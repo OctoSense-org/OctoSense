@@ -449,6 +449,18 @@ fn turn_in_progress(error: &str) -> bool {
     error.contains("(turn_in_progress)")
 }
 
+/// Why a `peer/input`'s turn did not start, for `peer/input/reject`: still
+/// `turn_in_progress` at the turn timeout is `busy`; anything else (the
+/// kernel's refusal, a timeout, the turn withdrawn by a Stop or the app
+/// closing) is `other` with the reason.
+fn start_refusal(error: &str) -> InputRefusal {
+    if turn_in_progress(error) {
+        InputRefusal::Busy
+    } else {
+        InputRefusal::Other(format!("the app could not start the turn: {error}"))
+    }
+}
+
 impl State {
     /// Record what started `turn` (a context turn this broker started).
     fn note_trigger(&mut self, turn: &str, trigger: TurnTrigger) {
@@ -1742,8 +1754,15 @@ impl Inner {
     /// `peer/input/reject` on this link (the one the input came on), with
     /// the peer's credential, before any `turn/start` with its turn id.
     fn reject_input(self: &Arc<Self>, peer: &PeerInfo, input: &PeerInput, why: InputRefusal) {
+        let Some(link) = self.lock().link.clone() else {
+            return eprintln!("app-peers: {}: input {} refused: {why} (no link to say so)", self.cfg.app_id, input.input_id);
+        };
+        self.reject_input_on(&link, peer, input, why);
+    }
+
+    /// `peer/input/reject` on `link`.
+    fn reject_input_on(self: &Arc<Self>, link: &mpsc::UnboundedSender<String>, peer: &PeerInfo, input: &PeerInput, why: InputRefusal) {
         eprintln!("app-peers: {}: input {} refused: {why}", self.cfg.app_id, input.input_id);
-        let Some(link) = self.lock().link.clone() else { return };
         let mut params = json!({
             "profile_id": self.cfg.profile_id,
             "session_id": self.cfg.originator,
@@ -1754,15 +1773,18 @@ impl Inner {
         for (k, v) in why.fields().as_object().into_iter().flatten() {
             params[k] = v.clone();
         }
-        self.fire(&link, host_tools::PEER_INPUT_REJECT, params);
+        self.fire(link, host_tools::PEER_INPUT_REJECT, params);
     }
 
     /// Start the system agent's input as the peer's turn: the kernel's turn
     /// id and NO origin (the kernel labels a `peer/input` turn
     /// `system_agent` itself and refuses any other label on it).
     fn start_input(self: &Arc<Self>, input: PeerInput) {
-        {
+        // The link the input came on: only there may it be refused.
+        let (link, peer) = {
             let mut st = self.lock();
+            let link = st.link.clone();
+            let peer = st.peer.as_ref().map(|(_, p)| p.clone());
             st.peer_turn = Some(input.turn_id.clone());
             remember(&mut st.input_turns, input.turn_id.clone());
             st.note_request(Request {
@@ -1773,7 +1795,8 @@ impl Inner {
                 speaker: Speaker { kind: host_tools::TurnOrigin::SystemAgent, label: None },
                 at: rfc3339_now(),
             });
-        }
+            (link, peer)
+        };
         let inner = self.clone();
         self.rt().spawn(async move {
             let params = json!({
@@ -1785,6 +1808,11 @@ impl Inner {
             let still = move |inner: &Inner| inner.lock().peer_turn.as_deref() == Some(turn.as_str());
             if let Err(e) = inner.start_turn_retrying(params, still).await {
                 eprintln!("app-peers: {}: the system agent's input {} did not start: {e}", inner.cfg.app_id, input.input_id);
+                // The system agent is told why (octos#2621), on the link the
+                // input came on; a closed link fails its inputs itself.
+                if let (Some(link), Some(peer)) = (link, peer) {
+                    inner.reject_input_on(&link, &peer, &input, start_refusal(&e));
+                }
                 inner.peer_turn_ended(&input.turn_id);
             }
         });
