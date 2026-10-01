@@ -161,6 +161,7 @@ pub struct HostServiceExecutor {
 /// Where a call's answer goes: App Hub's reply queue, keyed by a heap key no
 /// isolate uses.
 struct Waiting {
+    call_id: String,
     reply: ToolReply,
 }
 
@@ -190,13 +191,29 @@ impl ToolExecutor for HostServiceExecutor {
             return;
         }
         let key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { reply });
-        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args: call.args.clone(), from_sheet: false, may_prompt: true, host_dir: self.host_dir.clone() };
+        WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { call_id: call.call_id.clone(), reply });
+        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args: call.args.clone(), from_sheet: false,
+            // A tool call has no surface for a sheet: the person is not in the app.
+            may_prompt: false, host_dir: self.host_dir.clone() };
         octosense_appstore::services::dispatch(service_call, key, 0, &mut NoSheet);
     }
 
-    fn cancel(&self, _call_id: &str) {
-        // The reply is closed: whatever the service answers is dropped.
+    fn cancel(&self, call_id: &str) {
+        // Stop waiting now, and have App Hub drop the request: the service's
+        // late answer goes nowhere, and the request no longer counts against
+        // the calls that may wait.
+        let keys: Vec<usize> = {
+            let mut waiting = WAITING.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(waiting) = waiting.as_mut() else { return };
+            let keys: Vec<usize> = waiting.iter().filter(|(_, w)| w.call_id == call_id).map(|(key, _)| *key).collect();
+            for key in &keys {
+                waiting.remove(key);
+            }
+            keys
+        };
+        for key in keys {
+            octosense_appstore::services::cancel_heap(key);
+        }
     }
 }
 
@@ -213,8 +230,8 @@ pub fn poll() {
             Err(message) => ToolOutcome::error("app_error", message),
         });
     }
-    // A call cancelled while its service worked stays until the service
-    // answers (its reply, closed, sends nothing).
+    // A call its service never answers times out in App Hub, and the
+    // timeout arrives here like any answer.
 }
 
 /// How many calls wait on a host service.
@@ -349,6 +366,42 @@ pub(crate) mod tests {
         let sent: Arc<Mutex<Vec<Value>>> = Arc::default();
         let s = sent.clone();
         (ToolReply::new("c", move |v| s.lock().unwrap().push(v)), sent)
+    }
+
+    struct Holds(Arc<Mutex<Option<Replier>>>);
+    impl HostService for Holds {
+        fn family(&self) -> &'static str {
+            "g3hold"
+        }
+        fn call(&mut self, _call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
+            *self.0.lock().unwrap() = Some(reply);
+        }
+    }
+
+    fn is_waiting(call_id: &str) -> bool {
+        WAITING.lock().unwrap().as_ref().is_some_and(|w| w.values().any(|waiting| waiting.call_id == call_id))
+    }
+
+    /// A cancelled tool call stops waiting at once, and its service's late
+    /// answer goes nowhere.
+    #[test]
+    fn a_cancelled_tool_call_stops_waiting() {
+        let held = Arc::new(Mutex::new(None));
+        octosense_appstore::services::register_host_service(Box::new(Holds(held.clone())));
+        let exec = HostServiceExecutor {
+            app: "os.g3hold".into(),
+            tools: ["g3hold.wait".to_string()].into_iter().collect(),
+            families: ["g3hold".to_string()].into_iter().collect(),
+            host_dir: std::env::temp_dir(),
+        };
+        let (r, sent) = reply();
+        exec.execute(call("g3hold.wait"), r);
+        assert!(is_waiting("c-g3hold.wait"));
+        exec.cancel("c-g3hold.wait");
+        assert!(!is_waiting("c-g3hold.wait"), "cancelled");
+        held.lock().unwrap().take().expect("the service held it").send(Ok(json!({})));
+        poll();
+        assert!(sent.lock().unwrap().is_empty(), "the late answer reached nobody");
     }
 
     /// The executor runs a host-service tool as the app's own
