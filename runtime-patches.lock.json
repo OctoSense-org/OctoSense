@@ -4,7 +4,7 @@
     "base_revision": "e29a0eaa68781231eb9ec582e5f02648c6dad7e9",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "1bf3c9d5367bb35a0e2ab0eb92b614507817066d31d8030404cbb0655c758268",
-    "tree": "e9520ccb3740f3af8629d981d06d7e53aad48c06",
+    "tree": "46c5e8a22592382620c3edf9ffb2dccf789c5c8a",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -12,7 +12,9 @@
       "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11).",
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
       "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
-      "A map that is not drawn (Maps sent to the background) no longer asks for a frame and a full redraw every frame, nor ticks its tile fades every 16 ms, while it waits to draw (OctoSense-org/makepad#79)."
+      "A map that is not drawn (Maps sent to the background) no longer asks for a frame and a full redraw every frame, nor ticks its tile fades every 16 ms, while it waits to draw (OctoSense-org/makepad#79).",
+      "OpenHarmony GL frees retired GPU allocations through completion fences and serves that retirement on idle vsync beats, as on Android; before, the debt never settled and an idle app repainted at display rate (OctoSense-org/makepad#88).",
+      "A DrawText no longer redraws a draw list from inside that list's own redraw; one DrawText drawing the big clock as SLUG and labels as raster kept an idle OpenHarmony Home re-recording its scene every frame (OctoSense-org/makepad#89)."
     ],
     "stacked": [
       {
@@ -34,6 +36,14 @@
       {
         "patch": "tools/runtime-patches/makepad-map-hidden-no-frame-loop.patch",
         "sha256": "e89a4776c617d48242c4a33495972e1566036016584c81f58f8cb4affc535d8f"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-ohos-gl-lifetimes.patch",
+        "sha256": "997cca9b560a0ea8fa38a209613752a5430467bcac99a5d90069dc280721a0c7"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-drawtext-current-list-redraw.patch",
+        "sha256": "a64d6b6db40a6ac7c5518d2b9ba6675abd8b8ad04c917e27a674bd41d4904ee4"
       }
     ]
   }
