@@ -682,6 +682,50 @@ mod tests {
         assert!(matches!(bus.release(&held.key, true, ""), Route::Drop));
     }
 
+    /// Review of #218: a process's destructive tool is confirmed on the
+    /// shell's sheet (every argument, in full), never on the pane's card,
+    /// which cuts them: announced to the pane as `Act`, each call held for
+    /// the router, no standing rule may answer it.
+    #[test]
+    fn a_processs_destructive_tool_is_confirmed_on_the_shells_sheet_not_the_pane_card() {
+        let notes = ServiceManifest::new("notes", "Notes", "Notes.")
+            .with_tool(ToolDef::new("purge", "Delete every note.", r#"{"type":"object"}"#, Risk::Destructive))
+            .with_tool(ToolDef::new("list", "List notes.", r#"{"type":"object"}"#, Risk::Read));
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: notes, port_tag: 0 } };
+        let Route::ToPane(json) = bus.on_custom_from(4, Some("notes"), &up.to_json()) else { panic!("expected ToPane") };
+        let ServiceUp::Register { manifest, .. } = HostedUp::parse(&json).unwrap().msg else { panic!() };
+        assert_eq!(manifest.tool("purge").unwrap().risk, Risk::Act, "the pane's card does not confirm it");
+        let long = format!(r#"{{"filter":"{}"}}"#, "x".repeat(200));
+        let down = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("purge", &long)) };
+        let Route::Approval(held) = bus.on_custom(9, &down.to_json()) else { panic!("expected a held call") };
+        assert_eq!((held.app.as_str(), held.tool.as_str(), held.args.as_str()), ("notes", "purge", long.as_str()));
+        assert!(!held.auto_approvable && !held.command);
+        let read = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("list", "{}")) };
+        assert!(matches!(bus.on_custom(9, &read.to_json()), Route::ToClient(4, _)), "reads are not held");
+    }
+
+    /// Review of #222: the pane's own calls are audited like the relay's,
+    /// when they go out and when they are answered.
+    #[test]
+    fn the_panes_calls_are_audited_in_the_tool_call_log() {
+        let lines: std::sync::Arc<std::sync::Mutex<Vec<crate::approvals::audit::CallAudit>>> = Default::default();
+        let sink = lines.clone();
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        bus.set_audit(std::sync::Arc::new(move |e| sink.lock().unwrap().push(e)));
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: files(), port_tag: 0 } };
+        bus.on_custom_from(4, Some("files"), &up.to_json());
+        let down = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("stat", r#"{"path":"/x"}"#)) };
+        assert!(matches!(bus.on_custom(9, &down.to_json()), Route::ToClient(4, _)));
+        let result = HostedUp { from: None, msg: ServiceUp::Result(ToolResult::ok("c", "ok", "ok")) };
+        bus.on_custom(4, &result.to_json());
+        let got: Vec<(String, String, String, String)> = lines.lock().unwrap().iter().map(|e| (e.caller.clone(), e.owner.clone(), e.phase.clone(), e.outcome.clone())).collect();
+        assert_eq!(got, vec![
+            ("assistant_pane".into(), "files".into(), "call".into(), "received".into()),
+            ("assistant_pane".into(), "files".into(), "done".into(), "ok".into()),
+        ]);
+    }
+
     #[test]
     fn the_shells_own_calls_reach_the_terminal_unheld_and_answer_the_shell_not_the_pane() {
         let terminal = ServiceManifest::new("terminal", "Terminal", "The live terminal.")

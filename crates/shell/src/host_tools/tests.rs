@@ -1092,3 +1092,19 @@ fn should_send_a_modules_tools_down_its_link_when_it_has_no_executor() {
     assert_eq!(w.link_calls.len(), 1);
     assert_eq!(w.link_calls[0].0, "probe");
 }
+
+/// Review of #222: the shell's audit sink writes each line to the home's
+/// file at once (nothing waits for `pump`, so a crash or quit loses none),
+/// from whatever thread answers.
+#[test]
+fn the_shells_audit_lines_are_written_at_once() {
+    use super::relay::CallAudit;
+    let home = std::env::temp_dir().join(format!("octosense-syncaudit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let sink = super::audit_sink_for(home.clone());
+    let e = CallAudit { ts: 1, call_id: "c1".into(), caller: "system_agent".into(), owner: "terminal".into(), tool: "terminal.run".into(), args_digest: "x".into(), phase: "call".into(), outcome: "received".into() };
+    std::thread::spawn(move || sink(e)).join().unwrap();
+    let text = std::fs::read_to_string(home.join(crate::approvals::audit::CALLS_FILE)).unwrap();
+    assert_eq!(text.lines().count(), 1, "written before any pump");
+    let _ = std::fs::remove_dir_all(home);
+}

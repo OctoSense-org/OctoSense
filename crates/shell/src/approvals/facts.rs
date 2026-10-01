@@ -322,4 +322,25 @@ mod tests {
         assert_ne!(digest(&json!({"a": 1})), digest(&json!({"a": 2})));
         assert!(digest(&json!({})).starts_with("sha256:"));
     }
+
+    /// Review of #222: the audit's digest is an HMAC under a per-home key,
+    /// so a short secret (a PIN) cannot be found by hashing guesses.
+    #[test]
+    fn the_audit_digest_is_keyed_per_home() {
+        let a = keyed_digest(&[1u8; 32], &json!({"pin": "1234"}));
+        let b = keyed_digest(&[2u8; 32], &json!({"pin": "1234"}));
+        assert!(a.starts_with("hmac-sha256:") && a != b);
+        assert_eq!(a, keyed_digest(&[1u8; 32], &json!({"pin": "1234"})));
+        assert_ne!(a, digest(&json!({"pin": "1234"})));
+        let home = std::env::temp_dir().join(format!("octosense-auditkey-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let k1 = home_key(&home).unwrap();
+        assert_eq!(k1, home_key(&home).unwrap(), "stable");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(home.join(AUDIT_KEY_FILE)).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        let _ = std::fs::remove_dir_all(home);
+    }
 }
