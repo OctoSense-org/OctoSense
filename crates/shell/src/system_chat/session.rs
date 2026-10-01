@@ -264,10 +264,7 @@ impl Driver {
             Ok(call) => call,
             Err(_) => return,
         };
-        // Only the system session's own set reaches this link.
-        if call.peer.is_some() || call.session_id != SYSTEM_SESSION {
-            return;
-        }
+        let not_ours = call.peer.is_some() || call.session_id != SYSTEM_SESSION;
         let outbox = self.outbox.clone();
         let waker = self.waker.clone();
         let reply = ToolReply::new(call.call_id.clone(), move |fields| {
@@ -276,19 +273,30 @@ impl Driver {
                 thread.unpark();
             }
         });
+        // Only this host's session set is relayed here (ADR 0004 §8); any
+        // other session's, or an app peer's, is refused at once rather than
+        // left to time out.
+        if not_ours {
+            reply.finish(ToolOutcome::error("not_this_hosts_session", "the system chat relays tool calls of the system session only"));
+            return;
+        }
         if self.interrupted.contains(&call.turn_id) {
             reply.finish(ToolOutcome::error("turn_interrupted", "the person stopped that answer"));
             return;
         }
-        // Only a turn this chat started is relayed (ADR 0004 §8): the
-        // person's (G1, G2). Another client's turn on the session is not
-        // this host's to run tools for; the kernel hears so at once.
-        if !self.model.is_own_turn(&call.turn_id) {
-            reply.finish(ToolOutcome::error("not_this_hosts_turn", "the shell relays tool calls only from turns its system chat started"));
-            return;
-        }
+        // Whose turn (ADR 0004 §8). octos routes a host-session call only
+        // for a turn THIS connection drove (`apply_session_owned_host_tools`:
+        // never a kernel continuation, a Talk to Octos client or another
+        // device's connection, which get no host-session tools), so every
+        // call here is this host's. A turn the chat started itself is the
+        // person's (G1, G2); one it did not record is still its connection's
+        // own work, relayed as the system agent's, never the person's.
         let mut call = call;
-        call.trigger = crate::ai_host::app_peers::TurnTrigger::Person;
+        call.trigger = if self.model.is_own_turn(&call.turn_id) {
+            crate::ai_host::app_peers::TurnTrigger::Person
+        } else {
+            crate::ai_host::app_peers::TurnTrigger::SystemAgent
+        };
         self.calls.insert(call.call_id.clone(), reply.clone());
         self.effects.push(Effect::ToolCall { call, reply });
     }
