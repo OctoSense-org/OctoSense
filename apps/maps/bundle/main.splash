@@ -11,6 +11,25 @@ let finding = ""        // "" | "origin" | "stop": the search picks the start or
 let stops = []          // up to two stops on the way, in order
 let view3d = true       // drive view: 3D follow camera, or the flat 2D map
 
+// ADR 0004 §11: the app's data is its account folder (a system app acts for
+// the device), the folder its agent works in; what it can fetch again is
+// cache/. A file an earlier build kept at the top of the jail moves on first
+// use: the old one is removed only once the copy reads back the same; if the
+// copy fails the app keeps using the old file and tries again next time.
+let DATA = "accounts/device/"
+fn moved(name, path){
+    if fs.exists(path) || !fs.exists(name) { return path }
+    let data = fs.read(name)
+    fs.write(path, data)
+    if fs.exists(path) && fs.read(path) == data {
+        fs.remove(name)
+        return path
+    }
+    if fs.exists(path) { fs.remove(path) }
+    return name
+}
+fn data_path(name){ return moved(name, DATA + name) }
+
 fn fix_origin(){
     if origin.picked { return }
     if sys.gps("ok") >= 1 {
@@ -18,8 +37,8 @@ fn fix_origin(){
     }
 }
 fn load_recents(){
-    if fs.exists("recents.json") {
-        let v = fs.read("recents.json").parse_json()
+    if fs.exists(data_path("recents.json")) {
+        let v = fs.read(data_path("recents.json")).parse_json()
         if v != nil { recents = v }
     }
 }
@@ -27,7 +46,7 @@ fn remember(p){
     recents.retain(|r| r.name != p.name)
     recents.push(p)
     if recents.len() > 8 { recents.remove(0) }
-    fs.write("recents.json", recents.to_json())
+    fs.write(data_path("recents.json"), recents.to_json())
 }
 fn search_for(text){
     q = ("" + text).trim()

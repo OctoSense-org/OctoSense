@@ -521,7 +521,7 @@ impl MenuModel {
             items.push(MenuItem::new("desktop.octosense-dark","OctoSense · Dark",MenuKind::Action));
         }
         if crate::dev_mode::settings_available() {
-            let developer = developer_items(&items);
+            let developer = developer_items(&items, path);
             // Setup keeps its jsonc place, after Style.
             let at = items.iter().position(|item| item.id == "style").map_or(items.len(), |i| i + 1);
             items.splice(at..at, developer);
@@ -551,6 +551,15 @@ impl MenuModel {
         self.frozen_top = None;
         self.items = Self::all_items(path);
         self.rebuild();
+    }
+
+    /// The same submenu, its rows built again (a Settings row changed
+    /// them), the cursor kept where it was.
+    pub fn refresh(&mut self) {
+        let sel = self.sel;
+        self.items = Self::all_items(&self.path);
+        self.rebuild();
+        self.sel = sel.min(self.rows.len().saturating_sub(1));
     }
 
     pub fn close(&mut self) {
@@ -784,6 +793,25 @@ impl MenuModel {
 
 /// Settings → Developer options' Turn on row.
 const DEVELOPER_ON: &str = "setup.developer.on";
+/// Developer options › Apps it covers: `.all`, or one row per app with an
+/// agent (`.<app id with ':' for '.'>`, so the menu tree keeps its shape).
+pub const DEVELOPER_APPS_ROW: &str = "setup.developer.apps";
+
+/// Whether choosing `target` leaves the menu open on its list (the shell
+/// then refreshes the rows).
+pub fn keeps_menu_open(target: &str) -> bool {
+    target.strip_prefix(DEVELOPER_APPS_ROW).is_some_and(|rest| rest.starts_with('.'))
+}
+
+/// The menu id segment of an app's row under Apps it covers.
+pub fn developer_app_row(app: &str) -> String {
+    format!("{DEVELOPER_APPS_ROW}.{}", app.replace('.', ":"))
+}
+
+/// The app id a row's segment names.
+pub fn developer_app_of(segment: &str) -> String {
+    segment.replace(':', ".")
+}
 
 /// The Approvals page's row (lib.rs opens `approvals::open_settings`).
 pub const APPROVALS_ROW: &str = "setup.assistant.approvals";
@@ -835,7 +863,10 @@ fn assistant_items(existing: &[MenuItem]) -> Vec<MenuItem> {
 /// needs the confirmation typed into the menu's filter (the row carries it
 /// as an alias, so typing keeps it listed) and says what it risks.
 fn command_items() -> Vec<MenuItem> {
-    command_items_given(crate::system_chat::grants::command_execution(), crate::apps::terminal_runs_as_process())
+    // A Terminal whose launch ran unsandboxed counts as none; one not
+    // launched yet may still be (its first launch decides).
+    let terminal = crate::apps::terminal_runs_as_process() && crate::sandbox::launch_state(crate::apps::TERMINAL) != Some(false);
+    command_items_given(crate::system_chat::grants::command_execution(), terminal)
 }
 
 /// [`command_items`] for a switch and a Terminal: without a process
@@ -853,8 +884,8 @@ fn command_items_given(on: bool, terminal_process: bool) -> Vec<MenuItem> {
         .describe(&describe)];
     if !terminal_process {
         items.push(
-            MenuItem::new(&format!("{COMMANDS_ROW}.needs"), "Command execution needs Terminal as a process on this device", MenuKind::Inert)
-                .describe("Commands are typed into a Terminal that runs as its own sandboxed process; here the Terminal runs inside OctoSense (or not at all), so the assistant is not offered commands even if you allow them."),
+            MenuItem::new(&format!("{COMMANDS_ROW}.needs"), "Command execution needs Terminal as a sandboxed process on this device", MenuKind::Inert)
+                .describe("Commands are typed into a Terminal that runs as its own sandboxed process; here the Terminal runs inside OctoSense, without its sandbox, or not at all, so the assistant is not offered commands even if you allow them."),
         );
     }
     items.push(MenuItem::new(&format!("{COMMANDS_ROW}.risk"), "What this allows", MenuKind::Inert).describe(grants::RISK));
@@ -885,7 +916,7 @@ fn command_items_given(on: bool, terminal_process: bool) -> Vec<MenuItem> {
 /// it on needs the confirmation phrase typed into the menu's filter: the
 /// row carries the phrase as an alias, so typing it keeps the row listed,
 /// and choosing it passes what was typed.
-fn developer_items(existing: &[MenuItem]) -> Vec<MenuItem> {
+fn developer_items(existing: &[MenuItem], path: &str) -> Vec<MenuItem> {
     use crate::dev_mode;
     let mut items = Vec::new();
     if !existing.iter().any(|item| item.id == "setup") {
@@ -897,6 +928,11 @@ fn developer_items(existing: &[MenuItem]) -> Vec<MenuItem> {
             .aliases(&["developer", "dev mode"])
             .describe("Every app gets every grant, for building apps"),
     );
+    // The apps are listed only under Developer options (reading them waits
+    // on App Hub's catalog, which the root menu must not).
+    let apps: Vec<(String, String)> =
+        if path.starts_with("setup.developer") { crate::agents::all().into_iter().map(|a| (a.id, a.name)).collect() } else { Vec::new() };
+    items.extend(developer_app_items(&dev_mode::chosen_scope(), &apps));
     match dev_mode::status() {
         Some((active, profile)) => {
             items.push(
@@ -906,8 +942,12 @@ fn developer_items(existing: &[MenuItem]) -> Vec<MenuItem> {
             );
         }
         None => {
+            let label = match dev_mode::chosen_scope() {
+                dev_mode::Scope::AllApps => "Turn on for all apps".to_string(),
+                chosen => format!("Turn on for {}", chosen.label()),
+            };
             items.push(
-                MenuItem::new(DEVELOPER_ON, "Turn on for all apps", MenuKind::Action)
+                MenuItem::new(DEVELOPER_ON, &label, MenuKind::Action)
                     .icon(Ico::Check)
                     .aliases(&[dev_mode::CONFIRM_PHRASE])
                     .describe(&format!("Type \u{201c}{}\u{201d}, then choose this", dev_mode::CONFIRM_PHRASE)),
@@ -920,6 +960,38 @@ fn developer_items(existing: &[MenuItem]) -> Vec<MenuItem> {
             }
             items.push(profile);
         }
+    }
+    items
+}
+
+/// Developer options › Apps it covers, for a choice and the apps with an
+/// agent (id, name): All apps, then each app, the covered ones checked.
+/// Choosing one keeps the menu open (lib.rs `developer_options_activate`).
+fn developer_app_items(choice: &crate::dev_mode::Scope, apps: &[(String, String)]) -> Vec<MenuItem> {
+    use crate::dev_mode::Scope;
+    let all = matches!(choice, Scope::AllApps);
+    let mut items = vec![MenuItem::new(DEVELOPER_APPS_ROW, "Apps it covers", MenuKind::Menu)
+        .icon(Ico::Check)
+        .aliases(&["apps", "developer apps", "chosen apps"])
+        .describe(&format!("Developer mode covers {}", choice.label()))];
+    let mut row = MenuItem::new(&format!("{DEVELOPER_APPS_ROW}.all"), "All apps", MenuKind::Action).describe("Every app, including ones installed later");
+    row.checked = all;
+    items.push(row);
+    let mut listed: Vec<(String, String)> = apps.to_vec();
+    // An app chosen elsewhere (OCTOSENSE_DEV_MODE's list) stays choosable.
+    if let Scope::Apps(chosen) = choice {
+        for id in chosen {
+            if !listed.iter().any(|(a, _)| Scope::parse(id).is_some_and(|s| s.covers(a))) {
+                listed.push((id.clone(), id.clone()));
+            }
+        }
+    }
+    for (id, name) in listed {
+        let covered = !all && choice.covers(&id);
+        let mut row = MenuItem::new(&developer_app_row(&id), &name, MenuKind::Action)
+            .describe(if covered { "Covered: choose to leave it out" } else if all { "Covered as one of all apps: choose to cover only the others" } else { "Not covered: choose to add it" });
+        row.checked = covered;
+        items.push(row);
     }
     items
 }
@@ -1168,6 +1240,11 @@ impl ShellMenu {
         self.model.open_at(path, skin);
         self.next = nextstep::NextMenus::default();
         self.gate.reset();
+        self.redraw(cx);
+    }
+
+    pub fn refresh(&mut self, cx: &mut Cx) {
+        self.model.refresh();
         self.redraw(cx);
     }
 
@@ -1617,7 +1694,10 @@ impl ShellMenu {
 
     fn activate_selected(&mut self, cx: &mut Cx) {
         if let Some(target) = self.model.activate() {
-            self.model.close();
+            // A choice in a list (Apps it covers) keeps the list open.
+            if !keeps_menu_open(&target) {
+                self.model.close();
+            }
             cx.widget_action(self.uid, ShellMenuAction::Activate(target));
         }
         self.gate.reset();
@@ -1795,6 +1875,33 @@ mod tests {
         assert_eq!(model.activate().as_deref(), Some("setup.developer.on:turn on developer mode"));
     }
 
+    /// Developer options › Apps it covers: All apps, then every app with an
+    /// agent, the covered ones checked; a row names its app in a segment the
+    /// menu tree keeps (no extra dots), and choosing it is an action.
+    #[test]
+    fn developer_options_list_the_apps_it_covers() {
+        use crate::dev_mode::Scope;
+        let apps = vec![("os.news".to_string(), "News".to_string()), ("rinx".to_string(), "Rinx".to_string())];
+        let rows = developer_app_items(&Scope::AllApps, &apps);
+        assert_eq!(rows[0].id, DEVELOPER_APPS_ROW);
+        assert_eq!(rows[0].description, "Developer mode covers all apps");
+        let all = rows.iter().find(|r| r.id == "setup.developer.apps.all").unwrap();
+        assert!(all.checked && all.kind == MenuKind::Action);
+        let news = rows.iter().find(|r| r.label == "News").unwrap();
+        assert_eq!(news.id, "setup.developer.apps.os:news");
+        assert_eq!(news.parent(), DEVELOPER_APPS_ROW, "one level under Apps it covers");
+        assert_eq!(developer_app_of("os:news"), "os.news");
+        assert!(keeps_menu_open("setup.developer.apps.os:news") && keeps_menu_open("setup.developer.apps.all"));
+        assert!(!keeps_menu_open(DEVELOPER_APPS_ROW) && !keeps_menu_open("setup.developer.on:"));
+        assert!(!news.checked, "all apps: only All apps is checked");
+        let rows = developer_app_items(&Scope::parse("os.news,os.mail").unwrap(), &apps);
+        assert!(rows.iter().find(|r| r.label == "News").unwrap().checked);
+        assert!(!rows.iter().find(|r| r.label == "Rinx").unwrap().checked);
+        assert!(!rows.iter().find(|r| r.id == "setup.developer.apps.all").unwrap().checked);
+        assert!(rows.iter().any(|r| r.id == "setup.developer.apps.os:mail"), "an app chosen elsewhere stays listed");
+        assert_eq!(rows[0].description, "Developer mode covers os.mail, os.news");
+    }
+
     /// Setup → Assistant → Command execution: Allow carries the typed
     /// confirmation to the shell (which checks it; lib.rs
     /// `assistant_commands_activate`), and the chat row opens the chat.
@@ -1828,10 +1935,10 @@ mod tests {
         let text = |items: &[MenuItem]| items.iter().map(|i| format!("{} {}", i.label, i.description)).collect::<Vec<_>>().join("\n");
         for on in [false, true] {
             let items = command_items_given(on, false);
-            assert!(text(&items).contains("needs Terminal as a process on this device"), "{on}: {}", text(&items));
+            assert!(text(&items).contains("needs Terminal as a sandboxed process on this device"), "{on}: {}", text(&items));
         }
         let items = command_items_given(true, true);
-        assert!(!text(&items).contains("needs Terminal as a process"), "{}", text(&items));
+        assert!(!text(&items).contains("needs Terminal as a sandboxed process"), "{}", text(&items));
         assert!(text(&items).contains("On: each command asks you first"));
     }
 

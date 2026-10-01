@@ -431,7 +431,7 @@ fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
     let catalog = Catalog::shipped();
     for tool in ["terminal.run", "terminal.read_screen", "terminal.read_scrollback"] {
         assert!(catalog.entry("terminal", tool).is_some(), "{tool}");
-        assert_eq!(catalog.owner_of(tool), Some("terminal"));
+        assert_eq!(catalog.owner_of(tool).as_deref(), Some("terminal"));
     }
     let rinx = crate::native_apps::find("rinx").unwrap();
     assert_eq!(catalog.generic("rinx", false), rinx.generic_tools.iter().map(|t| t.to_string()).collect::<Vec<_>>());
@@ -586,6 +586,9 @@ fn a_calls_trigger_is_the_one_its_host_stamped_and_unknown_by_default() {
         (TurnTrigger::Unknown, CallOrigin::PeerOwn, Trigger::Unknown),
         (TurnTrigger::Unknown, CallOrigin::System, Trigger::Unknown),
         (TurnTrigger::Person, CallOrigin::PeerInput, Trigger::SystemAgent),
+        // An app saying the person started it is the app's run: only a
+        // shell surface makes a turn the person's.
+        (TurnTrigger::AppSaysPerson, CallOrigin::Context, Trigger::App),
     ];
     for (i, (stamped, origin, want)) in cases.into_iter().enumerate() {
         let id = format!("c{i}");
@@ -803,6 +806,28 @@ fn an_expired_host_tool_approval_is_denied_with_its_reason() {
     assert_eq!(w.router.expired().len(), 1);
 }
 
+/// A script app's `tools.json` may say `auto_approvable: false` (App Hub's
+/// `ToolSpec`): its approvals then never go to a standing rule, whatever
+/// the host's own rule says (ADR 0004 §8).
+#[test]
+fn a_script_apps_declared_auto_approvable_false_holds_on_its_approvals() {
+    let mut relay = Relay::default();
+    let mut pay = decl("pay.transfer", true, "host");
+    pay["auto_approvable"] = json!(false);
+    relay.catalog.declare("com.example.pay", vec![pay, decl("pay.quote", true, "host")]);
+    let mut w = World::new(FixedDevMode::off());
+    for (id, tool) in [("a1", "pay.transfer"), ("a2", "pay.quote")] {
+        let approval = HostToolApproval::parse(
+            &json!({"approval_id": id, "turn_id": "t", "approval_kind": "host_tool", "typed_details": {"host_tool": {"app": "com.example.pay", "tool": tool, "args": {}, "risk": "act", "outward": true, "calling_kind": "system"}}}),
+            "s#system",
+        )
+        .unwrap();
+        relay.handle(Event::Approval { app: "system".into(), account: None, approval, answer: ApprovalAnswer::new(|_| {}) }, &mut w);
+    }
+    assert!(!w.asked[0].1.auto_approvable, "declared false: no rule answers it");
+    assert!(w.asked[1].1.auto_approvable, "omitted: a rule may");
+}
+
 // ------------------------------------------------------------ dev.run (ADR 0004 §13)
 
 fn dev_run_call(id: &str, calling: &str, owner: &str) -> HostToolCall {
@@ -892,4 +917,178 @@ fn dev_runs_approval_is_a_command_developer_mode_answers_for_a_covered_app() {
         }
         assert_eq!(answers.lock().unwrap().as_slice(), if answered { &[true][..] } else { &[][..] });
     }
+}
+
+/// ADR 0004 §11 gap 7 (octos#2647 `read_parent`): an app's conversation reads
+/// its account's folder only where the manifest says its agent works there
+/// (`storage.agent_workspace: "account"`, the default) and the agent has
+/// that workspace now (an app whose agent has no files, a suspended or a
+/// refused account gets none).
+#[test]
+fn a_conversation_reads_the_account_folder_only_where_the_agent_works_there() {
+    use crate::app_storage::{AgentWorkspace, StorageSpec};
+    let folder = std::path::Path::new("/octosense/apps/rinx/accounts/a");
+    let account = StorageSpec { agent_workspace: AgentWorkspace::Account, ..Default::default() };
+    let none = StorageSpec { agent_workspace: AgentWorkspace::None, ..Default::default() };
+    assert!(super::reads_account(&account, Some(folder)));
+    assert!(super::reads_account(&StorageSpec::default(), Some(folder)), "\"account\" is the default");
+    assert!(!super::reads_account(&account, None), "no workspace now: fenced");
+    assert!(!super::reads_account(&none, Some(folder)), "agent_workspace none: fenced");
+}
+
+// ------------------------------------------------------------ the host read tools (ADR 0004 §11)
+
+/// `files.list`, `files.read`, `files.search`: an app's own agent's calls
+/// run on the shell (never down the app's link, no developer mode needed),
+/// with their arguments checked; another app's agent and the system agent
+/// are refused.
+#[test]
+fn the_host_read_tools_run_on_the_shell_for_the_apps_own_agent_only() {
+    let mut relay = Relay::default();
+    let host = Arc::new(Exec::default());
+    relay.set_executor(super::relay::HOST_EXECUTOR, Some(host.clone()));
+    let mut w = World::new(FixedDevMode::off());
+    w.links.push("rinx".into());
+    let files_call = |id: &str, name: &str, calling: &str, args: Value| {
+        let mut c = call(id, name, calling);
+        c.app = "rinx".into();
+        c.risk = "read".into();
+        c.args = args;
+        c
+    };
+    let (r, _) = reply("c1");
+    relay.handle(Event::Call { call: files_call("c1", super::files::READ, "rinx", json!({"path": "exports/room.md"})), reply: r }, &mut w);
+    let (r, _) = reply("c2");
+    relay.handle(Event::Call { call: files_call("c2", super::files::SEARCH, "rinx", json!({"query": "budget"})), reply: r }, &mut w);
+    let ran: Vec<String> = host.0.lock().unwrap().iter().map(|(c, _)| c.name.clone()).collect();
+    assert_eq!(ran, [super::files::READ, super::files::SEARCH]);
+    assert_eq!(host.0.lock().unwrap()[0].0.context_id, None, "the call's own context is stamped by the host");
+    assert!(w.link_calls.is_empty(), "never down the app's link");
+    let (r, sent) = reply("c3");
+    relay.handle(Event::Call { call: files_call("c3", super::files::READ, "rinx", json!({"file": "x"})), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "invalid_args");
+    let (r, sent) = reply("c4");
+    relay.handle(Event::Call { call: files_call("c4", super::files::LIST, "calendar", json!({})), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "another app's folder: never");
+    let mut system = files_call("c5", super::files::LIST, super::SYSTEM, json!({}));
+    system.caller_kind = CallerKind::System;
+    let (r, sent) = reply("c5");
+    relay.handle(Event::Call { call: system, reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    assert_eq!(host.0.lock().unwrap().len(), 2);
+    // Declared as the app's own read tools, no confirmation.
+    for d in super::files::declarations("rinx") {
+        assert_eq!((d["app"].as_str(), d["risk"].as_str(), d.get("confirm")), (Some("rinx"), Some("read"), None), "{d}");
+    }
+}
+
+// ---------------------------------------------------------------- the audit (ADR 0004 §8, §12, §13)
+
+/// Every tool call is audited when the relay receives it and when it ends
+/// (answered, refused or cancelled): caller, owning app, tool, a digest of
+/// the exact arguments (never the arguments), and the outcome.
+#[test]
+fn every_tool_call_is_audited_when_it_arrives_and_when_it_ends() {
+    use super::relay::CallAudit;
+    let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.room.list", false, "host")]);
+    let log: Arc<Mutex<Vec<CallAudit>>> = Arc::default();
+    let sink = log.clone();
+    relay.set_audit(Arc::new(move |e| sink.lock().unwrap().push(e)));
+    let mut w = World::new(FixedDevMode::off());
+    // Answered.
+    let (r, _) = reply("a1");
+    relay.handle(Event::Call { call: call("a1", "rinx.room.list", "rinx"), reply: r }, &mut w);
+    exec.0.lock().unwrap()[0].1.finish(ToolOutcome::Ok(json!({"rooms": []})));
+    // Refused (not granted).
+    let (r, _) = reply("a2");
+    relay.handle(Event::Call { call: call("a2", "rinx.admin.wipe", "rinx"), reply: r }, &mut w);
+    // Cancelled while it runs.
+    let (r, _) = reply("a3");
+    relay.handle(Event::Call { call: call("a3", "rinx.room.list", "rinx"), reply: r }, &mut w);
+    relay.handle(Event::Cancel { call_id: "a3".into(), reason: "interrupted".into() }, &mut w);
+    let got: Vec<(String, String, String)> = log.lock().unwrap().iter().map(|e| (e.call_id.clone(), e.phase.clone(), e.outcome.clone())).collect();
+    let want = [
+        ("a1", "call", "received"),
+        ("a1", "done", "ok"),
+        ("a2", "call", "received"),
+        ("a2", "done", "error:not_granted"),
+        ("a3", "call", "received"),
+        ("a3", "done", "cancelled"),
+    ];
+    assert_eq!(got, want.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string())).collect::<Vec<_>>());
+    let e = log.lock().unwrap()[0].clone();
+    assert_eq!((e.caller.as_str(), e.owner.as_str(), e.tool.as_str()), ("own_agent/mini.news", "rinx", "rinx.room.list"));
+    assert_eq!(e.args_digest, crate::approvals::facts::digest(&json!({"to": ["ana@example.org"], "text": "hi"})));
+    let line = serde_json::to_string(&e).unwrap();
+    assert!(!line.contains("ana@example.org"), "never the arguments: {line}");
+}
+
+/// The shell's audit of tool calls is one owner-only JSON-lines file in the
+/// home, beside the approvals audit.
+#[test]
+fn the_tool_call_audit_is_an_owner_only_file_in_the_home() {
+    use super::relay::CallAudit;
+    let home = std::env::temp_dir().join(format!("octosense-callaudit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let e = CallAudit { ts: 1, call_id: "c1".into(), caller: "system_agent".into(), owner: "terminal".into(), tool: "terminal.run".into(), args_digest: "sha256:x".into(), phase: "call".into(), outcome: "received".into() };
+    crate::approvals::audit::append_call(&home, &e).unwrap();
+    crate::approvals::audit::append_call(&home, &e).unwrap();
+    let path = home.join(crate::approvals::audit::CALLS_FILE);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.lines().count(), 2);
+    assert_eq!(serde_json::from_str::<CallAudit>(text.lines().next().unwrap()).unwrap(), e);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// ADR 0004 §7: a grant names its owning app explicitly, by the tool's
+/// namespace (the native app of that id, else the system app `os.<ns>`, the
+/// toolbox for its own), never whichever app declared the name first.
+#[test]
+fn a_grants_owner_is_the_namespaces_app_never_the_first_declarer() {
+    let mut c = Catalog::shipped();
+    c.declare("os.mail", vec![decl("mail.send", true, "host")]);
+    c.declare("com.evil.mail", vec![decl("mail.send", true, "host")]);
+    assert_eq!(c.owner_of("mail.send"), Some("os.mail".to_string()), "com.evil.mail sorts first but owns nothing");
+    c.declare("com.evil.news", vec![decl("news.list", true, "host")]);
+    assert_eq!(c.owner_of("news.list"), Some("os.news".to_string()), "whoever declares it, not yet loaded");
+    c.declare("com.evil.terminal", vec![decl("terminal.run", true, "host")]);
+    assert_eq!(c.owner_of("terminal.run"), Some("terminal".to_string()), "a native app owns its namespace");
+    assert_eq!(c.owner_of("toolbox.search"), Some(super::TOOLBOX.to_string()));
+    assert_eq!(c.owner_of("workflow.run"), Some(super::TOOLBOX.to_string()));
+    assert_eq!(c.owner_of("search"), None, "a kernel tool has no owning app");
+    // A grant resolved so reaches only the owner's tool.
+    c.grant("com.example.trip", &c.owner_of("mail.send").unwrap(), "mail.send");
+    assert!(c.may_call("com.example.trip", "os.mail", "mail.send", false));
+    assert!(!c.may_call("com.example.trip", "com.evil.mail", "mail.send", false));
+}
+
+#[test]
+fn should_run_a_modules_tools_on_its_executor_when_it_also_holds_a_peer_link() {
+    // #142: a module that opens Makepad's OctosPeer only to talk keeps its
+    // tools on its executor; nothing reroutes them to the link.
+    let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.room.list", false, "host")]);
+    let mut w = World::new(FixedDevMode::off());
+    w.links.push("rinx".into());
+    let (r, _) = reply("c1");
+    relay.handle(Event::Call { call: call("c1", "rinx.room.list", "rinx"), reply: r }, &mut w);
+    assert_eq!(exec.0.lock().unwrap().len(), 1, "the executor ran it");
+    assert!(w.link_calls.is_empty(), "nothing went down the link");
+}
+
+#[test]
+fn should_send_a_modules_tools_down_its_link_when_it_has_no_executor() {
+    // A module that serves its tools over its peer link, like a process app.
+    let mut relay = Relay::default();
+    relay.catalog.declare("probe", vec![decl("probe.ping", false, "host")]);
+    let mut w = World::new(FixedDevMode::off());
+    w.links.push("probe".into());
+    let (r, _) = reply("c1");
+    relay.handle(Event::Call { call: call("c1", "probe.ping", "probe"), reply: r }, &mut w);
+    assert_eq!(w.link_calls.len(), 1);
+    assert_eq!(w.link_calls[0].0, "probe");
 }

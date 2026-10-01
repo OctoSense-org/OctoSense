@@ -5,28 +5,111 @@
 //!   with an AES key that lives in the Android Keystore and never leaves it.
 //! - Elsewhere: an owner-only file under the service's directory.
 //!
-//! A password kept as a plain file by an earlier build is moved into the
-//! store the first time it is read.
+//! The files live in the host's secrets folder, `<home>/secrets/os.mail/`
+//! (0700, files 0600; ADR 0004 §11), when the host names it
+//! ([`crate::set_secrets_dir`]), else in `<mail dir>/secrets/`. Every file
+//! an earlier build left in `<mail dir>/secrets/` moves there when the shell
+//! starts ([`migrate_all`]; also on a read, for a host that did not), and a password kept as a plain file by an earlier build is moved
+//! into the store the first time it is read.
 use std::path::{Path, PathBuf};
 
+/// Where one service's passwords go: the host's secrets folder for Mail
+/// (`<home>/secrets/os.mail/`, ADR 0004 §11, 0700) when the host names one,
+/// else `<mail dir>/secrets/` (a Card runner without a host, tests). The
+/// mail dir still names the keychain items, so they stay where they were.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Place {
+    /// The service's state folder (`<host dir>/mail`).
+    pub mail_dir: PathBuf,
+    /// The folder the password files go in.
+    pub secrets_dir: PathBuf,
+}
+
+impl Place {
+    /// Where earlier builds kept the files: `<mail dir>/secrets/`.
+    pub fn legacy(mail_dir: &Path) -> Self {
+        Place { mail_dir: mail_dir.to_path_buf(), secrets_dir: mail_dir.join("secrets") }
+    }
+
+    /// The host's folder when it named one, else [`Place::legacy`].
+    pub fn resolve(mail_dir: &Path, secrets: Option<&Path>) -> Self {
+        match secrets {
+            Some(dir) => Place { mail_dir: mail_dir.to_path_buf(), secrets_dir: dir.to_path_buf() },
+            None => Self::legacy(mail_dir),
+        }
+    }
+
+    fn file(&self, id: &str) -> PathBuf {
+        self.secrets_dir.join(id)
+    }
+
+    fn legacy_file(&self, id: &str) -> PathBuf {
+        self.mail_dir.join("secrets").join(id)
+    }
+
+    /// A password an earlier build left under `<mail dir>/secrets/` moves
+    /// (bytes as they are: plain, or Android's sealed form) into the
+    /// secrets folder, owner-only, the first time it is needed.
+    fn adopt_legacy(&self, id: &str) -> bool {
+        let (old, new) = (self.legacy_file(id), self.file(id));
+        if old == new || !std::fs::symlink_metadata(&old).is_ok_and(|m| m.is_file()) {
+            return false;
+        }
+        // Moved before, but the old copy could not be deleted then: the new
+        // one is the password (written by this build or a later sign-in).
+        if !new.exists() {
+            let Ok(bytes) = std::fs::read(&old) else { return false };
+            if write_private(&new, &bytes).is_err() {
+                return false;
+            }
+        }
+        let gone = std::fs::remove_file(&old).is_ok();
+        let _ = std::fs::remove_dir(self.mail_dir.join("secrets"));
+        gone
+    }
+
+    /// Both the file and any legacy one.
+    fn remove_files(&self, id: &str) {
+        let _ = std::fs::remove_file(self.file(id));
+        let _ = std::fs::remove_file(self.legacy_file(id));
+    }
+}
+
+/// Move every password an earlier build left in `<mail dir>/secrets/` into
+/// the secrets folder (the shell, at startup), and drop an old copy whose
+/// earlier move could not delete it. How many old files went.
+pub fn migrate_all(place: &Place) -> usize {
+    let Ok(entries) = std::fs::read_dir(place.mail_dir.join("secrets")) else { return 0 };
+    let ids: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|id| !id.ends_with(".tmp"))
+        .collect();
+    ids.iter().filter(|id| place.adopt_legacy(id)).count()
+}
+
 pub trait Vault: Send + Sync {
-    /// `dir` is the service's own directory; `id` the account.
-    fn put(&self, dir: &Path, id: &str, secret: &str) -> Result<(), String>;
-    fn get(&self, dir: &Path, id: &str) -> Result<String, String>;
-    fn remove(&self, dir: &Path, id: &str);
+    /// `place` says where the service keeps passwords; `id` is the account.
+    fn put(&self, place: &Place, id: &str, secret: &str) -> Result<(), String>;
+    fn get(&self, place: &Place, id: &str) -> Result<String, String>;
+    fn remove(&self, place: &Place, id: &str);
 }
 
 fn missing() -> String {
     "The account's password is missing; sign in again.".into()
 }
 
-fn secret_path(dir: &Path, id: &str) -> PathBuf {
-    dir.join("secrets").join(id)
-}
-
+/// `path` written owner-only (0600) and atomically, in an owner-only (0700)
+/// folder.
 fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Cannot store the password: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).map_err(|e| format!("Cannot store the password: {e}"))?;
+        }
     }
     let temp = path.with_extension("tmp");
     #[cfg(unix)]
@@ -51,25 +134,27 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
 pub struct FileVault;
 
 impl Vault for FileVault {
-    fn put(&self, dir: &Path, id: &str, secret: &str) -> Result<(), String> {
-        write_private(&secret_path(dir, id), secret.as_bytes())
+    fn put(&self, place: &Place, id: &str, secret: &str) -> Result<(), String> {
+        write_private(&place.file(id), secret.as_bytes())
     }
-    fn get(&self, dir: &Path, id: &str) -> Result<String, String> {
-        std::fs::read_to_string(secret_path(dir, id)).map_err(|_| missing())
+    fn get(&self, place: &Place, id: &str) -> Result<String, String> {
+        place.adopt_legacy(id);
+        std::fs::read_to_string(place.file(id)).map_err(|_| missing())
     }
-    fn remove(&self, dir: &Path, id: &str) {
-        let _ = std::fs::remove_file(secret_path(dir, id));
+    fn remove(&self, place: &Place, id: &str) {
+        place.remove_files(id);
     }
 }
 
 /// A plain file left by an earlier build, if any: read, and moved into
 /// `vault` on success.
-fn migrate(vault: &dyn Vault, dir: &Path, id: &str) -> Option<String> {
-    let secret = std::fs::read_to_string(secret_path(dir, id)).ok()?;
-    if vault.put(dir, id, &secret).is_ok() {
+fn migrate(vault: &dyn Vault, place: &Place, id: &str) -> Option<String> {
+    place.adopt_legacy(id);
+    let secret = std::fs::read_to_string(place.file(id)).ok()?;
+    if vault.put(place, id, &secret).is_ok() {
         // Android's vault rewrites the same file; elsewhere it goes.
-        if std::fs::read_to_string(secret_path(dir, id)).ok().as_deref() == Some(secret.as_str()) {
-            let _ = std::fs::remove_file(secret_path(dir, id));
+        if std::fs::read_to_string(place.file(id)).ok().as_deref() == Some(secret.as_str()) {
+            let _ = std::fs::remove_file(place.file(id));
         }
     }
     Some(secret)
@@ -105,21 +190,21 @@ pub mod keychain {
     }
 
     impl Vault for Keychain {
-        fn put(&self, dir: &Path, id: &str, secret: &str) -> Result<(), String> {
-            entry(dir, id)?.set_password(secret).map_err(|e| format!("Cannot store the password in the keychain: {e}"))
+        fn put(&self, place: &Place, id: &str, secret: &str) -> Result<(), String> {
+            entry(&place.mail_dir, id)?.set_password(secret).map_err(|e| format!("Cannot store the password in the keychain: {e}"))
         }
-        fn get(&self, dir: &Path, id: &str) -> Result<String, String> {
-            match entry(dir, id)?.get_password() {
+        fn get(&self, place: &Place, id: &str) -> Result<String, String> {
+            match entry(&place.mail_dir, id)?.get_password() {
                 Ok(secret) => Ok(secret),
-                Err(keyring::Error::NoEntry) => migrate(self, dir, id).ok_or_else(missing),
+                Err(keyring::Error::NoEntry) => migrate(self, place, id).ok_or_else(missing),
                 Err(e) => Err(format!("Cannot read the password from the keychain: {e}")),
             }
         }
-        fn remove(&self, dir: &Path, id: &str) {
-            if let Ok(entry) = entry(dir, id) {
+        fn remove(&self, place: &Place, id: &str) {
+            if let Ok(entry) = entry(&place.mail_dir, id) {
                 let _ = entry.delete_credential();
             }
-            let _ = std::fs::remove_file(secret_path(dir, id));
+            place.remove_files(id);
         }
     }
 }
@@ -142,18 +227,19 @@ mod android {
     pub struct Keystore;
 
     impl Vault for Keystore {
-        fn put(&self, dir: &Path, id: &str, secret: &str) -> Result<(), String> {
+        fn put(&self, place: &Place, id: &str, secret: &str) -> Result<(), String> {
             let (iv, sealed) = unsafe { with_env(|env| crypt(env, true, &[], secret.as_bytes())) }?;
             let mut bytes = MAGIC.to_vec();
             bytes.push(iv.len() as u8);
             bytes.extend_from_slice(&iv);
             bytes.extend_from_slice(&sealed);
-            write_private(&secret_path(dir, id), &bytes)
+            write_private(&place.file(id), &bytes)
         }
-        fn get(&self, dir: &Path, id: &str) -> Result<String, String> {
-            let bytes = std::fs::read(secret_path(dir, id)).map_err(|_| missing())?;
+        fn get(&self, place: &Place, id: &str) -> Result<String, String> {
+            place.adopt_legacy(id);
+            let bytes = std::fs::read(place.file(id)).map_err(|_| missing())?;
             let Some(rest) = bytes.strip_prefix(MAGIC) else {
-                return migrate(self, dir, id).ok_or_else(missing);
+                return migrate(self, place, id).ok_or_else(missing);
             };
             let iv_len = *rest.first().ok_or_else(missing)? as usize;
             let iv = rest.get(1..1 + iv_len).ok_or_else(missing)?;
@@ -161,8 +247,8 @@ mod android {
             let (_, plain) = unsafe { with_env(|env| crypt(env, false, iv, sealed)) }?;
             String::from_utf8(plain).map_err(|_| missing())
         }
-        fn remove(&self, dir: &Path, id: &str) {
-            let _ = std::fs::remove_file(secret_path(dir, id));
+        fn remove(&self, place: &Place, id: &str) {
+            place.remove_files(id);
         }
     }
 
@@ -332,20 +418,100 @@ mod android {
 mod tests {
     use super::*;
 
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("mail-vault-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// ADR 0004 §11: passwords live in the host's secrets folder
+    /// (`secrets/os.mail/`), not beside the service's state under `apps/`.
+    #[test]
+    fn should_keep_passwords_in_the_host_secrets_folder_owner_only_when_the_host_names_one() {
+        let dir = scratch("place");
+        let place = Place { mail_dir: dir.join("apps/.host/mail"), secrets_dir: dir.join("secrets/os.mail") };
+        FileVault.put(&place, "a1", "pw").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/a1")).unwrap(), "pw");
+        assert!(!dir.join("apps/.host/mail/secrets").exists(), "nothing under apps/");
+        #[cfg(unix)]
+        {
+            assert_eq!(mode(&dir.join("secrets/os.mail")), 0o700);
+            assert_eq!(mode(&dir.join("secrets/os.mail/a1")), 0o600);
+        }
+        assert_eq!(FileVault.get(&place, "a1").unwrap(), "pw");
+        FileVault.remove(&place, "a1");
+        assert!(FileVault.get(&place, "a1").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn should_move_a_password_from_the_old_mail_folder_when_it_is_first_read() {
+        let dir = scratch("migrate");
+        let place = Place { mail_dir: dir.join("apps/.host/mail"), secrets_dir: dir.join("secrets/os.mail") };
+        let old = Place::legacy(&place.mail_dir);
+        FileVault.put(&old, "a1", "from before").unwrap();
+        assert!(dir.join("apps/.host/mail/secrets/a1").is_file());
+        assert_eq!(FileVault.get(&place, "a1").unwrap(), "from before");
+        assert!(!dir.join("apps/.host/mail/secrets/a1").exists(), "moved out of apps/");
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/a1")).unwrap(), "from before");
+        #[cfg(unix)]
+        assert_eq!(mode(&dir.join("secrets/os.mail/a1")), 0o600);
+        // Removing an account removes a password wherever it is.
+        FileVault.put(&old, "a2", "x").unwrap();
+        FileVault.remove(&place, "a2");
+        assert!(!dir.join("apps/.host/mail/secrets/a2").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// At startup every password left under the mail folder moves, not only
+    /// those read later; a leftover whose move already happened (its delete
+    /// failed) is removed then.
+    #[test]
+    fn should_move_every_old_password_at_startup_and_retry_a_leftover() {
+        let dir = scratch("startup");
+        let place = Place { mail_dir: dir.join("apps/.host/mail"), secrets_dir: dir.join("secrets/os.mail") };
+        let old = Place::legacy(&place.mail_dir);
+        FileVault.put(&old, "a1", "one").unwrap();
+        FileVault.put(&old, "b2", "two").unwrap();
+        // b2 was moved before, but its old copy could not be deleted.
+        FileVault.put(&place, "b2", "two").unwrap();
+        assert_eq!(migrate_all(&place), 2);
+        assert!(!dir.join("apps/.host/mail/secrets").exists(), "nothing left under apps/");
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/a1")).unwrap(), "one");
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/b2")).unwrap(), "two");
+        assert_eq!(migrate_all(&place), 0, "nothing to do the second time");
+        // Without a host folder (the legacy place itself) nothing moves.
+        assert_eq!(migrate_all(&old), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn should_use_the_old_mail_folder_when_no_host_secrets_folder_is_set() {
+        let mail = Path::new("/h/apps/.host/mail");
+        assert_eq!(Place::resolve(mail, None).secrets_dir, mail.join("secrets"));
+        assert_eq!(Place::resolve(mail, Some(Path::new("/h/secrets/os.mail"))).secrets_dir, Path::new("/h/secrets/os.mail"));
+    }
+
     #[test]
     fn a_file_vault_keeps_secrets_owner_only() {
-        let dir = std::env::temp_dir().join(format!("mail-vault-{}", std::process::id()));
+        let dir = Place::legacy(&std::env::temp_dir().join(format!("mail-vault-{}", std::process::id())));
         FileVault.put(&dir, "a1", "pa ss").unwrap();
         assert_eq!(FileVault.get(&dir, "a1").unwrap(), "pa ss");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(secret_path(&dir, "a1")).unwrap().permissions().mode();
+            let mode = std::fs::metadata(dir.file("a1")).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
         }
         FileVault.remove(&dir, "a1");
         assert!(FileVault.get(&dir, "a1").is_err());
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir.mail_dir);
     }
 
     /// Touches the login keychain, so it runs only when asked:
@@ -354,17 +520,17 @@ mod tests {
     #[test]
     #[ignore]
     fn the_keychain_keeps_a_secret_and_takes_over_an_old_file() {
-        let dir = std::env::temp_dir().join(format!("mail-keychain-{}", std::process::id()));
+        let dir = Place::legacy(&std::env::temp_dir().join(format!("mail-keychain-{}", std::process::id())));
         FileVault.put(&dir, "old", "from a file").unwrap();
         let vault = keychain::Keychain;
         assert_eq!(vault.get(&dir, "old").unwrap(), "from a file");
-        assert!(!secret_path(&dir, "old").exists(), "the file moved into the keychain");
+        assert!(!dir.file("old").exists(), "the file moved into the keychain");
         assert_eq!(vault.get(&dir, "old").unwrap(), "from a file");
         vault.put(&dir, "new", "s3cret").unwrap();
         assert_eq!(vault.get(&dir, "new").unwrap(), "s3cret");
         vault.remove(&dir, "old");
         vault.remove(&dir, "new");
         assert!(vault.get(&dir, "new").is_err());
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir.mail_dir);
     }
 }

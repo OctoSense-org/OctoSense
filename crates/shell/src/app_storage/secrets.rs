@@ -22,6 +22,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// The file under `secrets/<app id>/` naming the app's keychain items.
+pub const KEYCHAIN_INDEX: &str = ".keychain-index";
+
 /// Keys are file names: `[A-Za-z0-9._-]{1,128}`, not starting with `.`.
 pub fn validate_key(key: &str) -> Result<(), StorageError> {
     let ok = !key.is_empty()
@@ -146,16 +149,66 @@ pub fn platform(secrets_root: &Path, app_id: &str) -> Arc<dyn SecretStore> {
 
 /// Delete every secret of `app_id`: its keychain items (those the index
 /// names), only when this run uses the keychain. The caller removes
-/// `secrets/<app id>/` itself.
-pub fn purge(secrets_root: &Path, app_id: &str) {
+/// `secrets/<app id>/` itself. `false`: keychain items are indexed that this
+/// run could not delete (no keychain here, a headless run, or a deletion
+/// failed: the index then names only those); the caller keeps the index.
+/// Never follows a symlinked `secrets/<app id>`.
+pub fn purge(secrets_root: &Path, app_id: &str) -> bool {
     if validate_app_id(app_id).is_err() {
-        return;
+        return true;
+    }
+    let dir = secrets_root.join(app_id);
+    if !std::fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir()) {
+        return true;
     }
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     if backend() == Backend::Keychain {
-        keychain::Keychain::new(secrets_root, app_id).purge();
+        return keychain::Keychain::new(secrets_root, app_id).purge();
     }
-    let _ = secrets_root;
+    !std::fs::symlink_metadata(dir.join(KEYCHAIN_INDEX)).is_ok_and(|m| m.is_file())
+}
+
+/// Delete each of `keys` with `delete`; the keys that could not be deleted
+/// (kept in the index, so a later purge tries again).
+pub fn purge_keys(keys: &[String], delete: impl Fn(&str) -> Result<(), String>) -> Vec<String> {
+    keys.iter().filter(|k| delete(k).is_err()).cloned().collect()
+}
+
+/// A run with the keychain deletes the items an earlier headless uninstall
+/// could not (see [`purge_leftovers_with`]).
+pub fn purge_leftovers(secrets_root: &Path, uninstalled: impl Fn(&str) -> bool) {
+    if backend() != Backend::Keychain {
+        return;
+    }
+    purge_leftovers_with(secrets_root, uninstalled, |app_id| purge(secrets_root, app_id));
+}
+
+/// Purge (with `purge`, true when every item went) the keychain items of
+/// each `secrets/<app id>/` that holds the index and nothing else, is a real
+/// folder (never a symlink), belongs to no host-owned `os.*` id and to an
+/// app that is `uninstalled` (no jail: a reinstalled app's items are its own
+/// again); the folder goes only when the purge succeeded.
+pub fn purge_leftovers_with(secrets_root: &Path, uninstalled: impl Fn(&str) -> bool, purge: impl Fn(&str) -> bool) {
+    let Ok(entries) = std::fs::read_dir(secrets_root) else { return };
+    for entry in entries.flatten() {
+        let app_id = entry.file_name().to_string_lossy().into_owned();
+        if validate_app_id(&app_id).is_err() || app_id.starts_with("os.") || !uninstalled(&app_id) {
+            continue;
+        }
+        if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+            continue;
+        }
+        let names: Vec<_> = match std::fs::read_dir(entry.path()) {
+            Ok(files) => files.flatten().map(|f| f.file_name()).collect(),
+            Err(_) => continue,
+        };
+        if names.len() != 1 || names[0] != KEYCHAIN_INDEX {
+            continue;
+        }
+        if purge(&app_id) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -163,7 +216,7 @@ pub mod keychain {
     use super::*;
     use sha2::{Digest, Sha256};
 
-    const INDEX: &str = ".keychain-index";
+    const INDEX: &str = super::KEYCHAIN_INDEX;
 
     pub struct Keychain {
         files: FileSecrets,
@@ -198,12 +251,20 @@ pub mod keychain {
             write_private(&self.files.dir().join(INDEX), keys.join("\n").as_bytes())
         }
 
-        pub fn purge(&self) {
-            for key in self.index() {
-                if let Ok(entry) = self.entry(&key) {
-                    let _ = entry.delete_credential();
+        /// Delete every indexed item; true when all went. The index keeps
+        /// the keys that could not be deleted, for a later purge.
+        pub fn purge(&self) -> bool {
+            let left = super::purge_keys(&self.index(), |key| {
+                let entry = self.entry(key).map_err(|e| e.to_string())?;
+                match entry.delete_credential() {
+                    Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                    Err(e) => Err(e.to_string()),
                 }
+            });
+            if !left.is_empty() {
+                let _ = self.write_index(&left);
             }
+            left.is_empty()
         }
     }
 

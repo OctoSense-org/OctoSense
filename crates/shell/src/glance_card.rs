@@ -284,7 +284,7 @@ pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSe
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.1,
         None => {
             let anchor = std::env::var("OCTOSENSE_HUB_ANCHOR").unwrap_or_else(|_| octosense_appstore::DEFAULT_ANCHOR.to_string());
-            let mut store = octosense_app_hub::Store::new(&anchor, &root, octosense_app_policy::HostLimits::default());
+            let mut store = octosense_app_hub::Store::new(&anchor, &root, octosense_app_contract::HostLimits::default());
             let catalog = std::fs::read_to_string(root.join("catalog.json")).unwrap_or_default();
             store.accept_catalog(&catalog).map_err(|e| format!("no verified catalog on this device ({e})"))?;
             store.may_run(app)?
@@ -337,7 +337,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.splash"), "View{}").unwrap();
-        let digest = octosense_app_policy::digest_dir(&dir).unwrap();
+        let digest = octosense_app_contract::digest_dir(&dir).unwrap();
         let manifest = format!(
             r#"{{"schema":1,"id":"{id}","version":"1","name":"Glance test","integrity":{{"bundle_blake3":"{digest}"}},"capabilities":["storage","glance"]}}"#
         );

@@ -53,6 +53,8 @@ pub mod module_host;
 mod module_close_tests;
 #[cfg(test)]
 mod module_panic_tests;
+#[cfg(test)]
+mod module_peer_tests;
 pub mod module_view;
 pub mod native_apps;
 pub mod sandbox;
@@ -261,6 +263,8 @@ script_mod! {
 /// Bar height when the platform reports no window-button rect (Linux,
 /// Windows, and macOS before the first geometry event).
 const BAR_HEIGHT_FALLBACK: f64 = 26.0;
+/// `developer_options_activate`'s target for the phone's finished gesture.
+const DEVELOPER_PHONE_ON: &str = "setup.developer.phone-on";
 
 /// The bar's height and the left padding its content starts at. macOS puts
 /// its traffic lights on the left; Linux and Windows put caption buttons on
@@ -404,6 +408,10 @@ pub struct App {
     /// The developer-mode generation last acted on (dev_mode.rs).
     #[rust]
     pub dev_generation: u64,
+    /// The phone's developer-options gesture, finished in this run: About
+    /// phone shows Developer options (`developer_build_tap`).
+    #[rust]
+    developer_options_revealed: Option<dev_mode::TapsReached>,
     /// The approvals' generation last drawn (approvals/).
     #[rust]
     pub approvals_generation: u64,
@@ -699,6 +707,11 @@ impl App {
         // An installed app opens only while the App Hub catalog still admits
         // it. A system app (`os.*`) ships with the build and answers to no
         // catalog.
+        // No script app runs under a native app's name (ADR 0004 §3).
+        if let Some(Err(error)) = apps::card_manifest_id(app).map(apps::check_script_app_id) {
+            self.notify(cx, "Could not open app", &error);
+            return;
+        }
         #[cfg(any(feature = "app-hub", native_mobile))]
         if let Some(manifest_id) = apps::card_manifest_id(app).filter(|id| !id.starts_with("os.")) {
             if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(
@@ -1638,9 +1651,18 @@ impl App {
         // refuses and asks the person in its own root. Its tile stays, in
         // front so the question is seen; a yes arrives as the root's
         // `ModuleCloseAction::Confirmed` (handle_actions), a no as nothing.
-        if !stopped && self.module_host.is_module(client) && self.module_host.ask_close(cx, client) == CloseDecision::Veto {
+        // Insisting ends it whatever it would answer (process_close.rs,
+        // `Insistence`): an instance that keeps refusing is never unclosable.
+        let module = !stopped && self.module_host.is_module(client);
+        let forced = module && ask && self.module_host.close_gate_mut().insist(client, host::now());
+        if forced {
+            log!("wm: client {client} was closed {} times in {}s; ending it", process_close::FORCE_CLOSES, process_close::FORCE_WINDOW);
+        } else if module && self.module_host.ask_close(cx, client) == CloseDecision::Veto {
             let app = self.state.as_ref().and_then(|s| s.clients.get(&client)).map(|s| s.app.clone()).unwrap_or_default();
             log!("wm: {app} (client {client}) asks before closing; its tile stays until the person confirms");
+            if self.module_host.close_gate_mut().next_close_forces(client) {
+                self.hint_force_close(cx, client);
+            }
             self.activate_client(cx, client);
             self.update_bar(cx);
             self.redraw_all(cx);
@@ -1672,6 +1694,9 @@ impl App {
                 process_close::CloseStep::Ask => {
                     let app = self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default();
                     log!("wm: asking {app} (client {client}) to close; it answers before anything ends");
+                    if self.process_close.next_close_forces(client) {
+                        self.hint_force_close(cx, client);
+                    }
                     self.send_wm_event(client, WmEvent::CloseRequested);
                     self.activate_client(cx, client);
                     self.update_bar(cx);
@@ -1680,7 +1705,7 @@ impl App {
                 }
                 process_close::CloseStep::Wait => return,
                 process_close::CloseStep::Force => {
-                    log!("wm: client {client} was closed again before it answered; ending it");
+                    log!("wm: client {client} was closed again (before it answered, or insisting); ending it");
                     self.end_process_client(cx, client);
                     return;
                 }
@@ -1779,6 +1804,14 @@ impl App {
         }
     }
 
+    /// The close before the one that ends an app that keeps refusing: say
+    /// so, so the person knows another close ends it (and its unsaved work).
+    fn hint_force_close(&mut self, cx: &mut Cx, client: ClientId) {
+        let app = self.state.as_ref().and_then(|s| s.clients.get(&client)).map(|s| s.app.clone()).unwrap_or_default();
+        let label = clients::find_app(&app).map(|a| a.label).unwrap_or(app);
+        self.notify(cx, &format!("{label} is asking before it closes"), "Close it once more to end it now, without its answer.");
+    }
+
     /// Whether `client` is answering a close or asking the person about
     /// one (a hosted module or a process app).
     fn close_pending(&self, client: ClientId) -> bool {
@@ -1813,6 +1846,15 @@ impl App {
     /// forced end (a termination signal, a kill) never asks.
     fn ask_before_quit(&mut self, cx: &mut Cx) -> bool {
         let refused = self.module_host.ask_quit(cx);
+        // An instance that refused this quit as often as insisting takes
+        // (process_close::Insistence) is ended; the rest are waited on.
+        let now = host::now();
+        let (forced, refused): (Vec<ClientId>, Vec<ClientId>) =
+            refused.into_iter().partition(|client| self.module_host.close_gate_mut().insist(*client, now));
+        for client in forced {
+            log!("wm: client {client} refused the quit {} times; ending it", process_close::FORCE_CLOSES);
+            self.remove_client(cx, client);
+        }
         // Process apps that answer closes themselves are asked the same way
         // (process_close.rs); the rest end with the shell, as always.
         let windows: Vec<ClientId> = self
@@ -1952,6 +1994,7 @@ impl App {
         }
         self.state_mut().layout.remove(client);
         self.state_mut().clients.remove(&client);
+        hub::revoke_launch_token(client);
         // A dying warm viewer (or its requester) clears the cache's
         // reference to it — "if a viewer process dies clear its slot, so
         // the next Space respawns" instead of talking to a dead socket.
@@ -2110,6 +2153,21 @@ impl App {
                 }
             }
         }
+        // A launch whose build finished starts its app now (or fails; the
+        // reaping below reports it). Launches closed while building start
+        // nothing.
+        let started: Vec<(ClientId, Result<(), String>)> = self
+            .state_mut()
+            .clients
+            .iter_mut()
+            .filter_map(|(id, slot)| slot.continue_launch(*id).map(|r| (*id, r)))
+            .collect();
+        for (id, result) in started {
+            match result {
+                Ok(()) => log!("wm: client {id}: built; the app starts"),
+                Err(why) => log!("wm: client {id}: {why}"),
+            }
+        }
         // An app that quits while a close of it is pending gave its answer
         // (yes): a close, not a crash.
         let mut answering: Vec<ClientId> = self.state_mut().clients.keys().copied().collect();
@@ -2120,6 +2178,11 @@ impl App {
             .clients
             .iter_mut()
             .filter_map(|(id, slot)| {
+                // A build whose app has not started is not the app's exit
+                // (`continue_launch` above takes it, next tick at the latest).
+                if slot.building() {
+                    return None;
+                }
                 let status = slot.child.as_mut()?.try_wait().ok()??;
                 if answering.contains(id) && slot.closing.is_none() {
                     slot.closing = Some(now);
@@ -2865,6 +2928,14 @@ impl App {
                     socket,
                     sender,
                 } => {
+                    // The hub admitted this socket with the launch's own
+                    // secret; the slot must still be that live process,
+                    // and not bound already (ADR 0004 §5).
+                    if !slot_accepts_socket(self.state_mut().clients.get(&client)) {
+                        log!("wm: refused a socket for client {client}: no unbound process slot");
+                        let _ = sender.send(Vec::new());
+                        continue;
+                    }
                     let theme_splash = theme::theme_splash_path(&self.state_mut().theme_name)
                         .to_string_lossy()
                         .to_string();
@@ -2910,7 +2981,13 @@ impl App {
                         }
                     }
                 }
-                HubEvent::FromApp { client, msgs } => {
+                HubEvent::FromApp { client, socket, msgs } => {
+                    // Only the socket bound to a live slot speaks for it: a
+                    // slot that is gone, or a socket that is not (or no
+                    // longer) the bound one, is not heard.
+                    if !frame_is_bound(self.state_mut().clients.get(&client), socket) {
+                        continue;
+                    }
                     for msg in msgs {
                         self.on_app_msg(cx, client, msg);
                     }
@@ -3211,6 +3288,15 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// Rebuild the open menu's rows in place (a Settings row changed them).
+    fn refresh_shell_menu(&mut self, cx: &mut Cx) {
+        let menu = self.ui.widget(cx, ids!(shell_menu));
+        if let Some(mut m) = menu.borrow_mut::<ShellMenu>() {
+            m.refresh(cx);
+        }
+        self.redraw_all(cx);
+    }
+
     fn close_shell_menu(&mut self, cx: &mut Cx) {
         let menu = self.ui.widget(cx, ids!(shell_menu));
         {
@@ -3334,10 +3420,36 @@ impl App {
         self.redraw_all(cx);
     }
 
-    /// Settings → Developer options (`setup.developer.*`, shell/menu.rs).
-    /// The one place outside dev_mode.rs that turns developer mode on: the
-    /// person typed the confirmation phrase into the menu and chose the row.
+    /// Settings → Developer options (`setup.developer.*`, shell/menu.rs), and
+    /// the phone's (About phone, revealed by seven taps on Build number:
+    /// [`App::developer_build_tap`]). The one place outside dev_mode.rs that
+    /// turns developer mode on: the person typed the confirmation phrase
+    /// into the menu and chose the row, or confirmed Turn on in the phone's
+    /// revealed Developer options. It turns on for the apps chosen under
+    /// Apps it covers, which both show. A wider choice made while it is on
+    /// waits for that confirmation again.
     fn developer_options_activate(&mut self, cx: &mut Cx, target: &str) {
+        // Choosing apps keeps the menu open on the list.
+        if let Some(choice) = target.strip_prefix(shell::menu::DEVELOPER_APPS_ROW).and_then(|t| t.strip_prefix('.')) {
+            let scope = if choice == "all" {
+                Some(dev_mode::Scope::AllApps)
+            } else {
+                let app = shell::menu::developer_app_of(choice);
+                let every: Vec<String> = agents::all().into_iter().map(|a| a.id).collect();
+                dev_mode::chosen_scope().toggled(&app, &every)
+            };
+            match scope {
+                None => self.notify(cx, "Developer mode", "Choose at least one app, or All apps."),
+                Some(scope) => match dev_mode::choose_apps(scope) {
+                    Err(why) => self.notify(cx, "Developer mode", &why),
+                    Ok(true) => self.notify(cx, "Developer mode", "Saved. It covers more apps once you turn it off and on again, with the confirmation."),
+                    Ok(false) => {}
+                },
+            }
+            self.refresh_shell_menu(cx);
+            self.dev_mode_changed(cx);
+            return;
+        }
         self.close_shell_menu(cx);
         if let Some(typed) = target.strip_prefix("setup.developer.on:") {
             match dev_mode::PersonGesture::settings_phrase(typed) {
@@ -3347,15 +3459,79 @@ impl App {
                     &format!("To turn it on, type \u{201c}{}\u{201d} in Developer options, then choose Turn on.", dev_mode::CONFIRM_PHRASE),
                 ),
                 Some(gesture) => {
-                    if let Err(why) = dev_mode::turn_on(gesture, dev_mode::Scope::AllApps) {
+                    if let Err(why) = dev_mode::turn_on(gesture, dev_mode::chosen_scope()) {
                         self.notify(cx, "Developer mode is off", &why);
                     }
                 }
+            }
+        } else if target == DEVELOPER_PHONE_ON {
+            match &self.developer_options_revealed {
+                Some(revealed) => {
+                    if let Err(why) = dev_mode::turn_on(dev_mode::PersonGesture::phone_confirmed(revealed), dev_mode::chosen_scope()) {
+                        self.notify(cx, "Developer mode is off", &why);
+                    }
+                }
+                None => self.notify(cx, "Developer mode is off", "Tap Build number seven times first."),
             }
         } else if target == "setup.developer.off" {
             dev_mode::turn_off("settings");
         }
         self.dev_mode_changed(cx);
+    }
+
+    /// Whether About phone shows Developer options: revealed in this run, or
+    /// developer mode is on.
+    pub fn developer_options_shown(&self) -> bool {
+        self.developer_options_revealed.is_some() || dev_mode::is_on()
+    }
+
+    /// Home's Settings › About phone › Developer options: toggle `app` in the
+    /// apps developer mode covers (`None`: all apps). Only Settings' request
+    /// handler calls it (`dev_mode` tests scan `phone/`).
+    pub fn developer_choose(&mut self, cx: &mut Cx, app: Option<&str>) {
+        if !self.developer_options_shown() {
+            return;
+        }
+        let row = match app {
+            Some(app) => shell::menu::developer_app_row(app),
+            None => format!("{}.all", shell::menu::DEVELOPER_APPS_ROW),
+        };
+        self.developer_options_activate(cx, &row);
+    }
+
+    /// Home's Settings › About phone › Turn off developer mode.
+    pub fn developer_turn_off(&mut self, cx: &mut Cx) {
+        self.developer_options_activate(cx, "setup.developer.off");
+    }
+
+    /// Home's Settings › About phone › Developer options › Turn on, confirmed
+    /// on its sheet with the apps it covers shown. Only after the gesture
+    /// revealed Developer options; only Settings' request handler calls it.
+    pub fn developer_phone_turn_on(&mut self, cx: &mut Cx) {
+        self.developer_options_activate(cx, DEVELOPER_PHONE_ON);
+    }
+
+    /// One tap on Settings › About phone › Build number (Home's Settings,
+    /// `phone/`): the phone's developer-options gesture, as on Android. The
+    /// seventh reveals Developer options; it turns nothing on. What
+    /// Settings shows the person. Only Settings' request handler calls it.
+    pub fn developer_build_tap(&mut self, cx: &mut Cx) -> String {
+        let _ = cx;
+        if self.developer_options_shown() {
+            return "Developer options are already shown.".into();
+        }
+        if !dev_mode::settings_available() {
+            return "Developer mode needs a development build of OctoSense.".into();
+        }
+        match dev_mode::build_number_tap() {
+            dev_mode::Tap::Remaining(left) if left > 4 => String::new(),
+            dev_mode::Tap::Remaining(1) => "You are now 1 step away from showing developer options.".into(),
+            dev_mode::Tap::Remaining(left) => format!("You are now {left} steps away from showing developer options."),
+            dev_mode::Tap::Reached(reached) => {
+                self.developer_options_revealed = Some(reached);
+                "Developer options are shown below. Developer mode stays off until you turn it on there.".into()
+            }
+        }
     }
 
     /// What a menu row does. The ids are the jsonc's dotted paths, with
@@ -3616,6 +3792,40 @@ impl App {
                 true
             }
         }
+    }
+
+    /// Text input, the input method's state query and its action key for
+    /// the chat panes. True when a pane took the event. Only a pane whose
+    /// prompt holds the key focus takes the input method's events; another
+    /// focused field (an app's text input, a host sheet) keeps its own.
+    fn chat_text_input(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        let mut focused = [false; 2];
+        for (i, pane) in [ids!(shell_app_chat), ids!(shell_system_chat)].into_iter().enumerate() {
+            let pane = self.ui.widget(cx, pane);
+            let Some(mut pane) = pane.borrow_mut::<system_chat::view::ShellSystemChat>() else { continue };
+            focused[i] = pane.has_keyboard(cx);
+            if !matches!(event, Event::ImeAction(_)) && pane.ime(cx, event) {
+                return true;
+            }
+        }
+        use system_chat::composer::{text_target, Pane};
+        let target = match event {
+            Event::ImeAction(action) if system_chat::composer::ime_action_sends(action.action) => system_chat::composer::ime_target(focused[0], focused[1]),
+            // Typed text with no field focused (F8 opened the pane without
+            // a press): the pane that has the keyboard. Never an input
+            // method's whole editor state: that belongs to the field it was
+            // asked of.
+            Event::TextInput(t) if t.full_state_sync.is_none() => text_target(cx.key_focus().is_empty(), app_chat::is_focused(), system_chat::is_open()),
+            _ => None,
+        };
+        match (event, target) {
+            (Event::ImeAction(_), Some(Pane::App)) => app_chat::send_draft(),
+            (Event::ImeAction(_), Some(Pane::System)) => system_chat::send_draft(),
+            (Event::TextInput(t), Some(Pane::App)) => return app_chat::text_input(t),
+            (Event::TextInput(t), Some(Pane::System)) => return system_chat::text_input(t),
+            _ => return false,
+        }
+        true
     }
 
     /// The system chat's pane owns the pointer inside its rect while open.
@@ -4967,6 +5177,20 @@ fn test_action(name: &str) -> Option<WmAction> {
 /// The SUPER chord for mouse binds — Ctrl+Alt nested, the Logo key on a
 /// Linux session (binds.rs carries the same law for keys).
 /// No modifier at all: the bare function keys the WM owns (F10).
+/// Whether an admitted hub socket may bind `slot` (ADR 0004 §5): only a
+/// live process client's slot that no socket holds yet. An in-process
+/// module has no process, so it is never bound to a socket; a bound slot is
+/// never rebound, not even after its socket drops.
+fn slot_accepts_socket(slot: Option<&clients::ClientSlot>) -> bool {
+    slot.is_some_and(|slot| slot.child.is_some() && !slot.stopped && slot.socket.is_none() && slot.sender.is_none())
+}
+
+/// Whether frames from hub socket `socket` speak for `slot`: only while it
+/// is the socket bound to that live slot.
+fn frame_is_bound(slot: Option<&clients::ClientSlot>, socket: u64) -> bool {
+    slot.is_some_and(|slot| slot.socket == Some(socket))
+}
+
 fn bare_key(m: &KeyModifiers) -> bool {
     !m.shift && !m.control && !m.alt && !m.logo
 }
@@ -5023,6 +5247,47 @@ fn os_list_result(call_id: &str, rows: &[OsAppRow]) -> ToolResult {
         format!("{} apps, {} running", rows.len(), running),
     )
     .with_data(rows.to_vec().serialize_json())
+}
+
+#[cfg(all(test, unix))]
+mod hub_binding_tests {
+    use super::*;
+
+    fn process_slot(id: ClientId) -> clients::ClientSlot {
+        let mut slot = clients::ClientSlot::module(id, "terminal", "Terminal");
+        slot.child = Some(clients::ProcessGroup::new(std::process::Command::new("true").spawn().expect("spawn true")));
+        slot
+    }
+
+    #[test]
+    fn should_bind_a_socket_only_when_the_slot_is_an_unbound_live_process() {
+        let mut slot = process_slot(4);
+        assert!(slot_accepts_socket(Some(&slot)));
+        assert!(!slot_accepts_socket(None), "no slot: nothing to bind");
+        assert!(!slot_accepts_socket(Some(&clients::ClientSlot::module(5, "reference", "Reference"))), "a module slot never takes a socket");
+        // Bound: a second socket is refused, and so is a rebind after the
+        // first socket dropped.
+        let (tx, _rx) = std::sync::mpsc::channel();
+        slot.socket = Some(11);
+        slot.sender = Some(tx);
+        assert!(!slot_accepts_socket(Some(&slot)));
+        slot.stopped = true;
+        slot.socket = None;
+        slot.sender = None;
+        assert!(!slot_accepts_socket(Some(&slot)), "a stopped slot is not live");
+        let _ = slot.child.take().map(|mut c| c.wait());
+    }
+
+    #[test]
+    fn should_ignore_frames_when_the_socket_is_not_bound_to_the_slot() {
+        let mut slot = process_slot(4);
+        assert!(!frame_is_bound(Some(&slot), 11), "not bound yet");
+        slot.socket = Some(11);
+        assert!(frame_is_bound(Some(&slot), 11));
+        assert!(!frame_is_bound(Some(&slot), 12), "another socket naming the same id");
+        assert!(!frame_is_bound(None, 11), "a slot that is gone");
+        let _ = slot.child.take().map(|mut c| c.wait());
+    }
 }
 
 #[cfg(test)]
@@ -5701,6 +5966,9 @@ impl App {
         // or draw, or in a call the shell made — is contained by now; show
         // it closed and free it before the next event (module_host.rs).
         self.contain_module_faults(cx);
+        // Modules' peer links (#142): the links opened during this event,
+        // and what the instances sent on theirs, to the shell's peer link.
+        self.module_host.pump_peer_links(cx);
         // A quit that waited on instances asking the person goes ahead once
         // the last of them confirmed (or failed and has nothing left to ask).
         if self.take_quit_ready() {
@@ -6020,12 +6288,14 @@ impl App {
                 self.pump_warm(cx);
             }
         }
-        // The phone's input method types into the system chat's prompt.
-        if let Event::TextInput(t) = event {
-            if cfg!(native_mobile) && self.state.is_some() && (app_chat::text_input(&t.input) || system_chat::text_input(&t.input)) {
-                self.system_chat_changed(cx);
-                return;
-            }
+        // The chat panes' prompts: text input and the input method (see
+        // system_chat/composer.rs). A pane whose prompt holds the key focus
+        // takes its text and answers the input method's state query; plain
+        // typed text (a desktop's) goes to the pane that has the keyboard.
+        // Characters are typed only here, never on KeyDown.
+        if self.state.is_some() && matches!(event, Event::TextInput(_) | Event::TextInputStateQuery(_) | Event::ImeAction(_)) && self.chat_text_input(cx, event) {
+            self.system_chat_changed(cx);
+            return;
         }
         if let Event::Signal = event {
             if self.state.is_some() {

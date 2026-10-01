@@ -16,12 +16,21 @@
 //! - **Send**: a person turn in this context (`TurnTrigger::Person`), in
 //!   parallel with the system agent's lane. With a question of the app's
 //!   agent open, the text answers it instead.
-//! - **Stop** (#167): `approvals::stop_agent`: both lanes' running turns,
-//!   the app's open questions and the approvals the router holds for it.
+//! - **Stop**: the person's own running turn (the person's lane). The
+//!   system agent's turn goes on; the panel stops it only on its own,
+//!   explicit control ("Stop the system agent's task", [`stop_system_agent`]).
+//!   Send stays while only the system agent's lane runs: the lanes are
+//!   independent.
 //! - **Questions** of the app's conversation (G11: turns the person or the
 //!   app started) are shown and answered here; the system agent's go to the
 //!   system chat. **Approvals** are the shell's sheets, as everywhere.
-//! - **Close** closes the context; the peer stays for the system agent.
+//! - **Close** hides the panel. The sharing context stays open with its
+//!   follower, so the conversation keeps up while hidden and a reopen shows
+//!   the person's own rows again: a new context would start an empty
+//!   person's lane (the broker gives every handle a new kernel context).
+//!   A reopen loads both lanes' merged history again. The context closes
+//!   when the panel opens for another app, when the agent is turned off, or
+//!   when the app's peer goes (then a reopen starts a new one).
 
 pub mod model;
 
@@ -36,6 +45,9 @@ use crate::ai_host::app_peers::{ContextEvent, ContextOp, EventSink, OctosContext
 use crate::apps::AgentApp;
 use crate::system_chat::model::{ChatModel, Item, Phase};
 use model::Conversation;
+
+/// The panel's client instance on the app's peer (the same on every open).
+pub const INSTANCE: &str = "shell-ask";
 
 /// The id prefix of the app's questions in the panel.
 pub const ROUTED_PREFIX: &str = "routed:";
@@ -69,7 +81,7 @@ struct Panel {
     open: bool,
     /// The keyboard goes here (else to the system chat).
     focused: bool,
-    draft: String,
+    draft: crate::system_chat::composer::Composer,
     scroll: f64,
     ui_generation: u64,
     shared: Arc<Mutex<Shared>>,
@@ -84,7 +96,7 @@ fn with<R>(f: impl FnOnce(&mut Panel) -> R) -> R {
         app: None,
         open: false,
         focused: false,
-        draft: String::new(),
+        draft: Default::default(),
         scroll: 0.0,
         ui_generation: 0,
         shared: Arc::new(Mutex::new(Shared { conversation: Conversation::new(""), context: None, status: Status::Idle, generation: 0, epoch: 0 })),
@@ -145,6 +157,9 @@ pub fn open_app(app: AgentApp) {
         p.ui_generation += 1;
     });
     if live {
+        // Reopened: both lanes' history again (what ran while it was
+        // hidden, and anything a stale view lost); the follower stays.
+        reload_history();
         return;
     }
     close_context();
@@ -193,7 +208,10 @@ fn connect(app: &AgentApp) {
     };
     let app = app.clone();
     let _ = std::thread::Builder::new().name("ask-app".into()).spawn(move || {
-        let instance = format!("shell-ask-{epoch}");
+        // One instance for every open: the broker gives each handle a new
+        // kernel context, and its history keeps the person's rows of the
+        // earlier ones of the same instance.
+        let instance = INSTANCE.to_string();
         let context = match crate::agents::conversation(&app, &instance) {
             Ok(context) => context,
             Err(e) => {
@@ -223,27 +241,45 @@ fn connect(app: &AgentApp) {
             }
             s.context = Some(context.clone());
         }
-        let history = shared.clone();
-        let loaded: EventSink = Arc::new(move |event| {
-            if let ContextEvent::Complete(result) = event {
-                let mut s = lock(&history);
-                if s.epoch != epoch {
-                    return;
-                }
-                match result {
-                    Ok(value) => s.conversation.load_history(&value["messages"]),
-                    Err(e) => s.conversation.notice(format!("Could not load the conversation: {e}")),
-                }
-                s.status = Status::Ready;
-                changed(&mut s);
+        load_history(&shared, &context, epoch);
+    });
+}
+
+/// Load both lanes' merged history (`octos.session.history`) into the
+/// conversation; the panel is ready once it came.
+fn load_history(shared: &Arc<Mutex<Shared>>, context: &Arc<dyn OctosContext>, epoch: u64) {
+    let history = shared.clone();
+    let loaded: EventSink = Arc::new(move |event| {
+        if let ContextEvent::Complete(result) = event {
+            let mut s = lock(&history);
+            if s.epoch != epoch {
+                return;
             }
-        });
-        if let Err(e) = context.call(ContextOp::History, loaded) {
-            let mut s = lock(&shared);
-            s.status = Status::Failed(e);
+            match result {
+                Ok(value) => s.conversation.load_history(&value["messages"]),
+                Err(e) => s.conversation.notice(format!("Could not load the conversation: {e}")),
+            }
+            s.status = Status::Ready;
             changed(&mut s);
         }
     });
+    if let Err(e) = context.call(ContextOp::History, loaded) {
+        let mut s = lock(shared);
+        s.status = Status::Failed(e);
+        changed(&mut s);
+    }
+}
+
+/// The panel reopened on its live context: its history again.
+fn reload_history() {
+    let shared = shared();
+    let (context, epoch) = {
+        let s = lock(&shared);
+        (s.context.clone(), s.epoch)
+    };
+    if let Some(context) = context {
+        load_history(&shared, &context, epoch);
+    }
 }
 
 fn close_context() {
@@ -254,16 +290,20 @@ fn close_context() {
     }
 }
 
+/// Hide the panel. Its context stays open (see the module): a reopen shows
+/// the same conversation, the person's rows included.
 pub fn close() {
     with(|p| {
         p.open = false;
         p.focused = false;
         p.ui_generation += 1;
     });
-    close_context();
     let shared = shared();
     let mut s = lock(&shared);
-    s.status = Status::Idle;
+    if !s.context.as_ref().is_some_and(|c| c.is_open()) {
+        s.context = None;
+        s.status = Status::Idle;
+    }
     changed(&mut s);
 }
 
@@ -297,7 +337,7 @@ pub fn send_draft() {
     let text = with(|p| {
         p.ui_generation += 1;
         p.scroll = 0.0;
-        std::mem::take(&mut p.draft)
+        p.draft.take()
     });
     send(&text);
 }
@@ -348,15 +388,42 @@ pub fn send(text: &str) {
     }
 }
 
-/// Stop (#167): both lanes, the app's open questions, the approvals held
-/// for it.
+/// Stop: the person's own running turn, only. The system agent's lane
+/// goes on (its own control: [`stop_system_agent`]). The turn's open
+/// questions and held approvals end with it (the broker closes them).
 pub fn stop() {
     let Some(app) = app() else { return };
-    let stopped = crate::approvals::stop_agent(&app.id);
+    let stopped = crate::host_tools::interrupt_agent_lane(&app.id, model::LANE_PERSON);
     let shared = shared();
     let mut s = lock(&shared);
-    s.conversation.notice(if stopped.is_empty() { "Nothing was running.".to_string() } else { "Stopped.".to_string() });
+    s.conversation.notice(if stopped.is_empty() { "Nothing of yours was running.".to_string() } else { "Stopped.".to_string() });
     changed(&mut s);
+}
+
+/// "Stop the system agent's task": the system agent's running turn in this
+/// app's conversation, only, and only on the person's explicit gesture on
+/// that turn's own row (never the Send button's place).
+pub fn stop_system_agent() {
+    let Some(app) = app() else { return };
+    let stopped = crate::host_tools::interrupt_agent_lane(&app.id, model::LANE_SYSTEM_AGENT);
+    let shared = shared();
+    let mut s = lock(&shared);
+    s.conversation.notice(if stopped.is_empty() { "The system agent had nothing running here.".to_string() } else { "Stopped the system agent's task.".to_string() });
+    changed(&mut s);
+}
+
+/// The person's lane runs a turn (Stop shows instead of Send).
+pub fn person_running() -> bool {
+    let shared = shared();
+    let s = lock(&shared);
+    s.status == Status::Ready && s.conversation.running_in(model::LANE_PERSON).is_some()
+}
+
+/// The system agent's lane runs a turn (its row offers to stop it).
+pub fn system_agent_running() -> bool {
+    let shared = shared();
+    let s = lock(&shared);
+    s.status == Status::Ready && s.conversation.running_in(model::LANE_SYSTEM_AGENT).is_some()
 }
 
 pub fn answer_option(question: &str, _count: usize, label: &str) {
@@ -438,7 +505,12 @@ pub fn status_text() -> String {
 }
 
 pub fn draft() -> String {
-    with(|p| p.draft.clone())
+    with(|p| p.draft.text().to_string())
+}
+
+/// The prompt's editor state, for the input method.
+pub fn draft_state() -> makepad_widgets::makepad_platform::event::FullTextState {
+    with(|p| p.draft.state())
 }
 
 pub fn scroll() -> f64 {
@@ -460,42 +532,44 @@ pub fn generation() -> u64 {
 }
 
 /// The keyboard, while the panel is open and focused. True when it was the
-/// panel's.
+/// panel's. Characters are not typed here: they arrive as text input
+/// ([`text_input`]), as they do for makepad's `TextInput`.
 pub fn key(e: &KeyEvent) -> bool {
     if !is_focused() {
         return false;
     }
-    let command_key = e.modifiers.logo || e.modifiers.control;
-    match e.key_code {
-        KeyCode::Escape => close(),
-        KeyCode::ReturnKey if !e.modifiers.shift => send_draft(),
-        KeyCode::Backspace => with(|p| {
-            p.draft.pop();
-            p.ui_generation += 1;
-        }),
-        KeyCode::Period if command_key => stop(),
-        other if !command_key => {
-            // Function keys (F8: the system chat) go on to the shell.
-            let Some(ch) = other.to_char(e.modifiers.shift) else { return false };
-            with(|p| {
-                p.draft.push(ch);
+    use crate::system_chat::composer::Key;
+    match crate::system_chat::composer::key(e) {
+        Key::Close => close(),
+        Key::Send => send_draft(),
+        Key::Backspace => with(|p| {
+            if p.draft.backspace() {
                 p.ui_generation += 1;
-            });
-        }
-        _ => return false,
+            }
+        }),
+        Key::Stop => stop(),
+        Key::Swallow => {}
+        // Function keys (F8: the system chat) go on to the shell.
+        Key::New | Key::Pass => return false,
     }
     true
 }
 
-/// Text from the platform's input method (phones), while focused.
-pub fn text_input(text: &str) -> bool {
+/// Text input while focused: typed characters, a paste, the phone's input
+/// method (see [`crate::system_chat::composer`]).
+pub fn text_input(event: &makepad_widgets::makepad_platform::event::TextInputEvent) -> bool {
     if !is_focused() {
         return false;
     }
-    with(|p| {
-        p.draft.push_str(text);
-        p.ui_generation += 1;
+    let submit = with(|p| {
+        if p.draft.text_input(event) {
+            p.ui_generation += 1;
+        }
+        p.draft.take_submit()
     });
+    if submit {
+        send_draft();
+    }
     true
 }
 

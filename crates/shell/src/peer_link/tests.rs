@@ -245,6 +245,11 @@ fn the_shell_reads_the_makepad_clients_frames() {
     assert_eq!(Up::parse(r#"{"octos_peer":{"up":"request","req_id":1,"method":"octos.turn.start"},"from":"rinx"}"#), None);
     let big = request(1, "octos.turn.start", json!({"text": "a".repeat(wire::MAX_FRAME_BYTES)}));
     assert_eq!(Up::parse(&big), None);
+    // A conversation frame as Makepad's client writes it (its own key
+    // order) reads back here; the client reads the shell's (its fixtures
+    // are frames recorded from this link on a real kernel).
+    let makepad_conversation = r#"{"octos_peer":{"down":"conversation","context":"pl7-1","event":{"method":"turn/started"}}}"#;
+    assert_eq!(Down::parse(makepad_conversation), Some(Down::Conversation { context: "pl7-1".into(), event: json!({"method": "turn/started"}) }));
     let call = Down::ToolCall(wire::ToolCallDown {
         call_id: "k2".into(),
         name: "send".into(),
@@ -321,8 +326,9 @@ fn identity_is_the_sockets_and_a_process_uses_only_its_own_contexts() {
     let got = downs(&frames_a);
     assert!(matches!(got.as_slice(), [Down::Event { req_id: 6, .. }, Down::Reply { req_id: 6, result: Ok(_) }]), "{got:?}");
     assert!(matches!(&got[0], Down::Event { event, .. } if event["trigger"] == "unknown"), "a turn that says nothing is unknown: {got:?}");
-    // What started the turn reaches the broker as the app said it.
-    for (req, said, want) in [(7, json!("person"), "person"), (8, json!("incoming"), "incoming"), (9, json!("system_agent"), "unknown")] {
+    // What started the turn reaches the broker as the app said it; its
+    // "person" is only its word (ADR 0004 §8: never the person's trigger).
+    for (req, said, want) in [(7, json!("person"), "app_says_person"), (8, json!("incoming"), "incoming"), (9, json!("system_agent"), "unknown")] {
         links.on_frame(1, "notes", &request(req, "octos.turn.start", json!({"context": ctx, "text": "x", "trigger": said})), None);
         let got = downs(&frames_a);
         assert!(matches!(got.first(), Some(Down::Event { event, .. }) if event["trigger"] == want), "{req}: {got:?}");
@@ -554,4 +560,24 @@ fn a_session_without_a_client_is_the_apps_conversation_and_follows_both_lanes() 
     assert!(links.on_frame(7, "notes", &request(2, "octos.turn.start", json!({"context": chat, "text": "hi", "trigger": "person"})), None));
     assert!(matches!(downs(&frames).pop(), Some(Down::Reply { req_id: 2, result: Ok(_) })));
     assert_eq!(world.with(|s| s.contexts[0].calls.load(Ordering::SeqCst)), 2);
+}
+
+#[test]
+fn should_refuse_a_second_socket_when_the_clients_link_is_live() {
+    let (mut links, _world, _) = setup();
+    let (first, frames_first) = out();
+    let (second, frames_second) = out();
+    assert!(links.connected(1, "notes", first));
+    assert!(!links.connected(1, "notes", second), "the link is never rebound");
+    links.on_frame(1, "notes", &request(1, "octos.session.open", json!({})), None);
+    assert!(matches!(downs(&frames_first).as_slice(), [Down::Reply { req_id: 1, result: Ok(_) }]));
+    assert!(downs(&frames_second).is_empty(), "the second socket hears nothing");
+    // A frame read as another app's on this client's link is dropped.
+    let (reply, frames_reply) = out();
+    links.on_frame(1, "mail", &request(2, "octos.session.open", json!({})), Some(reply));
+    assert!(downs(&frames_first).is_empty() && downs(&frames_reply).is_empty());
+    // Once the process is gone, a new launch of the id may link again.
+    links.process_gone(1);
+    let (third, _) = out();
+    assert!(links.connected(1, "notes", third));
 }

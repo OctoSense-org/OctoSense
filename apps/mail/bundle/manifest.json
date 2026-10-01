@@ -4,5 +4,6 @@
   "version": "1.0.0",
   "name": "Mail",
   "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "mail"]
+  "capabilities": ["storage", "mail"],
+  "storage": { "accounts": true }
 }
