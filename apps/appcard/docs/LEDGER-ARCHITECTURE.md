@@ -393,6 +393,28 @@ Every literal carries a **provenance class**:
 | `user-copy` | authored by the user | no |
 | `model-copy` | authored by the model | yes, **never in a data position** |
 
+*(2026-10-01, Octoscript #53, profile §4.2 and §5.15.)* Model text is now shown, and every
+action stays closed to it. **Model text** is a `model-copy` declaration, a model-written field
+of a host source (`sys.digest`'s `summary` and a point's `text`/`label`, a `sys.chat` entry's
+`text`), or a `text` state such text was written into (a draft). It may fill a **text slot**
+(the `text` of `TextHero`, `TextTitle`, `TextBody`, `TextRow`, `TextEyebrow`, `TextCaption`,
+`Band`, `Bubble`, `ChatEntry`, `Field`) as a plain-text literal, and every lowering marks it
+(`l0_ai_text(…)`, ` l0_ai: true`, `ai: 1`): the kit draws the AI-written mark
+(`octoscript_node::ai`). Every other position is **default deny**: a payload, a guard, a key,
+a source argument, a label on a control, a prop, a `Kit` argument, a state's initial, a write
+into a non-text state or into a §5.12 store. A draft stays model text through chained writes,
+so it cannot be laundered into an action; what the user commits from a `Field` is user input.
+
+The in-card chat (`sys.chat`) is the host's. OctoSense answers it for the publishing app only
+(`crates/l0-chat`, used by the shell's glance cards and AppCard): threads are kept per app
+and thread in the app's account folder (ADR 0004 §11, `apps/<app>/accounts/<account>/chat/`);
+a card's one write, `append`, is accepted only from what the person typed and recorded as a
+`user` entry; the host runs the app's agent (a turn in its conversation on the host-owned app
+peer) and appends the reply as `model`, or a `host` notice. A card never writes a `model` or
+`host` entry, and a transcript in the published data is replaced by the host's. Limits: 4 KB
+per message, one message per 2 s per thread (and none while the agent answers), the last
+200 entries kept.
+
 **At L0 this is decidable**, because the grammar makes a `view` a typed tree. The plan layer
 already demonstrates the strongest form — removing the `condition` field made that bug
 *unrepresentable* rather than forbidden.

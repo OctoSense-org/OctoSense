@@ -14,6 +14,7 @@ something this document promised.
 | `Band` | `text: text` |
 | `Bubble` | `text: text`, `side: token` |
 | `Card` | `on_tap: event`, `value: any`, `tint: token` |
+| `ChatEntry` | `text: text`, `role: path` |
 | `Chip` | `text: text`, `on_tap: event`, `value: any`, `active: bool`, `tone: .normal \| .primary \| .danger`, `width: .fill \| .fit \| .day \| .rank \| .temp \| .label` |
 | `Col` | `align: .start \| .center \| .end`, `gap: number`, `width: width` |
 | `Fab` | `name: token` |
@@ -61,9 +62,12 @@ and that looks exactly like data still arriving.
 | capability | arguments | answers |
 |---|---|---|
 | `sys.airquality` | `lat`, `lon` | `aqi`, `pm25`, `pm10`, `ozone` |
+| `sys.chat` | `app`, `thread`, `fields` | `status`, `count`, `entries`, `id`, `role`, `text`, `at` |
 | `sys.cities` | `fields`, `unit` | `name`, `lat`, `lon`, `temp`, `feels`, `feels_delta`, `hi`, `lo`, `cond`, `humidity`, `wind` |
 | `sys.convert` | `amount`, `from`, `to`, `direction`, `fields` | `amount`, `value` |
+| `sys.dataset` | `id`, `fields` | `title`, `subtitle`, `summary`, `coverage`, `status`, `as_of`, `metric1_label`, `metric1_value`, `metric2_label`, `metric2_value`, `pick1_title`, `pick1_body`, `pick1_source`, `url1`, `pick2_title`, `pick2_body`, `pick2_source`, `url2`, `pick3_title`, `pick3_body`, `pick3_source`, `url3`, `evidence_title`, `evidence_body` |
 | `sys.daylight` | `lat`, `lon` | `rise`, `set`, `now` |
+| `sys.digest` | `app`, `id`, `fields` | `status`, `topic`, `language`, `summary`, `retrieved_at`, `count`, `points`, `sources`, `id`, `text`, `label`, `cite`, `citations`, `n`, `title`, `source`, `url`, `published_at` |
 | `sys.geocode` | `name` | `lat`, `lon`, `name`, `country`, `admin1`, `timezone`, `population` |
 | `sys.gps` | — (no arguments) | `lat`, `lon`, `accuracy`, `ok` |
 | `sys.indicator` | `countries`, `indicator`, `years`, `fields` | `name`, `latest`, `first`, `change`, `min`, `max`, `year`, `title` |
@@ -72,7 +76,9 @@ and that looks exactly like data still arriving.
 | `sys.moonphase` | `lat`, `lon` | `phase`, `illumination`, `name` |
 | `sys.movers` | `count`, `fields`, `symbols` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange` |
 | `sys.news` | `count`, `offset`, `fields` | `id`, `title`, `author`, `points`, `comments`, `url` |
+| `sys.news_digest` | `query`, `language`, `count`, `fields` | `id`, `title`, `summary`, `publisher`, `url`, `published_at` |
 | `sys.news_item` | `id`, `fields` | `id`, `title`, `author`, `points`, `comments`, `url` |
+| `sys.news_status` | `query`, `language`, `fields` | `status`, `message`, `count` |
 | `sys.photo` | `query`, `cond` | — (not a record) |
 | `sys.places` | `lat`, `lon`, `category`, `count`, `fields` | `id`, `name`, `distance`, `lat`, `lon`, `category` |
 | `sys.prefs` | `fields` | `units`, `range`, `home`, `work`, `mode` |
