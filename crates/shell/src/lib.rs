@@ -3863,6 +3863,16 @@ impl App {
         true
     }
 
+    /// A press on a toast (shell/notifications.rs `hit`). Only the press: a
+    /// drag of a pane's frame keeps its moves and its release wherever they
+    /// go.
+    fn press_on_toast(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        let Event::MouseDown(e) = event else { return false };
+        let notes = self.ui.widget(cx, ids!(shell_notes));
+        let on = notes.borrow::<shell::notifications::ShellNotifications>().is_some_and(|n| n.hit(e.abs));
+        on
+    }
+
     /// The system chat's pane owns the pointer inside its rect while open.
     fn system_chat_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
         if !system_chat::is_open() {
@@ -6131,8 +6141,23 @@ impl App {
             )
             && (self.dev_banner_pointer(cx, event)
                 || self.shell_menu_pointer(cx, event)
-                || self.shell_panel_pointer(cx, event)
-                || self.glance_sheet_pointer(cx, event)
+                || self.shell_panel_pointer(cx, event))
+        {
+            return;
+        }
+        // A toast is drawn over the card window, the glance panel, the chat
+        // panes and the windows: a press on it is the toast's alone (it
+        // opens its card), whatever lies under it.
+        if self.state.is_some() && self.press_on_toast(cx, event) {
+            self.ui.widget(cx, ids!(shell_notes)).handle_event(cx, event, &mut Scope::empty());
+            return;
+        }
+        if self.state.is_some()
+            && matches!(
+                event,
+                Event::TouchUpdate(_) | Event::MouseMove(_) | Event::MouseDown(_) | Event::MouseUp(_) | Event::Scroll(_)
+            )
+            && (self.glance_sheet_pointer(cx, event)
                 || self.shell_glance_pointer(cx, event)
                 || self.app_chat_pointer(cx, event)
                 || self.system_chat_pointer(cx, event))

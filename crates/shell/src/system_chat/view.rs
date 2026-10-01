@@ -12,6 +12,11 @@
 //! ([`ShellSystemChat::pointer`]), the keyboard (`super::key`) and text
 //! input (`super::text_input`, [`ShellSystemChat::ime`]).
 //!
+//! - **Placing it** (a desktop, not the full-screen surface): the header
+//!   (title and status) moves the pane, an edge or a corner sizes it, each
+//!   with its cursor; a double-click on the header puts it back in its
+//!   column. The placement holds while the shell runs and stays on screen
+//!   when the window shrinks ([`placed_pane`], [`dragged`]).
 //! - **Scrolling**: the wheel, and a touch drag with its fling
 //!   ([`TouchScroll`]): a phone sends no scroll events for a drag. A drag
 //!   that starts on a button scrolls and presses nothing.
@@ -57,6 +62,121 @@ pub const PANE_W: f64 = 440.0;
 pub const FULL_SCREEN_BELOW: f64 = 720.0;
 const PAD: f64 = 16.0;
 const FIELD_H: f64 = 36.0;
+/// The smallest the person may size the desktop pane.
+pub const MIN_W: f64 = 320.0;
+pub const MIN_H: f64 = 240.0;
+/// The resize band along the pane's edges, and its corners' reach.
+const EDGE: f64 = 6.0;
+const CORNER: f64 = 14.0;
+/// The header the pane is moved by: the padding, the title and the status.
+const HEADER_H: f64 = PAD + 30.0 + 22.0;
+/// Two presses on the header this close (seconds) put the pane back.
+const DOUBLE_PRESS_S: f64 = 0.4;
+
+/// What a press on the desktop pane's frame drags: the header moves it; an
+/// edge or a corner (by compass point) sizes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grip {
+    Move,
+    N,
+    S,
+    E,
+    W,
+    NE,
+    NW,
+    SE,
+    SW,
+}
+
+impl Grip {
+    fn cursor(self) -> MouseCursor {
+        match self {
+            Grip::Move => MouseCursor::Move,
+            Grip::N | Grip::S => MouseCursor::NsResize,
+            Grip::E | Grip::W => MouseCursor::EwResize,
+            Grip::NE | Grip::SW => MouseCursor::NeswResize,
+            Grip::NW | Grip::SE => MouseCursor::NwseResize,
+        }
+    }
+}
+
+/// `v` within `lo..=hi`, `lo` winning when the range is empty (a screen
+/// smaller than the pane's minimum).
+fn between(v: f64, lo: f64, hi: f64) -> f64 {
+    v.min(hi).max(lo)
+}
+
+/// The part of the surface `r` inside the window `pass` (its size; zero
+/// when unknown): the surface starts under the bar yet is the window's
+/// height, so its bottom would hang past the window, and with it the
+/// pane's bottom edge and padding.
+pub fn visible(r: Rect, pass: Vec2d) -> Rect {
+    if pass.x <= 0.0 || pass.y <= 0.0 {
+        return r;
+    }
+    rect(r.pos.x, r.pos.y, r.size.x.min((pass.x - r.pos.x).max(0.0)), r.size.y.min((pass.y - r.pos.y).max(0.0)))
+}
+
+/// A placement kept on `screen`: no smaller than the minimum (unless the
+/// screen is), no larger than the screen, wholly on it.
+pub fn placed_pane(r: Rect, screen: Rect) -> Rect {
+    let w = between(r.size.x, MIN_W.min(screen.size.x), screen.size.x);
+    let h = between(r.size.y, MIN_H.min(screen.size.y), screen.size.y);
+    let x = between(r.pos.x, screen.pos.x, screen.pos.x + screen.size.x - w);
+    let y = between(r.pos.y, screen.pos.y, screen.pos.y + screen.size.y - h);
+    rect(x, y, w, h)
+}
+
+/// The pane `from`, dragged by `grip` through `d`: moved, or one or two of
+/// its edges moved, never past the minimum size or off `screen`.
+pub fn dragged(grip: Grip, from: Rect, d: Vec2d, screen: Rect) -> Rect {
+    if grip == Grip::Move {
+        return placed_pane(rect(from.pos.x + d.x, from.pos.y + d.y, from.size.x, from.size.y), screen);
+    }
+    let (mut l, mut t) = (from.pos.x, from.pos.y);
+    let (mut r, mut b) = (l + from.size.x, t + from.size.y);
+    let (sr, sb) = (screen.pos.x + screen.size.x, screen.pos.y + screen.size.y);
+    if matches!(grip, Grip::W | Grip::NW | Grip::SW) {
+        l = between(l + d.x, screen.pos.x, r - MIN_W);
+    }
+    if matches!(grip, Grip::E | Grip::NE | Grip::SE) {
+        r = between(r + d.x, l + MIN_W, sr);
+    }
+    if matches!(grip, Grip::N | Grip::NW | Grip::NE) {
+        t = between(t + d.y, screen.pos.y, b - MIN_H);
+    }
+    if matches!(grip, Grip::S | Grip::SW | Grip::SE) {
+        b = between(b + d.y, t + MIN_H, sb);
+    }
+    placed_pane(rect(l, t, r - l, b - t), screen)
+}
+
+/// The desktop pane's frame, as hits: corners, then edges, then the header,
+/// so an edge wins over the header it crosses. Pushed after the controls,
+/// which win over all of them.
+fn grips(pane: Rect) -> Vec<(Rect, Hit)> {
+    let (x, y, w, h) = (pane.pos.x, pane.pos.y, pane.size.x, pane.size.y);
+    vec![
+        (rect(x, y, CORNER, CORNER), Hit::Grip(Grip::NW)),
+        (rect(x + w - CORNER, y, CORNER, CORNER), Hit::Grip(Grip::NE)),
+        (rect(x, y + h - CORNER, CORNER, CORNER), Hit::Grip(Grip::SW)),
+        (rect(x + w - CORNER, y + h - CORNER, CORNER, CORNER), Hit::Grip(Grip::SE)),
+        (rect(x, y, w, EDGE), Hit::Grip(Grip::N)),
+        (rect(x, y + h - EDGE, w, EDGE), Hit::Grip(Grip::S)),
+        (rect(x, y, EDGE, h), Hit::Grip(Grip::W)),
+        (rect(x + w - EDGE, y, EDGE, h), Hit::Grip(Grip::E)),
+        (rect(x, y, w, HEADER_H.min(h)), Hit::Grip(Grip::Move)),
+    ]
+}
+
+/// A drag of the pane's frame under way: by what, from where, and the pane
+/// it started from.
+#[derive(Clone, Copy, Debug)]
+struct PaneDrag {
+    grip: Grip,
+    start: Vec2d,
+    from: Rect,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 enum Hit {
@@ -70,6 +190,8 @@ enum Hit {
     OpenProviders,
     Field,
     Pane,
+    /// The desktop pane's frame ([`Grip`]).
+    Grip(Grip),
 }
 
 /// What a pointer event did.
@@ -116,7 +238,7 @@ fn grown(r: Rect) -> Rect {
 /// Whether a target gets a finger's width of slop: buttons do; the pane,
 /// the prompt and an answer option (an answer must be meant) do not.
 fn has_slop(hit: &Hit) -> bool {
-    !matches!(hit, Hit::Pane | Hit::Field | Hit::Option { .. })
+    !matches!(hit, Hit::Pane | Hit::Field | Hit::Option { .. } | Hit::Grip(_))
 }
 
 /// What a press at `p` hits: a control first (a button's finger's width
@@ -297,6 +419,22 @@ pub struct ShellSystemChat {
     /// hidden-window runs' logs).
     #[rust]
     pub shown: Vec<String>,
+    /// Where the person put the desktop pane (None: its column).
+    #[rust]
+    placed: Option<Rect>,
+    /// The surface the pane was last drawn on (a drag stays on it).
+    #[rust]
+    screen: Rect,
+    /// The pane's frame being dragged.
+    #[rust]
+    drag: Option<PaneDrag>,
+    /// The grip under the pointer (its cursor is worn).
+    #[rust]
+    grip_hover: Option<Grip>,
+    /// When the header was last pressed (a second press soon after puts
+    /// the pane back).
+    #[rust]
+    header_pressed: f64,
 }
 
 /// The conversation a pane shows: the system chat's or an app's.
@@ -411,11 +549,38 @@ impl ShellSystemChat {
         hit_in(&self.hits, p)
     }
 
+    /// The frame's grip at `p`, if a control is not there first.
+    fn grip_at(&self, p: Vec2d) -> Option<Grip> {
+        match self.hit_at(p) {
+            Some(Hit::Grip(g)) => Some(g),
+            _ => None,
+        }
+    }
+
     /// The shell's pointer hook: the pane's own rect is its own while open.
     pub fn pointer(&mut self, cx: &mut Cx, event: &Event) -> Outcome {
         let source = self.source();
         if !source.is_open() || self.pane.size.x <= 0.0 {
+            self.drag = None;
             return Outcome::Ignored;
+        }
+        // A drag of the frame has the pointer until the button comes up,
+        // wherever it goes.
+        if let Some(drag) = self.drag {
+            match event {
+                Event::MouseMove(e) => {
+                    self.placed = Some(dragged(drag.grip, drag.from, e.abs - drag.start, self.screen));
+                    cx.set_cursor(drag.grip.cursor());
+                    self.redraw(cx);
+                    return Outcome::Taken;
+                }
+                Event::MouseUp(_) => {
+                    self.drag = None;
+                    return Outcome::Taken;
+                }
+                Event::MouseDown(_) => return Outcome::Taken,
+                _ => {}
+            }
         }
         match event {
             Event::Scroll(e) if contains(self.pane, e.abs) => {
@@ -425,14 +590,39 @@ impl ShellSystemChat {
                 return Outcome::Taken;
             }
             Event::MouseMove(e) => {
-                let hover = self.hits.iter().find(|(r, h)| *h != Hit::Pane && contains(*r, e.abs)).map(|(r, _)| *r);
+                let hover = self.hits.iter().find(|(r, h)| *h != Hit::Pane && !matches!(h, Hit::Grip(_)) && contains(*r, e.abs)).map(|(r, _)| *r);
                 if hover != self.hover {
                     self.hover = hover;
                     self.redraw(cx);
                 }
+                let grip = self.grip_at(e.abs);
+                if let Some(g) = grip {
+                    cx.set_cursor(g.cursor());
+                } else if self.grip_hover.is_some() {
+                    cx.set_cursor(MouseCursor::Default);
+                }
+                self.grip_hover = grip;
                 return if contains(self.pane, e.abs) { Outcome::Taken } else { Outcome::Ignored };
             }
-            Event::MouseDown(e) => return self.press(cx, source, e.abs),
+            Event::MouseDown(e) => {
+                if let Some(grip) = self.grip_at(e.abs) {
+                    if grip == Grip::Move && e.time - self.header_pressed < DOUBLE_PRESS_S {
+                        // A double-click on the header: back in its column.
+                        self.placed = None;
+                        self.header_pressed = 0.0;
+                        self.redraw(cx);
+                        return Outcome::Taken;
+                    }
+                    if grip == Grip::Move {
+                        self.header_pressed = e.time;
+                    }
+                    self.down = None;
+                    self.drag = Some(PaneDrag { grip, start: e.abs, from: self.pane });
+                    cx.set_cursor(grip.cursor());
+                    return Outcome::Taken;
+                }
+                return self.press(cx, source, e.abs);
+            }
             Event::MouseUp(e) => return self.release(cx, source, e.abs),
             Event::TouchUpdate(e) => {
                 use makepad_widgets::makepad_platform::event::TouchState;
@@ -674,8 +864,14 @@ impl ShellSystemChat {
         }
         let tok = self.d.tokens(self.tokens);
         let full = screen.size.x < FULL_SCREEN_BELOW;
+        self.screen = screen;
         let pane = if full {
             screen
+        } else if let Some(placed) = self.placed {
+            // Where the person put it, kept on screen.
+            let kept = placed_pane(placed, screen);
+            self.placed = Some(kept);
+            kept
         } else {
             let gap = tok.spacing.gaps_out;
             // "Ask <app>" stands left of the system chat when both are open.
@@ -814,6 +1010,10 @@ impl ShellSystemChat {
         }
         shown.extend(lines.iter().map(|l| l.text.clone()));
         self.hits.extend(hits);
+        // The frame last: the controls win over it.
+        if !full {
+            self.hits.extend(grips(pane));
+        }
         self.shown = shown;
     }
 }
@@ -827,7 +1027,7 @@ fn act(source: Source, hit: Hit) -> Outcome {
             Hit::Stop => crate::app_chat::stop(),
             Hit::StopSystemAgent => crate::app_chat::stop_system_agent(),
             Hit::Option { question, count, label } => crate::app_chat::answer_option(&question, count, &label),
-            Hit::New | Hit::OpenProviders | Hit::Field | Hit::Pane => {}
+            Hit::New | Hit::OpenProviders | Hit::Field | Hit::Pane | Hit::Grip(_) => {}
         }
         return Outcome::Taken;
     }
@@ -839,7 +1039,7 @@ fn act(source: Source, hit: Hit) -> Outcome {
         Hit::StopSystemAgent => {}
         Hit::Option { question, count, label } => super::answer_option(&question, count, &label),
         Hit::OpenProviders => return Outcome::OpenProviders,
-        Hit::Field | Hit::Pane => {}
+        Hit::Field | Hit::Pane | Hit::Grip(_) => {}
     }
     Outcome::Taken
 }
@@ -847,7 +1047,7 @@ fn act(source: Source, hit: Hit) -> Outcome {
 impl Widget for ShellSystemChat {
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
-        let screen = cx.turtle().rect();
+        let screen = visible(cx.turtle().rect(), cx.current_pass_size());
         self.d.begin_surface(cx);
         self.draw_pane(cx, screen);
         self.d.end_surface(cx);
@@ -922,6 +1122,44 @@ mod tests {
         assert!(!lifted_on(&Hit::Send, send, dvec2(350.0, 790.0)), "slid off: cancelled");
         assert!(lifted_on(&option, yes, dvec2(40.0, 664.0)));
         assert!(!lifted_on(&option, yes, dvec2(40.0, 682.0)), "an answer is exact");
+    }
+
+    /// The desktop pane's frame: the header's buttons win over the header
+    /// they sit in, an edge wins over the header it crosses, and the inside
+    /// is still the pane's.
+    #[test]
+    fn the_frame_moves_and_sizes_the_pane_but_never_takes_a_button() {
+        let pane = rect(100.0, 50.0, 440.0, 700.0);
+        let close = rect(470.0, 66.0, 54.0, 28.0);
+        let mut hits = vec![(pane, Hit::Pane), (close, Hit::Close)];
+        hits.extend(grips(pane));
+        assert_eq!(hit_in(&hits, dvec2(490.0, 80.0)), Some(Hit::Close), "a button in the header is a button");
+        assert_eq!(hit_in(&hits, dvec2(250.0, 80.0)), Some(Hit::Grip(Grip::Move)), "the header moves it");
+        assert_eq!(hit_in(&hits, dvec2(250.0, 52.0)), Some(Hit::Grip(Grip::N)), "its top edge sizes it");
+        assert_eq!(hit_in(&hits, dvec2(102.0, 400.0)), Some(Hit::Grip(Grip::W)));
+        assert_eq!(hit_in(&hits, dvec2(537.0, 747.0)), Some(Hit::Grip(Grip::SE)));
+        assert_eq!(hit_in(&hits, dvec2(300.0, 400.0)), Some(Hit::Pane), "the transcript stays the pane's");
+    }
+
+    /// Moving keeps the pane on screen; sizing moves only the dragged edges,
+    /// never below the minimum; a placement shrinks with the window.
+    #[test]
+    fn a_dragged_pane_stays_on_screen_and_above_its_minimum() {
+        let screen = rect(0.0, 30.0, 1400.0, 860.0);
+        let pane = rect(944.0, 40.0, 440.0, 840.0);
+        assert_eq!(dragged(Grip::Move, pane, dvec2(-300.0, 0.0), screen), rect(644.0, 40.0, 440.0, 840.0));
+        assert_eq!(dragged(Grip::Move, pane, dvec2(500.0, -100.0), screen), rect(960.0, 30.0, 440.0, 840.0), "never off screen");
+        assert_eq!(dragged(Grip::W, pane, dvec2(-200.0, 0.0), screen), rect(744.0, 40.0, 640.0, 840.0), "the left edge only");
+        assert_eq!(dragged(Grip::W, pane, dvec2(400.0, 0.0), screen), rect(1064.0, 40.0, MIN_W, 840.0), "no narrower than the minimum");
+        assert_eq!(dragged(Grip::SE, pane, dvec2(-100.0, -500.0), screen), rect(944.0, 40.0, 340.0, 340.0));
+        assert_eq!(dragged(Grip::N, pane, dvec2(0.0, 700.0), screen), rect(944.0, 640.0, 440.0, MIN_H));
+        let small = rect(0.0, 0.0, 800.0, 500.0);
+        assert_eq!(placed_pane(rect(600.0, 300.0, 440.0, 840.0), small), rect(360.0, 0.0, 440.0, 500.0), "a window that shrank keeps it whole");
+        let tiny = rect(0.0, 0.0, 200.0, 100.0);
+        assert_eq!(placed_pane(pane, tiny), tiny, "a screen smaller than the minimum: the whole screen");
+        // A surface under a 33 px bar, as tall as the window: cut to it.
+        assert_eq!(visible(rect(0.0, 33.0, 1400.0, 894.0), dvec2(1400.0, 894.0)), rect(0.0, 33.0, 1400.0, 861.0));
+        assert_eq!(visible(rect(0.0, 33.0, 1400.0, 894.0), dvec2(0.0, 0.0)), rect(0.0, 33.0, 1400.0, 894.0), "no window size known");
     }
 
     #[test]
