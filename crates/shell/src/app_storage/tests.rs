@@ -421,6 +421,53 @@ fn every_system_app_manifest_storage_block_is_valid() {
     assert!(seen >= 5);
 }
 
+/// How every system app moves a file an earlier build left at the top of
+/// its jail: the copy is checked (it exists and reads back the same) before
+/// the old file goes; a failed or short copy is removed and the app keeps
+/// using the old file, so nothing is lost and the move is tried again.
+const MOVED: &str = r#"fn moved(name, path){
+    if fs.exists(path) || !fs.exists(name) { return path }
+    let data = fs.read(name)
+    fs.write(path, data)
+    if fs.exists(path) && fs.read(path) == data {
+        fs.remove(name)
+        return path
+    }
+    if fs.exists(path) { fs.remove(path) }
+    return name
+}"#;
+
+/// ADR 0004 §11: a script app's data is its account folder, the one its
+/// agent works in (a system app acts for the device: `accounts/device/`);
+/// what it can refetch is `cache/`. The Card runner's files are the jail,
+/// so a system app names those folders itself: outside [`MOVED`], every
+/// file it touches goes through `data_path` or `cache_path`, never a bare
+/// name at the jail's top. The one exception is Camera's captured images,
+/// whose paths the camera widget chooses (`ui.cam.last()`).
+#[test]
+fn should_keep_every_system_apps_files_in_its_account_folder_or_cache() {
+    let apps = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps");
+    let widget_paths: &[(&str, &[&str])] = &[("camera", &["last)", "old)", "viewing)"])];
+    for app in ["news", "youtube", "photos", "maps", "camera"] {
+        let source = std::fs::read_to_string(apps.join(app).join("bundle/main.splash")).unwrap();
+        assert!(source.contains(r#"let DATA = "accounts/device/""#), "{app}: names its account folder");
+        assert!(source.contains(MOVED), "{app}: moves an old file only once the copy is verified");
+        let rest = source.replacen(MOVED, "", 1);
+        let allowed = widget_paths.iter().find(|(a, _)| *a == app).map(|(_, p)| *p).unwrap_or(&[]);
+        for (n, line) in rest.lines().enumerate() {
+            for call in ["fs.write(", "fs.read(", "fs.read_bytes(", "fs.exists(", "fs.remove("] {
+                let mut at_line = line;
+                while let Some(at) = at_line.find(call) {
+                    let arg = at_line[at + call.len()..].trim_start();
+                    let ok = arg.starts_with("data_path(") || arg.starts_with("cache_path(") || allowed.iter().any(|p| arg.starts_with(p));
+                    assert!(ok, "{app}/main.splash: {call} must go through data_path or cache_path: {line} (line {} outside moved)", n + 1);
+                    at_line = &at_line[at + call.len()..];
+                }
+            }
+        }
+    }
+}
+
 // ---- the startup check ----------------------------------------------------
 
 /// A home with two apps, one account each, and one secret.
