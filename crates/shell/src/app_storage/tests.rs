@@ -104,7 +104,9 @@ fn the_account_hash_is_stable_normalized_and_opaque() {
 }
 
 /// One account key: the folder name and the agent's memory tag agree on
-/// which ids are one account.
+/// which ids are one account. The broker (and its tag) is built only where
+/// the shell hosts the kernel (`cfg(kernel)`: feature `octos-core`).
+#[cfg(kernel)]
 #[test]
 fn should_key_the_folder_and_the_memory_tag_the_same_way_when_ids_differ_in_case() {
     use crate::ai_host::app_peers::broker::account_tag;
