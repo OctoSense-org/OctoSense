@@ -108,9 +108,42 @@ pub struct MpModuleView {
     /// Where the Restart button was drawn.
     #[rust]
     restart_rect: Option<Rect>,
+    /// Out of sight on the phone (`set_asleep`): the app gets no frames and
+    /// its redraws are held, but timers, network replies and messages
+    /// still reach it, so its state stays current (and audio keeps
+    /// playing: a WebView plays on its own).
+    #[rust]
+    asleep: bool,
+    /// The frames its animations waited for while asleep, replayed on wake.
+    #[rust]
+    owed_frame: Option<NextFrameEvent>,
+    /// It asked to redraw while asleep.
+    #[rust]
+    redraw_owed: bool,
+    /// The frame that wakes it: the owed frame and redraw land there,
+    /// outside the draw that decided it is visible again.
+    #[rust]
+    wake_frame: Option<NextFrame>,
 }
 
 impl MpModuleView {
+    /// The frame that will wake it, if it is waking.
+    pub fn wake_frame(&self) -> Option<NextFrame> {
+        self.wake_frame
+    }
+
+    /// The phone puts an app it does not show to sleep, and wakes it when
+    /// it shows (or starts to show) again.
+    pub fn set_asleep(&mut self, cx: &mut Cx, asleep: bool) {
+        if self.asleep == asleep {
+            return;
+        }
+        self.asleep = asleep;
+        if !asleep && (self.owed_frame.is_some() || self.redraw_owed) {
+            self.wake_frame = Some(cx.new_next_frame());
+        }
+    }
+
     /// Seat an instance's root here. The WM's view of the client is set
     /// with it so a press can name the tile to focus.
     pub fn set_root(&mut self, cx: &mut Cx, client: ClientId, vm_id: SplashVmId, root: WidgetRef) {
@@ -310,6 +343,39 @@ impl Widget for MpModuleView {
         let Some(root) = self.root.clone() else {
             return;
         };
+        // Asleep: frames wait (its animations stop asking for more); the
+        // newest is kept, with every waiting animation in it.
+        if self.asleep {
+            if let Event::NextFrame(frame) = event {
+                match self.owed_frame.as_mut() {
+                    Some(owed) => {
+                        owed.set.extend(frame.set.iter().copied());
+                        owed.frame = frame.frame;
+                        owed.time = frame.time;
+                    }
+                    None => self.owed_frame = Some(frame.clone()),
+                }
+                return;
+            }
+        }
+        // Woken: the frames it missed arrive with this one, and its held
+        // redraw happens.
+        let woken;
+        let event = match (event, self.wake_frame) {
+            (Event::NextFrame(frame), Some(wake)) if frame.set.contains(&wake) => {
+                self.wake_frame = None;
+                if std::mem::take(&mut self.redraw_owed) {
+                    root.redraw(cx);
+                }
+                let mut merged = self.owed_frame.take().unwrap_or_else(|| frame.clone());
+                merged.set.extend(frame.set.iter().copied());
+                merged.frame = frame.frame;
+                merged.time = frame.time;
+                woken = Event::NextFrame(merged);
+                &woken
+            }
+            _ => event,
+        };
         // Failed through another path (a host call) since the last event.
         if is_failed(cx, self.vm_id) {
             self.stop(cx);
@@ -342,9 +408,28 @@ impl Widget for MpModuleView {
                 cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
             }
         }
+        // A redraw an asleep app asks for (a timer, a network reply) is held
+        // until it wakes: it would redraw, and re-record, the phone's home
+        // scene that covers it.
+        let held = self.asleep.then(|| {
+            let pending = &cx.new_draw_event;
+            (pending.draw_lists.len(), pending.draw_lists_and_children.len(), pending.redraw_all)
+        });
         if contain(cx, self.vm_id, "an event", |cx| root.handle_event(cx, event, scope)).is_none() {
             self.stop(cx);
             return;
+        }
+        if let Some((lists, with_children, all)) = held {
+            let pending = &mut cx.new_draw_event;
+            if pending.draw_lists.len() > lists
+                || pending.draw_lists_and_children.len() > with_children
+                || pending.redraw_all != all
+            {
+                pending.draw_lists.truncate(lists);
+                pending.draw_lists_and_children.truncate(with_children);
+                pending.redraw_all = all;
+                self.redraw_owed = true;
+            }
         }
         // A press inside this tile is this tile's, even where none of the
         // app's widgets took it, so no window behind reacts to it.

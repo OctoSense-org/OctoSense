@@ -109,6 +109,9 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
     // Without App Hub linked: the same store icon, kept beside the other app art.
     #[cfg(not(any(feature = "app-hub", native_mobile)))]
     wear(&mut assets, "apphub", include_str!("../../resources/icons/apps/apphub.svg").into());
+    // The system chat's dock entry and home chip (#143): its own art, so it
+    // never reads as the AI pane's app.
+    wear(&mut assets, "assistant", include_str!("../../resources/icons/apps/assistant.svg").into());
     assets.sort_by(|a, b| a.name.cmp(&b.name));
     assets
 }
@@ -231,8 +234,10 @@ mod tests {
             let framework = app_icon::load_assets(style);
             let assets = icon_assets(style);
             // Nothing the framework draws is lost, and the list stays sorted
-            // by name as the framework's is.
-            assert_eq!(assets.len(), framework.len() + 2, "{}", style.id());
+            // by name as the framework's is. Added: OctosMap, App Hub and the
+            // system chat's Assistant (#143).
+            assert_eq!(assets.len(), framework.len() + 3, "{}", style.id());
+            assert!(svg_of(&assets, "assistant").contains("OctoSense #143"), "{}", style.id());
             assert!(assets.windows(2).all(|pair| pair[0].name < pair[1].name), "{}", style.id());
             for asset in &framework {
                 if asset.name != "news" {
