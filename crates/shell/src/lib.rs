@@ -405,6 +405,10 @@ pub struct App {
     /// The glance cards' generation the surfaces last drew (glance.rs).
     #[rust]
     pub glance_generation: u64,
+    /// When the glance panel was last open: cards published after it are
+    /// new (the bar's glance button is lit).
+    #[rust]
+    pub glance_seen_ms: u64,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
     /// shade's ids, which open the glance page.
@@ -3549,6 +3553,11 @@ impl App {
             self.ask_focused_app(cx);
             return;
         }
+        if target == shell::menu::GLANCE_ROW {
+            self.close_shell_menu(cx);
+            self.set_glance_open(cx, true);
+            return;
+        }
         if target == shell::menu::SYSTEM_CHAT_ROW {
             self.close_shell_menu(cx);
             system_chat::open();
@@ -3644,8 +3653,19 @@ impl App {
         if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
             panel.open = open;
         }
+        // Seen: the bar's glance button goes back from lit.
+        if open {
+            self.glance_seen_ms = glance::now_ms();
+        }
         log!("wm: glance panel {}", if open { "open" } else { "closed" });
+        if self.state.is_some() {
+            self.update_bar(cx);
+        }
         self.redraw_all(cx);
+    }
+
+    fn glance_open(&mut self, cx: &mut Cx) -> bool {
+        self.ui.widget(cx, ids!(shell_glance)).borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open)
     }
 
     /// The card window (glance_sheet.rs) is modal: while a card is open
@@ -4078,6 +4098,14 @@ impl App {
         data.active_window = (!title.is_empty()).then_some(title);
         data.ask_agent = self.focused_agent_app().map(|a| a.name);
         data.open_panel = self.shell_panel_open;
+        // The glance button: the cards shown now, and how many arrived since
+        // the panel was last open; it wears the pill while the panel is up.
+        let cards = glance::shown();
+        let new = cards.iter().filter(|c| c.published_ms > self.glance_seen_ms).count();
+        data.glance = Some((cards.len(), new));
+        if self.glance_open(cx) {
+            data.open_panel = Some(BarModule::Glance);
+        }
         // The middle window control reads "restore" while maximized.
         data.maximized = self.ui.window(cx, ids!(main_window)).is_fullscreen(cx);
         let bar = self.ui.widget(cx, ids!(shell_bar));
@@ -5799,6 +5827,10 @@ impl MatchEvent for App {
                         }
                     }
                     BarModule::AskAgent => self.ask_focused_app(cx),
+                    BarModule::Glance => {
+                        let open = self.glance_open(cx);
+                        self.set_glance_open(cx, !open);
+                    }
                     control @ (BarModule::WindowMin | BarModule::WindowMax | BarModule::WindowClose) => {
                         // The gallery's bar is a picture of one: its
                         // controls log (shell/gallery.rs), never close or
@@ -6402,6 +6434,8 @@ impl App {
             // A card was published, replaced or withdrawn (glance.rs).
             if glance::generation() != self.glance_generation && self.state.is_some() {
                 self.glance_generation = glance::generation();
+                // The bar's glance button counts the cards.
+                self.update_bar(cx);
                 self.redraw_all(cx);
             }
             if self.state.is_some() {

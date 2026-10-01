@@ -41,6 +41,9 @@ pub enum BarModule {
     /// has an agent (ADR 0004 §4): opens the shell's panel for it.
     AskAgent,
     Indicator(usize),
+    /// The glance panel (F9): the cards apps published, their count on a
+    /// badge, lit while some are new since the panel was last open.
+    Glance,
     Clock,
     KeyboardLayout,
     Weather,
@@ -111,6 +114,9 @@ pub struct BarData {
     pub open_panel: Option<BarModule>,
     /// The window is maximized: the middle control shows "restore".
     pub maximized: bool,
+    /// The glance screen's cards and how many arrived since the panel was
+    /// last open (`None`: no glance button).
+    pub glance: Option<(usize, usize)>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -171,6 +177,7 @@ impl BarData {
             }),
             open_panel: None,
             maximized: false,
+            glance: None,
         }
     }
 }
@@ -569,6 +576,9 @@ impl ShellBar {
     /// icon each one shows right now.
     fn right_modules(&self) -> Vec<(BarModule, Ico, bool)> {
         let mut v: Vec<(BarModule, Ico, bool)> = Vec::new();
+        if self.data.glance.is_some() {
+            v.push((BarModule::Glance, Ico::Bell, true));
+        }
         for (i, ico) in self.data.tray.iter().enumerate() {
             v.push((BarModule::Tray(i), *ico, true));
         }
@@ -857,7 +867,28 @@ impl ShellBar {
             if *module == BarModule::Audio && self.data.muted {
                 color = fade(fg, 0.45);
             }
+            let glance = if *module == BarModule::Glance { self.data.glance } else { None };
+            if let Some((_, new)) = glance {
+                if new > 0 {
+                    color = accent;
+                }
+            }
             self.d.icon_centered(cx, *ico, cell, canvas, color);
+            // The glance button's count, at the bell's corner: a tag in the
+            // accent while some cards are new.
+            if let Some((count, new)) = glance.filter(|(count, _)| *count > 0) {
+                let text = if count > 9 { "9+".to_string() } else { count.to_string() };
+                let px = tok.font.caption * 0.8;
+                let h = (px * 1.25).round();
+                let w = (self.d.measure(cx, true, px, &text) + 4.0).max(h);
+                let badge = rect((cell.pos.x + cell.size.x * 0.5 + canvas * 0.15).round(), (cell.pos.y + cell.size.y * 0.5 - canvas * 0.6).round(), w, h);
+                if new > 0 {
+                    self.d.solid(cx, badge, accent);
+                    self.d.label(cx, badge, true, px, tok.bar.background, super::ui::HAlign::Center, &text);
+                } else {
+                    self.d.label(cx, badge, true, px, fade(fg, 0.7), super::ui::HAlign::Center, &text);
+                }
+            }
             self.hits.push((*module, cell));
         }
 
@@ -896,6 +927,11 @@ impl ShellBar {
                 .clone()
                 .unwrap_or_default(),
             BarModule::AskAgent => format!("Talk to {}'s agent (Shift+F8)", self.data.ask_agent.clone().unwrap_or_default()),
+            BarModule::Glance => match self.data.glance {
+                Some((count, new)) if new > 0 => format!("At a glance (F9): {count} card(s), {new} new"),
+                Some((count, _)) => format!("At a glance (F9): {count} card(s)"),
+                None => "At a glance (F9)".into(),
+            },
             BarModule::Clock => "Calendar".into(),
             BarModule::KeyboardLayout => "Keyboard layout".into(),
             BarModule::Weather => "Weather".into(),
