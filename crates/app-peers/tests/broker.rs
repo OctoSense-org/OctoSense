@@ -32,6 +32,8 @@ struct Script {
     history: Vec<Value>,
     /// What session/hydrate answers for the peer's own session.
     peer_history: Vec<Value>,
+    /// What it answers for one session, before `history`.
+    session_history: std::collections::HashMap<String, Vec<Value>>,
     /// peer/context/open ignores `share_history` (a kernel before it).
     no_share_history: bool,
     connects: usize,
@@ -113,7 +115,11 @@ impl Connector for FakeConnector {
                             s.busy_starts -= 1;
                         }
                         let on_peer = params["session_id"].as_str().is_some_and(|id| id.contains("#peer-"));
-                        let history = if on_peer { s.peer_history.clone() } else { s.history.clone() };
+                        let history = match params["session_id"].as_str().and_then(|id| s.session_history.get(id)) {
+                            Some(rows) => rows.clone(),
+                            None if on_peer => s.peer_history.clone(),
+                            None => s.history.clone(),
+                        };
                         (s.legacy, s.hold_turns, s.refuse_register, busy, history, s.no_share_history)
                     };
                     let send = |frame: String| emit(&script, conn, frame);
@@ -1729,6 +1735,62 @@ fn stop_on_the_conversation_interrupts_both_lanes() {
     let (sink, rx) = collect();
     chat.call(ContextOp::Interrupt, sink).unwrap();
     assert!(complete(&rx).unwrap_err().contains("Nothing is running"));
+    drop(broker);
+}
+
+/// A conversation opened again for the same instance (the shell's panel
+/// reopened after its context closed) is a new kernel context, whose
+/// person's lane starts empty: its history still has the person's rows of
+/// the earlier handles, merged with the system agent's lane. Another
+/// instance does not see them.
+#[test]
+fn a_reopened_conversation_keeps_the_persons_earlier_rows() {
+    let (broker, script) = new_broker_with(&ALL, None, None);
+    broker.set_account(Some("@a:x"));
+    let first = broker.open_conversation(spec("@a:x", "shell-ask", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    first.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane1) = person_lane(&script, 0);
+    first.close();
+    let second = broker.open_conversation(spec("@a:x", "shell-ask", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    second.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane2) = person_lane(&script, 1);
+    assert_ne!(lane1, lane2, "a new kernel context");
+    let slug = peer_slug(&script);
+    {
+        let mut s = script.lock().unwrap();
+        s.session_history.insert(lane1.clone(), vec![
+            json!({"role": "user", "content": "[from the person] what is new?", "persisted_at": "2026-09-30T10:00:00Z"}),
+            json!({"role": "assistant", "content": "Three stories.", "persisted_at": "2026-09-30T10:00:05Z"}),
+        ]);
+        s.session_history.insert(lane2.clone(), vec![]);
+        s.session_history.insert(format!("_main:api:octosense#peer-{slug}"), vec![
+            json!({"role": "user", "content": "[from the system agent] digest", "persisted_at": "2026-09-30T10:00:02Z"}),
+        ]);
+    }
+    let (sink, rx) = collect();
+    second.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].clone();
+    let said: Vec<(String, String)> = rows.as_array().unwrap().iter().map(|r| (r["lane"].as_str().unwrap_or("").to_owned(), r["content"].as_str().unwrap_or("").to_owned())).collect();
+    assert_eq!(said.len(), 3, "{rows}");
+    assert_eq!(said[0].0, "person");
+    assert!(said[0].1.contains("what is new?"), "{said:?}");
+    assert_eq!(said[1].0, "system_agent", "merged by time: {said:?}");
+    assert_eq!(said[2], ("person".to_owned(), "Three stories.".to_owned()));
+    // Another instance (another app UI) has only its own.
+    let other = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    other.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane3) = person_lane(&script, 2);
+    script.lock().unwrap().session_history.insert(lane3, vec![]);
+    let (sink, rx) = collect();
+    other.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].clone();
+    assert!(rows.as_array().unwrap().iter().all(|r| r["lane"] == "system_agent"), "{rows}");
     drop(broker);
 }
 

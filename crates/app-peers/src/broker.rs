@@ -618,6 +618,11 @@ struct State {
     queue: VecDeque<PeerInput>,
     /// Conversations opened: each gets a new kernel context id.
     conversations: u64,
+    /// The person's lane of every conversation handle bound so far, by the
+    /// instance that opened it, oldest first: a handle opened again for the
+    /// same instance (a shell panel reopened) shows the earlier ones'
+    /// history too.
+    person_lanes: HashMap<String, Vec<String>>,
     /// Workspaces new peers were created with, when no state dir keeps them.
     cwds: HashMap<String, String>,
     /// Approval and question ids the host took: only the host answers them.
@@ -683,6 +688,7 @@ impl Broker {
                 requests: VecDeque::new(),
                 queue: VecDeque::new(),
                 conversations: 0,
+                person_lanes: HashMap::new(),
                 cwds: HashMap::new(),
                 host_held: VecDeque::new(),
                 questions: HashMap::new(),
@@ -2625,6 +2631,16 @@ impl ContextInner {
                 context: Arc::downgrade(self),
             },
         );
+        if self.conversation {
+            let mut st = inner.lock();
+            let lanes = st.person_lanes.entry(self.instance.clone()).or_default();
+            if !lanes.contains(&session) {
+                lanes.push(session.clone());
+                if lanes.len() > 16 {
+                    lanes.remove(0);
+                }
+            }
+        }
         *self.bound.lock().unwrap_or_else(|e| e.into_inner()) = Some(Bound {
             session: session.clone(),
             peer_slug: peer.slug,
@@ -2768,12 +2784,32 @@ impl ContextInner {
                     .await;
                 if self.conversation {
                     // Both lanes: the person's context and the peer's session.
+                    // The person's lane includes the earlier handles of this
+                    // instance (each handle is a new kernel context).
+                    let earlier: Vec<String> = inner.lock().person_lanes.get(&self.instance).map(|l| l.iter().filter(|s| **s != session).cloned().collect()).unwrap_or_default();
+                    let mut history = history;
+                    if let Ok(person) = &mut history {
+                        let mut rows = Vec::new();
+                        for lane in &earlier {
+                            if let Ok(mut old) = inner.request("session/hydrate", json!({"session_id": lane, "include": ["messages"]})).await {
+                                if let Value::Array(old) = old["messages"].take() {
+                                    rows.extend(old);
+                                }
+                            }
+                        }
+                        if !rows.is_empty() {
+                            if let Value::Array(now) = person["messages"].take() {
+                                rows.extend(now);
+                            }
+                            person["messages"] = Value::Array(rows);
+                        }
+                    }
                     let peer_session = inner.lock().peer.as_ref().map(|(_, p)| p.session.clone());
                     let system_agent = match peer_session.clone() {
                         Some(peer) => inner.request("session/hydrate", json!({"session_id": peer, "include": ["messages"]})).await?,
                         None => json!({"messages": []}),
                     };
-                    let requests: Vec<Request> = inner.lock().requests.iter().filter(|r| r.session == session || peer_session.as_deref() == Some(r.session.as_str())).cloned().collect();
+                    let requests: Vec<Request> = inner.lock().requests.iter().filter(|r| r.session == session || earlier.contains(&r.session) || peer_session.as_deref() == Some(r.session.as_str())).cloned().collect();
                     history.map(|person| merged_history(person, system_agent, &requests))
                 } else {
                     history

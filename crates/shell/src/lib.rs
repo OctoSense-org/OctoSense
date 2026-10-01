@@ -3640,8 +3640,7 @@ impl App {
             let pane = self.ui.widget(cx, pane);
             let Some(mut pane) = pane.borrow_mut::<system_chat::view::ShellSystemChat>() else { continue };
             if let Event::ImeAction(action) = event {
-                use makepad_widgets::makepad_platform::event::ImeAction;
-                if pane.has_keyboard(cx) && matches!(action.action, ImeAction::Send | ImeAction::Done | ImeAction::Go) {
+                if pane.has_keyboard(cx) && system_chat::composer::ime_action_sends(action.action) {
                     if pane.is_app_panel() { app_chat::send_draft() } else { system_chat::send_draft() }
                     return true;
                 }
@@ -3650,6 +3649,19 @@ impl App {
             if pane.ime(cx, event) {
                 return true;
             }
+        }
+        // The keyboard's Send with no pane holding the key focus (it moved,
+        // or a redraw lost it): the pane that has the keyboard sends.
+        if let Event::ImeAction(action) = event {
+            if system_chat::composer::ime_action_sends(action.action) {
+                match system_chat::composer::ime_target(app_chat::is_focused(), system_chat::is_open()) {
+                    Some(system_chat::composer::Pane::App) => app_chat::send_draft(),
+                    Some(system_chat::composer::Pane::System) => system_chat::send_draft(),
+                    None => return false,
+                }
+                return true;
+            }
+            return false;
         }
         // Typed text with no pane focused by a press (F8 opened it): the
         // pane that has the keyboard. Never an input method's whole editor

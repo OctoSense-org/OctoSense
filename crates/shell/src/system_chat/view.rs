@@ -106,6 +106,18 @@ fn composer_button(person_running: bool, usable: bool, draft: &str) -> (&'static
     }
 }
 
+/// What a press at `p` hits: a control first (a finger's width around it
+/// counts, for touch), else the pane itself.
+fn hit_in(hits: &[(Rect, Hit)], p: Vec2d) -> Option<Hit> {
+    const FINGER: f64 = 8.0;
+    let grown = |r: Rect| rect(r.pos.x - FINGER, r.pos.y - FINGER, r.size.x + FINGER * 2.0, r.size.y + FINGER * 2.0);
+    hits.iter()
+        .find(|(r, h)| *h != Hit::Pane && contains(*r, p))
+        .or_else(|| hits.iter().find(|(r, h)| *h != Hit::Pane && *h != Hit::Field && contains(grown(*r), p)))
+        .or_else(|| hits.iter().find(|(r, _)| contains(*r, p)))
+        .map(|(_, h)| h.clone())
+}
+
 /// The label of the system agent's running row's control.
 pub const STOP_SYSTEM_AGENT: &str = "Stop the system agent's task";
 
@@ -261,6 +273,11 @@ pub struct ShellSystemChat {
     /// The prompt could be typed into at the last frame.
     #[rust]
     usable: bool,
+    /// Where the pane was laid out at its last draw: the hits are in that
+    /// frame's coordinates. If the window's content moved since (the soft
+    /// keyboard shifting it), a pointer is mapped back by that much.
+    #[rust]
+    drawn_at: Vec2d,
     /// What the last frame showed, one string per line (for tests and the
     /// hidden-window runs' logs).
     #[rust]
@@ -376,7 +393,16 @@ impl ShellSystemChat {
     }
 
     fn hit_at(&self, p: Vec2d) -> Option<Hit> {
-        self.hits.iter().find(|(r, h)| *h != Hit::Pane && contains(*r, p)).or_else(|| self.hits.iter().find(|(r, _)| contains(*r, p))).map(|(_, h)| h.clone())
+        hit_in(&self.hits, p)
+    }
+
+    /// How far the pane moved since it was drawn (its area's live rect
+    /// against where it was laid out).
+    fn moved_by(&self, cx: &Cx) -> Vec2d {
+        if self.area.is_empty() || !self.area.is_valid(cx) {
+            return Vec2d::default();
+        }
+        self.area.rect(cx).pos - self.drawn_at
     }
 
     /// The shell's pointer hook: the pane's own rect is its own while open.
@@ -385,36 +411,38 @@ impl ShellSystemChat {
         if !source.is_open() || self.pane.size.x <= 0.0 {
             return Outcome::Ignored;
         }
+        // Hits are where the last draw laid things out.
+        let shift = self.moved_by(cx);
         match event {
-            Event::Scroll(e) if contains(self.pane, e.abs) => {
+            Event::Scroll(e) if contains(self.pane, e.abs - shift) => {
                 self.touch.cancel_fling();
                 source.scroll_by(e.scroll.y, self.max_scroll);
                 self.redraw(cx);
                 return Outcome::Taken;
             }
             Event::MouseMove(e) => {
-                let hover = self.hits.iter().find(|(r, h)| *h != Hit::Pane && contains(*r, e.abs)).map(|(r, _)| *r);
+                let hover = self.hits.iter().find(|(r, h)| *h != Hit::Pane && contains(*r, e.abs - shift)).map(|(r, _)| *r);
                 if hover != self.hover {
                     self.hover = hover;
                     self.redraw(cx);
                 }
-                return if contains(self.pane, e.abs) { Outcome::Taken } else { Outcome::Ignored };
+                return if contains(self.pane, e.abs - shift) { Outcome::Taken } else { Outcome::Ignored };
             }
-            Event::MouseDown(e) => return self.press(cx, source, e.abs),
-            Event::MouseUp(e) => return self.release(cx, source, e.abs),
+            Event::MouseDown(e) => return self.press(cx, source, e.abs - shift),
+            Event::MouseUp(e) => return self.release(cx, source, e.abs - shift),
             Event::TouchUpdate(e) => {
                 use makepad_widgets::makepad_platform::event::TouchState;
                 let mut outcome = Outcome::Ignored;
                 for t in &e.touches {
                     let this = match t.state {
                         TouchState::Start => {
-                            let taken = self.press(cx, source, t.abs);
+                            let taken = self.press(cx, source, t.abs - shift);
                             if taken != Outcome::Ignored {
-                                self.touch.start(t.uid, t.abs, t.time);
+                                self.touch.start(t.uid, t.abs - shift, t.time);
                             }
                             taken
                         }
-                        TouchState::Move => match self.touch.moved(t.uid, t.abs, t.time) {
+                        TouchState::Move => match self.touch.moved(t.uid, t.abs - shift, t.time) {
                             Some(dy) => {
                                 // A drag presses nothing.
                                 self.down = None;
@@ -422,7 +450,7 @@ impl ShellSystemChat {
                                 self.redraw(cx);
                                 Outcome::Taken
                             }
-                            None if contains(self.pane, t.abs) => Outcome::Taken,
+                            None if contains(self.pane, t.abs - shift) => Outcome::Taken,
                             None => Outcome::Ignored,
                         },
                         TouchState::Stop => {
@@ -433,7 +461,11 @@ impl ShellSystemChat {
                                 }
                                 Outcome::Taken
                             } else {
-                                self.release(cx, source, t.abs)
+                                // A tap: what the finger went down on, even
+                                // if the layout moved under it before the
+                                // lift (the keyboard's suggestion bar, a
+                                // keyboard rising or settling).
+                                self.tap(cx, source, t.abs - shift)
                             }
                         }
                         _ => Outcome::Ignored,
@@ -464,7 +496,17 @@ impl ShellSystemChat {
         Outcome::Taken
     }
 
-    /// A release (mouse up, a finger's lift that was no drag).
+    /// A finger lifted without dragging: the press's target acts.
+    fn tap(&mut self, cx: &mut Cx, source: Source, p: Vec2d) -> Outcome {
+        let Some(hit) = self.down.take() else {
+            return if contains(self.pane, p) { Outcome::Taken } else { Outcome::Ignored };
+        };
+        let outcome = act(source, hit);
+        self.redraw(cx);
+        outcome
+    }
+
+    /// A release (mouse up).
     fn release(&mut self, cx: &mut Cx, source: Source, p: Vec2d) -> Outcome {
         let hit = self.hit_at(p);
         let pressed = self.down.take();
@@ -791,6 +833,7 @@ impl Widget for ShellSystemChat {
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
+        self.drawn_at = screen.pos;
         self.d.begin_surface(cx);
         self.draw_pane(cx, screen);
         self.d.end_surface(cx);
@@ -841,6 +884,27 @@ mod tests {
         assert_eq!(composer_button(false, true, "why?"), ("Send", Hit::Send, true));
         assert_eq!(composer_button(false, false, "why?"), ("Send", Hit::Send, false), "not before the conversation is ready");
         assert_eq!(composer_button(true, true, "why?"), ("Stop", Hit::Stop, true), "the person's own turn");
+    }
+
+    /// The device: Send tapped while the soft keyboard was up missed. A
+    /// finger slightly off the button still hits it, the prompt does not
+    /// grow over it, and a pointer is mapped back by how far the content
+    /// moved since the hits were laid out.
+    #[test]
+    fn a_tap_near_a_button_hits_it_and_follows_a_moved_layout() {
+        let pane = rect(0.0, 0.0, 400.0, 800.0);
+        let field = rect(16.0, 700.0, 300.0, 36.0);
+        let send = rect(324.0, 704.0, 60.0, 28.0);
+        let hits = vec![(pane, Hit::Pane), (send, Hit::Send), (field, Hit::Field)];
+        assert_eq!(hit_in(&hits, dvec2(350.0, 715.0)), Some(Hit::Send));
+        assert_eq!(hit_in(&hits, dvec2(350.0, 738.0)), Some(Hit::Send), "a finger's width below it");
+        assert_eq!(hit_in(&hits, dvec2(310.0, 715.0)), Some(Hit::Field), "the prompt itself first");
+        assert_eq!(hit_in(&hits, dvec2(200.0, 300.0)), Some(Hit::Pane));
+        // The content moved up 300 px (a keyboard) after the hits were made.
+        let moved = dvec2(0.0, -300.0);
+        let tapped = dvec2(350.0, 715.0) + moved;
+        assert_eq!(hit_in(&hits, tapped - moved), Some(Hit::Send));
+        assert_ne!(hit_in(&hits, tapped), Some(Hit::Send), "unmapped, it missed");
     }
 
     #[test]
