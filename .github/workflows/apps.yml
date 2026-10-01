@@ -32,9 +32,12 @@ on:
 permissions:
   contents: read
 
+# Pull requests: one run per PR, a new push cancels the old run. Pushes to
+# main: one group, apps-main, so only the newest main commit's run completes
+# and older queued or running main runs are cancelled.
 concurrency:
-  group: apps-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'apps-main' || format('apps-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 jobs:
   services:
