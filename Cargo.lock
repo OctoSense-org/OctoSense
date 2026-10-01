@@ -6929,6 +6929,7 @@ dependencies = [
  "octoscript-node",
  "octoscript-ui-l0",
  "octosense-kernel",
+ "octosense-l0-chat",
  "octosense-llm-config",
  "reqwest 0.12.28",
  "robius-open",
@@ -7521,6 +7522,7 @@ dependencies = [
  "makepad-app-module",
  "makepad-widgets",
  "octos-app",
+ "octosense-app-peers",
  "serde_json",
 ]
 
@@ -7574,6 +7576,15 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "octosense-l0-chat"
+version = "0.1.0"
+dependencies = [
+ "octoscript-ui-l0",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7686,6 +7697,7 @@ dependencies = [
  "octosense-app-policy",
  "octosense-appcard",
  "octosense-appstore",
+ "octosense-l0-chat",
  "octosense-mail-service",
  "octosense-news-service",
  "octosense-reference",

@@ -1,4 +1,4 @@
-# ledger mail.action@0.1.0
+# ledger mail.action@0.2.0
 # level:   L0
 # profile: ui/l0
 #
@@ -8,40 +8,43 @@
 # shell publishes it as `os.mail` with fake data under
 # OCTOSENSE_GLANCE_DEMO=mail; no mail is read and no model is called.
 #
-# Stand-ins until Octoscript catalogs `sys.mail_*` (plan, build order #3):
-# - `msg`, the message and the agent's summary, suggestion and draft, is a
-#   flat `sys.dataset` record (title, subtitle, as_of, summary, pick1_title,
-#   pick1_body), seeded from `data` because it names no `id`.
-# - `turns`, the Ask transcript, is `sys.news_digest` rows (id, title =
-#   the question, summary = the answer), seeded because it names no `query`.
-# - `asked`, the question a person sends, is the writable `sys.topics` source:
-#   `append($value)` is a §5.12 write the HOST performs (the card window
-#   appends the question and a canned answer to `turns`).
-# The summary, draft and answers are model-written text. L0 refuses
-# `model-copy` copy, so they arrive as host data and the card marks them
-# with an "AI" eyebrow. Send only moves the card to "Sent (demo)".
+# - The agent's words are the card's own `model-copy` (profile §4.2): the
+#   summary, the suggestion and the reply draft. A text slot shows them and
+#   the kit marks them AI-written; nothing acts on them. Reply writes the
+#   draft into `draft`, a text state, which the Field shows for editing;
+#   what the person sends is their own text.
+# - Ask is an in-card chat with Mail's agent (§5.15): `convo` is the host's
+#   `sys.chat` thread for this message, drawn with `ChatEntry`; a question
+#   committed in the Field is appended as the person's entry and the host
+#   appends the agent's reply (the canned demo answer, glance_chat.rs).
+# - `msg` (title, recipient line, time) is a flat `sys.dataset` record,
+#   seeded from `data`, standing in until Octoscript catalogs `sys.mail_*`
+#   (plan, build order #3). Send only moves the card to "Sent (demo)".
 
-source msg   sys.dataset(fields: [title, subtitle, as_of, summary, pick1_title, pick1_body])
-source turns sys.news_digest(count: 8, fields: [id, title, summary])
-source asked sys.topics(fields: [name])
+source msg   sys.dataset(fields: [title, subtitle, as_of])
+source convo sys.chat(app: "os.mail", thread: "ana-contract", fields: [entries, id, role, text])
 
 state mode     { shape: enum[brief, reply, ask, sent, done], initial: .brief }
-state draft    { shape: text, initial: msg.pick1_body }
+state draft    { shape: text, initial: "" }
 state question { shape: text, initial: "" }
 
-event reply  { mode: set(.reply) }
+event reply  { mode: set(.reply), draft: set(copy.draft) }
 event done   { mode: set(.done) }
 event ask    { mode: set(.ask) }
 event back   { mode: set(.brief) }
 event send   { mode: set(.sent) }
 event edit   { draft: set($value) }
 event typing { question: set($value) }
-event submit { asked: append($value), question: clear }
+event submit { convo: append($value), question: clear }
+
+copy gist     { class: model-copy, en: "Ana asks whether we can sign by Friday, and wants the revised payment terms before then." }
+copy suggest  { class: model-copy, en: "Suggested: Reply — confirm Friday" }
+copy draft    { class: model-copy, en: "Hi Ana, Friday works for us. I'll send the revised payment terms tomorrow morning." }
 
 copy app      { class: vocabulary, en: "Mail" }
-copy ai_sum   { class: vocabulary, en: "AI SUMMARY" }
-copy ai_draft { class: vocabulary, en: "AI DRAFT · EDIT BEFORE SENDING" }
-copy ai_chat  { class: vocabulary, en: "ASK MAIL'S AGENT" }
+copy h_sum    { class: vocabulary, en: "SUMMARY" }
+copy h_draft  { class: vocabulary, en: "DRAFT · EDIT BEFORE SENDING" }
+copy h_chat   { class: vocabulary, en: "ASK MAIL'S AGENT" }
 copy b_reply  { class: vocabulary, en: "Reply" }
 copy b_done   { class: vocabulary, en: "Mark done" }
 copy b_ask    { class: vocabulary, en: "Ask" }
@@ -70,9 +73,9 @@ view root Surface(pad: .tight) {
 }
 
 view brief Col(gap: 10) {
-  Row(gap: 6, align: .center) { Icon(name: .zap, size: .row) TextEyebrow(text: copy.ai_sum) }
-  TextBody(text: msg.summary, width: .fill)
-  TextRow(text: msg.pick1_title, width: .fill)
+  TextEyebrow(text: copy.h_sum)
+  TextBody(text: copy.gist, width: .fill)
+  TextRow(text: copy.suggest, width: .fill)
   Row(gap: 8) {
     Chip(text: copy.b_reply, on_tap: reply, tone: .primary)
     Chip(text: copy.b_done, on_tap: done)
@@ -82,7 +85,7 @@ view brief Col(gap: 10) {
 
 view compose Col(gap: 10) {
   TextCaption(value: msg.subtitle)
-  Row(gap: 6, align: .center) { Icon(name: .zap, size: .row) TextEyebrow(text: copy.ai_draft) }
+  TextEyebrow(text: copy.h_draft)
   Field(text: draft, on_change: edit, width: .fill)
   Row(gap: 8) {
     Chip(text: copy.b_cancel, on_tap: back)
@@ -91,10 +94,9 @@ view compose Col(gap: 10) {
 }
 
 view chat Col(gap: 8) {
-  Row(gap: 6, align: .center) { Icon(name: .zap, size: .row) TextEyebrow(text: copy.ai_chat) }
-  for t in turns key t.id {
-    Bubble(text: t.title, side: .me)
-    Bubble(text: t.summary, side: .them)
+  TextEyebrow(text: copy.h_chat)
+  for m in convo.entries key m.id {
+    ChatEntry(text: m.text, role: m.role)
   }
   Row(gap: 8, align: .center) {
     Field(text: question, placeholder: copy.hint, on_change: typing, on_commit: submit, width: .fill)

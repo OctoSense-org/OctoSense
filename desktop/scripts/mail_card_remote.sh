@@ -9,11 +9,14 @@
 # toast. Two runs:
 #
 # 1. the toasts; the Ana Lee toast opens THAT card in the card window
-#    (glance_sheet.rs), sized to the card; Reply shows the AI draft in a
-#    multi-line field; Send shows "Sent (demo)";
+#    (glance_sheet.rs), sized to the card, the agent's summary and
+#    suggestion marked AI-written; Reply writes the agent's draft into a
+#    multi-line field (marked); Send shows "Sent (demo)";
 #    ✕ closes it; the UPS toast opens the shipping card; Track; Esc closes.
-# 2. the Ana Lee card's Ask: the transcript; a typed question sent with the
-#    arrow adds itself and a canned answer.
+# 2. the Ana Lee card's Ask, an in-card chat with Mail's agent (`sys.chat`,
+#    glance_chat.rs): the host's transcript; a typed question sent with the
+#    arrow is recorded as the person's entry and the host appends the
+#    agent's reply (the canned demo answer), marked AI-written.
 #
 # Every step is checked in the log (the card window logs each tap it
 # carries out) and grabbed to <frames-dir>/NN-name.png. Each run ends with
@@ -106,13 +109,13 @@ grab 02-mail-card
 CARD=ana-contract
 pass "the toast opened the Ana Lee card in the card window (not the panel)"
 
-at 80 296 # Reply
+at 80 319 # Reply
 wait_log "tap reply (applied true, relower true)"
 grab 03-mail-reply-draft
-at 147 318 # Send
+at 147 326 # Send
 wait_log "tap send (applied true, relower true)"
 grab 04-mail-sent
-pass "Reply showed the AI draft; Send moved the card to Sent (demo)"
+pass "Reply showed the agent's draft, marked; Send moved the card to Sent (demo)"
 
 sheet ana-contract
 click "$CX" "$CY" # ✕
@@ -144,17 +147,19 @@ read -r TX TY <<<"$(toast_at ana-contract)"
 click "$TX" "$TY"
 wait_log "glance sheet: os.mail/ana-contract sheet@"
 CARD=ana-contract
-at 248 296 # Ask
+at 248 319 # Ask
 wait_log "tap ask (applied true, relower true)"
 grab 09-mail-ask-transcript
-at 150 300 # the question field
+at 150 308 # the question field
 type_text "When do they need the terms?"
 wait_log "tap typing (applied true, relower false)"
 grab 10-mail-ask-typed
-at 315 300 # ➤
+at 315 308 # ➤
 wait_log "tap submit (applied true, relower true)"
+wait_log "glance: os.mail chat convo recorded"
+sleep 1
 grab 11-mail-ask-answered
-pass "Ask showed the transcript; a sent question added itself and a canned answer"
+pass "Ask showed the host's transcript; a sent question became the person's entry and the agent's reply followed"
 key Escape
 wait_log "glance sheet: closed os.mail/ana-contract"
 grep -q "panicked" "$LOG" && fail "panic in $LOG"

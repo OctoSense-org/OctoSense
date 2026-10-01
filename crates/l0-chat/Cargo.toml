@@ -1,0 +1,20 @@
+# octosense-l0-chat: the host side of an L0 card's in-card chat (Octoscript
+# profile §5.15, `sys.chat` and `ChatEntry`), shared by every host path that
+# runs L0 cards: the shell's glance cards and card window, and AppCard.
+#
+# The host holds each app's conversations (one per thread), answers
+# `sys.chat` for the publishing app only, records what the person sends as a
+# `user` entry, runs the app's agent through a [`Responder`] and appends its
+# reply as a `model` entry (or a `host` notice). A card never writes a
+# `model` or `host` entry. Limits: text length, rate and retention.
+[package]
+name = "octosense-l0-chat"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+octoscript-ui-l0 = { workspace = true }

@@ -27,6 +27,7 @@ members = [
     "crates/shell",
     "crates/toolbox",
     "crates/process-apps",
+    "crates/l0-chat",
     "apps/reference",
     "apps/news/host-service",
     "apps/mail/host-service",
@@ -135,6 +136,9 @@ octosense-app-peers = { path = "crates/app-peers" }
 octosense-ai-host = { path = "crates/ai-host" }
 octosense-shell = { path = "crates/shell" }
 octosense-toolbox = { path = "crates/toolbox" }
+# An L0 card's in-card chat, host side (sys.chat): the shell's glance cards
+# and AppCard.
+octosense-l0-chat = { path = "crates/l0-chat" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }

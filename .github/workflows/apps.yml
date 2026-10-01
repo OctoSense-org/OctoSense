@@ -75,6 +75,10 @@ jobs:
           cargo clippy --locked -p octosense-app-peers --all-targets --features octos-core,ws --no-deps -- -D warnings
       - name: AI providers config
         run: cargo test --locked -p octosense-llm-config
+      - name: L0 in-card chat (sys.chat, host side)
+        run: |
+          cargo test --locked -p octosense-l0-chat
+          cargo clippy --locked -p octosense-l0-chat --all-targets --no-deps -- -D warnings
       - name: System toolbox (workflow templates)
         run: |
           cargo fmt -p octosense-toolbox --check
