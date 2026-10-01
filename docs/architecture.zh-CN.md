@@ -126,7 +126,7 @@ Shell 在运行时如何决定（`crates/shell/src/apps.rs`，`AppRegistry::host
 **进程托管**使用 Makepad 窗口管理器的托管机制（`crates/shell/src/clients.rs`、`hub.rs`）：
 
 - Shell 以 `--stdin-loop` 启动应用子进程（在源码检出中为 `cargo run … -- --stdin-loop`，否则为同目录下的二进制），放在独立的进程组中，并设置 `STUDIO_HOST=http://127.0.0.1:<hub 端口>` 和其客户端 id。
-- 子进程回连 Shell 的 **hub**：Shell 在回环地址 8765–8785 中第一个空闲端口上绑定的 HTTP/WebSocket 服务（`WmHub::start`），使用 Makepad 的 studio 协议（`AppToStudio` / `StudioToApp`）。
+- 子进程回连 Shell 的 **hub**：Shell 在回环地址 8765–8785 中第一个空闲端口上绑定的 HTTP/WebSocket 服务（`WmHub::start`），使用 Makepad 的 studio 协议（`AppToStudio` / `StudioToApp`）。hub 只接受出示了 Shell 写入该子进程 stdin 的本次启动密钥的连接，每次启动只接受一次，并拒绝浏览器来源（[ADR 0004 §5](adr/0004-native-apps-hosting-and-peers.md#5-the-peer-link-for-process-hosted-native-apps)）。
 - 在操作系统允许时，画面以零拷贝方式到达合成器（在 Makepad `platform/src/os` 中实现）：macOS 上用 IOSurface，Windows 上用 D3D11 共享句柄，Linux 在 Vulkan 加 Wayland 下用 DMA_BUF；Linux 的 OpenGL 构建则每帧经 CPU 回读。
 - 进程应用崩溃只影响它自己：Shell 移除其客户端并显示 “App stopped”。（目前只有进程内模块有 Restart 界面；见[不一致之处](#代码与-adr-不一致之处)。）
 
@@ -276,7 +276,7 @@ Agent 的工具来源：
 
 **系统 Agent 的工具集**（`crates/kernel/src/system_tools.rs`，[#117](https://github.com/OctoSense-org/OctoSense/pull/117)）。**已在 main**，部分生效：
 
-- 默认列表 `SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`、`peer_close`；不含 `peer_handoff`）、其工作区的文件工具、`ask_user_question` 和查看媒体、记忆、`web_search` / `web_fetch`、`tool_search`。授权在此基础上增加（`SystemAgentTools`：工具箱工具、其他应用的可共享工具、命令执行）。
+- 默认列表 `SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`；不含 `peer_handoff`，也不含 `peer_close`，`_main` 配置文件的 `tool_policy` 对所有智能体禁用它）、其工作区的文件工具、`ask_user_question` 和查看媒体、记忆、`web_search` / `web_fetch`、`tool_search`。授权在此基础上增加（`SystemAgentTools`：工具箱工具、其他应用的可共享工具、命令执行）。
 - **从不提供 octos 自己的 shell。** 每次启动内核前，`enforce` 写入 `_main` profile 的 `tool_policy`，拒绝 `group:runtime`（`shell`、`bash`、`exec_command`、`write_stdin`）。它只替换 OctoSense 自己写的策略，并拒绝用户自己的 octos 主目录。
 - **还不是精确列表。** octos#2567 的宿主会话集合可以用 `generic_tools` 收窄会话，但 Shell 注册时不传它（按 #2567 的约定：该列表会收窄该会话上所有客户端的回合），因此系统 Agent 仍会得到 octos 注册的其余所有工具；精确列表的测试已保留但被忽略（持久的宿主专用列表是 octos#2605）。
 - **从 Settings 开启命令执行**（默认关闭，每条命令实时批准）：Setup › Assistant › Command execution 设置授权；开启期间，系统对话在自己的连接上把 `terminal.run` 注册到系统会话（不带 `peer` 的 `peer/tools/register`），关闭时立即撤回。octos 以某个应用 peer 的宿主令牌作为凭据，因此在某个应用的 Agent 启动之前，对话会说明暂时无法提供。
