@@ -893,3 +893,20 @@ fn dev_runs_approval_is_a_command_developer_mode_answers_for_a_covered_app() {
         assert_eq!(answers.lock().unwrap().as_slice(), if answered { &[true][..] } else { &[][..] });
     }
 }
+
+/// ADR 0004 §11 gap 7 (octos#2647 `read_parent`): an app's conversation reads
+/// its account's folder only where the manifest says its agent works there
+/// (`storage.agent_workspace: "account"`, the default) and the agent has
+/// that workspace now (an app whose agent has no files, a suspended or a
+/// refused account gets none).
+#[test]
+fn a_conversation_reads_the_account_folder_only_where_the_agent_works_there() {
+    use crate::app_storage::{AgentWorkspace, StorageSpec};
+    let folder = std::path::Path::new("/octosense/apps/rinx/accounts/a");
+    let account = StorageSpec { agent_workspace: AgentWorkspace::Account, ..Default::default() };
+    let none = StorageSpec { agent_workspace: AgentWorkspace::None, ..Default::default() };
+    assert!(super::reads_account(&account, Some(folder)));
+    assert!(super::reads_account(&StorageSpec::default(), Some(folder)), "\"account\" is the default");
+    assert!(!super::reads_account(&account, None), "no workspace now: fenced");
+    assert!(!super::reads_account(&none, Some(folder)), "agent_workspace none: fenced");
+}

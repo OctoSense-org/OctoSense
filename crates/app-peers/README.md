@@ -95,6 +95,14 @@ service.release();                            // app closed
   `peer_purge_busy`, then drops the record (`<ns>.peer`) and makes every
   live broker of the app forget the peer. Adding the account again makes a
   new peer. Signing out never purges.
+- **The app's conversation reads the account folder** (ADR 0004 §11):
+  where the host says the agent works in the account folder
+  (`ToolHost::context_reads_account`; the shell: the manifest's
+  `storage.agent_workspace` is `"account"` and the agent has that
+  workspace), the person's lane is opened with octos's `read_parent`
+  (octos#2647): read-only, never another context's folder. A kernel that
+  ignores it is refused. A client's request context (`open_context`, a
+  Rinx mini app) stays fenced to its own folder.
 - **Nobody answers**: an approval or question on the peer's session or a
   context expires after `BrokerConfig::prompt_deadline` (10 min;
   `OCTOSENSE_PROMPT_DEADLINE_SECS` overrides it): denied or declined with

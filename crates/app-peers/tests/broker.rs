@@ -37,6 +37,8 @@ struct Script {
     peer_history: Vec<Value>,
     /// peer/context/open ignores `share_history` (a kernel before it).
     no_share_history: bool,
+    /// peer/context/open ignores `read_parent` (a kernel before octos#2647).
+    no_read_parent: bool,
     connects: usize,
     /// Like octos: each staged peer's workspace by name; a resume must name
     /// the same one (no `cwd`: the kernel's `/kernel/ws`), and a `cwd` must
@@ -196,7 +198,8 @@ impl Connector for FakeConnector {
                                 params["peer"].as_str().unwrap(),
                                 params["context_id"].as_str().unwrap()
                             );
-                            let mut result = json!({"session_id": session, "created": true, "share_history": null});
+                            let read_parent = params["read_parent"] == json!(true) && !script.lock().unwrap().no_read_parent;
+                            let mut result = json!({"session_id": session, "created": true, "share_history": null, "read_parent": read_parent});
                             if params.get("share_history").is_some() && !no_share {
                                 result["share_history"] = json!({"last_n": 20, "max_bytes": 16384});
                             }
@@ -576,6 +579,8 @@ struct RecordingHost {
     generic: Mutex<Option<Vec<String>>>,
     /// Refuse each `peer/input` with this.
     refuse_input: Mutex<Option<InputRefusal>>,
+    /// The app's conversation reads the account folder (`read_parent`).
+    reads_account: Mutex<bool>,
 }
 
 impl ToolHost for RecordingHost {
@@ -593,6 +598,9 @@ impl ToolHost for RecordingHost {
     }
     fn workspace_refused(&self, _app: &str, _account: &str) -> Option<String> {
         self.refused.lock().unwrap().clone()
+    }
+    fn context_reads_account(&self, _app: &str, _account: &str) -> bool {
+        *self.reads_account.lock().unwrap()
     }
     fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
         if let Some(outcome) = self.answer.lock().unwrap().clone() {
@@ -2484,4 +2492,58 @@ fn uninstalling_purges_every_recorded_account_of_the_app() {
     assert_eq!(calls_of(&script, "peer/purge").len(), 2);
     // Another app's records are not touched.
     assert!(purge(&script, &dir, "other", None).erased.is_empty());
+}
+
+// ---------------------------------------------------------------- read_parent (octos#2647)
+
+/// ADR 0004 §11 gap 7: where the agent reads its account's folder (the host
+/// says so from the manifest's `storage.agent_workspace`), the app's
+/// conversation (the person's lane) is opened with `read_parent`: a
+/// read-only view of the account folder. A plain request context (an app's
+/// client, a Rinx mini app) never is, nor is any context of a host that does
+/// not say so (the default).
+#[test]
+fn the_apps_conversation_reads_the_account_folder_when_the_host_says_so() {
+    let host = Arc::new(RecordingHost::default());
+    *host.reads_account.lock().unwrap() = true;
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "rinx-ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "what's in my notes".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    complete(&rx).unwrap();
+    let mini = broker.open_context(spec("@a:x", "mini.news#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    mini.call(ContextOp::Turn { text: "hi".into() }, sink).unwrap();
+    complete(&rx).unwrap();
+    let opens = calls_of(&script, "peer/context/open");
+    assert_eq!(opens.len(), 2);
+    assert_eq!(opens[0].1["read_parent"], json!(true), "the conversation: {:?}", opens[0].1);
+    assert!(opens[1].1.get("read_parent").is_none(), "a mini app's context stays fenced: {:?}", opens[1].1);
+
+    // The default host: fenced.
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), None);
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "rinx-ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "hi".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    complete(&rx).unwrap();
+    assert!(calls_of(&script, "peer/context/open")[0].1.get("read_parent").is_none());
+}
+
+/// A kernel that ignores `read_parent` (before octos#2647) would open the
+/// conversation fenced: refused, never run without the account's files.
+#[test]
+fn a_kernel_without_read_parent_is_refused_for_the_conversation() {
+    let host = Arc::new(RecordingHost::default());
+    *host.reads_account.lock().unwrap() = true;
+    let (broker, script) = new_broker_with(&ALL, Some(host), None);
+    script.lock().unwrap().no_read_parent = true;
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "rinx-ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "hi".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    let err = complete(&rx).unwrap_err();
+    assert!(err.contains("read_parent"), "{err}");
+    assert!(calls_of(&script, "turn/start").is_empty());
 }
