@@ -26,6 +26,8 @@ libc = "0.2"
 # App storage (ADR 0004 §11): the account hash that names account folders;
 # the approvals audit's digest of each call's arguments.
 sha2 = "0.10"
+# The hub's per-launch connect secrets (hub.rs): v4 UUIDs from the OS CSPRNG.
+uuid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # `appcard,maps`: the AppCard widget set (kit, text roles, weather,
@@ -53,6 +55,10 @@ octosense-appstore = { workspace = true, optional = true }
 # a card under its app's policy (glance_card.rs).
 octosense-app-policy = { workspace = true, optional = true }
 octosense-app-hub = { workspace = true, optional = true }
+# The app contract (OctoSense ADR 0005): the manifest, policy limits and
+# digests the shell reads itself, by version, the one copy App Hub and Rinx
+# link too.
+octosense-app-contract = { workspace = true, optional = true }
 makepad-aichat = { workspace = true, optional = true }
 # The native apps this shell can link (native-apps.json), each behind its
 # `app-<id>` feature. Rinx gets the assistant only through the injected
@@ -82,6 +88,7 @@ octosense-app-hub-app = { workspace = true }
 octosense-appstore = { workspace = true }
 octosense-app-policy = { workspace = true }
 octosense-app-hub = { workspace = true }
+octosense-app-contract = { workspace = true }
 octosense-mail-service = { workspace = true }
 octosense-news-service = { workspace = true }
 octosense-ai-host = { workspace = true, features = ["llm"] }
@@ -104,7 +111,7 @@ app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 app-terminal = ["dep:makepad-terminal"]
 app-appcard = ["dep:octosense-appcard", "octos-core"]
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-mail-service", "dep:octosense-news-service", "octosense-ai-host/llm"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-news-service", "octosense-ai-host/llm"]
 # END native-apps: features
 # The aichat module, seated in the pane in-process.
 app-aichat = ["dep:makepad-aichat"]

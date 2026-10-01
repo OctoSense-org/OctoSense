@@ -103,6 +103,17 @@ fn the_account_hash_is_stable_normalized_and_opaque() {
     assert_eq!(normalize_account(" X@Y "), "x@y");
 }
 
+/// One account key: the folder name and the agent's memory tag agree on
+/// which ids are one account.
+#[test]
+fn should_key_the_folder_and_the_memory_tag_the_same_way_when_ids_differ_in_case() {
+    use crate::ai_host::app_peers::broker::account_tag;
+    for (a, b) in [("Alice@Example.org", "alice@example.org"), (" @bob:x ", "@bob:x"), ("alice@example.org", "bob@example.org")] {
+        assert_eq!(account_hash(a) == account_hash(b), account_tag(a) == account_tag(b), "{a:?} / {b:?}");
+    }
+    assert_eq!(normalize_account(" X@Y "), crate::ai_host::app_peers::storage::normalize_account(" X@Y "));
+}
+
 /// `SHA-256("octosense.account.v1\0alice@example.org")`, first 16 bytes.
 const PINNED_ALICE: &str = "d0c3ec9a8159479a7cf0933b0a539aa2";
 
@@ -531,4 +542,23 @@ fn a_platform_host_in_tests_keeps_secrets_in_files() {
     assert!(home.0.join("secrets/probe/k").is_file());
     host.uninstall("probe").unwrap();
     assert!(!home.0.join("secrets/probe").exists());
+}
+
+/// The host's answer to the broker: a refused workspace is refused for the
+/// account the relay keys it by (an app with accounts: that account; a
+/// script app's `card.<id>` peer: the device), for prepare, resume, input
+/// and calls alike.
+#[cfg(unix)]
+#[test]
+fn should_answer_refused_for_the_peers_account_when_the_startup_check_flags_it() {
+    let (home, host, ws, secret) = populated("host-refused");
+    let notes = host.open("notes").unwrap().account_folder(None).unwrap();
+    std::os::unix::fs::symlink(&secret, ws.join("token")).unwrap();
+    std::os::unix::fs::symlink(&secret, notes.join("token")).unwrap();
+    host.startup_check();
+    let why = crate::host_tools::workspace_refused_in(&host, "rinx", "alice");
+    assert!(why.is_some_and(|w| w.contains("secrets")), "rinx keeps accounts: alice's folder is refused");
+    assert!(crate::host_tools::workspace_refused_in(&host, "rinx", "bob").is_none(), "another account is not");
+    assert!(crate::host_tools::workspace_refused_in(&host, "card.notes", "anyone").is_some(), "a script app's peer uses the device folder");
+    drop(home);
 }

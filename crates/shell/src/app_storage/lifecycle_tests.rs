@@ -299,3 +299,27 @@ fn settings_says_a_suspended_agents_memory_remains() {
     let text = agent_state_text(&State::Allowed, memory_notice(&host, "rinx"));
     assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until octos can erase it");
 }
+
+/// A script app never takes a native app's id (ADR 0004 §3, §11): an
+/// install or launch naming `rinx` leaves Rinx's spec alone, and an
+/// install event naming it never deletes Rinx's folders or secrets.
+#[test]
+fn a_script_app_with_a_native_apps_id_touches_none_of_its_storage() {
+    let home = Scratch::new("native-id");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    host.set_spec("rinx", StorageSpec { accounts: true, ..Default::default() });
+    let rinx = host.open("rinx").unwrap();
+    rinx.account_folder(Some("@me:x")).unwrap();
+    rinx.secrets().put("token", b"t").unwrap();
+    write_json(&root.join("rinx/bundle/manifest.json"), &json!({"id": "rinx"}));
+
+    assert!(prepare_script_app(&host, &root, "rinx").unwrap_err().contains("native app"));
+    assert!(prepare_script_app(&host, &root, "com.example.rinx").is_err(), "nor its namespace");
+    assert!(host.spec("rinx").accounts, "Rinx's own block holds");
+
+    std::fs::remove_dir_all(root.join("rinx")).unwrap();
+    assert!(!app_uninstalled(&host, &root, "rinx"));
+    assert!(home.0.join("secrets/rinx").is_dir(), "Rinx's secrets stay");
+    assert!(!host.is_signed_out("rinx", Some("@me:x")));
+}

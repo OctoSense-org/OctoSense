@@ -28,6 +28,10 @@ Start every session with `python3 tools/setup.py` (it prepares `.sources/`, and 
 
 On a machine that already has clones of Makepad, OctoScript or Octoscript-Makepad, never let setup clone them again: name the clones as a hub (`~/.config/octosense/sources.json`, `--hub DIR` or `OCTOSENSE_SOURCES_HUB`; see the README's Set up) so every `.sources/` entry is a `git worktree` of the one clone, and run `python3 tools/setup.py --remove-worktrees` before deleting a checkout of this repository.
 
+## Local CI
+
+`tools/ci-local.sh --only all` (or `desktop`, `phone`, `apps`, `rom`) runs the workflows' `run:` steps verbatim on this machine, prints PASS, FAIL or SKIPPED per step, and writes `target/ci-local/last.json`. At most two runs share a machine; the others wait. When the GitHub macOS queue is saturated, you may merge on a local pass. First rebase the branch on `origin/main`, then run it on the exact head, then run `tools/ci-local-merge.sh <PR>`. That script checks the evidence, comments the summary on the PR, and merges with `--admin`. A SKIPPED step did not pass. GitHub CI runs on every push to `main`, including these merges. Main runs share one group per workflow (`<workflow>-main`) that cancels older ones, so only the newest main commit's run completes. A failure there is fixed before anything else is merged. See [docs/local-ci.md](docs/local-ci.md).
+
 ## Rules
 
 1. **One change, one pull request.** Branch from `main`; the shell, its services and the apps change together, so there are no internal pins to move. Never push to or force-push `main`.
