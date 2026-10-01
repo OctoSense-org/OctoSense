@@ -51,14 +51,20 @@ Two stages keep it cheap. Each new email gets a short triage call (`{important, 
 
 **Privacy:** the text of each new email goes to the model provider for triage. The agent's memory can hold "never send mail from <sender> to the model", and the host then skips those messages before any model call.
 
-## The card: the LLM writes L0 only
+## The card: L0, relaxed for model-written content (decided 2026-10-01)
 
-The card follows the L0 design. The model writes **only an L0 card** (declarative: sources, state, events, copy, view), checked by `check_ui_l0` with up to three repair rounds, as in AppCard (`L0_REPAIR_BUDGET`). It writes no L1 (arithmetic) and never L2 (imperative). The trusted theme kit (`Octoscript-Makepad/components/l0/_kit.octoscript`) turns roles into widgets.
+Cards are no longer only generated in real time. The model also fills them with its own words, such as a summary, a draft or a research report, and the person chats with the agent inside the card. So two L0 rules are relaxed:
+
+- **Model-written text is allowed in a card,** in text slots with an *AI-written* provenance. Today the L0 checker refuses model copy; that refusal is lifted for these slots. Model text is always shown as plain text, with no markup, no acting links and no code, and labelled as AI-written so the person can tell it from the email's own content.
+- **Actions stay strict.** Send, Mark done and every other effect go only through declared actions the host checks. Model text can never trigger, retarget or change an action. This is what keeps an email's content (prompt injection) from steering the card.
+- **A chat component:** a new L0 component, a transcript plus an input, bound to the card's thread. Messages go to the owning app's agent in the person's lane (`octos.turn.start`), and answers appear in the card.
+
+Within those rules the card follows the L0 design. The model writes **an L0 card** (layout and its text) (declarative: sources, state, events, copy, view), checked by `check_ui_l0` with up to three repair rounds, as in AppCard (`L0_REPAIR_BUDGET`). It writes no L1 (arithmetic) and never L2 (imperative). The trusted theme kit (`Octoscript-Makepad/components/l0/_kit.octoscript`) turns roles into widgets.
 
 - **A new a2app L0 app:** `apps/appcard/a2app-l0/apps/email/{app.md, exemplar.card}`, with one exemplar per category shape (in the `email-card` skill), registered like the other L0 apps.
 - **New `sys.mail_*` sources:** declared in Octoscript's `docs/ui-l0-constructors.toml` (then the catalog is regenerated):
   - `sys.mail_message(id, fields)`, read-only: from, subject, date, body;
-  - `sys.mail_draft(id, fields:[body])`, writable (`set`/`clear`): the draft, which the agent fills **as host data** through a Mail tool, because a draft written as model copy is refused by the checker;
+  - `sys.mail_draft(id, fields:[body])`, writable (`set`/`clear`): the draft. The agent may write it directly as AI-written text (the relaxed rule), and the person edits it before sending;
   - **Send**, as a real action that sends real email: see open decision 1.
 - **A multi-line text field** for the draft body: a new argument or role in the constructors TOML, plus its kit piece and widget.
 - **Before typed text may drive a send:** the 2026-09-04 L0 review found that `on_change`/`on_return` targets are built by unescaped string concatenation (typed text could redirect a tap). That fix comes first.
@@ -147,7 +153,7 @@ Today the desktop shows toasts only (no notification centre), and clicking one o
 | --- | --- | --- |
 | 1 | Card visual design: L0 exemplars per category, rendered for review | `apps/appcard/a2app-l0/apps/email/` |
 | 2 | Fix the L0 typed-text target escaping (the review finding) | AppCard / Octoscript-Makepad kit |
-| 3 | `sys.mail_*` sources; the multi-line field; the send action (decision 1) | Octoscript TOML, Octoscript-Makepad kit, OctoSense host |
+| 3 | `sys.mail_*` sources; the multi-line field; the send action (decision 1); the relaxed checker for AI-written text slots; the chat component | Octoscript (checker, TOML), Octoscript-Makepad kit, OctoSense host |
 | 4 | Mail host service: background sync, the new-mail event and ledger, `mail.draft_reply`, `mail.publish_card` | `apps/mail/host-service` |
 | 5 | Mail's manifest, `tools.json`, `AGENTS.md`, skills; skills copied into the workspace; the shell's `incoming` trigger | `apps/mail/bundle`, `crates/shell` |
 | 6 | Glance: write dispatch for L0 cards; toast opens the card; card window; history | `crates/shell` (glance, notifications) |
