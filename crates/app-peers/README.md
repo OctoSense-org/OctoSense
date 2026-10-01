@@ -93,8 +93,12 @@ service.release();                            // app closed
   `peer/purge` for each (app, account) peer the host recorded (its name and
   host token, owned by the system agent; octos#2649), retries
   `peer_purge_busy`, then drops the record (`<ns>.peer`) and makes every
-  live broker of the app forget the peer. Adding the account again makes a
-  new peer. Signing out never purges.
+  live broker of the app forget the peer. A record saved before records
+  carried the peer's name is tried under each name the host can derive
+  (`<label> <8 hex>` for the labels it passes and the label a broker of
+  the app used in this process); `peer_not_found` there is a failure and
+  the record is kept. Adding the account again makes a new peer. Signing
+  out never purges.
 - **Nobody answers**: an approval or question on the peer's session or a
   context expires after `BrokerConfig::prompt_deadline` (10 min;
   `OCTOSENSE_PROMPT_DEADLINE_SECS` overrides it): denied or declined with

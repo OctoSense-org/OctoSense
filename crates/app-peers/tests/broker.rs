@@ -46,6 +46,9 @@ struct Script {
     out: Vec<Option<mpsc::UnboundedSender<String>>>,
     /// The next this-many peer/purges are refused `peer_purge_busy`.
     purge_busy: usize,
+    /// Like octos: the slugs of the peers staged (`peer/prepare`); a purge
+    /// of any other name is refused `peer_not_found`.
+    staged: std::collections::HashSet<String>,
 }
 
 struct FakeConnector(Arc<Mutex<Script>>);
@@ -143,6 +146,7 @@ impl Connector for FakeConnector {
                                 .unwrap()
                                 .to_lowercase()
                                 .replace(' ', "-");
+                            script.lock().unwrap().staged.insert(name.clone());
                             let cwd = params["cwd"].as_str().unwrap_or("/kernel/ws").to_owned();
                             let checked = {
                                 let mut s = script.lock().unwrap();
@@ -225,15 +229,19 @@ impl Connector for FakeConnector {
                         "session/hydrate" => send(reply(json!({"messages": history}))),
                         "peer/tools/unregister" => send(reply(json!({"slug": params["peer"], "profile_id": "_main", "unregistered": true}))),
                         "peer/purge" => {
-                            let busy = {
+                            let slug = params["peer"].as_str().unwrap_or("").to_lowercase().replace(' ', "-");
+                            let (busy, staged) = {
                                 let mut s = script.lock().unwrap();
                                 let busy = s.purge_busy > 0;
                                 s.purge_busy = s.purge_busy.saturating_sub(1);
-                                busy
+                                (busy, s.staged.contains(&slug))
                             };
-                            if busy {
+                            if !staged {
+                                send(refuse("peer_not_found"));
+                            } else if busy {
                                 send(refuse("peer_purge_busy"));
                             } else {
+                                script.lock().unwrap().staged.remove(&slug);
                                 send(reply(json!({"session_id": params["session_id"], "slug": params["peer"], "purged": true, "already_purged": false})));
                             }
                         }
@@ -2400,7 +2408,7 @@ fn purge(script: &Arc<Mutex<Script>>, dir: &std::path::Path, app: &str, account:
     let connector = FakeConnector(script.clone());
     let host = purge_host(dir);
     tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
-        .block_on(octosense_app_peers::purge::purge_app(&connector, &host, app, "Rinx", account))
+        .block_on(octosense_app_peers::purge::purge_app(&connector, &host, app, &["Rinx".to_owned()], account))
 }
 
 /// ADR 0004 §11: removing an account erases its agent. The host names the
@@ -2484,4 +2492,51 @@ fn uninstalling_purges_every_recorded_account_of_the_app() {
     assert_eq!(calls_of(&script, "peer/purge").len(), 2);
     // Another app's records are not touched.
     assert!(purge(&script, &dir, "other", None).erased.is_empty());
+}
+
+
+/// A record saved before records carried the peer's name: the host guesses
+/// the broker's name, `<label> <8 hex>`, from the labels the app may have
+/// been hosted under. A wrong guess (`peer_not_found`) is NOT success: the
+/// record is kept (the agent stays suspended, octos may still hold its
+/// memory) until a label that names the staged peer purges it.
+#[test]
+fn a_legacy_record_without_a_name_is_purged_only_under_a_name_the_kernel_knows() {
+    use octosense_app_peers::peer_record::{self, PeerRecord};
+    let dir = scratch("purge-legacy");
+    let script = Arc::new(Mutex::new(Script::default()));
+    let key = app_namespace("legacy.app", "@a:x");
+    let tag = account_tag("@a:x");
+    peer_record::save(&dir, &key, &PeerRecord { token: "fixture-host-token".into(), cwd: None, namespace: None, name: None, legacy: false }).unwrap();
+    // The kernel staged it as a native host named it: "Legacy <8 hex>".
+    script.lock().unwrap().staged.insert(format!("legacy-{}", &tag[..8]));
+    let connector = FakeConnector(script.clone());
+    let host = purge_host(&dir);
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+
+    let wrong = rt.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &["legacy.app".to_owned()], Some("@a:x")));
+    assert!(wrong.erased.is_empty(), "{wrong:?}");
+    assert!(wrong.failed[0].1.contains("peer_not_found"), "{wrong:?}");
+    assert!(peer_record::load(&dir, &key).is_some(), "kept: the agent was not erased");
+
+    let labels = ["legacy.app".to_owned(), "Legacy".to_owned()];
+    let right = rt.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &labels, Some("@a:x")));
+    assert!(right.ok(), "{right:?}");
+    assert!(peer_record::load(&dir, &key).is_none());
+    let tried: Vec<String> = calls_of(&script, "peer/purge").iter().map(|(_, p)| p["peer"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(tried, [format!("legacy.app {}", &tag[..8]), format!("legacy.app {}", &tag[..8]), format!("Legacy {}", &tag[..8])]);
+}
+
+/// A RECORDED name the kernel does not know means the peer is gone (a
+/// kernel whose data was reset): the record is dropped.
+#[test]
+fn a_recorded_name_the_kernel_does_not_know_is_gone() {
+    use octosense_app_peers::peer_record::{self, PeerRecord};
+    let dir = scratch("purge-gone");
+    let script = Arc::new(Mutex::new(Script::default()));
+    let key = app_namespace("gone.app", "@a:x");
+    peer_record::save(&dir, &key, &PeerRecord { token: "fixture-host-token".into(), cwd: None, namespace: None, name: Some("Gone 1".into()), legacy: false }).unwrap();
+    let done = purge(&script, &dir, "gone.app", Some("@a:x"));
+    assert!(done.ok(), "{done:?}");
+    assert!(peer_record::load(&dir, &key).is_none());
 }
