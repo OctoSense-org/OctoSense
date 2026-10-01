@@ -195,10 +195,10 @@ fn rebuild_memories(){
     for m in saved_memories { memories.push(m) }
     for m in build_memories() { memories.push(m) }
 }
-fn read_memory_snapshot(path){
+fn read_memory_snapshot(name){
     try {
-        if !fs.exists(path) { return nil }
-        let raw = fs.read(path)
+        if !fs.exists(data_path(name)) { return nil }
+        let raw = fs.read(data_path(name))
         let data = raw.parse_json()
         // parse_json can accept an incomplete value. Our own compact format
         // must round-trip exactly, including the closing delimiters.
@@ -209,12 +209,12 @@ fn read_memory_snapshot(path){
         if !items.is_array() { return nil }
         let checked = checked_memories(items, catalog_ids(), 12)
         if checked.len() != items.len() { return nil }
-        {memories: checked revision: revision path: path}
+        {memories: checked revision: revision path: data_path(name)}
     } catch { nil }
 }
 fn load_memories(){
-    let loaded = read_memory_snapshot(DATA + "memories.json")
-    let backup = read_memory_snapshot(DATA + "memories-backup.json")
+    let loaded = read_memory_snapshot("memories.json")
+    let backup = read_memory_snapshot("memories-backup.json")
     if backup != nil && (loaded == nil || backup.revision > loaded.revision) { loaded = backup }
     saved_memories = []
     memory_revision = 0
@@ -230,12 +230,12 @@ fn persist_memories(items){
     // No rename API is available in the app jail. Alternate snapshots so a
     // failed/truncated write never overwrites the last verified collection.
     try {
-        let path = DATA + "memories.json"
-        if memory_file == path { path = DATA + "memories-backup.json" }
+        let name = "memories.json"
+        if memory_file == data_path(name) { name = "memories-backup.json" }
         let data = {version: 1 revision: memory_revision + 1 memories: items}.to_json()
-        fs.write(path, data)
-        if fs.read(path) != data { return false }
-        memory_file = path
+        fs.write(data_path(name), data)
+        if fs.read(data_path(name)) != data { return false }
+        memory_file = data_path(name)
         memory_revision = memory_revision + 1
         true
     } catch { false }
