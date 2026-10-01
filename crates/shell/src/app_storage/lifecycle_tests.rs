@@ -297,5 +297,71 @@ fn settings_says_a_suspended_agents_memory_remains() {
     host.sign_out("rinx", Some("a"));
     host.remove_account("rinx", Some("b")).unwrap();
     let text = agent_state_text(&State::Allowed, memory_notice(&host, "rinx"));
-    assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until octos can erase it");
+    assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until the account is removed and its agent erased");
+}
+
+// ---- erasing the agent (peer/purge, octos#2649) ----------------------------
+
+/// The purge requests for apps whose id starts with `prefix` (other tests
+/// running at the same time remove accounts too), answered with `erased`.
+fn recording_purger(prefix: &'static str, erased: bool) -> Arc<Mutex<Vec<PurgeRequest>>> {
+    let seen: Arc<Mutex<Vec<PurgeRequest>>> = Arc::default();
+    let log = seen.clone();
+    set_purger(Some(Arc::new(move |request: PurgeRequest, done: Box<dyn FnOnce(bool) + Send>| {
+        if request.app.starts_with(prefix) {
+            log.lock().unwrap().push(request);
+            done(erased);
+        }
+    })));
+    seen
+}
+
+/// ADR 0004 §11: removing an account deletes its folder, then erases its
+/// agent (under both ids it may have: a native app's own, a script app's
+/// `card.<id>`); once erased its suspension is forgotten, so Settings says
+/// no memory remains and adding the account again makes a new agent. An
+/// erase that failed keeps it suspended. Uninstalling erases every account's
+/// agent and forgets the app's suspensions.
+#[test]
+fn removing_an_account_or_uninstalling_erases_the_agents_after_the_folders() {
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("purge");
+    let host = storage(&home.0);
+    let seen = recording_purger("org.purge.", true);
+    host.set_spec("org.purge.mail", StorageSpec { accounts: true, ..Default::default() });
+    let added = AccountEvent::Added { app_id: "org.purge.mail".into(), account: "id1".into() };
+    let Change::SignedIn { folder, .. } = mail_account(&host, &added) else { panic!() };
+    let removed = AccountEvent::Removed { app_id: "org.purge.mail".into(), account: "id1".into() };
+    mail_account(&host, &removed);
+    assert!(!folder.exists(), "the folder first");
+    assert_eq!(*seen.lock().unwrap(), vec![PurgeRequest {
+        app: "org.purge.mail".into(),
+        service_apps: vec!["org.purge.mail".into(), "card.org.purge.mail".into()],
+        account: Some("id1".into()),
+    }]);
+    assert!(!host.is_signed_out("org.purge.mail", Some("id1")), "erased: nothing left to suspend");
+    assert_eq!(memory_notice(&host, "org.purge.mail"), None);
+
+    // An erase that failed: the agent stays suspended and Settings says so.
+    set_purger(None);
+    let _failed = recording_purger("org.purge.", false);
+    mail_account(&host, &added);
+    mail_account(&host, &removed);
+    assert!(host.is_signed_out("org.purge.mail", Some("id1")));
+    assert!(memory_notice(&host, "org.purge.mail").is_some());
+
+    // Uninstall: every account's agent, then the app's suspensions go.
+    set_purger(None);
+    let seen = recording_purger("org.purge.", true);
+    let root = host.layout().apps_root().to_path_buf();
+    write_json(&root.join("org.purge.chat/bundle/manifest.json"), &json!({"id": "org.purge.chat"}));
+    host.set_spec("org.purge.chat", StorageSpec { accounts: true, ..Default::default() });
+    host.open("org.purge.chat").unwrap().account_folder(Some("me")).unwrap();
+    std::fs::remove_dir_all(root.join("org.purge.chat")).unwrap();
+    assert!(app_uninstalled(&host, &root, "org.purge.chat"));
+    assert_eq!(seen.lock().unwrap().last().unwrap().account, None, "every account");
+    assert!(!host.is_signed_out("org.purge.chat", Some("me")));
+    assert_eq!(memory_notice(&host, "org.purge.chat"), None);
+    assert!(!storage(&home.0).is_signed_out("org.purge.chat", Some("me")), "across a restart");
+    set_purger(None);
 }

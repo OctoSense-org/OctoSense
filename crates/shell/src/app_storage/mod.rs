@@ -483,8 +483,31 @@ impl Storage {
         }
     }
 
+    /// The account's agent was erased (`peer/purge`, after
+    /// [`Storage::remove_account`]): nothing of it is left to suspend.
+    /// Adding the account again makes a new agent.
+    pub fn forget_account(&self, app_id: &str, account: Option<&str>) {
+        let mut state = self.state();
+        if state.signed_out.remove(&Self::key(app_id, account)) {
+            self.save_suspended(&state);
+        }
+    }
+
+    /// Every agent of an uninstalled app was erased (`peer/purge`, after
+    /// [`Storage::uninstall`]): no suspension of it is kept, so installing
+    /// it again starts with new agents.
+    pub fn forget_agents(&self, app_id: &str) {
+        let mut state = self.state();
+        let before = state.signed_out.len();
+        state.signed_out.retain(|(app, _)| app != app_id);
+        let changed = state.uninstalled.remove(app_id).is_some() || state.signed_out.len() != before;
+        if changed {
+            self.save_suspended(&state);
+        }
+    }
+
     /// Removing an account: its folder goes and its agent is suspended
-    /// (octos keeps the peer's memory until it has a `peer/purge`).
+    /// until the shell has erased it (`peer/purge`, [`lifecycle`]).
     pub fn remove_account(&self, app_id: &str, account: Option<&str>) -> Result<(), StorageError> {
         let paths = self.layout.app(app_id).map_err(StorageError::Io)?;
         self.sign_out(app_id, account);
@@ -492,7 +515,8 @@ impl Storage {
     }
 
     /// Uninstalling: `apps/<app id>/` and `secrets/<app id>/` go (vault
-    /// items too) and every account of the app stays suspended.
+    /// items too) and every account of the app stays suspended until the
+    /// shell has erased its agents (`peer/purge`, [`lifecycle`]).
     pub fn uninstall(&self, app_id: &str) -> Result<(), StorageError> {
         let paths = self.layout.app(app_id).map_err(StorageError::Io)?;
         {

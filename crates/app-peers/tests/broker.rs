@@ -44,6 +44,8 @@ struct Script {
     bindings: Option<std::collections::HashMap<String, String>>,
     /// Each connection's kernel-to-broker half (`None`: closed).
     out: Vec<Option<mpsc::UnboundedSender<String>>>,
+    /// The next this-many peer/purges are refused `peer_purge_busy`.
+    purge_busy: usize,
 }
 
 struct FakeConnector(Arc<Mutex<Script>>);
@@ -173,7 +175,7 @@ impl Connector for FakeConnector {
                             send(reply(result));
                         }
                         "peer/tools/register" if refuse_register => send(refuse("peer_tools_invalid")),
-                        "peer/tools/register" | "peer/tools/unregister" | "peer/context/open" | "peer/context/close" | "peer/tool/result"
+                        "peer/tools/register" | "peer/tools/unregister" | "peer/context/open" | "peer/context/close" | "peer/tool/result" | "peer/purge"
                             if params["host_token"] != "fixture-host-token" =>
                         {
                             send(refuse("peer_host_token_mismatch"));
@@ -222,6 +224,19 @@ impl Connector for FakeConnector {
                         }
                         "session/hydrate" => send(reply(json!({"messages": history}))),
                         "peer/tools/unregister" => send(reply(json!({"slug": params["peer"], "profile_id": "_main", "unregistered": true}))),
+                        "peer/purge" => {
+                            let busy = {
+                                let mut s = script.lock().unwrap();
+                                let busy = s.purge_busy > 0;
+                                s.purge_busy = s.purge_busy.saturating_sub(1);
+                                busy
+                            };
+                            if busy {
+                                send(refuse("peer_purge_busy"));
+                            } else {
+                                send(reply(json!({"session_id": params["session_id"], "slug": params["peer"], "purged": true, "already_purged": false})));
+                            }
+                        }
                         "turn/interrupt" => {
                             send(reply(json!({"interrupted": true})));
                             if interrupts_end {
@@ -2371,4 +2386,102 @@ fn an_unanswered_approval_in_the_persons_lane_expires_and_its_turn_is_interrupte
     assert_eq!(broker.pending_prompts(), 0);
     assert!(broker.peer_active_turn().is_none(), "the system agent's lane was never involved");
     drop(broker);
+}
+
+// ---------------------------------------------------------------- peer/purge (octos#2649)
+
+fn purge_host(dir: &std::path::Path) -> octosense_app_peers::purge::PurgeHost {
+    let mut host = octosense_app_peers::purge::PurgeHost::new("_main", "_main:api:octosense#system", dir);
+    host.retry_waits = vec![Duration::from_millis(50); 3];
+    host
+}
+
+fn purge(script: &Arc<Mutex<Script>>, dir: &std::path::Path, app: &str, account: Option<&str>) -> octosense_app_peers::purge::Purged {
+    let connector = FakeConnector(script.clone());
+    let host = purge_host(dir);
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
+        .block_on(octosense_app_peers::purge::purge_app(&connector, &host, app, "Rinx", account))
+}
+
+/// ADR 0004 §11: removing an account erases its agent. The host names the
+/// peer it recorded (its name and host token, owned by the system agent),
+/// drops the record, and a live broker bound to it forgets the peer, so the
+/// account's next use prepares a NEW peer (no host token: not a resume).
+#[test]
+fn removing_an_account_purges_its_recorded_peer_and_drops_the_record() {
+    let dir = scratch("purge-one");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let key = app_namespace("rinx", "@purge-a:x");
+    assert!(octosense_app_peers::peer_record::load(&dir, &key).is_some(), "recorded");
+    let done = purge(&script, &dir, "rinx", Some("@purge-a:x"));
+    assert!(done.ok(), "{done:?}");
+    assert_eq!(done.erased, std::slice::from_ref(&key));
+    let purges = calls_of(&script, "peer/purge");
+    assert_eq!(purges.len(), 1);
+    let p = &purges[0].1;
+    assert_eq!(p["session_id"], "_main:api:octosense#system");
+    assert_eq!(p["peer"], format!("Rinx {}", account_tag("@purge-a:x")), "the name a resume finds it by");
+    assert_eq!(p["host_token"], "fixture-host-token");
+    assert_eq!(p["profile_id"], "_main");
+    assert!(octosense_app_peers::peer_record::load(&dir, &key).is_none(), "the record is dropped");
+    assert!(broker.peer().is_none(), "the live broker forgot the purged peer");
+    // Its next use prepares a new peer, not a resume.
+    broker.bind().unwrap();
+    let prepares = calls_of(&script, "peer/prepare");
+    assert!(prepares.last().unwrap().1.get("host_token").is_none(), "a new peer: {prepares:?}");
+    // Nothing recorded: no kernel call.
+    let before = calls_of(&script, "peer/purge").len();
+    assert!(purge(&script, &dir, "rinx", Some("@nobody:x")).erased.is_empty());
+    assert_eq!(calls_of(&script, "peer/purge").len(), before);
+}
+
+/// `peer_purge_busy` (a turn did not stop in time) is retried; past the
+/// retries the purge fails and the record is kept (the peer stays
+/// suspended, and a later purge can finish it).
+#[test]
+fn a_busy_purge_is_retried_and_one_still_busy_keeps_the_record() {
+    let dir = scratch("purge-busy");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let key = app_namespace("rinx", "@purge-a:x");
+    script.lock().unwrap().purge_busy = 2;
+    let done = purge(&script, &dir, "rinx", Some("@purge-a:x"));
+    assert!(done.ok(), "{done:?}");
+    assert_eq!(calls_of(&script, "peer/purge").len(), 3, "two busy, then purged");
+
+    let dir = scratch("purge-still-busy");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    script.lock().unwrap().purge_busy = 99;
+    let done = purge(&script, &dir, "rinx", Some("@purge-a:x"));
+    assert_eq!(done.failed.len(), 1);
+    assert!(done.failed[0].1.contains("peer_purge_busy"), "{done:?}");
+    assert_eq!(calls_of(&script, "peer/purge").len(), 4, "the first try and three retries");
+    assert!(octosense_app_peers::peer_record::load(&dir, &key).is_some(), "kept for a later purge");
+}
+
+/// Uninstalling the app purges every account's peer the host recorded.
+#[test]
+fn uninstalling_purges_every_recorded_account_of_the_app() {
+    let dir = scratch("purge-all");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("a", || broker.availability() == Availability::Ready && broker.peer().is_some());
+    broker.set_account(Some("@purge-b:x"));
+    wait_for("b", || broker.availability() == Availability::Ready && broker.peer().is_some());
+    let done = purge(&script, &dir, "rinx", None);
+    assert!(done.ok(), "{done:?}");
+    let mut erased = done.erased.clone();
+    erased.sort();
+    let mut expected = vec![app_namespace("rinx", "@purge-a:x"), app_namespace("rinx", "@purge-b:x")];
+    expected.sort();
+    assert_eq!(erased, expected);
+    assert!(octosense_app_peers::peer_record::namespaces_under(&dir, "app/rinx/acct-").is_empty());
+    assert_eq!(calls_of(&script, "peer/purge").len(), 2);
+    // Another app's records are not touched.
+    assert!(purge(&script, &dir, "other", None).erased.is_empty());
 }

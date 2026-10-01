@@ -111,3 +111,24 @@ pub fn remove(dir: &Path, namespace: &str) {
         let _ = std::fs::remove_file(path);
     }
 }
+
+/// The namespaces with a record (or legacy token) under `dir` whose
+/// namespace starts with `prefix` (for example `app/<app id>/acct-`, every
+/// account of one app).
+pub fn namespaces_under(dir: &Path, prefix: &str) -> Vec<String> {
+    let stem_prefix = stem(prefix);
+    let mut found: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let rest = name.strip_prefix(&stem_prefix)?;
+            let rest = rest.strip_suffix(".peer").or_else(|| rest.strip_suffix(".token"))?;
+            (!rest.is_empty() && !rest.contains('/')).then(|| format!("{prefix}{rest}"))
+        })
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
