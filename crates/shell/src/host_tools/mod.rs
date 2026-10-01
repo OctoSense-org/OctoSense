@@ -206,9 +206,10 @@ impl ToolHost for ShellToolHost {
         // (ADR 0004 §4); its calls are refused before that too (the relay).
         let consented = approvals::consent_granted(&app) || dev;
         let mut tools = with_relay(|r| r.catalog.offered(&app, dev, consented));
-        // The host read tools (ADR 0004 §11) on every peer whose agent has
-        // a workspace: how its request contexts read the account's data.
-        if agent_workspace(app_id, account).is_some() {
+        // The host read tools (ADR 0004 §11) on every consented peer whose
+        // agent has a workspace: how its request contexts read the
+        // account's data (Unix only, files.rs).
+        if files::SUPPORTED && consented && agent_workspace(app_id, account).is_some() {
             tools.extend(files::declarations(&app));
         }
         Ok(tools)
