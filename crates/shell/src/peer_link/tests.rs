@@ -245,6 +245,11 @@ fn the_shell_reads_the_makepad_clients_frames() {
     assert_eq!(Up::parse(r#"{"octos_peer":{"up":"request","req_id":1,"method":"octos.turn.start"},"from":"rinx"}"#), None);
     let big = request(1, "octos.turn.start", json!({"text": "a".repeat(wire::MAX_FRAME_BYTES)}));
     assert_eq!(Up::parse(&big), None);
+    // A conversation frame as Makepad's client writes it (its own key
+    // order) reads back here; the client reads the shell's (its fixtures
+    // are frames recorded from this link on a real kernel).
+    let makepad_conversation = r#"{"octos_peer":{"down":"conversation","context":"pl7-1","event":{"method":"turn/started"}}}"#;
+    assert_eq!(Down::parse(makepad_conversation), Some(Down::Conversation { context: "pl7-1".into(), event: json!({"method": "turn/started"}) }));
     let call = Down::ToolCall(wire::ToolCallDown {
         call_id: "k2".into(),
         name: "send".into(),
@@ -321,8 +326,9 @@ fn identity_is_the_sockets_and_a_process_uses_only_its_own_contexts() {
     let got = downs(&frames_a);
     assert!(matches!(got.as_slice(), [Down::Event { req_id: 6, .. }, Down::Reply { req_id: 6, result: Ok(_) }]), "{got:?}");
     assert!(matches!(&got[0], Down::Event { event, .. } if event["trigger"] == "unknown"), "a turn that says nothing is unknown: {got:?}");
-    // What started the turn reaches the broker as the app said it.
-    for (req, said, want) in [(7, json!("person"), "person"), (8, json!("incoming"), "incoming"), (9, json!("system_agent"), "unknown")] {
+    // What started the turn reaches the broker as the app said it; its
+    // "person" is only its word (ADR 0004 §8: never the person's trigger).
+    for (req, said, want) in [(7, json!("person"), "app_says_person"), (8, json!("incoming"), "incoming"), (9, json!("system_agent"), "unknown")] {
         links.on_frame(1, "notes", &request(req, "octos.turn.start", json!({"context": ctx, "text": "x", "trigger": said})), None);
         let got = downs(&frames_a);
         assert!(matches!(got.first(), Some(Down::Event { event, .. }) if event["trigger"] == want), "{req}: {got:?}");

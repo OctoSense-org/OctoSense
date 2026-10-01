@@ -58,6 +58,8 @@ toolbox-peers = [
 [dependencies]
 makepad-widgets = { workspace = true }
 makepad-app-module = { workspace = true }
+# Makepad's peer client, for the in-process leg of the peer link (`module_peer`).
+makepad-ai-services = { workspace = true }
 # The kernel's home rule without a kernel (and the profile path).
 octosense-llm-config = { workspace = true }
 # The contract (OCTOS_SERVICES, injection) always; the broker with `octos-core`.

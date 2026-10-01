@@ -339,6 +339,12 @@ impl App {
     fn activate_shelf(&mut self, cx: &mut Cx, hit: ShelfHit) {
         match hit {
             ShelfHit::Launcher => self.toggle_launcher(cx),
+            // The system chat, as F8 opens it (#143).
+            ShelfHit::Assistant => {
+                crate::system_chat::toggle();
+                crate::app_chat::focus(!crate::system_chat::is_open());
+                self.system_chat_changed(cx);
+            }
             ShelfHit::App(app) => {
                 let existing = {
                     let s = self.state_mut();

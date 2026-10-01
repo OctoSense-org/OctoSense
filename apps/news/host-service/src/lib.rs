@@ -15,7 +15,7 @@
 //! | `news.read` | `{id, full?}` | `{item, text, full_text}`: `text` is the stored summary, or the article's text when `full` and the shell gave the service a reader |
 //! | `news.topics.get` | – | `{topics: [{query, lang, region}]}` |
 //! | `news.topics.set` | `{topics: [{query, lang, region}]}` | `{topics}`, as stored (checked, at most 20) |
-//! | `news.refresh` | – | the run's report `{at, new, total, clusters, sources}`, or `{busy: true}` |
+//! | `news.refresh` | `{due?}` | the run's report `{at, new, total, clusters, sources}`, or `{busy: true}` |
 //! | `news.sources` | – | `{sources: [{id, label, kind, host, lang, topics, last_success, last_error, failures, next_due, items}]}` |
 //! | `news.feeds.import` | `{opml}` | `{added: [id], skipped: [{url, reason}]}` |
 //!
@@ -27,7 +27,15 @@
 //! (`network.hosts`), redirects included, with `User-Agent:
 //! OctoSense-News/1.0`, `If-None-Match`/`If-Modified-Since`, a timeout, a
 //! 4 MB cap, a pause between requests to one host, a per-source interval, and
-//! a back-off (not a retry) after a failure. Full article text is not
+//! a growing back-off after a failure: the timer retries a failed source
+//! after 30 s, then 1, 2, 4 … minutes (at most an hour), waking for it
+//! rather than waiting for its next 15-minute tick, and the person's
+//! Refresh (`news.refresh`, which News also sends when it opens) fetches a
+//! failed source again at once (at most every 10 s), unless it answered
+//! 429: then it waits out its back-off or its `Retry-After`, whichever is
+//! longer. `news.refresh {due: true}` (News's own retry timer) fetches only
+//! what is due. A first fetch before
+//! the network was up is so retried, never stuck until the back-off ends. Full article text is not
 //! fetched here: article hosts are arbitrary, so reading one is a separate
 //! capability the shell may grant ([`ArticleReader`]).
 //!
@@ -107,6 +115,8 @@ pub struct Options {
     interval: Duration,
     source_interval_secs: i64,
     manual_interval_secs: i64,
+    retry_secs: i64,
+    manual_retry_secs: i64,
     max_backoff_secs: i64,
     host_spacing: Duration,
     gdelt_spacing: Duration,
@@ -128,7 +138,9 @@ impl Default for Options {
             interval: Duration::from_secs(900),
             source_interval_secs: 600,
             manual_interval_secs: 120,
-            max_backoff_secs: 6 * 3600,
+            retry_secs: 30,
+            manual_retry_secs: 10,
+            max_backoff_secs: 3600,
             host_spacing: Duration::from_secs(2),
             // GDELT asks for no more than one request every five seconds.
             gdelt_spacing: Duration::from_secs(6),
@@ -183,6 +195,14 @@ impl Options {
     pub fn source_intervals(mut self, timer_secs: i64, manual_secs: i64) -> Self {
         self.source_interval_secs = timer_secs;
         self.manual_interval_secs = manual_secs;
+        self
+    }
+    /// After a failure: the first retry on the timer (`timer_secs`, then
+    /// doubling up to an hour), and the least time between two attempts on
+    /// `news.refresh` (`manual_secs`).
+    pub fn retries(mut self, timer_secs: i64, manual_secs: i64) -> Self {
+        self.retry_secs = timer_secs;
+        self.manual_retry_secs = manual_secs;
         self
     }
     /// The pause between two requests to one host, and to GDELT.
@@ -284,7 +304,9 @@ impl News {
                 .name("news-fetch".into())
                 .spawn(move || loop {
                     let _ = news.refresh_with(false);
-                    let until = Instant::now() + every;
+                    // Wake for the next source due (a failed one's retry
+                    // comes before the next tick).
+                    let until = Instant::now() + news.next_wake(every);
                     while Instant::now() < until {
                         if stop.load(Ordering::SeqCst) {
                             return;
@@ -450,8 +472,27 @@ impl News {
         })
     }
 
+    /// How long the timer sleeps: until the next source is due, at least
+    /// 15 s and at most `every`.
+    fn next_wake(&self, every: Duration) -> Duration {
+        let now = self.now();
+        let next = self.with_data(|data, _| data.state.values().map(|st| st.next_due).min()).ok().flatten();
+        match next {
+            Some(due) => Duration::from_secs((due - now).clamp(15, every.as_secs().max(15) as i64) as u64),
+            None => every,
+        }
+    }
+
+    /// The timer's run: every source whose time (its interval, or a failed
+    /// one's back-off) has come.
+    pub fn refresh_due(&self) -> Result<Option<FetchReport>, String> {
+        self.refresh_with(false)
+    }
+
     /// Fetch what is due now, as `news.refresh` does (a manual run fetches a
-    /// source again after [`Options::source_intervals`]' manual interval).
+    /// source again after [`Options::source_intervals`]' manual interval,
+    /// and a failed one after [`Options::retries`]' manual retry, whatever
+    /// its back-off).
     /// `Err` only when there is no folder yet; a run already going answers
     /// `Ok(None)`.
     pub fn refresh(&self) -> Result<Option<FetchReport>, String> {
@@ -464,13 +505,16 @@ impl News {
         let sources = self.sources()?;
         let state: HashMap<String, store::SourceState> = self.with_data(|data, _| data.state.clone())?;
         let mut last_request: HashMap<String, Instant> = HashMap::new();
+        let mut throttled: HashMap<String, i64> = HashMap::new();
         let mut fetched: Vec<(Source, Result<Option<fetch::Response>, String>, i64)> = Vec::new();
         let mut reports = Vec::new();
         for source in sources {
             let st = state.get(&source.id).cloned().unwrap_or_default();
             let now = self.now();
-            let due = if manual {
-                now - st.last_attempt >= options.manual_interval_secs && (st.failures == 0 || now >= st.next_due)
+            let slowed = st.last_error.as_deref() == Some(SLOW_DOWN);
+            let due = if manual && !slowed {
+                let least = if st.failures == 0 { options.manual_interval_secs } else { options.manual_retry_secs };
+                now - st.last_attempt >= least
             } else {
                 now >= st.next_due
             };
@@ -478,7 +522,7 @@ impl News {
                 reports.push(SourceReport { id: source.id.clone(), status: "skipped", new: 0, error: None });
                 continue;
             }
-            let result = self.fetch_source(&source, &st, &mut last_request);
+            let result = self.fetch_source(&source, &st, &mut last_request, &mut throttled);
             fetched.push((source, result, self.now()));
         }
         let report = self.with_data(|data, store| {
@@ -516,7 +560,7 @@ impl News {
                     }
                     Err(error) => {
                         st.failures = st.failures.saturating_add(1);
-                        let backoff = options.source_interval_secs.max(60).saturating_mul(1 << st.failures.min(10)).min(options.max_backoff_secs);
+                        let backoff = failure_backoff(options, st.failures).max(throttled.get(&source.id).copied().unwrap_or(0));
                         st.next_due = at + backoff;
                         st.last_error = Some(error.clone());
                         reports.push(SourceReport { id: source.id.clone(), status: "error", new: 0, error: Some(error) });
@@ -544,7 +588,7 @@ impl News {
     /// One source: its declared host only, paced per host, conditional on
     /// its last answer, following a redirect only to a declared host.
     /// `Ok(None)` is "not modified".
-    fn fetch_source(&self, source: &Source, st: &store::SourceState, last_request: &mut HashMap<String, Instant>) -> Result<Option<fetch::Response>, String> {
+    fn fetch_source(&self, source: &Source, st: &store::SourceState, last_request: &mut HashMap<String, Instant>, throttled: &mut HashMap<String, i64>) -> Result<Option<fetch::Response>, String> {
         let options = &self.core.options;
         let mut request = fetch::Request { url: source.url.clone(), etag: st.etag.clone(), last_modified: st.last_modified.clone() };
         for _ in 0..4 {
@@ -566,7 +610,12 @@ impl News {
                     let next = url::Url::parse(&request.url).and_then(|base| base.join(&location)).map_err(|e| format!("a bad redirect: {e}"))?;
                     request = fetch::Request { url: next.to_string(), etag: None, last_modified: None };
                 }
-                429 => return Err("the source asked the service to slow down (429)".into()),
+                429 => {
+                    // Wait as long as the source asks (at least the normal
+                    // back-off); a Refresh does not skip it.
+                    throttled.insert(source.id.clone(), response.retry_after.unwrap_or(0));
+                    return Err(SLOW_DOWN.into());
+                }
                 status => return Err(format!("the source answered {status}")),
             }
         }
@@ -600,6 +649,17 @@ pub fn query_from(args: &Value) -> Query {
         limit: number("limit").map_or(50, |n| n as usize),
         offset: number("offset").map_or(0, |n| n as usize),
     }
+}
+
+/// The error of a source that answered 429: until its back-off (or its
+/// `Retry-After`, if longer) ends, not even a Refresh asks it again.
+const SLOW_DOWN: &str = "the source asked the service to slow down (429)";
+
+/// How long a source waits after its `failures`-th failure in a row:
+/// [`Options::retries`]' first retry, doubling, at most the maximum.
+fn failure_backoff(options: &Options, failures: u32) -> i64 {
+    let doublings = failures.saturating_sub(1).min(16);
+    options.retry_secs.max(1).saturating_mul(1i64 << doublings).min(options.max_backoff_secs)
 }
 
 /// The host service over a [`News`].
@@ -643,8 +703,11 @@ impl HostService for NewsService {
                 let topics = args["topics"].as_array().cloned().unwrap_or_default();
                 reply.send(news.set_topics(&topics).map(|topics| json!({"topics": topics})));
             }
+            // `{due: true}`: only what is due (a retry timer's), never the
+            // person's bypass of a failed source's back-off.
             "refresh" => work(move || {
-                reply.send(news.refresh().map(|report| match report {
+                let run = if args["due"].as_bool() == Some(true) { news.refresh_due() } else { news.refresh() };
+                reply.send(run.map(|report| match report {
                     Some(report) => json!(report),
                     None => json!({"busy": true}),
                 }))

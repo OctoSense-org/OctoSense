@@ -48,6 +48,11 @@
 //!   allowed, whether or not the app calls `octos` (`contained::prepare`),
 //!   and opens the app's conversation on it for its "Ask <app>" panel
 //!   (`contained::conversation`). Approvals go to the shell's router.
+//! - **The peer link's in-process leg** ([`module_peer`], ADR 0004 §5): a
+//!   module that opens Makepad's `OctosPeer` gets the channel pair the
+//!   shell serves with the same peer link as a process app's socket, so an
+//!   app does not depend on how it is hosted. The injected service above
+//!   stays for modules that claim it (Rinx).
 //! - **The system toolbox for app agents** (feature `toolbox-peers`, off by
 //!   default): the toolbox's grants and the executor the shell's host-tool
 //!   relay runs its calls on ([`toolbox_peers`]). Its results live in each
@@ -56,6 +61,8 @@
 
 mod bridge;
 pub mod contained;
+/// The in-process leg of the peer link: a module's `OctosPeer` as frames.
+pub mod module_peer;
 /// Generated from `native-apps.json` (`tools/native_apps.py`).
 pub mod native_agents;
 mod qr;

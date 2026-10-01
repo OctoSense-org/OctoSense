@@ -82,6 +82,45 @@ pub(crate) fn local_route(request: &SettingsRequest, available: impl Fn(SystemAp
     }
 }
 
+/// About phone's Developer options, from the shell's developer mode: once
+/// seven taps on Build number revealed them (`shown`) where Settings may
+/// turn it on, or while it is on.
+fn developer_options(shown: bool) -> Option<crate::settings_app::DeveloperOptions> {
+    use crate::dev_mode::{self, Scope};
+    let status = dev_mode::status();
+    if status.is_none() && !(shown && dev_mode::settings_available()) {
+        return None;
+    }
+    let choice = dev_mode::chosen_scope();
+    let summary = match &status {
+        Some((active, _)) => format!("{}.", dev_mode::banner_text(active)),
+        None => "Developer mode is off.".to_string(),
+    };
+    let all = matches!(choice, Scope::AllApps);
+    let apps = developer_apps()
+        .into_iter()
+        .map(|(id, name)| crate::settings_app::DeveloperApp { covered: !all && choice.covers(&id), id, name })
+        .collect();
+    Some(crate::settings_app::DeveloperOptions { on: status.is_some(), summary, covers: choice.label(), all, apps })
+}
+
+/// The apps with an agent, read at most every few seconds (every Settings
+/// snapshot asks; reading them waits on App Hub's catalog).
+fn developer_apps() -> Vec<(String, String)> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, Vec<(String, String)>)>> = Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    match &*cache {
+        Some((at, apps)) if at.elapsed() < Duration::from_secs(5) => apps.clone(),
+        _ => {
+            let apps: Vec<(String, String)> = crate::agents::all().into_iter().map(|a| (a.id, a.name)).collect();
+            *cache = Some((Instant::now(), apps.clone()));
+            apps
+        }
+    }
+}
+
 impl SettingsRuntime {
     fn activity_resumed(&mut self, observed: Option<bool>) {
         // Java can observe the first Activity resume before the native app is
@@ -185,6 +224,7 @@ impl App {
             sounds:self.settings_runtime.sounds.snapshot.clone(),sounds_loading:self.settings_runtime.sounds.loading(),sounds_error:self.settings_runtime.sounds.error.clone(),
             notification_history:self.settings_runtime.history.snapshot.clone(),history_loading:self.settings_runtime.history.loading(),history_error:self.settings_runtime.history.error.clone(),
             ai_providers:self.settings_system_app_available(SystemApp::AiProviders),
+            developer:developer_options(self.developer_options_shown()),
         }
     }
     pub(crate) fn refresh_settings_app(&mut self, cx: &mut Cx) {
@@ -242,6 +282,33 @@ impl App {
             }
             Some(LocalRoute::Unavailable) => { self.settings_outcome(cx, client, false, "This app is not part of this build."); return; }
             None => {}
+        }
+        // Developer options: the shell's own (lib.rs), on any device.
+        match &request {
+            SettingsRequest::DeveloperTap => {
+                // The shell counts the taps; the seventh reveals Developer
+                // options and turns nothing on (`developer_build_tap`).
+                let message = self.developer_build_tap(cx);
+                self.settings_outcome(cx, client, false, &message);
+                self.refresh_settings_app(cx);
+                return;
+            }
+            SettingsRequest::DeveloperChoose(app) => {
+                self.developer_choose(cx, app.as_deref());
+                self.refresh_settings_app(cx);
+                return;
+            }
+            SettingsRequest::DeveloperOn => {
+                self.developer_phone_turn_on(cx);
+                self.refresh_settings_app(cx);
+                return;
+            }
+            SettingsRequest::DeveloperOff => {
+                self.developer_turn_off(cx);
+                self.refresh_settings_app(cx);
+                return;
+            }
+            _ => {}
         }
         if matches!(request, SettingsRequest::Back) {
             if self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
@@ -447,7 +514,8 @@ impl App {
             SettingsRequest::Controls(ControlsRequest::Snapshot(_)) => unreachable!(),
             SettingsRequest::Wifi(WifiRequest::Snapshot) => unreachable!(),
             SettingsRequest::AppsCatalog {..}|SettingsRequest::AppDetails {..}|SettingsRequest::AppEntryDetails{..} => unreachable!(),
-            SettingsRequest::Back | SettingsRequest::OpenSystemApp(_) => unreachable!(),
+            SettingsRequest::Back | SettingsRequest::OpenSystemApp(_) | SettingsRequest::DeveloperTap
+                | SettingsRequest::DeveloperChoose(_) | SettingsRequest::DeveloperOn | SettingsRequest::DeveloperOff => unreachable!(),
         };
         let id = self.android_command_id(cx, channel, operation, fields);
         self.settings_runtime.pending = Some(Pending { id, client, root: uid, deadline: crate::host::now() + 20.0, device });

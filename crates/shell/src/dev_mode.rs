@@ -6,7 +6,11 @@
 //!
 //! **Who turns it on.** Only the person: Settings → Developer options with
 //! the typed phrase [`CONFIRM_PHRASE`] (the desktop menu, `shell/menu.rs`),
-//! or at launch `OCTOSENSE_DEV_MODE=all` / `--dev-grant-all`. The setter,
+//! on a phone the familiar gesture, [`TAPS_TO_TURN_ON`] taps on Settings ›
+//! About phone › Build number ([`BuildTaps`]), or at launch
+//! `OCTOSENSE_DEV_MODE=all` / `--dev-grant-all`. Settings turns it on for
+//! the apps chosen under Developer options › Apps it covers
+//! ([`CHOICE_FILE`], all apps until chosen). The setter,
 //! [`turn_on`], takes a [`PersonGesture`], and nothing outside this module
 //! and the shell's Settings rows can make one: the AI bus (`ai_bus.rs`), the
 //! `os` service and the host services never do (a test scans the sources).
@@ -81,6 +85,14 @@ pub const PROFILE_MARKER: &str = "developer-profile";
 pub const STATE_FILE: &str = "dev-mode.json";
 /// The append-only audit log, relative to the home.
 pub const AUDIT_FILE: &str = "logs/dev-audit.jsonl";
+/// Which apps Settings chose for developer mode (`all` or a list), kept per
+/// home like the other Settings, owner-only. It is only a choice: it grants
+/// nothing until developer mode is on, and then it is the mode's scope.
+pub const CHOICE_FILE: &str = "assistant/developer-apps.json";
+/// The phone's gesture (Settings › About phone › Build number): this many
+/// taps, each within [`TAP_GAP_MS`] of the last, turn developer mode on.
+pub const TAPS_TO_TURN_ON: u32 = 7;
+pub const TAP_GAP_MS: u64 = 3000;
 /// With real accounts, developer mode ends by itself after this long.
 pub const REAL_ACCOUNT_LIMIT_S: u64 = 8 * 3600;
 /// The host tool developer mode adds (`host_tools::dev_run`).
@@ -149,6 +161,37 @@ impl Scope {
                 let app = short(&app.to_lowercase());
                 apps.iter().any(|a| short(a) == app)
             }
+        }
+    }
+    /// The scope with `app` covered or not, whichever it was not: from all
+    /// apps, every app in `every` but `app`. `None` when nothing would be
+    /// left (developer mode for no app is off; Settings says so).
+    pub fn toggled(&self, app: &str, every: &[String]) -> Option<Scope> {
+        let short = |id: &str| id.strip_prefix("os.").unwrap_or(id).to_lowercase();
+        let mut apps: BTreeSet<String> = match self {
+            Scope::AllApps => every.iter().map(|a| a.to_lowercase()).collect(),
+            Scope::Apps(apps) => apps.clone(),
+        };
+        if self.covers(app) {
+            apps.retain(|a| short(a) != short(app));
+        } else {
+            apps.insert(app.to_lowercase());
+        }
+        (!apps.is_empty()).then_some(Scope::Apps(apps))
+    }
+    /// Whether every app this scope covers, `other` covers too (narrowing).
+    pub fn within(&self, other: &Scope) -> bool {
+        match (self, other) {
+            (_, Scope::AllApps) => true,
+            (Scope::AllApps, Scope::Apps(_)) => false,
+            (Scope::Apps(apps), Scope::Apps(_)) => apps.iter().all(|a| other.covers(a)),
+        }
+    }
+    /// For Settings: "all apps", or the chosen ids.
+    pub fn label(&self) -> String {
+        match self {
+            Scope::AllApps => "all apps".into(),
+            Scope::Apps(apps) => apps.iter().cloned().collect::<Vec<_>>().join(", "),
         }
     }
     fn to_json(&self) -> Value {
@@ -228,8 +271,53 @@ impl PersonGesture {
         let typed = typed.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
         (typed == CONFIRM_PHRASE).then_some(PersonGesture { origin: Origin::Settings })
     }
+    /// The phone's Developer options: revealed by the familiar gesture
+    /// ([`TAPS_TO_TURN_ON`] taps on About phone › Build number, counted by
+    /// [`BuildTaps`], the only maker of a [`TapsReached`]), then the person
+    /// confirmed Turn on there, with the apps it covers shown.
+    pub(crate) fn phone_confirmed(_revealed: &TapsReached) -> PersonGesture {
+        PersonGesture { origin: Origin::Settings }
+    }
     fn launch(origin: Origin) -> PersonGesture {
         PersonGesture { origin }
+    }
+}
+
+/// Proof that the person finished the phone's gesture; only [`BuildTaps`]
+/// makes one.
+#[derive(Debug, PartialEq, Eq)]
+pub struct TapsReached(());
+
+/// What one tap on Build number did.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Tap {
+    /// Taps still needed.
+    Remaining(u32),
+    /// The last one: the shell turns developer mode on with this proof.
+    Reached(TapsReached),
+}
+
+/// The Android-style counter behind Settings › About phone › Build number:
+/// [`TAPS_TO_TURN_ON`] taps in a row, each within [`TAP_GAP_MS`] of the last.
+#[derive(Debug, Default)]
+pub struct BuildTaps {
+    count: u32,
+    last_ms: Option<u64>,
+}
+
+impl BuildTaps {
+    pub fn tap(&mut self, now_ms: u64) -> Tap {
+        if self.last_ms.is_none_or(|last| now_ms.saturating_sub(last) > TAP_GAP_MS) {
+            self.count = 0;
+        }
+        self.last_ms = Some(now_ms);
+        self.count += 1;
+        if self.count >= TAPS_TO_TURN_ON {
+            self.count = 0;
+            self.last_ms = None;
+            return Tap::Reached(TapsReached(()));
+        }
+        Tap::Remaining(TAPS_TO_TURN_ON - self.count)
     }
 }
 
@@ -320,6 +408,22 @@ pub fn dev_grants_allowed_on(connection: Connection, session_key: &str) -> Resul
     Ok(())
 }
 
+/// Write `bytes` to `path`, owner-only on Unix.
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).write(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(bytes)
+}
+
 /// The append-only audit log.
 #[derive(Clone, Debug)]
 pub struct Audit {
@@ -374,6 +478,17 @@ pub struct Controller {
     generation: u64,
     /// Things the person must be told (the real-accounts warning).
     notices: Vec<String>,
+    /// The apps Settings chose ([`CHOICE_FILE`]): the scope Settings turns
+    /// developer mode on with.
+    choice: Scope,
+}
+
+fn read_choice(home: &Path) -> Scope {
+    std::fs::read_to_string(home.join(CHOICE_FILE))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| Scope::from_json(&v["apps"]))
+        .unwrap_or(Scope::AllApps)
 }
 
 fn profile_id(home: &Path) -> String {
@@ -394,6 +509,7 @@ impl Controller {
             active: None,
             generation: 0,
             notices: Vec::new(),
+            choice: read_choice(home),
         };
         let build = c.launch.build;
         if c.launch.flag_all && build.honours_flag() {
@@ -515,6 +631,35 @@ impl Controller {
         }
     }
 
+    /// The apps Settings turns developer mode on for.
+    pub fn choice(&self) -> &Scope {
+        &self.choice
+    }
+
+    /// Settings chose which apps developer mode covers: kept for this home.
+    /// While developer mode is on, a narrower choice is its scope at once
+    /// (audited); a wider one waits for the person to turn it on again, with
+    /// the same confirmation (`Ok(true)`: it waits).
+    pub fn set_choice(&mut self, scope: Scope, now: u64) -> Result<bool, String> {
+        let path = self.home.join(CHOICE_FILE);
+        let body = json!({"apps": scope.to_json()}).to_string();
+        write_private(&path, body.as_bytes()).map_err(|e| format!("could not save {}: {e}", path.display()))?;
+        self.choice = scope.clone();
+        self.audit.append(now, "choice", json!({"scope": scope.to_json()}));
+        if let Some(active) = self.active.as_mut() {
+            if active.scope != scope {
+                if !scope.within(&active.scope) {
+                    return Ok(true);
+                }
+                active.scope = scope;
+                self.generation += 1;
+                self.audit.append(now, "mode_scope", self.mode_entry(false));
+                self.save();
+            }
+        }
+        Ok(false)
+    }
+
     /// Turn it off (anyone may; `reason` goes to the audit log).
     pub fn turn_off(&mut self, reason: &str, now: u64) {
         let Some(was) = self.active.take() else { return };
@@ -620,6 +765,24 @@ pub fn turn_on(gesture: PersonGesture, scope: Scope) -> Result<(), String> {
 pub fn turn_off(reason: &str) {
     with(|c| c.turn_off(reason, now()));
 }
+/// The apps Settings turns developer mode on for (all apps until chosen).
+pub fn chosen_scope() -> Scope {
+    with(|c| c.choice().clone()).unwrap_or(Scope::AllApps)
+}
+/// See [`Controller::set_choice`]. Only Settings' rows call it (a test
+/// scans the sources).
+pub fn choose_apps(scope: Scope) -> Result<bool, String> {
+    with(|c| c.set_choice(scope, now())).unwrap_or_else(|| Err("developer mode is not set up".into()))
+}
+
+static TAPS: Mutex<BuildTaps> = Mutex::new(BuildTaps { count: 0, last_ms: None });
+
+/// One tap on Settings › About phone › Build number (the phone's gesture).
+pub fn build_number_tap() -> Tap {
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    TAPS.lock().unwrap_or_else(|e| e.into_inner()).tap(now_ms)
+}
+
 /// Expire; true when it changed.
 pub fn tick() -> bool {
     with(|c| c.tick(now())).unwrap_or(false)
@@ -1009,6 +1172,79 @@ mod tests {
         }
     }
 
+    /// Settings' choice of apps is kept for the home, is the scope Settings
+    /// turns developer mode on with, and while it is on changes its scope at
+    /// once (audited); it grants nothing while off.
+    #[test]
+    fn the_chosen_apps_persist_and_scope_developer_mode() {
+        let home = Home::new("choice");
+        let mut c = Controller::start(&home.0, launch(BuildKind::Development, None, false), T0);
+        assert_eq!(c.choice(), &Scope::AllApps, "all apps until chosen");
+        let news = Scope::parse("os.news").unwrap();
+        c.set_choice(news.clone(), T0).unwrap();
+        assert!(c.active(T0).is_none() && !c.grants_all("os.news", T0), "a choice grants nothing while off");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(home.0.join(CHOICE_FILE)).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        // Kept across a restart, like the other Settings.
+        let mut c = Controller::start(&home.0, launch(BuildKind::Development, None, false), T0 + 1);
+        assert_eq!(c.choice(), &news);
+        let scope = c.choice().clone();
+        c.turn_on(PersonGesture::settings_phrase(CONFIRM_PHRASE).unwrap(), scope, T0 + 1).unwrap();
+        assert!(c.grants_all("news", T0 + 1) && !c.grants_all("os.mail", T0 + 1));
+        // Widening while on waits for the person to turn it on again.
+        let before = c.generation();
+        assert_eq!(c.set_choice(Scope::AllApps, T0 + 2), Ok(true));
+        assert!(!c.grants_all("os.mail", T0 + 2), "a wider choice never applies without the confirmation");
+        assert_eq!(c.generation(), before);
+        c.turn_off("test", T0 + 2);
+        c.turn_on(PersonGesture::settings_phrase(CONFIRM_PHRASE).unwrap(), Scope::parse("os.news,os.mail").unwrap(), T0 + 3).unwrap();
+        // Narrowing while on applies at once.
+        assert_eq!(c.set_choice(news.clone(), T0 + 4), Ok(false));
+        assert!(!c.grants_all("os.mail", T0 + 4) && c.grants_all("os.news", T0 + 4), "on: a narrower choice applies at once");
+        assert!(c.generation() > before, "the shell re-announces the apps' tools");
+        let kinds: Vec<String> = home.audit().iter().map(|e| e["kind"].as_str().unwrap().to_owned()).collect();
+        assert_eq!(kinds, ["choice", "mode_on", "choice", "mode_off", "mode_on", "choice", "mode_scope"]);
+    }
+
+    #[test]
+    fn an_app_is_toggled_in_and_out_of_the_choice() {
+        let news = Scope::parse("os.news").unwrap();
+        assert!(news.within(&Scope::AllApps) && news.within(&Scope::parse("news,rinx").unwrap()));
+        assert!(!Scope::AllApps.within(&news) && !Scope::parse("rinx").unwrap().within(&news));
+        let every: Vec<String> = ["os.news", "os.mail", "rinx"].iter().map(|s| s.to_string()).collect();
+        let no_mail = Scope::AllApps.toggled("mail", &every).unwrap();
+        assert!(!no_mail.covers("os.mail") && no_mail.covers("os.news") && no_mail.covers("rinx"));
+        let back = no_mail.toggled("os.mail", &every).unwrap();
+        assert!(back.covers("os.mail"));
+        let only_rinx = Scope::parse("rinx").unwrap();
+        assert_eq!(only_rinx.toggled("rinx", &every), None, "never no app at all");
+        assert_eq!(only_rinx.label(), "rinx");
+        assert_eq!(Scope::AllApps.label(), "all apps");
+    }
+
+    /// The phone's gesture: seven taps in a row on Build number, each within
+    /// three seconds of the last; a pause starts the count again.
+    #[test]
+    fn seven_taps_on_build_number_in_a_row_are_the_phones_gesture() {
+        let mut taps = BuildTaps::default();
+        let mut t = 1_000;
+        for left in (1..TAPS_TO_TURN_ON).rev() {
+            assert_eq!(taps.tap(t), Tap::Remaining(left));
+            t += 400;
+        }
+        assert!(matches!(taps.tap(t), Tap::Reached(_)));
+        assert_eq!(taps.tap(t + 100), Tap::Remaining(TAPS_TO_TURN_ON - 1), "counting starts again");
+        for _ in 0..4 {
+            t += 500;
+            taps.tap(t);
+        }
+        assert_eq!(taps.tap(t + TAP_GAP_MS + 1), Tap::Remaining(TAPS_TO_TURN_ON - 1), "a pause starts the count again");
+    }
+
     #[test]
     fn external_clients_never_get_developer_grants_or_dev_run() {
         // ADR 0003: the system conversation is reachable by a paired client;
@@ -1043,7 +1279,7 @@ mod tests {
                 } else if path.extension().is_some_and(|e| e == "rs") {
                     let text = std::fs::read_to_string(&path).unwrap();
                     let rel = path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
-                    for needle in ["PersonGesture::", "PersonGesture {", "dev_mode::turn_on("] {
+                    for needle in ["PersonGesture::", "PersonGesture {", "dev_mode::turn_on(", "dev_mode::choose_apps(", "TapsReached(", ".developer_build_tap(", ".developer_choose(", ".developer_phone_turn_on("] {
                         if text.contains(needle) && rel != "dev_mode.rs" {
                             makers.push(format!("{rel}: {needle}"));
                         }
@@ -1054,7 +1290,33 @@ mod tests {
         makers.sort();
         makers.dedup();
         // The one caller outside this module: the Settings row's handler.
-        assert_eq!(makers, ["lib.rs: PersonGesture::", "lib.rs: dev_mode::turn_on("], "{makers:?}");
+        assert_eq!(makers, ["lib.rs: PersonGesture::", "lib.rs: dev_mode::choose_apps(", "lib.rs: dev_mode::turn_on("], "{makers:?}");
+        // Home's packaging (`phone/`) reaches the shell's Settings entry
+        // points only from Settings' request handler, for the person's taps
+        // on About phone (settings_host.rs), never anywhere else.
+        let phone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../phone/src");
+        let mut callers = Vec::new();
+        for entry in std::fs::read_dir(&phone).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "rs") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                for needle in [".developer_build_tap(", ".developer_choose(", ".developer_phone_turn_on(", ".developer_turn_off(", "PersonGesture", "dev_mode::turn_on(", "dev_mode::choose_apps("] {
+                    for _ in text.matches(needle) {
+                        callers.push(format!("{}: {needle}", path.file_name().unwrap().to_string_lossy()));
+                    }
+                }
+            }
+        }
+        callers.sort();
+        assert_eq!(
+            callers,
+            ["settings_host.rs: .developer_build_tap(", "settings_host.rs: .developer_choose(", "settings_host.rs: .developer_phone_turn_on(", "settings_host.rs: .developer_turn_off("],
+            "{callers:?}"
+        );
+        let host = std::fs::read_to_string(phone.join("settings_host.rs")).unwrap();
+        let at = host.find(".developer_build_tap(").unwrap();
+        let handler = host[..at].rfind("fn ").map(|i| &host[i..at]).unwrap();
+        assert!(handler.starts_with("fn settings_request"), "only Settings' request handler: {}", &handler[..60.min(handler.len())]);
         let lib = std::fs::read_to_string(src.join("lib.rs")).unwrap();
         let at = lib.find("PersonGesture::").unwrap();
         let handler = lib[..at].rfind("fn ").map(|i| &lib[i..at]).unwrap();
