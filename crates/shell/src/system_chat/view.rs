@@ -419,9 +419,18 @@ impl Line {
     }
 }
 
-/// What a laid-out transcript depends on: the conversation's generation,
-/// the width, the two font sizes and the text scale.
-type TranscriptKey = (u64, f64, f64, f64, f64);
+/// What a laid-out transcript depends on: its items, whether a turn runs
+/// (the streaming caret), the width, the two font sizes and the text
+/// scale. Never the prompt: typing does not lay the transcript out again.
+#[derive(Clone, Debug, PartialEq)]
+struct TranscriptKey {
+    items: Vec<Item>,
+    running: bool,
+    width: f64,
+    body: f64,
+    small: f64,
+    scale: f64,
+}
 
 /// Styled runs wrapped to `width`, each run measured in its weight at `px`
 /// (the drawn size).
@@ -651,12 +660,6 @@ impl Source {
         match self {
             Source::System => super::scroll(),
             Source::App => crate::app_chat::scroll(),
-        }
-    }
-    fn generation(self) -> u64 {
-        match self {
-            Source::System => super::generation(),
-            Source::App => crate::app_chat::generation(),
         }
     }
     fn scroll_by(self, dy: f64, max: f64) {
@@ -1162,7 +1165,7 @@ impl ShellSystemChat {
             let field_w = cw - bw - 8.0;
             let inner_w = (field_w - tok.spacing.control_padding_x * 2.0).max(1.0);
             let ts = b.d.text_scale();
-            let mut lines = b.d.wrap_lines(cx, false, tok.font.body * ts, &draft, inner_w, true);
+            let mut lines = b.d.wrap_input(cx, tok.font.body * ts, &draft, inner_w);
             if lines.len() > PROMPT_LINES {
                 // Past its height the prompt shows its last lines: the caret's.
                 lines.drain(..lines.len() - PROMPT_LINES);
@@ -1227,7 +1230,14 @@ impl ShellSystemChat {
 
         // The transcript, newest at the bottom, scrolled back by `scroll`;
         // laid out again only when it or its measure changed.
-        let key: TranscriptKey = (source.generation(), cw, tok.font.body, tok.font.body_small, self.d.text_scale());
+        let key = TranscriptKey {
+            items: model.items.clone(),
+            running: model.phase().running_turn().is_some(),
+            width: cw,
+            body: tok.font.body,
+            small: tok.font.body_small,
+            scale: self.d.text_scale(),
+        };
         let lines = match &self.laid_out {
             Some((k, lines)) if *k == key => lines.clone(),
             _ => {

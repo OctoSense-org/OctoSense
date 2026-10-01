@@ -1014,8 +1014,14 @@ impl ShellDraw {
         lines
     }
 
+    /// Text being typed, wrapped to `max_w` with every character kept
+    /// ([`wrap_exact`]).
+    pub fn wrap_input(&mut self, cx: &mut Cx2d, px: f64, text: &str, max_w: f64) -> Vec<String> {
+        wrap_exact(text, max_w, |s| self.measure(cx, false, px, s))
+    }
+
     /// Every line of `text` wrapped to `max_w` ([`wrap_with`]), blank lines
-    /// kept when `keep_blank` says (a prompt being typed shows them).
+    /// kept when `keep_blank` says.
     pub fn wrap_lines(&mut self, cx: &mut Cx2d, bold: bool, px: f64, text: &str, max_w: f64, keep_blank: bool) -> Vec<String> {
         wrap_with(text, max_w, keep_blank, |s| self.measure(cx, bold, px, s))
     }
@@ -1694,11 +1700,14 @@ impl ShellDraw {
             self.label_elided(cx, rect(inner.pos.x, top, inner.size.x, line_h), false, px, super::darker(foreground, 1.6), HAlign::Left, placeholder);
         } else {
             for (i, line) in lines.iter().enumerate() {
-                self.label_elided(cx, rect(inner.pos.x, top + i as f64 * line_h, inner.size.x, line_h), false, px, foreground, HAlign::Left, line);
+                // A line's trailing spaces hang past its end: not drawn, so
+                // they never elide the line.
+                self.label_elided(cx, rect(inner.pos.x, top + i as f64 * line_h, inner.size.x, line_h), false, px, foreground, HAlign::Left, line.trim_end());
             }
         }
+        // The caret goes after everything typed, spaces too.
         let last = lines.last().map(String::as_str).unwrap_or("");
-        let w = if last.is_empty() { 0.0 } else { self.measure(cx, false, px, last).min(inner.size.x) };
+        let w = if last.is_empty() { 0.0 } else { self.measure(cx, false, px * self.text_scale(), last).min(inner.size.x) };
         let at = rect(inner.pos.x + w + 1.0, top + (n - 1.0) * line_h + (line_h - px * 1.1) * 0.5, 1.0, px * 1.1);
         if caret {
             self.solid(cx, at, foreground);
@@ -2036,6 +2045,64 @@ pub fn wrap_with(text: &str, max_w: f64, keep_blank: bool, mut measure: impl FnM
     lines
 }
 
+/// Text being typed, wrapped to `max_w` by `measure` with every character
+/// kept: each space stays (a space at a line's end hangs past it, so the
+/// caret goes after it at once), a line break makes a line even when blank,
+/// and the lines put back together are the text. Lines break before a word
+/// that does not fit, between CJK characters, and inside a word longer
+/// than a line; never before closing punctuation.
+pub fn wrap_exact(text: &str, max_w: f64, mut measure: impl FnMut(&str) -> f64) -> Vec<String> {
+    let mut lines = Vec::new();
+    for para in text.split('\n') {
+        let mut line = String::new();
+        let mut w = 0.0;
+        let mut word: Option<usize> = None;
+        let mut tokens: Vec<&str> = Vec::new();
+        for (i, c) in para.char_indices() {
+            if c.is_whitespace() || breaks_anywhere(c) {
+                if let Some(start) = word.take() {
+                    tokens.push(&para[start..i]);
+                }
+                tokens.push(&para[i..i + c.len_utf8()]);
+            } else if word.is_none() {
+                word = Some(i);
+            }
+        }
+        if let Some(start) = word {
+            tokens.push(&para[start..]);
+        }
+        for token in tokens {
+            let tw = measure(token);
+            let mut chars = token.chars();
+            let first = chars.next().unwrap_or(' ');
+            let single = chars.next().is_none();
+            let space = first.is_whitespace();
+            if !space && !line.is_empty() && w + tw > max_w && !(single && closes(first)) {
+                lines.push(std::mem::take(&mut line));
+                w = 0.0;
+            }
+            if !space && line.is_empty() && tw > max_w {
+                for c in token.chars() {
+                    let mut buf = [0u8; 4];
+                    let c_str = c.encode_utf8(&mut buf);
+                    let cw = measure(c_str);
+                    if !line.is_empty() && w + cw > max_w && !closes(c) {
+                        lines.push(std::mem::take(&mut line));
+                        w = 0.0;
+                    }
+                    line.push(c);
+                    w += cw;
+                }
+            } else {
+                line.push_str(token);
+                w += tw;
+            }
+        }
+        lines.push(line);
+    }
+    lines
+}
+
 #[cfg(test)]
 mod wrap_tests {
     use super::*;
@@ -2059,6 +2126,20 @@ mod wrap_tests {
         assert_eq!(wrap_with("你好世，再见", 6.0, false, width), ["你好世，", "再见"]);
         // Latin words and CJK mix with no space between them.
         assert_eq!(wrap_with("用OctoSense发送", 12.0, false, width), ["用OctoSense", "发送"]);
+    }
+
+    /// What is typed is shown as typed: a trailing space at once, a run of
+    /// spaces whole, blank lines, and the lines put back are the text.
+    #[test]
+    fn typed_text_keeps_every_space_and_line() {
+        assert_eq!(wrap_exact("hello ", 20.0, width), ["hello "]);
+        assert_eq!(wrap_exact("a  b", 20.0, width), ["a  b"]);
+        assert_eq!(wrap_exact("aaa bbb", 5.0, width), ["aaa ", "bbb"], "the space hangs at the line's end");
+        assert_eq!(wrap_exact("你好世界", 4.0, width), ["你好", "世界"]);
+        assert_eq!(wrap_exact("abc\n", 20.0, width), ["abc", ""], "the caret's empty line after a break");
+        assert_eq!(wrap_exact("", 20.0, width), [""]);
+        let typed = "one two  三四，五 https://example.com/very/long\n\nend ";
+        assert_eq!(wrap_exact(typed, 9.0, width).concat(), typed.replace('\n', ""), "nothing typed is lost");
     }
 
     #[test]
