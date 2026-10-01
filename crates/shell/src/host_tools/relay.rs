@@ -325,17 +325,7 @@ impl Catalog {
     /// may declare `mail.send` for itself, and owns only its own. `None` for
     /// a name without a namespace (a kernel tool).
     pub fn owner_of(&self, tool: &str) -> Option<String> {
-        let (ns, _) = tool.split_once('.')?;
-        if ns.is_empty() {
-            return None;
-        }
-        if ns == TOOLBOX || ns == "workflow" {
-            return Some(TOOLBOX.to_string());
-        }
-        if crate::native_apps::find(ns).is_some() {
-            return Some(ns.to_string());
-        }
-        Some(format!("os.{ns}"))
+        owner_of_tool(tool)
     }
 
     fn shareable(entry: &Value) -> bool {
@@ -390,6 +380,23 @@ impl Catalog {
         }
         out
     }
+}
+
+/// [`Catalog::owner_of`] without a catalog (it reads only the tool's name
+/// and the native apps): for callers that must not take the relay's lock,
+/// such as the first-use sheet under the approvals lock.
+pub fn owner_of_tool(tool: &str) -> Option<String> {
+    let (ns, _) = tool.split_once('.')?;
+    if ns.is_empty() {
+        return None;
+    }
+    if ns == TOOLBOX || ns == "workflow" {
+        return Some(TOOLBOX.to_string());
+    }
+    if crate::native_apps::find(ns).is_some() {
+        return Some(ns.to_string());
+    }
+    Some(format!("os.{ns}"))
 }
 
 /// `terminal.run` as the Terminal declares it (`native-apps.json`):

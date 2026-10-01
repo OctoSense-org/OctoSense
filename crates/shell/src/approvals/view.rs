@@ -646,7 +646,7 @@ fn act(hit: Hit) {
             super::with(|a| {
                 a.consent.set(&ApprovalGesture::sheet_tap(), &app, allow, now);
                 if allow && commands {
-                    a.consent.set_commands(&ApprovalGesture::sheet_tap(), &app, true, now);
+                    a.consent.give_commands(&ApprovalGesture::sheet_tap(), &app, now);
                 }
             });
         }

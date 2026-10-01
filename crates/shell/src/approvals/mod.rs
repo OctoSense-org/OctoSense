@@ -225,8 +225,6 @@ pub fn consent_granted(app: &str) -> bool {
     with(|a| a.consent_granted(app)).unwrap_or(false)
 }
 
-/// An app asks for its agent: shows the first-use sheet if the person has
-/// not decided yet.
 /// Whether the person gave `app`'s agent command execution (ADR 0004 §12),
 /// or developer mode covers it.
 pub fn commands_granted(app: &str) -> bool {
@@ -237,6 +235,8 @@ pub fn commands_granted(app: &str) -> bool {
     .unwrap_or(false)
 }
 
+/// An app asks for its agent: shows the first-use sheet if the person has
+/// not decided yet.
 pub fn consent_ask(summary: consent::AgentSummary) -> consent::State {
     with(|a| {
         let all = a.router.hooks().grants_all(&summary.app);
@@ -425,6 +425,16 @@ pub fn test_action(name: &str) -> bool {
             consent_ask(consent::AgentSummary::from_manifest("com.example.helper", "Helper", &manifest, &[], "The model set in AI providers"));
         }
         "approvals-settings" => open_settings(),
+        // Settings with an agent allowed before command execution was asked
+        // apart (saved only once the person changes something there).
+        "approvals-settings-commands" => {
+            let manifest = json!({"capabilities": ["news"], "agent": {"profile": "read-only", "tools": ["mail.send", "terminal.run"]}});
+            with(|a| {
+                a.consent.register(consent::AgentSummary::from_manifest("com.example.helper", "Helper", &manifest, &[], "The model set in AI providers"));
+                a.consent.allow_as_before_commands("com.example.helper", now());
+            });
+            open_settings();
+        }
         _ => return false,
     }
     true
