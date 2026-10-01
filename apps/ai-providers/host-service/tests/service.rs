@@ -76,6 +76,15 @@ impl Rig {
         heap
     }
 
+    /// A call from a surface that cannot show a sheet: a home-screen tile,
+    /// an agent's tool call.
+    fn send_background(&mut self, service: &str, args: Value) -> usize {
+        let heap = NEXT.fetch_add(1, Ordering::Relaxed);
+        let call = ServiceCall { app_id: APP.into(), service: service.into(), args, from_sheet: false, may_prompt: false, host_dir: self.dir.clone() };
+        dispatch(call, heap, 1, &mut self.host);
+        heap
+    }
+
     fn ask(&mut self, service: &str, args: Value) -> Result<Value, String> {
         let heap = self.send(APP, service, args, false);
         wait(heap)
@@ -127,6 +136,24 @@ fn all(providers: &Value) -> Vec<Value> {
 fn two_providers(rig: &mut Rig) {
     rig.add(json!({"family": "deepseek", "model": "deepseek-chat", "base_url": "", "api_type": "default", "key": DEEPSEEK_KEY}));
     rig.add(json!({"family": "zai", "model": "", "base_url": "", "api_type": "default", "key": ZAI_KEY}));
+}
+
+#[test]
+fn a_background_surface_cannot_raise_or_replace_a_sheet() {
+    let mut rig = Rig::new("background", None);
+    two_providers(&mut rig);
+    let id = all(&rig.ask("llm.providers", json!({})).unwrap())[0]["id"].clone();
+    // The person is adding a provider on the sheet in the foreground.
+    let waiting = rig.send(APP, "llm.add_provider", Value::Null, false);
+    let body = rig.host.body().to_string();
+    for (method, args) in [("llm.add_provider", Value::Null), ("llm.edit_provider", json!({"id": id})),
+                           ("llm.import_qr", Value::Null), ("llm.export_qr", Value::Null)] {
+        let heap = rig.send_background(method, args);
+        let refused = wait(heap).unwrap_err();
+        assert!(refused.contains("Open AI providers"), "{method}: {refused}");
+    }
+    assert_eq!(rig.host.body(), body, "the person's sheet is untouched");
+    assert!(still_waiting(waiting), "and its request still waits for them");
 }
 
 #[test]
