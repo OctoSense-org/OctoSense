@@ -32,6 +32,8 @@ pub mod storage;
 #[cfg(feature = "broker")]
 pub mod broker;
 #[cfg(feature = "broker")]
+pub mod peer_record;
+#[cfg(feature = "broker")]
 pub mod connectors;
 #[cfg(feature = "octos-core")]
 pub mod hosted;

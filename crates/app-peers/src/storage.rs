@@ -28,6 +28,16 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+/// An account id as the host keys it, everywhere: surrounding whitespace
+/// trimmed and lowercased (Unicode `to_lowercase`), so `Alice@Example.org `
+/// and `alice@example.org` are one account. The account folder's name
+/// (`octosense_shell::app_storage::account_hash`) and the agent's memory tag
+/// (`broker::account_tag`) both hash this. No other folding: ids reach the
+/// host from the app that signed them in.
+pub fn normalize_account(account: &str) -> String {
+    account.trim().to_lowercase()
+}
+
 /// Why a storage call was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StorageError {
@@ -239,6 +249,11 @@ mod tests {
         observe_accounts(None);
         account_changed("observer-probe", None, Some("b"));
         assert_eq!(*seen.lock().unwrap(), vec!["None->Some(\"a\")", "Some(\"a\")->None"]);
+    }
+
+    #[test]
+    fn should_normalize_an_account_by_trimming_and_lowercasing_it() {
+        assert_eq!(normalize_account("  Alice@Example.ORG\n"), "alice@example.org");
     }
 
     #[test]

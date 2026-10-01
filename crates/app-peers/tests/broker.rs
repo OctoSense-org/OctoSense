@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use octosense_app_peers::broker::{BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
+use octosense_app_peers::broker::{account_tag, app_namespace, BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
 use octosense_app_peers::host_tools::{AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, InputRefusal, PeerInput, QuestionAnswer, QuestionReply, ToolHost, ToolOutcome, ToolReply, TurnOrigin};
 use octosense_app_peers::*;
 use serde_json::{json, Value};
@@ -28,6 +28,9 @@ struct Script {
     busy_starts: usize,
     /// turn/interrupt ends the turn (a v2 `turn_terminal`, `interrupted`).
     interrupts_end: bool,
+    /// Every turn/start is refused with this kind (a refusal other than
+    /// `turn_in_progress`).
+    refuse_starts: Option<String>,
     /// What session/hydrate answers (`messages`) for a request context.
     history: Vec<Value>,
     /// What session/hydrate answers for the peer's own session.
@@ -35,6 +38,10 @@ struct Script {
     /// peer/context/open ignores `share_history` (a kernel before it).
     no_share_history: bool,
     connects: usize,
+    /// Like octos: each staged peer's workspace by name; a resume must name
+    /// the same one (no `cwd`: the kernel's `/kernel/ws`), and a `cwd` must
+    /// exist. `None`: nothing is checked.
+    bindings: Option<std::collections::HashMap<String, String>>,
     /// Each connection's kernel-to-broker half (`None`: closed).
     out: Vec<Option<mpsc::UnboundedSender<String>>>,
 }
@@ -86,6 +93,9 @@ impl Connector for FakeConnector {
     fn available(&self) -> Result<(), String> {
         Ok(())
     }
+    fn kernel_id(&self) -> Option<String> {
+        Some(format!("fake:{:p}", Arc::as_ptr(&self.0)))
+    }
     fn connect(&self) -> BoxFuture<'static, Result<Box<dyn Link>, String>> {
         let script = self.0.clone();
         Box::pin(async move {
@@ -104,6 +114,7 @@ impl Connector for FakeConnector {
                     let params = frame["params"].clone();
                     let id = frame["id"].clone();
                     let interrupts_end = script.lock().unwrap().interrupts_end;
+                    let refuse_start = script.lock().unwrap().refuse_starts.clone().filter(|_| method == "turn/start");
                     let (legacy, hold, refuse_register, busy, history, no_share) = {
                         let mut s = script.lock().unwrap();
                         s.calls.push((method.clone(), params.clone()));
@@ -131,6 +142,26 @@ impl Connector for FakeConnector {
                                 .to_lowercase()
                                 .replace(' ', "-");
                             let cwd = params["cwd"].as_str().unwrap_or("/kernel/ws").to_owned();
+                            let checked = {
+                                let mut s = script.lock().unwrap();
+                                let resume = params.get("host_token").is_some();
+                                match s.bindings.as_mut() {
+                                    Some(_) if params.get("cwd").is_some() && cwd != "/kernel/ws" && !std::path::Path::new(&cwd).is_dir() => Err("invalid_params"),
+                                    Some(b) if resume => match b.get(&name) {
+                                        Some(bound) if *bound != cwd => Err("peer_binding_mismatch"),
+                                        _ => Ok(()),
+                                    },
+                                    Some(b) => {
+                                        b.insert(name.clone(), cwd.clone());
+                                        Ok(())
+                                    }
+                                    None => Ok(()),
+                                }
+                            };
+                            if let Err(kind) = checked {
+                                send(refuse(kind));
+                                continue;
+                            }
                             let mut result = json!({"slug": name, "cwd": cwd, "model": {"lane": "primary"}});
                             if !legacy {
                                 result["memory_namespace"] = params["memory_namespace"].clone();
@@ -170,6 +201,7 @@ impl Connector for FakeConnector {
                             send(reply(result));
                         }
                         "turn/start" if busy => send(refuse("turn_in_progress")),
+                        "turn/start" if refuse_start.is_some() => send(refuse(refuse_start.as_deref().unwrap())),
                         "turn/start" => {
                             let session = params["session_id"].clone();
                             let turn = params["turn_id"].clone();
@@ -229,6 +261,10 @@ fn new_broker_timed(services: &[&str], host: Option<Arc<RecordingHost>>, state_d
 }
 
 fn new_broker_app(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>) -> (Broker, Arc<Mutex<Script>>) {
+    new_broker_cfg(app, services, host, state_dir, timing, None)
+}
+
+fn new_broker_cfg(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>, turn_timeout: Option<Duration>) -> (Broker, Arc<Mutex<Script>>) {
     let script = Arc::new(Mutex::new(Script::default()));
     let mut cfg = BrokerConfig::new(
         Deployment::Hosted,
@@ -243,6 +279,9 @@ fn new_broker_app(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>
     if let Some((deadline, grace)) = timing {
         cfg.prompt_deadline = Duration::from_millis(deadline);
         cfg.expiry_grace = Duration::from_millis(grace);
+    }
+    if let Some(timeout) = turn_timeout {
+        cfg.turn_timeout = timeout;
     }
     (
         Broker::new(cfg, Arc::new(FakeConnector(script.clone()))),
@@ -507,6 +546,8 @@ struct RecordingHost {
     declared: Mutex<Vec<Value>>,
     workspace: Mutex<Option<std::path::PathBuf>>,
     suspended: Mutex<bool>,
+    /// The startup check refused the account's workspace, and why.
+    refused: Mutex<Option<String>>,
     /// Answer each call at once with this (else hold it).
     answer: Mutex<Option<ToolOutcome>>,
     calls: Mutex<Vec<(HostToolCall, ToolReply)>>,
@@ -533,6 +574,9 @@ impl ToolHost for RecordingHost {
     }
     fn suspended(&self, _app: &str, _account: &str) -> bool {
         *self.suspended.lock().unwrap()
+    }
+    fn workspace_refused(&self, _app: &str, _account: &str) -> Option<String> {
+        self.refused.lock().unwrap().clone()
     }
     fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
         if let Some(outcome) = self.answer.lock().unwrap().clone() {
@@ -977,18 +1021,286 @@ fn a_new_peers_workspace_is_the_account_folder_and_a_resume_keeps_the_one_it_was
     assert_eq!(prepare["host_token"], "fixture-host-token");
     assert_eq!(prepare["cwd"], "/home/apps/rinx/accounts/abc");
     drop(broker);
-    // A peer created before (a token, no recorded workspace) keeps the kernel's.
-    for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-        if entry.path().extension().is_some_and(|e| e == "cwd") {
-            std::fs::remove_file(entry.path()).unwrap();
-        }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn scratch(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("app-peers-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::canonicalize(&dir).unwrap()
+}
+
+/// The files a broker kept before one record held both (`<ns>.token`,
+/// `<ns>.cwd`).
+fn legacy_files(dir: &std::path::Path, account: &str, cwd: Option<&str>) {
+    let stem = app_namespace("rinx", account).replace('/', "_");
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join(format!("{stem}.token")), "fixture-host-token").unwrap();
+    if let Some(cwd) = cwd {
+        std::fs::write(dir.join(format!("{stem}.cwd")), cwd).unwrap();
     }
-    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+}
+
+fn files_in(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    names
+}
+
+fn strict(script: &Arc<Mutex<Script>>, bound: &[(&str, &str)]) {
+    script.lock().unwrap().bindings = Some(bound.iter().map(|(n, c)| (n.to_string(), c.to_string())).collect());
+}
+
+/// The slug the fake kernel gives the Rinx peer of `account`.
+fn slug_of(account: &str) -> String {
+    format!("rinx-{}", account_tag(account))
+}
+
+/// The slug of a peer recorded before names carried the whole tag.
+fn short_slug_of(account: &str) -> String {
+    format!("rinx-{}", &account_tag(account)[..8])
+}
+
+#[cfg(unix)]
+fn mode(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+/// ADR 0004 §11: the host token and the workspace are one record, written
+/// at once, owner-only, so a resume never finds one without the other.
+#[test]
+fn should_keep_the_token_and_workspace_in_one_owner_only_record_when_a_peer_is_created() {
+    let root = scratch("record");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, _script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
     broker.set_account(Some("@a:x"));
     wait_for("the peer", || broker.availability() == Availability::Ready);
-    assert!(calls_of(&script, "peer/prepare")[0].1.get("cwd").is_none());
+    drop(broker);
+    let files = files_in(&dir);
+    assert_eq!(files.len(), 1, "one record, no token or cwd files: {files:?}");
+    assert!(files[0].ends_with(".peer"), "{files:?}");
+    let record: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(&files[0])).unwrap()).unwrap();
+    assert_eq!(record["token"], "fixture-host-token");
+    assert_eq!(record["cwd"], ws.to_string_lossy().as_ref());
+    #[cfg(unix)]
+    {
+        assert_eq!(mode(&dir), 0o700, "the state directory is owner-only");
+        assert_eq!(mode(&dir.join(&files[0])), 0o600, "the record is owner-only");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn should_resume_from_the_legacy_token_and_cwd_files_and_migrate_them_to_one_record() {
+    let root = scratch("migrate");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    legacy_files(&dir, "@a:x", Some(&ws.to_string_lossy()));
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(root.join("elsewhere"));
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(short_slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    let prepare = calls_of(&script, "peer/prepare")[0].1.clone();
+    assert_eq!(prepare["host_token"], "fixture-host-token");
+    assert_eq!(prepare["cwd"], ws.to_string_lossy().as_ref());
+    drop(broker);
+    let files = files_in(&dir);
+    assert_eq!(files.len(), 1, "migrated: {files:?}");
+    assert!(files[0].ends_with(".peer"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A token with no saved workspace: the account folder first (a peer made
+/// there whose cwd was never recorded), else the kernel's own (a peer made
+/// before the account folder was its workspace). Either way it is saved.
+#[test]
+fn should_resume_with_the_account_folder_when_no_workspace_was_saved() {
+    let root = scratch("nocwd");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    legacy_files(&dir, "@a:x", None);
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(short_slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    let prepares = calls_of(&script, "peer/prepare");
+    assert_eq!(prepares.len(), 1);
+    assert_eq!(prepares[0].1["cwd"], ws.to_string_lossy().as_ref());
+    drop(broker);
+    let record = std::fs::read_to_string(dir.join(&files_in(&dir)[0])).unwrap();
+    assert!(record.contains(&*ws.to_string_lossy()), "{record}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn should_fall_back_to_the_kernels_workspace_when_a_legacy_peer_was_made_there() {
+    let root = scratch("kernelws");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    legacy_files(&dir, "@a:x", None);
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    strict(&script, &[(short_slug_of("@a:x").as_str(), "/kernel/ws")]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    let prepares = calls_of(&script, "peer/prepare");
+    assert_eq!(prepares.len(), 2, "the account folder, then the kernel's");
+    assert_eq!(prepares[0].1["cwd"], ws.to_string_lossy().as_ref());
+    assert!(prepares[1].1.get("cwd").is_none());
+    drop(broker);
+    // Saved: the next run resumes at once.
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(short_slug_of("@a:x").as_str(), "/kernel/ws")]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert_eq!(calls_of(&script, "peer/prepare").len(), 1);
+    drop(broker);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// FNV-1a of the raw bytes: the tag before accounts were normalized.
+fn raw_tag(account: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in account.bytes() {
+        hash ^= u64::from(b);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// A new peer's name carries the whole 64-bit tag (it is what a resume
+/// finds the peer by), not 32 bits of it.
+#[test]
+fn should_name_a_new_peer_with_the_whole_account_tag() {
+    let (broker, script) = new_broker(&ALL);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert_eq!(calls_of(&script, "peer/prepare")[0].1["names"][0], format!("Rinx {}", account_tag("@a:x")));
+}
+
+/// A peer recorded before names were widened resumes under its old name;
+/// one made under an un-normalized account keeps its namespace, and the
+/// record keeps both.
+#[test]
+fn should_resume_an_older_peer_under_its_own_name_and_namespace() {
+    let root = scratch("oldname");
+    let dir = root.join("peers");
+    let raw = "@A:X ";
+    let old_ns = format!("app/rinx/acct-{}", raw_tag(raw));
+    assert_ne!(old_ns, app_namespace("rinx", raw), "the tag changed for this id");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{}.token", old_ns.replace('/', "_"))), "fixture-host-token").unwrap();
+    for run in 0..2 {
+        let (broker, script) = new_broker_with(&ALL, None, Some(dir.clone()));
+        broker.set_account(Some(raw));
+        wait_for("the peer", || broker.availability() == Availability::Ready);
+        let prepare = calls_of(&script, "peer/prepare")[0].1.clone();
+        assert_eq!(prepare["host_token"], "fixture-host-token", "run {run}");
+        assert_eq!(prepare["memory_namespace"], old_ns.as_str(), "run {run}");
+        assert_eq!(prepare["names"][0], format!("Rinx {}", &raw_tag(raw)[..8]), "run {run}");
+        drop(broker);
+    }
+    let files = files_in(&dir);
+    assert_eq!(files.len(), 1, "one record: {files:?}");
+    let record: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(&files[0])).unwrap()).unwrap();
+    assert_eq!(record["namespace"], old_ns.as_str());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Removing an account deletes its folder; adding it again resumes the same
+/// peer, whose workspace must exist first.
+#[test]
+fn should_recreate_the_account_folder_before_resuming_when_it_was_removed() {
+    let root = scratch("recreate");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    strict(&script, &[]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    drop(broker);
+    std::fs::remove_dir_all(&ws).unwrap();
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert!(ws.is_dir(), "recreated");
+    #[cfg(unix)]
+    assert_eq!(mode(&ws), 0o700);
+    drop(broker);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// ADR 0004 §11: a workspace the startup check refused stays refused for a
+/// resumed peer too, not only for a new one.
+#[test]
+fn should_prepare_no_peer_when_the_workspace_is_refused_new_or_resumed() {
+    let dir = std::env::temp_dir().join(format!("app-peers-refused-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some("/home/apps/rinx/accounts/abc".into());
+    *host.refused.lock().unwrap() = Some("a symlink into the secrets".into());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(calls_of(&script, "peer/prepare").is_empty(), "no new peer on a refused workspace");
+    assert_ne!(broker.availability(), Availability::Ready);
+    drop(broker);
+    // A peer made while the workspace was clean...
+    *host.refused.lock().unwrap() = None;
+    let (broker, _script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    drop(broker);
+    // ...is not resumed once a later start refuses it.
+    *host.refused.lock().unwrap() = Some("a symlink into the secrets".into());
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(calls_of(&script, "peer/prepare").is_empty(), "no resume on a refused workspace");
+    assert_ne!(broker.availability(), Availability::Ready);
     drop(broker);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn should_refuse_input_and_tool_calls_when_the_workspace_is_refused() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    *host.refused.lock().unwrap() = Some("a hard link to a secret".into());
+    notify(&script, "peer/input", json!({"peer": slug, "session_id": session, "input_id": "r1", "turn_id": "turn-r1", "text": "hi"}));
+    wait_for("the rejection", || !calls_of(&script, "peer/input/reject").is_empty());
+    let reject = calls_of(&script, "peer/input/reject")[0].1.clone();
+    assert_eq!(reject["reason"], "other");
+    assert!(reject["message"].as_str().unwrap().contains("workspace"), "{reject}");
+    assert!(host.inputs.lock().unwrap().is_empty(), "refused before the host is asked");
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", "t1", None));
+    wait_for("the refusal", || !calls_of(&script, "peer/tool/result").is_empty());
+    assert_eq!(calls_of(&script, "peer/tool/result")[0].1["error"]["kind"], "workspace_refused");
+    assert!(host.calls.lock().unwrap().is_empty(), "nothing ran");
+    assert!(calls_of(&script, "turn/start").is_empty());
 }
 
 #[test]
@@ -1065,6 +1377,66 @@ fn octos_own_approvals_on_a_context_or_the_peers_session_go_to_the_host() {
     drop(broker);
 }
 
+/// ADR 0004 §8 (the 2026-09-29 review's first gap): a kernel tool's
+/// approval on the system agent's `peer/input` turn reaches the host (the
+/// person decides; the system agent never answers it), stamped as the
+/// system agent's turn, and the app only hears that the host has it. When
+/// its turn ends unanswered it is withdrawn from the host.
+#[test]
+fn a_kernel_tool_approval_on_a_peer_input_turn_goes_to_the_host_and_ends_with_its_turn() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    let (_slug, session) = busy_peer(&broker, &script);
+    let conversation = broker.open_conversation(spec("@a:x", "ask#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    conversation.subscribe(Some(sink));
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls",
+        "risk_level": "high"}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    let (approval, answer) = host.approvals.lock().unwrap()[0].clone();
+    assert!(approval.octos, "a kernel tool, not a host tool");
+    assert_eq!((approval.app.as_str(), approval.tool.as_str(), approval.turn_id.as_str()), ("rinx", "shell", "turn-i1"));
+    assert_eq!(approval.trigger, TurnTrigger::SystemAgent, "the system agent's turn: its rules, never 'the person'");
+    assert_eq!(approval.calling_kind, octosense_app_peers::host_tools::CallerKind::AppPeer, "the app's own agent calls; the person decides");
+    assert!(approval.context_id.is_none() && approval.client.is_none());
+    let seen: Vec<String> = events(&rx, Duration::from_millis(300)).iter().map(|d| d["method"].as_str().unwrap_or("").to_owned()).collect();
+    assert!(seen.iter().any(|m| m == host_tools::HANDLED_BY_HOST), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "approval/requested"), "the app never answers it: {seen:?}");
+    assert!(position(&script, "approval/respond").is_none(), "nobody answered for the person");
+    // The turn ends before anyone answered: the host's sheet stops asking,
+    // and the next queued input starts.
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-i1"}));
+    wait_for("withdrawn", || host.closed_approvals.lock().unwrap().contains(&"k1".to_string()));
+    assert!(!answer.is_sent());
+    wait_for("the queued input", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
+/// The link an approval or question came on closed (a kernel restart, the
+/// app released): nothing can answer it there any more, so the host
+/// withdraws what it holds instead of asking until the deadline.
+#[test]
+fn a_closed_link_withdraws_the_approvals_and_questions_the_host_holds() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    let (_slug, session) = busy_peer(&broker, &script);
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls"}));
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k2", "turn_id": "turn-i1", "tool_name": "write_file", "title": "Write", "body": "b"}));
+    notify(&script, "user_question/requested", json!({"session_id": session, "question_id": "q1", "turn_id": "turn-i1", "title": "Which?", "body": "",
+        "questions": [{"header": "H", "question": "Which?", "options": [], "allow_free_text": true}]}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 2 && host.questions.lock().unwrap().len() == 1);
+    // One answered before the link went: that one is not withdrawn.
+    assert!(host.approvals.lock().unwrap()[1].1.respond(true));
+    kill_link(&script);
+    wait_for("withdrawn", || !host.closed_approvals.lock().unwrap().is_empty() && !host.closed_questions.lock().unwrap().is_empty());
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(*host.closed_approvals.lock().unwrap(), ["k1"]);
+    assert_eq!(*host.closed_questions.lock().unwrap(), ["q1"]);
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
 
 /// octos#2621: a `peer/input` the host will not act on is refused on the
 /// connection it came on, with the reason (signed_out, no_consent, busy,
@@ -1127,6 +1499,149 @@ fn a_refused_input_is_rejected_with_its_reason_before_any_turn() {
     assert!(!calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-full"));
 }
 
+
+/// A second instance of the app on the same kernel: its broker for the same
+/// peer, on a connection of its own.
+fn second_instance(script: &Arc<Mutex<Script>>, host: &Arc<RecordingHost>) -> Broker {
+    let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", ALL.iter().map(|s| s.to_string()).collect());
+    cfg.tool_host = Some(ToolHostHandle(host.clone() as Arc<dyn ToolHost>));
+    Broker::new(cfg, Arc::new(FakeConnector(script.clone())))
+}
+
+/// Every connection the fake kernel has open (the shell's kernel router
+/// sends a peer session's frames to every consumer that named it).
+fn broadcast(script: &Arc<Mutex<Script>>, method: &str, params: Value) {
+    let conns = script.lock().unwrap().out.len();
+    for conn in 0..conns {
+        emit(script, conn, json!({"jsonrpc": "2.0", "method": method, "params": params}).to_string());
+    }
+}
+
+/// ADR 0004 §5 (the 2026-09-29 review): octos routes a peer's `peer/input`
+/// and tool calls to the connection that registered its tools LAST, and the
+/// shell's kernel router hands a peer session's frames to every consumer
+/// that named it. With two instances of one app (two windows of one
+/// module), exactly one broker drives the peer: the oldest live
+/// instance registers the tools and takes the peer's inputs, calls,
+/// approvals and questions, once; the other takes none. When the driving
+/// instance closes, the next one registers on its own connection and takes
+/// over (with the queue), and the peer's running turn is not stopped while
+/// an instance of the app is still open.
+#[test]
+fn two_instances_of_one_app_drive_the_peer_once_and_hand_over_on_close() {
+    let host = Arc::new(RecordingHost::default());
+    let (first, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    first.set_account(Some("@a:x"));
+    wait_for("the first", || first.availability() == Availability::Ready);
+    let second = second_instance(&script, &host);
+    second.set_account(Some("@a:x"));
+    wait_for("the second", || second.availability() == Availability::Ready && second.peer().is_some());
+    std::thread::sleep(Duration::from_millis(200));
+    let registers = calls_of(&script, "peer/tools/register");
+    assert_eq!(registers.len(), 1, "only the driving instance registers: {registers:?}");
+    let first_conn = registers[0].0;
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    assert_eq!(second.peer().unwrap().0, slug, "the same peer");
+
+    // An input reaches both: one turn, on the driver's connection.
+    let input = |id: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id});
+    broadcast(&script, "peer/input", input("i1"));
+    wait_for("the turn", || !calls_of(&script, "turn/start").is_empty());
+    std::thread::sleep(Duration::from_millis(200));
+    let starts = calls_of(&script, "turn/start");
+    assert_eq!(starts.len(), 1, "one turn per input: {starts:?}");
+    assert_eq!(starts[0].0, first_conn);
+    assert_eq!(host.inputs.lock().unwrap().len(), 1, "admitted once");
+    // A call and an approval of the peer's session reach both: the host gets each once.
+    broadcast(&script, "peer/tool/call", tool_call_params(&slug, "c1", "turn-i1", None));
+    broadcast(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls"}));
+    wait_for("the call and the approval", || host.calls.lock().unwrap().len() == 1 && host.approvals.lock().unwrap().len() == 1);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(host.calls.lock().unwrap().len(), 1, "run once");
+    assert_eq!(host.calls.lock().unwrap()[0].0.origin, CallOrigin::PeerInput);
+    assert_eq!(host.approvals.lock().unwrap().len(), 1, "one sheet");
+    // A second input waits behind the running turn.
+    broadcast(&script, "peer/input", input("i2"));
+    wait_for("queued", || first.queued_inputs() == 1);
+    assert_eq!(second.queued_inputs(), 0);
+
+    // The driving instance closes: the running turn goes on, the other
+    // instance registers on its own connection and takes over.
+    first.release();
+    wait_for("the hand-over", || calls_of(&script, "peer/tools/register").len() == 2);
+    let registers = calls_of(&script, "peer/tools/register");
+    assert_ne!(registers[1].0, first_conn, "on the second instance's connection");
+    std::thread::sleep(Duration::from_millis(700));
+    assert!(position(&script, "turn/interrupt").is_none(), "an instance is still open: the turn goes on");
+    assert_eq!(second.queued_inputs(), 1, "the queue moved over");
+    // The turn ends: the queued input starts on the new driver's connection.
+    broadcast(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-i1"}));
+    wait_for("the queued input", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-i2");
+    assert_eq!(calls_of(&script, "turn/start")[1].0, registers[1].0);
+    // Its calls are the new driver's, still stamped as the system agent's.
+    broadcast(&script, "peer/tool/call", tool_call_params(&slug, "c2", "turn-i2", None));
+    wait_for("the second call", || host.calls.lock().unwrap().len() == 2);
+    assert_eq!(host.calls.lock().unwrap()[1].0.origin, CallOrigin::PeerInput);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(host.calls.lock().unwrap().len(), 2);
+    // The last instance closes: now its running turn is stopped.
+    second.release();
+    wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
+    drop(first);
+    drop(second);
+}
+
+/// The 2026-09-29 review: a host `turn/start` for a `peer/input` that the
+/// kernel refuses (anything but `turn_in_progress`, which is retried) is
+/// said to the kernel with `peer/input/reject` and the reason, on the
+/// connection the input came on, so the system agent learns why the app
+/// did not act; the peer's queue moves on. Retrying `turn_in_progress`
+/// until the turn timeout ends as `busy`.
+#[test]
+fn a_refused_turn_start_for_an_input_is_rejected_with_its_reason() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_cfg("rinx", &ALL, Some(host.clone()), None, None, Some(Duration::from_millis(600)));
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    let input = |id: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id});
+    let rejects = || calls_of(&script, "peer/input/reject");
+
+    // A refusal other than turn_in_progress: `other`, with the kernel's words.
+    script.lock().unwrap().refuse_starts = Some("session_not_found".into());
+    notify(&script, "peer/input", input("r1"));
+    wait_for("the reject", || rejects().len() == 1);
+    let (conn, reject) = rejects()[0].clone();
+    assert_eq!(reject["input_id"], "r1");
+    assert_eq!(reject["reason"], "other");
+    let message = reject["message"].as_str().unwrap();
+    assert!(message.contains("session_not_found"), "{message}");
+    assert!(message.len() <= 256 && !message.chars().any(char::is_control));
+    assert_eq!((reject["peer"].as_str(), reject["host_token"].as_str()), (Some(slug.as_str()), Some("fixture-host-token")));
+    assert_eq!(conn, calls_of(&script, "peer/tools/register")[0].0, "on the connection the input came on");
+    assert!(broker.peer_active_turn().is_none(), "the peer is free again");
+
+    // Still busy after the turn timeout: `busy`.
+    script.lock().unwrap().refuse_starts = None;
+    script.lock().unwrap().busy_starts = 1000;
+    notify(&script, "peer/input", input("b1"));
+    wait_for("the busy reject", || rejects().len() == 2);
+    assert_eq!(rejects()[1].1["input_id"], "b1");
+    assert_eq!(rejects()[1].1["reason"], "busy");
+    assert!(rejects()[1].1.get("message").is_none());
+
+    // The next input starts as usual.
+    script.lock().unwrap().busy_starts = 0;
+    notify(&script, "peer/input", input("ok"));
+    wait_for("the next turn", || calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-ok"));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(rejects().len(), 2, "a started input is never refused");
+    drop(broker);
+}
 
 // ---------------------------------------------------------------------------
 // The shared peer conversation (ADR 0004 §6, octos#2626): the person and the
@@ -1729,6 +2244,43 @@ fn stop_on_the_conversation_interrupts_both_lanes() {
     let (sink, rx) = collect();
     chat.call(ContextOp::Interrupt, sink).unwrap();
     assert!(complete(&rx).unwrap_err().contains("Nothing is running"));
+    drop(broker);
+}
+
+/// The shell's "Ask <app>" panel stops one lane at a time: its Stop ends
+/// the person's own turn and leaves the system agent's running; the system
+/// agent's is stopped only on its own control. Late calls of a stopped turn
+/// are refused as with any Stop.
+#[test]
+fn a_lane_stop_leaves_the_other_lane_running() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_app("lane-stop-test", &ALL, Some(host.clone()), None, None);
+    let (slug, session) = busy_peer(&broker, &script);
+    script.lock().unwrap().interrupts_end = true;
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, person_rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "long job".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    wait_for("the person's turn", || calls_of(&script, "turn/start").len() == 2);
+    let (_, lane) = person_lane(&script, 0);
+    let person_turn = calls_of(&script, "turn/start")[1].1["turn_id"].as_str().unwrap().to_owned();
+    let mine = |app: &str| app == "lane-stop-test";
+
+    let stopped = octosense_app_peers::broker::interrupt_lane_where(mine, octosense_app_peers::broker::LANE_PERSON);
+    assert_eq!(stopped, std::slice::from_ref(&person_turn));
+    wait_for("the person's interrupt", || calls_of(&script, "turn/interrupt").len() == 1);
+    assert_eq!(calls_of(&script, "turn/interrupt")[0].1, json!({"session_id": lane, "turn_id": person_turn}));
+    assert!(complete(&person_rx).is_err(), "the person's turn ended interrupted");
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(calls_of(&script, "turn/interrupt").len(), 1, "the system agent's turn goes on");
+    assert_eq!(broker.peer_active_turn().as_deref(), Some("turn-i1"));
+
+    let stopped = octosense_app_peers::broker::interrupt_lane_where(mine, octosense_app_peers::broker::LANE_SYSTEM_AGENT);
+    assert_eq!(stopped, ["turn-i1"]);
+    wait_for("the system agent's interrupt", || calls_of(&script, "turn/interrupt").len() == 2);
+    assert_eq!(calls_of(&script, "turn/interrupt")[1].1, json!({"session_id": session, "turn_id": "turn-i1"}));
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c-late", "turn-i1", None));
+    wait_for("the refusal", || calls_of(&script, "peer/tool/result").iter().any(|(_, p)| p["call_id"] == "c-late"));
+    assert!(octosense_app_peers::broker::interrupt_lane_where(|app| app == "other", octosense_app_peers::broker::LANE_PERSON).is_empty());
     drop(broker);
 }
 
