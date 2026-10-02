@@ -2,7 +2,9 @@
 
 [English](ai-services.md) | 简体中文
 
-助手如何接入 OctoSense：Shell 运行的 [octos](https://github.com/octos-org/octos) Agent 内核、用户在哪里配置它、哪些应用可以使用以及如何使用，还有哪些在规划中。本文描述 2026-09-28 的 `main`（OctoSense `ad0d738`，它锁定 octos `5e7577f0` 和 OctoSense-App-Hub `e8601b80`）。标为**目前可用**的内容都在这份代码中读过；**进行中**表示有未合并的 pull request；**规划中**表示只有 ADR 或未关闭的 issue，尚无代码合入。
+本文介绍 OctoSense 的 octos 内核、提供方配置、应用 peer 和工具。状态说明以当前检出为准；阅读外部源码时使用 [Cargo.toml](../Cargo.toml) 的依赖锁定版本。下方带日期的运行信息是历史验证记录。
+
+历史源码评审分别在 2026-09-28（OctoSense `ad0d738`）和 2026-09-29（`baa90bd`）进行；这些日期不代表当前状态表的更新时间。
 
 本文讨论的是 OctoSense *内部*的助手。开发应用不需要任何 AI 服务，也不需要特定的编程 Agent：应用开发工具集 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 适用于任何 Agent，也可以不用 Agent。它的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md) 页面是本文面向应用开发者的简短版本。
 
@@ -32,10 +34,10 @@
 | News 数据服务（`news`，不使用模型） | 已合入（[#69](https://github.com/OctoSense-org/OctoSense/pull/69)）；只响应 `os.*` 应用 | [`apps/news/host-service`](../apps/news/host-service/README.md) |
 | `glance.publish`：L0/L1 source 卡片或 Splash script 卡片 | 已合入（[#72](https://github.com/OctoSense-org/OctoSense/pull/72)）；获得 `glance` 权限的隔离应用可以发布（[#86](https://github.com/OctoSense-org/OctoSense/pull/86)）。`sys.digest` 有单独的运行时/宿主要求；[#87](https://github.com/OctoSense-org/OctoSense/pull/87) 是历史跟踪链接，不表示当前 PR 状态 | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs) |
 | 审批、首次使用同意、开发者模式 | 已实现：Shell 审批路由、常设规则及面板接收 AI 服务总线和内核工具审批；首次运行先征求同意，开发者模式由用户开启 | [架构 § 审批](architecture.zh-CN.md#5-审批) |
-| 系统 Agent 的工具集 | 目前可用，已强制：从不提供 octos 的 shell（`_main` profile 的 `tool_policy`，[#117](https://github.com/OctoSense-org/OctoSense/pull/117)），且每次内核启动都设置系统会话的精确内核工具列表（`session/tool_list/set`，octos#2648） | [架构 § 工具与授权](architecture.zh-CN.md#4-工具与授权) |
+| 系统 Agent 的工具集 | 已强制：不提供 octos 内置 shell；精确设置系统会话内核工具列表。用户开启命令执行后通过 `terminal.run`，每次命令实时确认；Terminal 可用时模块和进程托管均支持 | [架构 § 工具与授权](architecture.zh-CN.md#4-工具与授权) |
 | 原生应用只声明一次（`native-apps.json`），按目标平台决定托管方式；Terminal 作为系统应用在桌面端以独立进程运行 | 目前可用（[#113](https://github.com/OctoSense-org/OctoSense/pull/113)） | [架构 § 原生应用](architecture.zh-CN.md#原生应用进程内还是独立进程) |
 | 应用自己的 Agent：声明与执行 | News/Mail/Calendar/Photos/Maps/Camera/YouTube 的 `tools.json`、通用工具授权、peer 和宿主服务执行器已实现。`AGENT.md` 提示词加载、包内 skills/模型选择和自动触发器仍有缺口 | [见下文](#规划中事件驱动的应用-agentadr-0002) |
-| 独立进程中的原生应用访问自己的 Agent（peer link，ADR 0004 §5） | 规划中（计划第 8 步）。Makepad 的客户端一侧已合入（[OctoSense-org/makepad#54](https://github.com/OctoSense-org/makepad/pull/54)，`makepad_ai_services::peer`）；Shell 一侧尚未实现（`crates/shell/src/hub.rs` 中没有） | [架构 § 应用与它自己的 Agent](architecture.zh-CN.md#应用与它自己的-agent) |
+| 独立进程中的原生应用访问自己的 Agent（peer link） | Makepad 客户端与 Shell `crates/shell/src/peer_link/` 均已实现。当前没有进程应用申请自己的 Agent；Terminal 声明了工具但未申请 peer | [架构 § 应用与它自己的 Agent](architecture.zh-CN.md#应用与它自己的-agent) |
 
 ## 架构
 
@@ -47,7 +49,7 @@ flowchart TB
     sheet["宿主面板<br/>密钥、QR、PIN"]
     llm["llm 宿主服务<br/>写入提供方配置"]
     aihost["crates/ai-host<br/>start、策略、offer"]
-    broker["crates/app-peers broker<br/>每个获授权的原生应用一个 peer"]
+    broker["crates/app-peers broker<br/>每个获授权应用/账号一个 peer"]
     runner["Card runner（App Hub）<br/>宿主服务：mail、news、glance、llm、model、octos"]
     router["审批路由<br/>crates/shell/src/approvals"]
     bus["AI 服务总线<br/>crates/shell/src/ai_bus.rs"]
@@ -69,7 +71,7 @@ flowchart TB
   rinx -- "受限的 OctosAppService" --> broker
   appcard -- "自己的连接" --> kernel
   scripts -- "host.request" --> runner
-  runner -- "octos.* 服务<br/>peer card.&lt;应用 id&gt;" --> broker
+  runner -- "octos.* 服务<br/>broker 身份 card.&lt;应用 id&gt;" --> broker
   rinx -- "类型化工具" --> bus
   bus -- "confirm: host 调用" --> router
   router --> person
@@ -77,18 +79,18 @@ flowchart TB
 
 ### octos 内核：每个 Shell 一个
 
-内核是一个 **Shell 服务**（[`crates/kernel`](../crates/kernel/README.md)，包名 `octosense-kernel`），不是应用。Shell 在启动时配置一次；在第一个使用者调用 `octosense_kernel::connect()` 之前什么都不运行，之后的使用者共享同一个进程。octos 对它的数据目录持有单写者锁，所以每个 core 目录只有一个内核。最后一个连接关闭时内核停止；`shutdown()` 随 Shell 一起停止它（最多 5 秒）。
+内核是一个 **Shell 服务**（[`crates/kernel`](../crates/kernel/README.md)，包名 `octosense-kernel`），不是应用。Shell 在启动时配置一次；在第一个使用者调用 `octosense_kernel::connect()` 之前什么都不运行，之后的使用者共享同一个进程。octos 对它的数据目录持有单写者锁，所以每个 core 目录只有一个内核。普通模式下最后一个连接关闭时内核停止；Talk to Octos 开启期间会保持共享内核存活；`shutdown()` 随 Shell 一起停止它（最多 5 秒）。
 
 各平台的运行方式（`crates/kernel/src/launch.rs`，`crates/ai-host` 中的 `KernelSource::platform()`）：
 
 | 平台 | 内核 | Core 目录（octos home） |
 | --- | --- | --- |
-| 桌面端（macOS；Windows 和 Linux 未测试） | `$OCTOS_APP_CORE_BIN serve --stdio --data-dir <core 目录>`（存在 `<core 目录>/config.json` 时再加 `--config`）。**没有 `OCTOS_APP_CORE_BIN` 就没有内核**，开发者自己运行的 `octos serve` 永远不会被动到。把内核打包在桌面端二进制旁边的工作正在进行（[#85](https://github.com/OctoSense-org/OctoSense/pull/85)）。 | `$OCTOS_APP_CORE_DIR`，否则为 `<OctoSense 状态目录>/octos-home/.octos`（`~/.octosense/octos-home/.octos`）：OctoSense 自己的目录，不再是用户的 `~/octos-home/.octos`（只从中复制一次提供商设置） |
+| 桌面端（macOS；Windows 和 Linux 未测试） | `$OCTOS_APP_CORE_BIN serve --stdio --data-dir <core 目录>`（存在 `<core 目录>/config.json` 时再加 `--config`）。**未显式指定内核程序或 `OCTOS_APP_CORE_BIN` 时没有桌面内核**，开发者自己运行的 `octos serve` 永远不会被动到。[#85](https://github.com/OctoSense-org/OctoSense/pull/85) 是内核打包的历史跟踪；此配方显式指定二进制。 | `$OCTOS_APP_CORE_DIR`，否则为 `<OctoSense 状态目录>/octos-home/.octos`（`~/.octosense/octos-home/.octos`）：OctoSense 自己的目录，不再是用户的 `~/octos-home/.octos`（只从中复制一次提供商设置） |
 | Android（Home） | APK 中的 `liboctos.so serve --stdio`，由 [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) 按根 `Cargo.toml` 锁定的 octos 版本构建 | `<应用数据目录>/octos-home/.octos` |
 | OpenHarmony | 进程内运行（`octos_cli::embedded::serve_io`），因为 HAP 不能 exec | `<应用数据目录>/octos-home/.octos` |
 | iOS | **没有。** 提供方仍会保存；没有应用能获得助手 | – |
 
-使用者通过 `Connection` 使用 octos UI Protocol（JSON-RPC 帧，与 `octos serve --stdio` 相同）。每个使用者只收到自己请求的回复和自己会话的通知。提供方变更时内核重启，所有连接以 `CloseReason::Restarted` 结束；使用者重新连接并重新打开会话（AppCard 的传输层是参考实现）。
+开启 Talk to Octos 后，内核使用宿主管理的回环 WebSocket 代替 stdio。使用者通过 `Connection` 使用 octos UI Protocol（JSON-RPC 帧，与 `octos serve --stdio` 相同）。每个使用者只收到自己请求的回复和自己会话的通知。提供方变更时内核重启，所有连接以 `CloseReason::Restarted` 结束；使用者重新连接并重新打开会话（AppCard 的传输层是参考实现）。
 
 ### AI providers 与 `llm` 宿主服务
 
@@ -125,15 +127,19 @@ flowchart TB
 
 [`crates/app-peers`](../crates/app-peers/README.md) 是应用和内核之间的中介（Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)；内核一侧是 octos UPCR-2026-034）：
 
-- 原生模块声明的 `octos.*` 服务获得策略授权后，该应用会在 Shell 的内核上得到**一个 octos peer**，通过 `peer/prepare` 创建或恢复。没有获得任何授权的模块不会分配 peer。
+- 原生模块声明的 `octos.*` 服务获得策略授权后，该应用会在 Shell 的内核上得到**每个账号一个 octos peer**，通过 `peer/prepare` 创建或恢复。没有获得任何授权的模块不会分配 peer。
 - peer 的**所有者**是 Shell 的系统 Agent 会话 `_main:api:octosense#system`。内核为 peer 生成宿主 token；Shell 把它保存在 `<core 目录>/../app-peers`（0600），任何应用都无法访问。
-- peer 的**记忆命名空间**是 `app/<app>/acct-<hash>`：按应用和应用账号区分（hash 是账号 id 的非机密标签）。内核为它提供工作区。不支持这一约定的内核会被拒绝，绝不会退回到使用配置共享记忆的普通会话。
-- 应用永远看不到内核协议。它为正在创建的实例拿到一个受限的 `OctosAppService`，绑定已登录的账号，并为每个客户端实例打开一个**请求上下文**（`peer/context/open`）。切换账号会撤销旧账号的所有上下文；迟到的事件会被丢弃。
-- 操作包括 `Open`、`History`、`Turn { text }`、`Interrupt` 和 `Approval { id, approve }`，每个都受对应的精确服务名约束（`octos.session.open`、`octos.session.history`、`octos.turn.start`、`octos.turn.interrupt`；审批需要 `octos.turn.start`）。一个回合 180 秒后超时。
+- peer 的**记忆命名空间**是 `app/<app>/acct-<hash>`：按应用和应用账号区分（hash 是账号 id 的非机密标签）。Shell 选择获准的账号工作目录，内核创建并核验。不支持这一约定的内核会被拒绝，绝不会退回到使用配置共享记忆的普通会话。
+- 应用永远看不到内核协议。它为正在创建的实例拿到一个受限的 `OctosAppService`，绑定已登录的账号，并为每个客户端实例打开一个**请求上下文**（`peer/context/open`）。请求上下文是同一 peer 下独立的内核 session，不是另一个应用 peer。`open_conversation` 创建带有限共享历史的人类通道，peer session 处理系统委派。切换账号会撤销旧账号的所有上下文；迟到的事件会被丢弃。
+- 操作包括 `Open`、`History`、`Turn { text }`、`Interrupt` 和 `Approval { id, approve }`，每个都受对应的精确服务名约束（`octos.session.open`、`octos.session.history`、`octos.turn.start`、`octos.turn.interrupt`；审批需要 `octos.turn.start`）。broker 默认回合超时为 180 秒。
 
 ### 系统 Agent
 
-目前系统 Agent 是所有应用 peer 的**所有者**：创建它们并能与之通信的会话。它不持有任何应用的工具，也无法回答应用 peer 的审批（octos [#2560](https://github.com/octos-org/octos/pull/2560)）。它的工具是 Shell 在每次启动内核前写入的一个确定集合，从不提供 octos 的 shell（[#117](https://github.com/OctoSense-org/OctoSense/pull/117)，`crates/kernel/src/system_tools.rs`；见[架构 § 工具与授权](architecture.zh-CN.md#4-工具与授权)）。目前用户通过 Talk to Octos 客户端与它对话（[#98](https://github.com/OctoSense-org/OctoSense/pull/98)，[ADR 0003](adr/0003-shared-octos-client-access.md)）；Shell 还没有为它绘制自己的对话界面。它在 ADR 0002 中更大的角色（监督应用 Agent、预算、紧急停止、对 glance 屏幕排序、改进应用 Agent）还在**规划中**；glance 屏幕目前按优先级和时间排序卡片。
+系统 Agent 拥有应用 peer，通过 `peer_send_input` 委派任务，再用 `peer_gather` 获取结果。`agents.list` 发现应用 Agent；`agents.ask` 请求首次同意并准备 peer，本身不发送委派任务。
+
+用户可用 F8 或 Shell 的 Assistant 入口打开系统聊天（`crates/shell/src/system_chat/`），也可通过桌面 “Ask &lt;app&gt;” 面板或卡片 `sys.chat` 直接与应用 Agent 对话；手机尚无打开 Ask-app 面板的触控入口。
+
+系统 Agent 使用受限内核工具列表和审核过的 Shell 工具（例如需开启的 `terminal.run`），不会继承所有应用工具，也不能替用户审批。Talk to Octos 是另一种客户端入口。自动触发调度、学习 overlay 和更丰富的 glance 排序仍在规划中；卡片目前按优先级和时间排序。
 
 ### Shell 中的其他助手
 
@@ -146,8 +152,8 @@ flowchart TB
 | --- | --- |
 | **密钥留在宿主。** | 只有 `llm` 服务读写密钥；密钥保存在平台密钥存储或内核 core 目录下仅所有者可读的配置中，从不进入应用的 jail。app-peers 约定中不携带任何凭据（`ModelInfo` 中没有）。没有任何 `octos.*` 服务允许应用选择提供方或提交密钥。 |
 | **机密归宿主所有。** | 应用不收集密码、PIN、密钥或一次性验证码，即使只是转交也不行。运行时让受管控隔离环境中的密码输入框失效，App Hub 的准入检查拒绝声明了此类输入框的应用包，服务在自己的面板上询问（`<family>.sheet.*` 只接受来自面板的调用）。 |
-| **审批属于用户，在所属应用中进行。** | 应用上下文中发起的工具审批只能由该应用自己的界面通过 `ContextOp::Approval` 回答；系统 Agent 从不替应用审批（app-peers 策略，octos #2560）。Rinx 的 `send_message` 会在 Rinx 自己的面板上显示房间和确切文字，只有用户确认才发送。Shell 的审批路由（[#120](https://github.com/OctoSense-org/OctoSense/pull/120)）只凭用户的操作作答：在 Shell 绘制的面板上当场确认，或按用户自己建立的常设规则；“我的联系人”类规则只有在用户打开“在审批规则中使用我的联系人”之后才会使用联系人（[架构 § 审批](architecture.zh-CN.md#5-审批)）。开发者模式为它覆盖的应用回答所有审批，只能由用户打开（[#118](https://github.com/OctoSense-org/OctoSense/pull/118)）。 |
-| **系统 Agent 通过应用的 Agent 驱动应用。** | 它拥有 peer，但不持有应用工具；应用的工具在应用中运行（Rinx：`src/assistant`，“系统 Agent 自己从不持有这些工具，而是请求 Rinx 的 peer”）。 |
+| **审批属于用户。** | Shell 将 `host_tool` 以及其他内核工具审批交给宿主路由，应用只收到 `approval/handled_by_host`。`confirm: app` 使用明确注册的所属应用面板。系统 Agent 不能代替用户同意；常设规则和开发者模式由用户控制，仍受工具限制，例如 Terminal 命令不能自动批准。见[审批](architecture.zh-CN.md#5-审批)。 |
+| **委派和工具执行的权限不同。** | 系统 Agent 委派给应用 peer；relay 检查授权、schema 和策略后以所有者身份执行工具。跨应用工具授权必须明确，不是获得所有 API 或数据库；系统会话另有审核过的 Shell 工具，如 `terminal.run`。 |
 | **记忆按应用和账号私有。** | 每个 peer 的记忆命名空间是 `app/<app>/acct-<hash>`；一个账号的上下文从不在另一个账号下恢复。提升到共享记忆还在规划中（ADR 0002 §9）。 |
 | **最小权限，按精确名称。** | 应用得到的是 `声明 ∩ 支持 ∩ 宿主策略` 的服务，按精确名称比较：`octos.` 或 `octos.admin` 不授予任何权限。 |
 
@@ -173,7 +179,7 @@ flowchart TB
 
 4. `availability()` 报告 `Unavailable`（没有内核、未授权、未登录）、`Idle`、`Ready` 或 `Failed`；在任何状态下应用的普通界面都照常工作。`settings_entry()` 为 `Host`：应用不提供自己的提供方表单，而是引导用户去 AI providers。
 
-**工具。** Rinx 只定义一次它的助手工具（`status`、`list_rooms`、`open_room`、`draft_message`、`read_room`、`open_mini_app`、`send_message`；`src/assistant/mod.rs`）。目前 Shell 通过 AI 服务总线上 Rinx 的 `ServiceExecutor` 调用它们。`read_room` 会在 Rinx 的读取面板上请求按房间的授权；`send_message` 是 Destructive 且自行确认：Rinx 的发送面板就是唯一的一次确认。把这些工具注册到 Rinx 的 octos peer、让 peer 自己的模型能调用它们，要等内核支持宿主注册工具（[octos#2567](https://github.com/octos-org/octos/pull/2567)，尚未合并）。
+**工具。** Rinx 在 `src/assistant/mod.rs` 定义其 UI 助手工具，通过 AI 服务总线上的 `ServiceExecutor` 执行，读取和发送仍走自己的确认界面。内核宿主注册工具及 Shell relay 已实现，缺口不是等待 octos#2567 合并：当前 Rinx 原生清单未声明这些 peer 工具，也尚未通过 `OctosAppService::set_confirm_sheet` 将发送确认面板交给 Shell。因此不要把总线上能调用的工具当作 Rinx peer 已拥有的工具。
 
 **Rinx 迷你应用。** Rinx 托管经过审核的 OctoScript 迷你应用，并向它们提供同样的四个 `octos.*` 服务，每个运行中的实例使用 Rinx peer 的一个独立请求上下文（[示例](https://github.com/hagency-org/Rinx/tree/main/examples/miniapps/matrix-octos-script)）。这是 Rinx 自己的迷你应用宿主，适用于用户审核后导入 Rinx 的应用包；它不是 App Hub 的安装路径。
 
@@ -196,7 +202,7 @@ flowchart TB
 - **工具审批。** peer 的工具请求交给 Shell 的审批路由及其面板（ADR 0004 §8）。开发者模式会为它覆盖的应用作答。没有审批路由的宿主会拒绝请求，并在 `denied_approvals` 中列出。详见 [`host_approvals.rs`](../crates/app-peers/src/host_approvals.rs)。
 - **回复。** 宿主拒绝超过 2 MiB 的回复。下表列出成功调用及常见错误的返回内容。
 
-因此，隔离运行的应用（商店应用或系统应用）只能通过 `octos.*` 使用助手，且需要 Shell 托管了内核。它会收到：
+脚本自己的助手调用使用已声明的 `octos.*`；Shell 也可以根据 `agent`/`tools.json` 驱动 peer，而不要求脚本声明这些 UI 调用。脚本服务调用的回复：
 
 | 调用 | 返回 |
 | --- | --- |
@@ -210,7 +216,7 @@ flowchart TB
 | 获得 `llm` 授权的商店应用调用 `llm.*` | `llm is for OctoSense's own apps.` |
 | 在 App Hub 的 `card-host` 中调用任何服务 | `no service answers "<family>" on this device`（`card-host` 不注册任何服务） |
 
-第一行、`llm` 一行和 `card-host` 一行已于 2026-09-27 在 `card-host`（App Hub `362d832`）中运行验证。回复、参数不合规的返回和缺少内核的返回已于 2026-09-28 在 macOS 上运行验证：release 版桌面端、隐藏窗口，经启动器打开一个声明了 `octos.session.open` 和 `octos.turn.start` 的系统应用；使用按当时锁定的 octos `7bec0918` 构建的内核和用户自己的提供方时，回复来自 peer `card.<应用 id>`，内核数据中出现了它的记忆命名空间 `app/card.<应用 id>/…`。文本长度和开关关闭的返回由 `cargo test -p octosense-ai-host` 覆盖，走的是同一个分发函数。OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md) 给出了示例应用，以及 Rinx 提供的四个 `octos.*` 调用的参数和返回形状。
+**历史验证记录。** 第一行、`llm` 一行和 `card-host` 一行已于 2026-09-27 在 `card-host`（App Hub `362d832`）中运行验证。回复、参数不合规的返回和缺少内核的返回已于 2026-09-28 在 macOS 上运行验证：release 版桌面端、隐藏窗口，经启动器打开一个声明了 `octos.session.open` 和 `octos.turn.start` 的系统应用；使用按当时锁定的 octos `7bec0918` 构建的内核和用户自己的提供方时，回复来自 peer `card.<应用 id>`，内核数据中出现了它的记忆命名空间 `app/card.<应用 id>/…`。文本长度和开关关闭的返回由 `cargo test -p octosense-ai-host` 覆盖，走的是同一个分发函数。OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md) 给出了示例应用，以及 Rinx 提供的四个 `octos.*` 调用的参数和返回形状。
 
 声明了 `agent` 块、声明了 `octos.*` 或附带 `tools.json` 的应用都有 Agent（[#184](https://github.com/OctoSense-org/OctoSense/pull/184)）。用户允许后，Shell 用应用包中的工具准备 peer。broker 用 `card.<应用 id>` 标识应用，peer slug 由内核返回。用户随后可以在 Shell 的“Ask &lt;app&gt;”面板中与它对话。详见 [`crates/shell/src/agents.rs`](../crates/shell/src/agents.rs)。
 
@@ -262,7 +268,7 @@ App Hub 接受 manifest 的 `agent` 设置，并按自己的限制裁剪。Shell
    日志中会出现 `octos: kernel service ready (starts on first use), core dir …`。没有 `OCTOS_APP_CORE_BIN` 时日志会说明没有内核，AI providers 仍会保存提供方。
 
 3. 打开 **Start → Settings → AI providers**，添加一个模型（family、模型、路由、密钥、**Test connection**、保存）。配置文件是 `$T/octos-home/.octos/profiles/_main.json`；使用文件密钥库时密钥就在其中，用完后请删除 `$T`。
-4. 通过某个使用者来使用助手：Rinx（默认链接并在进程内运行；从启动器打开它；登录 Matrix，在首次使用面板上允许它的 Agent，然后使用它的助手），或 AppCard（`--features app-appcard`）。隔离运行的应用通过 `octos` 宿主服务访问它（[见上文](#隔离运行的脚本应用系统应用和商店应用)）；在 Shell 第一次询问时允许该应用的 Agent（或在第 2 步的命令中加上 `OCTOSENSE_CONTAINED_APPS=1`，对所有应用跳过这个询问）。
+4. 通过某个使用者来使用助手：Rinx（默认链接并在进程内运行；从启动器打开它；登录 Matrix，在首次使用面板上允许它的 Agent，然后使用它的助手），或 AppCard（`--features app-appcard`）。隔离运行的应用通过 `octos` 宿主服务访问它（[见上文](#隔离运行的脚本应用系统应用和商店应用)）；保持 `OCTOSENSE_CONTAINED_APPS` 未设置，并在 Shell 询问时同意。F8 也可打开系统聊天；`agents.ask` 用于同意/准备，`peer_send_input` 才委派任务。
 
 **隐藏窗口。** 加上 `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>`，即可通过远程控制桥操作 Shell 而不占用屏幕（[桌面端 README § Remote-control bridge](../desktop/README.md#remote-control-bridge)）。`desktop/scripts/ai_providers_remote.sh` 以这种方式端到端运行 AI providers，使用假密钥并禁止出站 HTTPS；`desktop/scripts/glance_remote.sh` 对 glance 面板做同样的事。
 
@@ -280,7 +286,7 @@ OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test -p octosense-app-peers --f
 
 ### 手机
 
-- **Android（Home）：** Home APK 把内核打包为 `liboctos.so`；`cd phone && python3 ../rom/scripts/build-home.py` 构建这对 APK（见 [phone/README.md](../phone/README.md)），其中使用 [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) 按锁定的 octos 版本构建内核。内核在首次使用时启动。
+- **Android（Home）：** Home APK 把内核打包为 `liboctos.so`；配置好参数的 `rom/scripts/build-home.py` 流水线构建 APK 对（见 [phone/README.md](../phone/README.md)），其中使用 [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) 按锁定的 octos 版本构建内核。内核在首次使用时启动。
 - 在 **OctoSense Settings → Accounts → AI providers** 中配置提供方，或者从桌面端迁移：在桌面端点 **Show QR for phone**，然后在手机上通过相机、图片或粘贴代码导入，并输入 PIN。
 - **OpenHarmony** 在进程内运行内核。**iOS** 没有内核：提供方会被保存，但没有应用能获得助手。
 
