@@ -3998,10 +3998,10 @@ impl App {
     /// a toast on a desktop, which opens that card in the card window
     /// (glance_sheet.rs); a shade notification on the phone, which opens the
     /// glance page.
-    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
+    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote, toast: bool) {
         let body = "Open the card at a glance";
         let notes = self.ui.widget(cx, ids!(shell_notes));
-        let toast = shell::notifications::Notification {
+        let card_toast = shell::notifications::Notification {
             id: 0,
             app: note.app.clone(),
             summary: note.title.clone(),
@@ -4011,7 +4011,9 @@ impl App {
             // A card's toast stays its longest, so it can still be opened.
             requested: 30.0,
         };
-        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, toast)) {
+        if !toast {
+            log!("glance: {} shown in the open glance panel, no toast", note.key);
+        } else if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
             self.glance_toasts.record(id, &note.key);
             log!("glance: toast {id} opens {}", note.key);
         }
@@ -6434,13 +6436,25 @@ impl App {
             // A card was published, replaced or withdrawn (glance.rs).
             if glance::generation() != self.glance_generation && self.state.is_some() {
                 self.glance_generation = glance::generation();
-                // The bar's glance button counts the cards.
+                // A new card opens the glance panel on a desktop, unless a
+                // card window is up; the bar's glance button counts the cards.
+                let fresh = glance::shown().iter().any(|c| c.published_ms > self.glance_seen_ms);
+                let sheet_open = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
+                if fresh && !sheet_open && !self.state_mut().style.target.mobile() && !self.glance_open(cx) {
+                    log!("wm: a new glance card opens the glance panel");
+                    if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
+                        panel.show_newest();
+                    }
+                    self.set_glance_open(cx, true);
+                }
                 self.update_bar(cx);
                 self.redraw_all(cx);
             }
             if self.state.is_some() {
+                // A card the open panel shows needs no toast over it.
+                let toast = !self.glance_open(cx);
                 for note in glance::take_notifications() {
-                    self.glance_notify(cx, &note);
+                    self.glance_notify(cx, &note, toast);
                 }
             }
             if SignalToUI::check_and_clear_ui_signal() && self.state.is_some() {
