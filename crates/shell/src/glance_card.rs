@@ -839,7 +839,8 @@ mod tests {
     }
 
     /// A system app, registered from a pack made on the fly, whose manifest
-    /// grants `glance` and `storage` and nothing else.
+    /// grants `glance` and `storage` and nothing else. It is registered as
+    /// a test's, so the catalog tests running beside these leave it out.
     #[cfg(feature = "app-hub")]
     fn register_test_app(id: &'static str) {
         let dir = std::env::temp_dir().join(format!("glance-tile-app-{id}-{}", std::process::id()));
@@ -852,7 +853,7 @@ mod tests {
         );
         std::fs::write(dir.join("manifest.json"), manifest).unwrap();
         let pack = serde_json::to_string(&octosense_app_hub::pack::pack_dir(&dir).unwrap()).unwrap();
-        octosense_appstore::system::register_system_app(octosense_appstore::system::SystemApp { id, name: "Glance test", pack: Box::leak(pack.into_boxed_str()), assets: &[] });
+        crate::apps::test_system_apps::register(octosense_appstore::system::SystemApp { id, name: "Glance test", pack: Box::leak(pack.into_boxed_str()), assets: &[] });
     }
 
     /// A Cx with the widgets and the tile frame registered, for driving

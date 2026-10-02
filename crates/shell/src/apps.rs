@@ -141,6 +141,32 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
     Vec::new()
 }
 
+/// System apps a test registers for itself (the glance tile tests'
+/// probes). They join App Hub's registry, the one [`system_card_apps`]
+/// lists, which is process-wide and never forgets an app, so a test of the
+/// build's own catalog saw them or not depending on which tests had run
+/// before it in the same process. A test registers its app here, and the
+/// catalog tests leave these out.
+#[cfg(test)]
+pub(crate) mod test_system_apps {
+    use std::sync::Mutex;
+
+    static IDS: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+    /// Register `app` for a test. It is noted first, so a catalog that
+    /// lists it was read after it was noted.
+    #[cfg(feature = "app-hub")]
+    pub(crate) fn register(app: octosense_appstore::system::SystemApp) {
+        IDS.lock().unwrap_or_else(|e| e.into_inner()).push(app.id);
+        octosense_appstore::system::register_system_app(app);
+    }
+
+    /// Whether a test registered the system app `id` (an `os.` id).
+    pub(crate) fn is_test_app(id: &str) -> bool {
+        IDS.lock().unwrap_or_else(|e| e.into_inner()).contains(&id)
+    }
+}
+
 /// The services contained apps call through `host.request` (ADR 0004)
 /// that are not the assistant's, registered once, before the first system
 /// app can open: `mail` keeps accounts and passwords for the Mail app;
@@ -658,12 +684,19 @@ mod tests {
             .collect()
     }
 
+    /// The build's own rows among `rows`: without the system apps other
+    /// tests registered for themselves ([`super::test_system_apps`]).
+    /// `rows` must be read before this looks, as an argument is.
+    fn build_rows(rows: Vec<crate::clients::AppDef>) -> Vec<crate::clients::AppDef> {
+        rows.into_iter().filter(|row| !card_manifest_id(row).is_some_and(super::test_system_apps::is_test_app)).collect()
+    }
+
     #[cfg(feature = "mobile-apps")]
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
         let _one_rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let catalog = bundled_catalog();
+        let catalog = build_rows(bundled_catalog());
         // The linked modules in link order (AppCard is opt-in, `app-appcard`,
         // not part of `mobile-apps`; `settings` is the phone product's), then
         // the system apps no native module of the same id replaces.
@@ -718,7 +751,7 @@ mod tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let mut host = crate::module_host::ModuleHost::default();
-        for (index, app) in bundled_catalog().iter().enumerate() {
+        for (index, app) in build_rows(bundled_catalog()).iter().enumerate() {
             let module = registry.module(&app.id).unwrap();
             let client = index as u64 + 1;
             host.create(&mut cx, client, module, module_open(module, app).unwrap(), dvec2(400.0, 700.0)).unwrap();
@@ -768,7 +801,7 @@ mod tests {
     fn the_system_apps_ship_as_card_apps() {
         let registry = AppRegistry::default();
         let native = registry.linked_ids();
-        let ids: Vec<String> = system_card_apps().into_iter().map(|app| app.id).collect();
+        let ids: Vec<String> = build_rows(system_card_apps()).into_iter().map(|app| app.id).collect();
         let expected: Vec<&str> = system_app_ids().iter().copied().filter(|id| !native.contains(id)).collect();
         assert_eq!(ids, expected);
         for id in &ids {
