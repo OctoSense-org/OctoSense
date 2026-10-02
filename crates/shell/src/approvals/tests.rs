@@ -719,6 +719,52 @@ fn stop_denies_what_the_stopped_agent_asks() {
     assert_eq!(r.sheets().len(), 1);
 }
 
+/// The sheet's "Needs you … Open the sheet" notice names its request, and
+/// the shell withdraws that notification once the request no longer waits,
+/// with its sheet line: after the person's Stop (an instrument run found
+/// the toast still up, pointing at a sheet that was gone), an answer on
+/// the sheet, the turn's own end, or the deadline. Other notices stand on
+/// their own.
+#[test]
+fn a_sheets_notification_is_withdrawn_with_its_line() {
+    let (mut r, _) = router();
+    r.sheet_expiry_s = 600;
+    let own = |id: &str| {
+        let mut q = send(id, json!({"to": "eve@example.org"}));
+        q.caller = Caller::OwnAgent { client: None };
+        q
+    };
+    let Route::Sheet(_) = r.request(send("stopped", json!({"to": "eve@example.org"})), T0) else { panic!() };
+    let Route::Sheet(answered_on) = r.request(own("answered"), T0) else { panic!() };
+    let Route::Sheet(_) = r.request(own("withdrawn"), T0) else { panic!() };
+    let mut late = own("expired");
+    late.received = T0 + 60;
+    let Route::Sheet(_) = r.request(late, T0 + 60) else { panic!() };
+    let mut shown = super::RequestNotices::default();
+    let notices = r.take_notices();
+    assert_eq!(notices.len(), 4, "{notices:?}");
+    for (n, notice) in notices.iter().enumerate() {
+        assert!(notice.title.starts_with("Needs you: ") && notice.body.ends_with("Open the sheet to approve or deny."), "{notice:?}");
+        let request = notice.request.clone().expect("a sheet's notice names its request");
+        shown.record(request, super::Shown { toast: Some(n as u64 + 1), shade: Some(n as u64 + 11) });
+    }
+    let mut withdrawn = |r: &Router| -> Vec<String> { shown.withdrawn(|id| r.is_pending(id)).into_iter().map(|(id, _)| id.0).collect() };
+    assert!(withdrawn(&r).is_empty(), "all four still wait on their sheets");
+    r.stop_agent("calendar", T0 + 1);
+    assert_eq!(withdrawn(&r), ["stopped"], "Stop withdrew the line: its toast goes too");
+    r.answer(answered_on, &RequestId("answered".into()), Answer::Deny, &ApprovalGesture::sheet_tap(), T0 + 2).unwrap();
+    assert_eq!(withdrawn(&r), ["answered"]);
+    assert!(r.withdraw(&RequestId("withdrawn".into()), "the turn ended", T0 + 3));
+    assert_eq!(withdrawn(&r), ["withdrawn"]);
+    r.tick(T0 + 600);
+    assert!(withdrawn(&r).is_empty(), "the last one has a minute left");
+    r.tick(T0 + 660);
+    assert_eq!(withdrawn(&r), ["expired"]);
+    let expired = r.take_notices();
+    assert!(expired.iter().any(|n| n.title.starts_with("Expired: ") && n.request.is_none()), "the expiry notice stands on its own: {expired:?}");
+    assert!(withdrawn(&r).is_empty(), "each is withdrawn once");
+}
+
 // ---------------------------------------------------------------- confirm: app
 
 #[derive(Clone, Default)]
