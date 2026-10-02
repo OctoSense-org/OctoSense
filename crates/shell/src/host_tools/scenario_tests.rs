@@ -688,6 +688,23 @@ fn the_system_agent_and_the_person_work_with_one_app_agent_at_once() {
     assert_eq!((rows[audience]["lane"].clone(), rows[publish]["lane"].clone()), (json!("person"), json!("system_agent")));
     assert!(task < ask && ask < audience && audience < publish, "merged by time: task {task}, ask {ask}, audience {audience}, publish {publish}");
     assert!(rows.iter().all(|m| !m["content"].as_str().unwrap_or("").contains("<shared_history")), "the shared block is in neither transcript");
+
+    // 3g. A reload names its tool rows (octos#2675): the history's tool rows
+    // carry the tool's name and call id, so the panel shows News's agent's
+    // call by name, and the system chat its delegation, not "tool".
+    let named = |items: &[crate::system_chat::model::Item], tool: &str| {
+        items.iter().any(|i| matches!(i, crate::system_chat::model::Item::Tool { name, call_id, .. } if name == tool && !call_id.is_empty()))
+    };
+    let share = at(&|m| m["role"] == "tool" && m["tool_name"] == "news_share");
+    assert_eq!(rows[share]["lane"], "system_agent", "{rows:#?}");
+    assert!(rows[share]["tool_call_id"].as_str().is_some_and(|id| !id.is_empty()), "{:#?}", rows[share]);
+    let mut panel = crate::app_chat::model::Conversation::new(APP);
+    panel.load_history(&history["messages"]);
+    assert!(named(&panel.chat.items, "news_share"), "{:#?}", panel.chat.items);
+    let system = s.broker.host_request("session/hydrate", json!({"session_id": SYSTEM, "include": ["messages"]})).expect("the system chat's history");
+    let mut pane = crate::system_chat::model::ChatModel::new();
+    pane.load_history(&system["messages"]);
+    assert!(named(&pane.items, "peer_send_input"), "{:#?}", pane.items);
 }
 
 /// (a) Nobody answers: at a short deadline the shell's router denies the

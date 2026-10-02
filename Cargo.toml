@@ -110,7 +110,12 @@ octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub"
 # and App Hub and Rinx no longer need the same App Hub commit.
 octosense-app-contract = "1"
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
-# merge of octos#2656, low fixes for host-owned app peers; after #2655, the
+# merge of octos#2675, hydrate rows that name a tool row's call and tool;
+# after #2672, the accepted client_commands echoed on session/open, #2671
+# and #2669, docs, #2665, undeclared secrets kept from strict skills, #2664,
+# octos's own dev profile, and #2261, a credential store that keeps
+# credentials on a failed save; before that #2656, low fixes for host-owned
+# app peers; #2655, the
 # unknown-outcome interlock kept across a kernel restart, #2653, a bound
 # workspace swapped for a symlink no longer re-roots the session, #2648, a
 # host session's exact tool list; #2649,
@@ -120,12 +125,12 @@ octosense-app-contract = "1"
 # keeps its peer/input, and #2645, Bing News's Chinese results).
 # Move octos-core, octos-cli and octos-research together; the Android kernel
 # artifact (liboctos.so) is built from this same revision.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "ae230ce04d57f3c29cf6c2518e5956a86c07d788" }
-octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "ae230ce04d57f3c29cf6c2518e5956a86c07d788", default-features = false }
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "056173e85b150e387805fc307fe231064ac1ed35" }
+octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "056173e85b150e387805fc307fe231064ac1ed35", default-features = false }
 # The research engine (the metasearch, the SSRF-safe polite reader and the
 # toolbox scope) for the toolbox's `octos-engine` feature. Same source and
 # revision as above.
-octos-research = { git = "https://github.com/octos-org/octos.git", rev = "ae230ce04d57f3c29cf6c2518e5956a86c07d788", default-features = false }
+octos-research = { git = "https://github.com/octos-org/octos.git", rev = "056173e85b150e387805fc307fe231064ac1ed35", default-features = false }
 # --- AppCard's inline renderers.
 streaming-markdown-kit = { git = "https://github.com/Project-Robius-China/streaming-markdown-kit.git", branch = "main" }
 makepad-diagram-kit = { git = "https://github.com/Project-Robius-China/makepad-diagram-kit.git", branch = "main" }
