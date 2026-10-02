@@ -3885,16 +3885,18 @@ impl App {
     }
 
     /// Copy or cut (Command+C, Command+X) in the chat pane typing goes to:
-    /// its prompt's selection, cut taking it out. Without a selection the
-    /// event is left to whoever else answers it.
+    /// its prompt's selection, cut taking it out; else, for a copy, what is
+    /// selected in its transcript. Without a selection the event is left to
+    /// whoever else answers it.
     fn chat_clipboard(&mut self, cx: &mut Cx, event: &Event) -> bool {
         let (response, cut) = match event {
             Event::TextCopy(e) => (e.response.clone(), false),
             Event::TextCut(e) => (e.response.clone(), true),
             _ => return false,
         };
+        let panes = [ids!(shell_app_chat), ids!(shell_system_chat)];
         let mut focused = [false; 2];
-        for (i, pane) in [ids!(shell_app_chat), ids!(shell_system_chat)].into_iter().enumerate() {
+        for (i, pane) in panes.into_iter().enumerate() {
             let pane = self.ui.widget(cx, pane);
             focused[i] = pane.borrow::<system_chat::view::ShellSystemChat>().is_some_and(|p| p.has_keyboard(cx));
         }
@@ -3906,9 +3908,10 @@ impl App {
         } else {
             text_target(cx.key_focus().is_empty(), app_chat::is_focused(), system_chat::is_open())
         };
+        let selected = |cx: &mut Cx, pane| self.ui.widget(cx, pane).borrow::<system_chat::view::ShellSystemChat>().and_then(|p| p.selected_text());
         let text = match target {
-            Some(Pane::App) => app_chat::copy_draft(cut),
-            Some(Pane::System) => system_chat::copy_draft(cut),
+            Some(Pane::App) => app_chat::copy_draft(cut).or_else(|| if cut { None } else { selected(cx, panes[0]) }),
+            Some(Pane::System) => system_chat::copy_draft(cut).or_else(|| if cut { None } else { selected(cx, panes[1]) }),
             None => None,
         };
         match text {
