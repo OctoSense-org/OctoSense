@@ -109,9 +109,6 @@ pub struct MpModuleView {
     /// the line the tile shows once the shell has named the app.
     #[rust]
     stopped: Option<String>,
-    /// Where the Restart button was drawn.
-    #[rust]
-    restart_rect: Option<Rect>,
     /// Out of sight on the phone (`set_asleep`): the app gets no frames and
     /// its redraws are held, but timers, network replies and messages
     /// still reach it, so its state stays current (and audio keeps
@@ -157,7 +154,6 @@ impl MpModuleView {
         self.vm_id = vm_id;
         self.drawn = false;
         self.stopped = None;
-        self.restart_rect = None;
         self.draw_bg.redraw(cx);
     }
 
@@ -190,7 +186,10 @@ impl MpModuleView {
         self.draw_bg.redraw(cx);
     }
 
-    /// The closed face: a line and a Restart button, centred.
+    /// The closed face: a line and a Restart button, centred. The face's
+    /// turtle centres them as it ends, which moves the button after it was
+    /// walked, so a press is tested against the drawn button (`on_restart`),
+    /// not the rect `walk_turtle` gave: that one is at the face's top left.
     fn draw_stopped(&mut self, cx: &mut Cx2d, rect: Rect) {
         let Some(line) = self.stopped.clone() else { return };
         let ground = self.draw_bg.color;
@@ -203,8 +202,15 @@ impl MpModuleView {
         cx.begin_turtle(Walk::abs_rect(button), Layout { align: Align { x: 0.5, y: 0.5 }, ..Layout::default() });
         self.draw_button_text.draw_walk(cx, Walk::fit(), Align::default(), "Restart");
         cx.end_turtle();
-        self.restart_rect = Some(button);
         cx.end_turtle();
+    }
+
+    /// The press at `abs` is on the Restart button, where it is drawn: the
+    /// face hit-tests it by its own area, as any widget is hit-tested, so it
+    /// follows the face's centring and whatever clips the window.
+    fn on_restart(&self, cx: &Cx, abs: Vec2d) -> bool {
+        let button = self.draw_button.area();
+        button.is_valid(cx) && button.clipped_rect(cx).contains(abs)
     }
 
     /// A press on the closed face: Restart, or just focus the tile. The face
@@ -236,7 +242,7 @@ impl MpModuleView {
             return;
         }
         claim.set(self.area);
-        if self.restart_rect.is_some_and(|r| r.contains(abs)) {
+        if self.on_restart(cx, abs) {
             cx.widget_action(self.uid, MpRunViewAction::Restart { client });
         } else {
             cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
@@ -259,8 +265,9 @@ impl MpModuleView {
 
     /// Where the closed face drew its Restart (module_input_tests.rs).
     #[cfg(test)]
-    pub(crate) fn restart_button(&self) -> Option<Rect> {
-        self.restart_rect
+    pub(crate) fn restart_button(&self, cx: &Cx) -> Option<Rect> {
+        let button = self.draw_button.area();
+        button.is_valid(cx).then(|| button.rect(cx))
     }
 }
 
