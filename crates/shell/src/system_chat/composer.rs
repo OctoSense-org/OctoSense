@@ -520,6 +520,16 @@ pub enum Key {
     Pass,
 }
 
+/// Whether a pane keeps a key it has no use for ([`Key::Pass`]): yes, so
+/// it does not reach the window behind the pane, unless it is a shortcut
+/// (Command, Control) or a function key, which is the shell's wherever the
+/// keyboard is (F8 the assistant, F9 the glance panel).
+pub fn keeps_unused(e: &makepad_widgets::KeyEvent) -> bool {
+    use makepad_widgets::KeyCode::*;
+    let function_key = matches!(e.key_code, F1 | F2 | F3 | F4 | F5 | F6 | F7 | F8 | F9 | F10 | F11 | F12);
+    !(e.modifiers.logo || e.modifiers.control || function_key)
+}
+
 pub fn key(e: &makepad_widgets::KeyEvent) -> Key {
     use makepad_widgets::KeyCode;
     let command_key = e.modifiers.logo || e.modifiers.control;
@@ -600,6 +610,18 @@ mod tests {
         assert_eq!(key(&command(KeyCode::KeyN)), Key::New);
         assert_eq!(key(&command(KeyCode::Period)), Key::Stop);
         assert_eq!(key(&command(KeyCode::KeyV)), Key::Pass, "paste arrives as text input");
+    }
+
+    /// The pane keeps a key it has no use for, so it does not reach the
+    /// window behind; never a shortcut or a function key: with the pane
+    /// holding the keyboard, F9 still opened nothing.
+    #[test]
+    fn the_pane_keeps_unused_keys_but_never_the_shells() {
+        assert!(keeps_unused(&press(KeyCode::Tab)));
+        assert!(!keeps_unused(&press(KeyCode::F9)), "F9: the glance panel");
+        assert!(!keeps_unused(&press(KeyCode::F8)), "F8: the assistant, which closes the pane");
+        let command = |k| KeyEvent { key_code: k, modifiers: KeyModifiers { logo: true, ..Default::default() }, ..Default::default() };
+        assert!(!keeps_unused(&command(KeyCode::KeyQ)));
     }
 
     /// Android's input method: the editor state is asked for, then the new
