@@ -7,7 +7,12 @@
 //! - **Use my contacts in approval rules**: off by default; while off,
 //!   "people in my contacts" never matches (`contacts.rs`).
 //! - **App agents**: every app's agent with its consent and an off switch;
-//!   "Everything for 60 min" creates the time-boxed rule for that app.
+//!   "Everything for 60 min" creates the time-boxed rule for that app. An
+//!   allowed agent whose app asks for command execution (`terminal.run`)
+//!   shows whether it has it (and says so when its consent predates the
+//!   separate grant); "Give command execution…" asks a second, explicit
+//!   confirmation before it gives it, and "Take back commands" is one tap
+//!   (ADR 0004 §12).
 //! - **Recent automatic approvals**: the audit's newest automatic entries
 //!   (rule or developer mode, app, tool, caller, result).
 //!
@@ -16,7 +21,7 @@
 use makepad_widgets::*;
 
 use super::audit::Entry;
-use super::consent::State;
+use super::consent::{Commands, State};
 use super::rules::{ApprovalGesture, Rule, RuleDraft, RuleOrigin, MAX_EVERYTHING_MINUTES};
 use super::sheet::app_label;
 use super::types::RuleId;
@@ -51,6 +56,12 @@ enum Hit {
     ContactsOff,
     AgentOff(String),
     AgentAllow(String),
+    /// Ask to give command execution (shows the confirmation).
+    CommandsOffer(String),
+    /// The second, explicit confirmation: give it.
+    CommandsConfirm(String),
+    CommandsCancel,
+    CommandsTakeBack(String),
     Everything(String),
     Page,
 }
@@ -61,6 +72,8 @@ struct Frame {
     rules: Vec<Rule>,
     contacts: bool,
     agents: Vec<(String, String, State)>,
+    /// Each agent's command execution.
+    commands: Vec<Commands>,
     log: Vec<Entry>,
     now: u64,
 }
@@ -74,12 +87,46 @@ fn frame() -> Frame {
             open: true,
             rules: a.router.rules.rules().to_vec(),
             contacts: a.router.contacts().allowed(),
+            commands: a.consent.agents().iter().map(|(app, _, _)| a.consent.commands(app)).collect(),
             agents: a.consent.agents(),
             log: a.router.audit.recent_automatic(8),
             now: super::now(),
         }
     })
     .unwrap_or_default()
+}
+
+/// An agent's command execution, under its consent state.
+pub fn commands_text(c: Commands) -> String {
+    match c {
+        Commands::NotAsked => String::new(),
+        Commands::NeverAsked => "Commands: off \u{00b7} never asked (allowed earlier)".into(),
+        Commands::Off => "Commands: off".into(),
+        Commands::On => "Commands: on \u{00b7} each one still asks you".into(),
+    }
+}
+
+/// Which command control an agent's row shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommandsStep {
+    Nothing,
+    /// "Give command execution…".
+    Offer,
+    /// The second confirmation: "Run commands for X: Confirm / Cancel".
+    Confirm,
+    /// "Take back commands".
+    TakeBack,
+}
+
+/// The row's command control: `confirming` is the app whose confirmation
+/// is up, if any.
+pub fn commands_step(c: Commands, confirming: Option<&str>, app: &str) -> CommandsStep {
+    match c {
+        Commands::NotAsked => CommandsStep::Nothing,
+        Commands::On => CommandsStep::TakeBack,
+        Commands::Off | Commands::NeverAsked if confirming == Some(app) => CommandsStep::Confirm,
+        Commands::Off | Commands::NeverAsked => CommandsStep::Offer,
+    }
 }
 
 /// "3 min ago".
@@ -170,6 +217,9 @@ pub struct ShellApprovalsSettings {
     hover: Option<Rect>,
     #[rust]
     pub shown: Vec<String>,
+    /// The app whose "give command execution" confirmation is up.
+    #[rust]
+    confirming: Option<String>,
 }
 
 impl ShellApprovalsSettings {
@@ -214,6 +264,12 @@ impl ShellApprovalsSettings {
         if let Some(p) = up {
             let hit = self.hit_at(p).unwrap_or(Hit::Close);
             if self.down.take().as_ref() == Some(&hit) {
+                // The confirmation is the page's own state; any other press
+                // dismisses it.
+                match &hit {
+                    Hit::CommandsOffer(app) => self.confirming = Some(app.clone()),
+                    _ => self.confirming = None,
+                }
                 act(hit);
                 self.redraw(cx);
             }
@@ -321,7 +377,7 @@ impl ShellApprovalsSettings {
                 b.d.label_elided(cx, rect(x, y, cw, 18.0), false, tok.font.body, dim, HAlign::Left, "No app has asked for its agent yet.");
                 y += 26.0;
             }
-            for (app, name, state) in &f.agents {
+            for ((app, name, state), commands) in f.agents.iter().zip(f.commands.iter().copied()) {
                 if y + ROW_H > bottom {
                     break;
                 }
@@ -342,6 +398,39 @@ impl ShellApprovalsSettings {
                 b.d.label_elided(cx, rect(x, y + 20.0, tw, 16.0), false, tok.font.body_small, dim, HAlign::Left, &state_text);
                 shown.push(format!("{name}'s agent | {state_text}"));
                 y += ROW_H + 4.0;
+                // Command execution: its own grant (ADR 0004 §12).
+                let step = commands_step(commands, self.confirming.as_deref(), app);
+                if step != CommandsStep::Nothing && y + ROW_H <= bottom {
+                    let (text, warning) = if step == CommandsStep::Confirm {
+                        (format!("Let {name}'s agent run commands?"), Some("In the Terminal it can read and change anything you can; each command still asks you."))
+                    } else {
+                        (commands_text(commands), None)
+                    };
+                    let mut bx = x + cw;
+                    let buttons: Vec<(&str, Hit, bool)> = match step {
+                        CommandsStep::Offer => vec![("Give command execution\u{2026}", Hit::CommandsOffer(app.clone()), false)],
+                        CommandsStep::Confirm => vec![("Cancel", Hit::CommandsCancel, false), ("Yes, run commands", Hit::CommandsConfirm(app.clone()), true)],
+                        CommandsStep::TakeBack => vec![("Take back commands", Hit::CommandsTakeBack(app.clone()), false)],
+                        CommandsStep::Nothing => Vec::new(),
+                    };
+                    for (label, hit, primary) in buttons {
+                        let bw = b.width(cx, label);
+                        bx -= bw;
+                        let r = b.draw(cx, bx, y + 6.0, bw, label, primary);
+                        hits.push((r, hit));
+                        shown.push(label.to_string());
+                        bx -= 8.0;
+                    }
+                    let warn = crate::shell::rgb(0xE0, 0x8A, 0x00);
+                    b.d.label_elided(cx, rect(x + 12.0, y + 10.0, bx - x - 16.0, 20.0), false, tok.font.body_small, if commands == Commands::NeverAsked || warning.is_some() { warn } else { dim }, HAlign::Left, &text);
+                    shown.push(text);
+                    y += ROW_H + 4.0;
+                    if let Some(warning) = warning {
+                        b.d.label_elided(cx, rect(x + 12.0, y - 6.0, cw - 12.0, 18.0), false, tok.font.body_small, warn, HAlign::Left, warning);
+                        shown.push(warning.to_string());
+                        y += 18.0;
+                    }
+                }
             }
             y += 8.0;
         }
@@ -386,6 +475,10 @@ fn act(hit: Hit) {
         Hit::ContactsOff => a.router.contacts_mut().turn_off(now),
         Hit::AgentOff(app) => a.consent.turn_off(&app, now),
         Hit::AgentAllow(app) => a.consent.set(&ApprovalGesture::settings_tap(), &app, true, now),
+        // The confirmation itself is the page's (`pointer`).
+        Hit::CommandsOffer(_) | Hit::CommandsCancel => {}
+        Hit::CommandsConfirm(app) => a.consent.give_commands(&ApprovalGesture::settings_tap(), &app, now),
+        Hit::CommandsTakeBack(app) => a.consent.take_commands(&app, now),
         Hit::Everything(app) => {
             if let Err(e) = a.router.create_rule(&ApprovalGesture::settings_tap(), RuleDraft::everything(&app, MAX_EVERYTHING_MINUTES), now) {
                 log!("approvals: {e}");

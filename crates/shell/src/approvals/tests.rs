@@ -3,7 +3,7 @@
 //! hand-off, consent and the audit.
 
 use super::audit::AuditLog;
-use super::consent::{AgentSummary, ConsentStore, State};
+use super::consent::{AgentSummary, Commands, ConsentStore, State};
 use super::dev_hooks::FixedDevMode;
 use super::relay::RecordingRelay;
 use super::router::{make_request, AppConfirm, AppConfirmRequest, AutoBy, Route, Router};
@@ -846,6 +846,90 @@ fn consent_at_first_use_is_asked_once_and_remembered() {
     c.turn_off("os.news", T0);
     assert!(!c.granted("os.news", false));
     assert_eq!(c.agents(), vec![("os.news".to_string(), "News".to_string(), State::Denied)]);
+}
+
+/// ADR 0004 §4, §7, §12: the first-use sheet names every other app's tool
+/// the manifest asks for, and command execution on its own line; command
+/// execution is its own grant, never part of "Allow".
+#[test]
+fn the_first_use_sheet_lists_every_cross_app_grant_and_command_execution_apart() {
+    let manifest = json!({"capabilities": ["news"], "agent": {"profile": "read-only", "tools": ["ask_user_question", "mail.send", "calendar.event.create", "terminal.run"]}});
+    let s = AgentSummary::from_manifest("com.example.news", "Helper", &manifest, &[], "m");
+    let uses = s.uses.join("\n");
+    assert!(uses.contains("mail.send") && uses.contains("Mail"), "{uses}");
+    assert!(uses.contains("calendar.event.create") && uses.contains("Calendar"), "{uses}");
+    assert!(uses.contains("terminal.run") && uses.to_lowercase().contains("commands"), "{uses}");
+    assert_eq!(s.commands, vec!["terminal.run".to_string()], "command execution asks apart");
+    // A native app's grants (`native-apps.json` `agent.grants`) too.
+    let native = AgentSummary::from_manifest("rinx", "Rinx", &json!({"agent": {"octos": ["octos.turn.start"], "grants": [["os.mail", "mail.send"]]}}), &[], "m");
+    assert!(native.uses.iter().any(|u| u.contains("mail.send")), "{:?}", native.uses);
+    assert!(native.commands.is_empty());
+    // Owners by #232's resolution: a native app and the toolbox by their
+    // own id, never `os.<namespace>`.
+    let odd = AgentSummary::from_manifest("com.example.x", "X", &json!({"agent": {"tools": ["rinx.message.send", "toolbox.search"]}}), &[], "m");
+    let odd = odd.uses.join("\n");
+    assert!(odd.contains("Rinx's rinx.message.send") && odd.contains("Toolbox's toolbox.search") && !odd.contains("os."), "{odd}");
+    // "Allow" is not command execution; it is its own choice.
+    let mut c = ConsentStore::memory();
+    c.ask(s.clone(), false);
+    c.set(&ApprovalGesture::sheet_tap(), "com.example.news", true, T0);
+    assert!(c.granted("com.example.news", false));
+    assert!(!c.commands_granted("com.example.news", false));
+    c.give_commands(&ApprovalGesture::sheet_tap(), "com.example.news", T0);
+    assert!(c.commands_granted("com.example.news", false));
+    assert_eq!(c.commands("com.example.news"), Commands::On);
+    c.take_commands("com.example.news", T0);
+    assert_eq!(c.commands("com.example.news"), Commands::Off);
+    c.give_commands(&ApprovalGesture::settings_tap(), "com.example.news", T0);
+    assert!(c.commands_granted("com.example.news", false));
+    assert!(c.commands_granted("other", true), "developer mode grants everything");
+    // Turning the agent off takes command execution with it.
+    c.turn_off("com.example.news", T0);
+    assert!(!c.commands_granted("com.example.news", false));
+    c.set(&ApprovalGesture::settings_tap(), "com.example.news", true, T0);
+    assert!(!c.commands_granted("com.example.news", false), "on again: commands stay off until granted again");
+}
+
+/// A consent given before command execution was its own grant (no
+/// `commands` in the record) keeps the agent allowed, gives no commands,
+/// and says so: Settings shows it and offers the grant.
+#[test]
+fn a_consent_from_before_the_command_grant_says_commands_were_never_asked() {
+    let home = temp_home("old-consent");
+    std::fs::create_dir_all(home.join("approvals")).unwrap();
+    std::fs::write(home.join(super::consent::CONSENT_FILE), r#"{"schema": 1, "apps": {"com.example.news": {"allowed": true, "at": 1}}}"#).unwrap();
+    let mut c = ConsentStore::in_home(&home);
+    let manifest = json!({"agent": {"tools": ["terminal.run"]}});
+    c.register(AgentSummary::from_manifest("com.example.news", "Helper", &manifest, &[], "m"));
+    assert!(c.granted("com.example.news", false));
+    assert!(!c.commands_granted("com.example.news", false));
+    assert_eq!(c.commands("com.example.news"), Commands::NeverAsked);
+    assert!(super::settings_page::commands_text(Commands::NeverAsked).contains("never asked"));
+    c.give_commands(&ApprovalGesture::settings_tap(), "com.example.news", T0);
+    let mut again = ConsentStore::in_home(&home);
+    again.register(AgentSummary::from_manifest("com.example.news", "Helper", &manifest, &[], "m"));
+    assert_eq!(again.commands("com.example.news"), Commands::On, "persisted");
+    // An app that does not ask for commands has nothing to give.
+    c.register(AgentSummary::from_manifest("os.news", "News", &json!({}), &[], "m"));
+    c.set(&ApprovalGesture::settings_tap(), "os.news", true, T0);
+    assert_eq!(c.commands("os.news"), Commands::NotAsked);
+    c.give_commands(&ApprovalGesture::settings_tap(), "os.news", T0);
+    assert!(!c.commands_granted("os.news", false), "only an app that asks for it");
+    let _ = std::fs::remove_dir_all(home);
+}
+
+/// Settings gives command execution only through an explicit second
+/// confirmation, as the first-use sheet does with its own button; taking it
+/// back is one tap.
+#[test]
+fn settings_gives_commands_only_after_a_second_confirmation() {
+    use super::settings_page::{CommandsStep, commands_step};
+    assert_eq!(commands_step(Commands::Off, None, "a"), CommandsStep::Offer);
+    assert_eq!(commands_step(Commands::NeverAsked, None, "a"), CommandsStep::Offer);
+    assert_eq!(commands_step(Commands::Off, Some("a"), "a"), CommandsStep::Confirm);
+    assert_eq!(commands_step(Commands::Off, Some("b"), "a"), CommandsStep::Offer);
+    assert_eq!(commands_step(Commands::On, None, "a"), CommandsStep::TakeBack);
+    assert_eq!(commands_step(Commands::NotAsked, None, "a"), CommandsStep::Nothing);
 }
 
 #[test]

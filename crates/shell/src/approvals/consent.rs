@@ -29,6 +29,9 @@ pub struct AgentSummary {
     pub uses: Vec<String>,
     /// Where the model runs ("OpenAI (api.openai.com), set in AI providers").
     pub model: String,
+    /// The command-execution tools it asks for (`terminal.run`): its own
+    /// grant, on its own button, never part of "Allow" (ADR 0004 §12).
+    pub commands: Vec<String>,
 }
 
 impl AgentSummary {
@@ -65,7 +68,31 @@ impl AgentSummary {
         if manifest["agent"]["tools"].as_array().is_some_and(|t| t.iter().any(|t| t == "ask_user_question")) {
             uses.push("Ask you questions".to_string());
         }
-        AgentSummary { app: app.into(), name: name.into(), reads, uses, model: model.into() }
+        // Every other app's tool it asks for: a script app's dotted names
+        // in `agent.tools` (owner resolved as the relay resolves a grant,
+        // `relay::owner_of_tool`), a native app's `agent.grants` pairs.
+        // Command execution on its own line.
+        let mut asked: Vec<(String, String)> = manifest["agent"]["tools"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t.as_str())
+            .filter_map(|t| Some((crate::host_tools::relay::owner_of_tool(t)?, t.to_string())))
+            .collect();
+        asked.extend(manifest["agent"]["grants"].as_array().into_iter().flatten().filter_map(|g| Some((g.get(0)?.as_str()?.to_string(), g.get(1)?.as_str()?.to_string()))));
+        let mut commands = Vec::new();
+        for (owner, tool) in asked {
+            if crate::host_tools::relay::COMMAND_TOOLS.contains(&tool.as_str()) {
+                uses.push(format!("Run commands in the Terminal ({tool}): only with \u{201c}Allow with commands\u{201d}"));
+                if !commands.contains(&tool) {
+                    commands.push(tool);
+                }
+            } else {
+                uses.push(format!("{}'s {tool} (another app's tool)", super::sheet::app_label(&owner)));
+            }
+        }
+        uses.dedup();
+        AgentSummary { app: app.into(), name: name.into(), reads, uses, model: model.into(), commands }
     }
 }
 
@@ -92,6 +119,26 @@ pub enum State {
 struct Record {
     allowed: bool,
     at: u64,
+    /// Command execution (`terminal.run`), the person's own grant apart
+    /// from "Allow" (ADR 0004 §12): `None` in a consent given before it was
+    /// asked apart (never asked: off, and Settings says so), `Some(on)`
+    /// once the person chose. Lost when the agent is turned off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    commands: Option<bool>,
+    /// Where the person gave it (the sheet or Settings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    commands_from: Option<super::rules::RuleOrigin>,
+}
+
+/// An allowed agent's command execution, as Settings shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Commands {
+    /// The app does not ask for it (or its agent is not allowed).
+    NotAsked,
+    /// Allowed before command execution was its own grant: off, never asked.
+    NeverAsked,
+    Off,
+    On,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -140,6 +187,54 @@ impl ConsentStore {
     pub fn granted(&self, app: &str, grants_all: bool) -> bool {
         grants_all || self.state(app) == State::Allowed
     }
+    /// Whether the person gave the app's agent command execution (on top of
+    /// allowing it). `grants_all`: developer mode.
+    pub fn commands_granted(&self, app: &str, grants_all: bool) -> bool {
+        grants_all || self.decided.get(app).is_some_and(|r| r.allowed && r.commands == Some(true))
+    }
+    /// What Settings shows about `app`'s command execution.
+    pub fn commands(&self, app: &str) -> Commands {
+        let asks = self.known.get(app).is_some_and(|s| !s.commands.is_empty());
+        match self.decided.get(app) {
+            Some(r) if r.allowed && asks => match r.commands {
+                None => Commands::NeverAsked,
+                Some(false) => Commands::Off,
+                Some(true) => Commands::On,
+            },
+            _ => Commands::NotAsked,
+        }
+    }
+    /// The person gave command execution (the first-use sheet's "Allow with
+    /// commands", or Settings after its second confirmation): only to an
+    /// agent they allowed whose app asks for it. The gesture's origin is
+    /// recorded.
+    pub fn give_commands(&mut self, gesture: &ApprovalGesture, app: &str, now: u64) {
+        if !self.known.get(app).is_some_and(|s| !s.commands.is_empty()) {
+            return;
+        }
+        let Some(r) = self.decided.get_mut(app).filter(|r| r.allowed) else { return };
+        r.commands = Some(true);
+        r.commands_from = Some(gesture.origin());
+        r.at = now;
+        self.generation += 1;
+        self.save();
+    }
+    /// A consent as one given before command execution was asked apart
+    /// (`--test-action approvals-settings-commands` only: it shows what
+    /// such a consent looks like in Settings).
+    pub(crate) fn allow_as_before_commands(&mut self, app: &str, now: u64) {
+        self.decided.insert(app.to_string(), Record { allowed: true, at: now, commands: None, commands_from: None });
+        self.generation += 1;
+    }
+    /// Take command execution back (needs no gesture: always allowed).
+    pub fn take_commands(&mut self, app: &str, now: u64) {
+        let Some(r) = self.decided.get_mut(app).filter(|r| r.allowed) else { return };
+        r.commands = Some(false);
+        r.commands_from = None;
+        r.at = now;
+        self.generation += 1;
+        self.save();
+    }
     /// The shell learns of an app with an agent (Settings lists it).
     pub fn register(&mut self, summary: AgentSummary) {
         if self.known.get(&summary.app) != Some(&summary) {
@@ -173,7 +268,14 @@ impl ConsentStore {
         } else if !self.allowed.iter().any(|a| a == app) {
             self.allowed.push(app.to_string());
         }
-        self.decided.insert(app.to_string(), Record { allowed, at: now });
+        // Command execution survives only a choice that keeps the agent on;
+        // a new choice asks it apart (off until given).
+        let kept = self.decided.get(app).filter(|r| allowed && r.allowed);
+        let (commands, commands_from) = match kept {
+            Some(r) => (r.commands, r.commands_from),
+            None => (Some(false), None),
+        };
+        self.decided.insert(app.to_string(), Record { allowed, at: now, commands, commands_from });
         self.asking.retain(|a| a != app);
         self.generation += 1;
         self.save();
@@ -181,7 +283,7 @@ impl ConsentStore {
     /// Turning an agent off needs no gesture (always allowed).
     pub fn turn_off(&mut self, app: &str, now: u64) {
         self.revoke(app);
-        self.decided.insert(app.to_string(), Record { allowed: false, at: now });
+        self.decided.insert(app.to_string(), Record { allowed: false, at: now, commands: Some(false), commands_from: None });
         self.asking.retain(|a| a != app);
         self.generation += 1;
         self.save();
