@@ -16,8 +16,10 @@
 //! the desktop panel's 328 pt). Height: the card's own measured height,
 //! clamped to [`TILE_MIN_HEIGHT`]..=[`TILE_MAX_HEIGHT`] (room for a whole
 //! action card, its buttons included); until the first draw measures it,
-//! [`TILE_DEFAULT_HEIGHT`]. A taller card is clipped at the
-//! cap; the app is one tap away. A script card should size its root `Fit`.
+//! [`TILE_DEFAULT_HEIGHT`]. A taller card is clipped at the cap ([`overflow`]
+//! says by how much), or scrolled inside its tile where the surface offers
+//! that ([`GlanceTiles::draw_scrolled`]: the glance panel); the app is one
+//! tap away. A script card should size its root `Fit`.
 //!
 //! **Policy.** A tile's isolate runs under the publishing app's resolved
 //! policy, applied exactly as the Card runner applies it
@@ -586,6 +588,12 @@ pub fn clamp_height(measured: f64) -> f64 {
     measured.clamp(TILE_MIN_HEIGHT, TILE_MAX_HEIGHT)
 }
 
+/// How much taller than its tile a card is, as last measured: what of it the
+/// tile cannot show at once (0 when it fits).
+pub fn overflow(key: &str) -> f64 {
+    measured_height(key).map_or(0.0, |m| (m - tile_height(key)).max(0.0))
+}
+
 thread_local! {
     /// Measured tile heights by card key (`app/card_id`), shared by every
     /// surface that draws the card (phone glance page, desktop panel).
@@ -651,12 +659,26 @@ impl GlanceTiles {
     /// when it changed. The first draw seats the isolate under `app`'s
     /// policy (module docs).
     pub fn draw(&mut self, cx: &mut Cx2d, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>, rect: Rect) {
+        self.draw_scrolled(cx, key, app, contained, body, rect, 0.0);
+    }
+
+    /// [`Self::draw`], the card scrolled `scroll` points up inside its tile,
+    /// so a card taller than its tile shows its part from there down (the
+    /// glance panel's, glance_panel.rs `TileScroll`). The frame's own layout
+    /// scrolls, not a scroll view: no scroll bar claims a press, so a press
+    /// a card's controls do not claim stays unclaimed, and the card's hits
+    /// stay where it is drawn. Tiles that scroll by themselves (the card
+    /// window's) ignore it.
+    pub fn draw_scrolled(&mut self, cx: &mut Cx2d, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>, rect: Rect, scroll: f64) {
         if !CAN_RENDER {
             return;
         }
         ensure_vocabulary(cx);
         let splash = self.open(cx, key, app, contained, body);
         let Some(tile) = self.tiles.get_mut(key) else { return };
+        if !self.scroll {
+            tile.frame.as_view().set_scroll_pos(cx, dvec2(0.0, scroll.max(0.0)));
+        }
         let walk = Walk { abs_pos: Some(rect.pos), width: Size::Fixed(rect.size.x), height: Size::Fixed(rect.size.y), ..Walk::default() };
         let mut scope = Scope::empty();
         // Inside the card's isolate, as the Card runner draws its card.
@@ -1260,6 +1282,17 @@ mod tests {
         tiles.sweep(&mut cx, &[]);
         held.lock().unwrap().take().expect("the service holds the request").send(Ok(serde_json::Value::Null));
         assert!(take_replies_for(&[heap]).is_empty(), "nothing is left queued for the tile that went away");
+    }
+
+    /// A card taller than its tile overflows by the difference, as last
+    /// measured; one that fits, or that never drew, by nothing.
+    #[test]
+    fn a_card_taller_than_its_tile_overflows_by_the_difference() {
+        record_height("os.overflow/tall", TILE_MAX_HEIGHT + 80.0);
+        assert_eq!(overflow("os.overflow/tall"), 80.0);
+        record_height("os.overflow/short", 200.0);
+        assert_eq!(overflow("os.overflow/short"), 0.0);
+        assert_eq!(overflow("os.overflow/never"), 0.0);
     }
 
     #[test]
