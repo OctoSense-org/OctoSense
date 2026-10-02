@@ -441,11 +441,26 @@ impl Router {
     }
 
     /// The person answered one line of a shell-drawn sheet.
+    /// The view had every argument row of `request` on screen.
+    pub fn mark_seen(&mut self, sheet: u64, request: &RequestId) {
+        if let Some(line) = self.sheets.iter_mut().find(|s| s.id == sheet).and_then(|s| s.lines.iter_mut().find(|l| l.request == *request)) {
+            if !line.seen {
+                line.seen = true;
+                self.changed();
+            }
+        }
+    }
+
     pub fn answer(&mut self, sheet: u64, request: &RequestId, answer: Answer, gesture: &ApprovalGesture, now: u64) -> Result<Option<RuleId>, String> {
         let s = self.sheets.iter().position(|s| s.id == sheet).ok_or("that sheet is closed")?;
         let l = self.sheets[s].lines.iter().position(|l| l.request == *request).ok_or("that line is not on the sheet")?;
         if self.sheets[s].lines[l].answer.is_some() {
             return Err("already answered".into());
+        }
+        // Approval waits until the person has seen every argument (the view
+        // says so, `mark_seen`); Deny never waits.
+        if answer != Answer::Deny && !self.sheets[s].lines[l].seen {
+            return Err("read every argument first: scroll to the end of the arguments".into());
         }
         let mut made = None;
         match answer {

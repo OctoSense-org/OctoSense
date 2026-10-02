@@ -2505,7 +2505,7 @@ impl App {
             }
             Route::Os(call) => {
                 let result = self.answer_os_call(cx, &call);
-                self.send_to_pane(AiBus::os_reply(result));
+                self.send_to_pane(self.ai_bus.os_reply_audited(result));
             }
             Route::Local(client, msg) => self.on_local_frame(cx, client, msg),
             // A `confirm: host` tool (the Terminal's `run`): the approval

@@ -259,7 +259,7 @@ fn a_confirm_app_call_is_acknowledged_then_handed_to_the_owning_apps_sheet_and_r
     assert_eq!(shown.len(), 1);
     assert_eq!(shown[0].caller_label, "Calendar's agent", "the sheet shows who is calling");
     assert_eq!(shown[0].args["text"], "hi", "and the exact arguments");
-    assert_eq!(w.asked[0].1, ToolSpec::app("rinx.message.send"));
+    assert_eq!(w.asked[0].1, ToolSpec::app("rinx.message.send").schema(json!({"type": "object"})), "with its declared schema, for rules");
     // The person approves on Rinx's sheet.
     w.router.app_confirm_answered(&RequestId(format!("{CONFIRM_PREFIX}c1")), true, "sent", 2).unwrap();
     for event in w.decided() {
@@ -1091,4 +1091,20 @@ fn should_send_a_modules_tools_down_its_link_when_it_has_no_executor() {
     relay.handle(Event::Call { call: call("c1", "probe.ping", "probe"), reply: r }, &mut w);
     assert_eq!(w.link_calls.len(), 1);
     assert_eq!(w.link_calls[0].0, "probe");
+}
+
+/// Review of #222: the shell's audit sink writes each line to the home's
+/// file at once (nothing waits for `pump`, so a crash or quit loses none),
+/// from whatever thread answers.
+#[test]
+fn the_shells_audit_lines_are_written_at_once() {
+    use super::relay::CallAudit;
+    let home = std::env::temp_dir().join(format!("octosense-syncaudit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let sink = super::audit_sink_for(home.clone());
+    let e = CallAudit { ts: 1, call_id: "c1".into(), caller: "system_agent".into(), owner: "terminal".into(), tool: "terminal.run".into(), args_digest: "x".into(), phase: "call".into(), outcome: "received".into() };
+    std::thread::spawn(move || sink(e)).join().unwrap();
+    let text = std::fs::read_to_string(home.join(crate::approvals::audit::CALLS_FILE)).unwrap();
+    assert_eq!(text.lines().count(), 1, "written before any pump");
+    let _ = std::fs::remove_dir_all(home);
 }

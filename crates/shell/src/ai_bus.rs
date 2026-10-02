@@ -74,14 +74,28 @@ pub fn audit_dev_call(service: &str, manifest: Option<&ServiceManifest>, call: &
 /// The WM's own service endpoint.
 pub const OS_ENDPOINT: &str = "os";
 
-/// How much of a call's arguments the pane's confirm card shows: its title
-/// is the arguments with the outer braces trimmed, cut at this many bytes
-/// (makepad-ai-services `EngineCore::card`).
-pub const CARD_ARGS_BYTES: usize = 60;
+/// The pane's tool-call audit line (ADR 0004 §8, review of #222): the same
+/// `logs/tool-calls.jsonl` the relay writes, caller `assistant_pane`.
+pub(crate) fn pane_audit(owner: &str, call: &ServiceCall) -> crate::approvals::audit::CallAudit {
+    let args = serde_json::from_str::<serde_json::Value>(&call.args).unwrap_or_else(|_| serde_json::Value::String(call.args.clone()));
+    crate::approvals::audit::CallAudit {
+        ts: crate::host_tools::relay::unix_now(),
+        call_id: call.call_id.clone(),
+        caller: "assistant_pane".into(),
+        owner: owner.to_string(),
+        tool: call.tool.clone(),
+        args_digest: crate::approvals::facts::digest(&args),
+        phase: "call".into(),
+        outcome: "received".into(),
+    }
+}
 
-/// The arguments as the confirm card shows them, when it shows them whole.
-pub fn card_shows_in_full(args: &str) -> bool {
-    args.trim().trim_start_matches('{').trim_end_matches('}').trim().len() <= CARD_ARGS_BYTES
+/// How a pane call ended, for the audit.
+pub(crate) fn pane_outcome(result: &ToolResult) -> String {
+    match result.outcome {
+        ToolOutcome::Ok => "ok".into(),
+        other => format!("error:{}", format!("{other:?}").to_lowercase()),
+    }
 }
 
 /// The shell's rules for an app's assistant tools, from its native-apps.json
@@ -128,8 +142,14 @@ pub struct HeldCall {
 /// The router's request ids for the bus start with this.
 pub const HELD_PREFIX: &str = "bus:";
 
-/// Apply an app's rules to the manifest it registers.
-fn apply_rules(manifest: &mut ServiceManifest, rules: Option<&'static crate::native_apps::NativeApp>) {
+/// Apply an app's rules to the manifest it registers. Returns the tools the
+/// shell's sheet confirms beyond its `confirm: host` rules: every other
+/// destructive tool the app does not confirm on its own sheet. The pane's
+/// confirm card cuts the arguments (makepad-ai-services `EngineCore::card`
+/// keeps 60 bytes), so it confirms nothing: the shell's sheet shows every
+/// argument (review of #218).
+fn apply_rules(manifest: &mut ServiceManifest, rules: Option<&'static crate::native_apps::NativeApp>) -> HashSet<String> {
+    let mut sheet = HashSet::new();
     for tool in &mut manifest.tools {
         if host_confirmed(rules, &tool.name) {
             // The router confirms each call; the pane must not ask again.
@@ -137,8 +157,12 @@ fn apply_rules(manifest: &mut ServiceManifest, rules: Option<&'static crate::nat
                 tool.risk = Risk::Act;
             }
             tool.self_confirm = None;
+        } else if tool.risk == Risk::Destructive && !tool.confirms_itself() {
+            tool.risk = Risk::Act;
+            sheet.insert(tool.name.clone());
         }
     }
+    sheet
 }
 
 /// What the bus wants the WM to do with a frame.
@@ -186,6 +210,14 @@ pub struct AiBus {
     shell_calls: HashMap<String, ClientId>,
     /// Shell calls whose client died before answering.
     failed_shell_calls: Vec<String>,
+    /// Each client's destructive tools the shell's sheet confirms (no
+    /// `confirm: host` rule, no sheet of the app's own): held like
+    /// `confirm: host` calls, never a standing rule's.
+    sheet_confirms: HashMap<ClientId, HashSet<String>>,
+    /// The pane's calls still open, for their audit line when they end.
+    pane_calls: std::sync::Mutex<HashMap<String, crate::approvals::audit::CallAudit>>,
+    /// Where the pane's audit lines go (tests); the shell's file otherwise.
+    audit: Option<crate::host_tools::relay::AuditSink>,
     /// Tests only: answers `auto_approve` instead of the process's
     /// developer mode.
     #[cfg(test)]
@@ -224,6 +256,33 @@ impl AiBus {
 
     fn audit_call(&self, service: &str, manifest: Option<&ServiceManifest>, call: &ServiceCall) {
         audit_dev_call(service, manifest, call, self.auto_approves(service));
+        let line = pane_audit(service, call);
+        self.pane_calls.lock().unwrap_or_else(|e| e.into_inner()).insert(call.call_id.clone(), line.clone());
+        self.write_audit(line);
+    }
+
+    /// Where the pane's audit lines go.
+    pub fn set_audit(&mut self, sink: crate::host_tools::relay::AuditSink) {
+        self.audit = Some(sink);
+    }
+
+    fn write_audit(&self, line: crate::approvals::audit::CallAudit) {
+        match &self.audit {
+            Some(sink) => sink(line),
+            None => crate::host_tools::write_audit(line),
+        }
+    }
+
+    /// A pane call ended (answered, refused, its app gone): its audit line.
+    fn audit_done(&self, call_id: &str, outcome: String) {
+        let Some(line) = self.pane_calls.lock().unwrap_or_else(|e| e.into_inner()).remove(call_id) else { return };
+        self.write_audit(crate::approvals::audit::CallAudit { ts: crate::host_tools::relay::unix_now(), phase: "done".into(), outcome, ..line });
+    }
+
+    /// [`AiBus::os_reply`], audited.
+    pub fn os_reply_audited(&self, result: ToolResult) -> String {
+        self.audit_done(&result.call_id, pane_outcome(&result));
+        Self::os_reply(result)
     }
 
     pub fn endpoint_of(client: ClientId) -> EndpointId {
@@ -259,7 +318,8 @@ impl AiBus {
         if let Some(rules) = host_rules(&manifest.id) {
             self.rules.insert(client, rules);
         }
-        apply_rules(&mut manifest, self.rules.get(&client).copied());
+        let sheet = apply_rules(&mut manifest, self.rules.get(&client).copied());
+        self.sheet_confirms.insert(client, sheet);
         self.manifests.insert(client, manifest.clone());
         let manifest = self.effective(&manifest);
         HostedUp { from: Some(self.endpoint_for(client)), msg: ServiceUp::Register { manifest, port_tag: 0 } }.to_json()
@@ -267,6 +327,7 @@ impl AiBus {
 
     /// An in-process instance's answer, as a frame for the pane.
     pub fn local_reply(&self, client: ClientId, result: ToolResult) -> String {
+        self.audit_done(&result.call_id, pane_outcome(&result));
         self.local_up(client, ServiceUp::Result(result))
     }
 
@@ -440,6 +501,16 @@ impl AiBus {
                     self.held.insert(key, (target, down.msg.clone()));
                     return Route::Approval(held);
                 }
+                // Any other destructive tool the pane would have confirmed
+                // on its card: the shell's sheet, every argument in full;
+                // no standing rule answers it.
+                if self.sheet_confirms.get(&target).is_some_and(|t| t.contains(&call.tool)) {
+                    let key = format!("{HELD_PREFIX}{}:{}", self.endpoint_for(target).as_str(), call.call_id);
+                    let app = self.launched.get(&target).cloned().or_else(|| self.manifests.get(&target).map(|m| m.id.clone())).unwrap_or_default();
+                    let held = HeldCall { key: key.clone(), app, tool: call.tool.clone(), args: call.args.clone(), auto_approvable: false, command: false };
+                    self.held.insert(key, (target, down.msg.clone()));
+                    return Route::Approval(held);
+                }
             }
             return if self.locals.contains(&target) { Route::Local(target, down.msg) } else { Route::ToClient(target, down.to_json()) };
         }
@@ -453,16 +524,18 @@ impl AiBus {
                 return Route::ShellResult(result.clone());
             }
             ServiceUp::Progress { call_id, .. } if self.shell_calls.get(call_id) == Some(&client) => return Route::Drop,
+            ServiceUp::Result(result) => self.audit_done(&result.call_id, pane_outcome(result)),
             _ => {}
         }
         match &mut up.msg {
             ServiceUp::Register { manifest, .. } => {
                 // Another process cannot vouch for the person's consent: its
-                // destructive tools wait for the pane's own confirm card. Only
+                // destructive tools wait for the shell's sheet. Only
                 // in-process modules (`register_local`, trusted native code)
                 // keep a tool's claim that its own sheet confirms it.
                 manifest.clear_self_confirm();
-                apply_rules(manifest, self.rules.get(&client).copied());
+                let sheet = apply_rules(manifest, self.rules.get(&client).copied());
+                self.sheet_confirms.insert(client, sheet);
                 self.manifests.insert(client, manifest.clone());
                 *manifest = self.effective(manifest);
             }
@@ -494,8 +567,10 @@ impl AiBus {
             .map(|(client, _)| *client)
             .max()?;
         let call = ServiceCall { call_id: call_id.to_string(), tool: tool.to_string(), args: args.to_string() };
+        // The relay audits the shell's own calls (`host_tools`); developer
+        // mode's trace only here.
         if let Some(manifest) = self.manifests.get(&client) {
-            self.audit_call(app, Some(manifest), &call);
+            audit_dev_call(app, Some(manifest), &call, self.auto_approves(app));
         }
         self.shell_calls.insert(call_id.to_string(), client);
         let msg = ServiceDown::Call(call);
@@ -545,6 +620,7 @@ impl AiBus {
         }
         let ServiceDown::Call(call) = msg else { return Route::Drop };
         let refused = ToolResult::refused(&call.call_id, format!("not approved: {reason}"));
+        self.audit_done(&call.call_id, pane_outcome(&refused));
         Route::ToPane(HostedUp { from: Some(self.endpoint_for(target)), msg: ServiceUp::Result(refused) }.to_json())
     }
 
@@ -559,7 +635,12 @@ impl AiBus {
             self.pane_client = None;
             return None;
         }
+        let gone: Vec<String> = self.held.values().filter(|(target, _)| *target == client).filter_map(|(_, msg)| match msg { ServiceDown::Call(call) => Some(call.call_id.clone()), _ => None }).collect();
+        for id in gone {
+            self.audit_done(&id, "error:app_gone".into());
+        }
         self.held.retain(|_, (target, _)| *target != client);
+        self.sheet_confirms.remove(&client);
         let failed: Vec<String> = self.shell_calls.iter().filter(|(_, c)| **c == client).map(|(id, _)| id.clone()).collect();
         for id in failed {
             self.shell_calls.remove(&id);
@@ -680,6 +761,50 @@ mod tests {
         let Route::Approval(held) = bus.on_custom(9, &down.to_json()) else { panic!("expected a held call") };
         bus.client_died(4);
         assert!(matches!(bus.release(&held.key, true, ""), Route::Drop));
+    }
+
+    /// Review of #218: a process's destructive tool is confirmed on the
+    /// shell's sheet (every argument, in full), never on the pane's card,
+    /// which cuts them: announced to the pane as `Act`, each call held for
+    /// the router, no standing rule may answer it.
+    #[test]
+    fn a_processs_destructive_tool_is_confirmed_on_the_shells_sheet_not_the_pane_card() {
+        let notes = ServiceManifest::new("notes", "Notes", "Notes.")
+            .with_tool(ToolDef::new("purge", "Delete every note.", r#"{"type":"object"}"#, Risk::Destructive))
+            .with_tool(ToolDef::new("list", "List notes.", r#"{"type":"object"}"#, Risk::Read));
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: notes, port_tag: 0 } };
+        let Route::ToPane(json) = bus.on_custom_from(4, Some("notes"), &up.to_json()) else { panic!("expected ToPane") };
+        let ServiceUp::Register { manifest, .. } = HostedUp::parse(&json).unwrap().msg else { panic!() };
+        assert_eq!(manifest.tool("purge").unwrap().risk, Risk::Act, "the pane's card does not confirm it");
+        let long = format!(r#"{{"filter":"{}"}}"#, "x".repeat(200));
+        let down = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("purge", &long)) };
+        let Route::Approval(held) = bus.on_custom(9, &down.to_json()) else { panic!("expected a held call") };
+        assert_eq!((held.app.as_str(), held.tool.as_str(), held.args.as_str()), ("notes", "purge", long.as_str()));
+        assert!(!held.auto_approvable && !held.command);
+        let read = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("list", "{}")) };
+        assert!(matches!(bus.on_custom(9, &read.to_json()), Route::ToClient(4, _)), "reads are not held");
+    }
+
+    /// Review of #222: the pane's own calls are audited like the relay's,
+    /// when they go out and when they are answered.
+    #[test]
+    fn the_panes_calls_are_audited_in_the_tool_call_log() {
+        let lines: std::sync::Arc<std::sync::Mutex<Vec<crate::approvals::audit::CallAudit>>> = Default::default();
+        let sink = lines.clone();
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        bus.set_audit(std::sync::Arc::new(move |e| sink.lock().unwrap().push(e)));
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: files(), port_tag: 0 } };
+        bus.on_custom_from(4, Some("files"), &up.to_json());
+        let down = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("stat", r#"{"path":"/x"}"#)) };
+        assert!(matches!(bus.on_custom(9, &down.to_json()), Route::ToClient(4, _)));
+        let result = HostedUp { from: None, msg: ServiceUp::Result(ToolResult::ok("c", "ok", "ok")) };
+        bus.on_custom(4, &result.to_json());
+        let got: Vec<(String, String, String, String)> = lines.lock().unwrap().iter().map(|e| (e.caller.clone(), e.owner.clone(), e.phase.clone(), e.outcome.clone())).collect();
+        assert_eq!(got, vec![
+            ("assistant_pane".into(), "files".into(), "call".into(), "received".into()),
+            ("assistant_pane".into(), "files".into(), "done".into(), "ok".into()),
+        ]);
     }
 
     #[test]
@@ -992,17 +1117,20 @@ mod local_tests {
             assert_eq!(m.tool("send").unwrap().risk, Risk::Act, "approved in advance");
             assert!(m.validate().is_ok(), "and still a valid manifest");
         }
-        assert_eq!(registered(&news).tool("send").unwrap().risk, Risk::Destructive, "an app it does not cover");
+        assert_eq!(registered(&news).tool("send").unwrap().risk, Risk::Act, "an app it does not cover: the shell's sheet confirms it, not the pane's card");
         assert_eq!(registered(&bus.replay(AiBus::os_manifest(&[]))[1]).tool("send").unwrap().risk, Risk::Act);
-        // Off: the pane is told the real risk again, and a module keeps its own sheet.
+        // Off: a module keeps its own sheet (the pane sees it destructive,
+        // and the module confirms); a process's destructive tool stays with
+        // the shell's sheet (`Act` to the pane, held by the bus).
         fn nobody(_: &str) -> bool {
             false
         }
         bus.dev_check = Some(nobody);
         let again = bus.reannounce();
         assert_eq!(again.len(), 3);
-        for json in &again {
-            assert_eq!(registered(json).tool("send").unwrap().risk, Risk::Destructive);
+        for (i, json) in again.iter().enumerate() {
+            let want = if i == 2 { Risk::Destructive } else { Risk::Act };
+            assert_eq!(registered(json).tool("send").unwrap().risk, want, "{i}");
         }
         assert!(registered(&again[2]).tool("send").unwrap().confirms_itself(), "m6 keeps its own confirmation");
         assert!(!registered(&again[0]).tool("send").unwrap().confirms_itself());
@@ -1072,8 +1200,10 @@ mod local_tests {
         let Route::ToPane(process) = bus.on_custom(5, &up.to_json()) else { panic!("expected ToPane") };
         for (frame, endpoint, tool, pane_confirms) in [
             (&local, "m4", "send", false),
-            (&local, "m4", "delete", true),
-            (&process, "w5", "send", true),
+            // Not the pane's card: the shell holds these for its own sheet
+            // (`a_processs_destructive_tool_is_confirmed_on_the_shells_sheet_not_the_pane_card`).
+            (&local, "m4", "delete", false),
+            (&process, "w5", "send", false),
         ] {
             let up = HostedUp::parse(frame).expect("valid registration");
             let ServiceUp::Register { manifest, .. } = up.msg.clone() else { panic!("expected a registration") };

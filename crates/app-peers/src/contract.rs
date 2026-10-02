@@ -139,6 +139,11 @@ impl TurnTrigger {
             _ => TurnTrigger::Unknown,
         }
     }
+    /// The host's own name for the trigger (logs, tests). Never sent to an
+    /// app or the kernel: an app reads who spoke from the turn's `speaker`
+    /// ([`TurnTrigger::speaker`]), which stays `person` for an app's
+    /// `"trigger": "person"`, so what apps see did not change when
+    /// [`TurnTrigger::AppSaysPerson`] was split out (2026-09-30).
     pub fn as_str(&self) -> &'static str {
         match self {
             TurnTrigger::Person => "person",

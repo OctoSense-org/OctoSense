@@ -407,7 +407,9 @@ struct Pending {
 /// Where the relay's audit lines go.
 pub type AuditSink = Arc<dyn Fn(CallAudit) + Send + Sync>;
 
-fn unix_now() -> u64 {
+/// The audit's one clock (every phase of every call, the AI bus pane's
+/// too): Unix seconds of the system clock.
+pub fn unix_now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
@@ -651,7 +653,7 @@ impl Relay {
         let reply = match self.audit.clone() {
             Some(sink) => {
                 let record = CallAudit {
-                    ts: env.now(),
+                    ts: unix_now(),
                     call_id: call.call_id.clone(),
                     caller: caller.as_audit(),
                     owner: owner.clone(),
@@ -762,6 +764,10 @@ impl Relay {
             let (auto, _) = self.tool_rule(&*env, &owner, &tool);
             let mut spec = ToolSpec::app(&tool);
             spec.auto_approvable = auto;
+            // Rule conditions read only what the tool declares.
+            if let Some(schema) = entry.as_ref().and_then(|e| e.get("input_schema")) {
+                spec = spec.schema(schema.clone());
+            }
             let id = format!("{CONFIRM_PREFIX}{}", call.call_id);
             let context = RequestContext {
                 call_id: id.clone(),
@@ -816,7 +822,7 @@ impl Relay {
         if let (Some(record), Some(sink)) = (self.audited.remove(call_id), self.audit.clone()) {
             let open = self.calls.get(call_id).is_some_and(|p| p.reply.is_open());
             if cancelled || open {
-                sink(CallAudit { ts: env.now(), phase: "done".into(), outcome: "cancelled".into(), ..record });
+                sink(CallAudit { ts: unix_now(), phase: "done".into(), outcome: "cancelled".into(), ..record });
             }
         }
         let Some(p) = self.calls.remove(call_id) else { return };
@@ -843,6 +849,11 @@ impl Relay {
         let (auto, command) = self.tool_rule(&*env, &owner, &approval.tool);
         let mut spec = ToolSpec::host(&approval.tool);
         spec.auto_approvable = auto;
+        // Rule conditions read only what the owning app's tool declares
+        // (octos's own tools declare none here: their rules read no facts).
+        if let Some(schema) = self.catalog.entry(&owner, &approval.tool).and_then(|e| e.get("input_schema")) {
+            spec = spec.schema(schema.clone());
+        }
         if command || approval.tool == TERMINAL_RUN || approval.tool == DEV_RUN || (approval.octos && OCTOS_COMMANDS.contains(&approval.tool.as_str())) {
             spec = spec.command();
         }

@@ -40,8 +40,17 @@ fn ctx(id: &str, trigger: Trigger) -> RequestContext {
 fn req(id: &str, tool: ToolSpec, args: Value, trigger: Trigger) -> Request {
     make_request(MAIL, tool, args, Caller::AppAgent { app: "calendar".into() }, ctx(id, trigger), T0, 0)
 }
+/// `mail.send` as Mail declares it: the fields its rules can read.
+fn mail_send() -> ToolSpec {
+    ToolSpec::host("mail.send").schema(json!({"type": "object", "properties": {
+        "to": {}, "cc": {}, "bcc": {}, "subject": {"type": "string"}, "body": {"type": "string"},
+        "attachments": {"type": "array"}, "amount": {}, "total": {}, "count": {}, "items": {"type": "array"}, "note": {"type": "string"},
+        "user": {"type": "string"}, "max": {"type": "integer"}, "limit": {"type": "integer"}, "number": {"type": "string"},
+        "signature_key": {"type": "string"}, "smtp_password": {"type": "string"}
+    }}))
+}
 fn send(id: &str, args: Value) -> Request {
-    req(id, ToolSpec::host("mail.send"), args, Trigger::Person)
+    req(id, mail_send(), args, Trigger::Person)
 }
 fn rule(r: &mut Router, draft: RuleDraft) -> RuleId {
     r.create_rule(&ApprovalGesture::settings_tap(), draft, T0).expect("rule")
@@ -123,18 +132,18 @@ fn incoming_content_is_excluded_by_default() {
     let (mut r, relay) = router();
     rule(&mut r, contacts_rule());
     let from = Trigger::IncomingContent { from: Some("eve@example.org".into()) };
-    let q = req("in", ToolSpec::host("mail.send"), json!({"to": "ana@example.org"}), from.clone());
+    let q = req("in", mail_send(), json!({"to": "ana@example.org"}), from.clone());
     assert!(matches!(r.request(q, T0), Route::Sheet(_)));
     assert!(relay.take().is_empty());
     assert_eq!(r.front_sheet().unwrap().lines[0].surfaced, Surfaced::IncomingContent);
     // An unstated trigger is treated the same.
-    let q = req("unk", ToolSpec::host("mail.send"), json!({"to": "ana@example.org"}), Trigger::Unknown);
+    let q = req("unk", mail_send(), json!({"to": "ana@example.org"}), Trigger::Unknown);
     assert!(matches!(r.request(q, T0), Route::Sheet(_)));
     // A rule that opts in answers it.
     let mut d = contacts_rule();
     d.include_incoming = true;
     let id = rule(&mut r, d);
-    let q = req("in2", ToolSpec::host("mail.send"), json!({"to": "ana@example.org"}), from);
+    let q = req("in2", mail_send(), json!({"to": "ana@example.org"}), from);
     assert_eq!(r.request(q, T0), Route::Approved(AutoBy::Rule(id)));
 }
 
@@ -143,12 +152,12 @@ fn rules_are_keyed_on_owning_app_and_tool_whoever_calls() {
     let (mut r, relay) = router();
     let id = rule(&mut r, contacts_rule());
     for (i, caller) in [Caller::OwnAgent { client: None }, Caller::AppAgent { app: "calendar".into() }, Caller::SystemAgent].into_iter().enumerate() {
-        let q = make_request(MAIL, ToolSpec::host("mail.send"), json!({"to": "ana@example.org"}), caller.clone(), ctx(&format!("c{i}"), Trigger::SystemAgent), T0, 0);
+        let q = make_request(MAIL, mail_send(), json!({"to": "ana@example.org"}), caller.clone(), ctx(&format!("c{i}"), Trigger::SystemAgent), T0, 0);
         assert_eq!(r.request(q, T0), Route::Approved(AutoBy::Rule(id.clone())), "{caller:?}");
     }
     // Another tool, or the same tool name of another app, is not covered.
     assert!(matches!(r.request(req("t", ToolSpec::host("mail.forward"), json!({"to": "ana@example.org"}), Trigger::Person), T0), Route::Sheet(_)));
-    let other = make_request("os.notes", ToolSpec::host("mail.send"), json!({"to": "ana@example.org"}), Caller::SystemAgent, ctx("o", Trigger::Person), T0, 0);
+    let other = make_request("os.notes", mail_send(), json!({"to": "ana@example.org"}), Caller::SystemAgent, ctx("o", Trigger::Person), T0, 0);
     assert!(matches!(r.request(other, T0), Route::Sheet(_)));
     let d = relay.take();
     assert_eq!(d.len(), 3);
@@ -158,7 +167,7 @@ fn rules_are_keyed_on_owning_app_and_tool_whoever_calls() {
 // ---------------------------------------------------------------- conditions
 
 fn matches(r: &mut Router, id: &str, args: Value, trigger: Trigger, thread: &[&str]) -> bool {
-    let mut q = req(id, ToolSpec::host("mail.send"), args, trigger);
+    let mut q = req(id, mail_send(), args, trigger);
     q.context.thread = thread.iter().map(|s| s.to_string()).collect();
     matches!(r.request(q, T0), Route::Approved(AutoBy::Rule(_)))
 }
@@ -263,6 +272,87 @@ fn condition_amount_and_count_limits() {
 /// §8): an attachment under another name, a count under another name or in
 /// another shape, a recipient the reader cannot make out, and amounts it
 /// cannot parse all fail the rule, and the person is asked.
+/// Review of #215: a condition reads only the fields the tool's schema
+/// declares. Any key the schema does not declare (`dest`, `target`,
+/// `addressee`, `mailto`, `e-mail`, `enclosure`, `payload`, `data`, `url`,
+/// at any depth) makes the call unreadable for rules; declared fields with
+/// broad names (`user`, `max`, `limit`, `number`) do not; and a tool with no
+/// declared schema is unreadable for every condition.
+#[test]
+fn conditions_read_only_the_declared_fields() {
+    let (mut r, _) = router();
+    rule(&mut r, contacts_rule());
+    assert!(matches(&mut r, "d0", json!({"to": "ana@example.org", "user": "me", "max": 3, "limit": 1, "number": "7"}), Trigger::Person, &[]), "declared broad names are fine");
+    for (i, key) in ["dest", "target", "addressee", "mailto", "e-mail", "enclosure", "payload", "data", "url"].into_iter().enumerate() {
+        let mut args = json!({"to": "ana@example.org"});
+        args[key] = json!("eve@example.org");
+        assert!(!matches(&mut r, &format!("d{}", i + 1), args, Trigger::Person, &[]), "{key} is not declared");
+    }
+    let mut q = req("nested", mail_send(), json!({"to": "ana@example.org", "items": [{"to": "eve@example.org"}]}), Trigger::Person);
+    q.context.thread = Vec::new();
+    assert!(!matches!(r.request(q, T0), Route::Approved(AutoBy::Rule(_))), "an undeclared key inside a declared list");
+    // No schema: no condition can read anything.
+    let q = req("bare", ToolSpec::host("mail.send"), json!({"to": "ana@example.org"}), Trigger::Person);
+    assert!(!matches!(r.request(q, T0), Route::Approved(AutoBy::Rule(_))), "no declared schema");
+    // A rule without conditions needs no facts.
+    let (mut r, _) = router();
+    rule(&mut r, RuleDraft::tool(MAIL, "mail.send", Conditions::default()));
+    let q = req("plain", ToolSpec::host("mail.send"), json!({"anything": 1}), Trigger::Person);
+    assert!(matches!(r.request(q, T0), Route::Approved(AutoBy::Rule(_))));
+}
+
+/// Review of #218: the router itself refuses "Approve once" and "Always …"
+/// on a line whose arguments need reading until the view says every row was
+/// on screen; Deny always works.
+#[test]
+fn the_router_refuses_approval_until_every_argument_was_seen() {
+    let (mut r, _) = router();
+    let to: Vec<String> = (0..20).map(|i| format!("friend{i}@example.org")).collect();
+    let Route::Sheet(sheet) = r.request(send("long", json!({"to": to})), T0) else { panic!() };
+    let id = RequestId("long".into());
+    assert!(!r.front_sheet().unwrap().lines[0].seen, "20 recipients do not fit");
+    let refused = r.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0).unwrap_err();
+    assert!(refused.contains("every argument"), "{refused}");
+    assert!(r.answer(sheet, &id, Answer::Always(0), &ApprovalGesture::sheet_tap(), T0).is_err());
+    r.mark_seen(sheet, &id);
+    assert!(r.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0).is_ok());
+    // Short arguments are seen at once; Deny never waits.
+    let Route::Sheet(sheet) = r.request(send("short", json!({"to": "ana@example.org"})), T0) else { panic!() };
+    assert!(r.front_sheet().unwrap().lines[0].seen);
+    let Route::Sheet(s2) = r.request(send("long2", json!({"to": (0..20).map(|i| format!("f{i}@x.org")).collect::<Vec<_>>()})), T0) else { panic!() };
+    let _ = sheet;
+    assert!(r.answer(s2, &RequestId("long2".into()), Answer::Deny, &ApprovalGesture::sheet_tap(), T0).is_ok());
+}
+
+/// Review of #218: the heading and the caller go through `visible()` too.
+#[test]
+fn the_heading_and_caller_show_hidden_characters() {
+    use super::sheet::Line;
+    let q = make_request("os.ma\u{202E}il", ToolSpec::host("mail.se\u{200B}nd"), json!({}), Caller::AppAgent { app: "cal\u{2066}endar".into() }, ctx("h", Trigger::Person), T0, 0);
+    let line = Line::for_request(&q, Surfaced::NoRule, &NoContacts);
+    for text in [line.heading(), line.caller.clone()] {
+        assert!(!text.contains('\u{202E}') && !text.contains('\u{200B}') && !text.contains('\u{2066}'), "{text:?}");
+    }
+    assert!(line.heading().contains("\u{27E8}U+202E\u{27E9}") && line.heading().contains("\u{27E8}U+200B\u{27E9}"));
+    assert!(line.caller.contains("\u{27E8}U+2066\u{27E9}"));
+}
+
+/// Review of #218: wrapped rows are cached per width AND text scale; a
+/// re-wrap is reported, so the view starts the "seen" count over.
+#[test]
+fn a_rewrap_is_reported_for_a_new_width_or_text_scale() {
+    use super::sheet::WrapCache;
+    let measure = |s: &str| s.chars().count() as f64 * 7.0;
+    let args = vec![format!("\"subject\": \"{}\"", "x".repeat(100))];
+    let mut cache = WrapCache::default();
+    let id = RequestId("w".into());
+    let (rows, rewrapped) = cache.rows(&id, 280.0, 1.0, &args, measure);
+    assert!(rewrapped && rows.len() > 1);
+    assert!(!cache.rows(&id, 280.0, 1.0, &args, measure).1, "same width and scale: cached");
+    assert!(cache.rows(&id, 280.0, 1.25, &args, |s| s.chars().count() as f64 * 8.75).1, "a new text scale re-wraps");
+    assert!(cache.rows(&id, 400.0, 1.25, &args, measure).1, "a new width re-wraps");
+}
+
 #[test]
 fn conditions_fail_closed_on_arguments_they_cannot_read() {
     let (mut r, _) = router();
@@ -404,14 +494,14 @@ fn the_sheet_model_holds_every_argument_with_hidden_characters_made_visible() {
     let to: Vec<String> = (0..20).map(|i| format!("friend{i}@example.org")).collect();
     let mut args = json!({"subject": "hi", "to": to});
     args["to"].as_array_mut().unwrap().push(json!("attacker@evil.example"));
-    let q = req("many", ToolSpec::host("mail.send"), args, Trigger::Person);
+    let q = req("many", mail_send(), args, Trigger::Person);
     let line = Line::for_request(&q, Surfaced::NoRule, &NoContacts);
     assert!(line.args.len() > 12);
     assert!(line.args.iter().any(|l| l.contains("attacker@evil.example")), "the last recipient is in the model");
     // Right-to-left override, zero-width space, a bell, a C1 control, a
     // line separator and a tag character.
     let tricky = json!({"to": "ana@example.org", "subject": "invoice\u{202E}fdp.exe\u{200B}\u{0007}\u{0085}\u{2028}\u{E0041}"});
-    let q = req("tricky", ToolSpec::host("mail.send"), tricky, Trigger::Person);
+    let q = req("tricky", mail_send(), tricky, Trigger::Person);
     let rows = Line::for_request(&q, Surfaced::NoRule, &NoContacts).args.join("\n");
     for hidden in ['\u{202E}', '\u{200B}', '\u{0007}', '\u{0085}', '\u{2028}', '\u{E0041}'] {
         assert!(!rows.contains(hidden), "{hidden:?} drawn raw: {rows}");
@@ -474,7 +564,7 @@ fn approve_waits_until_every_argument_row_was_seen() {
 #[test]
 fn sheet_model_shows_app_tool_caller_and_redacted_args() {
     let (mut r, _) = router();
-    let tool = ToolSpec::host("mail.send").secret("signature_key");
+    let tool = mail_send().secret("signature_key");
     let args = json!({"to": ["ana@example.org"], "subject": "Tuesday", "signature_key": "k-123", "smtp_password": "hunter2"});
     let Route::Sheet(id) = r.request(req("s", tool, args, Trigger::Person), T0) else { panic!() };
     let sheet = r.front_sheet().unwrap();
@@ -966,7 +1056,7 @@ fn an_external_callers_approval_is_never_answered_by_the_shell() {
     let mut everything = RuleDraft::everything(MAIL, 30);
     everything.include_incoming = true;
     rule(&mut r, everything);
-    for tool in [ToolSpec::host("mail.send"), ToolSpec::app("mail.send"), ToolSpec::host("terminal.run").command()] {
+    for tool in [mail_send(), ToolSpec::app("mail.send"), ToolSpec::host("terminal.run").command()] {
         let route = r.request(external("x", tool), T0);
         assert!(matches!(route, Route::LeftToClient(_)), "{route:?}");
     }

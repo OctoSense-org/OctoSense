@@ -33,7 +33,7 @@ use std::collections::HashMap;
 
 use super::consent::AgentSummary;
 use super::rules::{ApprovalGesture, Rule};
-use super::sheet::{app_label, wrap, Answer, ArgWindow, Line, Sheet};
+use super::sheet::{app_label, Answer, ArgWindow, Line, Sheet, WrapCache};
 use super::types::{RequestId, RuleId};
 use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, ShellDraw};
 use crate::shell::{alpha, rgb, CtrlState, ShellTokens};
@@ -56,7 +56,7 @@ const PAD: f64 = 18.0;
 const BUTTON_H: f64 = 28.0;
 const ARG_LINE_H: f64 = 17.0;
 /// Rows the argument area shows at once; more scroll.
-pub const MAX_ARG_ROWS: usize = 12;
+pub use super::sheet::MAX_ARG_ROWS;
 const INDICATOR_H: f64 = 30.0;
 
 /// What a press lands on.
@@ -205,7 +205,7 @@ pub struct ShellApprovals {
     arg_boxes: Vec<(Rect, RequestId, usize, usize)>,
     /// Each open line's wrapped rows, and the width they were wrapped to.
     #[rust]
-    wrapped: HashMap<RequestId, (f64, Vec<String>)>,
+    wrapped: WrapCache,
 }
 
 impl ShellApprovals {
@@ -427,21 +427,18 @@ impl ShellApprovals {
         // Every argument row, wrapped to the card: nothing is elided.
         let px = tok.font.body_small;
         let scaled = px * self.d.text_scale();
-        self.wrapped.retain(|id, _| lines.iter().any(|l| l.request == *id));
-        let wrapped: Vec<Vec<String>> = lines
-            .iter()
-            .map(|l| {
-                if let Some((at, rows)) = self.wrapped.get(&l.request) {
-                    if *at == row_w {
-                        return rows.clone();
-                    }
-                }
-                let d = &mut self.d;
-                let rows: Vec<String> = l.args.iter().flat_map(|a| wrap(a, row_w, |t| d.measure(cx, false, scaled, t))).collect();
-                self.wrapped.insert(l.request.clone(), (row_w, rows.clone()));
-                rows
-            })
-            .collect();
+        self.wrapped.retain(|id| lines.iter().any(|l| l.request == *id));
+        let mut wrapped: Vec<Vec<String>> = Vec::with_capacity(lines.len());
+        for l in &lines {
+            let d = &mut self.d;
+            let (rows, rewrapped) = self.wrapped.rows(&l.request, row_w, scaled, &l.args, |t| d.measure(cx, false, scaled, t));
+            if rewrapped {
+                // New rows (a resize, a text-scale change): what was seen
+                // before counts no more (review of #218).
+                self.windows.remove(&l.request);
+            }
+            wrapped.push(rows);
+        }
         let shown_rows = |n: usize| n.min(MAX_ARG_ROWS);
         let header = 26.0 + 20.0 + 14.0;
         let body: f64 = lines.iter().zip(&wrapped).map(|(l, w)| Self::line_height(l, shown_rows(w.len()), w.len() > MAX_ARG_ROWS)).sum();
@@ -488,6 +485,11 @@ impl ShellApprovals {
             let window = self.windows.entry(line.request.clone()).or_default();
             let range = window.show(total, visible);
             let (at_end, at_top, seen_all) = (window.at_end(total, visible), window.top == 0, window.seen_all(total));
+            if seen_all && !line.seen {
+                // The router waits for this before it takes an approval.
+                let (sheet_id, request) = (sheet.id, line.request.clone());
+                super::with(|a| a.router.mark_seen(sheet_id, &request));
+            }
             let box_h = visible as f64 * ARG_LINE_H + 8.0;
             let area = rect(x, y - 4.0, w, box_h);
             self.d.solid(cx, area, alpha(ink, 0.06));
