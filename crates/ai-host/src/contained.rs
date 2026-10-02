@@ -47,8 +47,8 @@
 use octosense_app_peers::{ContextEvent, ContextOp, ContextSpec, EventSink, OctosAppService, OctosContext, TurnTrigger};
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, Mutex, Weak};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 
 /// The account an app's peer acts for, as the host knows it (ADR 0004
 /// §11): [`ACCOUNT`] for an app without accounts; for one that keeps
@@ -162,14 +162,49 @@ fn peer_services() -> BTreeSet<String> {
 
 /// `app_id`'s live peer, or a new one from `factory` (kept live, so every
 /// caller shares ONE peer per app).
+///
+/// One launch per app at a time: the person's Allow starts the "Ask <app>"
+/// panel's [`conversation`] and the shell's [`prepare`] together, and a
+/// second broker for the same app would create the same kernel peer. On a
+/// fresh home neither broker has the peer's host token yet, so the kernel
+/// refuses whichever `peer/prepare` comes second
+/// (`peer_host_token_mismatch`). The caller that launches keeps the app in
+/// `launching` until the broker is bound to its account and live; every
+/// other caller waits for it and shares that broker.
 fn obtain(app_id: &str, factory: &dyn PeerFactory) -> Result<Arc<dyn OctosAppService>, String> {
-    if let Some(service) = live(|l| l.get(app_id).cloned()) {
-        return Ok(service);
-    }
     let peer = peer_id(app_id)?;
+    {
+        let mut guard = registry();
+        loop {
+            let peers = guard.get_or_insert_with(Registry::default);
+            if let Some(service) = peers.live.get(app_id) {
+                return Ok(service.clone());
+            }
+            if peers.launching.insert(app_id.to_owned()) {
+                break;
+            }
+            guard = LAUNCHED.wait(guard).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+    // Ends the launch however it ends (an error, a panic): the waiters
+    // then find the peer live, or launch one themselves.
+    struct Launch<'a>(&'a str);
+    impl Drop for Launch<'_> {
+        fn drop(&mut self) {
+            if let Some(peers) = registry().as_mut() {
+                peers.launching.remove(self.0);
+            }
+            LAUNCHED.notify_all();
+        }
+    }
+    let launch = Launch(app_id);
     let service = factory.launch(&peer, app_id, &peer_services()).ok_or(UNAVAILABLE)?;
+    // Bound before anyone else can use it (a conversation opens for the
+    // account the broker acts for).
     service.set_account(account_of(app_id).as_deref());
-    Ok(live(|l| l.entry(app_id.to_owned()).or_insert(service).clone()))
+    live(|l| l.insert(app_id.to_owned(), service.clone()));
+    drop(launch);
+    Ok(service)
 }
 
 /// The shell prepares `app_id`'s agent (the person allowed it): its peer is
@@ -203,12 +238,26 @@ pub fn conversation(app_id: &str, instance: &str) -> Result<Arc<dyn OctosContext
     service.open_conversation(ContextSpec { account, instance: instance.to_owned(), services: service.services() })
 }
 
-/// Every contained app's live peer, by app id, so turning its agent off
-/// revokes it at once ([`revoke`]).
-static LIVE: Mutex<Option<HashMap<String, Arc<dyn OctosAppService>>>> = Mutex::new(None);
+/// The contained apps' peers.
+#[derive(Default)]
+struct Registry {
+    /// Every contained app's live peer, by app id, so turning its agent off
+    /// revokes it at once ([`revoke`]).
+    live: HashMap<String, Arc<dyn OctosAppService>>,
+    /// The apps whose peer a caller is launching now ([`obtain`]).
+    launching: HashSet<String>,
+}
+
+static REGISTRY: Mutex<Option<Registry>> = Mutex::new(None);
+/// Signalled whenever a launch ends.
+static LAUNCHED: Condvar = Condvar::new();
+
+fn registry() -> MutexGuard<'static, Option<Registry>> {
+    REGISTRY.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 fn live<R>(f: impl FnOnce(&mut HashMap<String, Arc<dyn OctosAppService>>) -> R) -> R {
-    f(LIVE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new))
+    f(&mut registry().get_or_insert_with(Registry::default).live)
 }
 
 /// Tests: forget every live peer and the factory (the maps are global).
