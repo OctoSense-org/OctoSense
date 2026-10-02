@@ -6463,15 +6463,22 @@ impl App {
                 return;
             }
         }
-        // The glance page's live cards (glance_card.rs): every event, and
-        // the pointer while the page is what the person sees. The shell
-        // keeps only each card's open button for itself.
+        // The glance page's live cards (mobile_pages.rs `GlanceCards`):
+        // every event, and the pointer while the page is what the person
+        // sees. Their taps then run as the desktop panel's do, a card's
+        // clicks only for a plain tap on it: what the finger is (a tap, or a
+        // swipe, a pull, a long press, a press on the shell's controls) is
+        // the shell's to say, read before the shell handles the event. The
+        // shell keeps each card's open button for itself.
         if self.state.is_some() && self.state_mut().style.target.mobile() {
+            let claimed = self.phone_gestures.current().is_some();
             let phone = &self.state_mut().phone;
             let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open();
+            let finger = mobile_pages::GlanceFinger::of(event, phone.gesture.as_ref(), claimed, phone.touch);
             if showing || !event.requires_visibility() {
-                if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
-                    desk.phone_ui.glance_tiles.handle_event(cx, event);
+                let changed = self.desk(cx).borrow_mut::<WmDesk>().is_some_and(|mut desk| desk.phone_ui.glance_cards.handle_event(cx, event, finger));
+                if changed {
+                    self.redraw_all(cx);
                 }
             }
         }

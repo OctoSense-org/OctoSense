@@ -2,7 +2,7 @@
 use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self, HomeLayout, TileSlot, TILE_RADIUS}, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::mobile_shade::ShadeContentCache;
-use crate::glance_card::GlanceTiles;
+use crate::mobile_pages::GlanceCards;
 use crate::octosense::style::AppIconDraw;
 mod search;
 use search::SearchResults;
@@ -398,8 +398,9 @@ pub struct PhoneSurface {
     #[live] android_icon: DrawImage,
     #[rust] pub icons: AppIconDraw,
     #[rust] pub hits: Vec<(Rect, PhoneHit)>,
-    /// The glance page's published cards, each a contained Splash tile (glance_card.rs).
-    #[rust] pub glance_tiles: GlanceTiles,
+    /// The glance page's published cards, live: each a Splash tile under its
+    /// app's policy with its L0 session (mobile_pages.rs, glance_card.rs).
+    #[rust] pub glance_cards: GlanceCards,
     /// The hits published as accessibility nodes this frame, in node order
     /// (an activation from the platform names a node by its index).
     #[rust] pub a11y_hits: Vec<PhoneHit>,
@@ -590,7 +591,7 @@ impl PhoneSurface {
     pub fn hit_rect(&self, hit: &PhoneHit) -> Option<Rect> {
         self.hits.iter().find(|(_, h)| h == hit).map(|(r, _)| *r)
     }
-    pub fn begin(&mut self) { self.hits.clear();self.home_icon_bounds.clear(); }
+    pub fn begin(&mut self) { self.hits.clear();self.home_icon_bounds.clear();self.glance_cards.begin(); }
     pub fn pressed_hit(&self) -> Option<&PhoneHit> { self.pressed.as_ref() }
     pub fn rounded(&mut self, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f) {
         self.round.radius = radius*2.0;
