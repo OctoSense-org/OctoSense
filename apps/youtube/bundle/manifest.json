@@ -4,12 +4,17 @@
   "version": "1.0.0",
   "name": "YouTube",
   "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "net"],
+  "capabilities": ["storage", "net", "glance"],
   "network": {
     "hosts": [
       "www.youtube.com",
       "m.youtube.com",
       "i.ytimg.com"
     ]
+  },
+  "agent": {
+    "profile": "read-only",
+    "tools": ["ask_user_question"],
+    "model": { "needs": ["tool_calling"] }
   }
 }

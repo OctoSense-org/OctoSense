@@ -4,5 +4,10 @@
   "version": "1.0.0",
   "name": "Photos",
   "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage"]
+  "capabilities": ["storage", "glance"],
+  "agent": {
+    "profile": "read-only",
+    "tools": ["ask_user_question"],
+    "model": { "needs": ["tool_calling"] }
+  }
 }

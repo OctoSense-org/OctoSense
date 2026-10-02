@@ -525,6 +525,17 @@ pub fn register() {
     octosense_appstore::services::register_host_service(Box::new(GlanceService));
 }
 
+/// Publish a card for contained app `app` from one of its host services:
+/// a tool call runs outside the app's isolate, where the Card runner's gate
+/// does not, so the grant is the app's admitted manifest's `glance`
+/// (`script_apps::grants`). Calendar's cards and every app's notice
+/// (glance_notice.rs) go out this way.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn publish_for(app: &str, args: &Value) -> Result<Value, String> {
+    let caller = Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
+    request(&caller, "glance.publish", args)
+}
+
 // ---------------------------------------------------------------- the demo
 
 /// The sample News digest card (L0) and fake data, for trying the glance
@@ -668,8 +679,6 @@ mod tests {
         assert_eq!(store.len(), 1);
     }
 
-    /// Mail's `mail.notify` card is a valid L0 card the store admits as
-    /// Mail's, and a Mail without the `glance` grant cannot publish it.
     /// Calendar's event and agenda cards are valid L0 cards the store
     /// admits as Calendar's.
     #[cfg(any(feature = "app-hub", native_mobile))]
@@ -687,17 +696,36 @@ mod tests {
         assert!(shown.iter().all(|c| c.app == "os.calendar" && c.open_app == "calendar"));
     }
 
+    /// Mail's `mail.notify` card is a valid L0 card the store admits as
+    /// Mail's, and a Mail without the `glance` grant cannot publish it.
     #[cfg(any(feature = "app-hub", native_mobile))]
     #[test]
     fn mails_notice_card_is_admitted_as_mails_own() {
         let mut store = GlanceStore::default();
-        let args = octosense_mail_service::notice_publish_args(&json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
+        let args = crate::glance_notice::publish_args("os.mail", &json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
         let ok = store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap();
         assert_eq!(ok["card_id"], "hello");
         let shown = store.shown(1_000, SHOWN_CARDS);
         assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.mail", "mail"));
         let ungranted = Caller::Contained { app: "os.mail".into(), granted: false };
         assert!(store.publish(&ungranted, &args, 1_000).is_err());
+    }
+
+    /// Every system app's notice (`<namespace>.notify`) is a valid L0 card,
+    /// with that app's icon, that the store admits as that app's own and
+    /// that opens it; another app cannot publish it.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn every_apps_notice_card_is_admitted_as_its_own() {
+        for app in ["os.news", "os.photos", "os.maps", "os.youtube", "os.camera", "os.calendar", "os.ai-providers"] {
+            let mut store = GlanceStore::default();
+            let args = crate::glance_notice::publish_args(app, &json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
+            let ok = store.publish(&Caller::granted(app), &args, 1_000);
+            assert!(ok.is_ok(), "{app}: {ok:?}");
+            let shown = store.shown(1_000, SHOWN_CARDS);
+            assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), (app, app.strip_prefix("os.").unwrap()));
+            assert!(store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap_err().contains("opens the app that published it"), "{app}");
+        }
     }
 
     #[test]

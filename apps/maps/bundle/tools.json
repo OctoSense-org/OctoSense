@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "maps.notify",
+      "description": "Tell the person something now: put a notice card from Maps on the glance screen and show a notification. Give a short title (at most 80 characters) and the text (at most 600 characters); Maps draws the card. Use it when the person or the system agent asks Maps to notify them. The same card_id replaces an earlier notice.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "risk": "act",
+      "background": true,
+      "implemented_by": "host-service"
+    }
+  ]
+}

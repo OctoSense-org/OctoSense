@@ -57,20 +57,21 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
-| [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com` | 无 |
-| [Photos](photos/bundle) | `os.photos` | 示例相册：回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage` | 无 | 无（原图来自 Shell 的资源挂载，见下文） |
-| [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始 | `storage`、`net`、`location` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr` | 无 |
-| [Camera](camera/bundle) | `os.camera` | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library` | 无 | 无 |
+| [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
+| [Photos](photos/bundle) | `os.photos` | 示例相册：回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance` | 无 | 无（原图来自 Shell 的资源挂载，见下文） |
+| [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始 | `storage`、`net`、`location`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr` | 无 |
+| [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | 无 |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
-| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | 无 |
+| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | 无 |
 | [Calendar](calendar/bundle) | `os.calendar`（桌面端） | 它的 Agent 保存用户的日程，并把日程卡片和议程卡片放到 glance 屏幕上；它自己的窗口还不能列出日程（需要 App Hub 提供 `calendar` 权限） | `storage`、`glance` | 无 | [`calendar`](calendar/host-service)（只供日历的 Agent 使用） |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由 App Hub 的封闭列表定义（`crates/app-policy/src/manifest.rs`
 中的 `KNOWN_CAPABILITIES`）：`images` 可显示任意公网 https 主机的图片，`web`
 在系统 WebView 中打开网页，`library` 把拍摄内容提供给系统相册，`mail` 访问
-宿主的邮件服务，`llm` 访问宿主的大模型服务商服务。`net` 只能访问 manifest 列出的主机。
+宿主的邮件服务，`llm` 访问宿主的大模型服务商服务，`news` 读取宿主的新闻服务，
+`glance` 向速览屏发布卡片。`net` 只能访问 manifest 列出的主机。
 
 ### 状态与已知问题
 
@@ -268,13 +269,12 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 | 文件 | 作用 |
 | --- | --- |
-| `lib.rs` | 服务本体：`mail.accounts`、`add_account`（弹出登录面板）、`remove_account`、`folders`、`sync`、`list`、`message`、`mark_read`、`send`、`notify`（Agent 的通知卡片，以 Mail 的身份通过 Shell 的 glance 服务发布）；`register()`、`register_demo()`、`register_with*()`；`Transport` trait；给 Shell 的账户事件（`on_account_event`） |
+| `lib.rs` | 服务本体：`mail.accounts`、`add_account`（弹出登录面板）、`remove_account`、`folders`、`sync`、`list`、`message`、`mark_read`、`send`、`notify`（Agent 的通知：交给 Shell，由 Shell 以 Mail 的身份发布它的通知卡片，`on_notify`）；`register()`、`register_demo()`、`register_with*()`；`Transport` trait；给 Shell 的账户事件（`on_account_event`） |
 | `imap.rs` | IMAP 客户端（文件夹、已读标记回写服务器） |
 | `network.rs` | POP3 和 SMTP、MIME 解码；错误信息中从不包含凭据 |
 | `html.rs` | 把邮件重建为 Mail 的 `Html` 视图能绘制的少量标签，不含任何远程内容 |
 | `vault.rs` | 密码的存放位置：macOS/iOS 钥匙串；Android 上用 Android Keystore 密钥加密的文件；其他平台为仅所有者可读的文件，这些文件放在宿主的密钥文件夹 `<home>/secrets/os.mail/` 中；`OCTOSENSE_MAIL_VAULT=file` 强制使用文件存储，便于未签名的开发构建 |
 | `contacts.rs` | 用户的账户发过邮件的地址，供审批规则“收件人在我的联系人中”使用（用户在设置中打开之前不生效） |
-| `resources/notice.card` | `mail.notify` 填充的固定 L0 通知卡片 |
 
 账户元数据（不含密码）和已拉取的邮件存放在宿主自己的目录（`<host_dir>/mail`），
 位于所有应用沙箱之外。每个账户只授权给添加它的应用。服务会先测试账户可用，再保存。
@@ -320,9 +320,11 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 
 | 应用 | `manifest.json` | `tools.json` | 卡片 |
 | --- | --- | --- | --- |
-| 新闻 | `agent` 块 | `news.list`、`news.read`（read，可共享） | – |
-| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.notify`（act，后台） | `notice.card` |
+| 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
+| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.notify`（act，后台） | Shell 的通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
+| 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
+| AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
 - **声明。** manifest 的 `agent` 块列出 Agent 可以使用的内核工具（`"tools": ["ask_user_question"]`；
   其中带点的名称表示申请另一个应用的可共享工具），`bundle/tools.json` 声明应用自己的工具：
@@ -332,7 +334,9 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 - **运行。** 在用户于首次使用面板上允许之前什么都不会运行（用户用顶栏的 “Ask <app>”、
   Shift+F8 或菜单项 “Ask this app's agent” 打开 Shell 的 “Ask <app>” 面板时，或系统
   Agent 用 `agents.ask` 询问时，弹出这个面板）。之后 Shell 准备好 peer，系统 Agent
-  就能用 `peer_send_input` 找到它。只有系统 Agent、用户或卡片的卡内对话发起请求时才会
+  就能用 `peer_send_input` 找到它。`agents.ask` 会等待用户的回答和 peer 就绪（它声明为
+  `outward` 且 `confirm: app`，内核会像对待审批一样一直等它，而不是只给读取类工具的 30 秒），
+  然后把 peer 的 slug 交给系统 Agent，让请求在同一轮里继续。只有系统 Agent、用户或卡片的卡内对话发起请求时才会
   开始一轮：还没有触发器或定时任务（ADR 0002 M3，计划中）。
 - **直接与它对话。** 用户可以直接与应用的 Agent 对话，而不只是通过系统 Agent：在 Shell
   为每个拥有 Agent 的应用提供的 “Ask <app>” 面板里（这些应用都不绘制自己的对话界面），
@@ -342,12 +346,18 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 - **它的工具在应用的宿主服务上运行**，以应用的身份运行，在此之前 Shell 的中转已检查授权、
   schema 和预算。octos 只对破坏性和对外的工具请求审批（这里是 `calendar.remove_event`），
   由用户在 Shell 的面板上回答。
-- **卡片。** `mail.notify`、`calendar.notify` 和 `calendar.agenda` 填充宿主服务自带的固定
-  L0 卡片，并以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布（应用需要 `glance`
-  权限）。模型只提供文字，从不编写卡片代码。卡片里可以有与应用自己的 Agent 的卡内对话
+- **卡片。** `<app>.notify {title, body, card_id?, priority?}` 以应用的名义在 glance 屏幕上
+  放一张通知卡片，并发出一条通知：所有应用共用 Shell 自带的一张固定 L0 卡片
+  （[`../crates/shell/resources/glance/notice.card`](../crates/shell/resources/glance/notice.card)，
+  由 [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs) 填充），带有应用的
+  图标和名称、时间，以及 Agent 写的标题（最多 80 个字符）和正文（最多 600 个字符）；同一个
+  `card_id` 会替换该应用之前的通知。邮件和新闻的服务把 `notify` 交给 Shell；照片、地图、YouTube
+  和相机没有自己的服务，由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历
+  自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
+  （应用需要 `glance` 权限）。模型只提供文字，从不编写卡片代码。卡片里可以有与应用自己的 Agent 的卡内对话
   （`sys.chat`，[`../crates/l0-chat`](../crates/l0-chat/README.md)）。
-- **试一试**（桌面端）：打开助手（F8），请系统 Agent 让邮件或日历的 Agent 在 glance 屏幕上
-  放一张卡片；在弹出的面板上允许该 Agent。邮件需要一个已登录的账户（下文的演示邮箱即可）。
+- **试一试**（桌面端）：打开助手（F8），请系统 Agent 让某个应用的 Agent（邮件、日历、新闻、照片、
+  地图或 YouTube）在 glance 屏幕上放一张卡片；在弹出的面板上允许该 Agent。邮件需要一个已登录的账户（下文的演示邮箱即可）。
   邮件更完整的操作卡片（[计划（英文）](mail/docs/2026-10-01-email-action-card-plan.md)）目前只是
   使用假数据的演示：`OCTOSENSE_GLANCE_DEMO=mail` 会在启动时发布它。**未验证**（在 #267 的检查中
   运行过，没有为本页重新运行）。
