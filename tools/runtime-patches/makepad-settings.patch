@@ -1,5 +1,5 @@
 diff --git a/draw/src/shader/draw_text.rs b/draw/src/shader/draw_text.rs
-index d4f8c2927..a3ae3a090 100644
+index b9c38073e..86fdd5429 100644
 --- a/draw/src/shader/draw_text.rs
 +++ b/draw/src/shader/draw_text.rs
 @@ -573,6 +573,20 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
@@ -83,7 +83,7 @@ index d4f8c2927..a3ae3a090 100644
              }
          }
  
-@@ -728,6 +750,20 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
+@@ -731,6 +753,20 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
  
          radius: uniform(float)
          cutoff: uniform(float)
@@ -104,7 +104,7 @@ index d4f8c2927..a3ae3a090 100644
          aa_pad_px: uniform(float(1.0))
          slug_matrix_0: uniform(vec4(1.0, 0.0, 0.0, 0.0))
          slug_matrix_1: uniform(vec4(0.0, 1.0, 0.0, 0.0))
-@@ -821,6 +857,9 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
+@@ -824,6 +860,9 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
          }
  
          sdf: fn(scale, p, color) {
@@ -114,7 +114,7 @@ index d4f8c2927..a3ae3a090 100644
              let sampled = self.grayscale_texture.sample_as_bgra(p);
              let s = if self.atlas_plane < 0.5 {
                  sampled.r
-@@ -835,7 +874,7 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
+@@ -838,7 +877,7 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
              let safe_scale = max(scale, 0.0001);
              let luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
              var a = clamp(
@@ -123,7 +123,7 @@ index d4f8c2927..a3ae3a090 100644
                  0.0,
                  1.0,
              );
-@@ -848,13 +887,16 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
+@@ -851,13 +890,16 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
          }
  
          msdf: fn(scale, p, color) {
@@ -141,7 +141,7 @@ index d4f8c2927..a3ae3a090 100644
                  0.0,
                  1.0,
              );
-@@ -1212,8 +1254,9 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
+@@ -1215,8 +1257,9 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
                  let tex_size = self.grayscale_texture.size()
                  let half_texel = vec2(0.5 / tex_size.x, 0.5 / tex_size.y)
                  let p = clamp(self.t.xy, self.t_min + half_texel, self.t_max - half_texel)
@@ -153,7 +153,7 @@ index d4f8c2927..a3ae3a090 100644
              } else if self.texture_index < 1.5 {
                  let tex_size = self.color_texture.size()
                  let half_texel = vec2(0.5 / tex_size.x, 0.5 / tex_size.y)
-@@ -1228,8 +1271,9 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
+@@ -1231,8 +1274,9 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
                  let tex_size = self.msdf_texture.size()
                  let half_texel = vec2(0.5 / tex_size.x, 0.5 / tex_size.y)
                  let p = clamp(self.t.xy, self.t_min + half_texel, self.t_max - half_texel)
@@ -165,8 +165,8 @@ index d4f8c2927..a3ae3a090 100644
              } else {
                  return self.sample_slug_pixel()
              }
-@@ -1664,6 +1708,8 @@ enum PrewarmAction {
- #[cfg(any(target_os = "linux", target_os = "windows"))]
+@@ -1679,6 +1723,8 @@ enum PrewarmAction {
+ #[cfg(any(all(target_os = "linux", not(target_env = "ohos")), target_os = "windows"))]
  impl DrawText {
      fn slug_run_is_ready(&mut self, cx: &mut Cx2d, text: &LaidoutText) -> bool {
 +        let prefs = cx.accessibility_preferences();
@@ -174,7 +174,7 @@ index d4f8c2927..a3ae3a090 100644
          let dpi_factor = cx.current_dpi_factor() as f32;
          let redraw_id = cx.cx.redraw_id;
          let mut has_slug_candidates = false;
-@@ -3035,6 +3081,13 @@ fn finish_many_instances(&mut self, cx: &mut Cx2d, instances: ManyInstances) {
+@@ -3139,6 +3185,13 @@ fn finish_many_instances(&mut self, cx: &mut Cx2d, instances: ManyInstances) {
  
      pub(crate) fn update_draw_vars(&mut self, cx: &mut Cx2d) {
          self.draw_vars.append_group_id = cx.draw_call_group_content().0;
@@ -188,7 +188,7 @@ index d4f8c2927..a3ae3a090 100644
          let fonts = cx.fonts.borrow();
          let rasterizer = fonts.rasterizer().borrow();
          let sdfer_settings = rasterizer.sdfer().settings();
-@@ -3144,7 +3197,11 @@ fn resolve_glyph(&mut self, cx: &mut Cx2d, glyph: &LaidoutGlyph) -> Option<Resol
+@@ -3248,7 +3301,11 @@ fn resolve_glyph(&mut self, cx: &mut Cx2d, glyph: &LaidoutGlyph) -> Option<Resol
          let glyph_prefers_raster_image = glyph
              .font
              .has_glyph_raster_image(glyph.id, font_size_in_dpxs);
@@ -201,7 +201,7 @@ index d4f8c2927..a3ae3a090 100644
          {
              let slug_lookup = {
                  let mut fonts = cx.fonts.borrow_mut();
-@@ -3937,3 +3994,23 @@ fn slug_helper_color_is_visible_through_instance_slice() {
+@@ -4041,3 +4098,23 @@ fn slug_helper_color_is_visible_through_instance_slice() {
          });
      }
  }
@@ -323,7 +323,7 @@ index 7a9d27393..8938723e0 100644
              Self::TextRangeReplace(_) => 35,
              Self::TextCopy(_) => 36,
 diff --git a/platform/src/lib.rs b/platform/src/lib.rs
-index a310cd1f6..a16cc32dc 100644
+index 815732636..2b1f2ffb6 100644
 --- a/platform/src/lib.rs
 +++ b/platform/src/lib.rs
 @@ -111,6 +111,7 @@
@@ -335,10 +335,10 @@ index a310cd1f6..a16cc32dc 100644
  #[macro_use]
  mod app_main;
 diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
-index 0c8630f66..6fb38bd68 100644
+index c0bf8571a..de787641c 100644
 --- a/platform/src/os/linux/android/android.rs
 +++ b/platform/src/os/linux/android/android.rs
-@@ -235,6 +235,21 @@ pub(crate) fn boost_render_thread() {
+@@ -240,6 +240,21 @@ pub(crate) fn boost_render_thread() {
  }
  
  impl Cx {
@@ -360,7 +360,7 @@ index 0c8630f66..6fb38bd68 100644
      pub(crate) fn current_android_xr_options(&self) -> CxOpenXrOptions {
          CxOpenXrOptions {
              buffer_scale: self.os.xr_buffer_scale_requested,
-@@ -368,6 +383,12 @@ pub fn main_loop(&mut self, from_java_rx: mpsc::Receiver<FromJavaMessage>) {
+@@ -373,6 +388,12 @@ pub fn main_loop(&mut self, from_java_rx: mpsc::Receiver<FromJavaMessage>) {
          self.display_context.safe_area_insets = insets;
          self.update_safe_inset_script_values(insets);
          self.call_event_handler(&Event::Startup);
@@ -373,7 +373,7 @@ index 0c8630f66..6fb38bd68 100644
          // After Startup: `warm_task_pool` sets this thread `UserInteractive`,
          // which is nice 0 on Linux, and would undo an earlier boost.
          boost_render_thread();
-@@ -404,8 +425,8 @@ pub fn main_loop(&mut self, from_java_rx: mpsc::Receiver<FromJavaMessage>) {
+@@ -409,8 +430,8 @@ pub fn main_loop(&mut self, from_java_rx: mpsc::Receiver<FromJavaMessage>) {
                              FromJavaMessage::Wake => continue,
                              _ => {}
                          }
@@ -384,7 +384,7 @@ index 0c8630f66..6fb38bd68 100644
                                  .iter()
                                  .all(|t| t.state == crate::event::finger::TouchState::Move)
                              {
-@@ -419,12 +440,17 @@ pub fn main_loop(&mut self, from_java_rx: mpsc::Receiver<FromJavaMessage>) {
+@@ -424,12 +445,17 @@ pub fn main_loop(&mut self, from_java_rx: mpsc::Receiver<FromJavaMessage>) {
                          // Flush the deferred move first (if any) so ordering is preserved.
                          if let Some(deferred) = pending_touch_move.take() {
                              self.handle_message(deferred);
@@ -402,7 +402,7 @@ index 0c8630f66..6fb38bd68 100644
                      }
                      self.handle_other_events();
                      if self.os.in_xr_mode && self.os.openxr.session.is_none() {
-@@ -581,8 +607,54 @@ fn copy_or_cut_to_clipboard(&mut self, cut: bool) {
+@@ -586,8 +612,54 @@ fn copy_or_cut_to_clipboard(&mut self, cut: bool) {
          }
      }
  
@@ -457,7 +457,7 @@ index 0c8630f66..6fb38bd68 100644
              FromJavaMessage::SwitchedActivity(activity_handle, activity_thread_id) => {
                  self.os.activity_thread_id = Some(activity_thread_id);
                  if self.os.in_xr_mode {
-@@ -852,12 +924,17 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -857,12 +929,17 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                  });
                  self.call_event_handler(&e);
              }
@@ -476,7 +476,7 @@ index 0c8630f66..6fb38bd68 100644
                  }
  
                  // Check for outside-click popup dismiss on touch start
-@@ -888,6 +965,11 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -893,6 +970,11 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                  };
  
                  // Synthesize internal drag-and-drop events from touch gestures.
@@ -488,7 +488,7 @@ index 0c8630f66..6fb38bd68 100644
                  if self.os.internal_drag_items.is_some() {
                      if let Some(touch) = e
                          .touches
-@@ -1371,9 +1453,13 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -1376,9 +1458,13 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                  }
              }
              FromJavaMessage::Pause => {
@@ -502,7 +502,7 @@ index 0c8630f66..6fb38bd68 100644
                  if self.os.fullscreen {
                      unsafe {
                          let env = attach_jni_env();
-@@ -1458,40 +1544,6 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -1463,40 +1549,6 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                  });
                  self.call_event_handler(&e);
              }
@@ -543,7 +543,7 @@ index 0c8630f66..6fb38bd68 100644
              FromJavaMessage::ComposerSubmit { text } => {
                  // The native floating composer submitted text. Deliver it as a
                  // bare action and drain it *this tick* (post_action alone would
-@@ -1598,11 +1650,13 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -1603,11 +1655,13 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                  self.handle_action_receiver();
              }
              FromJavaMessage::SafeAreaInsets {
@@ -557,7 +557,7 @@ index 0c8630f66..6fb38bd68 100644
                  let new_insets = crate::event::SafeAreaInsets {
                      top,
                      right,
-@@ -1628,6 +1682,7 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -1633,6 +1687,7 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                      }
                  }
              }
@@ -565,7 +565,7 @@ index 0c8630f66..6fb38bd68 100644
              FromJavaMessage::Init(_) => {}
          }
      }
-@@ -2204,6 +2259,7 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
+@@ -2209,6 +2264,7 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
              let mut initial_params: Option<AndroidParams> = None;
              let mut initial_surface: Option<(*mut ndk_sys::ANativeWindow, i32, i32)> = None;
              let mut initial_physical_keyboard: Option<bool> = None;
@@ -573,7 +573,7 @@ index 0c8630f66..6fb38bd68 100644
  
              let (window, width, height, android_params) = loop {
                  // Here use blocking method `recv` to reduce CPU usage during cold start.
-@@ -2211,6 +2267,10 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
+@@ -2216,6 +2272,10 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
                      Ok(FromJavaMessage::Init(params)) => {
                          initial_params = Some(params);
                      }
@@ -584,7 +584,7 @@ index 0c8630f66..6fb38bd68 100644
                      Ok(FromJavaMessage::SurfaceCreated { window }) => {
                          // Bootstrap off the first SurfaceChanged so we have a
                          // real size. SurfaceCreated still hands us an acquired
-@@ -2254,7 +2314,8 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
+@@ -2259,7 +2319,8 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
                  }
  
                  if initial_params.is_some() && initial_surface.is_some() {
@@ -594,7 +594,7 @@ index 0c8630f66..6fb38bd68 100644
                      let (window, width, height) = initial_surface.take().unwrap();
                      break (window, width, height, android_params);
                  }
-@@ -2728,6 +2789,21 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+@@ -2736,6 +2797,21 @@ fn handle_platform_ops(&mut self) -> EventFlow {
                      self.os.timers.timers.remove(&timer_id);
                  }
                  CxOsOp::ShowTextIME(_area, _pos, config) => unsafe {
@@ -616,7 +616,7 @@ index 0c8630f66..6fb38bd68 100644
                      // A focused `TextInput` re-issues `ShowTextIME` on every
                      // draw. Calling into Java each time thrashes the IME:
                      // `configure_keyboard` can restart the input connection,
-@@ -2745,38 +2821,14 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+@@ -2753,38 +2829,14 @@ fn handle_platform_ops(&mut self) -> EventFlow {
                      }
                  },
                  CxOsOp::HideTextIME => unsafe {
@@ -657,7 +657,7 @@ index 0c8630f66..6fb38bd68 100644
                  CxOsOp::ShareText(content) => unsafe {
                      android_jni::to_java_share_text(content);
                  },
-@@ -3703,6 +3755,7 @@ fn default() -> Self {
+@@ -3711,6 +3763,7 @@ fn default() -> Self {
              last_ime_height: 0.0,
              last_ime_visible: false,
              last_ime_config: None,
@@ -665,7 +665,7 @@ index 0c8630f66..6fb38bd68 100644
              media: CxAndroidMedia::default(),
              display: None,
              surface_alive: false,
-@@ -3848,6 +3901,12 @@ pub struct CxOs {
+@@ -3856,6 +3909,12 @@ pub struct CxOs {
      /// real change. Reset to `None` on `HideTextIME` and when Java reports the
      /// keyboard closed.
      pub last_ime_config: Option<TextInputConfig>,
@@ -748,7 +748,7 @@ index 000000000..ea66e8075
 +    }
 +}
 diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
-index 93d15a63e..5179e8e95 100644
+index 1034093bc..1ae0c3e61 100644
 --- a/platform/src/os/linux/android/android_jni.rs
 +++ b/platform/src/os/linux/android/android_jni.rs
 @@ -90,7 +90,10 @@ pub enum TouchPhase {
@@ -807,7 +807,7 @@ index 93d15a63e..5179e8e95 100644
  static MESSAGES_TX: Mutex<Option<mpsc::Sender<FromJavaMessage>>> = Mutex::new(None);
  static INTEGRATION_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
  
-@@ -1029,6 +1027,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
+@@ -1039,6 +1037,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
      _: *mut jni_sys::JNIEnv,
      _: jni_sys::jobject,
  ) {
@@ -815,7 +815,7 @@ index 93d15a63e..5179e8e95 100644
      send_from_java_message(FromJavaMessage::Resume);
  }
  
-@@ -1037,6 +1036,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
+@@ -1047,6 +1046,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
      _: *mut jni_sys::JNIEnv,
      _: jni_sys::jobject,
  ) {
@@ -823,7 +823,7 @@ index 93d15a63e..5179e8e95 100644
      send_from_java_message(FromJavaMessage::Pause);
  }
  
-@@ -1174,7 +1174,10 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
+@@ -1184,7 +1184,10 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
  
          touches.push(TouchPoint {
              state: {
@@ -835,7 +835,7 @@ index 93d15a63e..5179e8e95 100644
                      match action_masked {
                          0 | 5 => TouchState::Start,
                          1 | 6 => TouchState::Stop,
-@@ -1195,7 +1198,7 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
+@@ -1205,7 +1208,7 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
              time: time as f64 / 1000.0,
          });
      }
@@ -844,7 +844,7 @@ index 93d15a63e..5179e8e95 100644
  }
  
  #[no_mangle]
-@@ -1269,8 +1272,10 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
+@@ -1279,8 +1282,10 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
      right: jni_sys::jfloat,
      bottom: jni_sys::jfloat,
      left: jni_sys::jfloat,
@@ -855,7 +855,7 @@ index 93d15a63e..5179e8e95 100644
          top: top as f64,
          right: right as f64,
          bottom: bottom as f64,
-@@ -1278,6 +1283,15 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
+@@ -1288,6 +1293,15 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
      });
  }
  
@@ -871,7 +871,7 @@ index 93d15a63e..5179e8e95 100644
  #[no_mangle]
  extern "C" fn Java_dev_makepad_android_MakepadNative_onRenderLoop(
      _: *mut jni_sys::JNIEnv,
-@@ -1684,34 +1698,24 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
+@@ -1694,34 +1708,24 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
  }
  
  #[no_mangle]
@@ -921,7 +921,7 @@ index 93d15a63e..5179e8e95 100644
  }
  
  unsafe fn jstring_to_string(env: *mut jni_sys::JNIEnv, java_string: jni_sys::jstring) -> String {
-@@ -2689,6 +2693,7 @@ pub unsafe fn to_java_configure_keyboard(config: &TextInputConfig) {
+@@ -2699,6 +2703,7 @@ pub unsafe fn to_java_configure_keyboard(config: &TextInputConfig) {
  
  /// Update IME text state for programmatic changes (Rust→Java)
  pub unsafe fn to_java_update_ime_text_state(
@@ -929,7 +929,7 @@ index 93d15a63e..5179e8e95 100644
      full_text: &str,
      selection_start: i32,
      selection_end: i32,
-@@ -2696,15 +2701,16 @@ pub unsafe fn to_java_update_ime_text_state(
+@@ -2706,15 +2711,16 @@ pub unsafe fn to_java_update_ime_text_state(
      composing_end: i32,
  ) {
      let env = attach_jni_env();
@@ -961,10 +961,10 @@ index a4a335dfe..8a4c77000 100644
 +
 +pub mod android_ime;
 diff --git a/platform/src/os/linux/gl_sys.rs b/platform/src/os/linux/gl_sys.rs
-index 2a2afcf71..abb6e1574 100644
+index 1e8933b6f..69296a0a2 100644
 --- a/platform/src/os/linux/gl_sys.rs
 +++ b/platform/src/os/linux/gl_sys.rs
-@@ -405,7 +405,16 @@ macro_rules! gl_flush_error {
+@@ -416,7 +416,16 @@ macro_rules! gl_flush_error {
      enabled: GLboolean,
  );
  
@@ -981,7 +981,7 @@ index 2a2afcf71..abb6e1574 100644
      pub glGenVertexArrays: TglGenVertexArrays,
      pub glBindVertexArray: TglBindVertexArray,
      pub glBindBuffer: TglBindBuffer,
-@@ -547,6 +556,7 @@ pub fn try_load<F>(mut loadfn: F) -> Result<LibGl, String>
+@@ -566,6 +575,7 @@ pub fn try_load<F>(mut loadfn: F) -> Result<LibGl, String>
          F: FnMut(&[&'static str]) -> *const raw::c_void,
      {
          Ok(Self {
@@ -990,10 +990,10 @@ index 2a2afcf71..abb6e1574 100644
                  loadfn,
                  TglGenVertexArrays,
 diff --git a/platform/src/os/linux/opengl.rs b/platform/src/os/linux/opengl.rs
-index 8e4e483c6..7ddc0be29 100644
+index efd3e8095..c081aa356 100644
 --- a/platform/src/os/linux/opengl.rs
 +++ b/platform/src/os/linux/opengl.rs
-@@ -1669,6 +1669,10 @@ fn read_program_cache(
+@@ -1682,6 +1682,10 @@ fn read_program_cache(
  
      #[cfg(not(ohos_sim))]
      fn read_program_cache(gl: &LibGl, vertex: &str, pixel: &str, os_type: &OsType) -> Option<u32> {
@@ -1004,7 +1004,7 @@ index 8e4e483c6..7ddc0be29 100644
          if let Some(cache_dir) = os_type.get_cache_dir() {
              let shader_hash = live_id!(shader).str_append(&vertex).str_append(&pixel);
              let mut base_filename = format!("{}/shader_{:08x}", cache_dir, shader_hash.0);
-@@ -1688,8 +1692,8 @@ fn read_program_cache(gl: &LibGl, vertex: &str, pixel: &str, os_type: &OsType) -
+@@ -1701,8 +1705,8 @@ fn read_program_cache(gl: &LibGl, vertex: &str, pixel: &str, os_type: &OsType) -
              if let Ok(mut cache_file) = File::open(&filename) {
                  let mut binary = Vec::new();
                  let mut format_bytes = [0u8; 4];
@@ -1015,7 +1015,7 @@ index 8e4e483c6..7ddc0be29 100644
                          let binary_format = u32::from_be_bytes(format_bytes);
                          match cache_file.read_to_end(&mut binary) {
                              Ok(_full_bytes) => {
-@@ -1731,8 +1735,14 @@ fn read_program_cache(gl: &LibGl, vertex: &str, pixel: &str, os_type: &OsType) -
+@@ -1744,8 +1748,14 @@ fn read_program_cache(gl: &LibGl, vertex: &str, pixel: &str, os_type: &OsType) -
                                                  error
                                              );
                                              (gl.glDeleteProgram)(program);
@@ -1030,7 +1030,7 @@ index 8e4e483c6..7ddc0be29 100644
                                          return Some(program);
                                      }
                                  } else {
-@@ -1871,12 +1881,16 @@ fn start_pending_program_compile(
+@@ -1884,12 +1894,16 @@ fn start_pending_program_compile(
  
      #[cfg(not(ohos_sim))]
      fn write_program_cache(gl: &LibGl, program: u32, vertex: &str, pixel: &str, os_type: &OsType) {
@@ -1048,7 +1048,7 @@ index 8e4e483c6..7ddc0be29 100644
                      binary.resize(binary_len as usize, 0u8);
                      let mut return_size = 0i32;
                      let mut binary_format = 0u32;
-@@ -1887,7 +1901,24 @@ fn write_program_cache(gl: &LibGl, program: u32, vertex: &str, pixel: &str, os_t
+@@ -1900,7 +1914,24 @@ fn write_program_cache(gl: &LibGl, program: u32, vertex: &str, pixel: &str, os_t
                          &mut binary_format as *mut _,
                          binary.as_mut_ptr() as *mut _,
                      );
@@ -1162,10 +1162,10 @@ index c763d8501..b2b321cd2 100644
      fn set_window_dpi_override_converts_every_in_window_metric() {
          let mut cx = test_cx();
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-index c6e70c6fb..274d922b1 100644
+index a7dd7524d..e95620a5d 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-@@ -370,7 +370,7 @@ class MakepadSystemInsets {
+@@ -371,7 +371,7 @@ class MakepadSystemInsets {
      static void report(View view, WindowInsets insets) {
          float density = view.getResources().getDisplayMetrics().density;
          MakepadSystemInsets i = MakepadSystemInsets.from(view, insets, density);
@@ -1174,7 +1174,7 @@ index c6e70c6fb..274d922b1 100644
      }
  }
  
-@@ -386,6 +386,24 @@ class MakepadSurface
+@@ -387,6 +387,24 @@ class MakepadSurface
  {
      // IME InputConnection for handling composition text
      private MakepadInputConnection mInputConnection;
@@ -1199,7 +1199,7 @@ index c6e70c6fb..274d922b1 100644
  
      // Shared Editable buffer for IME - this is the source of truth for Java side
      private SpannableStringBuilder mEditable = new SpannableStringBuilder();
-@@ -427,7 +445,8 @@ class MakepadSurface
+@@ -428,7 +446,8 @@ class MakepadSurface
      private int mAutocapitalize = AUTOCAP_SENTENCES;
      private int mAutocorrect = AUTOCORRECT_DEFAULT;
      private int mReturnKeyType = RETURN_KEY_DEFAULT;
@@ -1209,15 +1209,15 @@ index c6e70c6fb..274d922b1 100644
      private boolean mIsSecure = false;
  
      // Package-private getters for MakepadInputConnection to access shared state
-@@ -549,6 +568,7 @@ class MakepadSurface
-             }
+@@ -602,6 +621,7 @@ class MakepadSurface
          }
  
+         if (actionMasked == MotionEvent.ACTION_DOWN) hintTouchLoad();
 +        if (actionMasked==MotionEvent.ACTION_DOWN || actionMasked==MotionEvent.ACTION_UP || actionMasked==MotionEvent.ACTION_CANCEL) MakepadNative.beginInput();
          MakepadNative.surfaceOnTouch(event);
          return retval;
      }
-@@ -614,6 +634,27 @@ class MakepadSurface
+@@ -667,6 +687,27 @@ class MakepadSurface
      @SuppressWarnings("deprecation")
      @Override
      public boolean onKey(View v, int keyCode, KeyEvent event) {
@@ -1245,7 +1245,7 @@ index c6e70c6fb..274d922b1 100644
          if (event.getAction() == KeyEvent.ACTION_DOWN && keyCode != 0) {
              int metaState = event.getMetaState();
              boolean isRepeat = event.getRepeatCount() > 0;
-@@ -625,7 +666,11 @@ class MakepadSurface
+@@ -678,7 +719,11 @@ class MakepadSurface
              MakepadNative.surfaceOnKeyUp(keyCode, metaState);
          }
  
@@ -1258,7 +1258,7 @@ index c6e70c6fb..274d922b1 100644
              int character = event.getUnicodeChar();
              if (character == 0) {
                  String characters = event.getCharacters();
-@@ -822,23 +867,39 @@ class MakepadSurface
+@@ -875,23 +920,39 @@ class MakepadSurface
      }
  
      // Called from Rust to update text state (for programmatic changes, not IME input)
@@ -1312,7 +1312,7 @@ index c6e70c6fb..274d922b1 100644
          // Clamp selection
          int textLen = textChanged ? fullText.length() : currentText.length();
          selStart = Math.max(0, Math.min(selStart, textLen));
-@@ -861,13 +922,6 @@ class MakepadSurface
+@@ -914,13 +975,6 @@ class MakepadSurface
                  mInputConnection.setComposingRegion(composingStart, composingEnd);
              }
  
@@ -1326,7 +1326,7 @@ index c6e70c6fb..274d922b1 100644
              // Notify IME of text change without restarting input
              // restartInput() destroys composition state and causes IME flicker;
              // updateExtractedText() + updateSelection() is the lightweight alternative
-@@ -906,6 +960,7 @@ class MakepadSurface
+@@ -959,6 +1013,7 @@ class MakepadSurface
                  }
              }
          }
@@ -1334,7 +1334,7 @@ index c6e70c6fb..274d922b1 100644
      }
  
      public Surface getNativeSurface() {
-@@ -1114,6 +1169,7 @@ public class MakepadActivity
+@@ -1167,6 +1222,7 @@ public class MakepadActivity
      private FrameLayout mRootLayout;
      private FrameLayout mApplicationOverlay;
      private ApplicationExtension mApplicationExtension;
@@ -1342,7 +1342,7 @@ index c6e70c6fb..274d922b1 100644
  
      /** Optional app Java client. Implementations enqueue blocking work on workers. */
      public interface ApplicationExtension {
-@@ -1124,6 +1180,24 @@ public class MakepadActivity
+@@ -1177,6 +1233,24 @@ public class MakepadActivity
          void onDestroy();
          default boolean onActivityResult(int requestCode, int resultCode, Intent data) { return false; }
          default boolean onBackPressed() { return false; }
@@ -1367,7 +1367,7 @@ index c6e70c6fb..274d922b1 100644
      }
  
      private void createApplicationExtension() {
-@@ -1590,6 +1664,26 @@ public class MakepadActivity
+@@ -1643,6 +1717,26 @@ public class MakepadActivity
          MakepadNative.activityOnStart();
      }
  
@@ -1394,7 +1394,7 @@ index c6e70c6fb..274d922b1 100644
      @Override
      protected void onResume() {
          super.onResume();
-@@ -1616,6 +1710,7 @@ public class MakepadActivity
+@@ -1669,6 +1763,7 @@ public class MakepadActivity
          if (mQrScanning) closeQrScanner("interrupted");
          prepareSurfaceSnapshotOverlayForPause();
          super.onPause();
@@ -1402,7 +1402,7 @@ index c6e70c6fb..274d922b1 100644
          MakepadNative.activityOnPause();
          if (mApplicationExtension != null) mApplicationExtension.onPause();
          stopGpsLocationUpdates();
-@@ -2603,6 +2698,7 @@ public class MakepadActivity
+@@ -2656,6 +2751,7 @@ public class MakepadActivity
          runOnUiThread(new Runnable() {
              @Override
              public void run() {
@@ -1410,7 +1410,7 @@ index c6e70c6fb..274d922b1 100644
                  if (show) {
                      if (view == null || view.getInputMode() == MakepadSurface.INPUT_MODE_NONE) {
                          return;
-@@ -2647,17 +2743,16 @@ public class MakepadActivity
+@@ -2700,17 +2796,16 @@ public class MakepadActivity
          });
      }
  
@@ -1432,7 +1432,7 @@ index c6e70c6fb..274d922b1 100644
                          selStart,
                          selEnd,
                          composingStart,
-@@ -3021,16 +3116,19 @@ public class MakepadActivity
+@@ -3074,16 +3169,19 @@ public class MakepadActivity
  
                  if (action == MotionEvent.ACTION_DOWN) {
                      setSelectionHandlePosition(v, absX, absY);
@@ -1848,10 +1848,10 @@ index 10f380316..4df279052 100644
      }
  }
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
-index a63e3864a..daecd8509 100644
+index 866ef68dc..9f27bf02c 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
-@@ -32,7 +32,8 @@ public class MakepadNative {
+@@ -34,7 +34,8 @@ public class MakepadNative {
      public native static void surfaceOnCharacter(int character);
      public native static void surfaceOnResizeTextIME(int keyboard_height, boolean is_open);
      public native static void surfaceOnPhysicalKeyboardChanged(boolean connected);
@@ -1861,7 +1861,7 @@ index a63e3864a..daecd8509 100644
  
      // networking
      public native static void onHttpResponse(long id, long metadata_id, int status_code, String headers, byte[] body);
-@@ -48,19 +49,16 @@ public class MakepadNative {
+@@ -50,19 +51,16 @@ public class MakepadNative {
      // selection handles
      public native static void onSelectionHandleDrag(int handle, int phase, float x, float y, long timeMillis);
  
