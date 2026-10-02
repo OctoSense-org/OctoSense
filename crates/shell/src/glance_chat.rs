@@ -118,8 +118,9 @@ impl Responder for HostResponder {
 /// first.
 pub struct AgentResponder;
 
-/// The instance the card chat's conversation is opened under.
-const INSTANCE: &str = "card-chat";
+/// The instance the card chat's conversation is opened under (internal:
+/// the person reads "for you", `approvals::sheet::persons_surface`).
+pub const INSTANCE: &str = "card-chat";
 
 impl Responder for AgentResponder {
     fn respond(&self, request: Request, done: Done) {
