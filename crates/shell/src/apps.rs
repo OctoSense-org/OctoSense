@@ -24,7 +24,7 @@
 
 use makepad_app_module::AppModule;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hosting {
@@ -317,7 +317,7 @@ fn read_script_agent_apps(root: &Path) -> Vec<AgentApp> {
         }
     }
     for app in octosense_app_hub_app::installed_apps(&root) {
-        if let Some(a) = script_agent_app(&root.join(&app.id).join("bundle").join("manifest.json"), &app.id, &app.name) {
+        if let Some(a) = script_agent_app(&installed_bundle(&root, &app.id).join("manifest.json"), &app.id, &app.name) {
             out.push(a);
         }
     }
@@ -661,6 +661,20 @@ impl AppRegistry {
     }
 }
 
+/// An installed store app's bundle under App Hub's apps root. App Hub keeps
+/// it outside the app's storage, in `<root>/.bundles/<id>/bundle`
+/// (`octosense_app_hub::installed_bundle_dir`); a device whose App Hub has
+/// not moved it yet still has it in `<root>/<id>/bundle`. The new place
+/// wins when both exist.
+pub(crate) fn installed_bundle(root: &Path, app_id: &str) -> PathBuf {
+    let current = root.join(".bundles").join(app_id).join("bundle");
+    if current.is_dir() {
+        current
+    } else {
+        root.join(app_id).join("bundle")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// The assistant pane's own process is a registry row (F10 starts it
@@ -674,6 +688,23 @@ mod tests {
         assert!(crate::shell::launcher::apps().iter().all(|a| a.id != "apps.aichat" && a.id != "aichat"));
     }
 
+    /// App Hub keeps an installed bundle in `<root>/.bundles/<id>/bundle`
+    /// (outside the app's storage); a device App Hub has not updated yet
+    /// still has it in `<root>/<id>/bundle`. Either is found, the new one
+    /// first.
+    #[test]
+    fn an_installed_bundle_is_found_in_either_layout() {
+        let root = std::env::temp_dir().join(format!("shell-installed-bundle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let legacy = root.join("dev.example.app/bundle");
+        std::fs::create_dir_all(&legacy).unwrap();
+        assert_eq!(installed_bundle(&root, "dev.example.app"), legacy);
+        let current = root.join(".bundles/dev.example.app/bundle");
+        std::fs::create_dir_all(&current).unwrap();
+        assert_eq!(installed_bundle(&root, "dev.example.app"), current, "the new layout wins");
+        assert_eq!(installed_bundle(&root, "dev.example.none"), root.join("dev.example.none/bundle"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
     use super::*;
 
     /// ADR 0004 §3: no script app takes a native app's id or namespace.
