@@ -21,7 +21,8 @@
 //! [`contacts::CONTACTS_FILE`] and [`audit::AUDIT_FILE`], all owner-only.
 //!
 //! The shell calls [`init`] at startup, [`tick`] once a second (and shows
-//! [`take_notices`] as notifications), and gives pointer events to
+//! [`take_notices`] as notifications, withdrawing a request's own once it
+//! no longer waits: [`RequestNotices`]), and gives pointer events to
 //! [`pointer`] before anything else while a sheet or the Settings page is
 //! up. The relay calls [`approval_requested`] and installs itself with
 //! [`set_relay`]; an app module registers its own confirmation sheet with
@@ -296,6 +297,49 @@ pub fn dismiss_expired(id: &RequestId) {
 pub fn take_notices() -> Vec<Notice> {
     with(|a| a.router.take_notices()).unwrap_or_default()
 }
+
+/// Whether `id` still waits for its answer (on its sheet, or on the
+/// owning app's).
+pub fn is_pending(id: &RequestId) -> bool {
+    with(|a| a.router.is_pending(id)).unwrap_or(false)
+}
+
+/// Where the shell showed one notice: its desktop toast and its phone shade
+/// notification.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Shown {
+    pub toast: Option<u64>,
+    pub shade: Option<u64>,
+}
+
+/// The notifications of the notices that ask the person to answer a request
+/// ([`Notice::request`]: "Needs you: … Open the sheet to approve or
+/// deny."), by that request. The shell withdraws each once its request is
+/// no longer pending, together with its sheet line: after Stop withdrew
+/// the sheet, its toast still said to open it.
+#[derive(Debug, Default)]
+pub struct RequestNotices(Vec<(RequestId, Shown)>);
+
+impl RequestNotices {
+    pub fn record(&mut self, request: RequestId, shown: Shown) {
+        self.0.push((request, shown));
+    }
+
+    /// The notifications of the requests `pending` no longer holds, to
+    /// withdraw now; forgotten here.
+    pub fn withdrawn(&mut self, pending: impl Fn(&RequestId) -> bool) -> Vec<(RequestId, Shown)> {
+        let mut gone = Vec::new();
+        self.0.retain(|(id, shown)| {
+            let keep = pending(id);
+            if !keep {
+                gone.push((id.clone(), *shown));
+            }
+            keep
+        });
+        gone
+    }
+}
+
 pub fn generation() -> u64 {
     with(|a| a.generation()).unwrap_or(0)
 }

@@ -79,6 +79,8 @@ pub mod glance_notice;
 pub mod glance_panel;
 pub mod glance_sheet;
 use glance::NoteTargets as GlanceNoteTargets;
+// The App derive takes a plain type name for a field.
+use approvals::RequestNotices as ApprovalNotices;
 pub mod system_chat;
 pub use octosense_ai_host as ai_host;
 
@@ -437,6 +439,10 @@ pub struct App {
     /// The approvals' generation last drawn (approvals/).
     #[rust]
     pub approvals_generation: u64,
+    /// The notifications of "Needs you" notices, withdrawn with their
+    /// requests' sheet lines (approvals/).
+    #[rust]
+    pub approval_notices: ApprovalNotices,
     /// The system chat's generation the surfaces last drew (system_chat/).
     #[rust]
     pub system_chat_generation: u64,
@@ -4134,7 +4140,16 @@ impl App {
             self.on_bus_route(cx, route);
         }
         for n in approvals::take_notices() {
-            self.notify(cx, &n.title, &n.body);
+            let shown = self.notify_shown(cx, &n.title, &n.body);
+            if let Some(request) = n.request {
+                self.approval_notices.record(request, shown);
+            }
+        }
+        // "Needs you … Open the sheet" goes with its sheet line (answered,
+        // stopped, withdrawn, expired): it pointed at a sheet that was gone.
+        for (request, shown) in self.approval_notices.withdrawn(approvals::is_pending) {
+            log!("approvals: {request} no longer waits; its notification is withdrawn");
+            self.withdraw_notification(cx, shown);
         }
         let generation = approvals::generation();
         if generation != self.approvals_generation {
@@ -4146,15 +4161,32 @@ impl App {
     /// The in-process notification API — `WmRequest::Notify{title, body}`
     /// lands here.
     pub fn notify(&mut self, cx: &mut Cx, title: &str, body: &str) {
+        self.notify_shown(cx, title, body);
+    }
+
+    /// [`Self::notify`], saying where it was shown (the desktop toast, the
+    /// phone shade's notification), so it can be withdrawn.
+    fn notify_shown(&mut self, cx: &mut Cx, title: &str, body: &str) -> approvals::Shown {
         let notes = self.ui.widget(cx, ids!(shell_notes));
-        {
+        let toast = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.notify(cx, title, body));
+        let now = cx.seconds_since_app_start();
+        let shade = self.state.as_mut().map(|state| state.phone.shade.post("wm", title, body, now, Vec::new()));
+        self.redraw_all(cx);
+        approvals::Shown { toast, shade }
+    }
+
+    /// Take back what [`Self::notify_shown`] showed (gone already: nothing).
+    fn withdraw_notification(&mut self, cx: &mut Cx, shown: approvals::Shown) {
+        if let Some(id) = shown.toast {
+            let notes = self.ui.widget(cx, ids!(shell_notes));
             let mut borrowed = notes.borrow_mut::<shell::notifications::ShellNotifications>();
             if let Some(n) = borrowed.as_mut() {
-                n.notify(cx, title, body);
+                n.dismiss(cx, id);
             }
         }
-        let now = cx.seconds_since_app_start();
-        if let Some(state) = self.state.as_mut() { state.phone.shade.post("wm", title, body, now, Vec::new()); }
+        if let (Some(id), Some(state)) = (shown.shade, self.state.as_mut()) {
+            state.phone.shade.dismiss(id);
+        }
         self.redraw_all(cx);
     }
 
