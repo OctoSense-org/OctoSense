@@ -213,7 +213,9 @@ On desktop, focus an agent-enabled app and open **Ask &lt;app&gt;** from the bar
 Shift+F8 or the menu. F8 opens the system agent. `agents.list` reports app agents;
 `agents.ask` waits for first-use consent and peer preparation, then returns the
 peer slug. The system agent sends the task with `peer_send_input` and gathers its
-answer with `peer_gather`. A card's `sys.chat` can address its own app agent.
+answer with `peer_gather`. A card declaring `sys.chat` can address its own app
+agent. Shipped notice and Calendar templates have no chat, so use “Ask <app>”
+for those agents; the Mail demo card answers with canned text.
 Phone touch navigation has no Ask-app panel-opening control yet.
 
 Follow [`app_chat/`](../../crates/shell/src/app_chat/mod.rs),

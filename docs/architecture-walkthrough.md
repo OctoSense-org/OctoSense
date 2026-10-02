@@ -125,6 +125,8 @@ The broker's `driver_of` and `take_over` handle multiple native instances sharin
 | A script app's own chat | Exact granted `octos.session.open`, `octos.session.history`, `octos.turn.start`, `octos.turn.interrupt` calls through `host.request`. The shipped system-app agents are shell-driven without their scripts declaring these calls. |
 | A published card's chat | `sys.chat` → [l0-chat](../crates/l0-chat/src/lib.rs) and [glance_chat.rs](../crates/shell/src/glance_chat.rs). Publisher checks bind it to the card's owning app. |
 
+The shipped `<app>.notify`, `calendar.notify` and `calendar.agenda` templates contain no `sys.chat`; their agents are reached through “Ask <app>”. The `OCTOSENSE_GLANCE_DEMO=mail` demonstration card has chat but uses canned replies (`glance_chat::HostResponder`). The card-chat route above applies to a card that declares `sys.chat`.
+
 Phone touch navigation does not yet expose an equivalent control to open the Ask-app panel; app-owned chat and published-card chat are separate surfaces. The Ask-app panel's Stop interrupts the human lane; “Stop the system agent's task” targets the other lane. The lower-level conversation `ContextOp::Interrupt` is broader and can interrupt both: do not assume all Stop surfaces call the same method. Hiding the Ask panel keeps its context/subscription; changing app or revoking access closes it.
 
 The shell stamps a composer action as `TurnTrigger::Person`. A script can supply `trigger`/`from` with `octos.turn.start`, but its `trigger: "person"` becomes `AppSaysPerson`: a transcript label is not proof of a trusted human gesture and cannot unlock human-initiated approval rules.
