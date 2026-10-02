@@ -202,8 +202,16 @@ impl MpModuleView {
         cx.end_turtle();
     }
 
-    /// A press on the closed face: Restart, or just focus the tile.
+    /// A press on the closed face: Restart, or just focus the tile. The face
+    /// takes presses as the live tile does: only one inside it that nothing
+    /// in front claimed, and it claims what it takes, so a click on a window
+    /// over it never restarts the app and a click on it raises no window
+    /// behind it.
     fn handle_stopped_event(&mut self, cx: &mut Cx, event: &Event) {
+        let rect = self.area.is_valid(cx).then(|| self.area.rect(cx));
+        if pointer_start(event, rect) != PointerStart::Inside {
+            return;
+        }
         let abs = match event {
             Event::MouseDown(e) => Some(e.abs),
             Event::TouchUpdate(update) => update.touches.iter()
@@ -211,10 +219,14 @@ impl MpModuleView {
                 .map(|point| point.abs),
             _ => None,
         };
-        let (Some(abs), Some(client)) = (abs, self.client) else { return };
+        let (Some(abs), Some(claim), Some(client)) = (abs, press_claim(event), self.client) else { return };
+        if !claim.get().is_empty() {
+            return;
+        }
+        claim.set(self.area);
         if self.restart_rect.is_some_and(|r| r.contains(abs)) {
             cx.widget_action(self.uid, MpRunViewAction::Restart { client });
-        } else if self.area.is_valid(cx) && self.area.rect(cx).contains(abs) {
+        } else {
             cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
         }
     }
@@ -230,6 +242,12 @@ impl MpModuleView {
 
     pub fn root(&self) -> Option<WidgetRef> {
         self.root.clone()
+    }
+
+    /// Where the closed face drew its Restart (module_input_tests.rs).
+    #[cfg(test)]
+    pub(crate) fn restart_button(&self) -> Option<Rect> {
+        self.restart_rect
     }
 }
 
@@ -321,17 +339,18 @@ fn pointer_start(event: &Event, rect: Option<Rect>) -> PointerStart {
     }
 }
 
-/// The claim cell of a press or new touch no tile in front has taken yet
-/// (a wheel step has none: it raises nothing).
-fn unclaimed_press(event: &Event) -> Option<&std::cell::Cell<Area>> {
-    let handled = match event {
-        Event::MouseDown(e) => &e.handled,
-        Event::TouchUpdate(update) => &update.touches.iter()
-            .find(|point| point.state == makepad_platform::event::TouchState::Start)?
-            .handled,
-        _ => return None,
-    };
-    handled.get().is_empty().then_some(handled)
+/// The cell that records who claimed a press or a new touch (a wheel step
+/// has none: it raises nothing). Tiles see input topmost first (desk.rs),
+/// after the shell's own surfaces over the desk, so a press that reaches a
+/// tile already claimed was taken by something in front of it.
+fn press_claim(event: &Event) -> Option<&std::cell::Cell<Area>> {
+    match event {
+        Event::MouseDown(e) => Some(&e.handled),
+        Event::TouchUpdate(update) => update.touches.iter()
+            .find(|point| point.state == makepad_platform::event::TouchState::Start)
+            .map(|point| &point.handled),
+        _ => None,
+    }
 }
 
 impl Widget for MpModuleView {
@@ -396,11 +415,21 @@ impl Widget for MpModuleView {
         if start == PointerStart::Outside {
             return;
         }
-        // A press inside, with the cell that records who claimed it. Tiles
-        // see input topmost first (desk.rs), so a claimed press belongs to a
-        // tile in front: overlapping windows of one app (its extra windows)
-        // must not raise the one behind.
-        let press = if start == PointerStart::Inside { unclaimed_press(event) } else { None };
+        // A press inside, with the cell that records who claimed it. One that
+        // is claimed already was taken in front of this tile (`press_claim`):
+        // by a window over it, this app's own extra windows included, or by
+        // a shell surface. Like a press outside, it is not this instance's:
+        // it raises nothing, and the root never sees it. The claim alone
+        // would not keep it from the app's widgets. Makepad lets a widget
+        // co-capture a press another area has claimed
+        // (`hits_with_capture_overload`: GestureView's taps, a list's drag, a
+        // View's `on_item_tap`), and GestureView follows new touches from
+        // the raw stream, so a click on Mail's inbox footer opened the News
+        // story under it.
+        let press = if start == PointerStart::Inside { press_claim(event) } else { None };
+        if press.is_some_and(|claim| !claim.get().is_empty()) {
+            return;
+        }
         if press.is_some() {
             if let Some(client) = self.client {
                 // The WM moves focus here (and back to us through
@@ -432,7 +461,9 @@ impl Widget for MpModuleView {
             }
         }
         // A press inside this tile is this tile's, even where none of the
-        // app's widgets took it, so no window behind reacts to it.
+        // app's widgets took it. Claimed, it reaches no window behind: a
+        // module tile lets it by (above), a process tile's `event.hits`
+        // misses it.
         if let Some(handled) = press {
             if handled.get().is_empty() {
                 handled.set(self.area);
@@ -554,13 +585,13 @@ mod tests {
         assert_eq!(pointer_start(&Event::Startup, tile()), PointerStart::None);
     }
 
-    /// A new touch is a press this tile may claim; the rest of its stroke
-    /// and a frame are not. (A press a window in front already claimed has
-    /// a non-empty cell and raises nothing behind it.)
+    /// A new touch is a press with a claim; the rest of its stroke and a
+    /// frame are not. (A press a window in front already claimed has a
+    /// non-empty cell: the tile behind lets it by, module_input_tests.rs.)
     #[test]
     fn only_a_new_touch_or_button_is_a_press_to_claim() {
-        assert!(unclaimed_press(&touch(dvec2(200.0, 400.0), TouchState::Start)).is_some());
-        assert!(unclaimed_press(&touch(dvec2(200.0, 400.0), TouchState::Move)).is_none(), "only a start is a press");
-        assert!(unclaimed_press(&Event::Startup).is_none());
+        assert!(press_claim(&touch(dvec2(200.0, 400.0), TouchState::Start)).is_some());
+        assert!(press_claim(&touch(dvec2(200.0, 400.0), TouchState::Move)).is_none(), "only a start is a press");
+        assert!(press_claim(&Event::Startup).is_none());
     }
 }

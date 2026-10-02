@@ -52,6 +52,8 @@ pub mod module_host;
 #[cfg(test)]
 mod module_close_tests;
 #[cfg(test)]
+mod module_input_tests;
+#[cfg(test)]
 mod module_panic_tests;
 #[cfg(test)]
 mod module_peer_tests;
