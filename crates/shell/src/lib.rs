@@ -71,6 +71,7 @@ pub mod wm_reply;
 pub mod ext;
 pub mod glance;
 pub mod glance_card;
+pub mod glance_chat;
 pub mod glance_panel;
 pub mod glance_sheet;
 use glance::NoteTargets as GlanceNoteTargets;

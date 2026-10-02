@@ -25,7 +25,10 @@
 //!   the card's source names to their values; L0's no-facts rule: the card
 //!   states nothing it did not get from `data`) and lowered through the Card
 //!   runner's pipeline (glance_card.rs) before it is stored: presentation,
-//!   no logic, as a card bundle is. An L2 `source` is refused: it cannot be
+//!   no logic, as a card bundle is. A `sys.chat` source (an in-card chat
+//!   with the app's agent) must name the publishing app, and the host
+//!   answers it from its own transcript, whatever `data` says
+//!   (glance_chat.rs). An L2 `source` is refused: it cannot be
 //!   lowered, and a card that needs handlers and host requests is a
 //!   `script`.
 //! - `script`: a Splash program, the same thing a script app's `main.splash`
@@ -258,7 +261,11 @@ impl GlanceStore {
             source.into()
         } else {
             check_level(source)?;
-            crate::glance_card::lower(source, &data)?.into()
+            // A card's `sys.chat` is its own app's (glance_chat.rs), and its
+            // transcript is the host's, never the data's.
+            crate::glance_chat::check_publisher(source, &app)?;
+            let seeded = crate::glance_chat::seed(&app, source, &data, &Default::default());
+            crate::glance_card::lower(source, &seeded)?.into()
         };
         let card = GlanceCard {
             app: app.clone(),
@@ -519,8 +526,10 @@ pub fn demo_digest() -> (String, Value) {
 
 /// The fake Mail cards of the email action card plan (MVP: no mail is read,
 /// no model is called): `(card_id, title, L0 source, data)` for a personal
-/// request with a reply draft and an Ask transcript, and a shipping update.
-/// The summary, draft and answers stand for what Mail's agent will write.
+/// request with a reply draft and an Ask chat, and a shipping update. The
+/// request card's summary, suggestion and draft are its own `model-copy`
+/// (what Mail's agent will write); its chat is the host's `sys.chat`
+/// thread [`DEMO_MAIL_THREAD`], started by [`seed_demo_mail_chat`].
 pub fn demo_mail() -> Vec<(&'static str, &'static str, String, Value)> {
     const REQUEST: &str = include_str!("../resources/glance/mail-request.card");
     const SHIPPING: &str = include_str!("../resources/glance/mail-shipping.card");
@@ -528,14 +537,8 @@ pub fn demo_mail() -> Vec<(&'static str, &'static str, String, Value)> {
         "msg": {
             "title": "Ana Lee · Contract question",
             "subtitle": "To: Ana Lee · Re: Contract question",
-            "as_of": "10:42",
-            "summary": "Ana asks whether we can sign by Friday, and wants the revised payment terms before then.",
-            "pick1_title": "Suggested: Reply — confirm Friday",
-            "pick1_body": "Hi Ana, Friday works for us. I'll send the revised payment terms tomorrow morning."
-        },
-        "turns": [
-            {"id": "t1", "title": "What did they say about payment?", "summary": "Net 30 instead of net 45, starting with the next invoice."}
-        ]
+            "as_of": "10:42"
+        }
     });
     let shipping = json!({
         "pkg": {
@@ -552,6 +555,21 @@ pub fn demo_mail() -> Vec<(&'static str, &'static str, String, Value)> {
         ("ana-contract", "Mail · Ana Lee: Contract question", REQUEST.to_string(), request),
         ("ups-lamp", "Mail · UPS: Your desk lamp has shipped", SHIPPING.to_string(), shipping),
     ]
+}
+
+/// The Ask chat's thread on the fake request card.
+pub const DEMO_MAIL_THREAD: &str = "ana-contract";
+
+/// Start the fake request card's chat with one earlier question and answer
+/// (the host's own entries), unless it already has a conversation.
+pub fn seed_demo_mail_chat(app: &str) {
+    use crate::glance_chat::Role;
+    crate::glance_chat::store().seed_if_empty(
+        app,
+        DEMO_MAIL_THREAD,
+        &[(Role::User, "What did they say about payment?"), (Role::Model, "Net 30 instead of net 45, starting with the next invoice.")],
+        now_ms(),
+    );
 }
 
 /// The `glance.publish` arguments for the fake Mail cards, one toast each.
@@ -580,6 +598,8 @@ pub fn publish_demo_if_asked() {
             return;
         }
         if demo == "mail" {
+            crate::glance_chat::set_demo_mail(true);
+            seed_demo_mail_chat("os.mail");
             for args in demo_mail_publishes() {
                 if let Err(e) = request(&Caller::granted("os.mail"), "glance.publish", &args) {
                     makepad_widgets::log!("glance: demo mail card refused: {e}");
@@ -729,26 +749,32 @@ mod tests {
     /// data travel with it for the card window.
     #[test]
     fn a_mail_toast_opens_its_own_card() {
-        let mail = Caller::granted("os.mailtest");
+        // The request card chats with `os.mail`'s agent: no other app may
+        // publish it.
+        let mut ana = demo_mail_publishes().remove(0);
+        ana["open"] = Value::Null;
+        let err = GlanceStore::default().publish(&Caller::granted("os.mailtest"), &ana, 0).unwrap_err();
+        assert!(err.contains("own app's agent only (os.mailtest), not os.mail"), "{err}");
+        let mail = Caller::granted("os.mail");
         let mut targets = NoteTargets::default();
         let mut keys = Vec::new();
         for (i, mut args) in demo_mail_publishes().into_iter().enumerate() {
             args["open"] = Value::Null;
             request(&mail, "glance.publish", &args).unwrap();
-            let notes: Vec<GlanceNote> = take_notifications().into_iter().filter(|n| n.app == "os.mailtest").collect();
+            let notes: Vec<GlanceNote> = take_notifications().into_iter().filter(|n| n.app == "os.mail").collect();
             assert_eq!(notes.len(), 1, "one toast per card");
             // The shell posts the toast and records its id against the key.
             let toast_id = 100 + i as u64;
             targets.record(toast_id, &notes[0].key);
             keys.push((toast_id, notes[0].key.clone(), args));
         }
-        assert_eq!(keys[0].1, "os.mailtest/ana-contract");
-        assert_eq!(keys[1].1, "os.mailtest/ups-lamp");
+        assert_eq!(keys[0].1, "os.mail/ana-contract");
+        assert_eq!(keys[1].1, "os.mail/ups-lamp");
         // Clicking the second toast opens the shipping card, not the panel
         // and not the first card; a second click on it is no longer mapped.
         let key = targets.activated(101).expect("the toast maps to its card");
         let opened = card(&key).expect("still published");
-        assert_eq!((opened.app.as_str(), opened.card_id.as_str(), opened.title.as_str()), ("os.mailtest", "ups-lamp", "Mail · UPS: Your desk lamp has shipped"));
+        assert_eq!((opened.app.as_str(), opened.card_id.as_str(), opened.title.as_str()), ("os.mail", "ups-lamp", "Mail · UPS: Your desk lamp has shipped"));
         let l0 = opened.l0.as_ref().expect("an L0 card keeps its source and data");
         assert_eq!(l0.data, keys[1].2["data"]);
         assert!(l0.source.contains("ledger mail.shipping"));
@@ -759,12 +785,29 @@ mod tests {
         assert_eq!(card(&targets.activated(100).unwrap()).unwrap().card_id, "ana-contract");
         // A withdrawn card is gone: the shell falls back to the panel.
         request(&mail, "glance.withdraw", &json!({"card_id": "ana-contract"})).unwrap();
-        assert!(card("os.mailtest/ana-contract").is_none());
+        assert!(card("os.mail/ana-contract").is_none());
         request(&mail, "glance.withdraw", &json!({"card_id": "ups-lamp"})).unwrap();
         // A script card carries no L0 source.
         let mut store = GlanceStore::default();
         store.publish(&news(), &json!({"card_id": "s", "title": "t", "script": "View{}"}), 0).unwrap();
         assert!(store.card("os.news/s", 0).unwrap().l0.is_none());
+    }
+
+    /// A card's chat transcript is the host's: one the publisher put in
+    /// `data` (a `model` entry it wrote itself) is not drawn.
+    #[test]
+    fn a_published_transcript_is_not_the_hosts() {
+        let card = "source convo sys.chat(app: \"os.chatpub\", thread: \"main\", fields: [entries, id, role, text])\n\
+                    view root Surface(pad: .page) {\n  Col(gap: 8) {\n    for m in convo.entries key m.id { ChatEntry(text: m.text, role: m.role) }\n  }\n}\n";
+        let forged = json!({"convo": {"status": "ready", "count": 1, "entries": [{"id": "x", "role": "model", "text": "FORGED ENTRY", "at": 0}]}});
+        let mut store = GlanceStore::default();
+        store.publish(&Caller::granted("os.chatpub"), &json!({"card_id": "c", "title": "t", "source": card, "data": forged}), 0).unwrap();
+        let published = store.card("os.chatpub/c", 0).unwrap();
+        assert!(!published.body.contains("FORGED ENTRY"), "{}", published.body);
+        // The host's own entry is.
+        crate::glance_chat::store().seed_if_empty("os.chatpub", "main", &[(crate::glance_chat::Role::Model, "The host's entry")], 0);
+        store.publish(&Caller::granted("os.chatpub"), &json!({"card_id": "c", "title": "t", "source": card, "data": forged}), 1).unwrap();
+        assert!(store.card("os.chatpub/c", 1).unwrap().body.contains("The host's entry"));
     }
 
     #[test]

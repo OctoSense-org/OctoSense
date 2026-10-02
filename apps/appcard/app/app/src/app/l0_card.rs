@@ -841,6 +841,11 @@ fn with_durable(
         let Some(collection) = request.helper.strip_prefix("sys.") else {
             continue;
         };
+        // A conversation is writable too, and is not a collection: the chat
+        // store answers it, below.
+        if request.helper == "sys.chat" {
+            continue;
+        }
         // Any capability the profile says is writable is backed by the store,
         // so this follows the catalog rather than naming collections here — a
         // list hardcoded in the host is one that forgets the next capability.
@@ -906,7 +911,9 @@ fn with_durable(
             map.insert(request.name.clone(), serde_json::Value::Array(rows));
         }
     }
-    out
+    // Every `sys.chat` the card reads: AppCard's own transcript, whatever
+    // the data says (l0_chat.rs).
+    super::l0_chat::seed(source, &out, store)
 }
 
 /// Hand every stored collection to the VM, so a durable source can resolve a row.
@@ -1103,6 +1110,15 @@ fn tap_inner(
         origin.unwrap_or(octoscript_ui_l0::ValueOrigin::Authored),
     );
     for write in &outcome.writes {
+        // A conversation's append: the person's message, then the host's
+        // answer (l0_chat.rs). Never a store write.
+        if write.helper == "sys.chat" {
+            match super::l0_chat::perform(&session.source, &session.store, &dispatch_data, write, origin) {
+                Ok(entry) => makepad_widgets::log!("[l0] chat {} recorded {}", write.source, entry.id),
+                Err(e) => makepad_widgets::log!("[l0] chat {} refused: {e}", write.source),
+            }
+            continue;
+        }
         // A sys.link write is not a store write at all: the card asked the
         // HOST to open (or close) its reader overlay on a page. Spawn loads
         // the url; the rect is placed by the app on its next event, and

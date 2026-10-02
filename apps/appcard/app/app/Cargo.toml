@@ -99,6 +99,8 @@ keyring = { workspace = true }
 
 # L0 profile checker and framework node model from the shared runtime.
 octoscript-ui-l0 = { workspace = true }
+# An L0 card's in-card chat (`sys.chat`), the code the shell's glance cards use.
+octosense-l0-chat = { workspace = true }
 
 octoscript-node = { workspace = true }
 

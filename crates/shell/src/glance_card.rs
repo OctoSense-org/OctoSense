@@ -258,16 +258,17 @@ pub fn parse_tap(target: &str) -> Option<(String, String, String)> {
     Some((field("k")?, field("e")?, field("v").unwrap_or_default()))
 }
 
-/// What the demo host answers a question sent from a card's Ask (MVP: no
-/// model call).
-pub const DEMO_ANSWER: &str = "Demo answer: Mail's agent will reply here from the thread. (No model was called.)";
-
-/// A live L0 card in the card window: its source, its data (which the
-/// host's writes update) and its local state.
+/// A live L0 card in the card window: the app that published it, its
+/// source, its data as published and its local state. Its `sys.chat`
+/// sources are answered by the host on every lowering and dispatch
+/// (glance_chat.rs), never from `data`.
 pub struct L0Session {
+    pub app: String,
     pub source: String,
     pub data: serde_json::Value,
     pub store: octoscript_ui_l0::InstanceStore,
+    /// The chat generation the card was last lowered at.
+    chat_generation: u64,
 }
 
 /// What a tap did to an [`L0Session`].
@@ -292,13 +293,27 @@ fn node_arg<'a>(node: &'a octoscript_ui_l0::UiNode, name: &str) -> Option<&'a oc
 }
 
 impl L0Session {
-    pub fn new(l0: &crate::glance::L0Source) -> Self {
-        L0Session { source: l0.source.clone(), data: l0.data.clone(), store: Default::default() }
+    /// The card `app` published.
+    pub fn new(app: &str, l0: &crate::glance::L0Source) -> Self {
+        L0Session { app: app.to_string(), source: l0.source.clone(), data: l0.data.clone(), store: Default::default(), chat_generation: crate::glance_chat::generation() }
+    }
+
+    /// The data the card reads now: as published, with the host's answer
+    /// to each `sys.chat`.
+    fn data_now(&self) -> serde_json::Value {
+        crate::glance_chat::seed(&self.app, &self.source, &self.data, &self.store)
     }
 
     /// The card as it stands now, lowered for a Splash.
-    pub fn body(&self) -> Result<String, String> {
-        lower_with_state(&self.source, &self.data, &self.store)
+    pub fn body(&mut self) -> Result<String, String> {
+        self.chat_generation = crate::glance_chat::generation();
+        lower_with_state(&self.source, &self.data_now(), &self.store)
+    }
+
+    /// A conversation the card reads changed since it was last lowered (a
+    /// reply arrived): lower it again.
+    pub fn chat_moved(&self) -> bool {
+        self.chat_generation != crate::glance_chat::generation() && crate::glance_chat::reads_chat(&self.source)
     }
 
     /// Carry out one `NAV` call from this card.
@@ -306,8 +321,13 @@ impl L0Session {
         use octoscript_ui_l0::NodeValue;
         let (key, event, value) = parse_tap(target).ok_or_else(|| format!("not an L0 target: {target}"))?;
         // The element as it stands now: what it carries and what raised it.
-        let report = octoscript_ui_l0::realize_with_state(&self.source, &self.data, &self.store, Default::default());
-        let node = report.complete_root().ok().and_then(|root| find_node(root, &key)).cloned();
+        let data = self.data_now();
+        let report = octoscript_ui_l0::realize_with_state(&self.source, &data, &self.store, Default::default());
+        let root = report.complete_root().ok();
+        let node = root.and_then(|root| find_node(root, &key)).cloned();
+        // Where the payload came from: what the person typed into a field,
+        // or the value the element carries (§4's event origins).
+        let origin = root.and_then(|root| octoscript_ui_l0::event_payload_origin(root, &key, &event));
         let keystroke = node.as_ref().is_some_and(|n| n.kind == "Field" && matches!(node_arg(n, "on_change"), Some(NodeValue::Event(e)) if *e == event));
         let payload = if value == "$$" {
             // A field's text, as typed.
@@ -324,30 +344,25 @@ impl L0Session {
                 _ => None,
             }
         };
-        let outcome = octoscript_ui_l0::dispatch_reporting(&self.source, &mut self.store, &key, &event, payload.as_ref(), &self.data);
+        let outcome = octoscript_ui_l0::dispatch_reporting_with_origin(&self.source, &mut self.store, &key, &event, payload.as_ref(), &data, origin.unwrap_or(octoscript_ui_l0::ValueOrigin::Authored));
         for write in &outcome.writes {
-            self.perform(write);
+            self.perform(write, origin, &data);
         }
         let moved = !outcome.changed.is_empty() || !outcome.writes.is_empty();
         Ok(TapOutcome { event, applied: outcome.applied, relower: moved && !keystroke })
     }
 
-    /// A §5.12 write the card reported, performed by this (demo) host: a
-    /// question appended to `asked` adds a turn to the `turns` transcript
-    /// with a canned answer. Anything else is not performed in the MVP.
-    fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite) {
-        match (write.source.as_str(), write.op.as_str()) {
-            ("asked", "append") if !write.value.trim().is_empty() => {
-                if !self.data.get("turns").is_some_and(serde_json::Value::is_array) {
-                    self.data["turns"] = serde_json::json!([]);
-                }
-                if let Some(turns) = self.data["turns"].as_array_mut() {
-                    let id = format!("q{}", turns.len() + 1);
-                    turns.push(serde_json::json!({"id": id, "title": write.value, "summary": DEMO_ANSWER}));
-                }
+    /// A §5.12 write the card reported, performed by the host: a
+    /// `sys.chat` append (glance_chat.rs). The demo host performs no other.
+    fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite, origin: Option<octoscript_ui_l0::ValueOrigin>, data: &serde_json::Value) {
+        if write.helper == "sys.chat" {
+            match crate::glance_chat::perform(&self.app, &self.source, &self.store, data, write, origin) {
+                Ok(entry) => log!("glance: {} chat {} recorded {}", self.app, write.source, entry.id),
+                Err(e) => log!("glance: {} chat {} refused: {e}", self.app, write.source),
             }
-            _ => log!("glance: the card's {} {} on {} is not performed (demo host)", write.op, write.helper, write.source),
+            return;
         }
+        log!("glance: the card's {} {} on {} is not performed (demo host)", write.op, write.helper, write.source);
     }
 }
 
@@ -701,7 +716,7 @@ mod tests {
 
     fn mail_session(card_id: &str) -> L0Session {
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == card_id).unwrap();
-        L0Session::new(&crate::glance::L0Source { source, data })
+        L0Session::new("os.mail", &crate::glance::L0Source { source, data })
     }
 
     /// The tap targets a body offers, in order, as `(key, event)`.
@@ -719,22 +734,21 @@ mod tests {
         format!("l0:{}", serde_json::json!({"e": e, "k": k, "v": v}))
     }
 
-    /// The fake email card, end to end through the host's L0 loop: Reply
-    /// shows the AI draft in a field with Cancel/Send; Send shows "Sent
-    /// (demo)"; Ask shows the transcript, and a question typed and sent adds
-    /// itself and the canned answer.
+    /// The fake email card, end to end through the host's L0 loop: the
+    /// agent's summary and suggestion are its own model-copy; Reply writes
+    /// its draft into a field with Cancel/Send; Send shows "Sent (demo)".
     #[test]
-    fn the_mail_card_replies_sends_and_asks_through_l0_taps() {
+    fn the_mail_card_replies_and_sends_through_l0_taps() {
         let mut s = mail_session("ana-contract");
         let body = s.body().unwrap();
-        for text in ["Ana Lee · Contract question", "10:42", "AI SUMMARY", "Suggested: Reply — confirm Friday", "Reply", "Mark done", "Ask"] {
+        for text in ["Ana Lee · Contract question", "10:42", "SUMMARY", "Ana asks whether we can sign by Friday", "Suggested: Reply — confirm Friday", "Reply", "Mark done", "Ask"] {
             assert!(body.contains(text), "{text} in {body}");
         }
         assert!(!body.contains("Sent (demo)"));
         let reply = target_for(&body, "reply");
         assert!(s.tap(&reply, None).unwrap().relower);
         let body = s.body().unwrap();
-        assert!(body.contains("AI DRAFT") && body.contains("Hi Ana, Friday works for us.") && body.contains("Cancel") && body.contains("Send"), "{body}");
+        assert!(body.contains("DRAFT") && body.contains("Hi Ana, Friday works for us.") && body.contains("Cancel") && body.contains("Send"), "{body}");
         // The draft (no on_commit) wraps over several lines; nothing else does.
         assert_eq!(body.matches("is_multiline: true").count(), 1, "{body}");
         assert!(body.contains("max: FitBound.Abs(156)") && !body.contains("l0_multiline"), "{body}");
@@ -746,7 +760,17 @@ mod tests {
         let send = target_for(&s.body().unwrap(), "send");
         assert!(s.tap(&send, None).unwrap().relower);
         assert!(s.body().unwrap().contains("Sent (demo)"));
+    }
 
+    /// Ask is the card's `sys.chat` with Mail's agent: the host's transcript
+    /// (seeded, never the published data), a question typed and committed
+    /// becomes the person's entry, and the host appends the reply (the
+    /// demo's canned answer) as the agent's, which the card shows once the
+    /// card is lowered again.
+    #[test]
+    fn the_mail_card_asks_mails_agent_in_the_card() {
+        crate::glance_chat::set_demo_mail(true);
+        crate::glance::seed_demo_mail_chat("os.mail");
         let mut s = mail_session("ana-contract");
         let ask = target_for(&s.body().unwrap(), "ask");
         s.tap(&ask, None).unwrap();
@@ -755,13 +779,56 @@ mod tests {
         assert!(!body.contains("is_multiline"), "the question commits on Return: one line");
         let typing = target_for(&body, "typing");
         assert!(!s.tap(&typing, Some("When do they need it?")).unwrap().relower);
-        // The arrow carries the question as it stands now, not as it was
-        // when the card was last lowered (empty).
-        let submit = targets(&body).into_iter().find(|(k, e, _)| e == "submit" && k.contains("Chip")).unwrap();
-        let arrow = format!("l0:{}", serde_json::json!({"e": submit.1, "k": submit.0, "v": submit.2}));
-        assert!(s.tap(&arrow, None).unwrap().relower);
+        // Return in the field sends what was typed.
+        let (k, e, _) = targets(&body).into_iter().find(|(k, e, _)| e == "submit" && k.contains("Field")).expect("the field commits");
+        let commit = format!("l0:{}", serde_json::json!({"e": e, "k": k, "v": "$$"}));
+        assert!(s.tap(&commit, Some("When do they need it?")).unwrap().relower);
+        let entries = crate::glance_chat::store().entries("os.mail", crate::glance::DEMO_MAIL_THREAD);
+        let last: Vec<(crate::glance_chat::Role, &str)> = entries.iter().rev().take(2).rev().map(|e| (e.role, e.text.as_str())).collect();
+        assert_eq!(last, [(crate::glance_chat::Role::User, "When do they need it?"), (crate::glance_chat::Role::Model, crate::glance_chat::DEMO_ANSWER)]);
         let body = s.body().unwrap();
-        assert!(body.contains("When do they need it?") && body.contains(DEMO_ANSWER), "{body}");
+        assert!(body.contains("When do they need it?") && body.contains(crate::glance_chat::DEMO_ANSWER), "{body}");
+        // The field was cleared; a second message at once is over the rate.
+        let again = s.tap(&commit, Some("And the deposit?")).unwrap();
+        assert!(again.applied);
+        assert!(!crate::glance_chat::store().entries("os.mail", crate::glance::DEMO_MAIL_THREAD).iter().any(|e| e.text == "And the deposit?"), "one message per 2 s");
+    }
+
+    /// The AI-written mark reaches what the card window draws (profile
+    /// §4.2, the kit's `l0_ai_text` and `octoscript_node::ai`): on the
+    /// agent's words, the summary, the suggestion, the draft while it is the
+    /// model's and the agent's chat entries, and on nothing the person or the
+    /// app's vocabulary wrote.
+    #[test]
+    fn the_ai_written_mark_reaches_the_card_window() {
+        // `octoscript_node::ai::AI_MARK_GLYPH`, the sparkle in the icon face,
+        // as the Splash body escapes it.
+        const AI_MARK: &str = r"\u{e2ca}";
+        let marks = |body: &str| body.matches(AI_MARK).count();
+        let mut s = mail_session("ana-contract");
+        let body = s.body().unwrap();
+        assert_eq!(marks(&body), 2, "the summary and the suggestion: {body}");
+        // The words stay a plain label: no markup is made of them.
+        assert!(body.contains("Ana asks whether we can sign by Friday"));
+        s.tap(&target_for(&body, "reply"), None).unwrap();
+        let body = s.body().unwrap();
+        assert_eq!(marks(&body), 1, "the model's draft in the field: {body}");
+        // Once the person edits it, it is theirs: no mark.
+        s.tap(&target_for(&body, "edit"), Some("Hi Ana, Friday is fine.")).unwrap();
+        assert_eq!(marks(&s.body().unwrap()), 0);
+
+        // The chat: only the agent's entries.
+        crate::glance_chat::store().seed_if_empty("os.mail", "marks", &[(crate::glance_chat::Role::User, "Q?"), (crate::glance_chat::Role::Model, "A."), (crate::glance_chat::Role::Host, "Searched 3 messages.")], 0);
+        let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ana-contract").unwrap();
+        let source = source.replace("thread: \"ana-contract\"", "thread: \"marks\"");
+        let mut s = L0Session::new("os.mail", &crate::glance::L0Source { source, data });
+        let ask = target_for(&s.body().unwrap(), "ask");
+        s.tap(&ask, None).unwrap();
+        let body = s.body().unwrap();
+        assert!(body.contains("Q?") && body.contains("A.") && body.contains("Searched 3 messages."), "{body}");
+        assert_eq!(marks(&body), 1, "the model's entry only: {body}");
+        let mark = body.find(AI_MARK).unwrap();
+        assert!(mark > body.find("Q?").unwrap() && mark < body.find("A.").unwrap(), "the mark sits on the agent's entry: {body}");
     }
 
     /// The shipping card: carrier, status, ETA and Track; no reply.

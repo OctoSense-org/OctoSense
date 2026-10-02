@@ -46,6 +46,8 @@ makepad-wm-theme = { workspace = true }
 octoscript-makepad = { workspace = true }
 # The L0 checker the glance service admits published cards with (glance.rs).
 octoscript-ui-l0 = { workspace = true }
+# A glance card's in-card chat with its app's agent (`sys.chat`, glance_chat.rs).
+octosense-l0-chat = { workspace = true }
 octosense-ai-host = { workspace = true }
 octosense-mail-service = { workspace = true, optional = true }
 octosense-news-service = { workspace = true, optional = true }

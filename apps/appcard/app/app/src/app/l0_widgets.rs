@@ -21,10 +21,13 @@ use std::fmt::Write as _;
 
 /// Render a tree as the DSL this repository's VM evaluates.
 pub fn to_dsl(root: &UiNode) -> String {
-    // A surface that states an ink lends it to unreadable text below, before
-    // anything is emitted.
+    // Model-written text gets its AI-written mark (profile §4.2), the one
+    // every backend draws (`octoscript_node::ai`), before the ink pass so the
+    // mark's ink is checked like any text. A surface that states an ink lends
+    // it to unreadable text below, before anything is emitted.
     let root = &{
         let mut r = root.clone();
+        octoscript_node::ai::expand_ai_marks(&mut r);
         apply_ink_planes(&mut r, None, None);
         r
     };

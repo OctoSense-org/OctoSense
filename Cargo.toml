@@ -27,6 +27,7 @@ members = [
     "crates/shell",
     "crates/toolbox",
     "crates/process-apps",
+    "crates/l0-chat",
     "apps/reference",
     "apps/news/host-service",
     "apps/mail/host-service",
@@ -84,16 +85,16 @@ makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", re
 makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9" }
 makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9" }
 makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9", default-features = false }
-# --- OctoScript (Octoscript dbd48cfb) and its Makepad runtime
-# (Octoscript-Makepad e0df0b51, native-runtime.lock.json).
-octoscript-ui-l0 = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
+# --- OctoScript (Octoscript 5991dfae) and its Makepad runtime
+# (Octoscript-Makepad 8f103d0c, native-runtime.lock.json).
+octoscript-ui-l0 = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "5991dfae9344589e732b2605b530f788e8bbcd11" }
 # The bounded VM, capability-leased host modules and executable JSON schemas
 # (the system toolbox's workflow templates, crates/toolbox).
-octoscript-core = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
-octoscript-capabilities = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
-octoscript-schema = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
-octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "e0df0b5177f9cb0d8ad0ad0225d40ebcf8389a1b" }
-octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "e0df0b5177f9cb0d8ad0ad0225d40ebcf8389a1b" }
+octoscript-core = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "5991dfae9344589e732b2605b530f788e8bbcd11" }
+octoscript-capabilities = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "5991dfae9344589e732b2605b530f788e8bbcd11" }
+octoscript-schema = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "5991dfae9344589e732b2605b530f788e8bbcd11" }
+octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "8f103d0c650196d455cbcaa55b13911475121224" }
+octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "8f103d0c650196d455cbcaa55b13911475121224" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
 octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "58c3c8aed8fc811a16d67c5f784a8a44214ff876" }
@@ -135,6 +136,9 @@ octosense-app-peers = { path = "crates/app-peers" }
 octosense-ai-host = { path = "crates/ai-host" }
 octosense-shell = { path = "crates/shell" }
 octosense-toolbox = { path = "crates/toolbox" }
+# An L0 card's in-card chat, host side (sys.chat): the shell's glance cards
+# and AppCard.
+octosense-l0-chat = { path = "crates/l0-chat" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }

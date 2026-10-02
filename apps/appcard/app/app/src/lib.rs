@@ -7,6 +7,9 @@ mod app;
 mod backend;
 pub mod host;
 pub use host::{register_script_mods, AppShell, BODY_WIDGET};
+/// Where AppCard keeps its L0 cards' chat threads (the module sets it from
+/// the storage the shell offers).
+pub use app::l0_chat::set_folder as set_l0_chat_folder;
 #[cfg(target_os = "android")]
 mod monitor;
 

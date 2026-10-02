@@ -13,6 +13,9 @@
 //! [`L0Session`] (the declared transition, the §5.12 writes this host
 //! performs, a re-lowering), so a Reply opens its draft and a Send changes
 //! the card. Its state lives as long as the window: closing it forgets it.
+//! Its in-card chat (`sys.chat`) is the host's and outlives the window
+//! (glance_chat.rs); the card is lowered again when the agent's reply
+//! comes.
 use crate::glance_card::{GlanceTiles, L0Session};
 use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, Ico, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellTokens};
@@ -112,8 +115,8 @@ impl ShellGlanceSheet {
         let Some(card) = crate::glance::card(key) else {
             return false;
         };
-        let session = card.l0.as_deref().map(L0Session::new);
-        let body: Arc<str> = match session.as_ref().map(L0Session::body) {
+        let mut session = card.l0.as_deref().map(|l0| L0Session::new(&card.app, l0));
+        let body: Arc<str> = match session.as_mut().map(L0Session::body) {
             Some(Ok(body)) => body.into(),
             Some(Err(e)) => {
                 log!("glance sheet: {key} lowers as published only: {e}");
@@ -160,7 +163,8 @@ impl ShellGlanceSheet {
         let Some(heap) = self.tiles.heap_key(cx, &tile) else { return };
         let taps = crate::glance_card::take_taps(heap);
         let Some(session) = open.session.as_mut() else { return };
-        let mut relower = false;
+        // A conversation the card reads moved (the agent's reply came).
+        let mut relower = session.chat_moved();
         for tap in taps {
             match session.tap(&tap.target, tap.typed.as_deref()) {
                 Ok(outcome) => {
