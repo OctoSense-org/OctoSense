@@ -323,6 +323,13 @@ pub fn take_taps(heap: usize) -> Vec<Tap> {
     mine
 }
 
+/// Whether the isolate `heap` has a click waiting: a call with no text (a
+/// tap target's; a field's carries its text). A tap target claims no press,
+/// so this is how a surface learns that a press was on one (glance_panel.rs).
+pub fn has_clicks(heap: usize) -> bool {
+    TAPS.lock().is_ok_and(|taps| taps.iter().any(|t| t.heap == heap && t.typed.is_none()))
+}
+
 /// Forget the queued calls of the isolate `heap`, whose tile went away: a
 /// heap key is unique only while its isolate lives, so a later isolate may
 /// get the same one, and must not run the calls the old one queued.
@@ -1057,6 +1064,23 @@ mod tests {
         assert_eq!(marks(&body), 1, "the model's entry only: {body}");
         let mark = body.find(AI_MARK).unwrap();
         assert!(mark > body.find("Q?").unwrap() && mark < body.find("A.").unwrap(), "the mark sits on the agent's entry: {body}");
+    }
+
+    /// A click waiting for an isolate is seen without taking it; a field's
+    /// edit (it carries text) is no click, and another isolate's is not its.
+    #[test]
+    fn a_waiting_click_is_seen_without_taking_it() {
+        const A: usize = 0x6a11_0011;
+        const B: usize = 0x6a11_0012;
+        queue_tap(Tap { heap: A, target: "a".into(), typed: Some("typed".into()) });
+        assert!(!has_clicks(A), "a field's edit is not a click");
+        queue_tap(Tap { heap: B, target: "b".into(), typed: None });
+        assert!(!has_clicks(A), "another isolate's click");
+        queue_tap(Tap { heap: A, target: "a".into(), typed: None });
+        assert!(has_clicks(A));
+        assert_eq!(take_taps(A).len(), 2, "seen, not taken");
+        assert!(!has_clicks(A));
+        drop_taps(B);
     }
 
     /// Taps are taken per isolate: a surface takes its own tile's, in
