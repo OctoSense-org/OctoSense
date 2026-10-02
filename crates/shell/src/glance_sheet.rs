@@ -9,18 +9,18 @@
 //! scrolls inside. The card runs in its own isolate, under the publishing
 //! app's policy, as a glance tile does (glance_card.rs).
 //!
-//! An L0 card is live here: its taps and field edits run through an
-//! [`L0Session`] (the declared transition, the §5.12 writes this host
-//! performs, a re-lowering), so a Reply opens its draft and a Send changes
-//! the card. Its state lives as long as the window: closing it forgets it.
-//! Its in-card chat (`sys.chat`) is the host's and outlives the window
-//! (glance_chat.rs); the card is lowered again when the agent's reply
-//! comes.
-use crate::glance_card::{GlanceTiles, L0Session};
+//! An L0 card is live here, as in the glance panel ([`LiveCards`]): its
+//! taps and field edits run through its `L0Session` (the declared
+//! transition, the §5.12 writes this host performs, a re-lowering), so a
+//! Reply opens its draft and a Send changes the card. Its state lives as
+//! long as the window: closing it forgets it. Its in-card chat (`sys.chat`)
+//! is the host's and outlives the window (glance_chat.rs); the card is
+//! lowered again when the agent's reply comes.
+use crate::glance::GlanceCard;
+use crate::glance_card::{GlanceTiles, LiveCards};
 use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, Ico, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellTokens};
 use makepad_widgets::*;
-use std::sync::Arc;
 
 pub const SHEET_WIDTH: f64 = 380.0;
 /// The window's least height, and its card's height before it is measured.
@@ -63,15 +63,10 @@ pub fn card_rect(sheet: Rect) -> Rect {
     rect(sheet.pos.x + PAD, sheet.pos.y + HEADER, sheet.size.x - PAD * 2.0, sheet.size.y - HEADER - PAD)
 }
 
-/// The open card.
+/// The open card, as it was published when the window opened.
 struct Open {
     key: String,
-    app: String,
-    title: String,
-    contained: bool,
-    body: Arc<str>,
-    /// An L0 card's live state; `None` for a script card (which keeps its own).
-    session: Option<L0Session>,
+    card: GlanceCard,
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -97,9 +92,15 @@ pub struct ShellGlanceSheet {
     sheet: Rect,
     #[rust]
     tiles: GlanceTiles,
+    /// An L0 card's live state (a script card keeps its own).
+    #[rust]
+    live: LiveCards,
     /// What the last layout log said, so it is logged once per change.
     #[rust]
     logged: String,
+    /// The window's own area: what `redraw` repaints (`draw_bg` draws
+    /// nothing), so an agent's reply that comes later shows at once.
+    #[redraw]
     #[rust]
     area: Area,
 }
@@ -115,19 +116,13 @@ impl ShellGlanceSheet {
         let Some(card) = crate::glance::card(key) else {
             return false;
         };
-        let mut session = card.l0.as_deref().map(|l0| L0Session::new(&card.app, l0));
-        let body: Arc<str> = match session.as_mut().map(L0Session::body) {
-            Some(Ok(body)) => body.into(),
-            Some(Err(e)) => {
-                log!("glance sheet: {key} lowers as published only: {e}");
-                card.body.clone()
-            }
-            None => card.body.clone(),
-        };
-        // A fresh isolate for each opening: the card starts as published.
+        // A fresh isolate and session for each opening: the card starts as
+        // published (lowered now, so one that does not lower says so once).
         self.tiles.sweep(cx, &[]);
         self.tiles = GlanceTiles::scrolling();
-        self.open = Some(Open { key: key.to_string(), app: card.app.clone(), title: card.title.clone(), contained: card.contained, body, session });
+        self.live.clear();
+        self.live.body(&Self::tile_key(key), &card, "glance sheet");
+        self.open = Some(Open { key: key.to_string(), card });
         log!("glance sheet: opened {key}");
         self.redraw(cx);
         true
@@ -138,6 +133,7 @@ impl ShellGlanceSheet {
             log!("glance sheet: closed {}", open.key);
         }
         self.tiles.sweep(cx, &[]);
+        self.live.clear();
         self.logged.clear();
         self.redraw(cx);
     }
@@ -156,29 +152,10 @@ impl ShellGlanceSheet {
         format!("sheet:{key}")
     }
 
-    /// Run the open card's queued taps through its L0 session.
+    /// Run the open card's queued taps through its L0 session, and lower it
+    /// again when the agent's reply came (glance_card.rs `LiveCards`).
     fn dispatch_taps(&mut self, cx: &mut Cx) {
-        let Some(open) = self.open.as_mut() else { return };
-        let tile = Self::tile_key(&open.key);
-        let Some(heap) = self.tiles.heap_key(cx, &tile) else { return };
-        let taps = crate::glance_card::take_taps(heap);
-        let Some(session) = open.session.as_mut() else { return };
-        // A conversation the card reads moved (the agent's reply came).
-        let mut relower = session.chat_moved();
-        for tap in taps {
-            match session.tap(&tap.target, tap.typed.as_deref()) {
-                Ok(outcome) => {
-                    log!("glance sheet: {} tap {} (applied {}, relower {})", open.key, outcome.event, outcome.applied, outcome.relower);
-                    relower |= outcome.relower;
-                }
-                Err(e) => log!("glance sheet: {} tap refused: {e}", open.key),
-            }
-        }
-        if relower {
-            match session.body() {
-                Ok(body) => open.body = body.into(),
-                Err(e) => log!("glance sheet: {} does not lower: {e}", open.key),
-            }
+        if self.open.is_some() && self.live.dispatch(cx, &self.tiles, "glance sheet") {
             self.redraw(cx);
         }
     }
@@ -199,11 +176,12 @@ impl Widget for ShellGlanceSheet {
             self.sheet = sheet;
             self.d.card(cx, sheet, &tok.notifications.surface);
             let close = close_rect(sheet);
-            self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), false, 12.0, alpha(ink, 0.7), HAlign::Left, &open.title);
+            self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), false, 12.0, alpha(ink, 0.7), HAlign::Left, &open.card.title);
             self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
             let card = card_rect(sheet);
-            let (key, app, contained, body) = (Self::tile_key(&open.key), open.app.clone(), open.contained, open.body.clone());
-            self.tiles.draw(cx, &key, &app, contained, &body, card);
+            let key = Self::tile_key(&open.key);
+            let body = self.live.body(&key, &open.card, "glance sheet");
+            self.tiles.draw(cx, &key, &open.card.app, open.card.contained, &body, card);
             let layout = format!("{} sheet@{},{},{},{} card@{},{},{},{} close@{},{}", open.key, sheet.pos.x as i32, sheet.pos.y as i32, sheet.size.x as i32, sheet.size.y as i32, card.pos.x as i32, card.pos.y as i32, card.size.x as i32, card.size.y as i32, (close.pos.x + close.size.x * 0.5) as i32, (close.pos.y + close.size.y * 0.5) as i32);
             if layout != self.logged {
                 log!("glance sheet: {layout}");

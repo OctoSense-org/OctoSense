@@ -171,13 +171,20 @@ pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Opti
 /// opened): record its manifest's storage block, so its agent acts for the
 /// right account and its suspension is keyed right; then `prepare`.
 pub fn prepare_agent_with<R>(storage: &Storage, root: &Path, app_id: &str, prepare: impl FnOnce(&Storage) -> R) -> R {
+    record_manifest_spec(storage, root, app_id);
+    prepare(storage)
+}
+
+/// Record the storage block of the script app `app_id`'s manifest, when
+/// one is on disk ([`script_manifest`]); a block the host refuses is
+/// logged, and the default holds.
+fn record_manifest_spec(storage: &Storage, root: &Path, app_id: &str) {
     if let Some(manifest) = script_manifest(root, app_id) {
         match StorageSpec::from_manifest(&manifest, AppKind::Script) {
             Ok(spec) => storage.set_spec(app_id, spec),
             Err(e) => makepad_widgets::log!("app storage: {app_id}: {e}"),
         }
     }
-    prepare(storage)
 }
 
 /// The account a contained app's agent acts for (`contained::set_account_of`).
@@ -192,7 +199,17 @@ pub fn contained_account(app: &str) -> Option<String> {
 /// (Mail), its active account (the one the person signed in to last, from
 /// Mail's host service), or none yet. One agent is live per app at a time,
 /// bound to that account (ADR 0004 §11).
+///
+/// Whether the app keeps accounts is its manifest's storage block. Nothing
+/// may have recorded it yet in this run: the account is also asked before
+/// the app was opened or its agent prepared (a glance card's chat thread at
+/// startup, glance_chat.rs), so the block is read from the manifest then,
+/// as [`prepare_agent_with`] does. The default, no accounts, would answer
+/// the device for a signed-in Mail.
 pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
+    if !storage.has_spec(app) {
+        record_manifest_spec(storage, storage.layout().apps_root(), app);
+    }
     if !storage.spec(app).accounts {
         return Some(crate::ai_host::contained::ACCOUNT.to_owned());
     }

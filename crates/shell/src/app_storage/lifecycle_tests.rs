@@ -265,6 +265,28 @@ fn should_bind_a_contained_agent_to_the_active_account_when_the_app_keeps_accoun
     assert_eq!(contained_account_in(&host, "os.mail").as_deref(), Some("late"));
 }
 
+/// The account is also asked before anything recorded the app's storage
+/// block in this run (a glance card's chat thread at startup, before Mail
+/// was opened or its agent prepared): the block is read from the manifest
+/// then and recorded, so a signed-in Mail acts for its account, never the
+/// device.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn should_read_the_manifests_block_when_the_account_is_asked_first() {
+    let home = Scratch::new("account-first");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    write_json(&root.join(".system/os.mail/0001/manifest.json"), &json!({"id": "os.mail", "storage": {"accounts": true}}));
+    write_json(&root.join(".host/mail/accounts.json"), &json!([{"id": "ana@example.org", "apps": ["os.mail"], "signed_in": 10}]));
+    assert!(!host.has_spec("os.mail"));
+    assert_eq!(contained_account_in(&host, "os.mail").as_deref(), Some("ana@example.org"));
+    assert!(host.has_spec("os.mail") && host.spec("os.mail").accounts, "recorded from the manifest");
+    // No manifest on disk yet (a system app not unpacked): the device, and
+    // nothing recorded, so a later ask reads it once it is there.
+    assert_eq!(contained_account_in(&host, "os.notes").as_deref(), Some("device"));
+    assert!(!host.has_spec("os.notes"));
+}
+
 // ---- script manifests, install and uninstall -----------------------------
 
 #[test]
