@@ -5711,6 +5711,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-task"
+version = "0.1.0"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
 name = "makepad-terminal"
 version = "0.1.0"
 dependencies = [
@@ -7736,6 +7745,7 @@ dependencies = [
  "makepad-notes",
  "makepad-reminders",
  "makepad-sheets",
+ "makepad-task",
  "makepad-terminal",
  "makepad-weather",
  "octosense-reference",

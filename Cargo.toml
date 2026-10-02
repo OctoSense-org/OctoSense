@@ -75,6 +75,7 @@ makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c155f61d0e1600d2ec474209374444a38a09a470", default-features = false }
 makepad-reminders = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c155f61d0e1600d2ec474209374444a38a09a470", default-features = false }
 makepad-weather = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c155f61d0e1600d2ec474209374444a38a09a470", default-features = false }
+makepad-task = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c155f61d0e1600d2ec474209374444a38a09a470" }
 # END native-apps: pins
 # --- Makepad (OctoSense-org/makepad), the revision Octoscript-Makepad's
 # runtime.json pins (native-runtime.lock.json); resolved to .sources/makepad.
@@ -246,6 +247,7 @@ makepad-clock = { path = ".sources/makepad/apps/clock" }
 makepad-notes = { path = ".sources/makepad/apps/notes" }
 makepad-reminders = { path = ".sources/makepad/apps/reminders" }
 makepad-weather = { path = ".sources/makepad/apps/weather" }
+makepad-task = { path = ".sources/makepad/apps/task" }
 # END native-apps: patch https://github.com/OctoSense-org/makepad.git
 
 # AppCard's inline-renderer kits name makepad-widgets by the ZhangHanDong URL.

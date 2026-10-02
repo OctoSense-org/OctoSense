@@ -228,6 +228,22 @@
         ],
         "system_tools": ["weather.current"]
       }
+    },
+    {
+      "id": "task",
+      "crate": "makepad-task",
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/task" },
+      "module": null,
+      "bin": "task",
+      "default_features": true,
+      "crate_features": [],
+      "implies": [],
+      "hosting": { "macos": "process", "windows": "process", "linux": "process-if-vulkan", "android": "none", "ios": "none", "ohos": "none" },
+      "shells": { "desktop": "off", "phone": "off" },
+      "native_mobile": "feature",
+      "sandbox": { "network": "none", "processes": true },
+      "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
+      "agent": { "octos": [], "tools": null }
     }
   ]
 }

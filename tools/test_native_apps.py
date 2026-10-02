@@ -32,15 +32,20 @@ class TheRepository(unittest.TestCase):
     def test_the_manifest_declares_todays_native_apps(self):
         apps = native_apps.load(ROOT)
         self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub",
-                                                       "calculator", "clock", "notes", "reminders", "weather"])
+                                                       "calculator", "clock", "notes", "reminders", "weather",
+                                                       "task"])
         hosting = {app["id"]: app["hosting"] for app in apps}
-        # Terminal is the only process app for now (ADR 0004 §2).
+        # Terminal is the only app that runs both linked and as a process
+        # (ADR 0004 §2); Task has no module and runs only as one.
+        self.assertIsNone(next(app for app in apps if app["id"] == "task")["module"])
+        self.assertEqual(hosting["task"]["macos"], "process")
         self.assertEqual(hosting["terminal"]["macos"], "process")
         self.assertEqual(hosting["terminal"]["windows"], "process")
         self.assertEqual(hosting["terminal"]["linux"], "process-if-vulkan")
         for ident in ("apphub", "rinx", "sheets", "reference", "appcard"):
             self.assertEqual(set(hosting[ident].values()), {"module"}, ident)
-        # Non-Vulkan Linux is in-process for everything.
+        # Non-Vulkan Linux is in-process for every app with a module (a
+        # process-only app is not there).
         for ident, h in hosting.items():
             self.assertIn(h["linux"], ("module", "process-if-vulkan"), ident)
 
@@ -293,6 +298,45 @@ class Generation(Fixture):
         self.assertNotIn("app-image", (self.root / "phone/Cargo.toml").read_text())
         rust = (self.root / native_apps.RUST_FILE).read_text()
         self.assertIn('    #[cfg(feature = "app-image")]\n    out.push(&makepad_image::IMAGE_MODULE);', rust)
+
+    def process_only(self):
+        """Task: the manifest's process-only app (`module: null`)."""
+        app = self.app("task")
+        self.assertIsNone(app["module"])
+        return app
+
+    def test_a_process_only_app_is_built_never_linked(self):
+        """`module: null` (ADR 0004 §2): the app runs only as its own
+        desktop process. The process-app crate builds it; no shell links
+        it, and it is not there where there are no processes."""
+        self.process_only()
+        self.save()
+        self.assertEqual(self.run_main("--no-lock"), 0)
+        self.assertIn('makepad-task = { workspace = true }', (self.root / "crates/process-apps/Cargo.toml").read_text())
+        self.assertNotIn("makepad-task", (self.root / "crates/shell/Cargo.toml").read_text())
+        self.assertNotIn("app-task", (self.root / "desktop/Cargo.toml").read_text())
+        rust = (self.root / native_apps.RUST_FILE).read_text()
+        self.assertNotIn('feature = "app-task"', rust, "nothing links it")
+        self.assertIn('bin: Some("task"),\n        macos: Hosting::Process,', rust)
+        self.assertIn("android: Hosting::None,", rust)
+        self.assertIn("wasm: Hosting::None,", rust)
+
+    def test_a_process_only_app_is_checked(self):
+        app = self.process_only()
+        native_apps.validate(self.data)
+        app["bin"] = None
+        self.assertRefused(r"task: a process-only app \(module null\) needs a bin")
+        app["bin"] = "task"
+        app["hosting"]["android"] = "module"
+        self.assertRefused(r"hosting\.android: a process-only app \(module null\) has no module")
+        app["hosting"]["android"] = "process"
+        self.assertRefused(r"hosting\.android: android has no processes")
+        app["hosting"]["android"] = "none"
+        app["shells"]["desktop"] = "default"
+        self.assertRefused(r"task: a process-only app is linked by no shell: shells must be off")
+        app["shells"]["desktop"] = "off"
+        self.app("terminal")["hosting"]["android"] = "none"
+        self.assertRefused(r"terminal: hosting\.android: 'none' is for a process-only app")
 
     def test_native_mobile_links_without_the_feature(self):
         rust = native_apps.render_rust(native_apps.validate(self.data))

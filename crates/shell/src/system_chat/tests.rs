@@ -1048,17 +1048,24 @@ fn an_open_routed_question_is_never_dropped() {
 }
 
 /// The system agent gets the native apps' own read tools that their
-/// manifest entries name (`agent.system_tools`), for the apps this build
-/// links, and never the Terminal's: its command stays behind Setup's switch.
+/// manifest entries name (`agent.system_tools`), for the apps that run here
+/// (linked, or started as their own process), and never the Terminal's: its
+/// command stays behind Setup's switch.
 #[test]
-fn the_system_agent_gets_the_linked_native_apps_read_tools_never_the_terminals() {
+fn the_system_agent_gets_the_read_tools_of_the_native_apps_that_run_here_never_the_terminals() {
     let tools = grants::native_system_tools();
     for app in crate::native_apps::APPS {
+        let here = grants::native_system_tools_given(|id| id == app.id);
+        let elsewhere = grants::native_system_tools_given(|id| id != app.id);
         for tool in app.system_tools {
-            assert_eq!(tools.contains(*tool), crate::apps::is_linked(app.id), "{tool}");
+            assert!(here.contains(*tool) && !elsewhere.contains(*tool), "{tool}");
+            if crate::apps::is_linked(app.id) {
+                assert!(tools.contains(*tool), "{tool}");
+            }
         }
     }
-    assert!(!tools.contains("terminal.run") && !tools.contains("terminal.read_screen"));
+    let every = grants::native_system_tools_given(|_| true);
+    assert!(!every.contains("terminal.run") && !every.contains("terminal.read_screen"));
     let calculator = crate::native_apps::find("calculator").unwrap();
     assert_eq!(calculator.system_tools, ["calculator.eval"]);
     assert_eq!(crate::native_apps::find("notes").unwrap().system_tools, ["notes.search", "notes.read"]);

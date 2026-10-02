@@ -515,7 +515,9 @@ pub fn is_launchable(app: &crate::clients::AppDef) -> bool {
 pub fn manifest_default(declared: crate::native_apps::Hosting, process_form: impl FnOnce() -> bool, vulkan_wayland: bool) -> Hosting {
     use crate::native_apps::Hosting as Declared;
     let wants_process = match declared {
-        Declared::Module => false,
+        // `None` is a process-only app's where it cannot run; nothing links
+        // such an app, so it never reaches here as a module.
+        Declared::Module | Declared::None => false,
         Declared::Process => true,
         Declared::ProcessIfVulkan => vulkan_wayland,
     };

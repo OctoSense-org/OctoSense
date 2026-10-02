@@ -177,13 +177,21 @@ pub fn host_tools() -> std::collections::BTreeSet<String> {
 }
 
 /// The native apps' own read tools the system agent may call
-/// (`native-apps.json` `agent.system_tools`), for the apps this build
-/// links: Calculator's `eval`, Notes' `search` and `read`, … A call reaches
-/// the app's open instance; a closed app answers that it is not running.
+/// (`native-apps.json` `agent.system_tools`), for the apps that run here:
+/// linked into this build (Calculator's `eval`, Notes' `search` and `read`,
+/// …) or started as their own process (a process-only app such as Task).
+/// A call reaches the app's open instance; a closed app answers that it is
+/// not running.
 pub fn native_system_tools() -> std::collections::BTreeSet<String> {
+    let processes = crate::host::processes_available();
+    native_system_tools_given(|id| crate::apps::is_linked(id) || (processes && crate::apps::process_form(id)))
+}
+
+/// [`native_system_tools`] for the apps `runs_here` says this device has.
+pub fn native_system_tools_given(runs_here: impl Fn(&str) -> bool) -> std::collections::BTreeSet<String> {
     crate::native_apps::APPS
         .iter()
-        .filter(|app| crate::apps::is_linked(app.id))
+        .filter(|app| runs_here(app.id))
         .flat_map(|app| app.system_tools.iter().map(|tool| tool.to_string()))
         .collect()
 }

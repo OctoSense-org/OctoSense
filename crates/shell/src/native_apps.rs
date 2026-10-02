@@ -15,8 +15,11 @@ pub enum Hosting {
     /// Its own process (`bin`), connected to the shell's hub.
     Process,
     /// Its own process on a Vulkan build in a Wayland session; in the
-    /// shell's process otherwise.
+    /// shell's process otherwise (a process-only app: not there).
     ProcessIfVulkan,
+    /// Not on this target: a process-only app (no module) where
+    /// there are no processes.
+    None,
 }
 
 /// Who shows the person a tool's live confirmation (ADR 0004 §8).
@@ -372,6 +375,31 @@ pub const APPS: &[NativeApp] = &[
         calls_per_turn: None,
         calls_per_day: None,
     },
+    NativeApp {
+        id: "task",
+        feature: "app-task",
+        bin: Some("task"),
+        macos: Hosting::Process,
+        windows: Hosting::Process,
+        linux: Hosting::ProcessIfVulkan,
+        android: Hosting::None,
+        ios: Hosting::None,
+        ohos: Hosting::None,
+        wasm: Hosting::None,
+        octos: &[],
+        tools: &[],
+        network: Network::None,
+        processes: true,
+        accounts: false,
+        external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        system_tools: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
+    },
 ];
 
 impl NativeApp {
@@ -420,6 +448,7 @@ pub fn package_of(id: &str) -> Option<&'static str> {
         "notes" => Some("makepad-notes"),
         "reminders" => Some("makepad-reminders"),
         "weather" => Some("makepad-weather"),
+        "task" => Some("makepad-task"),
         _ => None,
     }
 }

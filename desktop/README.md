@@ -99,7 +99,7 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
 | `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
 
-A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx, AppCard, Reference and Sheets in-process everywhere, the Terminal as a process on macOS and Windows (and on Linux with a Vulkan build in a Wayland session). `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
+A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx, AppCard, Reference and Sheets in-process everywhere, the Terminal as a process on macOS and Windows (and on Linux with a Vulkan build in a Wayland session), and Task, which has no module, only as a process, and not at all where there are no processes. `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
 
 ```sh
 cargo run --release -p octosense -- --module terminal
@@ -250,7 +250,7 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 
 ### Developer programs and the catalog
 
-`config/apps.json` lists Reference and the Makepad apps OctoSense picked (Browser, Files, Task, Terminal, Sheets, Clock, Weather, Finance, Notes, Reminders, Calculator, Route, and the Image and PDF viewers). Calculator, Clock, Notes, Reminders and Weather are native apps ([`../native-apps.json`](../native-apps.json)): linked by default and opened in-process, with their read tools offered to the system agent while they are open. Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The `aichat` row is the assistant pane's own process (F10), which the pane starts; no list shows it. A launcher row whose id is listed in `wm/launcher.hides` under the state directory is hidden.
+`config/apps.json` lists Reference and the Makepad apps OctoSense picked (Browser, Files, Task, Terminal, Sheets, Clock, Weather, Finance, Notes, Reminders, Calculator, Route, and the Image and PDF viewers). Calculator, Clock, Notes, Reminders and Weather are native apps ([`../native-apps.json`](../native-apps.json)): linked by default and opened in-process, with their read tools offered to the system agent while they are open. Task is a native app that runs only as its own process (`"module": null`), sandboxed. Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The `aichat` row is the assistant pane's own process (F10), which the pane starts; no list shows it. A launcher row whose id is listed in `wm/launcher.hides` under the state directory is hidden.
 
 Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it exists, else `config/apps.json`. A catalog is a JSON array; each entry picks one launch target:
 
