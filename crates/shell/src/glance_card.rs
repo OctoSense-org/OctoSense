@@ -43,13 +43,15 @@
 //! "l0:{e,k,v}", v?)` (Octoscript-Makepad's general translation). Every
 //! isolate gets a host `NAV` ([`install_nav`]) that queues the call with the
 //! isolate's heap key; nothing else reads it. The card window
-//! (glance_sheet.rs) and the desktop's glance panel (glance_panel.rs) keep
-//! their L0 cards in a [`LiveCards`], one path for both: a tile's own
-//! isolate's calls ([`take_taps`], never another tile's) run through its
-//! card's [`L0Session`], made for the app that published the card: the
-//! declared transition (`octoscript_ui_l0` dispatch), the §5.12 writes the
-//! host performs (a `sys.chat` append, glance_chat.rs), and a re-lowering.
-//! The phone's glance page does not dispatch yet: its L0 taps stay inert.
+//! (glance_sheet.rs), the desktop's glance panel (glance_panel.rs) and the
+//! phone's glance page (mobile_pages.rs `GlanceCards`) keep their L0 cards
+//! in a [`LiveCards`], one path for all three: a tile's own isolate's calls
+//! ([`take_taps`], never another tile's) run through its card's
+//! [`L0Session`], made for the app that published the card: the declared
+//! transition (`octoscript_ui_l0` dispatch), the §5.12 writes the host
+//! performs (a `sys.chat` append, glance_chat.rs), and a re-lowering. On the
+//! phone the shell first drops a card's clicks ([`drop_clicks`]) when the
+//! finger was no plain tap on that card: a page swipe, a pull, a long press.
 use makepad_widgets::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -294,6 +296,12 @@ fn queue_tap(tap: Tap) {
     }
 }
 
+/// [`queue_tap`], for another module's tests: a card's `NAV` call.
+#[cfg(all(test, feature = "app-hub"))]
+pub(crate) fn queue_tap_for_test(tap: Tap) {
+    queue_tap(tap)
+}
+
 /// Register [`install_nav`] for every isolate made from now on, once, with
 /// the hit target a lowered card's taps are drawn as (`OctoscriptTap`, which
 /// the Card runner's own isolate mods do not include).
@@ -339,6 +347,17 @@ pub fn drop_taps(heap: usize) {
     if let Ok(mut taps) = TAPS.lock() {
         taps.retain(|t| t.heap != heap);
     }
+}
+
+/// Forget the isolate `heap`'s queued clicks, its calls with no text (a tap
+/// target's), and keep its field edits (a field's call carries the text the
+/// person typed): for a surface whose finger was no tap on that tile
+/// (mobile_pages.rs `GlanceCards`). How many went.
+pub fn drop_clicks(heap: usize) -> usize {
+    let Ok(mut taps) = TAPS.lock() else { return 0 };
+    let before = taps.len();
+    taps.retain(|t| t.heap != heap || t.typed.is_some());
+    before - taps.len()
 }
 
 /// `l0:{"e":event,"k":instance key,"v":value}` → `(key, event, value)`.
@@ -505,9 +524,10 @@ impl L0Session {
 
 /// The L0 cards one surface keeps live, by tile key: each card's
 /// [`L0Session`] and the body its tile draws now. The card window keeps one
-/// for its card and the glance panel one for its tiles, so a tap runs the
-/// same way on both (module docs, "L0 taps"). A script card is not kept
-/// here: it runs as published and keeps its own state.
+/// for its card, and the glance panel and the phone's glance page one for
+/// their tiles, so a tap runs the same way on each (module docs, "L0
+/// taps"). A script card is not kept here: it runs as published and keeps
+/// its own state.
 #[derive(Default)]
 pub struct LiveCards {
     cards: HashMap<String, LiveCard>,
