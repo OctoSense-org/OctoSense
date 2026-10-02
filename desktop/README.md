@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
-> **Where this fits.** The desktop is one shell process with the octos kernel as its child (`OCTOS_APP_CORE_BIN`). App Hub, the Card runner with the script apps, and Rinx run in process; the Terminal runs as its own process, in an OS sandbox on macOS and Linux (not yet on Windows), attached over the shell's hub. On macOS that sandbox keeps `~/.cargo`, `~/.rustup` and the OctoSense checkout read-only, so run `cargo install`, `rustup update` and builds of OctoSense itself in another terminal. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
+> **Where this fits.** The desktop is one shell process with the octos kernel as its child (the packaged `octos-kernel`, or `OCTOS_APP_CORE_BIN`). App Hub, the Card runner with the script apps, and Rinx run in process; the Terminal runs as its own process, in an OS sandbox on macOS and Linux (not yet on Windows), attached over the shell's hub. On macOS that sandbox keeps `~/.cargo`, `~/.rustup` and the OctoSense checkout read-only, so run `cargo install`, `rustup update` and builds of OctoSense itself in another terminal. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent shell on top of your operating system, and the desktop packaging of the OctoSense repository (formerly the OctoSense-Desktop repository). It is one Makepad window that is the desktop: a launcher, a dock and tiles, hosting system apps and App Hub store apps as contained script programs, trusted native modules in-process, and Makepad developer programs as child processes. It gets its apps the same way the phone shell, [Home](../phone/README.md), does. Setup, the repository layout and CI are in the [root README](../README.md).
 
@@ -21,7 +21,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | Where apps are designed, built and published to the App Hub. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | The runtime release that pins Makepad and OctoScript. Checked out in `.sources/`. |
 | [makepad (OctoSense fork)](https://github.com/OctoSense-org/makepad) | The framework. Checked out in `.sources/makepad`. |
-| [octos](https://github.com/octos-org/octos) | The agent kernel, a shell service (`octos-core`, on by default): AI providers configures it, AppCard, Rinx and other consumers connect to it. One revision, pinned in the root `Cargo.toml`; the kernel itself is a separate binary (desktop: `OCTOS_APP_CORE_BIN`; Android: bundled `liboctos.so`). |
+| [octos](https://github.com/octos-org/octos) | The agent kernel, a shell service (`octos-core`, on by default): AI providers configures it, AppCard, Rinx and other consumers connect to it. One revision, pinned in the root `Cargo.toml`; the kernel itself is a separate binary (desktop: the packaged `octos-kernel` beside the shell, see [Build and run](#build-and-run), or `OCTOS_APP_CORE_BIN`; Android: bundled `liboctos.so`). |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, linked as a module (`app-rinx`, on by default). |
 
 ## Layout of `desktop/`
@@ -58,11 +58,16 @@ Details, `--update` and `--cache`: [root README](../README.md#set-up).
 
 ## Build and run
 
-From the repository root or `desktop/`, after setup:
+From the repository root, after setup: stage the octos kernel beside the shell, then build and run it.
 
 ```sh
+python3 tools/kernel-artifact.py --host --stage target/release   # once per octos pin
 cargo run --release -p octosense
 ```
+
+`kernel-artifact.py --host` checks out the octos revision `Cargo.lock` pins into `target/octos-kernel/` (never a checkout of yours) and builds it for this machine; `--stage target/release` puts it there as `octos-kernel` with its receipt `octos-kernel.json` (revision, version, SHA-256). `--kernel <path>` stages a binary you already built instead; it is refused unless its `--version` names the pinned revision. For a debug build stage into `target/debug`. Plain `cargo run` never builds or installs the kernel.
+
+At startup the kernel service looks for `octos-kernel` beside the `octosense` executable (in a macOS `.app` also in `Contents/Resources`), never in the working directory or on `PATH`, and runs it only when its receipt names the octos revision this build pins and the binary's SHA-256 matches. Otherwise the desktop runs without an assistant and says why: for example, after the octos pin moves, `refusing the packaged kernel …: it is octos <old> but this build pins <new>`; stage it again. `OCTOS_APP_CORE_BIN=<path>` still wins and is not checked. While developing against another octos, `OCTOSENSE_KERNEL_ANY_REVISION=1` runs a packaged kernel of another revision (the receipt and its SHA-256 are still required).
 
 The desktop starts empty. Start App Hub, a system app or a developer program from the dock, the top-left **Apps** menu, or **⌘Space** (menu and search). **System → Quit OctoSense** closes the desktop and everything it hosts.
 
@@ -116,7 +121,7 @@ App Hub's modules have no process form and always open in-process.
 | `MAKEPAD_APP_CONFIG='{"mail_demo":true}'` | Serve Mail's demo mailbox (see [Demos](#demos)). |
 | `OCTOSENSE_MAIL_VAULT=file` | Keep Mail passwords in a 0600 file instead of the macOS keychain. |
 | `OCTOSENSE_LLM_VAULT=file` | Keep AI providers' keys in the owner-only octos profile instead of the macOS keychain. |
-| `OCTOS_APP_CORE_BIN`, `OCTOS_APP_CORE_DIR` | The octos kernel binary the shell's kernel service runs (none: no kernel on this desktop) and its core dir (default `~/octos-home/.octos`; the AI providers profile is `<dir>/profiles/_main.json`). |
+| `OCTOS_APP_CORE_BIN`, `OCTOS_APP_CORE_DIR` | The octos kernel binary the shell's kernel service runs, unchecked (unset: the packaged `octos-kernel`, see [Build and run](#build-and-run)) and its core dir (default `~/octos-home/.octos`; the AI providers profile is `<dir>/profiles/_main.json`). |
 | `OCTOSENSE_GLANCE_DEMO=1` | Publish a sample L0 News digest card (as `os.news`) to the glance screen at startup: F9 on a desktop style, the glance page on a phone style. A test path for the `glance` service. |
 | `OCTOSENSE_GLANCE_DEMO=mail` | Publish two fake Mail action cards (L0, as `os.mail`, with a toast each) at startup: clicking a toast opens that card in the card window, where Reply, Send (demo), Ask and Track work on fake data. They work the same in the glance panel, which opens with them. No mail is read and no model is called. `scripts/mail_card_remote.sh` drives it hidden. |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
@@ -150,7 +155,7 @@ Mail is the worked example (`octosense-mail-service`, from [`../apps/mail/host-s
 
 AI providers (`os.ai-providers`) edits the octos kernel's LLM providers through the `llm` service (`octosense-llm-service`, from [`../apps/ai-providers/host-service`](../apps/ai-providers/host-service)). Keys are typed only on host sheets and go to the macOS keychain entry octos reads; the providers are written to the kernel's profile under the shell's octos core dir (`<core dir>/profiles/_main.json`; core dir `OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`). A phone's provider QR is imported from a picture of it: **Choose image** opens the open panel, or drop a screenshot on the import sheet. **Start → Settings → AI providers** opens it. After a change the service restarts the kernel if one runs; its consumers (AppCard) reconnect to the new one.
 
-**The octos kernel** is a shell service, not part of any app: `octosense-kernel` ([`../crates/kernel`](../crates/kernel), feature `octos-core`, default). The shell starts it through its AI services at startup ([`../crates/ai-host`](../crates/ai-host/README.md), `octosense_ai_host::start`); nothing runs until a consumer connects, then one kernel per process (`<OCTOS_APP_CORE_BIN> serve --stdio --data-dir <core dir>` on a desktop, the APK's `liboctos.so` on Android; none on iOS or on a desktop without `OCTOS_APP_CORE_BIN`). AppCard's agent connects to it; Rinx reaches it through the app-agent broker. It stops when the last consumer leaves and when the shell exits.
+**The octos kernel** is a shell service, not part of any app: `octosense-kernel` ([`../crates/kernel`](../crates/kernel), feature `octos-core`, default). The shell starts it through its AI services at startup ([`../crates/ai-host`](../crates/ai-host/README.md), `octosense_ai_host::start`); nothing runs until a consumer connects, then one kernel per process (the packaged `octos-kernel` or `OCTOS_APP_CORE_BIN`, with `serve --stdio --data-dir <core dir>`, on a desktop; the APK's `liboctos.so` on Android; none on iOS or on a desktop with neither). AppCard's agent connects to it; Rinx reaches it through the app-agent broker. It stops when the last consumer leaves and when the shell exits.
 
 **Talk to Octos** (off by default): **AI providers → Talk to Octos** turns on a loopback server so a web client or a terminal UI can talk to this device's assistant. While it is on, the kernel runs as `octos serve --host-managed` instead of `--stdio` and native apps keep working over its WebSocket; external clients get a separate token that opens the UI Protocol socket and nothing else. A web client pairs with a one-time code or the QR of its link; a terminal client of this user reads the private connection file. The server stays up when native apps close, until it is turned off or the shell exits. See [ADR 0003](../docs/adr/0003-shared-octos-client-access.md) and the [kernel guide](../crates/kernel/README.md).
 
@@ -228,7 +233,7 @@ AppCard is **not shipped for now**: it interfered with the other apps, so no bui
 cargo run --release -p octosense --features app-appcard -- --module appcard
 ```
 
-It starts no kernel of its own: it connects to the shell's. On desktop that needs `OCTOS_APP_CORE_BIN` (and optionally `OCTOS_APP_CORE_DIR`); without a kernel it shows its login / WebSocket screen. Every octos crate comes from octos-org/octos at the one revision the root `Cargo.toml` pins.
+It starts no kernel of its own: it connects to the shell's. On desktop that is the packaged `octos-kernel` or `OCTOS_APP_CORE_BIN` (and optionally `OCTOS_APP_CORE_DIR`); without a kernel it shows its login / WebSocket screen. Every octos crate comes from octos-org/octos at the one revision the root `Cargo.toml` pins.
 
 ## Demos
 

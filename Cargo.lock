@@ -7581,6 +7581,7 @@ dependencies = [
  "octos-core",
  "octosense-llm-config",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tokio-tungstenite 0.24.0",
  "tracing-subscriber",

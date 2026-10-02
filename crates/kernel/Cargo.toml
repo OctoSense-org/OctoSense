@@ -38,6 +38,11 @@ octos-core = { workspace = true }
 octos-cli = { workspace = true, features = ["api", "git", "ast"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# A desktop checks its packaged `octos-kernel` against the receipt's SHA-256
+# before running it (`launch::verify_packaged`).
+[target.'cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))'.dependencies]
+sha2 = "0.10"
+
 # Passing the kept Talk to Octos listener to the kernel (`dup2` between fork
 # and exec).
 [target.'cfg(unix)'.dependencies]

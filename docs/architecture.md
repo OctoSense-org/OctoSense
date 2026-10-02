@@ -94,7 +94,7 @@ Each shell runs at most one [octos](https://github.com/octos-org/octos) kernel, 
 
 | Platform | Kernel | How it is started |
 | --- | --- | --- |
-| Desktop (macOS; Windows and Linux untested) | a child process: the `octos` binary named by `OCTOS_APP_CORE_BIN` (or the embedder's `Options::program`) | `serve --stdio --data-dir <core dir>`; without a binary there is no kernel (no `PATH` lookup). Shipping the binary with the desktop is in progress ([#85](https://github.com/OctoSense-org/OctoSense/pull/85)). |
+| Desktop (macOS; Windows and Linux untested) | a child process: the embedder's `Options::program`, else the `octos` binary named by `OCTOS_APP_CORE_BIN`, else the packaged `octos-kernel` beside the shell (run only when its receipt names the pinned octos revision) | `serve --stdio --data-dir <core dir>`; without a binary there is no kernel (no `PATH` or working-directory lookup). |
 | Android (Home) | a child process: the APK's bundled `liboctos.so`, built by [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) at the pinned octos revision | `serve --stdio`, found next to `libmakepad.so` in the app's native library directory |
 | OpenHarmony | in process: `octos_cli::embedded::serve_io` as a task over an in-memory duplex (a HAP may not exec) | same protocol, no child |
 | iOS | none | the providers are saved; no app gets an assistant |
@@ -140,7 +140,7 @@ Script apps (the system apps News, Photos, Maps, Camera on phones, Mail, AI prov
 flowchart TB
   subgraph desktop["Desktop (macOS)"]
     ds["OctoSense process<br/>shell + App Hub + Card runner + Rinx"]
-    dk["octos child<br/>OCTOS_APP_CORE_BIN serve --stdio"]
+    dk["octos child<br/>octos-kernel serve --stdio"]
     dt["Terminal child<br/>--stdin-loop"]
     ds -- "stdin/stdout" --> dk
     dt -- "hub WebSocket, IOSurface frames" --> ds

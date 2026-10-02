@@ -10,9 +10,15 @@
 //!   (`octos_cli::embedded::serve_io`); HAP native libraries cannot exec.
 //! - **Desktop**: `<program> serve --stdio --data-dir <core_dir> --config
 //!   <core_dir>/config.json` with `OCTOS_HOME=<core_dir>`, where the program
-//!   is the shell's [`crate::Options::program`] or `$OCTOS_APP_CORE_BIN`.
-//!   Without one there is no kernel (a developer's own `octos serve` is never
-//!   touched).
+//!   is the shell's [`crate::Options::program`], `$OCTOS_APP_CORE_BIN`, or
+//!   the packaged `octos-kernel[.exe]` beside the shell executable (in a
+//!   macOS `.app`, `Contents/MacOS` or `Contents/Resources`), in that order.
+//!   The packaged kernel runs only when its receipt (`octos-kernel.json`,
+//!   written by `tools/kernel-artifact.py --stage`) names the octos revision
+//!   this build pins (checked when resolved, `verify_packaged`) and the
+//!   kernel's SHA-256 (checked by [`prepare`] before each start, off the
+//!   caller's thread). No PATH search and no attaching to another running
+//!   kernel (a developer's own `octos serve` is never touched).
 //! - **iOS**: no kernel (an app cannot exec a child).
 //!
 //! With Talk to Octos on (desktop and Android), `--stdio` becomes
@@ -122,18 +128,248 @@ pub(crate) fn resolve(inputs: &Inputs) -> Result<Launch, Unavailable> {
     }
     #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
     {
-        let program = match inputs.program {
-            Some(p) => p.to_path_buf(),
-            None => std::env::var_os("OCTOS_APP_CORE_BIN")
-                .filter(|v| !v.is_empty())
-                .map(PathBuf::from)
-                .ok_or_else(|| Unavailable::NoKernel("no kernel binary configured (OCTOS_APP_CORE_BIN)".into()))?,
-        };
-        if !program.is_file() {
-            return Err(Unavailable::NoKernel(format!("{} is not a file", program.display())));
-        }
+        let env = std::env::var_os(PROGRAM_ENV).filter(|v| !v.is_empty()).map(PathBuf::from);
+        // Through symlinks (a launcher linked into a bin dir): the kernel
+        // travels with the real executable.
+        let executable = std::env::current_exe().ok().map(|p| p.canonicalize().unwrap_or(p));
+        let any_revision = std::env::var_os(ANY_REVISION_ENV).is_some_and(|v| v == "1");
+        let program = desktop_program(inputs.program, env.as_deref(), executable.as_deref(), PINNED_REVISION, any_revision)?;
         Ok(desktop_stdio(program, core_dir, inputs.env))
     }
+}
+
+/// The desktop's explicit kernel: wins over the packaged one, unchecked (the
+/// person chose it).
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+pub const PROGRAM_ENV: &str = "OCTOS_APP_CORE_BIN";
+/// Development only: `=1` runs a packaged kernel whose receipt names another
+/// octos revision than this build pins (a missing receipt or a SHA-256
+/// mismatch is still refused).
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+pub const ANY_REVISION_ENV: &str = "OCTOSENSE_KERNEL_ANY_REVISION";
+/// The packaged kernel's file name, beside the shell executable.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+pub const PACKAGED_KERNEL: &str = if cfg!(windows) { "octos-kernel.exe" } else { "octos-kernel" };
+/// Its receipt: `{"source", "revision", "version", "sha256"}`.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+pub const PACKAGED_RECEIPT: &str = "octos-kernel.json";
+/// The octos revision this build pins (the workspace's Cargo.lock, read by
+/// build.rs); empty when the build could not tell.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+pub const PINNED_REVISION: &str = env!("OCTOSENSE_PINNED_OCTOS_REVISION");
+
+/// The kernel program on a desktop: `explicit` (`Options::program`), else
+/// `env` (`$OCTOS_APP_CORE_BIN`), else the packaged kernel that travels with
+/// `executable`, wherever it was installed or moved (never the working
+/// directory). An override is authoritative: a broken one is an error, never
+/// a fallback to another kernel. The packaged one must pass
+/// [`verify_packaged`].
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn desktop_program(
+    explicit: Option<&Path>,
+    env: Option<&Path>,
+    executable: Option<&Path>,
+    pinned: &str,
+    any_revision: bool,
+) -> Result<PathBuf, Unavailable> {
+    if let Some(program) = explicit.or(env) {
+        check_executable(program)?;
+        return Ok(program.to_owned());
+    }
+    let Some(dir) = executable.and_then(Path::parent) else {
+        return Err(Unavailable::NoKernel(format!("no packaged kernel and no {PROGRAM_ENV} override")));
+    };
+    let Some(program) = packaged_candidates(dir).into_iter().find(|p| p.is_file()) else {
+        return Err(Unavailable::NoKernel(format!(
+            "no packaged {PACKAGED_KERNEL} beside {} and no {PROGRAM_ENV} override; \
+             stage one with `python3 tools/kernel-artifact.py --host --stage <dir of the octosense binary>`",
+            dir.display()
+        )));
+    };
+    check_executable(&program)?;
+    let receipt = receipt_candidates(dir, &program).into_iter().find(|p| p.is_file());
+    let sha256 = verify_packaged(&program, receipt.as_deref(), pinned, any_revision)?;
+    // Hashing a 100 MB kernel takes most of a second: not here (resolving
+    // also answers status queries on the UI thread) but in `prepare`, right
+    // before the start.
+    expect_sha256(&program, sha256);
+    Ok(program)
+}
+
+/// Where a packaged kernel may sit, relative to the shell executable's dir:
+/// beside it (a source build's `target/<profile>`, the Windows install dir,
+/// Linux `usr/bin`, a `.app`'s `Contents/MacOS`), or a `.app`'s
+/// `Contents/Resources`.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn packaged_candidates(dir: &Path) -> Vec<PathBuf> {
+    let mut found = vec![dir.join(PACKAGED_KERNEL)];
+    if let Some(resources) = bundle_resources(dir) {
+        found.push(resources.join(PACKAGED_KERNEL));
+    }
+    found
+}
+
+/// Where its receipt may sit: beside the kernel, a `.app`'s
+/// `Contents/Resources` (nothing but code belongs in `Contents/MacOS`), or a
+/// Linux package's `usr/lib/octosense` (not `usr/bin`).
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn receipt_candidates(dir: &Path, program: &Path) -> Vec<PathBuf> {
+    let mut found = vec![program.with_file_name(PACKAGED_RECEIPT)];
+    if let Some(resources) = bundle_resources(dir) {
+        found.push(resources.join(PACKAGED_RECEIPT));
+    }
+    if dir.file_name().is_some_and(|n| n == "bin") {
+        if let Some(prefix) = dir.parent() {
+            found.push(prefix.join("lib/octosense").join(PACKAGED_RECEIPT));
+        }
+    }
+    found
+}
+
+/// `<bundle>.app/Contents/Resources` when `dir` is `<bundle>.app/Contents/MacOS`.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn bundle_resources(dir: &Path) -> Option<PathBuf> {
+    let contents = dir.parent()?;
+    let is_bundle = dir.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && contents.parent()?.extension().is_some_and(|e| e == "app");
+    is_bundle.then(|| contents.join("Resources"))
+}
+
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn check_executable(program: &Path) -> Result<(), Unavailable> {
+    if !program.is_file() {
+        return Err(Unavailable::NoKernel(format!("{} is not a file", program.display())));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::metadata(program).map(|m| m.permissions().mode() & 0o111 == 0).unwrap_or(true) {
+            return Err(Unavailable::NoKernel(format!("{} is not executable", program.display())));
+        }
+    }
+    Ok(())
+}
+
+/// A packaged kernel runs only when it is the one this build pins: its
+/// receipt names `pinned` (unless `any_revision`, a development override)
+/// and records a SHA-256, which [`prepare`] checks against the file before
+/// every start ([`check_sha256`]). So an old `target/release/octos-kernel`
+/// left from an earlier pin, a kernel without a receipt or a binary swapped
+/// in later is refused with a reason the person sees, never run silently.
+/// Returns the recorded SHA-256. Reads only the small receipt.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+pub(crate) fn verify_packaged(program: &Path, receipt: Option<&Path>, pinned: &str, any_revision: bool) -> Result<String, Unavailable> {
+    let refuse = |why: String| Err(Unavailable::NoKernel(refusal(program, &why)));
+    let Some(receipt) = receipt else {
+        return refuse(format!("it has no receipt ({PACKAGED_RECEIPT}) saying which octos revision it is"));
+    };
+    let text = match std::fs::read_to_string(receipt) {
+        Ok(text) => text,
+        Err(e) => return refuse(format!("its receipt {} cannot be read ({e})", receipt.display())),
+    };
+    let Ok(record) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return refuse(format!("its receipt {} is not JSON", receipt.display()));
+    };
+    let revision = record["revision"].as_str().unwrap_or("");
+    let sha256 = record["sha256"].as_str().unwrap_or("").to_ascii_lowercase();
+    if revision.is_empty() || sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return refuse(format!("its receipt {} names no revision and SHA-256", receipt.display()));
+    }
+    if revision != pinned {
+        if pinned.is_empty() {
+            if !any_revision {
+                return refuse("this build does not know which octos revision it pins".into());
+            }
+        } else if any_revision {
+            log::warn!(
+                "octos-core: {ANY_REVISION_ENV}=1: running the packaged kernel at octos {} although this build pins {}",
+                short(revision),
+                short(pinned)
+            );
+        } else {
+            return refuse(format!(
+                "it is octos {} but this build pins {} (set {ANY_REVISION_ENV}=1 to run it anyway while developing)",
+                short(revision),
+                short(pinned)
+            ));
+        }
+    }
+    Ok(sha256)
+}
+
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn refusal(program: &Path, why: &str) -> String {
+    format!(
+        "refusing the packaged kernel {}: {why}. Rebuild it with `python3 tools/kernel-artifact.py --host --stage {}` \
+         or name a kernel with {PROGRAM_ENV}",
+        program.display(),
+        program.parent().map(|p| p.display().to_string()).unwrap_or_default()
+    )
+}
+
+/// Packaged kernels resolved, and the SHA-256 their receipts record.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+type Expected = std::collections::HashMap<PathBuf, String>;
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+static EXPECTED: std::sync::Mutex<Option<Expected>> = std::sync::Mutex::new(None);
+
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn expect_sha256(program: &Path, sha256: String) {
+    EXPECTED.lock().unwrap().get_or_insert_with(Expected::new).insert(program.to_path_buf(), sha256);
+}
+
+/// Before a start (from [`prepare`], on the kernel's runtime): a packaged
+/// kernel's bytes must be the ones its receipt records. A file already
+/// checked (same path, size and modification time) is not hashed again.
+/// Any other program (an override) has nothing to check.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+pub(crate) fn check_sha256(program: &Path) -> Result<(), String> {
+    let Some(expected) = EXPECTED.lock().unwrap().as_ref().and_then(|e| e.get(program).cloned()) else {
+        return Ok(());
+    };
+    // (path, recorded SHA-256) -> (size, modification time) when it matched.
+    type Checked = Vec<((PathBuf, String), (u64, Option<std::time::SystemTime>))>;
+    static CHECKED: std::sync::Mutex<Checked> = std::sync::Mutex::new(Vec::new());
+    let stamp = std::fs::metadata(program).ok().map(|m| (m.len(), m.modified().ok()));
+    let key = (program.to_path_buf(), expected);
+    if let Some(stamp) = stamp {
+        if CHECKED.lock().unwrap().iter().any(|(k, s)| *k == key && *s == stamp) {
+            return Ok(());
+        }
+    }
+    let actual = sha256_file(program).map_err(|e| refusal(program, &format!("it cannot be read ({e})")))?;
+    if actual != key.1 {
+        return Err(refusal(program, "its SHA-256 is not the one its receipt records"));
+    }
+    if let Some(stamp) = stamp {
+        let mut checked = CHECKED.lock().unwrap();
+        checked.retain(|(k, _)| k.0 != key.0);
+        checked.push((key, stamp));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn short(revision: &str) -> &str {
+    revision.get(..12).unwrap_or(revision)
+}
+
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn sha256_file(path: &Path) -> std::io::Result<String> {
+    use sha2::Digest;
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// The desktop launch: an explicit data dir, as AppCard's local core mode has
@@ -205,8 +441,16 @@ pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, S
 /// written and read back (a foreign policy in the profile, the person's own
 /// octos home, an unwritable profile), `Err` says why and the kernel is not
 /// started: every consumer's connection closes with that reason. A kernel
-/// without the policy would give the system agent octos's shell.
+/// without the policy would give the system agent octos's shell. Likewise
+/// on a desktop when a packaged kernel's bytes are not the ones its receipt
+/// records ([`check_sha256`]).
 pub(crate) fn prepare(launch: &Launch, core_dir: &Path) -> Result<(), String> {
+    // A packaged kernel's bytes, against its receipt (never on the thread
+    // that resolved it).
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    if let Launch::Stdio { program, .. } | Launch::WebSocket { program, .. } = launch {
+        check_sha256(program)?;
+    }
     if let Err(e) = std::fs::create_dir_all(core_dir) {
         log::warn!("octos-core: could not create {}: {e}", core_dir.display());
     }
@@ -380,6 +624,160 @@ mod tests {
         assert_eq!(v["memory"]["max_inject_tokens"], 90000);
         assert_eq!(v["appui"]["sessions_in_cwd"], true);
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    const PIN: &str = "ae230ce04d57f3c29cf6c2518e5956a86c07d788";
+
+    /// An executable fixture at `path` and, with `revision`, its receipt at
+    /// `receipt` (default: beside it) recording that revision and its SHA-256.
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    fn fixture(path: &Path, receipt: Option<&Path>, revision: Option<&str>) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, format!("fixture kernel {}", path.display())).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        if let Some(revision) = revision {
+            let receipt = receipt.map(Path::to_path_buf).unwrap_or_else(|| path.with_file_name(PACKAGED_RECEIPT));
+            std::fs::create_dir_all(receipt.parent().unwrap()).unwrap();
+            let sha = sha256_file(path).unwrap();
+            std::fs::write(receipt, serde_json::json!({"revision": revision, "sha256": sha, "version": "octos test"}).to_string()).unwrap();
+        }
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    fn why(result: Result<PathBuf, Unavailable>) -> String {
+        match result {
+            Err(Unavailable::NoKernel(why)) => why,
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    #[test]
+    fn desktop_finds_its_packaged_kernel_and_keeps_overrides_authoritative() {
+        let dir = tmp("packaged");
+        let shell = dir.join("octosense");
+        let packaged = dir.join(PACKAGED_KERNEL);
+        let explicit = dir.join("explicit");
+        let env = dir.join("environment");
+        fixture(&packaged, None, Some(PIN));
+        fixture(&explicit, None, None);
+        fixture(&env, None, None);
+        assert_eq!(desktop_program(None, None, Some(&shell), PIN, false).unwrap(), packaged);
+        assert_eq!(desktop_program(None, Some(&env), Some(&shell), PIN, false).unwrap(), env);
+        assert_eq!(desktop_program(Some(&explicit), Some(&env), Some(&shell), PIN, false).unwrap(), explicit);
+        // A broken override is an error, never a fallback to the packaged one.
+        let missing = dir.join("missing");
+        assert!(desktop_program(Some(&missing), Some(&env), Some(&shell), PIN, false).is_err());
+        assert!(desktop_program(None, Some(&missing), Some(&shell), PIN, false).is_err());
+        // Overrides are the person's choice: no receipt needed, any revision.
+        assert_eq!(desktop_program(None, Some(&env), Some(&shell), "", false).unwrap(), env);
+        // Found from the executable after the whole directory moves.
+        let moved = dir.with_extension("moved");
+        let _ = std::fs::remove_dir_all(&moved);
+        std::fs::rename(&dir, &moved).unwrap();
+        assert_eq!(desktop_program(None, None, Some(&moved.join("octosense")), PIN, false).unwrap(), moved.join(PACKAGED_KERNEL));
+        std::fs::remove_file(moved.join(PACKAGED_KERNEL)).unwrap();
+        assert!(why(desktop_program(None, None, Some(&moved.join("octosense")), PIN, false)).contains("kernel-artifact.py --host --stage"));
+        assert!(desktop_program(None, None, None, PIN, false).is_err());
+        std::fs::remove_dir_all(moved).unwrap();
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    #[test]
+    fn desktop_refuses_a_packaged_kernel_of_another_revision() {
+        let dir = tmp("stale");
+        let shell = dir.join("octosense");
+        let packaged = dir.join(PACKAGED_KERNEL);
+        // An old target/release/octos-kernel from an earlier pin.
+        fixture(&packaged, None, Some(&"b".repeat(40)));
+        let refused = why(desktop_program(None, None, Some(&shell), PIN, false));
+        assert!(refused.contains("bbbbbbbbbbbb") && refused.contains(&PIN[..12]), "{refused}");
+        assert!(refused.contains(ANY_REVISION_ENV), "{refused}");
+        // The development override runs it anyway.
+        assert_eq!(desktop_program(None, None, Some(&shell), PIN, true).unwrap(), packaged);
+        // A build that does not know its pin refuses it too.
+        assert!(why(desktop_program(None, None, Some(&shell), "", false)).contains("does not know"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    #[test]
+    fn desktop_refuses_a_packaged_kernel_without_a_matching_receipt() {
+        let dir = tmp("receipt");
+        let shell = dir.join("octosense");
+        let packaged = dir.join(PACKAGED_KERNEL);
+        fixture(&packaged, None, None);
+        assert!(why(desktop_program(None, None, Some(&shell), PIN, true)).contains("no receipt"));
+        std::fs::write(dir.join(PACKAGED_RECEIPT), "not json").unwrap();
+        assert!(why(desktop_program(None, None, Some(&shell), PIN, false)).contains("not JSON"));
+        std::fs::write(dir.join(PACKAGED_RECEIPT), r#"{"revision": "x", "sha256": "not a digest"}"#).unwrap();
+        assert!(why(desktop_program(None, None, Some(&shell), PIN, true)).contains("no revision and SHA-256"));
+        fixture(&packaged, None, Some(PIN));
+        assert!(desktop_program(None, None, Some(&shell), PIN, false).is_ok());
+        // The bytes are checked before the start (prepare), not when resolved.
+        assert_eq!(check_sha256(&packaged), Ok(()));
+        // The file changes after it was checked (another size): hashed again.
+        std::fs::write(&packaged, "a different kernel binary").unwrap();
+        assert!(desktop_program(None, None, Some(&shell), PIN, true).is_ok(), "resolving reads only the receipt");
+        let refused = check_sha256(&packaged).unwrap_err();
+        assert!(refused.contains("SHA-256"), "the development override never skips the hash: {refused}");
+        let launch = desktop_stdio(packaged.clone(), &dir.join("core"), &[]);
+        assert!(prepare(&launch, &dir.join("core")).unwrap_err().contains("SHA-256"), "no start");
+        // An override is never hashed.
+        assert_eq!(check_sha256(&dir.join("explicit")), Ok(()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    #[test]
+    fn desktop_finds_the_kernel_in_installed_layouts() {
+        let dir = tmp("layouts");
+        // macOS .app: the kernel in Contents/MacOS, its receipt in Resources.
+        let macos = dir.join("OctoSense.app/Contents/MacOS");
+        let resources = dir.join("OctoSense.app/Contents/Resources");
+        fixture(&macos.join(PACKAGED_KERNEL), Some(&resources.join(PACKAGED_RECEIPT)), Some(PIN));
+        assert_eq!(desktop_program(None, None, Some(&macos.join("octosense")), PIN, false).unwrap(), macos.join(PACKAGED_KERNEL));
+        // ... or both in Resources.
+        std::fs::remove_file(macos.join(PACKAGED_KERNEL)).unwrap();
+        fixture(&resources.join(PACKAGED_KERNEL), None, Some(PIN));
+        assert_eq!(desktop_program(None, None, Some(&macos.join("octosense")), PIN, false).unwrap(), resources.join(PACKAGED_KERNEL));
+        // Not a bundle: a directory merely named MacOS has no Resources lookup.
+        let plain = dir.join("plain/Contents/MacOS");
+        std::fs::create_dir_all(&plain).unwrap();
+        fixture(&dir.join("plain/Contents/Resources").join(PACKAGED_KERNEL), None, Some(PIN));
+        assert!(desktop_program(None, None, Some(&plain.join("octosense")), PIN, false).is_err());
+        // Linux package: usr/bin/octos-kernel, receipt in usr/lib/octosense.
+        let bin = dir.join("usr/bin");
+        fixture(&bin.join(PACKAGED_KERNEL), Some(&dir.join("usr/lib/octosense").join(PACKAGED_RECEIPT)), Some(PIN));
+        assert_eq!(desktop_program(None, None, Some(&bin.join("octosense")), PIN, false).unwrap(), bin.join(PACKAGED_KERNEL));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(all(unix, not(any(target_env = "ohos", target_os = "ios", target_os = "android"))))]
+    #[test]
+    fn desktop_rejects_a_nonexecutable_kernel() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tmp("not-executable");
+        let program = dir.join(PACKAGED_KERNEL);
+        fixture(&program, None, Some(PIN));
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(why(desktop_program(None, None, Some(&dir.join("octosense")), PIN, false)).contains("not executable"));
+        assert!(desktop_program(Some(&program), None, None, PIN, false).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    #[test]
+    fn the_pinned_revision_is_the_workspace_lock() {
+        let lock = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock")).unwrap();
+        assert_eq!(PINNED_REVISION.len(), 40, "build.rs found the octos pin");
+        assert!(lock.contains("name = \"octos-cli\"\nversion = "), "octos-cli is in the lock");
+        assert!(lock.contains(&format!("octos.git?rev={PINNED_REVISION}#")), "{PINNED_REVISION} is the locked octos");
     }
 
     #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]

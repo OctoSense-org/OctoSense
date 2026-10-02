@@ -38,8 +38,14 @@ Shell（`phone/` 中的 Home、`desktop/` 中的桌面）拥有它；**AI provid
   运行在本 crate 的运行时上，工作线程栈 8 MiB（HAP 原生库不能 exec）。
 - **桌面**：`<program> serve --stdio --data-dir <core_dir>`（`<core_dir>/config.json`
   存在时再加 `--config <core_dir>/config.json`），`OCTOS_HOME=<core_dir>`；程序为 Shell 的
-  `Options::program` 或 `$OCTOS_APP_CORE_BIN`。两者都没有时就没有内核：绝不会动开发者
-  自己的 `octos serve`。
+  `Options::program`、`$OCTOS_APP_CORE_BIN`，或 Shell 可执行文件旁随附的
+  `octos-kernel[.exe]`（macOS `.app` 中为 `Contents/MacOS` 或 `Contents/Resources`），
+  依次选用。随附内核只有在其收据 `octos-kernel.json`（在它旁边、`.app` 的
+  `Contents/Resources` 或 Linux 包的 `usr/lib/octosense` 中）记录的版本与本次构建固定的
+  octos 版本一致（`build.rs` 从 `Cargo.lock` 读取），且 SHA-256 相符时才运行；否则连接
+  失败并给出原因。`tools/kernel-artifact.py --host --stage <目录>` 负责构建和放置；开发时
+  `OCTOSENSE_KERNEL_ANY_REVISION=1` 可接受其他版本。不在 `PATH` 或工作目录中查找，绝不会
+  动开发者自己的 `octos serve`。
 - **iOS**：没有内核。
 - **开启 Talk to Octos 时**（桌面和 Android）：同一命令，以 `--host 127.0.0.1 --host-managed`
   代替 `--stdio`，并把本进程保留的监听套接字作为描述符 3 传入（`--listen-fd 3`，Unix）。
