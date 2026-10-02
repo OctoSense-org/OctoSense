@@ -19,7 +19,7 @@
 | Tool / host service | Tool 是模型可选择的操作；host service 是应用或执行器调用的 Rust 服务。分别检查它们的授权与入口。 |
 | `AGENTS.md` / `AGENT.md` | 前者指导仓库贡献者；后者是应用包的 Agent 指令文件。App Hub 会准入后者，但 Shell 尚未把它加载进 peer 提示词。 |
 
-相关仓库的导读：[Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/docs/junior-architecture-walkthrough/docs/CODE-WALKTHROUGH.md)、[App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/docs/junior-architecture-walkthrough/docs/CODE-WALKTHROUGH.md)、[Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/docs/junior-architecture-walkthrough/docs/architecture-walkthrough.md)、[octos](https://github.com/octos-org/octos/blob/docs/junior-architecture-walkthrough/docs/octosense-integration-walkthrough.md)。这些链接指向已发布的文档分支；运行时版本仍由使用方的依赖锁定文件控制。
+相关仓库的导读：[Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/71163c03d55edd3e6371947e1d6eab8f982bf088/docs/CODE-WALKTHROUGH.md)、[App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/f560e9b1e751d9ab7d4ba7f74204ee37056d27dd/docs/CODE-WALKTHROUGH.md)、[Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/5c05e1a20fc0b92a6a211d3cd512eaf256040706/docs/architecture-walkthrough.md)、[octos](https://github.com/octos-org/octos/blob/0cfa32e838f582ff00a2661ba067723322f3c16a/docs/octosense-integration-walkthrough.md)。这些链接指向已发布的文档版本；运行时版本仍由使用方的依赖锁定文件控制。
 
 ## 2. 从可执行入口读到应用宿主
 
