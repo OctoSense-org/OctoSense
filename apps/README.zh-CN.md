@@ -340,8 +340,9 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
   开始一轮：还没有触发器或定时任务（ADR 0002 M3，计划中）。
 - **直接与它对话。** 用户可以直接与应用的 Agent 对话，而不只是通过系统 Agent：在 Shell
   为每个拥有 Agent 的应用提供的 “Ask <app>” 面板里（这些应用都不绘制自己的对话界面）。
-  这些回合在用户的通道里运行，与系统 Agent 的通道并列，带着应用的工具。卡片可以带有与
-  Agent 的卡内对话（`sys.chat`），但这些 Agent 发布的卡片都还没有声明。面板的“停止”只停止用户自己的回合。手机上还没有打开这个面板的触控入口。详见根目录的
+  这些回合在用户的通道里运行，与系统 Agent 的通道并列，带着应用的工具。
+  独立的 `sys.chat` 功能见[卡内对话的可用情况](../README.zh-CN.md#卡内对话)。
+  面板的“停止”只停止用户自己的回合。手机上还没有打开这个面板的触控入口。详见根目录的
   [README](../README.zh-CN.md#直接与应用的-agent-对话)。
 - **它的工具在应用的宿主服务上运行**，以应用的身份运行，在此之前 Shell 的中转已检查授权、
   schema 和预算。octos 只对破坏性和对外的工具请求审批（这里是 `calendar.remove_event`），
@@ -354,9 +355,7 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
   `card_id` 会替换该应用之前的通知。邮件和新闻的服务把 `notify` 交给 Shell；照片、地图、YouTube
   和相机没有自己的服务，由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历
   自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
-  （应用需要 `glance` 权限）。模型只提供文字，从不编写卡片代码。卡片里可以有与应用自己的 Agent 的卡内对话
-  （`sys.chat`，[`../crates/l0-chat`](../crates/l0-chat/README.md)）；`notice.card`、
-  `event.card` 和 `agenda.card` 还没有。
+  （应用需要 `glance` 权限）。模型只提供文字，从不编写卡片代码。
 - **试一试**（桌面端）：打开助手（F8），请系统 Agent 让某个应用的 Agent（邮件、日历、新闻、照片、
   地图或 YouTube）在 glance 屏幕上放一张卡片；在弹出的面板上允许该 Agent。邮件需要一个已登录的账户（下文的演示邮箱即可）。
   邮件更完整的操作卡片（[计划（英文）](mail/docs/2026-10-01-email-action-card-plan.md)）目前只是
