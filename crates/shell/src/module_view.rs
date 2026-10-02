@@ -88,6 +88,10 @@ pub struct MpModuleView {
     /// The WM's focus is on this tile: keys reach the root.
     #[rust]
     focused: bool,
+    /// One of the app's widgets took the last hover the root was handed
+    /// (`hover_claim`): it holds the hover until a move tells it otherwise.
+    #[rust]
+    hovered: bool,
     /// The root has drawn at least once.
     #[rust]
     drawn: bool,
@@ -179,6 +183,7 @@ impl MpModuleView {
             }
         }
         self.focused = false;
+        self.hovered = false;
         if self.stopped.is_none() {
             self.stopped = Some("The app stopped after an error".to_string());
         }
@@ -206,9 +211,16 @@ impl MpModuleView {
     /// takes presses as the live tile does: only one inside it that nothing
     /// in front claimed, and it claims what it takes, so a click on a window
     /// over it never restarts the app and a click on it raises no window
-    /// behind it.
+    /// behind it. It claims a hover inside it the same way, so nothing behind
+    /// it lights up under the face.
     fn handle_stopped_event(&mut self, cx: &mut Cx, event: &Event) {
         let rect = self.area.is_valid(cx).then(|| self.area.rect(cx));
+        if let Some((claim, abs)) = hover_claim(cx, event) {
+            if claim.get().is_empty() && rect.is_some_and(|r| r.contains(abs)) {
+                claim.set(self.area);
+            }
+            return;
+        }
         if pointer_start(event, rect) != PointerStart::Inside {
             return;
         }
@@ -237,6 +249,7 @@ impl MpModuleView {
     pub fn clear_root(&mut self, cx: &mut Cx) {
         self.root = None;
         self.focused = false;
+        self.hovered = false;
         self.draw_bg.redraw(cx);
     }
 
@@ -353,6 +366,18 @@ fn press_claim(event: &Event) -> Option<&std::cell::Cell<Area>> {
     }
 }
 
+/// A hover: a mouse move with no button held, with the cell that records
+/// who took it and where it is. Like a press, a hover that reaches a tile
+/// already claimed was taken in front of it. A move with a button held is
+/// no hover: it belongs to whatever captured the press, and passes wherever
+/// it goes.
+fn hover_claim<'a>(cx: &Cx, event: &'a Event) -> Option<(&'a std::cell::Cell<Area>, Vec2d)> {
+    match event {
+        Event::MouseMove(e) if cx.fingers.first_mouse_button.is_none() => Some((&e.handled, e.abs)),
+        _ => None,
+    }
+}
+
 impl Widget for MpModuleView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if self.stopped.is_some() {
@@ -430,6 +455,18 @@ impl Widget for MpModuleView {
         if press.is_some_and(|claim| !claim.get().is_empty()) {
             return;
         }
+        // A hover inside, with its claim (`hover_claim`). One a window in
+        // front took is not this instance's either: the root never sees it,
+        // so no widget under that window lights up or sets its cursor. The
+        // one exception: while a widget of this app still holds the hover
+        // from the last move (`hovered`), the root gets this move too, so
+        // that widget sees its hover end. Claimed, the move lets no other
+        // hover start.
+        let hover = hover_claim(cx, event).map(|(claim, abs)| (claim, rect.is_some_and(|r| r.contains(abs))));
+        if hover.is_some_and(|(claim, inside)| inside && !claim.get().is_empty() && !self.hovered) {
+            return;
+        }
+        let hover_unclaimed = hover.is_some_and(|(claim, _)| claim.get().is_empty());
         if press.is_some() {
             if let Some(client) = self.client {
                 // The WM moves focus here (and back to us through
@@ -467,6 +504,17 @@ impl Widget for MpModuleView {
         if let Some(handled) = press {
             if handled.get().is_empty() {
                 handled.set(self.area);
+            }
+        }
+        // A hover inside this tile is the tile's in the same way. Before, no
+        // tile claimed a move, so a hover over the part of Mail that takes
+        // none reached News behind it unclaimed: its widgets lit up and set
+        // their cursors under Mail. A process tile's `event.hits` claims
+        // hovers too.
+        if let Some((claim, inside)) = hover {
+            self.hovered = hover_unclaimed && !claim.get().is_empty();
+            if inside && claim.get().is_empty() {
+                claim.set(self.area);
             }
         }
     }
@@ -593,5 +641,27 @@ mod tests {
         assert!(press_claim(&touch(dvec2(200.0, 400.0), TouchState::Start)).is_some());
         assert!(press_claim(&touch(dvec2(200.0, 400.0), TouchState::Move)).is_none(), "only a start is a press");
         assert!(press_claim(&Event::Startup).is_none());
+    }
+
+    /// A mouse move with no button held is a hover with a claim. With a
+    /// button held it is a drag, which passes to whatever captured the press;
+    /// a finger's move is no hover either.
+    #[test]
+    fn only_a_mouse_move_with_no_button_held_is_a_hover_to_claim() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let at = dvec2(200.0, 400.0);
+        let moved = Event::MouseMove(MouseMoveEvent {
+            abs: at,
+            lock_delta: Vec2d::default(),
+            window_id: WindowId(0, 0),
+            modifiers: Default::default(),
+            time: 0.0,
+            handled: Default::default(),
+        });
+        assert!(hover_claim(&cx, &moved).is_some_and(|(_, abs)| abs == at));
+        assert!(hover_claim(&cx, &touch(at, TouchState::Move)).is_none());
+        assert!(hover_claim(&cx, &Event::Startup).is_none());
+        cx.fingers.first_mouse_button = Some((MouseButton::PRIMARY, WindowId(0, 0)));
+        assert!(hover_claim(&cx, &moved).is_none(), "a drag is no hover");
     }
 }
