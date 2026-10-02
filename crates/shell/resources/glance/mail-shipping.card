@@ -1,0 +1,55 @@
+# ledger mail.shipping@0.1.0
+# level:   L0
+# profile: ui/l0
+#
+# Mail's shipping-and-tracking card shape (the email action card plan):
+# carrier, status and ETA, Track; no reply. A test fixture published as
+# `os.mail` with fake data under OCTOSENSE_GLANCE_DEMO=mail. `pkg` is a
+# `sys.dataset` record standing in for `sys.mail_message` (see
+# mail-request.card); Track only shows the tracking state (demo).
+
+source pkg sys.dataset(fields: [title, subtitle, as_of, summary, metric1_label, metric1_value, metric2_label, metric2_value, url1])
+
+state mode { shape: enum[brief, tracking, done], initial: .brief }
+
+event track { mode: set(.tracking) }
+event done  { mode: set(.done) }
+event back  { mode: set(.brief) }
+
+copy app      { class: vocabulary, en: "Mail · Shipping" }
+copy ai_sum   { class: vocabulary, en: "AI SUMMARY" }
+copy b_track  { class: vocabulary, en: "Track" }
+copy b_done   { class: vocabulary, en: "Mark done" }
+copy b_back   { class: vocabulary, en: "Back" }
+copy opening  { class: vocabulary, en: "Opening the carrier's tracking page (demo)" }
+copy marked   { class: vocabulary, en: "Marked done" }
+
+view root Surface(pad: .tight) {
+  Col(gap: 10) {
+    Row(gap: 8, align: .center) {
+      Icon(name: .mail, size: .row)
+      TextCaption(text: copy.app, width: .fill)
+      TextCaption(value: pkg.as_of)
+    }
+    TextTitle(text: pkg.title, width: .fill)
+    Row(gap: 8) {
+      Tile(label: pkg.metric1_label, value: pkg.metric1_value)
+      Tile(label: pkg.metric2_label, value: pkg.metric2_value)
+    }
+    TextCaption(value: pkg.subtitle)
+    when mode == .brief {
+      Row(gap: 6, align: .center) { Icon(name: .zap, size: .row) TextEyebrow(text: copy.ai_sum) }
+      TextBody(text: pkg.summary, width: .fill)
+      Row(gap: 8) {
+        Chip(text: copy.b_track, on_tap: track, tone: .primary)
+        Chip(text: copy.b_done, on_tap: done)
+      }
+    }
+    when mode == .tracking {
+      Row(gap: 8, align: .center) { Icon(name: .location, size: .row) TextRow(text: copy.opening, width: .fill) }
+      TextCaption(value: pkg.url1)
+      Chip(text: copy.b_back, on_tap: back)
+    }
+    when mode == .done { Row(gap: 8, align: .center) { Icon(name: .check, size: .row) TextTitle(text: copy.marked) } }
+  }
+}

@@ -44,9 +44,11 @@
 //! store keeps at most [`STORE_CARDS`], dropping the least important.
 //!
 //! **Notifications.** `notify: true` also posts a notification for the card
-//! (the phone's shade, the desktop's toast); tapping it opens the glance
-//! page (phone) or panel (desktop), where the card is live. The shell drains
-//! them with [`take_notifications`].
+//! (the phone's shade, the desktop's toast). Tapping it opens the glance
+//! page on the phone; on a desktop, clicking the toast opens THAT card in the
+//! card window (glance_sheet.rs), App Clip style, by the key the
+//! notification carries ([`GlanceNote::key`], [`NoteTargets`], [`card`]).
+//! The shell drains them with [`take_notifications`].
 //!
 //! **Who may call.** A contained app publishes only when it holds the
 //! `glance` capability (App Hub's `KNOWN_CAPABILITIES`; the store tells the
@@ -141,6 +143,17 @@ pub struct GlanceCard {
     /// The publisher is a contained app: its tile runs under that app's
     /// resolved policy. A native module's tile runs with no grants.
     pub contained: bool,
+    /// For a `source` card, the L0 card and its data as published: the card
+    /// window (glance_sheet.rs) carries out its taps against them and
+    /// re-lowers. `None` for a `script` card.
+    pub l0: Option<Arc<L0Source>>,
+}
+
+/// A published L0 card as it was admitted: its source and its data.
+#[derive(Clone, Debug, PartialEq)]
+pub struct L0Source {
+    pub source: String,
+    pub data: Value,
 }
 
 impl GlanceCard {
@@ -258,6 +271,7 @@ impl GlanceStore {
             route,
             body,
             contained: matches!(caller, Caller::Contained { .. }),
+            l0: (kind == "source").then(|| Arc::new(L0Source { source: source.to_string(), data })),
         };
         let expires_at = card.expires_ms;
         if let Some(i) = replacing {
@@ -331,6 +345,11 @@ impl GlanceStore {
         cards
     }
 
+    /// The live card with this key (`app/card_id`), if it is still published.
+    pub fn card(&self, key: &str, now_ms: u64) -> Option<GlanceCard> {
+        self.cards.iter().find(|c| c.expires_ms > now_ms && c.key() == key).cloned()
+    }
+
     pub fn len(&self) -> usize {
         self.cards.len()
     }
@@ -363,6 +382,30 @@ pub struct GlanceNote {
 /// The notifications cards asked for since the last call.
 pub fn take_notifications() -> Vec<GlanceNote> {
     std::mem::take(&mut *NOTES.lock().unwrap())
+}
+
+/// Which card each posted notification opens: the shell records the toast
+/// (or shade note) id it posted for a [`GlanceNote`], and a click on it
+/// takes the card key back out.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NoteTargets(Vec<(u64, String)>);
+
+impl NoteTargets {
+    pub fn record(&mut self, id: u64, key: &str) {
+        self.0.push((id, key.to_string()));
+    }
+    pub fn contains(&self, id: u64) -> bool {
+        self.0.iter().any(|(i, _)| *i == id)
+    }
+    /// The notification was clicked: the key of the card it opens, once.
+    pub fn activated(&mut self, id: u64) -> Option<String> {
+        let at = self.0.iter().position(|(i, _)| *i == id)?;
+        Some(self.0.remove(at).1)
+    }
+    /// The notification went away unclicked.
+    pub fn dismissed(&mut self, id: u64) {
+        self.0.retain(|(i, _)| *i != id);
+    }
 }
 /// Bumped whenever the published set changes, so a surface re-reads it only then.
 static GENERATION: AtomicU64 = AtomicU64::new(1);
@@ -422,6 +465,11 @@ pub fn expire_now() {
     }
 }
 
+/// The published card with this key (`app/card_id`), while it is live.
+pub fn card(key: &str) -> Option<GlanceCard> {
+    with_store(|store| store.card(key, now_ms()))
+}
+
 /// What the glance screen shows now (priority, then recency, capped).
 pub fn shown() -> Vec<GlanceCard> {
     expire_now();
@@ -469,12 +517,74 @@ pub fn demo_digest() -> (String, Value) {
     (CARD.to_string(), data)
 }
 
-/// `OCTOSENSE_GLANCE_DEMO=1`: publish the sample digest as `os.news`, once,
-/// at startup (a test path; nothing publishes it otherwise).
+/// The fake Mail cards of the email action card plan (MVP: no mail is read,
+/// no model is called): `(card_id, title, L0 source, data)` for a personal
+/// request with a reply draft and an Ask transcript, and a shipping update.
+/// The summary, draft and answers stand for what Mail's agent will write.
+pub fn demo_mail() -> Vec<(&'static str, &'static str, String, Value)> {
+    const REQUEST: &str = include_str!("../resources/glance/mail-request.card");
+    const SHIPPING: &str = include_str!("../resources/glance/mail-shipping.card");
+    let request = json!({
+        "msg": {
+            "title": "Ana Lee · Contract question",
+            "subtitle": "To: Ana Lee · Re: Contract question",
+            "as_of": "10:42",
+            "summary": "Ana asks whether we can sign by Friday, and wants the revised payment terms before then.",
+            "pick1_title": "Suggested: Reply — confirm Friday",
+            "pick1_body": "Hi Ana, Friday works for us. I'll send the revised payment terms tomorrow morning."
+        },
+        "turns": [
+            {"id": "t1", "title": "What did they say about payment?", "summary": "Net 30 instead of net 45, starting with the next invoice."}
+        ]
+    });
+    let shipping = json!({
+        "pkg": {
+            "title": "UPS · Your desk lamp has shipped",
+            "subtitle": "Tracking 1Z 999 AA1 01 2345 6784",
+            "as_of": "09:15",
+            "summary": "The desk lamp from Lumen & Co. is out for delivery today; no signature needed.",
+            "metric1_label": "Status", "metric1_value": "Out for delivery",
+            "metric2_label": "ETA", "metric2_value": "Today by 8 pm",
+            "url1": "ups.com/track · 1Z999AA10123456784"
+        }
+    });
+    vec![
+        ("ana-contract", "Mail · Ana Lee: Contract question", REQUEST.to_string(), request),
+        ("ups-lamp", "Mail · UPS: Your desk lamp has shipped", SHIPPING.to_string(), shipping),
+    ]
+}
+
+/// The `glance.publish` arguments for the fake Mail cards, one toast each.
+pub fn demo_mail_publishes() -> Vec<Value> {
+    demo_mail()
+        .into_iter()
+        .enumerate()
+        .map(|(i, (card_id, title, source, data))| {
+            json!({
+                "card_id": card_id, "title": title, "source": source, "data": data,
+                "priority": 80 - i as i64, "open": {"app": "mail"}, "notify": true
+            })
+        })
+        .collect()
+}
+
+/// `OCTOSENSE_GLANCE_DEMO`, once, at startup (a test path; nothing publishes
+/// these otherwise): `mail` publishes the fake Mail cards as `os.mail`, each
+/// with a notification; any other value but `0` publishes the sample News
+/// digest as `os.news`.
 pub fn publish_demo_if_asked() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        if std::env::var("OCTOSENSE_GLANCE_DEMO").map(|v| v.is_empty() || v == "0").unwrap_or(true) {
+        let demo = std::env::var("OCTOSENSE_GLANCE_DEMO").unwrap_or_default();
+        if demo.is_empty() || demo == "0" {
+            return;
+        }
+        if demo == "mail" {
+            for args in demo_mail_publishes() {
+                if let Err(e) = request(&Caller::granted("os.mail"), "glance.publish", &args) {
+                    makepad_widgets::log!("glance: demo mail card refused: {e}");
+                }
+            }
             return;
         }
         let (source, data) = demo_digest();
@@ -611,6 +721,50 @@ mod tests {
         let note = notes.iter().find(|n| n.app == "os.notifytest").expect("queued");
         assert_eq!((note.key.as_str(), note.title.as_str()), ("os.notifytest/notify-test", "News digest"));
         request(&Caller::granted("os.notifytest"), "glance.withdraw", &json!({"card_id": "notify-test"})).unwrap();
+    }
+
+    /// The fake Mail cards pass the L0 admission and publish as `os.mail`,
+    /// each queuing a notification that carries its card's key; the
+    /// notification's id maps back to exactly that card, whose L0 source and
+    /// data travel with it for the card window.
+    #[test]
+    fn a_mail_toast_opens_its_own_card() {
+        let mail = Caller::granted("os.mailtest");
+        let mut targets = NoteTargets::default();
+        let mut keys = Vec::new();
+        for (i, mut args) in demo_mail_publishes().into_iter().enumerate() {
+            args["open"] = Value::Null;
+            request(&mail, "glance.publish", &args).unwrap();
+            let notes: Vec<GlanceNote> = take_notifications().into_iter().filter(|n| n.app == "os.mailtest").collect();
+            assert_eq!(notes.len(), 1, "one toast per card");
+            // The shell posts the toast and records its id against the key.
+            let toast_id = 100 + i as u64;
+            targets.record(toast_id, &notes[0].key);
+            keys.push((toast_id, notes[0].key.clone(), args));
+        }
+        assert_eq!(keys[0].1, "os.mailtest/ana-contract");
+        assert_eq!(keys[1].1, "os.mailtest/ups-lamp");
+        // Clicking the second toast opens the shipping card, not the panel
+        // and not the first card; a second click on it is no longer mapped.
+        let key = targets.activated(101).expect("the toast maps to its card");
+        let opened = card(&key).expect("still published");
+        assert_eq!((opened.app.as_str(), opened.card_id.as_str(), opened.title.as_str()), ("os.mailtest", "ups-lamp", "Mail · UPS: Your desk lamp has shipped"));
+        let l0 = opened.l0.as_ref().expect("an L0 card keeps its source and data");
+        assert_eq!(l0.data, keys[1].2["data"]);
+        assert!(l0.source.contains("ledger mail.shipping"));
+        assert_eq!(targets.activated(101), None);
+        // A dismissed toast opens nothing; the other still opens its own card.
+        targets.dismissed(999);
+        assert!(targets.contains(100));
+        assert_eq!(card(&targets.activated(100).unwrap()).unwrap().card_id, "ana-contract");
+        // A withdrawn card is gone: the shell falls back to the panel.
+        request(&mail, "glance.withdraw", &json!({"card_id": "ana-contract"})).unwrap();
+        assert!(card("os.mailtest/ana-contract").is_none());
+        request(&mail, "glance.withdraw", &json!({"card_id": "ups-lamp"})).unwrap();
+        // A script card carries no L0 source.
+        let mut store = GlanceStore::default();
+        store.publish(&news(), &json!({"card_id": "s", "title": "t", "script": "View{}"}), 0).unwrap();
+        assert!(store.card("os.news/s", 0).unwrap().l0.is_none());
     }
 
     #[test]

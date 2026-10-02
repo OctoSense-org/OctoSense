@@ -35,6 +35,15 @@
 //! raises is not shown on the tile. The shell keeps one affordance of its
 //! own on each tile, the open button at its top-right corner
 //! ([`open_button`]), which opens the app.
+//!
+//! **L0 taps.** A lowered L0 card's taps and field edits call `NAV(t:
+//! "l0:{e,k,v}", v?)` (Octoscript-Makepad's general translation). Every
+//! isolate gets a host `NAV` ([`install_nav`]) that queues the call with the
+//! isolate's heap key; nothing else reads it. The card window
+//! (glance_sheet.rs) takes its own isolate's calls ([`take_taps`]) and runs
+//! them through an [`L0Session`]: the declared transition (`octoscript_ui_l0`
+//! dispatch), the §5.12 writes the host performs, and a re-lowering. A
+//! glance-panel tile does not dispatch: its L0 taps stay inert.
 use makepad_widgets::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -82,7 +91,19 @@ const MOODS: &[(&str, &str)] = &[
 /// realize (the no-facts rule: every value from `data`), assemble with the
 /// kit, evaluate the checked design VM, translate to Makepad UI.
 pub fn lower(source: &str, data: &serde_json::Value) -> Result<String, String> {
-    let report = octoscript_ui_l0::realize(source, data, Default::default());
+    lower_report(source, octoscript_ui_l0::realize(source, data, Default::default()), false)
+}
+
+/// [`lower`], realized against a card's local state (its `InstanceStore`),
+/// for the card window: through Octoscript-Makepad's L0 translation, which
+/// keeps the kit's resolved sizes and its chips' labels (the general
+/// translation [`lower`] uses re-lowers chips the Material way and drops
+/// their text).
+pub fn lower_with_state(source: &str, data: &serde_json::Value, store: &octoscript_ui_l0::InstanceStore) -> Result<String, String> {
+    lower_report(source, octoscript_ui_l0::realize_with_state(source, data, store, Default::default()), true)
+}
+
+fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bool) -> Result<String, String> {
     let root = report.complete_root()?;
     if octoscript_ui_l0::kit_pack::contains(root) {
         return Err("native kit components are not offered on a glance tile".into());
@@ -94,16 +115,240 @@ pub fn lower(source: &str, data: &serde_json::Value) -> Result<String, String> {
             return Err(format!("theme axis {axis}: .{value} is not offered on a glance tile"));
         }
     }
-    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, KIT, &octoscript_ui_l0::kit::lower(root)].join("\n");
+    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, KIT, HOST_KIT, &octoscript_ui_l0::kit::lower(root)].join("\n");
     let tree = octoscript_makepad::design::prepare(&kit_source)?;
     // A measured design (an imported artboard) lowers as the Card runner
     // lowers it; a kit-composed card (columns, rows, text) through the
     // backend's general translation.
-    let ui = octoscript_makepad::design::to_makepad_ui(&tree).unwrap_or_else(|_| octoscript_makepad::to_makepad_ui(&tree));
+    let ui = octoscript_makepad::design::to_makepad_ui(&tree).unwrap_or_else(|_| if l0_ui { octoscript_makepad::to_makepad_l0_ui(&tree) } else { octoscript_makepad::to_makepad_ui(&tree) });
     // A card's page fills its screen; a tile measures it instead. The root's
     // own properties are the only lines at this indentation.
     let ui = ui.replacen("\n    height: Fill\n", "\n    height: Fit\n", 1);
+    let ui = multiline_fields(&ui);
     Ok(format!("width:Fill height:Fit flow:Overlay {ui}"))
+}
+
+/// The host's additions to the L0 kit, after the kit so they win.
+///
+/// A multi-line field. L0's `Field` has no argument for it (that needs
+/// Octoscript: a constructor argument in `ui-l0-constructors.toml`, the
+/// checker, and the kit), so the host decides by what the field is for: a
+/// field with no `on_commit` has nothing for Return to do, so its text is a
+/// body (a reply draft) and it wraps over several lines; a field that
+/// commits on Return (a search, a question) stays one line. The kit's own
+/// `l0_field`, with the multi-line ones marked for [`multiline_fields`].
+const HOST_KIT: &str = r#"
+fn l0_field(text, placeholder, target, changing) {
+    let node = {t: "input", fillw: 1, text: text, placeholder: placeholder,
+            tapto: target, changeto: changing, bg: l0_fill, radius: 12, padx: 14,
+            padtop: 14, padbottom: 14, size: 11, color: l0_text}
+    if target == "" { node.id = "l0_multiline" }
+    return node
+}
+"#;
+
+/// The lines a multi-line field shows before it scrolls: it grows from
+/// about three to about six lines of the kit's field text.
+pub const MULTILINE_MIN: f64 = 92.0;
+pub const MULTILINE_MAX: f64 = 156.0;
+
+/// Make the fields [`HOST_KIT`] marked multi-line: wrapping, growing with
+/// their text between [`MULTILINE_MIN`] and [`MULTILINE_MAX`], then
+/// scrolling (Makepad's `TextInput` scrolls a multi-line input inside its
+/// bounded height).
+fn multiline_fields(ui: &str) -> String {
+    let lines: Vec<&str> = ui.lines().collect();
+    let mut out = Vec::with_capacity(lines.len() + 4);
+    let mut close_at: Option<String> = None;
+    for line in lines {
+        if let Some(rest) = line.trim_start().strip_prefix("l0_multiline := TextInput {") {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            out.push(format!("{indent}TextInput {{{rest}"));
+            close_at = Some(format!("{indent}}}"));
+            continue;
+        }
+        if close_at.as_deref() == Some(line) {
+            let indent = &line[..line.len() - 1];
+            out.push(format!("{indent}    is_multiline: true"));
+            out.push(format!("{indent}    height: Fit{{min: FitBound.Abs({MULTILINE_MIN}) max: FitBound.Abs({MULTILINE_MAX})}}"));
+            close_at = None;
+        }
+        out.push(line.to_string());
+    }
+    out.join("\n")
+}
+
+/// The card's last measured height (unclamped), for a surface that sizes
+/// to its card.
+pub fn measured_height(key: &str) -> Option<f64> {
+    HEIGHTS.with(|h| h.borrow().get(key).copied())
+}
+
+// ------------------------------------------------------------- L0 taps
+
+/// One `NAV` call from a card: the isolate it came from, the target string
+/// and, for a field, the text it carried.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tap {
+    pub heap: usize,
+    pub target: String,
+    pub typed: Option<String>,
+}
+
+static TAPS: std::sync::Mutex<Vec<Tap>> = std::sync::Mutex::new(Vec::new());
+
+/// The host `NAV` global, installed into every Splash isolate: it only
+/// queues the call, tagged with the calling isolate's heap key, so a surface
+/// acts only on calls from the isolate it owns.
+pub fn install_nav(vm: &mut ScriptVm) {
+    let nav = {
+        let base = &mut *vm.bx;
+        let mut native = base.code.native.borrow_mut();
+        native.add_fn(&mut base.heap, script_args_def!(t = NIL, v = NIL), |vm, args| {
+            let t = script_value!(vm, args.t);
+            let v = script_value!(vm, args.v);
+            let mut target = String::new();
+            vm.bx.heap.cast_to_string(t, &mut target);
+            let typed = (!v.is_nil()).then(|| {
+                let mut text = String::new();
+                vm.bx.heap.cast_to_string(v, &mut text);
+                text
+            });
+            let heap = vm.bx.heap.heap_key();
+            if let Ok(mut taps) = TAPS.lock() {
+                // Bounded: a card no surface reads cannot grow it forever.
+                if taps.len() >= 64 {
+                    taps.remove(0);
+                }
+                taps.push(Tap { heap, target, typed });
+            }
+            NIL
+        })
+    };
+    vm.set_injected_global(id!(NAV), nav.into());
+}
+
+/// Register [`install_nav`] for every isolate made from now on, once, with
+/// the hit target a lowered card's taps are drawn as (`OctoscriptTap`, which
+/// the Card runner's own isolate mods do not include).
+pub fn ensure_nav() {
+    thread_local! {
+        static DONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if !DONE.with(|d| d.replace(true)) {
+        widget_async::register_splash_isolate_mod(install_nav);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        widget_async::register_splash_isolate_mod(|vm| {
+            octosense_appstore::octoscript_widgets::tap::script_mod(vm);
+        });
+    }
+}
+
+/// The queued `NAV` calls from the isolate `heap`; every other isolate's
+/// queued calls are dropped (nothing dispatches them).
+pub fn take_taps(heap: usize) -> Vec<Tap> {
+    let taps = TAPS.lock().map(|mut t| std::mem::take(&mut *t)).unwrap_or_default();
+    taps.into_iter().filter(|t| t.heap == heap).collect()
+}
+
+/// `l0:{"e":event,"k":instance key,"v":value}` → `(key, event, value)`.
+pub fn parse_tap(target: &str) -> Option<(String, String, String)> {
+    let json: serde_json::Value = serde_json::from_str(target.strip_prefix("l0:")?).ok()?;
+    let field = |name: &str| json.get(name).and_then(serde_json::Value::as_str).map(str::to_string);
+    Some((field("k")?, field("e")?, field("v").unwrap_or_default()))
+}
+
+/// What the demo host answers a question sent from a card's Ask (MVP: no
+/// model call).
+pub const DEMO_ANSWER: &str = "Demo answer: Mail's agent will reply here from the thread. (No model was called.)";
+
+/// A live L0 card in the card window: its source, its data (which the
+/// host's writes update) and its local state.
+pub struct L0Session {
+    pub source: String,
+    pub data: serde_json::Value,
+    pub store: octoscript_ui_l0::InstanceStore,
+}
+
+/// What a tap did to an [`L0Session`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TapOutcome {
+    pub event: String,
+    pub applied: bool,
+    /// The card must be lowered again (not for a keystroke in a field,
+    /// which already shows what was typed).
+    pub relower: bool,
+}
+
+fn find_node<'a>(node: &'a octoscript_ui_l0::UiNode, key: &str) -> Option<&'a octoscript_ui_l0::UiNode> {
+    if node.key == key {
+        return Some(node);
+    }
+    node.children.iter().find_map(|c| find_node(c, key))
+}
+
+fn node_arg<'a>(node: &'a octoscript_ui_l0::UiNode, name: &str) -> Option<&'a octoscript_ui_l0::NodeValue> {
+    node.args.iter().find(|(n, _)| n == name).map(|(_, v)| v)
+}
+
+impl L0Session {
+    pub fn new(l0: &crate::glance::L0Source) -> Self {
+        L0Session { source: l0.source.clone(), data: l0.data.clone(), store: Default::default() }
+    }
+
+    /// The card as it stands now, lowered for a Splash.
+    pub fn body(&self) -> Result<String, String> {
+        lower_with_state(&self.source, &self.data, &self.store)
+    }
+
+    /// Carry out one `NAV` call from this card.
+    pub fn tap(&mut self, target: &str, typed: Option<&str>) -> Result<TapOutcome, String> {
+        use octoscript_ui_l0::NodeValue;
+        let (key, event, value) = parse_tap(target).ok_or_else(|| format!("not an L0 target: {target}"))?;
+        // The element as it stands now: what it carries and what raised it.
+        let report = octoscript_ui_l0::realize_with_state(&self.source, &self.data, &self.store, Default::default());
+        let node = report.complete_root().ok().and_then(|root| find_node(root, &key)).cloned();
+        let keystroke = node.as_ref().is_some_and(|n| n.kind == "Field" && matches!(node_arg(n, "on_change"), Some(NodeValue::Event(e)) if *e == event));
+        let payload = if value == "$$" {
+            // A field's text, as typed.
+            typed.map(|t| serde_json::Value::String(t.to_string()))
+        } else if !value.is_empty() {
+            Some(serde_json::Value::String(value))
+        } else {
+            // A payload bound to state was baked in when the card was last
+            // lowered; a field edit since then did not re-lower. Read it
+            // off the element as it would realize now.
+            match node.as_ref().and_then(|n| node_arg(n, "value")) {
+                Some(NodeValue::Text(t)) | Some(NodeValue::Token(t)) => Some(serde_json::Value::String(t.clone())),
+                Some(NodeValue::Number(n)) => Some(serde_json::json!(n)),
+                _ => None,
+            }
+        };
+        let outcome = octoscript_ui_l0::dispatch_reporting(&self.source, &mut self.store, &key, &event, payload.as_ref(), &self.data);
+        for write in &outcome.writes {
+            self.perform(write);
+        }
+        let moved = !outcome.changed.is_empty() || !outcome.writes.is_empty();
+        Ok(TapOutcome { event, applied: outcome.applied, relower: moved && !keystroke })
+    }
+
+    /// A §5.12 write the card reported, performed by this (demo) host: a
+    /// question appended to `asked` adds a turn to the `turns` transcript
+    /// with a canned answer. Anything else is not performed in the MVP.
+    fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite) {
+        match (write.source.as_str(), write.op.as_str()) {
+            ("asked", "append") if !write.value.trim().is_empty() => {
+                if !self.data.get("turns").is_some_and(serde_json::Value::is_array) {
+                    self.data["turns"] = serde_json::json!([]);
+                }
+                if let Some(turns) = self.data["turns"].as_array_mut() {
+                    let id = format!("q{}", turns.len() + 1);
+                    turns.push(serde_json::json!({"id": id, "title": write.value, "summary": DEMO_ANSWER}));
+                }
+            }
+            _ => log!("glance: the card's {} {} on {} is not performed (demo host)", write.op, write.helper, write.source),
+        }
+    }
 }
 
 /// The tile height for a measured card height.
@@ -139,6 +384,11 @@ script_mod! {
         width: Fill height: Fit flow: Down clip_y: true clip_x: true
         card := Splash { width: Fill height: Fit }
     }
+    // The card window's frame: a card taller than the window scrolls.
+    mod.widgets.GlanceSheetFrame = ScrollYView {
+        width: Fill height: Fill flow: Down
+        card := Splash { width: Fill height: Fit }
+    }
 }
 
 struct Tile {
@@ -155,9 +405,16 @@ struct Tile {
 #[derive(Default)]
 pub struct GlanceTiles {
     tiles: HashMap<String, Tile>,
+    /// Cards scroll inside their rect instead of clipping (the card window).
+    scroll: bool,
 }
 
 impl GlanceTiles {
+    /// Tiles whose cards scroll inside their rect (the card window).
+    pub fn scrolling() -> Self {
+        GlanceTiles { tiles: HashMap::new(), scroll: true }
+    }
+
     /// Draw `card` (its `body`, published by `app`) at `rect`: the rect's
     /// height is the tile height; the Splash lays out at its natural height,
     /// and that height is recorded for the next layout. Asks for a redraw
@@ -187,8 +444,9 @@ impl GlanceTiles {
     pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
         let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), body: "".into(), app: app.to_string(), contained });
         if tile.frame.is_empty() {
+            let scroll = self.scroll;
             tile.frame = cx.with_vm(|vm| {
-                let value = script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} });
+                let value = if scroll { script_eval!(vm, { use mod.widgets.* GlanceSheetFrame {} }) } else { script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} }) };
                 WidgetRef::script_from_value(vm, value)
             });
             let splash = tile.frame.splash(cx, ids!(card));
@@ -200,6 +458,14 @@ impl GlanceTiles {
             tile.body = body.clone();
         }
         splash
+    }
+
+    /// The heap key of the isolate `key`'s card runs in, once seated.
+    pub fn heap_key(&self, cx: &mut Cx, key: &str) -> Option<usize> {
+        let tile = self.tiles.get(key)?;
+        let splash = tile.frame.splash(cx, ids!(card));
+        let mut splash = splash.borrow_mut()?;
+        splash.isolate_heap_key(cx)
     }
 
     /// Hand `event` to every live tile, inside its isolate (as the Card
@@ -309,6 +575,7 @@ fn ensure_vocabulary(cx: &mut Cx) {
     if DONE.with(|d| d.replace(true)) {
         return;
     }
+    ensure_nav();
     #[cfg(any(feature = "app-hub", native_mobile))]
     cx.with_vm(|vm| makepad_app_module::AppModule::register(&octosense_app_hub_app::CARD_MODULE, vm));
     #[cfg(not(any(feature = "app-hub", native_mobile)))]
@@ -430,6 +697,86 @@ mod tests {
         // The request the card queued goes out on the next event.
         tiles.handle_event(&mut cx, &Event::Signal);
         assert!(crate::glance::shown().iter().any(|c| c.key() == "os.glanceinput/typed" && c.contained), "published as the tile's app");
+    }
+
+    fn mail_session(card_id: &str) -> L0Session {
+        let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == card_id).unwrap();
+        L0Session::new(&crate::glance::L0Source { source, data })
+    }
+
+    /// The tap targets a body offers, in order, as `(key, event)`.
+    fn targets(body: &str) -> Vec<(String, String, String)> {
+        body.split("NAV(t: ")
+            .skip(1)
+            .filter_map(|rest| {
+                let lit: String = serde_json::from_str::<String>(&rest[..rest.find("\"}\"").map(|i| i + 3).unwrap_or(0)]).ok()?;
+                parse_tap(&lit)
+            })
+            .collect()
+    }
+    fn target_for(body: &str, event: &str) -> String {
+        let (k, e, v) = targets(body).into_iter().find(|(_, e, _)| e == event).unwrap_or_else(|| panic!("no {event} in {body}"));
+        format!("l0:{}", serde_json::json!({"e": e, "k": k, "v": v}))
+    }
+
+    /// The fake email card, end to end through the host's L0 loop: Reply
+    /// shows the AI draft in a field with Cancel/Send; Send shows "Sent
+    /// (demo)"; Ask shows the transcript, and a question typed and sent adds
+    /// itself and the canned answer.
+    #[test]
+    fn the_mail_card_replies_sends_and_asks_through_l0_taps() {
+        let mut s = mail_session("ana-contract");
+        let body = s.body().unwrap();
+        for text in ["Ana Lee · Contract question", "10:42", "AI SUMMARY", "Suggested: Reply — confirm Friday", "Reply", "Mark done", "Ask"] {
+            assert!(body.contains(text), "{text} in {body}");
+        }
+        assert!(!body.contains("Sent (demo)"));
+        let reply = target_for(&body, "reply");
+        assert!(s.tap(&reply, None).unwrap().relower);
+        let body = s.body().unwrap();
+        assert!(body.contains("AI DRAFT") && body.contains("Hi Ana, Friday works for us.") && body.contains("Cancel") && body.contains("Send"), "{body}");
+        // The draft (no on_commit) wraps over several lines; nothing else does.
+        assert_eq!(body.matches("is_multiline: true").count(), 1, "{body}");
+        assert!(body.contains("max: FitBound.Abs(156)") && !body.contains("l0_multiline"), "{body}");
+        // A keystroke in the draft updates state without re-lowering.
+        let edit = target_for(&body, "edit");
+        let typed = s.tap(&edit, Some("Hi Ana, Friday is fine.")).unwrap();
+        assert!(typed.applied && !typed.relower, "{typed:?}");
+        assert!(s.body().unwrap().contains("Hi Ana, Friday is fine."));
+        let send = target_for(&s.body().unwrap(), "send");
+        assert!(s.tap(&send, None).unwrap().relower);
+        assert!(s.body().unwrap().contains("Sent (demo)"));
+
+        let mut s = mail_session("ana-contract");
+        let ask = target_for(&s.body().unwrap(), "ask");
+        s.tap(&ask, None).unwrap();
+        let body = s.body().unwrap();
+        assert!(body.contains("What did they say about payment?") && body.contains("Net 30 instead of net 45"), "{body}");
+        assert!(!body.contains("is_multiline"), "the question commits on Return: one line");
+        let typing = target_for(&body, "typing");
+        assert!(!s.tap(&typing, Some("When do they need it?")).unwrap().relower);
+        // The arrow carries the question as it stands now, not as it was
+        // when the card was last lowered (empty).
+        let submit = targets(&body).into_iter().find(|(k, e, _)| e == "submit" && k.contains("Chip")).unwrap();
+        let arrow = format!("l0:{}", serde_json::json!({"e": submit.1, "k": submit.0, "v": submit.2}));
+        assert!(s.tap(&arrow, None).unwrap().relower);
+        let body = s.body().unwrap();
+        assert!(body.contains("When do they need it?") && body.contains(DEMO_ANSWER), "{body}");
+    }
+
+    /// The shipping card: carrier, status, ETA and Track; no reply.
+    #[test]
+    fn the_shipping_card_tracks_and_offers_no_reply() {
+        let mut s = mail_session("ups-lamp");
+        let body = s.body().unwrap();
+        for text in ["UPS · Your desk lamp has shipped", "Out for delivery", "Today by 8 pm", "Track"] {
+            assert!(body.contains(text), "{text} in {body}");
+        }
+        let events: Vec<String> = targets(&body).into_iter().map(|(_, e, _)| e).collect();
+        assert_eq!(events, ["track", "done"]);
+        s.tap(&target_for(&body, "track"), None).unwrap();
+        assert!(s.body().unwrap().contains("Opening the carrier's tracking page (demo)"));
+        assert!(parse_tap("NAV").is_none() && parse_tap("l0:{}").is_none());
     }
 
     /// A tile is a background surface: what its card asks of a host service
