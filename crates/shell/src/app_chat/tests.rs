@@ -554,8 +554,13 @@ fn the_system_agent_is_told_about_agents_it_cannot_list() {
     assert_eq!(crate::agents::strip_note(&sent), "ask News for a digest");
     assert_eq!(crate::agents::strip_note("ask News"), "ask News");
     // The tools it can call, answered by the shell.
-    let names: Vec<String> = crate::agents::declarations().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    let declarations = crate::agents::declarations();
+    let names: Vec<String> = declarations.iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(names, [crate::agents::LIST_TOOL, crate::agents::ASK_TOOL]);
+    // agents.ask's confirmation is the shell's own sheet, so the kernel
+    // holds the call as long as an approval, not a read tool's 30 s.
+    let ask = &declarations[1];
+    assert_eq!((ask["risk"].as_str(), ask["outward"].as_bool(), ask["confirm"].as_str()), (Some("act"), Some(true), Some("app")));
     match crate::agents::call(crate::agents::LIST_TOOL, &json!({})) {
         crate::ai_host::app_peers::host_tools::ToolOutcome::Ok(v) => {
             assert!(v["apps"].as_array().unwrap().iter().any(|a| a["app"] == "rinx" && a["what_to_do"].as_str().is_some()), "{v}");

@@ -381,7 +381,11 @@ model lane and tools. Which system apps have one, and how
   panel, with the bar's "Ask <app>", Shift+F8 or the menu row "Ask this
   app's agent", or when the system agent asks it with `agents.ask`). Then
   the shell prepares the peer, so the system agent can reach it with
-  `peer_send_input`. A turn starts only when the system agent, the person
+  `peer_send_input`. `agents.ask` waits for the person's answer and the
+  peer (it is declared `outward` with `confirm: app`, so the kernel holds
+  it as long as an approval, not a read tool's 30 s), then gives the system
+  agent the peer's slug, so the request goes on in the same turn. A turn
+  starts only when the system agent, the person
   or a card's in-card chat asks: there are no triggers or schedules yet
   (ADR 0002 M3, planned).
 - **Talking to it yourself.** The person can chat with the app's agent

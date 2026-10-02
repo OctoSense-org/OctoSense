@@ -109,7 +109,8 @@ struct HeldAsk {
 
 /// How long a held `agents.ask` waits for the person before it answers
 /// that they have not (the system agent tells them; the sheet stays up).
-const ASK_WAIT: Duration = Duration::from_secs(120);
+/// The kernel holds it longer (`confirm: app`, agents.rs `declarations`).
+const ASK_WAIT: Duration = Duration::from_secs(600);
 
 /// The id prefix of a routed question in the conversation.
 pub const ROUTED_PREFIX: &str = "routed:";

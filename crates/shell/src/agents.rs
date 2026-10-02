@@ -376,7 +376,14 @@ pub fn declarations() -> Vec<Value> {
             "app": OWNER,
             "description": "Ask the person to allow one app's agent (the shell shows its first-use sheet; only the person answers). Use it when you need an app's agent that is not yet allowed. The call waits for their answer and for the agent's peer to start, then returns its peer slug: send the person's request to it with peer_send_input in this same turn. If they did not allow it, say so.",
             "input_schema": {"type": "object", "properties": {"app": {"type": "string", "description": "The app's name or id, e.g. News or os.news"}}, "required": ["app"], "additionalProperties": false},
-            "risk": "read",
+            // The shell's own sheet asks the person, so the kernel holds the
+            // call as long as an approval (`confirm: app` on a gated tool);
+            // a `read` tool gets 30 s, and the person had not answered by
+            // then in the live run. `outward`: it lets another app's agent
+            // in, past the system agent.
+            "risk": "act",
+            "outward": true,
+            "confirm": "app",
         }),
     ]
 }

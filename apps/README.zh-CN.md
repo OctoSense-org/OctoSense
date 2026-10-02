@@ -334,7 +334,9 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 - **运行。** 在用户于首次使用面板上允许之前什么都不会运行（用户用顶栏的 “Ask <app>”、
   Shift+F8 或菜单项 “Ask this app's agent” 打开 Shell 的 “Ask <app>” 面板时，或系统
   Agent 用 `agents.ask` 询问时，弹出这个面板）。之后 Shell 准备好 peer，系统 Agent
-  就能用 `peer_send_input` 找到它。只有系统 Agent、用户或卡片的卡内对话发起请求时才会
+  就能用 `peer_send_input` 找到它。`agents.ask` 会等待用户的回答和 peer 就绪（它声明为
+  `outward` 且 `confirm: app`，内核会像对待审批一样一直等它，而不是只给读取类工具的 30 秒），
+  然后把 peer 的 slug 交给系统 Agent，让请求在同一轮里继续。只有系统 Agent、用户或卡片的卡内对话发起请求时才会
   开始一轮：还没有触发器或定时任务（ADR 0002 M3，计划中）。
 - **直接与它对话。** 用户可以直接与应用的 Agent 对话，而不只是通过系统 Agent：在 Shell
   为每个拥有 Agent 的应用提供的 “Ask <app>” 面板里（这些应用都不绘制自己的对话界面），
