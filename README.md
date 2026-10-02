@@ -29,12 +29,13 @@ flowchart LR
   person(["Person"])
   ext["Talk to Octos client<br/>web or terminal, opt-in"]
   subgraph shellp["OctoSense shell process"]
-    ui["Window manager, launcher,<br/>system chat, sheets"]
+    ui["Window manager, launcher,<br/>system chat, Ask app panel, sheets"]
     mods["Native modules<br/>App Hub, Rinx"]
     runner["Card runner<br/>script apps, glance cards"]
     aihost["ai-host + app-peers broker<br/>host connection"]
     relay["Host-tool relay"]
     router["Approval router"]
+    svc["App host services<br/>mail, calendar, news"]
   end
   term["Terminal<br/>process app in an OS sandbox"]
   subgraph kern["octos kernel: child process, in process on OpenHarmony"]
@@ -44,6 +45,7 @@ flowchart LR
   person --> ui
   ui --- mods
   ui --- runner
+  ui -->|"person's turns:<br/>Ask app, in-card chat"| aihost
   mods -->|"OctosAppService"| aihost
   runner -->|"host.request octos.*"| aihost
   term <-->|"hub: frames, AI bus"| ui
@@ -52,6 +54,8 @@ flowchart LR
   sys -->|"peer_send_input"| peers
   kern -->|"peer/tool/call, approvals"| relay
   relay --> router
+  relay -->|"app tools"| svc
+  svc -->|"glance.publish: cards"| runner
   ext -.->|"external token:<br/>system conversation only"| sys
 ```
 
@@ -90,6 +94,10 @@ A script app has an agent when its manifest declares `octos.*` names or an `agen
 
 **From the system agent to a card on the glance screen**:
 
+![From the system agent to a card on the glance screen](docs/images/agents-card-flow.png)
+
+<details><summary>Text version (Mermaid)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -116,12 +124,18 @@ sequenceDiagram
   A-->>G: the reply, drawn as AI-written
 ```
 
+</details>
+
 - The model never writes card code: `mail.notify`, `calendar.notify` and `calendar.agenda` fill a fixed L0 card the app's host service ships (`apps/mail/host-service/resources/notice.card`, `apps/calendar/host-service/resources/*.card`) and publish it as the app.
 - `mail.notify` and `calendar.add_event` are `act` tools and run without a sheet; octos asks for approval only for destructive and outward tools, which go to the shell's approval router ([below](#a-tool-call-with-an-approval)).
 
 ### One app agent, two lanes
 
 An app agent is one host-owned octos **peer** per (app, account), owned by the system agent, with its own workspace, memory namespace, model and tool list. The system agent and the person each talk to it in their own lane:
+
+![One app agent, two lanes](docs/images/agents-two-lanes.png)
+
+<details><summary>Text version (Mermaid)</summary>
 
 ```mermaid
 flowchart TB
@@ -144,6 +158,8 @@ flowchart TB
   lane2 --- own
   mini -->|"open_context"| ctx
 ```
+
+</details>
 
 - **The system agent's lane** is the peer's own session, `…#peer-<app>`. The system agent sends `peer_send_input`; octos delivers it to the shell's host connection as `peer/input`, and the shell starts the turn itself, so it runs with the app's tools, memory and approvals (or refuses it with `peer/input/reject` for a signed-out account or an app the person has not allowed). The peer's results go to the peers' blackboard, which the system agent reads.
 - **The person's lane** is a request context, `…#peerctx-<app>.<id>`, opened with `share_history` by the shell's "Ask <app>" panel (`agents::conversation`, client instance `shell-ask`), by a card's in-card chat, or by the app's own UI (a native module's `open_conversation`, a script app's `octos.session.open`, a process app's peer link), a new one for every handle ([octos#2636](https://github.com/octos-org/octos/pull/2636), UPCR-2026-034). The two lanes run in parallel, one turn at a time per session: a person's message never waits for the system agent's turn. Each turn sees the other lane's recent messages as a read-only block that is never written into its own transcript, and every turn is labelled by its speaker (`[from the person: <app>]`, `[from the system agent]`). The app follows both lanes, each event tagged with its `lane` and speaker; `octos.session.history` merges both transcripts by time. The person's turns also leave rounds on the blackboard (`origin: person`), so the system agent sees them with `peer_gather`.
@@ -184,7 +200,7 @@ sequenceDiagram
   participant Ro as Approval router
   participant P as Person
   participant Ex as Owning app
-  Ag->>K: call mail.send
+  Ag->>K: call calendar.remove_event
   alt confirm host
     K->>Ro: approval/requested, host_tool
     Ro->>Ro: dev mode, then standing rules

@@ -29,12 +29,13 @@ flowchart LR
   person(["用户"])
   ext["Talk to Octos 客户端<br/>网页或终端，需手动开启"]
   subgraph shellp["OctoSense Shell 进程"]
-    ui["窗口管理器、启动器、<br/>系统对话、面板"]
+    ui["窗口管理器、启动器、<br/>系统对话、Ask app 面板、面板"]
     mods["原生模块<br/>App Hub、Rinx"]
     runner["Card runner<br/>脚本应用、glance 卡片"]
     aihost["ai-host + app-peers 代理<br/>宿主连接"]
     relay["宿主工具中转"]
     router["审批路由"]
+    svc["应用宿主服务<br/>mail、calendar、news"]
   end
   term["Terminal<br/>在系统沙箱中的进程应用"]
   subgraph kern["octos 内核：子进程，OpenHarmony 上在进程内"]
@@ -44,6 +45,7 @@ flowchart LR
   person --> ui
   ui --- mods
   ui --- runner
+  ui -->|"用户的回合：<br/>Ask app、卡内对话"| aihost
   mods -->|"OctosAppService"| aihost
   runner -->|"host.request octos.*"| aihost
   term <-->|"hub：画面、AI bus"| ui
@@ -52,6 +54,8 @@ flowchart LR
   sys -->|"peer_send_input"| peers
   kern -->|"peer/tool/call、审批"| relay
   relay --> router
+  relay -->|"应用的工具"| svc
+  svc -->|"glance.publish：卡片"| runner
   ext -.->|"外部 token：<br/>只能用系统对话"| sys
 ```
 
@@ -90,6 +94,10 @@ flowchart LR
 
 **从系统 Agent 到 glance 屏幕上的一张卡片**：
 
+![From the system agent to a card on the glance screen](docs/images/agents-card-flow.png)
+
+<details><summary>文字版（Mermaid）</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -116,12 +124,18 @@ sequenceDiagram
   A-->>G: the reply, drawn as AI-written
 ```
 
+</details>
+
 - 模型从不编写卡片代码：`mail.notify`、`calendar.notify` 和 `calendar.agenda` 填充应用宿主服务自带的固定 L0 卡片（`apps/mail/host-service/resources/notice.card`、`apps/calendar/host-service/resources/*.card`），并以该应用的身份发布。
 - `mail.notify` 和 `calendar.add_event` 是 `act` 工具，运行时不弹面板；octos 只对破坏性和对外的工具请求审批，这些审批交给 Shell 的审批路由（[见下文](#一次带审批的工具调用)）。
 
 ### 一个应用 Agent，两条通道
 
 一个应用 Agent 就是每个（应用，账号）一个由宿主拥有的 octos **peer**，归系统 Agent 所有，有自己的工作区、记忆命名空间、模型和工具列表。系统 Agent 和用户各自在自己的通道里与它对话：
+
+![One app agent, two lanes](docs/images/agents-two-lanes.png)
+
+<details><summary>文字版（Mermaid）</summary>
 
 ```mermaid
 flowchart TB
@@ -144,6 +158,8 @@ flowchart TB
   lane2 --- own
   mini -->|"open_context"| ctx
 ```
+
+</details>
 
 - **系统 Agent 的通道**是 peer 自己的会话 `…#peer-<app>`。系统 Agent 发送 `peer_send_input`；octos 把它作为 `peer/input` 交给 Shell 的宿主连接，由 Shell 自己启动这一轮，所以这一轮带着应用的工具、记忆和审批运行（对已退出登录的账号或用户未允许的应用，Shell 以 `peer/input/reject` 拒绝）。peer 的结果写到 peer 黑板上，由系统 Agent 读取。
 - **用户的通道**是一个请求上下文 `…#peerctx-<app>.<id>`，以 `share_history` 打开，打开方可以是 Shell 的 “Ask <app>” 面板（`agents::conversation`，客户端实例 `shell-ask`）、卡片的卡内对话，或应用自己的界面（原生模块的 `open_conversation`、脚本应用的 `octos.session.open`、进程应用的 peer link），每个句柄一个新的上下文（[octos#2636](https://github.com/octos-org/octos/pull/2636)，UPCR-2026-034）。两条通道并行运行，每个会话同一时间只有一轮：用户的消息不必等系统 Agent 的回合。每一轮都会以只读块的形式看到另一条通道的最近消息，这个块不会写入自己的对话记录；每一轮都标明说话者（`[from the person: <app>]`、`[from the system agent]`）。应用跟随两条通道，每个事件带有 `lane` 和说话者；`octos.session.history` 按时间合并两份对话记录。用户的回合也会在黑板上留下结果（`origin: person`），系统 Agent 用 `peer_gather` 就能看到。
@@ -184,7 +200,7 @@ sequenceDiagram
   participant Ro as 审批路由
   participant P as 用户
   participant Ex as 拥有工具的应用
-  Ag->>K: 调用 mail.send
+  Ag->>K: 调用 calendar.remove_event
   alt confirm host
     K->>Ro: approval/requested，host_tool
     Ro->>Ro: 先看开发者模式，再看常设规则
