@@ -4081,17 +4081,24 @@ impl App {
     /// (glance_sheet.rs); a shade notification on the phone, which opens the
     /// glance page.
     fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
-        let body = "Open the card at a glance";
+        let body = if note.summary.is_empty() { "Open the card at a glance" } else { note.summary.as_str() };
         let notes = self.ui.widget(cx, ids!(shell_notes));
+        // Who it is from (the app's own icon and name), what (the title,
+        // without the app's name the publisher may have put first) and its
+        // gist (the card's summary); a press opens the card.
+        let name = app_display_name(&note.app);
+        let title = note.title.strip_prefix(&format!("{name} \u{00b7} ")).unwrap_or(&note.title).to_string();
         let card_toast = shell::notifications::Notification {
-            id: 0,
             app: note.app.clone(),
-            summary: note.title.clone(),
-            body: "Click to open the card".into(),
+            caption: name,
+            summary: title,
+            body: note.summary.clone(),
             icon: Some(shell::ui::Ico::Bell),
+            app_icon: Some(note.open_app.clone()),
             urgency: shell::notifications::Urgency::Normal,
             // A card's toast stays its longest, so it can still be opened.
             requested: 30.0,
+            ..Default::default()
         };
         if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
             self.glance_toasts.record(id, &note.key);
@@ -5371,6 +5378,15 @@ fn frame_is_bound(slot: Option<&clients::ClientSlot>, socket: u64) -> bool {
     slot.is_some_and(|slot| slot.socket == Some(socket))
 }
 
+/// An app's name for people: a system app's manifest name, else a label
+/// made from its id.
+fn app_display_name(app: &str) -> String {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    return crate::glance_notice::app_name(app);
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    crate::approvals::sheet::app_label(app)
+}
+
 fn bare_key(m: &KeyModifiers) -> bool {
     !m.shift && !m.control && !m.alt && !m.logo
 }
@@ -5894,10 +5910,16 @@ impl MatchEvent for App {
             if let ModuleCloseAction::Confirmed = wa.cast::<ModuleCloseAction>() {
                 self.module_close_confirmed(cx, wa.widget_uid);
             }
-            if let glance_panel::ShellGlancePanelAction::Open { app, route } = wa.cast::<glance_panel::ShellGlancePanelAction>() {
-                log!("wm: glance card opens {} (route {:?})", app, route);
-                self.set_glance_open(cx, false);
-                self.launch_app(cx, &app);
+            match wa.cast::<glance_panel::ShellGlancePanelAction>() {
+                glance_panel::ShellGlancePanelAction::Open { app, route } => {
+                    log!("wm: glance card opens {} (route {:?})", app, route);
+                    self.set_glance_open(cx, false);
+                    self.launch_app(cx, &app);
+                }
+                // A card pressed in the panel: the card window, as its
+                // notification opens it.
+                glance_panel::ShellGlancePanelAction::OpenCard { key } => self.open_glance_card(cx, &key),
+                glance_panel::ShellGlancePanelAction::None => {}
             }
             // A card's notification opens that card in the card window.
             match wa.cast::<shell::notifications::ShellNotificationsAction>() {

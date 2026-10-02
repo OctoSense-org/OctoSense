@@ -22,6 +22,7 @@ use makepad_widgets::*;
 
 use super::ui::{contains, inset, rect, DrawShellFill, Ico, ShellDraw};
 use super::{darker, fade, MaterialTokens, ShellTokens};
+use crate::octosense::style::{AppIconDraw, DesktopStyle};
 
 thread_local! {
     /// A surface the toasts stay clear of while it is up ([`keep_clear_of`]).
@@ -58,6 +59,8 @@ const CLOSE_INSET: f64 = 3.0;
 const STACK_SPACING: f64 = 8.0;
 const COUNTDOWN_HEIGHT: f64 = 2.0;
 const SUMMARY_LINES: usize = 2;
+/// The caption line's height (a glance card's app name, small).
+const CAPTION_LINE: f64 = 17.0;
 const BODY_LINES: usize = 3;
 
 /// libnotify urgency.
@@ -70,13 +73,19 @@ pub enum Urgency {
 }
 
 /// `NotificationLogic.snapshotOf`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Notification {
     pub id: u64,
     pub app: String,
+    /// A small line above the summary: who it is from (a glance card's app
+    /// name). Empty: none.
+    pub caption: String,
     pub summary: String,
     pub body: String,
     pub icon: Option<Ico>,
+    /// The app whose own icon the toast shows (a launcher id), drawn as the
+    /// dock draws it; else `icon`.
+    pub app_icon: Option<String>,
     pub urgency: Urgency,
     /// The sender's hint in seconds; 0 means "you decide".
     pub requested: f64,
@@ -161,6 +170,11 @@ pub struct ShellNotifications {
     /// How far the stack is pushed down (the bar's height + gapsOut).
     #[rust]
     pub bar_clearance: f64,
+    /// The desktop style app icons are drawn in, and their drawer.
+    #[rust]
+    pub icon_style: DesktopStyle,
+    #[rust]
+    app_icons: AppIconDraw,
     #[rust]
     area: Area,
     #[rust]
@@ -212,6 +226,7 @@ impl ShellNotifications {
                 icon: Some(Ico::Bell),
                 urgency: Urgency::Normal,
                 requested: 0.0,
+                ..Default::default()
             },
         )
     }
@@ -262,9 +277,10 @@ impl ShellNotifications {
                 .len()
         };
         let line = tok.font.title * 1.35;
-        let single = summary == 1 && body == 0;
+        let single = summary == 1 && body == 0 && note.caption.is_empty();
         let v = if single { V_MARGIN_TOAST } else { V_MARGIN };
-        let text_h = summary as f64 * line
+        let caption = if note.caption.is_empty() { 0.0 } else { CAPTION_LINE };
+        let text_h = caption + summary as f64 * line
             + if body > 0 {
                 TEXT_SPACING + body as f64 * line
             } else {
@@ -308,7 +324,13 @@ impl ShellNotifications {
             let single = h <= ICON_SLOT + V_MARGIN_TOAST * 2.0 + border * 2.0;
             let v = if single { V_MARGIN_TOAST } else { V_MARGIN };
             let mut tx = inner.pos.x + SIDE_MARGIN;
-            if let Some(ico) = note.icon {
+            if let Some(app) = note.app_icon.as_deref() {
+                // The app's own icon, as the dock shows it.
+                let size = 34.0;
+                let at = rect(tx + (ICON_SLOT - size) * 0.5, inner.pos.y + v + (ICON_SLOT - size) * 0.5, size, size);
+                self.app_icons.draw(cx, app, self.icon_style, at, 1.0, tok.notifications.surface.text);
+                tx += ICON_SLOT + ICON_GAP;
+            } else if let Some(ico) = note.icon {
                 self.d.icon_centered(
                     cx,
                     ico,
@@ -321,6 +343,18 @@ impl ShellNotifications {
             let text_w = inner.pos.x + inner.size.x - SIDE_MARGIN - TEXT_RIGHT_MARGIN - tx;
             let line = tok.font.title * 1.35;
             let mut ty = inner.pos.y + v;
+            if !note.caption.is_empty() {
+                self.d.label_elided(
+                    cx,
+                    rect(tx, ty, text_w, CAPTION_LINE),
+                    false,
+                    tok.font.body_small,
+                    darker(tok.notifications.surface.text, 1.6),
+                    super::ui::HAlign::Left,
+                    &note.caption,
+                );
+                ty += CAPTION_LINE;
+            }
             let summary = self
                 .d
                 .wrap(cx, true, tok.font.title, &note.summary, text_w, SUMMARY_LINES);
@@ -493,6 +527,7 @@ pub fn fixtures() -> Vec<Notification> {
             icon: Some(Ico::Moon),
             urgency: Urgency::Normal,
             requested: 0.0,
+            ..Default::default()
         },
         Notification {
             id: 0,
@@ -502,6 +537,7 @@ pub fn fixtures() -> Vec<Notification> {
             icon: Some(Ico::Check),
             urgency: Urgency::Low,
             requested: 0.0,
+            ..Default::default()
         },
         Notification {
             id: 0,
@@ -511,6 +547,7 @@ pub fn fixtures() -> Vec<Notification> {
             icon: Some(Ico::Battery),
             urgency: Urgency::Critical,
             requested: 0.0,
+            ..Default::default()
         },
     ]
 }

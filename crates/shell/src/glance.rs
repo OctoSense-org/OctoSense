@@ -4,7 +4,7 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `glance.publish` | `{card_id, source \| script, data?, title, priority?, expires?, open?: {app, route?}, notify?}` | `{card_id, replaced, expires_at}` |
+//! | `glance.publish` | `{card_id, source \| script, data?, title, summary?, priority?, expires?, open?: {app, route?}, notify?}` | `{card_id, replaced, expires_at}` |
 //! | `glance.withdraw` | `{card_id}` | `{withdrawn}` |
 //! | `glance.list` | – | `[{card_id, title, priority, published_at, expires_at}]`, the caller's own cards |
 //!
@@ -39,7 +39,9 @@
 //! Every tile is interactive and runs under the publishing app's own policy
 //! (glance_card.rs), so a card does on the glance screen exactly what the
 //! app's UI does. Caps: `card_id` 1–64 of `[A-Za-z0-9._-]`, `title` ≤ 80
-//! characters, `source`/`script` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route`
+//! characters, `summary` ≤ 200 (the notification's second line; without
+//! one it is the card's own `summary` or `note.summary` in its data, or
+//! nothing), `source`/`script` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route`
 //! ≤ 256. `priority` 0–100 (default 50). `expires` is seconds from now, 60 s
 //! to 7 days (default 24 h); an expired card is dropped. Each app may publish
 //! [`RATE_LIMIT`] times per [`RATE_WINDOW_MS`] (a replace counts, and so
@@ -78,6 +80,8 @@ use std::sync::{Arc, Mutex};
 
 pub const CARD_ID_MAX: usize = 64;
 pub const TITLE_MAX: usize = 80;
+/// A notification's second line, in characters.
+pub const SUMMARY_MAX: usize = 200;
 pub const SOURCE_MAX: usize = 16 * 1024;
 pub const DATA_MAX: usize = 32 * 1024;
 pub const ROUTE_MAX: usize = 256;
@@ -209,6 +213,11 @@ impl GlanceStore {
         let title = text(args, "title").ok_or("title is required")?.trim();
         if title.is_empty() || title.chars().count() > TITLE_MAX {
             return Err(format!("title must be 1-{TITLE_MAX} characters"));
+        }
+        match args.get("summary") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(s)) if s.chars().count() <= SUMMARY_MAX => {}
+            Some(_) => return Err(format!("summary must be a string of at most {SUMMARY_MAX} characters")),
         }
         let (kind, source) = match (text(args, "source"), text(args, "script")) {
             (Some(source), None) => ("source", source),
@@ -392,7 +401,24 @@ pub struct GlanceNote {
     /// The card's key (`app/card_id`).
     pub key: String,
     pub app: String,
+    /// The launcher id the card opens (its app's icon on the toast).
+    pub open_app: String,
     pub title: String,
+    /// The notification's second line ([`note_summary`]); may be empty.
+    pub summary: String,
+}
+
+/// A card notification's second line: the publisher's `summary`, else the
+/// card's own summary in its data (`summary`, or a source record's, as a
+/// notice's `note.summary`), else nothing.
+pub fn note_summary(args: &Value) -> String {
+    let pick = |v: Option<&Value>| v.and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let record = || args.get("data").and_then(Value::as_object).and_then(|data| data.values().find_map(|v| pick(v.get("summary"))));
+    let summary = pick(args.get("summary")).or_else(|| pick(args.pointer("/data/summary"))).or_else(record).unwrap_or_default();
+    match summary.char_indices().nth(SUMMARY_MAX) {
+        Some((cut, _)) => format!("{}\u{2026}", &summary[..cut]),
+        None => summary,
+    }
 }
 
 /// The notifications cards asked for since the last call.
@@ -460,7 +486,13 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
     if result.is_ok() && method == "publish" && args.get("notify").and_then(Value::as_bool) == Some(true) {
         let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or_default();
         let title = args.get("title").and_then(Value::as_str).unwrap_or_default().trim();
-        NOTES.lock().unwrap().push(GlanceNote { key: format!("{}/{card_id}", caller.app()), app: caller.app().to_string(), title: title.to_string() });
+        NOTES.lock().unwrap().push(GlanceNote {
+            key: format!("{}/{card_id}", caller.app()),
+            app: caller.app().to_string(),
+            open_app: caller.launch_id().to_string(),
+            title: title.to_string(),
+            summary: note_summary(args),
+        });
     }
     if result.is_ok() && method != "list" {
         changed();
@@ -607,10 +639,15 @@ pub fn demo_mail_publishes() -> Vec<Value> {
         .into_iter()
         .enumerate()
         .map(|(i, (card_id, title, source, data))| {
-            json!({
+            let mut args = json!({
                 "card_id": card_id, "title": title, "source": source, "data": data,
                 "priority": 80 - i as i64, "open": {"app": "mail"}, "notify": true
-            })
+            });
+            // The request card's gist is its chat's, not its data's.
+            if card_id == "ana-contract" {
+                args["summary"] = json!("Ana asks whether you can sign by Friday, with the revised payment terms.");
+            }
+            args
         })
         .collect()
 }
@@ -946,6 +983,23 @@ mod tests {
         assert!(store.publish(&news(), &args("one-more"), 900_000).unwrap_err().contains("already has"));
         // Replacing is still allowed at the cap.
         assert!(store.publish(&news(), &args("digest"), 900_000).is_ok());
+    }
+
+    /// A card's notification gets its publisher's summary, else the card's
+    /// own (a source record's, a notice's), clipped; a long one is refused
+    /// at publish.
+    #[test]
+    fn a_cards_notification_says_its_gist() {
+        assert_eq!(note_summary(&json!({"summary": " Out today ", "data": {"pkg": {"summary": "x"}}})), "Out today");
+        assert_eq!(note_summary(&json!({"data": {"pkg": {"summary": "Out for delivery"}}})), "Out for delivery");
+        assert_eq!(note_summary(&json!({"data": {"note": {"title": "Hi", "summary": "From the agent"}}})), "From the agent");
+        assert_eq!(note_summary(&json!({"data": {"msg": {"title": "Hi"}}})), "");
+        let long = "x".repeat(SUMMARY_MAX + 5);
+        assert_eq!(note_summary(&json!({"data": {"summary": long}})).chars().count(), SUMMARY_MAX + 1, "clipped with an ellipsis");
+        let mut store = GlanceStore::default();
+        let mut a = args("digest");
+        a["summary"] = json!("y".repeat(SUMMARY_MAX + 1));
+        assert!(store.publish(&news(), &a, 1_000).unwrap_err().contains("summary"));
     }
 
     #[test]

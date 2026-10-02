@@ -261,12 +261,12 @@ The limits are 6 publishes per minute and 4 cards per app. The shell keeps 32 ca
 
 | Surface | What happens |
 | --- | --- |
-| Desktop panel | A new card opens the glance panel unless a card window is already open. The bar’s bell or F9 also opens the panel. |
-| Desktop notification | A card published with `notify` also posts a toast. Selecting the toast opens the card in its own window. While the panel is open, toasts stack to its left. |
-| Desktop dismissal | Each card has a dismiss button: `glance::dismiss` removes it as if the app had withdrawn it. The panel has a separate close button. |
+| Desktop panel | A new card opens the glance panel unless a card window is already open. The bar’s bell or F9 also opens the panel. A press on a card outside its own controls opens it in the card window. The hovered card shows its open and dismiss actions, and a card that just came wears an accent mark for a few seconds. |
+| Desktop notification | A card published with `notify` also posts a toast with the app’s icon and name, the card’s title and its `summary` (else the card’s own). Selecting the toast opens the card in its own window. While the panel is open, toasts stack to its left. |
+| Desktop dismissal | The hovered card shows a dismiss button: `glance::dismiss` removes the card as if the app had withdrawn it. Clear all dismisses every card. The panel has a separate close button. |
 | Phone | `notify` posts a shade notification. Selecting it opens the glance page. |
 
-The desktop surfaces are implemented in [`glance_panel.rs`](crates/shell/src/glance_panel.rs), [`glance_sheet.rs`](crates/shell/src/glance_sheet.rs) and [`notifications.rs`](crates/shell/src/shell/notifications.rs) (`keep_clear_of`, [#273](https://github.com/OctoSense-org/OctoSense/pull/273)).
+A card that names no theme takes the shell’s light or dark palette. The desktop surfaces are implemented in [`glance_panel.rs`](crates/shell/src/glance_panel.rs), [`glance_sheet.rs`](crates/shell/src/glance_sheet.rs) and [`notifications.rs`](crates/shell/src/shell/notifications.rs) (`keep_clear_of`, [#273](https://github.com/OctoSense-org/OctoSense/pull/273)).
 
 #### Interactive cards
 

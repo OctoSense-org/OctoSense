@@ -120,6 +120,12 @@ impl App {
         state.dragging.clear();
         state.style.select(style);
         state.phone.shade.dark = dark;
+        // Glance cards that name no theme take the shell's mode.
+        crate::glance_card::set_dark(dark);
+        // Toasts draw an app's icon as the dock does, in this style.
+        if let Some(mut notes) = self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<crate::shell::notifications::ShellNotifications>() {
+            notes.icon_style = style;
+        }
         // Extra module windows are a desktop thing: the phone shell's apps are
         // full-screen, so their windows close (the apps hear it, as from a person).
         self.module_host.set_extra_windows(!style.mobile());

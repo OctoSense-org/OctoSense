@@ -261,12 +261,12 @@ sequenceDiagram
 
 | 界面 | 行为 |
 | --- | --- |
-| 桌面面板 | 新卡片会打开 glance 面板，除非已有卡片窗口打开。顶栏铃铛或 F9 也可以打开面板。 |
-| 桌面通知 | 以 `notify` 发布的卡片还会弹出 toast。点击 toast 会在独立窗口中打开卡片。面板打开时，toast 叠放在面板左侧。 |
-| 桌面关闭操作 | 每张卡片都有移除按钮：`glance::dismiss` 会移除卡片，效果如同应用撤回了它。面板本身另有关闭按钮。 |
+| 桌面面板 | 新卡片会打开 glance 面板，除非已有卡片窗口打开。顶栏铃铛或 F9 也可以打开面板。点击卡片上自身控件以外的地方，会在卡片窗口中打开它。鼠标悬停的卡片会显示打开和移除操作，刚到的卡片旁会有几秒钟的强调色标记。 |
+| 桌面通知 | 以 `notify` 发布的卡片还会弹出 toast，显示应用的图标和名称、卡片标题及其 `summary`（没有时用卡片自带的摘要）。点击 toast 会在独立窗口中打开卡片。面板打开时，toast 叠放在面板左侧。 |
+| 桌面关闭操作 | 鼠标悬停的卡片会显示移除按钮：`glance::dismiss` 会移除卡片，效果如同应用撤回了它。“Clear all”会移除所有卡片。面板本身另有关闭按钮。 |
 | 手机 | `notify` 在通知栏发出通知，点击后打开 glance 页面。 |
 
-桌面界面实现在 [`glance_panel.rs`](crates/shell/src/glance_panel.rs)、[`glance_sheet.rs`](crates/shell/src/glance_sheet.rs) 和 [`notifications.rs`](crates/shell/src/shell/notifications.rs) 中（`keep_clear_of`，[#273](https://github.com/OctoSense-org/OctoSense/pull/273)）。
+未声明主题的卡片使用 Shell 的浅色或深色配色。桌面界面实现在 [`glance_panel.rs`](crates/shell/src/glance_panel.rs)、[`glance_sheet.rs`](crates/shell/src/glance_sheet.rs) 和 [`notifications.rs`](crates/shell/src/shell/notifications.rs) 中（`keep_clear_of`，[#273](https://github.com/OctoSense-org/OctoSense/pull/273)）。
 
 #### 交互式卡片
 
