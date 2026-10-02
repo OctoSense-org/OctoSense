@@ -12,7 +12,7 @@
 //! column is [`PANEL_WIDTH`] wide; each card is a tile of the column's inner
 //! width at its measured height (glance_card.rs), in the glance order
 //! (priority, then recency).
-use crate::glance_card::GlanceTiles;
+use crate::glance_card::{GlanceTiles, LiveCards};
 use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, Ico, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellTokens};
 use makepad_widgets::*;
@@ -78,6 +78,13 @@ pub struct ShellGlancePanel {
     logged: String,
     #[rust]
     tiles: GlanceTiles,
+    /// The L0 cards' live state, by card key, as the card window keeps its
+    /// card's (glance_card.rs `LiveCards`): their chips, buttons and field
+    /// edits run here as there, their in-card chat (`sys.chat`) with the
+    /// publishing app's own agent included. A card's state lasts while the
+    /// panel shows it; closing the panel forgets it.
+    #[rust]
+    live: LiveCards,
     /// The panel's own area: what `redraw` repaints (`draw_bg` draws
     /// nothing).
     #[redraw]
@@ -159,7 +166,8 @@ impl Widget for ShellGlancePanel {
                 }
                 drawn += 1;
                 let r = rect(x + PAD, y, PANEL_WIDTH - PAD * 2.0, h);
-                self.tiles.draw(cx, &key, &card.app, card.contained, &card.body, r);
+                let body = self.live.body(&key, card, "glance panel");
+                self.tiles.draw(cx, &key, &card.app, card.contained, &body, r);
                 let open = crate::glance_card::open_button(r);
                 self.d.card(cx, open, &tok.notifications.surface);
                 self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
@@ -193,6 +201,7 @@ impl Widget for ShellGlancePanel {
         }
         let live: Vec<String> = if self.open { crate::glance::shown().iter().map(|c| c.key()).collect() } else { Vec::new() };
         self.tiles.sweep(cx, &live);
+        self.live.retain(&live);
         cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
     }
@@ -254,6 +263,11 @@ impl Widget for ShellGlancePanel {
         // has swept its tiles; pointer events reach them only while open.
         if self.open || !event.requires_visibility() {
             self.tiles.handle_event(cx, event);
+            // Then the L0 taps those tiles queued, as the card window runs
+            // its card's, and the cards whose chat moved (a reply came).
+            if self.live.dispatch(cx, &self.tiles, "glance panel") {
+                self.redraw(cx);
+            }
         }
     }
 }

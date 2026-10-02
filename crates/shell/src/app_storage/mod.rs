@@ -434,6 +434,12 @@ impl Storage {
         self.state().specs.get(app_id).cloned().unwrap_or_default()
     }
 
+    /// Whether `app_id`'s storage block was recorded yet ([`Self::spec`]
+    /// answers the default until then).
+    pub fn has_spec(&self, app_id: &str) -> bool {
+        self.state().specs.contains_key(app_id)
+    }
+
     /// Lay out `app_id`'s jail (`accounts/`, `common/`, `cache/`) and its
     /// secrets directory, and return the handle a module is offered.
     pub fn open(self: &Arc<Self>, app_id: &str) -> Result<Arc<dyn AppStorage>, StorageError> {

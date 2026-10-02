@@ -498,3 +498,75 @@ fn threads_are_kept_in_the_apps_folder() {
             .is_empty()
     );
 }
+
+/// A thread is the folder's the host names for the app now: another
+/// account signed in, another thread. A reply goes to the thread its
+/// message went to, even when the account switched while the agent
+/// answered: never into the new account's thread, and the first thread
+/// takes messages again.
+#[test]
+fn a_reply_stays_with_the_account_its_message_went_to() {
+    struct Later(Mutex<Option<Done>>);
+    impl Responder for Later {
+        fn respond(&self, _: Request, done: Done) {
+            *self.0.lock().unwrap() = Some(done);
+        }
+    }
+    let root = std::env::temp_dir().join(format!("l0-chat-accounts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let account = Arc::new(Mutex::new("a"));
+    let folder = {
+        let (root, account) = (root.clone(), account.clone());
+        move |app: &str| {
+            let dir = root.join(app).join(*account.lock().unwrap()).join("chat");
+            std::fs::create_dir_all(&dir).ok()?;
+            Some(dir)
+        }
+    };
+    let chat = Arc::new(ChatStore::with_folder(Box::new(folder)));
+    let later = Later(Mutex::new(None));
+    let (write, origin, data) = send(&chat, "os.news", CARD, "asked as a");
+    perform(
+        &chat,
+        &later,
+        "os.news",
+        CARD,
+        &InstanceStore::default(),
+        &data,
+        &write,
+        origin,
+        0,
+    )
+    .unwrap();
+    // Another account signs in while the agent answers.
+    *account.lock().unwrap() = "b";
+    assert!(chat.entries("os.news", "main").is_empty(), "b's own thread");
+    let done = later.0.lock().unwrap().take().unwrap();
+    done(Reply::Model("for a".into()));
+    assert!(
+        chat.entries("os.news", "main").is_empty(),
+        "a's reply is not b's"
+    );
+    assert!(!root.join("os.news/b/chat/main.json").exists());
+    *account.lock().unwrap() = "a";
+    assert_eq!(
+        roles(&chat, "os.news", "main"),
+        [
+            (Role::User, "asked as a".to_string()),
+            (Role::Model, "for a".to_string())
+        ]
+    );
+    assert_eq!(
+        chat.answer("os.news", "main")["status"],
+        "ready",
+        "a's thread takes messages again"
+    );
+    let kept = ChatStore::with_folder(Box::new(move |app: &str| {
+        Some(root.join(app).join("a").join("chat"))
+    }));
+    assert_eq!(
+        kept.entries("os.news", "main").len(),
+        2,
+        "kept on disk as a's"
+    );
+}

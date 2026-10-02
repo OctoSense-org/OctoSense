@@ -14,10 +14,13 @@
 //!   app's conversation (ADR 0004 §6: the person's lane on the host-owned
 //!   app peer, `crate::agents::conversation`) once the person allowed it;
 //!   otherwise a `host` notice saying why. Under `OCTOSENSE_GLANCE_DEMO=mail`
-//!   Mail, which has no agent yet (no `octos` services, no `tools.json`),
-//!   answers with the canned demo reply instead.
-//! - **Stale.** Every change wakes the UI; the card window re-seeds and
-//!   re-lowers its card when [`generation`] moved (glance_sheet.rs).
+//!   Mail's chat answers with the canned demo reply ([`DEMO_ANSWER`]) by
+//!   design, although Mail has an agent (its `tools.json`, `mail.notify`):
+//!   the demo's cards and thread are fake data (glance.rs), so its chat
+//!   never asks a model.
+//! - **Stale.** Every change wakes the UI; a surface that shows the card
+//!   (the card window, the glance panel) re-seeds and re-lowers it when
+//!   [`generation`] moved (glance_card.rs `LiveCards`).
 use octosense_l0_chat::{ChatStore, Done, Reply, Request, Responder};
 use serde_json::Value;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -39,11 +42,18 @@ pub fn store() -> &'static Arc<ChatStore> {
 
 /// The app's chat folder in its account folder, created owner-only.
 fn folder(app: &str) -> Option<std::path::PathBuf> {
-    let host = crate::app_storage::host()?;
-    let paths = host.layout().app(app).ok()?;
-    let account = crate::ai_host::contained::account_of(app).filter(|a| a != crate::ai_host::contained::ACCOUNT);
+    folder_in(crate::app_storage::host()?, app, crate::ai_host::contained::account_of(app))
+}
+
+/// `app`'s chat folder in `storage`, for `account`: the account its agent
+/// acts for, as `account_of` answers it (the shell's lookup is
+/// `app_storage::lifecycle::contained_account_in`); the device folder for
+/// [`crate::ai_host::contained::ACCOUNT`] or none.
+fn folder_in(storage: &crate::app_storage::Storage, app: &str, account: Option<String>) -> Option<std::path::PathBuf> {
+    let paths = storage.layout().app(app).ok()?;
+    let account = account.filter(|a| a != crate::ai_host::contained::ACCOUNT);
     let dir = paths.account(account.as_deref()).join("chat");
-    match crate::app_storage::ensure_private_dir(host.layout().apps_root(), &dir) {
+    match crate::app_storage::ensure_private_dir(storage.layout().apps_root(), &dir) {
         Ok(()) => Some(dir),
         Err(e) => {
             makepad_widgets::log!("glance chat: {app}'s chat folder: {e}; kept in memory");
@@ -172,5 +182,38 @@ mod tests {
             Some(Reply::Notice(text)) => assert!(text.contains("no agent"), "{text}"),
             other => panic!("{other:?}"),
         }
+    }
+
+    /// A card's chat thread is kept in the folder of the account the app's
+    /// agent acts for: a signed-in Mail's account, also for a thread first
+    /// touched at startup (the demo's seed), before anything opened Mail or
+    /// prepared its agent in this run. The account comes from Mail's
+    /// manifest then; before, the unrecorded block read as "no accounts"
+    /// and the thread went to the device folder.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn a_cards_thread_is_kept_under_the_account_the_agent_acts_for() {
+        use crate::app_storage::{lifecycle::contained_account_in, Layout, Storage};
+        let home = crate::app_storage::tests::Scratch::new("glance-chat-account");
+        let host = Storage::with_file_secrets(Layout::new(&home.0).unwrap());
+        let apps = host.layout().apps_root().to_path_buf();
+        let write = |path: std::path::PathBuf, value: Value| {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, value.to_string()).unwrap();
+        };
+        write(apps.join(".system/os.mail/0001/manifest.json"), serde_json::json!({"id": "os.mail", "storage": {"accounts": true}}));
+        write(apps.join(".host/mail/accounts.json"), serde_json::json!([{"id": "ana@example.org", "apps": ["os.mail"], "signed_in": 10}]));
+        assert!(!host.has_spec("os.mail"), "nothing opened Mail in this run");
+        let chat = {
+            let host = host.clone();
+            ChatStore::with_folder(Box::new(move |app| folder_in(&host, app, contained_account_in(&host, app))))
+        };
+        assert!(chat.seed_if_empty("os.mail", "ana-contract", &[(Role::Model, "Net 30.")], 0));
+        let mail = host.layout().app("os.mail").unwrap();
+        assert!(mail.account(Some("ana@example.org")).join("chat/ana-contract.json").is_file());
+        assert!(!mail.account(None).join("chat").exists(), "nothing in the device folder");
+        // An app without accounts keeps its threads in its device folder.
+        assert!(chat.seed_if_empty("os.news", "main", &[(Role::Model, "Rates held.")], 0));
+        assert!(host.layout().app("os.news").unwrap().account(None).join("chat/main.json").is_file());
     }
 }

@@ -35,7 +35,9 @@
 //! - **Storage.** Threads are kept per app and thread, in the folder the
 //!   host's [`ChatStore::with_folder`] names for the app (the shell: the
 //!   app's account folder under ADR 0004's layout, `apps/<app>/accounts/
-//!   <account>/chat/<thread>.json`), or in memory.
+//!   <account>/chat/<thread>.json`), or in memory. A reply is kept in the
+//!   thread its message went to, even when the host names another folder
+//!   by then (another account signed in while the agent answered).
 //! - **Stale.** Every change bumps [`ChatStore::generation`] and calls the
 //!   host's change hook, so a surface re-seeds and re-lowers the card: the
 //!   write marks the source stale (§5.9) and the reply arrives later.
@@ -255,8 +257,8 @@ impl ChatStore {
             .unwrap_or_default()
     }
 
-    fn save(&self, app: &str, thread: &str, t: &Thread) {
-        let Some(path) = self.file(app, thread) else {
+    fn save(&self, app: &str, thread: &str, file: &Option<PathBuf>, t: &Thread) {
+        let Some(path) = file else {
             return;
         };
         let disk = json!({"schema": SCHEMA, "entries": t.entries, "next": t.next});
@@ -267,23 +269,40 @@ impl ChatStore {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
             }
-            std::fs::rename(&tmp, &path)
+            std::fs::rename(&tmp, path)
         });
         if let Err(e) = written {
             eprintln!("l0 chat: could not keep {app}/{thread}: {e}");
         }
     }
 
-    fn with_thread<R>(&self, app: &str, thread: &str, f: impl FnOnce(&mut Thread) -> R) -> R {
+    /// `f` on the thread in the folder the host names for the app now.
+    /// Keyed by the file too: when the host's folder for the app changes
+    /// (another account is active), the thread is that folder's.
+    fn with_thread<R>(
+        &self,
+        app: &str,
+        thread: &str,
+        f: impl FnOnce(&mut Thread, &Option<PathBuf>) -> R,
+    ) -> R {
+        self.with_thread_at(app, thread, self.file(app, thread), f)
+    }
+
+    /// `f` on the thread kept in `file` (`None`: in memory), and that file.
+    fn with_thread_at<R>(
+        &self,
+        app: &str,
+        thread: &str,
+        file: Option<PathBuf>,
+        f: impl FnOnce(&mut Thread, &Option<PathBuf>) -> R,
+    ) -> R {
         let mut threads = self.threads.lock().unwrap_or_else(|e| e.into_inner());
-        // Keyed by the file too: when the host's folder for the app changes
-        // (another account is active), the thread is that folder's.
-        let key = (app.to_string(), thread.to_string(), self.file(app, thread));
+        let key = (app.to_string(), thread.to_string(), file);
         if !threads.contains_key(&key) {
             let loaded = self.load(&key.2);
             threads.insert(key.clone(), loaded);
         }
-        f(threads.get_mut(&key).expect("just inserted"))
+        f(threads.get_mut(&key).expect("just inserted"), &key.2)
     }
 
     /// The thread's entries, oldest first.
@@ -291,7 +310,7 @@ impl ChatStore {
         if !valid_app(app) || !valid_thread(thread) {
             return Vec::new();
         }
-        self.with_thread(app, thread, |t| t.entries.clone())
+        self.with_thread(app, thread, |t, _| t.entries.clone())
     }
 
     /// `sys.chat`'s answer for one thread: `{status, count, entries}`;
@@ -300,7 +319,7 @@ impl ChatStore {
         if !valid_app(app) || !valid_thread(thread) {
             return unavailable();
         }
-        self.with_thread(app, thread, |t| {
+        self.with_thread(app, thread, |t, _| {
             json!({
                 "status": if t.answering { "answering" } else { "ready" },
                 "count": t.entries.len(),
@@ -318,6 +337,18 @@ impl ChatStore {
         text: &str,
         now: u64,
     ) -> Result<Entry, String> {
+        self.append_user_at(app, thread, self.file(app, thread), text, now)
+    }
+
+    /// [`Self::append_user`] to the thread kept in `file`.
+    fn append_user_at(
+        &self,
+        app: &str,
+        thread: &str,
+        file: Option<PathBuf>,
+        text: &str,
+        now: u64,
+    ) -> Result<Entry, String> {
         if !valid_app(app) || !valid_thread(thread) {
             return Err(format!("not a conversation: {app}/{thread}"));
         }
@@ -331,7 +362,7 @@ impl ChatStore {
                 text.len()
             ));
         }
-        let entry = self.with_thread(app, thread, |t| {
+        let entry = self.with_thread_at(app, thread, file, |t, file| {
             if t.answering {
                 return Err("the agent is still answering the last message".to_string());
             }
@@ -346,7 +377,7 @@ impl ChatStore {
             let entry = push(t, Role::User, text, now);
             t.last_user_ms = Some(now);
             t.answering = true;
-            self.save(app, thread, t);
+            self.save(app, thread, file, t);
             Ok(entry)
         })?;
         self.changed();
@@ -356,6 +387,18 @@ impl ChatStore {
     /// The host appends the agent's reply (`model`) or a notice (`host`),
     /// and the thread takes messages again.
     pub fn append_reply(&self, app: &str, thread: &str, reply: Reply, now: u64) -> Option<Entry> {
+        self.append_reply_at(app, thread, self.file(app, thread), reply, now)
+    }
+
+    /// [`Self::append_reply`] to the thread kept in `file`.
+    fn append_reply_at(
+        &self,
+        app: &str,
+        thread: &str,
+        file: Option<PathBuf>,
+        reply: Reply,
+        now: u64,
+    ) -> Option<Entry> {
         if !valid_app(app) || !valid_thread(thread) {
             return None;
         }
@@ -367,10 +410,10 @@ impl ChatStore {
             Reply::Notice(text) => (Role::Host, text),
         };
         let text = cut(text.trim(), REPLY_MAX_BYTES);
-        let entry = self.with_thread(app, thread, |t| {
+        let entry = self.with_thread_at(app, thread, file, |t, file| {
             let entry = push(t, role, text, now);
             t.answering = false;
-            self.save(app, thread, t);
+            self.save(app, thread, file, t);
             entry
         });
         self.changed();
@@ -389,14 +432,14 @@ impl ChatStore {
         if !valid_app(app) || !valid_thread(thread) {
             return false;
         }
-        let seeded = self.with_thread(app, thread, |t| {
+        let seeded = self.with_thread(app, thread, |t, file| {
             if !t.entries.is_empty() {
                 return false;
             }
             for (role, text) in entries {
                 push(t, *role, text.to_string(), now);
             }
-            self.save(app, thread, t);
+            self.save(app, thread, file, t);
             true
         });
         if seeded {
@@ -618,8 +661,12 @@ pub fn perform(
         ));
     }
     let thread = thread_of(&source, state, data).ok_or("sys.chat: no valid thread")?;
-    let entry = chat.append_user(&app, &thread, &write.value, now)?;
-    let history = chat.entries(&app, &thread);
+    // The reply goes where the message went: the thread in the folder the
+    // host names now, even when it names another (another account signed
+    // in) before the agent answers.
+    let file = chat.file(&app, &thread);
+    let entry = chat.append_user_at(&app, &thread, file.clone(), &write.value, now)?;
+    let history = chat.with_thread_at(&app, &thread, file.clone(), |t, _| t.entries.clone());
     let store = chat.clone();
     let (a, t) = (app.clone(), thread.clone());
     responder.respond(
@@ -630,7 +677,7 @@ pub fn perform(
             history,
         },
         Box::new(move |reply| {
-            store.append_reply(&a, &t, reply, now_ms());
+            store.append_reply_at(&a, &t, file, reply, now_ms());
         }),
     );
     Ok(entry)
