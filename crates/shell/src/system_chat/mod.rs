@@ -578,8 +578,9 @@ pub fn key(e: &KeyEvent) -> bool {
         composer::Key::New => new_conversation(),
         composer::Key::Stop => interrupt(),
         composer::Key::Swallow => {}
-        // Other keys stay the pane's too, unless they are shortcuts.
-        composer::Key::Pass => return !(e.modifiers.logo || e.modifiers.control),
+        // Other keys stay the pane's too, unless they are shortcuts or
+        // function keys (the shell's: F8, F9).
+        composer::Key::Pass => return composer::keeps_unused(e),
     }
     true
 }
