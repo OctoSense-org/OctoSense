@@ -173,6 +173,14 @@ pub struct ShellApprovalsSettings {
 }
 
 impl ShellApprovalsSettings {
+    /// The shell's theme (light or dark) and material, as its other
+    /// surfaces take them (desktop_app.rs `apply_material_to_chrome`): a
+    /// sheet is lifted with them, so it stays over the chat panes.
+    pub fn set_material(&mut self, m: crate::shell::MaterialTokens, palette: Option<crate::shell::ShellPalette>) {
+        self.d.set_material(m);
+        self.d.set_palette(palette);
+    }
+
     fn hit_at(&self, p: Vec2d) -> Option<Hit> {
         self.hits.iter().find(|(r, h)| *h != Hit::Page && contains(*r, p)).or_else(|| self.hits.iter().find(|(r, _)| contains(*r, p))).map(|(_, h)| h.clone())
     }

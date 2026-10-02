@@ -18,7 +18,9 @@
 //! is `implemented_by: "host-service"` runs on the host service of its
 //! namespace (`news.list` → the `news` service), exactly as the app's own
 //! `host.request("news.list", …)` would: with the app's identity, never
-//! from a sheet, and only when the app's manifest was granted that family.
+//! from a sheet, and only when the app's manifest was granted that family,
+//! or the family is a system app's own namespace (`os.calendar` and its
+//! `calendar` service, which ship with the shell).
 //! A tool the app's own script implements (`implemented_by: "app"`) needs
 //! the app open, and is refused visibly until the Card runner can take it.
 //! Answers arrive on App Hub's reply queue; [`poll`] (from
@@ -132,6 +134,15 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
 /// Load `app`'s agent block from App Hub: a system app's packed bundle, or
 /// an installed one.
 pub fn load(app: &str) -> Result<(), String> {
+    let (root, bundle) = admitted_bundle(app)?;
+    let loaded = from_bundle(&bundle)?;
+    install(app, loaded, root.join(".host"));
+    Ok(())
+}
+
+/// `app`'s admitted bundle: a system app's packed bundle, or an installed
+/// one, with App Hub's apps root.
+fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
     // Never a native app's tools, executor or grants (ADR 0004 §3, §7).
     crate::apps::check_script_app_id(app)?;
     let root = octosense_appstore::data_root_if_set().ok_or("App Hub has no apps root yet")?;
@@ -139,9 +150,14 @@ pub fn load(app: &str) -> Result<(), String> {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.0,
         None => root.join(app).join("bundle"),
     };
-    let loaded = from_bundle(&bundle)?;
-    install(app, loaded, root.join(".host"));
-    Ok(())
+    Ok((root, bundle))
+}
+
+/// Whether `app`'s admitted manifest was granted the capability `family`:
+/// for a host service acting for the app outside its isolate (a tool call),
+/// where the Card runner's gate does not run.
+pub fn grants(app: &str, family: &str) -> bool {
+    admitted_bundle(app).and_then(|(_, bundle)| from_bundle(&bundle)).is_ok_and(|loaded| loaded.families.contains(family))
 }
 
 // ------------------------------------------------------------ the executor
@@ -186,7 +202,11 @@ impl ToolExecutor for HostServiceExecutor {
             return;
         }
         let family = call.name.split('.').next().unwrap_or("");
-        if !self.families.contains(family) {
+        // A system app's own namespace is its own host service: both ship
+        // with the shell (Calendar's `calendar`, which App Hub's closed
+        // capability list does not name). Any other family needs the grant.
+        let own = self.app.strip_prefix(octosense_appstore::system::SYSTEM_ID_PREFIX) == Some(family);
+        if !self.families.contains(family) && !own {
             reply.finish(ToolOutcome::error("not_granted", format!("{} was not granted the {family} service", self.app)));
             return;
         }
@@ -279,6 +299,41 @@ pub(crate) mod tests {
         // A tampered bundle is refused (App Hub's digest check).
         std::fs::write(dir.join("tools.json"), "{}").unwrap();
         assert!(from_bundle(&dir).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Mail's bundle gives its agent `mail.notify` on the `mail` host
+    /// service, and Mail is granted `glance` (what `mail.notify` publishes
+    /// under). octos takes a tool only with object schemas.
+    #[test]
+    fn mail_offers_its_tools_and_notify_from_its_bundle() {
+        let dir = stamped_bundle("mail", "tools", |_, _| {});
+        let loaded = from_bundle(&dir).unwrap();
+        let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert_eq!(names, ["mail.notify"]);
+        assert_eq!(loaded.host_service_tools.len(), 1);
+        assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
+        assert!(loaded.tools.iter().all(|t| t["shareable"] == false), "Mail's tools are its own agent's");
+        assert!(["mail", "glance"].iter().all(|f| loaded.families.contains(*f)));
+        assert_eq!(loaded.generic, ["ask_user_question"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Calendar's bundle gives its agent its five tools, all on its own
+    /// `calendar` host service; removing an event is destructive (the
+    /// person approves it); Calendar is granted `glance`.
+    #[test]
+    fn calendar_offers_its_tools_from_its_bundle() {
+        let dir = stamped_bundle("calendar", "tools", |_, _| {});
+        let loaded = from_bundle(&dir).unwrap();
+        let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert_eq!(names, ["calendar.events", "calendar.add_event", "calendar.remove_event", "calendar.notify", "calendar.agenda"]);
+        assert_eq!(loaded.host_service_tools.len(), 5);
+        assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
+        let remove = loaded.tools.iter().find(|t| t["name"] == "calendar.remove_event").unwrap();
+        assert_eq!(remove["risk"], "destructive");
+        assert!(loaded.families.contains("glance") && !loaded.families.contains("calendar"), "no `calendar` capability exists to grant");
+        assert_eq!(loaded.generic, ["ask_user_question"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -434,5 +489,29 @@ pub(crate) mod tests {
         let (r, sent) = reply();
         exec.execute(call("g3probe.in_script"), r);
         assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "app_tool_unavailable");
+    }
+
+    /// A system app's own namespace is its own service, granted or not
+    /// (Calendar's `calendar`); a store app's needs the grant like any
+    /// other family.
+    #[test]
+    fn a_system_apps_own_namespace_needs_no_grant() {
+        octosense_appstore::services::register_host_service(Box::new(Probe));
+        let run = |app: &str| {
+            let exec = HostServiceExecutor { app: app.into(), tools: ["g3probe.echo".to_string()].into_iter().collect(), families: Default::default(), host_dir: std::env::temp_dir() };
+            let (r, sent) = reply();
+            exec.execute(call("g3probe.echo"), r);
+            for _ in 0..50 {
+                poll();
+                if !sent.lock().unwrap().is_empty() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let got = sent.lock().unwrap().clone();
+            got
+        };
+        assert_eq!(run("os.g3probe")[0]["ok"], true, "its own service");
+        assert_eq!(run("com.example.g3probe")[0]["error"]["kind"], "not_granted", "a store app is granted nothing by its id");
     }
 }

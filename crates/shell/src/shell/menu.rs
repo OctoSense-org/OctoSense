@@ -526,6 +526,15 @@ impl MenuModel {
             let at = items.iter().position(|item| item.id == "style").map_or(items.len(), |i| i + 1);
             items.splice(at..at, developer);
         }
+        // The glance panel, right after Apps: the cards apps published.
+        let at = items.iter().position(|item| item.id == "apps").map_or(0, |i| i + 1);
+        items.insert(
+            at,
+            MenuItem::new(GLANCE_ROW, "At a glance", MenuKind::Action)
+                .icon(Ico::Bell)
+                .aliases(&["glance", "cards", "notifications"])
+                .describe("The cards your apps published (F9)"),
+        );
         // Settings → Assistant → Approvals (approvals/settings_page.rs), in
         // every build: rules, app agents' consent, recent auto-approvals.
         let assistant = assistant_items(&items);
@@ -828,6 +837,8 @@ pub const COMMANDS_ALLOW_ROW: &str = "setup.assistant.commands.allow";
 pub const COMMANDS_OFF_ROW: &str = "setup.assistant.commands.off";
 /// Restart the assistant so a changed grant applies.
 pub const ASSISTANT_RESTART_ROW: &str = "setup.assistant.restart";
+/// The glance panel (lib.rs opens it), at the menu's top level.
+pub const GLANCE_ROW: &str = "glance";
 
 /// Settings (Setup) → Assistant: the system chat, Approvals, and Command
 /// execution.
@@ -2022,13 +2033,14 @@ mod tests {
         let styles = if crate::MOBILE_ONLY { 0 } else { 1 };
         // A development build lists Setup (Developer options) after Style.
         let setup = usize::from(crate::dev_mode::settings_available());
-        assert_eq!(m.rows.len(), 4 + setup + styles);
+        assert_eq!(m.rows.len(), 5 + setup + styles);
         assert_eq!(m.rows.iter().any(|r| r.target == "desktop"), styles == 1);
         assert_eq!(m.rows[0].label, "Apps");
+        assert_eq!(m.rows[1].label, "At a glance", "the glance panel, right after Apps");
         if setup == 1 {
-            assert_eq!(m.rows[3].label, "Setup");
+            assert_eq!(m.rows[4].label, "Setup");
         }
-        assert_eq!(m.rows[3 + setup].label, "System");
+        assert_eq!(m.rows[4 + setup].label, "System");
         assert!(m.rows.iter().all(|r| !r.disabled));
         // Submenu rows carry the chevron.
         assert!(m.rows[0].has_children);
@@ -2073,14 +2085,14 @@ mod tests {
     fn back_walks_the_visited_stack_then_the_parents() {
         let mut m = MenuModel::default();
         m.open_at("", MenuSkin::Menu);
-        m.sel = 2; // Style
-        assert_eq!(m.rows[2].label, "Style");
+        let style = m.rows.iter().position(|r| r.label == "Style").expect("Style");
+        m.sel = style;
         m.activate();
         assert_eq!(m.path, "style");
         assert!(m.rows.iter().any(|r| r.label == "Theme"));
         assert!(m.back());
         assert_eq!(m.path, "");
-        assert_eq!(m.sel, 2);
+        assert_eq!(m.sel, style);
         // At the root there is nowhere left to go.
         assert!(!m.back());
     }

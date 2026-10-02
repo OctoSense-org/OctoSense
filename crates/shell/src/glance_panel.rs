@@ -72,9 +72,24 @@ pub struct ShellGlancePanel {
     logged: String,
     #[rust]
     tiles: GlanceTiles,
+    /// The panel's own area: what `redraw` repaints (`draw_bg` draws
+    /// nothing).
+    #[redraw]
     #[rust]
     area: Area,
+    /// The first card shown (the wheel moves it a card at a time), the
+    /// wheel's travel not yet turned into a step, and how many cards did
+    /// not fit below the last one drawn.
+    #[rust]
+    first: usize,
+    #[rust]
+    wheel: f64,
+    #[rust]
+    below: usize,
 }
+
+/// How far the wheel travels for one card.
+const WHEEL_STEP: f64 = 60.0;
 
 impl ShellGlancePanel {
     /// Whether a pointer event at `p` is the panel's: anywhere in the open
@@ -82,6 +97,12 @@ impl ShellGlancePanel {
     /// column, it closes the panel).
     pub fn owns_pointer(&self, p: DVec2, press: bool) -> bool {
         self.open && (press || contains(self.column, p))
+    }
+    /// Show the newest card first (a new card opened the panel).
+    pub fn show_newest(&mut self) {
+        let cards = crate::glance::shown();
+        self.first = cards.iter().enumerate().max_by_key(|(_, c)| c.published_ms).map_or(0, |(i, _)| i);
+        self.wheel = 0.0;
     }
     pub fn toggle(&mut self, cx: &mut Cx) {
         self.open = !self.open;
@@ -114,16 +135,20 @@ impl Widget for ShellGlancePanel {
             let ink = tok.notifications.surface.text;
             self.d.label_elided(cx, rect(x + PAD, top + 14.0, PANEL_WIDTH - PAD * 2.0, 24.0), true, 18.0, ink, HAlign::Left, "At a glance");
             let cards = crate::glance::shown();
+            self.first = self.first.min(cards.len().saturating_sub(1));
             let status = if cards.is_empty() { "Nothing published yet".to_string() } else { format!("{} from your apps", cards.len()) };
             self.d.label_elided(cx, rect(x + PAD, top + 38.0, PANEL_WIDTH - PAD * 2.0, 18.0), false, 12.0, alpha(ink, 0.65), HAlign::Left, &status);
             let mut y = top + HEADER;
-            let bottom = column.pos.y + column.size.y - PAD;
-            for card in &cards {
+            let bottom = column.pos.y + column.size.y - PAD - 20.0;
+            let mut drawn = 0;
+            for card in cards.iter().skip(self.first) {
                 let key = card.key();
                 let h = crate::glance_card::tile_height(&key);
-                if y + h > bottom {
+                // The first card shown always draws (clipped by its cap).
+                if drawn > 0 && y + h > bottom {
                     break;
                 }
+                drawn += 1;
                 let r = rect(x + PAD, y, PANEL_WIDTH - PAD * 2.0, h);
                 self.tiles.draw(cx, &key, &card.app, card.contained, &card.body, r);
                 let open = crate::glance_card::open_button(r);
@@ -131,6 +156,17 @@ impl Widget for ShellGlancePanel {
                 self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
                 self.card_rects.push((r, card.open_app.clone(), card.route.clone()));
                 y += h + GAP;
+            }
+            // The cards the column does not show: the wheel brings them.
+            self.below = cards.len().saturating_sub(self.first + drawn);
+            let more = match (self.first, self.below) {
+                (0, 0) => String::new(),
+                (0, n) => format!("{n} more below \u{2193}"),
+                (n, 0) => format!("\u{2191} {n} more above"),
+                (a, b) => format!("\u{2191} {a} above \u{00b7} {b} below \u{2193}"),
+            };
+            if !more.is_empty() {
+                self.d.label_elided(cx, rect(x + PAD, column.pos.y + column.size.y - PAD - 16.0, PANEL_WIDTH - PAD * 2.0, 16.0), false, 12.0, alpha(ink, 0.65), HAlign::Center, &more);
             }
         }
         self.d.end_surface(cx);
@@ -148,6 +184,32 @@ impl Widget for ShellGlancePanel {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        // The wheel over the column: a card at a time.
+        if let Event::Scroll(e) = event {
+            if self.open && contains(self.column, e.abs) {
+                self.wheel += e.scroll.y;
+                let mut moved = false;
+                while self.wheel >= WHEEL_STEP {
+                    self.wheel -= WHEEL_STEP;
+                    if self.below > 0 {
+                        self.first += 1;
+                        self.below -= 1;
+                        moved = true;
+                    }
+                }
+                while self.wheel <= -WHEEL_STEP {
+                    self.wheel += WHEEL_STEP;
+                    if self.first > 0 {
+                        self.first -= 1;
+                        moved = true;
+                    }
+                }
+                if moved {
+                    self.redraw(cx);
+                }
+                return;
+            }
+        }
         if let Event::MouseDown(e) = event {
             if !self.open {
                 return;
@@ -157,6 +219,7 @@ impl Widget for ShellGlancePanel {
                 return;
             } else if !contains(self.column, e.abs) {
                 self.open = false;
+                log!("wm: glance panel closed (a press outside it)");
                 self.redraw(cx);
                 return;
             }

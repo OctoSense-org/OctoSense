@@ -7541,6 +7541,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-calendar-service"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "octosense-appstore",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "octosense-home"
 version = "0.1.0"
 dependencies = [
@@ -7697,6 +7707,7 @@ dependencies = [
  "octosense-app-policy",
  "octosense-appcard",
  "octosense-appstore",
+ "octosense-calendar-service",
  "octosense-l0-chat",
  "octosense-mail-service",
  "octosense-news-service",

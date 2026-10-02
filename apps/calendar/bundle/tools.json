@@ -1,0 +1,228 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "calendar.events",
+      "description": "List the person's calendar events, soonest first: id, title, start, end, location and notes. Times are local, like 2026-10-02T15:00. Filter with from and to (a time or a date); limit caps the list.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "to": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "risk": "read",
+      "background": true,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "calendar.add_event",
+      "description": "Add an event to the person's calendar. start (and end) are local times like 2026-10-02T15:00, or a date like 2026-10-02 for the whole day. Answers the new event's id.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "start": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "end": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 600
+          }
+        },
+        "required": [
+          "title",
+          "start"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "risk": "act",
+      "background": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "calendar.remove_event",
+      "description": "Remove an event from the person's calendar by its id (from calendar.events). It is gone for good, so the person approves it.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
+        ]
+      },
+      "risk": "destructive",
+      "confirm": "host",
+      "background": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "calendar.notify",
+      "description": "Show an event on the person's glance screen as an event card, with a notification: name one of the calendar's events by its id (event), or give a title and when (a local time like 2026-10-02T15:00, or words), with a location and notes if any. Calendar draws the card. The same card_id replaces an earlier card.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "when": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "risk": "act",
+      "background": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "calendar.agenda",
+      "description": "Put the person's agenda on the glance screen: a card with the next three events within days (7 by default), with a notification. It replaces the previous agenda card.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "risk": "act",
+      "background": true,
+      "implemented_by": "host-service"
+    }
+  ]
+}

@@ -5,7 +5,7 @@
 //!
 //! The window is [`SHEET_WIDTH`] wide and as tall as its card (measured each
 //! frame, so it follows the card from state to state), not clipped to the
-//! glance tile's 260 pt: at most the screen less a margin, and a taller card
+//! glance tile's cap: at most the screen less a margin, and a taller card
 //! scrolls inside. The card runs in its own isolate, under the publishing
 //! app's policy, as a glance tile does (glance_card.rs).
 //!
@@ -249,8 +249,8 @@ mod tests {
         assert_eq!(card.size.y, 300.0, "the card fills the window: no empty area below it");
         assert!(contains(sheet, close_rect(sheet).pos));
         // Taller than the tile cap, it is not clipped there.
-        assert_eq!(card_rect(sheet_rect(screen, 400.0)).size.y, 400.0);
-        assert!(400.0 > crate::glance_card::TILE_MAX_HEIGHT);
+        let tall = crate::glance_card::TILE_MAX_HEIGHT + 100.0;
+        assert_eq!(card_rect(sheet_rect(screen, tall)).size.y, tall);
         // Taller than the screen, the window stops at the margin (the card
         // scrolls inside); a tiny card keeps the least height.
         assert_eq!(sheet_rect(screen, 5000.0).size.y, 800.0 - MARGIN * 2.0);

@@ -104,7 +104,7 @@
       "bin": null,
       "default_features": true,
       "crate_features": [],
-      "implies": ["dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-news-service", "octosense-ai-host/llm"],
+      "implies": ["dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-news-service", "dep:octosense-calendar-service", "octosense-ai-host/llm"],
       "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
       "shells": { "desktop": "default", "phone": "default" },
       "native_mobile": "always",

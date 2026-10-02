@@ -1,6 +1,7 @@
 //! The system chat pane, drawn by the shell like its other surfaces
-//! (approvals/view.rs, glance_panel.rs): a column at the right of the
-//! desktop, the whole screen on a phone (or any narrow window).
+//! (approvals/view.rs, glance_panel.rs): a medium pane at the left of the
+//! desktop ([`default_pane`]), which the person can move and size; the
+//! whole screen on a phone (or any narrow window).
 //!
 //! It shows the conversation ([`super::model`]): the person's messages,
 //! the assistant's streamed text, each tool call with its status, the
@@ -12,6 +13,24 @@
 //! ([`ShellSystemChat::pointer`]), the keyboard (`super::key`) and text
 //! input (`super::text_input`, [`ShellSystemChat::ime`]).
 //!
+//! - **Placing it** (a desktop, not the full-screen surface): the header
+//!   (title and status) moves the pane, an edge or a corner sizes it, each
+//!   with its cursor; a double-click on the header puts it back where it
+//!   opens. The placement holds while the shell runs and stays on screen
+//!   when the window shrinks ([`placed_pane`], [`dragged`]).
+//! - **The caret** blinks at the end of the prompt while the pane holds
+//!   the keyboard, and stays on while the person types.
+//! - **The prompt** takes several lines: it grows with what is typed up to
+//!   [`PROMPT_LINES`], then shows its last lines; Shift+Return breaks a
+//!   line ([`super::composer`]). On a desktop it takes the keyboard when the
+//!   pane opens, so an input method (Chinese, Japanese) composes in it at
+//!   once, its candidates at the caret.
+//! - **Replies are Markdown** ([`super::markdown`]): styled runs, lists,
+//!   quotes, code and rules. Text wraps between CJK characters as well as
+//!   at spaces. The laid-out transcript is kept until the conversation,
+//!   the width or the font changes.
+//! - **Colours** follow the shell's theme, light or dark, like its other
+//!   surfaces ([`ShellSystemChat::set_material`]).
 //! - **Scrolling**: the wheel, and a touch drag with its fling
 //!   ([`TouchScroll`]): a phone sends no scroll events for a drag. A drag
 //!   that starts on a button scrolls and presses nothing.
@@ -28,15 +47,67 @@
 //! whenever the PERSON's lane is idle, even while the system agent's turn
 //! runs, and Stop stops the person's own turn. The system agent's running
 //! turn has its own row with "Stop the system agent's task". On a desktop
-//! the panel stands left of the system chat when both are open, so the two
-//! lanes show side by side; on a phone it is a full-screen sheet.
+//! the panel stands right of the system chat when both are open, so the
+//! two lanes show side by side; on a phone it is a full-screen sheet.
 
 use makepad_widgets::*;
 
+use super::composer::{Composer, LineLayout, Pane};
+use super::markdown as md;
 use super::model::{ApprovalState, ChatModel, Item, Phase, Role, ToolStatus};
 use crate::approvals::view::Buttons;
-use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, ShellDraw};
-use crate::shell::{alpha, ShellTokens};
+use crate::shell::ui::{contains, rect, wrap_styled, DrawShellFill, HAlign, ShellDraw};
+use crate::shell::{alpha, MaterialTokens, ShellPalette, ShellTokens};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+thread_local! {
+    /// Each pane's prompt as last drawn (its lines, their characters' x):
+    /// Up and Down from the keyboard move by them ([`prompt_layout`]).
+    static PROMPT_LAYOUT: RefCell<[Vec<LineLayout>; 2]> = RefCell::new([Vec::new(), Vec::new()]);
+}
+
+/// A pane's prompt lines as last drawn.
+pub fn prompt_layout(pane: Pane) -> Vec<LineLayout> {
+    PROMPT_LAYOUT.with(|l| l.borrow()[pane as usize].clone())
+}
+
+/// Where the prompt's lines were drawn, for a click and a drag: the first
+/// line shown, its top, the line height, the text's left edge and every
+/// line's layout.
+#[derive(Clone, Debug, Default)]
+struct PromptGeom {
+    first: usize,
+    top: f64,
+    line_h: f64,
+    inner_x: f64,
+    layout: Vec<LineLayout>,
+}
+
+/// Each drawn prompt line's start in the text and its character
+/// boundaries' x, measured at `px` (the drawn size).
+fn layout_prompt(d: &mut ShellDraw, cx: &mut Cx2d, text: &str, lines: &[String], px: f64) -> Vec<LineLayout> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = 0;
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        let mut xs = Vec::with_capacity(line.chars().count() + 1);
+        xs.push(0.0);
+        let mut w = 0.0;
+        for c in line.chars() {
+            let mut buf = [0u8; 4];
+            w += d.measure(cx, false, px, c.encode_utf8(&mut buf));
+            xs.push(w);
+        }
+        let n = xs.len() - 1;
+        out.push(LineLayout { start: at, xs });
+        at += n;
+        if chars.get(at) == Some(&'\n') {
+            at += 1;
+        }
+    }
+    out
+}
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -57,6 +128,143 @@ pub const PANE_W: f64 = 440.0;
 pub const FULL_SCREEN_BELOW: f64 = 720.0;
 const PAD: f64 = 16.0;
 const FIELD_H: f64 = 36.0;
+/// The desktop pane's default height, as a share of the screen's, and the
+/// most it takes by default.
+const DEFAULT_HEIGHT: f64 = 0.6;
+const DEFAULT_MAX_H: f64 = 640.0;
+/// The smallest the person may size the desktop pane.
+pub const MIN_W: f64 = 320.0;
+pub const MIN_H: f64 = 240.0;
+/// The resize band along the pane's edges, and its corners' reach.
+const EDGE: f64 = 6.0;
+const CORNER: f64 = 14.0;
+/// The header the pane is moved by: the padding, the title and the status.
+const HEADER_H: f64 = PAD + 30.0 + 22.0;
+/// Two presses on the header this close (seconds) put the pane back.
+const DOUBLE_PRESS_S: f64 = 0.4;
+/// The caret's half period (seconds), as makepad's `TextInput` blinks.
+const BLINK_S: f64 = 0.5;
+/// The most lines the prompt grows to; past them its last lines show.
+pub const PROMPT_LINES: usize = 8;
+/// A list's nesting step, a quote's and a code line's inset.
+const LIST_INDENT: f64 = 16.0;
+const QUOTE_INDENT: f64 = 12.0;
+const CODE_PAD: f64 = 8.0;
+
+/// What a press on the desktop pane's frame drags: the header moves it; an
+/// edge or a corner (by compass point) sizes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grip {
+    Move,
+    N,
+    S,
+    E,
+    W,
+    NE,
+    NW,
+    SE,
+    SW,
+}
+
+impl Grip {
+    fn cursor(self) -> MouseCursor {
+        match self {
+            Grip::Move => MouseCursor::Move,
+            Grip::N | Grip::S => MouseCursor::NsResize,
+            Grip::E | Grip::W => MouseCursor::EwResize,
+            Grip::NE | Grip::SW => MouseCursor::NeswResize,
+            Grip::NW | Grip::SE => MouseCursor::NwseResize,
+        }
+    }
+}
+
+/// `v` within `lo..=hi`, `lo` winning when the range is empty (a screen
+/// smaller than the pane's minimum).
+fn between(v: f64, lo: f64, hi: f64) -> f64 {
+    v.min(hi).max(lo)
+}
+
+/// The part of the surface `r` inside the window `pass` (its size; zero
+/// when unknown): the surface starts under the bar yet is the window's
+/// height, so its bottom would hang past the window, and with it the
+/// pane's bottom edge and padding.
+pub fn visible(r: Rect, pass: Vec2d) -> Rect {
+    if pass.x <= 0.0 || pass.y <= 0.0 {
+        return r;
+    }
+    rect(r.pos.x, r.pos.y, r.size.x.min((pass.x - r.pos.x).max(0.0)), r.size.y.min((pass.y - r.pos.y).max(0.0)))
+}
+
+/// Where the desktop pane opens: a medium pane at the left (the column's
+/// width, [`DEFAULT_HEIGHT`] of the screen up to [`DEFAULT_MAX_H`]),
+/// centred top to bottom; `beside` (the "Ask <app>" panel while the system
+/// chat is open) right of the system chat's.
+pub fn default_pane(screen: Rect, gap: f64, beside: bool) -> Rect {
+    let h = between(screen.size.y * DEFAULT_HEIGHT, MIN_H, DEFAULT_MAX_H).min((screen.size.y - gap * 2.0).max(0.0));
+    let x = screen.pos.x + gap + if beside { PANE_W + gap } else { 0.0 };
+    placed_pane(rect(x, screen.pos.y + (screen.size.y - h) * 0.5, PANE_W, h), screen)
+}
+
+/// A placement kept on `screen`: no smaller than the minimum (unless the
+/// screen is), no larger than the screen, wholly on it.
+pub fn placed_pane(r: Rect, screen: Rect) -> Rect {
+    let w = between(r.size.x, MIN_W.min(screen.size.x), screen.size.x);
+    let h = between(r.size.y, MIN_H.min(screen.size.y), screen.size.y);
+    let x = between(r.pos.x, screen.pos.x, screen.pos.x + screen.size.x - w);
+    let y = between(r.pos.y, screen.pos.y, screen.pos.y + screen.size.y - h);
+    rect(x, y, w, h)
+}
+
+/// The pane `from`, dragged by `grip` through `d`: moved, or one or two of
+/// its edges moved, never past the minimum size or off `screen`.
+pub fn dragged(grip: Grip, from: Rect, d: Vec2d, screen: Rect) -> Rect {
+    if grip == Grip::Move {
+        return placed_pane(rect(from.pos.x + d.x, from.pos.y + d.y, from.size.x, from.size.y), screen);
+    }
+    let (mut l, mut t) = (from.pos.x, from.pos.y);
+    let (mut r, mut b) = (l + from.size.x, t + from.size.y);
+    let (sr, sb) = (screen.pos.x + screen.size.x, screen.pos.y + screen.size.y);
+    if matches!(grip, Grip::W | Grip::NW | Grip::SW) {
+        l = between(l + d.x, screen.pos.x, r - MIN_W);
+    }
+    if matches!(grip, Grip::E | Grip::NE | Grip::SE) {
+        r = between(r + d.x, l + MIN_W, sr);
+    }
+    if matches!(grip, Grip::N | Grip::NW | Grip::NE) {
+        t = between(t + d.y, screen.pos.y, b - MIN_H);
+    }
+    if matches!(grip, Grip::S | Grip::SW | Grip::SE) {
+        b = between(b + d.y, t + MIN_H, sb);
+    }
+    placed_pane(rect(l, t, r - l, b - t), screen)
+}
+
+/// The desktop pane's frame, as hits: corners, then edges, then the header,
+/// so an edge wins over the header it crosses. Pushed after the controls,
+/// which win over all of them.
+fn grips(pane: Rect) -> Vec<(Rect, Hit)> {
+    let (x, y, w, h) = (pane.pos.x, pane.pos.y, pane.size.x, pane.size.y);
+    vec![
+        (rect(x, y, CORNER, CORNER), Hit::Grip(Grip::NW)),
+        (rect(x + w - CORNER, y, CORNER, CORNER), Hit::Grip(Grip::NE)),
+        (rect(x, y + h - CORNER, CORNER, CORNER), Hit::Grip(Grip::SW)),
+        (rect(x + w - CORNER, y + h - CORNER, CORNER, CORNER), Hit::Grip(Grip::SE)),
+        (rect(x, y, w, EDGE), Hit::Grip(Grip::N)),
+        (rect(x, y + h - EDGE, w, EDGE), Hit::Grip(Grip::S)),
+        (rect(x, y, EDGE, h), Hit::Grip(Grip::W)),
+        (rect(x + w - EDGE, y, EDGE, h), Hit::Grip(Grip::E)),
+        (rect(x, y, w, HEADER_H.min(h)), Hit::Grip(Grip::Move)),
+    ]
+}
+
+/// A drag of the pane's frame under way: by what, from where, and the pane
+/// it started from.
+#[derive(Clone, Copy, Debug)]
+struct PaneDrag {
+    grip: Grip,
+    start: Vec2d,
+    from: Rect,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 enum Hit {
@@ -70,6 +278,8 @@ enum Hit {
     OpenProviders,
     Field,
     Pane,
+    /// The desktop pane's frame ([`Grip`]).
+    Grip(Grip),
 }
 
 /// What a pointer event did.
@@ -116,7 +326,7 @@ fn grown(r: Rect) -> Rect {
 /// Whether a target gets a finger's width of slop: buttons do; the pane,
 /// the prompt and an answer option (an answer must be meant) do not.
 fn has_slop(hit: &Hit) -> bool {
-    !matches!(hit, Hit::Pane | Hit::Field | Hit::Option { .. })
+    !matches!(hit, Hit::Pane | Hit::Field | Hit::Option { .. } | Hit::Grip(_))
 }
 
 /// What a press at `p` hits: a control first (a button's finger's width
@@ -235,12 +445,150 @@ impl TouchScroll {
 /// One drawn line of the transcript.
 #[derive(Clone, Debug, PartialEq)]
 struct Line {
+    /// The line as plain text (what a hidden-window run logs).
     text: String,
+    /// Its styled runs (a reply's Markdown), drawn instead of `text`.
+    runs: md::Runs,
     bold: bool,
     small: bool,
     dim: bool,
     accent: bool,
     gap_before: f64,
+    /// How far right of the transcript's edge it starts (lists, quotes).
+    indent: f64,
+    /// A heading's size over the body's; 1 for any other line.
+    scale: f64,
+    kind: LineKind,
+}
+
+/// What a transcript line is drawn as, besides its text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum LineKind {
+    #[default]
+    Text,
+    /// A line of a code block or a table, on a tint.
+    Code,
+    /// A quoted line, with a bar to its left.
+    Quote,
+    Rule,
+}
+
+impl Line {
+    fn plain(text: String, bold: bool, small: bool, dim: bool, accent: bool, gap_before: f64) -> Line {
+        Line { text, runs: Vec::new(), bold, small, dim, accent, gap_before, indent: 0.0, scale: 1.0, kind: LineKind::Text }
+    }
+
+    fn height(&self, body: f64, small: f64) -> f64 {
+        let px = if self.small { small } else { body } * self.scale;
+        self.gap_before + if self.kind == LineKind::Rule { 12.0 } else { px * 1.45 }
+    }
+}
+
+/// What a laid-out transcript depends on: its items, whether a turn runs
+/// (the streaming caret), the width, the two font sizes and the text
+/// scale. Never the prompt: typing does not lay the transcript out again.
+#[derive(Clone, Debug, PartialEq)]
+struct TranscriptKey {
+    items: Vec<Item>,
+    running: bool,
+    width: f64,
+    body: f64,
+    small: f64,
+    scale: f64,
+}
+
+/// Styled runs wrapped to `width`, each run measured in its weight at `px`
+/// (the drawn size).
+fn wrap_runs(d: &mut ShellDraw, cx: &mut Cx2d, runs: &md::Runs, width: f64, px: f64, bold: bool) -> Vec<md::Runs> {
+    let runs: Vec<(&str, md::Style)> = runs.iter().map(|(t, s)| (t.as_str(), *s)).collect();
+    // Code runs in the theme's code face, the rest in its regular or bold.
+    wrap_styled(&runs, width, |t, s| if s.code { d.with_code(|d| d.measure(cx, false, px, t)) } else { d.measure(cx, bold || s.bold, px, t) })
+}
+
+/// A code line wrapped to `width` between characters, its spaces kept (a
+/// tab as four).
+fn wrap_code(d: &mut ShellDraw, cx: &mut Cx2d, text: &str, width: f64, px: f64) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut w = 0.0;
+    for c in text.chars() {
+        let piece = if c == '\t' { "    ".to_string() } else { c.to_string() };
+        let cw = d.with_code(|d| d.measure(cx, false, px, &piece));
+        if !line.is_empty() && w + cw > width {
+            lines.push(std::mem::take(&mut line));
+            w = 0.0;
+        }
+        line.push_str(&piece);
+        w += cw;
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// An agent's reply as transcript lines ([`md::blocks`]): each block
+/// wrapped to `width`, the first line `gap` below the speaker.
+fn markdown_lines(d: &mut ShellDraw, cx: &mut Cx2d, lines: &mut Vec<Line>, text: &str, width: f64, body: f64, gap: f64) {
+    let ts = d.text_scale();
+    let first = lines.len();
+    let mut gap_next = gap;
+    for block in md::blocks(text) {
+        let base = Line::plain(String::new(), false, false, false, false, 0.0);
+        let mut out: Vec<Line> = Vec::new();
+        match block {
+            md::Block::Blank => {
+                gap_next = gap_next.max(6.0);
+                continue;
+            }
+            md::Block::Rule => out.push(Line { kind: LineKind::Rule, dim: true, ..base }),
+            md::Block::Code(code) => {
+                let wrapped = wrap_code(d, cx, &code, (width - CODE_PAD * 2.0).max(1.0), body * ts);
+                let wrapped = if wrapped.is_empty() { vec![String::new()] } else { wrapped };
+                out.extend(wrapped.into_iter().map(|l| Line { text: l, kind: LineKind::Code, indent: CODE_PAD, ..base.clone() }));
+            }
+            md::Block::Heading(level, runs) => {
+                let scale = match level {
+                    1 => 1.3,
+                    2 => 1.15,
+                    _ => 1.0,
+                };
+                if lines.len() > first {
+                    gap_next = gap_next.max(8.0);
+                }
+                out.extend(wrap_runs(d, cx, &runs, width, body * scale * ts, true).into_iter().map(|r| Line { runs: r, bold: true, scale, ..base.clone() }));
+            }
+            md::Block::Item { depth, marker, runs } => {
+                let indent = depth as f64 * LIST_INDENT;
+                let marker = format!("{marker} ");
+                let mw = d.measure(cx, false, body * ts, &marker);
+                let wrapped = wrap_runs(d, cx, &runs, (width - indent - mw).max(1.0), body * ts, false);
+                let wrapped = if wrapped.is_empty() { vec![Vec::new()] } else { wrapped };
+                for (i, mut r) in wrapped.into_iter().enumerate() {
+                    let at = if i == 0 {
+                        r.insert(0, (marker.clone(), md::Style::default()));
+                        indent
+                    } else {
+                        indent + mw
+                    };
+                    out.push(Line { runs: r, indent: at, ..base.clone() });
+                }
+            }
+            md::Block::Quote(runs) => {
+                out.extend(wrap_runs(d, cx, &runs, (width - QUOTE_INDENT).max(1.0), body * ts, false).into_iter().map(|r| Line { runs: r, dim: true, indent: QUOTE_INDENT, kind: LineKind::Quote, ..base.clone() }));
+            }
+            md::Block::Para(runs) => {
+                out.extend(wrap_runs(d, cx, &runs, width, body * ts, false).into_iter().map(|r| Line { runs: r, ..base.clone() }));
+            }
+        }
+        for mut line in out {
+            if !line.runs.is_empty() {
+                line.text = line.runs.iter().map(|(t, _)| t.as_str()).collect();
+            }
+            line.gap_before = std::mem::take(&mut gap_next);
+            lines.push(line);
+        }
+    }
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -263,6 +611,9 @@ pub struct ShellSystemChat {
     /// The "Ask <app>" panel ([`crate::app_chat`]) instead of the system chat.
     #[live]
     app_panel: bool,
+    /// The pane's own area: what `redraw` repaints (`draw_bg` draws
+    /// nothing, so its area alone would repaint nothing).
+    #[redraw]
     #[rust]
     area: Area,
     #[rust]
@@ -297,6 +648,44 @@ pub struct ShellSystemChat {
     /// hidden-window runs' logs).
     #[rust]
     pub shown: Vec<String>,
+    /// Where the person put the desktop pane (None: where it opens).
+    #[rust]
+    placed: Option<Rect>,
+    /// The surface the pane was last drawn on (a drag stays on it).
+    #[rust]
+    screen: Rect,
+    /// The pane's frame being dragged.
+    #[rust]
+    drag: Option<PaneDrag>,
+    /// The grip under the pointer (its cursor is worn).
+    #[rust]
+    grip_hover: Option<Grip>,
+    /// When the header was last pressed (a second press soon after puts
+    /// the pane back).
+    #[rust]
+    header_pressed: f64,
+    /// The caret's blink: its timer, whether it is in its off half, and
+    /// the prompt it last saw (typing keeps it on).
+    #[rust]
+    blink_timer: Timer,
+    #[rust]
+    blink_off: bool,
+    #[rust]
+    blink_draft: (String, usize, usize, usize),
+    /// The transcript last laid out, and what it was laid out for.
+    #[rust]
+    laid_out: Option<(TranscriptKey, Rc<Vec<Line>>)>,
+    /// The prompt as last drawn, the first of its lines shown, a drag in it
+    /// selecting, and the last press in it (a second soon after on the
+    /// same place takes the word).
+    #[rust]
+    prompt: PromptGeom,
+    #[rust]
+    prompt_first: usize,
+    #[rust]
+    field_drag: bool,
+    #[rust]
+    field_press: (f64, usize),
 }
 
 /// The conversation a pane shows: the system chat's or an app's.
@@ -323,6 +712,24 @@ impl Source {
         match self {
             Source::System => super::draft(),
             Source::App => crate::app_chat::draft(),
+        }
+    }
+    fn composer(self) -> Composer {
+        match self {
+            Source::System => super::composer(),
+            Source::App => crate::app_chat::composer(),
+        }
+    }
+    fn edit(self, f: impl FnOnce(&mut Composer)) {
+        match self {
+            Source::System => super::edit_draft(f),
+            Source::App => crate::app_chat::edit_draft(f),
+        }
+    }
+    fn pane(self) -> Pane {
+        match self {
+            Source::System => Pane::System,
+            Source::App => Pane::App,
         }
     }
     fn draft_state(self) -> makepad_widgets::makepad_platform::event::FullTextState {
@@ -411,11 +818,64 @@ impl ShellSystemChat {
         hit_in(&self.hits, p)
     }
 
+    /// The prompt's character boundary under `p`: where a click puts the
+    /// caret.
+    fn prompt_index(&self, p: Vec2d) -> usize {
+        let g = &self.prompt;
+        if g.layout.is_empty() || g.line_h <= 0.0 {
+            return 0;
+        }
+        let row = ((p.y - g.top) / g.line_h).floor().max(0.0) as usize;
+        let line = (g.first + row).min(g.layout.len() - 1);
+        Composer::index_at(&g.layout, line, p.x - g.inner_x)
+    }
+
+    /// The frame's grip at `p`, if a control is not there first.
+    fn grip_at(&self, p: Vec2d) -> Option<Grip> {
+        match self.hit_at(p) {
+            Some(Hit::Grip(g)) => Some(g),
+            _ => None,
+        }
+    }
+
     /// The shell's pointer hook: the pane's own rect is its own while open.
     pub fn pointer(&mut self, cx: &mut Cx, event: &Event) -> Outcome {
         let source = self.source();
         if !source.is_open() || self.pane.size.x <= 0.0 {
+            self.drag = None;
             return Outcome::Ignored;
+        }
+        // A drag in the prompt selects, wherever it goes, until the button
+        // comes up.
+        if self.field_drag {
+            match event {
+                Event::MouseMove(e) => {
+                    let i = self.prompt_index(e.abs);
+                    source.edit(|c| c.move_to(i, true));
+                    self.redraw(cx);
+                    return Outcome::Taken;
+                }
+                Event::MouseUp(_) => self.field_drag = false,
+                _ => {}
+            }
+        }
+        // A drag of the frame has the pointer until the button comes up,
+        // wherever it goes.
+        if let Some(drag) = self.drag {
+            match event {
+                Event::MouseMove(e) => {
+                    self.placed = Some(dragged(drag.grip, drag.from, e.abs - drag.start, self.screen));
+                    cx.set_cursor(drag.grip.cursor());
+                    self.redraw(cx);
+                    return Outcome::Taken;
+                }
+                Event::MouseUp(_) => {
+                    self.drag = None;
+                    return Outcome::Taken;
+                }
+                Event::MouseDown(_) => return Outcome::Taken,
+                _ => {}
+            }
         }
         match event {
             Event::Scroll(e) if contains(self.pane, e.abs) => {
@@ -425,14 +885,56 @@ impl ShellSystemChat {
                 return Outcome::Taken;
             }
             Event::MouseMove(e) => {
-                let hover = self.hits.iter().find(|(r, h)| *h != Hit::Pane && contains(*r, e.abs)).map(|(r, _)| *r);
+                let hover = self.hits.iter().find(|(r, h)| *h != Hit::Pane && !matches!(h, Hit::Grip(_)) && contains(*r, e.abs)).map(|(r, _)| *r);
                 if hover != self.hover {
                     self.hover = hover;
                     self.redraw(cx);
                 }
+                let grip = self.grip_at(e.abs);
+                if let Some(g) = grip {
+                    cx.set_cursor(g.cursor());
+                } else if self.grip_hover.is_some() {
+                    cx.set_cursor(MouseCursor::Default);
+                }
+                self.grip_hover = grip;
                 return if contains(self.pane, e.abs) { Outcome::Taken } else { Outcome::Ignored };
             }
-            Event::MouseDown(e) => return self.press(cx, source, e.abs),
+            Event::MouseDown(e) => {
+                if let Some(grip) = self.grip_at(e.abs) {
+                    if grip == Grip::Move && e.time - self.header_pressed < DOUBLE_PRESS_S {
+                        // A double-click on the header: back where it opens.
+                        self.placed = None;
+                        self.header_pressed = 0.0;
+                        self.redraw(cx);
+                        return Outcome::Taken;
+                    }
+                    if grip == Grip::Move {
+                        self.header_pressed = e.time;
+                    }
+                    self.down = None;
+                    self.drag = Some(PaneDrag { grip, start: e.abs, from: self.pane });
+                    cx.set_cursor(grip.cursor());
+                    return Outcome::Taken;
+                }
+                // In the prompt: the caret goes where pressed (Shift: the
+                // selection grows to there), a drag selects, a second press
+                // on the same place takes the word.
+                if self.hit_at(e.abs) == Some(Hit::Field) {
+                    let i = self.prompt_index(e.abs);
+                    let double = e.time - self.field_press.0 < DOUBLE_PRESS_S && self.field_press.1 == i;
+                    self.field_press = (e.time, i);
+                    if double {
+                        let word = source.composer().word_at(i);
+                        source.edit(|c| c.select(word.start, word.end));
+                    } else {
+                        let extend = e.modifiers.shift;
+                        source.edit(|c| c.move_to(i, extend));
+                        self.field_drag = true;
+                    }
+                    self.redraw(cx);
+                }
+                return self.press(cx, source, e.abs);
+            }
             Event::MouseUp(e) => return self.release(cx, source, e.abs),
             Event::TouchUpdate(e) => {
                 use makepad_widgets::makepad_platform::event::TouchState;
@@ -556,6 +1058,64 @@ impl ShellSystemChat {
     }
 
     /// This is the "Ask <app>" panel.
+    /// Whether what the person types lands in this prompt now: the pane is
+    /// open and takes text, and its prompt holds the key focus, or nothing
+    /// does and the shell hands typed text to this pane (F8 opened it
+    /// without a press; lib.rs `chat_text_input`).
+    fn typing(&self, cx: &Cx) -> bool {
+        if !self.usable || !self.source().is_open() {
+            return false;
+        }
+        if self.has_keyboard(cx) {
+            return true;
+        }
+        let pane = match self.source() {
+            Source::System => super::composer::Pane::System,
+            Source::App => super::composer::Pane::App,
+        };
+        cx.key_focus().is_empty() && super::composer::text_target(true, crate::app_chat::is_focused(), super::is_open()) == Some(pane)
+    }
+
+    /// The caret's blink: on again (and its half period restarted) when the
+    /// prompt changed, so it never hides while the person types; started
+    /// when the prompt takes the keyboard; dropped when it lets go.
+    fn keep_blinking(&mut self, cx: &mut Cx) {
+        if !self.typing(cx) {
+            self.blink_off = false;
+            if !self.blink_timer.is_empty() {
+                cx.stop_timer(self.blink_timer);
+                self.blink_timer = Timer::empty();
+            }
+            return;
+        }
+        let c = self.source().composer();
+        let sel = c.selection();
+        let now = (c.text().to_string(), c.cursor(), sel.start, sel.end);
+        if now != self.blink_draft || self.blink_timer.is_empty() {
+            self.blink_draft = now;
+            self.blink_off = false;
+            cx.stop_timer(self.blink_timer);
+            self.blink_timer = cx.start_timeout(BLINK_S);
+        }
+    }
+
+    /// The shell's theme (light or dark) and material, as its other
+    /// surfaces take them (desktop_app.rs `apply_material_to_chrome`).
+    pub fn set_material(&mut self, m: MaterialTokens, palette: Option<ShellPalette>) {
+        self.d.set_material(m);
+        self.d.set_palette(palette);
+        self.laid_out = None;
+    }
+
+    /// The pane just opened on a desktop: its prompt takes the keyboard
+    /// unless a field already holds it, so typing (and an input method's
+    /// composing) lands in it at once.
+    pub fn focus_prompt(&mut self, cx: &mut Cx) {
+        if self.source().is_open() && cx.key_focus().is_empty() {
+            self.take_keyboard(cx);
+        }
+    }
+
     pub fn is_app_panel(&self) -> bool {
         self.app_panel
     }
@@ -608,7 +1168,7 @@ impl ShellSystemChat {
             for para in text.split('\n') {
                 let wrapped = if para.trim().is_empty() { vec![String::new()] } else { d.wrap(cx, false, px, para, width, 400) };
                 for l in wrapped {
-                    lines.push(Line { text: l, bold: false, small: small_text, dim, accent, gap_before: if first { gap } else { 0.0 } });
+                    lines.push(Line::plain(l, false, small_text, dim, accent, if first { gap } else { 0.0 }));
                     first = false;
                 }
             }
@@ -621,12 +1181,17 @@ impl ShellSystemChat {
                         (None, Role::User) => "You",
                         (None, Role::Assistant) => self.source().assistant_label(),
                     };
-                    lines.push(Line { text: who.into(), bold: true, small: true, dim: *role == Role::User, accent: false, gap_before: 12.0 });
+                    lines.push(Line::plain(who.into(), true, true, *role == Role::User, false, 12.0));
                     let mut text = text.clone();
                     if running && i == last && *role == Role::Assistant {
                         text.push('\u{258d}');
                     }
-                    push_wrapped(&mut self.d, cx, &mut lines, &text, false, false, false, 2.0);
+                    // A reply is Markdown; what the person typed is shown as typed.
+                    if *role == Role::Assistant {
+                        markdown_lines(&mut self.d, cx, &mut lines, &text, width, body, 2.0);
+                    } else {
+                        push_wrapped(&mut self.d, cx, &mut lines, &text, false, false, false, 2.0);
+                    }
                 }
                 Item::Tool { name, status, detail, .. } => {
                     let state = match status {
@@ -674,13 +1239,17 @@ impl ShellSystemChat {
         }
         let tok = self.d.tokens(self.tokens);
         let full = screen.size.x < FULL_SCREEN_BELOW;
+        self.screen = screen;
         let pane = if full {
             screen
+        } else if let Some(placed) = self.placed {
+            // Where the person put it, kept on screen.
+            let kept = placed_pane(placed, screen);
+            self.placed = Some(kept);
+            kept
         } else {
-            let gap = tok.spacing.gaps_out;
-            // "Ask <app>" stands left of the system chat when both are open.
-            let beside = if source == Source::App && super::is_open() { PANE_W + gap } else { 0.0 };
-            rect(screen.pos.x + screen.size.x - gap - PANE_W - beside, screen.pos.y + gap, PANE_W, (screen.size.y - gap * 2.0).max(240.0))
+            // "Ask <app>" stands right of the system chat when both are open.
+            default_pane(screen, tok.spacing.gaps_out, source == Source::App && super::is_open())
         };
         self.pane = pane;
         self.d.card(cx, pane, &tok.popups);
@@ -721,22 +1290,78 @@ impl ShellSystemChat {
         self.d.separator(cx, rect(x, y, cw, 1.0), ink, 0.12);
         let top = y + 6.0;
 
-        // Composer at the bottom.
+        // Composer at the bottom: as tall as its lines.
         let bottom = pane.pos.y + pane.size.y - PAD;
-        let field_y = bottom - FIELD_H;
+        let field_y;
         let usable = source.usable(&model);
         self.usable = usable;
         let (label, hit, enabled) = composer_button(source.person_running(&model), usable, &draft);
+        let caret_on = self.typing(cx) && !self.blink_off;
+        let composer = source.composer();
         {
             let mut b = Buttons { d: &mut self.d, tok, hover };
             let bw = b.width(cx, label);
-            let button = b.draw(cx, x + cw - bw, field_y + (FIELD_H - 28.0) * 0.5, bw, label, enabled);
+            let field_w = cw - bw - 8.0;
+            let inner_w = (field_w - tok.spacing.control_padding_x * 2.0).max(1.0);
+            let ts = b.d.text_scale();
+            let px = tok.font.body * ts;
+            let lines = b.d.wrap_input(cx, px, &draft, inner_w);
+            let layout = layout_prompt(b.d, cx, &draft, &lines, px);
+            // The lines shown: up to PROMPT_LINES, the caret's always among them.
+            let caret_line = layout.iter().rposition(|l| l.start <= composer.cursor()).unwrap_or(0);
+            let n = lines.len().clamp(1, PROMPT_LINES);
+            let mut first = self.prompt_first.min(lines.len().saturating_sub(n));
+            if caret_line < first {
+                first = caret_line;
+            } else if caret_line >= first + n {
+                first = caret_line + 1 - n;
+            }
+            self.prompt_first = first;
+            let line_h = (px * 1.45).ceil();
+            let field_h = FIELD_H.max(n as f64 * line_h + (FIELD_H - line_h));
+            field_y = bottom - field_h;
+            let button = b.draw(cx, x + cw - bw, bottom - FIELD_H + (FIELD_H - 28.0) * 0.5, bw, label, enabled);
             hits.push((button, hit));
             shown.push(format!("button: {label}"));
-            let field = rect(x, field_y, cw - bw - 8.0, FIELD_H);
-            self.field = field;
-            let placeholder = source.placeholder(model.open_question().is_some());
-            b.d.text_field(cx, field, &tok, &draft, &placeholder, true, hover == Some(field), ink);
+            let field = rect(x, field_y, field_w, field_h);
+            b.d.field_frame(cx, field, &tok, true, hover == Some(field));
+            let inner_x = x + tok.spacing.control_padding_x;
+            let top = field_y + (field_h - n as f64 * line_h) * 0.5;
+            // The selection behind the text; a line break in it shows as a
+            // sliver past its line's end.
+            let sel = composer.selection();
+            if !sel.is_empty() {
+                for (i, l) in layout.iter().enumerate().skip(first).take(n) {
+                    let len = l.xs.len() - 1;
+                    let (a, z) = (sel.start.max(l.start), sel.end.min(l.start + len));
+                    let past = sel.end > l.start + len && sel.start <= l.start + len && i + 1 < layout.len();
+                    if a < z || past {
+                        let x1 = l.xs[a.saturating_sub(l.start).min(len)];
+                        let x2 = if z > a { l.xs[(z - l.start).min(len)] } else { x1 } + if past { 5.0 } else { 0.0 };
+                        let y = top + (i - first) as f64 * line_h;
+                        b.d.solid(cx, rect(inner_x + x1, y, (x2 - x1).max(1.0), line_h), alpha(accent, 0.3));
+                    }
+                }
+            }
+            if draft.is_empty() {
+                let placeholder = source.placeholder(model.open_question().is_some());
+                b.d.label_elided(cx, rect(inner_x, top, inner_w, line_h), false, tok.font.body, crate::shell::darker(ink, 1.6), HAlign::Left, &placeholder);
+            } else {
+                for (i, line) in lines.iter().enumerate().skip(first).take(n) {
+                    // A line's trailing spaces hang past its end: not drawn.
+                    b.d.label_elided(cx, rect(inner_x, top + (i - first) as f64 * line_h, inner_w, line_h), false, tok.font.body, ink, HAlign::Left, line.trim_end());
+                }
+            }
+            // The caret where it is (none over a selection); the input
+            // method's candidates go by it.
+            let caret_x = layout.get(caret_line).map_or(0.0, |l| l.xs[(composer.cursor() - l.start).min(l.xs.len() - 1)]).min(inner_w);
+            let caret = rect(inner_x + caret_x + 1.0, top + (caret_line.saturating_sub(first)) as f64 * line_h + (line_h - px * 1.1) * 0.5, 1.0, px * 1.1);
+            if caret_on && sel.is_empty() {
+                b.d.solid(cx, caret, ink);
+            }
+            self.field = caret;
+            PROMPT_LAYOUT.with(|l| l.borrow_mut()[source.pane() as usize] = layout.clone());
+            self.prompt = PromptGeom { first, top, line_h, inner_x, layout };
             hits.push((field, Hit::Field));
         }
         shown.push(format!("prompt: {draft}"));
@@ -785,9 +1410,25 @@ impl ShellSystemChat {
             shown.push("Open AI providers".into());
         }
 
-        // The transcript, newest at the bottom, scrolled back by `scroll`.
-        let lines = self.transcript(cx, &model, cw, &tok);
-        let heights: Vec<f64> = lines.iter().map(|l| l.gap_before + if l.small { tok.font.body_small * 1.45 } else { tok.font.body * 1.45 }).collect();
+        // The transcript, newest at the bottom, scrolled back by `scroll`;
+        // laid out again only when it or its measure changed.
+        let key = TranscriptKey {
+            items: model.items.clone(),
+            running: model.phase().running_turn().is_some(),
+            width: cw,
+            body: tok.font.body,
+            small: tok.font.body_small,
+            scale: self.d.text_scale(),
+        };
+        let lines = match &self.laid_out {
+            Some((k, lines)) if *k == key => lines.clone(),
+            _ => {
+                let lines = Rc::new(self.transcript(cx, &model, cw, &tok));
+                self.laid_out = Some((key, lines.clone()));
+                lines
+            }
+        };
+        let heights: Vec<f64> = lines.iter().map(|l| l.height(tok.font.body, tok.font.body_small)).collect();
         let total: f64 = heights.iter().sum();
         let room = (list_bottom - top).max(0.0);
         self.max_scroll = (total - room).max(0.0);
@@ -799,9 +1440,47 @@ impl ShellSystemChat {
             if line_top < top || ly > list_bottom + 0.5 {
                 continue;
             }
-            let px = if line.small { tok.font.body_small } else { tok.font.body };
+            let lh = h - line.gap_before;
+            let px = if line.small { tok.font.body_small } else { tok.font.body } * line.scale;
             let color = if line.accent { accent } else if line.dim { dim } else { ink };
-            self.d.label_elided(cx, rect(x, line_top, cw, h - line.gap_before), line.bold, px, color, HAlign::Left, &line.text);
+            match line.kind {
+                LineKind::Rule => {
+                    self.d.separator(cx, rect(x, line_top + lh * 0.5, cw, 1.0), ink, 0.18);
+                    continue;
+                }
+                LineKind::Code => self.d.solid(cx, rect(x, line_top, cw, lh), alpha(ink, 0.07)),
+                LineKind::Quote => self.d.solid(cx, rect(x + 3.0, line_top, 2.0, lh), alpha(ink, 0.35)),
+                LineKind::Text => {}
+            }
+            let lx = x + line.indent;
+            if line.runs.is_empty() {
+                let r = rect(lx, line_top, (cw - line.indent).max(0.0), lh);
+                if line.kind == LineKind::Code {
+                    self.d.with_code(|d| d.label_elided(cx, r, false, px, color, HAlign::Left, &line.text));
+                } else {
+                    self.d.label_elided(cx, r, line.bold, px, color, HAlign::Left, &line.text);
+                }
+                continue;
+            }
+            // Styled runs side by side, measured as they are drawn.
+            let ts = self.d.text_scale();
+            let mut rx = lx;
+            for (text, style) in &line.runs {
+                let bold = line.bold || style.bold;
+                let r = rect(rx, line_top, (x + cw - rx).max(0.0) + 2.0, lh);
+                let run_color = if style.link { accent } else { color };
+                let w = if style.code {
+                    let w = self.d.with_code(|d| d.measure(cx, false, px * ts, text));
+                    self.d.solid(cx, rect(rx - 1.0, line_top + lh * 0.1, w + 2.0, lh * 0.8), alpha(ink, 0.1));
+                    self.d.with_code(|d| d.label_elided(cx, r, false, px, run_color, HAlign::Left, text));
+                    w
+                } else {
+                    let w = self.d.measure(cx, bold, px * ts, text);
+                    self.d.label_elided(cx, r, bold, px, run_color, HAlign::Left, text);
+                    w
+                };
+                rx += w;
+            }
         }
         if model.items.is_empty() && usable {
             let hint = source.hint();
@@ -814,6 +1493,10 @@ impl ShellSystemChat {
         }
         shown.extend(lines.iter().map(|l| l.text.clone()));
         self.hits.extend(hits);
+        // The frame last: the controls win over it.
+        if !full {
+            self.hits.extend(grips(pane));
+        }
         self.shown = shown;
     }
 }
@@ -827,7 +1510,7 @@ fn act(source: Source, hit: Hit) -> Outcome {
             Hit::Stop => crate::app_chat::stop(),
             Hit::StopSystemAgent => crate::app_chat::stop_system_agent(),
             Hit::Option { question, count, label } => crate::app_chat::answer_option(&question, count, &label),
-            Hit::New | Hit::OpenProviders | Hit::Field | Hit::Pane => {}
+            Hit::New | Hit::OpenProviders | Hit::Field | Hit::Pane | Hit::Grip(_) => {}
         }
         return Outcome::Taken;
     }
@@ -839,15 +1522,21 @@ fn act(source: Source, hit: Hit) -> Outcome {
         Hit::StopSystemAgent => {}
         Hit::Option { question, count, label } => super::answer_option(&question, count, &label),
         Hit::OpenProviders => return Outcome::OpenProviders,
-        Hit::Field | Hit::Pane => {}
+        Hit::Field | Hit::Pane | Hit::Grip(_) => {}
     }
     Outcome::Taken
 }
 
 impl Widget for ShellSystemChat {
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.keep_blinking(cx);
         cx.begin_turtle(walk, self.layout);
-        let screen = cx.turtle().rect();
+        let mut screen = visible(cx.turtle().rect(), cx.current_pass_size());
+        // The developer-mode banner holds the bottom strip while it shows:
+        // the pane (and its prompt) stays above it.
+        if crate::dev_mode::status().is_some() {
+            screen.size.y = (screen.size.y - crate::shell::dev_banner::HEIGHT).max(0.0);
+        }
         self.d.begin_surface(cx);
         self.draw_pane(cx, screen);
         self.d.end_surface(cx);
@@ -873,6 +1562,18 @@ impl Widget for ShellSystemChat {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        // The caret's blink, while the prompt holds the keyboard.
+        if self.blink_timer.is_event(event).is_some() {
+            self.blink_timer = Timer::empty();
+            if self.typing(cx) {
+                self.blink_off = !self.blink_off;
+                self.blink_timer = cx.start_timeout(BLINK_S);
+            } else {
+                // The keyboard went elsewhere: the caret goes too.
+                self.blink_off = false;
+            }
+            self.redraw(cx);
+        }
         // A fling goes on frame by frame.
         if let Some(ne) = self.fling_frame.is_event(event) {
             if let Some(dy) = self.touch.fling_step(ne.time) {
@@ -922,6 +1623,58 @@ mod tests {
         assert!(!lifted_on(&Hit::Send, send, dvec2(350.0, 790.0)), "slid off: cancelled");
         assert!(lifted_on(&option, yes, dvec2(40.0, 664.0)));
         assert!(!lifted_on(&option, yes, dvec2(40.0, 682.0)), "an answer is exact");
+    }
+
+    /// The desktop pane's frame: the header's buttons win over the header
+    /// they sit in, an edge wins over the header it crosses, and the inside
+    /// is still the pane's.
+    #[test]
+    fn the_frame_moves_and_sizes_the_pane_but_never_takes_a_button() {
+        let pane = rect(100.0, 50.0, 440.0, 700.0);
+        let close = rect(470.0, 66.0, 54.0, 28.0);
+        let mut hits = vec![(pane, Hit::Pane), (close, Hit::Close)];
+        hits.extend(grips(pane));
+        assert_eq!(hit_in(&hits, dvec2(490.0, 80.0)), Some(Hit::Close), "a button in the header is a button");
+        assert_eq!(hit_in(&hits, dvec2(250.0, 80.0)), Some(Hit::Grip(Grip::Move)), "the header moves it");
+        assert_eq!(hit_in(&hits, dvec2(250.0, 52.0)), Some(Hit::Grip(Grip::N)), "its top edge sizes it");
+        assert_eq!(hit_in(&hits, dvec2(102.0, 400.0)), Some(Hit::Grip(Grip::W)));
+        assert_eq!(hit_in(&hits, dvec2(537.0, 747.0)), Some(Hit::Grip(Grip::SE)));
+        assert_eq!(hit_in(&hits, dvec2(300.0, 400.0)), Some(Hit::Pane), "the transcript stays the pane's");
+    }
+
+    /// The pane opens at the left, medium and centred; "Ask <app>" beside
+    /// it; a short screen gives it its minimum height.
+    #[test]
+    fn the_pane_opens_medium_at_the_left() {
+        let screen = rect(0.0, 31.0, 1400.0, 832.0);
+        let pane = default_pane(screen, 5.0, false);
+        assert_eq!((pane.pos.x, pane.size.x), (5.0, PANE_W));
+        assert!((pane.size.y - 832.0 * DEFAULT_HEIGHT).abs() < 1e-9);
+        assert!((pane.pos.y + pane.size.y * 0.5 - (31.0 + 416.0)).abs() < 1e-9, "centred top to bottom");
+        assert_eq!(default_pane(screen, 5.0, true).pos.x, 5.0 + PANE_W + 5.0, "Ask <app> right of it");
+        assert_eq!(default_pane(rect(0.0, 0.0, 1400.0, 2000.0), 5.0, false).size.y, DEFAULT_MAX_H);
+        assert_eq!(default_pane(rect(0.0, 0.0, 800.0, 300.0), 5.0, false).size.y, MIN_H);
+    }
+
+    /// Moving keeps the pane on screen; sizing moves only the dragged edges,
+    /// never below the minimum; a placement shrinks with the window.
+    #[test]
+    fn a_dragged_pane_stays_on_screen_and_above_its_minimum() {
+        let screen = rect(0.0, 30.0, 1400.0, 860.0);
+        let pane = rect(944.0, 40.0, 440.0, 840.0);
+        assert_eq!(dragged(Grip::Move, pane, dvec2(-300.0, 0.0), screen), rect(644.0, 40.0, 440.0, 840.0));
+        assert_eq!(dragged(Grip::Move, pane, dvec2(500.0, -100.0), screen), rect(960.0, 30.0, 440.0, 840.0), "never off screen");
+        assert_eq!(dragged(Grip::W, pane, dvec2(-200.0, 0.0), screen), rect(744.0, 40.0, 640.0, 840.0), "the left edge only");
+        assert_eq!(dragged(Grip::W, pane, dvec2(400.0, 0.0), screen), rect(1064.0, 40.0, MIN_W, 840.0), "no narrower than the minimum");
+        assert_eq!(dragged(Grip::SE, pane, dvec2(-100.0, -500.0), screen), rect(944.0, 40.0, 340.0, 340.0));
+        assert_eq!(dragged(Grip::N, pane, dvec2(0.0, 700.0), screen), rect(944.0, 640.0, 440.0, MIN_H));
+        let small = rect(0.0, 0.0, 800.0, 500.0);
+        assert_eq!(placed_pane(rect(600.0, 300.0, 440.0, 840.0), small), rect(360.0, 0.0, 440.0, 500.0), "a window that shrank keeps it whole");
+        let tiny = rect(0.0, 0.0, 200.0, 100.0);
+        assert_eq!(placed_pane(pane, tiny), tiny, "a screen smaller than the minimum: the whole screen");
+        // A surface under a 33 px bar, as tall as the window: cut to it.
+        assert_eq!(visible(rect(0.0, 33.0, 1400.0, 894.0), dvec2(1400.0, 894.0)), rect(0.0, 33.0, 1400.0, 861.0));
+        assert_eq!(visible(rect(0.0, 33.0, 1400.0, 894.0), dvec2(0.0, 0.0)), rect(0.0, 33.0, 1400.0, 894.0), "no window size known");
     }
 
     #[test]

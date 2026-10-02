@@ -31,6 +31,7 @@ members = [
     "apps/reference",
     "apps/news/host-service",
     "apps/mail/host-service",
+    "apps/calendar/host-service",
     "apps/ai-providers/config",
     "apps/ai-providers/host-service",
     "apps/appcard/module",
@@ -142,6 +143,7 @@ octosense-l0-chat = { path = "crates/l0-chat" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }
+octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
 octos-app = { path = "apps/appcard/app/app", default-features = false }
 octos-app-store = { path = "apps/appcard/app/crates/octos-app-store" }

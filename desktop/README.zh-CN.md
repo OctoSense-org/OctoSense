@@ -13,7 +13,7 @@
 | 位置 | 对桌面端的作用 |
 | --- | --- |
 | [`../phone/`](../phone/README.zh-CN.md) | Home，手机 Shell。相同的应用模型、相同的运行时、相同的系统应用。 |
-| [`../apps/`](../apps/README.zh-CN.md) | 新闻、相册、地图、相机、邮件、AI 提供商和 YouTube 的应用包，邮件与 `llm` 宿主服务，AppCard 助手（`octos-app`，需显式启用，默认不随产品发布），以及 Reference。 |
+| [`../apps/`](../apps/README.zh-CN.md) | 新闻、相册、地图、相机、邮件、日历、AI 提供商和 YouTube 的应用包，邮件、日历与 `llm` 宿主服务，AppCard 助手（`octos-app`，需显式启用，默认不随产品发布），以及 Reference。 |
 | [`../crates/`](../crates/) | Shell 本身（`crates/shell`，包名 `octosense-shell`，本包包装它）、它的 AI 服务（`crates/ai-host`）、octos 内核服务（`crates/kernel`，包名 `octosense-kernel`）和应用与 Agent 之间的代理（`crates/app-peers`）。 |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店和 Card 运行器。以 Git crate `octosense-app-hub-app` 链接。 |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 设计、构建应用并发布到 App Hub 的地方。 |
@@ -125,12 +125,12 @@ launcher 把四类应用列在一起：
 
 | 类别 | 来源 | 运行方式 | Launcher id |
 | --- | --- | --- | --- |
-| **系统应用**：新闻、相册、地图、相机、邮件、AI 提供商、YouTube | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
+| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
 | **商店应用** | 签名的 App Hub 目录，从商店（`apphub`）安装 | 同一个 Card 运行器。每次打开都会对照目录检查；更新会关闭旧实例。 | `hub:<manifest-id>` |
 | **原生模块** | 链接进本二进制的 Rust crate | 进程内的 `AppModule`。只允许受信任的代码：App Hub、AppCard、Rinx、Reference 以及各 `app-*` feature。 | 模块 id |
 | **开发者程序** | `config/apps.json` | tile 中的独立进程，通过 Makepad 的 `--stdin-loop` 托管协议运行，首次启动时构建 | 目录 `id` |
 
-优先级：已链接的原生模块优先于同 id 的系统应用，系统应用优先于同 id 的目录条目。因此 Makepad 示例中的 Mail 和 Photos 已从随附目录中移除（`config/apps.overlay.json` 中的 `drop`）。
+优先级：已链接的原生模块优先于同 id 的系统应用，系统应用优先于同 id 的目录条目。因此 Makepad 示例中的 Mail、Photos 和 Calendar 已从随附目录中移除（`config/apps.overlay.json` 中的 `drop`）。
 
 ### 隔离与权限
 

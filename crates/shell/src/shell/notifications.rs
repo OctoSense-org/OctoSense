@@ -212,6 +212,12 @@ impl ShellNotifications {
         self.live.is_empty()
     }
 
+    /// Whether `p` is on a toast, its card or its close button: a press
+    /// there is the toast's, whatever surface lies under it.
+    pub fn hit(&self, p: Vec2d) -> bool {
+        !self.inert && self.card_rects.iter().any(|(_, card, close)| contains(*card, p) || contains(*close, p))
+    }
+
     /// The height a card needs for its text.
     fn card_height(&mut self, cx: &mut Cx2d, note: &Notification) -> f64 {
         let tok = self.d.tokens(self.tokens);

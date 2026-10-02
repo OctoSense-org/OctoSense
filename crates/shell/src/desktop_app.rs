@@ -63,6 +63,20 @@ impl App {
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<crate::glance_sheet::ShellGlanceSheet>() {
             w.set_material(material, palette);
         }
+        // The chat panes: the system chat and "Ask <app>".
+        for pane in [ids!(shell_system_chat), ids!(shell_app_chat)] {
+            if let Some(mut w) = self.ui.widget(cx, pane).borrow_mut::<crate::system_chat::view::ShellSystemChat>() {
+                w.set_material(material, palette);
+            }
+        }
+        // The approval sheets and the Approvals page, after the chat panes
+        // in the tree: lifted with the same material, they stay over them.
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_approvals)).borrow_mut::<crate::approvals::view::ShellApprovals>() {
+            w.set_material(material, palette);
+        }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_approvals_settings)).borrow_mut::<crate::approvals::settings_page::ShellApprovalsSettings>() {
+            w.set_material(material, palette);
+        }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_ai_pane)).borrow_mut::<ShellAiPane>() {
             w.set_material(material);
         }

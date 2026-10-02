@@ -405,6 +405,10 @@ pub struct App {
     /// The glance cards' generation the surfaces last drew (glance.rs).
     #[rust]
     pub glance_generation: u64,
+    /// When the glance panel was last open: cards published after it are
+    /// new (the bar's glance button is lit).
+    #[rust]
+    pub glance_seen_ms: u64,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
     /// shade's ids, which open the glance page.
@@ -3549,9 +3553,15 @@ impl App {
             self.ask_focused_app(cx);
             return;
         }
+        if target == shell::menu::GLANCE_ROW {
+            self.close_shell_menu(cx);
+            self.set_glance_open(cx, true);
+            return;
+        }
         if target == shell::menu::SYSTEM_CHAT_ROW {
             self.close_shell_menu(cx);
             system_chat::open();
+            self.focus_system_chat(cx);
             self.system_chat_changed(cx);
             return;
         }
@@ -3643,8 +3653,19 @@ impl App {
         if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
             panel.open = open;
         }
+        // Seen: the bar's glance button goes back from lit.
+        if open {
+            self.glance_seen_ms = glance::now_ms();
+        }
         log!("wm: glance panel {}", if open { "open" } else { "closed" });
+        if self.state.is_some() {
+            self.update_bar(cx);
+        }
         self.redraw_all(cx);
+    }
+
+    fn glance_open(&mut self, cx: &mut Cx) -> bool {
+        self.ui.widget(cx, ids!(shell_glance)).borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open)
     }
 
     /// The card window (glance_sheet.rs) is modal: while a card is open
@@ -3863,6 +3884,64 @@ impl App {
         true
     }
 
+    /// Copy or cut (Command+C, Command+X) in the chat pane typing goes to:
+    /// its prompt's selection, cut taking it out. Without a selection the
+    /// event is left to whoever else answers it.
+    fn chat_clipboard(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        let (response, cut) = match event {
+            Event::TextCopy(e) => (e.response.clone(), false),
+            Event::TextCut(e) => (e.response.clone(), true),
+            _ => return false,
+        };
+        let mut focused = [false; 2];
+        for (i, pane) in [ids!(shell_app_chat), ids!(shell_system_chat)].into_iter().enumerate() {
+            let pane = self.ui.widget(cx, pane);
+            focused[i] = pane.borrow::<system_chat::view::ShellSystemChat>().is_some_and(|p| p.has_keyboard(cx));
+        }
+        use system_chat::composer::{text_target, Pane};
+        let target = if focused[0] {
+            Some(Pane::App)
+        } else if focused[1] {
+            Some(Pane::System)
+        } else {
+            text_target(cx.key_focus().is_empty(), app_chat::is_focused(), system_chat::is_open())
+        };
+        let text = match target {
+            Some(Pane::App) => app_chat::copy_draft(cut),
+            Some(Pane::System) => system_chat::copy_draft(cut),
+            None => None,
+        };
+        match text {
+            Some(text) => {
+                *response.borrow_mut() = Some(text);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The system chat just opened on a desktop: its prompt takes the
+    /// keyboard, so an input method composes in it at once (a phone opens
+    /// it with a tap, which gives the keyboard itself).
+    fn focus_system_chat(&mut self, cx: &mut Cx) {
+        if !system_chat::is_open() || self.state.is_none() || self.state_mut().style.target.mobile() {
+            return;
+        }
+        if let Some(mut pane) = self.ui.widget(cx, ids!(shell_system_chat)).borrow_mut::<system_chat::view::ShellSystemChat>() {
+            pane.focus_prompt(cx);
+        }
+    }
+
+    /// A press on a toast (shell/notifications.rs `hit`). Only the press: a
+    /// drag of a pane's frame keeps its moves and its release wherever they
+    /// go.
+    fn press_on_toast(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        let Event::MouseDown(e) = event else { return false };
+        let notes = self.ui.widget(cx, ids!(shell_notes));
+        let on = notes.borrow::<shell::notifications::ShellNotifications>().is_some_and(|n| n.hit(e.abs));
+        on
+    }
+
     /// The system chat's pane owns the pointer inside its rect while open.
     fn system_chat_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
         if !system_chat::is_open() {
@@ -3955,10 +4034,10 @@ impl App {
     /// a toast on a desktop, which opens that card in the card window
     /// (glance_sheet.rs); a shade notification on the phone, which opens the
     /// glance page.
-    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
+    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote, toast: bool) {
         let body = "Open the card at a glance";
         let notes = self.ui.widget(cx, ids!(shell_notes));
-        let toast = shell::notifications::Notification {
+        let card_toast = shell::notifications::Notification {
             id: 0,
             app: note.app.clone(),
             summary: note.title.clone(),
@@ -3968,7 +4047,9 @@ impl App {
             // A card's toast stays its longest, so it can still be opened.
             requested: 30.0,
         };
-        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, toast)) {
+        if !toast {
+            log!("glance: {} shown in the open glance panel, no toast", note.key);
+        } else if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
             self.glance_toasts.record(id, &note.key);
             log!("glance: toast {id} opens {}", note.key);
         }
@@ -4055,6 +4136,14 @@ impl App {
         data.active_window = (!title.is_empty()).then_some(title);
         data.ask_agent = self.focused_agent_app().map(|a| a.name);
         data.open_panel = self.shell_panel_open;
+        // The glance button: the cards shown now, and how many arrived since
+        // the panel was last open; it wears the pill while the panel is up.
+        let cards = glance::shown();
+        let new = cards.iter().filter(|c| c.published_ms > self.glance_seen_ms).count();
+        data.glance = Some((cards.len(), new));
+        if self.glance_open(cx) {
+            data.open_panel = Some(BarModule::Glance);
+        }
         // The middle window control reads "restore" while maximized.
         data.maximized = self.ui.window(cx, ids!(main_window)).is_fullscreen(cx);
         let bar = self.ui.widget(cx, ids!(shell_bar));
@@ -5776,6 +5865,10 @@ impl MatchEvent for App {
                         }
                     }
                     BarModule::AskAgent => self.ask_focused_app(cx),
+                    BarModule::Glance => {
+                        let open = self.glance_open(cx);
+                        self.set_glance_open(cx, !open);
+                    }
                     control @ (BarModule::WindowMin | BarModule::WindowMax | BarModule::WindowClose) => {
                         // The gallery's bar is a picture of one: its
                         // controls log (shell/gallery.rs), never close or
@@ -6131,8 +6224,23 @@ impl App {
             )
             && (self.dev_banner_pointer(cx, event)
                 || self.shell_menu_pointer(cx, event)
-                || self.shell_panel_pointer(cx, event)
-                || self.glance_sheet_pointer(cx, event)
+                || self.shell_panel_pointer(cx, event))
+        {
+            return;
+        }
+        // A toast is drawn over the card window, the glance panel, the chat
+        // panes and the windows: a press on it is the toast's alone (it
+        // opens its card), whatever lies under it.
+        if self.state.is_some() && self.press_on_toast(cx, event) {
+            self.ui.widget(cx, ids!(shell_notes)).handle_event(cx, event, &mut Scope::empty());
+            return;
+        }
+        if self.state.is_some()
+            && matches!(
+                event,
+                Event::TouchUpdate(_) | Event::MouseMove(_) | Event::MouseDown(_) | Event::MouseUp(_) | Event::Scroll(_)
+            )
+            && (self.glance_sheet_pointer(cx, event)
                 || self.shell_glance_pointer(cx, event)
                 || self.app_chat_pointer(cx, event)
                 || self.system_chat_pointer(cx, event))
@@ -6273,6 +6381,7 @@ impl App {
                     system_chat::toggle();
                     // The system chat takes the keyboard when it opens.
                     app_chat::focus(!system_chat::is_open());
+                    self.focus_system_chat(cx);
                     self.system_chat_changed(cx);
                     return;
                 }
@@ -6356,6 +6465,11 @@ impl App {
             self.system_chat_changed(cx);
             return;
         }
+        // Copy and cut in a chat pane's prompt: its selection.
+        if self.state.is_some() && matches!(event, Event::TextCopy(_) | Event::TextCut(_)) && self.chat_clipboard(cx, event) {
+            self.system_chat_changed(cx);
+            return;
+        }
         if let Event::Signal = event {
             if self.state.is_some() {
                 self.system_chat_changed(cx);
@@ -6363,11 +6477,25 @@ impl App {
             // A card was published, replaced or withdrawn (glance.rs).
             if glance::generation() != self.glance_generation && self.state.is_some() {
                 self.glance_generation = glance::generation();
+                // A new card opens the glance panel on a desktop, unless a
+                // card window is up; the bar's glance button counts the cards.
+                let fresh = glance::shown().iter().any(|c| c.published_ms > self.glance_seen_ms);
+                let sheet_open = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
+                if fresh && !sheet_open && !self.state_mut().style.target.mobile() && !self.glance_open(cx) {
+                    log!("wm: a new glance card opens the glance panel");
+                    if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
+                        panel.show_newest();
+                    }
+                    self.set_glance_open(cx, true);
+                }
+                self.update_bar(cx);
                 self.redraw_all(cx);
             }
             if self.state.is_some() {
+                // A card the open panel shows needs no toast over it.
+                let toast = !self.glance_open(cx);
                 for note in glance::take_notifications() {
-                    self.glance_notify(cx, &note);
+                    self.glance_notify(cx, &note, toast);
                 }
             }
             if SignalToUI::check_and_clear_ui_signal() && self.state.is_some() {

@@ -169,6 +169,17 @@ fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
+        // `mail.notify` (Mail's agent's tool) and Calendar's cards: a card
+        // published as the calling app, only when its manifest was granted
+        // `glance`.
+        let publish = |app: &str, args: serde_json::Value| {
+            let caller = crate::glance::Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
+            crate::glance::request(&caller, "glance.publish", &args)
+        };
+        octosense_mail_service::on_publish_card(Some(std::sync::Arc::new(publish)));
+        // Calendar's events and cards (its agent's `calendar.*` tools).
+        octosense_calendar_service::register();
+        octosense_calendar_service::on_publish_card(Some(std::sync::Arc::new(publish)));
         register_news();
     });
 }

@@ -1,11 +1,10 @@
 {
   "schema": 1,
-  "id": "os.mail",
+  "id": "os.calendar",
   "version": "1.0.0",
-  "name": "Mail",
+  "name": "Calendar",
   "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "mail", "glance"],
-  "storage": { "accounts": true },
+  "capabilities": ["storage", "glance"],
   "agent": {
     "profile": "read-only",
     "tools": ["ask_user_question"],
