@@ -130,6 +130,31 @@ impl Approvals {
     pub fn consent_granted(&self, app: &str) -> bool {
         self.consent.granted(app, self.router.hooks().grants_all(app))
     }
+    /// The relay's entry point (octos#2567) on these approvals: a call
+    /// needs an approval.
+    pub fn approval_requested(&mut self, app: &str, tool: ToolSpec, args: serde_json::Value, caller: Caller, context: RequestContext) -> Route {
+        self.router.approval_requested(app, tool, args, caller, context)
+    }
+    /// The relay installs itself; decisions made before are handed over
+    /// first.
+    pub fn set_relay(&mut self, mut relay: Box<dyn ApprovalRelay>) {
+        for (id, decision, reason) in self.queue.take() {
+            relay.approval_decided(&id, decision, &reason);
+        }
+        *self.external.lock().unwrap_or_else(|e| e.into_inner()) = Some(relay);
+    }
+    /// The AI bus's held `confirm: host` call as a request like any other.
+    pub fn bus_requested(&mut self, held: &crate::ai_bus::HeldCall) -> Route {
+        let mut tool = ToolSpec::host(&held.tool);
+        tool.auto_approvable = held.auto_approvable;
+        if held.command {
+            tool = tool.command();
+        }
+        let args = serde_json::from_str(&held.args).unwrap_or_else(|_| serde_json::Value::String(held.args.clone()));
+        // The pane is the person's own conversation with the system agent.
+        let context = RequestContext { call_id: held.key.clone(), trigger: Trigger::Person, ..RequestContext::default() };
+        self.approval_requested(&held.app, tool, args, Caller::SystemAgent, context)
+    }
 }
 
 static STATE: Mutex<Option<Approvals>> = Mutex::new(None);
@@ -160,34 +185,23 @@ pub fn now() -> u64 {
 
 // ------------------------------------------------------------ the relay
 
-/// The relay's entry point (octos#2567): a call needs an approval.
+/// The relay's entry point (octos#2567): a call needs an approval
+/// ([`Approvals::approval_requested`] on the shell's approvals).
 pub fn approval_requested(app: &str, tool: ToolSpec, args: serde_json::Value, caller: Caller, context: RequestContext) -> Route {
-    with(|a| a.router.approval_requested(app, tool, args, caller, context)).unwrap_or_else(|| Route::Refused("approvals are not set up".into()))
+    with(|a| a.approval_requested(app, tool, args, caller, context)).unwrap_or_else(|| Route::Refused("approvals are not set up".into()))
 }
 
-/// The relay installs itself; decisions made before are handed over first.
-pub fn set_relay(mut relay: Box<dyn ApprovalRelay>) {
-    with(|a| {
-        for (id, decision, reason) in a.queue.take() {
-            relay.approval_decided(&id, decision, &reason);
-        }
-        *a.external.lock().unwrap_or_else(|e| e.into_inner()) = Some(relay);
-    });
+/// The relay installs itself; decisions made before are handed over first
+/// ([`Approvals::set_relay`] on the shell's approvals).
+pub fn set_relay(relay: Box<dyn ApprovalRelay>) {
+    with(|a| a.set_relay(relay));
 }
 
 /// The AI bus's `confirm: host` calls (`ai_bus::Route::Approval`): each is
 /// a request like any other; the shell drains the answers here and
 /// releases the held call (`AiBus::release`).
 pub fn bus_requested(held: &crate::ai_bus::HeldCall) -> Route {
-    let mut tool = ToolSpec::host(&held.tool);
-    tool.auto_approvable = held.auto_approvable;
-    if held.command {
-        tool = tool.command();
-    }
-    let args = serde_json::from_str(&held.args).unwrap_or_else(|_| serde_json::Value::String(held.args.clone()));
-    // The pane is the person's own conversation with the system agent.
-    let context = RequestContext { call_id: held.key.clone(), trigger: Trigger::Person, ..RequestContext::default() };
-    approval_requested(&held.app, tool, args, Caller::SystemAgent, context)
+    with(|a| a.bus_requested(held)).unwrap_or_else(|| Route::Refused("approvals are not set up".into()))
 }
 
 pub fn take_bus_decisions() -> Vec<(RequestId, Decision, String)> {

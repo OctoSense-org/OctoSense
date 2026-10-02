@@ -993,32 +993,31 @@ fn only_settings_and_the_sheet_make_a_person_gesture() {
 
 // ---------------------------------------------------------------- the relay seam
 
+/// On approvals of its own, never the shell's (`super::with`): those are
+/// the process's, and the tests that run app agents keep their consent
+/// and relay there while this runs.
 #[test]
 fn the_relay_gets_decisions_made_before_it_was_installed() {
-    super::init_memory();
-    let route = super::approval_requested("os.mail", ToolSpec::host("mail.archive").not_auto_approvable(), json!({"id": 1}), Caller::SystemAgent, ctx("g1", Trigger::Person));
-    assert!(matches!(route, Route::Sheet(_)));
-    let (sheet, id) = super::with(|a| {
+    let mut a = super::Approvals::memory();
+    let front = |a: &super::Approvals| {
         let s = a.router.front_sheet().unwrap();
         (s.id, s.lines[0].request.clone())
-    })
-    .unwrap();
-    super::with(|a| a.router.answer(sheet, &id, Answer::Deny, &ApprovalGesture::sheet_tap(), T0)).unwrap().unwrap();
+    };
+    let route = a.approval_requested("os.mail", ToolSpec::host("mail.archive").not_auto_approvable(), json!({"id": 1}), Caller::SystemAgent, ctx("g1", Trigger::Person));
+    assert!(matches!(route, Route::Sheet(_)));
+    let (sheet, id) = front(&a);
+    a.router.answer(sheet, &id, Answer::Deny, &ApprovalGesture::sheet_tap(), T0).unwrap();
     let relay = RecordingRelay::default();
-    super::set_relay(Box::new(relay.clone()));
+    a.set_relay(Box::new(relay.clone()));
     assert_eq!(relay.take(), vec![(RequestId("g1".into()), Decision::Deny, "denied on the sheet".into())]);
     // From now on, straight to it.
-    super::approval_requested("os.mail", ToolSpec::host("mail.archive").not_auto_approvable(), json!({"id": 2}), Caller::SystemAgent, ctx("g2", Trigger::Person));
-    let (sheet, id) = super::with(|a| {
-        let s = a.router.front_sheet().unwrap();
-        (s.id, s.lines[0].request.clone())
-    })
-    .unwrap();
-    super::with(|a| a.router.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0)).unwrap().unwrap();
+    a.approval_requested("os.mail", ToolSpec::host("mail.archive").not_auto_approvable(), json!({"id": 2}), Caller::SystemAgent, ctx("g2", Trigger::Person));
+    let (sheet, id) = front(&a);
+    a.router.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0).unwrap();
     assert_eq!(relay.take().len(), 1);
     // The AI bus's held `confirm: host` calls come back to the shell, not
     // to the relay: the Terminal's `run` asks the person, never a rule.
-    super::with(|a| a.router.create_rule(&ApprovalGesture::settings_tap(), RuleDraft::everything("terminal", 30), T0)).unwrap().unwrap();
+    a.router.create_rule(&ApprovalGesture::settings_tap(), RuleDraft::everything("terminal", 30), T0).unwrap();
     let held = crate::ai_bus::HeldCall {
         key: "bus:w4:c1".into(),
         app: "terminal".into(),
@@ -1027,19 +1026,18 @@ fn the_relay_gets_decisions_made_before_it_was_installed() {
         auto_approvable: false,
         command: true,
     };
-    assert!(matches!(super::bus_requested(&held), Route::Sheet(_)));
-    let (sheet, id, caller, args) = super::with(|a| {
+    assert!(matches!(a.bus_requested(&held), Route::Sheet(_)));
+    let (sheet, id, caller, args) = {
         let s = a.router.front_sheet().unwrap();
         (s.id, s.lines[0].request.clone(), s.lines[0].caller.clone(), s.lines[0].args.join(" "))
-    })
-    .unwrap();
+    };
     assert_eq!(id, RequestId("bus:w4:c1".into()));
     assert_eq!(caller, "The system agent");
     assert_eq!(args, "command (1 line):   1 \u{2502} ls", "a command, one numbered row per line");
-    super::with(|a| a.router.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0)).unwrap().unwrap();
+    a.router.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0).unwrap();
     assert!(relay.take().is_empty());
-    assert_eq!(super::take_bus_decisions(), vec![(id, Decision::ApproveOnce, "approved on the sheet".into())]);
-    assert!(!super::consent_granted("os.news"), "developer mode is off in tests: nothing is granted");
+    assert_eq!(a.bus.take(), vec![(id, Decision::ApproveOnce, "approved on the sheet".into())]);
+    assert!(!a.consent_granted("os.news"), "developer mode is off in tests: nothing is granted");
 }
 
 /// The module host's gate: the first ask shows the first-use sheet and
