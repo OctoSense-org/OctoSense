@@ -411,6 +411,10 @@ pub struct App {
     /// new (the bar's glance button is lit).
     #[rust]
     pub glance_seen_ms: u64,
+    /// A quit waiting on apps asking the person: since when (its start or
+    /// the last refusal), so it expires (process_close `quit_expired`).
+    #[rust]
+    pub quit_waiting_since: Option<f64>,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
     /// shade's ids, which open the glance page.
@@ -1806,6 +1810,10 @@ impl App {
                 }
                 let app = self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default();
                 log!("wm: {app} (client {client}) asks before closing; its tile stays until the person answers");
+                // A quit waiting on it waits from this refusal.
+                if self.quit_waiting_since.is_some() {
+                    self.quit_waiting_since = Some(host::now());
+                }
                 // In front so the question is seen; while a quit waits on
                 // several, the first to ask keeps the front.
                 if first || !self.process_close.quit_waiting() {
@@ -1897,6 +1905,7 @@ impl App {
             "wm: quit waits: instances {refused:?} ask, apps {:?} are answering",
             ask.asked
         );
+        self.quit_waiting_since = Some(now);
         if let Some(&first) = refused.first() {
             self.activate_client(cx, first);
         }
@@ -2152,6 +2161,19 @@ impl App {
                 process_close::ANSWER_TIMEOUT
             );
             self.end_process_client(cx, client);
+        }
+        // A quit nobody answered for a minute: the person kept the asking
+        // app (it does not say so). Drop the quit and say so, so a later
+        // yes or exit of that app does not quit the shell.
+        let quit_waiting = self.process_close.quit_waiting() || self.module_host.close_gate_mut().quit_waiting();
+        if !quit_waiting {
+            self.quit_waiting_since = None;
+        } else if process_close::quit_expired(self.quit_waiting_since, quit_waiting, host::now()) {
+            self.quit_waiting_since = None;
+            self.process_close.abandon_quit();
+            self.module_host.abandon_quit();
+            log!("wm: the quit waited {}s on an app asking the person; dropped", process_close::QUIT_ANSWER_WINDOW);
+            self.notify(cx, "Quit cancelled", "An app asked before closing and was kept open. Quit again when you are ready.");
         }
         // A client that ignored the polite close gets the fallback.
         let pool = cx.task_pool();
