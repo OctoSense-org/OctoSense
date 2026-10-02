@@ -86,8 +86,9 @@ flowchart LR
 | 应用 | 声明方式 | 它的工具（由谁执行） | 它放到 glance 屏幕上的内容 |
 | --- | --- | --- | --- |
 | Rinx（原生） | `native-apps.json` 的 `agent.octos`（四个 `octos.*` 服务）和 `agent.generic_tools` | 其列表中的 octos 通用工具；它自己的助手界面 | – |
-| 新闻（`os.news`） | `apps/news/bundle/tools.json`、manifest 中的 `agent` 块 | `news.list`、`news.read`（`news` 宿主服务） | – |
+| 新闻（`os.news`） | `apps/news/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `news.list`、`news.read`、`news.notify`（`news` 宿主服务） | 一张通知卡片，并发出一条通知 |
 | 邮件（`os.mail`） | `apps/mail/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `mail.notify`（`mail` 宿主服务） | 一张通知卡片，并发出一条通知 |
+| 照片、地图、YouTube（`os.photos`、`os.maps`、`os.youtube`）和相机（`os.camera`，仅手机端） | 各应用的 `bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `<app>.notify`（`photos.notify` 等；由 Shell 的通知服务应答，`crates/shell/src/glance_notice.rs`，因为这些应用没有自己的服务） | 一张通知卡片，并发出一条通知 |
 | 日历（`os.calendar`，仅桌面端） | `apps/calendar/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（破坏性操作：由用户批准）、`calendar.notify`、`calendar.agenda`（`calendar` 宿主服务） | 一张日程卡片或议程卡片，并发出一条通知 |
 
 脚本应用在以下情况下拥有 Agent：manifest 声明了 `octos.*` 名称或 `agent` 块（`"tools": ["ask_user_question"]` 列出它可以使用的内核工具），或者应用包附带 `tools.json`（每个工具名为 `<app>.<tool>`，带 schema、`risk`、`confirm` 和 `shareable`）。它的 peer 是 `card.<应用 id>`。用户只需在首次使用面板上允许一次（从 Shell 的 “Ask <app>” 面板、应用自己的 `octos` 调用，或系统 Agent 的 `agents.ask` 打开）。此后 Shell 在启动时就准备好这个 peer 并注册应用的工具，所以系统 Agent 的 `peer_list` 能看到它。除了自己的工具，应用 Agent 还能用宿主的只读工具 `files.list`、`files.read` 和 `files.search` 读取其账号文件夹。手机默认构建 `toolbox-peers`，因此在手机上，manifest 申请了 `research` 或 `crawl` 的应用 Agent 还会得到系统工具箱的工具；目前还没有应用申请。`AGENT.md`、技能和触发器（[ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)）尚未实现：应用 Agent 只在系统 Agent、用户或卡片请求时运行。
@@ -115,18 +116,16 @@ sequenceDiagram
   R->>R: grant, consent, schema, budget
   R->>M: run on Mail's host service
   M->>G: glance.publish as os.mail: notice.card, notify
-  G-->>P: notification (a desktop toast, the phone's shade)
+  G-->>P: desktop: a toast and the glance panel; phone: a shade notification
   M-->>R: {card_id}
   R-->>A: peer/tool/result
   A-->>S: the turn's result on the blackboard (peer_gather)
-  P->>G: opens the card, types in its chat
-  G->>A: a turn in the person's lane (sys.chat)
-  A-->>G: the reply, drawn as AI-written
 ```
 
 </details>
 
-- 模型从不编写卡片代码：`mail.notify`、`calendar.notify` 和 `calendar.agenda` 填充应用宿主服务自带的固定 L0 卡片（`apps/mail/host-service/resources/notice.card`、`apps/calendar/host-service/resources/*.card`），并以该应用的身份发布。
+- 模型从不编写卡片代码：每个 `<app>.notify`（邮件、新闻、照片等的）都填充 Shell 自带的同一张通知卡片（`crates/shell/resources/glance/notice.card`、`glance_notice.rs`）：应用的图标和名称由 Shell 填入，标题和正文来自调用，同一个 `card_id` 会替换该应用之前的通知。邮件和新闻的宿主服务把 `notify` 交给 Shell；其他应用由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历自己的卡片（`apps/calendar/host-service/resources/*.card`）。每张卡片都以应用的身份发布，前提是它的 manifest 获准使用 `glance`（`glance::publish_for`）。
+- 这张卡片只用于展示：通知卡片和日历的 `event.card`、`agenda.card` 一样，没有声明卡内对话（`sys.chat`），点击它会打开应用。要就它与邮件的 Agent 对话，用户打开 “Ask Mail”（[见下文](#直接与应用的-agent-对话)）。
 - `mail.notify` 和 `calendar.add_event` 是 `act` 工具，运行时不弹面板；octos 只对破坏性和对外的工具请求审批，这些审批交给 Shell 的审批路由（[见下文](#一次带审批的工具调用)）。
 
 ### 一个应用 Agent，两条通道
@@ -173,8 +172,8 @@ flowchart TB
 | 入口 | 位置 | 如何打开 |
 | --- | --- | --- |
 | **“Ask <app>”**（`crates/shell/src/app_chat/`） | Shell 为每个拥有 Agent 的应用提供的面板，不论应用自己是否绘制对话界面：它就是系统对话的窗格，以应用对话的形式绘制（`app_panel: true`）。在桌面端，它位于系统对话的右侧，两条通道并排显示。 | 顶栏的 “Ask <app>” 按钮（当前聚焦窗口的应用拥有 Agent 时显示）、Shift+F8，或菜单项 “Ask this app's agent”。如果聚焦的应用没有 Agent，Shell 会提示 “No app agent here”。在手机上，这个窗格绘制为全屏面板，但 `main` 上还没有可以打开它的触控入口。 |
-| **卡片的卡内对话**（`sys.chat`，`crates/shell/src/glance_chat.rs`） | 应用发布的一张 glance 卡片 | 用户在卡片的对话里输入。只有发布卡片的应用自己的 Agent 会回答，它的回复标为 AI 撰写（[见下文](#卡片与提问)）。 |
-| **应用自己的界面** | 原生模块的 `open_conversation`、脚本应用的 `octos.session.open`、进程应用的 peer link | 在应用内。Rinx 绘制自己的助手界面；系统应用（新闻、邮件、日历）都不绘制对话界面，所以对它们来说，入口就是这个面板和它们的卡片。 |
+| **卡片的卡内对话**（`sys.chat`，`crates/shell/src/glance_chat.rs`） | 应用发布的一张 glance 卡片 | 用户在卡片的对话里输入。只有发布卡片的应用自己的 Agent 会回答，它的回复标为 AI 撰写（[见下文](#卡片与提问)）。`main` 上，应用的 Agent 发布的卡片都还没有对话；唯一带对话的内置卡片是 `OCTOSENSE_GLANCE_DEMO=mail` 的演示卡片（`crates/shell/resources/glance/mail-request.card`），它用固定的演示回复作答。 |
+| **应用自己的界面** | 原生模块的 `open_conversation`、脚本应用的 `octos.session.open`、进程应用的 peer link | 在应用内。Rinx 绘制自己的助手界面；系统应用都不绘制对话界面，所以对它们来说，入口就是 “Ask <app>” 面板。 |
 
 “Ask <app>” 面板的行为：
 
@@ -231,9 +230,9 @@ sequenceDiagram
 
 ### 卡片与提问
 
-- **Glance 卡片**（`crates/shell/src/glance.rs`）：拥有 `glance` 权限的应用用 `glance.publish`（以及 `glance.withdraw`、`glance.list`）以自己的身份发布卡片：Shell 从调用方取得发布者，从不读取参数里的发布者。卡片要么是由 `data` 填充的 L0 `source`（只有呈现，由 Octoscript 的 L0 检查器检查），要么是 Splash `script`。限制：每个应用每分钟发布 6 次、最多保留 4 张卡片，总共保留 32 张，按优先级再按时间显示 6 张。以 `notify` 发布的卡片还会发出一条通知：桌面端点击 toast 会在单独的卡片窗口中打开这张卡片（`glance_sheet.rs`），每来一张新卡片 glance 面板（`glance_panel.rs`；顶栏的铃铛、F9）都会打开；手机上点通知栏里的通知会打开 glance 页面。
+- **Glance 卡片**（`crates/shell/src/glance.rs`）：拥有 `glance` 权限的应用用 `glance.publish`（以及 `glance.withdraw`、`glance.list`）以自己的身份发布卡片：Shell 从调用方取得发布者，从不读取参数里的发布者。卡片要么是由 `data` 填充的 L0 `source`（只有呈现，由 Octoscript 的 L0 检查器检查），要么是 Splash `script`。限制：每个应用每分钟发布 6 次、最多保留 4 张卡片，总共保留 32 张，按优先级再按时间显示 6 张。在桌面端，每来一张新卡片，glance 面板（`glance_panel.rs`；顶栏的铃铛、F9）都会打开，除非卡片窗口已经打开；以 `notify` 发布的卡片还会弹出一个 toast，点击它会在单独的卡片窗口中打开这张卡片（`glance_sheet.rs`）；面板打开时，toast 叠放在面板一栏的左侧，而不是盖在面板上（`notifications.rs` `keep_clear_of`，[#273](https://github.com/OctoSense-org/OctoSense/pull/273)）。面板中的每张卡片都有一个关闭按钮（`glance::dismiss`：卡片会消失，就像应用撤回了它一样），面板本身也有关闭按钮。在手机上，`notify` 会在通知栏发出一条通知，点击它会打开 glance 页面。
 - **交互式卡片**（[#153](https://github.com/OctoSense-org/OctoSense/pull/153)）：应用的 glance 卡片在应用自己的策略下运行，与应用界面在 Card runner 中一样。用户在卡片上的操作是应用自己的操作，经过应用的能力闸门和宿主服务，而不是 Agent 的工具调用，因此不需要额外的 Shell 审批。
-- **卡内对话**（[#263](https://github.com/OctoSense-org/OctoSense/pull/263)）：L0 卡片可以声明 `sys.chat(app, thread, fields)` 并绘制 `ChatEntry` 行，也可以显示模型写的文字（`class: model-copy`），这些文字标为 AI 撰写，且从不被当作操作执行。对话记录归宿主所有（[`crates/l0-chat`](crates/l0-chat/README.md)、`crates/shell/src/glance_chat.rs`）：只能与发布卡片的应用自己的 Agent 对话，只有用户亲手输入的内容才记为用户的话，Agent 在用户的通道里回答。对话按线程保存在应用的账号文件夹中（`apps/<app>/accounts/<account>/chat/<thread>.json`）。
+- **卡内对话**（[#263](https://github.com/OctoSense-org/OctoSense/pull/263)）：L0 卡片可以声明 `sys.chat(app, thread, fields)` 并绘制 `ChatEntry` 行，也可以显示模型写的文字（`class: model-copy`），这些文字标为 AI 撰写，且从不被当作操作执行。对话记录归宿主所有（[`crates/l0-chat`](crates/l0-chat/README.md)、`crates/shell/src/glance_chat.rs`）：只能与发布卡片的应用自己的 Agent 对话，只有用户亲手输入的内容才记为用户的话，Agent 在用户的通道里回答。对话按线程保存在应用的账号文件夹中（`apps/<app>/accounts/<account>/chat/<thread>.json`）。`main` 上，应用的 Agent 发布的卡片都还没有声明卡内对话；`OCTOSENSE_GLANCE_DEMO=mail` 的演示卡片有，并用固定的演示回复作答。
 - **提问**（octos 的 `ask_user_question`）按这一轮的触发方路由：来自用户通道（或应用）的一轮在应用的对话中提问，来自系统 Agent 通道的一轮在系统对话中提问。只有用户能回答，而且只能在 Shell 的界面上回答。
 
 ## 目录结构

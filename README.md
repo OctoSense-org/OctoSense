@@ -86,8 +86,9 @@ flowchart LR
 | App | Declared by | Its tools (run by) | What it puts on the glance screen |
 | --- | --- | --- | --- |
 | Rinx (native) | `native-apps.json` `agent.octos` (the four `octos.*` services) and `agent.generic_tools` | octos's generic tools in its list; its own assistant UI | – |
-| News (`os.news`) | `apps/news/bundle/tools.json`, the manifest's `agent` block | `news.list`, `news.read` (the `news` host service) | – |
+| News (`os.news`) | `apps/news/bundle/tools.json`, the manifest's `agent` block and `glance` | `news.list`, `news.read`, `news.notify` (the `news` host service) | a notice card with a notification |
 | Mail (`os.mail`) | `apps/mail/bundle/tools.json`, the manifest's `agent` block and `glance` | `mail.notify` (the `mail` host service) | a notice card with a notification |
+| Photos, Maps, YouTube (`os.photos`, `os.maps`, `os.youtube`) and Camera (`os.camera`, phone only) | each app's `bundle/tools.json`, the manifest's `agent` block and `glance` | `<app>.notify` (`photos.notify`, …; the shell's notice service, `crates/shell/src/glance_notice.rs`, since these apps have no service of their own) | a notice card with a notification |
 | Calendar (`os.calendar`, desktop only) | `apps/calendar/bundle/tools.json`, the manifest's `agent` block and `glance` | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (destructive: the person approves it), `calendar.notify`, `calendar.agenda` (the `calendar` host service) | an event card or an agenda card, with a notification |
 
 A script app has an agent when its manifest declares `octos.*` names or an `agent` block (`"tools": ["ask_user_question"]` names the kernel tools it may use), or its bundle ships `tools.json` (each tool `<app>.<tool>` with its schemas, `risk`, `confirm` and `shareable`). Its peer is `card.<app id>`. The person allows the agent once, on the first-use sheet (from the shell's "Ask <app>" panel, the app's own `octos` call or the system agent's `agents.ask`). From then on the shell prepares the peer at startup, with the app's tools registered, so the system agent's `peer_list` shows it. Besides its own tools, an app agent gets the host read tools `files.list`, `files.read` and `files.search` over its account folder. On the phone, which builds `toolbox-peers` by default, it also gets the system toolbox's tools when its manifest asks for `research` or `crawl`, which no app does yet. `AGENT.md`, skills and triggers ([ADR 0002](docs/adr/0002-event-driven-app-agents.md)) are not built: an app agent runs only when the system agent, the person or a card asks it.
@@ -115,18 +116,16 @@ sequenceDiagram
   R->>R: grant, consent, schema, budget
   R->>M: run on Mail's host service
   M->>G: glance.publish as os.mail: notice.card, notify
-  G-->>P: notification (a desktop toast, the phone's shade)
+  G-->>P: desktop: a toast and the glance panel; phone: a shade notification
   M-->>R: {card_id}
   R-->>A: peer/tool/result
   A-->>S: the turn's result on the blackboard (peer_gather)
-  P->>G: opens the card, types in its chat
-  G->>A: a turn in the person's lane (sys.chat)
-  A-->>G: the reply, drawn as AI-written
 ```
 
 </details>
 
-- The model never writes card code: `mail.notify`, `calendar.notify` and `calendar.agenda` fill a fixed L0 card the app's host service ships (`apps/mail/host-service/resources/notice.card`, `apps/calendar/host-service/resources/*.card`) and publish it as the app.
+- The model never writes card code: every `<app>.notify` (Mail's, News's, Photos's, …) fills the shell's one notice card (`crates/shell/resources/glance/notice.card`, `glance_notice.rs`): the app's icon and name are the shell's, the title and text the call's, and the same `card_id` replaces the app's earlier notice. Mail's and News's host services hand `notify` to the shell; the others are answered by the shell's notice service. `calendar.notify` and `calendar.agenda` fill Calendar's own cards (`apps/calendar/host-service/resources/*.card`). Each card is published as the app, only when its manifest was granted `glance` (`glance::publish_for`).
+- The card is presentation only: the notice card, like Calendar's `event.card` and `agenda.card`, declares no in-card chat (`sys.chat`), and a press on it opens the app. To talk to Mail's agent about it, the person opens "Ask Mail" ([below](#talking-to-an-apps-agent-yourself)).
 - `mail.notify` and `calendar.add_event` are `act` tools and run without a sheet; octos asks for approval only for destructive and outward tools, which go to the shell's approval router ([below](#a-tool-call-with-an-approval)).
 
 ### One app agent, two lanes
@@ -173,8 +172,8 @@ The person is not limited to the system agent: they can talk to any app's own ag
 | Surface | Where it is | How it opens |
 | --- | --- | --- |
 | **"Ask <app>"** (`crates/shell/src/app_chat/`) | A shell panel for every app with an agent, whether or not the app draws a chat of its own: the system chat's pane drawn as the app's conversation (`app_panel: true`). On a desktop it stands right of the system chat, so the two lanes show side by side. | The bar's "Ask <app>" button (shown while the focused window's app has an agent), Shift+F8, or the menu row "Ask this app's agent". With an app without an agent focused, the shell says "No app agent here". On the phone the pane is drawn as a full-screen sheet, but no touch control opens it on `main` yet. |
-| **A card's in-card chat** (`sys.chat`, `crates/shell/src/glance_chat.rs`) | A glance card the app published | The person types in the card's chat. Only the publishing app's own agent answers, and its reply is marked AI-written ([below](#cards-and-questions)). |
-| **The app's own UI** | A native module's `open_conversation`, a script app's `octos.session.open`, a process app's peer link | Inside the app. Rinx draws its own assistant UI; none of the system apps (News, Mail, Calendar) draws a chat, so for them the panel and their cards are the way in. |
+| **A card's in-card chat** (`sys.chat`, `crates/shell/src/glance_chat.rs`) | A glance card the app published | The person types in the card's chat. Only the publishing app's own agent answers, and its reply is marked AI-written ([below](#cards-and-questions)). On `main` no card an app's agent publishes has a chat yet; the only shipped card with one is the demo card of `OCTOSENSE_GLANCE_DEMO=mail` (`crates/shell/resources/glance/mail-request.card`), which answers with a canned reply. |
+| **The app's own UI** | A native module's `open_conversation`, a script app's `octos.session.open`, a process app's peer link | Inside the app. Rinx draws its own assistant UI; none of the system apps draws a chat, so for them the "Ask <app>" panel is the way in. |
 
 How the "Ask <app>" panel behaves:
 
@@ -231,9 +230,9 @@ sequenceDiagram
 
 ### Cards and questions
 
-- **Glance cards** (`crates/shell/src/glance.rs`): an app with the `glance` capability publishes with `glance.publish` (`glance.withdraw`, `glance.list`), as itself: the shell takes the publisher from the caller, never from the arguments. A card is an L0 `source` filled from `data` (presentation only, checked with Octoscript's L0 checker) or a Splash `script`. Limits: 6 publishes a minute and 4 cards per app, 32 kept, 6 shown by priority, then recency. A card published with `notify` also posts a notification: on a desktop the toast opens that card in its own card window (`glance_sheet.rs`), and the glance panel (`glance_panel.rs`; the bar's bell, F9) opens on every new card; on a phone the shade's notification opens the glance page.
+- **Glance cards** (`crates/shell/src/glance.rs`): an app with the `glance` capability publishes with `glance.publish` (`glance.withdraw`, `glance.list`), as itself: the shell takes the publisher from the caller, never from the arguments. A card is an L0 `source` filled from `data` (presentation only, checked with Octoscript's L0 checker) or a Splash `script`. Limits: 6 publishes a minute and 4 cards per app, 32 kept, 6 shown by priority, then recency. On a desktop every new card opens the glance panel (`glance_panel.rs`; the bar's bell, F9) unless a card window is up, and a card published with `notify` also posts a toast that opens it in its own card window (`glance_sheet.rs`); while the panel is open, toasts stack left of its column instead of over it (`notifications.rs` `keep_clear_of`, [#273](https://github.com/OctoSense-org/OctoSense/pull/273)). Each card in the panel has a dismiss button (`glance::dismiss`: the card goes, as if its app had withdrawn it), and the panel a close button. On a phone, `notify` posts a shade notification that opens the glance page.
 - **Interactive cards** ([#153](https://github.com/OctoSense-org/OctoSense/pull/153)): an app's glance cards run under the app's own policy, as the app's UI does in the Card runner. What the person does on a card is the app's own action, through the app's capability gate and host services, not an agent tool call, so it needs no extra shell approval.
-- **In-card chat** ([#263](https://github.com/OctoSense-org/OctoSense/pull/263)): an L0 card may declare `sys.chat(app, thread, fields)` and draw `ChatEntry` rows, and show text the model wrote (`class: model-copy`), marked AI-written and never acted on. The transcript is the host's ([`crates/l0-chat`](crates/l0-chat/README.md), `crates/shell/src/glance_chat.rs`): only the publishing app's own agent, only what the person typed is written as theirs, and the agent answers in the person's lane. Threads are kept in the app's account folder (`apps/<app>/accounts/<account>/chat/<thread>.json`).
+- **In-card chat** ([#263](https://github.com/OctoSense-org/OctoSense/pull/263)): an L0 card may declare `sys.chat(app, thread, fields)` and draw `ChatEntry` rows, and show text the model wrote (`class: model-copy`), marked AI-written and never acted on. The transcript is the host's ([`crates/l0-chat`](crates/l0-chat/README.md), `crates/shell/src/glance_chat.rs`): only the publishing app's own agent, only what the person typed is written as theirs, and the agent answers in the person's lane. Threads are kept in the app's account folder (`apps/<app>/accounts/<account>/chat/<thread>.json`). No card an app's agent publishes on `main` declares a chat yet; the `OCTOSENSE_GLANCE_DEMO=mail` demo card does, and answers with a canned reply.
 - **Questions** (octos's `ask_user_question`) are routed by the turn's trigger: a turn from the person's lane (or the app) asks in the app's conversation, a turn from the system agent's lane asks in the system chat. Only the person answers, on a shell surface.
 
 ## Layout
