@@ -84,6 +84,7 @@ let people = []
 let route = "collections"   // collections | library | album | person | favorites | editor
 let route_arg = ""
 let columns = 3
+let tile_rows = 1
 let pinch_start = 3
 let query = ""
 let viewer_ids = []
@@ -398,10 +399,27 @@ fn set_query(text){
     ui.subtitle.set_text(subtitle_text())
     ui.list.render()
 }
-fn tile_ids(){
+fn tile_rows_for_size(width, height){
+    let image_width = (width - 6) / 3
+    let minimum_height = image_width / 2
+    if minimum_height < 64 { minimum_height = 64 }
+    let rows = floor((height + 3) / (minimum_height + 3))
+    if rows < 1 { return 1 }
+    if rows > 3 { return 3 }
+    rows
+}
+fn on_app_resize(width, height){
+    if width <= 0 || height <= 0 { return }
+    let rows = tile_rows_for_size(width, height)
+    if rows != tile_rows {
+        tile_rows = rows
+        ui.tile_grid.render()
+    }
+}
+fn tile_ids(rows){
     let out = []
-    for id in store.favorites { if out.len() < 6 { out.push(id) } }
-    for p in catalog { if out.len() < 6 && !has_item(out, p.id) { out.push(p.id) } }
+    for id in store.favorites { if out.len() < rows * 3 { out.push(id) } }
+    for p in catalog { if out.len() < rows * 3 && !has_item(out, p.id) { out.push(p.id) } }
     out
 }
 
@@ -626,14 +644,19 @@ HostedView{width: Fill height: Fill
             }
         }
     }
-    tile: View{width: Fill height: Fill flow: Down padding: 10 spacing: 6 new_batch: true show_bg: true draw_bg.color: #xffffff
-        Label{text: "Photos" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 13}}
+    tile: View{width: Fill height: Fill flow: Overlay new_batch: true show_bg: true draw_bg.color: #xffffff
         tile_grid := View{width: Fill height: Fill flow: Down spacing: 3 on_render: || {
-            for row in grid_rows_of(tile_ids(), 3) {
+            for row in grid_rows_of(tile_ids(tile_rows), 3) {
                 View{width: Fill height: Fill flow: Right spacing: 3
                     for id in row { Image{width: Fill height: Fill fit: ImageFit.CropToFill src: http_resource(thumb_url(id))} }
                 }
             }
         }}
+        tile_caption := View{width: Fill height: Fill flow: Down align: Align{y: 1.0} padding: 10
+            RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 4 bottom: 4}
+                new_batch: true show_bg: true draw_bg.color: #x000000aa draw_bg.border_radius: 4.0
+                tile_title := Label{text: "Photos" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 13}}
+            }
+        }
     }
 }
