@@ -978,7 +978,7 @@ mod tests {
     fn card(app: &str, id: &str, priority: i64, published_ms: u64) -> GlanceItem {
         GlanceItem::Card(GlanceCard {
             app: app.into(), card_id: id.into(), title: format!("{app}/{id}"), priority, published_ms, expires_ms: 0,
-            open_app: app.trim_start_matches("os.").into(), route: None, body: "".into(), contained: true, l0: None,
+            open_app: app.trim_start_matches("os.").into(), route: None, body: "".into(), contained: true, digests: Vec::new(), l0: None,
         })
     }
 

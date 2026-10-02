@@ -1,0 +1,123 @@
+{
+  "run_id": "glance",
+  "app_id": "os.news",
+  "template": {
+    "id": "news-digest",
+    "version": "1.1.0",
+    "digest": "92ab809c79d8b83c370efeb37b9a7c6de632d313c45456fd1e91e45c43261f02"
+  },
+  "status": "ready",
+  "data": {
+    "digest": {
+      "language": "en",
+      "points": [
+        {
+          "citations": [
+            "s72ee00603e06"
+          ],
+          "text": "Harbor City's council approved an order for 120 electric buses on Tuesday."
+        },
+        {
+          "citations": [
+            "s39327104dbcc"
+          ],
+          "text": "Ocho bibliotecas de Puerto Claro abrirán los domingos durante un programa piloto de tres meses."
+        },
+        {
+          "citations": [
+            "s3820b1dec583"
+          ],
+          "text": "Clearwater Utilities reported that a six-month sensor pilot detected 43 underground leaks across two districts."
+        }
+      ],
+      "summary": "Sources: Harbor City approves electric bus order; Ocho bibliotecas amplían su horario durante un piloto; Water utility reports early leak-detection results",
+      "task": "digest"
+    },
+    "language": "en",
+    "missing": 0,
+    "sources": [
+      {
+        "evidence_sha256": "d7006e8135e503bb16aedc89b4f5e6848da09c42d82097795a84fcbc609d8ba8",
+        "id": "s72ee00603e06",
+        "published_at": "2026-09-19T10:00:00Z",
+        "source": "Harbor Daily",
+        "title": "Harbor City approves electric bus order",
+        "url": "https://example.invalid/news/buses"
+      },
+      {
+        "evidence_sha256": "fb9bd23cf16648691f79ed6f64b5add1fb35506cf838dac8785f428be7c102bd",
+        "id": "s39327104dbcc",
+        "published_at": "2026-09-19T08:30:00Z",
+        "source": "Diario de Puerto Claro",
+        "title": "Ocho bibliotecas amplían su horario durante un piloto",
+        "url": "https://example.invalid/news/libraries"
+      },
+      {
+        "evidence_sha256": "1464f7fa5fe6edd95282a0f93cd0a62d0ad8cfcfb6d9271303d79bc3e0b6c2b1",
+        "id": "s3820b1dec583",
+        "published_at": "2026-09-18T16:00:00Z",
+        "source": "Clearwater Courier",
+        "title": "Water utility reports early leak-detection results",
+        "url": "https://example.invalid/news/water"
+      }
+    ],
+    "topic": "city infrastructure",
+    "unreadable": 0
+  },
+  "provenance": [
+    {
+      "id": "s72ee00603e06",
+      "url": "https://example.invalid/news/buses",
+      "title": "Harbor City approves electric bus order",
+      "source": "Harbor Daily",
+      "language": "en",
+      "published_at": "2026-09-19T10:00:00Z",
+      "retrieved_at": "2026-09-20T08:00:01Z",
+      "evidence_sha256": "d7006e8135e503bb16aedc89b4f5e6848da09c42d82097795a84fcbc609d8ba8",
+      "via": "article"
+    },
+    {
+      "id": "s39327104dbcc",
+      "url": "https://example.invalid/news/libraries",
+      "title": "Ocho bibliotecas amplían su horario durante un piloto",
+      "source": "Diario de Puerto Claro",
+      "language": "en",
+      "published_at": "2026-09-19T08:30:00Z",
+      "retrieved_at": "2026-09-20T08:00:02Z",
+      "evidence_sha256": "fb9bd23cf16648691f79ed6f64b5add1fb35506cf838dac8785f428be7c102bd",
+      "via": "article"
+    },
+    {
+      "id": "s3820b1dec583",
+      "url": "https://example.invalid/news/water",
+      "title": "Water utility reports early leak-detection results",
+      "source": "Clearwater Courier",
+      "language": "en",
+      "published_at": "2026-09-18T16:00:00Z",
+      "retrieved_at": "2026-09-20T08:00:03Z",
+      "evidence_sha256": "1464f7fa5fe6edd95282a0f93cd0a62d0ad8cfcfb6d9271303d79bc3e0b6c2b1",
+      "via": "article"
+    }
+  ],
+  "diagnostics": [],
+  "stats": {
+    "calls": 7,
+    "model_calls": 1,
+    "pages": 3,
+    "search_fetches": 2,
+    "denied": 0,
+    "failed": 0,
+    "peak_concurrency": 3,
+    "elapsed_ms": 412.0
+  },
+  "trace": [
+    {
+      "event": "start",
+      "call": 0,
+      "tool": "research.search",
+      "ms": 0.0
+    }
+  ],
+  "started_at": "2026-09-20T08:00:00Z",
+  "result_path": "toolbox/runs/news-digest/glance.json"
+}

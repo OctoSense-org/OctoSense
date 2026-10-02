@@ -5,8 +5,8 @@
 # The News digest on the glance screen (OctoSense #63): a test fixture the
 # shell publishes as `os.news` under OCTOSENSE_GLANCE_DEMO=1. Every value is
 # a source the publisher supplies in `data`; the card states nothing else.
-# The sources are the catalogued News digest helpers; the `sys.digest(app:)`
-# source ADR 0002 names is not in the pinned L0 catalog yet.
+# The sources are the catalogued News digest helpers, fed by the publisher;
+# news-brief.card is the same card bound to a host-held `sys.digest`.
 
 source status   sys.news_status(fields: [message, count])
 source stories  sys.news_digest(count: 3, fields: [id, title, publisher])
