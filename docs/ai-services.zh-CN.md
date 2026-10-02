@@ -4,6 +4,8 @@
 
 本文介绍 OctoSense 的 octos 内核、提供方配置、应用 peer 和工具。阅读外部源码时使用 [Cargo.toml](../Cargo.toml) 的依赖锁定版本。调用链与执行模型见[架构导读](architecture-walkthrough.zh-CN.md)。状态说明以当前检出为准。下方带日期的运行信息是历史验证记录。
 
+历史源码评审分别在 2026-09-28（OctoSense `ad0d738`）和 2026-09-29（`baa90bd`）进行；这些日期不代表当前状态表的更新时间。
+
 本文讨论的是 OctoSense *内部*的助手。开发应用不需要任何 AI 服务，也不需要特定的编程 Agent：应用开发工具集 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 适用于任何 Agent，也可以不用 Agent。它的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md) 页面是本文面向应用开发者的简短版本。
 
 它所处的整个系统（各平台的进程、Agent、协议、工具与授权、审批、存储和信任边界）见 [OctoSense 架构](architecture.zh-CN.md)。本文不重复那些内容：原生应用清单（`native-apps.json`）、系统 Agent 的工具集、审批路由、首次使用同意和开发者模式都在那里描述，这里只给出链接。
@@ -199,11 +201,11 @@ flowchart TB
 | `model` | 获得 `model` 权限的应用（[App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)） | 一次性的 `model.complete {task, input, schema, class?, allow_urls?}` 和 `model.budget`（[#95](https://github.com/OctoSense-org/OctoSense/pull/95)，`apps/ai-providers/host-service/src/complete/`，在 `crates/ai-host/src/lib.rs` 中注册）：`class` 为 `fast` 或 `strong`；宿主从用户的提供方中挑选模型，按 schema 校验回复，除非请求否则拒绝含 URL 的回复，按应用管理每日预算；没有工具、记忆和历史，应用也看不到任何密钥 |
 | `octos` | 声明了确切 `octos.*` 服务名的应用；需要 Shell 托管内核，并遵守[隔离应用的首次使用同意](#隔离应用的首次使用同意)策略 | 应用自己的助手，经由宿主拥有的 peer 访问。broker 用 `card.<应用 id>` 标识应用；`peer/prepare` 返回内核分配的 peer slug（[`contained.rs`](../crates/ai-host/src/contained.rs)，[#106](https://github.com/OctoSense-org/OctoSense/pull/106)）。调用规则见下文。 |
 
-四个 `octos.*` 调用的参数、审批和回复各有规则：
+四个 `octos.*` 调用的参数、来源、审批和回复各有规则：
 
-- **参数。** `octos.turn.start` 必须提供非空白、最多 32 KiB 的 `text`，还可以提供 `trigger` 和 `from`。其余调用只接受 `{}`。
+- **参数。** `octos.turn.start` 必须提供非空白、最多 32 KiB 的 `text`，还可以提供 `trigger`（`person`、`app` 或 `incoming`）和 `from`。其余调用只接受 `{}`。
 - **来源。** `trigger: "person"` 会得到 `AppSaysPerson` 分类。它只是应用的声明，不是受信任的人类操作，也不能绕过审批。
-- **审批。** 宿主工具审批和其他 peer 审批都交给 Shell；工具仍受已有授权与审批规则约束。
+- **审批。** 宿主工具审批和其他 peer 审批都交给 Shell；工具仍受已有授权与审批规则约束，开发者模式会为它覆盖的应用作答。没有审批路由的宿主会拒绝请求，并在 `denied_approvals` 中列出。详见 [`host_approvals.rs`](../crates/app-peers/src/host_approvals.rs)。
 - **回复。** 宿主拒绝超过 2 MiB 的回复。下表列出成功调用及常见错误的返回内容。
 
 脚本自己的助手调用使用已声明的 `octos.*`；Shell 也可以根据 `agent`/`tools.json` 驱动 peer，而不要求脚本声明这些 UI 调用。脚本服务调用的回复：
@@ -213,7 +215,7 @@ flowchart TB
 | manifest 未授予的 family | `r.error`：`this app was not granted "<family>", which "<service>" needs`（由隔离环境立即返回） |
 | 已获授权的 `octos.turn.start {text}`，内核与提供方已配置 | `r.data`：`{turn_id, text}`，即应用 peer 的回复 |
 | 参数超出规则的 `octos.*` | `r.error`：`Unsupported Octos arguments` 或 `Provide text (at most 32 KiB)` |
-| `Policy::contained_apps` 为关时的 `octos.*` | `r.error`：`The assistant is turned off for apps on this device` |
+| 设备为应用关闭了助手时（`OCTOSENSE_CONTAINED_APPS=0`）的 `octos.*` | `r.error`：`The assistant is turned off for apps on this device` |
 | 用户尚未允许该应用的 Agent 时的 `octos.*` | `r.error`：`Waiting for the person to allow this app's agent (OctoSense asks the first time)`，同时 Shell 显示首次使用面板（在 `contained.rs` 和 `approvals/mod.rs` 中读到；未在运行的 Shell 中验证，**unverified**） |
 | 在未设置 `OCTOS_APP_CORE_BIN` 的桌面端调用 `octos.*` | `r.error`：`no octos kernel: no kernel binary configured (OCTOS_APP_CORE_BIN)` |
 | 在不链接内核的构建（iOS）中调用 `octos.*` | `r.error`：`no service answers "octos" on this device`（**未验证**） |
@@ -226,7 +228,7 @@ manifest 的 `agent` 和已准入 `tools.json` 已参与 Shell 的 Agent 发现�
 
 ## 规划中：事件驱动的应用 Agent（ADR 0002）
 
-[ADR 0002](adr/0002-event-driven-app-agents.md)（状态 **Proposed**）让每个申请的应用拥有**自己的 Agent**：在 Shell 唯一内核上的应用 peer，由应用自己的触发器唤醒，只通过应用自己的工具工作，把卡片发布到 glance 屏幕。原生模块和脚本应用遵循同一模型（§12）。各部分及其进展：
+[ADR 0002](adr/0002-event-driven-app-agents.md)（状态 **Proposed**）描述事件驱动应用 Agent 的完整计划。应用 peer、工具执行和用户对话已经可用。自动触发器等剩余部分在下表单独列出；ADR 仍处于提案状态，并不表示所有组件都尚未实现。
 
 | 组成部分 | ADR | 状态 |
 | --- | --- | --- |

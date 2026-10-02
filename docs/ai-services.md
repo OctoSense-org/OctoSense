@@ -4,6 +4,8 @@ English | [简体中文](ai-services.zh-CN.md)
 
 How the assistant is wired into OctoSense: the octos kernel, provider configuration, app peers and tools. Use the [Cargo.toml](../Cargo.toml) dependency pins when following external code. For calls and the execution model, read the [architecture walkthrough](architecture-walkthrough.md). Status descriptions refer to this checkout. Dated runs below are historical validation records.
 
+Earlier source reviews took place on 2026-09-28 (OctoSense `ad0d738`) and 2026-09-29 (`baa90bd`). Those dates do not date the current status table.
+
 This page is about the assistant *inside* OctoSense. Building an app needs no AI service and no particular coding agent: the app harness, [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow), works with any agent or none. Its [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md) page is the app developer's short version of this one.
 
 For the whole system around it (processes per platform, agents, protocols, tools and grants, approvals, storage and trust boundaries), see [OctoSense architecture](architecture.md). This page does not repeat it: the native app manifest (`native-apps.json`), the system agent's tool set, the approval router, first-use consent and developer mode are described there and only linked from here.
@@ -203,9 +205,9 @@ A script app runs in App Hub's Card runner and reaches the shell only through `h
 
 The four `octos.*` calls have separate argument, origin, approval and reply rules:
 
-- **Arguments.** `octos.turn.start` requires non-blank `text` of at most 32 KiB and accepts optional `trigger` and `from`. The other calls accept only `{}`.
+- **Arguments.** `octos.turn.start` requires non-blank `text` of at most 32 KiB and accepts optional `trigger` (`person`, `app` or `incoming`) and `from`. The other calls accept only `{}`.
 - **Origin.** `trigger: "person"` is classified as `AppSaysPerson`. It is an app assertion, not a trusted human gesture, and cannot bypass approval.
-- **Approvals.** Both host-tool and other peer approvals route to the shell. Existing grants and approval rules still apply.
+- **Approvals.** Both host-tool and other peer approvals route to the shell. Existing grants and approval rules still apply; developer mode answers for the apps it covers. A host without a router declines requests and lists them in `denied_approvals`. See [`host_approvals.rs`](../crates/app-peers/src/host_approvals.rs).
 - **Replies.** The host refuses replies larger than 2 MiB. The response table below lists successful calls and common errors.
 
 A script's own assistant calls use declared `octos.*` services. Separately, the shell can drive an app peer from `agent`/`tools.json` without the script declaring those UI calls. Replies on the script service path:
@@ -215,7 +217,7 @@ A script's own assistant calls use declared `octos.*` services. Separately, the 
 | a family the manifest did not grant | `r.error`: `this app was not granted "<family>", which "<service>" needs` (at once, from the isolate) |
 | `octos.turn.start {text}`, granted, kernel and provider configured | `r.data`: `{turn_id, text}`, the reply of the app's peer |
 | `octos.*` with arguments beyond the rules | `r.error`: `Unsupported Octos arguments`, or `Provide text (at most 32 KiB)` |
-| `octos.*` with `Policy::contained_apps` off | `r.error`: `The assistant is turned off for apps on this device` |
+| `octos.*` with the assistant turned off for apps (`OCTOSENSE_CONTAINED_APPS=0`) | `r.error`: `The assistant is turned off for apps on this device` |
 | `octos.*` before the person allowed the app's agent | `r.error`: `Waiting for the person to allow this app's agent (OctoSense asks the first time)`, and the shell shows its first-use sheet (read in `contained.rs` and `approvals/mod.rs`; **unverified** in a running shell) |
 | `octos.*` on a desktop without `OCTOS_APP_CORE_BIN` | `r.error`: `no octos kernel: no kernel binary configured (OCTOS_APP_CORE_BIN)` |
 | `octos.*` in a build that links no kernel (iOS) | `r.error`: `no service answers "octos" on this device` (**unverified**) |
@@ -228,7 +230,7 @@ The manifest's `agent` and admitted `tools.json` participate in shell agent disc
 
 ## Planned: event-driven app agents (ADR 0002)
 
-[ADR 0002](adr/0002-event-driven-app-agents.md) (status **Proposed**) gives every app that asks for one **its own agent**: its app peer on the shell's one kernel, woken by the app's own triggers, working only through the app's own tools, publishing cards to the glance screen. Native modules and script apps follow one model (§12). The pieces and where each stands:
+[ADR 0002](adr/0002-event-driven-app-agents.md) (status **Proposed**) describes the broader plan for event-driven app agents. App peers, tool execution and human conversations already work. Automatic triggers and other remaining pieces are listed separately below; the ADR’s proposed status does not mean every component is still planned.
 
 | Piece | ADR | Status |
 | --- | --- | --- |

@@ -46,6 +46,12 @@
 //! every declared app the same way and waits while any is answering or
 //! asking; it goes ahead when the last one has said yes (or gone). A termination
 //! signal or a crash of the shell asks nobody, as before.
+//!
+//! **A quit kept at an app's question expires** ([`quit_expired`]). An app
+//! says yes (`Close`) but never no: a no only hides its question. A quit
+//! still waiting [`QUIT_ANSWER_WINDOW`] after the last refusal is dropped,
+//! and the person is told, so a later yes or an exit of that app (its last
+//! tab closed) closes only the app, never the shell under them.
 
 use crate::hub::ClientId;
 use crate::module_host::CloseGate;
@@ -57,6 +63,17 @@ use std::collections::{HashMap, HashSet};
 /// slow but live app here would lose exactly what the question protects.
 /// The person can end a hung app sooner by closing it again.
 pub const ANSWER_TIMEOUT: f64 = 5.0;
+
+/// How long a quit waits on apps asking the person, after the last
+/// refusal, before it is dropped ([`quit_expired`]).
+pub const QUIT_ANSWER_WINDOW: f64 = 60.0;
+
+/// Whether a quit waiting since `since` (its start or the last refusal)
+/// is dropped at `now`: it still waits, and nobody answered for
+/// [`QUIT_ANSWER_WINDOW`].
+pub fn quit_expired(since: Option<f64>, still_waiting: bool, now: f64) -> bool {
+    still_waiting && since.is_some_and(|since| now - since >= QUIT_ANSWER_WINDOW)
+}
 
 /// A second close of the same tile this soon after the first is the same
 /// gesture (a double click), not a demand to force it.
@@ -324,6 +341,18 @@ pub fn take_quit_ready(modules: &mut CloseGate, apps: &mut ProcessCloseGate) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A no at an app's question says nothing to the shell: the waiting
+    /// quit is dropped a minute after the last refusal (it quit the shell
+    /// when the kept terminal closed later, seen live), never sooner, and
+    /// never once the quit stopped waiting.
+    #[test]
+    fn a_quit_kept_at_an_apps_question_expires() {
+        assert!(!quit_expired(Some(100.0), true, 100.0 + QUIT_ANSWER_WINDOW - 1.0));
+        assert!(quit_expired(Some(100.0), true, 100.0 + QUIT_ANSWER_WINDOW));
+        assert!(!quit_expired(Some(100.0), false, 1_000.0), "the quit went, or a close dropped it");
+        assert!(!quit_expired(None, true, 1_000.0));
+    }
     use makepad_widgets::WidgetUid;
 
     fn declared(clients: &[ClientId]) -> ProcessCloseGate {
