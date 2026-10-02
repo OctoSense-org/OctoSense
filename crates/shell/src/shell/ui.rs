@@ -550,6 +550,7 @@ script_mod! {
             chevron_down +: {svg: crate_resource("self:resources/icons/chevron-down.svg")}
             chevron_up +: {svg: crate_resource("self:resources/icons/chevron-up.svg")}
             check +: {svg: crate_resource("self:resources/icons/check.svg")}
+            copy +: {svg: crate_resource("self:resources/icons/copy.svg")}
             close +: {svg: crate_resource("self:resources/icons/close.svg")}
             search +: {svg: crate_resource("self:resources/icons/search.svg")}
             cpu +: {svg: crate_resource("self:resources/icons/cpu.svg")}
@@ -693,6 +694,8 @@ pub struct ShellIcons {
     #[live]
     pub check: DrawSvg,
     #[live]
+    pub copy: DrawSvg,
+    #[live]
     pub close: DrawSvg,
     #[live]
     pub search: DrawSvg,
@@ -755,6 +758,7 @@ pub enum Ico {
     ChevronDown,
     ChevronUp,
     Check,
+    Copy,
     Close,
     Search,
     Cpu,
@@ -803,6 +807,7 @@ impl ShellIcons {
             Ico::ChevronDown => &mut self.chevron_down,
             Ico::ChevronUp => &mut self.chevron_up,
             Ico::Check => &mut self.check,
+            Ico::Copy => &mut self.copy,
             Ico::Close => &mut self.close,
             Ico::Search => &mut self.search,
             Ico::Cpu => &mut self.cpu,
@@ -819,6 +824,15 @@ impl ShellIcons {
             Ico::Lock => &mut self.lock,
         }
     }
+}
+
+/// Where a label's text went: its layout, origin and scale, what makepad's
+/// `TextFlow` hands its `SelectionTracker` for a run it draws, so a surface
+/// drawn with this kit selects text the same way ([`ShellDraw::label_traced`]).
+pub struct Trace {
+    pub laidout: std::rc::Rc<makepad_widgets::makepad_draw::text::layouter::LaidoutText>,
+    pub origin: Vec2d,
+    pub font_scale: f32,
 }
 
 /// Horizontal placement of a label inside its box.
@@ -1073,13 +1087,14 @@ impl ShellDraw {
         color: Vec4f,
         align: HAlign,
         s: &str,
-    ) {
+    ) -> Option<Trace> {
         if s.is_empty() {
-            return;
+            return None;
         }
         let face = self.face(bold);
         face.text_style.font_size = px_to_pt(px);
         let run = face.layout(cx, 0.0, 0.0, None, false, Align::default(), s);
+        let font_scale = face.font_scale;
         let w = run.size_in_lpxs.width as f64;
         let x = match align {
             HAlign::Left => r.pos.x,
@@ -1088,7 +1103,9 @@ impl ShellDraw {
         };
         let y = r.pos.y + (r.size.y - run.size_in_lpxs.height as f64) * 0.5 + run.ink_center_offset_in_lpxs() as f64;
         let dpi = cx.current_dpi_factor();
-        self.text_at(cx, dvec2((x*dpi).round()/dpi, (y*dpi).round()/dpi), bold, px, color, s);
+        let origin = dvec2((x*dpi).round()/dpi, (y*dpi).round()/dpi);
+        self.text_at(cx, origin, bold, px, color, s);
+        Some(Trace { laidout: run, origin, font_scale })
     }
 
     /// As `label`, elided to the box first.
@@ -1102,9 +1119,24 @@ impl ShellDraw {
         align: HAlign,
         s: &str,
     ) {
+        self.label_traced(cx, r, bold, px, color, align, s);
+    }
+
+    /// As `label_elided`, telling where the text went ([`Trace`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn label_traced(
+        &mut self,
+        cx: &mut Cx2d,
+        r: Rect,
+        bold: bool,
+        px: f64,
+        color: Vec4f,
+        align: HAlign,
+        s: &str,
+    ) -> Option<Trace> {
         let px = px * self.text_scale();
         let s = self.elide(cx, bold, px, s, r.size.x);
-        self.label_px(cx, r, bold, px, color, align, &s);
+        self.label_px(cx, r, bold, px, color, align, &s)
     }
 
     // ---------------------------------------------------------- material
@@ -1974,7 +2006,14 @@ fn pieces<S: Copy + PartialEq>(runs: &[(&str, S)]) -> Vec<Piece<S>> {
 /// one), between CJK characters, and inside a word longer than a line;
 /// never before closing punctuation. Each line is its runs, adjacent ones
 /// of one style merged. No lines for an empty paragraph.
-pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut measure: impl FnMut(&str, S) -> f64) -> Vec<Vec<(String, S)>> {
+pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, measure: impl FnMut(&str, S) -> f64) -> Vec<Vec<(String, S)>> {
+    wrap_styled_spaced(runs, max_w, measure).into_iter().map(|(line, _)| line).collect()
+}
+
+/// As [`wrap_styled`], each line with whether the break before it took a
+/// space: text copied across the break gets it back. A break between CJK
+/// characters or inside a long word took none.
+pub fn wrap_styled_spaced<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut measure: impl FnMut(&str, S) -> f64) -> Vec<(Vec<(String, S)>, bool)> {
     fn push<S: PartialEq>(line: &mut Vec<(String, S)>, text: &str, style: S) {
         match line.last_mut() {
             Some((last, s)) if *s == style => last.push_str(text),
@@ -1983,6 +2022,8 @@ pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut meas
     }
     let mut lines = Vec::new();
     let mut line: Vec<(String, S)> = Vec::new();
+    // The break before `line` took a space.
+    let mut spaced = false;
     let mut w = 0.0;
     // A space is owed before the next word on this line, in this style.
     let mut space: Option<S> = None;
@@ -1999,7 +2040,8 @@ pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut meas
         let gap = space.map_or(0.0, |s| measure(" ", s));
         let lone_closer = matches!(&segments[..], [(t, _)] if { let mut cs = t.chars(); matches!((cs.next(), cs.next()), (Some(c), None) if closes(c)) });
         if !line.is_empty() && w + gap + ww > max_w && !lone_closer {
-            lines.push(std::mem::take(&mut line));
+            lines.push((std::mem::take(&mut line), spaced));
+            spaced = space.is_some();
             w = 0.0;
         } else if let (Some(s), false) = (space, line.is_empty()) {
             push(&mut line, " ", s);
@@ -2014,7 +2056,8 @@ pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut meas
                     let c_str = c.encode_utf8(&mut buf);
                     let cw = measure(c_str, *style);
                     if !line.is_empty() && w + cw > max_w && !closes(c) {
-                        lines.push(std::mem::take(&mut line));
+                        lines.push((std::mem::take(&mut line), spaced));
+                        spaced = false;
                         w = 0.0;
                     }
                     push(&mut line, c_str, *style);
@@ -2030,7 +2073,7 @@ pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut meas
         last_style = segments.last().map(|(_, s)| *s);
     }
     if !line.is_empty() {
-        lines.push(line);
+        lines.push((line, spaced));
     }
     lines
 }
@@ -2135,6 +2178,19 @@ mod wrap_tests {
         assert_eq!(wrap_with("你好世，再见", 6.0, false, width), ["你好世，", "再见"]);
         // Latin words and CJK mix with no space between them.
         assert_eq!(wrap_with("用OctoSense发送", 12.0, false, width), ["用OctoSense", "发送"]);
+    }
+
+    /// A copy across a line's break gets back the space the break took,
+    /// and nothing where the break took none (CJK, a long word).
+    #[test]
+    fn each_wrapped_line_says_whether_its_break_took_a_space() {
+        let spaced = |text: &str, w: f64| -> Vec<(String, bool)> {
+            wrap_styled_spaced(&[(text, ())], w, |s, _| width(s)).into_iter().map(|(runs, sp)| (runs.into_iter().map(|(t, _)| t).collect(), sp)).collect()
+        };
+        assert_eq!(spaced("aaa bbb", 5.0), [("aaa".into(), false), ("bbb".into(), true)]);
+        assert_eq!(spaced("你好世界再见", 6.0), [("你好世".into(), false), ("界再见".into(), false)]);
+        assert_eq!(spaced("abcdefgh", 4.0), [("abcd".into(), false), ("efgh".into(), false)]);
+        assert_eq!(spaced("ab cdefghij", 4.0), [("ab".into(), false), ("cdef".into(), true), ("ghij".into(), false)]);
     }
 
     /// What is typed is shown as typed: a trailing space at once, a run of

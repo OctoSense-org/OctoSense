@@ -56,7 +56,7 @@ use super::composer::{Composer, LineLayout, Pane};
 use super::markdown as md;
 use super::model::{ApprovalState, ChatModel, Item, Phase, Role, ToolStatus};
 use crate::approvals::view::Buttons;
-use crate::shell::ui::{contains, rect, wrap_styled, DrawShellFill, HAlign, ShellDraw};
+use crate::shell::ui::{contains, rect, wrap_styled_spaced, DrawShellFill, HAlign, Ico, ShellDraw, Trace};
 use crate::shell::{alpha, MaterialTokens, ShellPalette, ShellTokens};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -276,6 +276,8 @@ enum Hit {
     StopSystemAgent,
     Option { question: String, count: usize, label: String },
     OpenProviders,
+    /// A reply's Copy button (its item).
+    Copy(usize),
     Field,
     Pane,
     /// The desktop pane's frame ([`Grip`]).
@@ -459,6 +461,11 @@ struct Line {
     /// A heading's size over the body's; 1 for any other line.
     scale: f64,
     kind: LineKind,
+    /// What a copy puts between the line before and this one: a line
+    /// break, the space its wrap took, or nothing ([`joint`]).
+    joint: &'static str,
+    /// The conversation item the line shows.
+    item: usize,
 }
 
 /// What a transcript line is drawn as, besides its text.
@@ -471,16 +478,121 @@ enum LineKind {
     /// A quoted line, with a bar to its left.
     Quote,
     Rule,
+    /// Under a finished reply: its Copy button.
+    Actions,
 }
+
+/// The height of a reply's row of actions.
+const ACTIONS_H: f64 = 22.0;
+/// How long Copy says "Copied".
+const COPIED_S: f64 = 1.5;
+/// How far a selecting drag past the transcript's top or bottom scrolls it
+/// at each move.
+const SELECT_SCROLL: f64 = 12.0;
 
 impl Line {
     fn plain(text: String, bold: bool, small: bool, dim: bool, accent: bool, gap_before: f64) -> Line {
-        Line { text, runs: Vec::new(), bold, small, dim, accent, gap_before, indent: 0.0, scale: 1.0, kind: LineKind::Text }
+        Line { text, runs: Vec::new(), bold, small, dim, accent, gap_before, indent: 0.0, scale: 1.0, kind: LineKind::Text, joint: "\n", item: 0 }
     }
 
     fn height(&self, body: f64, small: f64) -> f64 {
         let px = if self.small { small } else { body } * self.scale;
-        self.gap_before + if self.kind == LineKind::Rule { 12.0 } else { px * 1.45 }
+        self.gap_before
+            + match self.kind {
+                LineKind::Rule => 12.0,
+                LineKind::Actions => ACTIONS_H,
+                _ => px * 1.45,
+            }
+    }
+}
+
+/// The joint before a wrapped line: a line break before a block's first
+/// line, else the space the wrap took, if it took one.
+fn joint(first: bool, spaced: bool) -> &'static str {
+    if first {
+        "\n"
+    } else if spaced {
+        " "
+    } else {
+        ""
+    }
+}
+
+/// The transcript as laid out: its lines, and their text as one string
+/// (what a selection copies), each line's start in it.
+struct Laid {
+    lines: Vec<Line>,
+    starts: Vec<usize>,
+    text: String,
+}
+
+fn joined(lines: Vec<Line>) -> Laid {
+    let mut text = String::new();
+    let mut starts = Vec::with_capacity(lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            text.push_str(line.joint);
+        }
+        starts.push(text.len());
+        text.push_str(&line.text);
+    }
+    Laid { lines, starts, text }
+}
+
+/// `i` moved back to a character boundary of `s`.
+fn floor_boundary(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// The text between two offsets in either order, without the streaming
+/// caret; None when they meet.
+fn copy_of(text: &str, a: usize, b: usize) -> Option<String> {
+    let (a, b) = (floor_boundary(text, a.min(b)), floor_boundary(text, a.max(b)));
+    let out: String = text[a..b].chars().filter(|c| *c != '\u{258d}').collect();
+    (!out.is_empty()).then_some(out)
+}
+
+/// A selection in the transcript, kept as makepad's `TextFlow` keeps one:
+/// an anchor and a cursor (offsets into [`Laid::text`]), found from the
+/// runs drawn last frame by a [`SelectionTracker`] ([`ShellDraw::label_traced`]).
+#[derive(Default)]
+struct TranscriptSelection {
+    tracker: SelectionTracker,
+    anchor: usize,
+    cursor: usize,
+    /// A drag is selecting.
+    dragging: bool,
+    /// The last press: when, and where (a second soon after on the same
+    /// place takes the word).
+    press: (f64, usize),
+    /// The transcript's area: a press in it selects.
+    region: Rect,
+    /// What the offsets are for: the measure (a new width wraps the lines
+    /// anew) and how many items there were (fewer: a new conversation).
+    measure: (f64, f64, f64, f64),
+    items: usize,
+}
+
+impl TranscriptSelection {
+    fn range(&self) -> (usize, usize) {
+        (self.anchor.min(self.cursor), self.anchor.max(self.cursor))
+    }
+
+    fn clear(&mut self) {
+        self.anchor = 0;
+        self.cursor = 0;
+        self.dragging = false;
+    }
+
+    /// A run just drawn at `text_start` in the transcript's text.
+    fn push(&mut self, trace: Option<Trace>, text_start: usize) {
+        if let Some(t) = trace {
+            self.tracker.segments.push(SelectionSegment::Text { laidout_text: t.laidout, origin: t.origin, font_scale: t.font_scale, text_start });
+        }
     }
 }
 
@@ -498,11 +610,11 @@ struct TranscriptKey {
 }
 
 /// Styled runs wrapped to `width`, each run measured in its weight at `px`
-/// (the drawn size).
-fn wrap_runs(d: &mut ShellDraw, cx: &mut Cx2d, runs: &md::Runs, width: f64, px: f64, bold: bool) -> Vec<md::Runs> {
+/// (the drawn size), each line with whether its break took a space.
+fn wrap_runs(d: &mut ShellDraw, cx: &mut Cx2d, runs: &md::Runs, width: f64, px: f64, bold: bool) -> Vec<(md::Runs, bool)> {
     let runs: Vec<(&str, md::Style)> = runs.iter().map(|(t, s)| (t.as_str(), *s)).collect();
     // Code runs in the theme's code face, the rest in its regular or bold.
-    wrap_styled(&runs, width, |t, s| if s.code { d.with_code(|d| d.measure(cx, false, px, t)) } else { d.measure(cx, bold || s.bold, px, t) })
+    wrap_styled_spaced(&runs, width, |t, s| if s.code { d.with_code(|d| d.measure(cx, false, px, t)) } else { d.measure(cx, bold || s.bold, px, t) })
 }
 
 /// A code line wrapped to `width` between characters, its spaces kept (a
@@ -545,7 +657,7 @@ fn markdown_lines(d: &mut ShellDraw, cx: &mut Cx2d, lines: &mut Vec<Line>, text:
             md::Block::Code(code) => {
                 let wrapped = wrap_code(d, cx, &code, (width - CODE_PAD * 2.0).max(1.0), body * ts);
                 let wrapped = if wrapped.is_empty() { vec![String::new()] } else { wrapped };
-                out.extend(wrapped.into_iter().map(|l| Line { text: l, kind: LineKind::Code, indent: CODE_PAD, ..base.clone() }));
+                out.extend(wrapped.into_iter().enumerate().map(|(i, l)| Line { text: l, kind: LineKind::Code, indent: CODE_PAD, joint: joint(i == 0, false), ..base.clone() }));
             }
             md::Block::Heading(level, runs) => {
                 let scale = match level {
@@ -556,29 +668,29 @@ fn markdown_lines(d: &mut ShellDraw, cx: &mut Cx2d, lines: &mut Vec<Line>, text:
                 if lines.len() > first {
                     gap_next = gap_next.max(8.0);
                 }
-                out.extend(wrap_runs(d, cx, &runs, width, body * scale * ts, true).into_iter().map(|r| Line { runs: r, bold: true, scale, ..base.clone() }));
+                out.extend(wrap_runs(d, cx, &runs, width, body * scale * ts, true).into_iter().enumerate().map(|(i, (r, sp))| Line { runs: r, bold: true, scale, joint: joint(i == 0, sp), ..base.clone() }));
             }
             md::Block::Item { depth, marker, runs } => {
                 let indent = depth as f64 * LIST_INDENT;
                 let marker = format!("{marker} ");
                 let mw = d.measure(cx, false, body * ts, &marker);
                 let wrapped = wrap_runs(d, cx, &runs, (width - indent - mw).max(1.0), body * ts, false);
-                let wrapped = if wrapped.is_empty() { vec![Vec::new()] } else { wrapped };
-                for (i, mut r) in wrapped.into_iter().enumerate() {
+                let wrapped = if wrapped.is_empty() { vec![(Vec::new(), false)] } else { wrapped };
+                for (i, (mut r, sp)) in wrapped.into_iter().enumerate() {
                     let at = if i == 0 {
                         r.insert(0, (marker.clone(), md::Style::default()));
                         indent
                     } else {
                         indent + mw
                     };
-                    out.push(Line { runs: r, indent: at, ..base.clone() });
+                    out.push(Line { runs: r, indent: at, joint: joint(i == 0, sp), ..base.clone() });
                 }
             }
             md::Block::Quote(runs) => {
-                out.extend(wrap_runs(d, cx, &runs, (width - QUOTE_INDENT).max(1.0), body * ts, false).into_iter().map(|r| Line { runs: r, dim: true, indent: QUOTE_INDENT, kind: LineKind::Quote, ..base.clone() }));
+                out.extend(wrap_runs(d, cx, &runs, (width - QUOTE_INDENT).max(1.0), body * ts, false).into_iter().enumerate().map(|(i, (r, sp))| Line { runs: r, dim: true, indent: QUOTE_INDENT, kind: LineKind::Quote, joint: joint(i == 0, sp), ..base.clone() }));
             }
             md::Block::Para(runs) => {
-                out.extend(wrap_runs(d, cx, &runs, width, body * ts, false).into_iter().map(|r| Line { runs: r, ..base.clone() }));
+                out.extend(wrap_runs(d, cx, &runs, width, body * ts, false).into_iter().enumerate().map(|(i, (r, sp))| Line { runs: r, joint: joint(i == 0, sp), ..base.clone() }));
             }
         }
         for mut line in out {
@@ -674,7 +786,18 @@ pub struct ShellSystemChat {
     blink_draft: (String, usize, usize, usize),
     /// The transcript last laid out, and what it was laid out for.
     #[rust]
-    laid_out: Option<(TranscriptKey, Rc<Vec<Line>>)>,
+    laid_out: Option<(TranscriptKey, Rc<Laid>)>,
+    /// What is selected in the transcript, and the pointer over its text
+    /// (the text cursor shows).
+    #[rust]
+    select: TranscriptSelection,
+    #[rust]
+    text_hover: bool,
+    /// The reply whose Copy says "Copied", until its timer.
+    #[rust]
+    copied: Option<usize>,
+    #[rust]
+    copied_timer: Timer,
     /// The prompt as last drawn, the first of its lines shown, a drag in it
     /// selecting, and the last press in it (a second soon after on the
     /// same place takes the word).
@@ -859,6 +982,28 @@ impl ShellSystemChat {
                 _ => {}
             }
         }
+        // A drag in the transcript selects, as in makepad's `TextFlow`; past
+        // its top or bottom it scrolls that way.
+        if self.select.dragging {
+            match event {
+                Event::MouseMove(e) => {
+                    let r = self.select.region;
+                    if e.abs.y < r.pos.y {
+                        source.scroll_by(SELECT_SCROLL, self.max_scroll);
+                    } else if e.abs.y > r.pos.y + r.size.y {
+                        source.scroll_by(-SELECT_SCROLL, self.max_scroll);
+                    }
+                    if let Some(i) = self.select.tracker.point_to_index(cx, e.abs) {
+                        self.select.cursor = i;
+                    }
+                    cx.set_cursor(MouseCursor::Text);
+                    self.redraw(cx);
+                    return Outcome::Taken;
+                }
+                Event::MouseUp(_) => self.select.dragging = false,
+                _ => {}
+            }
+        }
         // A drag of the frame has the pointer until the button comes up,
         // wherever it goes.
         if let Some(drag) = self.drag {
@@ -891,12 +1036,17 @@ impl ShellSystemChat {
                     self.redraw(cx);
                 }
                 let grip = self.grip_at(e.abs);
+                // Over the transcript's text (not a button): the text cursor.
+                let text = grip.is_none() && hover.is_none() && contains(self.select.region, e.abs);
                 if let Some(g) = grip {
                     cx.set_cursor(g.cursor());
-                } else if self.grip_hover.is_some() {
+                } else if text {
+                    cx.set_cursor(MouseCursor::Text);
+                } else if self.grip_hover.is_some() || self.text_hover {
                     cx.set_cursor(MouseCursor::Default);
                 }
                 self.grip_hover = grip;
+                self.text_hover = text;
                 return if contains(self.pane, e.abs) { Outcome::Taken } else { Outcome::Ignored };
             }
             Event::MouseDown(e) => {
@@ -931,7 +1081,34 @@ impl ShellSystemChat {
                         source.edit(|c| c.move_to(i, extend));
                         self.field_drag = true;
                     }
+                    // One selection at a time: the transcript's goes.
+                    self.select.clear();
                     self.redraw(cx);
+                }
+                // In the transcript's text: the selection starts there (Shift:
+                // it grows to there), a drag selects, a second press on the
+                // same place takes the word. The prompt keeps the keyboard,
+                // so Cmd+C finds the selection and typing goes on.
+                if self.hit_at(e.abs) == Some(Hit::Pane) && contains(self.select.region, e.abs) {
+                    if let Some(i) = self.select.tracker.point_to_index(cx, e.abs) {
+                        let double = e.time - self.select.press.0 < DOUBLE_PRESS_S && self.select.press.1 == i;
+                        self.select.press = (e.time, i);
+                        if double {
+                            (self.select.anchor, self.select.cursor) = self.word_around(i);
+                        } else if e.modifiers.shift {
+                            self.select.cursor = i;
+                        } else {
+                            self.select.anchor = i;
+                            self.select.cursor = i;
+                            self.select.dragging = true;
+                        }
+                        source.edit(|c| {
+                            let at = c.cursor();
+                            c.move_to(at, false);
+                        });
+                        self.take_keyboard(cx);
+                        self.redraw(cx);
+                    }
                 }
                 return self.press(cx, source, e.abs);
             }
@@ -1013,19 +1190,26 @@ impl ShellSystemChat {
         if !lifted_on(&hit, r, p) {
             return if contains(self.pane, p) { Outcome::Taken } else { Outcome::Ignored };
         }
-        let outcome = act(source, hit);
-        self.redraw(cx);
-        outcome
+        self.act_on(cx, source, hit)
     }
 
     /// A release (mouse up).
     fn release(&mut self, cx: &mut Cx, source: Source, p: Vec2d) -> Outcome {
         let hit = self.hit_at(p);
         let pressed = self.down.take();
-        if hit.is_none() || hit != pressed {
-            return if contains(self.pane, p) { Outcome::Taken } else { Outcome::Ignored };
+        match hit {
+            Some(hit) if Some(&hit) == pressed.as_ref() => self.act_on(cx, source, hit),
+            _ if contains(self.pane, p) => Outcome::Taken,
+            _ => Outcome::Ignored,
         }
-        let outcome = act(source, hit.unwrap());
+    }
+
+    fn act_on(&mut self, cx: &mut Cx, source: Source, hit: Hit) -> Outcome {
+        if let Hit::Copy(item) = hit {
+            self.copy_item(cx, item);
+            return Outcome::Taken;
+        }
+        let outcome = act(source, hit);
         self.redraw(cx);
         outcome
     }
@@ -1159,21 +1343,24 @@ impl ShellSystemChat {
     fn transcript(&mut self, cx: &mut Cx2d, model: &ChatModel, width: f64, tok: &ShellTokens) -> Vec<Line> {
         let body = tok.font.body;
         let small = tok.font.body_small;
-        let mut lines = Vec::new();
+        let mut lines: Vec<Line> = Vec::new();
         let running = model.phase().running_turn().is_some();
         let last = model.items.len().saturating_sub(1);
         let push_wrapped = |d: &mut ShellDraw, cx: &mut Cx2d, lines: &mut Vec<Line>, text: &str, small_text: bool, dim: bool, accent: bool, gap: f64| {
             let px = if small_text { small } else { body };
             let mut first = true;
             for para in text.split('\n') {
-                let wrapped = if para.trim().is_empty() { vec![String::new()] } else { d.wrap(cx, false, px, para, width, 400) };
-                for l in wrapped {
-                    lines.push(Line::plain(l, false, small_text, dim, accent, if first { gap } else { 0.0 }));
+                let runs = vec![(para.to_string(), md::Style::default())];
+                let wrapped = if para.trim().is_empty() { vec![(Vec::new(), false)] } else { wrap_runs(d, cx, &runs, width, px, false) };
+                for (i, (r, sp)) in wrapped.into_iter().enumerate() {
+                    let text = r.into_iter().map(|(t, _)| t).collect();
+                    lines.push(Line { joint: joint(i == 0, sp), ..Line::plain(text, false, small_text, dim, accent, if first { gap } else { 0.0 }) });
                     first = false;
                 }
             }
         };
         for (i, item) in model.items.iter().enumerate() {
+            let from = lines.len();
             match item {
                 Item::Message { role, text, speaker, .. } => {
                     let who = match (speaker, role) {
@@ -1189,6 +1376,10 @@ impl ShellSystemChat {
                     // A reply is Markdown; what the person typed is shown as typed.
                     if *role == Role::Assistant {
                         markdown_lines(&mut self.d, cx, &mut lines, &text, width, body, 2.0);
+                        // A finished reply gets its Copy button.
+                        if !(running && i == last) && !text.trim().is_empty() {
+                            lines.push(Line { kind: LineKind::Actions, joint: "", ..Line::plain(String::new(), false, true, true, false, 2.0) });
+                        }
                     } else {
                         push_wrapped(&mut self.d, cx, &mut lines, &text, false, false, false, 2.0);
                     }
@@ -1225,8 +1416,44 @@ impl ShellSystemChat {
                 }
                 Item::Notice(text) => push_wrapped(&mut self.d, cx, &mut lines, text, true, true, false, 8.0),
             }
+            for line in &mut lines[from..] {
+                line.item = i;
+            }
         }
         lines
+    }
+
+    /// The text selected in the transcript, if any (what Cmd+C copies;
+    /// lib.rs `chat_clipboard`).
+    pub fn selected_text(&self) -> Option<String> {
+        let (a, z) = self.select.range();
+        let (_, laid) = self.laid_out.as_ref()?;
+        if a >= z || !self.source().is_open() {
+            return None;
+        }
+        copy_of(&laid.text, a, z)
+    }
+
+    /// Copy: a reply's text as the agent wrote it (its Markdown) goes to
+    /// the clipboard, and the button says "Copied" for a moment.
+    fn copy_item(&mut self, cx: &mut Cx, item: usize) {
+        if let Some(Item::Message { text, .. }) = self.source().snapshot().items.get(item) {
+            cx.copy_to_clipboard(text);
+            self.copied = Some(item);
+            cx.stop_timer(self.copied_timer);
+            self.copied_timer = cx.start_timeout(COPIED_S);
+            self.redraw(cx);
+        }
+    }
+
+    /// The transcript's offset of the word at `i`.
+    fn word_around(&self, i: usize) -> (usize, usize) {
+        let Some((_, laid)) = self.laid_out.as_ref() else { return (i, i) };
+        let text = &laid.text;
+        let i = floor_boundary(text, i);
+        let words = super::composer::word_range(text, text[..i].chars().count());
+        let byte = |c: usize| text.char_indices().nth(c).map_or(text.len(), |(b, _)| b);
+        (byte(words.start), byte(words.end))
     }
 
     fn draw_pane(&mut self, cx: &mut Cx2d, screen: Rect) {
@@ -1235,6 +1462,7 @@ impl ShellSystemChat {
         let source = self.source();
         if !source.is_open() {
             self.pane = Rect::default();
+            self.select.clear();
             return;
         }
         let tok = self.d.tokens(self.tokens);
@@ -1420,21 +1648,34 @@ impl ShellSystemChat {
             small: tok.font.body_small,
             scale: self.d.text_scale(),
         };
-        let lines = match &self.laid_out {
-            Some((k, lines)) if *k == key => lines.clone(),
+        let laid = match &self.laid_out {
+            Some((k, laid)) if *k == key => laid.clone(),
             _ => {
-                let lines = Rc::new(self.transcript(cx, &model, cw, &tok));
-                self.laid_out = Some((key, lines.clone()));
-                lines
+                let laid = Rc::new(joined(self.transcript(cx, &model, cw, &tok)));
+                self.laid_out = Some((key, laid.clone()));
+                laid
             }
         };
+        // A selection holds for this wrapping of this conversation: a new
+        // width, font or text size wraps the lines anew, and a new
+        // conversation has other text.
+        let measure = (cw, tok.font.body, tok.font.body_small, self.d.text_scale());
+        if self.select.measure != measure || model.items.len() < self.select.items {
+            self.select.clear();
+        }
+        self.select.measure = measure;
+        self.select.items = model.items.len();
+        self.select.tracker.clear();
+        self.select.region = rect(x, top, cw, (list_bottom - top).max(0.0));
+        let lines = &laid.lines;
         let heights: Vec<f64> = lines.iter().map(|l| l.height(tok.font.body, tok.font.body_small)).collect();
         let total: f64 = heights.iter().sum();
         let room = (list_bottom - top).max(0.0);
         self.max_scroll = (total - room).max(0.0);
         let scroll = source.scroll().min(self.max_scroll);
         let mut ly = list_bottom - total + scroll;
-        for (line, h) in lines.iter().zip(&heights) {
+        let ts = self.d.text_scale();
+        for (i, (line, h)) in lines.iter().zip(&heights).enumerate() {
             let line_top = ly + line.gap_before;
             ly += h;
             if line_top < top || ly > list_bottom + 0.5 {
@@ -1448,38 +1689,64 @@ impl ShellSystemChat {
                     self.d.separator(cx, rect(x, line_top + lh * 0.5, cw, 1.0), ink, 0.18);
                     continue;
                 }
+                LineKind::Actions => {
+                    // Copy, then "Copied" for a moment.
+                    let done = self.copied == Some(line.item);
+                    let (ico, label, tint) = if done { (Ico::Check, "Copied", accent) } else { (Ico::Copy, "Copy", dim) };
+                    let lw = self.d.measure(cx, false, tok.font.body_small * ts, label);
+                    let r = rect(x - 4.0, line_top, 4.0 + 14.0 + 5.0 + lw + 6.0, lh);
+                    if hover == Some(r) {
+                        self.d.solid(cx, r, alpha(ink, 0.08));
+                    }
+                    self.d.icon(cx, ico, rect(x, line_top + (lh - 14.0) * 0.5, 14.0, 14.0), tint);
+                    self.d.label(cx, rect(x + 19.0, line_top, lw + 2.0, lh), false, tok.font.body_small, tint, HAlign::Left, label);
+                    hits.push((r, Hit::Copy(line.item)));
+                    continue;
+                }
                 LineKind::Code => self.d.solid(cx, rect(x, line_top, cw, lh), alpha(ink, 0.07)),
                 LineKind::Quote => self.d.solid(cx, rect(x + 3.0, line_top, 2.0, lh), alpha(ink, 0.35)),
                 LineKind::Text => {}
             }
             let lx = x + line.indent;
+            // Each run drawn goes to the selection's tracker at its place in
+            // the transcript's text.
+            let start = laid.starts[i];
             if line.runs.is_empty() {
                 let r = rect(lx, line_top, (cw - line.indent).max(0.0), lh);
-                if line.kind == LineKind::Code {
-                    self.d.with_code(|d| d.label_elided(cx, r, false, px, color, HAlign::Left, &line.text));
+                let trace = if line.kind == LineKind::Code {
+                    self.d.with_code(|d| d.label_traced(cx, r, false, px, color, HAlign::Left, &line.text))
                 } else {
-                    self.d.label_elided(cx, r, line.bold, px, color, HAlign::Left, &line.text);
-                }
+                    self.d.label_traced(cx, r, line.bold, px, color, HAlign::Left, &line.text)
+                };
+                self.select.push(trace, start);
                 continue;
             }
             // Styled runs side by side, measured as they are drawn.
-            let ts = self.d.text_scale();
             let mut rx = lx;
+            let mut at = start;
             for (text, style) in &line.runs {
                 let bold = line.bold || style.bold;
                 let r = rect(rx, line_top, (x + cw - rx).max(0.0) + 2.0, lh);
                 let run_color = if style.link { accent } else { color };
-                let w = if style.code {
+                let (w, trace) = if style.code {
                     let w = self.d.with_code(|d| d.measure(cx, false, px * ts, text));
                     self.d.solid(cx, rect(rx - 1.0, line_top + lh * 0.1, w + 2.0, lh * 0.8), alpha(ink, 0.1));
-                    self.d.with_code(|d| d.label_elided(cx, r, false, px, run_color, HAlign::Left, text));
-                    w
+                    (w, self.d.with_code(|d| d.label_traced(cx, r, false, px, run_color, HAlign::Left, text)))
                 } else {
                     let w = self.d.measure(cx, bold, px * ts, text);
-                    self.d.label_elided(cx, r, bold, px, run_color, HAlign::Left, text);
-                    w
+                    (w, self.d.label_traced(cx, r, bold, px, run_color, HAlign::Left, text))
                 };
+                self.select.push(trace, at);
+                at += text.len();
                 rx += w;
+            }
+        }
+        // The selection: drawn after the text, it still goes under it (the
+        // fill's draw call, the pane's card, came first).
+        let (a, z) = self.select.range();
+        if a < z {
+            for r in self.select.tracker.selection_rects(a, z) {
+                self.d.solid(cx, r, alpha(accent, 0.3));
             }
         }
         if model.items.is_empty() && usable {
@@ -1491,7 +1758,7 @@ impl ShellSystemChat {
                 hy += 18.0;
             }
         }
-        shown.extend(lines.iter().map(|l| l.text.clone()));
+        shown.extend(lines.iter().filter(|l| l.kind != LineKind::Actions).map(|l| l.text.clone()));
         self.hits.extend(hits);
         // The frame last: the controls win over it.
         if !full {
@@ -1510,7 +1777,7 @@ fn act(source: Source, hit: Hit) -> Outcome {
             Hit::Stop => crate::app_chat::stop(),
             Hit::StopSystemAgent => crate::app_chat::stop_system_agent(),
             Hit::Option { question, count, label } => crate::app_chat::answer_option(&question, count, &label),
-            Hit::New | Hit::OpenProviders | Hit::Field | Hit::Pane | Hit::Grip(_) => {}
+            Hit::New | Hit::OpenProviders | Hit::Copy(_) | Hit::Field | Hit::Pane | Hit::Grip(_) => {}
         }
         return Outcome::Taken;
     }
@@ -1522,7 +1789,8 @@ fn act(source: Source, hit: Hit) -> Outcome {
         Hit::StopSystemAgent => {}
         Hit::Option { question, count, label } => super::answer_option(&question, count, &label),
         Hit::OpenProviders => return Outcome::OpenProviders,
-        Hit::Field | Hit::Pane | Hit::Grip(_) => {}
+        // Copy needs the clipboard: `ShellSystemChat::copy_item`.
+        Hit::Copy(_) | Hit::Field | Hit::Pane | Hit::Grip(_) => {}
     }
     Outcome::Taken
 }
@@ -1562,6 +1830,12 @@ impl Widget for ShellSystemChat {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        // "Copied" goes back to Copy.
+        if self.copied_timer.is_event(event).is_some() {
+            self.copied_timer = Timer::empty();
+            self.copied = None;
+            self.redraw(cx);
+        }
         // The caret's blink, while the prompt holds the keyboard.
         if self.blink_timer.is_event(event).is_some() {
             self.blink_timer = Timer::empty();
@@ -1590,6 +1864,48 @@ impl Widget for ShellSystemChat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn line(text: &str, joint: &'static str) -> Line {
+        Line { joint, ..Line::plain(text.into(), false, false, false, false, 0.0) }
+    }
+
+    /// What a selection copies is the text as read: a wrapped line's space
+    /// comes back, CJK and a long word's breaks add nothing, blocks and
+    /// speakers go on new lines, and a reply's Copy row adds nothing.
+    #[test]
+    fn the_transcripts_text_puts_back_what_its_wrapping_took() {
+        let laid = joined(vec![
+            line("You", "\n"),
+            line("what is", "\n"),
+            line("this?", " "),
+            line("Assistant", "\n"),
+            line("你好世", "\n"),
+            line("界", ""),
+            line("let x = 1;", "\n"),
+            Line { kind: LineKind::Actions, ..line("", "") },
+            line("You", "\n"),
+        ]);
+        assert_eq!(laid.text, "You\nwhat is this?\nAssistant\n你好世界\nlet x = 1;\nYou");
+        assert_eq!(laid.starts[2], "You\nwhat is ".len());
+        assert_eq!(laid.starts[5], "You\nwhat is this?\nAssistant\n你好世".len());
+        // The Copy row starts where the line before ended.
+        assert_eq!(laid.starts[7], laid.starts[6] + "let x = 1;".len());
+    }
+
+    /// A selection copies between its ends in either order, never splits
+    /// a character, and leaves out the streaming caret.
+    #[test]
+    fn a_selection_copies_its_text() {
+        let text = "Assistant\n你好 world\u{258d}";
+        let a = text.find('你').unwrap();
+        let z = text.len();
+        assert_eq!(copy_of(text, a, z).as_deref(), Some("你好 world"));
+        assert_eq!(copy_of(text, z, a).as_deref(), Some("你好 world"), "dragged backwards");
+        // Inside "你": back to its start.
+        assert_eq!(copy_of(text, a + 1, a + 4).as_deref(), Some("你"));
+        assert_eq!(copy_of(text, 3, 3), None, "the ends meet");
+        assert_eq!(copy_of(text, text.len() - 3, text.len()), None, "only the caret");
+    }
 
     /// "Ask <app>" while the system agent's turn runs: the person's lane is
     /// idle, so the button is Send (enabled once there is text), never Stop.

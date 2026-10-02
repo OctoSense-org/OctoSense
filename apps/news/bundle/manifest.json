@@ -15,7 +15,8 @@
     "net",
     "images",
     "web",
-    "news"
+    "news",
+    "glance"
   ],
   "id": "os.news",
   "integrity": {

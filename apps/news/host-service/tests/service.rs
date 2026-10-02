@@ -414,6 +414,26 @@ fn read_gives_the_summary_or_a_granted_readers_text() {
     assert_eq!(read["text"], "The full text of https://www.bbc.com/news/articles/c2.");
 }
 
+/// `news.notify` goes to the shell's notifier, which draws the notice card
+/// every system app shares and publishes it as the calling app: the service
+/// hands it the caller and the call as they came; without one it refuses.
+#[test]
+fn notify_goes_to_the_shell_as_the_calling_app() {
+    let rig = Rig::new("notify-none");
+    assert_eq!(rig.news.notify("os.news", &json!({"title": "Hello", "body": "x"})).unwrap_err(), "This device shows no glance cards.");
+    let heard: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
+    let seen = heard.clone();
+    let rig = Rig::with("notify", move |o| {
+        o.on_notify(move |app, args| {
+            seen.lock().unwrap().push((app.to_string(), args.clone()));
+            Ok(json!({"card_id": "hello", "replaced": false}))
+        })
+    });
+    let args = json!({"title": "Hello", "body": "Three new stories on fusion", "card_id": "hello"});
+    assert_eq!(rig.news.notify("os.news", &args).unwrap()["card_id"], "hello");
+    assert_eq!(*heard.lock().unwrap(), [("os.news".to_string(), args)]);
+}
+
 // --- Through App Hub's dispatch, as the Card runner calls it.
 
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -472,6 +492,8 @@ fn the_card_runner_reaches_the_tools() {
     let sources = ask("os.news", &dir, "news.sources", json!({})).unwrap();
     assert!(sources["sources"].as_array().unwrap().iter().any(|s| s["kind"] == "gdelt"));
     assert!(ask("os.news", &dir, "news.nope", json!({})).unwrap_err().contains("no method"));
+    // This service was registered without the shell's notifier.
+    assert!(ask("os.news", &dir, "news.notify", json!({"title": "Hello", "body": "x"})).unwrap_err().contains("no glance cards"));
     assert!(ask("com.example.app", &dir, "news.list", json!({})).unwrap_err().contains("system apps only"));
     assert!(dir.join("news/items.json").exists(), "the service keeps its files under <host_dir>/news");
 }

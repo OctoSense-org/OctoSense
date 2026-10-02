@@ -149,7 +149,8 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 /// instead (no keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
 /// `news` fetches News's feeds on a timer, with no model (ADR 0002), into
 /// the Card runner's host directory, so it keeps fetching while News is
-/// closed.
+/// closed. Last, every system app no service answers gets the notice
+/// service (glance_notice.rs), for its agent's `<namespace>.notify`.
 ///
 /// The `llm` service (AI providers, `os.ai-providers`) is the assistant's
 /// and registers with the kernel in `ai_host::start`, at startup, with the
@@ -169,18 +170,18 @@ fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
-        // `mail.notify` (Mail's agent's tool) and Calendar's cards: a card
-        // published as the calling app, only when its manifest was granted
-        // `glance`.
-        let publish = |app: &str, args: serde_json::Value| {
-            let caller = crate::glance::Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
-            crate::glance::request(&caller, "glance.publish", &args)
-        };
-        octosense_mail_service::on_publish_card(Some(std::sync::Arc::new(publish)));
-        // Calendar's events and cards (its agent's `calendar.*` tools).
+        // `mail.notify` (Mail's agent's tool): the shell's notice card, as
+        // Mail, only when its manifest was granted `glance`.
+        octosense_mail_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));
+        // Calendar's events and cards (its agent's `calendar.*` tools),
+        // published the same way.
         octosense_calendar_service::register();
-        octosense_calendar_service::on_publish_card(Some(std::sync::Arc::new(publish)));
+        octosense_calendar_service::on_publish_card(Some(std::sync::Arc::new(|app: &str, args: serde_json::Value| crate::glance::publish_for(app, &args))));
         register_news();
+        // After every service of the shell's own: the notice service never
+        // stands in for one.
+        let served = crate::glance_notice::serve_system_apps();
+        makepad_widgets::log!("glance: the notice service answers {served:?} (no service of their own)");
     });
 }
 
@@ -190,16 +191,19 @@ fn register_host_services() {
 /// request instead.
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn register_news() {
-    let mut options = octosense_news_service::Options::default().on_fetch(|report| {
-        // M3 routes this to News's peer, to wake its agent; logged for now.
-        let failed = report.sources.iter().filter(|s| s.status == "error").count();
-        makepad_widgets::log!(
-            "news: fetched {} new, {} kept, {} sources ({failed} failed)",
-            report.new,
-            report.total,
-            report.sources.len()
-        );
-    });
+    let mut options = octosense_news_service::Options::default()
+        .on_fetch(|report| {
+            // M3 routes this to News's peer, to wake its agent; logged for now.
+            let failed = report.sources.iter().filter(|s| s.status == "error").count();
+            makepad_widgets::log!(
+                "news: fetched {} new, {} kept, {} sources ({failed} failed)",
+                report.new,
+                report.total,
+                report.sources.len()
+            );
+        })
+        // `news.notify` (News's agent's tool): the shell's notice card, as News.
+        .on_notify(crate::glance_notice::notify);
     match octosense_app_hub_app::data_root_if_set() {
         Some(root) => {
             let host_dir = root.join(".host");

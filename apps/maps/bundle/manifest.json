@@ -9,7 +9,8 @@
   "capabilities": [
     "storage",
     "net",
-    "location"
+    "location",
+    "glance"
   ],
   "network": {
     "hosts": [
@@ -20,5 +21,16 @@
       "maps.mail.ru",
       "overpass.openstreetmap.fr"
     ]
+  },
+  "agent": {
+    "profile": "read-only",
+    "tools": [
+      "ask_user_question"
+    ],
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    }
   }
 }

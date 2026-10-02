@@ -20,7 +20,8 @@
 //! `host.request("news.list", …)` would: with the app's identity, never
 //! from a sheet, and only when the app's manifest was granted that family,
 //! or the family is a system app's own namespace (`os.calendar` and its
-//! `calendar` service, which ship with the shell).
+//! `calendar` service, which ship with the shell; `os.photos`'s
+//! `photos.notify` and the shell's notice service, `glance_notice`).
 //! A tool the app's own script implements (`implemented_by: "app"`) needs
 //! the app open, and is refused visibly until the Card runner can take it.
 //! Answers arrive on App Hub's reply queue; [`poll`] (from
@@ -285,16 +286,20 @@ pub(crate) mod tests {
     }
 
     /// G3 (e): News's bundle offers its agent (and, shared, others) real
-    /// read tools on its host service.
+    /// read tools on its host service, and its agent alone `news.notify`
+    /// (a notice card as News: News is granted `glance`).
     #[test]
     fn news_offers_its_read_tools_from_its_bundle() {
         let dir = stamped_bundle("news", "tools", |_, _| {});
         let loaded = from_bundle(&dir).unwrap();
         let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert_eq!(names, ["news.list", "news.read"]);
-        assert!(loaded.tools.iter().all(|t| t["risk"] == "read" && t["shareable"] == true && t.get("implemented_by").is_none()));
-        assert_eq!(loaded.host_service_tools.len(), 2);
-        assert!(loaded.families.contains("news"), "News is granted its service");
+        assert_eq!(names, ["news.list", "news.read", "news.notify"]);
+        let (read, notify) = loaded.tools.split_at(2);
+        assert!(read.iter().all(|t| t["risk"] == "read" && t["shareable"] == true && t.get("implemented_by").is_none()));
+        assert_eq!((notify[0]["risk"].as_str(), notify[0]["shareable"].as_bool()), (Some("act"), Some(false)), "News's notices are its own agent's");
+        assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
+        assert_eq!(loaded.host_service_tools.len(), 3);
+        assert!(["news", "glance"].iter().all(|f| loaded.families.contains(*f)), "News is granted its service and glance");
         assert_eq!(loaded.generic, ["ask_user_question"], "News's agent may ask the person");
         // A tampered bundle is refused (App Hub's digest check).
         std::fs::write(dir.join("tools.json"), "{}").unwrap();
@@ -335,6 +340,48 @@ pub(crate) mod tests {
         assert!(loaded.families.contains("glance") && !loaded.families.contains("calendar"), "no `calendar` capability exists to grant");
         assert_eq!(loaded.generic, ["ask_user_question"]);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Photos, Maps, YouTube and Camera each give their agent one tool,
+    /// `<namespace>.notify`, on their own namespace: no service of their
+    /// own answers it, so the shell's notice service does
+    /// (glance_notice.rs). Each is granted `glance`, and nothing else new.
+    #[test]
+    fn photos_maps_youtube_and_camera_offer_notify_from_their_bundles() {
+        for (app, kept) in [("photos", &["storage"][..]), ("maps", &["storage", "net", "location"]), ("youtube", &["storage", "net"]), ("camera", &["storage", "camera", "microphone", "library"])] {
+            let dir = stamped_bundle(app, "notify", |_, _| {});
+            let loaded = from_bundle(&dir).unwrap();
+            let _ = std::fs::remove_dir_all(dir);
+            let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
+            assert_eq!(names, [format!("{app}.notify")], "{app}");
+            assert_eq!(loaded.host_service_tools.len(), 1, "{app}");
+            let tool = &loaded.tools[0];
+            assert!(tool["input_schema"]["type"] == "object" && tool["output_schema"]["type"] == "object", "{app}: octos takes object schemas only");
+            assert_eq!((tool["risk"].as_str(), tool["shareable"].as_bool(), tool["background"].as_bool()), (Some("act"), Some(false), Some(true)), "{app}");
+            let mut granted: Vec<&str> = kept.to_vec();
+            granted.push("glance");
+            assert_eq!(loaded.families, granted.iter().map(|f| f.to_string()).collect::<BTreeSet<String>>(), "{app}");
+            assert_eq!(loaded.generic, ["ask_user_question"], "{app}");
+        }
+    }
+
+    /// AI providers (`os.ai-providers`) cannot declare tools yet: App Hub
+    /// takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's
+    /// segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is
+    /// refused, and with it the whole agent block. The shell's side takes a
+    /// hyphen (glance_notice.rs). When App Hub admits one, this fails: give
+    /// AI providers its agent then.
+    #[test]
+    fn a_hyphenated_namespace_cannot_declare_tools_yet() {
+        let dir = stamped_bundle("ai-providers", "notify", |dir, m| {
+            m["agent"] = json!({"profile": "read-only", "tools": ["ask_user_question"], "model": {"needs": ["tool_calling"]}});
+            let mut tools: Value = serde_json::from_str(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/photos/bundle/tools.json")).unwrap()).unwrap();
+            tools["tools"][0]["name"] = json!("ai-providers.notify");
+            std::fs::write(dir.join("tools.json"), tools.to_string()).unwrap();
+        });
+        let refused = from_bundle(&dir).unwrap_err();
+        let _ = std::fs::remove_dir_all(dir);
+        assert!(refused.contains("namespace \"ai-providers\""), "{refused}");
     }
 
     /// The manifest's `agent.tools`: a plain name is a kernel tool, and App

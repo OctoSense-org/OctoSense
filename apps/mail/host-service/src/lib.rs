@@ -14,7 +14,7 @@
 //! | `mail.message` | `{account, folder?, message}` | `{id, sender, address, subject, body, html, attachments, date, time}` |
 //! | `mail.mark_read` | `{account, folder?, message}` | `{}` |
 //! | `mail.send` | `{account, to, subject, body}` | `{accepted}` |
-//! | `mail.notify` | `{title, body, card_id?, priority?}` | `{card_id, replaced, expires_at}` once a notice card is on the glance screen, with a notification ([`on_publish_card`]) |
+//! | `mail.notify` | `{title, body, card_id?, priority?}` | `{card_id, replaced, expires_at}` once the shell put Mail's notice card on the glance screen, with a notification ([`on_notify`]) |
 //!
 //! The app never sees a password or a socket. `mail.add_account` raises the
 //! host's sign-in sheet, a separate isolate over the app; only calls from
@@ -85,49 +85,29 @@ fn account_event(event: AccountEvent) {
     }
 }
 
-/// Publishes one glance card as the calling app: `(app id, glance.publish
-/// arguments)`. The shell installs it once at startup; it decides whether
-/// the app may publish (the `glance` grant).
-pub type CardPublisher = Arc<dyn Fn(&str, Value) -> Result<Value, String> + Send + Sync>;
+/// Puts a notice on the glance screen as the calling app: `(app id,
+/// mail.notify arguments)` → `{card_id, replaced, expires_at}`. The shell
+/// installs it once at startup: it draws the notice card every system app
+/// shares, and decides whether the app may publish (the `glance` grant).
+pub type Notifier = Arc<dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync>;
 
-fn card_publisher() -> &'static Mutex<Option<CardPublisher>> {
-    static PUBLISHER: std::sync::OnceLock<Mutex<Option<CardPublisher>>> = std::sync::OnceLock::new();
-    PUBLISHER.get_or_init(Default::default)
+fn notifier() -> &'static Mutex<Option<Notifier>> {
+    static NOTIFIER: std::sync::OnceLock<Mutex<Option<Notifier>>> = std::sync::OnceLock::new();
+    NOTIFIER.get_or_init(Default::default)
 }
 
-/// Install (or with `None` remove) what `mail.notify` publishes through.
-pub fn on_publish_card(publisher: Option<CardPublisher>) {
-    *card_publisher().lock().unwrap_or_else(|e| e.into_inner()) = publisher;
+/// Install (or with `None` remove) what `mail.notify` goes to.
+pub fn on_notify(notify: Option<Notifier>) {
+    *notifier().lock().unwrap_or_else(|e| e.into_inner()) = notify;
 }
 
-/// Mail's notice card (L0): a title and a short text, nothing else.
-pub const NOTICE_CARD: &str = include_str!("../resources/notice.card");
-const NOTICE_TITLE_MAX: usize = 80;
-const NOTICE_BODY_MAX: usize = 600;
-
-/// `mail.notify`'s `glance.publish` arguments: the notice card filled from
-/// the call, opening Mail, with a notification. The card's text is the
-/// caller's; the card itself is fixed, so a model never writes card code.
-pub fn notice_publish_args(args: &Value, now_ms: u128) -> Result<Value, String> {
-    let title = text(args, "title").trim();
-    let body = text(args, "body").trim();
-    if title.is_empty() || title.chars().count() > NOTICE_TITLE_MAX {
-        return Err(format!("Provide a title of 1 to {NOTICE_TITLE_MAX} characters."));
+/// `mail.notify`: the call, as `app`, to the shell's notifier.
+fn notify(app: &str, args: &Value) -> Result<Value, String> {
+    let notify = notifier().lock().unwrap_or_else(|e| e.into_inner()).clone();
+    match notify {
+        Some(notify) => notify(app, args),
+        None => Err("This device shows no glance cards.".into()),
     }
-    if body.is_empty() || body.chars().count() > NOTICE_BODY_MAX {
-        return Err(format!("Provide a body of 1 to {NOTICE_BODY_MAX} characters."));
-    }
-    let card_id = match text(args, "card_id") {
-        "" => format!("notice-{now_ms:x}"),
-        id => id.to_string(),
-    };
-    let priority = args["priority"].as_i64().unwrap_or(60).clamp(0, 100);
-    let as_of = chrono::Local::now().format("%H:%M").to_string();
-    Ok(json!({
-        "card_id": card_id, "title": format!("Mail · {title}"), "source": NOTICE_CARD,
-        "data": {"note": {"title": title, "summary": body, "as_of": as_of}},
-        "priority": priority, "open": {"app": "mail"}, "notify": true,
-    }))
 }
 
 /// How mail moves: IMAP or POP3 and SMTP in the shell, or a fake in tests.
@@ -737,14 +717,7 @@ impl HostService for MailService {
                     reply.send(sent)
                 });
             }
-            "notify" => {
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-                let publisher = card_publisher().lock().unwrap_or_else(|e| e.into_inner()).clone();
-                let Some(publisher) = publisher else {
-                    return reply.send(Err("This device shows no glance cards.".into()));
-                };
-                reply.send(notice_publish_args(&call.args, now).and_then(|args| publisher(&call.app_id, args)));
-            }
+            "notify" => reply.send(notify(&call.app_id, &call.args)),
             other => reply.send(Err(format!("mail has no method {other:?}"))),
         }
     }
@@ -949,24 +922,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// `mail.notify` fills the fixed notice card from the call: the text is
-    /// the caller's, the card opens Mail and notifies, and a blank or long
-    /// title or body is refused before anything is published.
+    /// `mail.notify` goes to the shell, which draws the notice card (the
+    /// one every system app shares) and publishes it as the calling app:
+    /// the service hands it the caller and the call as they came, and
+    /// without the shell's notifier the call is refused.
     #[test]
-    fn a_notice_is_the_fixed_card_filled_with_the_callers_text() {
-        let args = notice_publish_args(&json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
-        assert_eq!(args["card_id"], "hello");
-        assert_eq!(args["title"], "Mail · Hello");
-        assert_eq!(args["source"], NOTICE_CARD);
-        assert_eq!(args["data"]["note"]["title"], "Hello");
-        assert_eq!(args["data"]["note"]["summary"], "From the system agent");
-        assert_eq!((args["open"]["app"].as_str(), args["notify"].as_bool()), (Some("mail"), Some(true)));
-        assert_eq!(args["priority"], 60);
-        let generated = notice_publish_args(&json!({"title": "Hi", "body": "x", "priority": 500}), 0xabc).unwrap();
-        assert_eq!((generated["card_id"].as_str(), generated["priority"].as_i64()), (Some("notice-abc"), Some(100)));
-        assert!(notice_publish_args(&json!({"title": " ", "body": "x"}), 0).is_err());
-        assert!(notice_publish_args(&json!({"title": "x".repeat(81), "body": "x"}), 0).is_err());
-        assert!(notice_publish_args(&json!({"title": "x", "body": "y".repeat(601)}), 0).is_err());
+    fn a_notice_goes_to_the_shell_as_the_calling_app() {
+        assert_eq!(notify("os.mail", &json!({"title": "Hello", "body": "x"})).unwrap_err(), "This device shows no glance cards.");
+        let heard: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
+        let seen = heard.clone();
+        on_notify(Some(Arc::new(move |app: &str, args: &Value| -> Result<Value, String> {
+            seen.lock().unwrap().push((app.to_string(), args.clone()));
+            Ok(json!({"card_id": "hello", "replaced": false}))
+        })));
+        let args = json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"});
+        assert_eq!(notify("os.mail", &args).unwrap()["card_id"], "hello");
+        assert_eq!(*heard.lock().unwrap(), [("os.mail".to_string(), args)]);
+        on_notify(None);
     }
 
     #[test]

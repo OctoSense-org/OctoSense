@@ -72,6 +72,8 @@ pub mod ext;
 pub mod glance;
 pub mod glance_card;
 pub mod glance_chat;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod glance_notice;
 pub mod glance_panel;
 pub mod glance_sheet;
 use glance::NoteTargets as GlanceNoteTargets;
@@ -3885,16 +3887,18 @@ impl App {
     }
 
     /// Copy or cut (Command+C, Command+X) in the chat pane typing goes to:
-    /// its prompt's selection, cut taking it out. Without a selection the
-    /// event is left to whoever else answers it.
+    /// its prompt's selection, cut taking it out; else, for a copy, what is
+    /// selected in its transcript. Without a selection the event is left to
+    /// whoever else answers it.
     fn chat_clipboard(&mut self, cx: &mut Cx, event: &Event) -> bool {
         let (response, cut) = match event {
             Event::TextCopy(e) => (e.response.clone(), false),
             Event::TextCut(e) => (e.response.clone(), true),
             _ => return false,
         };
+        let panes = [ids!(shell_app_chat), ids!(shell_system_chat)];
         let mut focused = [false; 2];
-        for (i, pane) in [ids!(shell_app_chat), ids!(shell_system_chat)].into_iter().enumerate() {
+        for (i, pane) in panes.into_iter().enumerate() {
             let pane = self.ui.widget(cx, pane);
             focused[i] = pane.borrow::<system_chat::view::ShellSystemChat>().is_some_and(|p| p.has_keyboard(cx));
         }
@@ -3906,9 +3910,10 @@ impl App {
         } else {
             text_target(cx.key_focus().is_empty(), app_chat::is_focused(), system_chat::is_open())
         };
+        let selected = |cx: &mut Cx, pane| self.ui.widget(cx, pane).borrow::<system_chat::view::ShellSystemChat>().and_then(|p| p.selected_text());
         let text = match target {
-            Some(Pane::App) => app_chat::copy_draft(cut),
-            Some(Pane::System) => system_chat::copy_draft(cut),
+            Some(Pane::App) => app_chat::copy_draft(cut).or_else(|| if cut { None } else { selected(cx, panes[0]) }),
+            Some(Pane::System) => system_chat::copy_draft(cut).or_else(|| if cut { None } else { selected(cx, panes[1]) }),
             None => None,
         };
         match text {
@@ -4034,7 +4039,7 @@ impl App {
     /// a toast on a desktop, which opens that card in the card window
     /// (glance_sheet.rs); a shade notification on the phone, which opens the
     /// glance page.
-    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote, toast: bool) {
+    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
         let body = "Open the card at a glance";
         let notes = self.ui.widget(cx, ids!(shell_notes));
         let card_toast = shell::notifications::Notification {
@@ -4047,9 +4052,7 @@ impl App {
             // A card's toast stays its longest, so it can still be opened.
             requested: 30.0,
         };
-        if !toast {
-            log!("glance: {} shown in the open glance panel, no toast", note.key);
-        } else if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
+        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
             self.glance_toasts.record(id, &note.key);
             log!("glance: toast {id} opens {}", note.key);
         }
@@ -6492,10 +6495,11 @@ impl App {
                 self.redraw_all(cx);
             }
             if self.state.is_some() {
-                // A card the open panel shows needs no toast over it.
-                let toast = !self.glance_open(cx);
+                // A card that asked to notify gets its toast even when the
+                // panel opens with it: the toasts stack clear of the panel
+                // (notifications.rs `keep_clear_of`).
                 for note in glance::take_notifications() {
-                    self.glance_notify(cx, &note, toast);
+                    self.glance_notify(cx, &note);
                 }
             }
             if SignalToUI::check_and_clear_ui_signal() && self.state.is_some() {

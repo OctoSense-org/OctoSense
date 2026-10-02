@@ -63,6 +63,12 @@ pub fn open_button(rect: Rect) -> Rect {
     Rect { pos: dvec2(rect.pos.x + rect.size.x - OPEN_BUTTON - 6.0, rect.pos.y + 6.0), size: dvec2(OPEN_BUTTON, OPEN_BUTTON) }
 }
 
+/// Where a tile at `rect` has its dismiss button: left of its open button.
+pub fn dismiss_button(rect: Rect) -> Rect {
+    let open = open_button(rect);
+    Rect { pos: dvec2(open.pos.x - OPEN_BUTTON - 4.0, open.pos.y), size: open.size }
+}
+
 macro_rules! l0_kit {
     ($name:literal) => {
         include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/octoscript-makepad/components/l0/", $name))
