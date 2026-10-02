@@ -10,7 +10,11 @@
 //!
 //! - **A card's own controls** (its chips, buttons and fields) work in place.
 //!   A press anywhere else on it opens the card in the card window
-//!   ([`ShellGlancePanelAction::OpenCard`]), as its notification does.
+//!   ([`ShellGlancePanelAction::OpenCard`]), as its notification does. A
+//!   field claims its press; a chip (a tap target, `OctoscriptTap`) claims
+//!   none and calls its card once the release's handlers have run, so a
+//!   release is held for a frame: a click from that card means its control
+//!   had it.
 //! - **The hovered card** shows its actions over its top-right corner, on a
 //!   backdrop: open the app that published it, and dismiss the card. They
 //!   are not drawn over every card's content all the time.
@@ -165,6 +169,12 @@ pub struct ShellGlancePanel {
     hover: Option<String>,
     #[rust]
     card_press: Option<String>,
+    /// That press released on its card: it opens the card window on the next
+    /// frame unless the card clicked by then (one of its chips had it).
+    #[rust]
+    card_release: Option<String>,
+    #[rust]
+    release_frame: NextFrame,
     /// A new card came: the next draw scrolls as little as shows it.
     #[rust]
     reveal_newest: bool,
@@ -605,12 +615,28 @@ impl Widget for ShellGlancePanel {
                 Event::MouseUp(e) => {
                     if let Some(key) = self.card_press.take() {
                         if self.card_at(e.abs).as_deref() == Some(key.as_str()) {
-                            log!("wm: glance card {key} opens in the card window");
-                            cx.widget_action(self.uid, ShellGlancePanelAction::OpenCard { key });
+                            // A chip claims no press and clicks once this
+                            // release's handlers have run: wait a frame.
+                            self.card_release = Some(key);
+                            self.release_frame = cx.new_next_frame();
                         }
                     }
                 }
                 _ => {}
+            }
+            // The released card clicked: the press was one of its chips',
+            // not the card's. Seen before its taps run, on any event after
+            // the release's.
+            if let Some(key) = self.card_release.as_deref() {
+                if self.tiles.heap_key(cx, key).is_some_and(crate::glance_card::has_clicks) {
+                    self.card_release = None;
+                }
+            }
+            if self.release_frame.is_event(event).is_some() {
+                if let Some(key) = self.card_release.take() {
+                    log!("wm: glance card {key} opens in the card window");
+                    cx.widget_action(self.uid, ShellGlancePanelAction::OpenCard { key });
+                }
             }
             // Then the L0 taps those tiles queued, as the card window runs
             // its card's, and the cards whose chat moved (a reply came).
