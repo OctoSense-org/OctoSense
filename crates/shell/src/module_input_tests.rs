@@ -490,7 +490,7 @@ fn a_stopped_tile_takes_only_a_press_nothing_in_front_took() {
     // another app under it, reaching out right of Mail.
     let (under_at, stopped_at, mail_at) = (at(150.0, 0.0), at(100.0, 100.0), at(60.0, 120.0));
     let frame = draw_stack(&mut cx, &[(&under, under_at), (&stopped, stopped_at), (&over, mail_at)]);
-    let restart = stopped.borrow::<MpModuleView>().unwrap().restart_button().expect("the closed face has its Restart");
+    let restart = stopped.borrow::<MpModuleView>().unwrap().restart_button(&cx).expect("the closed face has its Restart");
     assert!(restart.is_inside_of(mail_at) && under_at.contains(restart.center()), "Mail covers the Restart: {restart:?}");
     let front_to_back = [&over, &stopped, &under];
     assert_eq!(click(&mut cx, &front_to_back, restart.center()), [Asked::Raise(2)], "a click on Mail is Mail's");
@@ -505,9 +505,37 @@ fn a_stopped_tile_takes_only_a_press_nothing_in_front_took() {
     drop(frame);
     let mail_at = at(500.0, 300.0);
     let frame = draw_stack(&mut cx, &[(&under, under_at), (&stopped, stopped_at), (&over, mail_at)]);
-    let restart = stopped.borrow::<MpModuleView>().unwrap().restart_button().unwrap();
+    let restart = stopped.borrow::<MpModuleView>().unwrap().restart_button(&cx).unwrap();
     assert!(!mail_at.contains(restart.center()));
     assert_eq!(click(&mut cx, &front_to_back, restart.center()), [Asked::Restart(1)]);
     assert_eq!(counts(&mut cx, &mut host, 3), (0, 0));
     close(cx, host, vec![stopped, over, under], frame, &[1, 2, 3]);
+}
+
+/// The closed face's Restart responds where it is drawn. The face centres
+/// its line and button as its turtle ends, after the button was walked, and
+/// it hit-tested the rect it walked: the face's top left, where nothing is
+/// drawn. A click or a tap on the visible button did nothing but raise the
+/// window, and a click at the top left restarted the app.
+#[test]
+fn the_restart_on_a_stopped_face_responds_where_it_is_drawn() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &NEWS);
+    let stopped = tile(&mut cx, &host, 1);
+    stopped.borrow_mut::<MpModuleView>().unwrap().show_failed(&mut cx, "News");
+    let face = at(100.0, 100.0);
+    let frame = draw_stack(&mut cx, &[(&stopped, face)]);
+    let restart = stopped.borrow::<MpModuleView>().unwrap().restart_button(&cx).expect("the closed face has its Restart");
+    // Centred across the face, just under its middle (the line is above it).
+    assert!((restart.center().x - face.center().x).abs() < 1.0, "Restart is not centred across the face: {restart:?}");
+    assert!((restart.pos.y - face.center().y).abs() < restart.size.y, "Restart is not at the face's middle: {restart:?}");
+    assert_eq!(click(&mut cx, &[&stopped], restart.center()), [Asked::Restart(1)], "a click on the visible Restart");
+    assert_eq!(tap(&mut cx, &[&stopped], restart.center()), [Asked::Restart(1)], "a tap on the visible Restart");
+    // The face's top left, where the button was walked: a press there is a
+    // press on the face, which raises the window and restarts nothing.
+    let top_left = face.pos + dvec2(20.0, 50.0);
+    assert!(!restart.contains(top_left));
+    assert_eq!(click(&mut cx, &[&stopped], top_left), [Asked::Raise(1)], "a click at the face's top left restarted the app");
+    assert_eq!(tap(&mut cx, &[&stopped], top_left), [Asked::Raise(1)], "a tap at the face's top left restarted the app");
+    close(cx, host, vec![stopped], frame, &[1]);
 }
