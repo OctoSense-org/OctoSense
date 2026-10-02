@@ -115,7 +115,7 @@ pub fn apps_uncached() -> Vec<MenuItem> {
         // Launchable: a package this checkout can run, or a module this
         // build links (the only kind the web build has).
         .filter(|app| crate::apps::is_launchable(app))
-        .filter(|app| !is_hidden(&app.id, &hides))
+        .filter(|app| crate::apps::listed(&app.id) && !is_hidden(&app.id, &hides))
         .map(|app| MenuItem {
             id: format!("apps.{}", app.id),
             label: app.label.clone(),

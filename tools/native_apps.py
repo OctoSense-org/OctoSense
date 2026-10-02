@@ -276,7 +276,7 @@ def tool_policy_problems(policy):
     return problems
 
 
-AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget"}
+AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget", "system_tools"}
 # The fields a `tools.json` entry may carry (octos `ToolDecl`, UPCR-2026-035);
 # `app` is the shell's to set.
 DECL_FIELDS = {"name", "description", "input_schema", "output_schema", "risk", "background", "outward", "confirm", "shareable"}
@@ -291,7 +291,9 @@ def agent_problems(ident, agent):
     services), `tools` (null, or its own `tools.json` entries, named
     `<id>.<tool>`), `generic_tools` (the exact octos kernel tools its agent
     gets; never octos's shell), `grants` (other apps' shareable tools,
-    `{"app", "tool"}`), `budget` (`calls_per_turn`, `calls_per_day`)."""
+    `{"app", "tool"}`), `budget` (`calls_per_turn`, `calls_per_day`),
+    `system_tools` (its own tools the system agent may call while the app
+    runs: each one of its `tools`, a shareable read tool, by full name)."""
     problems = []
     unknown = sorted(set(agent) - AGENT_KEYS)
     if unknown:
@@ -349,6 +351,19 @@ def agent_problems(ident, agent):
             problems.append(f"agent.generic_tools: {g!r} is not an octos tool name")
     if len(set(map(str, generic))) != len(generic):
         problems.append("agent.generic_tools names a tool twice")
+    system = agent.get("system_tools", [])
+    declared = {t.get("name"): t for t in (tools or []) if isinstance(t, dict)}
+    if not isinstance(system, list) or not all(isinstance(t, str) for t in system):
+        problems.append("agent.system_tools must be a list of its own tool names")
+        system = []
+    for name in system:
+        tool = declared.get(name)
+        if tool is None:
+            problems.append(f"agent.system_tools: {name} is not one of {ident}'s agent.tools")
+        elif tool.get("risk") != "read" or tool.get("shareable") is not True:
+            problems.append(f"agent.system_tools: {name} must be a shareable read tool (the system agent gets read tools only)")
+    if len(set(system)) != len(system):
+        problems.append("agent.system_tools names a tool twice")
     budget = agent.get("budget")
     if budget is not None:
         if not isinstance(budget, dict) or not set(budget) <= {"calls_per_turn", "calls_per_day"}:
@@ -626,6 +641,9 @@ def render_rust(apps):
         "    /// `agent.grants`: other apps' shareable tools its agent may call,",
         "    /// as (owning app, tool).",
         "    pub grants: &'static [(&'static str, &'static str)],",
+        "    /// `agent.system_tools`: its own read tools the system agent may",
+        "    /// call while the app runs (full names).",
+        "    pub system_tools: &'static [&'static str],",
         "    /// `agent.budget`: its agent's tool calls per turn and per day",
         "    /// (`None`: the shell's defaults).",
         "    pub calls_per_turn: Option<u32>,",
@@ -670,6 +688,8 @@ def render_rust(apps):
         out.append(f"        generic_tools: &[{generic}],")
         grants = ", ".join(f"({s(g['app'])}, {s(g['tool'])})" for g in agent.get("grants", []))
         out.append(f"        grants: &[{grants}],")
+        system = ", ".join(s(x) for x in agent.get("system_tools", []))
+        out.append(f"        system_tools: &[{system}],")
         budget = agent.get("budget") or {}
         for key in ("calls_per_turn", "calls_per_day"):
             value = f"Some({budget[key]})" if key in budget else "None"

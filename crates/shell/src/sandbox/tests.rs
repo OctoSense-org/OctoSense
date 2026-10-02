@@ -50,6 +50,7 @@ fn jail_only(root: &Path, hub_port: u16) -> Policy {
         tools_json: "[]",
         generic_tools: &[],
         grants: &[],
+        system_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
     };

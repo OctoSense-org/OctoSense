@@ -171,7 +171,21 @@ pub fn command_execution() -> bool {
 /// registers on its session (`peer/tools/register` without `peer`,
 /// UPCR-2026-035) and the relay checks every call against.
 pub fn host_tools() -> std::collections::BTreeSet<String> {
-    host_tools_given(command_execution(), terminal_target())
+    let mut tools = host_tools_given(command_execution(), terminal_target());
+    tools.extend(native_system_tools());
+    tools
+}
+
+/// The native apps' own read tools the system agent may call
+/// (`native-apps.json` `agent.system_tools`), for the apps this build
+/// links: Calculator's `eval`, Notes' `search` and `read`, … A call reaches
+/// the app's open instance; a closed app answers that it is not running.
+pub fn native_system_tools() -> std::collections::BTreeSet<String> {
+    crate::native_apps::APPS
+        .iter()
+        .filter(|app| crate::apps::is_linked(app.id))
+        .flat_map(|app| app.system_tools.iter().map(|tool| tool.to_string()))
+        .collect()
 }
 
 /// Whether `terminal.run` has a target: the Terminal runs as its own

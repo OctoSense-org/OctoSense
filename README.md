@@ -89,7 +89,7 @@ The person talks to it in the shell's **assistant pane**, the system chat (`crat
 
 Its kernel tools are exactly `SYSTEM_AGENT_TOOLS` (`crates/kernel/src/system_tools.rs`): `peer_send_input`, `peer_gather`, `peer_list` and `peer_respond` to supervise app agents, its workspace's file tools, memory, `ask_user_question`, media viewing, `web_search`, `web_fetch` and `tool_search`. Every kernel start sets that list with octos's `session/tool_list/set`, so octos's own shell, the spawn family and `peer_close` are never offered.
 
-The system chat also registers host tools on the session: `agents.list` and `agents.ask` (`crates/shell/src/agents.rs`: which apps have an agent, and the first-use sheet and ready-peer wait for one), and `terminal.run` while Setup › Assistant › Command execution is on.
+The system chat also registers host tools on the session: `agents.list` and `agents.ask` (`crates/shell/src/agents.rs`: which apps have an agent, and the first-use sheet and ready-peer wait for one), `terminal.run` while Setup › Assistant › Command execution is on, and the native apps' own read tools their `native-apps.json` entries name (`agent.system_tools`): Calculator's `calculator.eval`, Clock's `clock.now`, Notes' `notes.search` and `notes.read`, Reminders' `reminders.due` and `reminders.list`, Weather's `weather.current`. Such a call reaches the app's open instance (its AI bus service); a closed app answers "Open Notes first".
 
 **An app agent** is one host-owned octos peer per (app, account) ([`crates/app-peers`](crates/app-peers/README.md)). These apps have one on `main` (`crates/shell/src/apps.rs`, `agent_apps`):
 

@@ -1046,3 +1046,20 @@ fn an_open_routed_question_is_never_dropped() {
     super::trim_routed(&mut all_open, super::ROUTED_KEPT);
     assert_eq!(all_open.len(), 40, "open questions are never dropped");
 }
+
+/// The system agent gets the native apps' own read tools that their
+/// manifest entries name (`agent.system_tools`), for the apps this build
+/// links, and never the Terminal's: its command stays behind Setup's switch.
+#[test]
+fn the_system_agent_gets_the_linked_native_apps_read_tools_never_the_terminals() {
+    let tools = grants::native_system_tools();
+    for app in crate::native_apps::APPS {
+        for tool in app.system_tools {
+            assert_eq!(tools.contains(*tool), crate::apps::is_linked(app.id), "{tool}");
+        }
+    }
+    assert!(!tools.contains("terminal.run") && !tools.contains("terminal.read_screen"));
+    let calculator = crate::native_apps::find("calculator").unwrap();
+    assert_eq!(calculator.system_tools, ["calculator.eval"]);
+    assert_eq!(crate::native_apps::find("notes").unwrap().system_tools, ["notes.search", "notes.read"]);
+}

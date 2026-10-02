@@ -31,7 +31,8 @@ class TheRepository(unittest.TestCase):
 
     def test_the_manifest_declares_todays_native_apps(self):
         apps = native_apps.load(ROOT)
-        self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub"])
+        self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub",
+                                                       "calculator", "clock", "notes", "reminders", "weather"])
         hosting = {app["id"]: app["hosting"] for app in apps}
         # Terminal is the only process app for now (ADR 0004 §2).
         self.assertEqual(hosting["terminal"]["macos"], "process")
@@ -208,6 +209,24 @@ class Validation(Fixture):
         rinx["grants"] = [{"app": "nowhere", "tool": "nowhere.x"}]
         self.assertRefused(r"no native app nowhere")
 
+    def test_the_system_agent_gets_only_an_apps_own_shareable_read_tools(self):
+        """`agent.system_tools`: what the system agent may call of an app's
+        own tools is named per app, and only its shareable read tools
+        qualify; the Terminal's command is never one of them."""
+        terminal = self.app("terminal")["agent"]
+        terminal["system_tools"] = ["terminal.read_screen"]
+        apps = native_apps.validate(self.data)
+        self.assertIn('system_tools: &["terminal.read_screen"],', native_apps.render_rust(apps))
+        terminal["system_tools"] = ["terminal.run"]
+        self.assertRefused(r"agent\.system_tools: terminal\.run must be a shareable read tool")
+        terminal["system_tools"] = ["terminal.nope"]
+        self.assertRefused(r"agent\.system_tools: terminal\.nope is not one of terminal's agent\.tools")
+        terminal["system_tools"] = ["terminal.read_screen", "terminal.read_screen"]
+        self.assertRefused(r"agent\.system_tools names a tool twice")
+        self.app("terminal")["agent"]["tools"][1]["shareable"] = False
+        terminal["system_tools"] = ["terminal.read_screen"]
+        self.assertRefused(r"terminal\.read_screen must be a shareable read tool")
+
     def test_the_agent_block_is_generated(self):
         self.app("rinx")["agent"]["grants"] = [{"app": "terminal", "tool": "terminal.read_screen"}]
         self.app("rinx")["agent"]["budget"] = {"calls_per_day": 99}
@@ -254,25 +273,26 @@ class Generation(Fixture):
 
     def test_a_new_app_reaches_every_place(self):
         extra = copy.deepcopy(self.app("sheets"))
-        extra.update({"id": "notes", "crate": "makepad-notes", "module": "makepad_notes::NOTES_MODULE", "bin": "notes",
+        extra.update({"id": "image", "crate": "makepad-image", "module": "makepad_image::IMAGE_MODULE", "bin": "image",
                       "shells": {"desktop": "default", "phone": "off"}, "native_mobile": "feature"})
-        extra["source"]["local"] = ".sources/makepad/apps/notes"
+        extra["source"]["local"] = ".sources/makepad/apps/image"
         self.data["apps"].append(extra)
         self.save()
         self.assertEqual(self.run_main("--no-lock"), 0)
         root = (self.root / "Cargo.toml").read_text()
         rev = extra["source"]["rev"]  # the Makepad pin, whatever it is today
-        self.assertIn(f'makepad-notes = {{ git = "https://github.com/OctoSense-org/makepad.git", rev = "{rev}", default-features = false }}', root)
-        self.assertIn('makepad-notes = { path = ".sources/makepad/apps/notes" }', root)
+        self.assertIn(f'makepad-image = {{ git = "https://github.com/OctoSense-org/makepad.git", rev = "{rev}", default-features = false }}', root)
+        self.assertIn('makepad-image = { path = ".sources/makepad/apps/image" }', root)
         shell = (self.root / "crates/shell/Cargo.toml").read_text()
-        self.assertIn('makepad-notes = { workspace = true, optional = true }', shell)
-        self.assertIn('app-notes = ["dep:makepad-notes"]', shell)
+        self.assertIn('makepad-image = { workspace = true, optional = true }', shell)
+        self.assertIn('app-image = ["dep:makepad-image"]', shell)
         desktop = (self.root / "desktop/Cargo.toml").read_text()
-        self.assertIn('default = ["octos-core", "app-rinx", "app-terminal", "app-hub", "app-notes"]', desktop)
-        self.assertIn('app-notes = ["octosense-shell/app-notes"]', desktop)
-        self.assertNotIn("app-notes", (self.root / "phone/Cargo.toml").read_text())
+        default = next(line for line in desktop.splitlines() if line.startswith("default = "))
+        self.assertIn('"app-image"', default, "a desktop default app is in the package's default features")
+        self.assertIn('app-image = ["octosense-shell/app-image"]', desktop)
+        self.assertNotIn("app-image", (self.root / "phone/Cargo.toml").read_text())
         rust = (self.root / native_apps.RUST_FILE).read_text()
-        self.assertIn('    #[cfg(feature = "app-notes")]\n    out.push(&makepad_notes::NOTES_MODULE);', rust)
+        self.assertIn('    #[cfg(feature = "app-image")]\n    out.push(&makepad_image::IMAGE_MODULE);', rust)
 
     def test_native_mobile_links_without_the_feature(self):
         rust = native_apps.render_rust(native_apps.validate(self.data))

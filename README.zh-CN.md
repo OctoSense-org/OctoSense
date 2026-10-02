@@ -89,7 +89,7 @@ flowchart LR
 
 它的内核工具恰好是 `SYSTEM_AGENT_TOOLS`（`crates/kernel/src/system_tools.rs`）：用于监督应用 Agent 的 `peer_send_input`、`peer_gather`、`peer_list` 和 `peer_respond`，其工作区的文件工具，记忆，`ask_user_question`，媒体查看，`web_search`、`web_fetch` 和 `tool_search`。每次内核启动都用 octos 的 `session/tool_list/set` 设置这份列表，所以 octos 自带的 shell、spawn 一族和 `peer_close` 永远不会提供给它。
 
-系统对话还会在这个会话上注册宿主工具：`agents.list` 和 `agents.ask`（`crates/shell/src/agents.rs`：哪些应用有 Agent，以及某个 Agent 的首次使用面板与就绪等待），以及在 Setup › Assistant › Command execution 打开期间的 `terminal.run`。
+系统对话还会在这个会话上注册宿主工具：`agents.list` 和 `agents.ask`（`crates/shell/src/agents.rs`：哪些应用有 Agent，以及某个 Agent 的首次使用面板与就绪等待），在 Setup › Assistant › Command execution 打开期间的 `terminal.run`，以及原生应用在 `native-apps.json` 条目中列出的只读工具（`agent.system_tools`）：Calculator 的 `calculator.eval`、Clock 的 `clock.now`、Notes 的 `notes.search` 和 `notes.read`、Reminders 的 `reminders.due` 和 `reminders.list`、Weather 的 `weather.current`。这样的调用会到达该应用已打开的实例（它的 AI bus 服务）；应用未打开时会回答“Open Notes first”。
 
 **应用 Agent** 是每个（应用，账号）一个由宿主拥有的 octos peer（[`crates/app-peers`](crates/app-peers/README.md)）。`main` 上以下应用有 Agent（`crates/shell/src/apps.rs`，`agent_apps`）：
 

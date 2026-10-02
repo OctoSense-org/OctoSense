@@ -20,4 +20,9 @@ path = "src/lib.rs"
 octosense-reference = { workspace = true }
 makepad-sheets = { workspace = true, features = ["standalone"] }
 makepad-terminal = { workspace = true }
+makepad-calculator = { workspace = true, features = ["standalone"] }
+makepad-clock = { workspace = true, features = ["standalone"] }
+makepad-notes = { workspace = true, features = ["standalone"] }
+makepad-reminders = { workspace = true, features = ["standalone"] }
+makepad-weather = { workspace = true, features = ["standalone"] }
 # END native-apps: process deps

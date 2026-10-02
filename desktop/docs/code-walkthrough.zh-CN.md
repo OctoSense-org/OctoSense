@@ -35,7 +35,7 @@ cargo run --locked -p octosense-reference
 # 把 Reference 链接进桌面，并在启动后打开。
 MAKEPAD_WM_TEST_APP=reference cargo run --locked -p octosense --features app-reference -- --module reference
 
-# 标准桌面：App Hub、Rinx、Terminal 和内核集成。
+# 标准桌面：App Hub、Rinx、Terminal、原生 Makepad 应用和内核集成。
 cargo run --locked --release -p octosense
 ```
 

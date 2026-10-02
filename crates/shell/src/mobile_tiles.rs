@@ -206,7 +206,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
 /// every launch target is reachable from exactly one card.
 pub const LIBRARY_GROUPS: [(&str, &[&str]); 4] = [
     ("Utilities", &["clock", "weather", "calculator", "appcard", "news", "terminal", "files", "task"]),
-    ("Productivity", &["notes", "reminders", "sheets", "browser", "route", "maps", "finance", "aichat"]),
+    ("Productivity", &["notes", "reminders", "sheets", "browser", "route", "maps", "finance"]),
     ("Media", &["photos", "image", "pdf"]),
     ("Other", &[]),
 ];

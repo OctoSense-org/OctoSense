@@ -406,11 +406,12 @@ fn a_host_tool_approval_whose_turn_ended_is_withdrawn_from_the_sheet() {
 
 #[test]
 fn an_app_that_is_not_running_is_refused_visibly() {
+    // An app with neither an executor nor a native app's bus service.
     let mut relay = Relay::default();
-    relay.catalog.declare("notes", vec![decl("notes.add", false, "host")]);
+    relay.catalog.declare("jot", vec![decl("jot.add", false, "host")]);
     let mut w = World::new(FixedDevMode::off());
     let (r, sent) = reply("c1");
-    relay.handle(Event::Call { call: call("c1", "notes.add", "notes"), reply: r }, &mut w);
+    relay.handle(Event::Call { call: call("c1", "jot.add", "jot"), reply: r }, &mut w);
     assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "app_not_running");
     let _ = Decision::Deny;
 }
@@ -421,7 +422,7 @@ fn the_shipped_catalog_offers_the_terminals_run_to_those_granted_it() {
     let run = catalog.entry("terminal", TERMINAL_RUN).unwrap();
     assert_eq!((run["risk"].as_str(), run["confirm"].as_str()), (Some("destructive"), Some("host")));
     assert!(catalog.declarations("rinx", false).is_empty(), "nobody gets it without a grant");
-    assert_eq!(catalog.declarations("rinx", true).len(), 3, "developer mode grants every shareable tool");
+    assert_eq!(catalog.declarations("rinx", true).len(), shareable_native_tools().len(), "developer mode grants every shareable tool");
 }
 
 /// G3: the native apps' agent blocks (`native-apps.json`) are the shipped
@@ -474,6 +475,32 @@ fn the_terminals_read_tools_are_granted_then_read_on_the_bus() {
     assert_eq!(sent.lock().unwrap()[0]["data"]["text"], "$ ls");
 }
 
+/// A native app's own read tool (Calculator's `eval`) reaches the system
+/// agent once granted, and runs on the app's AI bus service by its short
+/// name: the Terminal is no longer the only native app the bus serves.
+#[test]
+fn a_native_apps_read_tool_runs_on_its_bus_service() {
+    assert!(super::relay::serves_on_bus("terminal") && super::relay::serves_on_bus("calculator") && super::relay::serves_on_bus("notes"));
+    assert!(!super::relay::serves_on_bus("sheets"), "an app that declares no tools has none to serve");
+    assert!(!super::relay::serves_on_bus("os.mail") && !super::relay::serves_on_bus("nowhere"));
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    let mut system = call("c1", "calculator.eval", "system");
+    system.args = json!({"expression": "6*7"});
+    system.caller_kind = CallerKind::System;
+    system.origin = CallOrigin::System;
+    let (r, sent) = reply("c1");
+    relay.handle(Event::Call { call: system.clone(), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    w.system.insert("calculator.eval".into());
+    system.call_id = "c2".into();
+    let (r, sent) = reply("c2");
+    relay.handle(Event::Call { call: system, reply: r }, &mut w);
+    assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c2"), "calculator".into(), "eval".into(), json!({"expression": "6*7"}).to_string())]);
+    relay.handle(Event::BusResult { call_id: "c2".into(), outcome: ToolOutcome::Ok(json!({"text": "42"})) }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["ok"], true);
+}
+
 /// The system toolbox's tools as its catalog declares them (the real ones
 /// with the `toolbox-peers` feature): owned by `toolbox`, shareable, read
 /// except `workflow.fork`.
@@ -487,6 +514,17 @@ fn toolbox_catalog() -> Vec<Value> {
             let risk = if *name == "workflow.fork" { "act" } else { "read" };
             json!({"name": name, "app": super::TOOLBOX, "description": "d", "input_schema": {"type": "object"}, "risk": risk, "background": true, "outward": false, "confirm": "host", "shareable": true})
         })
+        .collect()
+}
+
+/// Every native app's shareable tool (`native-apps.json`): what developer
+/// mode grants another app's agent.
+fn shareable_native_tools() -> Vec<String> {
+    crate::native_apps::APPS
+        .iter()
+        .flat_map(|app| serde_json::from_str::<Vec<Value>>(app.tools_json).unwrap())
+        .filter(|tool| tool["shareable"] == true)
+        .map(|tool| tool["name"].as_str().unwrap().to_string())
         .collect()
 }
 
@@ -516,7 +554,10 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     // No grant, no toolbox tools; developer mode does not invent a grant
     // (the toolbox needs its scope), though it grants other shareable tools.
     assert!(offered_names(&relay, "calendar", false, true).is_empty());
-    assert_eq!(offered_names(&relay, "calendar", true, true), [super::relay::DEV_RUN, "terminal.read_screen", "terminal.read_scrollback", TERMINAL_RUN]);
+    let mut every = shareable_native_tools();
+    every.push(super::relay::DEV_RUN.to_string());
+    every.sort();
+    assert_eq!(offered_names(&relay, "calendar", true, true), every);
 }
 
 #[test]

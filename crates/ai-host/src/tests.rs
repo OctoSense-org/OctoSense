@@ -104,23 +104,25 @@ fn rinx_is_granted_before_start() {
     assert!(offered.finish().is_some());
 }
 
-/// The shipped policy grants Rinx exactly the assistant services, and it
-/// comes from `native-apps.json` (the generated `native_agents`), not code.
+/// The shipped policy grants each native app the agent services its
+/// `native-apps.json` entry declares (the generated `native_agents`), not
+/// code: Rinx exactly the assistant services.
 #[test]
-fn the_shipped_policy_grants_rinx_the_assistant() {
+fn the_shipped_policy_grants_each_native_app_its_declared_services() {
     let policy = Policy::shipped();
     let grants: Vec<_> = policy.grants().collect();
-    assert_eq!(grants.len(), 1);
-    assert_eq!(grants[0].0, "rinx");
-    assert_eq!(grants[0].1, octosense_app_peers::OCTOS_SERVICES.map(String::from));
+    let rinx = grants.iter().find(|(app, _)| *app == "rinx").expect("Rinx is granted");
+    assert_eq!(rinx.1, octosense_app_peers::OCTOS_SERVICES.map(String::from));
     assert!(Policy::none().grants().next().is_none());
     let generated: Vec<(&str, Vec<String>)> = crate::native_agents::NATIVE_AGENTS.iter().map(|(app, s)| (*app, s.iter().map(|s| s.to_string()).collect())).collect();
     let shipped: Vec<(&str, Vec<String>)> = policy.grants().map(|(app, s)| (app, s.to_vec())).collect();
     assert_eq!(shipped, generated, "Policy::shipped() is the manifest's agent block");
     let manifest: serde_json::Value = serde_json::from_str(include_str!("../../../native-apps.json")).unwrap();
-    let rinx = manifest["apps"].as_array().unwrap().iter().find(|a| a["id"] == "rinx").unwrap();
-    let declared: Vec<String> = rinx["agent"]["octos"].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect();
-    assert_eq!(grants[0].1, declared);
+    for (app, services) in &grants {
+        let entry = manifest["apps"].as_array().unwrap().iter().find(|a| a["id"] == *app).unwrap();
+        let declared: Vec<String> = entry["agent"]["octos"].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect();
+        assert_eq!(services.to_vec(), declared, "{app}");
+    }
 }
 
 #[test]
