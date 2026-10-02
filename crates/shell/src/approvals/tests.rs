@@ -494,6 +494,30 @@ fn sheet_model_shows_app_tool_caller_and_redacted_args() {
     assert!(labels.iter().any(|l| l.starts_with("Everything Mail asks")));
 }
 
+/// A turn from the person's own surface (the "Ask <app>" panel, a card's
+/// chat) is the person's: the sheet line and its toast say "for you". The
+/// shell's internal instance id reached the person ("Asked by Calendar's
+/// agent for shell-ask", the toast "Calendar's agent for shell-ask asks").
+/// Another client keeps its own name (a Rinx mini app).
+#[test]
+fn the_persons_own_surface_reads_for_you_never_its_instance_id() {
+    use super::sheet::caller_label;
+    for client in [crate::app_chat::INSTANCE, crate::glance_chat::INSTANCE] {
+        assert_eq!(caller_label("os.calendar", &Caller::OwnAgent { client: Some(client.into()) }), "Calendar's agent for you", "{client}");
+    }
+    assert_eq!(caller_label("rinx", &Caller::OwnAgent { client: Some("weather".into()) }), "Rinx's agent for weather");
+    assert_eq!(caller_label("os.calendar", &Caller::OwnAgent { client: None }), "Calendar's agent");
+    let (mut r, _) = router();
+    let caller = Caller::OwnAgent { client: Some(crate::app_chat::INSTANCE.into()) };
+    let request = make_request("os.calendar", ToolSpec::host("calendar.remove_event"), json!({"id": "evt-1"}), caller, ctx("ask-1", Trigger::Person), T0, 0);
+    let Route::Sheet(_) = r.request(request, T0) else { panic!() };
+    assert_eq!(r.front_sheet().unwrap().lines[0].caller, "Calendar's agent for you", "the sheet's \"Asked by\" line");
+    let notices = r.take_notices();
+    let toast = notices.iter().find(|n| n.title == "Needs you: Calendar \u{00b7} calendar.remove_event").expect("the sheet's toast");
+    assert_eq!(toast.body, "Calendar's agent for you asks. Open the sheet to approve or deny.");
+    assert!(notices.iter().all(|n| !format!("{} {}", n.title, n.body).contains(crate::app_chat::INSTANCE)), "{notices:?}");
+}
+
 #[test]
 fn a_batch_is_one_sheet_in_the_system_chat() {
     let (mut r, relay) = router();

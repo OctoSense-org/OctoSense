@@ -50,6 +50,8 @@ use crate::system_chat::model::{ChatModel, Item, Phase};
 use model::Conversation;
 
 /// The panel's client instance on the app's peer (the same on every open).
+/// Internal: the sheets and question cards say "for you" for it
+/// (`approvals::sheet::persons_surface`).
 pub const INSTANCE: &str = "shell-ask";
 
 /// The id prefix of the app's questions in the panel.

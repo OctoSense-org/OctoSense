@@ -105,10 +105,21 @@ pub fn app_label(app: &str) -> String {
     }
 }
 
-/// "Calendar's agent", "The system agent", "Rinx's agent for weather".
+/// Whether a request context's `client` is one of the shell's own surfaces
+/// where the person talks to an app's agent: the "Ask <app>" panel
+/// ([`crate::app_chat::INSTANCE`]) or a card's in-card chat
+/// ([`crate::glance_chat::INSTANCE`]). Such a turn is the person's, and
+/// the person reads "for you", never the shell's internal instance id.
+pub fn persons_surface(client: &str) -> bool {
+    client == crate::app_chat::INSTANCE || client == crate::glance_chat::INSTANCE
+}
+
+/// "Calendar's agent", "The system agent", "Rinx's agent for weather",
+/// "Calendar's agent for you" (the person's own surface, [`persons_surface`]).
 pub fn caller_label(owning_app: &str, caller: &Caller) -> String {
     match caller {
         Caller::OwnAgent { client: None } => format!("{}'s agent", app_label(owning_app)),
+        Caller::OwnAgent { client: Some(c) } if persons_surface(c) => format!("{}'s agent for you", app_label(owning_app)),
         Caller::OwnAgent { client: Some(c) } => format!("{}'s agent for {c}", app_label(owning_app)),
         Caller::AppAgent { app } => format!("{}'s agent", app_label(app)),
         Caller::SystemAgent => "The system agent".into(),

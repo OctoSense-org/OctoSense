@@ -90,6 +90,28 @@ fn a_question_follows_its_turns_origin_not_its_session() {
     assert!(model.get(system).unwrap().origin_reported);
 }
 
+/// Who asks, as every surface heads a question: the person's own surface
+/// (the "Ask <app>" panel, a card's chat) reads "for you", never the
+/// shell's internal instance id ("News's agent asks (shell-ask)" reached
+/// the person); the system agent's lane "for the assistant"; another
+/// client (a Rinx mini app) keeps its name.
+#[test]
+fn who_asks_names_the_person_never_the_shells_instance_id() {
+    let mut model = Questions::default();
+    let mut ask = |peer: &str, client: Option<&str>, origin: CallOrigin| {
+        let mut q = question("q1", "t1", origin, client.map(|_| "ctx1"));
+        q.client = client.map(str::to_string);
+        let (answer, _) = answer_handle();
+        let id = model.requested(peer, None, q, answer);
+        model.get(id).unwrap().asked_by()
+    };
+    assert_eq!(ask("card.os.news", Some(crate::app_chat::INSTANCE), CallOrigin::Context), "News's agent asks (for you)");
+    assert_eq!(ask("card.os.mail", Some(crate::glance_chat::INSTANCE), CallOrigin::Context), "Mail's agent asks (for you)");
+    assert_eq!(ask("card.os.news", None, CallOrigin::PeerInput), "News's agent asks (for the assistant)");
+    assert_eq!(ask("rinx", Some("weather"), CallOrigin::Context), "Rinx's agent asks (weather)");
+    assert_eq!(ask("rinx", None, CallOrigin::PeerOwn), "Rinx's agent asks");
+}
+
 #[test]
 fn the_persons_answer_is_sent_once_and_a_closed_question_takes_none() {
     let mut model = Questions::default();
