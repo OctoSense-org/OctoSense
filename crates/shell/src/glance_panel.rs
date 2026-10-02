@@ -6,7 +6,9 @@
 //! panel hands it the pointer inside its tile and every other event
 //! (typing, focus, timers, answers), so it works as it does in its app
 //! (glance_card.rs). The open button at a card's top-right corner opens the
-//! app that published it; clicking outside the column closes it. The
+//! app that published it, the close button left of it dismisses the card;
+//! the header's close button, or a click outside the column, closes the
+//! panel. While it is open, toasts stack left of it. The
 //! column is [`PANEL_WIDTH`] wide; each card is a tile of the column's inner
 //! width at its measured height (glance_card.rs), in the glance order
 //! (priority, then recency).
@@ -65,8 +67,12 @@ pub struct ShellGlancePanel {
     pub bar_clearance: f64,
     #[rust]
     column: Rect,
+    /// Each card drawn: its tile, the app it opens (and route), its key.
     #[rust]
-    card_rects: Vec<(Rect, String, Option<String>)>,
+    card_rects: Vec<(Rect, String, Option<String>, String)>,
+    /// The header's close button.
+    #[rust]
+    close: Rect,
     /// What the last layout log said, so it is logged once per change.
     #[rust]
     logged: String,
@@ -114,7 +120,7 @@ impl ShellGlancePanel {
     }
     /// Where each card is, for a test driver.
     pub fn card_rects(&self) -> Vec<(Rect, String)> {
-        self.card_rects.iter().map(|(r, app, _)| (*r, app.clone())).collect()
+        self.card_rects.iter().map(|(r, app, _, _)| (*r, app.clone())).collect()
     }
 }
 
@@ -123,6 +129,7 @@ impl Widget for ShellGlancePanel {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
         self.card_rects.clear();
+        self.close = Rect::default();
         // Every frame, open or closed: the kit keeps its overlay in tree order.
         self.d.begin_surface(cx);
         if self.open {
@@ -133,7 +140,9 @@ impl Widget for ShellGlancePanel {
             self.column = column;
             self.d.card(cx, column, &tok.notifications.surface);
             let ink = tok.notifications.surface.text;
-            self.d.label_elided(cx, rect(x + PAD, top + 14.0, PANEL_WIDTH - PAD * 2.0, 24.0), true, 18.0, ink, HAlign::Left, "At a glance");
+            self.d.label_elided(cx, rect(x + PAD, top + 14.0, PANEL_WIDTH - PAD * 2.0 - 32.0, 24.0), true, 18.0, ink, HAlign::Left, "At a glance");
+            self.close = rect(x + PANEL_WIDTH - PAD - 28.0, top + 12.0, 28.0, 28.0);
+            self.d.icon_centered(cx, Ico::Close, self.close, 14.0, alpha(ink, 0.8));
             let cards = crate::glance::shown();
             self.first = self.first.min(cards.len().saturating_sub(1));
             let status = if cards.is_empty() { "Nothing published yet".to_string() } else { format!("{} from your apps", cards.len()) };
@@ -154,7 +163,10 @@ impl Widget for ShellGlancePanel {
                 let open = crate::glance_card::open_button(r);
                 self.d.card(cx, open, &tok.notifications.surface);
                 self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
-                self.card_rects.push((r, card.open_app.clone(), card.route.clone()));
+                let dismiss = crate::glance_card::dismiss_button(r);
+                self.d.card(cx, dismiss, &tok.notifications.surface);
+                self.d.icon_centered(cx, Ico::Close, dismiss, 12.0, ink);
+                self.card_rects.push((r, card.open_app.clone(), card.route.clone(), key));
                 y += h + GAP;
             }
             // The cards the column does not show: the wheel brings them.
@@ -170,8 +182,10 @@ impl Widget for ShellGlancePanel {
             }
         }
         self.d.end_surface(cx);
+        // The toasts stack clear of the open column (notifications.rs).
+        crate::shell::notifications::keep_clear_of(self.open.then_some(self.column));
         // Where the cards landed, once per change: evidence for a remote run.
-        let layout: Vec<String> = self.card_rects.iter().map(|(r, app, _)| format!("{app}@{},{},{},{}", r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
+        let layout: Vec<String> = self.card_rects.iter().map(|(r, app, _, _)| format!("{app}@{},{},{},{}", r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
         let layout = layout.join(" ");
         if self.open && layout != self.logged {
             log!("glance panel: {} card(s) {}", self.card_rects.len(), layout);
@@ -214,8 +228,20 @@ impl Widget for ShellGlancePanel {
             if !self.open {
                 return;
             }
-            if let Some((_, app, route)) = self.card_rects.iter().find(|(r, _, _)| contains(crate::glance_card::open_button(*r), e.abs)).cloned() {
+            if contains(self.close, e.abs) {
+                self.open = false;
+                log!("wm: glance panel closed (its close button)");
+                self.redraw(cx);
+                return;
+            }
+            if let Some((_, app, route, _)) = self.card_rects.iter().find(|(r, ..)| contains(crate::glance_card::open_button(*r), e.abs)).cloned() {
                 cx.widget_action(self.uid, ShellGlancePanelAction::Open { app, route });
+                return;
+            } else if let Some((.., key)) = self.card_rects.iter().find(|(r, ..)| contains(crate::glance_card::dismiss_button(*r), e.abs)).cloned() {
+                if crate::glance::dismiss(&key) {
+                    log!("wm: glance card {key} dismissed");
+                }
+                self.redraw(cx);
                 return;
             } else if !contains(self.column, e.abs) {
                 self.open = false;

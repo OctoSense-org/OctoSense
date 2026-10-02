@@ -23,6 +23,28 @@ use makepad_widgets::*;
 use super::ui::{contains, inset, rect, DrawShellFill, Ico, ShellDraw};
 use super::{darker, fade, MaterialTokens, ShellTokens};
 
+thread_local! {
+    /// A surface the toasts stay clear of while it is up ([`keep_clear_of`]).
+    static KEEP_CLEAR: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
+}
+
+/// A surface at the toasts' corner says where it is each frame it draws
+/// (None while it is down), and the toasts stack left of it instead of over
+/// it: the glance panel, which opens with a new card whose toast comes too.
+pub fn keep_clear_of(r: Option<Rect>) {
+    KEEP_CLEAR.with(|c| c.set(r));
+}
+
+/// The stack's left edge: at the screen's right, or left of a surface it
+/// keeps clear of when they would overlap.
+fn stack_x(screen: Rect, gaps_out: f64, clear: Option<Rect>) -> f64 {
+    let x = screen.pos.x + screen.size.x - gaps_out - CARD_WIDTH;
+    match clear {
+        Some(r) if r.size.x > 0.0 && r.pos.x < x + CARD_WIDTH && r.pos.x + r.size.x > x => (r.pos.x - STACK_SPACING - CARD_WIDTH).max(screen.pos.x + gaps_out),
+        _ => x,
+    }
+}
+
 pub const CARD_WIDTH: f64 = 380.0;
 const SIDE_MARGIN: f64 = 12.0;
 const V_MARGIN: f64 = 10.0;
@@ -274,7 +296,7 @@ impl ShellNotifications {
         let gaps_out = tok.spacing.gaps_out;
         let border = tok.notifications.surface.border_width;
         let mut y = screen.pos.y + self.bar_clearance.max(gaps_out);
-        let x = screen.pos.x + screen.size.x - gaps_out - CARD_WIDTH;
+        let x = stack_x(screen, gaps_out, KEEP_CLEAR.with(|c| c.get()));
 
         for entry in self.live.clone() {
             let note = entry.note.clone();
@@ -496,6 +518,18 @@ pub fn fixtures() -> Vec<Notification> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// With the glance panel up at the right, the toasts stack left of it;
+    /// without it (or with a surface elsewhere), at the right edge.
+    #[test]
+    fn toasts_stack_clear_of_the_glance_panel() {
+        let screen = rect(0.0, 0.0, 1400.0, 900.0);
+        let right = 1400.0 - 10.0 - CARD_WIDTH;
+        assert_eq!(stack_x(screen, 10.0, None), right);
+        let panel = rect(1400.0 - 10.0 - 360.0, 40.0, 360.0, 800.0);
+        assert_eq!(stack_x(screen, 10.0, Some(panel)), panel.pos.x - STACK_SPACING - CARD_WIDTH);
+        assert_eq!(stack_x(screen, 10.0, Some(rect(10.0, 40.0, 440.0, 500.0))), right, "the Assistant pane at the left is not in the way");
+    }
 
     #[test]
     fn lifetimes_follow_duration_for() {

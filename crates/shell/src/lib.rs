@@ -4037,7 +4037,7 @@ impl App {
     /// a toast on a desktop, which opens that card in the card window
     /// (glance_sheet.rs); a shade notification on the phone, which opens the
     /// glance page.
-    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote, toast: bool) {
+    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
         let body = "Open the card at a glance";
         let notes = self.ui.widget(cx, ids!(shell_notes));
         let card_toast = shell::notifications::Notification {
@@ -4050,9 +4050,7 @@ impl App {
             // A card's toast stays its longest, so it can still be opened.
             requested: 30.0,
         };
-        if !toast {
-            log!("glance: {} shown in the open glance panel, no toast", note.key);
-        } else if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
+        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, card_toast)) {
             self.glance_toasts.record(id, &note.key);
             log!("glance: toast {id} opens {}", note.key);
         }
@@ -6495,10 +6493,11 @@ impl App {
                 self.redraw_all(cx);
             }
             if self.state.is_some() {
-                // A card the open panel shows needs no toast over it.
-                let toast = !self.glance_open(cx);
+                // A card that asked to notify gets its toast even when the
+                // panel opens with it: the toasts stack clear of the panel
+                // (notifications.rs `keep_clear_of`).
                 for note in glance::take_notifications() {
-                    self.glance_notify(cx, &note, toast);
+                    self.glance_notify(cx, &note);
                 }
             }
             if SignalToUI::check_and_clear_ui_signal() && self.state.is_some() {
