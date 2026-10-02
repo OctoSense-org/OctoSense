@@ -568,8 +568,13 @@ fn the_system_agent_and_the_person_work_with_one_app_agent_at_once() {
     // 4. The person answers in the shell's "Ask News" panel (G11: the
     // question of the app's conversation is shown there, not in the system
     // chat): their turn ends while the system agent's is still parked on
-    // its approval.
+    // its approval. With the panel open it is the question's one surface:
+    // the approvals overlay draws no card over it.
+    let card = || crate::approvals::view::card_question(crate::questions::open(&Conversation::App(APP.into())), crate::app_chat::shown_app().as_deref()).map(|q| q.id);
+    crate::app_chat::close();
+    assert_eq!(card(), Some(question.id), "no panel open: the overlay's card asks it");
     crate::app_chat::show_for_tests(crate::apps::AgentApp { id: APP.into(), name: LABEL.into(), octos: Vec::new(), manifest: json!({}), native: false });
+    assert_eq!(card(), None, "Ask News is open: no card over it, the panel's own buttons answer");
     let panel = crate::app_chat::snapshot();
     let routed = panel
         .items
