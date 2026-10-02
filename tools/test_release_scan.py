@@ -36,6 +36,16 @@ class PatternTests(unittest.TestCase):
                      b"not found.forbiddenutf-8.local/bin/x", b"command not foundnewTab.local/sharekde-open"):
             self.assertEqual(findings(fine), [], fine)
 
+    def test_a_dependency_constant_is_not_a_host(self):
+        # matrix-sdk's "send-queue.localhost": x86-64 code keeps its first 16
+        # bytes as a comparison constant, and any constant may come next.
+        for fine in (b"send-queue.local\x00\x00\x00\x00", b"send-queue.local\x80\x10Hk",
+                     b"mxc://send-queue.localhost/txn"):
+            self.assertEqual(findings(fine), [], fine)
+        # That exact name only: a host whose name merely contains it is found.
+        for leak in (b"my-send-queue.local", b"send-queue2.local", b"xsend-queue.local"):
+            self.assertTrue(findings(b"at " + leak + b" end"), leak)
+
     def test_findings_are_masked_and_extra_patterns_apply(self):
         out = findings(b"/Users/someone/x")
         self.assertEqual(len(out), 1)

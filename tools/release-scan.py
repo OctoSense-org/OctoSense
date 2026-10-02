@@ -29,8 +29,9 @@ It fails on:
 
 Exit status 1 with one line per finding (the match is shown masked), 0 when
 clean. Findings are about the build, not the code: fix them with neutral
-build paths (see desktop/scripts/package.py). The only exceptions are the
-product's own `.local` constants (PRODUCT_LOCAL_NAMES), exact names.
+build paths (see desktop/scripts/package.py). The only exceptions are known
+`.local` constants, exact names: the product's own (PRODUCT_LOCAL_NAMES) and
+its dependencies' (DEPENDENCY_LOCAL_NAMES).
 """
 import argparse
 import getpass
@@ -54,12 +55,25 @@ GENERIC_ACCOUNTS = {"runner", "runneradmin", "root", "admin", "administrator", "
 # worker's git identity, the solo profile, a test account).
 PRODUCT_LOCAL_NAMES = ("octosense.local", "octos.local", "solo.local", "test.local")
 
+# The same in a dependency, one entry per constant, exact names. Each says
+# whose constant it is and why it shows up as a `.local` name.
+DEPENDENCY_LOCAL_NAMES = (
+    # matrix-sdk (Rinx's Matrix client) names media still in its send queue
+    # `mxc://send-queue.localhost/<txn>` (LOCAL_MXC_SERVER_NAME,
+    # crates/matrix-sdk/src/media.rs). x86-64 code compares a server name
+    # with it 16 bytes at a time, so its first 16 bytes are a constant of
+    # their own; when the next constant starts with a non-name byte, they
+    # read as this name (seen in the Windows build).
+    "send-queue.local",
+)
+
 BASE_PATTERNS = [
     ("macOS user directory", rb"/Users/[^/\s\x00\"']+"),
     ("Windows user directory", rb"[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?!runneradmin[\\/])[^\\/\s\x00\"']+"),
     ("Windows user directory (UTF-16)", rb"(?:[A-Za-z]\x00):\x00(?:[\\/]\x00){1,2}U\x00s\x00e\x00r\x00s\x00"),
     ("Linux home directory", rb"/home/(?!runner/)[a-z_][a-z0-9_.-]*/"),
-    ("mDNS .local host name", rb"(?<![A-Za-z0-9_.-])(?!(?:" + b"|".join(re.escape(n.encode()) for n in PRODUCT_LOCAL_NAMES)
+    ("mDNS .local host name", rb"(?<![A-Za-z0-9_.-])(?!(?:"
+     + b"|".join(re.escape(n.encode()) for n in PRODUCT_LOCAL_NAMES + DEPENDENCY_LOCAL_NAMES)
      + rb")(?![A-Za-z0-9_-]))[A-Za-z0-9][A-Za-z0-9-]*\.local(?![A-Za-z0-9_-])"
      # ~/.local/bin and friends glued to a neighbouring string are paths.
      # (Rust packs literals back to back, so the next literal may follow.)
