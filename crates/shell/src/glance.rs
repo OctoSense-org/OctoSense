@@ -4,7 +4,7 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `glance.publish` | `{card_id, source \| script, data?, title, priority?, expires?, open?: {app, route?}, notify?}` | `{card_id, replaced, expires_at}` |
+//! | `glance.publish` | `{card_id, source \| script, data?, title, summary?, priority?, expires?, open?: {app, route?}, notify?}` | `{card_id, replaced, expires_at}` |
 //! | `glance.withdraw` | `{card_id}` | `{withdrawn}` |
 //! | `glance.list` | – | `[{card_id, title, priority, published_at, expires_at}]`, the caller's own cards |
 //!
@@ -39,7 +39,9 @@
 //! Every tile is interactive and runs under the publishing app's own policy
 //! (glance_card.rs), so a card does on the glance screen exactly what the
 //! app's UI does. Caps: `card_id` 1–64 of `[A-Za-z0-9._-]`, `title` ≤ 80
-//! characters, `source`/`script` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route`
+//! characters, `summary` ≤ 200 (the notification's second line; without
+//! one it is the card's own `summary` or `note.summary` in its data, or
+//! nothing), `source`/`script` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route`
 //! ≤ 256. `priority` 0–100 (default 50). `expires` is seconds from now, 60 s
 //! to 7 days (default 24 h); an expired card is dropped. Each app may publish
 //! [`RATE_LIMIT`] times per [`RATE_WINDOW_MS`] (a replace counts, and so
@@ -78,6 +80,8 @@ use std::sync::{Arc, Mutex};
 
 pub const CARD_ID_MAX: usize = 64;
 pub const TITLE_MAX: usize = 80;
+/// A notification's second line, in characters.
+pub const SUMMARY_MAX: usize = 200;
 pub const SOURCE_MAX: usize = 16 * 1024;
 pub const DATA_MAX: usize = 32 * 1024;
 pub const ROUTE_MAX: usize = 256;
@@ -210,6 +214,11 @@ impl GlanceStore {
         if title.is_empty() || title.chars().count() > TITLE_MAX {
             return Err(format!("title must be 1-{TITLE_MAX} characters"));
         }
+        match args.get("summary") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(s)) if s.chars().count() <= SUMMARY_MAX => {}
+            Some(_) => return Err(format!("summary must be a string of at most {SUMMARY_MAX} characters")),
+        }
         let (kind, source) = match (text(args, "source"), text(args, "script")) {
             (Some(source), None) => ("source", source),
             (None, Some(script)) => ("script", script),
@@ -328,9 +337,28 @@ impl GlanceStore {
     /// screen): it goes, as if its app had withdrawn it. True when it was
     /// there.
     pub fn dismiss(&mut self, key: &str) -> bool {
-        let before = self.cards.len();
-        self.cards.retain(|c| c.key() != key);
-        self.cards.len() != before
+        self.take(key).is_some()
+    }
+
+    /// Take the card with this key out (a dismiss that can be undone).
+    pub fn take(&mut self, key: &str) -> Option<GlanceCard> {
+        let at = self.cards.iter().position(|c| c.key() == key)?;
+        Some(self.cards.remove(at))
+    }
+
+    /// Put cards back that were taken out ([`Self::take`]): each keeps its
+    /// publish and expiry, unless it expired meanwhile or its app published
+    /// the same card again since. How many came back.
+    pub fn restore(&mut self, cards: Vec<GlanceCard>, now_ms: u64) -> usize {
+        let mut back = 0;
+        for card in cards {
+            if card.expires_ms <= now_ms || self.cards.iter().any(|c| c.key() == card.key()) {
+                continue;
+            }
+            self.cards.push(card);
+            back += 1;
+        }
+        back
     }
 
     /// `glance.list`: the caller's own cards.
@@ -392,7 +420,24 @@ pub struct GlanceNote {
     /// The card's key (`app/card_id`).
     pub key: String,
     pub app: String,
+    /// The launcher id the card opens (its app's icon on the toast).
+    pub open_app: String,
     pub title: String,
+    /// The notification's second line ([`note_summary`]); may be empty.
+    pub summary: String,
+}
+
+/// A card notification's second line: the publisher's `summary`, else the
+/// card's own summary in its data (`summary`, or a source record's, as a
+/// notice's `note.summary`), else nothing.
+pub fn note_summary(args: &Value) -> String {
+    let pick = |v: Option<&Value>| v.and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let record = || args.get("data").and_then(Value::as_object).and_then(|data| data.values().find_map(|v| pick(v.get("summary"))));
+    let summary = pick(args.get("summary")).or_else(|| pick(args.pointer("/data/summary"))).or_else(record).unwrap_or_default();
+    match summary.char_indices().nth(SUMMARY_MAX) {
+        Some((cut, _)) => format!("{}\u{2026}", &summary[..cut]),
+        None => summary,
+    }
 }
 
 /// The notifications cards asked for since the last call.
@@ -460,7 +505,13 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
     if result.is_ok() && method == "publish" && args.get("notify").and_then(Value::as_bool) == Some(true) {
         let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or_default();
         let title = args.get("title").and_then(Value::as_str).unwrap_or_default().trim();
-        NOTES.lock().unwrap().push(GlanceNote { key: format!("{}/{card_id}", caller.app()), app: caller.app().to_string(), title: title.to_string() });
+        NOTES.lock().unwrap().push(GlanceNote {
+            key: format!("{}/{card_id}", caller.app()),
+            app: caller.app().to_string(),
+            open_app: caller.launch_id().to_string(),
+            title: title.to_string(),
+            summary: note_summary(args),
+        });
     }
     if result.is_ok() && method != "list" {
         changed();
@@ -488,17 +539,54 @@ pub fn card(key: &str) -> Option<GlanceCard> {
 
 /// The person dismissed the card with this key (`app/card_id`).
 pub fn dismiss(key: &str) -> bool {
-    let gone = with_store(|store| store.dismiss(key));
-    if gone {
+    dismiss_all(&[key.to_string()]) == 1
+}
+
+/// The cards the person dismissed last (one card's close, or Clear all),
+/// kept so [`undo_dismiss`] can bring them back.
+static UNDO: Mutex<Vec<GlanceCard>> = Mutex::new(Vec::new());
+
+/// The person dismissed these cards: they go, as if their apps had
+/// withdrawn them, and the next [`undo_dismiss`] brings them back. How many
+/// went.
+pub fn dismiss_all(keys: &[String]) -> usize {
+    let gone: Vec<GlanceCard> = with_store(|store| keys.iter().filter_map(|key| store.take(key)).collect());
+    let count = gone.len();
+    if count > 0 {
+        *UNDO.lock().unwrap() = gone;
         changed();
     }
-    gone
+    count
+}
+
+/// Put back the cards the last dismiss took: the keys of those that came
+/// back (one its app published anew meanwhile stays as it is now).
+pub fn undo_dismiss() -> Vec<String> {
+    let cards = std::mem::take(&mut *UNDO.lock().unwrap());
+    let keys: Vec<String> = cards.iter().map(|c| c.key()).collect();
+    let now = now_ms();
+    let back = with_store(|store| {
+        store.restore(cards, now);
+        keys.into_iter().filter(|key| store.card(key, now).is_some()).collect::<Vec<_>>()
+    });
+    if !back.is_empty() {
+        changed();
+    }
+    back
 }
 
 /// What the glance screen shows now (priority, then recency, capped).
 pub fn shown() -> Vec<GlanceCard> {
     expire_now();
     with_store(|store| store.shown(now_ms(), SHOWN_CARDS))
+}
+
+/// Every live card, in the glance order: the desktop's panel scrolls, so it
+/// lists them all (and Clear all takes them all); the phone's glance screen
+/// shows the first [`SHOWN_CARDS`] ([`shown`]).
+pub fn listed() -> Vec<GlanceCard> {
+    expire_now();
+    with_store(|store| store.shown(now_ms(), STORE_CARDS))
 }
 
 /// The `glance` family for the Card runner (App Hub's host services).
@@ -607,18 +695,35 @@ pub fn demo_mail_publishes() -> Vec<Value> {
         .into_iter()
         .enumerate()
         .map(|(i, (card_id, title, source, data))| {
-            json!({
+            let mut args = json!({
                 "card_id": card_id, "title": title, "source": source, "data": data,
                 "priority": 80 - i as i64, "open": {"app": "mail"}, "notify": true
-            })
+            });
+            // The request card's gist is its chat's, not its data's.
+            if card_id == "ana-contract" {
+                args["summary"] = json!("Ana asks whether you can sign by Friday, with the revised payment terms.");
+            }
+            args
         })
         .collect()
 }
 
+/// `OCTOSENSE_GLANCE_DEMO=many`'s notices: (app, card id, title, text).
+#[cfg(any(feature = "app-hub", native_mobile))]
+const DEMO_NOTICES: &[(&str, &str, &str, &str)] = &[
+    ("os.calendar", "dentist", "Dentist at 3 pm", "Main St 12. Leave by 2:40 to be on time."),
+    ("os.photos", "hike", "12 new photos", "From Saturday's hike; three are already favourites."),
+    ("os.maps", "commute", "Traffic on your way home", "I-280 is slow: 18 minutes longer than usual."),
+    ("os.youtube", "makepad", "New from a channel you follow", "Makepad: building a GPU shell in Rust (24 min)."),
+    ("os.calendar", "standup", "Standup moved", "Tomorrow's standup is at 9:30 instead of 9:00."),
+];
+
 /// `OCTOSENSE_GLANCE_DEMO`, once, at startup (a test path; nothing publishes
 /// these otherwise): `mail` publishes the fake Mail cards as `os.mail`, each
-/// with a notification; any other value but `0` publishes the sample News
-/// digest as `os.news`.
+/// with a notification; `many` adds notices from five more apps and the News
+/// digest (eight cards, seven notifications: the panel's overflow and the
+/// toasts' cap); any other value but `0` publishes the sample News digest
+/// as `os.news`.
 pub fn publish_demo_if_asked() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -626,7 +731,7 @@ pub fn publish_demo_if_asked() {
         if demo.is_empty() || demo == "0" {
             return;
         }
-        if demo == "mail" {
+        if demo == "mail" || demo == "many" {
             crate::glance_chat::set_demo_mail(true);
             seed_demo_mail_chat("os.mail");
             for args in demo_mail_publishes() {
@@ -634,7 +739,16 @@ pub fn publish_demo_if_asked() {
                     makepad_widgets::log!("glance: demo mail card refused: {e}");
                 }
             }
-            return;
+            if demo == "mail" {
+                return;
+            }
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            for &(app, card_id, title, body) in DEMO_NOTICES {
+                let args = crate::glance_notice::publish_args(app, &json!({"title": title, "body": body, "card_id": card_id}), now_ms());
+                if let Err(e) = args.and_then(|args| request(&Caller::granted(app), "glance.publish", &args)) {
+                    makepad_widgets::log!("glance: demo notice {card_id} refused: {e}");
+                }
+            }
         }
         let (source, data) = demo_digest();
         let args = json!({
@@ -948,6 +1062,23 @@ mod tests {
         assert!(store.publish(&news(), &args("digest"), 900_000).is_ok());
     }
 
+    /// A card's notification gets its publisher's summary, else the card's
+    /// own (a source record's, a notice's), clipped; a long one is refused
+    /// at publish.
+    #[test]
+    fn a_cards_notification_says_its_gist() {
+        assert_eq!(note_summary(&json!({"summary": " Out today ", "data": {"pkg": {"summary": "x"}}})), "Out today");
+        assert_eq!(note_summary(&json!({"data": {"pkg": {"summary": "Out for delivery"}}})), "Out for delivery");
+        assert_eq!(note_summary(&json!({"data": {"note": {"title": "Hi", "summary": "From the agent"}}})), "From the agent");
+        assert_eq!(note_summary(&json!({"data": {"msg": {"title": "Hi"}}})), "");
+        let long = "x".repeat(SUMMARY_MAX + 5);
+        assert_eq!(note_summary(&json!({"data": {"summary": long}})).chars().count(), SUMMARY_MAX + 1, "clipped with an ellipsis");
+        let mut store = GlanceStore::default();
+        let mut a = args("digest");
+        a["summary"] = json!("y".repeat(SUMMARY_MAX + 1));
+        assert!(store.publish(&news(), &a, 1_000).unwrap_err().contains("summary"));
+    }
+
     #[test]
     fn cards_expire_and_withdraw() {
         let mut store = GlanceStore::default();
@@ -961,6 +1092,27 @@ mod tests {
         store.publish(&news(), &args("digest"), 70_000).unwrap();
         assert_eq!(store.withdraw(&news(), &json!({"card_id": "digest"}), 70_001).unwrap()["withdrawn"], true);
         assert!(store.is_empty());
+    }
+
+    /// A dismissed card comes back on undo, with its publish and expiry,
+    /// unless it expired or its app published it again meanwhile.
+    #[test]
+    fn a_dismissed_card_comes_back_on_undo() {
+        let mut store = GlanceStore::default();
+        store.publish(&news(), &args("digest"), 1_000).unwrap();
+        let key = store.shown(1_000, 9)[0].key();
+        let card = store.take(&key).unwrap();
+        assert!(store.is_empty());
+        assert_eq!(store.restore(vec![card.clone()], 2_000), 1);
+        assert_eq!(store.shown(2_000, 9)[0].published_ms, 1_000, "as published");
+        let again = store.take(&key).unwrap();
+        store.publish(&news(), &args("digest"), 3_000).unwrap();
+        assert_eq!(store.restore(vec![again], 3_000), 0, "published anew meanwhile");
+        assert_eq!(store.restore(vec![card], card_expiry(1_000) + 1), 0, "expired meanwhile");
+    }
+
+    fn card_expiry(published_ms: u64) -> u64 {
+        published_ms + EXPIRES_DEFAULT_S * 1000
     }
 
     /// The person's close button takes the one card it is on; the app can

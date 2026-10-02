@@ -79,6 +79,21 @@ macro_rules! l0_kit {
 }
 
 const PALETTE_BASE: &str = l0_kit!("_palette_dark.octoscript");
+
+/// The shell's mode, for a card that names no theme of its own: it takes
+/// the light palette in a light shell and the dark one in a dark shell, as
+/// every other surface does (desktop_app.rs sets it with the style; a live
+/// card lowers again when it changes, [`L0Session::mode_moved`]).
+static DARK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Set the shell's mode; true when it changed.
+pub fn set_dark(dark: bool) -> bool {
+    DARK.swap(dark, std::sync::atomic::Ordering::Relaxed) != dark
+}
+
+pub fn dark() -> bool {
+    DARK.load(std::sync::atomic::Ordering::Relaxed)
+}
 const DERIVE_COLOR: &str = l0_kit!("_derive_color.octoscript");
 const DERIVE: &str = l0_kit!("_derive.octoscript");
 const KIT: &str = l0_kit!("_kit.octoscript");
@@ -119,7 +134,7 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
     if octoscript_ui_l0::kit_pack::contains(root) {
         return Err("native kit components are not offered on a glance tile".into());
     }
-    let mood = octoscript_ui_l0::card_theme(source).unwrap_or_else(|| "dark".into());
+    let mood = octoscript_ui_l0::card_theme(source).unwrap_or_else(|| if dark() { "dark" } else { "light" }.into());
     let delta = MOODS.iter().find(|(name, _)| *name == mood).map(|(_, d)| *d).ok_or_else(|| format!("theme {mood:?} is not offered on a glance tile"))?;
     for (axis, value) in octoscript_ui_l0::card_theme_axes(source) {
         if !matches!(value.as_str(), "neutral" | "regular" | "none" | "soft" | "sans") {
@@ -337,6 +352,8 @@ pub struct L0Session {
     chat_generation: u64,
     /// The card reads a `sys.chat` (worked out once: every event asks).
     reads_chat: bool,
+    /// The shell's mode the card was last lowered in.
+    dark: bool,
 }
 
 /// What a tap did to an [`L0Session`].
@@ -370,6 +387,7 @@ impl L0Session {
             store: Default::default(),
             chat_generation: crate::glance_chat::generation(),
             reads_chat: crate::glance_chat::reads_chat(&l0.source),
+            dark: dark(),
         }
     }
 
@@ -382,7 +400,14 @@ impl L0Session {
     /// The card as it stands now, lowered for a Splash.
     pub fn body(&mut self) -> Result<String, String> {
         self.chat_generation = crate::glance_chat::generation();
+        self.dark = dark();
         lower_with_state(&self.source, &self.data_now(), &self.store)
+    }
+
+    /// The shell changed mode since the card was last lowered: lower it
+    /// again in the new palette.
+    pub fn mode_moved(&self) -> bool {
+        self.dark != dark()
     }
 
     /// A conversation the card reads changed since it was last lowered (a
@@ -397,7 +422,7 @@ impl L0Session {
     /// share ([`LiveCards`]). The new body when the card changed; `who`
     /// heads the log lines (`glance sheet: os.mail/ana-contract`).
     pub fn run(&mut self, taps: Vec<Tap>, who: &str) -> Option<String> {
-        let mut relower = self.chat_moved();
+        let mut relower = self.chat_moved() || self.mode_moved();
         for tap in taps {
             match self.tap(&tap.target, tap.typed.as_deref()) {
                 Ok(outcome) => {
@@ -498,7 +523,14 @@ impl LiveCards {
             self.cards.remove(tile);
             return card.body.clone();
         };
-        if let Some(live) = self.cards.get(tile).filter(|live| std::sync::Arc::ptr_eq(&live.published, l0)) {
+        if let Some(live) = self.cards.get_mut(tile).filter(|live| std::sync::Arc::ptr_eq(&live.published, l0)) {
+            // The shell changed mode: the card takes the new palette.
+            if live.session.mode_moved() {
+                match live.session.body() {
+                    Ok(body) => live.body = body.into(),
+                    Err(e) => log!("{who}: {} does not lower in the new mode: {e}", live.key),
+                }
+            }
             return live.body.clone();
         }
         let mut session = L0Session::new(&card.app, l0);
@@ -520,7 +552,7 @@ impl LiveCards {
         let mut changed = false;
         for (tile, live) in &mut self.cards {
             let taps = tiles.heap_key(cx, tile).map(take_taps).unwrap_or_default();
-            if taps.is_empty() && !live.session.chat_moved() {
+            if taps.is_empty() && !live.session.chat_moved() && !live.session.mode_moved() {
                 continue;
             }
             if let Some(body) = live.session.run(taps, &format!("{who}: {}", live.key)) {

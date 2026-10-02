@@ -762,6 +762,16 @@ pub struct DesktopShelf {
     #[rust]
     hover_time: f64,
 }
+thread_local! {
+    static SHELF_BOUNDS: std::cell::Cell<Rect> = std::cell::Cell::new(Rect::default());
+}
+
+/// Where the shelf (the dock or taskbar) was last drawn; empty when it is
+/// not: the glance panel's column stops above it.
+pub fn shelf_bounds() -> Rect {
+    SHELF_BOUNDS.with(|b| b.get())
+}
+
 impl DesktopShelf {
     pub fn hit(&self, p: Vec2d) -> Option<ShelfHit> {
         self.hits
@@ -1084,6 +1094,7 @@ impl Widget for DesktopShelf {
         let screen = cx.turtle().rect();
         self.hits.clear();
         self.bounds = Rect::default();
+        SHELF_BOUNDS.with(|b| b.set(Rect::default()));
         if let Some(state) = scope.data.get_mut::<WmState>() {
             self.active_window = state.layout.focused_client()
                 .filter(|c| !state.layout.desktop.minimized(*c));
@@ -1146,6 +1157,7 @@ impl Widget for DesktopShelf {
                 let r = shelf_geometry(screen, t, apps.len());
                 let (x, y, w, h) = (r.pos.x, r.pos.y, r.size.x, r.size.y);
                 self.bounds = r;
+                SHELF_BOUNDS.with(|b| b.set(r));
                 let glass_shelf = t.share(|s| s.glass_shelf);
                 // One pill's worth of glass between the two pills.
                 let (frosted, octosense) = shelf_glass_split(t, self.d.material().is_glass());

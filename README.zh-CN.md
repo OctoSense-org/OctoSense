@@ -257,16 +257,16 @@ sequenceDiagram
 
 拥有 `glance` 权限的应用通过 `glance.publish` 以自己的身份发布卡片，也可以使用 `glance.withdraw` 和 `glance.list`。Shell 从调用方取得发布者，从不读取参数中的发布者。卡片可以是由 `data` 填充的 L0 `source`（只用于呈现，由 Octoscript 的 L0 检查器检查），也可以是 Splash `script`。
 
-每个应用每分钟最多发布 6 次、保留 4 张卡片。Shell 总共保留 32 张，按优先级、再按时间显示 6 张。详见 [`glance.rs`](crates/shell/src/glance.rs)。
+每个应用每分钟最多发布 6 次、保留 4 张卡片。Shell 总共保留 32 张，按优先级、再按时间排序：手机的 glance 页面显示前 6 张，桌面的面板列出全部卡片。详见 [`glance.rs`](crates/shell/src/glance.rs)。
 
 | 界面 | 行为 |
 | --- | --- |
-| 桌面面板 | 新卡片会打开 glance 面板，除非已有卡片窗口打开。顶栏铃铛或 F9 也可以打开面板。 |
-| 桌面通知 | 以 `notify` 发布的卡片还会弹出 toast。点击 toast 会在独立窗口中打开卡片。面板打开时，toast 叠放在面板左侧。 |
-| 桌面关闭操作 | 每张卡片都有移除按钮：`glance::dismiss` 会移除卡片，效果如同应用撤回了它。面板本身另有关闭按钮。 |
+| 桌面面板 | 新卡片会打开 glance 面板，除非已有卡片窗口打开。顶栏铃铛或 F9 也可以打开面板。点击卡片上自身控件以外的地方，会在卡片窗口中打开它。鼠标悬停的卡片会显示打开和移除操作，刚到的卡片旁会有几秒钟的强调色标记。放不下的那张卡片会在列表末尾露出一部分。用 F9（或在面板里点击）打开时，面板接管键盘：方向键在卡片之间移动焦点环，Return 打开卡片，Delete 移除卡片，Esc 关闭面板。 |
+| 桌面通知 | 以 `notify` 发布的卡片还会弹出 toast，显示应用的图标和名称、卡片标题及其 `summary`（没有时用卡片自带的摘要）。点击 toast 会在独立窗口中打开卡片。同时最多显示三条 toast，其余的由下方的“+N more”标签展开。面板打开时，toast 叠放在面板左侧。 |
+| 桌面关闭操作 | 鼠标悬停的卡片会显示移除按钮：`glance::dismiss` 会移除卡片，效果如同应用撤回了它。“Clear all”会移除所有卡片。移除的卡片可以在报告这次移除的 toast 上撤销（Undo），面板接管键盘时也可以按 ⌘Z 撤销。面板本身另有关闭按钮。 |
 | 手机 | `notify` 在通知栏发出通知，点击后打开 glance 页面。 |
 
-桌面界面实现在 [`glance_panel.rs`](crates/shell/src/glance_panel.rs)、[`glance_sheet.rs`](crates/shell/src/glance_sheet.rs) 和 [`notifications.rs`](crates/shell/src/shell/notifications.rs) 中（`keep_clear_of`，[#273](https://github.com/OctoSense-org/OctoSense/pull/273)）。
+未声明主题的卡片使用 Shell 的浅色或深色配色。toast 和面板会滑入；设置 `OCTOSENSE_REDUCE_MOTION=1` 则保持静止。桌面界面实现在 [`glance_panel.rs`](crates/shell/src/glance_panel.rs)、[`glance_sheet.rs`](crates/shell/src/glance_sheet.rs) 和 [`notifications.rs`](crates/shell/src/shell/notifications.rs) 中（`keep_clear_of`，[#273](https://github.com/OctoSense-org/OctoSense/pull/273)）。
 
 #### 交互式卡片
 
