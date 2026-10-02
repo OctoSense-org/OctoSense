@@ -8,6 +8,7 @@ use octosense_appstore::services::{dispatch, register_host_service, take_replies
 use serde_json::json;
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Condvar;
 use std::time::{Duration, Instant};
 
 /// One `octos` service is registered at a time (the registry is global).
@@ -538,4 +539,90 @@ fn should_bind_a_contained_peer_to_the_apps_account_when_it_keeps_accounts() {
     assert_eq!(mail.accounts.lock().unwrap().last().cloned().flatten().as_deref(), Some("acct-2"));
     set_account_of(None);
     reset_for_tests();
+}
+
+/// A factory whose launch waits (half a second at most) for a second launch
+/// to begin, so two callers that both found no live peer are inside
+/// `launch` together: the interleaving the person's first Allow produces.
+struct Racing {
+    peers: Arc<Peers>,
+    inside: Mutex<usize>,
+    arrived: Condvar,
+}
+
+impl PeerFactory for Racing {
+    fn launch(&self, peer_id: &str, app_id: &str, services: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>> {
+        let mut inside = self.inside.lock().unwrap();
+        *inside += 1;
+        self.arrived.notify_all();
+        let deadline = Instant::now() + Duration::from_millis(500);
+        while *inside < 2 {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            inside = self.arrived.wait_timeout(inside, left).unwrap().0;
+        }
+        drop(inside);
+        self.peers.launch(peer_id, app_id, services)
+    }
+}
+
+/// B2, the race on the first Allow: Allow starts the "Ask <app>" panel's
+/// conversation and the shell's preparation at once. They must share ONE
+/// broker, launched and bound once. Two brokers each create the app's
+/// peer, and on a fresh home the kernel refuses the second one's
+/// `peer/prepare` (`peer_host_token_mismatch`): the preparation then reads
+/// Failed although the panel works.
+#[test]
+fn the_panel_and_the_preparation_racing_on_the_first_allow_share_one_peer() {
+    let _g = serial();
+    let peers = Peers::new(Turn::Reply(json!({})));
+    set_factory(Arc::new(Racing { peers: peers.clone(), inside: Mutex::new(0), arrived: Condvar::new() }));
+    let start = Arc::new(std::sync::Barrier::new(2));
+    let go = start.clone();
+    let preparation = std::thread::spawn(move || {
+        go.wait();
+        prepare("os.news")
+    });
+    let panel = std::thread::spawn(move || {
+        start.wait();
+        conversation("os.news", "shell-ask").map(|c| c.is_open())
+    });
+    assert_eq!(preparation.join().unwrap(), Ok(()), "the preparation");
+    assert_eq!(panel.join().unwrap(), Ok(true), "the panel's conversation");
+    assert_eq!(peers.ids(), vec!["card.os.news".to_string()], "one broker for the app, however many callers race");
+    let news = peers.service("card.os.news");
+    assert_eq!(news.accounts.lock().unwrap().as_slice(), [Some(ACCOUNT.to_string())], "bound to its account once: one peer/prepare");
+    assert_eq!(news.prepared.load(Ordering::SeqCst), 1);
+    assert_eq!(news.conversations.load(Ordering::SeqCst), 1, "the panel's conversation is on the prepared peer");
+}
+
+/// A launch that fails (no peer on this device) or panics frees the app:
+/// the next caller launches instead of waiting for it forever.
+#[test]
+fn a_failed_or_panicking_launch_lets_the_next_caller_launch() {
+    struct Panics;
+    impl PeerFactory for Panics {
+        fn launch(&self, _: &str, _: &str, _: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>> {
+            panic!("the factory broke");
+        }
+    }
+    /// `prepare(APP)` on another thread; its result, or a hang reported.
+    fn prepare_within_seconds() -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(std::panic::catch_unwind(|| prepare(APP)).unwrap_or_else(|_| Err("panicked".into())));
+        });
+        rx.recv_timeout(Duration::from_secs(5)).expect("prepare waited for a launch that had ended")
+    }
+    let _g = serial();
+    set_factory(Arc::new(Peers { give: false, turn: Turn::Reply(json!({})), close_after_call: false, launched: Mutex::default(), granted: Mutex::default() }));
+    assert_eq!(prepare_within_seconds(), Err(UNAVAILABLE.to_string()));
+    set_factory(Arc::new(Panics));
+    assert_eq!(prepare_within_seconds(), Err("panicked".to_string()));
+    let peers = Peers::new(Turn::Reply(json!({})));
+    set_factory(peers.clone());
+    assert_eq!(prepare_within_seconds(), Ok(()));
+    assert_eq!(peers.ids(), vec![format!("card.{APP}")]);
 }
