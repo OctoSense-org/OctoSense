@@ -2,7 +2,7 @@
 
 English | [简体中文](ai-services.zh-CN.md)
 
-How the assistant is wired into OctoSense: the octos kernel, provider configuration, app peers and tools. Use the [Cargo.toml](../Cargo.toml) dependency pins when following external code. For calls and the execution model, read the [architecture walkthrough](architecture-walkthrough.md). Dated runs below are historical validation records.
+How the assistant is wired into OctoSense: the octos kernel, provider configuration, app peers and tools. Use the [Cargo.toml](../Cargo.toml) dependency pins when following external code. For calls and the execution model, read the [architecture walkthrough](architecture-walkthrough.md). Status descriptions refer to this checkout. Dated runs below are historical validation records.
 
 This page is about the assistant *inside* OctoSense. Building an app needs no AI service and no particular coding agent: the app harness, [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow), works with any agent or none. Its [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md) page is the app developer's short version of this one.
 
@@ -35,7 +35,7 @@ For the whole system around it (processes per platform, agents, protocols, tools
 | The system agent's tool set | Works today, enforced: octos's shell is never offered (the `_main` profile's `tool_policy`, [#117](https://github.com/OctoSense-org/OctoSense/pull/117)), and every kernel start sets the system session's exact kernel tool list (`session/tool_list/set`, octos#2648). Command execution is the Setup → Assistant → Command execution switch ([#132](https://github.com/OctoSense-org/OctoSense/pull/132)): `terminal.run`, each command approved live, in both module and process hosting where Terminal is available | [architecture § Tools and grants](architecture.md#4-tools-and-grants) |
 | Native apps declared once (`native-apps.json`), hosting per target; the Terminal a system app in its own process on the desktop | Works today ([#113](https://github.com/OctoSense-org/OctoSense/pull/113)) | [architecture § Native apps](architecture.md#native-apps-in-process-or-their-own-process) |
 | An app's own agent: declarations versus execution | `tools.json`, generic-tool grants, peers and host-service executors are implemented for News/Mail/Calendar/Photos/Maps/Camera/YouTube. `AGENT.md` prompt loading, bundle skills/model selection and automatic triggers remain gaps | [below](#planned-event-driven-app-agents-adr-0002) |
-| Native apps in their own process reaching their agent (the peer link, ADR 0004 §5) | Built, no user yet. Makepad's client side ([OctoSense-org/makepad#54](https://github.com/OctoSense-org/makepad/pull/54), `makepad_ai_services::peer`) and the shell side ([#130](https://github.com/OctoSense-org/OctoSense/pull/130), `crates/shell/src/peer_link/`) are merged; no process app is granted an agent yet (the Terminal, the only process app, declares none) | [architecture § An app and its own agent](architecture.md#an-app-and-its-own-agent) |
+| Native apps in their own process reaching their agent (the peer link, ADR 0004 §5) | Makepad’s client and the shell’s `crates/shell/src/peer_link/` are implemented. No process app currently requests its own agent; Terminal declares tools but does not request a peer. | [architecture § An app and its own agent](architecture.md#an-app-and-its-own-agent) |
 
 ## Architecture
 
@@ -70,7 +70,7 @@ flowchart TB
   rinx -- "scoped OctosAppService" --> broker
   appcard -- "its own connection" --> kernel
   scripts -- "host.request" --> runner
-  runner -- "octos.* service<br/>peer card.&lt;app id&gt;" --> broker
+  runner -- "octos.* service<br/>broker identity card.&lt;app id&gt;" --> broker
   rinx -- "typed tools" --> bus
   bus -- "confirm: host calls" --> router
   kernel -- "peer/tool/call" --> relay
@@ -137,7 +137,11 @@ The policy is selected by `contained_gate_from` in [`crates/ai-host/src/lib.rs`]
 
 ### The system agent
 
-The system agent owns the app peers and uses `peer_send_input` to delegate, then `peer_gather` to obtain results. `agents.list` discovers available app agents; `agents.ask` requests first-use consent/preparation, not the delegated task itself. The person reaches the system chat through F8 or the shell's Assistant entry (`crates/shell/src/system_chat/`), and can talk directly to an app through the desktop “Ask <app>” panel or a card's `sys.chat`. Phone touch navigation has no Ask-app panel entry yet. The system agent has a restricted kernel roster (`system_tools.rs`) and selected shell tools such as opt-in `terminal.run`; it does not inherit every app tool and cannot approve for the person. Talk to Octos is a separate client-access option. Automatic trigger orchestration, learning overlays and richer glance ranking remain planned; cards currently sort by priority and recency.
+The system agent owns the app peers and uses `peer_send_input` to delegate, then `peer_gather` to obtain results. `agents.list` discovers available app agents; `agents.ask` requests first-use consent/preparation, not the delegated task itself.
+
+The person reaches the system chat through F8 or the shell's Assistant entry (`crates/shell/src/system_chat/`), and can talk directly to an app through the desktop “Ask &lt;app&gt;” panel or a card's `sys.chat`. Phone touch navigation has no Ask-app panel entry yet.
+
+The system agent has a restricted kernel roster (`system_tools.rs`) and selected shell tools such as opt-in `terminal.run`; it does not inherit every app tool and cannot approve for the person. Talk to Octos is a separate client-access option. Automatic trigger orchestration, learning overlays and richer glance ranking remain planned; cards currently sort by priority and recency.
 
 ### Other assistants in the shell
 
@@ -177,7 +181,9 @@ A native module is trusted Rust linked into the shell. **Rinx** ([hagency-org/Ri
 
 4. `availability()` reports `Unavailable` (no kernel, not granted, signed out), `Idle`, `Ready` or `Failed`; the app's ordinary UI keeps working in every state. `settings_entry()` is `Host`: the app offers no provider form of its own and points the person to AI providers.
 
-**Tools.** Rinx defines its assistant tools once (`status`, `list_rooms`, `open_room`, `draft_message`, `read_room`, `open_mini_app`, `send_message`; `src/assistant/mod.rs`). Today the shell reaches them through Rinx's `ServiceExecutor` on the AI services bus. `read_room` asks for a per-room grant on Rinx's read sheet; `send_message` is Destructive and self-confirmed: Rinx's send sheet is the one confirmation. Registering these tools with Rinx's octos peer, so that the peer's own model can call them, needs Rinx to declare them: the kernel's host-registered tools ([octos#2567](https://github.com/octos-org/octos/pull/2567)) are merged and the shell registers and relays each peer's tools ([#145](https://github.com/OctoSense-org/OctoSense/pull/145)), but Rinx declares no `tools.json` yet and has not handed its send sheet to the shell (`OctosAppService::set_confirm_sheet`).
+**Tools.** Rinx defines its UI assistant tools in `src/assistant/mod.rs` and exposes them through `ServiceExecutor` on the AI services bus. Reads and sends still use Rinx’s own confirmation sheets.
+
+The kernel supports host-registered tools, and the shell implements their relay. Rinx has not yet declared those peer tools or registered its send sheet with `OctosAppService::set_confirm_sheet`. Tools available on the AI bus are therefore not automatically available to Rinx’s peer.
 
 **Rinx mini apps.** Rinx hosts reviewed OctoScript mini apps and serves them the same four `octos.*` services, each running instance in its own request context of Rinx's peer ([example](https://github.com/hagency-org/Rinx/tree/main/examples/miniapps/matrix-octos-script)). That is Rinx's own mini-app host, for bundles a person imports into Rinx after review; it is not the App Hub install path.
 
@@ -286,7 +292,7 @@ OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test -p octosense-app-peers --f
 
 ### Phone
 
-- **Android (Home):** the Home APK bundles the kernel as `liboctos.so`; `cd phone && python3 ../rom/scripts/build-home.py` builds the APK pair (see [phone/README.md](../phone/README.md)), using [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) at the pinned octos revision. The kernel starts on first use.
+- **Android (Home):** the Home APK bundles the kernel as `liboctos.so`. The configured `rom/scripts/build-home.py` pipeline builds the APK pair (see [phone/README.md](../phone/README.md)), using [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) at the locked octos revision. The kernel starts on first use.
 - Configure providers in **OctoSense Settings → Accounts → AI providers**, or move them from a desktop: **Show QR for phone** on the desktop, then import on the phone by camera, image or pasted code, with the PIN.
 - **OpenHarmony** runs the kernel in process. **iOS** has no kernel: providers are saved, no app gets an assistant.
 

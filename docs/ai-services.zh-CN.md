@@ -2,7 +2,7 @@
 
 [English](ai-services.md) | 简体中文
 
-本文介绍 OctoSense 的 octos 内核、提供方配置、应用 peer 和工具。阅读外部源码时使用 [Cargo.toml](../Cargo.toml) 的依赖锁定版本。调用链与执行模型见[架构导读](architecture-walkthrough.zh-CN.md)。下方带日期的运行信息是历史验证记录。
+本文介绍 OctoSense 的 octos 内核、提供方配置、应用 peer 和工具。阅读外部源码时使用 [Cargo.toml](../Cargo.toml) 的依赖锁定版本。调用链与执行模型见[架构导读](architecture-walkthrough.zh-CN.md)。状态说明以当前检出为准。下方带日期的运行信息是历史验证记录。
 
 本文讨论的是 OctoSense *内部*的助手。开发应用不需要任何 AI 服务，也不需要特定的编程 Agent：应用开发工具集 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 适用于任何 Agent，也可以不用 Agent。它的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md) 页面是本文面向应用开发者的简短版本。
 
@@ -70,7 +70,7 @@ flowchart TB
   rinx -- "受限的 OctosAppService" --> broker
   appcard -- "自己的连接" --> kernel
   scripts -- "host.request" --> runner
-  runner -- "octos.* 服务<br/>peer card.&lt;应用 id&gt;" --> broker
+  runner -- "octos.* 服务<br/>broker 身份 card.&lt;应用 id&gt;" --> broker
   rinx -- "类型化工具" --> bus
   bus -- "confirm: host 调用" --> router
   kernel -- "peer/tool/call" --> relay
@@ -137,7 +137,11 @@ flowchart TB
 
 ### 系统 Agent
 
-系统 Agent 拥有应用 peer，通过 `peer_send_input` 委派任务，再用 `peer_gather` 获取结果。`agents.list` 发现应用 Agent；`agents.ask` 请求首次同意并准备 peer，本身不发送委派任务。用户可用 F8 或 Shell 的 Assistant 入口打开系统聊天（`crates/shell/src/system_chat/`），也可通过桌面 “Ask <app>” 面板或卡片 `sys.chat` 直接与应用 Agent 对话；手机尚无打开 Ask-app 面板的触控入口。系统 Agent 使用受限内核工具列表和审核过的 Shell 工具（例如需开启的 `terminal.run`），不会继承所有应用工具，也不能替用户审批。Talk to Octos 是另一种客户端入口。自动触发调度、学习 overlay 和更丰富的 glance 排序仍在规划中；卡片目前按优先级和时间排序。
+系统 Agent 拥有应用 peer，通过 `peer_send_input` 委派任务，再用 `peer_gather` 获取结果。`agents.list` 发现应用 Agent；`agents.ask` 请求首次同意并准备 peer，本身不发送委派任务。
+
+用户可用 F8 或 Shell 的 Assistant 入口打开系统聊天（`crates/shell/src/system_chat/`），也可通过桌面 “Ask &lt;app&gt;” 面板或卡片 `sys.chat` 直接与应用 Agent 对话；手机尚无打开 Ask-app 面板的触控入口。
+
+系统 Agent 使用受限内核工具列表和审核过的 Shell 工具（例如需开启的 `terminal.run`），不会继承所有应用工具，也不能替用户审批。Talk to Octos 是另一种客户端入口。自动触发调度、学习 overlay 和更丰富的 glance 排序仍在规划中；卡片目前按优先级和时间排序。
 
 ### Shell 中的其他助手
 
