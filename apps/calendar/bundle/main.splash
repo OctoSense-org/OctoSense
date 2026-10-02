@@ -1,0 +1,15 @@
+// Calendar: its assistant keeps the events (the `calendar` host service) and
+// puts event and agenda cards on the glance screen. This window says how to
+// reach it; listing the events here waits for App Hub's `calendar` capability.
+let ink = #x1c1c1e
+let secondary = #x8e8e93
+
+SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
+    View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 12 padding: 32
+        Label{text: "Calendar" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 32}}
+        Label{width: Fill align: Align{x: 0.5} text: "Calendar's assistant keeps your events. Ask it to add one, to show an event on your glance screen, or to put your agenda there."
+            draw_text.color: secondary draw_text.text_style.font_size: 13}
+        Label{width: Fill align: Align{x: 0.5} text: "Ask Calendar from the bar while this window is in front, or ask the assistant (F8) to ask Calendar."
+            draw_text.color: secondary draw_text.text_style.font_size: 12}
+    }
+}

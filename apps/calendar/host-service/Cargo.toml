@@ -1,0 +1,16 @@
+# octosense-calendar-service — the `calendar` host service: Calendar's events,
+# kept by the host, and the event and agenda cards its agent puts on the
+# glance screen.
+[package]
+name = "octosense-calendar-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }

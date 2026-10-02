@@ -1,0 +1,36 @@
+# ledger calendar.agenda@0.1.0
+# level:   L0
+# profile: ui/l0
+#
+# Calendar's agenda card (`calendar.agenda`): the next three events, as
+# `os.calendar`. `day` is a `sys.dataset` record the service fills from the
+# events (an event's title, and its time and place); the card states nothing
+# else.
+
+source day sys.dataset(fields: [title, as_of, pick1_title, pick1_body, pick2_title, pick2_body, pick3_title, pick3_body, summary])
+
+copy app { class: vocabulary, en: "Calendar" }
+
+view root Surface(pad: .tight) {
+  Col(gap: 8) {
+    Row(gap: 8, align: .center) {
+      Icon(name: .calendar, size: .row)
+      TextCaption(text: copy.app, width: .fill)
+      TextCaption(value: day.as_of)
+    }
+    TextTitle(text: day.title, width: .fill)
+    Row(gap: 8) {
+      TextRow(text: day.pick1_title, width: .fill)
+      TextCaption(text: day.pick1_body)
+    }
+    Row(gap: 8) {
+      TextRow(text: day.pick2_title, width: .fill)
+      TextCaption(text: day.pick2_body)
+    }
+    Row(gap: 8) {
+      TextRow(text: day.pick3_title, width: .fill)
+      TextCaption(text: day.pick3_body)
+    }
+    TextCaption(value: day.summary)
+  }
+}

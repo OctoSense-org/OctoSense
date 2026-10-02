@@ -50,6 +50,7 @@ octoscript-ui-l0 = { workspace = true }
 octosense-l0-chat = { workspace = true }
 octosense-ai-host = { workspace = true }
 octosense-mail-service = { workspace = true, optional = true }
+octosense-calendar-service = { workspace = true, optional = true }
 octosense-news-service = { workspace = true, optional = true }
 # App Hub's host-service registry: the `glance` service registers into it.
 octosense-appstore = { workspace = true, optional = true }
@@ -93,6 +94,7 @@ octosense-app-hub = { workspace = true }
 octosense-app-contract = { workspace = true }
 octosense-mail-service = { workspace = true }
 octosense-news-service = { workspace = true }
+octosense-calendar-service = { workspace = true }
 octosense-ai-host = { workspace = true, features = ["llm"] }
 
 [features]
@@ -113,7 +115,7 @@ app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 app-terminal = ["dep:makepad-terminal"]
 app-appcard = ["dep:octosense-appcard", "octos-core"]
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-news-service", "octosense-ai-host/llm"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-news-service", "dep:octosense-calendar-service", "octosense-ai-host/llm"]
 # END native-apps: features
 # The aichat module, seated in the pane in-process.
 app-aichat = ["dep:makepad-aichat"]

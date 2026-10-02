@@ -1,0 +1,31 @@
+# ledger calendar.event@0.2.0
+# level:   L0
+# profile: ui/l0
+#
+# Calendar's event card (`calendar.notify`): one event, as `os.calendar`.
+# `ev` is a `sys.dataset` record the service fills from the event (its day
+# and time on two tiles, its place, its notes); the card states nothing else.
+
+source ev sys.dataset(fields: [title, as_of, metric1_label, metric1_value, metric2_label, metric2_value, subtitle, summary])
+
+copy app { class: vocabulary, en: "Calendar" }
+
+view root Surface(pad: .tight) {
+  Col(gap: 10) {
+    Row(gap: 8, align: .center) {
+      Icon(name: .calendar, size: .row)
+      TextCaption(text: copy.app, width: .fill)
+      TextCaption(value: ev.as_of)
+    }
+    TextTitle(text: ev.title, width: .fill)
+    Row(gap: 8) {
+      Tile(label: ev.metric1_label, value: ev.metric1_value)
+      Tile(label: ev.metric2_label, value: ev.metric2_value)
+    }
+    Row(gap: 8, align: .center) {
+      Icon(name: .location, size: .row)
+      TextRow(text: ev.subtitle, width: .fill)
+    }
+    TextBody(text: ev.summary, width: .fill)
+  }
+}

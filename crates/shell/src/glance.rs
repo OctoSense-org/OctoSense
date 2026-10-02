@@ -652,6 +652,23 @@ mod tests {
 
     /// Mail's `mail.notify` card is a valid L0 card the store admits as
     /// Mail's, and a Mail without the `glance` grant cannot publish it.
+    /// Calendar's event and agenda cards are valid L0 cards the store
+    /// admits as Calendar's.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn calendars_cards_are_admitted_as_its_own() {
+        use octosense_calendar_service as cal;
+        let mut store = GlanceStore::default();
+        let event = cal::event_card_args("Dentist", "Fri 2 Oct", "15:00\u{2013}16:00", "Main St", "Bring the form", "ev-1", 70);
+        assert!(store.publish(&Caller::granted("os.calendar"), &event, 1_000).is_ok());
+        let now = cal::parse_time("2026-10-01T09:00").unwrap();
+        let events = vec![cal::Event { id: "a".into(), title: "Standup".into(), start: "2026-10-02T09:30".into(), end: None, location: String::new(), notes: String::new() }];
+        let agenda = cal::agenda_card_args(&events, 7, now);
+        assert!(store.publish(&Caller::granted("os.calendar"), &agenda, 1_000).is_ok());
+        let shown = store.shown(1_000, SHOWN_CARDS);
+        assert!(shown.iter().all(|c| c.app == "os.calendar" && c.open_app == "calendar"));
+    }
+
     #[cfg(any(feature = "app-hub", native_mobile))]
     #[test]
     fn mails_notice_card_is_admitted_as_mails_own() {

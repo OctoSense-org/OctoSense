@@ -69,6 +69,14 @@ impl App {
                 w.set_material(material, palette);
             }
         }
+        // The approval sheets and the Approvals page, after the chat panes
+        // in the tree: lifted with the same material, they stay over them.
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_approvals)).borrow_mut::<crate::approvals::view::ShellApprovals>() {
+            w.set_material(material, palette);
+        }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_approvals_settings)).borrow_mut::<crate::approvals::settings_page::ShellApprovalsSettings>() {
+            w.set_material(material, palette);
+        }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_ai_pane)).borrow_mut::<ShellAiPane>() {
             w.set_material(material);
         }
