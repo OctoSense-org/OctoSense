@@ -35,14 +35,6 @@
     "policy": "new"
   },
   {
-    "id": "mixer",
-    "label": "Mixer",
-    "source": "makepad",
-    "package": "makepad-mixer",
-    "bin": "makepad-mixer",
-    "policy": "focus"
-  },
-  {
     "id": "task",
     "label": "Task Manager",
     "source": "makepad",
@@ -107,59 +99,11 @@
     "policy": "focus"
   },
   {
-    "id": "fabric",
-    "label": "Fabric",
-    "source": "makepad",
-    "package": "makepad-fabric",
-    "bin": "makepad-fabric",
-    "policy": "focus"
-  },
-  {
-    "id": "score",
-    "label": "Score",
-    "source": "makepad",
-    "package": "makepad-app-score",
-    "bin": "makepad-app-score",
-    "policy": "focus"
-  },
-  {
-    "id": "video",
-    "label": "Video Player",
-    "source": "makepad",
-    "package": "makepad-video",
-    "bin": "video",
-    "policy": "new"
-  },
-  {
     "id": "route",
     "label": "Route",
     "source": "makepad",
     "package": "makepad-app-route",
     "bin": "route",
-    "policy": "focus"
-  },
-  {
-    "id": "vj",
-    "label": "VJ",
-    "source": "makepad",
-    "package": "makepad-vj",
-    "bin": "makepad-vj",
-    "policy": "focus"
-  },
-  {
-    "id": "fab",
-    "label": "Fab",
-    "source": "makepad",
-    "package": "makepad-fab",
-    "bin": "makepad-fab",
-    "policy": "focus"
-  },
-  {
-    "id": "studio",
-    "label": "Director",
-    "source": "makepad",
-    "package": "makepad-director",
-    "bin": "director",
     "policy": "focus"
   },
   {

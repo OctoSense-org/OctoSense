@@ -29,7 +29,7 @@
 | 路径 | 内容 |
 | --- | --- |
 | `src/main.rs` | 入口（包名 `octosense`）：在 Shell 的 `App` 上调用 `octosense_main!()`。Shell 本身（平铺、launcher、dock、顶栏、托管、应用注册表、`shell/`、`octosense/`）在 [`../crates/shell/src`](../crates/shell/src)。 |
-| `config/apps.json` | 默认的开发者程序目录。`apps.makepad.json` 是供 `--apps` 使用的相同副本；`apps.overlay.json` 保存重新生成时应用的调整。 |
+| `config/apps.json` | 默认的开发者程序目录：OctoSense 挑选的 Makepad 应用（`apps.overlay.json` 中的 `pick`），每个也是 [`../native-apps.json`](../native-apps.json) 中的原生应用。`apps.makepad.json` 供 `--apps` 使用，包含上游注册表策展的全部应用；`apps.overlay.json` 保存重新生成两者时应用的调整。 |
 | `system-apps.json` | 本构建打包哪些系统应用，以及从哪里打包（`../apps`）。 |
 | `scripts/` | `package.py`（发布包，见[发布构建](#发布构建)）、`upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh`、`ai_providers_remote.sh` 和 `glance_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用、AI 提供商与一览屏），以及 `provision-appcard-llm.sh`（Android）。 |
 | `packaging/` | 发布包的 cargo-packager 配置（`release.json`）、应用图标（`icons/`、`make_icons.py`）以及 macOS `Info.plist` 补充项和 entitlements。 |
@@ -275,6 +275,8 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 python3 scripts/upstream.py catalog          # report drift
 python3 scripts/upstream.py catalog --apply  # rewrite config/apps.json and apps.makepad.json
 ```
+
+只有 overlay 的 `pick` 中列出的上游应用会进入 `config/apps.json`：上游之后新增的应用在被挑选之前不会出现，上游不再策展的挑选项会被报告。`--apps config/apps.makepad.json` 会以全部应用启动桌面。
 
 ### AppCard 助手
 

@@ -204,11 +204,10 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
 /// iOS App Library: every launchable app in a category card. Categories are
 /// fixed by app id (an app the table does not know lands in "Other"), so
 /// every launch target is reachable from exactly one card.
-pub const LIBRARY_GROUPS: [(&str, &[&str]); 5] = [
-    ("Utilities", &["clock", "weather", "appcard", "news", "terminal", "files", "task"]),
-    ("Creativity", &["photos", "mixer", "score", "vj", "fab", "fabric"]),
-    ("Productivity", &["sheets", "browser", "route", "maps", "studio"]),
-    ("Media", &["video", "image", "pdf"]),
+pub const LIBRARY_GROUPS: [(&str, &[&str]); 4] = [
+    ("Utilities", &["clock", "weather", "calculator", "appcard", "news", "terminal", "files", "task"]),
+    ("Productivity", &["notes", "reminders", "sheets", "browser", "route", "maps", "finance", "aichat"]),
+    ("Media", &["photos", "image", "pdf"]),
     ("Other", &[]),
 ];
 

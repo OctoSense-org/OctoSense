@@ -42,7 +42,7 @@
 | 文件 | 内容 |
 |---|---|
 | `config/apps.json`(默认) | Reference + Makepad 全家桶(20+ 个应用),桌面默认就读它 |
-| `config/apps.makepad.json` | 与 `config/apps.json` 相同的副本,供 `--apps` 显式指定 |
+| `config/apps.makepad.json` | 上游注册表策展的全部 Makepad 应用,供 `--apps` 显式指定(默认的 `config/apps.json` 只含 `apps.overlay.json` 中 `pick` 挑选的应用) |
 
 默认目录已经包含所有 Makepad 应用,你**不需要手写**,直接 `cargo run --release` 即可。
 也可以显式指定副本:

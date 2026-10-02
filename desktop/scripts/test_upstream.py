@@ -704,6 +704,39 @@ class MergeCatalog(unittest.TestCase):
         )
         self.assertEqual([row["id"] for row in merged], ["reference", "browser", "pdf"])
 
+    def test_only_the_picked_upstream_apps_ship_and_the_full_catalog_keeps_the_rest(self):
+        """Upstream's apps are cherry-picked: one upstream curates later
+        stays out of the shipped catalog until it is picked, and the full
+        catalog (`--apps config/apps.makepad.json`) still has every one,
+        adapted the same way."""
+        upstream_rows = [
+            {"id": "browser", "label": "Browser", "source": "makepad",
+             "package": "makepad-browser", "bin": "browser", "policy": "focus"},
+            {"id": "studio", "label": "Studio", "source": "makepad",
+             "package": "makepad-studio", "bin": "studio", "policy": "focus"},
+            {"id": "scope", "label": "Scope", "source": "makepad",
+             "package": "makepad-scope", "bin": "scope", "policy": "focus"},
+        ]
+        overlay = dict(OVERLAY, pick=["browser"])
+        shipped = upstream.merge_catalog(upstream_rows, overlay)
+        self.assertEqual([row["id"] for row in shipped], ["reference", "browser"])
+        full = upstream.merge_catalog(upstream_rows, overlay, picked=False)
+        self.assertEqual([row["id"] for row in full], ["reference", "browser", "studio"])
+        self.assertEqual(next(row for row in full if row["id"] == "studio")["label"], "Director")
+
+
+class PickProblems(unittest.TestCase):
+    def test_a_pick_that_cannot_take_effect_is_named(self):
+        upstream_rows = [{"id": "browser"}, {"id": "scope"}]
+        overlay = {"pick": ["browser", "scope", "gone"], "drop": ["scope"]}
+        problems = upstream.pick_problems(upstream_rows, overlay)
+        self.assertEqual([(p["id"], p["detail"]) for p in problems], [
+            ("scope", "picked and dropped"),
+            ("gone", "picked, but upstream's registry does not curate it"),
+        ])
+        self.assertEqual(upstream.pick_problems(upstream_rows, {}), [], "nothing picked: nothing to name")
+
+
 class CatalogProblems(unittest.TestCase):
     def test_rows_naming_a_crate_the_revision_does_not_build_are_reported(self):
         """Upstream's registry can name a binary its own revision no longer
@@ -765,13 +798,15 @@ edition = "2021"
 
 class ShippedCatalog(unittest.TestCase):
     def test_the_shipped_catalog_matches_the_pinned_revision(self):
-        """The generated rows are the ones in the tree. Drift here means the
-        catalog and the revision disagree about what the launcher can start,
-        which is the duplication this generation exists to remove."""
+        """The generated rows are the ones in the tree, the shipped catalog
+        and the full one. Drift here means a catalog and the revision
+        disagree about what the launcher can start, which is the duplication
+        this generation exists to remove."""
         root = Path(upstream.__file__).resolve().parents[1]
         try:
-            generated, problems = upstream.generated_catalog(root)
+            catalogs, problems = upstream.generated_catalogs(root)
         except upstream.SyncError as error:
             self.skipTest(f"pinned checkout unavailable: {error}")
         self.assertEqual(problems, [])
-        self.assertEqual(json.loads((root / "config/apps.json").read_text()), generated)
+        for name, generated in zip(upstream.CATALOGS, catalogs):
+            self.assertEqual(json.loads((root / name).read_text()), generated, name)

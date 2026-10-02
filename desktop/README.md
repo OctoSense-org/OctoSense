@@ -29,7 +29,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | Path | What it is |
 | --- | --- |
 | `src/main.rs` | The entry point (package `octosense`): `octosense_main!()` over the shell's `App`. The shell (tiling, launcher, dock, bar, hosting, the app registry, `shell/`, `octosense/`) is [`../crates/shell/src`](../crates/shell/src). |
-| `config/apps.json` | The default developer-program catalog. `apps.makepad.json` is an identical copy for `--apps`; `apps.overlay.json` holds the adaptations applied when regenerating them. |
+| `config/apps.json` | The default developer-program catalog: the Makepad apps OctoSense picked (`pick` in `apps.overlay.json`), each also a native app in [`../native-apps.json`](../native-apps.json). `apps.makepad.json`, for `--apps`, has every app upstream's registry curates; `apps.overlay.json` holds the adaptations applied when regenerating both. |
 | `system-apps.json` | Which system apps this build packs, and from where (`../apps`). |
 | `scripts/` | `package.py` (the release packages, [Release builds](#release-builds)), `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.sh` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
 | `packaging/` | The release packages' cargo-packager config (`release.json`), app icon (`icons/`, `make_icons.py`) and macOS `Info.plist` additions and entitlements. |
@@ -275,6 +275,8 @@ The Makepad rows are generated from upstream's app registry at the pinned revisi
 python3 scripts/upstream.py catalog          # report drift
 python3 scripts/upstream.py catalog --apply  # rewrite config/apps.json and apps.makepad.json
 ```
+
+Only the upstream apps named in the overlay's `pick` reach `config/apps.json`: an app upstream curates later stays out until it is picked, and a pick upstream no longer curates is reported. `--apps config/apps.makepad.json` starts the desktop with all of them.
 
 ### The AppCard assistant
 

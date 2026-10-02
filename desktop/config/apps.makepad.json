@@ -91,14 +91,6 @@
     "policy": "focus"
   },
   {
-    "id": "calendar",
-    "label": "Calendar",
-    "source": "makepad",
-    "package": "makepad-calendar",
-    "bin": "calendar",
-    "policy": "focus"
-  },
-  {
     "id": "reminders",
     "label": "Reminders",
     "source": "makepad",
