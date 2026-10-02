@@ -60,6 +60,9 @@ struct Io {
     /// host-managed server stops when it reaches EOF, which also happens
     /// when this process dies, so a crashed shell leaves no kernel behind.
     lifeline: Option<tokio::process::ChildStdin>,
+    /// The task copying the child's stderr into the [`Tail`]; it ends at
+    /// the end of the pipe, after the kernel's last line.
+    stderr: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Keeps the last lines the kernel wrote to stderr, to say why it exited.
@@ -116,7 +119,7 @@ fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Resu
                 return Err("the kernel's stdin/stdout are not piped".into());
             };
             // The kernel logs to stderr; it never carries protocol frames.
-            if let Some(stderr) = child.stderr.take() {
+            let stderr = child.stderr.take().map(|stderr| {
                 let log = log.clone();
                 let tail = tail.clone();
                 tokio::spawn(async move {
@@ -126,14 +129,14 @@ fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Resu
                         (log)(&format!("octos: {line}"));
                         tail.push(line);
                     }
-                });
-            }
+                })
+            });
             let lines = BufReader::new(Box::pin(stdout) as Pin<Box<dyn AsyncRead + Send>>).lines();
             Ok(if shared {
                 // Frames go over the WebSocket once it is up (`prepare_network`).
-                Io { writer: Box::pin(tokio::io::sink()), lines, running: Running::Child(child), lifeline: Some(stdin) }
+                Io { writer: Box::pin(tokio::io::sink()), lines, running: Running::Child(child), lifeline: Some(stdin), stderr }
             } else {
-                Io { writer: Box::pin(stdin), lines, running: Running::Child(child), lifeline: None }
+                Io { writer: Box::pin(stdin), lines, running: Running::Child(child), lifeline: None, stderr }
             })
         }
         #[cfg(target_env = "ohos")]
@@ -153,6 +156,7 @@ fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Resu
                 lines: BufReader::new(Box::pin(reader) as Pin<Box<dyn AsyncRead + Send>>).lines(),
                 running: Running::Embedded(task),
                 lifeline: None,
+                stderr: None,
             })
         }
         #[cfg(not(target_env = "ohos"))]
@@ -266,7 +270,7 @@ async fn exited(running: &mut Running) -> String {
 async fn stop(io: Io) {
     // Closing stdin stops either kind of child: the stdio pipe drains owned
     // turns on EOF; a host-managed server drains its connections and exits.
-    let Io { writer, lines, mut running, lifeline } = io;
+    let Io { writer, lines, mut running, lifeline, .. } = io;
     let grace = if lifeline.is_some() { SHARED_GRACE } else { STDIO_GRACE };
     drop(writer);
     drop(lines);
@@ -401,16 +405,18 @@ pub(crate) async fn supervise(
                                 }
                             }
                         }
-                        Ok(None) => break CloseReason::Exited(with_tail("the kernel closed its output", &tail)),
+                        Ok(None) => break CloseReason::Exited("the kernel closed its output".into()),
                         Err(e) => break CloseReason::Exited(format!("reading from the kernel failed: {e}")),
                     },
-                    why = exited(&mut io.running) => break CloseReason::Exited(with_tail(&why, &tail)),
+                    why = exited(&mut io.running) => break CloseReason::Exited(why),
                 }
             }};
             (log)(&format!("octos-core: stopping kernel {generation}: {reason}"));
+            let stderr = io.stderr.take();
             stop(io).await;
             match reason {
-                CloseReason::Failed(why) => CloseReason::Failed(with_tail(&why, &tail)),
+                CloseReason::Failed(why) => CloseReason::Failed(last_words(&why, stderr, &tail).await),
+                CloseReason::Exited(why) => CloseReason::Exited(last_words(&why, stderr, &tail).await),
                 other => other,
             }
         }
@@ -462,6 +468,24 @@ fn tool_list_reply(text: &str) -> Option<String> {
         Some(error) => format!("was NOT set: {error}"),
         None => format!("is set (version {})", frame["result"]["version"]),
     })
+}
+
+/// How long a stopped kernel's stderr may take to reach its end. The pipe
+/// closes with the kernel; only a process it started that inherited the
+/// pipe can hold it open longer.
+const LAST_WORDS_GRACE: Duration = Duration::from_secs(2);
+
+/// `why` with the kernel's last words (the [`Tail`]), once `stderr`, the
+/// task reading them, has reached the end of the pipe. That task runs
+/// beside the supervisor, so lines the kernel wrote just before its stdout
+/// closed or it exited can still be on their way to the tail: read at once,
+/// the reason said "the kernel closed its output: fake kernel up" without
+/// the "asked to exit" the kernel wrote last.
+async fn last_words(why: &str, stderr: Option<tokio::task::JoinHandle<()>>, tail: &Tail) -> String {
+    if let Some(reader) = stderr {
+        let _ = tokio::time::timeout(LAST_WORDS_GRACE, reader).await;
+    }
+    with_tail(why, tail)
 }
 
 fn with_tail(why: &str, tail: &Tail) -> String {

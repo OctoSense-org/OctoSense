@@ -238,7 +238,9 @@ async fn a_kernel_that_dies_closes_its_connections_with_its_last_words() {
     call(&mut a, "1", "session/list", json!({})).await;
     a.send(json!({"jsonrpc": "2.0", "method": "test/exit", "params": {}}).to_string()).unwrap();
     match next(&mut a).await {
-        Err(CloseReason::Exited(why)) => assert!(why.contains("asked to exit") || why.contains("exit"), "{why}"),
+        // The line it wrote to stderr last, whichever end the core saw
+        // first: its output closing or its exit status.
+        Err(CloseReason::Exited(why)) => assert!(why.contains("asked to exit"), "{why}"),
         other => panic!("expected Exited, got {other:?}"),
     }
     for _ in 0..100 {
