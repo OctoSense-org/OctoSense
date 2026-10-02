@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde_json::Value;
 
-use crate::system_chat::model::{ChatModel, Item, Phase, Role};
+use crate::system_chat::model::{history_turn, ChatModel, Item, Phase, Role, ToolNames};
 
 /// The person's lane (this panel's context) and the system agent's.
 pub const LANE_PERSON: &str = "person";
@@ -232,12 +232,16 @@ impl Conversation {
 
     /// The conversation's history (both transcripts merged by time; rows
     /// `{role, content, lane, speaker?, display_text?, thread_id|turn_id?}`)
-    /// replaces what the panel showed.
+    /// replaces what the panel showed. A tool row keeps the name the panel
+    /// showed for it ([`ToolNames`]: history has none), and what history
+    /// cannot know stays where it stood ([`keep_in_place`]).
     pub fn load_history(&mut self, rows: &Value) {
+        let rows = rows.as_array().map(Vec::as_slice).unwrap_or(&[]);
+        let mut tools = ToolNames::new(&self.chat.items, rows);
         let mut items = Vec::new();
-        for row in rows.as_array().into_iter().flatten() {
+        for row in rows {
             let lane = row["lane"].as_str().unwrap_or(LANE_PERSON);
-            let turn = row["turn_id"].as_str().or_else(|| row["thread_id"].as_str()).map(str::to_string);
+            let turn = history_turn(row);
             if let Some(t) = &turn {
                 self.lanes.entry(t.clone()).or_insert_with(|| lane.to_string());
             }
@@ -259,7 +263,7 @@ impl Conversation {
                 }
                 "tool" => items.push(Item::Tool {
                     call_id: row["tool_call_id"].as_str().unwrap_or("").to_string(),
-                    name: row["name"].as_str().or_else(|| row["tool_name"].as_str()).unwrap_or("tool").to_string(),
+                    name: tools.name(row, turn.as_deref()),
                     status: crate::system_chat::model::ToolStatus::Done,
                     detail: String::new(),
                     turn,
@@ -269,20 +273,70 @@ impl Conversation {
             }
         }
         // What history cannot know stays: notices, and anything still open.
-        for item in std::mem::take(&mut self.chat.items) {
-            let keep = matches!(item, Item::Question { answered: None, .. } | Item::Notice(_))
-                || matches!(&item, Item::Message { turn: Some(t), .. } if self.running.contains(t));
-            if keep {
-                items.push(item);
-            }
-        }
-        self.chat.items = items;
+        let running = &self.running;
+        let shown = std::mem::take(&mut self.chat.items);
+        self.chat.items = keep_in_place(items, shown, |item| {
+            matches!(item, Item::Question { answered: None, .. } | Item::Notice(_)) || matches!(item, Item::Message { turn: Some(t), .. } if running.contains(t))
+        });
         self.settle_phase();
     }
 
     pub fn notice(&mut self, text: impl Into<String>) {
         self.chat.notice(text);
     }
+}
+
+/// What a transcript row is, to find it again in a reloaded history: its
+/// kind and its turn (history rows carry the turn, [`history_turn`]).
+fn row_key(item: &Item) -> Option<(&'static str, &str)> {
+    match item {
+        Item::Message { role: Role::User, turn: Some(t), .. } => Some(("user", t)),
+        Item::Message { role: Role::Assistant, turn: Some(t), .. } => Some(("assistant", t)),
+        Item::Tool { turn: Some(t), .. } => Some(("tool", t)),
+        _ => None,
+    }
+}
+
+/// `history`, with the items of `shown` (the transcript it replaces) that
+/// history cannot know (`kept`: notices, an open question, a running turn's
+/// rows) put back where they stood: right after the row they followed in
+/// `shown`, found again in `history` by its kind and turn (the same
+/// occurrence of that pair, or the last one there is). An item kept from
+/// before any row comes first; one whose rows history has none of comes
+/// last. Appending them all after the history moved "Stopped." and the
+/// other notices below every newer row on each reload.
+fn keep_in_place(history: Vec<Item>, shown: Vec<Item>, kept: impl Fn(&Item) -> bool) -> Vec<Item> {
+    let keys: Vec<Option<(&'static str, String)>> = history.iter().map(|i| row_key(i).map(|(k, t)| (k, t.to_string()))).collect();
+    let find = |key: &(&'static str, String), nth: usize| -> Option<usize> {
+        let at: Vec<usize> = keys.iter().enumerate().filter(|(_, k)| k.as_ref() == Some(key)).map(|(i, _)| i).collect();
+        at.get(nth).or(at.last()).copied()
+    };
+    let mut after: Vec<Vec<Item>> = (0..history.len()).map(|_| Vec::new()).collect();
+    let (mut first, mut last) = (Vec::new(), Vec::new());
+    // The rows `shown` had so far: kind, turn, and which occurrence.
+    let mut before: Vec<((&'static str, String), usize)> = Vec::new();
+    let mut seen: HashMap<(&'static str, String), usize> = HashMap::new();
+    for item in shown {
+        if kept(&item) {
+            match before.iter().rev().find_map(|(key, nth)| find(key, *nth)) {
+                Some(row) => after[row].push(item),
+                None if before.is_empty() => first.push(item),
+                None => last.push(item),
+            }
+        } else if let Some((kind, turn)) = row_key(&item) {
+            let key = (kind, turn.to_string());
+            let nth = seen.entry(key.clone()).or_default();
+            before.push((key, *nth));
+            *nth += 1;
+        }
+    }
+    let mut items = first;
+    for (row, placed) in history.into_iter().zip(after) {
+        items.push(row);
+        items.extend(placed);
+    }
+    items.extend(last);
+    items
 }
 
 /// The text after the kernel's origin marker, if it carries one.

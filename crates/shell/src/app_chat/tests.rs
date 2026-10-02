@@ -149,6 +149,116 @@ fn the_merged_history_names_its_speakers() {
     );
 }
 
+/// The transcript as the panel draws it, row by row: speakers, notices,
+/// tool rows.
+fn transcript(c: &Conversation) -> Vec<String> {
+    c.chat
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Message { speaker, text, .. } => Some(format!("{}: {text}", speaker.clone().unwrap_or_default())),
+            Item::Notice(n) => Some(format!("({n})")),
+            Item::Tool { name, .. } => Some(format!("[{name}]")),
+            _ => None,
+        })
+        .collect()
+}
+
+fn started(lane: &str, turn: &str, text: &str, kind: &str) -> Value {
+    json!({"method": "turn/started", "lane": lane, "speaker": {"kind": kind}, "request": {"text": text, "speaker": {"kind": kind}}, "params": {"turn_id": turn}})
+}
+
+/// A reload (the panel reopened) puts the notices back where they stood,
+/// after the row they followed, not below every newer row. The instrument
+/// run's order: the person's turn; the system agent's turn and the person's
+/// second one; the person's Stop ("Stopped." and its end), Ctrl+. ("Nothing
+/// of yours was running."), the row's Stop ("Stopped the system agent's
+/// task." and its end); then, with the panel closed, the system agent's
+/// next turn. After the reopen the notices stood below that last turn.
+#[test]
+fn a_reload_keeps_the_notices_where_they_stood() {
+    let mut c = Conversation::new("News");
+    c.apply(&started(LANE_PERSON, "p1", "Hello News", "person"));
+    c.apply(&env(LANE_PERSON, "p1", 2, "assistant_persisted", json!({"assistant_segment_id": "p1:1", "text": "SLOW DONE after 15 s"})));
+    c.apply(&env(LANE_PERSON, "p1", 3, "turn_terminal", json!({"outcome": "completed"})));
+    c.apply(&started(LANE_SYSTEM_AGENT, "s1", "SLOW:45", "system_agent"));
+    c.apply(&started(LANE_PERSON, "p2", "SLOW:40", "person"));
+    c.notice("Stopped.");
+    c.apply(&env(LANE_PERSON, "p2", 5, "turn_terminal", json!({"outcome": "interrupted", "error": {"message": "turn interrupted by client"}})));
+    c.notice("Nothing of yours was running.");
+    c.notice("Stopped the system agent's task.");
+    c.apply(&env(LANE_SYSTEM_AGENT, "s1", 900, "turn_terminal", json!({"outcome": "interrupted", "error": {"message": "turn interrupted by client"}})));
+    // The panel is closed; its follower still hears the system agent's turn.
+    c.apply(&started(LANE_SYSTEM_AGENT, "s2", "SLOW:3", "system_agent"));
+    c.apply(&env(LANE_SYSTEM_AGENT, "s2", 902, "assistant_persisted", json!({"assistant_segment_id": "s2:1", "text": "SLOW DONE after 3 s"})));
+    c.apply(&env(LANE_SYSTEM_AGENT, "s2", 903, "turn_terminal", json!({"outcome": "completed"})));
+    let live = transcript(&c);
+    assert_eq!(
+        live,
+        [
+            "You: Hello News",
+            "News's agent: SLOW DONE after 15 s",
+            "System agent: SLOW:45",
+            "You: SLOW:40",
+            "(Stopped.)",
+            "(turn interrupted by client)",
+            "(Nothing of yours was running.)",
+            "(Stopped the system agent's task.)",
+            "(turn interrupted by client)",
+            "System agent: SLOW:3",
+            "News's agent, to the system agent: SLOW DONE after 3 s",
+        ]
+    );
+    // Reopened: the merged history as the broker sends it. Every row a turn
+    // persisted carries its turn as `thread_id`; the two stopped turns the
+    // kernel never recorded are the broker's rows, with `turn_id`.
+    let history = json!([
+        {"role": "user", "content": "[from the person: News] Hello News", "lane": "person", "speaker": {"kind": "person"}, "display_text": "Hello News", "thread_id": "p1"},
+        {"role": "assistant", "content": "SLOW DONE after 15 s", "lane": "person", "thread_id": "p1"},
+        {"role": "user", "content": "SLOW:45", "display_text": "SLOW:45", "speaker": {"kind": "system_agent"}, "lane": "system_agent", "turn_id": "s1", "unrecorded": true},
+        {"role": "user", "content": "SLOW:40", "display_text": "SLOW:40", "speaker": {"kind": "person"}, "lane": "person", "turn_id": "p2", "unrecorded": true},
+        {"role": "user", "content": "[from the system agent] SLOW:3", "lane": "system_agent", "speaker": {"kind": "system_agent"}, "display_text": "SLOW:3", "thread_id": "s2"},
+        {"role": "assistant", "content": "SLOW DONE after 3 s", "lane": "system_agent", "thread_id": "s2"},
+    ]);
+    c.load_history(&history);
+    assert_eq!(transcript(&c), live, "the reload keeps every notice in its place");
+    c.load_history(&history);
+    assert_eq!(transcript(&c), live, "and so does the next one");
+    // A notice from before any row stays first; one after rows the history
+    // no longer has goes last.
+    let mut c = Conversation::new("News");
+    c.notice("Could not load the conversation: closed");
+    c.apply(&started(LANE_PERSON, "gone", "a turn the history lost", "person"));
+    c.apply(&env(LANE_PERSON, "gone", 2, "turn_terminal", json!({"outcome": "completed"})));
+    c.notice("Stopped.");
+    c.load_history(&json!([{"role": "user", "content": "earlier", "lane": "person", "thread_id": "p0"}]));
+    assert_eq!(transcript(&c), ["(Could not load the conversation: closed)", "You: earlier", "(Stopped.)"]);
+}
+
+/// The history's tool rows carry no tool name (octos's hydrate rows have
+/// none), so a reload showed "⚙ tool · done". A row keeps the name the
+/// panel showed for the same turn's call; a turn the panel never followed
+/// stays "tool" (never another call's name).
+#[test]
+fn a_reload_keeps_the_tool_names_the_panel_showed() {
+    let mut c = Conversation::new("News");
+    c.apply(&started(LANE_PERSON, "p1", "SCN_ASK", "person"));
+    c.apply(&env(LANE_PERSON, "p1", 2, "tool_start", json!({"tool_call_id": "c1", "name": "ask_user_question"})));
+    c.apply(&env(LANE_PERSON, "p1", 3, "tool_end", json!({"tool_call_id": "c1", "status": "complete"})));
+    c.apply(&env(LANE_PERSON, "p1", 4, "assistant_persisted", json!({"assistant_segment_id": "p1:1", "text": "SCN AUDIENCE Team"})));
+    c.apply(&env(LANE_PERSON, "p1", 5, "turn_terminal", json!({"outcome": "completed"})));
+    c.load_history(&json!([
+        {"role": "user", "content": "[from the person: News] older", "lane": "person", "speaker": {"kind": "person"}, "display_text": "older", "thread_id": "p0"},
+        {"role": "assistant", "content": "", "lane": "person", "thread_id": "p0"},
+        {"role": "tool", "content": "{\"ok\":true}", "lane": "person", "thread_id": "p0"},
+        {"role": "user", "content": "[from the person: News] SCN_ASK", "lane": "person", "speaker": {"kind": "person"}, "display_text": "SCN_ASK", "thread_id": "p1"},
+        {"role": "assistant", "content": "", "lane": "person", "thread_id": "p1"},
+        {"role": "tool", "content": "{\"ok\":true,\"kind\":\"user_question_answer\"}", "lane": "person", "thread_id": "p1"},
+        {"role": "assistant", "content": "SCN AUDIENCE Team", "lane": "person", "thread_id": "p1"},
+    ]));
+    assert_eq!(transcript(&c), ["You: older", "[tool]", "You: SCN_ASK", "[ask_user_question]", "News's agent: SCN AUDIENCE Team"]);
+}
+
 /// The live run's order (#184 follow-up): each lane counts its own
 /// `cursor.seq` (the peer's session is long, the person's context new), and
 /// the kernel sends a turn's user message when the turn ENDS. Replayed as
