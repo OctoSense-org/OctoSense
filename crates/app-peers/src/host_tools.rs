@@ -876,6 +876,9 @@ pub struct ConfirmRequest {
     pub args: Value,
     /// "Calendar's agent", "The assistant", "Your mini app news".
     pub caller_label: String,
+    /// Who is calling, as data (stamped by the host, never by the app): the
+    /// app checks its own grants against it (ADR 0004 §5, §9).
+    pub caller: ConfirmCaller,
     pub context_id: Option<String>,
     pub client: Option<String>,
     answer: ConfirmFn,
@@ -888,7 +891,29 @@ impl std::fmt::Debug for ConfirmRequest {
     }
 }
 
+/// Who is calling a `confirm: app` tool, as the host stamped it.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum ConfirmCaller {
+    /// The owning app's own agent (`client`: one of its request contexts,
+    /// e.g. a Rinx mini app).
+    OwnAgent { client: Option<String> },
+    /// Another app's agent (a cross-app call).
+    AppAgent { app: String },
+    /// The system agent.
+    SystemAgent,
+    /// An outside client's turn.
+    External { client: Option<String> },
+    /// Not said (a host that does not stamp it).
+    #[default]
+    Unknown,
+}
+
 impl ConfirmRequest {
+    /// With who is calling, as data.
+    pub fn with_caller(mut self, caller: ConfirmCaller) -> ConfirmRequest {
+        self.caller = caller;
+        self
+    }
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: impl Into<String>,
@@ -904,6 +929,7 @@ impl ConfirmRequest {
             tool: tool.into(),
             args,
             caller_label: caller_label.into(),
+            caller: ConfirmCaller::Unknown,
             context_id,
             client,
             answer: Arc::new(answer),

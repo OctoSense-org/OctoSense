@@ -829,7 +829,8 @@ impl Relay {
                     e.cancel(call_id);
                 }
             }
-            At::Confirming(_) => {}
+            // Still on the owning app's sheet: withdrawn there too.
+            At::Confirming(_) => env.withdraw_approval(&RequestId(format!("{CONFIRM_PREFIX}{call_id}")), reason),
         }
         env.log(format!("host tools: {} ({}) cancelled: {reason}", p.call.name, call_id));
     }

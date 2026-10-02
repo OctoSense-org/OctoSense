@@ -88,7 +88,7 @@ struct Chat {
     /// Scroll back from the newest line, in pixels.
     pub scroll: f64,
     /// App agents' questions routed here ([`crate::questions`]), by id.
-    routed: Vec<(u64, model::Item)>,
+    routed: Routed,
     /// What the shell told the system agent about the apps' agents last
     /// ([`crate::agents::system_note`]): said again only when it changed.
     told: Option<String>,
@@ -114,6 +114,78 @@ const ASK_WAIT: Duration = Duration::from_secs(600);
 
 /// The id prefix of a routed question in the conversation.
 pub const ROUTED_PREFIX: &str = "routed:";
+/// How many routed questions the chat keeps: the oldest settled ones go
+/// first, and an open one is never dropped (the person must still see it).
+pub const ROUTED_KEPT: usize = 32;
+
+/// Keep at most `max` routed questions, dropping the oldest settled ones;
+/// open questions stay whatever their number.
+pub(crate) fn trim_routed(routed: &mut Vec<(u64, model::Item)>, max: usize) {
+    while routed.len() > max {
+        let Some(i) = routed.iter().position(|(_, item)| !open_question(item)) else { break };
+        routed.remove(i);
+    }
+}
+
+/// How many OPEN routed questions the chat shows at once; past it a new one
+/// waits (said visibly) and comes in when one settles.
+pub const ROUTED_OPEN_MAX: usize = 16;
+
+fn open_question(item: &model::Item) -> bool {
+    matches!(item, model::Item::Question { answered: None, .. })
+}
+
+/// The app agents' questions routed to the system chat: bounded, and never
+/// dropping an open one silently.
+#[derive(Debug, Default)]
+pub(crate) struct Routed {
+    /// In the conversation, oldest first.
+    pub(crate) shown: Vec<(u64, model::Item)>,
+    /// Open questions past [`ROUTED_OPEN_MAX`], oldest first.
+    pub(crate) waiting: Vec<(u64, model::Item)>,
+}
+
+impl Routed {
+    /// A routed question asked or changed.
+    pub(crate) fn place(&mut self, id: u64, item: model::Item) {
+        if let Some(slot) = self.shown.iter_mut().find(|(n, _)| *n == id) {
+            slot.1 = item;
+        } else if let Some(i) = self.waiting.iter().position(|(n, _)| *n == id) {
+            if open_question(&item) {
+                self.waiting[i].1 = item;
+            } else {
+                // Settled while it waited (expired, closed): shown as such.
+                self.waiting.remove(i);
+                self.shown.push((id, item));
+            }
+        } else if open_question(&item) && self.open_count() >= ROUTED_OPEN_MAX {
+            self.waiting.push((id, item));
+        } else {
+            self.shown.push((id, item));
+        }
+        while self.open_count() < ROUTED_OPEN_MAX && !self.waiting.is_empty() {
+            let next = self.waiting.remove(0);
+            self.shown.push(next);
+        }
+        trim_routed(&mut self.shown, ROUTED_KEPT);
+    }
+    fn open_count(&self) -> usize {
+        self.shown.iter().filter(|(_, i)| open_question(i)).count()
+    }
+    /// What the conversation shows: the questions, and a line saying how
+    /// many more wait.
+    pub(crate) fn items(&self) -> Vec<model::Item> {
+        let mut out: Vec<model::Item> = self.shown.iter().map(|(_, i)| i.clone()).collect();
+        if !self.waiting.is_empty() {
+            let n = self.waiting.len();
+            out.push(model::Item::Notice(format!(
+                "{n} more app question{} waiting: answer one above to see the next (unanswered ones expire).",
+                if n == 1 { "" } else { "s" }
+            )));
+        }
+        out
+    }
+}
 
 /// The system chat as a consumer of [`crate::questions`]: the questions of
 /// `peer/input` turns (the system agent's requests to app agents).
@@ -140,13 +212,7 @@ impl crate::questions::Consumer for RoutedQuestions {
             answered,
         };
         with(|c| {
-            match c.routed.iter_mut().find(|(id, _)| *id == request.id) {
-                Some(slot) => slot.1 = item,
-                None => c.routed.push((request.id, item)),
-            }
-            if c.routed.len() > 32 {
-                c.routed.remove(0);
-            }
+            c.routed.place(request.id, item);
             c.ui_generation += 1;
         });
     }
@@ -163,7 +229,7 @@ fn with<R>(f: impl FnOnce(&mut Chat) -> R) -> R {
         shared: Arc::new(Mutex::new(Shared { model: ChatModel::new(), effects: Vec::new() })),
         worker: None,
         scroll: 0.0,
-        routed: Vec::new(),
+        routed: Routed::default(),
         told: None,
         notes: Vec::new(),
         asks: Vec::new(),
@@ -360,7 +426,7 @@ pub fn new_conversation() {
 pub fn snapshot() -> ChatModel {
     with(|c| {
         let mut model = c.shared.lock().unwrap_or_else(|e| e.into_inner()).model.clone();
-        model.items.extend(c.routed.iter().map(|(_, item)| item.clone()));
+        model.items.extend(c.routed.items());
         model.items.extend(c.notes.iter().cloned());
         model
     })
