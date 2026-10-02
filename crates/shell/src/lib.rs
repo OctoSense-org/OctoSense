@@ -72,6 +72,8 @@ pub mod ext;
 pub mod glance;
 pub mod glance_card;
 pub mod glance_chat;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod glance_notice;
 pub mod glance_panel;
 pub mod glance_sheet;
 use glance::NoteTargets as GlanceNoteTargets;

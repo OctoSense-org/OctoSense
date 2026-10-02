@@ -65,13 +65,13 @@ OctoScript-App-Design-Flow:
 
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
-| [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com` | none |
-| [Photos](photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage` | none | none (full-size files come from a shell asset mount, see below) |
-| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one | `storage`, `net`, `location` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
-| [Camera](camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
+| [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
+| [Photos](photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance` | none | none (full-size files come from a shell asset mount, see below) |
+| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one | `storage`, `net`, `location`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
+| [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | none |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
-| [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | none |
+| [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | none |
 | [Calendar](calendar/bundle) | `os.calendar` (desktop) | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
@@ -79,7 +79,9 @@ What each capability means is defined by App Hub's closed list
 (`KNOWN_CAPABILITIES` in `crates/app-policy/src/manifest.rs`): `images` shows
 pictures from any public https host, `web` opens a page in the system WebView,
 `library` offers captures to the system photo library, `mail` reaches the
-host's mail service, `llm` reaches the host's LLM-provider service. `net` reaches only the hosts the manifest lists.
+host's mail service, `llm` reaches the host's LLM-provider service, `news`
+reads the host's news service, `glance` publishes cards to the glance
+screen. `net` reaches only the hosts the manifest lists.
 
 ### Status and known gaps
 
@@ -302,13 +304,12 @@ isolate under no app's policy. Calls from the sheet arrive marked
 
 | File | Role |
 | --- | --- |
-| `lib.rs` | the service: `mail.accounts`, `add_account` (raises the sign-in sheet), `remove_account`, `folders`, `sync`, `list`, `message`, `mark_read`, `send`, `notify` (the agent's notice card, published through the shell's glance service as Mail); `register()`, `register_demo()`, `register_with*()`; the `Transport` trait; account events for the shell (`on_account_event`) |
+| `lib.rs` | the service: `mail.accounts`, `add_account` (raises the sign-in sheet), `remove_account`, `folders`, `sync`, `list`, `message`, `mark_read`, `send`, `notify` (the agent's notice: handed to the shell, which publishes its notice card as Mail, `on_notify`); `register()`, `register_demo()`, `register_with*()`; the `Transport` trait; account events for the shell (`on_account_event`) |
 | `imap.rs` | IMAP client (folders, read flag back to the server) |
 | `network.rs` | POP3 and SMTP, MIME decoding; credentials never appear in errors |
 | `html.rs` | rebuilds a message as the few tags Mail's `Html` view draws, with nothing remote in it |
 | `vault.rs` | where passwords go: macOS/iOS Keychain, Android (a file sealed with an Android Keystore key), owner-only file elsewhere, the files in the host's secrets folder `<home>/secrets/os.mail/`; `OCTOSENSE_MAIL_VAULT=file` forces the file store for unsigned dev builds |
 | `contacts.rs` | the addresses the person's accounts sent mail to, for the approval rule "recipients in my contacts" (off until the person turns it on in Settings) |
-| `resources/notice.card` | the fixed L0 notice card `mail.notify` fills |
 
 Account metadata (no passwords) and fetched mail live under the host's own
 directory (`<host_dir>/mail`), outside every app's jail. Each account is
@@ -361,9 +362,11 @@ model lane and tools. Which system apps have one, and how
 
 | App | `manifest.json` | `tools.json` | Cards |
 | --- | --- | --- | --- |
-| News | `agent` block | `news.list`, `news.read` (read, shareable) | – |
-| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.notify` (act, background) | `notice.card` |
+| News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
+| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.notify` (act, background) | the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
+| Photos, Maps, YouTube, Camera | `agent` block, `glance` | `photos.notify`, `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
+| AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
 - **Declaring one.** The manifest's `agent` block names the kernel tools the
   agent may use (`"tools": ["ask_user_question"]`; a dotted name there asks
@@ -393,14 +396,25 @@ model lane and tools. Which system apps have one, and how
   shell's relay checked the grant, the schema and the budget. octos asks
   for an approval only for destructive and outward tools (here
   `calendar.remove_event`), which the person answers on a shell sheet.
-- **Cards.** `mail.notify`, `calendar.notify` and `calendar.agenda` fill a
-  fixed L0 card the host service ships and publish it with `notify` through
-  the shell's `glance` service as the app (the app needs the `glance`
-  capability). The model only supplies the text; it never writes card code.
+- **Cards.** `<app>.notify {title, body, card_id?, priority?}` puts a
+  notice on the glance screen, with a notification: one fixed L0 card for
+  every app, which the shell ships
+  ([`../crates/shell/resources/glance/notice.card`](../crates/shell/resources/glance/notice.card),
+  filled by [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs)),
+  with the app's icon and name, the time, and the agent's title (at most 80
+  characters) and text (at most 600); the same `card_id` replaces the app's
+  earlier notice. Mail's and News's services hand `notify` to the shell;
+  Photos, Maps, YouTube and Camera have no service of their own, so the
+  shell's notice service answers it. `calendar.notify` and
+  `calendar.agenda` fill Calendar's own event and agenda cards. Every card
+  is published with `notify` through the shell's `glance` service as the
+  app (the app needs the `glance` capability). The model only supplies the
+  text; it never writes card code.
   A card can hold an in-card chat with the app's own agent (`sys.chat`,
   [`../crates/l0-chat`](../crates/l0-chat/README.md)).
 - **Trying it** on the desktop: open the assistant (F8) and ask the system
-  agent to have Mail's or Calendar's agent put a card on the glance screen;
+  agent to have an app's agent (Mail, Calendar, News, Photos, Maps or
+  YouTube) put a card on the glance screen;
   allow the agent on the sheet that comes up. Mail needs a signed-in
   account (the demo mailbox, below, will do). Mail's richer action card
   ([the plan](mail/docs/2026-10-01-email-action-card-plan.md)) is so far a

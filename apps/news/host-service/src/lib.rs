@@ -18,6 +18,7 @@
 //! | `news.refresh` | `{due?}` | the run's report `{at, new, total, clusters, sources}`, or `{busy: true}` |
 //! | `news.sources` | – | `{sources: [{id, label, kind, host, lang, topics, last_success, last_error, failures, next_due, items}]}` |
 //! | `news.feeds.import` | `{opml}` | `{added: [id], skipped: [{url, reason}]}` |
+//! | `news.notify` | `{title, body, card_id?, priority?}` | `{card_id, replaced, expires_at}` once the shell put News's notice card on the glance screen, with a notification ([`Options::on_notify`]) |
 //!
 //! An item is `{id, title, url, source, feed, lang, published, fetched,
 //! summary, image?, topics, discussion?, points?, comments?, also?}`; `id` is
@@ -101,6 +102,7 @@ pub struct SourceReport {
 }
 
 type Hook = Arc<dyn Fn(&FetchReport) + Send + Sync>;
+type Notify = Arc<dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync>;
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 /// How the service runs. `Options::default()` is what a shell wants.
@@ -110,6 +112,7 @@ pub struct Options {
     fetcher: Arc<dyn Fetcher>,
     reader: Option<Arc<dyn ArticleReader>>,
     on_fetch: Option<Hook>,
+    on_notify: Option<Notify>,
     clock: Clock,
     timer: bool,
     interval: Duration,
@@ -133,6 +136,7 @@ impl Default for Options {
             fetcher: Arc::new(HttpFetcher::default()),
             reader: None,
             on_fetch: None,
+            on_notify: None,
             clock: Arc::new(|| chrono::Utc::now().timestamp()),
             timer: true,
             interval: Duration::from_secs(900),
@@ -174,6 +178,14 @@ impl Options {
     /// thread, with what was new. The shell forwards it to News's agent.
     pub fn on_fetch(mut self, f: impl Fn(&FetchReport) + Send + Sync + 'static) -> Self {
         self.on_fetch = Some(Arc::new(f));
+        self
+    }
+    /// What `news.notify` goes to: `(app id, its arguments)` →
+    /// `{card_id, replaced, expires_at}`. The shell draws the notice card
+    /// every system app shares and publishes it as the calling app; without
+    /// one, `news.notify` is refused.
+    pub fn on_notify(mut self, f: impl Fn(&str, &Value) -> Result<Value, String> + Send + Sync + 'static) -> Self {
+        self.on_notify = Some(Arc::new(f));
         self
     }
     /// Unix seconds; tests move time.
@@ -397,6 +409,15 @@ impl News {
             }
         }
         Ok(json!({"item": item, "text": item.summary, "full_text": false}))
+    }
+
+    /// `news.notify`, for `app`: to the shell's notifier
+    /// ([`Options::on_notify`]), as the call came.
+    pub fn notify(&self, app: &str, args: &Value) -> Result<Value, String> {
+        match &self.core.options.on_notify {
+            Some(notify) => notify(app, args),
+            None => Err("This device shows no glance cards.".into()),
+        }
     }
 
     pub fn topics(&self) -> Result<Vec<Topic>, String> {
@@ -714,6 +735,7 @@ impl HostService for NewsService {
             }),
             "sources" => reply.send(news.source_status()),
             "feeds.import" => reply.send(news.import_opml(args["opml"].as_str().unwrap_or(""))),
+            "notify" => reply.send(news.notify(&call.app_id, &args)),
             other => reply.send(Err(format!("news has no method {other:?}"))),
         }
     }

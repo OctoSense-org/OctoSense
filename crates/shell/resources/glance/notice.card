@@ -1,0 +1,26 @@
+# ledger os.notice@0.2.0
+# level:   L0
+# profile: ui/l0
+#
+# A system app's notice card (`<namespace>.notify`, glance_notice.rs): a
+# title and a short text the app's agent wrote, as that app. `note` is a
+# `sys.dataset` record the shell fills from the call; the card states
+# nothing else. The app's name and icon are the shell's: it puts in the
+# app's manifest name and a meaning from L0's closed icon set, never the
+# caller's text.
+
+source note sys.dataset(fields: [title, summary, as_of])
+
+copy app { class: vocabulary, en: "{app}" }
+
+view root Surface(pad: .tight) {
+  Col(gap: 8) {
+    Row(gap: 8, align: .center) {
+      Icon(name: .{icon}, size: .row)
+      TextCaption(text: copy.app, width: .fill)
+      TextCaption(value: note.as_of)
+    }
+    TextTitle(text: note.title, width: .fill)
+    TextBody(text: note.summary, width: .fill)
+  }
+}

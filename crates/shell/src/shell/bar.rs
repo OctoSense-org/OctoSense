@@ -244,7 +244,12 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
 /// `date` reads). Forking `date` twice a second cost an idle phone 11% of a
 /// core on this thread alone.
 pub fn sample_clock(alt: bool) -> String {
-    let fmt: &std::ffi::CStr = if alt { c"%-d %B W%V %Y" } else { c"%A %H:%M" };
+    local_time(if alt { c"%-d %B W%V %Y" } else { c"%A %H:%M" })
+}
+
+/// Now, in local time, formatted by `strftime`'s `fmt` (`%H:%M`): the C
+/// library's `localtime_r` on Unix, `date` elsewhere.
+pub fn local_time(fmt: &std::ffi::CStr) -> String {
     #[cfg(unix)]
     {
         let mut buf = [0u8; 64];
