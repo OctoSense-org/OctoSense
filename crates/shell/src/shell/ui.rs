@@ -1658,6 +1658,19 @@ impl ShellDraw {
         }
     }
 
+    /// A text field's frame alone (its owner draws the text, the caret and
+    /// the selection): focused, hovered or at rest.
+    pub fn field_frame(&mut self, cx: &mut Cx2d, r: Rect, tok: &ShellTokens, focused: bool, hot: bool) {
+        let state = if focused {
+            CtrlState::Focus
+        } else if hot {
+            CtrlState::Hover
+        } else {
+            CtrlState::Normal
+        };
+        self.control(cx, r, &tok.controls, state);
+    }
+
     /// A text field of several lines: `lines` (wrapped already) from the
     /// top, `line_h` apart and centred as a block; the placeholder while
     /// there is no text; the caret after the last line when `caret` says.

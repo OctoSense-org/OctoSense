@@ -52,12 +52,62 @@
 
 use makepad_widgets::*;
 
+use super::composer::{Composer, LineLayout, Pane};
 use super::markdown as md;
 use super::model::{ApprovalState, ChatModel, Item, Phase, Role, ToolStatus};
 use crate::approvals::view::Buttons;
 use crate::shell::ui::{contains, rect, wrap_styled, DrawShellFill, HAlign, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellPalette, ShellTokens};
+use std::cell::RefCell;
 use std::rc::Rc;
+
+thread_local! {
+    /// Each pane's prompt as last drawn (its lines, their characters' x):
+    /// Up and Down from the keyboard move by them ([`prompt_layout`]).
+    static PROMPT_LAYOUT: RefCell<[Vec<LineLayout>; 2]> = RefCell::new([Vec::new(), Vec::new()]);
+}
+
+/// A pane's prompt lines as last drawn.
+pub fn prompt_layout(pane: Pane) -> Vec<LineLayout> {
+    PROMPT_LAYOUT.with(|l| l.borrow()[pane as usize].clone())
+}
+
+/// Where the prompt's lines were drawn, for a click and a drag: the first
+/// line shown, its top, the line height, the text's left edge and every
+/// line's layout.
+#[derive(Clone, Debug, Default)]
+struct PromptGeom {
+    first: usize,
+    top: f64,
+    line_h: f64,
+    inner_x: f64,
+    layout: Vec<LineLayout>,
+}
+
+/// Each drawn prompt line's start in the text and its character
+/// boundaries' x, measured at `px` (the drawn size).
+fn layout_prompt(d: &mut ShellDraw, cx: &mut Cx2d, text: &str, lines: &[String], px: f64) -> Vec<LineLayout> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = 0;
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        let mut xs = Vec::with_capacity(line.chars().count() + 1);
+        xs.push(0.0);
+        let mut w = 0.0;
+        for c in line.chars() {
+            let mut buf = [0u8; 4];
+            w += d.measure(cx, false, px, c.encode_utf8(&mut buf));
+            xs.push(w);
+        }
+        let n = xs.len() - 1;
+        out.push(LineLayout { start: at, xs });
+        at += n;
+        if chars.get(at) == Some(&'\n') {
+            at += 1;
+        }
+    }
+    out
+}
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -621,10 +671,21 @@ pub struct ShellSystemChat {
     #[rust]
     blink_off: bool,
     #[rust]
-    blink_draft: String,
+    blink_draft: (String, usize, usize, usize),
     /// The transcript last laid out, and what it was laid out for.
     #[rust]
     laid_out: Option<(TranscriptKey, Rc<Vec<Line>>)>,
+    /// The prompt as last drawn, the first of its lines shown, a drag in it
+    /// selecting, and the last press in it (a second soon after on the
+    /// same place takes the word).
+    #[rust]
+    prompt: PromptGeom,
+    #[rust]
+    prompt_first: usize,
+    #[rust]
+    field_drag: bool,
+    #[rust]
+    field_press: (f64, usize),
 }
 
 /// The conversation a pane shows: the system chat's or an app's.
@@ -651,6 +712,24 @@ impl Source {
         match self {
             Source::System => super::draft(),
             Source::App => crate::app_chat::draft(),
+        }
+    }
+    fn composer(self) -> Composer {
+        match self {
+            Source::System => super::composer(),
+            Source::App => crate::app_chat::composer(),
+        }
+    }
+    fn edit(self, f: impl FnOnce(&mut Composer)) {
+        match self {
+            Source::System => super::edit_draft(f),
+            Source::App => crate::app_chat::edit_draft(f),
+        }
+    }
+    fn pane(self) -> Pane {
+        match self {
+            Source::System => Pane::System,
+            Source::App => Pane::App,
         }
     }
     fn draft_state(self) -> makepad_widgets::makepad_platform::event::FullTextState {
@@ -739,6 +818,18 @@ impl ShellSystemChat {
         hit_in(&self.hits, p)
     }
 
+    /// The prompt's character boundary under `p`: where a click puts the
+    /// caret.
+    fn prompt_index(&self, p: Vec2d) -> usize {
+        let g = &self.prompt;
+        if g.layout.is_empty() || g.line_h <= 0.0 {
+            return 0;
+        }
+        let row = ((p.y - g.top) / g.line_h).floor().max(0.0) as usize;
+        let line = (g.first + row).min(g.layout.len() - 1);
+        Composer::index_at(&g.layout, line, p.x - g.inner_x)
+    }
+
     /// The frame's grip at `p`, if a control is not there first.
     fn grip_at(&self, p: Vec2d) -> Option<Grip> {
         match self.hit_at(p) {
@@ -753,6 +844,20 @@ impl ShellSystemChat {
         if !source.is_open() || self.pane.size.x <= 0.0 {
             self.drag = None;
             return Outcome::Ignored;
+        }
+        // A drag in the prompt selects, wherever it goes, until the button
+        // comes up.
+        if self.field_drag {
+            match event {
+                Event::MouseMove(e) => {
+                    let i = self.prompt_index(e.abs);
+                    source.edit(|c| c.move_to(i, true));
+                    self.redraw(cx);
+                    return Outcome::Taken;
+                }
+                Event::MouseUp(_) => self.field_drag = false,
+                _ => {}
+            }
         }
         // A drag of the frame has the pointer until the button comes up,
         // wherever it goes.
@@ -810,6 +915,23 @@ impl ShellSystemChat {
                     self.drag = Some(PaneDrag { grip, start: e.abs, from: self.pane });
                     cx.set_cursor(grip.cursor());
                     return Outcome::Taken;
+                }
+                // In the prompt: the caret goes where pressed (Shift: the
+                // selection grows to there), a drag selects, a second press
+                // on the same place takes the word.
+                if self.hit_at(e.abs) == Some(Hit::Field) {
+                    let i = self.prompt_index(e.abs);
+                    let double = e.time - self.field_press.0 < DOUBLE_PRESS_S && self.field_press.1 == i;
+                    self.field_press = (e.time, i);
+                    if double {
+                        let word = source.composer().word_at(i);
+                        source.edit(|c| c.select(word.start, word.end));
+                    } else {
+                        let extend = e.modifiers.shift;
+                        source.edit(|c| c.move_to(i, extend));
+                        self.field_drag = true;
+                    }
+                    self.redraw(cx);
                 }
                 return self.press(cx, source, e.abs);
             }
@@ -966,9 +1088,11 @@ impl ShellSystemChat {
             }
             return;
         }
-        let draft = self.source().draft();
-        if draft != self.blink_draft || self.blink_timer.is_empty() {
-            self.blink_draft = draft;
+        let c = self.source().composer();
+        let sel = c.selection();
+        let now = (c.text().to_string(), c.cursor(), sel.start, sel.end);
+        if now != self.blink_draft || self.blink_timer.is_empty() {
+            self.blink_draft = now;
             self.blink_off = false;
             cx.stop_timer(self.blink_timer);
             self.blink_timer = cx.start_timeout(BLINK_S);
@@ -1172,28 +1296,72 @@ impl ShellSystemChat {
         let usable = source.usable(&model);
         self.usable = usable;
         let (label, hit, enabled) = composer_button(source.person_running(&model), usable, &draft);
-        let caret = self.typing(cx) && !self.blink_off;
+        let caret_on = self.typing(cx) && !self.blink_off;
+        let composer = source.composer();
         {
             let mut b = Buttons { d: &mut self.d, tok, hover };
             let bw = b.width(cx, label);
             let field_w = cw - bw - 8.0;
             let inner_w = (field_w - tok.spacing.control_padding_x * 2.0).max(1.0);
             let ts = b.d.text_scale();
-            let mut lines = b.d.wrap_input(cx, tok.font.body * ts, &draft, inner_w);
-            if lines.len() > PROMPT_LINES {
-                // Past its height the prompt shows its last lines: the caret's.
-                lines.drain(..lines.len() - PROMPT_LINES);
+            let px = tok.font.body * ts;
+            let lines = b.d.wrap_input(cx, px, &draft, inner_w);
+            let layout = layout_prompt(b.d, cx, &draft, &lines, px);
+            // The lines shown: up to PROMPT_LINES, the caret's always among them.
+            let caret_line = layout.iter().rposition(|l| l.start <= composer.cursor()).unwrap_or(0);
+            let n = lines.len().clamp(1, PROMPT_LINES);
+            let mut first = self.prompt_first.min(lines.len().saturating_sub(n));
+            if caret_line < first {
+                first = caret_line;
+            } else if caret_line >= first + n {
+                first = caret_line + 1 - n;
             }
-            let line_h = (tok.font.body * ts * 1.45).ceil();
-            let field_h = FIELD_H.max(lines.len() as f64 * line_h + (FIELD_H - line_h));
+            self.prompt_first = first;
+            let line_h = (px * 1.45).ceil();
+            let field_h = FIELD_H.max(n as f64 * line_h + (FIELD_H - line_h));
             field_y = bottom - field_h;
             let button = b.draw(cx, x + cw - bw, bottom - FIELD_H + (FIELD_H - 28.0) * 0.5, bw, label, enabled);
             hits.push((button, hit));
             shown.push(format!("button: {label}"));
             let field = rect(x, field_y, field_w, field_h);
-            let placeholder = source.placeholder(model.open_question().is_some());
-            // The input method's candidates go by the caret.
-            self.field = b.d.text_area(cx, field, &tok, &lines, line_h, &placeholder, true, hover == Some(field), ink, caret);
+            b.d.field_frame(cx, field, &tok, true, hover == Some(field));
+            let inner_x = x + tok.spacing.control_padding_x;
+            let top = field_y + (field_h - n as f64 * line_h) * 0.5;
+            // The selection behind the text; a line break in it shows as a
+            // sliver past its line's end.
+            let sel = composer.selection();
+            if !sel.is_empty() {
+                for (i, l) in layout.iter().enumerate().skip(first).take(n) {
+                    let len = l.xs.len() - 1;
+                    let (a, z) = (sel.start.max(l.start), sel.end.min(l.start + len));
+                    let past = sel.end > l.start + len && sel.start <= l.start + len && i + 1 < layout.len();
+                    if a < z || past {
+                        let x1 = l.xs[a.saturating_sub(l.start).min(len)];
+                        let x2 = if z > a { l.xs[(z - l.start).min(len)] } else { x1 } + if past { 5.0 } else { 0.0 };
+                        let y = top + (i - first) as f64 * line_h;
+                        b.d.solid(cx, rect(inner_x + x1, y, (x2 - x1).max(1.0), line_h), alpha(accent, 0.3));
+                    }
+                }
+            }
+            if draft.is_empty() {
+                let placeholder = source.placeholder(model.open_question().is_some());
+                b.d.label_elided(cx, rect(inner_x, top, inner_w, line_h), false, tok.font.body, crate::shell::darker(ink, 1.6), HAlign::Left, &placeholder);
+            } else {
+                for (i, line) in lines.iter().enumerate().skip(first).take(n) {
+                    // A line's trailing spaces hang past its end: not drawn.
+                    b.d.label_elided(cx, rect(inner_x, top + (i - first) as f64 * line_h, inner_w, line_h), false, tok.font.body, ink, HAlign::Left, line.trim_end());
+                }
+            }
+            // The caret where it is (none over a selection); the input
+            // method's candidates go by it.
+            let caret_x = layout.get(caret_line).map_or(0.0, |l| l.xs[(composer.cursor() - l.start).min(l.xs.len() - 1)]).min(inner_w);
+            let caret = rect(inner_x + caret_x + 1.0, top + (caret_line.saturating_sub(first)) as f64 * line_h + (line_h - px * 1.1) * 0.5, 1.0, px * 1.1);
+            if caret_on && sel.is_empty() {
+                b.d.solid(cx, caret, ink);
+            }
+            self.field = caret;
+            PROMPT_LAYOUT.with(|l| l.borrow_mut()[source.pane() as usize] = layout.clone());
+            self.prompt = PromptGeom { first, top, line_h, inner_x, layout };
             hits.push((field, Hit::Field));
         }
         shown.push(format!("prompt: {draft}"));

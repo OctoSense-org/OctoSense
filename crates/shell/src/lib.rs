@@ -3884,6 +3884,42 @@ impl App {
         true
     }
 
+    /// Copy or cut (Command+C, Command+X) in the chat pane typing goes to:
+    /// its prompt's selection, cut taking it out. Without a selection the
+    /// event is left to whoever else answers it.
+    fn chat_clipboard(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        let (response, cut) = match event {
+            Event::TextCopy(e) => (e.response.clone(), false),
+            Event::TextCut(e) => (e.response.clone(), true),
+            _ => return false,
+        };
+        let mut focused = [false; 2];
+        for (i, pane) in [ids!(shell_app_chat), ids!(shell_system_chat)].into_iter().enumerate() {
+            let pane = self.ui.widget(cx, pane);
+            focused[i] = pane.borrow::<system_chat::view::ShellSystemChat>().is_some_and(|p| p.has_keyboard(cx));
+        }
+        use system_chat::composer::{text_target, Pane};
+        let target = if focused[0] {
+            Some(Pane::App)
+        } else if focused[1] {
+            Some(Pane::System)
+        } else {
+            text_target(cx.key_focus().is_empty(), app_chat::is_focused(), system_chat::is_open())
+        };
+        let text = match target {
+            Some(Pane::App) => app_chat::copy_draft(cut),
+            Some(Pane::System) => system_chat::copy_draft(cut),
+            None => None,
+        };
+        match text {
+            Some(text) => {
+                *response.borrow_mut() = Some(text);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The system chat just opened on a desktop: its prompt takes the
     /// keyboard, so an input method composes in it at once (a phone opens
     /// it with a tap, which gives the keyboard itself).
@@ -6426,6 +6462,11 @@ impl App {
         // typed text (a desktop's) goes to the pane that has the keyboard.
         // Characters are typed only here, never on KeyDown.
         if self.state.is_some() && matches!(event, Event::TextInput(_) | Event::TextInputStateQuery(_) | Event::ImeAction(_)) && self.chat_text_input(cx, event) {
+            self.system_chat_changed(cx);
+            return;
+        }
+        // Copy and cut in a chat pane's prompt: its selection.
+        if self.state.is_some() && matches!(event, Event::TextCopy(_) | Event::TextCut(_)) && self.chat_clipboard(cx, event) {
             self.system_chat_changed(cx);
             return;
         }

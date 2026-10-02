@@ -358,6 +358,30 @@ pub fn draft_state() -> makepad_widgets::makepad_platform::event::FullTextState 
     with(|c| c.draft.state())
 }
 
+/// The prompt as it stands (its text, caret and selection), for drawing.
+pub fn composer() -> composer::Composer {
+    with(|c| c.draft.clone())
+}
+
+/// Edit the prompt (a click placing the caret, a drag selecting).
+pub fn edit_draft(f: impl FnOnce(&mut composer::Composer)) {
+    with(|c| {
+        f(&mut c.draft);
+        c.ui_generation += 1;
+    });
+}
+
+/// Copy or cut the prompt's selection (`None` without one).
+pub fn copy_draft(cut: bool) -> Option<String> {
+    with(|c| {
+        let text = c.draft.copy(cut);
+        if cut && text.is_some() {
+            c.ui_generation += 1;
+        }
+        text
+    })
+}
+
 pub fn scroll() -> f64 {
     with(|c| c.scroll)
 }
@@ -473,6 +497,22 @@ pub fn key(e: &KeyEvent) -> bool {
         }),
         composer::Key::NewLine => with(|c| {
             c.draft.newline();
+            c.ui_generation += 1;
+        }),
+        composer::Key::Delete => with(|c| {
+            if c.draft.delete_forward() {
+                c.ui_generation += 1;
+            }
+        }),
+        composer::Key::Move(m) => {
+            let layout = view::prompt_layout(composer::Pane::System);
+            with(|c| {
+                c.draft.motion(m, &layout);
+                c.ui_generation += 1;
+            });
+        }
+        composer::Key::SelectAll => with(|c| {
+            c.draft.select_all();
             c.ui_generation += 1;
         }),
         composer::Key::New => new_conversation(),

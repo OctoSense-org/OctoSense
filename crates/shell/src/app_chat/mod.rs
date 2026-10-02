@@ -513,6 +513,30 @@ pub fn draft_state() -> makepad_widgets::makepad_platform::event::FullTextState 
     with(|p| p.draft.state())
 }
 
+/// The prompt as it stands (its text, caret and selection), for drawing.
+pub fn composer() -> crate::system_chat::composer::Composer {
+    with(|p| p.draft.clone())
+}
+
+/// Edit the prompt (a click placing the caret, a drag selecting).
+pub fn edit_draft(f: impl FnOnce(&mut crate::system_chat::composer::Composer)) {
+    with(|p| {
+        f(&mut p.draft);
+        p.ui_generation += 1;
+    });
+}
+
+/// Copy or cut the prompt's selection (`None` without one).
+pub fn copy_draft(cut: bool) -> Option<String> {
+    with(|p| {
+        let text = p.draft.copy(cut);
+        if cut && text.is_some() {
+            p.ui_generation += 1;
+        }
+        text
+    })
+}
+
 pub fn scroll() -> f64 {
     with(|p| p.scroll)
 }
@@ -549,6 +573,22 @@ pub fn key(e: &KeyEvent) -> bool {
         }),
         Key::NewLine => with(|p| {
             p.draft.newline();
+            p.ui_generation += 1;
+        }),
+        Key::Delete => with(|p| {
+            if p.draft.delete_forward() {
+                p.ui_generation += 1;
+            }
+        }),
+        Key::Move(m) => {
+            let layout = crate::system_chat::view::prompt_layout(crate::system_chat::composer::Pane::App);
+            with(|p| {
+                p.draft.motion(m, &layout);
+                p.ui_generation += 1;
+            });
+        }
+        Key::SelectAll => with(|p| {
+            p.draft.select_all();
             p.ui_generation += 1;
         }),
         Key::Stop => stop(),
