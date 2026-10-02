@@ -26,6 +26,14 @@
 //!   ([`first_to_reveal`]). "More above" heads the list and "more below"
 //!   ends it; the card that does not fit whole peeks in above that line,
 //!   cut at the list's end.
+//! - **A card taller than its tile** (the cap, glance_card.rs) scrolls
+//!   inside it ([`TileScroll`]), with a thumb at its edge. A card with an
+//!   in-card chat (`sys.chat`) sits at its newest rows and follows them as
+//!   the conversation grows, so its field and the latest exchange stay in
+//!   view; any other card starts at its top. The wheel over such a card
+//!   scrolls it first and moves the list only at its ends. The tile's own
+//!   layout scrolls, so a press the card's controls do not claim still
+//!   opens the card window.
 //! - **A dismissal** (a card's close, Delete, Clear all) can be undone: the
 //!   shell's toast offers Undo ([`ShellGlancePanelAction::Dismissed`]), and
 //!   ⌘Z does it while the panel holds the keyboard.
@@ -46,6 +54,7 @@ use crate::glance_card::{GlanceTiles, LiveCards};
 use crate::shell::ui::{contains, rect, slide, DrawShellFill, HAlign, Ico, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellTokens};
 use makepad_widgets::*;
+use std::collections::HashMap;
 
 pub const PANEL_WIDTH: f64 = 380.0;
 const PAD: f64 = 16.0;
@@ -100,6 +109,60 @@ pub fn step_focus(len: usize, at: Option<usize>, first: usize, down: bool) -> us
 /// card under it takes its place, or the one above when it was the last.
 pub fn focus_after_dismiss(keys: &[String], i: usize) -> Option<String> {
     keys.get(i + 1).or(i.checked_sub(1).and_then(|j| keys.get(j))).cloned()
+}
+
+/// Where a card taller than its tile sits in it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TileScroll {
+    /// At its newest rows, its bottom, followed as the card grows: where a
+    /// card with an in-card chat starts, so its field and the latest
+    /// exchange stay in view.
+    Newest,
+    /// This far down from its top: where any other card starts (at 0), and
+    /// where the wheel leaves a chat scrolled back from its newest rows.
+    Top(f64),
+}
+
+impl TileScroll {
+    /// Where a card starts: one with a chat at its newest rows, any other at
+    /// its top.
+    pub fn start(chat: bool) -> Self {
+        if chat { TileScroll::Newest } else { TileScroll::Top(0.0) }
+    }
+
+    /// How far up the card is scrolled in a tile it overflows by `overflow`.
+    pub fn offset(self, overflow: f64) -> f64 {
+        let overflow = overflow.max(0.0);
+        match self {
+            TileScroll::Newest => overflow,
+            TileScroll::Top(down) => down.clamp(0.0, overflow),
+        }
+    }
+
+    /// The wheel's `dy` (positive: further down the card) over a card that
+    /// overflows its tile by `overflow`: it scrolls as far as it goes, and a
+    /// chat back at its bottom follows its newest rows again. False when it
+    /// was at that end already: the wheel is the list's.
+    pub fn wheel(&mut self, dy: f64, overflow: f64, chat: bool) -> bool {
+        let overflow = overflow.max(0.0);
+        let at = self.offset(overflow);
+        let to = (at + dy).clamp(0.0, overflow);
+        if (to - at).abs() < 0.5 {
+            return false;
+        }
+        *self = if chat && to >= overflow - 0.5 { TileScroll::Newest } else { TileScroll::Top(to) };
+        true
+    }
+}
+
+/// A tall card's place in its tile, as the panel keeps it while the card is
+/// drawn tall: the publish it is for (a newer one starts over), whether the
+/// card has a chat, and where it sits.
+#[derive(Clone, Copy, Debug)]
+struct TallCard {
+    published_ms: u64,
+    chat: bool,
+    at: TileScroll,
 }
 
 script_mod! {
@@ -206,6 +269,15 @@ pub struct ShellGlancePanel {
     /// What the last layout log said, so it is logged once per change.
     #[rust]
     logged: String,
+    /// The cards taller than their tiles: where each sits (by key), the ones
+    /// this frame drew with how far each overflows, and what the last log of
+    /// their places said.
+    #[rust]
+    tall: HashMap<String, TallCard>,
+    #[rust]
+    tall_drawn: Vec<(String, f64)>,
+    #[rust]
+    tall_logged: String,
     #[rust]
     tiles: GlanceTiles,
     /// The L0 cards' live state, by card key, as the card window keeps its
@@ -326,6 +398,32 @@ impl ShellGlancePanel {
     fn card_at(&self, p: DVec2) -> Option<String> {
         self.card_rects.iter().find(|(r, ..)| contains(*r, p)).map(|(.., key)| key.clone())
     }
+    /// How far up the tall card `card` is scrolled in its tile, which it
+    /// overflows by `overflow`: where it sits, kept from frame to frame for
+    /// its publish (first seen: a card with a chat at its newest rows, any
+    /// other at its top), and noted as drawn for the wheel.
+    fn tall_scroll(&mut self, key: &str, card: &crate::glance::GlanceCard, overflow: f64) -> f64 {
+        let fresh = || {
+            let chat = card.l0.as_ref().is_some_and(|l0| crate::glance_chat::reads_chat(&l0.source));
+            TallCard { published_ms: card.published_ms, chat, at: TileScroll::start(chat) }
+        };
+        let tall = self.tall.entry(key.to_string()).or_insert_with(fresh);
+        if tall.published_ms != card.published_ms {
+            *tall = fresh();
+        }
+        let at = tall.at.offset(overflow);
+        self.tall_drawn.push((key.to_string(), overflow));
+        at
+    }
+    /// The wheel's `dy` at `p`: a tall card there scrolls first. False when
+    /// none is there, or it is at its end that way: the wheel is the list's.
+    fn scroll_tall(&mut self, p: DVec2, dy: f64) -> bool {
+        let Some(key) = self.card_at(p) else { return false };
+        let Some(overflow) = self.tall_drawn.iter().find(|(k, _)| *k == key).map(|(_, o)| *o) else { return false };
+        let Some(tall) = self.tall.get_mut(&key) else { return false };
+        let chat = tall.chat;
+        tall.at.wheel(dy, overflow, chat)
+    }
     pub fn toggle(&mut self, cx: &mut Cx) {
         self.set_open(!self.open);
         self.redraw(cx);
@@ -345,6 +443,7 @@ impl Widget for ShellGlancePanel {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
         self.card_rects.clear();
+        self.tall_drawn.clear();
         self.close = Rect::default();
         // Every frame, open or closed: the kit keeps its overlay in tree order.
         self.d.begin_surface(cx);
@@ -441,7 +540,17 @@ impl Widget for ShellGlancePanel {
                     }
                     let r = rect(x + PAD, y, PANEL_WIDTH - PAD * 2.0, h);
                     let body = self.live.body(&key, card, "glance panel");
-                    self.tiles.draw(cx, &key, &card.app, card.contained, &body, r);
+                    // A card taller than its tile scrolls inside it (one that
+                    // peeks in shows its top), with a thumb at its edge, under
+                    // the card's actions.
+                    let overflow = if cut { 0.0 } else { crate::glance_card::overflow(&key) };
+                    let scroll = if overflow > 0.0 { self.tall_scroll(&key, card, overflow) } else { 0.0 };
+                    self.tiles.draw_scrolled(cx, &key, &card.app, card.contained, &body, r, scroll);
+                    if overflow > 0.0 {
+                        let track = rect(r.pos.x + r.size.x - 6.0, r.pos.y + 40.0, 3.0, (r.size.y - 50.0).max(12.0));
+                        let thumb = (track.size.y * r.size.y / (r.size.y + overflow)).clamp(12.0, track.size.y);
+                        self.d.solid(cx, rect(track.pos.x, track.pos.y + (track.size.y - thumb) * scroll / overflow, track.size.x, thumb), alpha(ink, 0.35));
+                    }
                     // A card that just came: an accent mark in the gutter
                     // beside it for a few seconds, the one its toast is about.
                     let age = now.saturating_sub(card.published_ms);
@@ -496,9 +605,30 @@ impl Widget for ShellGlancePanel {
             log!("glance panel: {} card(s) {}", self.card_rects.len(), layout);
             self.logged = layout;
         }
+        // Where the tall cards sit, once per change: evidence for a remote run.
+        let places: Vec<String> = self
+            .tall_drawn
+            .iter()
+            .filter_map(|(key, overflow)| {
+                let tall = self.tall.get(key)?;
+                let newest = if tall.at == TileScroll::Newest { " newest" } else { "" };
+                Some(format!("{key} {:.0}/{:.0}{newest}", tall.at.offset(*overflow), overflow))
+            })
+            .collect();
+        let places = places.join(", ");
+        if self.open && !self.sliding && places != self.tall_logged {
+            if !places.is_empty() {
+                log!("glance panel: scrolled {places}");
+            }
+            self.tall_logged = places;
+        }
         let live: Vec<String> = if self.open { crate::glance::listed().iter().map(|c| c.key()).collect() } else { Vec::new() };
         self.tiles.sweep(cx, &live);
         self.live.retain(&live);
+        // A card that is not tall now (it fits, peeks in or is scrolled out
+        // of the list) starts over when it is again.
+        let tall_drawn = &self.tall_drawn;
+        self.tall.retain(|key, _| tall_drawn.iter().any(|(k, _)| k == key));
         cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
     }
@@ -516,9 +646,15 @@ impl Widget for ShellGlancePanel {
             self.new_timer = Timer::empty();
             self.redraw(cx);
         }
-        // The wheel over the column: a card at a time.
+        // The wheel over the column: a card at a time, after a tall card
+        // under it has scrolled to its end that way.
         if let Event::Scroll(e) = event {
             if self.open && contains(self.column, e.abs) {
+                if self.scroll_tall(e.abs, e.scroll.y) {
+                    self.wheel = 0.0;
+                    self.redraw(cx);
+                    return;
+                }
                 self.wheel += e.scroll.y;
                 let mut moved = false;
                 while self.wheel >= WHEEL_STEP {
@@ -675,6 +811,41 @@ mod tests {
         assert_eq!(step_focus(5, Some(4), 0, true), 4, "the last card stays");
         assert_eq!(step_focus(5, Some(0), 0, false), 0, "the first card stays");
         assert_eq!(step_focus(3, None, 7, true), 2, "a stale first is clamped");
+    }
+
+    /// A chat card past its tile's cap (after the first exchange) sits at
+    /// its newest rows, so its field and the latest exchange show, and stays
+    /// there as the conversation grows; any other card shows its top.
+    #[test]
+    fn a_chat_card_taller_than_its_tile_shows_its_newest_rows() {
+        let chat = TileScroll::start(true);
+        assert_eq!(chat.offset(80.0), 80.0, "scrolled up by all it overflows: its bottom shows");
+        assert_eq!(chat.offset(140.0), 140.0, "a reply came: still at the newest rows");
+        assert_eq!(chat.offset(0.0), 0.0, "it fits: nothing to scroll");
+        let other = TileScroll::start(false);
+        assert_eq!((other.offset(80.0), other.offset(140.0)), (0.0, 0.0), "its top, as before");
+    }
+
+    /// The wheel over a tall card scrolls it as far as it goes and is the
+    /// list's at the card's ends; a chat scrolled back to its bottom follows
+    /// its newest rows again, and one scrolled up stays where it was read.
+    #[test]
+    fn the_wheel_scrolls_a_tall_card_and_leaves_the_list_its_ends() {
+        let mut at = TileScroll::start(true);
+        assert!(!at.wheel(40.0, 80.0, true), "at the newest rows already: the list's");
+        assert!(at.wheel(-30.0, 80.0, true));
+        assert_eq!(at, TileScroll::Top(50.0));
+        assert_eq!(at.offset(120.0), 50.0, "a reply while it was scrolled back: the rows read stay put");
+        assert!(at.wheel(-100.0, 80.0, true));
+        assert_eq!(at, TileScroll::Top(0.0));
+        assert!(!at.wheel(-10.0, 80.0, true), "at its top: the list's");
+        assert!(at.wheel(500.0, 80.0, true));
+        assert_eq!(at, TileScroll::Newest, "back at the bottom: it follows the newest rows");
+        let mut other = TileScroll::start(false);
+        assert!(!other.wheel(-10.0, 80.0, false));
+        assert!(other.wheel(30.0, 80.0, false));
+        assert!(other.wheel(500.0, 80.0, false));
+        assert_eq!(other, TileScroll::Top(80.0), "a card with no chat does not follow its bottom");
     }
 
     /// A dismissed card's focus passes to the card under it, or above it
