@@ -186,6 +186,9 @@ pub struct AiBus {
     shell_calls: HashMap<String, ClientId>,
     /// Shell calls whose client died before answering.
     failed_shell_calls: Vec<String>,
+    /// `Registered` frames the shell owes clients for their registrations
+    /// ([`AiBus::take_confirmations`]).
+    confirmations: Vec<(ClientId, String)>,
     /// Tests only: answers `auto_approve` instead of the process's
     /// developer mode.
     #[cfg(test)]
@@ -404,6 +407,12 @@ impl AiBus {
         if self.is_pane(client) {
             let Some(down) = HostedDown::parse(json) else { return Route::Drop };
             let Some(to) = down.to.clone() else { return Route::Drop };
+            // The shell confirmed each registration itself (below): the
+            // pane's answer is a second one, or, for a replayed
+            // registration, one that names no port's tag.
+            if matches!(down.msg, ServiceDown::Registered { .. }) {
+                return Route::Drop;
+            }
             if to.as_str() == OS_ENDPOINT {
                 return match down.msg {
                     ServiceDown::Call(call) => {
@@ -456,7 +465,7 @@ impl AiBus {
             _ => {}
         }
         match &mut up.msg {
-            ServiceUp::Register { manifest, .. } => {
+            ServiceUp::Register { manifest, port_tag } => {
                 // Another process cannot vouch for the person's consent: its
                 // destructive tools wait for the pane's own confirm card. Only
                 // in-process modules (`register_local`, trusted native code)
@@ -465,6 +474,13 @@ impl AiBus {
                 apply_rules(manifest, self.rules.get(&client).copied());
                 self.manifests.insert(client, manifest.clone());
                 *manifest = self.effective(manifest);
+                // The shell issues the endpoint, so the shell confirms it, at
+                // once and with the port's own tag. A port takes no call
+                // before that, and the pane may start later or never: the
+                // shell's own calls (`shell_call`) must reach the app anyway.
+                let endpoint = Self::endpoint_of(client);
+                let confirm = HostedDown { to: Some(endpoint.clone()), msg: ServiceDown::Registered { port_tag: *port_tag, endpoint } };
+                self.confirmations.push((client, confirm.to_json()));
             }
             ServiceUp::Unregister => {
                 self.manifests.remove(&client);
@@ -530,6 +546,12 @@ impl AiBus {
     /// Shell calls whose client died before answering.
     pub fn take_failed_shell_calls(&mut self) -> Vec<String> {
         std::mem::take(&mut self.failed_shell_calls)
+    }
+
+    /// The `Registered` frames owed since the last take, each for its
+    /// client: send them before routing the frame that caused them.
+    pub fn take_confirmations(&mut self) -> Vec<(ClientId, String)> {
+        std::mem::take(&mut self.confirmations)
     }
 
     /// The approval router answered a held call: on to the app, or refused
@@ -709,6 +731,30 @@ mod tests {
         let reads = ServiceManifest::new("terminal", "Terminal", "reads").with_tool(ToolDef::new("read_screen", "Read.", r#"{"type":"object"}"#, Risk::Read));
         let _ = bus.register_local(6, reads);
         assert!(bus.shell_call("terminal", "run", "{}", "hosttool-c3").is_none());
+    }
+
+    #[test]
+    fn the_shell_confirms_a_process_apps_registration_itself_pane_or_none() {
+        let browser = ServiceManifest::new("browser", "Browser", "The browser.")
+            .with_tool(ToolDef::new("tabs", "List the tabs.", r#"{"type":"object"}"#, Risk::Read));
+        // No pane yet: the port still learns its endpoint, by its own tag,
+        // so the shell's own calls reach it.
+        let mut bus = AiBus::default();
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: browser, port_tag: 7 } };
+        let _ = bus.on_custom_from(4, Some("browser"), &up.to_json());
+        let confirmations = bus.take_confirmations();
+        let [(4, json)] = confirmations.as_slice() else { panic!("expected one confirmation for client 4") };
+        let down = HostedDown::parse(json).unwrap();
+        assert!(matches!(down.msg, ServiceDown::Registered { port_tag: 7, ref endpoint } if endpoint.as_str() == "w4"));
+        assert!(bus.take_confirmations().is_empty(), "sent once");
+        assert!(matches!(bus.shell_call("browser", "tabs", "{}", "hosttool-b1"), Some(Route::ToClient(4, _))));
+        // The pane's own answer, to a live or a replayed registration, is
+        // not passed on: the port is confirmed already.
+        bus.pane_client = Some(9);
+        for tag in [7, 0] {
+            let answer = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Registered { port_tag: tag, endpoint: EndpointId("w4".into()) } };
+            assert!(matches!(bus.on_custom(9, &answer.to_json()), Route::Drop));
+        }
     }
 
     #[test]
