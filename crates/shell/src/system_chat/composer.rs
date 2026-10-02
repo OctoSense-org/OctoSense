@@ -98,6 +98,30 @@ fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// The word (or the run of spaces, or the one other character) at the
+/// character `index` of `text`, in characters: what a double-click selects,
+/// in the prompt and in the transcript.
+pub fn word_range(text: &str, index: usize) -> std::ops::Range<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    let i = index.min(chars.len());
+    let at = chars.get(i).or_else(|| i.checked_sub(1).and_then(|j| chars.get(j)));
+    let Some(&c) = at else { return i..i };
+    let i = if chars.get(i).is_some() { i } else { i - 1 };
+    let same = |d: char| if is_word(c) { is_word(d) } else if c.is_whitespace() { d.is_whitespace() && d != '\n' } else { false };
+    if !is_word(c) && !c.is_whitespace() {
+        return i..i + 1;
+    }
+    let mut a = i;
+    while a > 0 && same(chars[a - 1]) {
+        a -= 1;
+    }
+    let mut b = i + 1;
+    while b < chars.len() && same(chars[b]) {
+        b += 1;
+    }
+    a..b
+}
+
 impl Composer {
     pub fn text(&self) -> &str {
         &self.text
@@ -227,26 +251,9 @@ impl Composer {
     }
 
     /// The word (or the run of spaces, or the one other character) at
-    /// `index`: what a double-click selects.
+    /// `index`: what a double-click selects ([`word_range`]).
     pub fn word_at(&self, index: usize) -> std::ops::Range<usize> {
-        let chars: Vec<char> = self.text.chars().collect();
-        let i = index.min(chars.len());
-        let at = chars.get(i).or_else(|| i.checked_sub(1).and_then(|j| chars.get(j)));
-        let Some(&c) = at else { return i..i };
-        let i = if chars.get(i).is_some() { i } else { i - 1 };
-        let same = |d: char| if is_word(c) { is_word(d) } else if c.is_whitespace() { d.is_whitespace() && d != '\n' } else { false };
-        if !is_word(c) && !c.is_whitespace() {
-            return i..i + 1;
-        }
-        let mut a = i;
-        while a > 0 && same(chars[a - 1]) {
-            a -= 1;
-        }
-        let mut b = i + 1;
-        while b < chars.len() && same(chars[b]) {
-            b += 1;
-        }
-        a..b
+        word_range(&self.text, index)
     }
 
     /// The start and end of the line (between line breaks) the caret is on.
