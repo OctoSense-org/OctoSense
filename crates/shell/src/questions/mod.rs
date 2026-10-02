@@ -26,10 +26,12 @@
 //! when the peer's `generic_tools` lists it.
 //!
 //! **Consumers.** The system chat subscribes and shows its questions in
-//! its conversation (`crate::system_chat`); the shell's app-conversation
-//! surface (the approvals overlay, `crate::approvals::view`) shows the
-//! app's. Notification and glance cards can subscribe the same way; none
-//! of them owns a question, and none renders anything here.
+//! its conversation (`crate::system_chat`). An app's are shown in its "Ask
+//! <app>" panel (`crate::app_chat`) while that is open, and otherwise on
+//! the shell's app-conversation surface (the approvals overlay's card,
+//! `crate::approvals::view`): one surface at a time. Notification and
+//! glance cards can subscribe the same way; none of them owns a question,
+//! and none renders anything here.
 //!
 //! **Only the person answers, only through the shell.** The one answer
 //! path is [`answer`], which needs a [`PersonAnswer`]: made only by the

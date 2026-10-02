@@ -23,7 +23,10 @@
 //!   independent.
 //! - **Questions** of the app's conversation (G11: turns the person or the
 //!   app started) are shown and answered here; the system agent's go to the
-//!   system chat. **Approvals** are the shell's sheets, as everywhere.
+//!   system chat. While the panel is open, the approvals overlay draws no
+//!   card for them ([`shown_app`]): its modal card took every press, so the
+//!   panel's own option buttons answered nothing. **Approvals** are the
+//!   shell's sheets, as everywhere.
 //! - **Close** hides the panel. The sharing context stays open with its
 //!   follower, so the conversation keeps up while hidden and a reopen shows
 //!   the person's own rows again: a new context would start an empty
@@ -124,6 +127,13 @@ pub fn is_open() -> bool {
 /// The app the panel is for.
 pub fn app() -> Option<AgentApp> {
     with(|p| p.app.clone())
+}
+
+/// The app whose panel is open, if one is. Its conversation's questions
+/// are this panel's to show and answer, so the approvals overlay draws no
+/// card for them ([`crate::approvals::view::card_question`]).
+pub fn shown_app() -> Option<String> {
+    with(|p| if p.open { p.app.as_ref().map(|a| a.id.clone()) } else { None })
 }
 
 /// Whether the keyboard is the panel's.

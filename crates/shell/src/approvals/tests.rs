@@ -523,6 +523,41 @@ fn a_batch_is_one_sheet_in_the_system_chat() {
     assert!(r.answer(sheet.id, &RequestId("b1".into()), Answer::Once, &g, T0).is_err(), "answered once");
 }
 
+/// G11: an app's question is shown and answered in its "Ask <app>" panel
+/// while that is open. The overlay then draws no card for it: its modal
+/// card drew the question a second time and took every press, so the
+/// panel's own option buttons answered nothing (an instrument run found
+/// it). The card still asks another app's question, and this one once the
+/// panel is closed; the system agent's questions are never the overlay's.
+#[test]
+fn the_overlay_leaves_the_open_panels_questions_to_the_panel() {
+    use crate::ai_host::app_peers::host_tools::{AgentQuestion, QuestionAnswer, TurnOrigin};
+    use crate::questions::Questions;
+    use super::view::card_question;
+    let ask = |model: &mut Questions, peer: &str, id: &str, origin: TurnOrigin| {
+        let mut q = AgentQuestion::parse(
+            &json!({"question_id": id, "turn_id": format!("turn-{id}"),
+                "questions": [{"question": "Who should see the summary?", "options": [{"label": "Team"}, {"label": "Everyone"}]}]}),
+            "_main:api:octosense#peer",
+        )
+        .unwrap();
+        q.turn_origin = origin;
+        model.requested(peer, None, q, QuestionAnswer::new(|_| {}))
+    };
+    let mut model = Questions::default();
+    let news = ask(&mut model, "card.os.news", "q1", TurnOrigin::Person);
+    let calendar = ask(&mut model, "card.os.calendar", "q2", TurnOrigin::App);
+    ask(&mut model, "card.os.mail", "q3", TurnOrigin::SystemAgent);
+    let card = |model: &Questions, panel: Option<&str>| card_question(model.open_in_apps(), panel).map(|q| q.id);
+    assert_eq!(card(&model, None), Some(news), "no panel open: the card asks the oldest app question");
+    assert_eq!(card(&model, Some("os.news")), Some(calendar), "Ask News is open: News's question is the panel's, Calendar's is still the card's");
+    assert_eq!(card(&model, Some("os.mail")), Some(news), "a panel for another app changes nothing for News");
+    let mut news_only = Questions::default();
+    let only = ask(&mut news_only, "card.os.news", "q4", TurnOrigin::Person);
+    assert_eq!(card(&news_only, Some("os.news")), None, "the open panel is the question's one surface: no modal card over it");
+    assert_eq!(card(&news_only, None), Some(only), "the panel closed: the card asks it again");
+}
+
 #[test]
 fn always_for_makes_a_rule_and_answers_the_matching_open_lines() {
     let (mut r, relay) = router();

@@ -486,9 +486,11 @@ fn reopening_the_panel_keeps_the_persons_rows_and_the_live_follower() {
     super::send("what is new?");
     assert_eq!(persons_rows(), ["what is new?"]);
     let context = peers.0.lock().unwrap()[0].1.conversations.lock().unwrap()[0].1.clone();
+    assert_eq!(super::shown_app().as_deref(), Some(APP), "open: its questions are the panel's, not the overlay card's");
 
     super::close();
     assert!(!super::is_open());
+    assert_eq!(super::shown_app(), None, "hidden: the overlay's card asks its questions again");
     assert!(context.is_open(), "closing hides the panel; its context stays");
     // While hidden, the follower keeps the conversation up to date.
     let follower = context.follower.lock().unwrap().clone().expect("still followed");

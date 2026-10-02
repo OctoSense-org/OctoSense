@@ -17,7 +17,10 @@
 //! - **An app agent's question** ([`crate::questions`], the app's
 //!   conversation): who asks, the question and its options; a tap answers
 //!   it (the person's answer, [`crate::questions::PersonAnswer`]). Modal,
-//!   after any approval sheet.
+//!   after any approval sheet. Never for the app whose "Ask <app>" panel is
+//!   open: the panel shows and answers its conversation's questions
+//!   ([`crate::app_chat`], G11), so each question has one surface
+//!   ([`card_question`]).
 //! - **Stop** on an app-conversation sheet or question: denies or declines
 //!   what that app's agent asks and stops the turn running on its shared
 //!   conversation, whoever started it ([`super::stop_agent`]).
@@ -135,7 +138,7 @@ struct Frame {
     more_sheets: usize,
     consent: Option<AgentSummary>,
     everything: Vec<Rule>,
-    /// The oldest open question of an app's conversation.
+    /// The question the card asks ([`card_question`]).
     question: Option<crate::questions::Request>,
     /// What expired unanswered: approvals, then questions.
     expired: Vec<super::router::Expired>,
@@ -158,11 +161,22 @@ fn frame() -> Frame {
         }
     })
     .map(|mut f| {
-        f.question = crate::questions::open_in_apps().into_iter().next();
+        f.question = card_question(crate::questions::open_in_apps(), crate::app_chat::shown_app().as_deref());
         f.expired_questions = crate::questions::expired_in_apps();
         f
     })
     .unwrap_or_default()
+}
+
+/// The question the overlay's card asks, of the apps' `open` questions
+/// (oldest first): the oldest one, except those of the app whose "Ask
+/// <app>" panel is open (`panel`). That panel shows and answers its
+/// conversation's questions itself (G11); a modal card over it drew the
+/// question twice and took every press, so the panel's own buttons
+/// answered nothing.
+pub(crate) fn card_question(open: Vec<crate::questions::Request>, panel: Option<&str>) -> Option<crate::questions::Request> {
+    use crate::questions::Conversation;
+    open.into_iter().find(|q| !matches!((&q.conversation, panel), (Conversation::App(app), Some(shown)) if app == shown))
 }
 
 #[derive(Script, ScriptHook, Widget)]
