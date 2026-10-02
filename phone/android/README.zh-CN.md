@@ -31,7 +31,7 @@ export GRADLE_USER_HOME="$OCTOSENSE_TOOLS/gradle-cache"
 - `system-bridge/build/reports/lint-results-prototype.html`。
 - `quickstep/build/outputs/apk/prototype/quickstep-prototype.apk`。
 
-Makepad 打包器的源码变更后，在固定版本的检出目录 `.sources/makepad`（在仓库根目录运行 `python3 tools/setup.py` 准备）中构建它，然后在 `phone/` 下调用其独立二进制文件。以下命令只构建、不安装，**本次文档审查未验证**。这是底层打包命令，不是 Home/Bridge 配对构建与内核回执流水线；完整产物请使用 [Home README 的构建流程](../README.zh-CN.md)：
+Makepad 打包器的源码变更后，在固定版本的检出目录 `.sources/makepad`（在仓库根目录运行 `python3 tools/setup.py` 准备）中构建它，然后在 `phone/` 下调用其独立二进制文件。以下命令只构建、不安装，**未验证配方**。Home/Bridge 配对构建与内核回执流水线请使用 [Home README 的构建流程](../README.zh-CN.md)：
 
 ```sh
 # From .sources/makepad:

@@ -57,8 +57,7 @@ Outputs:
 Build the Makepad packager in the pinned checkout `.sources/makepad` (prepared
 by `python3 tools/setup.py` from the repository root) after its source changes, then invoke its
 standalone binary from `phone/`. This builds without installing.
-**Unverified in this documentation review**; this low-level command is not the
-Home/Bridge pair build or kernel receipt pipeline. Use
+**Unverified recipe.** For the Home/Bridge pair and kernel receipt pipeline, use
 [the supported build](../README.md#build-and-run) for those artifacts:
 
 ```sh

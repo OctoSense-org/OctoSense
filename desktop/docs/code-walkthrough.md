@@ -2,138 +2,133 @@
 
 English | [简体中文](code-walkthrough.zh-CN.md)
 
-This is a source-reading tutorial for a Rust developer who is new to OctoSense.
-Paths below are relative to the repository root. The companion
-[agent architecture walkthrough](../../docs/architecture-walkthrough.md) follows
-the kernel, peers, tools and Tokio tasks in more detail.
+Follow an app from its executable entry point through hosting, data access and
+agent interaction. Paths below are relative to the repository root. The
+[agent architecture walkthrough](../../docs/architecture-walkthrough.md) continues
+into the kernel, peers, tool routing and Tokio tasks.
 
-The launch recipes below are **unverified in this documentation review**: their
-package names, features and entry points were checked against source, but no GUI,
-Android APK, ROM image or device was launched. Existing dated validation records
-remain separate evidence. Run setup as described in the root README before using
-Cargo; reuse existing framework clones with the sources-hub configuration.
+**Launch recipes: unverified.** Prepare dependencies with the root README's setup
+instructions first; use its sources-hub configuration to reuse existing clones.
 
-## 1. Start with the nouns
+## 1. Locate the running components
 
-| Name | What actually runs |
+| Component | Entry point and responsibility |
 | --- | --- |
-| Desktop | The `octosense` executable; a thin entry point for `octosense-shell`. |
-| Home | The `octosense-home` executable/APK; the same shell plus built-in Settings and platform integration. |
-| Native app | Rust implementing Makepad's `AppModule`, or a separate executable hosted through the window-manager protocol. |
-| OctoScript app | An admitted `manifest.json` + `main.splash` bundle, interpreted inside App Hub's Card runner. |
-| Host service | Rust code that performs a specific operation for an attributed app and returns data. It need not use a model. |
-| App agent | A model-driven octos peer scoped to an app/account, with a workspace, sessions and explicitly granted tools. |
-| System agent | The shell's assistant, with its own tool policy and delegation tools. |
-| ROM privileged agent | An Android Java/Binder service for platform operations. It is a different component from the model-driven system agent. |
+| Desktop | `desktop/src/main.rs` starts `octosense`, a thin entry point for `octosense-shell`. |
+| Home | `phone/src/main.rs` starts `octosense-home`, adding Settings and platform integration to the shared shell. |
+| Native app | Rust implementing Makepad's `AppModule`, or an executable hosted through the window-manager protocol. |
+| Contained script app | App Hub's Card runner admits `manifest.json` and runs `main.splash` in a restricted Makepad Script/Splash VM. |
+| Host service | Rust performs operations for an attributed app and returns data. |
+| App agent | An octos peer scoped to an app/account, with sessions, a workspace and granted tools. |
+| System agent | The shell's assistant session, with tools for discovery, delegation and selected system operations. |
+| ROM privileged agent | Android's Java/Binder platform service, `AgentPlatformService`. |
 
-A Rust `trait` describes an interface; `impl AppModule` supplies one implementation.
-A `Widget` handles UI events and drawing. Neither implies a thread, an LLM nor a
-Tokio task. Likewise, a Splash file can be a native widget description or a
-contained app's program: the host and its policy determine the authority.
-Here `main.splash` runs on Makepad Script/Splash. The separate Octoscript L0
-parser/checker and `.card` lowering path are not the parser for that program.
-“OctoScript app” is the product name used by these guides, not a claim that
-these two language implementations are identical.
+Contained `main.splash` programs use Makepad Script/Splash. L0 `.card` files pass
+through Octoscript's separate parser/checker and Makepad lowering path. Both
+appear in this product; follow the loading path for the artifact you are editing.
 
-## 2. Run the smallest native example
+## 2. Run Reference and follow native hosting
 
 From the repository root, after setup:
 
 ```sh
-# An ordinary standalone Reference window.
+# Standalone Reference window.
 cargo run --locked -p octosense-reference
 
-# Reference linked into the desktop and opened as a module.
+# Reference linked into the desktop and opened at startup.
 MAKEPAD_WM_TEST_APP=reference cargo run --locked -p octosense --features app-reference -- --module reference
 
-# The normal desktop product (App Hub, Rinx, Terminal, kernel integration).
+# Standard desktop: App Hub, Rinx, Terminal and kernel integration.
 cargo run --locked --release -p octosense
 ```
 
-These are development recipes, **unverified here**. To inspect UI without taking
-over the screen, add `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=8000` and use the
-Makepad control endpoints documented by `/help`; end the run through `/quit`.
+For hidden-window inspection, add `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=8000`,
+use the Makepad control endpoints documented by `/help`, and exit through `/quit`.
 `--module` selects hosting; `MAKEPAD_WM_TEST_APP` requests startup launch.
 
 Read these files in order:
 
 1. [`apps/reference/src/lib.rs`](../../apps/reference/src/lib.rs):
-   `ReferenceView` holds `count: usize`; `handle_event` receives button/text
-   actions and changes labels. `draw_walk` delegates drawing to the contained
-   `View`. This is ordinary UI state, with no agent involved.
-2. The same file's `ReferenceModule`: `register` makes its widget type known to
-   the VM; `create` returns `InstanceParts` containing a root widget, a service
-   executor and shutdown callback. The executor says “Reference has no tools”.
-   A native app does not automatically acquire an agent.
-3. [`native-apps.json`](../../native-apps.json): Reference's source, feature,
-   hosting, storage and empty agent grants. This manifest generates the native
-   app registry and Cargo feature blocks; do not edit the generated blocks.
-4. [`desktop/src/main.rs`](../src/main.rs): imports the shell's `App` and calls
+   `ReferenceView` owns `count`; `handle_event` receives button/text actions and
+   changes labels; `draw_walk` delegates to the contained `View`.
+2. In the same file, `ReferenceModule::register` registers its widget type.
+   `create` returns `InstanceParts`: the root widget, service executor and
+   shutdown callback. `ReferenceExecutor` exposes no tools.
+3. [`native-apps.json`](../../native-apps.json) declares Reference's source,
+   feature, hosting, storage and empty agent grants. The generator uses it to
+   produce the native registry and Cargo feature blocks.
+4. [`desktop/src/main.rs`](../src/main.rs) imports the shell's `App` and invokes
    `octosense_main!`. In [`crates/shell/src/lib.rs`](../../crates/shell/src/lib.rs),
-   that macro delegates to Makepad's `app_main!` and selects the package directory.
-5. Follow `App::launch_app_with_args` in that shell file. It finds a registered
-   app, checks script-app identity/admission where applicable, prepares storage,
-   optionally focuses an existing window, then chooses module or process hosting.
-6. [`crates/shell/src/module_host.rs`](../../crates/shell/src/module_host.rs),
-   `ModuleHost::create`: establishes an instance scope, storage namespace, reply
-   handles, viewport and VM, then builds the module. Agent services are injected
-   only when declared and granted by host policy.
+   the macro calls Makepad's `app_main!` and selects the package directory.
+5. `App::launch_app_with_args` finds the registered app, checks script-app
+   identity/admission where needed, prepares storage, optionally focuses an
+   existing window, then selects module or process hosting.
+6. [`ModuleHost::create`](../../crates/shell/src/module_host.rs) creates the
+   instance scope, storage namespace, reply handles, viewport and VM, then the
+   module. Host policy controls which declared agent services it receives.
 
 For process hosting, continue to
-[`crates/shell/src/clients.rs`](../../crates/shell/src/clients.rs) and
+[`clients.rs`](../../crates/shell/src/clients.rs) and
 [`crates/process-apps`](../../crates/process-apps). The shell starts a child,
 connects the window-manager protocol, forwards input and displays its surface.
-That child process is independent of any octos peer. Terminal normally uses this
-path on macOS/Windows and with Vulkan in a Linux Wayland session; its module
-fallback and overrides are described in the [desktop README](../README.md).
+Terminal normally uses this path on macOS/Windows and in a Vulkan-enabled Linux
+Wayland session; see the [desktop README](../README.md) for module fallback and
+overrides.
+
+A native app can also reach its agent over
+[`peer_link`](../../crates/shell/src/peer_link/mod.rs). Process apps send an
+`octos_peer` envelope over their existing authenticated hub socket. The shell
+attributes frames to the launched app, checks its `agent.octos` grants and
+consent, and connects requests to the same app-peer broker used by modules.
+Module `OctosPeer` channels enter this link through `module_connected` and
+`on_module_frame`. Tool outcomes and cancellations travel back through the link;
+when a process dies, its contexts close and pending calls fail while the durable
+peer remains. **No shipped process app currently requests an agent:** Terminal's
+manifest exposes tools but has an empty `agent.octos` list.
 
 ## 3. Run and follow a script bundle
 
-The normal desktop already contains the selected system bundles. Open News or
-Calendar from the launcher. A standalone preview uses the App Hub repository's
-`card-host`; from an App Hub checkout after its own setup:
+The desktop packages selected system bundles; open News or Calendar from the
+launcher. For standalone preview, run App Hub's `card-host` from an App Hub
+checkout after following that repository's setup:
 
 ```sh
-# Replace the example path with your OctoSense checkout.
+# Replace the path with your OctoSense checkout.
 cargo run --locked --release -p octosense-card-host --bin card-host -- --bundle /path/to/OctoSense/apps/news/bundle --system
 ```
 
-This recipe is **unverified here**. `--system` admits the shipped `os.*` bundle;
-it does not give the preview the shell's host services or agent UI. In particular,
-Mail requires the shell's service. A source-backed desktop recipe is:
+`--system` admits the shipped `os.*` bundle. Shell host services and agent UI
+require the full shell. For example, run Mail's demo service from the OctoSense
+root:
 
 ```sh
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosense
 ```
 
-The demo account uses password `demo`; its sends stay in the demo. New store apps
-belong in OctoScript-App-Design-Flow, then App Hub's admission/publishing flow.
-Use a local catalog to test the real shell installation path; see
-[the desktop local-catalog recipe](../README.md#try-your-own-app-before-it-is-published).
+The demo account uses password `demo`; sends stay in the demo. Develop new store
+apps in OctoScript-App-Design-Flow and use App Hub's admission/publishing flow.
+The [local-catalog recipe](../README.md#try-your-own-app-before-it-is-published)
+tests installation into the shell before publication.
 
-Read [`desktop/system-apps.json`](../system-apps.json) and
-[`phone/system-apps.json`](../../phone/system-apps.json): these select bundles
-from `apps/`. Follow [`crates/shell/src/apps.rs`](../../crates/shell/src/apps.rs)
-for launcher entries, `agent_apps` and `register_host_services`. The linked App
-Hub `CARD_MODULE` is a native host for those interpreted programs. It is distinct
-from the opt-in AppCard assistant module.
+[`desktop/system-apps.json`](../system-apps.json) and
+[`phone/system-apps.json`](../../phone/system-apps.json) select bundles from
+`apps/`. Follow [`apps.rs`](../../crates/shell/src/apps.rs) for launcher entries,
+`agent_apps` and `register_host_services`. App Hub's native `CARD_MODULE` hosts
+these interpreted programs. The optional AppCard assistant has its own module.
 
-An app's manifest requests capabilities; admission converts those requests into
-a policy. A script's `host.request(...)` is checked under that app's identity.
-It is not arbitrary Rust execution and not automatically an LLM tool call.
-App Hub's `crates/appstore/src/services.rs` defines `HostService`, `ServiceCall`
-and replies. `ServiceCall` carries the app identity and host directory; a service
-can check both the method and caller before doing work.
+Admission resolves manifest capability requests into policy. A script's
+`host.request(...)` runs under that app's identity. App Hub's
+`crates/appstore/src/services.rs` defines `HostService`, `ServiceCall` and replies;
+the call supplies an app identity and host directory for the service to check.
+Only explicitly declared agent tools make corresponding operations available
+to a model.
 
-## 4. Follow real data through a tool, not through the model
+## 4. Follow a tool into app data and Glance
 
-Start with [`apps/calendar/bundle/tools.json`](../../apps/calendar/bundle/tools.json)
-and [`apps/calendar/host-service/src/lib.rs`](../../apps/calendar/host-service/src/lib.rs).
-The JSON declares tools and schemas; it contains no implementation. The Rust
-`CalendarService` implements the host-service interface; `handle` dispatches
-methods, while `load`/`save` own `<host_dir>/calendar/events.json`.
-
-For “add an event”, the path is:
+Start with [`Calendar's tools.json`](../../apps/calendar/bundle/tools.json) and
+[`CalendarService`](../../apps/calendar/host-service/src/lib.rs). JSON declares
+schemas and policy; Rust `handle` dispatches methods and `load`/`save` manage
+`<host_dir>/calendar/events.json`.
 
 ```mermaid
 sequenceDiagram
@@ -152,130 +147,159 @@ sequenceDiagram
     A-->>H: Answer in the requesting conversation
 ```
 
-Read [`crates/shell/src/host_tools/script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs)
-for tool loading and `HostServiceExecutor`, then `host_tools/relay.rs` for
-authorization. `calendar.remove_event` is destructive and needs the configured
-host confirmation. `calendar.notify`/`agenda` fill fixed `.card` resources and
-call the publisher installed by `register_host_services`; the shell checks the
-app's `glance` grant. The model supplies arguments, not executable card code.
+Read [`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs) for tool
+loading and `HostServiceExecutor`, then
+[`relay.rs`](../../crates/shell/src/host_tools/relay.rs) for authorization.
+`calendar.remove_event` requires destructive-action approval. The shell's
+[approval router](../../crates/shell/src/approvals/mod.rs) applies the person's
+standing rules or presents a confirmation; registered `confirm: app` tools use
+the owning app's sheet. Developer mode supplies a separate user-enabled override.
+The router records decisions in its owner-only audit log. These paths determine
+whether a tool runs; the model supplies only the call and arguments.
 
-Do not confuse these three stores/interfaces:
+The shipped declarations provide these operations:
 
-| Boundary | Actual access |
+| Agent-enabled app | Tools and implementation |
 | --- | --- |
-| Script storage | The app's storage capability and jail; only the runtime's allowed APIs. |
-| Agent workspace | The peer's app/account directory; only explicitly granted file tools, confined by shell policy. It is not a mount of every host-service database. |
-| Host-service database | Rust-owned data such as Calendar events, Mail cache and credentials, or News cache; accessed through explicitly exposed methods/tools. Secrets stay with host-owned sheets and vaults. |
+| News | `news.list`, `news.read` and `news.notify`; News's host service handles them and hands notices to the shell. |
+| Mail | `mail.notify` only; Mail's service calls the shell's `on_notify` hook. UI operations such as `mail.list`, `mail.message` and `mail.send` have no corresponding agent declarations. |
+| Calendar | `calendar.events`, `add_event`, `remove_event`, `notify`, `agenda`; its Rust service owns events and event/agenda card templates. |
+| Photos, Maps, YouTube, Camera | `<namespace>.notify` only; the shell's `NoticeService` handles each application's namespace. Camera is packaged by Home. |
 
-Current examples deliberately differ. News declares `news.list` and `news.read`.
-Mail's **agent tool file declares only `mail.notify`**: the service's UI methods
-`mail.list`, `mail.message` and `mail.send` are not thereby agent tools. Calendar's
-window currently explains how to ask its agent; it does not list/edit events
-through a script `calendar` capability, which App Hub does not expose.
+AI providers configures the host and currently declares no app agent. Calendar's
+script window explains how to ask its agent; its events are available through
+the tools above while App Hub has no script `calendar` capability.
 
-Cross-app access also needs explicit declarations: the requesting agent asks for
-a dotted tool name in `agent.tools`; the owner must offer a shareable tool, and
-the relay must grant and execute it under the right identities. App Hub admission
-also checks `HostLimits.offered_tools`; arbitrary dotted names such as
-`mail.send` are not offered by default, so editing `agent.tools` alone does
-not make the bundle admissible. A writable
-workspace or a chat message does not grant another app's files, credentials or
-API. See the companion walkthrough for system-agent delegation and current
-limits on reverse requests from an app agent to the system agent.
+Follow [`glance_notice.rs`](../../crates/shell/src/glance_notice.rs) and
+[`resources/glance/notice.card`](../../crates/shell/resources/glance/notice.card)
+for the shared notice. Mail and News keep their own services and install notice
+callbacks; `serve_system_apps` adds a `NoticeService` only for namespaces without
+a service. `publish_args` fills app name/icon, time, title and body, then
+`glance::publish_for` checks the app's `glance` grant. The notice opens its app and
+sets `notify: true`. Calendar keeps its own event and agenda card templates.
 
-## 5. Where a person talks to the app agent
+The broader [`glance.publish`](../../crates/shell/src/glance.rs) API accepts either
+L0 `source` with optional `data`, or a Splash `script` carrying its own values.
+Both render under the publishing app's policy. `notify: true` queues a toast;
+the host's `glance::dismiss` removes a card closed by the person. The fixed notice
+tools above accept text arguments; the script-card API serves richer app-owned
+surfaces. A person's action on such a surface uses the app's API permissions.
 
-The shell draws an **Ask &lt;app&gt;** panel for agent-enabled apps. On desktop,
-focus the app and use the bar, Shift+F8, or “Ask this app's agent” in the menu.
-First-use consent precedes preparation of its peer. F8 opens the system agent;
-`agents.ask` requests consent/preparation, then `peer_send_input` delegates work
-and `peer_gather` retrieves the answer. A card's `sys.chat` can also address its app
-agent. Phone touch navigation has no equivalent panel-opening control yet.
+The tests beside these implementations show the contracts directly:
+`a_host_service_tool_runs_as_the_apps_own_request` in `script_apps.rs`,
+`system_apps_without_a_service_of_their_own_get_the_notice_service` in
+`glance_notice.rs`, and `a_script_card_is_admitted_as_it_is` in `glance.rs`.
+They check attribution, namespace fallback and the script-card admission path.
 
-Follow `crates/shell/src/app_chat/`, `crates/shell/src/system_chat/`,
-`crates/shell/src/agents.rs`, `crates/ai-host/src/contained.rs` and
-`crates/app-peers/`. The human conversation and system-agent conversation have
-separate lanes/sessions on the app's peer; the panel's Stop interrupts the
-human's turn. “One peer” does not mean “one shared transcript”, “one OS thread”
-or “one Tokio task”. The Makepad event loop handles UI; broker/kernel work and
-notifications cross their own channels. The companion walkthrough maps those
-channels and kernel tasks to source symbols.
+Keep the data boundaries visible when adding a tool:
 
-The kernel must also be configured: `octos-core` links the integration but does
-not manufacture a desktop `octos` executable or a provider credential. Supply a
-compatible `OCTOS_APP_CORE_BIN`, configure AI providers and use the
-[kernel guide](../../crates/kernel/README.md). Android packages bundle
-`liboctos.so`; desktop and Android normally run a child kernel, while
-OpenHarmony uses the in-process core. These are kernel hosting choices, separate
-from whether the app UI is a module or child process.
+| Boundary | Access path |
+| --- | --- |
+| Script storage | Runtime storage APIs under the app's capability and jail. |
+| Agent workspace | The peer's app/account folder through granted file tools and shell policy. |
+| Host-service database | Explicit Rust methods/tools for Calendar events, Mail cache or News data. Credentials stay with host sheets and vaults. |
 
-## 6. Home adds Settings around the shared shell
+For cross-app calls, the requester names a dotted tool in `agent.tools`; its
+owner must declare it shareable and the relay must grant it. Admission also
+checks `HostLimits.offered_tools`: names such as `mail.send` are absent from the
+default offers. Add a complete declaration, admission offer and executor path
+before documenting a usable integration. The
+[agent walkthrough](../../docs/architecture-walkthrough.md) covers delegation
+and requests for help from another agent.
 
-Run Cargo **from `phone/`**, because its `.cargo/config.toml` selects the phone's
-bundles. From that directory, the desktop preview recipe (**unverified here**) is:
+## 5. Follow a person's conversation
+
+On desktop, focus an agent-enabled app and open **Ask &lt;app&gt;** from the bar,
+Shift+F8 or the menu. F8 opens the system agent. `agents.list` reports app agents;
+`agents.ask` waits for first-use consent and peer preparation, then returns the
+peer slug. The system agent sends the task with `peer_send_input` and gathers its
+answer with `peer_gather`. A card's `sys.chat` can address its own app agent.
+Phone touch navigation has no Ask-app panel-opening control yet.
+
+Follow [`app_chat/`](../../crates/shell/src/app_chat/mod.rs),
+[`system_chat/`](../../crates/shell/src/system_chat/mod.rs),
+[`agents.rs`](../../crates/shell/src/agents.rs),
+[`contained.rs`](../../crates/ai-host/src/contained.rs) and
+[`app-peers`](../../crates/app-peers/README.md). Human and system-agent work uses
+separate sessions/lanes on the peer; the panel's Stop interrupts the human turn.
+Makepad handles UI events, while broker/kernel channels carry requests and
+notifications. The companion walkthrough maps these channels to Rust tasks.
+
+Configure a compatible desktop `OCTOS_APP_CORE_BIN` and a provider in AI providers;
+`octos-core` enables the integration in the build. See the
+[kernel guide](../../crates/kernel/README.md). Android bundles `liboctos.so` and
+runs it as a child; OpenHarmony runs the core in-process. App UI hosting and
+kernel hosting are selected independently.
+
+## 6. Follow Home's Settings and platform bridge
+
+Run Cargo **from `phone/`** so its `.cargo/config.toml` selects the phone bundles:
 
 ```sh
 cargo run --locked --release -p octosense-home --features mobile-only
-# Add Reference/Sheets too; mobile-only and mobile-apps have different jobs.
+# Also link Reference and Sheets.
 cargo run --locked --release -p octosense-home --features mobile-only,mobile-apps
 ```
 
 [`phone/src/main.rs`](../../phone/src/main.rs) defines `App` with `#[deref]
-shell: ShellApp` plus `SettingsRuntime`. Dereferencing lets its implementation
-reach shell fields; it does not create another shell process. `install_ext`
-registers the trusted Settings module. In `handle_event`, Home first handles
-Settings startup/timing and entry intents, lets the shell process the event,
-then consumes queued platform packets and Settings requests. Observe that
-ordering when debugging a missing Settings update.
+shell: ShellApp` and `SettingsRuntime`. `install_ext` registers the trusted
+Settings module. `handle_event` first handles Settings startup/timing and entry
+intents, passes the event to the shell, then consumes queued platform packets
+and Settings requests. If a Settings update goes missing, check this ordering
+first.
 
-Follow `phone/src/settings_app.rs`, `settings_script.rs` and
-`settings_script_host_facade.rs`: Settings combines a script-owned controller/UI
-with Rust host checks. Its privilege comes from the compiled trusted singleton,
-not from a script declaring itself “settings”. `android_settings.rs` dispatches
-observations/results by channel. A returned command result and a later observed
-platform state are distinct; accepted work must not be displayed as confirmed
-platform state prematurely.
+[`settings_app.rs`](../../phone/src/settings_app.rs),
+[`settings_script.rs`](../../phone/src/settings_script.rs) and
+[`settings_script_host_facade.rs`](../../phone/src/settings_script_host_facade.rs)
+connect the script-owned controller/UI to Rust host checks. Privilege comes from
+the compiled trusted singleton. [`android_settings.rs`](../../phone/src/android_settings.rs)
+dispatches observations/results by channel. A command's accepted result and a
+later observed platform state have separate handlers; the latter confirms what
+the device currently does.
 
 On Android, continue into
-`phone/resources/android/java/dev/makepad/octosense/MakepadAppExtension.java`,
-the clients there, and `phone/android/contracts/`. The System Bridge's
-`SystemBridgeService.java` uses Binder callbacks and caller checks. Ordinary
-standalone Home has only available Android permissions/roles; installing Home
-does not give it ROM privileges. Follow [Home's build instructions](../../phone/README.md#build-and-run)
-for APK packaging; a desktop preview proves neither Binder nor device behavior.
+[`MakepadAppExtension.java`](../../phone/resources/android/java/dev/makepad/octosense/MakepadAppExtension.java),
+its clients and [`phone/android/contracts/`](../../phone/android/contracts).
+The bridge's [`SystemBridgeService.java`](../../phone/android/system-bridge/src/main/java/dev/makepad/octosense/bridge/SystemBridgeService.java)
+uses Binder callbacks and caller checks. Standalone Home operates within its
+Android permissions/roles; the ROM supplies additional privileged components.
+Follow [Home's build instructions](../../phone/README.md#build-and-run) for APK
+packaging and the separate device-validation steps.
 
-## 7. The ROM packages the platform, not another LLM peer
+## 7. Follow the ROM packaging and privileged service
 
-Read [`rom/vendor/octosense/octosense.mk`](../../rom/vendor/octosense/octosense.mk)
-and `Android.bp` for product inclusion, then
-[`rom/scripts/build-home.py`](../../rom/scripts/build-home.py), `stage-home.py`
-and `stage-forks.sh`. Build produces the Home/Bridge APK pair and receipt;
-staging verifies and copies artifacts; the LineageOS build produces the image.
-Installing, flashing and OTA delivery are separate operations.
+Read [`octosense.mk`](../../rom/vendor/octosense/octosense.mk) and
+[`Android.bp`](../../rom/vendor/octosense/Android.bp) for product inclusion,
+then [`build-home.py`](../../rom/scripts/build-home.py),
+[`stage-home.py`](../../rom/scripts/stage-home.py) and
+[`stage-forks.sh`](../../rom/scripts/stage-forks.sh). Building produces the
+Home/Bridge APK pair and receipt; staging verifies and copies artifacts; the
+LineageOS build produces the image. Installation, flashing and OTA delivery have
+separate scripts and validation steps.
 
-The privileged Android service lives in
-`rom/vendor/octosense/agent/src/dev/makepad/octosense/agent/AgentPlatformService.java`.
-Its `caller` checks Binder UID, allowed package identity and platform signature;
-methods use platform backends and report capabilities/results. Its AIDL contract
-is `IAgentPlatform.aidl`. It is a Java service with Android lifecycle and Binder
-execution, not an octos model loop and not a Rust Tokio app-agent task.
+[`AgentPlatformService.java`](../../rom/vendor/octosense/agent/src/dev/makepad/octosense/agent/AgentPlatformService.java)
+checks Binder UID, allowed package identity and platform signature in `caller`.
+Its [`IAgentPlatform.aidl`](../../rom/vendor/octosense/agent/src/dev/makepad/octosense/agent/IAgentPlatform.aidl)
+methods invoke platform backends and return capabilities/results. Android owns
+its service lifecycle and Binder execution; the LLM system conversation belongs
+to the octos kernel described earlier.
 
-Home's `AgentPlatformClient` connects to that optional ROM service. The System
-Bridge, Quickstep, SystemUI, Settings brokers and privileged agent are distinct
-Android pieces, not a universal “system agent” API an arbitrary app can call.
-Source checks cannot prove that a ROM boots or that its platform integration
-works; image/device validation remains **unverified in this review**.
+Home's `AgentPlatformClient` connects to this optional ROM service. System
+Bridge, Quickstep, SystemUI and Settings brokers have their own Android roles
+and permission boundaries. Use the ROM's
+[validation instructions](../../rom/README.md#testing-and-validation) to check
+boot, platform operations and update behavior on an assigned device.
 
-## 8. Keep the older AppCard path separate
+## 8. Follow the optional AppCard product
 
-`apps/appcard/module/src/lib.rs` adapts the optional AppCard assistant to
-`AppModule`; `apps/appcard/app/app` implements its router/composer and generated
-cards, with transport/store/render crates beside it. Enable it explicitly with
-`--features app-appcard`; defaults and `mobile-apps` leave it out.
+[`apps/appcard/module/src/lib.rs`](../../apps/appcard/module/src/lib.rs) adapts
+AppCard to `AppModule`; [`apps/appcard/app/app`](../../apps/appcard/app/app)
+implements its router/composer and generated cards, alongside the
+transport/store/render crates. Enable `--features app-appcard`; default builds
+and `mobile-apps` leave it out.
 
-AppCard's older routing/composition terminology is not the implementation of
-every modern system/app agent. The current system chat, app-chat broker and
-contained script agents work without enabling AppCard. Likewise its legacy
-`personal-data` mailbox reader is not current Mail's host-service database API.
-For learning native hosting, start with Reference; for shipped app-agent tools,
-start with Calendar/News; read AppCard when working on that optional product.
+The shared shell implements system chat, app chat and contained-app peers
+independently of AppCard. AppCard's legacy `personal-data` integration reads the
+older native Mail format; current Mail owns its cache in a host service. Start
+with Reference for native hosting, Calendar/News for app tools, and AppCard's
+own docs when changing its routing and card-generation product.

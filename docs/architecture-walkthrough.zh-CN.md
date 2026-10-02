@@ -2,168 +2,243 @@
 
 [English](architecture-walkthrough.md) | 简体中文
 
-本文面向了解 Rust 结构体、trait 和函数，但不熟悉 Agent 与 OctoSense 的开发者。阅读依据是 2026-10-01 检查的 OctoSense `c19da8d`，以及 Cargo 锁定的 octos `ae230ce0`。[架构参考](architecture.zh-CN.md)说明整体设计；本文沿着调用链、数据所有权与执行边界阅读实现。ADR 中的决定不代表所有步骤都已运行。
+本文沿着一条消息，阅读应用窗口、Shell、Agent 内核与工具执行器之间的调用。如果你了解 Rust，但刚接触 OctoSense 或 Agent，可以从这里开始。[架构参考](architecture.zh-CN.md)介绍整体设计，本文跟踪实现中的调用与所有权。依赖版本以 [Cargo.toml](../Cargo.toml) 和 [native-runtime.lock.json](../native-runtime.lock.json) 为准。ADR 记录设计决策，尚待实现的部分列在第 11 节。
 
-## 1. 先区分名字
+## 1. 先分清这些名称
 
-| 名称 | 在这里的含义 |
+| 名称 | 本文中的含义 |
 | --- | --- |
-| OctoSense | 桌面/Home Shell、应用和宿主服务；ROM 将 Home 与 Android 平台组件一起打包。 |
-| Makepad | Rust UI、事件循环与渲染框架。 |
-| Splash / Makepad Script | 受限 `main.splash` 应用使用的脚本 VM 和 UI 语言，不是独立的 Octoscript L0 解析器。 |
-| Octoscript / Octoscript-Makepad | L0 卡片语言、检查/降级到运行时的工具和 Makepad 集成；`.card` 与 `main.splash` 的加载路径不同。 |
-| octos | 负责模型调用、回合、工具、记录、记忆及 peer 协作的 Agent 内核，不是操作系统内核。 |
-| Agent | 读取消息、选择已提供的工具、根据结果继续推理并回答的模型工作单元。模型输出本身不会执行应用操作。 |
-| session / turn | session 标识会话及其状态；turn 是一次输入引起的执行，可包含多次模型和工具调用。 |
-| peer / request context | peer 是持久协作身份；context 是该 peer 下的另一个会话，有独立记录、工作目录和子记忆命名空间。 |
-| tool / host service | tool 是提供给模型的操作；host service 是处理应用或工具执行器请求的 Rust 实现。两者不会自动互相暴露。 |
-| `AGENTS.md` / `AGENT.md` | 仓库贡献者规则 / 应用包的 Agent 指令文件。App Hub 可以校验后者，但 Shell 尚未将它装入 peer 提示词。 |
+| OctoSense | 桌面/Home Shell、应用及其宿主服务。ROM 把 Home 与 Android 平台组件一起打包。 |
+| Makepad | Rust UI、事件与渲染框架；事件循环更新控件树。 |
+| Splash / Makepad Script | 隔离运行 `main.splash` 应用的脚本 VM 与 UI 语言；与 Octoscript L0 解析器分别实现。 |
+| Octoscript / Octoscript-Makepad | L0 卡片语言、检查器、lowering 及 Makepad 集成，还提供应用运行时支持。`.card` 与 `main.splash` 有各自的加载路径。 |
+| octos | Agent 内核，负责模型调用、回合、工具、对话记录、记忆与 peer 协作；这里的“内核”指 Agent 运行时。 |
+| Agent | 读取消息、选择工具、消费结果并回答的模型工作单元。实际操作由工具执行器完成。 |
+| Session / turn | Session 保存一次对话的身份与状态；turn 是响应一次输入的执行过程，可包含多次模型请求与工具调用。 |
+| Peer / request context | Peer 是持久的协作 Agent 身份；context 是属于该 peer 的另一个 session，有独立记录、工作目录和子记忆命名空间。 |
+| Tool / host service | Tool 是模型可选择的操作；host service 是应用或执行器调用的 Rust 服务。分别检查它们的授权与入口。 |
+| `AGENTS.md` / `AGENT.md` | 前者指导仓库贡献者；后者是应用包的 Agent 指令文件。App Hub 会准入后者，但 Shell 尚未把它加载进 peer 提示词。 |
 
-相关仓库是 [Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)、[App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)、[Octoscript-Makepad](https://github.com/OctoSense-org/Octoscript-Makepad) 和 [octos](https://github.com/octos-org/octos)。分别读取各自的锁定版本，不要默认相邻 checkout 的 `main` 就是 Shell 使用的版本。
+相关仓库的导读：[Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/docs/junior-architecture-walkthrough/docs/CODE-WALKTHROUGH.md)、[App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/docs/junior-architecture-walkthrough/docs/CODE-WALKTHROUGH.md)、[Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/docs/junior-architecture-walkthrough/docs/architecture-walkthrough.md)、[octos](https://github.com/octos-org/octos/blob/docs/junior-architecture-walkthrough/docs/octosense-integration-walkthrough.md)。这些链接指向已发布的文档分支；运行时版本仍由使用方的依赖锁定文件控制。
 
-## 2. 从可执行入口找到应用宿主
+## 2. 从可执行入口读到应用宿主
 
-先读 [desktop/src/main.rs](../desktop/src/main.rs)、[phone/src/main.rs](../phone/src/main.rs)，再读 [shell/src/lib.rs](../crates/shell/src/lib.rs)。Desktop 和 Home 是链接同一 Shell 的两个包；Home 还提供 Settings 与平台集成。ROM 打包 Home 和 Android 特权组件，并未另写一套 Rust Agent 架构。
+先打开 [desktop/src/main.rs](../desktop/src/main.rs)、[phone/src/main.rs](../phone/src/main.rs)，再读 [crates/shell/src/lib.rs](../crates/shell/src/lib.rs)。Desktop 和 Home 链接同一个 Shell；Home 还提供 Settings 与平台集成。ROM 打包 Home 和特权 Android 服务，沿用同一套 Rust Agent 架构。
 
-应用启动选择来自 [native-apps.json](../native-apps.json)、[apps.rs](../crates/shell/src/apps.rs) 中的 `AppRegistry`，以及各产品的 `system-apps.json`：
+应用启动方式来自 [native-apps.json](../native-apps.json)、[apps.rs 的 AppRegistry](../crates/shell/src/apps.rs) 与各产品的 `system-apps.json`：
 
-| 应用形态 | 源码入口 | 实际执行方式 |
+| 启动对象 | 代码路径 | 实际运行方式 |
 | --- | --- | --- |
-| Rust 模块，如 Reference、Rinx | [module_host.rs](../crates/shell/src/module_host.rs) | 与 Shell 同进程；每个实例有脚本 isolate，但 Rust 内存仍共享。 |
-| 原生进程应用，目前为受支持桌面上的 Terminal | [clients.rs](../crates/shell/src/clients.rs)、[hub.rs](../crates/shell/src/hub.rs)、[process-apps](../crates/process-apps/src/lib.rs) | 子进程通过经过认证的 Makepad hub 交换帧、输入和 AI-bus 消息。此连接不同于 octos 协议连接。 |
-| 受限脚本应用 | App Hub 的 `CARD_MODULE`，从 `apps.rs` 接入 | 校验应用包后创建嵌套的受限 Splash VM；每个包不需要编译一个 Rust 可执行文件。 |
-| L0 glance 卡片 | [glance.rs](../crates/shell/src/glance.rs)、[glance_chat.rs](../crates/shell/src/glance_chat.rs) | 运行时检查、转换并渲染卡片，宿主提供数据和聊天；卡片本身不是新 peer。 |
+| 原生 Rust 模块，如 Reference、Rinx | [module_host.rs](../crates/shell/src/module_host.rs)：创建模块，注入作用域句柄、助手和存储接口 | Rust 代码与 UI 在 Shell 进程内运行；每实例有脚本 isolate，Rust 内存仍在同一进程。 |
+| 原生进程应用，如受支持桌面上的 Terminal | [clients.rs](../crates/shell/src/clients.rs)、[hub.rs](../crates/shell/src/hub.rs)、[process-apps](../crates/process-apps/src/lib.rs) | 子进程经认证的 Makepad hub socket 交换帧、输入与 AI bus 消息。同一 socket 的 `octos_peer` 封装还支持助手连接（第 5 节）；当前随产品提供的进程应用未请求 `agent.octos` 服务。 |
+| 隔离脚本应用 | `apps.rs` 进入 App Hub 的 `CARD_MODULE` | Card runner 准入应用包，创建受限的嵌套 Splash VM；capability 限制宿主服务和平台 API。每个包无需编译 Rust 可执行文件。 |
+| Glance 卡片 | [glance.rs](../crates/shell/src/glance.rs)、[glance_chat.rs](../crates/shell/src/glance_chat.rs) | L0/L1 `source` 卡片经检查并结合宿主数据 lower 到运行时；Splash `script` 卡片在发布者策略下运行交互逻辑。`notify` 增加通知，UI 用 `glance::dismiss` 移除，应用用 `glance.withdraw` 撤回。聊天通向发布者的 peer。 |
 
-具体命令见[桌面](../desktop/README.zh-CN.md)、[Home](../phone/README.zh-CN.md)、[ROM](../rom/README.zh-CN.md)及[系统应用](../apps/README.zh-CN.md)。下面从仓库根目录运行的启动/构建命令已核对源码，但**本次未验证实际启动、GUI 或设备构建**：
+各产品运行细节见[桌面](../desktop/README.zh-CN.md)、[Home](../phone/README.zh-CN.md)、[ROM](../rom/README.zh-CN.md)和[系统应用](../apps/README.zh-CN.md)。以下构建/启动配方 **unverified（未验证）**，平台前置条件见产品 README。在仓库根目录运行：
 
 ```sh
 python3 tools/setup.py --hub /path/to/existing-clones
 python3 tools/setup.py --check --cargo
 cargo run --release -p octosense
+# 可选的进程内 Rust 示例：
 MAKEPAD_WM_TEST_APP=reference cargo run --release -p octosense --features app-reference -- --module reference
+# 启用内核集成；二进制应来自 Cargo.toml 锁定的 octos 版本：
 OCTOS_APP_CORE_BIN=/path/to/pinned/octos \
   cargo run --release -p octosense --features octos-core
 ```
 
-内核二进制应来自 `Cargo.toml` 锁定的 octos 版本，`OCTOS_APP_CORE_BIN` 必须指向文件；这里不会查找 `PATH`。真实对话还要求用户在宿主拥有的 AI providers 面板配置提供方和模型。编译 Rust 不会自动配置凭据。自动化 UI 检查使用产品 README 的隐藏窗口方式。
+真实对话还需要在 AI providers 的宿主确认面板配置提供方、模型与凭据。`OCTOS_APP_CORE_BIN` 指定一个文件；此启动器不会搜索 `PATH`。自动 UI 工作使用产品 README 中的隐藏窗口方式。
 
-脚本应用的 Design Flow `tools/octo` 是 Python CLI，包装 App Hub 的 `card-host` 和 `hub`，与 octos Agent 内核无关。`card-host` 可检查受限 UI/策略，但没有安装 Shell 的 Mail、Calendar、提供方或 peer 服务。这些集成必须在 Shell 中验证；`hub check` 通过不代表 Agent 回合成功。
+脚本应用使用 Design Flow 的 Python CLI `tools/octo`，它封装 App Hub 的 `card-host` 与 `hub`。在 Design Flow 检出目录运行 `tools/octo run /path/to/bundle`（启动配方未验证）。独立 runner 检查隔离 UI 与策略；Mail、Calendar、提供方与 peer 服务由 Shell 注册，因此集成测试需要 Shell。`hub check` 通过说明包满足准入约定。
 
-## 3. 谁拥有内核
+## 3. 找到内核的所有者
 
-阅读 [ai-host/src/lib.rs](../crates/ai-host/src/lib.rs)，然后读 [kernel/src/lib.rs](../crates/kernel/src/lib.rs)、[launch.rs](../crates/kernel/src/launch.rs)、[kernel.rs](../crates/kernel/src/kernel.rs) 和 [router.rs](../crates/kernel/src/router.rs)。
+依次阅读 [ai-host/src/lib.rs](../crates/ai-host/src/lib.rs)、[kernel/src/lib.rs](../crates/kernel/src/lib.rs)、[launch.rs](../crates/kernel/src/launch.rs)、[kernel.rs](../crates/kernel/src/kernel.rs) 和 [router.rs](../crates/kernel/src/router.rs)。
 
-1. Shell 调用 `ai_host::start` 注册服务、配置内核来源。`model.complete` 是单次模型请求，不会创建 peer 或工具循环。
-2. 首个获准使用内核的消费者调用 `Core::connect`，得到逻辑 `Connection`；后续消费者共享同一代内核。
-3. `launch::resolve` 选择桌面子进程、Android 包装为 `liboctos.so` 的可执行文件，或 OpenHarmony 内嵌服务；iOS 此处没有内核。
-4. `kernel::supervise` 拥有运行中的进程/任务和消息泵；`Router` 在唯一物理连接上关联消费者请求 ID 与会话事件。
-5. OUP 使用 JSON-RPC 请求和异步通知。默认通过 stdio 传输逐行 JSON；开启 Talk to Octos 后改用宿主管理的本地 WebSocket，不会为每个客户端另起一个内核。
-6. 提供方变更会重启内核代次，消费者必须重连、重新绑定。丢弃一个 Rust `Connection` 不等于删除 peer 记忆。
+1. Shell 调用 `ai_host::start` 注册服务、配置内核来源。`model.complete` 是一次提供方请求；peer 与工具循环走另一条路径。
+2. 首个获授权的使用方调用 `Core::connect`，得到逻辑 `Connection`；后续使用方共享同一内核代际。
+3. `launch::resolve` 选择桌面子进程（`OCTOS_APP_CORE_BIN` 或显式程序）、Android 打包的 `liboctos.so` 可执行文件，或 OpenHarmony 内嵌服务。iOS 在这里没有内核。
+4. `kernel::supervise` 持有运行中的进程/任务和帧循环。`Router` 在一条物理连接上关联使用方请求 ID 与 session 事件。
+5. OUP 协议使用 JSON-RPC 与异步通知。普通模式经 stdio 传输逐行 JSON；启用 Talk to Octos 后改用宿主管理的回环 WebSocket，客户端共享该内核。
+6. 提供方变化会重启代际，使用方需重连并重新绑定。Peer 记忆的生命周期长于 `Connection`。
 
-ROM 的 Android 特权“agent”执行经过允许的平台操作，不运行系统 LLM 会话。这两个“agent”必须分清。
+ROM 的特权 Android 服务也称“agent”，负责通过 Android bridge 执行允许的平台操作；系统 LLM 对话运行在 octos 中。
 
-## 4. 跟随系统聊天的一条消息
+## 4. 跟踪一条系统聊天消息
 
-读 [system_chat/mod.rs](../crates/shell/src/system_chat/mod.rs)、[session.rs](../crates/shell/src/system_chat/session.rs)、[link.rs](../crates/shell/src/system_chat/link.rs) 和 [system_tools.rs](../crates/kernel/src/system_tools.rs)。
+阅读 [system_chat/mod.rs](../crates/shell/src/system_chat/mod.rs)、[session.rs](../crates/shell/src/system_chat/session.rs)、[link.rs](../crates/shell/src/system_chat/link.rs) 和 [system_tools.rs](../crates/kernel/src/system_tools.rs)。
 
-助手面板发送 `Command` 给工作线程；`Driver` 打开 `_main:api:octosense#system`、读取历史并启动回合。事件更新聊天模型，`SignalToUI` 唤醒 Makepad 绘制快照。绘制线程不会同步等待模型完成。
+助手面板向工作线程发送 `Command`。`Driver` 打开 `_main:api:octosense#system`、读取历史并启动回合。收到的事件更新聊天模型，`SignalToUI` 唤醒 Makepad 事件循环绘制快照。
 
-系统 Agent 是 `_main` profile 下的会话。宿主通过 `session/tool_list/set` 缩小其内核工具集；`SYSTEM_AGENT_TOOLS` 包括 `peer_list`、`peer_send_input`、`peer_gather`、`peer_respond`。用户开启命令执行后，正常路径是 Shell 的 `terminal.run` 及其审批界面，而不是 octos 内置 `shell`。
+系统 Agent 是 `_main` profile 的一个 session。宿主通过 `session/tool_list/set` 限定其内核工具；`SYSTEM_AGENT_TOOLS` 包含 `peer_list`、`peer_send_input`、`peer_gather` 和 `peer_respond`。用户开启命令执行后，它通过 Shell 的 `terminal.run` 与审批 UI 执行命令；octos 内置 `shell` 不在其工具列表中。
 
-[agents.rs](../crates/shell/src/agents.rs) 的 `agents.list` 发现应用 Agent 及其状态，`agents.ask` 请求首次同意。后者不是通用的“应用调用系统 Agent”聊天 API，模型也不能替用户同意。
+[agents.rs](../crates/shell/src/agents.rs) 提供两个宿主工具：`agents.list` 查询应用 Agent 及可用状态；`agents.ask` 打开首次同意面板并等待可用的 peer slug。成功后系统 Agent 用 `peer_send_input` 提交任务；ask 调用只准备访问。首次同意由用户控制。
 
-## 5. 一个应用 peer，两条并行通道
+## 5. 一个应用 peer，两条对话通道
 
-先读 [contract.rs](../crates/app-peers/src/contract.rs)，再读 [broker.rs](../crates/app-peers/src/broker.rs)：`OctosAppService` 是应用拿到的受限助手句柄；`OctosContext` 是对话/请求句柄；`ContextSpec` 携带宿主认证的账号、实例和服务授权；`Broker(Arc<Inner>)` 实现连接、peer、context 与在途请求管理。
+先读 [app-peers/src/contract.rs](../crates/app-peers/src/contract.rs)，再读较大的 [broker.rs](../crates/app-peers/src/broker.rs)：
 
-原生模块经 [hosted.rs](../crates/app-peers/src/hosted.rs) 和 [injection.rs](../crates/app-peers/src/injection.rs) 获得服务。脚本应用经 [contained.rs](../crates/ai-host/src/contained.rs) 接入同一 broker。manifest 的助手服务、`agent` 块或 `tools.json` 使应用具备 Agent 资格，但仍需内核、同意及有效账号。
+- `OctosAppService`：应用拿到的作用域助手句柄。
+- `OctosContext`：对话/请求句柄；`call(ContextOp, EventSink)` 启动操作并交付 `ContextEvent`。
+- `ContextSpec`：宿主认证的账号、实例与已授权服务名。
+- `Broker`：Shell 对接口的实现，通过 `Arc<Inner>` 持有连接、peer、context 与在途请求。
 
-`card.os.news` 是 broker 使用的应用身份，不一定是内核生成的 peer slug。`peer/prepare` 返回 slug、会话和宿主凭据，应使用返回值。peer 按应用与账号区分；无账号应用使用 `device`，Mail 使用宿主报告的已登录账号。`ensure_peer` 恢复记录、核验命名空间并注册工具，成功后才执行回合。
+原生模块通过 [hosted.rs](../crates/app-peers/src/hosted.rs) 和 [injection.rs](../crates/app-peers/src/injection.rs) 获得句柄；隔离应用通过 [contained.rs](../crates/ai-host/src/contained.rs) 访问相同 broker。脚本 manifest 声明助手服务或 `agent` 块，或包内包含 `tools.json`，就具备 Agent 资格；运行还需要内核、用户同意及适用的有效账号。
 
-系统 Agent 调用 `peer_send_input` → octos 发出 `peer/input` → Shell broker 校验和排队 → broker 以 input ID 在 peer 会话调用 `turn/start`。因此是 Shell 驱动应用回合，并非内核收到消息就绕过 Shell 执行。
+原生进程客户端使用 [peer_link](../crates/shell/src/peer_link/mod.rs)：`OctosPeer` 消息封装为 `octos_peer`，共用已认证的 hub socket。Shell 根据自己启动的客户端确定应用和实例，检查 `native-apps.json` 的确切 `agent.octos` 授权与同意状态，再把 session、history、turn、interrupt 操作交给该应用的 broker。进程内模块也能打开同一客户端，由 `module_host` 认领暂存的连接；注入的 `OctosAppService` 是另一种适配器。进程退出会取消在途工作并关闭请求 context，保留持久 peer；结果不确定的写入返回 `outcome_unknown`。
 
-人类通过 `open_conversation` 打开带 `share_history` 的 request context，形成另一条通道。两条通道的 transcript 和回合状态独立；模型只读地看到另一条通道的有限近期文本。多个聊天界面可以打开同一 peer 的不同 conversation context。普通 `open_context` 用于 Rinx mini app 等客户端工作，不共享历史。context 有自己的内核会话，但不是另一个应用 peer。
+`card.os.news` 是 broker 的应用身份；内核的 peer slug 由 `peer/prepare` 返回，连同 peer session 和宿主凭据一起使用。Peer 按应用与账号区分：无账号应用使用 `device`，Mail 使用宿主报告的登录账号。`ensure_peer` 恢复记录的 peer，核对命名空间并注册工具，然后才运行回合。
 
-`driver_of` 与 `take_over` 保证一个 peer 的系统输入队列只有一个 broker 驱动，避免每个应用窗口重复执行同一 `peer/input`。人类 context 的回合可以同时运行。
+```mermaid
+sequenceDiagram
+    participant H as 用户
+    participant S as 系统 Agent session
+    participant K as octos
+    participant B as Shell broker
+    participant A as 应用 peer session
+    participant C as 应用对话 context
+    S->>K: peer_send_input(peer, task)
+    K->>B: peer/input 通知
+    B->>B: 检查账号、同意与工具；输入排队
+    B->>K: peer session 上 turn/start，携带 input id
+    K->>A: 执行系统通道回合
+    H->>B: Ask app：ContextOp::Turn
+    B->>K: peer/context/open，share_history；turn/start
+    K->>C: 执行用户通道回合
+    A-->>K: 回合完成 / peer 结果
+    K-->>S: 黑板结果可由 peer_gather 读取
+    C-->>B: 流式事件与完成
+    B-->>H: 应用对话 / 卡片聊天回复
+```
 
-## 6. 人在哪里说话，回答回到哪里
+应用 peer session 是**系统通道**；`open_conversation` 创建带 `share_history` 的请求 context，作为**用户通道**。两者各有记录和回合状态，有限的另一通道近期文本以只读形式补充。多个用户界面可以创建同一 peer 的多个对话 context。`open_context` 用于无历史共享的客户端工作，例如 Rinx 小程序。每个请求 context 是独立的内核 session，归属于原来的应用 peer。
 
-| 入口 | 实现 |
+多个原生实例共享 peer 时，broker 的 `driver_of` / `take_over` 选择一个 broker 驱动系统通道输入队列，避免多个窗口重复执行 `peer/input`。用户 context 的工作可以与当前系统通道回合并发。
+
+## 6. 用户在哪里提问，结果返回哪里
+
+| 入口 | 实现与行为 |
 | --- | --- |
-| 系统助手面板 / F8 | `system_chat` 使用系统会话；系统委派任务引发的应用问题也显示在此。 |
-| “Ask <app>” / Shift+F8 | [app_chat](../crates/shell/src/app_chat/mod.rs) 调用 `agents::conversation`，订阅两条通道并合并历史；Send 在人类 context 启动回合。 |
-| 原生应用自己的聊天 | 注入的 `OctosAppService::open_conversation`，应用渲染事件。 |
-| 脚本应用自己的聊天 | 通过 `host.request` 调用精确授权的四个 `octos.*` 服务。News/Mail/Calendar 自身未声明这些调用，但 Shell 仍可驱动其 Agent。 |
-| 卡片中的聊天 | `sys.chat` → [l0-chat](../crates/l0-chat/src/lib.rs) 与 [glance_chat.rs](../crates/shell/src/glance_chat.rs)，校验发布者后绑定拥有该卡片的应用。 |
+| 系统助手面板，F8 | `system_chat` 使用系统 Agent 的 session；系统委派工作产生的问题也在这里显示。 |
+| “Ask <app>”，Shift+F8 | [app_chat/mod.rs](../crates/shell/src/app_chat/mod.rs) 经 `agents::conversation` 订阅两条通道并合并历史；发送消息启动用户 context 回合。 |
+| 原生应用自己的聊天 | 调用注入的 `OctosAppService::open_conversation`，由应用绘制事件。 |
+| 脚本应用自己的聊天 | 经 `host.request` 调用确切获授权的 `octos.session.open`、`octos.session.history`、`octos.turn.start`、`octos.turn.interrupt`。随产品提供的系统应用 Agent 由 Shell 驱动，其脚本无需声明这些调用。 |
+| 已发布卡片中的聊天 | `sys.chat` 经 [l0-chat](../crates/l0-chat/src/lib.rs) 与 [glance_chat.rs](../crates/shell/src/glance_chat.rs) 到达发布者的 Agent；宿主核对卡片归属。 |
 
-目前手机触摸导航还没有打开 Ask 面板的对应入口；应用自己的聊天或已发布卡片的聊天是不同入口。Ask 面板的 Stop 只停人类通道；另一个明确的按钮停系统任务。底层 conversation 的 `ContextOp::Interrupt` 范围更大，可中断两条通道，不能把所有 Stop 混为一谈。隐藏面板保留 context/订阅；切换应用或撤销权限才关闭。
+手机触控导航尚无打开 Ask-app 面板的对应控件；应用自己的聊天与卡片聊天是另外的入口。Ask-app 面板的 Stop 中断用户通道，“Stop the system agent's task” 中断系统通道。底层 `ContextOp::Interrupt` 范围更大，可以中断两条通道。隐藏面板保留 context 和订阅；切换应用或撤销访问会关闭它。
 
-Shell 将自己的输入动作标为 `TurnTrigger::Person`；脚本 `octos.turn.start` 可携带 `trigger`/`from`，但其 `trigger: "person"` 只成为 `AppSaysPerson`。聊天中的人物标签不证明宿主看到了真实用户操作，也不会解锁仅限用户主动发起的审批规则。
+Shell 将聊天输入动作标为 `TurnTrigger::Person`。脚本调用 `octos.turn.start` 可传 `trigger` / `from`，但 `trigger: "person"` 被记录为 `AppSaysPerson`；脚本标签不能作为可信用户动作来匹配审批规则。
 
-工具结果先回到发起它的应用回合，供模型继续处理。人类 context 的最终事件通过其 event sink 回到聊天界面；系统委派回合的结果进入 peer blackboard，系统 Agent 用 `peer_gather` 获取并向用户总结。
+结构化工具结果回到发起它的应用回合。用户 context 的最终事件经其 event sink 回到对应界面；系统委派回合的结果写入 peer 黑板，由系统 Agent 获取并整理回答。
 
-## 7. 将工具声明追到真正的 Rust 实现
+## 7. 从工具声明追到 Rust 执行器
 
-读 [script_apps.rs](../crates/shell/src/host_tools/script_apps.rs)、[relay.rs](../crates/shell/src/host_tools/relay.rs) 和 [host_tools.rs](../crates/app-peers/src/host_tools.rs)。以 Calendar 的 `calendar.events` 为例：
+阅读 [host_tools/script_apps.rs](../crates/shell/src/host_tools/script_apps.rs)、[relay.rs](../crates/shell/src/host_tools/relay.rs)、[app-peers/host_tools.rs](../crates/app-peers/src/host_tools.rs)。以 Calendar 的 `calendar.events` 为例：
 
-1. [tools.json](../apps/calendar/bundle/tools.json) 声明 schema、风险、共享及实现方式；App Hub 校验摘要和规则。
-2. `from_bundle` 读取已准入声明；`install` 安装 catalog 项和 `HostServiceExecutor`。
-3. 驱动 peer 的 broker 经 `peer/tools/register` 注册精确工具集。
-4. 模型请求调用后，octos 发出 `peer/tool/call`；broker 附上真实调用者、账号、context 并交给 Shell `ToolHost`。
-5. `Relay::handle` 检查授权、同意、账号状态、输入 schema、大小及预算，需要时走 Shell 审批。
-6. 执行器以工具所属应用身份调用 [Calendar 服务](../apps/calendar/host-service/src/lib.rs)。回复经队列回来，输出也经过校验，`ToolReply` 最多发送一次 `peer/tool/result`。
-7. 模型读取 JSON 结果，回答或继续调用其他已授权工具。
+1. [tools.json](../apps/calendar/bundle/tools.json) 声明 schema、风险、共享与实现方式；App Hub 校验应用包并计算摘要。
+2. `script_apps::from_bundle` 加载准入的声明；`install` 加入 relay catalog，并安装 `HostServiceExecutor`。
+3. 驱动 peer 的 broker 用 `peer/tools/register` 注册精确工具列表；模型才能请求这些工具。
+4. octos 发出 `peer/tool/call`，broker 盖上真实调用方、账号与 context，交给 Shell 的 `ToolHost`。
+5. `Relay::handle` 检查授权、同意、账号、输入 schema、大小与调用预算；需要审批的调用进入下述路由器。
+6. 执行器以**工具所属应用**的身份调用 Calendar 宿主服务，读取 [Calendar 存储](../apps/calendar/host-service/src/lib.rs)。结果经回复队列返回，检查输出 schema/大小后，`ToolReply` 最多发送一次 `peer/tool/result`。
+7. 模型消费 JSON 结果并继续回合，输出回答或请求另一个获授权工具。
 
-声明不等于实现。`implemented_by: "host-service"` 需要存在对应服务且所属应用有权限；`implemented_by: "app"` 目前虽能准入，Card runner 尚未实现其脚本执行器，会返回不可用。复制 `tools.json` 或 gate 通过都不会补齐服务代码。
+`implemented_by: "host-service"` 需要存在可调用的服务；`implemented_by: "app"` 虽可作为元数据准入，但 Card runner 尚无脚本工具执行器，会返回 unavailable。声明文件和准入检查分别描述、验证接口；真正操作需要执行器代码。
 
-## 8. “读取应用数据”有几种完全不同的含义
+[host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs) 将 broker 线程的调用放入 inbox，由 UI 事件循环泵送并排队回复：
 
-| 数据 | 访问方式 |
+| 工具路线 | 执行边界 |
 | --- | --- |
-| 应用账号目录 | [app_storage](../crates/shell/src/app_storage/mod.rs) 和 `agent_workspace` 将新 peer 的 cwd 绑定到获准目录；内核文件工具仍需授权。 |
-| context 读取账号文本文件 | Shell 的 [files.list/read/search](../crates/shell/src/host_tools/files.rs)，目前仅 Unix、需同意和可用 workspace；有读取上限，拒绝符号链接并隐藏兄弟 context。这不是 SQLite 查询 API。 |
-| 人类对话读取父账号目录 | `storage.agent_workspace: "account"` 时请求 `read_parent`，父目录只读、写入仍限自身 context；普通客户端 context 不自动拥有此能力。 |
-| 宿主服务数据库或远端账号 | 必须经声明且实现的工具访问；workspace 不会挂载所有服务数据库或泄露凭据。 |
-| 对话历史和 Agent 记忆 | octos session/context 及 `app/<broker-app-id>/acct-<tag>`，不同于应用业务数据。 |
-| 机密 | 宿主的 secret store 和输入面板，不在脚本状态或 Agent workspace。 |
+| 隔离应用，`implemented_by: "host-service"` | `HostServiceExecutor` 调用准入的所属应用 Rust 服务。 |
+| 原生模块 | `OctosAppService::set_tool_executor` 注册的回调。 |
+| 原生进程 | `peer_link` 经认证的 hub socket 发送工具请求；仍需注册与授权。 |
+| 系统 `terminal.run` | 开启 Command execution 后，Shell 经 AI bus 在可见 Terminal 中输入已批准的命令。 |
+| `files.list/read/search` | Unix 上的 Shell 执行器，范围为调用方允许访问的账号工作目录。 |
+| `dev.run` | Shell 执行器，仅提供给开发者模式覆盖的 peer。 |
+| Toolbox 工具 | 已注册的工具箱执行器/工作流，需要 `toolbox-peers` feature 与应用授权。 |
 
-Calendar 服务在其宿主目录保存 `calendar/events.json` 并通过工具操作；News 暴露 `news.list/read`。Mail 当前 Agent **只声明 `mail.notify`**：Mail UI 能读信和发信不表示模型也能调用。旧 AppCard personal-data 导入器不会自动同步今天 Mail 的存储。
+### 审批顺序
 
-账号目录的 SHA-256 标签与 peer 记忆的 FNV 标签是不同的兼容标识，不能互换。登出暂停访问并保留数据；删除账号/卸载还请求 `peer/purge`，遇到忙 peer 会重试。恢复已有 peer 时不能静默更换已记录的 workspace。
+首次 Agent 同意、工具授权和逐次调用审批是三个独立检查。[approvals/router.rs](../crates/shell/src/approvals/router.rs) 按以下顺序处理审批请求：
 
-## 9. 跨应用调用与请求帮助
+1. 外部客户端的回合由该客户端处理；Shell 不回答其提示，也不使其过期。
+2. 开发者模式自动批准覆盖应用的请求，包括 `auto_approvable: false` 和 `confirm: app`。
+3. `confirm: app` 交给工具所属应用注册的确认面板，显示调用方；常设规则不会回答。若应用未在 `app_wait_s` 内注册面板，请求被拒绝。
+4. `auto_approvable: false`、结果未知，以及被标为外部连接的调用，要求用户决定。
+5. 用户预先设置的常设规则可决定符合条件的请求；由收到的内容触发的运行默认跳过，除非规则明确包含。
+6. 其余请求显示 Shell 确认面板；同一系统任务的调用可以合并展示。
 
-**委派**：系统 Agent 用 `peer_send_input` 请求已有应用 peer 做事，再获取结果；Shell 驱动该回合，并未新建一个进程。
+决定只交付一次，并记录到仅所有者可读写的审计日志；自动决定还产生通知。Shell 持有的宿主连接待答请求在 `OCTOSENSE_PROMPT_DEADLINE_SECS`（默认十分钟）后以拒绝过期。宿主工具审计保存参数摘要而非原始参数。模型的文本回复或 `peer_respond` 无法批准工具调用。
 
-**直接调用另一个应用的工具**：`Catalog::owner_of` 解析 owner；`may_call` 要求工具确实存在、`shareable: true` 以及该调用者的授权（显式开发模式另有规则）。脚本 `agent.tools` 中带点名称和原生清单 grants 表达请求；relay 调用 owner 执行器，不一定经过 owner 的模型。当前 owner 解析覆盖原生、工具箱和 `os.<namespace>`，不是任意商店应用发现机制。还必须通过 App Hub 的 `HostLimits.offered_tools` 准入；默认不提供的 `mail.send` 等名字不能仅靠写入 manifest 获准。
+## 8. “访问应用数据”对应哪些存储
 
-**问题或系统设施**：应用 Agent 只有获得 `ask_user_question` 才能使用它。[questions/mod.rs](../crates/shell/src/questions/mod.rs) 按回合来源将问题放到系统聊天或应用聊天，最终由人在 Shell 界面回答。此路由不是获取系统 Agent 权限的方法。Shell 没有给每个受限应用通用 `ask_system_agent` API 或任意 peer 工具。[系统工具箱](../crates/toolbox/README.md) 是工具/工作流服务，调用它也不等于与系统 Agent 聊天。
+| 数据 | 应用 Agent 的访问路线 |
+| --- | --- |
+| 应用账号目录 | [app_storage](../crates/shell/src/app_storage/mod.rs) 与 `ToolHost::agent_workspace` 将新 peer 的 cwd 绑定到允许的目录；内核文件工具仍需授权。 |
+| 请求 context 中读取账号文本文件 | [files.rs](../crates/shell/src/host_tools/files.rs) 的 `files.list/read/search`，当前限 Unix，要求同意和可用工作目录；限制大小，拒绝符号链接穿越，隐藏同级 context。SQLite 数据需另设服务接口。 |
+| 用户对话的父账号目录 | 只有 `storage.agent_workspace: "account"` 允许时才请求 `read_parent`。父目录只读，写入留在 context 自己的目录；普通客户端 context 不自动获得此访问。 |
+| 宿主服务数据库或远程账号 | 通过该服务实现的具体工具；工作目录权限不包含所有宿主数据库与远程凭据。 |
+| Agent 记录与记忆 | octos session/context 和 `app/<broker-app-id>/acct-<tag>` 命名空间，与应用业务数据分别存放。 |
+| 机密 | 宿主机密存储和确认面板；不进入 Agent 工作目录或脚本状态。 |
 
-系统 Agent 的 `peer_respond` 不能代替用户批准应用操作。审批与问题使用不同协议消息和宿主句柄；超时只会拒绝/谢绝，不会把沉默当成同意。
+Calendar 的宿主目录保存 `calendar/events.json`，通过 `calendar.*` 访问。News 提供 `news.list`、`news.read` 和 `news.notify`。Photos、Maps、Camera、YouTube 仅提供各自的 `<app>.notify`，经 [glance_notice.rs](../crates/shell/src/glance_notice.rs) 发布共享通知卡片。AI providers 没有应用 Agent。Mail 当前只声明 **`mail.notify`**；UI 中的读信和发信接口尚未作为 Agent 工具开放。旧 AppCard 个人数据导入器也不会自动同步当前 Mail 存储。
 
-## 10. 映射到 Rust、线程和 Tokio
+账号目录名使用 SHA-256 派生 tag，peer 记忆名称使用 broker 的 FNV 派生 tag；它们是不同的兼容标识。退出登录会暂停访问并保留数据；移除账号/卸载还会请求 `peer/purge`，忙碌时重试。恢复 peer 时，其已保存的工作目录不能悄悄改变。
 
-`async fn` 返回 future；poll 推进执行，直到等待 I/O。Tokio task 是被调度的 future，一个 OS 线程可以轮流 poll 很多 task。持久 session/peer 可以比当前处理它的所有 task 活得更久。
+## 9. 跨应用工作与求助
 
-| 层 | 实际执行方式 | 源码 |
+**委派任务：**系统 Agent 用 `peer_send_input` 请求现有应用 peer 工作，再获取结果。Shell 驱动该应用回合，peer 身份可以跨进程生命周期保留。
+
+**直接调用另一应用的 API 工具：**`Catalog::owner_of` 找到工具所属应用；通常 `may_call` 同时要求已有声明、`shareable: true` 和调用方授权，显式开发者模式规则另行处理。脚本 manifest 通过 `agent.tools` 请求带点的工具名，原生应用通过审核过的条目获得授权。App Hub 的 `HostLimits.offered_tools` 还必须提供请求的名称；默认未提供任意名称（例如 `mail.send`）。Relay 随后调用所属应用的执行器，无需询问该应用的模型，数据由执行器控制。当前 owner 解析覆盖原生命名空间、toolbox 与 `os.<namespace>`；任意已安装商店应用的发现尚未实现。
+
+**提问或使用系统设施：**应用 Agent 可调用获授权的 `ask_user_question`。[questions/mod.rs](../crates/shell/src/questions/mod.rs) 按回合来源路由：系统委派工作在系统聊天中提问，用户/应用回合在应用对话中提问，由用户在 Shell 界面回答。系统设施以明确授权的工具提供，例如 [toolbox](../crates/toolbox/README.md) 工作流。通用的应用到系统 Agent 对话 RPC 尚未实现。`peer_respond` 处理 peer 协作；审批消息使用单独的宿主回答句柄。
+
+## 10. 映射到 Rust 的实际执行模型
+
+Peer 是持久身份与状态；回合执行期间使用运行时任务，peer 在这些任务结束后仍存在。分别阅读所有权与调度边界：
+
+| 层 | 实际执行模型 | 源码 |
 | --- | --- | --- |
-| Makepad Shell | UI 事件循环，绘制、模块事件和 relay pump | `module_host.rs`、`host_tools/mod.rs` |
-| 系统聊天 | 普通 `std::thread`；命令/快照，通过 waker/unpark 轮询接收 | `system_chat/mod.rs`、`link.rs` |
-| Shell 内核服务 | 懒创建 Tokio runtime，**2 个 worker、8 MiB 栈**；一代 supervisor 拥有传输与生命周期 | `kernel/src/lib.rs`、`kernel.rs` |
-| 应用 broker | **每次 `Broker::new` 创建 1-worker runtime**；连接、请求、重试与期限任务；多个 broker 可共享同一 peer | `app-peers/src/broker.rs` |
-| OpenHarmony 内嵌内核 | 宿主 runtime 上 spawn `serve_io`，通过 `tokio::io::duplex` 通信 | `kernel.rs::start` |
-| octos OUP 回合 | 准入后 spawn `run_standalone_turn`，内部模型处理和进度/心跳还有其他任务 | octos `crates/octos-cli/src/api/ui_protocol_transport.rs` |
-| octos 输出 | WebSocket 为异步 writer task；stdio/内嵌为有界同步队列和普通 writer 线程 | 同上 |
-| 宿主服务/文件执行器 | 随服务而异：UI pump、回调、回复队列、阻塞工作线程；不是统一每应用一个 Tokio task | `files.rs`、App Hub `services.rs`、各服务 |
+| Makepad Shell | UI 事件循环，绘制、事件分发、宿主工具 relay 泵送 | `module_host.rs`、`host_tools/mod.rs` |
+| 系统聊天 | 普通 `std::thread`，交换命令与快照；`link::poll_for` 用 waker/unpark 轮询内核接收 | `system_chat/mod.rs`、`link.rs` |
+| Shell 内核服务 | 惰性创建 Tokio runtime：**2 个工作线程，8 MiB 栈**；每代一个 supervisor task 持有传输与进程生命周期，另有 I/O task | `kernel/src/lib.rs::Inner::runtime`、`kernel.rs::supervise` |
+| 应用 broker | **每次 `Broker::new` 创建 1 个工作线程的 runtime**，运行连接泵送、请求 future、重试和截止任务；多个 broker 可共享一个 peer | `app-peers/src/broker.rs` |
+| OpenHarmony 内嵌内核 | 在宿主 runtime 上 spawn `serve_io`，经 `tokio::io::duplex` 通信 | `kernel.rs::start` |
+| octos OUP 回合 | 已 spawn 的编排任务先在 `oneshot` 启动屏障等待活跃回合准入；成功后 `run_standalone_turn` 再 spawn Agent 处理与辅助任务 | 锁定 octos 的 `crates/octos-cli/src/api/ui_protocol_transport.rs` |
+| octos 传输出口 | WebSocket 使用异步 writer task；内嵌/stdio 使用有界同步队列和普通 writer 线程 | 同一 octos 文件 |
+| 宿主服务/文件执行器 | 按服务使用 UI 泵送、回调/回复队列或处理阻塞操作的工作线程 | `host_tools/files.rs`、App Hub `services.rs`、各应用服务 |
 
-`mpsc` 是多发送者邮箱，`oneshot` 是一次对应回复，`watch` 是最新生命周期/就绪状态。broker 用请求 ID 找到 `oneshot`，其连接循环用 `select!` 接收双向消息；supervisor 同时等待控制消息、内核输出与退出。`Arc` 共享所有权，`Weak` 避免让已关闭对象永久存活，generation/epoch 丢弃旧账号或旧连接的迟到回复。
+```mermaid
+flowchart LR
+    UI["Makepad UI 线程"] --> CMD["系统聊天 std 线程"]
+    UI --> B["Broker runtime：请求与连接任务"]
+    CMD --> C["Kernel Connection 通道"]
+    B --> C
+    C --> SUP["内核服务 supervisor task"]
+    SUP <-->|"stdio 或宿主 WebSocket"| OUP["octos 协议分发器"]
+    OUP --> T1["系统通道回合 task"]
+    OUP --> T2["用户 context 回合 task"]
+    T1 --> TOOL["工具 future 等待宿主回复"]
+    TOOL --> B
+    B --> Q["Shell relay 队列"]
+    Q --> UI
+```
 
-同步 `bind`/`host_request` 会等待 channel，不能在绘制回调中阻塞调用。模型异步 I/O 可以并发，阻塞文件操作仍需要现有工作线程边界。**一个应用/账号一个 peer 是身份与隔离规则，不是一个 Agent 对应一个 Tokio task 或 OS 线程。**
+`mpsc` 是多发送方邮箱，`oneshot` 交付一次关联回复，`watch` 保存最新的生命周期/就绪状态。Broker 的请求 ID 对应 `oneshot` sender；连接循环用 `tokio::select!` 同时处理进出消息。内核 supervisor 选择控制消息、内核输出与进程退出。`Arc` 共享所有权，`Weak` 避免延长已关闭 broker/context 的生命周期，代际/epoch 检查拒绝旧账号或连接的迟到回复。
 
-## 11. 本次验证与读代码练习
+Broker 同步 `bind` / `host_request` 会等待通道回复，不应在绘制回调中调用。不同 session 的异步模型 I/O 可重叠，同步文件工作仍走已有的工作线程边界。每应用/账号一个 peer 是身份规则；task 和线程数量由上表的 runtime 与活跃操作决定。
 
-已运行并通过：使用现有 clone hub 的 setup，以及 `python3 tools/setup.py --check --cargo`；`python3 tools/native_apps.py --check`；`python3 -m unittest discover -s rom/tests -p test_no_local_paths.py`；五个文档 worktree 的相对文件链接和 `git diff --check`。另外，`cargo test --locked -p octosense-kernel -p octosense-app-peers --features octosense-app-peers/octos-core,octosense-app-peers/ws` 的单元与脚本化连接测试也通过。真实内核测试未提供所需二进制环境变量，会提前返回，**不算真实内核集成验证**。
+## 11. 测试与尚待实现的部分
 
-[broker 测试](../crates/app-peers/tests/broker.rs)可作为逐步练习：阅读 `a_persons_message_runs_while_the_system_agents_input_runs`、`a_lane_stop_leaves_the_other_lane_running`、`a_kernel_without_shared_history_is_refused_for_the_conversation` 和 `removing_an_account_purges_its_recorded_peer_and_drops_the_record`。它们不需要付费模型即可展示协议行为。[relay 场景测试](../crates/shell/src/host_tools/scenario_tests.rs)展示调用者和审批边界；本次仅阅读，未运行。
+[Broker 测试](../crates/app-peers/tests/broker.rs)提供可执行协议示例：`a_persons_message_runs_while_the_system_agents_input_runs`、`a_lane_stop_leaves_the_other_lane_running`、`a_kernel_without_shared_history_is_refused_for_the_conversation`、`removing_an_account_purges_its_recorded_peer_and_drops_the_record`。[Shell relay 场景测试](../crates/shell/src/host_tools/scenario_tests.rs)覆盖调用方、工具与审批边界；修改对话或执行路径时从这些测试开始。
 
-桌面 GUI、真实提供方回合、Android/OpenHarmony/iOS 构建、ROM 构建及刷机均**未验证**。`AGENT.md` 提示词加载、应用包自动技能/触发器、任意脚本实现的 Agent 工具及通用应用到系统 Agent RPC 仍有实现缺口。一个架构示例是否能实际执行，要同时检查声明、授权和执行器。
+在仓库根目录运行单元测试与脚本化连接器测试：
+
+```sh
+cargo test --locked -p octosense-kernel -p octosense-app-peers \
+  --features octosense-app-peers/octos-core,octosense-app-peers/ws
+```
+
+可选真实内核测试在缺少二进制环境变量时提前返回；将结果当作集成证据前，阅读 [app-peers 测试说明](../crates/app-peers/README.md)。可见 UI、真实提供方对话和设备行为需要分别运行。
+
+尚待实现：应用包 `AGENT.md` 提示词加载、自动 triggers/skills、脚本实现的 Agent 工具分发，以及通用应用到系统 Agent 对话 RPC。围绕这些路径设计流程前，沿声明追到实际执行器。

@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, real app data and Android platform boundaries; it marks unrun recipes explicitly.
+**New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
 > **Where this fits.** The desktop is one shell process with the octos kernel as its child (`OCTOS_APP_CORE_BIN`). App Hub, the Card runner with the script apps, and Rinx run in process; the Terminal runs as its own process, in an OS sandbox on macOS and Linux (not yet on Windows), attached over the shell's hub. On macOS that sandbox keeps `~/.cargo`, `~/.rustup` and the OctoSense checkout read-only, so run `cargo install`, `rustup update` and builds of OctoSense itself in another terminal. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 

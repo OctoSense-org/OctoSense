@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、真实数据和 Android 平台边界，并明确标注未运行的配方。
+**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
 > **在整个系统中的位置。**在手机上，OctoSense 托管的原生模块和脚本应用在 Home 进程内运行（不使用桌面式进程托管）；普通 Android 应用仍在各自的 Android 进程中运行。octos 内核在 Android 上是 APK 中作为子进程运行的 `liboctos.so`，在 OpenHarmony 上是进程内的任务，在 iOS 上没有。应用仍然只能通过 Shell 使用自己的 Agent。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
@@ -138,7 +138,7 @@ AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（[`apps/ai-provide
 
 App Hub（`apphub`）用于浏览已签名的 OctoSense 应用目录、搜索、查看应用详情、安装经过验证的应用包，并维护已安装应用的应用库。已安装的应用在隔离的 Card 实例（`card`）中打开，并在启动器和最近任务中单独显示。两者都来自 App Hub 的共享 Shell crate `octosense-app-hub-app`（OctoSense-App-Hub 中的 `crates/app-hub-app`），由默认的 `app-hub` feature 链接，且包含在所有移动端构建中。**预览目录**开关会在线上目录为空时显示内置应用。
 
-参见该 crate 在固定版本下的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/46d67e51b62827a1224b1aacddc2a7b9e69185fc/crates/app-hub-app/README.md) 以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
+参见该 crate 的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/crates/app-hub-app/README.md) （阅读根 `Cargo.toml` 选定的版本）以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
 
 ## 在桌面电脑上运行
 

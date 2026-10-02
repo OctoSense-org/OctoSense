@@ -36,18 +36,20 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `cargo test --locked -p octosense-mail-service`. Calendar's and News's:
   `apps/calendar/host-service`, `apps/news/host-service`, and
   `cargo test --locked -p octosense-calendar-service -p octosense-news-service`.
-- An app's agent (News, Mail, Calendar) is declared by its manifest's
-  `agent` block and `bundle/tools.json`; each tool runs on the app's host
-  service (`implemented_by: "host-service"`), so a new tool is a new
-  host-service method plus its `tools.json` entry, with schemas that match
-  what the method answers (octos needs an object `output_schema`). Give a
-  tool the smallest `risk` that is true: `destructive` and outward tools get
-  the person's approval, `act` ones do not. A tool that shows something on
-  the glance screen fills a fixed L0 card the host service ships
-  (`resources/*.card`) and publishes it through the publisher the shell
-  installs (`on_publish_card`); never let the model write card code. The
-  app needs `glance` in its manifest. See the README's
-  [App agents](README.md#app-agents).
+- Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
+  input/output schemas consistent with the executor (octos requires an object
+  output schema), and select the actual risk, sharing and confirmation policy.
+  Add the implementation before adding a tool declaration; `implemented_by:
+  "app"` still has no Card runner executor.
+- For a notification tool, follow `../crates/shell/src/glance_notice.rs`.
+  Mail/News install `on_notify` callbacks; the shell's `NoticeService` serves
+  Photos, Maps, YouTube and Camera. The fixed notice template lives in
+  `../crates/shell/resources/glance/notice.card`; Calendar keeps its own event
+  and agenda templates. Grant `glance` in the manifest and publish as the app.
+- For richer app-owned cards, use `glance.publish` with either L0 `source` and
+  optional `data`, or a Splash `script`. Preserve app attribution, policy and
+  the distinction between app UI actions and agent tool calls. See
+  [App agents](README.md#app-agents) and the shell's glance tests.
 - There are no pins to bump: both shells pack `apps/` from the same commit
   (`desktop/system-apps.json`, `phone/system-apps.json`), so one pull request
   carries a change to every shell. App Hub, octos and the runtime are pinned
@@ -108,19 +110,20 @@ are in [appcard/AGENTS.md](appcard/AGENTS.md); in short:
 - CI for it is the `apps` job of `.github/workflows/apps.yml`, which runs on
   changes under `apps/`, `crates/` and the workspace files.
 
-## Architecture review and data access
+## Changing tools and data access
 
-Use the [product walkthrough](../desktop/docs/code-walkthrough.md) and
-[agent walkthrough](../docs/architecture-walkthrough.md) when changing docs.
-Keep host-service API methods, declared agent tools and agent-workspace files
-separate. Mail currently declares only `mail.notify` in `bundle/tools.json`;
-its UI service methods do not automatically become tools. Calendar's script
-window is an instruction screen; the agent calls its Rust service for events.
-News fetch timers do not currently trigger LLM turns. State these limits rather
-than documenting intended behavior as shipped.
+Trace each tool from `bundle/tools.json` through
+`../crates/shell/src/host_tools/script_apps.rs` to its executor. Test schemas,
+caller identity, approval behavior and results at that boundary. Keep UI API
+methods separate from the tools actually declared for the agent: Mail currently
+exposes only `mail.notify`; News exposes list/read/notify; Photos, Maps, YouTube
+and Camera expose notify only. AI providers declares no app agent.
 
-App Hub's Card runner and the optional AppCard assistant are different modules.
-AppCard's historical personal-data mailbox reader is not the current Mail store.
-Keep English/Chinese README changes paired and mark unrun launch/device recipes
-as unverified. Documentation-only changes need link/source checks, not new
-implementation-mirroring tests.
+Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
+and notice paths. For a cross-app tool, update the owner's shareable declaration,
+requesting app's grant and App Hub admission offer together. Keep credentials in
+the host service; expose business data through a narrow method or tool.
+
+Update both README languages when declarations, storage or runtime support
+change. Add agent scheduling claims only when the trigger dispatcher exists;
+News's fetch timer currently collects data without starting an LLM turn.

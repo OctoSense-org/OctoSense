@@ -52,12 +52,10 @@ On a machine that already has clones of Makepad, OctoScript or Octoscript-Makepa
 
 ## Architecture documentation and code walkthroughs
 
-For an unfamiliar subsystem, start with [the junior-Rust walkthrough](docs/architecture-walkthrough.md) and [the product walkthrough](desktop/docs/code-walkthrough.md), then follow their source symbols. Keep the English/Chinese guides and README entry points aligned when a boundary changes.
+Start with the [architecture walkthrough](docs/architecture-walkthrough.md) and [product walkthrough](desktop/docs/code-walkthrough.md), then follow the source symbols. Update English/Chinese guides and README entry points together when changing a boundary.
 
-- Trace the checked-out implementation and the root Cargo/runtime pins. Do not mix old `home/` worktrees or archived System-Apps/AppCard repositories into current product instructions.
-- Separate application hosting (Rust module/process, contained Splash app, L0 card) from agent identity (peer/session/context) and execution (UI thread, worker thread, Tokio task/runtime).
-- When documenting an app operation, verify its manifest, admitted `tools.json`, grant and executable handler. A UI host-service API, `shareable` flag or accepted `AGENT.md`/trigger file does not prove an agent can execute it.
-- Distinguish an app account workspace, host-service database, kernel memory and host secrets. Check accountless `device` and signed-in account paths separately.
-- Keep human conversation contexts distinct from the system-lane peer session; never describe all app instances as independent peers or all peers as one task each.
-- Check cross-app claims at both App Hub admission (`HostLimits.offered_tools`) and the shell relay. A route supported by the relay can still be rejected at admission.
-- Report unit/scripted-connector tests separately from optional real-kernel suites that early-return without binary environment variables. Mark unrun UI, provider, mobile and ROM commands unverified.
+- For hosting changes, document the module/process/Splash/card loader and its identity source in `module_host`, `peer_link`, or App Hub's runner.
+- For agent changes, trace `contract.rs` → `broker.rs` → the owning executor. Describe the peer/account identity, system session and human context separately from their runtime tasks.
+- For a new tool, update its manifest, `tools.json`, admission offer, caller grant and executable handler. Show which host service or workspace owns its data and how approval reaches the router.
+- Read external code at the Cargo/runtime pins. Use current `desktop/`, `phone/`, `rom/` and `apps/` paths when writing product instructions.
+- Record test execution in the PR: distinguish unit/scripted connectors from optional real-kernel tests that return early without a binary. Mark unrun launch/device recipes unverified.

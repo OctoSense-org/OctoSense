@@ -193,4 +193,4 @@ CI：`.github/workflows/apps.yml`（`services` 任务测试本 crate；`apps` �
 OpenHarmony 构建它的工作区还需要 `nix` 补丁（octos rev `18fcd3f1`，见根目录 `Cargo.toml`
 的 `[patch.crates-io]`）。其他平台上，内核是用同一 rev 构建的独立二进制文件。
 
-源码阅读补充：Rinx mini app 的 request context 有自己的内核会话和记录，但不是另一个应用 peer。线程、runtime 与回合任务的对应关系见[代码导读](../../docs/architecture-walkthrough.zh-CN.md#10-映射到-rust线程和-tokio)。
+源码阅读补充：Rinx mini app 的 request context 有自己的内核会话和记录，但不是另一个应用 peer。线程、runtime 与回合任务的对应关系见[代码导读](../../docs/architecture-walkthrough.zh-CN.md#10-映射到-rust-的实际执行模型)。

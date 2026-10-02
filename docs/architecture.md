@@ -2,7 +2,7 @@
 
 English | [简体中文](architecture.zh-CN.md)
 
-How OctoSense fits together: which processes run on each platform, where the agents live, how the pieces talk, how tools are granted and approved, where data and secrets are kept, and where the trust boundaries are. The current code-reading companion is the [junior-Rust walkthrough](architecture-walkthrough.md), checked against OctoSense `c19da8d` and its octos `ae230ce0` pin on 2026-10-01. This reference retains dated design/review history; the corrections below reflect that snapshot.
+How OctoSense fits together: processes, agents, tools, approvals, storage and trust boundaries. Follow the [code walkthrough](architecture-walkthrough.md) for calls and ownership. Dependency versions come from [Cargo.toml](../Cargo.toml) and [native-runtime.lock.json](../native-runtime.lock.json); the dated design notes below record earlier decisions.
 
 Every statement carries its status:
 
@@ -77,7 +77,7 @@ flowchart LR
 | process apps    |                  | octos kernel (child; in process on OHOS)|
 | Terminal, ...   |                  |   system agent session                  |
 +-----------------+                  |   app peers: one per (app, account)     |
-                                     |   tools run as short child processes    |
+                                     |   turns and tool dispatch              |
    Talk to Octos clients  ---------> +-----------------------------------------+
    (external token, allowlist, opt-in)
 ```
@@ -160,7 +160,7 @@ flowchart TB
 
 ## 2. Agents
 
-**One kernel per shell; agents are sessions, not processes.** Inside the one kernel, agent turns run as Tokio tasks, while peers and sessions are durable state. A peer can have multiple context sessions and a turn can create several tasks; there is no one-agent/one-task mapping. See the [thread and task table](architecture-walkthrough.md#10-map-the-architecture-to-rust-execution). Tools such as file edits run in the kernel; octos's command tools run as short child processes in the session's workspace (OctoSense denies them to the system agent, [section 4](#4-tools-and-grants)).
+**One kernel per shell; agents are sessions, not processes.** Inside the one kernel, agent turns run as Tokio tasks, while peers and sessions are durable state. A peer can have multiple context sessions and a turn can create several tasks; there is no one-agent/one-task mapping. See the [thread and task table](architecture-walkthrough.md#10-map-the-architecture-to-rust-execution). Tools such as file edits run in the kernel; octos's command turns and tool dispatch           in the session's workspace (OctoSense denies them to the system agent, [section 4](#4-tools-and-grants)).
 
 | Agent | What it is | Status |
 | --- | --- | --- |
@@ -172,7 +172,7 @@ Each app peer has, separately from every other:
 - a **workspace**: the folder the peer's session is bound to. A peer created since the octos 665209e5 pin gets its account folder (`apps/<app id>/accounts/<account hash>/`, ADR 0004 §11) as `peer/prepare`'s `cwd` (`host_tools::agent_workspace`), recorded beside its host token so a resume names the same folder; a peer created before keeps the kernel-provisioned one, since octos refuses to resume a peer under another workspace (see [the disagreements](#where-the-code-and-the-adrs-disagree));
 - a **memory namespace** `app/<app>/acct-<hash>` (`app_namespace()` in `crates/app-peers/src/broker.rs`); a kernel that does not return it is refused;
 - its own **transcript** and **model** lane (the host sets the model with `peer/prepare` / `peer/model/set`);
-- its own **tool list**: exactly the kernel tools its manifest grants (`generic_tools`, never octos's `shell`) plus the tools the shell registers (octos [#2567](https://github.com/octos-org/octos/pull/2567), UPCR-2026-035): after every `peer/prepare` and reconnect the broker registers, on the connection that drives the peer's turns, the app's declared tools and the other apps' shareable tools granted to it, each marked with its owning app (`crates/shell/src/host_tools/`), with `generic_tools` set to exactly the kernel tools the app's manifest declares and the person granted (a native app's `native-apps.json` `agent.generic_tools`, a script app's plain names in its manifest's `agent.tools`; an app that names none keeps none). The Terminal declares `terminal.run`, `terminal.read_screen` and `terminal.read_scrollback`; News declares `news.list` and `news.read` (`apps/news/bundle/tools.json`, on its host service). A peer that cannot register runs no turn;
+- its own **tool list**: exactly the kernel tools its manifest grants (`generic_tools`, never octos's `shell`) plus the tools the shell registers (octos [#2567](https://github.com/octos-org/octos/pull/2567), UPCR-2026-035): after every `peer/prepare` and reconnect the broker registers, on the connection that drives the peer's turns, the app's declared tools and the other apps' shareable tools granted to it, each marked with its owning app (`crates/shell/src/host_tools/`), with `generic_tools` set to exactly the kernel tools the app's manifest declares and the person granted (a native app's `native-apps.json` `agent.generic_tools`, a script app's plain names in its manifest's `agent.tools`; an app that names none keeps none). The Terminal declares `terminal.run`, `terminal.read_screen` and `terminal.read_scrollback`; News declares `news.list`, `news.read` and `news.notify` (`apps/news/bundle/tools.json`, on its host service). A peer that cannot register runs no turn;
 - **request contexts** (`peer/context/open`): one per client instance (a Rinx mini app), each with its own transcript, folder `contexts/<id>/` inside the peer's workspace and child memory namespace. Such a client's context cannot read the files beside it directly; it reads its account's data through the shell's host read tools `files.list`, `files.read` and `files.search` (ADR 0004 §11, `crates/shell/src/host_tools/files.rs`), which never show another context's folder. Besides those per-client contexts (`OctosAppService::open_context`: Rinx's mini apps, a process app's `octos.session.open` with a `client`), each app conversation is one more request context: the person's own conversation with an app agent, from the app's UI or its cards, runs in the person's lane, a context opened with `share_history` that runs in parallel with the peer's own session (the system agent's lane) and shows each lane the other's recent turns (ADR 0004 §6, decided 2026-09-29; below). That conversation context is opened with octos's `read_parent` where the manifest says the agent works in the account folder (`storage.agent_workspace: "account"`, octos#2647): it reads the account folder read-only, never another context's folder, and writes only its own.
 
 Who gets a peer today (`crates/ai-host/src/lib.rs`, `Policy::shipped()`; `crates/app-peers/src/hosted.rs`, `effective_services` = declared ∩ supported ∩ policy):
@@ -270,7 +270,7 @@ Where an agent's tools come from:
 
 | Source | Example | Runs | Status |
 | --- | --- | --- | --- |
-| The app's own tools (`tools.json`: name `<app>.<tool>`, schemas, `risk`, `confirm: host` or `app`, `shareable`) | `news.list`, `terminal.read_screen`, `mail.send`, `rinx.message.send` | the app's host service, module or process, called by the shell | On main (`crates/shell/src/host_tools/`): declared from `native-apps.json` `agent.tools` (native) or the admitted bundle's `tools.json` (script, `host_tools/script_apps.rs`, with App Hub's loader), authorized by (owning app, tool) and caller, arguments and results checked against the declared schemas, budgeted, stamped with account, context and client, and routed to a process app's peer link, an in-process module's executor (`OctosAppService::set_tool_executor`), a script app's host service (`HostServiceExecutor`) or the Terminal's AI bus service. News offers `news.list` and `news.read`; the Terminal `terminal.run` and its read tools |
+| The app's own tools (`tools.json`: name `<app>.<tool>`, schemas, `risk`, `confirm: host` or `app`, `shareable`) | `news.list`, `terminal.read_screen`, `mail.notify`, `calendar.add_event` | the app's host service, module or process, called by the shell | On main (`crates/shell/src/host_tools/`): declared from `native-apps.json` `agent.tools` (native) or the admitted bundle's `tools.json` (script, `host_tools/script_apps.rs`, with App Hub's loader), authorized by (owning app, tool) and caller, arguments and results checked against the declared schemas, budgeted, stamped with account, context and client, and routed to a process app's peer link, an in-process module's executor (`OctosAppService::set_tool_executor`), a script app's host service (`HostServiceExecutor`) or the Terminal's AI bus service. News offers `news.list`, `news.read` and `news.notify`; the Terminal `terminal.run` and its read tools |
 | The system toolbox, by capability (`research`, `crawl`, `model`) | `toolbox.search`, `toolbox.web_read`, `toolbox.deep_crawl`, `workflow.run` | host | In progress ([#108](https://github.com/OctoSense-org/OctoSense/pull/108)); `model` not registered yet |
 | octos's generic tools | file reads fenced to the workspace, memory, `web_search`, `deep_search` | octos | On main per app: each peer is registered with exactly its granted `generic_tools` (Rinx: its workspace files, `ask_user_question`, memory, the web); an app granted none keeps none; octos's `shell` is never among them (the generator, the catalog and the script loader drop it), and the `_main` profile's `tool_policy` denies it too |
 | Other apps' shareable tools, routed by the shell | Calendar's agent calling `mail.send` | the owning app, via the shell | On main (`relay::Catalog`): granted by (owning app, tool), from `native-apps.json` `agent.grants` (native) or the dotted names in a script app's `agent.tools` (at install), registered marked with the owner, checked on every call. None of today's apps is granted one |
@@ -392,7 +392,7 @@ One host-owned layout for every app, declared by its manifest (`storage` block) 
 
 ## 8. Worked example: emailing a meeting invite
 
-"Ask the system agent to email a meeting invite." This is ADR 0004's Calendar and Mail example. **Almost all of it is planned**: there is no Calendar app on `main`, Mail declares no `tools.json` or `octos.*` yet, and the kernel side (`peer/input`, host-registered tools) is octos#2567. The status column says which pieces exist.
+This ADR 0004 example combines an implemented Calendar action with a **planned Mail send tool**. Calendar ships `calendar.add_event`; Mail currently exposes only `mail.notify` to its agent. Completing this workflow requires a declared/shareable `mail.send`, admission and caller grants, and its executor. The broker, relay and approval mechanisms below already exist.
 
 ```mermaid
 sequenceDiagram
@@ -406,7 +406,7 @@ sequenceDiagram
   S->>C: peer_send_input (brief)
   Note over S,SH: octos delivers peer/input to the host
   SH->>C: turn/start (app's tools, memory, context)
-  C->>SH: peer/tool/call calendar.create_event
+  C->>SH: peer/tool/call calendar.add_event
   SH-->>C: result
   C->>SH: peer/tool/call mail.send x3 (caller: Calendar)
   SH->>SH: grant check: Calendar granted mail.send?
@@ -427,13 +427,13 @@ sequenceDiagram
 
 | Step | What happens | Status |
 | --- | --- | --- |
-| 1 | The person asks the system agent, in the system conversation `_main:api:octosense#system`. | On main: the shell's system chat ([#132](https://github.com/OctoSense-org/OctoSense/pull/132)), or a paired Talk to Octos client (the desktop's AI pane is Makepad's `aichat` on the bus, not the system agent) |
-| 2 | The system agent plans. Ambiguity is asked, not guessed ("two Edwards?"); for a bounded read it may call a granted tool directly. Work that needs Calendar's judgement goes to Calendar's agent with `peer_send_input`. | `peer_send_input` on main; direct cross-app grants planned (step 6) |
+| 1 | The person asks the system agent, in the system conversation `_main:api:octosense#system`. | On main: the shell's system chat ([#132](https://github.com/OctoSense-org/OctoSense/pull/132)), or a paired Talk to Octos client (the system assistant pane is separate from an app's Makepad `aichat` bus interface) |
+| 2 | The system agent plans. Ambiguity is asked, not guessed ("two Edwards?"); for a bounded read it may call a granted tool directly. Work that needs Calendar's judgement goes to Calendar's agent with `peer_send_input`. | `peer_send_input` and relay grants implemented; this example's Mail tool/grant still planned |
 | 3 | octos delivers the input to the shell as `peer/input`; the shell starts the turn on Calendar's peer with `turn/start`, so it has Calendar's tools, memory and account context. If Calendar's peer has no host connection, the system agent is told the app is not connected. | On main ([octos#2567](https://github.com/octos-org/octos/pull/2567) in the pin; the broker starts the turn) |
-| 4 | Calendar's agent calls `calendar.create_event` (its own tool) and Mail's shareable `mail.send` once per invitee. Each call reaches the shell as `peer/tool/call`; the shell stamps the caller (Calendar's agent), account and context. | Relay on main (`host_tools`); Calendar and Mail's tools planned |
-| 5 | The shell checks that Calendar's manifest was granted `mail.send` (at install for a script app); no second, agent-level consent. | Check on main (`relay::Catalog`); install-time grants planned (step 6) |
+| 4 | Calendar's agent calls `calendar.add_event` (its own tool) and Mail's shareable `mail.send` once per invitee. Each call reaches the shell as `peer/tool/call`; the shell stamps the caller (Calendar's agent), account and context. | Calendar action and relay implemented; `mail.send` planned |
+| 5 | The shell checks that Calendar's manifest was granted `mail.send` (at install for a script app); no second, agent-level consent. | Relay and App Hub admission checks implemented; this specific grant/tool is absent |
 | 6 | `mail.send` is outward and `confirm: host`, so the approval router takes it: developer mode off; not `confirm: app`; not `auto_approvable: false`; a standing rule on (Mail, `mail.send`) such as "send to my contacts" approves it (notified and audited; the contacts condition holds only once the person turned on "Use my contacts in approval rules"), else one batched shell sheet shows each invitation: owning app Mail, tool `mail.send`, calling app Calendar, the exact arguments. | Router, rules, sheets and audit on main ([#120](https://github.com/OctoSense-org/OctoSense/pull/120)); fed by kernel `host_tool` approvals through the relay |
-| 7 | On approval the shell hands each call to Mail's host service, which sends with the account the person signed in to on Mail's host sheet (the password never reaches the agent), and returns the result to the kernel as `peer/tool/result`. | Mail's host service on main (`apps/mail/host-service`); its tools as agent tools planned |
+| 7 | On approval the shell hands each call to Mail's host service, which sends with the account the person signed in to on Mail's host sheet (the password never reaches the agent), and returns the result to the kernel as `peer/tool/result`. | Mail host service implemented; its agent has `mail.notify`, while `mail.send` remains planned |
 | 8 | Calendar's turn ends and octos writes `peers/<slug>/result.md` and `turns.txt`; the system agent reads it with `peer_gather`. A failed invitation is named, and one with an unknown outcome is never retried without the person. | Blackboard on main (octos) |
 | 9 | The system agent announces "Booked Tue 3 pm; invitations sent to 3". Calendar's and Mail's own UIs show the change because their data changed. | Planned |
 

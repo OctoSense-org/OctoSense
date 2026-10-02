@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](../desktop/docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, real app data and Android platform boundaries; it marks unrun recipes explicitly.
+**New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](../desktop/docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
 The OctoSense ROM is LineageOS 22.2 (Android 15) for the OnePlus 6
 (`enchilada`) with the OctoSense Home app preinstalled beside a privileged

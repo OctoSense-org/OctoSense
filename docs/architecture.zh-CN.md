@@ -2,7 +2,7 @@
 
 [English](architecture.md) | 简体中文
 
-OctoSense 的各部分如何组合在一起：每个平台上运行哪些进程、Agent 在哪里、各部分如何通信、工具如何授权和审批、数据与机密存放在哪里，以及信任边界在哪里。最新[初学者代码导读](architecture-walkthrough.zh-CN.md)于 2026-10-01 核对 OctoSense `c19da8d` 及其 octos `ae230ce0` 锁定版本。本文保留标注日期的设计/审查历史；下列修订反映该源码快照。
+OctoSense 的进程、Agent、工具、审批、存储与信任边界。具体调用和所有权见[代码导读](architecture-walkthrough.zh-CN.md)。依赖版本以 [Cargo.toml](../Cargo.toml) 和 [native-runtime.lock.json](../native-runtime.lock.json) 为准；下方带日期的设计记录保留早期决策。
 
 每条陈述都标明状态：
 
@@ -77,7 +77,7 @@ flowchart LR
 | 进程应用        |           | octos 内核（子进程；OHOS 上在进程内）   |
 | Terminal 等     |           |   系统 Agent 会话                       |
 +-----------------+           |   应用 peer：每个（应用，账号）一个     |
-                              |   工具以短时子进程运行                  |
+                              |   回合执行与工具分发                    |
    Talk to Octos 客户端 ----> +-----------------------------------------+
    （外部 token、允许列表、需手动开启）
 ```
@@ -160,7 +160,7 @@ flowchart TB
 
 ## 2. Agent
 
-**每个 Shell 一个内核；Agent 是会话，不是进程。** 在这一个内核中，每个 Agent 都是一个以 tokio 任务运行的 octos 会话。文件编辑之类的工具在内核中运行；octos 的命令类工具在会话的工作区中以短时子进程运行（OctoSense 不让系统 Agent 使用它们，见[第 4 节](#4-工具与授权)）。
+**每个 Shell 一个内核；Agent 是会话，不是进程。** 在这一个内核中，Agent 回合由 Tokio 任务执行，peer 与 session 是持久状态。一个 peer 可包含多个 context session，一个回合也可创建多个任务。实际线程与任务对应关系见[导读](architecture-walkthrough.zh-CN.md#10-映射到-rust-的实际执行模型)。文件编辑之类的工具在内核中运行；octos 的命令类工具在会话的工作区中以短时子进程运行（OctoSense 不让系统 Agent 使用它们，见[第 4 节](#4-工具与授权)）。
 
 | Agent | 是什么 | 状态 |
 | --- | --- | --- |
@@ -391,7 +391,7 @@ flowchart TB
 
 ## 8. 完整示例：用邮件发送会议邀请
 
-“让系统 Agent 发一封会议邀请邮件。”这是 ADR 0004 中的 Calendar 与 Mail 示例。**其中几乎全部都在规划中**：`main` 上没有 Calendar 应用，Mail 还没有声明 `tools.json` 或 `octos.*`，内核一侧（`peer/input`、宿主注册的工具）是 octos#2567。状态一栏说明哪些部分已经存在。
+此 ADR 0004 示例组合了已实现的 Calendar 操作与**规划中的 Mail 发信工具**。Calendar 已提供 `calendar.add_event`；Mail 当前只向 Agent 暴露 `mail.notify`。完成流程还需要声明可共享的 `mail.send`、准入与调用方授权，以及执行器。下方的 broker、relay 与审批机制已经实现。
 
 ```mermaid
 sequenceDiagram
@@ -405,7 +405,7 @@ sequenceDiagram
   S->>C: peer_send_input（任务说明）
   Note over S,SH: octos 把 peer/input 送到宿主
   SH->>C: turn/start（应用的工具、记忆、上下文）
-  C->>SH: peer/tool/call calendar.create_event
+  C->>SH: peer/tool/call calendar.add_event
   SH-->>C: 结果
   C->>SH: peer/tool/call mail.send x3（调用方：Calendar）
   SH->>SH: 授权检查：Calendar 是否获授权 mail.send？
@@ -426,13 +426,13 @@ sequenceDiagram
 
 | 步骤 | 发生什么 | 状态 |
 | --- | --- | --- |
-| 1 | 用户在系统对话 `_main:api:octosense#system` 中向系统 Agent 提出请求。 | 目前只能从已配对的 Talk to Octos 客户端访问；Shell 还没有自己的系统 Agent 对话界面（桌面端的 AI 面板是总线上的 Makepad `aichat`，不是系统 Agent） |
-| 2 | 系统 Agent 做计划。有歧义就提问，不去猜（“两个 Edward？”）；有限的读取可以直接调用获授权的工具。需要 Calendar 自己判断的工作用 `peer_send_input` 交给 Calendar 的 Agent。 | `peer_send_input` 已在 main；直接的跨应用授权规划中（步骤 6） |
+| 1 | 用户在系统对话 `_main:api:octosense#system` 中向系统 Agent 提出请求。 | 目前只能从已配对的 Talk to Octos 客户端访问；Shell 还没有自己的系统 Agent 对话界面（系统助手面板与应用的 Makepad `aichat` 总线接口分别实现） |
+| 2 | 系统 Agent 做计划。有歧义就提问，不去猜（“两个 Edward？”）；有限的读取可以直接调用获授权的工具。需要 Calendar 自己判断的工作用 `peer_send_input` 交给 Calendar 的 Agent。 | `peer_send_input` 与 relay 授权已实现；此示例的 Mail 工具/授权仍在规划中 |
 | 3 | octos 把输入以 `peer/input` 送到 Shell；Shell 在 Calendar 的 peer 上用 `turn/start` 启动回合，使其带有 Calendar 的工具、记忆和账号上下文。如果 Calendar 的 peer 没有宿主连接，系统 Agent 会被告知该应用未连接。 | 已在 main（锁定版本含 [octos#2567](https://github.com/octos-org/octos/pull/2567)；由 broker 启动回合） |
-| 4 | Calendar 的 Agent 调用 `calendar.create_event`（自己的工具），并为每位受邀者调用一次 Mail 可共享的 `mail.send`。每次调用都以 `peer/tool/call` 到达 Shell；Shell 盖上调用方（Calendar 的 Agent）、账号和上下文。 | 中继已在 main（`host_tools`）；Calendar 和 Mail 的工具规划中 |
-| 5 | Shell 检查 Calendar 的清单是否获授权 `mail.send`（脚本应用在安装时授权）；不需要第二道 Agent 级别的同意。 | 检查已在 main（`relay::Catalog`）；安装时授权规划中（步骤 6） |
+| 4 | Calendar 的 Agent 调用 `calendar.add_event`（自己的工具），并为每位受邀者调用一次 Mail 可共享的 `mail.send`。每次调用都以 `peer/tool/call` 到达 Shell；Shell 盖上调用方（Calendar 的 Agent）、账号和上下文。 | Calendar 操作与中继已实现；`mail.send` 规划中 |
+| 5 | Shell 检查 Calendar 的清单是否获授权 `mail.send`（脚本应用在安装时授权）；不需要第二道 Agent 级别的同意。 | Relay 与 App Hub 准入检查已实现；此特定授权/工具尚不存在 |
 | 6 | `mail.send` 是对外的 `confirm: host` 工具，由审批路由处理：开发者模式未开启；不是 `confirm: app`；不是 `auto_approvable: false`；如果有针对（Mail，`mail.send`）的常设规则（例如“发给我的联系人”），就由规则批准（通知并审计；只有用户打开了“在审批规则中使用我的联系人”，联系人条件才会成立），否则一个合并的 Shell 面板列出每封邀请：所属应用 Mail、工具 `mail.send`、调用方应用 Calendar 以及确切参数。 | 路由、规则、面板和审计已在 main（[#120](https://github.com/OctoSense-org/OctoSense/pull/120)）；经中继由内核的 `host_tool` 审批提交请求 |
-| 7 | 批准后，Shell 把每次调用交给 Mail 的宿主服务，它用用户在 Mail 宿主面板上登录的账号发送（密码永远不会到达 Agent），并把结果以 `peer/tool/result` 返回内核。 | Mail 的宿主服务已在 main（`apps/mail/host-service`）；把它的工具作为 Agent 工具还在规划中 |
+| 7 | 批准后，Shell 把每次调用交给 Mail 的宿主服务，它用用户在 Mail 宿主面板上登录的账号发送（密码永远不会到达 Agent），并把结果以 `peer/tool/result` 返回内核。 | Mail 宿主服务已实现；Agent 已有 `mail.notify`，`mail.send` 仍在规划中 |
 | 8 | Calendar 的回合结束，octos 写入 `peers/<slug>/result.md` 和 `turns.txt`；系统 Agent 用 `peer_gather` 读取。失败的邀请会被点名，结果未知的邀请未经用户同意绝不重试。 | 黑板已在 main（octos） |
 | 9 | 系统 Agent 宣布“已预订周二下午 3 点；已向 3 人发送邀请”。Calendar 和 Mail 自己的界面会显示变化，因为它们的数据变了。 | 规划中 |
 
