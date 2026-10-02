@@ -66,6 +66,33 @@ fn run(program: &str, args: &[&str], policy: &Policy) -> (bool, String) {
     (out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
 }
 
+/// What `nc -v -z` said became of its connect: `Ok` when it connected, the
+/// reason it printed when the connect failed, `None` when it said neither
+/// (it never ran its connect: `sandbox-exec` refused to start it, say).
+/// Apple's nc writes `nc: connectx to … failed: <reason>`, OpenBSD's
+/// `nc: connect to … failed: <reason>`.
+fn connect_outcome(out: &str) -> Option<Result<(), &str>> {
+    for line in out.lines() {
+        if line.starts_with("Connection to ") && line.ends_with("succeeded!") {
+            return Some(Ok(()));
+        }
+        if line.starts_with("nc: connect") {
+            if let Some((_, why)) = line.split_once(" failed: ") {
+                return Some(Err(why.trim()));
+            }
+        }
+    }
+    None
+}
+
+/// A connect the sandbox itself refused: EPERM from Seatbelt and seccomp,
+/// EACCES from Landlock. Every other error is decided past the sandbox's
+/// check (an absent listener, the network stack), so it means the sandbox
+/// let the connect out.
+fn refused_by_sandbox(why: &str) -> bool {
+    why == "Operation not permitted" || why == "Permission denied"
+}
+
 fn sandbox_works_here() -> bool {
     if cfg!(target_os = "macos") {
         return Path::new(macos::SANDBOX_EXEC).is_file();
@@ -110,12 +137,23 @@ fn a_jail_only_app_reads_its_jail_and_is_refused_everything_else() {
     let (ok, out) = run("/bin/sh", &["-c", &format!("echo x > {}/written", root.display())], &Policy { processes: true, ..policy.clone() });
     assert!(!ok, "it writes nothing outside: {out}");
 
-    // Network: the hub on loopback, nothing else.
-    let nc = |port: u16| run("/usr/bin/nc", &["-z", "-w", "2", "127.0.0.1", &port.to_string()], &policy);
-    let (ok, out) = nc(hub_port);
-    assert!(ok, "the hub is reachable: {out}");
+    // Network: the hub on loopback, nothing else. What is asked is the
+    // sandbox's verdict on each connect, so nc says what became of it
+    // (`-v`) instead of only exiting 1, and only the sandbox's own refusal
+    // counts as one: a connect the sandbox lets out may still be refused by
+    // the network stack, which is not this test's business.
+    let nc = |port: u16| run("/usr/bin/nc", &["-v", "-n", "-z", "-w", "2", "127.0.0.1", &port.to_string()], &policy);
+    let (_, out) = nc(hub_port);
+    match connect_outcome(&out) {
+        Some(Ok(())) => {}
+        Some(Err(why)) => {
+            assert!(!refused_by_sandbox(why), "the sandbox lets the hub through: {out}");
+            eprintln!("the hub's connect left the sandbox and failed past it: {why}");
+        }
+        None => panic!("nc said nothing about the hub's connect: {out}"),
+    }
     let (ok, out) = nc(other_port);
-    assert!(!ok, "any other connection is refused: {out}");
+    assert!(!ok && matches!(connect_outcome(&out), Some(Err(why)) if refused_by_sandbox(why)), "any other connection is refused by the sandbox: {out}");
 
     // Processes: none.
     let (ok, out) = run("/bin/sh", &["-c", "/bin/echo first; /bin/echo spawned"], &policy);
