@@ -25,7 +25,7 @@ use makepad_widgets::gauss_view::{request_window_gauss, GaussBlurSnapshot, GAUSS
 use makepad_widgets::*;
 
 use super::{
-    alpha, BarTokens, ControlTokens, CtrlState, FontTokens, MaterialTokens, MenuTokens,
+    alpha, fade, BarTokens, ControlTokens, CtrlState, FontTokens, MaterialTokens, MenuTokens,
     NotificationTokens, ShellTokens, SpacingTokens, SurfaceTokens,
 };
 
@@ -66,6 +66,22 @@ script_mod! {
             let bc = mix(self.border_color, self.border_color_end, t)
             let c = mix(self.color, bc, cov * self.border_color.w)
             return vec4(c.rgb * c.w, c.w)
+        }
+    }
+
+    // A rounded ring inside the quad: the keyboard's focus ring around a
+    // card, `width` px wide with `radius` px corners.
+    set_type_default() do #(DrawShellRing::script_shader(vm)) {
+        ..mod.draw.DrawQuad
+        color: #ffffff
+        radius: 12.0
+        width: 2.0
+        pixel: fn() {
+            let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+            let h = self.width * 0.5
+            sdf.box(h, h, self.rect_size.x - self.width, self.rect_size.y - self.width, self.radius)
+            sdf.stroke(self.color, self.width)
+            return sdf.result
         }
     }
 
@@ -595,6 +611,20 @@ pub struct DrawShellChrome {
     pub border_width: f32,
 }
 
+/// A rounded ring ([`ShellDraw::focus_ring`]).
+#[derive(Script, ScriptHook)]
+#[repr(C)]
+pub struct DrawShellRing {
+    #[deref]
+    draw_super: DrawQuad,
+    #[live]
+    pub color: Vec4f,
+    #[live(12.0)]
+    pub radius: f32,
+    #[live(2.0)]
+    pub width: f32,
+}
+
 /// The glass card. Instance fields are per draw (`ShellDraw::glass_rect`
 /// fills them from the material); the pyramid textures and material-wide
 /// uniforms are bound once per surface (`ShellDraw::bind_snapshot`). Colours
@@ -835,6 +865,24 @@ pub struct Trace {
     pub font_scale: f32,
 }
 
+/// Whether the shell's surfaces keep still: `OCTOSENSE_REDUCE_MOTION`
+/// (anything but `0`) turns their slides off.
+pub fn reduce_motion() -> bool {
+    static REDUCE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *REDUCE.get_or_init(|| std::env::var("OCTOSENSE_REDUCE_MOTION").is_ok_and(|v| !v.is_empty() && v != "0"))
+}
+
+/// How far a surface is from its place `t` of the way through a slide of
+/// `distance` (an ease-out: fast at first, settling at the end); 0 once it
+/// is there, and always with reduced motion.
+pub fn slide(t: f64, distance: f64) -> f64 {
+    if reduce_motion() || t >= 1.0 {
+        return 0.0;
+    }
+    let t = t.clamp(0.0, 1.0);
+    (1.0 - t).powi(3) * distance
+}
+
 /// Horizontal placement of a label inside its box.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HAlign {
@@ -850,6 +898,8 @@ pub struct ShellDraw {
     pub fill: DrawShellFill,
     #[live]
     pub chrome: DrawShellChrome,
+    #[live]
+    pub ring: DrawShellRing,
     #[live]
     pub glass: DrawShellGlass,
     #[live]
@@ -1327,6 +1377,18 @@ impl ShellDraw {
         self.glass_rect(cx, r, 0.0, false);
     }
 
+    /// A rounded ring `width` px wide just inside `r`, with `radius` px
+    /// corners: the keyboard's focus ring.
+    pub fn focus_ring(&mut self, cx: &mut Cx2d, r: Rect, radius: f64, width: f64, color: Vec4f) {
+        if color.w <= 0.0 || r.size.x <= 0.0 || r.size.y <= 0.0 {
+            return;
+        }
+        self.ring.color = color;
+        self.ring.radius = radius as f32;
+        self.ring.width = width as f32;
+        self.ring.draw_abs(cx, r);
+    }
+
     /// A flat fill.
     pub fn solid(&mut self, cx: &mut Cx2d, r: Rect, color: Vec4f) {
         if color.w <= 0.0 || r.size.x <= 0.0 || r.size.y <= 0.0 {
@@ -1373,16 +1435,22 @@ impl ShellDraw {
     /// radius is the material's (the shader takes it per draw, so the card
     /// hands it over rather than the token).
     pub fn card(&mut self, cx: &mut Cx2d, r: Rect, s: &SurfaceTokens) {
+        self.card_faded(cx, r, s, 1.0);
+    }
+
+    /// [`Self::card`] at `opacity`, fill, ring and shadow as one (a toast
+    /// fades as it slides in and out).
+    pub fn card_faded(&mut self, cx: &mut Cx2d, r: Rect, s: &SurfaceTokens, opacity: f32) {
         if self.paints_glass() {
-            self.glass_rect(cx, r, self.material.corner_radius, true);
+            self.glass_pill(cx, r, self.material.corner_radius, opacity);
             return;
         }
         self.bordered(
             cx,
             r,
-            s.bg(),
-            s.border_start(),
-            s.border_stop(),
+            fade(s.bg(), opacity),
+            fade(s.border_start(), opacity),
+            fade(s.border_stop(), opacity),
             s.border_angle,
             s.border_width,
         );

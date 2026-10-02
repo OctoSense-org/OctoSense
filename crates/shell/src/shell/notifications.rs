@@ -17,11 +17,20 @@
 //! bar in `[notifications] countdown` (the accent) along its bottom edge.
 //! Omarchy computes that color and never draws it — the brief asks for it,
 //! and it is the only way a toast says how long it has left.
+//!
+//! Further departures, for the desktop's glance toasts:
+//! - At most [`MAX_SHOWN`] show; a "+N more" chip under them shows the rest.
+//! - A toast slides in and fades in over its first [`SLIDE_S`], and out
+//!   over its last ([`crate::shell::ui::slide`]; none with reduced motion).
+//! - An optional action button ([`Notification::action`], the glance
+//!   panel's Undo).
+//! - Secondary ink is the text colour faded ([`SECONDARY`], the body at
+//!   0.88), not `darker`, which deepens dark ink in a light theme.
 
 use makepad_widgets::*;
 
-use super::ui::{contains, inset, rect, DrawShellFill, Ico, ShellDraw};
-use super::{darker, fade, MaterialTokens, ShellTokens};
+use super::ui::{contains, inset, rect, slide, DrawShellFill, Ico, ShellDraw};
+use super::{fade, MaterialTokens, ShellTokens};
 use crate::octosense::style::{AppIconDraw, DesktopStyle};
 
 thread_local! {
@@ -61,6 +70,27 @@ const COUNTDOWN_HEIGHT: f64 = 2.0;
 const SUMMARY_LINES: usize = 2;
 /// The caption line's height (a glance card's app name, small).
 const CAPTION_LINE: f64 = 17.0;
+/// Secondary ink (the caption, the close): the text colour faded toward
+/// the card, so it recedes in a light theme as in a dark one (`darker`
+/// would deepen dark ink) and still reads at 4.5:1 or more on a flat card.
+const SECONDARY: f32 = 0.72;
+/// At most this many toasts show; a "+N more" chip under them shows the
+/// rest on a press.
+pub const MAX_SHOWN: usize = 3;
+const MORE_H: f64 = 26.0;
+/// A toast slides in over its first [`SLIDE_S`] and out over its last,
+/// [`SLIDE_PX`] from its place.
+const SLIDE_S: f64 = 0.22;
+const SLIDE_PX: f64 = 28.0;
+
+/// How far right of its place a toast draws: sliding in for its first
+/// [`SLIDE_S`], sliding out for its last ([`slide`]: none with reduced
+/// motion).
+fn slide_offset(age: f64, left: f64, lifetime: f64) -> f64 {
+    let coming = slide(age / SLIDE_S, SLIDE_PX);
+    let going = if lifetime > 0.0 && left < SLIDE_S { slide(left / SLIDE_S, SLIDE_PX) } else { 0.0 };
+    coming.max(going)
+}
 const BODY_LINES: usize = 3;
 
 /// libnotify urgency.
@@ -86,6 +116,9 @@ pub struct Notification {
     /// The app whose own icon the toast shows (a launcher id), drawn as the
     /// dock draws it; else `icon`.
     pub app_icon: Option<String>,
+    /// A button on the toast (Undo): a press on it sends
+    /// [`ShellNotificationsAction::Action`] instead of activating the toast.
+    pub action: Option<String>,
     pub urgency: Urgency,
     /// The sender's hint in seconds; 0 means "you decide".
     pub requested: f64,
@@ -121,6 +154,9 @@ struct Live {
     lifetime: f64,
     left: f64,
     hovered: bool,
+    /// When it was posted (`seconds_since_app_start`): its slide in runs on
+    /// the clock, not on how many frames came.
+    posted: f64,
 }
 
 script_mod! {
@@ -142,6 +178,8 @@ pub enum ShellNotificationsAction {
     Activated(u64),
     /// The ✕ or a right-click: dismiss only.
     Dismissed(u64),
+    /// The toast's action button ([`Notification::action`]).
+    Action(u64),
     #[default]
     None,
 }
@@ -181,6 +219,15 @@ pub struct ShellNotifications {
     screen: Rect,
     #[rust]
     card_rects: Vec<(u64, Rect, Rect)>,
+    /// Each drawn toast's action button.
+    #[rust]
+    action_rects: Vec<(u64, Rect)>,
+    /// The "+N more" chip, and whether it was pressed (every toast shows
+    /// until there are no more than [`MAX_SHOWN`] again).
+    #[rust]
+    more: Rect,
+    #[rust]
+    expanded: bool,
     #[rust]
     next_frame: NextFrame,
     #[rust]
@@ -206,6 +253,7 @@ impl ShellNotifications {
                 lifetime,
                 left: lifetime,
                 hovered: false,
+                posted: cx.seconds_since_app_start(),
             },
         );
         self.last_time = 0.0;
@@ -249,20 +297,32 @@ impl ShellNotifications {
         self.live.is_empty()
     }
 
-    /// Whether `p` is on a toast, its card or its close button: a press
-    /// there is the toast's, whatever surface lies under it.
+    /// Whether `p` is on a toast, its card or its close button, or on the
+    /// "+N more" chip: a press there is the toasts', whatever surface lies
+    /// under it.
     pub fn hit(&self, p: Vec2d) -> bool {
-        !self.inert && self.card_rects.iter().any(|(_, card, close)| contains(*card, p) || contains(*close, p))
+        !self.inert && (contains(self.more, p) || self.card_rects.iter().any(|(_, card, close)| contains(*card, p) || contains(*close, p)))
+    }
+
+    /// The width a toast's action button takes (none without one).
+    fn action_width(&mut self, cx: &mut Cx2d, note: &Notification) -> f64 {
+        let tok = self.d.tokens(self.tokens);
+        match &note.action {
+            Some(label) => self.d.measure(cx, true, tok.font.title * self.d.text_scale(), label) + 24.0,
+            None => 0.0,
+        }
     }
 
     /// The height a card needs for its text.
     fn card_height(&mut self, cx: &mut Cx2d, note: &Notification) -> f64 {
         let tok = self.d.tokens(self.tokens);
+        let action = self.action_width(cx, note);
         let text_w = CARD_WIDTH
             - SIDE_MARGIN * 2.0
             - ICON_SLOT
             - ICON_GAP
             - TEXT_RIGHT_MARGIN
+            - action
             - tok.notifications.surface.border_width * 2.0;
         let summary = self
             .d
@@ -304,7 +364,12 @@ impl ShellNotifications {
 
     fn draw_surface_inner(&mut self, cx: &mut Cx2d, screen: Rect) {
         self.card_rects.clear();
+        self.action_rects.clear();
+        self.more = Rect::default();
         self.screen = screen;
+        if self.live.len() <= MAX_SHOWN {
+            self.expanded = false;
+        }
         if self.live.is_empty() {
             return;
         }
@@ -314,11 +379,33 @@ impl ShellNotifications {
         let mut y = screen.pos.y + self.bar_clearance.max(gaps_out);
         let x = stack_x(screen, gaps_out, KEEP_CLEAR.with(|c| c.get()));
 
-        for entry in self.live.clone() {
+        // The stack ends above the dock when the dock is under it; a toast
+        // that would pass it waits under the "+N more" chip.
+        let mut bottom = screen.pos.y + screen.size.y - gaps_out;
+        let shelf = crate::desktop::shelf_bounds();
+        if shelf.size.y > 0.0 && shelf.pos.x < x + CARD_WIDTH && shelf.pos.x + shelf.size.x > x {
+            bottom = bottom.min(shelf.pos.y - gaps_out);
+        }
+        let now = cx.seconds_since_app_start();
+        let wanted = if self.expanded { self.live.len() } else { self.live.len().min(MAX_SHOWN) };
+        let mut shown = 0;
+        for entry in self.live.clone().into_iter().take(wanted) {
             let note = entry.note.clone();
             let h = self.card_height(cx, &note);
-            let card = rect(x, y, CARD_WIDTH, h);
-            self.d.card(cx, card, &tok.notifications.surface);
+            let more_after = shown + 1 < self.live.len();
+            let room = if more_after { STACK_SPACING + MORE_H } else { 0.0 };
+            if shown > 0 && y + h + room > bottom {
+                break;
+            }
+            shown += 1;
+            let action_w = self.action_width(cx, &note);
+            // Sliding in or out, it fades with its travel.
+            let offset = slide_offset(now - entry.posted, entry.left, entry.lifetime);
+            let o = (1.0 - offset / SLIDE_PX).clamp(0.0, 1.0) as f32;
+            let ink = fade(tok.notifications.surface.text, o);
+            let accent = fade(tok.notifications.countdown, o);
+            let card = rect(x + offset, y, CARD_WIDTH, h);
+            self.d.card_faded(cx, card, &tok.notifications.surface, o);
 
             let inner = inset(card, border);
             let single = h <= ICON_SLOT + V_MARGIN_TOAST * 2.0 + border * 2.0;
@@ -328,7 +415,7 @@ impl ShellNotifications {
                 // The app's own icon, as the dock shows it.
                 let size = 34.0;
                 let at = rect(tx + (ICON_SLOT - size) * 0.5, inner.pos.y + v + (ICON_SLOT - size) * 0.5, size, size);
-                self.app_icons.draw(cx, app, self.icon_style, at, 1.0, tok.notifications.surface.text);
+                self.app_icons.draw(cx, app, self.icon_style, at, o, ink);
                 tx += ICON_SLOT + ICON_GAP;
             } else if let Some(ico) = note.icon {
                 self.d.icon_centered(
@@ -336,20 +423,27 @@ impl ShellNotifications {
                     ico,
                     rect(tx, inner.pos.y + v, ICON_SLOT, ICON_SLOT),
                     tok.font.display_large,
-                    tok.notifications.surface.text,
+                    ink,
                 );
                 tx += ICON_SLOT + ICON_GAP;
             }
-            let text_w = inner.pos.x + inner.size.x - SIDE_MARGIN - TEXT_RIGHT_MARGIN - tx;
+            let text_w = inner.pos.x + inner.size.x - SIDE_MARGIN - TEXT_RIGHT_MARGIN - action_w - tx;
+            // The action (Undo), at the right, in the accent.
+            if let Some(label) = &note.action {
+                let button = rect(inner.pos.x + inner.size.x - SIDE_MARGIN - action_w + 8.0, card.pos.y + (h - 30.0) * 0.5, action_w - 8.0, 30.0);
+                self.d.label(cx, button, true, tok.font.title, accent, super::ui::HAlign::Center, label);
+                self.action_rects.push((note.id, button));
+            }
             let line = tok.font.title * 1.35;
-            let mut ty = inner.pos.y + v;
+            // A one-line toast's text sits level with its icon and action.
+            let mut ty = inner.pos.y + v + if single && note.caption.is_empty() { ((ICON_SLOT - line) * 0.5).max(0.0) } else { 0.0 };
             if !note.caption.is_empty() {
                 self.d.label_elided(
                     cx,
                     rect(tx, ty, text_w, CAPTION_LINE),
                     false,
                     tok.font.body_small,
-                    darker(tok.notifications.surface.text, 1.6),
+                    fade(ink, SECONDARY),
                     super::ui::HAlign::Left,
                     &note.caption,
                 );
@@ -364,7 +458,7 @@ impl ShellNotifications {
                     rect(tx, ty, text_w, line),
                     true,
                     tok.font.title,
-                    tok.notifications.surface.text,
+                    ink,
                     super::ui::HAlign::Left,
                     l,
                 );
@@ -375,7 +469,7 @@ impl ShellNotifications {
                 let body = self
                     .d
                     .wrap(cx, false, tok.font.title, &note.body, text_w, BODY_LINES);
-                let body_color = darker(tok.notifications.surface.text, 1.15);
+                let body_color = fade(ink, 0.88);
                 for l in &body {
                     self.d.label(
                         cx,
@@ -403,7 +497,7 @@ impl ShellNotifications {
                     Ico::Close,
                     close,
                     CLOSE_SIZE * 0.6,
-                    darker(tok.notifications.surface.text, 1.4),
+                    fade(ink, SECONDARY),
                 );
             }
 
@@ -418,16 +512,26 @@ impl ShellNotifications {
                         card.size.x * p,
                         COUNTDOWN_HEIGHT,
                     ),
-                    fade(tok.notifications.countdown, if entry.hovered { 0.5 } else { 1.0 }),
+                    fade(accent, if entry.hovered { 0.5 } else { 1.0 }),
                 );
             }
 
             self.card_rects.push((note.id, card, close));
             y += h + STACK_SPACING;
         }
+        // The toasts not shown: a chip under the stack says how many and
+        // shows them on a press.
+        if shown < self.live.len() {
+            let label = format!("+{} more", self.live.len() - shown);
+            let w = self.d.measure(cx, false, tok.font.body_small * self.d.text_scale(), &label) + 28.0;
+            self.more = rect(x + CARD_WIDTH - w, y, w, MORE_H);
+            self.d.card(cx, self.more, &tok.notifications.surface);
+            self.d.label(cx, self.more, false, tok.font.body_small, tok.notifications.surface.text, super::ui::HAlign::Center, &label);
+        }
         // Where the toasts landed, once per change: evidence for a remote run.
-        let layout: Vec<String> = self.card_rects.iter().map(|(id, r, _)| format!("{id}@{},{},{},{}", r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
-        let layout = layout.join(" ");
+        // Where they rest: a slide does not log each of its frames.
+        let layout: Vec<String> = self.card_rects.iter().map(|(id, r, _)| format!("{id}@{},{},{},{}", x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
+        let layout = if self.more.size.x > 0.0 { format!("{layout} +{} more", self.live.len() - self.card_rects.len(), layout = layout.join(" ")) } else { layout.join(" ") };
         if layout != self.logged {
             log!("notifications: {} toast(s) {layout}", self.card_rects.len());
             self.logged = layout;
@@ -462,6 +566,9 @@ impl Widget for ShellNotifications {
                     entry.left -= dt;
                     busy = true;
                 }
+                if cx.seconds_since_app_start() - entry.posted < SLIDE_S {
+                    busy = true;
+                }
             }
             let before = self.live.len();
             self.live
@@ -493,6 +600,16 @@ impl Widget for ShellNotifications {
                 }
             }
             Event::MouseDown(e) => {
+                if contains(self.more, e.abs) {
+                    self.expanded = true;
+                    self.redraw(cx);
+                    return;
+                }
+                if let Some((id, _)) = self.action_rects.iter().find(|(_, r)| contains(*r, e.abs)).copied() {
+                    cx.widget_action(self.uid, ShellNotificationsAction::Action(id));
+                    self.dismiss(cx, id);
+                    return;
+                }
                 let rects = self.card_rects.clone();
                 for (id, card, close) in rects {
                     if contains(close, e.abs) {
@@ -555,6 +672,25 @@ pub fn fixtures() -> Vec<Notification> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A toast slides in from the right over its first [`SLIDE_S`], keeps
+    /// still, and slides out over its last; one that never expires never
+    /// slides out. (Unless `OCTOSENSE_REDUCE_MOTION` is set for the test
+    /// run: then it never moves.)
+    #[test]
+    fn a_toast_slides_in_and_out_at_the_ends_of_its_life() {
+        if crate::shell::ui::reduce_motion() {
+            assert_eq!(slide_offset(0.0, 8.0, 8.0), 0.0);
+            return;
+        }
+        assert_eq!(slide_offset(0.0, 8.0, 8.0), SLIDE_PX, "posted: a slide away");
+        let early = slide_offset(SLIDE_S * 0.25, 8.0, 8.0);
+        let later = slide_offset(SLIDE_S * 0.75, 8.0, 8.0);
+        assert!(early > later && later > 0.0, "it closes in: {early} then {later}");
+        assert_eq!(slide_offset(4.0, 4.0, 8.0), 0.0, "mid-life: in place");
+        assert!(slide_offset(7.9, 0.1, 8.0) > 0.0, "leaving: it slides out");
+        assert_eq!(slide_offset(60.0, 0.0, 0.0), 0.0, "a toast without a lifetime stays put");
+    }
 
     /// With the glance panel up at the right, the toasts stack left of it;
     /// without it (or with a surface elsewhere), at the right edge.

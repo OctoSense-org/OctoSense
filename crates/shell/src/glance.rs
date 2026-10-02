@@ -337,9 +337,28 @@ impl GlanceStore {
     /// screen): it goes, as if its app had withdrawn it. True when it was
     /// there.
     pub fn dismiss(&mut self, key: &str) -> bool {
-        let before = self.cards.len();
-        self.cards.retain(|c| c.key() != key);
-        self.cards.len() != before
+        self.take(key).is_some()
+    }
+
+    /// Take the card with this key out (a dismiss that can be undone).
+    pub fn take(&mut self, key: &str) -> Option<GlanceCard> {
+        let at = self.cards.iter().position(|c| c.key() == key)?;
+        Some(self.cards.remove(at))
+    }
+
+    /// Put cards back that were taken out ([`Self::take`]): each keeps its
+    /// publish and expiry, unless it expired meanwhile or its app published
+    /// the same card again since. How many came back.
+    pub fn restore(&mut self, cards: Vec<GlanceCard>, now_ms: u64) -> usize {
+        let mut back = 0;
+        for card in cards {
+            if card.expires_ms <= now_ms || self.cards.iter().any(|c| c.key() == card.key()) {
+                continue;
+            }
+            self.cards.push(card);
+            back += 1;
+        }
+        back
     }
 
     /// `glance.list`: the caller's own cards.
@@ -520,17 +539,54 @@ pub fn card(key: &str) -> Option<GlanceCard> {
 
 /// The person dismissed the card with this key (`app/card_id`).
 pub fn dismiss(key: &str) -> bool {
-    let gone = with_store(|store| store.dismiss(key));
-    if gone {
+    dismiss_all(&[key.to_string()]) == 1
+}
+
+/// The cards the person dismissed last (one card's close, or Clear all),
+/// kept so [`undo_dismiss`] can bring them back.
+static UNDO: Mutex<Vec<GlanceCard>> = Mutex::new(Vec::new());
+
+/// The person dismissed these cards: they go, as if their apps had
+/// withdrawn them, and the next [`undo_dismiss`] brings them back. How many
+/// went.
+pub fn dismiss_all(keys: &[String]) -> usize {
+    let gone: Vec<GlanceCard> = with_store(|store| keys.iter().filter_map(|key| store.take(key)).collect());
+    let count = gone.len();
+    if count > 0 {
+        *UNDO.lock().unwrap() = gone;
         changed();
     }
-    gone
+    count
+}
+
+/// Put back the cards the last dismiss took: the keys of those that came
+/// back (one its app published anew meanwhile stays as it is now).
+pub fn undo_dismiss() -> Vec<String> {
+    let cards = std::mem::take(&mut *UNDO.lock().unwrap());
+    let keys: Vec<String> = cards.iter().map(|c| c.key()).collect();
+    let now = now_ms();
+    let back = with_store(|store| {
+        store.restore(cards, now);
+        keys.into_iter().filter(|key| store.card(key, now).is_some()).collect::<Vec<_>>()
+    });
+    if !back.is_empty() {
+        changed();
+    }
+    back
 }
 
 /// What the glance screen shows now (priority, then recency, capped).
 pub fn shown() -> Vec<GlanceCard> {
     expire_now();
     with_store(|store| store.shown(now_ms(), SHOWN_CARDS))
+}
+
+/// Every live card, in the glance order: the desktop's panel scrolls, so it
+/// lists them all (and Clear all takes them all); the phone's glance screen
+/// shows the first [`SHOWN_CARDS`] ([`shown`]).
+pub fn listed() -> Vec<GlanceCard> {
+    expire_now();
+    with_store(|store| store.shown(now_ms(), STORE_CARDS))
 }
 
 /// The `glance` family for the Card runner (App Hub's host services).
@@ -652,10 +708,22 @@ pub fn demo_mail_publishes() -> Vec<Value> {
         .collect()
 }
 
+/// `OCTOSENSE_GLANCE_DEMO=many`'s notices: (app, card id, title, text).
+#[cfg(any(feature = "app-hub", native_mobile))]
+const DEMO_NOTICES: &[(&str, &str, &str, &str)] = &[
+    ("os.calendar", "dentist", "Dentist at 3 pm", "Main St 12. Leave by 2:40 to be on time."),
+    ("os.photos", "hike", "12 new photos", "From Saturday's hike; three are already favourites."),
+    ("os.maps", "commute", "Traffic on your way home", "I-280 is slow: 18 minutes longer than usual."),
+    ("os.youtube", "makepad", "New from a channel you follow", "Makepad: building a GPU shell in Rust (24 min)."),
+    ("os.calendar", "standup", "Standup moved", "Tomorrow's standup is at 9:30 instead of 9:00."),
+];
+
 /// `OCTOSENSE_GLANCE_DEMO`, once, at startup (a test path; nothing publishes
 /// these otherwise): `mail` publishes the fake Mail cards as `os.mail`, each
-/// with a notification; any other value but `0` publishes the sample News
-/// digest as `os.news`.
+/// with a notification; `many` adds notices from five more apps and the News
+/// digest (eight cards, seven notifications: the panel's overflow and the
+/// toasts' cap); any other value but `0` publishes the sample News digest
+/// as `os.news`.
 pub fn publish_demo_if_asked() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -663,7 +731,7 @@ pub fn publish_demo_if_asked() {
         if demo.is_empty() || demo == "0" {
             return;
         }
-        if demo == "mail" {
+        if demo == "mail" || demo == "many" {
             crate::glance_chat::set_demo_mail(true);
             seed_demo_mail_chat("os.mail");
             for args in demo_mail_publishes() {
@@ -671,7 +739,16 @@ pub fn publish_demo_if_asked() {
                     makepad_widgets::log!("glance: demo mail card refused: {e}");
                 }
             }
-            return;
+            if demo == "mail" {
+                return;
+            }
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            for &(app, card_id, title, body) in DEMO_NOTICES {
+                let args = crate::glance_notice::publish_args(app, &json!({"title": title, "body": body, "card_id": card_id}), now_ms());
+                if let Err(e) = args.and_then(|args| request(&Caller::granted(app), "glance.publish", &args)) {
+                    makepad_widgets::log!("glance: demo notice {card_id} refused: {e}");
+                }
+            }
         }
         let (source, data) = demo_digest();
         let args = json!({
@@ -1015,6 +1092,27 @@ mod tests {
         store.publish(&news(), &args("digest"), 70_000).unwrap();
         assert_eq!(store.withdraw(&news(), &json!({"card_id": "digest"}), 70_001).unwrap()["withdrawn"], true);
         assert!(store.is_empty());
+    }
+
+    /// A dismissed card comes back on undo, with its publish and expiry,
+    /// unless it expired or its app published it again meanwhile.
+    #[test]
+    fn a_dismissed_card_comes_back_on_undo() {
+        let mut store = GlanceStore::default();
+        store.publish(&news(), &args("digest"), 1_000).unwrap();
+        let key = store.shown(1_000, 9)[0].key();
+        let card = store.take(&key).unwrap();
+        assert!(store.is_empty());
+        assert_eq!(store.restore(vec![card.clone()], 2_000), 1);
+        assert_eq!(store.shown(2_000, 9)[0].published_ms, 1_000, "as published");
+        let again = store.take(&key).unwrap();
+        store.publish(&news(), &args("digest"), 3_000).unwrap();
+        assert_eq!(store.restore(vec![again], 3_000), 0, "published anew meanwhile");
+        assert_eq!(store.restore(vec![card], card_expiry(1_000) + 1), 0, "expired meanwhile");
+    }
+
+    fn card_expiry(published_ms: u64) -> u64 {
+        published_ms + EXPIRES_DEFAULT_S * 1000
     }
 
     /// The person's close button takes the one card it is on; the app can

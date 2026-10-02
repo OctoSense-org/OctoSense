@@ -420,6 +420,9 @@ pub struct App {
     /// shade's ids, which open the glance page.
     #[rust]
     pub glance_toasts: GlanceNoteTargets,
+    /// The toast offering to undo the last dismissal in the glance panel.
+    #[rust]
+    pub glance_undo_toast: Option<u64>,
     #[rust]
     pub glance_shade_notes: Vec<u64>,
     /// The developer-mode generation last acted on (dev_mode.rs).
@@ -3675,7 +3678,7 @@ impl App {
     fn set_glance_open(&mut self, cx: &mut Cx, open: bool) {
         // The overlay starts under the bar already: no clearance to add.
         if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
-            panel.open = open;
+            panel.set_open(open);
         }
         // Seen: the bar's glance button goes back from lit.
         if open {
@@ -3686,6 +3689,83 @@ impl App {
             self.update_bar(cx);
         }
         self.redraw_all(cx);
+    }
+
+    /// What the glance panel asked for: from a press (its widget action)
+    /// or a key ([`glance_panel::ShellGlancePanel::key`]).
+    fn glance_panel_action(&mut self, cx: &mut Cx, action: glance_panel::ShellGlancePanelAction) {
+        match action {
+            glance_panel::ShellGlancePanelAction::Open { app, route } => {
+                log!("wm: glance card opens {} (route {:?})", app, route);
+                self.set_glance_open(cx, false);
+                self.launch_app(cx, &app);
+            }
+            // A card pressed in the panel: the card window, as its
+            // notification opens it.
+            glance_panel::ShellGlancePanelAction::OpenCard { key } => self.open_glance_card(cx, &key),
+            glance_panel::ShellGlancePanelAction::Dismissed { count } => self.glance_dismissed(cx, count),
+            glance_panel::ShellGlancePanelAction::Undo => self.glance_undo(cx),
+            glance_panel::ShellGlancePanelAction::None => {}
+        }
+    }
+
+    /// The person dismissed cards in the glance panel: a toast says so and
+    /// offers Undo (one at a time: a newer dismissal replaces it, as it
+    /// replaces what undo brings back).
+    fn glance_dismissed(&mut self, cx: &mut Cx, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let notes = self.ui.widget(cx, ids!(shell_notes));
+        let Some(mut notes) = notes.borrow_mut::<shell::notifications::ShellNotifications>() else { return };
+        if let Some(old) = self.glance_undo_toast.take() {
+            notes.dismiss(cx, old);
+        }
+        let summary = if count == 1 { "Card dismissed".to_string() } else { format!("{count} cards cleared") };
+        let id = notes.post(
+            cx,
+            shell::notifications::Notification {
+                app: "wm".into(),
+                summary,
+                icon: Some(shell::ui::Ico::Check),
+                action: Some("Undo".into()),
+                urgency: shell::notifications::Urgency::Normal,
+                ..Default::default()
+            },
+        );
+        self.glance_undo_toast = Some(id);
+    }
+
+    /// Undo the last dismissal in the glance panel: its cards come back,
+    /// and the keyboard's focus with them.
+    fn glance_undo(&mut self, cx: &mut Cx) {
+        let back = glance::undo_dismiss();
+        log!("wm: glance undo brought back {} card(s)", back.len());
+        if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
+            panel.focus_restored(&back);
+        }
+        if let Some(id) = self.glance_undo_toast.take() {
+            if let Some(mut notes) = self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<shell::notifications::ShellNotifications>() {
+                notes.dismiss(cx, id);
+            }
+        }
+        if self.state.is_some() {
+            self.update_bar(cx);
+        }
+        self.redraw_all(cx);
+    }
+
+    /// A key for the glance panel while it holds the keyboard (glance_panel.rs
+    /// `key`): true when it was the panel's.
+    fn glance_key(&mut self, cx: &mut Cx, e: &KeyEvent) -> bool {
+        let act = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>().and_then(|mut p| p.key(cx, e));
+        let Some(act) = act else { return false };
+        self.glance_panel_action(cx, act);
+        if self.state.is_some() {
+            self.update_bar(cx);
+        }
+        self.redraw_all(cx);
+        true
     }
 
     fn glance_open(&mut self, cx: &mut Cx) -> bool {
@@ -4187,9 +4267,9 @@ impl App {
         data.active_window = (!title.is_empty()).then_some(title);
         data.ask_agent = self.focused_agent_app().map(|a| a.name);
         data.open_panel = self.shell_panel_open;
-        // The glance button: the cards shown now, and how many arrived since
-        // the panel was last open; it wears the pill while the panel is up.
-        let cards = glance::shown();
+        // The glance button: the cards the panel lists, and how many arrived
+        // since it was last open; it wears the pill while the panel is up.
+        let cards = glance::listed();
         let new = cards.iter().filter(|c| c.published_ms > self.glance_seen_ms).count();
         data.glance = Some((cards.len(), new));
         if self.glance_open(cx) {
@@ -5911,15 +5991,8 @@ impl MatchEvent for App {
                 self.module_close_confirmed(cx, wa.widget_uid);
             }
             match wa.cast::<glance_panel::ShellGlancePanelAction>() {
-                glance_panel::ShellGlancePanelAction::Open { app, route } => {
-                    log!("wm: glance card opens {} (route {:?})", app, route);
-                    self.set_glance_open(cx, false);
-                    self.launch_app(cx, &app);
-                }
-                // A card pressed in the panel: the card window, as its
-                // notification opens it.
-                glance_panel::ShellGlancePanelAction::OpenCard { key } => self.open_glance_card(cx, &key),
                 glance_panel::ShellGlancePanelAction::None => {}
+                action => self.glance_panel_action(cx, action),
             }
             // A card's notification opens that card in the card window.
             match wa.cast::<shell::notifications::ShellNotificationsAction>() {
@@ -5929,6 +6002,8 @@ impl MatchEvent for App {
                     }
                 }
                 shell::notifications::ShellNotificationsAction::Dismissed(id) => self.glance_toasts.dismissed(id),
+                // The glance panel's Undo.
+                shell::notifications::ShellNotificationsAction::Action(id) if self.glance_undo_toast == Some(id) => self.glance_undo(cx),
                 _ => {}
             }
             #[cfg(any(feature = "app-hub", native_mobile))]
@@ -6450,6 +6525,13 @@ impl App {
                     self.alt_armed = false;
                     return;
                 }
+                // The glance panel, while it holds the keyboard (the person
+                // opened it or pressed in it last): its arrows, Return,
+                // Delete, ⌘Z and Esc, before a chat pane's prompt.
+                if self.glance_key(cx, e) {
+                    self.alt_armed = false;
+                    return;
+                }
                 // "Ask <app>"'s prompt, while its pane has the keyboard.
                 if app_chat::key(e) {
                     self.alt_armed = false;
@@ -6491,6 +6573,12 @@ impl App {
                 if e.key_code == KeyCode::F9 && bare_key(&e.modifiers) && !self.state_mut().style.target.mobile() {
                     self.alt_armed = false;
                     self.do_action(cx, WmAction::ToggleGlance);
+                    // Opened from the keyboard: its first card has the focus.
+                    if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
+                        if panel.open {
+                            panel.focus_first();
+                        }
+                    }
                     return;
                 }
                 if self.desktop_key(cx,e) {return;}
@@ -6572,7 +6660,7 @@ impl App {
                 self.glance_generation = glance::generation();
                 // A new card opens the glance panel on a desktop, unless a
                 // card window is up; the bar's glance button counts the cards.
-                let fresh = glance::shown().iter().any(|c| c.published_ms > self.glance_seen_ms);
+                let fresh = glance::listed().iter().any(|c| c.published_ms > self.glance_seen_ms);
                 let sheet_open = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
                 if fresh && !sheet_open && !self.state_mut().style.target.mobile() && !self.glance_open(cx) {
                     log!("wm: a new glance card opens the glance panel");

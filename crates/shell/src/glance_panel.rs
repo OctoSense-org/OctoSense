@@ -20,14 +20,26 @@
 //! - **The list** starts at the top and the wheel moves it a card at a time;
 //!   a new card scrolls it no further than shows that card
 //!   ([`first_to_reveal`]). "More above" heads the list and "more below"
-//!   ends it.
+//!   ends it; the card that does not fit whole peeks in above that line,
+//!   cut at the list's end.
+//! - **A dismissal** (a card's close, Delete, Clear all) can be undone: the
+//!   shell's toast offers Undo ([`ShellGlancePanelAction::Dismissed`]), and
+//!   ⌘Z does it while the panel holds the keyboard.
+//! - **The keyboard** ([`ShellGlancePanel::key`]): opened by the person, the
+//!   panel holds it. The arrows move a focus ring from card to card,
+//!   scrolling as they go, Return opens the card, Delete dismisses it and
+//!   Esc closes the panel. Opened by a new card it does not take the
+//!   keyboard from what the person was typing in; a press in it does, and
+//!   a press on a card's own control hands it to that control.
 //!
-//! While it is open, toasts stack left of it. The column is [`PANEL_WIDTH`]
+//! It slides in from the right as it opens ([`crate::shell::ui::slide`]),
+//! and its column stops above the dock. While it is open, toasts stack left
+//! of it. The column is [`PANEL_WIDTH`]
 //! wide, as wide as a toast; each card is a tile of the column's inner width
 //! at its measured height (glance_card.rs), in the glance order (priority,
 //! then recency).
 use crate::glance_card::{GlanceTiles, LiveCards};
-use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, Ico, ShellDraw};
+use crate::shell::ui::{contains, rect, slide, DrawShellFill, HAlign, Ico, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellTokens};
 use makepad_widgets::*;
 
@@ -40,6 +52,16 @@ const HINT_H: f64 = 20.0;
 /// How long a card that just came wears its accent mark (its toast says
 /// the same; the mark shows which card it was).
 const NEW_FOR_MS: u64 = 8_000;
+/// The card that does not fit under the others peeks in, cut at the list's
+/// end, when at least this much of it shows (else the list ends there).
+const PEEK_MIN: f64 = 72.0;
+/// The column slides in from the right as it opens.
+const SLIDE_IN_S: f64 = 0.24;
+const SLIDE_IN_PX: f64 = 40.0;
+/// The keyboard's focus ring: this far outside its card's tile, round with
+/// the tile's corners (the L0 kit's 12 px).
+const RING_GAP: f64 = 3.0;
+const TILE_RADIUS: f64 = 12.0;
 
 /// The first card to show so the card at `n` is on screen, scrolling as
 /// little as that takes (from the top when it fits there): `heights` are
@@ -56,6 +78,24 @@ pub fn first_to_reveal(heights: &[f64], n: usize, room: f64) -> usize {
         }
     }
     n
+}
+
+/// Where an arrow key moves the keyboard's focus among `len` cards: from
+/// the card at `at` (none yet: the first shown, `first`) one down or up,
+/// stopping at the ends.
+pub fn step_focus(len: usize, at: Option<usize>, first: usize, down: bool) -> usize {
+    let last = len.saturating_sub(1);
+    match at {
+        None => first.min(last),
+        Some(i) if down => (i + 1).min(last),
+        Some(i) => i.saturating_sub(1).min(last),
+    }
+}
+
+/// Where the focus goes when the card at `i` of `keys` is dismissed: the
+/// card under it takes its place, or the one above when it was the last.
+pub fn focus_after_dismiss(keys: &[String], i: usize) -> Option<String> {
+    keys.get(i + 1).or(i.checked_sub(1).and_then(|j| keys.get(j))).cloned()
 }
 
 script_mod! {
@@ -78,6 +118,11 @@ pub enum ShellGlancePanelAction {
     /// A press on a card, outside its own controls: open the card (its
     /// key) in the card window.
     OpenCard { key: String },
+    /// The person dismissed cards (a card's close, Delete, Clear all): the
+    /// shell offers to undo it.
+    Dismissed { count: usize },
+    /// ⌘Z while the panel holds the keyboard: the last dismissed come back.
+    Undo,
     #[default]
     None,
 }
@@ -126,6 +171,28 @@ pub struct ShellGlancePanel {
     /// When the newest mark goes (a redraw drops it).
     #[rust]
     new_timer: Timer,
+    /// The panel holds the keyboard ([`Self::key`]).
+    #[rust]
+    pub keyboard: bool,
+    /// The card the keyboard is on (by key; its ring shows), and the card
+    /// the next draw scrolls to (the keyboard moved onto it).
+    #[rust]
+    focus: Option<String>,
+    #[rust]
+    reveal: Option<String>,
+    /// Opening for a new card ([`Self::show_newest`]): it does not take the
+    /// keyboard.
+    #[rust]
+    quiet: bool,
+    /// The slide in: due on the next draw, when it started, its frames.
+    #[rust]
+    opening: bool,
+    #[rust]
+    opened_at: f64,
+    #[rust]
+    slide_frame: NextFrame,
+    #[rust]
+    sliding: bool,
     /// What the last layout log said, so it is logged once per change.
     #[rust]
     logged: String,
@@ -165,17 +232,92 @@ impl ShellGlancePanel {
         self.open && (press || contains(self.column, p))
     }
     /// Bring the newest card on screen (a new card opened the panel),
-    /// scrolling as little as that takes ([`first_to_reveal`]).
+    /// scrolling as little as that takes ([`first_to_reveal`]). Opening so,
+    /// the panel leaves the keyboard where it was.
     pub fn show_newest(&mut self) {
         self.reveal_newest = true;
         self.wheel = 0.0;
+        self.quiet = true;
+    }
+    /// Open or close it. Opened by the person it holds the keyboard; opened
+    /// for a new card ([`Self::show_newest`]) it does not.
+    pub fn set_open(&mut self, open: bool) {
+        if open && !self.open {
+            self.opening = true;
+        }
+        self.open = open;
+        self.keyboard = open && !std::mem::take(&mut self.quiet);
+        self.focus = None;
+    }
+    fn close(&mut self, cx: &mut Cx, why: &str) {
+        self.set_open(false);
+        log!("wm: glance panel closed ({why})");
+        self.redraw(cx);
+    }
+    /// The cards an undo brought back: the keyboard's focus goes to the
+    /// first, when the panel holds the keyboard.
+    pub fn focus_restored(&mut self, keys: &[String]) {
+        if self.open && self.keyboard {
+            if let Some(key) = keys.first() {
+                self.focus = Some(key.clone());
+                self.reveal = self.focus.clone();
+            }
+        }
+    }
+    /// Put the keyboard's focus on the first card shown (F9 opened the
+    /// panel: the keyboard is already in use).
+    pub fn focus_first(&mut self) {
+        self.focus = crate::glance::listed().get(self.first).map(|c| c.key());
+    }
+    /// A key while the panel holds the keyboard: what it asks of the shell
+    /// (`Some(None)` when it was the panel's alone), or `None` when it is not
+    /// the panel's, for the shell to route on. The arrows move the focus,
+    /// Return opens the focused card, Delete (or Backspace) dismisses it, ⌘Z
+    /// brings the last dismissed back, Esc closes the panel.
+    pub fn key(&mut self, cx: &mut Cx, e: &KeyEvent) -> Option<ShellGlancePanelAction> {
+        if !self.open || !self.keyboard {
+            return None;
+        }
+        let m = &e.modifiers;
+        let plain = !m.logo && !m.control && !m.alt;
+        let keys: Vec<String> = crate::glance::listed().iter().map(|c| c.key()).collect();
+        let at = self.focus.as_ref().and_then(|f| keys.iter().position(|k| k == f));
+        let act = match e.key_code {
+            KeyCode::Escape if plain => {
+                self.close(cx, "Esc");
+                ShellGlancePanelAction::None
+            }
+            KeyCode::ArrowDown | KeyCode::ArrowUp if plain && !keys.is_empty() => {
+                let n = step_focus(keys.len(), at, self.first, e.key_code == KeyCode::ArrowDown);
+                self.focus = Some(keys[n].clone());
+                self.reveal = self.focus.clone();
+                ShellGlancePanelAction::None
+            }
+            KeyCode::ReturnKey | KeyCode::NumpadEnter if plain && at.is_some() => {
+                let key = keys[at.unwrap()].clone();
+                log!("wm: glance card {key} opens in the card window (Return)");
+                ShellGlancePanelAction::OpenCard { key }
+            }
+            KeyCode::Delete | KeyCode::Backspace if plain && at.is_some() => {
+                let i = at.unwrap();
+                let count = crate::glance::dismiss_all(&[keys[i].clone()]);
+                log!("wm: glance card {} dismissed (Delete)", keys[i]);
+                self.focus = focus_after_dismiss(&keys, i);
+                self.reveal = self.focus.clone();
+                ShellGlancePanelAction::Dismissed { count }
+            }
+            KeyCode::KeyZ if (m.logo || m.control) && !m.shift && !m.alt => ShellGlancePanelAction::Undo,
+            _ => return None,
+        };
+        self.redraw(cx);
+        Some(act)
     }
     /// The card at `p`, by key.
     fn card_at(&self, p: DVec2) -> Option<String> {
         self.card_rects.iter().find(|(r, ..)| contains(*r, p)).map(|(.., key)| key.clone())
     }
     pub fn toggle(&mut self, cx: &mut Cx) {
-        self.open = !self.open;
+        self.set_open(!self.open);
         self.redraw(cx);
     }
     pub fn set_material(&mut self, m: MaterialTokens, palette: Option<crate::shell::ShellPalette>) {
@@ -199,15 +341,31 @@ impl Widget for ShellGlancePanel {
         self.clear_all = Rect::default();
         if self.open {
             let tok = self.d.tokens(self.tokens);
+            // Sliding in, from the right.
+            let now_s = cx.seconds_since_app_start();
+            if std::mem::take(&mut self.opening) {
+                self.opened_at = now_s;
+                self.slide_frame = cx.new_next_frame();
+            }
             let top = screen.pos.y + self.bar_clearance + tok.spacing.gaps_out;
-            let x = screen.pos.x + screen.size.x - tok.spacing.gaps_out - PANEL_WIDTH;
-            let column = rect(x, top, PANEL_WIDTH, (screen.pos.y + screen.size.y - tok.spacing.gaps_out - top).max(HEADER));
+            let dx = slide((now_s - self.opened_at) / SLIDE_IN_S, SLIDE_IN_PX);
+            self.sliding = dx > 0.0;
+            let x = screen.pos.x + screen.size.x - tok.spacing.gaps_out - PANEL_WIDTH + dx;
+            // The column ends above the dock when the dock is under it.
+            let mut end = screen.pos.y + screen.size.y - tok.spacing.gaps_out;
+            let shelf = crate::desktop::shelf_bounds();
+            if shelf.size.y > 0.0 && shelf.pos.y > top && shelf.pos.x < x + PANEL_WIDTH && shelf.pos.x + shelf.size.x > x {
+                end = end.min(shelf.pos.y - tok.spacing.gaps_out);
+            }
+            let column = rect(x, top, PANEL_WIDTH, (end - top).max(HEADER));
             self.column = column;
             self.d.card(cx, column, &tok.notifications.surface);
             let ink = tok.notifications.surface.text;
-            let dim = alpha(ink, 0.65);
+            // Secondary text, faded toward the column: 4.5:1 or more on a
+            // flat one, light or dark.
+            let dim = alpha(ink, 0.72);
             let accent = tok.notifications.countdown;
-            let cards = crate::glance::shown();
+            let cards = crate::glance::listed();
             // The header: the title and how many; Clear all and close.
             self.close = rect(x + PANEL_WIDTH - PAD - 28.0, top + 12.0, 28.0, 28.0);
             self.d.icon_centered(cx, Ico::Close, self.close, 14.0, alpha(ink, 0.8));
@@ -240,6 +398,10 @@ impl Widget for ShellGlancePanel {
                         self.first = first_to_reveal(&heights, n, bottom - list_top);
                     }
                 }
+                // The keyboard moved onto a card: scroll as little as shows it.
+                if let Some(n) = self.reveal.take().and_then(|key| cards.iter().position(|c| c.key() == key)) {
+                    self.first = if n < self.first { n } else { self.first.max(first_to_reveal(&heights, n, bottom - list_top)) };
+                }
                 self.first = self.first.min(cards.len() - 1);
                 let mut y = list_top;
                 if self.first > 0 {
@@ -253,12 +415,20 @@ impl Widget for ShellGlancePanel {
                 let mut drawn = 0;
                 for (i, card) in cards.iter().enumerate().skip(self.first) {
                     let key = card.key();
-                    let h = heights[i];
+                    let mut h = heights[i];
                     // The first card shown always draws (clipped by its cap).
-                    if drawn > 0 && y + h > limit {
-                        break;
+                    // The one that does not fit under the others peeks in,
+                    // cut at the list's end (its tile clips), so the list
+                    // reads as going on; it still counts as below.
+                    let cut = drawn > 0 && y + h > limit;
+                    if cut {
+                        if limit - y < PEEK_MIN {
+                            break;
+                        }
+                        h = limit - y;
+                    } else {
+                        drawn += 1;
                     }
-                    drawn += 1;
                     let r = rect(x + PAD, y, PANEL_WIDTH - PAD * 2.0, h);
                     let body = self.live.body(&key, card, "glance panel");
                     self.tiles.draw(cx, &key, &card.app, card.contained, &body, r);
@@ -270,9 +440,15 @@ impl Widget for ShellGlancePanel {
                         let left = NEW_FOR_MS - age;
                         mark_left = Some(mark_left.map_or(left, |m| m.min(left)));
                     }
+                    // The keyboard's card: a ring round it, and its actions.
+                    let focused = self.keyboard && self.focus.as_deref() == Some(key.as_str());
+                    if focused {
+                        let ring = rect(r.pos.x - RING_GAP, r.pos.y - RING_GAP, r.size.x + RING_GAP * 2.0, r.size.y + RING_GAP * 2.0);
+                        self.d.focus_ring(cx, ring, TILE_RADIUS + RING_GAP, 2.0, accent);
+                    }
                     // The hovered card's actions, on a backdrop so they read
                     // over its content: dismiss, and open its app.
-                    if self.hover.as_deref() == Some(key.as_str()) {
+                    if focused || self.hover.as_deref() == Some(key.as_str()) {
                         let open = crate::glance_card::open_button(r);
                         let dismiss = crate::glance_card::dismiss_button(r);
                         let backdrop = rect(dismiss.pos.x - 4.0, dismiss.pos.y - 4.0, open.pos.x + open.size.x - dismiss.pos.x + 8.0, open.size.y + 8.0);
@@ -282,6 +458,9 @@ impl Widget for ShellGlancePanel {
                     }
                     self.card_rects.push((r, card.open_app.clone(), card.route.clone(), key));
                     y += h + GAP;
+                    if cut {
+                        break;
+                    }
                 }
                 if let Some(left) = mark_left {
                     if self.new_timer.is_empty() {
@@ -299,14 +478,15 @@ impl Widget for ShellGlancePanel {
         self.d.end_surface(cx);
         // The toasts stack clear of the open column (notifications.rs).
         crate::shell::notifications::keep_clear_of(self.open.then_some(self.column));
-        // Where the cards landed, once per change: evidence for a remote run.
+        // Where the cards landed, once per change and once the slide is
+        // done: evidence for a remote run.
         let layout: Vec<String> = self.card_rects.iter().map(|(r, app, _, _)| format!("{app}@{},{},{},{}", r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
         let layout = layout.join(" ");
-        if self.open && layout != self.logged {
+        if self.open && !self.sliding && layout != self.logged {
             log!("glance panel: {} card(s) {}", self.card_rects.len(), layout);
             self.logged = layout;
         }
-        let live: Vec<String> = if self.open { crate::glance::shown().iter().map(|c| c.key()).collect() } else { Vec::new() };
+        let live: Vec<String> = if self.open { crate::glance::listed().iter().map(|c| c.key()).collect() } else { Vec::new() };
         self.tiles.sweep(cx, &live);
         self.live.retain(&live);
         cx.end_turtle_with_area(&mut self.area);
@@ -314,6 +494,13 @@ impl Widget for ShellGlancePanel {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        // The slide in's frames.
+        if self.slide_frame.is_event(event).is_some() {
+            if cx.seconds_since_app_start() - self.opened_at < SLIDE_IN_S {
+                self.slide_frame = cx.new_next_frame();
+            }
+            self.redraw(cx);
+        }
         // A newest mark's time is up.
         if self.new_timer.is_event(event).is_some() {
             self.new_timer = Timer::empty();
@@ -360,18 +547,16 @@ impl Widget for ShellGlancePanel {
                 return;
             }
             if contains(self.close, e.abs) {
-                self.open = false;
-                log!("wm: glance panel closed (its close button)");
-                self.redraw(cx);
+                self.close(cx, "its close button");
                 return;
             }
             if contains(self.clear_all, e.abs) {
-                let keys: Vec<String> = crate::glance::shown().iter().map(|c| c.key()).collect();
-                for key in &keys {
-                    crate::glance::dismiss(key);
-                }
-                log!("wm: glance panel cleared {} card(s)", keys.len());
+                let keys: Vec<String> = crate::glance::listed().iter().map(|c| c.key()).collect();
+                let count = crate::glance::dismiss_all(&keys);
+                log!("wm: glance panel cleared {count} card(s)");
                 self.first = 0;
+                self.focus = None;
+                cx.widget_action(self.uid, ShellGlancePanelAction::Dismissed { count });
                 self.redraw(cx);
                 return;
             }
@@ -383,8 +568,10 @@ impl Widget for ShellGlancePanel {
                     return;
                 }
                 if contains(crate::glance_card::dismiss_button(r), e.abs) {
-                    if crate::glance::dismiss(&key) {
+                    let count = crate::glance::dismiss_all(&[key.clone()]);
+                    if count > 0 {
                         log!("wm: glance card {key} dismissed");
+                        cx.widget_action(self.uid, ShellGlancePanelAction::Dismissed { count });
                     }
                     self.hover = None;
                     self.redraw(cx);
@@ -392,9 +579,7 @@ impl Widget for ShellGlancePanel {
                 }
             }
             if !contains(self.column, e.abs) {
-                self.open = false;
-                log!("wm: glance panel closed (a press outside it)");
-                self.redraw(cx);
+                self.close(cx, "a press outside it");
                 return;
             }
         }
@@ -409,6 +594,13 @@ impl Widget for ShellGlancePanel {
                 Event::MouseDown(e) => {
                     let claimed = event.pointer_claimed_area() != claim_before;
                     self.card_press = if claimed { None } else { self.card_at(e.abs) };
+                    // A press in the column takes the keyboard, unless a
+                    // card's own control claimed it (its field types then).
+                    // The pointer hides the focus ring until a key brings it.
+                    if self.open && contains(self.column, e.abs) {
+                        self.keyboard = !claimed;
+                        self.focus = None;
+                    }
                 }
                 Event::MouseUp(e) => {
                     if let Some(key) = self.card_press.take() {
@@ -444,5 +636,29 @@ mod tests {
         assert_eq!(first_to_reveal(&heights, 2, 780.0), 1, "all three do not: one card scrolls away");
         assert_eq!(first_to_reveal(&heights, 2, 200.0), 2, "the card alone does not fit: it heads the list");
         assert_eq!(first_to_reveal(&heights, 9, 2000.0), 0, "an index past the end is the last card");
+    }
+
+    /// The arrows move the focus a card at a time and stop at the ends; the
+    /// first press lands on the first card shown.
+    #[test]
+    fn the_arrows_step_through_the_cards_and_stop_at_the_ends() {
+        assert_eq!(step_focus(5, None, 2, true), 2, "first press: the first card shown");
+        assert_eq!(step_focus(5, None, 2, false), 2);
+        assert_eq!(step_focus(5, Some(2), 0, true), 3);
+        assert_eq!(step_focus(5, Some(2), 0, false), 1);
+        assert_eq!(step_focus(5, Some(4), 0, true), 4, "the last card stays");
+        assert_eq!(step_focus(5, Some(0), 0, false), 0, "the first card stays");
+        assert_eq!(step_focus(3, None, 7, true), 2, "a stale first is clamped");
+    }
+
+    /// A dismissed card's focus passes to the card under it, or above it
+    /// when it was the last, or to none when it was the only one.
+    #[test]
+    fn a_dismissed_cards_focus_passes_to_its_neighbour() {
+        let keys: Vec<String> = ["a", "b", "c"].iter().map(|k| k.to_string()).collect();
+        assert_eq!(focus_after_dismiss(&keys, 0).as_deref(), Some("b"));
+        assert_eq!(focus_after_dismiss(&keys, 1).as_deref(), Some("c"));
+        assert_eq!(focus_after_dismiss(&keys, 2).as_deref(), Some("b"), "the last: the one above");
+        assert_eq!(focus_after_dismiss(&keys[..1], 0), None, "the only card: no focus");
     }
 }
