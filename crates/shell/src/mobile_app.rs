@@ -635,13 +635,15 @@ impl App {
     }
     /// Android delivered a HOME intent to the running activity (OctoSense is
     /// the device's Home app): whatever is up — an app, Recents, a group
-    /// window, the sheet — the home page shows, as the Home tap does.
+    /// window, the sheet, an assistant pane — the home page shows, as the
+    /// Home tap does.
     pub fn phone_home_intent(&mut self,cx:&mut Cx) {
         if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return;}
         log!("[phone] home intent");
+        let closed_pane=self.close_chat_panes(cx,true);
         let already_home={
             let phone=&mut self.state_mut().phone;
-            let settled=phone.screen==PhoneScreen::Home && phone.shade.open<0.001 && phone.groups.open.is_none();
+            let settled=!closed_pane && phone.screen==PhoneScreen::Home && phone.shade.open<0.001 && phone.groups.open.is_none();
             phone.shade.close();
             phone.groups.close();
             settled

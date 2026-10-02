@@ -3791,6 +3791,25 @@ impl App {
         }
     }
 
+    /// A phone's Back and Home reach the assistant panes, which draw over the
+    /// home page full screen: Back closes the top one (an app's "Ask" panel,
+    /// then the system chat), Home (`all`) closes both. Closing only hides a
+    /// pane, as its own Close does: its conversation and a running turn stay.
+    /// True when a pane was open.
+    fn close_chat_panes(&mut self, cx: &mut Cx, all: bool) -> bool {
+        let (app, system) = chat_panes_to_close(app_chat::is_open(), system_chat::is_open(), all);
+        if app {
+            app_chat::close();
+        }
+        if system {
+            system_chat::close();
+        }
+        if app || system {
+            self.system_chat_changed(cx);
+        }
+        app || system
+    }
+
     /// The system chat moved (a frame from the kernel, the router decided
     /// one of its approvals): hand approvals on, and redraw.
     fn system_chat_changed(&mut self, cx: &mut Cx) {
@@ -5451,6 +5470,31 @@ mod hub_binding_tests {
     }
 }
 
+/// Which assistant panes a phone's Back closes (`all` false: the top one, an
+/// app's "Ask" panel over the system chat) or its Home closes (`all`: both),
+/// given which are open: (the app's panel, the system chat).
+fn chat_panes_to_close(app_open: bool, system_open: bool, all: bool) -> (bool, bool) {
+    (app_open, system_open && (all || !app_open))
+}
+
+#[cfg(test)]
+mod chat_pane_back_tests {
+    use super::chat_panes_to_close;
+
+    #[test]
+    fn back_closes_the_top_pane_and_home_closes_both() {
+        // Back: the top pane only; nothing open leaves Back to the app.
+        assert_eq!(chat_panes_to_close(false, true, false), (false, true), "the system chat alone");
+        assert_eq!(chat_panes_to_close(true, true, false), (true, false), "the app's panel is on top");
+        assert_eq!(chat_panes_to_close(true, false, false), (true, false));
+        assert_eq!(chat_panes_to_close(false, false, false), (false, false), "no pane: Back goes to the app");
+        // Home: every open pane.
+        assert_eq!(chat_panes_to_close(true, true, true), (true, true));
+        assert_eq!(chat_panes_to_close(false, true, true), (false, true));
+        assert_eq!(chat_panes_to_close(false, false, true), (false, false));
+    }
+}
+
 #[cfg(test)]
 mod test_action_tests {
     use super::*;
@@ -6183,6 +6227,8 @@ impl App {
         // is not also broadcast through the widget tree.
         if event.back_pressed() && self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
             log!("[phone] back");
+            // An open assistant pane takes Back first, as its own Close does.
+            if self.close_chat_panes(cx, false) { return; }
             self.phone_action(cx, mobile::PhoneHit::Back);
             return;
         }
