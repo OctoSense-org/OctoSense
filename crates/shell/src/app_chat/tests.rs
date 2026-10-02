@@ -417,10 +417,27 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
     assert!(listed["what_to_do"].as_str().unwrap().contains(&format!("peer_send_input and the peer slug \"{SLUG}\"")), "{listed}");
     let note = crate::agents::note_part(&app);
     assert!(note.contains(SLUG) && note.contains("peer_send_input") && note.contains("not the app id"), "{note}");
+    // A held agents.ask answers once the agent is ready: its slug, to send
+    // the request to now, in the same turn (it ended the turn to wait for
+    // the sheet in the live run, and the request was lost).
+    match crate::agents::ask_settled(&app) {
+        Some(crate::ai_host::app_peers::host_tools::ToolOutcome::Ok(v)) => {
+            assert_eq!(v["peer_slug"], SLUG);
+            assert!(v["text"].as_str().unwrap().contains("in this turn"), "{v}");
+        }
+        other => panic!("{other:?}"),
+    }
     assert_eq!(peers.0.lock().unwrap().len(), 1, "one peer per app");
     const OTHER: &str = "org.example.asktest2";
-    crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), OTHER, true, 2));
     let other = AgentApp { id: OTHER.into(), name: "Other".into(), ..app.clone() };
+    // The person has not answered the sheet: the call is held, and a call
+    // that waited too long says they have not.
+    assert!(crate::agents::ask_settled(&other).is_none(), "held while the sheet waits");
+    match crate::agents::ask_pending(&other) {
+        crate::ai_host::app_peers::host_tools::ToolOutcome::Ok(v) => assert!(v["text"].as_str().unwrap().contains("has not answered"), "{v}"),
+        other => panic!("{other:?}"),
+    }
+    crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), OTHER, true, 2));
     crate::agents::prepare(&other);
     wait("the preparation", || crate::agents::prepared(OTHER) == Some(crate::agents::Prepared::Ready));
     let prepared = peers.0.lock().unwrap().iter().find(|(id, _)| *id == format!("card.{OTHER}")).map(|(_, p)| *p.prepared.lock().unwrap());
@@ -430,6 +447,10 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
 
     // Turned off: the peer goes, the panel's context closes, and it says so.
     crate::approvals::with(|a| a.consent.turn_off(APP, 3));
+    match crate::agents::ask_settled(&app) {
+        Some(crate::ai_host::app_peers::host_tools::ToolOutcome::Ok(v)) => assert_eq!(v["access"], "off", "{v}"),
+        other => panic!("{other:?}"),
+    }
     assert!(crate::ai_host::contained::revoke(APP));
     assert!(peers.0.lock().unwrap().iter().find(|(id, _)| *id == format!("card.{APP}")).unwrap().1.released.load(Ordering::SeqCst));
     super::pump();

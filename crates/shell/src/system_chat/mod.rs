@@ -94,7 +94,22 @@ struct Chat {
     told: Option<String>,
     /// The shell's own lines in the conversation (an agents.ask sheet).
     notes: Vec<model::Item>,
+    /// `agents.ask` calls held until the person answered the first-use
+    /// sheet and the agent's peer started ([`settle_asks`]).
+    asks: Vec<HeldAsk>,
 }
+
+/// An `agents.ask` call the system chat holds: the app, the call's reply,
+/// and when it came.
+struct HeldAsk {
+    app: crate::apps::AgentApp,
+    reply: crate::ai_host::app_peers::host_tools::ToolReply,
+    since: std::time::Instant,
+}
+
+/// How long a held `agents.ask` waits for the person before it answers
+/// that they have not (the system agent tells them; the sheet stays up).
+const ASK_WAIT: Duration = Duration::from_secs(120);
 
 /// The id prefix of a routed question in the conversation.
 pub const ROUTED_PREFIX: &str = "routed:";
@@ -150,6 +165,7 @@ fn with<R>(f: impl FnOnce(&mut Chat) -> R) -> R {
         routed: Vec::new(),
         told: None,
         notes: Vec::new(),
+        asks: Vec::new(),
     });
     f(chat)
 }
@@ -413,27 +429,70 @@ pub fn pump() {
                 }
             }
             Effect::ApprovalGone(_) => {}
-            // `agents.list` / `agents.ask`: the shell's own answer (the
-            // sheet `agents.ask` shows is the person's to answer).
-            Effect::ToolCall { call, reply } if crate::agents::is_agents_tool(&call.name) => {
-                let outcome = crate::agents::call(&call.name, &call.args);
-                if call.name == crate::agents::ASK_TOOL {
-                    let app = call.args["app"].as_str().unwrap_or("an app").to_string();
-                    with(|c| {
-                        c.notes.push(model::Item::Notice(format!("The system agent asks to use {app}'s assistant: allow or deny it on the sheet.")));
-                        c.ui_generation += 1;
-                    });
+            // `agents.ask`: the first-use sheet is the person's to answer.
+            // The call waits for the answer and the agent's peer, so the
+            // system agent goes on with the request in the same turn.
+            Effect::ToolCall { call, reply } if call.name == crate::agents::ASK_TOOL => match crate::agents::ask_app(&call.args) {
+                Err(outcome) => {
+                    reply.finish(outcome);
                 }
-                reply.finish(outcome);
+                Ok(app) => {
+                    if crate::agents::begin_ask(&app) {
+                        let name = app.name.clone();
+                        with(|c| {
+                            c.notes.push(model::Item::Notice(format!("The system agent asks to use {name}'s assistant: allow or deny it on the sheet.")));
+                            c.ui_generation += 1;
+                        });
+                    }
+                    match crate::agents::ask_settled(&app) {
+                        Some(outcome) => {
+                            reply.finish(outcome);
+                        }
+                        None => {
+                            reply.acknowledge();
+                            with(|c| c.asks.push(HeldAsk { app, reply, since: std::time::Instant::now() }));
+                        }
+                    }
+                }
+            },
+            // `agents.list`: the shell's own answer.
+            Effect::ToolCall { call, reply } if crate::agents::is_agents_tool(&call.name) => {
+                reply.finish(crate::agents::call(&call.name, &call.args));
             }
             Effect::ToolCall { call, reply } => crate::host_tools::system_call(call, reply),
             Effect::ToolCancel(call_id) => crate::host_tools::system_cancel(&call_id),
         }
     }
+    settle_asks();
     for (id, decision, _reason) in crate::approvals::take_system_chat_decisions() {
         if let Some(approval_id) = id.0.strip_prefix(HELD_PREFIX) {
             command(Command::Approval { approval_id: approval_id.to_string(), approve: decision.approved() });
         }
+    }
+}
+
+/// Answer the held `agents.ask` calls that can be: the person answered and
+/// the peer started (or could not), or the wait ran out. A cancelled call
+/// (the turn was stopped) is dropped.
+fn settle_asks() {
+    let asks = with(|c| std::mem::take(&mut c.asks));
+    let mut held = Vec::new();
+    for ask in asks {
+        if !ask.reply.is_open() {
+            continue;
+        }
+        if let Some(outcome) = crate::agents::ask_settled(&ask.app) {
+            log!("system chat: agents.ask for {} answered: {}", ask.app.id, crate::agents::access(&ask.app.id).as_str());
+            ask.reply.finish(outcome);
+        } else if ask.since.elapsed() >= ASK_WAIT {
+            log!("system chat: agents.ask for {} still waits for the person; answered so", ask.app.id);
+            ask.reply.finish(crate::agents::ask_pending(&ask.app));
+        } else {
+            held.push(ask);
+        }
+    }
+    if !held.is_empty() {
+        with(|c| c.asks.extend(held));
     }
 }
 

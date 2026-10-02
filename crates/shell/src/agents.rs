@@ -28,7 +28,9 @@
 //! tools on the system session, `agents.list` and `agents.ask`
 //! ([`declarations`], answered by the system chat itself: [`call`]).
 //! `agents.ask` shows the first-use sheet (over the system chat); only the
-//! person answers it.
+//! person answers it. The system chat holds the call until they did and the
+//! agent's peer is ready ([`ask_settled`]), so the system agent goes on with
+//! the person's request in the same turn instead of ending it to wait.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -372,7 +374,7 @@ pub fn declarations() -> Vec<Value> {
         json!({
             "name": ASK_TOOL,
             "app": OWNER,
-            "description": "Ask the person to allow one app's agent (the shell shows its first-use sheet; only the person answers). Use it when you need an app's agent that is not yet allowed. Returns where it stands now; once allowed, its peer appears in peer_list.",
+            "description": "Ask the person to allow one app's agent (the shell shows its first-use sheet; only the person answers). Use it when you need an app's agent that is not yet allowed. The call waits for their answer and for the agent's peer to start, then returns its peer slug: send the person's request to it with peer_send_input in this same turn. If they did not allow it, say so.",
             "input_schema": {"type": "object", "properties": {"app": {"type": "string", "description": "The app's name or id, e.g. News or os.news"}}, "required": ["app"], "additionalProperties": false},
             "risk": "read",
         }),
@@ -389,23 +391,65 @@ pub fn is_agents_tool(tool: &str) -> bool {
 pub fn call(tool: &str, args: &Value) -> ToolOutcome {
     match tool {
         LIST_TOOL => ToolOutcome::Ok(list()),
-        ASK_TOOL => {
-            let name = args["app"].as_str().unwrap_or("");
-            let Some(app) = find(name) else {
-                let names: BTreeSet<String> = all().into_iter().map(|a| a.name).collect();
-                return ToolOutcome::error("no_such_agent", format!("No app with an agent is called {name:?}. Apps with an agent: {}.", names.into_iter().collect::<Vec<_>>().join(", ")));
-            };
-            let now = ask(&app);
-            let text = match now {
-                Access::Allowed => format!("{}'s assistant is allowed. Its peer is being prepared; it shows in peer_list shortly (use its peer slug from peer_list or agents.list with peer_send_input, not the app id).", app.name),
-                Access::NotAsked => format!("{}'s assistant is not yet allowed: the person was asked on the first-use sheet. Wait for them; its peer shows in peer_list once they allow it.", app.name),
-                Access::Off => format!("{}'s assistant is off. Only the person can turn it on (Settings › Assistant › Approvals).", app.name),
-            };
-            if now == Access::Allowed {
-                prepare(&app);
+        // Answered at once (the system chat holds the call instead, until
+        // the person answered: system_chat `pump`).
+        ASK_TOOL => match ask_app(args) {
+            Ok(app) => {
+                begin_ask(&app);
+                ask_settled(&app).unwrap_or_else(|| ask_pending(&app))
             }
-            ToolOutcome::Ok(json!({"app": app.id, "name": app.name, "access": now.as_str(), "peer_slug": peer_slug(&app), "text": text}))
-        }
+            Err(outcome) => outcome,
+        },
         other => ToolOutcome::error("unknown_tool", format!("{other} is not an agents tool")),
     }
+}
+
+/// The app `agents.ask` names, or the error it answers.
+pub fn ask_app(args: &Value) -> Result<AgentApp, ToolOutcome> {
+    let name = args["app"].as_str().unwrap_or("");
+    find(name).ok_or_else(|| {
+        let names: BTreeSet<String> = all().into_iter().map(|a| a.name).collect();
+        ToolOutcome::error("no_such_agent", format!("No app with an agent is called {name:?}. Apps with an agent: {}.", names.into_iter().collect::<Vec<_>>().join(", ")))
+    })
+}
+
+/// `agents.ask` for `app`: the first-use sheet if the person has not
+/// decided, and its peer started once allowed. Whether the sheet is up.
+pub fn begin_ask(app: &AgentApp) -> bool {
+    let now = ask(app);
+    if now == Access::Allowed {
+        prepare(app);
+    }
+    now == Access::NotAsked
+}
+
+/// `agents.ask`'s answer once there is one: the person allowed the agent
+/// and its peer is ready (its slug to pass to peer_send_input) or could not
+/// start, or the agent is off. None while the person has not answered the
+/// first-use sheet, or the allowed agent's peer is still starting.
+pub fn ask_settled(app: &AgentApp) -> Option<ToolOutcome> {
+    let now = access(&app.id);
+    let (text, slug) = match (now, prepared(&app.id)) {
+        (Access::Off, _) => (format!("{}'s assistant is off: the person did not allow it. Only they can turn it on (Settings › Assistant › Approvals); tell them.", app.name), None),
+        (Access::Allowed, _) if app.native => (format!("{}'s assistant is allowed. {}.", app.name, reach(app, peer_slug(app).as_deref())), peer_slug(app)),
+        (Access::Allowed, Some(Prepared::Ready)) => {
+            let slug = peer_slug(app)?;
+            (format!("{}'s assistant is allowed and ready. {} now, in this turn.", app.name, reach(app, Some(&slug))), Some(slug))
+        }
+        (Access::Allowed, Some(Prepared::Failed(e))) => (format!("{}'s assistant is allowed but could not start: {e}", app.name), None),
+        _ => return None,
+    };
+    Some(ToolOutcome::Ok(json!({"app": app.id, "name": app.name, "access": now.as_str(), "peer_slug": slug, "text": text})))
+}
+
+/// `agents.ask`'s answer while the person has not answered, or the peer
+/// has not started (a call that waited too long).
+pub fn ask_pending(app: &AgentApp) -> ToolOutcome {
+    let now = access(&app.id);
+    let text = match now {
+        Access::Allowed => format!("{}'s assistant is allowed. Its peer is still starting; it shows in peer_list shortly (use its peer slug from peer_list or agents.list with peer_send_input, not the app id).", app.name),
+        Access::NotAsked => format!("{}'s assistant is not yet allowed: the person has not answered the first-use sheet. Tell them it is waiting for them; its peer shows in peer_list once they allow it.", app.name),
+        Access::Off => format!("{}'s assistant is off. Only the person can turn it on (Settings › Assistant › Approvals).", app.name),
+    };
+    ToolOutcome::Ok(json!({"app": app.id, "name": app.name, "access": now.as_str(), "peer_slug": peer_slug(app), "text": text}))
 }
