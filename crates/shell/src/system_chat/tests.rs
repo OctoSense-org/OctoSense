@@ -295,6 +295,55 @@ fn history_replaces_the_transcript_and_keeps_what_is_still_open() {
     assert_eq!(m.open_question(), Some(("q1", 1)), "an open question survives a reload");
 }
 
+/// `session/hydrate`'s rows carry no tool name, so a reloaded tool row read
+/// "⚙ tool · done" where the live one had said "peer_send_input". It keeps
+/// the name the chat showed for the same turn's call (octos stamps each row
+/// a turn persists with `thread_id` = the turn id), across reloads; a turn
+/// the chat never saw in full stays "tool", never another call's name.
+#[test]
+fn a_reload_keeps_the_tool_names_the_chat_showed() {
+    let mut m = ChatModel::new();
+    m.start_turn("t1", "MAIL_NOTIFY");
+    m.apply("tool/started", &json!({"turn_id": "t1", "tool_call_id": "c1", "tool_name": "peer_send_input", "arguments": {"slug": "os-mail-1"}}));
+    m.apply("tool/completed", &json!({"turn_id": "t1", "tool_call_id": "c1", "tool_name": "peer_send_input", "success": true}));
+    m.apply("message/delta", &json!({"turn_id": "t1", "text": "DELEGATED"}));
+    m.apply("turn/completed", &json!({"turn_id": "t1"}));
+    // A turn the chat followed only in part: one of its two calls.
+    m.apply("tool/started", &json!({"turn_id": "t2", "tool_call_id": "c3", "tool_name": "web_fetch"}));
+    m.apply("tool/completed", &json!({"turn_id": "t2", "tool_call_id": "c3", "tool_name": "web_fetch", "success": true}));
+    // The rows octos's session/hydrate returns for them: no name, no call id.
+    let row = |seq: u64, role: &str, content: &str, thread: &str| json!({"seq": seq, "role": role, "content": content, "thread_id": thread, "persisted_at": "2026-10-02T05:56:00Z"});
+    let history = json!([
+        row(0, "user", "an earlier run's request", "t0"),
+        row(1, "assistant", "", "t0"),
+        row(2, "tool", "[]", "t0"),
+        row(3, "user", "MAIL_NOTIFY", "t1"),
+        row(4, "assistant", "", "t1"),
+        row(5, "tool", "message sent to peer os-mail-1", "t1"),
+        row(6, "assistant", "DELEGATED", "t1"),
+        row(7, "user", "read two pages", "t2"),
+        row(8, "tool", "page one", "t2"),
+        row(9, "tool", "page two", "t2"),
+    ]);
+    let tools = |m: &ChatModel| -> Vec<(String, Option<String>)> {
+        m.items.iter().filter_map(|i| match i {
+            Item::Tool { name, turn, .. } => Some((name.clone(), turn.clone())),
+            _ => None,
+        }).collect()
+    };
+    let expected = vec![
+        ("tool".to_string(), Some("t0".to_string())),
+        ("peer_send_input".to_string(), Some("t1".to_string())),
+        ("tool".to_string(), Some("t2".to_string())),
+        ("tool".to_string(), Some("t2".to_string())),
+    ];
+    m.load_history(&history);
+    assert_eq!(tools(&m), expected);
+    m.load_history(&history);
+    assert_eq!(tools(&m), expected, "a second reload keeps it");
+    assert_eq!(text_of(&m, Role::Assistant), ["DELEGATED"], "an empty tool-call row shows nothing");
+}
+
 #[test]
 fn an_approval_is_handed_on_never_answered_by_the_model() {
     let mut m = ChatModel::new();

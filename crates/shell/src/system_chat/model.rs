@@ -17,7 +17,10 @@
 //!   agent's on the person's behalf; an approval of any other turn on the
 //!   session (an external client's, e.g. Talk to Octos) is marked
 //!   [`ApprovalAsk::external`] and shown read-only: that client answers it.
-//! - **History**: `session/hydrate`'s rows replace the transcript.
+//! - **History**: `session/hydrate`'s rows replace the transcript; its tool
+//!   rows keep the names the transcript showed ([`ToolNames`]).
+
+use std::collections::HashMap;
 
 use serde_json::Value;
 
@@ -565,19 +568,22 @@ impl ChatModel {
     }
 
     /// The transcript from `session/hydrate` (`result.messages`), replacing
-    /// what the pane showed. Rows are `{role, content, turn_id?}`.
+    /// what the pane showed. Rows are `{role, content, thread_id?,
+    /// turn_id?}` ([`history_turn`]); a tool row is named by [`ToolNames`].
     pub fn load_history(&mut self, messages: &Value) {
+        let rows = messages.as_array().map(Vec::as_slice).unwrap_or(&[]);
+        let mut tools = ToolNames::new(&self.items, rows);
         let mut items = Vec::new();
-        for row in messages.as_array().into_iter().flatten() {
+        for row in rows {
             // The shell's note to the system agent is not the person's words.
             let text = crate::agents::strip_note(row.get("content").and_then(Value::as_str).unwrap_or("")).to_string();
-            let turn = row.get("turn_id").and_then(Value::as_str).map(str::to_string);
+            let turn = history_turn(row);
             match row.get("role").and_then(Value::as_str).unwrap_or("") {
                 "user" => items.push(Item::Message { role: Role::User, text, turn, segment: None, seq: None, speaker: None }),
                 "assistant" if !text.trim().is_empty() => items.push(Item::Message { role: Role::Assistant, text, turn, segment: None, seq: None, speaker: None }),
                 "tool" => items.push(Item::Tool {
                     call_id: row.get("tool_call_id").and_then(Value::as_str).unwrap_or("").to_string(),
-                    name: row.get("name").or_else(|| row.get("tool_name")).and_then(Value::as_str).unwrap_or("tool").to_string(),
+                    name: tools.name(row, turn.as_deref()),
                     status: ToolStatus::Done,
                     detail: String::new(),
                     turn,
@@ -607,6 +613,69 @@ impl ChatModel {
         self.items.clear();
         self.prompts.clear();
         self.changed();
+    }
+}
+
+/// A history row's turn: its `turn_id`, else its `thread_id`. octos's
+/// `session/hydrate` rows have no `turn_id` (its `HydratedMessage` leaves it
+/// unset), but every row a turn persists carries `thread_id` = that turn's
+/// id (`pre_stamp_turn_thread_id`); the broker's rows for a turn the kernel
+/// never recorded carry `turn_id`.
+pub fn history_turn(row: &Value) -> Option<String> {
+    row.get("turn_id").and_then(Value::as_str).or_else(|| row.get("thread_id").and_then(Value::as_str)).map(str::to_string)
+}
+
+/// What a reloaded history's tool rows are called. The rows carry no tool
+/// name: octos's `HydratedMessage` (the pinned revision) is `seq`, `role`,
+/// `content`, `thread_id`, `persisted_at` and the like, with no tool name or
+/// call id (the name is only on the assistant's tool call, which hydrate
+/// does not return), and the broker's merged history adds none. So a
+/// reloaded tool row keeps the name the transcript already showed for it
+/// (its live `tool/started`, or an earlier reload): a turn's tool rows, in
+/// order, when the transcript showed as many for that turn. A row's own
+/// `name` or `tool_name` comes first, should a kernel send one; a row the
+/// transcript never showed in full (another run's, a turn followed only in
+/// part) reads "tool".
+pub struct ToolNames {
+    /// The names the replaced transcript showed, per turn, in order.
+    shown: HashMap<String, Vec<String>>,
+    /// How many tool rows the history has per turn.
+    rows: HashMap<String, usize>,
+    /// How many of a turn's rows were named so far.
+    named: HashMap<String, usize>,
+}
+
+impl ToolNames {
+    /// For `rows` (the history) replacing `items` (the transcript).
+    pub fn new(items: &[Item], rows: &[Value]) -> ToolNames {
+        let mut shown: HashMap<String, Vec<String>> = HashMap::new();
+        for item in items {
+            if let Item::Tool { name, turn: Some(turn), .. } = item {
+                shown.entry(turn.clone()).or_default().push(name.clone());
+            }
+        }
+        let mut per_turn: HashMap<String, usize> = HashMap::new();
+        for row in rows.iter().filter(|r| r.get("role").and_then(Value::as_str) == Some("tool")) {
+            if let Some(turn) = history_turn(row) {
+                *per_turn.entry(turn).or_default() += 1;
+            }
+        }
+        ToolNames { shown, rows: per_turn, named: HashMap::new() }
+    }
+
+    /// The name of `row`, the next tool row of `turn`.
+    pub fn name(&mut self, row: &Value, turn: Option<&str>) -> String {
+        let at = turn.map(|turn| {
+            let next = self.named.entry(turn.to_string()).or_default();
+            *next += 1;
+            *next - 1
+        });
+        let own = row.get("name").and_then(Value::as_str).or_else(|| row.get("tool_name").and_then(Value::as_str)).filter(|n| !n.is_empty());
+        let shown = match (turn, at) {
+            (Some(turn), Some(at)) => self.shown.get(turn).filter(|names| names.len() == self.rows.get(turn).copied().unwrap_or(0)).and_then(|names| names.get(at)),
+            _ => None,
+        };
+        own.or(shown.map(String::as_str)).unwrap_or("tool").to_string()
     }
 }
 
