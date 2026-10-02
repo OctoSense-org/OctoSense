@@ -392,6 +392,20 @@ impl GlanceStore {
         crate::glance_digest::retain(root, app, &pinned);
     }
 
+    /// [`note_summary`] for the card just published under `key`, read from
+    /// the card's data as the store keeps it: a `sys.digest` value there is
+    /// the host's (glance_digest.rs), never what the publisher sent.
+    fn note_summary_for(&self, key: &str, args: &Value) -> String {
+        match self.cards.iter().find(|c| c.key() == key).and_then(|c| c.l0.as_ref()) {
+            Some(l0) => {
+                let mut kept = args.clone();
+                kept["data"] = l0.data.clone();
+                note_summary(&kept)
+            }
+            None => note_summary(args),
+        }
+    }
+
     /// Count one publish against `app`'s window, or refuse it.
     fn charge(&mut self, app: &str, now_ms: u64) -> Result<(), String> {
         let at = match self.publishes.iter().position(|(a, _)| a == app) {
@@ -594,12 +608,14 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
     if result.is_ok() && method == "publish" && args.get("notify").and_then(Value::as_bool) == Some(true) {
         let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or_default();
         let title = args.get("title").and_then(Value::as_str).unwrap_or_default().trim();
+        let key = format!("{}/{card_id}", caller.app());
+        let summary = with_store(|store| store.note_summary_for(&key, args));
         NOTES.lock().unwrap().push(GlanceNote {
-            key: format!("{}/{card_id}", caller.app()),
+            key,
             app: caller.app().to_string(),
             open_app: caller.launch_id().to_string(),
             title: title.to_string(),
-            summary: note_summary(args),
+            summary,
         });
     }
     if result.is_ok() && method != "list" {
@@ -965,6 +981,26 @@ mod tests {
             let mut long = brief(NEWS_BRIEF_CARD);
             long["expires"] = json!(EXPIRES_MAX_S);
             assert_eq!(store.publish(&news(), &long, now()).unwrap()["expires_at"], json!(digest_expires));
+        }
+
+        /// A digest card's notification line is the digest's summary, read
+        /// from the card's data as kept, never a summary the publisher put
+        /// in `data`; its own `summary` argument still comes first.
+        #[test]
+        fn a_digest_cards_notification_summarizes_the_hosts_digest() {
+            let root = root_with("glance-note", &[("os.news", "news-digest", news_digest_result())]);
+            let mut store = GlanceStore::default().with_digest_root(Some(root));
+            let mut args = brief(NEWS_BRIEF_CARD);
+            args["data"] = json!({"brief": {"summary": "Forged"}});
+            args["notify"] = json!(true);
+            store.publish(&news(), &args, now()).unwrap();
+            assert_eq!(note_summary(&args), "Forged", "the raw arguments carry the forged summary");
+            let summary = store.note_summary_for("os.news/brief", &args);
+            assert!(summary.starts_with("Sources: Harbor City approves electric bus order"), "{summary}");
+            args["summary"] = json!("Your morning brief");
+            assert_eq!(store.note_summary_for("os.news/brief", &args), "Your morning brief");
+            // A card the store does not hold reads the arguments, as before.
+            assert_eq!(store.note_summary_for("os.news/other", &json!({"data": {"pkg": {"summary": "Out"}}})), "Out");
         }
 
         #[test]
