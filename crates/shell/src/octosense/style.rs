@@ -104,16 +104,27 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
             }
         }
     }
-    #[cfg(any(feature = "app-hub", native_mobile))]
-    wear(&mut assets, "apphub", octosense_app_hub_app::APP_ICON_SVG.into());
-    // Without App Hub linked: the same store icon, kept beside the other app art.
-    #[cfg(not(any(feature = "app-hub", native_mobile)))]
-    wear(&mut assets, "apphub", include_str!("../../resources/icons/apps/apphub.svg").into());
+    wear(&mut assets, "apphub", apphub_svg().into());
     // The system chat's dock entry and home chip (#143): its own art, so it
     // never reads as the AI pane's app.
     wear(&mut assets, "assistant", include_str!("../../resources/icons/apps/assistant.svg").into());
     assets.sort_by(|a, b| a.name.cmp(&b.name));
     assets
+}
+
+/// App Hub's store icon: App Hub's own when it is linked, else the same icon
+/// kept beside the other app art.
+fn apphub_svg() -> &'static str {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    return octosense_app_hub_app::APP_ICON_SVG;
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    return include_str!("../../resources/icons/apps/apphub.svg");
+}
+
+/// Whether the icon catalog still wears this shell's art for `style`: its
+/// App Hub icon, which the framework's own catalog does not have.
+fn wears_shell_art(cx: &mut Cx, style: UpstreamStyle) -> bool {
+    *app_icon::source(cx, style, "apphub") == *apphub_svg()
 }
 
 /// News and OctosMap as `tools/build_app_icons.py` draws them, in that order.
@@ -152,8 +163,13 @@ impl AppIconDraw {
         let style = style.framework();
         // A style can be drawn before its sheet is applied (a crossfade's
         // target, the first frame); the framework would then fall back to
-        // its own artwork, which has no OctosMap.
-        if !std::mem::replace(&mut self.installed[style as usize], true) {
+        // its own artwork, which has no OctosMap. And a fresh isolate (a
+        // glance card's tile, a script app) that finds no sheet in its heap
+        // installs the framework's own catalog over this shell's: makepad's
+        // `desktop_style::current` falls back to `MAKEPAD_WIDGET_STYLE`,
+        // which this shell sets in its own environment for its children. So
+        // the shell's art goes back whenever its App Hub icon has gone.
+        if !std::mem::replace(&mut self.installed[style as usize], true) || !wears_shell_art(cx, style) {
             app_icon::install(cx, style, &icon_assets(style));
         }
         self.draw.draw(cx, name, style, rect, opacity, ink);
