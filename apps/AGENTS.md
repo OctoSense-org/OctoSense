@@ -80,7 +80,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
 
 ## AppCard (apps/appcard)
 
-AppCard is the one native app: Rust crates, not a bundle. Its own rules
+AppCard is an opt-in native assistant: Rust crates, not a bundle. Reference
+(`apps/reference`) is another native app; other native apps are linked from
+external crates through `native-apps.json`. Its own rules
 are in [appcard/AGENTS.md](appcard/AGENTS.md); in short:
 
 - Its crates (`apps/appcard/app/app`, `apps/appcard/app/crates/*`,
@@ -105,3 +107,20 @@ are in [appcard/AGENTS.md](appcard/AGENTS.md); in short:
   dependency.
 - CI for it is the `apps` job of `.github/workflows/apps.yml`, which runs on
   changes under `apps/`, `crates/` and the workspace files.
+
+## Architecture review and data access
+
+Use the [product walkthrough](../desktop/docs/code-walkthrough.md) and
+[agent walkthrough](../docs/architecture-walkthrough.md) when changing docs.
+Keep host-service API methods, declared agent tools and agent-workspace files
+separate. Mail currently declares only `mail.notify` in `bundle/tools.json`;
+its UI service methods do not automatically become tools. Calendar's script
+window is an instruction screen; the agent calls its Rust service for events.
+News fetch timers do not currently trigger LLM turns. State these limits rather
+than documenting intended behavior as shipped.
+
+App Hub's Card runner and the optional AppCard assistant are different modules.
+AppCard's historical personal-data mailbox reader is not the current Mail store.
+Keep English/Chinese README changes paired and mark unrun launch/device recipes
+as unverified. Documentation-only changes need link/source checks, not new
+implementation-mirroring tests.

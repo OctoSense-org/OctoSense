@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+**New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](../desktop/docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, real app data and Android platform boundaries; it marks unrun recipes explicitly.
+
 > **Where this fits.** The system apps are script apps in App Hub's Card runner. They never talk to the octos kernel. News, Mail and Calendar have an agent (one host-owned octos peer per app and account, `card.<app id>`), declared by their manifest's `agent` block and `tools.json`; the shell drives it for the system agent, the shell's "Ask <app>" panel and a card's in-card chat, and an app could also reach it with `host.request("octos.*")` (none of them does). The agent's calls to the app's tools come back through the shell's relay and approval router and run on the app's host service; Mail's and Calendar's tools put cards on the glance screen ([App agents](#app-agents)). An app's glance cards run under the app's own policy, and what the person does on them is the app's own action, not an agent tool call. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
@@ -364,6 +366,14 @@ model lane and tools. Which system apps have one, and how
 | News | `agent` block | `news.list`, `news.read` (read, shareable) | – |
 | Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.notify` (act, background) | `notice.card` |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
+
+**A service API is not automatically an agent tool.** Mail currently exposes
+only `mail.notify` in its agent tool file; its UI's `mail.list`, `mail.message`
+and `mail.send` methods are not thereby available to its agent. The peer's
+workspace also does not mount Mail's host database or credential vault. Calendar
+is a working example of an agent reading/writing its app data through declared
+Rust tools; its script window currently only explains how to ask the agent.
+See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-real-data-through-a-tool-not-through-the-model).
 
 - **Declaring one.** The manifest's `agent` block names the kernel tools the
   agent may use (`"tools": ["ask_user_question"]`; a dotted name there asks

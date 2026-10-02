@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、真实数据和 Android 平台边界，并明确标注未运行的配方。
+
 OctoSense ROM 是面向 OnePlus 6（一加 6，`enchilada`）的 LineageOS 22.2（Android 15），预装 OctoSense Home 应用以及具有系统权限的 agent、Quickstep 和 SystemUI，让 Agent 进入系统层。本目录只包含镜像本身：产品层、补丁、构建/签名/刷写/更新镜像的脚本，以及网页安装器。它原是 OctoSense-ROM 仓库（已停用，并入本仓库；其中的 `home/` 现为 [`../phone/`](../phone/README.zh-CN.md)）；见 [ADR 0001（英文）](../docs/adr/0001-one-octosense-repository.md)。
 
 Home 应用本身（也可作为普通 Home 应用安装在任意 Android 手机上）从 [`../phone/`](../phone/README.zh-CN.md) 构建。镜像使用这个以平台密钥签名的 APK，并加上具有系统权限的系统侧组件。

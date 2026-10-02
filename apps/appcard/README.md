@@ -9,9 +9,15 @@ or composes an app agent, and that agent generates a live interactive card. The
 card is a Splash DSL card or a webview card, and it binds real data at render
 time.
 
-Unlike the other apps in `apps/`, AppCard is not (yet) a contained
-script app with a `bundle/`. It is the one **native** app here: a Rust module
-(`octos-app`) that the shells link in-process.
+AppCard is an optional **native** Rust app, not a contained script bundle.
+The shells link it in-process through `octosense-appcard`; Reference is another
+native app in this repository. Enable `app-appcard` explicitly: default builds
+and `mobile-apps` do not include it.
+
+The shared shell's system chat and app-agent broker work without AppCard. Its
+router/composer and older personal-data integration are a separate product path,
+not the implementation of every script app's peer or current Mail storage. See
+the [source walkthrough](../../desktop/docs/code-walkthrough.md).
 
 What lives here (paths relative to `apps/appcard/`):
 

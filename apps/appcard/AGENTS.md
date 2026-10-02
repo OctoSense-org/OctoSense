@@ -50,3 +50,11 @@ All paths below are relative to `apps/appcard/` unless they say otherwise.
   force-push `main`.
 - Follow the Makepad `script_mod!` DSL conventions of the `.sources/makepad`
   checkout (`Name: value`, `name := Type{}`, `+:` merge).
+
+## Current shell architecture
+
+AppCard is opt-in (`app-appcard`) and separate from App Hub's `CARD_MODULE`,
+the current system chat and the app-peer broker. Keep its router/composer and
+legacy personal-data docs scoped to this app. Reference is also a native app;
+do not describe AppCard as the repository's only native app. See the
+[product walkthrough](../../desktop/docs/code-walkthrough.md).

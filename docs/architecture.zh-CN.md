@@ -2,7 +2,7 @@
 
 [English](architecture.md) | 简体中文
 
-OctoSense 的各部分如何组合在一起：每个平台上运行哪些进程、Agent 在哪里、各部分如何通信、工具如何授权和审批、数据与机密存放在哪里，以及信任边界在哪里。本文描述 2026-09-28 的 `main`（OctoSense `ff40e9c`，它锁定 octos `5e7577f0`），内容均在代码中读过。
+OctoSense 的各部分如何组合在一起：每个平台上运行哪些进程、Agent 在哪里、各部分如何通信、工具如何授权和审批、数据与机密存放在哪里，以及信任边界在哪里。最新[初学者代码导读](architecture-walkthrough.zh-CN.md)于 2026-10-01 核对 OctoSense `c19da8d` 及其 octos `ae230ce0` 锁定版本。本文保留标注日期的设计/审查历史；下列修订反映该源码快照。
 
 每条陈述都标明状态：
 
@@ -178,7 +178,7 @@ flowchart TB
 目前谁有 peer（`crates/ai-host/src/lib.rs`，`Policy::shipped()`；`crates/app-peers/src/hosted.rs`，`effective_services` = 声明 ∩ 支持 ∩ 策略）：
 
 - **Rinx**，唯一获授权使用助手的原生应用（四个 `octos.*` 服务），需首次使用时的同意。
-- **带 Agent 的脚本应用**：清单声明了 `octos.*` 或 `agent` 块，或应用包带有 `tools.json`（如 News）。每个应用一个 peer `card.<app id>`，账号为 `device`（`crates/ai-host/src/contained.rs`，[#106](https://github.com/OctoSense-org/OctoSense/pull/106)），在用户首次使用同意后可用（发布策略；`OCTOSENSE_CONTAINED_APPS=1` 不再询问，`0` 关闭）。用户一旦同意（以及启动时对已同意的应用），Shell 就会准备其 peer（`crates/shell/src/agents.rs`），因此即使应用从不调用 `octos`，系统 Agent 的 `peer_list` 也能看到它；对尚未同意或已关闭的应用，Shell 通过系统聊天中的提示以及 `agents.list` / `agents.ask` 宿主工具告知系统 Agent。
+- **带 Agent 的脚本应用**：清单声明了 `octos.*` 或 `agent` 块，或应用包带有 `tools.json`（如 News）。每个应用/账号一个 peer，broker 身份为 `card.<app id>`；无账号应用使用 `device`，Mail 等使用宿主报告的已登录账号（`crates/ai-host/src/contained.rs`，[#106](https://github.com/OctoSense-org/OctoSense/pull/106)），在用户首次使用同意后可用（发布策略；`OCTOSENSE_CONTAINED_APPS=1` 不再询问，`0` 关闭）。用户一旦同意（以及启动时对已同意的应用），Shell 就会准备其 peer（`crates/shell/src/agents.rs`），因此即使应用从不调用 `octos`，系统 Agent 的 `peer_list` 也能看到它；对尚未同意或已关闭的应用，Shell 通过系统聊天中的提示以及 `agents.list` / `agents.ask` 宿主工具告知系统 Agent。
 - **AppCard**（可选）使用自己的内核连接和会话，而不是 peer。
 - 进程应用目前没有 Agent：只有 `ModuleHost::create` 中才会提供服务（peer link 规划中，步骤 8）。
 
@@ -245,7 +245,7 @@ flowchart LR
 | --- | --- | --- |
 | 进程内原生模块，经 peer link | Makepad 的 `OctosPeer::open` 暂存一对通道；模块宿主把它归给打开它的实例，Shell 用进程应用同一套 **peer link** 服务它（`peer_link::module_connected`、`octosense_ai_host::module_peer`），应用无需知道自己如何被承载 | 已在 main（[#142](https://github.com/OctoSense-org/OctoSense/issues/142)）；尚无模块使用 |
 | 进程内原生模块（Rinx） | **注入的服务**：`create` 之前调用 `ai_host::offer`，在其中调用 `octosense_app_peers::injection::claim`，得到受限的 `OctosAppService`（`Open`、`History`、`Turn`、`Interrupt`、`Approval`）；模块永远看不到协议 | 已在 main |
-| 脚本应用 | 向 `octos` 宿主服务（`crates/ai-host/src/contained.rs`）调用 `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt", …)`；受清单、`Policy::contained_apps` 和首次使用同意（`consent_for_contained`）约束；其 peer 发起的工具审批一律被拒绝，并列在 `denied_approvals` 中 | 已在 main（[#106](https://github.com/OctoSense-org/OctoSense/pull/106)，同意机制来自 [#120](https://github.com/OctoSense-org/OctoSense/pull/120)） |
+| 脚本应用 | 向 `octos` 宿主服务（`crates/ai-host/src/contained.rs`）调用 `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt", …)`；受清单、`Policy::contained_gate`（默认 `ContainedGate::Consent`）和首次使用同意约束；其 peer 的工具审批交给 Shell 审批路由，只有用户通过宿主界面回答 | 已在 main（[#106](https://github.com/OctoSense-org/OctoSense/pull/106)，同意机制来自 [#120](https://github.com/OctoSense-org/OctoSense/pull/120)） |
 | 独立进程的原生应用 | **peer link**：应用 hub 连接上的独立通道（`PeerRequest`、`PeerReply`，以及由 Shell 盖上身份和调用方的 `PeerToolCall`），从不注册到 AI 总线；客户端 API 在 Makepad 的 `makepad-ai-services` 中 | 规划中（ADR 0004 §5，步骤 8）；`hub.rs` 中尚无代码 |
 
 ### Makepad 的 AI 服务总线与 OctoSense 的应用 Agent
@@ -438,19 +438,20 @@ sequenceDiagram
 
 ## 代码与 ADR 不一致之处
 
-撰写本文时（2026-09-28）发现；本次改动只涉及文档，这里都没有修复。
+下列记录始于 2026-09-28；已修复项随后由代码或 ADR 变更解决。应用 Agent 的关键路径于 2026-10-01 重新核对，见最后一项。
 
 1. **Terminal 之外的进程应用。** 已修复：可选的 Sheets 和 Reference 在所有目标上都是 `module`，生成器拒绝 Linux 上的普通 `process`（ADR 0004 §2）。
 2. **崩溃进程应用的重启。** ADR 0004 §2 说它的磁贴会显示已关闭并提供重启。Shell 实际上移除客户端并发出 “App stopped” 通知；Restart 界面只用于进程内模块（`module_view.rs`）。
 3. **Agent 工作区 = 账号目录。** 部分修复：自锁定 octos 665209e5 起新建的 peer 以账号目录作为 `peer/prepare` 的 `cwd`；之前创建的 peer 保留内核分配的工作区，因为 octos 只允许在创建时的工作区下恢复 peer（迁移需要 octos 尚未提供的支持）。账号目录名（`account_hash`，SHA-256）和记忆命名空间标签（`broker.rs` 中的 FNV-1a）仍是对账号的两种不同 hash；改动标签会让每个应用的记忆重新计算键。
 4. **ADR 0003 的 “What the profile runs”** 说 OctoSense 既不配置工具集也不配置沙箱。自 [#117](https://github.com/OctoSense-org/OctoSense/pull/117) 起，Shell 每次启动前都向 `_main` profile 写入拒绝 `group:runtime` 的 `tool_policy`，因此宿主自己的回合也没有 octos shell。
-5. **过时的背景描述。** 已修复：ADR 0004 的背景表格和各 README 的目录结构表不再列出 ADR 0004 步骤 1 删除的原生 News、Maps 和 Photos 模块（#113）。[ai-services.zh-CN.md](ai-services.zh-CN.md) 现已描述 2026-09-28 的 `main`（#106 的 Card runner `octos` 服务、#120 的同意机制；`Policy::contained_apps` 开关默认仍关闭）。
+5. **过时的背景描述。** 已修复：ADR 0004 的背景表格和各 README 的目录结构表不再列出 ADR 0004 步骤 1 删除的原生 News、Maps 和 Photos 模块（#113）。[ai-services.zh-CN.md](ai-services.zh-CN.md) 现已描述 2026-09-28 的 `main`（#106 的 Card runner `octos` 服务、#120 的同意机制；当前 `Policy::contained_gate` 默认是 `ContainedGate::Consent`，不是全局关闭）。
 6. **“在 Settings 中开启”命令执行。** 已修复：Setup › Assistant › Command execution 设置它（#132），开启期间系统对话把 `terminal.run` 注册到系统会话。
 7. **`host::processes_available()` 的测试**只检查 `wasm32`，而函数本身还排除了原生移动平台。
 8. **审批，ADR 0004 §8。** 每次应用工具调用都通过 `peer/tool/call` 到达 Shell，每个有门控的调用都到达路由（见上文）。还没有应用注册自己的 `confirm: app` 面板（Rinx 需要通过 `OctosAppService::set_confirm_sheet` 交出它的发送面板），因此这类调用会等待后被拒绝。审计记录的是参数摘要而不是参数。发送队列和撤销窗口尚未实现。
 9. **存储，ADR 0004 §11。** 机密只在 macOS 和 iOS 上使用系统钥匙串（其他平台为 0600 明文文件）。启动检查拒绝通过链接或包含关系通向机密的工作区，而不是查找 `secrets/` 路径，并且不会中止启动。（已修复：app storage 和同意面板中 `storage.accounts` 都默认为 `false`，同意面板现在读取 `StorageSpec`。）
 10. **开发者模式，ADR 0004 §13。** 已修复：`dev.run` 已注册在被覆盖应用的 peer 上，由 shell 执行。已修复：Settings 可以选择覆盖哪些应用（桌面端在 Setup › Developer options，手机上在 About phone › Developer options），手机上连续点按 Build number 七次显示 Developer options，再在那里确认开启。未完成：进程内模块仍会显示自己的确认面板。
-11. **应用 Agent，来自 2026-09-29 的代码审查**（octos acffad3b、`main` ecb3583；列在 ADR 0004 的后续事项中）：`peer/input` 回合上内核工具的审批被 broker 对 peer 会话的事件过滤丢弃（`broker.rs`），无人能回答；受限脚本应用的卡片没有流式输出、所有审批都被拒绝、每个应用共用一个上下文并使用固定账号 `device`（`crates/ai-host/src/contained.rs`）；卡片从不回答 `user_question/requested`：问题由 Shell 的请求模型按回合发起者路由，只由用户在 Shell 界面上回答（已修复）；`peer/input` 的宿主 `turn/start` 失败只记日志；`peer/input` 路由归最后注册该 peer 工具的连接所有（多实例未测试）。
+11. **2026-09-29 应用 Agent 审查的后续，2026-10-01 复核。** “所有审批被丢弃”“全部固定为 `device`”“输入启动失败只记日志”等旧描述已不符合当前实现。broker 将问题/审批交给宿主；`contained.rs::account_of` 获取宿主账号；失败的系统输入使用 `peer/input/reject`；`driver_of`/`take_over` 协调同一 peer 的多个 broker，相关路径有 broker 测试。受限 `host.request` 适配器仍返回汇总回合回复，没有脚本可订阅的流式接口；原生 context 和 Shell 聊天则有事件订阅。`implemented_by: "app"` 的脚本工具执行、`AGENT.md` 提示词加载和自动技能/触发器仍未实现。确切边界见[代码导读](architecture-walkthrough.zh-CN.md)。
+
 
 ## 源码位置
 

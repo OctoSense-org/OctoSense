@@ -2,7 +2,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
-> **Where this fits.** On a phone every app runs in the Home process (there are no process apps); the octos kernel is the APK's `liboctos.so` as a child process on Android, an in-process task on OpenHarmony, and absent on iOS. Apps still reach their agents only through the shell. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
+**New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](../desktop/docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, real app data and Android platform boundaries; it marks unrun recipes explicitly.
+
+> **Where this fits.** On a phone, OctoSense-hosted native modules and script apps run in the Home process (no desktop-style hosted process apps); ordinary Android apps still run in their own Android processes. The octos kernel is the APK's `liboctos.so` as a child process on Android, an in-process task on OpenHarmony, and absent on iOS. Apps still reach their agents only through the shell. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The OctoSense phone shell: a Makepad app that is the device's Home screen.
 Home pages with live tiles and app pairs, a gesture layer, the shade

@@ -49,3 +49,15 @@ On a machine that already has clones of Makepad, OctoScript or Octoscript-Makepa
 8. **Commit with a public identity.** Author and committer are your GitHub noreply address (for the maintainer, `ymote <151983+ymote@users.noreply.github.com>`) or another address you mean to publish; never a work or machine-local address. Check `git config user.email` before the first commit in a clone: a repository-local identity on a shared machine leaked a work address into this project's history once, and removing it took a history rewrite.
 9. **Keep docs honest and bilingual.** Every command in a doc was run; anything not run is marked **unverified**. User-facing docs are `README.md` plus `README.zh-CN.md`, linked by the single switcher line under the title (`English | [简体中文](README.zh-CN.md)`), and change together. `AGENTS.md` files are English only.
 10. **Keep signing keys, keystores, tokens and personal paths out of the repository.** `rom/tests/test_no_local_paths.py` checks for local paths.
+
+## Architecture documentation and code walkthroughs
+
+For an unfamiliar subsystem, start with [the junior-Rust walkthrough](docs/architecture-walkthrough.md) and [the product walkthrough](desktop/docs/code-walkthrough.md), then follow their source symbols. Keep the English/Chinese guides and README entry points aligned when a boundary changes.
+
+- Trace the checked-out implementation and the root Cargo/runtime pins. Do not mix old `home/` worktrees or archived System-Apps/AppCard repositories into current product instructions.
+- Separate application hosting (Rust module/process, contained Splash app, L0 card) from agent identity (peer/session/context) and execution (UI thread, worker thread, Tokio task/runtime).
+- When documenting an app operation, verify its manifest, admitted `tools.json`, grant and executable handler. A UI host-service API, `shareable` flag or accepted `AGENT.md`/trigger file does not prove an agent can execute it.
+- Distinguish an app account workspace, host-service database, kernel memory and host secrets. Check accountless `device` and signed-in account paths separately.
+- Keep human conversation contexts distinct from the system-lane peer session; never describe all app instances as independent peers or all peers as one task each.
+- Check cross-app claims at both App Hub admission (`HostLimits.offered_tools`) and the shell relay. A route supported by the relay can still be rejected at admission.
+- Report unit/scripted-connector tests separately from optional real-kernel suites that early-return without binary environment variables. Mark unrun UI, provider, mobile and ROM commands unverified.

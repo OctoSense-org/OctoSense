@@ -55,17 +55,20 @@ Outputs:
 - `quickstep/build/outputs/apk/prototype/quickstep-prototype.apk`.
 
 Build the Makepad packager in the pinned checkout `.sources/makepad` (prepared
-by `python3 scripts/setup-home.py`) after its source changes, then invoke its
-standalone binary from `home/`. This builds without installing:
+by `python3 tools/setup.py` from the repository root) after its source changes, then invoke its
+standalone binary from `phone/`. This builds without installing.
+**Unverified in this documentation review**; this low-level command is not the
+Home/Bridge pair build or kernel receipt pipeline. Use
+[the supported build](../README.md#build-and-run) for those artifacts:
 
 ```sh
 # From .sources/makepad:
 cargo build --locked --offline --release -p cargo-makepad
 
-# From home/, with an existing Makepad SDK selected:
-../.sources/makepad/target/release/cargo-makepad android \
+# From phone/, with an existing Makepad SDK selected:
+../.sources/makepad/target/release/cargo-makepad makepad android \
   --sdk-path="$OCTOSENSE_MAKEPAD_SDK" --abi=aarch64 \
-  build --release --locked --offline --no-default-features -p octosense
+  build --release --locked --offline -p octosense-home
 ```
 
 The packager compiles `resources/android/java/` and includes JARs from
@@ -83,7 +86,7 @@ and preserves their data. Retain a checksum-verified rollback APK and record
 device settings before testing a user-owned phone.
 
 Build the bridge runner with `:system-bridge:assembleValidation` and
-`:system-bridge:lintValidation`. From `home/`, build the Home runner:
+`:system-bridge:lintValidation`. From `phone/`, build the Home runner:
 
 ```sh
 python3 android/scripts/build-home-validation.py \

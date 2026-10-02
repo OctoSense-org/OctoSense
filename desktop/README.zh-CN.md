@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、真实数据和 Android 平台边界，并明确标注未运行的配方。
+
 [OctoSense](https://github.com/OctoSense-org)（运行在操作系统之上的 Agent 交互 Shell）的桌面端 Shell，也是 OctoSense 仓库中的桌面端打包（原为 OctoSense-Desktop 仓库）。它是一个 Makepad 窗口，这个窗口本身就是桌面：launcher、dock 和平铺窗格（tile）。系统应用和 App Hub 商店应用以隔离的脚本程序运行，受信任的原生模块在进程内运行，Makepad 开发者程序作为子进程运行。它获取应用的方式与手机 Shell [Home](../phone/README.zh-CN.md) 完全相同。环境准备、仓库结构和 CI 见[根目录 README](../README.zh-CN.md)。
 
 > **在整个系统中的位置。**桌面端是一个 Shell 进程，octos 内核是它的子进程（`OCTOS_APP_CORE_BIN`）。App Hub、运行脚本应用的 Card runner 和 Rinx 在进程内运行；Terminal 作为独立进程运行，在 macOS 和 Linux 上运行在系统沙箱中（Windows 上尚未实现），通过 Shell 的 hub 连接。在 macOS 上，该沙箱中 `~/.cargo`、`~/.rustup` 和 OctoSense 源码目录是只读的，因此 `cargo install`、`rustup update` 以及构建 OctoSense 本身都要在其他终端里运行。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
@@ -81,7 +83,7 @@ cargo run --release -p octosense
 
 | Feature | 默认 | 作用 |
 | --- | --- | --- |
-| `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及宿主服务 `octosense-mail-service`（邮件）和 `octosense-llm-service`（AI 提供商）。没有它，构建中既没有 App Hub 也没有系统应用。 |
+| `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及 Mail、News、Calendar 和 AI providers 宿主服务。没有它，构建中既没有 App Hub 也没有系统应用。 |
 | `octos-core` | 开 | octos 内核服务（`octosense-kernel`，来自 `../crates/kernel`）和应用与 Agent 之间的代理（`octosense-app-peers`）：AppCard、Rinx 等使用方共享的唯一内核，由 AI 提供商配置。Android 和 iOS 上始终开启。用 `--no-default-features --features app-hub`（再加上需要的其他 feature）可以去掉它。 |
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |

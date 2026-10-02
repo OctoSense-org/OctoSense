@@ -90,9 +90,9 @@ cursors, so the app carries on.
 **Other consumers.** Each takes its own connection (`connect()`) and gets
 only its sessions' traffic: the system chat opens `_main:api:octosense#system`;
 an app-peers broker drives its app's peer and request contexts (Rinx's mini
-apps are request contexts of Rinx's peer, through `OctosAppService`, not
-sessions of their own). Each must handle `CloseReason::Restarted` by
-reconnecting.
+apps use request contexts of Rinx's peer through `OctosAppService`; each
+context has its own kernel session/transcript, but is not another app peer).
+Each must handle `CloseReason::Restarted` by reconnecting.
 
 Other functions: `core_dir()`, `home()`, `profile()`, `launch()` /
 `is_available()` (whether and how a kernel would start), `status()`, and the

@@ -7,8 +7,13 @@
 路由大脑（AMA）选择或组合一个应用 Agent，由该 Agent 生成一张实时的交互卡片。
 卡片是 Splash DSL 卡片或 webview 卡片，在渲染时绑定真实数据。
 
-与 `apps/` 中的其他应用不同，AppCard（目前）还不是带 `bundle/` 的隔离运行脚本应用。
-它是这里唯一的**原生**应用：一个由 Shell 进程内链接的 Rust 模块（`octos-app`）。
+AppCard 是可选的**原生** Rust 应用，不是隔离脚本 bundle。Shell 通过
+`octosense-appcard` 在进程内链接它；Reference 是本仓库另一个原生应用。
+必须显式开启 `app-appcard`；默认构建和 `mobile-apps` 都不包含它。
+
+共用 Shell 的系统聊天和应用 Agent broker 无需 AppCard 即可工作。它的
+router/composer 和较早的 personal-data 集成是一条独立产品路径，不是所有
+脚本应用 Peer 或当前 Mail 存储的实现。见[源码导读](../../desktop/docs/code-walkthrough.zh-CN.md)。
 
 目录内容（路径相对于 `apps/appcard/`）：
 

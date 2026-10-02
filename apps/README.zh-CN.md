@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、真实数据和 Android 平台边界，并明确标注未运行的配方。
+
 > **在整个系统中的位置。**系统应用是运行在 App Hub 的 Card runner 中的脚本应用。它们从不直接与 octos 内核通信。新闻、邮件和日历有 Agent（每个应用、每个账号一个由宿主拥有的 octos peer，`card.<应用 id>`），由 manifest 的 `agent` 块和 `tools.json` 声明；Shell 替系统 Agent、Shell 的 “Ask <app>” 面板和卡片的卡内对话驱动它，应用自己也可以用 `host.request("octos.*")` 使用它（目前没有应用这样做）。Agent 对应用工具的调用经由 Shell 的中转和审批路由回到应用，在应用的宿主服务上运行；邮件和日历的工具会把卡片放到 glance 屏幕上（[应用 Agent](#应用-agent)）。应用的 glance 卡片在应用自己的策略下运行，用户在卡片上的操作是应用自己的操作，而不是 Agent 的工具调用。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
@@ -323,6 +325,12 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 | 新闻 | `agent` 块 | `news.list`、`news.read`（read，可共享） | – |
 | 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.notify`（act，后台） | `notice.card` |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
+
+**宿主服务 API 不会自动成为 Agent 工具。** Mail 的 Agent 工具文件目前仅暴露
+`mail.notify`；UI 使用的 `mail.list`、`mail.message` 和 `mail.send` 不会因此对
+Agent 开放。Peer 的工作目录也不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
+展示了通过显式声明的 Rust 工具读写应用数据的路径；它的脚本窗口目前只是 Agent
+使用说明。见[数据访问源码导读](../desktop/docs/code-walkthrough.zh-CN.md)。
 
 - **声明。** manifest 的 `agent` 块列出 Agent 可以使用的内核工具（`"tools": ["ask_user_question"]`；
   其中带点的名称表示申请另一个应用的可共享工具），`bundle/tools.json` 声明应用自己的工具：

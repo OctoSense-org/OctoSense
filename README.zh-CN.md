@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-[OctoSense](https://github.com/OctoSense-org) 是运行在操作系统之上的 Agent 交互 Shell：启动器和应用看起来与你熟悉的一样，背后是同一个 Agent。本仓库集中存放 OctoSense 自己的全部代码（[ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md)）：Shell、Shell 服务、第一方系统应用，以及由它们构建的三个产品。
+[OctoSense](https://github.com/OctoSense-org) 是运行在操作系统之上的 Agent 交互 Shell：启动器和应用看起来与你熟悉的一样，背后由系统 Agent 协调各应用 Agent。本仓库集中存放 OctoSense 自己的全部代码（[ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md)）：Shell、Shell 服务、第一方系统应用，以及由它们构建的三个产品。
 
 | 产品 | 是什么 | 位置 |
 | --- | --- | --- |
@@ -13,6 +13,10 @@
 本仓库原名 OctoSense-Desktop；OctoSense-ROM（已停用，并入本仓库）和 OctoSense-System-Apps 已于 2026-09-27 连同历史一起导入本仓库。OctoSense-System-Apps 已归档；OctoSense-ROM 仓库已不存在。
 
 > **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。[`apps/`](apps/README.zh-CN.md) 中的系统应用是同样应用结构的完整示例（`apps/<name>/bundle/`）。只有想在发布前先在 Shell 里看到自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)）。
+
+## 从代码导读开始
+
+面向 Rust 初学者的[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)，沿着入口、原生/脚本托管、数据访问、人类/系统对话、工具路由以及实际 Tokio 任务阅读源码。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充桌面、Home、ROM 和系统应用的运行方式，明确区分源码核对、已执行检查和未验证的设备/模型运行。
 
 ## 整体如何运作
 
@@ -90,7 +94,7 @@ flowchart LR
 | 邮件（`os.mail`） | `apps/mail/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `mail.notify`（`mail` 宿主服务） | 一张通知卡片，并发出一条通知 |
 | 日历（`os.calendar`，仅桌面端） | `apps/calendar/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（破坏性操作：由用户批准）、`calendar.notify`、`calendar.agenda`（`calendar` 宿主服务） | 一张日程卡片或议程卡片，并发出一条通知 |
 
-脚本应用在以下情况下拥有 Agent：manifest 声明了 `octos.*` 名称或 `agent` 块（`"tools": ["ask_user_question"]` 列出它可以使用的内核工具），或者应用包附带 `tools.json`（每个工具名为 `<app>.<tool>`，带 schema、`risk`、`confirm` 和 `shareable`）。它的 peer 是 `card.<应用 id>`。用户只需在首次使用面板上允许一次（从 Shell 的 “Ask <app>” 面板、应用自己的 `octos` 调用，或系统 Agent 的 `agents.ask` 打开）。此后 Shell 在启动时就准备好这个 peer 并注册应用的工具，所以系统 Agent 的 `peer_list` 能看到它。除了自己的工具，应用 Agent 还能用宿主的只读工具 `files.list`、`files.read` 和 `files.search` 读取其账号文件夹。手机默认构建 `toolbox-peers`，因此在手机上，manifest 申请了 `research` 或 `crawl` 的应用 Agent 还会得到系统工具箱的工具；目前还没有应用申请。`AGENT.md`、技能和触发器（[ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)）尚未实现：应用 Agent 只在系统 Agent、用户或卡片请求时运行。
+脚本应用在以下情况下拥有 Agent：manifest 声明了 `octos.*` 名称或 `agent` 块（`"tools": ["ask_user_question"]` 列出它可以使用的内核工具），或者应用包附带 `tools.json`（每个工具名为 `<app>.<tool>`，带 schema、`risk`、`confirm` 和 `shareable`）。它的 peer 是 `card.<应用 id>`。用户只需在首次使用面板上允许一次（从 Shell 的 “Ask <app>” 面板、应用自己的 `octos` 调用，或系统 Agent 的 `agents.ask` 打开）。此后 Shell 在启动时就准备好这个 peer 并注册应用的工具，所以系统 Agent 的 `peer_list` 能看到它。在 Unix 上，已获同意且有可用 workspace 的应用 Agent 还能用宿主只读工具 `files.list`、`files.read` 和 `files.search` 读取账号文件夹；这些工具不会暴露所有宿主服务数据库。手机默认构建 `toolbox-peers`，因此在手机上，manifest 申请了 `research` 或 `crawl` 的应用 Agent 还会得到系统工具箱的工具；目前还没有应用申请。`AGENT.md`、技能和触发器（[ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)）尚未实现：应用 Agent 只在系统 Agent、用户或卡片请求时运行。
 
 **从系统 Agent 到 glance 屏幕上的一张卡片**：
 
@@ -275,7 +279,7 @@ Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/000
 
 每个 Shell 运行一个 [octos](https://github.com/octos-org/octos) Agent 内核，首次使用时启动：Android 上是 APK 中的 `liboctos.so`，OpenHarmony 上在进程内运行，桌面端运行 `OCTOS_APP_CORE_BIN` 指定的二进制，iOS 上没有。用户在系统应用 **AI providers** 中、在宿主面板上选择模型并输入密钥；密钥保存在平台的密钥存储中，永远不会到达应用。[`crates/ai-host`](crates/ai-host/README.md) 是两个 Shell 的统一入口，[`crates/app-peers`](crates/app-peers/README.md) 为每个获授权的原生应用分配自己的 octos peer（私有的上下文、工作区和记忆 `app/<app>/acct-<hash>`），归 Shell 的系统 Agent 所有。peer 的工具审批只能由用户在该应用中回答，系统 Agent 无法代答。
 
-目前可用的：原生模块（Rinx）使用自己的 peer；AppCard（需主动开启）直接使用内核。隔离运行的脚本应用，无论系统应用还是商店应用，在托管了内核的 Shell 中通过 `octos` 宿主服务使用助手：每个应用有自己的、由宿主拥有的 peer（`card.<应用 id>`），它的工具审批和其他应用 Agent 一样交给 Shell 的审批面板（[#155](https://github.com/OctoSense-org/OctoSense/pull/155)）。`llm` 服务只为 `os.*` 应用管理提供方。应用自己的 Agent（`tools.json`、`AGENT.md`、skills、触发器、glance 卡片）见 [ADR 0002](docs/adr/0002-event-driven-app-agents.md)；自 [#160](https://github.com/OctoSense-org/OctoSense/pull/160) 起，应用 `tools.json` 中的工具已端到端提供给它的 Agent。
+目前可用的：原生模块（Rinx）使用自己的 peer；AppCard（需主动开启）直接使用内核。隔离运行的脚本应用，无论系统应用还是商店应用，在托管了内核的 Shell 中通过 `octos` 宿主服务使用助手：每个应用有自己的、由宿主拥有的 peer（`card.<应用 id>`），它的工具审批和其他应用 Agent 一样交给 Shell 的审批面板（[#155](https://github.com/OctoSense-org/OctoSense/pull/155)）。`llm` 服务只为 `os.*` 应用管理提供方。应用自己的 Agent（`tools.json`、`AGENT.md`、skills、触发器、glance 卡片）见 [ADR 0002](docs/adr/0002-event-driven-app-agents.md)；自 [#160](https://github.com/OctoSense-org/OctoSense/pull/160) 起，应用 `tools.json` 中由宿主服务实现的工具已通过 Shell relay 提供给其 Agent。标为 `implemented_by: "app"` 的工具仍缺少 Card runner 执行器；声明不等于实现。
 
 架构、信任模型、各类应用能用什么、规划及其状态，以及如何在本地运行和测试：[docs/ai-services.zh-CN.md](docs/ai-services.zh-CN.md)。它在整个系统中的位置：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)。面向应用开发者：OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md)。
 

@@ -81,7 +81,7 @@ AppCard 的传输层（`apps/appcard/app/crates/octos-app-transport`，`kernel.r
 
 **其他使用方。** 每个使用方都用自己的连接（`connect()`），只收到自己会话的流量：系统对话
 打开 `_main:api:octosense#system`；app-peers 代理驱动其应用的 peer 和请求上下文（Rinx 的
-小程序是 Rinx 的 peer 的请求上下文，经 `OctosAppService` 使用，没有自己的会话）。每个使用方
+小程序经 `OctosAppService` 使用 Rinx peer 的请求上下文；每个上下文有自己的内核会话和记录，但不是另一个应用 peer）。每个使用方
 都必须通过重新连接来处理 `CloseReason::Restarted`。
 
 其他函数：`core_dir()`、`home()`、`profile()`、`launch()` / `is_available()`（是否以及如何
@@ -192,3 +192,5 @@ CI：`.github/workflows/apps.yml`（`services` 任务测试本 crate；`apps` �
 链接 `octos-cli`，二者都使用根目录 `Cargo.toml` 为所有 octos crate 锁定的同一个 rev。为
 OpenHarmony 构建它的工作区还需要 `nix` 补丁（octos rev `18fcd3f1`，见根目录 `Cargo.toml`
 的 `[patch.crates-io]`）。其他平台上，内核是用同一 rev 构建的独立二进制文件。
+
+源码阅读补充：Rinx mini app 的 request context 有自己的内核会话和记录，但不是另一个应用 peer。线程、runtime 与回合任务的对应关系见[代码导读](../../docs/architecture-walkthrough.zh-CN.md#10-映射到-rust线程和-tokio)。
