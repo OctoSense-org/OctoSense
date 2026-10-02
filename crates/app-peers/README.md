@@ -1,13 +1,17 @@
 # octosense-app-peers: host-owned octos app peers
 
-> **Where this fits.** The broker is the host connection for app agents: one host-owned peer per (app, account), owned by the system agent. It starts the system agent's `peer/input` turns on the peer's session (`#peer-<app>`), runs the person's turns (a separate `share_history` request context `#peerctx-<app>.<id>` is in progress), registers the app's tools and hands every `peer/tool/call`, approval and question to the shell, and applies the 10-minute prompt deadline and the person's Stop. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../../README.md#how-it-fits-together); the details: [docs/architecture.md](../../docs/architecture.md) and [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md).
+> **Where this fits.** The broker is the host connection for app agents: one host-owned peer per (app, account), owned by the system agent. It starts the system agent's `peer/input` turns on the peer's session (`…#peer-<slug>`), runs the person's turns in a separate request context opened with `share_history` (`…#peerctx-<id>`; octos#2636), registers the app's tools and hands every `peer/tool/call`, approval and question to the shell, and applies the 10-minute prompt deadline and the person's Stop. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../../README.md#how-it-fits-together); the details: [docs/architecture.md](../../docs/architecture.md) and [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md):
 an OctoSense shell runs ONE octos kernel and ONE provider profile
-([`crates/kernel`](../kernel)). A native app that declares assistant
-services (the exact `octos.*` names App Hub publishes) and that host policy
-grants gets ONE octos peer owned by the shell's system agent, and a scoped
-service handle injected at module creation. The app talks with its agent in
+([`crates/kernel`](../kernel)). An app with an agent gets ONE octos peer per
+account, owned by the shell's system agent. A native app that declares
+assistant services (the exact `octos.*` names App Hub publishes) and that
+host policy grants gets its peer and a scoped service handle injected at
+module creation. A script app with an agent (News, Mail, Calendar today)
+gets its peer `card.<app id>` from the shell's `octos` host service
+(`crates/ai-host/src/contained.rs`), which launches it through
+`hosted::launch` as well. The app talks with its agent in
 its conversation (`open_conversation`): the person's lane, a request context
 opened with `share_history` that runs in parallel with the peer's own session
 (the system agent's lane, `peer/input`); each lane's model sees the other's
@@ -60,7 +64,11 @@ data dir. A new peer's workspace is the account's folder the host names
 names the recorded one, made again first if the account's folder was removed.
 A peer recorded without a workspace (older `.token` files) resumes with the
 account folder, else the kernel's, and the one the kernel takes is recorded.
-Their memory namespace is `app/<app>/acct-<hash>`.
+Their memory namespace is `app/<id>/acct-<tag>` (`broker::app_namespace`;
+`<id>` is the id the broker was launched with: `rinx` for Rinx,
+`card.os.mail` for Mail's script-app peer; `<tag>` is 16 hex digits of an
+FNV-1a hash of the normalized account, not the account folder's SHA-256
+hash, #139).
 
 ## An app
 
@@ -76,8 +84,11 @@ service.release();                            // app closed
 
 ## Policy on the ADR's open questions
 
-- **Approvals** reach the person through the app's native approval UI
-  (`ContextOp::Approval`); the system agent never approves for an app.
+- **Approvals**: a gated host tool's approval (`confirm: host`) goes to the
+  shell's approval router through the `ToolHost`, and a `confirm: app`
+  call to the owning app's own sheet; other octos approvals raised in an
+  app's context reach the app (`ContextOp::Approval`). The system agent
+  never approves for an app.
 - **Background work after close**: `release()` closes every context and
   interrupts the peer's running turn. The peer and its memory stay for the
   next launch. The app's last instance then releases the peer's route

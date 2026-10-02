@@ -2,7 +2,7 @@
 
 > **Any coding agent, or none.** These instructions work the same for Codex, Claude Code, Cursor, Gemini CLI, GitHub Copilot or a person at a terminal: every step is a shell command or a file edit, and nothing here needs a particular agent, model or vendor. `AGENTS.md` is the one source of truth; `CLAUDE.md` and `GEMINI.md` only import it for agents that look for those names.
 
-> octos appears below only as the runtime of the AppCard assistant, a product dependency. Changing or building the script apps and the Mail service does not need octos, and no step asks you to use octos as your coding agent.
+> octos appears below only as a product dependency: the runtime of the apps' own agents and of the AppCard assistant. Changing or building the script apps and their host services does not need octos, and no step asks you to use octos as your coding agent.
 
 These are shipping apps. Keep changes small, test them in a shell, and keep the
 rules in README.md. The repository-wide rules in [../AGENTS.md](../AGENTS.md)
@@ -33,7 +33,21 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
 - Validate on a phone through Home (`phone/`) built as a separate test
   package; never replace the device's installed Home.
 - Mail's service: change `apps/mail/host-service` and run
-  `cargo test --locked -p octosense-mail-service`.
+  `cargo test --locked -p octosense-mail-service`. Calendar's and News's:
+  `apps/calendar/host-service`, `apps/news/host-service`, and
+  `cargo test --locked -p octosense-calendar-service -p octosense-news-service`.
+- An app's agent (News, Mail, Calendar) is declared by its manifest's
+  `agent` block and `bundle/tools.json`; each tool runs on the app's host
+  service (`implemented_by: "host-service"`), so a new tool is a new
+  host-service method plus its `tools.json` entry, with schemas that match
+  what the method answers (octos needs an object `output_schema`). Give a
+  tool the smallest `risk` that is true: `destructive` and outward tools get
+  the person's approval, `act` ones do not. A tool that shows something on
+  the glance screen fills a fixed L0 card the host service ships
+  (`resources/*.card`) and publishes it through the publisher the shell
+  installs (`on_publish_card`); never let the model write card code. The
+  app needs `glance` in its manifest. See the README's
+  [App agents](README.md#app-agents).
 - There are no pins to bump: both shells pack `apps/` from the same commit
   (`desktop/system-apps.json`, `phone/system-apps.json`), so one pull request
   carries a change to every shell. App Hub, octos and the runtime are pinned
@@ -51,10 +65,13 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-kernel --test
   real_kernel` with a real kernel); AppCard and the `llm` service link it, so
   run their checks too. Consumers never spawn a kernel of their own.
-- Native apps reach the assistant through `../crates/app-peers`
-  (`octosense-app-peers`): the shell gives each app whose declared `octos.*`
-  services host policy grants ONE peer owned by the system agent and injects
-  a scoped service at module creation; apps never get raw kernel protocol.
+- Apps reach the assistant through `../crates/app-peers`
+  (`octosense-app-peers`): the shell gives each app with an agent ONE peer
+  per account, owned by the system agent: a native app whose declared
+  `octos.*` services host policy grants gets a scoped service injected at
+  module creation; a script app gets `card.<app id>` from the shell's
+  `octos` host service (`../crates/ai-host/src/contained.rs`). Apps never
+  get raw kernel protocol.
   Test with `cargo test --locked -p octosense-app-peers --features octos-core,ws`
   (and `OCTOS_APP_PEERS_TEST_KERNEL=<octos> cargo test -p octosense-app-peers
   --features octos-core --test real_kernel`); see its README.

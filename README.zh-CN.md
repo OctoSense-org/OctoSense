@@ -29,12 +29,13 @@ flowchart LR
   person(["用户"])
   ext["Talk to Octos 客户端<br/>网页或终端，需手动开启"]
   subgraph shellp["OctoSense Shell 进程"]
-    ui["窗口管理器、启动器、<br/>系统对话、面板"]
+    ui["窗口管理器、启动器、<br/>系统对话、Ask app 面板、面板"]
     mods["原生模块<br/>App Hub、Rinx"]
     runner["Card runner<br/>脚本应用、glance 卡片"]
     aihost["ai-host + app-peers 代理<br/>宿主连接"]
     relay["宿主工具中转"]
     router["审批路由"]
+    svc["应用宿主服务<br/>mail、calendar、news"]
   end
   term["Terminal<br/>在系统沙箱中的进程应用"]
   subgraph kern["octos 内核：子进程，OpenHarmony 上在进程内"]
@@ -44,6 +45,7 @@ flowchart LR
   person --> ui
   ui --- mods
   ui --- runner
+  ui -->|"用户的回合：<br/>Ask app、卡内对话"| aihost
   mods -->|"OctosAppService"| aihost
   runner -->|"host.request octos.*"| aihost
   term <-->|"hub：画面、AI bus"| ui
@@ -52,6 +54,8 @@ flowchart LR
   sys -->|"peer_send_input"| peers
   kern -->|"peer/tool/call、审批"| relay
   relay --> router
+  relay -->|"应用的工具"| svc
+  svc -->|"glance.publish：卡片"| runner
   ext -.->|"外部 token：<br/>只能用系统对话"| sys
 ```
 
@@ -68,10 +72,62 @@ flowchart LR
 | --- | --- | --- |
 | 进程内原生模块 | 与进程应用相同的 peer link，经 Makepad 的 `OctosPeer` 客户端（模块宿主把链接归给打开它的实例） | 已在 `main` 上；尚无模块使用 |
 | 进程内原生模块（Rinx） | 注入的 `OctosAppService`：`open_conversation`（应用与自己 Agent 的对话）和 `open_context`（每个客户端一个请求上下文，例如 Rinx 小程序） | 已在 `main` 上 |
-| 脚本应用及其卡片 | 向 `octos` 宿主服务发送 `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")` | 已在 `main` 上，受 `Policy::contained_apps`（发布策略中关闭）和首次使用同意约束 |
+| 脚本应用及其卡片 | 向 `octos` 宿主服务发送 `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")`，限于其 manifest 声明的名称；卡片的卡内对话（`sys.chat`）经过 Shell | 已在 `main` 上，需用户首次使用时同意（发布时的默认闸门；`OCTOSENSE_CONTAINED_APPS=1` 不询问任何人，`0` 关闭）。如今带 Agent 的系统应用都没有声明 `octos.*`：它们的 Agent 由 Shell 驱动 |
 | 进程应用 | 其 hub 连接上的 peer link（`octos.session.open`、`octos.turn.start` 等），身份由 Shell 标注 | Shell 一侧已在 `main` 上；尚无进程应用被授予 Agent |
 | 系统 Agent | 内核自己的会话 `_main:api:octosense#system`，从 Shell 的系统对话进入 | 已在 `main` 上 |
 | Talk to Octos 客户端 | 只能用系统对话，使用外部 token | 已在 `main` 上 |
+
+### 系统 Agent 与应用 Agent
+
+**系统 Agent** 是 `_main` profile 上的内核会话 `_main:api:octosense#system`（`crates/kernel/src/network.rs`）。它拥有并监督所有应用 Agent。用户在 Shell 的**助手面板**（即系统对话，`crates/shell/src/system_chat/`：Dock 上的 Assistant 图标、手机主屏的 Assistant 磁贴或 F8；桌面端是左侧一个中等大小、可移动、可调整大小并渲染 Markdown 的面板，手机上是全屏）或已配对的 Talk to Octos 客户端中与它对话。它的内核工具恰好是 `SYSTEM_AGENT_TOOLS`（`crates/kernel/src/system_tools.rs`）：用于监督应用 Agent 的 `peer_send_input`、`peer_gather`、`peer_list` 和 `peer_respond`，其工作区的文件工具，记忆，`ask_user_question`，媒体查看，`web_search`、`web_fetch` 和 `tool_search`。每次内核启动都用 octos 的 `session/tool_list/set` 设置这份列表，所以 octos 自带的 shell、spawn 一族和 `peer_close` 永远不会提供给它。系统对话还会在这个会话上注册宿主工具：`agents.list` 和 `agents.ask`（`crates/shell/src/agents.rs`：哪些应用有 Agent，以及某个 Agent 的首次使用面板），以及在 Setup › Assistant › Command execution 打开期间的 `terminal.run`。
+
+**应用 Agent** 是每个（应用，账号）一个由宿主拥有的 octos peer（[`crates/app-peers`](crates/app-peers/README.md)）。`main` 上以下应用有 Agent（`crates/shell/src/apps.rs`，`agent_apps`）：
+
+| 应用 | 声明方式 | 它的工具（由谁执行） | 它放到 glance 屏幕上的内容 |
+| --- | --- | --- | --- |
+| Rinx（原生） | `native-apps.json` 的 `agent.octos`（四个 `octos.*` 服务）和 `agent.generic_tools` | 其列表中的 octos 通用工具；它自己的助手界面 | – |
+| 新闻（`os.news`） | `apps/news/bundle/tools.json`、manifest 中的 `agent` 块 | `news.list`、`news.read`（`news` 宿主服务） | – |
+| 邮件（`os.mail`） | `apps/mail/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `mail.notify`（`mail` 宿主服务） | 一张通知卡片，并发出一条通知 |
+| 日历（`os.calendar`，仅桌面端） | `apps/calendar/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（破坏性操作：由用户批准）、`calendar.notify`、`calendar.agenda`（`calendar` 宿主服务） | 一张日程卡片或议程卡片，并发出一条通知 |
+
+脚本应用在以下情况下拥有 Agent：manifest 声明了 `octos.*` 名称或 `agent` 块（`"tools": ["ask_user_question"]` 列出它可以使用的内核工具），或者应用包附带 `tools.json`（每个工具名为 `<app>.<tool>`，带 schema、`risk`、`confirm` 和 `shareable`）。它的 peer 是 `card.<应用 id>`。用户只需在首次使用面板上允许一次（从 Shell 的 “Ask <app>” 面板、应用自己的 `octos` 调用，或系统 Agent 的 `agents.ask` 打开）。此后 Shell 在启动时就准备好这个 peer 并注册应用的工具，所以系统 Agent 的 `peer_list` 能看到它。除了自己的工具，应用 Agent 还能用宿主的只读工具 `files.list`、`files.read` 和 `files.search` 读取其账号文件夹。手机默认构建 `toolbox-peers`，因此在手机上，manifest 申请了 `research` 或 `crawl` 的应用 Agent 还会得到系统工具箱的工具；目前还没有应用申请。`AGENT.md`、技能和触发器（[ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)）尚未实现：应用 Agent 只在系统 Agent、用户或卡片请求时运行。
+
+**从系统 Agent 到 glance 屏幕上的一张卡片**：
+
+![From the system agent to a card on the glance screen](docs/images/agents-card-flow.png)
+
+<details><summary>文字版（Mermaid）</summary>
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as Person
+  participant S as System agent
+  participant B as Shell: app-peers broker
+  participant A as Mail's agent (peer card.os.mail)
+  participant R as Shell: tool relay
+  participant M as Mail's host service
+  participant G as Shell: glance service
+  P->>S: "Tell me on the glance screen when ..."
+  S->>B: peer_send_input (octos delivers peer/input)
+  B->>A: turn/start on the peer's session, with Mail's tools
+  A->>R: peer/tool/call mail.notify {title, body}
+  R->>R: grant, consent, schema, budget
+  R->>M: run on Mail's host service
+  M->>G: glance.publish as os.mail: notice.card, notify
+  G-->>P: notification (a desktop toast, the phone's shade)
+  M-->>R: {card_id}
+  R-->>A: peer/tool/result
+  A-->>S: the turn's result on the blackboard (peer_gather)
+  P->>G: opens the card, types in its chat
+  G->>A: a turn in the person's lane (sys.chat)
+  A-->>G: the reply, drawn as AI-written
+```
+
+</details>
+
+- 模型从不编写卡片代码：`mail.notify`、`calendar.notify` 和 `calendar.agenda` 填充应用宿主服务自带的固定 L0 卡片（`apps/mail/host-service/resources/notice.card`、`apps/calendar/host-service/resources/*.card`），并以该应用的身份发布。
+- `mail.notify` 和 `calendar.add_event` 是 `act` 工具，运行时不弹面板；octos 只对破坏性和对外的工具请求审批，这些审批交给 Shell 的审批路由（[见下文](#一次带审批的工具调用)）。
 
 ### 一个应用 Agent，两条通道
 
@@ -95,7 +151,7 @@ flowchart TB
   end
   sys -->|"peer_send_input"| input["octos：peer/input<br/>发给 Shell"]
   input -->|"Shell 启动这一轮"| lane1
-  person -->|"应用界面或其卡片"| lane2
+  person -->|"Shell 的 Ask-app 面板、<br/>卡片的对话或应用自己的界面"| lane2
   lane1 -.->|"最近消息，只读"| lane2
   lane2 -.->|"最近消息，只读"| lane1
   lane1 --- own
@@ -106,9 +162,28 @@ flowchart TB
 </details>
 
 - **系统 Agent 的通道**是 peer 自己的会话 `…#peer-<app>`。系统 Agent 发送 `peer_send_input`；octos 把它作为 `peer/input` 交给 Shell 的宿主连接，由 Shell 自己启动这一轮，所以这一轮带着应用的工具、记忆和审批运行（对已退出登录的账号或用户未允许的应用，Shell 以 `peer/input/reject` 拒绝）。peer 的结果写到 peer 黑板上，由系统 Agent 读取。
-- **用户的通道**是一个请求上下文 `…#peerctx-<app>.<id>`，由应用界面或其交互式卡片以 `share_history` 打开（原生模块的 `open_conversation`、脚本应用的 `octos.session.open`、进程应用的 peer link），每个句柄一个新的上下文（[octos#2636](https://github.com/octos-org/octos/pull/2636)，UPCR-2026-034）。两条通道并行运行，每个会话同一时间只有一轮：用户的消息不必等系统 Agent 的回合。每一轮都会以只读块的形式看到另一条通道的最近消息，这个块不会写入自己的对话记录；每一轮都标明说话者（`[from the person: <app>]`、`[from the system agent]`）。应用跟随两条通道，每个事件带有 `lane` 和说话者；`octos.session.history` 按时间合并两份对话记录。用户的回合也会在黑板上留下结果（`origin: person`），系统 Agent 用 `peer_gather` 就能看到。
+- **用户的通道**是一个请求上下文 `…#peerctx-<app>.<id>`，以 `share_history` 打开，打开方可以是 Shell 的 “Ask <app>” 面板（`agents::conversation`，客户端实例 `shell-ask`）、卡片的卡内对话，或应用自己的界面（原生模块的 `open_conversation`、脚本应用的 `octos.session.open`、进程应用的 peer link），每个句柄一个新的上下文（[octos#2636](https://github.com/octos-org/octos/pull/2636)，UPCR-2026-034）。两条通道并行运行，每个会话同一时间只有一轮：用户的消息不必等系统 Agent 的回合。每一轮都会以只读块的形式看到另一条通道的最近消息，这个块不会写入自己的对话记录；每一轮都标明说话者（`[from the person: <app>]`、`[from the system agent]`）。应用跟随两条通道，每个事件带有 `lane` 和说话者；`octos.session.history` 按时间合并两份对话记录。用户的回合也会在黑板上留下结果（`origin: person`），系统 Agent 用 `peer_gather` 就能看到。
 - *2026-09-29 之前两者在 peer 会话上的同一个共享对话中说话（[#166](https://github.com/OctoSense-org/OctoSense/pull/166)，octos#2626）：每个 peer 一个队列，一次一轮。*
 - **Rinx 小程序**保留各自的请求上下文（`open_context`），各有自己的对话记录和文件夹，不与任一通道共享。
+
+### 直接与应用的 Agent 对话
+
+用户不只能和系统 Agent 对话：任何应用自己的 Agent，用户都可以直接与它对话。用户发起的每一轮都是该应用 peer 上用户通道里的一轮，与系统 Agent 的通道并列。它和系统 Agent 发起的一轮一样，带着应用的工具、记忆和审批运行。
+
+| 入口 | 位置 | 如何打开 |
+| --- | --- | --- |
+| **“Ask <app>”**（`crates/shell/src/app_chat/`） | Shell 为每个拥有 Agent 的应用提供的面板，不论应用自己是否绘制对话界面：它就是系统对话的窗格，以应用对话的形式绘制（`app_panel: true`）。在桌面端，它位于系统对话的右侧，两条通道并排显示。 | 顶栏的 “Ask <app>” 按钮（当前聚焦窗口的应用拥有 Agent 时显示）、Shift+F8，或菜单项 “Ask this app's agent”。如果聚焦的应用没有 Agent，Shell 会提示 “No app agent here”。在手机上，这个窗格绘制为全屏面板，但 `main` 上还没有可以打开它的触控入口。 |
+| **卡片的卡内对话**（`sys.chat`，`crates/shell/src/glance_chat.rs`） | 应用发布的一张 glance 卡片 | 用户在卡片的对话里输入。只有发布卡片的应用自己的 Agent 会回答，它的回复标为 AI 撰写（[见下文](#卡片与提问)）。 |
+| **应用自己的界面** | 原生模块的 `open_conversation`、脚本应用的 `octos.session.open`、进程应用的 peer link | 在应用内。Rinx 绘制自己的助手界面；系统应用（新闻、邮件、日历）都不绘制对话界面，所以对它们来说，入口就是这个面板和它们的卡片。 |
+
+“Ask <app>” 面板的行为：
+
+- **先征得同意。** 用户还没有决定的 Agent 会先弹出首次使用面板，面板等待用户（“<App>'s assistant is not allowed yet: allow it on the sheet.”）。已关闭的 Agent 会直接说明：“<App>'s assistant is off. Turn it on in Setup › Assistant › Approvals.”
+- **两条通道，标明说话者。** 面板跟随两条通道，并加载合并后的历史；每一行都显示说话者（用户、系统 Agent、应用的 Agent）。
+- **发送**会发起用户的一轮（`TurnTrigger::Person`）。它从不等待系统 Agent 的回合：只有系统 Agent 的通道在运行时，“发送”仍然可用。如果应用的 Agent 有一个提问正在等待，输入的文字就作为对它的回答。
+- **停止**（用户自己的回合运行时取代“发送”的位置）只停止这一轮（“Stopped.”，或 “Nothing of yours was running.”）。正在运行的系统 Agent 回合有自己的一行，带 **“Stop the system agent's task”**，只停止那条通道。Shell 的审批和提问面板上的 **“Stop <App>'s agent”** 按钮会停止两条通道（`approvals::stop_agent`）：设备归用户所有。
+- **提问**：用户或应用发起的回合中的提问在面板中显示和回答；系统 Agent 的提问出现在系统对话（F8）中。审批与其他地方一样，都是 Shell 的面板。
+- **关闭**只是隐藏面板。它的上下文和跟随者保持打开，所以再次打开时仍能看到用户自己的那些行。面板为另一个应用打开、Agent 被关闭，或应用的 peer 消失（对邮件来说，就是账号退出登录）时，这个上下文才会关闭。
 
 ### 一次带审批的工具调用
 
@@ -125,7 +200,7 @@ sequenceDiagram
   participant Ro as 审批路由
   participant P as 用户
   participant Ex as 拥有工具的应用
-  Ag->>K: 调用 mail.send
+  Ag->>K: 调用 calendar.remove_event
   alt confirm host
     K->>Ro: approval/requested，host_tool
     Ro->>Ro: 先看开发者模式，再看常设规则
@@ -151,12 +226,14 @@ sequenceDiagram
 
 - **工具调用**：octos 把 `peer/tool/call` 发给 Shell 的中转（`crates/shell/src/host_tools/`）。中转按（拥有工具的应用，工具）和调用方检查授权，按工具的 schema 检查参数，检查调用方的预算，再把调用路由到拥有工具的应用的执行器：进程内模块的执行器、脚本应用的宿主服务、进程应用的 peer link，或 AI bus 上 Terminal 的 `run`。
 - **审批**交给审批路由（`crates/shell/src/approvals/`）：先看开发者模式，再看针对（拥有工具的应用，工具）的常设规则，否则弹出 Shell 绘制的面板。`confirm: app` 的工具在拥有它的应用自己的面板上确认，面板显示调用方。只有用户能批准；系统 Agent 永远不能。
-- **时限与停止**（[#167](https://github.com/OctoSense-org/OctoSense/pull/167)）：Shell 为应用 peer 持有的审批或提问在 10 分钟后过期（`OCTOSENSE_PROMPT_DEADLINE_SECS`）：审批路由拒绝它，提问被婉拒，两者都保持显示为 "Expired: no answer in 10 min"。如果 30 秒后这一轮仍在运行，代理会中断它，好让下一轮开始。用户的“停止”会结束两条通道上正在运行的回合，包括用户的和系统 Agent 的。
+- **时限与停止**（[#167](https://github.com/OctoSense-org/OctoSense/pull/167)）：Shell 为应用 peer 持有的审批或提问在 10 分钟后过期（`OCTOSENSE_PROMPT_DEADLINE_SECS`）：审批路由拒绝它，提问被婉拒，两者都保持显示为 "Expired: no answer in 10 min"。如果 30 秒后这一轮仍在运行，代理会中断它，好让下一轮开始。面板上的 “Stop <App>'s agent” 会结束两条通道上正在运行的回合，包括用户的和系统 Agent 的；“Ask <app>” 面板的“停止”只结束用户自己的回合（[见上文](#直接与应用的-agent-对话)）。
 - **外部客户端的提示**留在客户端：Shell 不回答、也不让 Talk to Octos 客户端各轮的审批过期（octos#2624）。
 
 ### 卡片与提问
 
-- **交互式卡片**（[#153](https://github.com/OctoSense-org/OctoSense/pull/153)）：应用的 glance 卡片在应用自己的策略下运行，与应用界面在 Card runner 中一样；以 `notify` 发布的卡片还会发出一条通知，点开后在 glance 页面或面板上打开这张实时卡片。用户在卡片上的操作是应用自己的操作，经过应用的能力闸门和宿主服务，而不是 Agent 的工具调用，因此不需要额外的 Shell 审批。
+- **Glance 卡片**（`crates/shell/src/glance.rs`）：拥有 `glance` 权限的应用用 `glance.publish`（以及 `glance.withdraw`、`glance.list`）以自己的身份发布卡片：Shell 从调用方取得发布者，从不读取参数里的发布者。卡片要么是由 `data` 填充的 L0 `source`（只有呈现，由 Octoscript 的 L0 检查器检查），要么是 Splash `script`。限制：每个应用每分钟发布 6 次、最多保留 4 张卡片，总共保留 32 张，按优先级再按时间显示 6 张。以 `notify` 发布的卡片还会发出一条通知：桌面端点击 toast 会在单独的卡片窗口中打开这张卡片（`glance_sheet.rs`），每来一张新卡片 glance 面板（`glance_panel.rs`；顶栏的铃铛、F9）都会打开；手机上点通知栏里的通知会打开 glance 页面。
+- **交互式卡片**（[#153](https://github.com/OctoSense-org/OctoSense/pull/153)）：应用的 glance 卡片在应用自己的策略下运行，与应用界面在 Card runner 中一样。用户在卡片上的操作是应用自己的操作，经过应用的能力闸门和宿主服务，而不是 Agent 的工具调用，因此不需要额外的 Shell 审批。
+- **卡内对话**（[#263](https://github.com/OctoSense-org/OctoSense/pull/263)）：L0 卡片可以声明 `sys.chat(app, thread, fields)` 并绘制 `ChatEntry` 行，也可以显示模型写的文字（`class: model-copy`），这些文字标为 AI 撰写，且从不被当作操作执行。对话记录归宿主所有（[`crates/l0-chat`](crates/l0-chat/README.md)、`crates/shell/src/glance_chat.rs`）：只能与发布卡片的应用自己的 Agent 对话，只有用户亲手输入的内容才记为用户的话，Agent 在用户的通道里回答。对话按线程保存在应用的账号文件夹中（`apps/<app>/accounts/<account>/chat/<thread>.json`）。
 - **提问**（octos 的 `ask_user_question`）按这一轮的触发方路由：来自用户通道（或应用）的一轮在应用的对话中提问，来自系统 Agent 通道的一轮在系统对话中提问。只有用户能回答，而且只能在 Shell 的界面上回答。
 
 ## 目录结构
@@ -167,10 +244,12 @@ sequenceDiagram
 | [`phone/`](phone/README.zh-CN.md) | Home 应用，package `octosense-home`（APK id `dev.makepad.octosense`）：包装 Shell 的入口（`src/main.rs`）、内置设置应用（`src/settings_*.rs`、`src/android_settings.rs`、`resources/settings/`）、Android、OpenHarmony 和 iOS 打包、系统桥的手机端（`android/`），以及手机端的系统应用选择。 |
 | [`rom/`](rom/README.zh-CN.md) | 仅 OnePlus 6 ROM 镜像：`vendor/`（产品定义、特权权限、overlay、设置后端、特权 agent）、`patches/`、镜像/刷机/OTA 脚本、Home APK 构建脚本、`web-installer/`、产品测试。 |
 | `crates/shell/` | 唯一的一份 Shell，package `octosense-shell`，两个包都链接它：窗口管理器（desk、样式、平铺、场景）、托管（子进程、进程内模块、App Hub、AI 面板）、手机层（主屏页面、下拉面板、手势、Android 启动器桥），以及主题、壁纸和图标（`resources/`）。 |
-| [`crates/ai-host/`](crates/ai-host/README.md) | Shell 的 AI 服务，统一入口，package `octosense-ai-host`：octos 内核服务、带平台二维码导入的 `llm` 宿主服务，以及应用访问助手的通道。 |
-| [`crates/kernel/`](crates/kernel/README.md) | octos 内核服务，package `octosense-kernel`：把 [octos](https://github.com/octos-org/octos) Agent 内核作为 Shell 服务，每个进程一个，由 AI 服务商配置，供所有使用方共享。 |
-| [`crates/app-peers/`](crates/app-peers/README.md) | 应用与 Agent 之间的代理：应用访问助手的通道（[Rinx ADR 0007（英文）](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)）。 |
-| [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、AI 服务商、YouTube），均为受隔离约束的脚本应用；它们的宿主服务（`mail`、`llm`）；`apps/reference`；以及需显式启用的 AppCard 助手（`apps/appcard`）。 |
+| [`crates/ai-host/`](crates/ai-host/README.md) | Shell 的 AI 服务，统一入口，package `octosense-ai-host`：octos 内核服务、带平台二维码导入的 `llm` 宿主服务、`model` 服务（`model.complete`）、为每个脚本应用提供 Agent（`card.<应用 id>`）的 `octos` 宿主服务，以及原生应用访问助手的通道。 |
+| [`crates/kernel/`](crates/kernel/README.md) | octos 内核服务，package `octosense-kernel`：把 [octos](https://github.com/octos-org/octos) Agent 内核作为 Shell 服务，每个进程一个，由 AI 服务商配置，供所有使用方共享；以及系统 Agent 的精确工具列表。 |
+| [`crates/app-peers/`](crates/app-peers/README.md) | 应用 Agent 的代理，package `octosense-app-peers`：每个（应用，账号）一个由宿主拥有的 octos peer，它的两条通道、工具、`peer/input`、时限和清除（[Rinx ADR 0007（英文）](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)）。 |
+| [`crates/l0-chat/`](crates/l0-chat/README.md) | L0 卡片卡内对话（`sys.chat`）的宿主一侧，package `octosense-l0-chat`，由 Shell 的 glance 卡片和 AppCard 共用。 |
+| [`crates/toolbox/`](crates/toolbox/README.md) | 系统工具箱，package `octosense-toolbox`：工作流模板、运行器、分支（fork）与评估，以及 `mod.research`；在 `toolbox-peers` 特性下作为宿主工具提供给应用 Agent。 |
+| [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、日历、AI 服务商、YouTube），均为受隔离约束的脚本应用；它们的宿主服务（`mail`、`calendar`、`news`、`llm`）；`apps/reference`；以及需显式启用的 AppCard 助手（`apps/appcard`）。 |
 | `tools/` | `setup.py`（锁定版本的框架源码）、经审查的 Makepad 运行时补丁（`runtime-patches/`）、`kernel-artifact.py`（Android APK 以 `liboctos.so` 形式打包的 octos 内核）、`check-shell-graph.sh`（每个 Shell 构建都要通过的依赖图检查）。 |
 | [`docs/adr/`](docs/adr/README.zh-CN.md) | 架构决策记录：本仓库的决策，以及作为历史保留的 Home 决策 0001–0006。 |
 | `Cargo.toml`、`Cargo.lock` | 一个工作区。所有外部依赖都只在 `[workspace.dependencies]` 中锁定一次。 |

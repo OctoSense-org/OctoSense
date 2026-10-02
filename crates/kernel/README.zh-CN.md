@@ -6,7 +6,9 @@
 
 [octos](https://github.com/octos-org/octos) Agent 内核是一项 **Shell 服务**。
 Shell（`phone/` 中的 Home、`desktop/` 中的桌面）拥有它；**AI providers** 系统应用
-通过 `llm` 宿主服务配置它；**AppCard** 以及之后 Rinx 的原生小程序宿主连接它。
+通过 `llm` 宿主服务配置它；它的使用方连接它：Shell 的系统对话（系统 Agent 的面板，
+`crates/shell/src/system_chat/link.rs`）、每个应用 Agent 的代理（`crates/app-peers`，
+`CoreConnector`：Rinx 以及带 Agent 的脚本应用）和需显式启用的 AppCard。
 本 crate 就是这项服务：每个进程一个内核，按需启动、共享，服务商变化时重启。
 
 它放在 `crates/` 而不是 `apps/`，因为它不是应用，而是 Shell、AppCard
@@ -77,9 +79,10 @@ AppCard 的传输层（`apps/appcard/app/crates/octos-app-transport`，`kernel.r
 使用方：收到 `Restarted` 时，它让仍在等待的请求失败，重新连接，并从各会话的回放游标重新
 打开会话，应用得以继续。
 
-**Rinx 与其他使用方。** 原生小程序宿主使用自己的连接（`connect()`），用自己的 id 打开
-会话（Rinx 使用 `<profile>:api:rinx-mini-…`），只收到自己会话的流量，不与 AppCard 的
-连接或 UI 队列耦合。它必须通过重新连接来处理 `CloseReason::Restarted`。
+**其他使用方。** 每个使用方都用自己的连接（`connect()`），只收到自己会话的流量：系统对话
+打开 `_main:api:octosense#system`；app-peers 代理驱动其应用的 peer 和请求上下文（Rinx 的
+小程序是 Rinx 的 peer 的请求上下文，经 `OctosAppService` 使用，没有自己的会话）。每个使用方
+都必须通过重新连接来处理 `CloseReason::Restarted`。
 
 其他函数：`core_dir()`、`home()`、`profile()`、`launch()` / `is_available()`（是否以及如何
 启动内核）、`status()`，以及下面的 Talk to Octos 控制函数。
@@ -135,12 +138,12 @@ adb -s SERIAL forward tcp:PORT tcp:PORT
 
 [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12：系统智能体的工具集就是它获得的授权。它默认的 octos
 工具是 `system_tools::SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`；
-不含 `peer_close`：octos 无法恢复已关闭的 peer，配置文件的 `tool_policy` 对所有智能体都禁用它）、其工作区内的文件工具（octos 将其限制在会话工作目录内）、记忆、`ask_user_question`、查看媒体、octos 的
-`web_search` / `web_fetch`（在工具箱授权取代它们之前，#108）以及 `tool_search`。授予的工具箱工具和跨应用工具通过 `SystemAgentTools` 作为宿主工具加入。命令执行作为授权**已完成**：用户在“设置 → 助手 → 命令执行”中的开关（默认关闭；开启需要用户输入确认语，确认语说明其风险；
+不含 `peer_close`：octos 无法恢复已关闭的 peer，配置文件的 `tool_policy` 对所有智能体都禁用它）、其工作区内的文件工具（octos 将其限制在会话工作目录内）、记忆、`ask_user_question`、查看媒体（`view_image`、`view_video`）、octos 的
+`web_search` / `web_fetch` 以及 `tool_search`。工具箱工具和跨应用工具按设计通过 `SystemAgentTools`（`grant_toolbox`、`grant_cross_app`）作为宿主工具加入，但目前除测试外没有任何地方授予它们，所以系统智能体还没有这些工具。系统对话总会在该会话上注册自己的两个宿主工具 `agents.list` 和 `agents.ask`（`crates/shell/src/agents.rs`：哪些应用有 Agent，以及允许某个 Agent 的首次使用面板；只有用户能回答）。命令执行作为授权**已完成**：用户在“设置 → 助手 → 命令执行”中的开关（默认关闭；开启需要用户输入确认语，确认语说明其风险；
 `crates/shell/src/system_chat/grants.rs`）通过 `SystemAgentTools::grant_command_execution` 为系统代理授予宿主工具 `terminal.run`。
 Shell 把授权交给本 crate（`system_tools::set_grants`）；每次内核启动时采用（`grants_at_start`、`system_agent_tools_in_effect()`），
 因此更改在重启后生效，设置中提供重启按钮。每条命令都经过 Shell 的批准路由器，按 `auto_approvable: false` 处理，并在实时批准表单上显示完整命令（开发者模式仍可直接批准）。
-开关开启期间，Shell 的系统对话在自己的连接上把该宿主工具注册到系统会话（octos#2567 的宿主会话目标，不带 `peer` 的 `peer/tools/register`），开关关闭时撤回；每个获批的调用由 Shell 输入到用户可见的 Terminal。
+开关开启期间，Shell 的系统对话在自己的连接上把该宿主工具注册到系统会话（octos#2567 的宿主会话目标，不带 `peer` 的 `peer/tools/register`；自 octos#2657 起也不需要任何应用 peer 的宿主 token，所以在任何应用的 Agent 启动之前就能提供），开关关闭时撤回；每个获批的调用由 Shell 输入到用户可见的 Terminal。
 
 **内核执行的内容。** 每次启动都写入 `_main` profile 的 `tool_policy`（`system_tools::tool_policy`）：任何授权可给予的一切，
 唯独去掉 octos 自己的 shell（`group:runtime`：`shell`、`bash`、`exec_command`、`write_stdin`）——这是 OctoSense 唯一从不提供的工具，

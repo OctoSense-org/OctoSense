@@ -5,13 +5,22 @@
 One entry point for what every OctoSense shell (desktop/, phone/) hosts:
 
 - **the octos kernel** (`crates/kernel`) as a shell service: configured once,
-  started when a consumer (AppCard, Rinx) first connects, restarted by the
-  `llm` service after a provider change, stopped at shutdown;
+  started when a consumer (the system chat, an app's agent, Rinx, AppCard)
+  first connects, restarted by the `llm` service after a provider change,
+  stopped at shutdown;
 - **the `llm` host service** (`apps/ai-providers/host-service`) the AI
   providers system app calls, with the platform's QR import (Android camera
   and image picker, desktop open panel and drops, elsewhere a pasted code);
-- **apps' assistant access** (Rinx ADR 0007): a scoped `crates/app-peers`
-  service offered to each granted native module instance at creation.
+- **the `model` host service** (`model.complete`, implemented in
+  `apps/ai-providers/host-service/src/complete/`): one-shot model calls over
+  the same providers for apps granted the `model` capability, with per-app
+  budgets;
+- **script apps' agents**: the `octos` host service (`src/contained.rs`,
+  below), one host-owned peer `card.<app id>` per app;
+- **native apps' assistant access** (Rinx ADR 0007): a scoped
+  `crates/app-peers` service offered to each granted native module instance
+  at creation (`offer`), and a module's own peer link
+  (`module_peer::ModulePeerLink`, which no module uses yet).
 
 ```rust
 use octosense_ai_host as ai_host;
@@ -47,12 +56,41 @@ mobile targets always have it — `cfg(kernel)`, set by build.rs), `llm`
 `toolbox-peers` (below; off by default, turned on by the shell's feature of
 the same name).
 
+## Script apps' agents: the `octos` host service (`src/contained.rs`)
+
+`start` registers `ContainedOctos` (family `octos`) in App Hub's host-service
+registry where the shell hosts a kernel. It is how every script app, system
+or store, has an agent:
+
+- **The peer.** One host-owned octos peer per app, `card.<app id>`
+  (`PEER_PREFIX`, `peer_id`), launched through
+  `octosense_app_peers::hosted::launch` and owned by the system agent. It acts
+  for `device` (`ACCOUNT`), or, for an app whose manifest sets
+  `storage.accounts`, for the account the shell reports (`set_account_of`;
+  Mail's signed-in account); without one it answers `SIGN_IN`.
+- **The gate.** `Policy::shipped()` reads `OCTOSENSE_CONTAINED_APPS`
+  (`contained_gate_from`): unset is `ContainedGate::Consent` (each app once
+  the person allowed its agent on the first-use sheet), `1` is `Everyone`
+  (asks nobody, for development), `0` is `Off` (`TURNED_OFF` for every app).
+  The service is registered even when off, so an app hears why.
+- **The app's own calls.** `host.request("octos.session.open" |
+  "octos.session.history" | "octos.turn.start" | "octos.turn.interrupt")`,
+  only the names its manifest declares (`set_declared`, else
+  `NOT_DECLARED`); text at most 32 KiB, replies at most 2 MiB. None of
+  today's system apps with an agent (News, Mail, Calendar) declares one:
+  their agents are driven by the shell.
+- **The shell's calls.** `prepare` (the shell prepares every allowed app's
+  peer at startup and when it is allowed, so the system agent's `peer_list`
+  shows it), `conversation` (the person's lane, for the "Ask <app>" panel and
+  a card's `sys.chat`), `revoke` (the agent turned off) and
+  `account_changed`.
+
 ## The system toolbox for app agents (`toolbox-peers`)
 
 ADR 0002 section 6 and ADR 0004 section 12. The toolbox is one more owner of
 host-routed tools in the shell's host-tool relay (octos#2567's shell side,
-`crates/shell/src/host_tools/`): main's broker registers them after every
-`peer/prepare` and reconnect (`generic_tools` omitted), and the relay
+`crates/shell/src/host_tools/`): the broker registers them after every
+`peer/prepare` and reconnect, with the app's other tools, and the relay
 authorizes each call and routes it to the toolbox's executor. This crate adds
 only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
 `peer` module):
@@ -71,8 +109,9 @@ only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
   app's manifest (`for_manifest`: `research`/`crawl` in `capabilities`, the
   scope in octos's `Scope` shape under the top-level `research` object, App
   Hub #26's shape) is, **temporarily**, granted only to system apps (`os.*`)
-  until the shells' App Hub pin includes #26 and the host reads its verified
-  grant.
+  until the host reads App Hub's verified grant. The shells' App Hub pin
+  (`58c3c8ae`) already includes #26; the code still keeps the `os.*` gate
+  (`system_app_only`). No system app declares `research` or `crawl` yet.
 - `ToolboxExecutor`: the relay's executor for the `toolbox` owner. It checks
   the calling app's grant again (a forged `toolbox.deep_crawl` is
   `not_granted`), runs the call with the app's `AppContext` (id, grants,
@@ -85,7 +124,14 @@ only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
 
 Nothing else is held back: octos's own generic tools (`deep_research` among
 them) are the kernel's, and which of them a peer gets is its `generic_tools`
-list, which the broker does not set.
+list: exactly the kernel tools its manifest names and the person granted,
+which the broker sets with every registration.
+
+Which shells build it: the phone's default features include `toolbox-peers`
+(`phone/Cargo.toml`, generated from `native-apps.json`); the desktop's do
+not (the desktop package has the feature, off by default). On the phone,
+`src/webview_render.rs` lets the octos reader render pages it cannot read
+over plain HTTP in hidden system WebViews.
 
 Results are written to the host-owned `<apps root>/.host/toolbox/<app id>`
 (`toolbox_folder`, always compiled; run results under

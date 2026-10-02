@@ -2,21 +2,29 @@
 
 English | [简体中文](README.zh-CN.md)
 
-> **Where this fits.** The system apps are script apps in App Hub's Card runner. They never talk to the octos kernel: an app reaches its own agent (one peer per app and account) only through the shell, with `host.request("octos.*")`, and the agent's calls to the app's tools come back through the shell's relay and approval router. An app's glance cards run under the app's own policy, and what the person does on them is the app's own action, not an agent tool call. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
+> **Where this fits.** The system apps are script apps in App Hub's Card runner. They never talk to the octos kernel. News, Mail and Calendar have an agent (one host-owned octos peer per app and account, `card.<app id>`), declared by their manifest's `agent` block and `tools.json`; the shell drives it for the system agent, the shell's "Ask <app>" panel and a card's in-card chat, and an app could also reach it with `host.request("octos.*")` (none of them does). The agent's calls to the app's tools come back through the shell's relay and approval router and run on the app's host service; Mail's and Calendar's tools put cards on the glance screen ([App agents](#app-agents)). An app's glance cards run under the app's own policy, and what the person does on them is the app's own action, not an agent tool call. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
 the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail, AI providers and YouTube** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, Calendar, AI providers and YouTube** are *contained script apps*. Each is
   an OctoScript (Splash) program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under exactly the permissions its `manifest.json` asks
   for. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
 - **Mail's host service** (`mail/host-service`) is the Rust half of Mail:
   IMAP/POP3/SMTP, the account store and the sign-in sheet, run by the shell.
-  The app gets mail, never a password or a socket.
+  The app gets mail, never a password or a socket. It also runs Mail's
+  agent's tool `mail.notify`, which puts a notice card on the glance screen.
+- **Calendar's host service** (`calendar/host-service`) keeps Calendar's
+  events in the host's directory and runs Calendar's agent's tools:
+  `calendar.events`, `add_event`, `remove_event`, and `notify` and `agenda`,
+  which put an event or agenda card on the glance screen. Calendar is a
+  desktop system app (`desktop/system-apps.json`).
+- **News's host service** (`news/host-service`) collects News's stories on a
+  timer, with no model, and runs News's agent's `news.list` and `news.read`.
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
@@ -61,9 +69,10 @@ OctoScript-App-Design-Flow:
 | [Photos](photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage` | none | none (full-size files come from a shell asset mount, see below) |
 | [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one | `storage`, `net`, `location` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
 | [Camera](camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
-| [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer | `storage`, `mail` | none (the service connects, not the app) | [`mail`](mail/host-service) |
+| [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | none |
+| [Calendar](calendar/bundle) | `os.calendar` (desktop) | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by App Hub's closed list
@@ -107,6 +116,11 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
   `mailbox-*.json` files. The script Mail app's mail now lives in the host
   service's own directory (`<host_dir>/mail/box-*.json`), so the skill
   probably no longer sees it; not verified.
+- **Calendar** (2026-10-01, desktop, hidden `--remote` run with a live
+  model): the system agent asked Calendar's agent for a card; the first-use
+  sheet came up, the agent added an event and its card opened the glance
+  panel. Not packed on the phone. Its host service's tests are not in
+  `apps.yml` yet.
 - Only Camera ships its own launcher icon (`bundle/icon.png`); the shells
   draw the others.
 
@@ -133,10 +147,12 @@ standalone launcher and ROM image). Each packaging:
    }
    ```
 
-2. Links the host services `octosense-mail-service` and
+2. Links the host services `octosense-mail-service`,
+   `octosense-calendar-service`, `octosense-news-service` and
    `octosense-llm-service` (workspace path dependencies) through the shell,
-   [`crates/shell`](../crates/shell), and registers them at startup: Mail with `register()` for real accounts, or `register_demo()`
-   when the shell's app config has `mail_demo: true`; `llm` with the octos
+   [`crates/shell`](../crates/shell) (its `app-hub` feature), and registers them at startup (`crates/shell/src/apps.rs`, `register_host_services`): Mail with `register()` for real accounts, or `register_demo()`
+   when the shell's app config has `mail_demo: true`, and with the publisher
+   its `mail.notify` (like Calendar's cards) publishes through; `llm` with the octos
    kernel's core dir and the shell's QR scanner and image picker (see
    [the `llm` service](#the-llm-service)). App Hub is pinned once, in the root
    `Cargo.toml`, so there is one host-service registry.
@@ -159,7 +175,11 @@ request.
 ```
 <name>/bundle/               a contained script app: manifest.json, main.splash, artwork
 photos/resources/            Photos' sample library, which Home mounts
-mail/host-service/           octosense-mail-service, the `mail` host service (Rust)
+mail/host-service/           octosense-mail-service, the `mail` host service (Rust); resources/notice.card
+mail/docs/                   Mail's plans (the email action card)
+calendar/host-service/       octosense-calendar-service, the `calendar` host service; resources/event.card, agenda.card
+news/host-service/           octosense-news-service, the `news` host service (News's data service)
+<name>/bundle/tools.json     an app agent's own tools (News, Mail, Calendar)
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
 reference/                   the reference module
@@ -176,7 +196,8 @@ appcard/                     the native AppCard assistant
 ../crates/shell/             octosense-shell: the one shell both packagings link
 ../crates/ai-host/           octosense-ai-host: the shell's AI services (kernel, `llm`, app peers), one entry point
 ../crates/kernel/            octosense-kernel: the shell's octos kernel (one per process, shared)
-../crates/app-peers/         octosense-app-peers: apps' scoped access to the assistant
+../crates/app-peers/         octosense-app-peers: the app-agent broker, one peer per (app, account)
+../crates/l0-chat/           octosense-l0-chat: the host side of a card's in-card chat (sys.chat)
 ../.github/workflows/apps.yml   CI for the host services, AppCard and the shell services
 ```
 
@@ -281,16 +302,36 @@ isolate under no app's policy. Calls from the sheet arrive marked
 
 | File | Role |
 | --- | --- |
-| `lib.rs` | the service: `mail.accounts`, `add_account` (raises the sign-in sheet), `remove_account`, `folders`, `sync`, `list`, `message`, `mark_read`, `send`; `register()`, `register_demo()`, `register_with*()`; the `Transport` trait |
+| `lib.rs` | the service: `mail.accounts`, `add_account` (raises the sign-in sheet), `remove_account`, `folders`, `sync`, `list`, `message`, `mark_read`, `send`, `notify` (the agent's notice card, published through the shell's glance service as Mail); `register()`, `register_demo()`, `register_with*()`; the `Transport` trait; account events for the shell (`on_account_event`) |
 | `imap.rs` | IMAP client (folders, read flag back to the server) |
 | `network.rs` | POP3 and SMTP, MIME decoding; credentials never appear in errors |
 | `html.rs` | rebuilds a message as the few tags Mail's `Html` view draws, with nothing remote in it |
-| `vault.rs` | where passwords go: macOS/iOS Keychain, Android (a file sealed with an Android Keystore key), owner-only file elsewhere; `OCTOSENSE_MAIL_VAULT=file` forces the file store for unsigned dev builds |
+| `vault.rs` | where passwords go: macOS/iOS Keychain, Android (a file sealed with an Android Keystore key), owner-only file elsewhere, the files in the host's secrets folder `<home>/secrets/os.mail/`; `OCTOSENSE_MAIL_VAULT=file` forces the file store for unsigned dev builds |
+| `contacts.rs` | the addresses the person's accounts sent mail to, for the approval rule "recipients in my contacts" (off until the person turns it on in Settings) |
+| `resources/notice.card` | the fixed L0 notice card `mail.notify` fills |
 
 Account metadata (no passwords) and fetched mail live under the host's own
 directory (`<host_dir>/mail`), outside every app's jail. Each account is
 granted only to the apps that added it. The service tests an account before
 keeping it.
+
+### The `calendar` service
+
+`octosense-calendar-service` (`apps/calendar/host-service/src/lib.rs`) answers
+only Calendar (`os.calendar`): App Hub's capability list has no `calendar`,
+so no other app can be granted it, and the shell runs Calendar's agent's
+`calendar.*` tools on it as the system app's own service.
+
+| Method | Args | Answer |
+| --- | --- | --- |
+| `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes}]}`, soonest first |
+| `calendar.add_event` | `{title, start, end?, location?, notes?}` | `{id, start}` |
+| `calendar.remove_event` | `{id}` | `{removed}` |
+| `calendar.notify` | `{event}` or `{title, when, location?, notes?}`, and `{card_id?, priority?}` | `{card_id, replaced, expires_at}` once an event card (`resources/event.card`) is on the glance screen, with a notification |
+| `calendar.agenda` | `{days?}` | the same, for the agenda card (`resources/agenda.card`): the next three events within `days` (7) |
+
+Times are local (`2026-10-02T15:00`, or a date for the whole day). Events
+live in `<host_dir>/calendar/events.json`, outside every app's jail.
 
 ### The `llm` service
 
@@ -309,6 +350,62 @@ method table and registration are in its
 [README](ai-providers/host-service/README.md).
 
 **Talk to Octos** (off by default): **AI providers → Talk to Octos** turns on a loopback server so a web client or a terminal UI can talk to this device's assistant. While it is on, the kernel runs as `octos serve --host-managed` instead of `--stdio` and native apps keep working over its WebSocket; external clients get a separate token that opens the UI Protocol socket and nothing else. A web client pairs with a one-time code or the QR of its link; a terminal client of this user reads the private connection file. The server stays up when native apps close, until it is turned off or the shell exits. See [ADR 0003](../docs/adr/0003-shared-octos-client-access.md) and the [kernel guide](../crates/kernel/README.md).
+
+## App agents
+
+An app agent is the app's own octos peer, owned by the system agent: its own
+workspace (the app's account folder, `apps/<id>/accounts/<account>/`), memory,
+model lane and tools. Which system apps have one, and how
+([`../crates/shell/src/apps.rs`](../crates/shell/src/apps.rs) `agent_apps`,
+[`../crates/shell/src/host_tools/script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs)):
+
+| App | `manifest.json` | `tools.json` | Cards |
+| --- | --- | --- | --- |
+| News | `agent` block | `news.list`, `news.read` (read, shareable) | – |
+| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.notify` (act, background) | `notice.card` |
+| Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
+
+- **Declaring one.** The manifest's `agent` block names the kernel tools the
+  agent may use (`"tools": ["ask_user_question"]`; a dotted name there asks
+  for another app's shareable tool), and `bundle/tools.json` declares the
+  app's own tools: `<app>.<tool>`, `input_schema`, `output_schema`, `risk`
+  (`read`, `act`, `destructive`), `background`, `confirm` (`host` or
+  `app`), `shareable` and `implemented_by: "host-service"`. App Hub admits
+  and pins both. The `agent` block's `profile` and `model` are admitted but
+  not used by the shell yet.
+- **Running one.** Nothing runs before the person allows the agent on the
+  first-use sheet (shown when the person opens the shell's "Ask <app>"
+  panel, with the bar's "Ask <app>", Shift+F8 or the menu row "Ask this
+  app's agent", or when the system agent asks it with `agents.ask`). Then
+  the shell prepares the peer, so the system agent can reach it with
+  `peer_send_input`. A turn starts only when the system agent, the person
+  or a card's in-card chat asks: there are no triggers or schedules yet
+  (ADR 0002 M3, planned).
+- **Talking to it yourself.** The person can chat with the app's agent
+  directly, not only through the system agent: in the "Ask <app>" panel,
+  which the shell draws for every app with an agent (none of these apps
+  draws a chat of its own), or in a card's in-card chat. Those turns run
+  in the person's lane, beside the system agent's, with the app's tools.
+  The panel's Stop stops only the person's own turn. On the phone no touch
+  control opens the panel yet. See the root
+  [README](../README.md#talking-to-an-apps-agent-yourself).
+- **Its tools run on the app's host service**, as the app, after the
+  shell's relay checked the grant, the schema and the budget. octos asks
+  for an approval only for destructive and outward tools (here
+  `calendar.remove_event`), which the person answers on a shell sheet.
+- **Cards.** `mail.notify`, `calendar.notify` and `calendar.agenda` fill a
+  fixed L0 card the host service ships and publish it with `notify` through
+  the shell's `glance` service as the app (the app needs the `glance`
+  capability). The model only supplies the text; it never writes card code.
+  A card can hold an in-card chat with the app's own agent (`sys.chat`,
+  [`../crates/l0-chat`](../crates/l0-chat/README.md)).
+- **Trying it** on the desktop: open the assistant (F8) and ask the system
+  agent to have Mail's or Calendar's agent put a card on the glance screen;
+  allow the agent on the sheet that comes up. Mail needs a signed-in
+  account (the demo mailbox, below, will do). Mail's richer action card
+  ([the plan](mail/docs/2026-10-01-email-action-card-plan.md)) is so far a
+  demo with fake data: `OCTOSENSE_GLANCE_DEMO=mail` publishes it at
+  startup. **Unverified** here (run in #267's checks, not for this page).
 
 ## The octos kernel
 
@@ -425,6 +522,8 @@ plus an entry in each shell's `system-apps.json`.
 | What | How |
 | --- | --- |
 | Mail service | `cargo test --locked -p octosense-mail-service` from the repository root. The keychain test is ignored by default: `cargo test -p octosense-mail-service -- --ignored keychain` |
+| Calendar and News services | `cargo test --locked -p octosense-calendar-service -p octosense-news-service` (Calendar's are not in `apps.yml` yet) |
+| A card's in-card chat | `cargo test --locked -p octosense-l0-chat` |
 | octos kernel service | `cargo test --locked -p octosense-kernel` (a stand-in kernel); `OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-kernel --test real_kernel` (a real one) |
 | `llm` service and config | `cargo test --locked -p octosense-llm-service -p octosense-llm-config`; add `--features octosense-llm-service/octos-core` for the shells' build |
 | AppCard | the commands above |
