@@ -402,8 +402,9 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
 - **Talking to it yourself.** The person can chat with the app's agent
   directly, not only through the system agent: in the "Ask <app>" panel,
   which the shell draws for every app with an agent (none of these apps
-  draws a chat of its own). The shipped notice and Calendar cards have no chat field. A custom card declaring `sys.chat` can use the same human lane. Those turns run
-  in the person's lane, beside the system agent's, with the app's tools.
+  draws a chat of its own). Those turns run in the person's lane, beside
+  the system agent's, with the app's tools. For the separate `sys.chat`
+  feature, see [in-card chat availability](../README.md#in-card-chat).
   The panel's Stop stops only the person's own turn. On the phone no touch
   control opens the panel yet. See the root
   [README](../README.md#talking-to-an-apps-agent-yourself).
@@ -426,7 +427,6 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   is published with `notify` through the shell's `glance` service as the
   app (the app needs the `glance` capability). The model only supplies the
   text; it never writes card code.
-  These notice, event and agenda templates contain no `sys.chat`. A custom card can declare in-card chat with its app's agent ([`../crates/l0-chat`](../crates/l0-chat/README.md)); the Mail demo card uses canned replies.
 - **Trying it** on the desktop: open the assistant (F8) and ask the system
   agent to have an app's agent (Mail, Calendar, News, Photos, Maps or
   YouTube) put a card on the glance screen;

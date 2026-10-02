@@ -4,6 +4,8 @@ English | [简体中文](architecture-walkthrough.zh-CN.md)
 
 This walkthrough follows a message from an app window through the shell, agent kernel and tool executor. Start here if you know Rust but are new to OctoSense or agents. The [architecture reference](architecture.md) describes the design; this guide follows implementation calls and ownership. Read dependency versions from [Cargo.toml](../Cargo.toml) and [native-runtime.lock.json](../native-runtime.lock.json). ADRs record decisions; remaining implementation work is listed in §11.
 
+We will use one question throughout: **“What is on my calendar today?”** On desktop, a person can ask the system assistant to delegate it to Calendar, or ask Calendar directly through “Ask Calendar”. Both routes can reach `calendar.events`, but their answers return to different conversations. This is an illustrative tool path: it requires a configured kernel/provider and consent, and the model chooses whether to call the tool.
+
 ## 1. Give each name one meaning
 
 | Name | Meaning in this walkthrough |
@@ -15,7 +17,7 @@ This walkthrough follows a message from an app window through the shell, agent k
 | octos | The agent kernel: model calls, turns, tools, transcripts, memory and peer coordination. It is not an operating-system kernel. |
 | Agent | A configured model-driven worker: it reads messages, calls available tools, consumes their results and produces an answer. Model output does not itself perform an app operation. |
 | Session / turn | A session identifies a conversation and its state. A turn is one execution responding to input; it can include several model requests and tool calls. |
-| Peer / request context | A peer is a durable cooperating agent identity. A context is another session belonging to that peer, with its own transcript, workspace and child memory namespace. |
+| Peer / request context | A peer is a durable cooperating agent identity. A context is another session belonging to that peer, with its own transcript, workspace and a separate memory area under the peer’s namespace. |
 | Tool / host service | A tool is an operation offered to the model. A host service is Rust code called by an app or tool executor. Exposing one API does not automatically expose the other. |
 | `AGENTS.md` / `AGENT.md` | Repository contributor instructions / an app-bundle agent-instructions artifact. The bundle artifact is admitted by App Hub, but is not yet loaded into the shell peer's prompt. |
 
@@ -72,22 +74,28 @@ The assistant pane sends a `Command` to its worker. The `Driver` opens `_main:ap
 
 The system agent is a session on the `_main` profile. The host narrows its kernel tools using `session/tool_list/set`; `SYSTEM_AGENT_TOOLS` includes `peer_list`, `peer_send_input`, `peer_gather` and `peer_respond`. Its normal command-execution route, if the person enables it, is the shell's `terminal.run` tool and approval UI. It is not octos's builtin `shell` tool.
 
-[agents.rs](../crates/shell/src/agents.rs) adds two useful host tools: `agents.list` discovers app agents and their availability; `agents.ask` opens first-use consent and waits for a ready peer slug. On success the system agent uses `peer_send_input` to submit the task; the ask call itself only prepares access. The person controls first-use consent.
+[agents.rs](../crates/shell/src/agents.rs) adds two useful host tools: `agents.list` discovers app agents and their availability; `agents.ask` opens first-use consent and waits for a ready peer slug—the identifier issued by the kernel for that peer. On success the system agent uses `peer_send_input` to submit the task; the ask call itself only prepares access. The person controls first-use consent.
 
 ## 5. Prepare one app peer, then give it two lanes
 
 Read [app-peers/src/contract.rs](../crates/app-peers/src/contract.rs) before the much larger [broker.rs](../crates/app-peers/src/broker.rs). The traits explain the boundary:
 
 - `OctosAppService`: the scoped assistant handle an app receives.
-- `OctosContext`: a conversation/request handle. `call(ContextOp, EventSink)` starts work and delivers `ContextEvent`s.
+- `OctosContext`: a conversation/request handle. `call(ContextOp, EventSink)` starts work. The event sink is the callback that receives progress, replies and completion as `ContextEvent`s.
 - `ContextSpec`: host-authenticated account, instance and granted service names.
-- `Broker`: the shell's implementation, holding connection, peer, contexts and in-flight requests behind `Arc<Inner>`.
+- `Broker`: the shell adapter that connects app requests to the kernel. It holds the connection, peer, contexts and in-flight requests behind `Arc<Inner>`.
 
 A native module receives its handle through [hosted.rs](../crates/app-peers/src/hosted.rs) and [injection.rs](../crates/app-peers/src/injection.rs). A contained app reaches the same broker through [contained.rs](../crates/ai-host/src/contained.rs). A script agent is eligible when its manifest declares assistant services, an `agent` block, or the bundle carries `tools.json`. Eligibility still requires a kernel, consent and an active account where applicable.
 
-Native process clients use [peer_link](../crates/shell/src/peer_link/mod.rs): `OctosPeer` messages share the authenticated hub socket in an `octos_peer` envelope. The shell derives the app/instance from the launched client, checks the exact `native-apps.json` `agent.octos` grants and consent, then forwards session/history/turn/interrupt operations to that app's broker. An in-process module can use the same client through a parked link claimed by `module_host`. The injected `OctosAppService` is another adapter to this broker. Process death cancels outstanding work and closes request contexts while keeping the durable peer; uncertain writes return `outcome_unknown`.
+Native process clients use [peer_link](../crates/shell/src/peer_link/mod.rs): `OctosPeer` messages share the authenticated hub socket in an `octos_peer` envelope. The shell derives the app/instance from the launched client, checks the exact `native-apps.json` `agent.octos` grants and consent, then forwards session/history/turn/interrupt operations to that app's broker.
+
+An in-process module can use the same client through a parked link claimed by `module_host`. The injected `OctosAppService` is another adapter to this broker.
+
+Process death cancels outstanding work and closes request contexts while keeping the durable peer; uncertain writes return `outcome_unknown`.
 
 `card.os.news` is the broker's app identity, not necessarily the kernel's generated peer slug. `peer/prepare` returns that slug, the peer session and a host credential; use the returned values. Peers are keyed by app and account. Accountless apps use `device`; Mail uses the host-reported signed-in account. `ensure_peer` resumes the recorded peer, verifies its namespace, and registers tools before a turn can run.
+
+In the Calendar example, delegation runs on the system lane; “Ask Calendar” runs on a human lane. The **blackboard** below is the kernel’s shared record of peer work and results, which the system agent can read with `peer_gather`.
 
 ```mermaid
 sequenceDiagram
@@ -127,7 +135,17 @@ The broker's `driver_of` and `take_over` handle multiple native instances sharin
 
 The shipped `<app>.notify`, `calendar.notify` and `calendar.agenda` templates contain no `sys.chat`; their agents are reached through “Ask <app>”. The `OCTOSENSE_GLANCE_DEMO=mail` demonstration card has chat but uses canned replies (`glance_chat::HostResponder`). The card-chat route above applies to a card that declares `sys.chat`.
 
-Phone touch navigation does not yet expose an equivalent control to open the Ask-app panel; app-owned chat and published-card chat are separate surfaces. The Ask-app panel's Stop interrupts the human lane; “Stop the system agent's task” targets the other lane. The lower-level conversation `ContextOp::Interrupt` is broader and can interrupt both: do not assume all Stop surfaces call the same method. Hiding the Ask panel keeps its context/subscription; changing app or revoking access closes it.
+Phone touch navigation does not yet expose a control to open the Ask-app panel. App-owned chat and published-card chat remain separate surfaces.
+
+Stopping work depends on the entry point:
+
+| Action | What it interrupts |
+| --- | --- |
+| Ask-app panel’s Stop | The human lane |
+| “Stop the system agent’s task” | The system lane |
+| Lower-level `ContextOp::Interrupt` | Can interrupt both lanes |
+
+Hiding the Ask panel keeps its context and subscription. Changing app or revoking access closes them.
 
 The shell stamps a composer action as `TurnTrigger::Person`. A script can supply `trigger`/`from` with `octos.turn.start`, but its `trigger: "person"` becomes `AppSaysPerson`: a transcript label is not proof of a trusted human gesture and cannot unlock human-initiated approval rules.
 
@@ -187,7 +205,16 @@ There are several stores, with separate ownership:
 | Agent transcript and memory | octos session/context and `app/<broker-app-id>/acct-<tag>` namespaces. These are separate from the app's business data. |
 | Secrets | Host-owned secret store/sheets; not the agent workspace or script state. |
 
-For example, Calendar keeps `calendar/events.json` under its host directory and exposes operations through `calendar.*`. News exposes `news.list`, `news.read` and `news.notify`. Photos, Maps, Camera and YouTube expose only their own `<app>.notify`; these tools publish a shared notice card through [glance_notice.rs](../crates/shell/src/glance_notice.rs). AI providers has no app agent. Mail's current agent declaration exposes **only `mail.notify`**; the Mail UI's ability to list messages or send mail does not mean the model has those tools. The older AppCard personal-data importer is not automatically synchronized with current Mail's store.
+For the Calendar question, the executor reads `calendar/events.json` under Calendar’s host directory through `calendar.events`. The model receives the service’s result; it does not open the file itself. Other app tools have narrower scopes:
+
+| App | Current data/tool boundary |
+| --- | --- |
+| News | `news.list`, `news.read` and `news.notify` |
+| Mail | **Only `mail.notify`**; the UI’s read/send APIs are not agent tools |
+| Photos, Maps, Camera, YouTube | Only their own `<app>.notify`, publishing a shared notice card through [glance_notice.rs](../crates/shell/src/glance_notice.rs) |
+| AI providers | No app agent |
+
+The older AppCard personal-data importer is not automatically synchronized with current Mail’s store.
 
 Account directory names use a SHA-256-derived tag; peer memory names use the broker's FNV-derived tag. These are compatibility identifiers, not interchangeable paths. Sign-out suspends access and retains data; account removal/uninstall additionally requests `peer/purge`, retrying busy peers. A peer's saved workspace cannot silently change on resume.
 
@@ -197,13 +224,29 @@ Three operations are easy to confuse:
 
 **Delegation:** the system agent uses `peer_send_input` to ask an existing app peer to do work, then gathers its answer. The shell remains responsible for driving that app turn. The peer is not a newly spawned process.
 
-**Calling another app's API as a tool:** `Catalog::owner_of` resolves an owner; `may_call` requires an existing declaration plus `shareable: true` and a grant for that caller (outside explicit developer-mode rules). Script manifests request dotted names through `agent.tools`; native entries use their reviewed grants. Admission is a separate prerequisite: App Hub `HostLimits.offered_tools` must offer a requested name; its default does not offer arbitrary names such as `mail.send`. A relay implementation does not override that gate. The relay calls the owner's executor without having to ask the owner's model. The receiving app's data remains behind that executor. Current owner resolution covers native namespaces, toolbox namespaces and `os.<namespace>`; it is not an arbitrary installed-store-app discovery mechanism.
+**Calling another app’s API as a tool:** this skips the owning app’s model and invokes its executor directly. For example, another app could call a shared Calendar tool only when all of these prerequisites hold:
+
+1. The tool has a declaration with `shareable: true` and an executable handler.
+2. The caller has a grant. Script manifests request dotted names in `agent.tools`; native apps use their reviewed grants. `may_call` checks these rules, with explicit developer-mode exceptions.
+3. For a script bundle, App Hub admission—the check that the host accepts the bundle—allows the name through `HostLimits.offered_tools`.
+4. `Catalog::owner_of` can resolve the owner, so the relay can call that owner’s executor.
+
+The executor controls access to the receiving app’s data. Current owner resolution covers native namespaces, toolbox namespaces and `os.<namespace>`; it does not discover arbitrary installed store apps. Default admission does not offer arbitrary names such as `mail.send`, and Mail does not currently implement that agent tool. A relay route alone cannot make it callable.
 
 **A question or system facility:** an app agent can call a granted `ask_user_question`. [questions/mod.rs](../crates/shell/src/questions/mod.rs) routes it by the initiating turn: system chat for system-delegated work, app conversation for a human/app turn. The person answers on a shell surface. Apps receive system facilities as explicitly granted tools, such as [toolbox](../crates/toolbox/README.md) workflows. A general app-to-system-agent conversation RPC remains unimplemented. `peer_respond` handles peer coordination; approval messages have separate host-owned answer handles.
 
 ## 10. Map the architecture to Rust execution
 
-A peer is persisted identity and state. A turn uses runtime tasks while it executes; the peer survives those tasks. Read the ownership and scheduling boundaries separately:
+A peer is persisted identity and state. A **Tokio task** is an async computation scheduled on a runtime’s worker threads; waiting for I/O lets that worker run another ready task. A turn uses several tasks, and the peer survives their completion.
+
+Follow the direct “Ask Calendar” question across those boundaries:
+
+1. The Makepad UI submits a context request to Calendar’s broker.
+2. The broker’s runtime sends `turn/start` through a shared kernel `Connection`; the kernel-service supervisor carries it across the transport.
+3. octos spawns a turn orchestration task. It waits at a start barrier until the active-turn registry accepts it, then starts agent processing.
+4. If the model calls `calendar.events`, its tool future waits while the broker and shell relay deliver the request to Calendar’s host service. The returned data lets the model continue; reply events travel back to the human context and wake the UI.
+
+These are scheduling boundaries, not a new thread or process for every peer. Use this table to locate their owners:
 
 | Layer | Actual execution model | Source |
 | --- | --- | --- |

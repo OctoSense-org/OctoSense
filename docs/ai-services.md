@@ -109,7 +109,21 @@ It is a contained script app like any other; the privileged half is the **`llm` 
 
 [`crates/ai-host`](../crates/ai-host/README.md) (`octosense-ai-host`) is what both shells call: `start(Host::platform(data_dir))` at startup (configures the kernel, installs the host policy, registers `llm` with the platform's QR import), `handle_event` every event, `offer(module, scope)` / `finish()` around a native module's `create`, and `shutdown()`.
 
-The host **policy** grants exact native `octos.*` services from the generated `native-apps.json` declarations (currently Rinx). `Policy::shipped()` enables contained apps behind **first-use consent** by default. `OCTOSENSE_CONTAINED_APPS=0` turns them off; `1` is a developer override that bypasses that consent gate while retaining declared-service limits. The shell asks on first use and provides per-app controls in Settings; see [Approvals](architecture.md#5-approvals).
+The host **policy** grants exact native `octos.*` services from the generated `native-apps.json` declarations (currently Rinx).
+
+#### Contained-app consent
+
+Contained apps use first-use consent by default. The environment variable `OCTOSENSE_CONTAINED_APPS` controls this policy:
+
+| Setting | Behavior |
+| --- | --- |
+| Unset (default) | Ask the person before an app first uses its agent (`ContainedGate::Consent`). |
+| `1` | Developer override: skip first-use consent. Declared-service limits and individual tool approval rules still apply. |
+| `0` | Turn off the `octos` service for contained apps. |
+
+On first use, the shell shows what the app’s agent may read and use and where the model runs. **Settings → Assistant → Approvals** lists each app’s agent and lets the person turn it off.
+
+The policy is selected by `contained_gate_from` in [`crates/ai-host/src/lib.rs`](../crates/ai-host/src/lib.rs). Per-app consent is handled by [`crates/shell/src/approvals/consent.rs`](../crates/shell/src/approvals/consent.rs) ([#120](https://github.com/OctoSense-org/OctoSense/pull/120)); see [architecture § Approvals](architecture.md#5-approvals).
 
 ### `crates/app-peers`: host-owned app peers
 
@@ -179,7 +193,14 @@ A script app runs in App Hub's Card runner and reaches the shell only through `h
 | `news` | `os.*` apps only (`may_call` in the service) | News data, without a model. The News bundle now declares `news`; its agent exposes `news.list`/`news.read`/`news.notify`. The background fetch timer does not yet trigger an LLM turn. |
 | `glance` | apps granted the `glance` capability ([#86](https://github.com/OctoSense-org/OctoSense/pull/86), [App-Hub#22](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/22)) | Publishing L0 cards to the glance screen, under the app's own id (`crates/shell/src/glance.rs`) |
 | `model` | apps granted the `model` capability ([App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)) | One-shot `model.complete {task, input, schema, class?, allow_urls?}` and `model.budget` ([#95](https://github.com/OctoSense-org/OctoSense/pull/95), `apps/ai-providers/host-service/src/complete/`, registered in `crates/ai-host/src/lib.rs`): `class` `fast` or `strong`; the host picks the model from the person's providers, validates the reply against the schema, refuses URLs unless asked, keeps a per-app daily budget; no tools, memory or history, and the app never sees a key |
-| `octos` | Exact declared services, a kernel and first-use consent by default | Uses broker identity `card.<app id>` (the actual peer slug is returned by `peer/prepare`). `octos.turn.start` takes non-blank `text` up to 32 KiB and optional `trigger`/`from`; the other calls take `{}`. `trigger: "person"` is `AppSaysPerson`, an app assertion, not a trusted human gesture or approval bypass. Both host-tool and other peer approvals route to the shell; replies over 2 MiB are refused. |
+| `octos` | Apps declaring the exact `octos.*` service names, in a shell that hosts a kernel, subject to [contained-app consent](#contained-app-consent) | The app’s assistant, reached through a host-owned peer. The broker identifies the app as `card.<app id>`; `peer/prepare` returns its kernel-issued peer slug ([`contained.rs`](../crates/ai-host/src/contained.rs), [#106](https://github.com/OctoSense-org/OctoSense/pull/106)). Call rules are below. |
+
+The four `octos.*` calls have separate argument, origin, approval and reply rules:
+
+- **Arguments.** `octos.turn.start` requires non-blank `text` of at most 32 KiB and accepts optional `trigger` and `from`. The other calls accept only `{}`.
+- **Origin.** `trigger: "person"` is classified as `AppSaysPerson`. It is an app assertion, not a trusted human gesture, and cannot bypass approval.
+- **Approvals.** Both host-tool and other peer approvals route to the shell. Existing grants and approval rules still apply.
+- **Replies.** The host refuses replies larger than 2 MiB. The response table below lists successful calls and common errors.
 
 A script's own assistant calls use declared `octos.*` services. Separately, the shell can drive an app peer from `agent`/`tools.json` without the script declaring those UI calls. Replies on the script service path:
 
@@ -208,7 +229,7 @@ The manifest's `agent` and admitted `tools.json` participate in shell agent disc
 | `tools.json`: names, input/output schemas, risk, confirmation, sharing and implementation | §4, §12 | Loaded by `host_tools/script_apps.rs`, registered on peers and routed to host-service executors. News, Mail, Calendar, Photos, Maps, Camera and YouTube ship declarations; AI providers has no app agent. Arbitrary `implemented_by: "app"` script execution remains unavailable. |
 | `AGENT.md`, data-only skills, model requirements, `background`, triggers | §2, §3 | Admitted metadata. Prompt/skill loading, model selection from these requirements and trigger scheduling remain unimplemented in the shell. Tool background eligibility alone does not schedule a turn. |
 | Kernel: host-registered tools per peer (`peer/tools/register`, `peer/tool/call`/`result`/`cancel`), tool-list and risk enforcement, approvals only on the host connection, an allowlist of generic tools, `peer/input` | §4, §13 | Kernel side merged: [octos#2567](https://github.com/octos-org/octos/pull/2567) (UPCR-2026-035), in the pin with its follow-ups (octos#2616). The shell side is on main: [#145](https://github.com/OctoSense-org/OctoSense/pull/145) (tool registration, the relay, `peer/input`) and G3 (per-app `generic_tools` from the manifests, `tools.json` loading, grants, executors for script apps' host services, schema and budget checks; `peer/input/reject`, octos#2621). |
-| Risk decides supervision: read and in-app act run unattended; destructive waits for the person (`confirm: host`: the kernel's approval path; `confirm: app`: the app's own sheet when the person is present, an approval request in the app's conversation when absent) | §4, §12 | Declared in App Hub (#18) and octos#2567. The shell's approval router, sheets and standing rules are merged ([#120](https://github.com/OctoSense-org/OctoSense/pull/120)) and take the AI services bus's `confirm: host` calls; since [#145](https://github.com/OctoSense-org/OctoSense/pull/145) the kernel's `host_tool` approvals reach it through the relay ([architecture § Approvals](architecture.md#5-approvals)). Rinx's `send_message` already works the `confirm: app` way on its own surface. |
+| Tool approval policy | §4, §12 | Destructive and outward calls enter the shell’s approval router. It applies standing rules, host or registered app confirmation surfaces, and developer mode. Grants, schemas and caller budgets are checked separately. See [Approvals](architecture.md#5-approvals). |
 | News M1: the `news` data service (no model) | First slice | Merged ([#69](https://github.com/OctoSense-org/OctoSense/pull/69)); issue [#60](https://github.com/OctoSense-org/OctoSense/issues/60). |
 | News M2: `os.news` gets a peer and tools | First slice | Implemented: manifest `agent`, `news.list`/`news.read`/`news.notify` tools, shell peer preparation and relay. |
 | News M3: triggers and an unattended run | First slice | Planned: [#62](https://github.com/OctoSense-org/OctoSense/issues/62). |
@@ -226,18 +247,18 @@ The build/launch recipes below are **unverified**; read dependency versions from
 
 ### Desktop, with a throwaway kernel and profile
 
-1. Build octos at the revision the root `Cargo.toml` pins, in a dedicated checkout of [octos-org/octos](https://github.com/octos-org/octos) (flags from `tools/kernel-artifact.py`; build/launch recipe **unverified**):
+1. Build the desktop kernel from the OctoSense repository root. The existing helper reads the octos revision from `Cargo.lock` and uses its own `target/octos-kernel/` directory, leaving other checkouts alone. The build and subsequent launch steps are **unverified**; only the `--plan` output was checked for this revision.
 
    ```sh
-   git checkout --detach <octos-rev-from-OctoSense-Cargo.toml>
-   cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
+   python3 tools/kernel-artifact.py --host --plan
+   python3 tools/kernel-artifact.py --host
    ```
 
 2. Run the desktop with its own state, core dir and file vaults, so neither `~/.octosense`, `~/octos-home` nor the login keychain is touched:
 
    ```sh
    T=$(mktemp -d)
-   OCTOS_APP_CORE_BIN=/path/to/octos/target/release/octos \
+   OCTOS_APP_CORE_BIN="$PWD/target/octos-kernel/target/release/octos" \
    OCTOS_APP_CORE_DIR=$T/octos-home/.octos \
    OCTOSENSE_HOME=$T/state OCTOSENSE_APP_DATA=$T/apps \
    OCTOSENSE_LLM_VAULT=file OCTOSENSE_MAIL_VAULT=file \

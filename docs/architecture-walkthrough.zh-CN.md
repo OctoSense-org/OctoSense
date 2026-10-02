@@ -4,6 +4,8 @@
 
 本文沿着一条消息，阅读应用窗口、Shell、Agent 内核与工具执行器之间的调用。如果你了解 Rust，但刚接触 OctoSense 或 Agent，可以从这里开始。[架构参考](architecture.zh-CN.md)介绍整体设计，本文跟踪实现中的调用与所有权。依赖版本以 [Cargo.toml](../Cargo.toml) 和 [native-runtime.lock.json](../native-runtime.lock.json) 为准。ADR 记录设计决策，尚待实现的部分列在第 11 节。
 
+全文使用同一个问题：**“我今天有哪些日程？”** 桌面用户可以让系统助手委派给 Calendar，也可以直接通过 “Ask Calendar” 提问。两条路线都可能调用 `calendar.events`，但答案返回不同的对话。这是说明调用关系的例子：需要已配置的内核/提供方和用户同意，是否调用工具由模型决定。
+
 ## 1. 先分清这些名称
 
 | 名称 | 本文中的含义 |
@@ -15,7 +17,7 @@
 | octos | Agent 内核，负责模型调用、回合、工具、对话记录、记忆与 peer 协作；这里的“内核”指 Agent 运行时。 |
 | Agent | 读取消息、选择工具、消费结果并回答的模型工作单元。实际操作由工具执行器完成。 |
 | Session / turn | Session 保存一次对话的身份与状态；turn 是响应一次输入的执行过程，可包含多次模型请求与工具调用。 |
-| Peer / request context | Peer 是持久的协作 Agent 身份；context 是属于该 peer 的另一个 session，有独立记录、工作目录和子记忆命名空间。 |
+| Peer / request context | Peer 是持久的协作 Agent 身份；context 是属于该 peer 的另一个 session，有独立记录、工作目录，以及 peer 记忆命名空间下的独立存储区域。 |
 | Tool / host service | Tool 是模型可选择的操作；host service 是应用或执行器调用的 Rust 服务。分别检查它们的授权与入口。 |
 | `AGENTS.md` / `AGENT.md` | 前者指导仓库贡献者；后者是应用包的 Agent 指令文件。App Hub 会准入后者，但 Shell 尚未把它加载进 peer 提示词。 |
 
@@ -72,22 +74,28 @@ ROM 的特权 Android 服务也称“agent”，负责通过 Android bridge 执�
 
 系统 Agent 是 `_main` profile 的一个 session。宿主通过 `session/tool_list/set` 限定其内核工具；`SYSTEM_AGENT_TOOLS` 包含 `peer_list`、`peer_send_input`、`peer_gather` 和 `peer_respond`。用户开启命令执行后，它通过 Shell 的 `terminal.run` 与审批 UI 执行命令；octos 内置 `shell` 不在其工具列表中。
 
-[agents.rs](../crates/shell/src/agents.rs) 提供两个宿主工具：`agents.list` 查询应用 Agent 及可用状态；`agents.ask` 打开首次同意面板并等待可用的 peer slug。成功后系统 Agent 用 `peer_send_input` 提交任务；ask 调用只准备访问。首次同意由用户控制。
+[agents.rs](../crates/shell/src/agents.rs) 提供两个宿主工具：`agents.list` 查询应用 Agent 及可用状态；`agents.ask` 打开首次同意面板并等待可用的 peer slug（内核为该 peer 分配的标识符）。成功后系统 Agent 用 `peer_send_input` 提交任务；ask 调用只准备访问。首次同意由用户控制。
 
 ## 5. 一个应用 peer，两条对话通道
 
 先读 [app-peers/src/contract.rs](../crates/app-peers/src/contract.rs)，再读较大的 [broker.rs](../crates/app-peers/src/broker.rs)：
 
 - `OctosAppService`：应用拿到的作用域助手句柄。
-- `OctosContext`：对话/请求句柄；`call(ContextOp, EventSink)` 启动操作并交付 `ContextEvent`。
+- `OctosContext`：对话/请求句柄；`call(ContextOp, EventSink)` 启动操作；event sink 是接收进度、回复和完成事件（`ContextEvent`）的回调。
 - `ContextSpec`：宿主认证的账号、实例与已授权服务名。
-- `Broker`：Shell 对接口的实现，通过 `Arc<Inner>` 持有连接、peer、context 与在途请求。
+- `Broker`：将应用请求接到内核的 Shell 适配器，通过 `Arc<Inner>` 持有连接、peer、context 与在途请求。
 
 原生模块通过 [hosted.rs](../crates/app-peers/src/hosted.rs) 和 [injection.rs](../crates/app-peers/src/injection.rs) 获得句柄；隔离应用通过 [contained.rs](../crates/ai-host/src/contained.rs) 访问相同 broker。脚本 manifest 声明助手服务或 `agent` 块，或包内包含 `tools.json`，就具备 Agent 资格；运行还需要内核、用户同意及适用的有效账号。
 
-原生进程客户端使用 [peer_link](../crates/shell/src/peer_link/mod.rs)：`OctosPeer` 消息封装为 `octos_peer`，共用已认证的 hub socket。Shell 根据自己启动的客户端确定应用和实例，检查 `native-apps.json` 的确切 `agent.octos` 授权与同意状态，再把 session、history、turn、interrupt 操作交给该应用的 broker。进程内模块也能打开同一客户端，由 `module_host` 认领暂存的连接；注入的 `OctosAppService` 是另一种适配器。进程退出会取消在途工作并关闭请求 context，保留持久 peer；结果不确定的写入返回 `outcome_unknown`。
+原生进程客户端使用 [peer_link](../crates/shell/src/peer_link/mod.rs)：`OctosPeer` 消息封装为 `octos_peer`，共用已认证的 hub socket。Shell 根据自己启动的客户端确定应用和实例，检查 `native-apps.json` 的确切 `agent.octos` 授权与同意状态，再把 session、history、turn、interrupt 操作交给该应用的 broker。
+
+进程内模块也能打开同一客户端，由 `module_host` 认领暂存的连接；注入的 `OctosAppService` 是另一种适配器。
+
+进程退出会取消在途工作并关闭请求 context，保留持久 peer；结果不确定的写入返回 `outcome_unknown`。
 
 `card.os.news` 是 broker 的应用身份；内核的 peer slug 由 `peer/prepare` 返回，连同 peer session 和宿主凭据一起使用。Peer 按应用与账号区分：无账号应用使用 `device`，Mail 使用宿主报告的登录账号。`ensure_peer` 恢复记录的 peer，核对命名空间并注册工具，然后才运行回合。
+
+在 Calendar 例子中，系统委派走系统通道，“Ask Calendar” 走用户通道。图中的**黑板（blackboard）**是内核保存 peer 工作与结果的共享记录，系统 Agent 用 `peer_gather` 读取它。
 
 ```mermaid
 sequenceDiagram
@@ -127,7 +135,17 @@ sequenceDiagram
 
 随产品提供的 `<app>.notify`、`calendar.notify` 与 `calendar.agenda` 模板不含 `sys.chat`，通过 “Ask <app>” 与其 Agent 对话。`OCTOSENSE_GLANCE_DEMO=mail` 演示卡片带有聊天，但由 `glance_chat::HostResponder` 返回预设答案。上表的卡片聊天路线适用于声明了 `sys.chat` 的卡片。
 
-手机触控导航尚无打开 Ask-app 面板的对应控件；应用自己的聊天与卡片聊天是另外的入口。Ask-app 面板的 Stop 中断用户通道，“Stop the system agent's task” 中断系统通道。底层 `ContextOp::Interrupt` 范围更大，可以中断两条通道。隐藏面板保留 context 和订阅；切换应用或撤销访问会关闭它。
+手机触控导航尚无打开 Ask-app 面板的对应控件。应用自己的聊天与卡片聊天仍是独立入口。
+
+不同入口的停止操作影响不同通道：
+
+| 操作 | 中断范围 |
+| --- | --- |
+| Ask-app 面板的 Stop | 用户通道 |
+| “Stop the system agent’s task” | 系统通道 |
+| 底层 `ContextOp::Interrupt` | 可以中断两条通道 |
+
+隐藏面板保留 context 和订阅；切换应用或撤销访问会关闭它们。
 
 Shell 将聊天输入动作标为 `TurnTrigger::Person`。脚本调用 `octos.turn.start` 可传 `trigger` / `from`，但 `trigger: "person"` 被记录为 `AppSaysPerson`；脚本标签不能作为可信用户动作来匹配审批规则。
 
@@ -183,7 +201,16 @@ Shell 将聊天输入动作标为 `TurnTrigger::Person`。脚本调用 `octos.tu
 | Agent 记录与记忆 | octos session/context 和 `app/<broker-app-id>/acct-<tag>` 命名空间，与应用业务数据分别存放。 |
 | 机密 | 宿主机密存储和确认面板；不进入 Agent 工作目录或脚本状态。 |
 
-Calendar 的宿主目录保存 `calendar/events.json`，通过 `calendar.*` 访问。News 提供 `news.list`、`news.read` 和 `news.notify`。Photos、Maps、Camera、YouTube 仅提供各自的 `<app>.notify`，经 [glance_notice.rs](../crates/shell/src/glance_notice.rs) 发布共享通知卡片。AI providers 没有应用 Agent。Mail 当前只声明 **`mail.notify`**；UI 中的读信和发信接口尚未作为 Agent 工具开放。旧 AppCard 个人数据导入器也不会自动同步当前 Mail 存储。
+对 Calendar 问题，执行器通过 `calendar.events` 读取宿主目录中的 `calendar/events.json`。模型收到服务结果，无需自行打开文件。其他应用的工具范围更窄：
+
+| 应用 | 当前数据/工具边界 |
+| --- | --- |
+| News | `news.list`、`news.read`、`news.notify` |
+| Mail | **只有 `mail.notify`**；UI 的读信/发信 API 尚未开放为 Agent 工具 |
+| Photos、Maps、Camera、YouTube | 仅各自的 `<app>.notify`，经 [glance_notice.rs](../crates/shell/src/glance_notice.rs) 发布共享通知卡片 |
+| AI providers | 没有应用 Agent |
+
+旧 AppCard 个人数据导入器不会自动同步当前 Mail 存储。
 
 账号目录名使用 SHA-256 派生 tag，peer 记忆名称使用 broker 的 FNV 派生 tag；它们是不同的兼容标识。退出登录会暂停访问并保留数据；移除账号/卸载还会请求 `peer/purge`，忙碌时重试。恢复 peer 时，其已保存的工作目录不能悄悄改变。
 
@@ -191,13 +218,29 @@ Calendar 的宿主目录保存 `calendar/events.json`，通过 `calendar.*` 访�
 
 **委派任务：**系统 Agent 用 `peer_send_input` 请求现有应用 peer 工作，再获取结果。Shell 驱动该应用回合，peer 身份可以跨进程生命周期保留。
 
-**直接调用另一应用的 API 工具：**`Catalog::owner_of` 找到工具所属应用；通常 `may_call` 同时要求已有声明、`shareable: true` 和调用方授权，显式开发者模式规则另行处理。脚本 manifest 通过 `agent.tools` 请求带点的工具名，原生应用通过审核过的条目获得授权。App Hub 的 `HostLimits.offered_tools` 还必须提供请求的名称；默认未提供任意名称（例如 `mail.send`）。Relay 随后调用所属应用的执行器，无需询问该应用的模型，数据由执行器控制。当前 owner 解析覆盖原生命名空间、toolbox 与 `os.<namespace>`；任意已安装商店应用的发现尚未实现。
+**直接调用另一应用的 API 工具：**这条路线直接调用所属应用的执行器，无需经过它的模型。例如，另一应用要调用可共享的 Calendar 工具，必须满足以下条件：
+
+1. 工具已有声明、`shareable: true` 和实际执行器。
+2. 调用方有授权。脚本 manifest 在 `agent.tools` 中请求带点的名称，原生应用使用审核过的授权；`may_call` 检查这些规则，显式开发者模式例外另行处理。
+3. 对脚本包，App Hub 准入（宿主接受应用包的检查）通过 `HostLimits.offered_tools` 允许该名称。
+4. `Catalog::owner_of` 能找到所属应用，relay 才能调用其执行器。
+
+接收方应用的数据访问由执行器控制。当前 owner 解析覆盖原生命名空间、toolbox 和 `os.<namespace>`，尚不支持发现任意已安装商店应用。默认准入未提供 `mail.send` 等任意名称，Mail 当前也未实现这个 Agent 工具；仅有 relay 路线不足以使它可调用。
 
 **提问或使用系统设施：**应用 Agent 可调用获授权的 `ask_user_question`。[questions/mod.rs](../crates/shell/src/questions/mod.rs) 按回合来源路由：系统委派工作在系统聊天中提问，用户/应用回合在应用对话中提问，由用户在 Shell 界面回答。系统设施以明确授权的工具提供，例如 [toolbox](../crates/toolbox/README.md) 工作流。通用的应用到系统 Agent 对话 RPC 尚未实现。`peer_respond` 处理 peer 协作；审批消息使用单独的宿主回答句柄。
 
 ## 10. 映射到 Rust 的实际执行模型
 
-Peer 是持久身份与状态；回合执行期间使用运行时任务，peer 在这些任务结束后仍存在。分别阅读所有权与调度边界：
+Peer 是持久身份与状态。**Tokio task** 是由 runtime 工作线程调度的异步计算；等待 I/O 时，工作线程可以运行其他就绪任务。一个回合会用到多个 task，peer 在它们结束后仍存在。
+
+沿着直接发送给 “Ask Calendar” 的问题，依次跨过这些边界：
+
+1. Makepad UI 将 context 请求交给 Calendar 的 broker。
+2. Broker 的 runtime 经共享内核 `Connection` 发送 `turn/start`，由内核服务 supervisor 送入传输连接。
+3. octos spawn 回合编排 task；它先在启动屏障等待活跃回合注册成功，再开始 Agent 处理。
+4. 若模型调用 `calendar.events`，工具 future 等待 broker 与 Shell relay 将请求交给 Calendar 宿主服务。返回的数据让模型继续；回复事件经用户 context 返回并唤醒 UI。
+
+这些是调度边界；每个 peer 并不各自创建线程或进程。下表列出各部分的所有者：
 
 | 层 | 实际执行模型 | 源码 |
 | --- | --- | --- |
