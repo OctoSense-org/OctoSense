@@ -199,7 +199,7 @@ impl ToolExecutor for HostServiceExecutor {
             return;
         }
         if !self.tools.contains(&call.name) {
-            reply.finish(ToolOutcome::error("app_tool_unavailable", format!("{} runs in the app's own script; open the app to use it", call.name)));
+            reply.finish(ToolOutcome::error("app_tool_unavailable", format!("{} declares a script implementation, but this host does not support script tool dispatch", call.name)));
             return;
         }
         let family = call.name.split('.').next().unwrap_or("");

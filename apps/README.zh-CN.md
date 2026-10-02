@@ -2,16 +2,18 @@
 
 [English](README.md) | 简体中文
 
-> **在整个系统中的位置。**系统应用是运行在 App Hub 的 Card runner 中的脚本应用。它们从不直接与 octos 内核通信。新闻、邮件和日历有 Agent（每个应用、每个账号一个由宿主拥有的 octos peer，`card.<应用 id>`），由 manifest 的 `agent` 块和 `tools.json` 声明；Shell 替系统 Agent、Shell 的 “Ask <app>” 面板和卡片的卡内对话驱动它，应用自己也可以用 `host.request("octos.*")` 使用它（目前没有应用这样做）。Agent 对应用工具的调用经由 Shell 的中转和审批路由回到应用，在应用的宿主服务上运行；邮件和日历的工具会把卡片放到 glance 屏幕上（[应用 Agent](#应用-agent)）。应用的 glance 卡片在应用自己的策略下运行，用户在卡片上的操作是应用自己的操作，而不是 Agent 的工具调用。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
+**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
+
+> **在整个系统中的位置。**系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent。Shell 为每个启用的应用/账号提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
 
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 
 - **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers 和 YouTube**
-  是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 OctoScript（Splash）
-  程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限严格等于其
-  `manifest.json` 所申请的内容，与商店应用受到的隔离完全相同。它们同时也是
+  是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 Makepad Script/Splash
+  程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限由其
+  `manifest.json` 经过准入后确定，与商店应用受到的隔离完全相同。它们同时也是
   任何开发者通过 App Hub 发布的应用形态的完整示例。
 - **邮件的宿主服务**（`mail/host-service`）是 Mail 的 Rust 部分：
   IMAP/POP3/SMTP、账户存储和登录面板，由 Shell 运行。应用拿到的是邮件，
@@ -22,12 +24,12 @@ OctoSense-System-Apps 仓库（已归档）。
   放到 glance 屏幕上的 `notify` 和 `agenda`。日历是桌面端的系统应用
   （`desktop/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
-  Agent 的 `news.list` 和 `news.read`。
+  Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
   密钥只在宿主自己的面板上输入，二维码也只在那里显示；应用只能看到打码后的状态。
-- **AppCard**（`appcard`）是唯一的原生应用：“Ask anything”助手，
+- **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`
   时才链接它，默认不随产品发布。
@@ -58,12 +60,12 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | 示例相册：回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance` | 无 | 无（原图来自 Shell 的资源挂载，见下文） |
-| [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始 | `storage`、`net`、`location`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr` | 无 |
-| [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | 无 |
+| [Photos](photos/bundle) | `os.photos` | 示例相册：回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance` | 无 | Shell 通知服务的 `photos.notify`（原图使用资源挂载） |
+| [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始 | `storage`、`net`、`location`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr` | Shell 通知服务的 `maps.notify` |
+| [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
-| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | 无 |
+| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar`（桌面端） | 它的 Agent 保存用户的日程，并把日程卡片和议程卡片放到 glance 屏幕上；它自己的窗口还不能列出日程（需要 App Hub 提供 `calendar` 权限） | `storage`、`glance` | 无 | [`calendar`](calendar/host-service)（只供日历的 Agent 使用） |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
@@ -91,7 +93,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **News**：开发时在 `card-host` 中运行过，但在 Shell PR 的测试中没有
   端到端验证（测试手机没有网络）。
 - **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。Mail 与 `llm` 两个宿主服务使用根目录
-  `Cargo.toml` 固定的唯一 App Hub 版本（`46d67e51`，OctoSense-App-Hub#15 合并后的 main；#11 新增了 `llm` 能力，#14 新增了 Matrix 与 Octos 宿主服务能力），与 Shell 链接的版本相同，
+  `Cargo.toml` 选定的 App Hub 版本，与 Shell 共用，
   因此一次构建中只有一份 `octosense-appstore` 和一个宿主服务注册表。
 - **脚本 bundle 没有 CI。** [`apps.yml`](../.github/workflows/apps.yml)
   测试宿主服务、AppCard 和 Shell 服务，不测试 bundle。
@@ -128,8 +130,9 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
    `octosense-mail-service`、`octosense-calendar-service`、`octosense-news-service` 和
    `octosense-llm-service`（workspace 内的 path 依赖），并在启动时注册
    （`crates/shell/src/apps.rs` 的 `register_host_services`）：Mail 服务在真实账户下用
-   `register()`，Shell 的应用配置中 `mail_demo: true` 时用 `register_demo()`，并装上
-   `mail.notify`（与日历的卡片一样）发布卡片所用的发布器；`llm` 服务使用 octos 内核的 core 目录以及
+   `register()`，Shell 的应用配置中 `mail_demo: true` 时用 `register_demo()`。
+   Mail 和 News 安装 `on_notify` 回调，调用 Shell 共用通知渲染器；Calendar 安装卡片发布器。
+   Shell 为其余系统应用命名空间注册 `NoticeService`；`llm` 服务使用 octos 内核的 core 目录以及
    Shell 的二维码扫描器和图片选择器（见 [`llm` 服务](#llm-服务)）。App Hub 只在根目录
    `Cargo.toml` 中固定一次，因此只有一个宿主服务注册表。
 3. 通过统一入口 [`crates/ai-host`](../crates/ai-host/README.md)（`octosense-ai-host`）
@@ -147,11 +150,12 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 ```
 <name>/bundle/               隔离运行的脚本应用：manifest.json、main.splash、图片资源
 photos/resources/            Home 挂载的 Photos 示例图库
-mail/host-service/           octosense-mail-service，`mail` 宿主服务（Rust）；resources/notice.card
+mail/host-service/           octosense-mail-service，`mail` 宿主服务（Rust）；通知回调交给 Shell
 mail/docs/                   邮件的计划（邮件操作卡片）
 calendar/host-service/       octosense-calendar-service，`calendar` 宿主服务；resources/event.card、agenda.card
 news/host-service/           octosense-news-service，`news` 宿主服务（新闻的数据服务）
-<name>/bundle/tools.json     应用 Agent 自己的工具（新闻、邮件、日历）
+<name>/bundle/tools.json     新闻、邮件、日历、相册、地图、YouTube、相机的 Agent 工具
+../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card
 ai-providers/                `llm` 宿主服务（host-service/）和 octosense-llm-config（config/：
                              octos 模型目录与服务商注册表、profile 合并、OCTOS1/OCTOS1E 二维码）
 reference/                   reference 模块
@@ -326,6 +330,12 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 | 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
+**宿主服务 API 不会自动成为 Agent 工具。** Mail 的 Agent 工具文件目前仅暴露
+`mail.notify`；UI 使用的 `mail.list`、`mail.message` 和 `mail.send` 不会因此对
+Agent 开放。Peer 的工作目录也不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
+展示了通过显式声明的 Rust 工具读写应用数据的路径；它的脚本窗口目前只是 Agent
+使用说明。见[数据访问源码导读](../desktop/docs/code-walkthrough.zh-CN.md)。
+
 - **声明。** manifest 的 `agent` 块列出 Agent 可以使用的内核工具（`"tools": ["ask_user_question"]`；
   其中带点的名称表示申请另一个应用的可共享工具），`bundle/tools.json` 声明应用自己的工具：
   `<app>.<tool>`、`input_schema`、`output_schema`、`risk`（`read`、`act`、`destructive`）、
@@ -345,8 +355,9 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
   面板的“停止”只停止用户自己的回合。手机上还没有打开这个面板的触控入口。详见根目录的
   [README](../README.zh-CN.md#直接与应用的-agent-对话)。
 - **它的工具在应用的宿主服务上运行**，以应用的身份运行，在此之前 Shell 的中转已检查授权、
-  schema 和预算。octos 只对破坏性和对外的工具请求审批（这里是 `calendar.remove_event`），
-  由用户在 Shell 的面板上回答。
+  schema 和预算。破坏性和对外调用（这里是 `calendar.remove_event`）进入审批路由；
+  路由应用用户的常设规则、宿主或已注册的应用确认面板，以及用户开启的开发者模式，并记录决定。
+  见[审批](../docs/architecture.zh-CN.md#5-审批)。
 - **卡片。** `<app>.notify {title, body, card_id?, priority?}` 以应用的名义在 glance 屏幕上
   放一张通知卡片，并发出一条通知：所有应用共用 Shell 自带的一张固定 L0 卡片
   （[`../crates/shell/resources/glance/notice.card`](../crates/shell/resources/glance/notice.card)，
@@ -359,8 +370,7 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 - **试一试**（桌面端）：打开助手（F8），请系统 Agent 让某个应用的 Agent（邮件、日历、新闻、照片、
   地图或 YouTube）在 glance 屏幕上放一张卡片；在弹出的面板上允许该 Agent。邮件需要一个已登录的账户（下文的演示邮箱即可）。
   邮件更完整的操作卡片（[计划（英文）](mail/docs/2026-10-01-email-action-card-plan.md)）目前只是
-  使用假数据的演示：`OCTOSENSE_GLANCE_DEMO=mail` 会在启动时发布它。**未验证**（在 #267 的检查中
-  运行过，没有为本页重新运行）。
+  使用假数据的演示：`OCTOSENSE_GLANCE_DEMO=mail` 会在启动时发布它。**未验证配方。**
 
 ## octos 内核
 
@@ -401,8 +411,7 @@ octos UI Protocol v1 与 octos 通信。
   （经由 Shell 内核、WebSocket 或 REST 的 octos UI Protocol 客户端）和
   `octos-app-render`（流式 markdown 渲染）。
 - **octos**：所有 octos crate 都来自 git `octos-org/octos`，版本为根目录
-  `Cargo.toml` 的 `[workspace.dependencies]` 中唯一的 rev（目前是 octos `main` 上的
-  `ae230ce0`），与 `crates/kernel` 和 Shell 共用。AppCard 不再自己启动内核，而是连接 Shell 的内核
+  `Cargo.toml` 的 `[workspace.dependencies]` 中唯一的 rev（具体版本见该文件），与 `crates/kernel` 和 Shell 共用。AppCard 不再自己启动内核，而是连接 Shell 的内核
   （见 [octos 内核](#octos-内核)）。
 - **Makepad**：不内置。Makepad、Octoscript 和 Octoscript-Makepad 是仓库根目录下
   `.sources/` 中由 `tools/setup.py` 准备的检出，版本由 `native-runtime.lock.json`
@@ -477,7 +486,7 @@ Shell 的 `system-apps.json` 中加入它。
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何设计、构建、检查和发布应用 |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript)、[OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad)、[makepad](https://github.com/OctoSense-org/makepad) | 语言与运行时 |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，原生模块；通过 `crates/app-peers` 访问助手 |
-| [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/kernel` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（只用一个版本 `ae230ce0`） |
+| [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/kernel` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（统一使用根 `Cargo.toml` 选定的版本） |
 
 ## 参与贡献
 

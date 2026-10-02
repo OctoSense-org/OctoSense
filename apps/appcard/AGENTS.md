@@ -50,3 +50,13 @@ All paths below are relative to `apps/appcard/` unless they say otherwise.
   force-push `main`.
 - Follow the Makepad `script_mod!` DSL conventions of the `.sources/makepad`
   checkout (`Name: value`, `name := Type{}`, `+:` merge).
+
+## Integrating with the shell
+
+Keep AppCard changes in its router/composer, transport/store/render crates or
+`module/` adapter. Change the shared system chat and app-peer broker in
+`../../crates/` when that is the target. Test the `app-appcard` feature explicitly;
+default and `mobile-apps` builds leave it out. When changing personal-data
+integration, verify the current host-service data format before adding an
+importer. The [product walkthrough](../../desktop/docs/code-walkthrough.md)
+shows the hosting and data boundaries.

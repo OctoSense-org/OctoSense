@@ -7,8 +7,13 @@
 路由大脑（AMA）选择或组合一个应用 Agent，由该 Agent 生成一张实时的交互卡片。
 卡片是 Splash DSL 卡片或 webview 卡片，在渲染时绑定真实数据。
 
-与 `apps/` 中的其他应用不同，AppCard（目前）还不是带 `bundle/` 的隔离运行脚本应用。
-它是这里唯一的**原生**应用：一个由 Shell 进程内链接的 Rust 模块（`octos-app`）。
+AppCard 是可选的**原生** Rust 应用，不是隔离脚本 bundle。Shell 通过
+`octosense-appcard` 在进程内链接它；Reference 是本仓库另一个原生应用。
+必须显式开启 `app-appcard`；默认构建和 `mobile-apps` 都不包含它。
+
+共用 Shell 的系统聊天和应用 Agent broker 无需 AppCard 即可工作。它的
+router/composer 和较早的 personal-data 集成是一条独立产品路径，不是所有
+脚本应用 Peer 或当前 Mail 存储的实现。见[源码导读](../../desktop/docs/code-walkthrough.zh-CN.md)。
 
 目录内容（路径相对于 `apps/appcard/`）：
 
@@ -38,9 +43,8 @@ docs/             架构、协议、构建与评审笔记。
 
 所有 octos crate（`octos-core`，以及 OpenHarmony 上的 `octos-cli` 和它引入的约
 20 个 crate）都来自**同一个**来源：git `https://github.com/octos-org/octos.git`，
-版本为仓库根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中唯一的 rev（目前是
-octos main 上的 `ae230ce0`），与 `crates/kernel` 和两个 Shell 共用。octos 中适配
-OpenHarmony 的 `nix` 在根目录的 `[patch.crates-io]` 中 patch（来自 octos `18fcd3f1`）。
+版本为仓库根目录 [`Cargo.toml`](../../Cargo.toml) 的 `[workspace.dependencies]` 中唯一的 rev，与 `crates/kernel` 和两个 Shell 共用。octos 中适配
+OpenHarmony 的 `nix` 在根目录的 `[patch.crates-io]` 中按该处记录的版本 patch。
 没有 octos submodule；可用
 `cargo tree --locked -p octos-app -i octos-core --target all --depth 0` 检查依赖图中只有一份 octos。
 

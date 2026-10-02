@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+**New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
+
 > **Where this fits.** The desktop is one shell process with the octos kernel as its child (`OCTOS_APP_CORE_BIN`). App Hub, the Card runner with the script apps, and Rinx run in process; the Terminal runs as its own process, in an OS sandbox on macOS and Linux (not yet on Windows), attached over the shell's hub. On macOS that sandbox keeps `~/.cargo`, `~/.rustup` and the OctoSense checkout read-only, so run `cargo install`, `rustup update` and builds of OctoSense itself in another terminal. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent shell on top of your operating system, and the desktop packaging of the OctoSense repository (formerly the OctoSense-Desktop repository). It is one Makepad window that is the desktop: a launcher, a dock and tiles, hosting system apps and App Hub store apps as contained script programs, trusted native modules in-process, and Makepad developer programs as child processes. It gets its apps the same way the phone shell, [Home](../phone/README.md), does. Setup, the repository layout and CI are in the [root README](../README.md).
@@ -81,7 +83,7 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 
 | Feature | Default | Effect |
 | --- | --- | --- |
-| `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps) and the host services `octosense-mail-service` (Mail) and `octosense-llm-service` (AI providers). Without it the build has no App Hub and no system apps. |
+| `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps) and the Mail, News, Calendar and AI providers host services. Without it the build has no App Hub and no system apps. |
 | `octos-core` | on | The octos kernel service (`octosense-kernel`, from `../crates/kernel`) and the app-agent broker (`octosense-app-peers`): the one kernel AppCard, Rinx and other consumers share, configured by AI providers. Always on for Android and iOS. Leave it out with `--no-default-features --features app-hub` (and whatever else you want). |
 | `app-rinx` | on | Links [Rinx](https://github.com/hagency-org/Rinx), the Matrix client, as a module; implies `octos-core` (its assistant is the shell's). |
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |

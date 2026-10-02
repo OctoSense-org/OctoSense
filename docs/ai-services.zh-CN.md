@@ -2,7 +2,7 @@
 
 [English](ai-services.md) | 简体中文
 
-本文介绍 OctoSense 的 octos 内核、提供方配置、应用 peer 和工具。状态说明以当前检出为准；阅读外部源码时使用 [Cargo.toml](../Cargo.toml) 的依赖锁定版本。下方带日期的运行信息是历史验证记录。
+本文介绍 OctoSense 的 octos 内核、提供方配置、应用 peer 和工具。阅读外部源码时使用 [Cargo.toml](../Cargo.toml) 的依赖锁定版本。调用链与执行模型见[架构导读](architecture-walkthrough.zh-CN.md)。状态说明以当前检出为准。下方带日期的运行信息是历史验证记录。
 
 历史源码评审分别在 2026-09-28（OctoSense `ad0d738`）和 2026-09-29（`baa90bd`）进行；这些日期不代表当前状态表的更新时间。
 
@@ -29,7 +29,7 @@
 | Shell 的 AI 入口（`start`、策略、按实例提供服务、QR 导入） | 目前可用 | [`crates/ai-host`](../crates/ai-host/README.md) |
 | 宿主拥有的应用 peer：每个获授权的应用/账号一个 octos peer，归系统 Agent 所有 | 已实现：原生模块（Rinx）及经过按应用同意的隔离脚本应用 | [`crates/app-peers`](../crates/app-peers/README.md)、[Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) |
 | 在 Shell 内核上运行的 AppCard（"Ask anything"） | 目前可用，需主动开启（`--features app-appcard`），不随产品发布 | [`apps/appcard`](../apps/appcard) |
-| 隔离运行的脚本应用（系统应用或商店应用）向助手提问 | 在托管内核的 Shell 中可用（[#106](https://github.com/OctoSense-org/OctoSense/pull/106)）：用户首次同意后，每个应用获得自己的 peer。工具审批使用 Shell 的审批面板。`llm` 仍是只供 `os.*` 应用使用的提供方管理服务 | [同意设置](#隔离应用的首次使用同意)；[下文的调用与回复](#隔离运行的脚本应用系统应用和商店应用) |
+| 隔离脚本应用向助手提问 | 已实现：精确声明的 `octos.*` 服务、内核与默认的首次使用同意；宿主工具和内核工具审批都交给 Shell。`OCTOSENSE_CONTAINED_APPS=0` 禁用；`1` 是跳过同意的开发覆盖，不是正常设置步骤 | [见下文](#隔离运行的脚本应用系统应用和商店应用) |
 | 供隔离应用使用的一次性模型调用（`model`，`model.complete`） | 目前可用（[#95](https://github.com/OctoSense-org/OctoSense/pull/95)）：由 `crates/ai-host` 与 `llm` 服务一同注册，供获得 `model` 权限的应用使用（[App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)，已在 Shell 锁定的 App Hub 中） | [见下文](#隔离运行的脚本应用系统应用和商店应用) |
 | News 数据服务（`news`，不使用模型） | 已合入（[#69](https://github.com/OctoSense-org/OctoSense/pull/69)）；只响应 `os.*` 应用 | [`apps/news/host-service`](../apps/news/host-service/README.md) |
 | `glance.publish`：L0/L1 source 卡片或 Splash script 卡片 | 已合入（[#72](https://github.com/OctoSense-org/OctoSense/pull/72)）；获得 `glance` 权限的隔离应用可以发布（[#86](https://github.com/OctoSense-org/OctoSense/pull/86)）。`sys.digest` 有单独的运行时/宿主要求；[#87](https://github.com/OctoSense-org/OctoSense/pull/87) 是历史跟踪链接，不表示当前 PR 状态 | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs) |
@@ -49,9 +49,10 @@ flowchart TB
     sheet["宿主面板<br/>密钥、QR、PIN"]
     llm["llm 宿主服务<br/>写入提供方配置"]
     aihost["crates/ai-host<br/>start、策略、offer"]
-    broker["crates/app-peers broker<br/>每个获授权应用/账号一个 peer"]
+    broker["crates/app-peers broker<br/>每个获授权的应用/账号一个 peer"]
     runner["Card runner（App Hub）<br/>宿主服务：mail、news、glance、llm、model、octos"]
     router["审批路由<br/>crates/shell/src/approvals"]
+    relay["Shell 宿主工具 relay<br/>声明和调用者检查"]
     bus["AI 服务总线<br/>crates/shell/src/ai_bus.rs"]
     rinx["Rinx（原生模块）"]
     appcard["AppCard（原生，需主动开启）"]
@@ -74,6 +75,9 @@ flowchart TB
   runner -- "octos.* 服务<br/>broker 身份 card.&lt;应用 id&gt;" --> broker
   rinx -- "类型化工具" --> bus
   bus -- "confirm: host 调用" --> router
+  kernel -- "peer/tool/call" --> relay
+  relay --> runner
+  kernel -- "approval/requested" --> router
   router --> person
 ```
 
@@ -107,7 +111,7 @@ flowchart TB
 
 [`crates/ai-host`](../crates/ai-host/README.md)（`octosense-ai-host`）是两个 Shell 都调用的入口：启动时调用 `start(Host::platform(data_dir))`（配置内核、安装宿主策略、注册带平台 QR 导入能力的 `llm`），每个事件调用 `handle_event`，在原生模块 `create` 前后调用 `offer(module, scope)` / `finish()`，退出时调用 `shutdown()`。
 
-宿主**策略**按精确的 `octos.*` 服务名决定哪些原生模块可以使用助手，以及隔离应用是否能使用 `octos` 服务。在原生模块中，`Policy::shipped()` 只把这四个服务授予 `rinx`。
+宿主**策略**从 `native-apps.json` 生成的声明读取原生 `octos.*` 精确授权（目前是 Rinx）。
 
 #### 隔离应用的首次使用同意
 
@@ -116,7 +120,7 @@ flowchart TB
 | 设置 | 行为 |
 | --- | --- |
 | 未设置（默认） | 应用首次使用自己的 Agent 前，先询问用户（`ContainedGate::Consent`）。 |
-| `1` | 开发者覆盖设置：跳过首次使用同意。每次工具调用的审批仍按各自规则处理。 |
+| `1` | 开发者覆盖设置：跳过首次使用同意。已声明服务的限制和每次工具调用的审批规则仍然有效。 |
 | `0` | 为隔离应用关闭 `octos` 服务。 |
 
 首次使用时，Shell 会说明应用的 Agent 可以读取和使用什么，以及模型在哪里运行。**设置 → 助手 → 审批**列出每个应用的 Agent，用户可以在此关闭它。
@@ -190,16 +194,18 @@ flowchart TB
 | Family | 谁可以调用 | 是什么 |
 | --- | --- | --- |
 | `mail` | 获得 `mail` 授权的任何应用 | 用户在宿主面板上登录的邮件账号 |
+| `calendar` | Calendar Agent 以 `os.calendar` 身份调用；无公开脚本能力 | Rust 日程存储和固定 glance 卡片工具；脚本窗口目前只是说明，不能通过通用 Calendar 能力调用这个 family。 |
 | `llm` | 仅 `os.*` 应用 | 管理助手的提供方（`llm.providers`、`llm.add_provider`、`llm.test`、`llm.import_qr` 等）；**没有提示词或补全方法** |
-| `news` | 仅 `os.*` 应用（`apps/news/host-service/src/lib.rs` 中的 `may_call`） | News 的数据服务（订阅源、已读记录、`news.list`、`news.read` 等），不使用模型。News 应用包声明了它（`apps/news/bundle/manifest.json`），并在 `host.has("news")` 时从中读取 |
+| `news` | 仅 `os.*` 应用（服务的 `may_call`） | 不使用模型的 News 数据服务。News bundle 已声明 `news`，其 Agent 暴露 `news.list`/`news.read`/`news.notify`；后台抓取计时器尚不会启动 LLM 回合。 |
 | `glance` | 获得 `glance` 权限的应用（[#86](https://github.com/OctoSense-org/OctoSense/pull/86)、[App-Hub#22](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/22)） | 以应用自己的 id 向 glance 屏幕发布 L0 卡片（`crates/shell/src/glance.rs`） |
 | `model` | 获得 `model` 权限的应用（[App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)） | 一次性的 `model.complete {task, input, schema, class?, allow_urls?}` 和 `model.budget`（[#95](https://github.com/OctoSense-org/OctoSense/pull/95)，`apps/ai-providers/host-service/src/complete/`，在 `crates/ai-host/src/lib.rs` 中注册）：`class` 为 `fast` 或 `strong`；宿主从用户的提供方中挑选模型，按 schema 校验回复，除非请求否则拒绝含 URL 的回复，按应用管理每日预算；没有工具、记忆和历史，应用也看不到任何密钥 |
 | `octos` | 声明了确切 `octos.*` 服务名的应用；需要 Shell 托管内核，并遵守[隔离应用的首次使用同意](#隔离应用的首次使用同意)策略 | 应用自己的助手，经由宿主拥有的 peer 访问。broker 用 `card.<应用 id>` 标识应用；`peer/prepare` 返回内核分配的 peer slug（[`contained.rs`](../crates/ai-host/src/contained.rs)，[#106](https://github.com/OctoSense-org/OctoSense/pull/106)）。调用规则见下文。 |
 
-四个 `octos.*` 调用的参数、审批和回复各有规则：
+四个 `octos.*` 调用的参数、来源、审批和回复各有规则：
 
-- **参数。** `octos.turn.start` 必须提供非空白、最多 32 KiB 的 `text`。还可以提供 `trigger`（`person`、`app` 或 `incoming`）和 `from`。其余三个调用只接受 `{}`。
-- **工具审批。** peer 的工具请求交给 Shell 的审批路由及其面板（ADR 0004 §8）。开发者模式会为它覆盖的应用作答。没有审批路由的宿主会拒绝请求，并在 `denied_approvals` 中列出。详见 [`host_approvals.rs`](../crates/app-peers/src/host_approvals.rs)。
+- **参数。** `octos.turn.start` 必须提供非空白、最多 32 KiB 的 `text`，还可以提供 `trigger`（`person`、`app` 或 `incoming`）和 `from`。其余调用只接受 `{}`。
+- **来源。** `trigger: "person"` 会得到 `AppSaysPerson` 分类。它只是应用的声明，不是受信任的人类操作，也不能绕过审批。
+- **审批。** 宿主工具审批和其他 peer 审批都交给 Shell；工具仍受已有授权与审批规则约束，开发者模式会为它覆盖的应用作答。没有审批路由的宿主会拒绝请求，并在 `denied_approvals` 中列出。详见 [`host_approvals.rs`](../crates/app-peers/src/host_approvals.rs)。
 - **回复。** 宿主拒绝超过 2 MiB 的回复。下表列出成功调用及常见错误的返回内容。
 
 脚本自己的助手调用使用已声明的 `octos.*`；Shell 也可以根据 `agent`/`tools.json` 驱动 peer，而不要求脚本声明这些 UI 调用。脚本服务调用的回复：
@@ -216,11 +222,9 @@ flowchart TB
 | 获得 `llm` 授权的商店应用调用 `llm.*` | `llm is for OctoSense's own apps.` |
 | 在 App Hub 的 `card-host` 中调用任何服务 | `no service answers "<family>" on this device`（`card-host` 不注册任何服务） |
 
-**历史验证记录。** 第一行、`llm` 一行和 `card-host` 一行已于 2026-09-27 在 `card-host`（App Hub `362d832`）中运行验证。回复、参数不合规的返回和缺少内核的返回已于 2026-09-28 在 macOS 上运行验证：release 版桌面端、隐藏窗口，经启动器打开一个声明了 `octos.session.open` 和 `octos.turn.start` 的系统应用；使用按当时锁定的 octos `7bec0918` 构建的内核和用户自己的提供方时，回复来自 peer `card.<应用 id>`，内核数据中出现了它的记忆命名空间 `app/card.<应用 id>/…`。文本长度和开关关闭的返回由 `cargo test -p octosense-ai-host` 覆盖，走的是同一个分发函数。OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md) 给出了示例应用，以及 Rinx 提供的四个 `octos.*` 调用的参数和返回形状。
+**历史验证。** 第一行、`llm` 一行和 `card-host` 一行已于 2026-09-27 在 `card-host`（App Hub `362d832`）中运行验证。回复、参数不合规的返回和缺少内核的返回已于 2026-09-28 在 macOS 上运行验证：release 版桌面端、隐藏窗口，经启动器打开一个声明了 `octos.session.open` 和 `octos.turn.start` 的系统应用；使用按当时锁定的 octos `7bec0918` 构建的内核和用户自己的提供方时，回复来自 peer `card.<应用 id>`，内核数据中出现了它的记忆命名空间 `app/card.<应用 id>/…`。文本长度和开关关闭的返回由 `cargo test -p octosense-ai-host` 覆盖，走的是同一个分发函数。OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md) 给出了示例应用，以及 Rinx 提供的四个 `octos.*` 调用的参数和返回形状。
 
-声明了 `agent` 块、声明了 `octos.*` 或附带 `tools.json` 的应用都有 Agent（[#184](https://github.com/OctoSense-org/OctoSense/pull/184)）。用户允许后，Shell 用应用包中的工具准备 peer。broker 用 `card.<应用 id>` 标识应用，peer slug 由内核返回。用户随后可以在 Shell 的“Ask &lt;app&gt;”面板中与它对话。详见 [`crates/shell/src/agents.rs`](../crates/shell/src/agents.rs)。
-
-App Hub 接受 manifest 的 `agent` 设置，并按自己的限制裁剪。Shell 保留获准使用的通用工具（`ask_user_question`），但还不应用权限档位、迭代或 token 上限，也不安装 `AGENT.md` 或技能。Rinx 会拒绝导入声明了 Agent 的应用包。
+manifest 的 `agent` 和已准入 `tools.json` 已参与 Shell 的 Agent 发现、工具加载与授权；News/Mail/Calendar/Photos/Maps/Camera/YouTube 已有宿主服务实现。`profile`/模型需求、`AGENT.md` 提示词、包内 skills 和自动触发器尚未完整消费，`implemented_by: "app"` 没有脚本执行器。Mail 当前只声明 `mail.notify`，不包含 UI 的读信/发信方法；Agent 工作目录不会自动暴露宿主数据库。Rinx 小程序准入是另一套约定，不能默认它支持 App Hub 的所有元数据。
 
 ## 规划中：事件驱动的应用 Agent（ADR 0002）
 
@@ -238,12 +242,14 @@ App Hub 接受 manifest 的 `agent` 设置，并按自己的限制裁剪。Shell
 | News M4：glance 卡片（`glance.publish`、glance 页面和桌面面板） | §7、§8 | `glance.publish`（[#72](https://github.com/OctoSense-org/OctoSense/pull/72)）和供隔离应用使用的 `glance` 权限（[#86](https://github.com/OctoSense-org/OctoSense/pull/86)，配合 [App-Hub#22](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/22)）已合入；`sys.digest` 有单独的运行时/宿主要求；[#87](https://github.com/OctoSense-org/OctoSense/pull/87) 是历史跟踪链接，不表示当前 PR 状态；issue [#63](https://github.com/OctoSense-org/OctoSense/issues/63)。 |
 | M5：作为获授权工具的系统工具箱 | §6 | 已在 `toolbox-peers` feature 下实现，见 `crates/ai-host/src/toolbox_peers.rs` 和 Shell 工具箱执行器。Home 默认开启，桌面需显式开启；仍需准入、授权和同意，不是与系统 Agent 的通用对话。 |
 | M6：渲染与评审（`card-studio`） | §7 | App Hub 的 `card-studio` crate 已合入（[App-Hub#19](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/19)）；对应 skill 规划中（[#65](https://github.com/OctoSense-org/OctoSense/issues/65)）。 |
-| M7：应用对话、问题和记忆 | §9、§10 | 已实现人类/系统通道、Ask-app 面板、`sys.chat`、宿主路由的问题/审批及 peer/context 记忆。见[导读](architecture.zh-CN.md)。 |
+| M7：应用对话、问题和记忆 | §9、§10 | 已实现人类/系统通道、Ask-app 面板、`sys.chat`、宿主路由的问题/审批及 peer/context 记忆。见[导读](architecture-walkthrough.zh-CN.md)。 |
 | M8：外层循环（叠加在 `AGENT.md` 上的 overlay） | §11 | 规划中：[#67](https://github.com/OctoSense-org/OctoSense/issues/67)。 |
 
 跟踪 issue 是 [#68](https://github.com/OctoSense-org/OctoSense/issues/68)。文件格式见 App Hub 的 [PUBLISHING § The app's agent and tools](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md#the-apps-agent-and-tools)。
 
 ## 本地运行与测试
+
+以下构建/启动配方 **unverified（未验证）**；依赖版本取自根 Cargo.toml。
 
 ### 桌面端：使用临时的内核与配置
 

@@ -49,3 +49,13 @@ On a machine that already has clones of Makepad, OctoScript or Octoscript-Makepa
 8. **Commit with a public identity.** Author and committer are your GitHub noreply address (for the maintainer, `ymote <151983+ymote@users.noreply.github.com>`) or another address you mean to publish; never a work or machine-local address. Check `git config user.email` before the first commit in a clone: a repository-local identity on a shared machine leaked a work address into this project's history once, and removing it took a history rewrite.
 9. **Keep docs honest and bilingual.** Every command in a doc was run; anything not run is marked **unverified**. User-facing docs are `README.md` plus `README.zh-CN.md`, linked by the single switcher line under the title (`English | [简体中文](README.zh-CN.md)`), and change together. `AGENTS.md` files are English only.
 10. **Keep signing keys, keystores, tokens and personal paths out of the repository.** `rom/tests/test_no_local_paths.py` checks for local paths.
+
+## Architecture documentation and code walkthroughs
+
+Start with the [architecture walkthrough](docs/architecture-walkthrough.md) and [product walkthrough](desktop/docs/code-walkthrough.md), then follow the source symbols. Update English/Chinese guides and README entry points together when changing a boundary.
+
+- For hosting changes, document the module/process/Splash/card loader and its identity source in `module_host`, `peer_link`, or App Hub's runner.
+- For agent changes, trace `contract.rs` → `broker.rs` → the owning executor. Describe the peer/account identity, system session and human context separately from their runtime tasks.
+- For a new tool, update its manifest, `tools.json`, admission offer, caller grant and executable handler. Show which host service or workspace owns its data and how approval reaches the router.
+- Read external code at the Cargo/runtime pins. Use current `desktop/`, `phone/`, `rom/` and `apps/` paths when writing product instructions.
+- Record test execution in the PR: distinguish unit/scripted connectors from optional real-kernel tests that return early without a binary. Mark unrun launch/device recipes unverified.

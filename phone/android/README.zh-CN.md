@@ -31,16 +31,16 @@ export GRADLE_USER_HOME="$OCTOSENSE_TOOLS/gradle-cache"
 - `system-bridge/build/reports/lint-results-prototype.html`。
 - `quickstep/build/outputs/apk/prototype/quickstep-prototype.apk`。
 
-Makepad 打包器的源码变更后，在固定版本的检出目录 `.sources/makepad`（由 `python3 scripts/setup-home.py` 准备）中构建它，然后在 `home/` 下调用其独立二进制文件。以下命令只构建、不安装：
+Makepad 打包器的源码变更后，在固定版本的检出目录 `.sources/makepad`（在仓库根目录运行 `python3 tools/setup.py` 准备）中构建它，然后在 `phone/` 下调用其独立二进制文件。以下命令只构建、不安装，**未验证配方**。Home/Bridge 配对构建与内核回执流水线请使用 [Home README 的构建流程](../README.zh-CN.md)：
 
 ```sh
 # From .sources/makepad:
 cargo build --locked --offline --release -p cargo-makepad
 
-# From home/, with an existing Makepad SDK selected:
-../.sources/makepad/target/release/cargo-makepad android \
+# From phone/, with an existing Makepad SDK selected:
+../.sources/makepad/target/release/cargo-makepad makepad android \
   --sdk-path="$OCTOSENSE_MAKEPAD_SDK" --abi=aarch64 \
-  build --release --locked --offline --no-default-features -p octosense
+  build --release --locked --offline -p octosense-home
 ```
 
 打包器会编译 `resources/android/java/`，并将 `resources/android/libs/` 中的 JAR 同时加入 javac 和 D8 的输入。构建 Home 之前请先导出契约。框架现有的 SDK 目录结构与这里的 Gradle SDK 相互独立；单纯的跨目标 `cargo check` 同样需要已安装的 NDK 编译器环境，这通常由打包器提供。
@@ -49,7 +49,7 @@ cargo build --locked --offline --release -p cargo-makepad
 
 常规 Home、bridge `prototype` 和 bridge `release` 的清单均不包含 instrumentation 注册。验证 APK 使用相同的应用身份和签名关系；安装后会替换这些应用并保留其数据。在用户自有手机上测试前，请保留一份经过校验和验证的回滚 APK，并记录设备设置。
 
-使用 `:system-bridge:assembleValidation` 和 `:system-bridge:lintValidation` 构建 bridge 测试运行器。在 `home/` 下构建 Home 测试运行器：
+使用 `:system-bridge:assembleValidation` 和 `:system-bridge:lintValidation` 构建 bridge 测试运行器。在 `phone/` 下构建 Home 测试运行器：
 
 ```sh
 python3 android/scripts/build-home-validation.py \
