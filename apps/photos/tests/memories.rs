@@ -49,7 +49,7 @@ fn run(body: &str) -> Value {
 
 #[test]
 fn photos_bundle_is_admitted_by_the_shared_app_contract() {
-    use octosense_app_contract::{admit_digest, digest_dir, parse, resolve, HostLimits, RefuseAllSignatures};
+    use octosense_app_contract::{admit_digest, digest_dir, parse, resolve, HostLimits, ProfileMode, RefuseAllSignatures};
 
     let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../photos/bundle");
     let digest = digest_dir(&bundle).expect("digest the shipped Photos bundle");
@@ -64,7 +64,12 @@ fn photos_bundle_is_admitted_by_the_shared_app_contract() {
     assert!(policy.allows("storage"));
     assert!(policy.hosts.is_empty(), "provider networking belongs to the host");
     assert!(!policy.storage.accounts, "Photos keeps its device-local library");
-    assert!(manifest.agent.is_none(), "one-shot curation needs no app agent");
+    // Memories are one-shot `model.complete` calls, not agent work: the
+    // agent every system app has (for its notices) stays read-only.
+    assert!(
+        manifest.agent.as_ref().is_some_and(|agent| agent.profile == ProfileMode::ReadOnly),
+        "Photos' agent stays read-only; curation does not need more"
+    );
 }
 
 #[test]
