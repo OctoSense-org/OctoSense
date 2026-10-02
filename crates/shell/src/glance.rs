@@ -324,6 +324,15 @@ impl GlanceStore {
         Ok(json!({"withdrawn": self.cards.len() != before}))
     }
 
+    /// The person dismissed a card (its close button on the glance
+    /// screen): it goes, as if its app had withdrawn it. True when it was
+    /// there.
+    pub fn dismiss(&mut self, key: &str) -> bool {
+        let before = self.cards.len();
+        self.cards.retain(|c| c.key() != key);
+        self.cards.len() != before
+    }
+
     /// `glance.list`: the caller's own cards.
     pub fn list(&mut self, caller: &Caller, now_ms: u64) -> Result<Value, String> {
         caller.may_use()?;
@@ -475,6 +484,15 @@ pub fn expire_now() {
 /// The published card with this key (`app/card_id`), while it is live.
 pub fn card(key: &str) -> Option<GlanceCard> {
     with_store(|store| store.card(key, now_ms()))
+}
+
+/// The person dismissed the card with this key (`app/card_id`).
+pub fn dismiss(key: &str) -> bool {
+    let gone = with_store(|store| store.dismiss(key));
+    if gone {
+        changed();
+    }
+    gone
 }
 
 /// What the glance screen shows now (priority, then recency, capped).
@@ -915,6 +933,21 @@ mod tests {
         store.publish(&news(), &args("digest"), 70_000).unwrap();
         assert_eq!(store.withdraw(&news(), &json!({"card_id": "digest"}), 70_001).unwrap()["withdrawn"], true);
         assert!(store.is_empty());
+    }
+
+    /// The person's close button takes the one card it is on; the app can
+    /// publish it again.
+    #[test]
+    fn the_person_dismisses_one_card() {
+        let mut store = GlanceStore::default();
+        store.publish(&news(), &args("digest"), 1_000).unwrap();
+        store.publish(&news(), &args("other"), 1_000).unwrap();
+        let key = store.shown(1_000, 9).iter().find(|c| c.card_id == "digest").unwrap().key();
+        assert!(store.dismiss(&key));
+        assert!(!store.dismiss(&key), "already gone");
+        assert_eq!(store.shown(1_000, 9).iter().map(|c| c.card_id.as_str()).collect::<Vec<_>>(), ["other"]);
+        store.publish(&news(), &args("digest"), 2_000).unwrap();
+        assert_eq!(store.len(), 2);
     }
 
     #[test]
