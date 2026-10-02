@@ -329,11 +329,16 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
   `<app>.<tool>`、`input_schema`、`output_schema`、`risk`（`read`、`act`、`destructive`）、
   `background`、`confirm`（`host` 或 `app`）、`shareable` 和 `implemented_by: "host-service"`。
   App Hub 接纳并固定这两个文件。`agent` 块中的 `profile` 和 `model` 会被接纳，但 Shell 还没有使用。
-- **运行。** 在用户于首次使用面板上允许之前什么都不会运行（面板从应用的 “Ask <app>” 面板、
-  顶栏的 “Ask <app>” 或 Shift+F8 打开，或在系统 Agent 用 `agents.ask` 询问时弹出）。之后
-  Shell 准备好 peer，系统 Agent 就能用 `peer_send_input` 找到它。只有系统 Agent、用户
-  （“Ask <app>” 面板）或卡片的卡内对话发起请求时才会开始一轮：还没有触发器或定时任务
-  （ADR 0002 M3，计划中）。
+- **运行。** 在用户于首次使用面板上允许之前什么都不会运行（用户用顶栏的 “Ask <app>”、
+  Shift+F8 或菜单项 “Ask this app's agent” 打开 Shell 的 “Ask <app>” 面板时，或系统
+  Agent 用 `agents.ask` 询问时，弹出这个面板）。之后 Shell 准备好 peer，系统 Agent
+  就能用 `peer_send_input` 找到它。只有系统 Agent、用户或卡片的卡内对话发起请求时才会
+  开始一轮：还没有触发器或定时任务（ADR 0002 M3，计划中）。
+- **直接与它对话。** 用户可以直接与应用的 Agent 对话，而不只是通过系统 Agent：在 Shell
+  为每个拥有 Agent 的应用提供的 “Ask <app>” 面板里（这些应用都不绘制自己的对话界面），
+  或在卡片的卡内对话里。这些回合在用户的通道里运行，与系统 Agent 的通道并列，带着应用的
+  工具。面板的“停止”只停止用户自己的回合。手机上还没有打开这个面板的触控入口。详见根目录的
+  [README](../README.zh-CN.md#直接与应用的-agent-对话)。
 - **它的工具在应用的宿主服务上运行**，以应用的身份运行，在此之前 Shell 的中转已检查授权、
   schema 和预算。octos 只对破坏性和对外的工具请求审批（这里是 `calendar.remove_event`），
   由用户在 Shell 的面板上回答。

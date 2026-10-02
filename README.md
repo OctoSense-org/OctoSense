@@ -86,7 +86,7 @@ flowchart LR
 | Mail (`os.mail`) | `apps/mail/bundle/tools.json`, the manifest's `agent` block and `glance` | `mail.notify` (the `mail` host service) | a notice card with a notification |
 | Calendar (`os.calendar`, desktop only) | `apps/calendar/bundle/tools.json`, the manifest's `agent` block and `glance` | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (destructive: the person approves it), `calendar.notify`, `calendar.agenda` (the `calendar` host service) | an event card or an agenda card, with a notification |
 
-A script app has an agent when its manifest declares `octos.*` names or an `agent` block (`"tools": ["ask_user_question"]` names the kernel tools it may use), or its bundle ships `tools.json` (each tool `<app>.<tool>` with its schemas, `risk`, `confirm` and `shareable`). Its peer is `card.<app id>`. The person allows the agent once, on the first-use sheet (from the app's "Ask <app>" panel, the app's own `octos` call or the system agent's `agents.ask`). From then on the shell prepares the peer at startup, with the app's tools registered, so the system agent's `peer_list` shows it. Besides its own tools, an app agent gets the host read tools `files.list`, `files.read` and `files.search` over its account folder. On the phone, which builds `toolbox-peers` by default, it also gets the system toolbox's tools when its manifest asks for `research` or `crawl`, which no app does yet. `AGENT.md`, skills and triggers ([ADR 0002](docs/adr/0002-event-driven-app-agents.md)) are not built: an app agent runs only when the system agent, the person or a card asks it.
+A script app has an agent when its manifest declares `octos.*` names or an `agent` block (`"tools": ["ask_user_question"]` names the kernel tools it may use), or its bundle ships `tools.json` (each tool `<app>.<tool>` with its schemas, `risk`, `confirm` and `shareable`). Its peer is `card.<app id>`. The person allows the agent once, on the first-use sheet (from the shell's "Ask <app>" panel, the app's own `octos` call or the system agent's `agents.ask`). From then on the shell prepares the peer at startup, with the app's tools registered, so the system agent's `peer_list` shows it. Besides its own tools, an app agent gets the host read tools `files.list`, `files.read` and `files.search` over its account folder. On the phone, which builds `toolbox-peers` by default, it also gets the system toolbox's tools when its manifest asks for `research` or `crawl`, which no app does yet. `AGENT.md`, skills and triggers ([ADR 0002](docs/adr/0002-event-driven-app-agents.md)) are not built: an app agent runs only when the system agent, the person or a card asks it.
 
 **From the system agent to a card on the glance screen**:
 
@@ -123,10 +123,6 @@ sequenceDiagram
 
 An app agent is one host-owned octos **peer** per (app, account), owned by the system agent, with its own workspace, memory namespace, model and tool list. The system agent and the person each talk to it in their own lane:
 
-![One app agent, two lanes](docs/images/agents-two-lanes.png)
-
-<details><summary>Text version (Mermaid)</summary>
-
 ```mermaid
 flowchart TB
   sys["System agent"]
@@ -141,7 +137,7 @@ flowchart TB
   end
   sys -->|"peer_send_input"| input["octos: peer/input<br/>to the shell"]
   input -->|"the shell starts the turn"| lane1
-  person -->|"app UI or its cards"| lane2
+  person -->|"the shell's Ask-app panel,<br/>a card's chat or the app's own UI"| lane2
   lane1 -.->|"recent messages, read-only"| lane2
   lane2 -.->|"recent messages, read-only"| lane1
   lane1 --- own
@@ -149,12 +145,29 @@ flowchart TB
   mini -->|"open_context"| ctx
 ```
 
-</details>
-
 - **The system agent's lane** is the peer's own session, `…#peer-<app>`. The system agent sends `peer_send_input`; octos delivers it to the shell's host connection as `peer/input`, and the shell starts the turn itself, so it runs with the app's tools, memory and approvals (or refuses it with `peer/input/reject` for a signed-out account or an app the person has not allowed). The peer's results go to the peers' blackboard, which the system agent reads.
-- **The person's lane** is a request context, `…#peerctx-<app>.<id>`, opened with `share_history` from the app's UI or its interactive cards (a native module's `open_conversation`, a script app's `octos.session.open`, a process app's peer link), a new one for every handle ([octos#2636](https://github.com/octos-org/octos/pull/2636), UPCR-2026-034). The two lanes run in parallel, one turn at a time per session: a person's message never waits for the system agent's turn. Each turn sees the other lane's recent messages as a read-only block that is never written into its own transcript, and every turn is labelled by its speaker (`[from the person: <app>]`, `[from the system agent]`). The app follows both lanes, each event tagged with its `lane` and speaker; `octos.session.history` merges both transcripts by time. The person's turns also leave rounds on the blackboard (`origin: person`), so the system agent sees them with `peer_gather`.
+- **The person's lane** is a request context, `…#peerctx-<app>.<id>`, opened with `share_history` by the shell's "Ask <app>" panel (`agents::conversation`, client instance `shell-ask`), by a card's in-card chat, or by the app's own UI (a native module's `open_conversation`, a script app's `octos.session.open`, a process app's peer link), a new one for every handle ([octos#2636](https://github.com/octos-org/octos/pull/2636), UPCR-2026-034). The two lanes run in parallel, one turn at a time per session: a person's message never waits for the system agent's turn. Each turn sees the other lane's recent messages as a read-only block that is never written into its own transcript, and every turn is labelled by its speaker (`[from the person: <app>]`, `[from the system agent]`). The app follows both lanes, each event tagged with its `lane` and speaker; `octos.session.history` merges both transcripts by time. The person's turns also leave rounds on the blackboard (`origin: person`), so the system agent sees them with `peer_gather`.
 - *Until 2026-09-29 both spoke in one shared conversation on the peer's session ([#166](https://github.com/OctoSense-org/OctoSense/pull/166), octos#2626): one queue per peer, one turn at a time.*
 - **Rinx mini apps** keep their own request contexts (`open_context`), each with its own transcript and folder, not shared with either lane.
+
+### Talking to an app's agent yourself
+
+The person is not limited to the system agent: they can talk to any app's own agent directly. Every turn the person starts is a person turn in the person's lane of that app's peer, beside the system agent's lane. It runs with the app's tools, memory and approvals, as a system agent's turn does.
+
+| Surface | Where it is | How it opens |
+| --- | --- | --- |
+| **"Ask <app>"** (`crates/shell/src/app_chat/`) | A shell panel for every app with an agent, whether or not the app draws a chat of its own: the system chat's pane drawn as the app's conversation (`app_panel: true`). On a desktop it stands right of the system chat, so the two lanes show side by side. | The bar's "Ask <app>" button (shown while the focused window's app has an agent), Shift+F8, or the menu row "Ask this app's agent". With an app without an agent focused, the shell says "No app agent here". On the phone the pane is drawn as a full-screen sheet, but no touch control opens it on `main` yet. |
+| **A card's in-card chat** (`sys.chat`, `crates/shell/src/glance_chat.rs`) | A glance card the app published | The person types in the card's chat. Only the publishing app's own agent answers, and its reply is marked AI-written ([below](#cards-and-questions)). |
+| **The app's own UI** | A native module's `open_conversation`, a script app's `octos.session.open`, a process app's peer link | Inside the app. Rinx draws its own assistant UI; none of the system apps (News, Mail, Calendar) draws a chat, so for them the panel and their cards are the way in. |
+
+How the "Ask <app>" panel behaves:
+
+- **Consent first.** An agent the person has not decided on shows the first-use sheet, and the panel waits ("<App>'s assistant is not allowed yet: allow it on the sheet."). An agent turned off says so: "<App>'s assistant is off. Turn it on in Setup › Assistant › Approvals."
+- **Both lanes, labelled.** The panel follows both lanes and loads their merged history; every row shows its speaker (the person, the system agent, the app's agent).
+- **Send** starts a person turn (`TurnTrigger::Person`). It never waits for the system agent's turn: Send stays available while only the system agent's lane runs. With a question from the app's agent open, the text answers it instead.
+- **Stop** (in Send's place while the person's own turn runs) stops only that turn ("Stopped.", or "Nothing of yours was running."). A running system agent turn has its own row with **"Stop the system agent's task"**, which stops only that lane. The **"Stop <App>'s agent"** button on the shell's approval and question sheets stops both lanes (`approvals::stop_agent`): the person owns the device.
+- **Questions** from turns the person or the app started are shown and answered in the panel; the system agent's go to the system chat (F8). Approvals are the shell's sheets, as everywhere.
+- **Close** hides the panel. Its context stays open with its follower, so a reopen shows the person's rows again. The context closes when the panel opens for another app, when the agent is turned off, or when the app's peer goes (a signed-out account, for Mail).
 
 ### A tool call with an approval
 
@@ -197,7 +210,7 @@ sequenceDiagram
 
 - **Tool calls**: octos sends `peer/tool/call` to the shell's relay (`crates/shell/src/host_tools/`), which checks the grant by (owning app, tool) and caller, the arguments against the tool's schema and the caller's budget, and routes the call to the owning app's executor: an in-process module's, a script app's host service, a process app's peer link, or the Terminal's `run` on the AI bus.
 - **Approvals** go to the approval router (`crates/shell/src/approvals/`): developer mode, then standing rules on (owning app, tool), then a shell-drawn sheet. A `confirm: app` tool is confirmed on the owning app's own sheet, which shows the caller. Only the person approves; the system agent never does.
-- **Deadlines and Stop** ([#167](https://github.com/OctoSense-org/OctoSense/pull/167)): an approval or question the shell holds for an app peer expires after 10 minutes (`OCTOSENSE_PROMPT_DEADLINE_SECS`): the router denies it, a question is declined, both stay visible as "Expired: no answer in 10 min". If the turn is still running 30 s later, the broker interrupts it so the next turn can start. The person's Stop ends the running turns of both lanes, the person's and the system agent's.
+- **Deadlines and Stop** ([#167](https://github.com/OctoSense-org/OctoSense/pull/167)): an approval or question the shell holds for an app peer expires after 10 minutes (`OCTOSENSE_PROMPT_DEADLINE_SECS`): the router denies it, a question is declined, both stay visible as "Expired: no answer in 10 min". If the turn is still running 30 s later, the broker interrupts it so the next turn can start. The sheets' "Stop <App>'s agent" ends the running turns of both lanes, the person's and the system agent's; the "Ask <app>" panel's Stop ends only the person's own turn ([above](#talking-to-an-apps-agent-yourself)).
 - **External clients' prompts** stay with the client: the shell does not answer or expire approvals of a Talk to Octos client's turns (octos#2624).
 
 ### Cards and questions

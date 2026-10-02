@@ -374,12 +374,21 @@ model lane and tools. Which system apps have one, and how
   and pins both. The `agent` block's `profile` and `model` are admitted but
   not used by the shell yet.
 - **Running one.** Nothing runs before the person allows the agent on the
-  first-use sheet (from the app's "Ask <app>" panel, the bar's "Ask <app>"
-  or Shift+F8, or when the system agent asks it with `agents.ask`). Then the
-  shell prepares the peer, so the system agent can reach it with
+  first-use sheet (shown when the person opens the shell's "Ask <app>"
+  panel, with the bar's "Ask <app>", Shift+F8 or the menu row "Ask this
+  app's agent", or when the system agent asks it with `agents.ask`). Then
+  the shell prepares the peer, so the system agent can reach it with
   `peer_send_input`. A turn starts only when the system agent, the person
-  (the "Ask <app>" panel) or a card's in-card chat asks: there are no
-  triggers or schedules yet (ADR 0002 M3, planned).
+  or a card's in-card chat asks: there are no triggers or schedules yet
+  (ADR 0002 M3, planned).
+- **Talking to it yourself.** The person can chat with the app's agent
+  directly, not only through the system agent: in the "Ask <app>" panel,
+  which the shell draws for every app with an agent (none of these apps
+  draws a chat of its own), or in a card's in-card chat. Those turns run
+  in the person's lane, beside the system agent's, with the app's tools.
+  The panel's Stop stops only the person's own turn. On the phone no touch
+  control opens the panel yet. See the root
+  [README](../README.md#talking-to-an-apps-agent-yourself).
 - **Its tools run on the app's host service**, as the app, after the
   shell's relay checked the grant, the schema and the budget. octos asks
   for an approval only for destructive and outward tools (here
