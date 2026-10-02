@@ -1,7 +1,7 @@
 # Plan: Mail's email action card (desktop validation)
 
 - **Date:** 2026-10-01
-- **Status:** Plan, not started. Two decisions are open (end of this page).
+- **Status:** Plan, in progress. Two decisions are open (end of this page). On `main` (2026-10-01): the card MVP on the desktop with fake data (#261, `OCTOSENSE_GLANCE_DEMO=mail`), model-copy and the in-card chat `sys.chat` (#263, `crates/l0-chat`), and Mail's agent with one tool, `mail.notify`, which puts a notice card on the glance screen (#267). Not yet: background sync and the new-mail trigger, the `triage` and `email-card` skills and `AGENTS.md`, Mail's read tools as agent tools, `mail.draft_reply`.
 - **Relates to:** [ADR 0002](../../../docs/adr/0002-event-driven-app-agents.md) (app agents, triggers, cards; Mail's row), [ADR 0004](../../../docs/adr/0004-native-apps-hosting-and-peers.md) (one agent per app and account, host tools, approvals, interactive cards), [ADR 0005](../../../docs/adr/0005-app-contract.md) (the app contract), the L0 card language (Octoscript `docs/ui-profile-l0.md`) and the a2app L0 cards (`apps/appcard/a2app-l0/`).
 
 ## What we want to show

@@ -4,7 +4,7 @@
 
 The system toolbox's library of **OctoScript workflow templates** ([ADR 0002](../../docs/adr/), section 6, "Workflow templates", proposed in OctoSense PR #77). A template is a fixed, bounded procedure (a news digest, a multi-language topic brief, a plan from the weather) written in OctoScript with a manifest that says what it may call. An app's agent picks one and fills its parameters: one model call to choose, instead of a multi-call tool loop. The host then runs the independent steps concurrently.
 
-This crate holds the library, the runner, forks, evaluation, the `mod.research` v1 host module, and the `workflow.*` tool surface as a Rust API. **The shells do not link it yet.** See [What remains](#what-remains).
+This crate holds the library, the runner, forks, evaluation, the `mod.research` v1 host module, and the `workflow.*` tool surface as a Rust API. The shells link it through `crates/ai-host`'s `toolbox-peers` feature: on by default on the phone (`phone/Cargo.toml`), off by default on the desktop. Its tools reach app agents only (the system agent gets none yet), and only an app whose manifest declares `research` or `crawl`, which no app does yet. See [What remains](#what-remains).
 
 The first templates are ported from the AppCard research experiment ([`apps/appcard/tools/splash-research`](../../apps/appcard/tools/splash-research)). Its composition harness (Python) was not used; what was needed is in Rust here.
 
@@ -18,10 +18,11 @@ The first templates are ported from the AppCard research experiment ([`apps/appc
 | `market-brief` (1.1.0) | One news search per ticker, started together; per-symbol reads run concurrently; one brief (a comparison for several symbols). Research, not advice: v1 has no quote method, so prices appear only as the sources state them | 13 | 1 |
 | `briefing` (1.1.0) | Up to four topics searched together; the top articles of each are read concurrently; one briefing | 17 | 1 |
 | `compare` (1.1.0) | The same aspect of two subjects searched together; reads run concurrently; one comparison. It needs sources for both sides | 9 | 1 |
+| `dossier` (1.1.0) | Background research, not news: for each of a few questions, the caller's sub-queries in each language and metasearch category (general, it, news, social, science) over a long window (up to 1500 days), all started together; readable results pooled per question in rank order; up to `read_top` reads per question within one run-wide read budget, a failed or off-topic read replaced by the next candidate and an article another question read reused; one digest per question, citing only articles read in this run | 64 | 6 |
 
 `weather-plan` and `market-brief` adapt the experiment's `weather` and `stock` workflows. Those called `forecast`, `air_quality`, `quote` and `baseline` methods, which `mod.research` v1 does not have. Here they read published forecasts and news. Structured weather and market data will come with the research engine's providers. `briefing` and `compare` come from the experiment's composition set. Its `travel`, `outdoor` and `market` families need places and quotes, which the research module does not provide, so they are deferred.
 
-Every template ships recorded fixtures in `templates/<id>/fixtures/`, with the expected `status`, `reasons` and `data`. The 20 cases include ready, partial and failed runs, off-topic pages dropped by the host and by the model (`news-digest/off-topic-dropped`), read budget moving to the language with readable results (`topic-brief/budget-moves-to-readable`), and Traditional-script pages matching a Simplified search (`topic-brief/traditional-script`).
+Every template ships recorded fixtures in `templates/<id>/fixtures/`, with the expected `status`, `reasons` and `data`. The 23 cases include ready, partial and failed runs, off-topic pages dropped by the host and by the model (`news-digest/off-topic-dropped`), read budget moving to the language with readable results (`topic-brief/budget-moves-to-readable`), and Traditional-script pages matching a Simplified search (`topic-brief/traditional-script`).
 
 ## Template format
 
@@ -234,21 +235,21 @@ The tests show this rule deciding real cases:
 
 `peer` is what an app's peer is offered (octos#2567, ADR 0004 §12). `peer::catalog(library)` gives every toolbox tool's `tools.json` entry, each marked with its owning app (`app: "toolbox"`), `shareable`, `background`, not `outward`, `confirm: host`: the shell's host-tool relay declares them and grants each app exactly what it declares and the person granted. `peer::tool_decls(app, library)` is that catalog narrowed to the app's grants (`research`: `workflow.run`, `workflow.fork`, `toolbox.search`, `toolbox.web_read`; `crawl` with crawl limits in the scope: `toolbox.deep_crawl`). Nothing else is held back: octos's own generic tools, `deep_research` among them, are the kernel's. `peer::PeerToolbox::call(app, name, args)` checks the name against the grants again (`not_granted` otherwise) and runs it: the two workflow tools through `handle_json` (the agent gets the data, sources and the result's path; the trace stays in the file), the single tools on the same `ResearchBackend` as `mod.research`, narrowed by the scope (`scope::narrow_search`, `check_domain`, `scope::narrow_crawl`), with their items saved under `research/` in the app's folder. `toolbox.deep_crawl` reads pages with `ResearchBackend::read_links` (the octos engine keeps each page's HTML for its links) and stays on the start's site, under `path_prefix`, inside the domains and within `max_depth` and `max_pages`.
 
-## How an app agent will use it
+## How an app agent uses it
 
-This flow needs the wiring in [What remains](#what-remains):
+The wiring is in place behind `toolbox-peers` (`crates/ai-host/src/toolbox_peers.rs`, `crates/shell/src/host_tools/toolbox.rs`); no app declares `research` yet, so no shipped app agent has gone through it:
 
-1. The app's manifest asks for `research` with a scope. App Hub pins the request and the person grants it.
-2. The kernel offers the app's peer `workflow.list` and `workflow.run` (and `workflow.fork` / `workflow.evaluate` if granted). The host fills `AppContext` from the peer's identity and the app's grants, never from the model.
+1. The app's manifest asks for `research` with a scope. App Hub pins the request and the person grants it (for now the host grants it only to system apps, `os.*`).
+2. The shell registers the app's peer `workflow.run`, `workflow.fork`, `toolbox.search` and `toolbox.web_read` (and `toolbox.deep_crawl` with `crawl`), owned by `toolbox`; `workflow.list` and `workflow.evaluate` stay Rust API. The host fills `AppContext` from the peer's identity and the app's grants, never from the model.
 3. The agent picks a template, fills its parameters in one model call, and calls `workflow.run`. The host runs it within the app's scope and budget and writes `toolbox/runs/<id>/<run>.json`. The agent gets back the structured result, including provenance.
 4. To improve a procedure, the agent forks it, edits the fork, and evaluates it against the parent on recorded cases. It adopts the fork only if the verdict is `better`.
 
 ## Commands
 
-All of these were run on 28 Sep 2026 with octos's merge of #2585 (7bec0918) in place of the pin, through an uncommitted override (the pin's octos has no `octos-research` toolbox, so every build needs it until the pin moves, and `--locked` needs the lock file updated locally for it): `--config 'patch."https://github.com/octos-org/octos.git".octos-research.path="<octos checkout>/crates/octos-research"'` (**unverified** against the pin until it moves).
+The pinned octos (`ae230ce0`) includes `octos-research`, so no override is needed any more. On 1 Oct 2026 `cargo test --locked -p octosense-toolbox` passed at the pin (83 tests). The others below were run on 28 Sep 2026 against octos's merge of #2585 (7bec0918) through a local override, before the pin moved; at the pin `apps.yml` runs the plain, `live` and `octos-engine` tests and both clippy lines, and the live and real-model runs are **unverified** at the pin.
 
 ```sh
-cargo test --locked -p octosense-toolbox                     # 67 tests, fixtures only (the thin scope parser)
+cargo test --locked -p octosense-toolbox                     # 83 tests, fixtures only (the thin scope parser)
 cargo test --locked -p octosense-toolbox --features live     # 81 tests (4 ignored): + adapter tests on a local server
                                                              # (robots.txt never requested by default; honoured when on; SSRF; backoff;
                                                              # Google News editions; the GDELT breaker; provider deadlines; the feed filter)
@@ -372,7 +373,7 @@ After the [status rules](#status) and the [summary check](#modresearch-v1): four
 
 ## What remains
 
-- **Peer tool wiring** is in place behind the shell's `toolbox-peers` feature (`crates/ai-host`'s `toolbox_peers`, the shell's `host_tools::toolbox`, and the `peer` module here: the tools per grant, `PeerToolbox::call`, and `toolbox.deep_crawl` over `ResearchBackend::read_links`). Script apps' grants wait for the shells' App Hub pin to include App Hub #26 (`research`/`crawl`).
+- **Peer tool wiring** is in place behind the shell's `toolbox-peers` feature (`crates/ai-host`'s `toolbox_peers`, the shell's `host_tools::toolbox`, and the `peer` module here: the tools per grant, `PeerToolbox::call`, and `toolbox.deep_crawl` over `ResearchBackend::read_links`). The shells' App Hub pin now includes App Hub #26 (`research`/`crawl`), but the host still grants a script app's declaration only to system apps (`os.*`) until it reads App Hub's verified grant. The system agent's toolbox grant (`SystemAgentTools::grant_toolbox` in `crates/kernel`) is not wired.
 - **Engine**: the octos research engine is behind `ResearchBackend` (`octos-engine`). Still to do:
   - drop the interim adapter once the shells use it;
   - add metasearch (octos#2582) and publisher feeds (octos#2585);
@@ -380,5 +381,5 @@ After the [status rules](#status) and the [summary check](#modresearch-v1): four
   - report why a read had no main text (final URL, consent page, bot challenge);
   - stop a provider that the breaker skipped from making every run `partial`.
 - **Durable execution** through `octoscript-workflow` (checkpointed, resumable runs; queueing and batching by the system agent).
-- **App Hub**: the `research` and `crawl` capabilities with a scope in the manifest; pinning forks shipped in a bundle.
+- **App Hub**: pinning forks shipped in a bundle. (The `research` and `crawl` capabilities with a scope in the manifest are App Hub #26, in the shells' pin.)
 - **Back upstream**: offering a winning fork to the library, with the person's consent.

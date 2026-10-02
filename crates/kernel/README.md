@@ -7,9 +7,11 @@ English | [简体中文](README.zh-CN.md)
 The [octos](https://github.com/octos-org/octos) agent kernel is a **shell
 service**. The shell (Home in `phone/`, the desktop in `desktop/`) owns it; the
 **AI providers** system app configures it through the `llm` host service;
-**AppCard**, and next Rinx's native mini-app host, connect to it. This crate
-is that service: one kernel per process, started on demand, shared,
-restarted when the providers change.
+its consumers connect to it: the shell's system chat (the system agent's
+pane, `crates/shell/src/system_chat/link.rs`), every app agent's broker
+(`crates/app-peers`, `CoreConnector`: Rinx and the script apps with an
+agent) and the opt-in AppCard. This crate is that service: one kernel per
+process, started on demand, shared, restarted when the providers change.
 
 It lives in `crates/` rather than `apps/` because it is not an app: it is
 the shared runtime piece the shells, AppCard (`apps/appcard/app`) and the
@@ -85,11 +87,12 @@ AppCard's transport (`apps/appcard/app/crates/octos-app-transport`,
 still waiting, reconnects and opens its sessions again from their replay
 cursors, so the app carries on.
 
-**Rinx and other consumers.** A native mini-app host takes its own
-connection (`connect()`), opens sessions with ids of its own (Rinx uses
-`<profile>:api:rinx-mini-…`) and gets only its sessions' traffic, with no
-coupling to AppCard's connection or UI queue. It must handle
-`CloseReason::Restarted` by reconnecting.
+**Other consumers.** Each takes its own connection (`connect()`) and gets
+only its sessions' traffic: the system chat opens `_main:api:octosense#system`;
+an app-peers broker drives its app's peer and request contexts (Rinx's mini
+apps are request contexts of Rinx's peer, through `OctosAppService`, not
+sessions of their own). Each must handle `CloseReason::Restarted` by
+reconnecting.
 
 Other functions: `core_dir()`, `home()`, `profile()`, `launch()` /
 `is_available()` (whether and how a kernel would start), `status()`, and the
@@ -166,9 +169,14 @@ system agent's tool set is its grants. Its default octos tools are
 profile's `tool_policy` denies to every agent, since octos cannot resume a
 closed peer), its workspace's
 file tools (octos fences them to the session's working directory), memory,
-`ask_user_question`, media viewing, octos's `web_search` / `web_fetch` (until
-toolbox grants replace them, #108) and `tool_search`. Granted toolbox and
-cross-app tools join it as host tools through `SystemAgentTools`. Command
+`ask_user_question`, media viewing (`view_image`, `view_video`), octos's
+`web_search` / `web_fetch` and `tool_search`. Toolbox and cross-app tools
+are meant to join it as host tools through `SystemAgentTools`
+(`grant_toolbox`, `grant_cross_app`), but nothing outside the tests grants
+them yet, so the system agent has none. The system chat always registers two
+host tools of its own on the session, `agents.list` and `agents.ask`
+(`crates/shell/src/agents.rs`: which apps have an agent, and the first-use
+sheet that allows one; only the person answers it). Command
 execution is **done** as a grant: the person's switch in Setup → Assistant →
 Command execution (off by default; turning it on needs the confirmation the
 person types, which says what it risks; `crates/shell/src/system_chat/grants.rs`)
@@ -181,8 +189,10 @@ approval router as `auto_approvable: false` with a live sheet showing the exact
 command (developer mode still answers it). While the switch is on, the
 shell's system chat registers the host tool on the system session over its own
 connection (octos#2567's host session target, `peer/tools/register` without
-`peer`) and withdraws it when the switch goes off; the shell types each approved
-call into the Terminal the person sees.
+`peer` and, since octos#2657, without any app peer's host token, so it is
+offered before any app's agent has started) and withdraws it when the switch
+goes off; the shell types each approved call into the Terminal the person
+sees.
 
 **What the kernel enforces.** Every start writes the `_main` profile's
 `tool_policy` (`system_tools::tool_policy`): everything a grant can give,
