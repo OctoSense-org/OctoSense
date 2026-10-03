@@ -15,13 +15,17 @@ Evidence identifiers from the retained local run artifacts:
 | Generation receipt, SHA-256 | `495461c440b451047bd32114a47ba69e778a9cb25eafdb72c1f99094fb0da6db` |
 | Acceptance contract, SHA-256 | `58a2091f2593a231982f755f643559b9dc29649b8d657b67c4edc3d3cbf715` |
 
-The functional run is `adr0006-task-planner-acceptance-v2`; the generation receipt is `adr0006-generated-app-final/generation-receipt.json`. These tests used the implementation working tree before final rebase/integration. They are evidence for that tested build and bundle, not a claim that a later rebased binary was rerun. Raw provider configuration, personal paths and device identifiers are not published here.
+The final functional run is `adr0006-task-planner-acceptance-final`, using runtime commit `50639fa2528baa9e6263ba603fb66eb3505e72a1` after rebasing onto `bf3c2180` and fixing both review findings. APK SHA-256: `d57dc55f1380372a37228ba37a4c6f4d3221599d5566783ae85d5b2d7e9122f3`. The unchanged model-authored bundle passed all 129 calls again. Before rerunning, the previous test-only installed data directory was archived by rename; the harness then created fresh installed state through native input. Production Home and Bridge were not replaced. After the final checks, the original developer-profile files and screen timeout were restored, the temporary provider profile was removed, the test package was stopped and adbd remained unprivileged.
 
-The final tools Python test run passed 105 tests before rebase. This supplements the device evidence; it does not replace it.
+The generation receipt is `adr0006-generated-app-final/generation-receipt.json`. Independent review replayed the model's successful write/edit operations and matched all four final authored files byte for byte. Generation was supervised across retries and runtime repairs. DeepSeek drove its own preview interactions; the separate Python acceptance harness drove the complete 129-call sequence. Manual visual review was performed by the coding agent. This is not evidence of one-shot autonomous model acceptance.
+
+Local checks passed: 863 shell tests, 89 app-peer unit/connector tests, 108 tools Python tests and 100 ROM tests with JDK 17 configured. The 15 optional real-kernel tests returned early without their executable and are not counted as end-to-end passes. Desktop default/mobile-apps and phone mobile-apps checks, both shell dependency graphs, setup consistency and native-app generation checks passed. The final Android build and physical rerun used the runtime commit above; later report-only changes do not alter it.
+
+Raw provider configuration, personal paths and device identifiers are not published here.
 
 ## Functional result
 
-Version 2 completed **129 tool calls**. It verified task entry, completion, All/Active/Done filtering, disposable preview state, separate installed storage, installed close/reopen and process-restart persistence. Exact Chinese input survived reopening. Seven additional rows made a real scrollable list; the instrument reached the last row. The full diagnostic artifacts retained native widget values, geometry and screenshots while compact tool replies exposed usable selectors to the model.
+Version 2 and the final post-review rerun each completed **129 tool calls**. It verified task entry, completion, All/Active/Done filtering, disposable preview state, separate installed storage, installed close/reopen and process-restart persistence. Exact Chinese input survived reopening. Seven additional rows made a real scrollable list; the instrument reached the last row. The full diagnostic artifacts retained native widget values, geometry and screenshots while compact tool replies exposed usable selectors to the model.
 
 The first harness run stopped after ten calls with “Add did not clear the text input.” This was a harness assertion error: Makepad exposes the placeholder as display text, while the editable `value` was empty. The corrected assertion requires the actual TextInput value. Version 2 retained the same admitted bundle digest; no app-source change was used to bypass the failure.
 
@@ -37,11 +41,15 @@ The harness's machine-readable status remains `functional_passed_visual_review_r
 
 ## Retained review captures
 
-These unmodified screenshots are from the pre-rebase device run described above.
+These unmodified screenshots are from the final post-review device run described above.
 
 ![Installed Task Planner with Chinese and wrapped long titles](evidence/task-planner-titles.png)
 
 ![Android keyboard with Task Planner input and Add still visible](evidence/task-planner-keyboard.png)
+
+## Review result
+
+Independent source and evidence reviews scored the implemented developer flow **4.6/5 (A−)**. Review found and fixed close acknowledgement preceding cleanup, and input followed by inspection returning an older cached frame. Both regression tests and the final device rerun passed. This score applies to the implemented offline developer flow, not the whole ADR.
 
 ## Remaining limits
 
