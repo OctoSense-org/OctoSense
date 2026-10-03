@@ -20,6 +20,7 @@
 | Which apps have an agent, their tools, and the relay that checks and routes every agent tool call | `crates/shell/src/apps.rs` (`agent_apps`), `crates/shell/src/host_tools/` (`script_apps.rs`, `relay.rs`, `files.rs`) | from `phone/`: `cargo test --locked --features mobile-apps -p octosense-shell host_tools`; `phone.yml` |
 | Approvals, first-use consent, standing rules, the audit | `crates/shell/src/approvals/` | from `phone/`: `cargo test --locked --features mobile-apps -p octosense-shell approvals`; `phone.yml` |
 | Glance cards (`glance.publish`), the desktop's glance panel and card window, a card's in-card chat | `crates/shell/src/glance*.rs`; the shared `sys.chat` host side in `crates/l0-chat/` | `cargo test --locked -p octosense-l0-chat`; from `phone/`: `cargo test --locked --features mobile-apps -p octosense-shell glance`; `apps.yml`, `phone.yml` |
+| App Studio's developer-only L0 preview (`studio.render`) | `crates/shell/src/studio/` (UI/GPU), `crates/shell/src/host_tools/studio.rs` (workspace and executor), `docs/adr/0006-app-studio-on-the-phone.md` | from `phone/`: `cargo test --locked --features mobile-apps,dev-mode -p octosense-shell`; separate-package device checks are required for GPU acceptance |
 | The system toolbox's workflow templates (library, runner, forks, evaluation, `mod.research`) | `crates/toolbox/` (templates in `crates/toolbox/templates/<id>/`); offered to app agents by `crates/ai-host/src/toolbox_peers.rs` (feature `toolbox-peers`) | `cargo test --locked -p octosense-toolbox`, its README, `apps.yml` |
 | A system app | `apps/<name>/bundle/` | App Hub's `card-host --bundle apps/<name>/bundle --system`; then in a shell |
 | A system app's agent: its tools and the cards they publish | `apps/<name>/bundle/tools.json` and the manifest's `agent` block; the tools run on the app's host service | its host service's tests (below); then in a shell, with the system agent asking the app's agent |
@@ -30,6 +31,12 @@
 | A decision | `docs/adr/` (next free number) | — |
 
 Start every session with `python3 tools/setup.py` (it prepares `.sources/`, and changes nothing that is already right).
+
+For local shell tests that link Rinx, set `OCTOSENSE_HOME` and `RINX_DATA_DIR`
+to separate, empty test directories and `MAKEPAD_HIDE_WINDOWS=1`. Some hosted
+module tests initialize Rinx; without the explicit data directory they can
+restore the machine's existing account. Keep these directories outside the
+checkout and never copy personal account state into them.
 
 On a machine that already has clones of Makepad, OctoScript or Octoscript-Makepad, never let setup clone them again: name the clones as a hub (`~/.config/octosense/sources.json`, `--hub DIR` or `OCTOSENSE_SOURCES_HUB`; see the README's Set up) so every `.sources/` entry is a `git worktree` of the one clone, and run `python3 tools/setup.py --remove-worktrees` before deleting a checkout of this repository.
 

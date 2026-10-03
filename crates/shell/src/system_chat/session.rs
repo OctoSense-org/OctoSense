@@ -90,6 +90,8 @@ pub trait SystemHost: Send {
     /// The host tools to register on the system session now (empty: none
     /// granted, or the grant was withdrawn).
     fn declarations(&self) -> Vec<Value>;
+    /// Workspace confirmed by this connection, never a model-supplied path.
+    fn workspace_opened(&self, _workspace: Option<&str>) {}
 }
 
 /// The shell's: Setup's grants and the app peers' host state.
@@ -107,7 +109,16 @@ impl SystemHost for ShellSystemHost {
         // Which apps have an agent, and asking the person to allow one
         // (ADR 0004 §4; answered by the chat itself, `crate::agents`).
         decls.extend(crate::agents::declarations());
+        // octos apply_turn_host_tool_rosters applies the kernel allowlist
+        // BEFORE adding this connection-owned host set. No baseline kernel
+        // tool grant is needed, and external turns cannot inherit this set.
+        if crate::host_tools::studio::SUPPORTED && crate::dev_mode::grants_all(crate::host_tools::SYSTEM) {
+            decls.push(crate::host_tools::studio::declaration(crate::host_tools::SYSTEM));
+        }
         decls
+    }
+    fn workspace_opened(&self, workspace: Option<&str>) {
+        crate::host_tools::studio::system_workspace_opened(workspace);
     }
 }
 
@@ -438,6 +449,7 @@ impl Driver {
     }
 
     fn drop_link(&mut self) {
+        self.system_host.workspace_opened(None);
         self.link = None;
         self.pending.clear();
         self.opened = false;
@@ -586,6 +598,7 @@ impl Driver {
                     self.retry_at = Some(Instant::now() + Duration::from_secs(3));
                 }
                 None => {
+                    self.system_host.workspace_opened(result.and_then(|r| r["opened"]["workspace_root"].as_str()));
                     self.opened = true;
                     self.model.set_phase(Phase::Ready);
                     self.sync_tools();

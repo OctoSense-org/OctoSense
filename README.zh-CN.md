@@ -18,6 +18,8 @@
 
 初次阅读源码？从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始，沿着入口、原生/脚本托管、数据访问、人类/系统对话、工具路由以及实际 Tokio 任务阅读源码。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充桌面、Home、ROM 和系统应用的运行方式。
 
+[手机上的 App Studio](docs/adr/0006-app-studio-on-the-phone.md) 已通过设计决策，里程碑 1 正在实现。Home 现可显式编译开发者选项并使用独立测试包名（[手机构建选项](phone/README.zh-CN.md#构建与运行)）；完整的渲染、检查、改进与安装循环仍在开发中。设备验收与单元测试、构建检查分别记录。
+
 ## 整体如何运作
 
 每台设备一个 Shell 进程，每个 Shell 一个 octos 内核，每个 Agent 都是这个内核中的一个会话。应用 Agent 通过 Shell broker 访问内核。Shell 持有宿主连接和宿主 token，把每个 Agent 工具调用转交给拥有该工具的应用，并通过开发者模式、用户预设的常设规则或确认面板处理审批。下文的可选 AppCard 原型绕过应用 peer broker，直接访问共享内核服务。完整说明，包括代码路径以及哪些已在 `main` 上、哪些还在规划中：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)；相关决策：[ADR 0004（英文）](docs/adr/0004-native-apps-hosting-and-peers.md)。

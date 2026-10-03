@@ -1,9 +1,34 @@
 # ADR 0006: App Studio on the phone
 
 - **Date:** 2026-10-02
-- **Status:** Accepted (2026-10-03). Implementation has not started; milestone 1 comes first.
+- **Status:** Accepted (2026-10-03). Milestone 1 is in progress; device acceptance is still required. Milestones 2–5 remain unimplemented.
 - **Scope:** How an agent on the phone turns an image (a generated design or a screenshot of an existing app) into an OctoSense app or glance card, looks at its own result and improves it, entirely on the phone, at first in developer mode. Covers the inputs, the in-process renderer, the checks, the rules that can change without a build, the tools agents get, and what of the OctoScript App Design Flow moves to the phone. There is no compile in the loop and no Mac.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (§6 the `card_render` and `card_critique_payload` toolbox tools; §7 a card is rendered, critiqued and revised before it is published; milestone M6); [ADR 0004](0004-native-apps-hosting-and-peers.md) (app agents, host tools, approvals, §13 developer mode); [ADR 0005](0005-app-contract.md) (the app contract and bundles); [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (contained script apps); [Home ADR 0005](home/0005-settings-octoscript-controller.md) and [Home ADR 0006](home/0006-builtin-settings.md) (Settings and its developer options); App Hub's [`card-studio`](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/card-studio) crate and [skill](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/skills/card-studio); the [OctoScript App Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (`flows/image-to-card`, `flows/image-lib`); octos issue #1149, closed, which added the `image_generation` stub (its backend needs a new issue).
+
+## Implementation status
+
+Milestone 1 is in progress. Its first implementation is a developer-only
+`studio.render` tool for L0 glance previews on Unix hosts, including Android.
+The system conversation uses the workspace confirmed by the kernel; an app
+agent uses its own account/context workspace. The model supplies relative
+`source_path`, optional `data_path`, and optional `dark`; it cannot select a
+workspace, output destination or rendering width. Source is limited to 16 KiB
+and data JSON to 32 KiB. The result is `{path, width, height, settled}`, with a
+relative PNG path for a separate `view_image` call and dimensions in pixels.
+
+This slice uses the real glance width, theme and height bounds, with disposable
+storage, no network or host-service grants, and foreground/cancellation checks.
+Bundle screens, images and interactive chat are not supported by this first
+renderer. The render deadline is 20 seconds, inside the host wait and kernel
+call deadline. It does not implement checks, comparison, the editable studio
+runner, bundle installation, image generation or ROM capture sessions.
+
+The Android build wrapper accepts `--dev-mode`, separately from the
+`--development` signing choice; `--package-name` selects a standalone Home
+test identity. Python tests cover build plans and receipt guards. Renderer and
+routing validation, followed by OnePlus 6 acceptance and model image delivery,
+are still required before milestone 1 is complete. The [device probe](../../tools/studio-device-probe.py) exercises denial, light/dark PNGs and background cancellation in an already installed, debuggable studio test package; it does not test model image delivery. The remaining sections
+describe the full accepted design, including work for milestones 2–5.
 
 ## Context
 
@@ -35,15 +60,15 @@ What the phone already has:
   - start an app (`startActivity`, `startTask`);
   - inject input (`tap`, `swipe`, `typeText`, `pressKey`), which it refuses while the keyguard is showing. `captureScreen` and `startActivity` do not check the keyguard.
 - **No image generation yet.** octos registers an `image_generation` tool but binds no backend, so every call fails with `no_backend_bound`. The tool is on no client's tool list: not octos's external clients', not the system agent's, not the developer app agents'.
-- **No developer mode on a phone today.** A development build (`cfg(dev_mode)`) honours it from Settings; a release build only with the `--dev-grant-all` launch flag, which a phone cannot pass. The Home APK is built `--release` without the feature. In a home with real accounts developer mode ends after 8 hours; only a home marked as a developer profile keeps it ([`dev_mode.rs`](../../crates/shell/src/dev_mode.rs)). A phone has one home.
+- **Phone developer mode.** A development build (`cfg(dev_mode)`) honours it from Settings; an ordinary release build only with the `--dev-grant-all` launch flag, which a phone cannot pass. The Home APK still defaults to `--release` without the feature; the milestone 1 `--dev-mode` build option includes the existing feature while retaining release optimization. In a home with real accounts developer mode ends after 8 hours; only a home marked as a developer profile keeps it ([`dev_mode.rs`](../../crates/shell/src/dev_mode.rs)). A phone has one home.
 
-For many people the phone is the only computer they have. An agent that can make and refine its own apps there should not need a Mac or a server.
+For many people the phone is the only computer they have. An agent that can make and refine its own apps there should not need a desktop or a build/render server.
 
 ## Decision
 
 ### 1. An App Studio that runs on the phone, developer mode first
 
-The whole loop runs on the device:
+The authoring workspace and rendering loop live on the device:
 
 1. **Take an image.**
 2. **Draft** an app or card.
@@ -53,7 +78,7 @@ The whole loop runs on the device:
 6. **Critique** it with the agent's own vision.
 7. **Edit** it, then render again.
 
-There is no compile in the loop and no Mac or server anywhere. The first release is gated to developer mode (section 8). Normal mode follows once approvals cover screen capture and installs.
+There is no compile in the loop and no desktop or build/render server is required. Generation and vision still call the model providers configured by the person. The first release is gated to developer mode (section 8). Normal mode follows once approvals cover screen capture and installs.
 
 ### 2. The input is an image; there is no Sketch path on the phone
 
@@ -62,7 +87,8 @@ An image comes from one of two places.
 - **Generated designs.** The person, or the agent, asks for a design. Generation goes through a provider the person configured in AI providers, and the PNG lands in the studio project's folder. octos's `image_generation` tool gets this backend instead of a separate OctoSense tool, and joins the tool lists that need it (octos's external clients, the system agent, developer app agents), so every client sees one tool. The person types the image provider's key on AI providers' host sheet, and it is kept like every provider key, where the kernel reads it: in the profile's `env_vars` on a phone (app-private, mode 0600), behind a `keychain:` marker on a desktop. octos's backend resolves it from there as it resolves an LLM key, and no app ever sees it.
 - **Screenshots of existing apps, to clone them.**
   - On every phone, the person picks screenshots with the system document picker, as AI providers' QR import does (one PNG or JPEG at a time today; picking several is new), or shares images to OctoSense (Home's share target accepts only text today; image shares are new).
-  - On the OctoSense ROM, in developer mode and after the person approves a capture session, the studio drives the agent service. It opens the app (`startActivity`), walks its screens (`tap`, `swipe`) and captures each one (`captureScreen`). A session is bound to one app and ends when another app comes to the front. It only navigates, never types (`typeText` is not used), refuses to start or continue while the phone is locked, and shows a stop control the person can use at any time.
+  - On the OctoSense ROM, in developer mode and after the person approves a capture session, the studio drives the agent service. It opens the app (`startActivity`) and captures its screens (`captureScreen`); automated input has the additional guard below. A session is bound to one app and ends when another app comes to the front. It refuses to start or continue while the phone is locked and shows a stop control the person can use at any time. Coordinates alone cannot distinguish navigation from sending, purchasing or changing a setting. Autonomous `tap`/`swipe` stays deferred until a trusted host guard can identify the target action and require the person’s approval for actions that change external state; omitting `typeText` is insufficient. Until that guard exists, the person navigates the target app and the approved session only captures its screens.
+  - The ROM capture transport must also change before these sessions ship: full PNGs must travel through a file descriptor or another bounded transfer, rather than an unbounded Binder byte-array reply. The host checks dimensions and byte limits, copies the image into the project folder, and closes or cancels the transfer on timeout or session end. This is future ROM/client work, not a milestone 1 dependency.
   - On stock Android, a capture session through MediaProjection, with Android's own consent prompt, comes later.
 
 The Sketch kit, its gates included, stays a desktop tool and is not ported.
@@ -87,7 +113,7 @@ It then:
 2. reads the pixels back, one readback at a time (makepad's 32 MiB readback budget is shared by every pending readback), composes the premultiplied RGBA onto the surface's backdrop and writes an opaque PNG;
 3. builds the widget-tree capture the checks read, in the capture format `card-studio` reads (section 5).
 
-There is no remote instrument, no `card-host` process and no window grab. Studio renders never go through the glance store, so its publish rate and card limits do not apply. Script cards render under a no-side-effect policy: a `host.request` that would change something is refused during a studio render.
+There is no remote instrument, no `card-host` process and no window grab. Studio renders never go through the glance store, so its publish rate and card limits do not apply. Every preview uses a no-side-effect policy established before source evaluation: a fresh disposable storage jail (or a bounded snapshot copied into it), no live app/account files, and disabled external network access. Bundle artwork is staged by the host through a bounded local asset path; service data comes from explicit preview fixtures. Mutating `host.request` calls are refused, but that gate alone is insufficient: Splash’s direct `fs.write`/`append`/`remove` and network APIs must remain confined or disabled too. Preview state is discarded on completion or cancellation. The target’s layout and lowering are reused; its live storage and service authority are not.
 
 ### 5. Checks and comparison are Rust, shared by phone and desktop
 
@@ -118,7 +144,7 @@ The system toolbox's runner becomes the studio runner.
 - **What moves from the design flow to Octoscript** (rules and text, not pixels):
   - the role-first mapping policy (`semantics`, `core/policy`);
   - review records;
-  - the code generation of image-to-card (`compile`, `extract`, `register`), without its desktop assumptions: fonts read from a `splash-makepad` checkout, artwork fetched from a local server, and the single 406×776 artboard;
+  - the image-to-card code generation (`flows/image-lib/compile.py`, `flows/image-lib/register.py` and `flows/image-to-card/extract.py`), without its desktop assumptions: fonts read from a `splash-makepad` checkout, artwork fetched from a local server, and the single 406×776 artboard;
   - repair plans.
 - **What moves to Rust** (in `card-studio`):
   - pixel work, including `extract`'s crop and `core/policy`'s crop comparison;
@@ -155,10 +181,10 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 
 ### 8. Developer mode for the studio
 
-- **The developer build.** Home is built with `--features dev-mode`, through a new `--dev-mode` option of [`build-home.py`](../../rom/scripts/build-home.py). Its existing `--development` option only picks the signing keystore. On the ROM the developer build is platform-signed, because the agent service accepts only platform-signed OctoSense packages.
+- **The developer build.** Home is built with `--features dev-mode`, through the `--dev-mode` option of [`build-home.py`](../../rom/scripts/build-home.py). Its existing `--development` option only picks the signing keystore; ordinary release builds keep developer options disabled. Standalone tests use a separate `--package-name`, such as `dev.makepad.octosense.studio`, without renaming or replacing the installed Bridge. Build receipts record both choices and ROM staging rejects developer-enabled receipts. On the ROM the developer build is platform-signed, because the agent service accepts only platform-signed OctoSense packages.
 - **The person's own home keeps its 8-hour limit.** The studio never marks a home that holds real accounts as a developer profile. A persistent developer profile on the phone needs a second home with test accounts, as ADR 0004 §13 intends; how the phone hosts one is open.
 - **One new grant.** Developer mode gives app agents the `studio.*` tools.
-- **One exception to ADR 0004 §13.** A capture session's approval is a new approval kind that developer mode never answers by itself. The person answers it once per session, because the session sees other apps' screens, and the answer goes to the developer-mode audit log.
+- **Person-only approvals amend ADR 0004 §13.** Developer mode never answers a capture-session approval by itself. The person answers once per session because the session sees other apps' screens. If the future trusted input guard permits an autonomous action that changes external state, its action-specific approval must also come from the person; the capture-session approval does not authorize that action. Both answers go to the developer-mode audit log. Until that guard and approval route exist, the person operates the target app.
 
 ### 9. Privacy, safety and other people's work
 
@@ -169,7 +195,7 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 
 ### 10. Limits on the device
 
-- **The screen must be on.** Makepad paints only while Home has a drawable surface, and without one a readback does not fail; it waits. The renderer watches for Home going to the background, cancels the readback and fails the render with `not_foreground`. Rendering in the background needs makepad changes, a surfaceless or pbuffer EGL context and its drawable-surface checks; that stays an open question.
+- **Home must have a drawable surface.** Makepad paints only while Home has a drawable surface, and without one a readback does not fail; it waits. The renderer watches for Home going to the background, cancels the readback and fails the render with `not_foreground`. Rendering in the background needs makepad changes, a surfaceless or pbuffer EGL context and its drawable-surface checks; that stays an open question.
 - **Size and memory.** A glance tile reads back from under 1 MB to about 8 MB of RGBA, depending on its height and the screen's density. A full app screen reads back 10–18 MB, which reserves 19–25 MiB of the 32 MiB readback budget once rows are padded, so renders run one at a time. PNGs for `view_image` stay under 5 MiB and are scaled down if needed.
 - **Vulkan.** On Android, readback is implemented for GLES only. A Vulkan build of Home would need Vulkan readback first.
 
@@ -201,7 +227,7 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 - The design flow's Python shrinks to the Sketch kit and desktop-only tools as the image-to-card parts move to Octoscript and Rust.
 - The shell gains a renderer that can show any card offscreen. It is a new attack surface for script cards, which is why studio renders run without side effects.
 - Rules and templates change on the phone without a build, under the toolbox's digest and budget rules.
-- Developer mode gains the `studio.*` tools and one approval it never answers by itself.
+- Developer mode gains the `studio.*` tools, with person-only approvals for capture sessions and any future guarded input that changes external state.
 - ADR 0002 is amended (its amendment of 2026-10-03): its §6 toolbox tools `card_render` and `card_critique_payload` become the `studio.*` host tools, and its §7 rule that the phone evaluates only while charging does not apply to renders the person starts.
 
 ## Open questions

@@ -82,6 +82,7 @@
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -661,6 +662,7 @@ fn remember(list: &mut VecDeque<String>, item: String) {
 
 #[derive(Clone)]
 struct PeerInfo {
+    workspace: Option<PathBuf>,
     slug: String,
     session: String,
     /// The host token that controls this peer (UPCR-2026-034).
@@ -1686,6 +1688,7 @@ impl Inner {
             }
         }
         let peer = PeerInfo {
+            workspace: result["cwd"].as_str().map(PathBuf::from),
             slug,
             session: session.clone(),
             token,
@@ -1897,6 +1900,7 @@ impl Inner {
             return refuse("workspace_refused", &format!("the account's workspace was refused: {why}"));
         }
         call.calling_app = self.cfg.app_id.clone();
+        call.peer_workspace = peer.workspace.clone();
         call.account = Some(account);
         let occurrence = call.occurrence();
         let repeat = {

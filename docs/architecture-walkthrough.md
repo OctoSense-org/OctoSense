@@ -279,6 +279,20 @@ Read `mpsc` as a many-sender mailbox, `oneshot` as one correlated answer, and `w
 
 The broker's synchronous `bind`/`host_request` wrappers wait for channel replies: do not call such blocking interfaces from a rendering callback. Async model I/O can overlap across sessions; synchronous filesystem work still needs the existing worker boundary. One peer per app and account is an identity rule. The number of tasks and worker threads follows the runtimes and active operations above.
 
+### A foreground render crosses three execution boundaries
+
+The first App Studio implementation adds `studio.render`, a shell-owned tool declared in [host_tools/studio.rs](../crates/shell/src/host_tools/studio.rs). The relay offers it only while developer mode covers the caller. It is not shareable, does not install a bundle, and does not add tools to a script manifest. A system call uses the workspace returned when its kernel session opens; an app call uses its broker-bound workspace, narrowed to `contexts/<id>/` for a human conversation. The caller supplies a relative `source_path`, optional `data_path`, and optional `dark` boolean. It cannot supply another app identity or an output directory.
+
+Follow one call from [the executor](../crates/shell/src/host_tools/studio.rs) to [the renderer](../crates/shell/src/studio/mod.rs):
+
+1. A host worker opens bounded source/data files through the workspace directory descriptor. Symlinks and `..` cannot escape that directory. It creates a unique output file there, queues a `RenderJob`, and waits for a correlated reply.
+2. Makepad's UI loop checks the current developer grant, prepares the L0 card, and draws a separate offscreen pass. It uses the live glance lowering with an explicit light/dark argument, the window width minus 40 points, and measured height clamped to 72–440 points. It never publishes a tile or changes the shell's global theme.
+3. The shell's shared readback router dispatches GPU results by ticket, preserving the existing test-capture route. After three matching pixel samples and ready shaders, a heavy worker flattens premultiplied pixels onto an opaque backdrop and encodes the PNG. The reply returns a workspace-relative path, pixel dimensions and `settled`; the agent can then call `view_image`.
+
+The preview isolate has no network, host capabilities or prompts. Its disposable storage directory has a zero-byte quota, its instruction budget is five million, and its heap limit is 16 MiB. Source/data limits match glance admission (16/32 KiB). Own-app digest references are resolved from host data; chat sources and image resources currently return explicit unsupported errors. Contained script-app screens are a later milestone.
+
+A render has a 20-second deadline including queueing and encoding. Backgrounding Home, cancellation or an expired developer grant prevents a successful reply, including while PNG encoding is in progress. A canceled GPU lease still has to drain before the platform releases its memory. The output is capped at 5 MiB; failed calls remove it. This is UI/GPU work followed by a worker-pool job—not a new agent peer or one Tokio task per render. Device evidence and the remaining model-image check belong to [ADR 0006](adr/0006-app-studio-on-the-phone.md).
+
 ## 11. Tests and remaining implementation
 
 [Broker tests](../crates/app-peers/tests/broker.rs) provide executable protocol examples: `a_persons_message_runs_while_the_system_agents_input_runs`, `a_lane_stop_leaves_the_other_lane_running`, `a_kernel_without_shared_history_is_refused_for_the_conversation`, and `removing_an_account_purges_its_recorded_peer_and_drops_the_record`. [Shell relay scenario tests](../crates/shell/src/host_tools/scenario_tests.rs) cover caller/tool/approval boundaries. Start with these when changing a conversation or executor path.

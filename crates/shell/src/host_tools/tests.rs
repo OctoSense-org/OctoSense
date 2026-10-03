@@ -556,6 +556,7 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     assert!(offered_names(&relay, "calendar", false, true).is_empty());
     let mut every = shareable_native_tools();
     every.push(super::relay::DEV_RUN.to_string());
+    if super::studio::SUPPORTED { every.push(super::studio::RENDER.to_string()); }
     every.sort();
     assert_eq!(offered_names(&relay, "calendar", true, true), every);
 }
@@ -1170,4 +1171,44 @@ fn a_cancelled_confirm_app_call_is_withdrawn_from_the_apps_sheet() {
     relay.handle(Event::Cancel { call_id: "w1".into(), reason: "interrupted".into() }, &mut w);
     assert!(!w.router.is_pending(&id), "withdrawn with the call");
     assert!(exec.0.lock().unwrap().is_empty());
+}
+
+/// Studio uses the host executor for only its covered owner, including the
+/// system session; an arbitrary cross-app declaration cannot grant it.
+#[test]
+fn studio_render_is_scoped_revocable_and_schema_checked() {
+    let mut relay = Relay::default();
+    let host = Arc::new(Exec::default());
+    relay.set_executor(super::relay::HOST_EXECUTOR, Some(host.clone()));
+    let mut w = World::new(FixedDevMode::all());
+    w.dev_all = true;
+    let make = |id: &str, caller: &str, owner: &str, system: bool| {
+        let mut c = call(id, super::studio::RENDER, caller);
+        c.app = owner.into();
+        c.args = json!({"source_path":"draft.card"});
+        if system { c.caller_kind = CallerKind::System; }
+        c
+    };
+    for (id, caller, system) in [("s1", "os.news", false), ("s2", super::SYSTEM, true)] {
+        let (r, _) = reply(id);
+        relay.handle(Event::Call { call: make(id, caller, caller, system), reply: r }, &mut w);
+    }
+    assert_eq!(host.0.lock().unwrap().len(), if super::studio::SUPPORTED { 2 } else { 0 });
+    if !super::studio::SUPPORTED { return; }
+    let (r, sent) = reply("cross");
+    relay.handle(Event::Call { call: make("cross", "os.news", "os.mail", false), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    let mut bad = make("bad", "os.news", "os.news", false);
+    bad.args["workspace"] = json!("/other-app");
+    let (r, sent) = reply("bad");
+    relay.handle(Event::Call { call: bad, reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "invalid_args");
+    w.dev_all = false;
+    let (r, sent) = reply("revoked");
+    relay.handle(Event::Call { call: make("revoked", super::SYSTEM, super::SYSTEM, true), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    relay.handle(Event::Cancel { call_id:"s1".into(),reason:"stopped".into() }, &mut w);
+    assert_eq!(host.1.lock().unwrap().as_slice(), &["s1".to_string()]);
+    assert!(!relay.catalog.offered("os.news", false, true).iter().any(|d| d["name"] == super::studio::RENDER));
+    assert!(relay.catalog.offered("os.news", true, true).iter().any(|d| d["name"] == super::studio::RENDER));
 }

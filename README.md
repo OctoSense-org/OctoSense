@@ -18,6 +18,8 @@ It was OctoSense-Desktop; OctoSense-ROM (retired; merged into this repository) a
 
 New to the codebase? Start with [From an app window to an agent turn](docs/architecture-walkthrough.md). It follows executable entry points, native and script hosting, app data access, human/system conversations, tool routing and the actual Tokio tasks. The [product walkthrough](desktop/docs/code-walkthrough.md) adds desktop, Home, ROM and system-app run recipes.
 
+[App Studio on the phone](docs/adr/0006-app-studio-on-the-phone.md) is an accepted plan with milestone 1 in progress. Home can now be packaged with explicit developer options and a separate test identity ([phone build options](phone/README.md#build-and-run)); the complete render/check/refine/install loop remains under development. Device acceptance is recorded separately from unit and build checks.
+
 ## How it fits together
 
 One shell process per device, one octos kernel per shell, and every agent is a session in that kernel. App-agent access goes through the shell broker. The shell holds the host connection and the host token, relays every agent tool call to the app that owns the tool, and routes approvals through developer mode, the person's standing rules or confirmation sheets. The opt-in AppCard prototype accesses the shared kernel service directly, bypassing the app-peer broker, as described below. The full picture, with the code paths and what is on `main` versus planned: [docs/architecture.md](docs/architecture.md); the decisions: [ADR 0004](docs/adr/0004-native-apps-hosting-and-peers.md).

@@ -273,6 +273,20 @@ flowchart LR
 
 Broker 同步 `bind` / `host_request` 会等待通道回复，不应在绘制回调中调用。不同 session 的异步模型 I/O 可重叠，同步文件工作仍走已有的工作线程边界。每应用/账号一个 peer 是身份规则；task 和线程数量由上表的 runtime 与活跃操作决定。
 
+### 前台渲染跨越三个执行边界
+
+App Studio 的首个实现增加了 Shell 所有的 `studio.render`，声明位于 [host_tools/studio.rs](../crates/shell/src/host_tools/studio.rs)。只有开发者模式覆盖当前调用方时，relay 才提供此工具。它不可共享，不安装应用包，也不向脚本清单添加工具。系统调用使用内核打开 session 时返回的 workspace；应用调用使用 broker 绑定的 workspace，用户对话进一步限定到 `contexts/<id>/`。调用方只传相对 `source_path`、可选 `data_path` 和可选 `dark` 布尔值，不能指定别的应用身份或输出目录。
+
+从[执行器](../crates/shell/src/host_tools/studio.rs)跟随一次调用进入[渲染器](../crates/shell/src/studio/mod.rs)：
+
+1. 宿主工作线程通过 workspace 目录描述符打开大小受限的源文件与数据文件。符号链接和 `..` 不能越出目录。它在该目录创建唯一输出文件，将 `RenderJob` 入队，等待对应回复。
+2. Makepad UI 循环检查当前开发者授权，准备 L0 卡片，绘制独立的离屏 pass。它复用真实 glance lowering，显式传入明暗模式；宽度为窗口宽减 40 点，测得的高度限制在 72–440 点。它不会发布卡片，也不会改变 Shell 的全局主题。
+3. Shell 共享的读回路由按 ticket 分发 GPU 结果，保留已有测试截图的路线。着色器就绪且连续三次像素样本相同后，重型工作线程把预乘像素合成到不透明背景上，再编码 PNG。回复返回 workspace 相对路径、像素尺寸和 `settled`，Agent 随后可调用 `view_image`。
+
+预览 isolate 没有网络、宿主能力或弹窗权限。临时存储目录配额为零，指令预算为五百万，堆上限为 16 MiB。源码/数据限制与 glance 准入一致，为 16/32 KiB。自身应用的 digest 引用由宿主数据解析；聊天来源和图像资源当前明确返回不支持。隔离脚本应用的完整屏幕属于后续里程碑。
+
+渲染的 20 秒期限包含排队和编码。Home 退到后台、取消或开发者授权失效都会阻止成功回复，PNG 编码阶段也不例外。已取消的 GPU 租约仍需排空，平台才释放其内存。输出上限为 5 MiB，失败调用会删除输出。这是 UI/GPU 工作接上工作线程池任务，不是新 Agent peer，也不是每次渲染对应一个 Tokio task。设备证据及尚待验证的模型图像链路见 [ADR 0006](adr/0006-app-studio-on-the-phone.md)。
+
 ## 11. 测试与尚待实现的部分
 
 [Broker 测试](../crates/app-peers/tests/broker.rs)提供可执行协议示例：`a_persons_message_runs_while_the_system_agents_input_runs`、`a_lane_stop_leaves_the_other_lane_running`、`a_kernel_without_shared_history_is_refused_for_the_conversation`、`removing_an_account_purges_its_recorded_peer_and_drops_the_record`。[Shell relay 场景测试](../crates/shell/src/host_tools/scenario_tests.rs)覆盖调用方、工具与审批边界；修改对话或执行路径时从这些测试开始。

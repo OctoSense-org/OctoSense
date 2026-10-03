@@ -84,21 +84,25 @@ signer, kept outside the checkout. Use the pinned packager, not upstream's: it
 carries this app's Java activity ([docs/build-tool.md](docs/build-tool.md)).
 Signing, receipts and the ROM variant: [rom/docs/home-build.md](../rom/docs/home-build.md).
 
-**Package name.** Home's application ID is `dev.makepad.octosense`, in both
-the standalone and the ROM variant. A phone running the OctoSense ROM already
-has that ID, signed with the platform key, so a development build cannot
-replace it. To install a test build beside it, call the packager with another
-package name, from `phone/`:
+**Developer options and a test package.** `--development` selects signing
+only. Add `--dev-mode` to compile Settings' developer options; this preserves
+`--release` optimization and does not turn developer mode on. Normal builds
+omit the feature. The build receipt records `development`, `dev_mode` and
+`home_package`; ROM staging refuses developer-enabled artifacts.
 
-```sh
-../.sources/makepad/target/release/cargo-makepad makepad android \
-  --sdk-path=/path/to/makepad-android \
-  --package-name=dev.makepad.octosense.scriptapps \
-  build -p octosense-home --release
-```
+Home normally uses `dev.makepad.octosense`. To build a test Home beside the
+installed app, add `--package-name dev.makepad.octosense.studio` to the
+standalone command above. The default output becomes
+`rom/out/home/standalone-dev-mode/dev.makepad.octosense.studio/` when both options
+are used. Install only that test Home APK; the accompanying Bridge retains its
+existing package ID and must not replace the device's Bridge. The separate
+Home does not receive privileged ROM services without satisfying their existing
+package/signature checks.
 
-`run` in place of `build` also installs and starts it; address it with its own
-name, for example `adb shell am start -n dev.makepad.octosense.scriptapps/.MakepadApp`.
+The new build-plan and receipt paths are unit tested and dry-run checked.
+APK and device validation remain separate: [App Studio milestone 1](../docs/adr/0006-app-studio-on-the-phone.md)
+is in progress; the full phone authoring loop is not yet available.
+The [studio device probe](../tools/studio-device-probe.py) checks denial, light/dark PNG output and background cancellation in that separate package. It needs a `--dev-mode` APK built with `MAKEPAD_FORCE_DEBUGGABLE=1` so `run-as` can provision test fixtures. The probe restores developer settings and returns to Home; it neither installs APKs nor tests model image delivery. Resolve startup permission prompts before running the probe; rendering does not need location access, which can remain denied. Device execution remains **unverified** until its evidence is recorded.
 
 **OpenHarmony:** `python3 rom/scripts/build-home-ohos.py --deveco-home ...
 --packager ... --signing-config ...` builds a normal OpenHarmony app with an
