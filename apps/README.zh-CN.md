@@ -83,7 +83,11 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **Camera**：在 OnePlus 6 测试中（2026-09-25），Camera 能拍照并在后台释放
   相机，但实时预览是纯黑的，尚未解决。桌面构建没有相机，Android 模拟器拒绝
   提供相机，因此其他环境下拍摄未经测试。
-- **Photos**：bundle 只带 75 张缩略图（`bundle/thumbs/`，约 2 MB）。查看器
+- **Photos**：bundle 只带 75 张缩略图（`bundle/thumbs/`，约 2 MB）。主屏幕预览
+  保持三列，根据卡片的可用宽高显示一、二或三行，并优先显示收藏。照片铺满卡片，
+  标题叠加在左下角，不再单独占用顶部空间。卡片尺寸变化
+  或重新加载时，Shell 的进程内卡片宿主会在应用自己的 isolate 中调用可选的
+  `on_app_resize(width, height)` 回调，并在绘制主屏幕预览帧之前完成队列中的 UI 更新。查看器
   显示的原图只有在 Shell 挂载后才会出现在 `{{assets}}/photos/...`：Home
   挂载 `photos/resources/photos`（约 87 MB，见 `phone/system-apps.json`）；
   桌面端不挂载任何目录（`desktop/system-apps.json`），所以那里的查看器没有原图。

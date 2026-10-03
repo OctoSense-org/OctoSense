@@ -57,6 +57,8 @@ mod module_input_tests;
 mod module_panic_tests;
 #[cfg(test)]
 mod module_peer_tests;
+#[cfg(test)]
+mod module_resize_tests;
 pub mod module_view;
 pub mod native_apps;
 pub mod sandbox;

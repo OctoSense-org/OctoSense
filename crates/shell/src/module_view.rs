@@ -125,6 +125,8 @@ pub struct MpModuleView {
     /// outside the draw that decided it is visible again.
     #[rust]
     wake_frame: Option<NextFrame>,
+    #[rust]
+    script_viewport: Option<(WidgetUid, Vec2d)>,
 }
 
 impl MpModuleView {
@@ -152,6 +154,7 @@ impl MpModuleView {
         self.root = Some(root);
         self.client = Some(client);
         self.vm_id = vm_id;
+        self.script_viewport = None;
         self.drawn = false;
         self.stopped = None;
         self.draw_bg.redraw(cx);
@@ -589,7 +592,32 @@ impl Widget for MpModuleView {
             //   is outside all of this.
             let mark = cx.unwind_mark();
             let captures = CaptureGauss::scope_depth(cx);
-            let drawn = contain(cx, self.vm_id, "its draw", |cx| root.draw_walk_all(cx, scope, Walk::fill()));
+            let viewport = &mut self.script_viewport;
+            let resized = contain(cx, self.vm_id, "its resize", |cx| {
+                let card = root.splash(cx, ids!(card));
+                let content = card
+                    .borrow()
+                    .filter(|splash| !splash.view.source.is_zero())
+                    .map(|splash| splash.view.widget_uid());
+                if let Some(content) = content {
+                    let current = (content, rect.size);
+                    if *viewport != Some(current) {
+                        *viewport = Some(current);
+                        return card.call_script_fn(
+                            cx,
+                            id!(on_app_resize),
+                            &[rect.size.x.into(), rect.size.y.into()],
+                        );
+                    }
+                }
+                false
+            });
+            if resized == Some(true) {
+                cx.with_vm_and_async(|_| {});
+            }
+            let drawn = resized.and_then(|_| {
+                contain(cx, self.vm_id, "its draw", |cx| root.draw_walk_all(cx, scope, Walk::fill()))
+            });
             if drawn.is_none() {
                 cx.unwind_to(mark);
                 CaptureGauss::unwind_scope_to(cx, captures);

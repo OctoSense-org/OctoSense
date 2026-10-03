@@ -97,7 +97,14 @@ screen. `net` reaches only the hosts the manifest lists.
   black; unresolved. Desktop builds have no camera and the Android emulator
   refuses one, so capture is untested elsewhere.
 - **Photos**: the bundle ships only 75 thumbnails (`bundle/thumbs/`, about
-  2 MB). The full-size files the viewer shows are served at
+  2 MB). Its Home preview keeps three columns and fits one, two or three rows
+  to the card's available width and height, with favorites first. Photos fill
+  the card edge to edge; the title overlays the lower-left corner instead of
+  reserving a header row. The shell's
+  in-process card host calls the optional `on_app_resize(width, height)` hook
+  in the app's own isolate when its slot changes size or the card reloads.
+  It applies the queued UI updates before drawing the Home preview frame.
+  The full-size files the viewer shows are served at
   `{{assets}}/photos/...` only when a shell mounts them: Home mounts
   `photos/resources/photos` (about 87 MB, `phone/system-apps.json`);
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
