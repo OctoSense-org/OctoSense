@@ -77,5 +77,57 @@ Mail 使用现有 `mail_demo` 传输层，通过宿主登录界面添加测试�
   因而测试包没有加载 Home 的原生 Back 接管逻辑。最终流程使用 ×；生产 Home 的 Back
   行为在本次测试中仍属**未验证**。
 
-已移除临时供应商配置、恢复屏幕超时时间、停止测试包，并确认 ADB 为非 root。
+上述原始测试结束后，已移除临时供应商配置、恢复屏幕超时时间、停止测试包，并确认 ADB 为非 root。
 保留合成 Mail 状态和测试证据供检查，见[清理记录](evidence/agent-card/cleanup.json)。
+
+## 外观调整：组合构建重放
+
+**后续竖屏重放通过**，卡片 ID 为 `os.mail/mail-card-polish-1791014993`。
+本次检查 `9e65b3bc` 中的圆角手机通知条、底部卡片弹层、更大的关闭触摸区和
+通知内容间距。实际 APK 来自干净的组合提交
+[`ccf8013f`](https://github.com/OctoSense-org/OctoSense/commit/ccf8013f2bd7adbb6c20d5f52f47bcfbcbb55313)，其中还包含 App Studio。
+这**不是仅以 `9e65b3bc` 构建的真机验证**。
+[已安装 APK 指纹](evidence/agent-card-polish/installed-build.json) 与
+[组合构建记录](evidence/agent-card-polish/build.json) 一致；上述原始
+`c3eaea2c` 证据单独保留。
+
+[新会话记录](evidence/agent-card-polish/agent-evidence.json) 包含系统 Agent 的
+`peer_send_input`、独立 Mail peer 成功执行的 `mail_notify`（相同卡片 ID，
+`replaced: false`），以及 `peer_gather` 和两个会话的最终回复。
+[路由日志](evidence/agent-card-polish/notification-route.log) 与
+[触摸记录](evidence/agent-card-polish/observation.json) 确认：触摸 `(540,270)`
+打开该卡片，点击 `(962,1510)` 的 × 后在同一 Activity 内关闭。坐标基于记录的
+450 dpi 屏幕密度。
+
+[聊天上方的通知条](evidence/agent-card-polish/01-notification-over-chat.png) ·
+[完整卡片](evidence/agent-card-polish/02-full-card.png) ·
+[关闭后的 Glance](evidence/agent-card-polish/03-glance-after-close.png)
+
+独立截图检查确认文字可读、完整卡片正文齐全、关闭按钮可见、边距完整，关闭后
+Glance 仍显示同一张卡片。通知条正文按设计省略。Glance 状态栏的白色图标与浅色
+背景对比度仍偏低，这是尚存的 shell 问题。通知条后方较早的 Calendar 模型回复
+属于另一项测试。见[视觉检查](evidence/agent-card-polish/visual-review.json) 和
+[文件哈希](evidence/agent-card-polish/sha256.json)。
+
+首次外观重放因测试脚本在旧日志快照中寻找尚未记录的触摸矩形而停止。选择触摸
+目标前刷新日志后，脚本恢复正常；运行时代码没有变化。
+[失败尝试摘要](evidence/agent-card-polish/prior-attempt.json) 保留了这一区别。
+成功重放的会话文件也保留了一次较早 Mail 轮次的 `orphaned_by_restart` 错误；
+本次验收的发布与最终回复属于另一个轮次。
+
+重放复用了现有人工同意记录和合成 demo 账户。流程期间未启用开发者授权；结束后
+将相关文件精确恢复为原字节或原先不存在的状态，并停止测试包。测试包装脚本没有
+改动供应商配置或同意记录，见[清理记录](evidence/agent-card-polish/cleanup.json)。
+生产 Home 未受影响。本次不增加对 Android Back、深色模式、横屏、系统通知栏或
+真实邮件的验证声明。
+
+全部模板和通知测试结束后，测试人员另外移除了两个独立测试包的临时供应商配置
+和开发者授权，恢复到原先不存在的状态；停止两个测试包、恢复 60 秒屏幕超时，
+并确认 ADB 为非 root。这份后续[最终清理记录](evidence/agent-card-polish/final-cleanup.json)
+记录的是包装脚本临时恢复授权之后的最终状态；生产 Home、默认启动器和 ROM
+均未改动。
+
+组合重放前，`9e65b3bc` 的 **840 个 shell 测试**、桌面默认/mobile-apps 和
+Home mobile-apps 检查、两套依赖图检查、setup 验证与 Android 构建均通过。
+这些检查和组合构建的真机重放对应不同源码范围，不能替代仅针对外观提交构建的
+真机测试。

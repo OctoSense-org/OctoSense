@@ -1,0 +1,14 @@
+{
+  "review": "Independent operator screenshot review",
+  "result": "passed for the recorded portrait flow",
+  "screens": {
+    "01-notification-over-chat.png": "Rounded banner readable above chat, positioned below status icons; body intentionally elided.",
+    "02-full-card.png": "Bottom card shows complete title/body, visible close control and intact margins; no observed content overlap.",
+    "03-glance-after-close.png": "Same title/body visible in undimmed Glance after close."
+  },
+  "limits": [
+    "Only this portrait synthetic notice was visually reviewed.",
+    "Glance status-bar white icons on a light background have low contrast; this existing shell issue remains.",
+    "Older Calendar-model output visible behind the toast is unrelated to this notification test."
+  ]
+}

@@ -1,0 +1,9 @@
+10-02 21:10:10.697 27953 27974 I Makepad : crates/shell/src/lib.rs:4288:13 - glance: toast 1 opens os.mail/mail-card-polish-1791014993
+10-02 21:10:10.697 27953 27974 I Makepad : crates/shell/src/lib.rs:4295:9 - glance: os.mail notifies os.mail/mail-card-polish-1791014993
+10-02 21:10:10.963 27953 27974 I Makepad : crates/shell/src/shell/notifications.rs:700:13 - notifications: 1 toast(s) 1@12,35,360,120
+10-02 21:10:10.975 27953 27974 I Makepad : crates/shell/src/shell/notifications.rs:700:13 - notifications: 1 toast(s) 1@12,36,360,120
+10-02 21:10:12.712 27953 27974 I Makepad : crates/shell/src/glance_sheet.rs:147:9 - glance sheet: opened os.mail/mail-card-polish-1791014993
+10-02 21:10:12.712 27953 27974 I Makepad : crates/shell/src/lib.rs:3875:13 - wm: glance toast opens card os.mail/mail-card-polish-1791014993
+10-02 21:10:13.273 27953 27974 I Makepad : crates/shell/src/glance_sheet.rs:224:17 - glance sheet: os.mail/mail-card-polish-1791014993 sheet@12,386,360,384 card@24,438,336,320 close@342,412
+10-02 21:10:13.290 27953 27974 I Makepad : crates/shell/src/glance_sheet.rs:224:17 - glance sheet: os.mail/mail-card-polish-1791014993 sheet@12,511,360,258 card@24,563,336,194 close@342,537
+10-02 21:10:14.440 27953 27974 I Makepad : crates/shell/src/glance_sheet.rs:155:13 - glance sheet: closed os.mail/mail-card-polish-1791014993

@@ -1,0 +1,17 @@
+{
+  "package": "dev.makepad.octosense.studio",
+  "source_revision": "ccf8013f2bd7adbb6c20d5f52f47bcfbcbb55313",
+  "source_dirty": false,
+  "polish_commit_included": "9e65b3bc8f944fbd5c21fe6cca3215fe7ed4d915",
+  "exact_polish_build": false,
+  "scope": "Composite integration and visual validation of PR314 polish",
+  "normal_consent_mode": true,
+  "first_use_consent_tested": false,
+  "consent": "Existing manual consent reused; consent records untouched",
+  "provider": "Existing authorized test-package provider profile untouched",
+  "mail": "Existing synthetic demo account; mail_demo enabled",
+  "production_home_touched": false,
+  "harness_sha256": "5995fab6a63783fe5312da65ac3c1789f05bc4e1725d887902a054c8d39da300",
+  "wrapper_sha256": "08c7439b6c08f5fc9a3db3249d75ca4fb6647c8ebc85408188e24e12fbb7d2ac",
+  "visual_review": "Pending; all three fresh screenshots require independent review"
+}

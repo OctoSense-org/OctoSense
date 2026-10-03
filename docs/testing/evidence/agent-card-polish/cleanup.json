@@ -1,0 +1,9 @@
+{
+  "provider_profile_modified_by_wrapper": false,
+  "consent_records_modified_by_wrapper": false,
+  "production_home_touched": false,
+  "automated_flow_passed": true,
+  "visual_review": "pending",
+  "developer_state_restored_exactly": true,
+  "test_package_stopped": true
+}

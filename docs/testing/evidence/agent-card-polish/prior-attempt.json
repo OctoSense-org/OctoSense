@@ -1,0 +1,10 @@
+{
+  "automated_flow_passed": false,
+  "failure": "Operator harness searched a stale pre-draw log snapshot for the notification touch rectangle.",
+  "notification_screenshot_captured": true,
+  "tap_completed": false,
+  "developer_state_restored_exactly": true,
+  "resolution": "Refresh PID-filtered logs and wait up to four seconds for the measured rectangle before tapping; runtime unchanged.",
+  "claim_limit": "This was a harness failure, not evidence of a production touch regression.",
+  "prior_harness_sha256": "51ed70f4d71b1f3e58cc5a5aba9cbece454e3dcffedbca4f8361475af9a28c0d"
+}
