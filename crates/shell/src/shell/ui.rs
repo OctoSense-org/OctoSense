@@ -43,6 +43,23 @@ script_mod! {
         }
     }
 
+    // Flat phone surfaces keep rounded corners without invoking the desktop
+    // glass compositor or inheriting a window's accent border.
+    set_type_default() do #(DrawShellRound::script_shader(vm)) {
+        ..mod.draw.DrawQuad
+        color: #ffffff
+        radius: 18.0
+        pixel: fn() {
+            let p = self.pos * self.rect_size
+            let half = self.rect_size * 0.5
+            let radius = min(self.radius, min(half.x, half.y))
+            let q = abs(p - half) - half + vec2(radius)
+            let d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - radius
+            let a = clamp(0.5 - d, 0.0, 1.0) * self.color.w
+            return vec4(self.color.rgb * a, a)
+        }
+    }
+
     // `BorderSurface`: a fill plus a hard square ring measured straight off
     // the quad edges. The ring takes two stops and an angle so a theme's
     // hyprland `active-border` gradient (what `[popups] border` resolves to)
@@ -596,6 +613,17 @@ pub struct DrawShellFill {
 
 #[derive(Script, ScriptHook)]
 #[repr(C)]
+pub struct DrawShellRound {
+    #[deref]
+    draw_super: DrawQuad,
+    #[live]
+    color: Vec4f,
+    #[live(18.0)]
+    radius: f32,
+}
+
+#[derive(Script, ScriptHook)]
+#[repr(C)]
 pub struct DrawShellChrome {
     #[deref]
     draw_super: DrawQuad,
@@ -897,6 +925,8 @@ pub struct ShellDraw {
     #[live]
     pub fill: DrawShellFill,
     #[live]
+    round: DrawShellRound,
+    #[live]
     pub chrome: DrawShellChrome,
     #[live]
     pub ring: DrawShellRing,
@@ -957,6 +987,13 @@ pub fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
         pos: dvec2(x, y),
         size: dvec2(w.max(0.0), h.max(0.0)),
     }
+}
+
+/// Phone overlays follow the card's light/dark appearance, rather than a
+/// desktop window-manager theme that may have the opposite appearance.
+pub fn phone_card_colors(dark: bool) -> (Vec4f, Vec4f) {
+    if dark { (super::rgb(28, 30, 36), super::rgb(245, 245, 247)) }
+    else { (super::rgb(255, 255, 255), super::rgb(28, 28, 30)) }
 }
 
 /// Shrink a rect on every side (QML `anchors.margins`).
@@ -1396,6 +1433,20 @@ impl ShellDraw {
         }
         self.fill.color = color;
         self.fill.draw_abs(cx, r);
+    }
+
+    pub fn rounded(&mut self, cx: &mut Cx2d, r: Rect, radius: f64, color: Vec4f) {
+        self.round.color = color;
+        self.round.radius = radius as f32;
+        self.round.draw_abs(cx, r);
+    }
+
+    /// A quiet, opaque phone card. Its inset shadow stays independent of
+    /// desktop window borders; the caller supplies the current appearance.
+    pub fn phone_card(&mut self, cx: &mut Cx2d, r: Rect, fill: Vec4f, opacity: f32) {
+        self.rounded(cx, rect(r.pos.x - 1.0, r.pos.y + 3.0, r.size.x + 2.0, r.size.y + 2.0), 21.0,
+            alpha(super::rgb(0, 0, 0), 0.06 * opacity));
+        self.rounded(cx, r, 20.0, fade(fill, opacity));
     }
 
     /// `BorderSurface`: fill + ring. `border_end`/`angle` let a theme's
@@ -2282,4 +2333,3 @@ mod wrap_tests {
         assert_eq!(wrap_with("one\r\ntwo\n", 10.0, true, width), ["one", "two", ""], "a trailing break is a new, empty line");
     }
 }
-

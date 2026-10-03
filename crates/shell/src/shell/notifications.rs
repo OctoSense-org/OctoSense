@@ -217,6 +217,8 @@ pub struct ShellNotifications {
     #[rust]
     pub icon_style: DesktopStyle,
     #[rust]
+    pub mobile: bool,
+    #[rust]
     app_icons: AppIconDraw,
     #[rust]
     area: Area,
@@ -449,6 +451,10 @@ impl ShellNotifications {
         if self.live.is_empty() {
             return;
         }
+        if self.mobile {
+            self.draw_phone_stack(cx, screen);
+            return;
+        }
         let tok = self.d.tokens(self.tokens);
         let gaps_out = tok.spacing.gaps_out;
         let border = tok.notifications.surface.border_width;
@@ -613,6 +619,95 @@ impl ShellNotifications {
             self.logged = layout;
         }
     }
+
+    fn draw_phone_stack(&mut self, cx: &mut Cx2d, screen: Rect) {
+        use super::ui::{phone_card_colors, HAlign};
+        let safe = cx.display_context.safe_area_insets;
+        let bounds = phone_stack_bounds(screen, safe.left, safe.top, safe.right, safe.bottom);
+        let (fill, foreground) = phone_card_colors(crate::glance_card::dark());
+        let now = cx.seconds_since_app_start();
+        let scale = self.d.text_scale();
+        let (header_h, title_h, body_h) = (24.0 * scale, 21.0 * scale, 18.0 * scale);
+        let mut y = bounds.pos.y;
+        let wanted = if self.expanded { self.live.len() } else { self.live.len().min(2) };
+        for entry in self.live.clone().into_iter().take(wanted) {
+            let note = &entry.note;
+            let text_w = bounds.size.x - 32.0;
+            let mut title = self.d.wrap(cx, true, 15.0 * scale, &note.summary, text_w, 2);
+            let mut body = self.d.wrap(cx, false, 13.0 * scale, &note.body, text_w, 2);
+            let action_h = if note.action.is_some() { 48.0 } else { 0.0 };
+            let height = |titles: usize, lines: usize| 14.0 + header_h + 8.0 + title_h * titles as f64
+                + if lines == 0 { 0.0 } else { 3.0 + body_h * lines as f64 }
+                + 14.0 + action_h;
+            let available = bounds.pos.y + bounds.size.y - y;
+            if !self.card_rects.is_empty() && height(title.len(), body.len()) + 54.0 > available { break; }
+            // In landscape or enlarged text, preserve the title/action and
+            // shorten only the preview. The full card retains the whole body.
+            while !body.is_empty() && height(title.len(), body.len()) > available {
+                if body.len() == 1 { body.clear(); }
+                else { body = self.d.wrap(cx, false, 13.0 * scale, &note.body, text_w, body.len() - 1); }
+            }
+            if height(title.len(), body.len()) > available {
+                title = self.d.wrap(cx, true, 15.0 * scale, &note.summary, text_w, 1);
+            }
+            let h = height(title.len(), body.len());
+            if h > available { break; }
+            let offset = slide_offset(now - entry.posted, entry.left, entry.lifetime);
+            let opacity = (1.0 - offset / SLIDE_PX).clamp(0.0, 1.0) as f32;
+            let card = rect(bounds.pos.x, y - offset * 0.35, bounds.size.x, h);
+            let ink = fade(foreground, opacity);
+            self.d.phone_card(cx, card, fill, opacity);
+            let icon = rect(card.pos.x + 16.0, card.pos.y + 14.0, 20.0, 20.0);
+            if let Some(app) = note.app_icon.as_deref() {
+                self.app_icons.draw(cx, app, self.icon_style, icon, opacity, ink);
+            } else if let Some(icon_kind) = note.icon {
+                self.d.icon_centered(cx, icon_kind, icon, 16.0, ink);
+            }
+            let caption = if note.caption.is_empty() { "Notification" } else { &note.caption };
+            self.d.label_elided(cx, rect(icon.pos.x + 28.0, icon.pos.y, text_w - 66.0, header_h),
+                false, 11.5, fade(ink, 0.68), HAlign::Left, caption);
+            // A visible close affordance with a 44-point touch target.
+            let close = rect(card.pos.x + card.size.x - 48.0, card.pos.y + 2.0, 44.0, 44.0);
+            self.d.icon_centered(cx, Ico::Close, close, 12.0, fade(ink, 0.65));
+            let mut ty = card.pos.y + 14.0 + header_h + 8.0;
+            for line in &title {
+                self.d.label(cx, rect(card.pos.x + 16.0, ty, text_w, title_h), true, 15.0, ink, HAlign::Left, line);
+                ty += title_h;
+            }
+            ty += 3.0;
+            for line in &body {
+                self.d.label(cx, rect(card.pos.x + 16.0, ty, text_w, body_h), false, 13.0, fade(ink, 0.78), HAlign::Left, line);
+                ty += body_h;
+            }
+            if let Some(label) = &note.action {
+                let action = rect(card.pos.x + 12.0, card.pos.y + h - 52.0, card.size.x - 24.0, 44.0);
+                self.d.rounded(cx, action, 12.0, fade(ink, 0.06));
+                self.d.label_elided(cx, action, true, 13.0, ink, HAlign::Center, label);
+                self.action_rects.push((note.id, action));
+            }
+            self.card_rects.push((note.id, card, close));
+            y += h + 10.0;
+        }
+        let hidden = self.live.len() - self.card_rects.len();
+        if hidden > 0 && y + 44.0 <= bounds.pos.y + bounds.size.y {
+            self.more = rect(bounds.pos.x + bounds.size.x - 116.0, y, 116.0, 44.0);
+            self.d.phone_card(cx, self.more, fill, 1.0);
+            self.d.label(cx, self.more, true, 12.0, foreground, HAlign::Center, &format!("{hidden} more"));
+        }
+        let layout = self.card_rects.iter().map(|(id, r, _)| format!("{id}@{},{},{},{}",
+            r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect::<Vec<_>>().join(" ");
+        if layout != self.logged {
+            log!("notifications: {} toast(s) {layout}", self.card_rects.len());
+            self.logged = layout;
+        }
+    }
+}
+
+fn phone_stack_bounds(screen: Rect, left: f64, top: f64, right: f64, bottom: f64) -> Rect {
+    let available = (screen.size.x - left - right - 24.0).max(0.0);
+    let width = available.min(420.0);
+    rect(screen.pos.x + left + 12.0 + (available - width) * 0.5,
+        screen.pos.y + top + 8.0, width, (screen.size.y - top - bottom - 24.0).max(0.0))
 }
 
 impl Widget for ShellNotifications {
@@ -751,6 +846,17 @@ pub fn fixtures() -> Vec<Notification> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phone_notifications_clear_status_bar_and_both_screen_edges() {
+        for (w, h) in [(320.0, 640.0), (384.0, 810.0), (810.0, 384.0)] {
+            let r = phone_stack_bounds(rect(0.0, 0.0, w, h), 8.0, 32.0, 24.0, 24.0);
+            assert!(r.pos.x >= 20.0 && r.pos.y >= 40.0);
+            assert!(r.pos.x + r.size.x <= w - 36.0);
+            assert!(r.pos.y + r.size.y <= h - 24.0);
+            assert!(r.size.x <= 420.0);
+        }
+    }
 
     fn touch(state: makepad_platform::event::TouchState, abs: Vec2d) -> Event {
         use makepad_platform::event::{TouchPoint, TouchUpdateEvent};
