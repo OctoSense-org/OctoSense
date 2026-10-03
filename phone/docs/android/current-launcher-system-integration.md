@@ -14,8 +14,9 @@ to remain installed; temporary fixture grants are removed after testing.
   OctoSense panel** controls this persistent feature. The lock screen retains
   Android's panel. See the [native panel record](systemui-shade-replacement.md)
   for exact artifacts, validation and recovery.
-- On Home, pull down inside the right side, starting below Android's status bar,
-  for **Controls**. The connection summary opens the
+- On Home, when the system-wide panel is off (always, on a phone without the
+  OctoSense ROM), pull down inside the right side, starting below Android's
+  status bar, for **Controls**. The connection summary opens the
   Internet panel. Wi-Fi and Bluetooth open Android setup when a direct switch is
   unavailable. Hold either tile to open connection settings even when direct
   switching is enabled.
@@ -23,8 +24,8 @@ to remain installed; temporary fixture grants are removed after testing.
   accessibility. Android owns network credentials, device pairing and consent.
 - Tap **System setup** for permission status and setup. The same page is available
   from the Home long-press menu and the System Bridge app in the app drawer.
-- On Home, pull down inside the left side, starting below Android's status bar,
-  for notifications. **Enable notifications** opens
+- On Home, with the system-wide panel off, pull down inside the left side,
+  starting below Android's status bar, for notifications. **Enable notifications** opens
   Android's access screen specifically for OctoSense. Once access is enabled,
   notification cards expose app actions, native inline replies and dismissal.
   Tap a card to open its content; swipe left for actions and right to dismiss.

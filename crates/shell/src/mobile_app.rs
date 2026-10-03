@@ -580,6 +580,8 @@ impl App {
             PhoneHit::Key(key)=>self.type_phone_key(cx,&key),
             PhoneHit::Back=>{
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
+                // An open shade takes Back before the page under it.
+                else if self.state_mut().phone.shade.is_open() {self.state_mut().phone.shade.close();}
                 else {self.phone_back(cx);}
             }
             // The shade's Dark mode tile is the appearance the desk bar's
@@ -866,7 +868,9 @@ impl App {
             // A rightward library swipe returns Home, including from search
             // results. Its vertical drags stay with the scrolling grid.
             body: matches!(phone.screen, PhoneScreen::Home | PhoneScreen::Drawer),
-            shade: !crate::mobile_navigation::ENABLED && !phone.android.system_panel,
+            // Home's own shade, unless the system-wide OctoSense panel owns
+            // the pull-downs (or nothing feeds it): `ShadeReach`.
+            shade: crate::mobile_shade::ShadeReach::of(phone.android.system_panel).shell_shade(),
         }
     }
     /// The recognizer's in-progress gesture moves what the shell draws

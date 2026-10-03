@@ -883,7 +883,7 @@ impl PhoneSurface {
             return;
         }
         if phone.gesture_out.is_some() || phone.pages.current()!=0 || phone.shade.open>0.001 || phone.overview>0.001 {return;}
-        let Some((_,text))=phone.hints.pending(phone.android.system_panel) else {return};
+        let Some((_,text))=phone.hints.pending(crate::mobile_shade::ShadeReach::of(phone.android.system_panel)) else {return};
         // Keep the hint below the dock icons and above the swipe chevron (the
         // bottom edge with floating navigation, which draws none), clear of
         // the favorites' labels and page indicator.
@@ -1198,7 +1198,7 @@ impl PhoneSurface {
         if perf {crate::mobile_perf::span(cx.cx,ch.overlay,clock);clock=std::time::Instant::now();}
         if !self.shade_warm && phone.shade.open<0.001 && phone.gesture.is_none() {
             self.shade_warm=true;
-            if !crate::mobile_navigation::ENABLED && !phone.android.system_panel {
+            if crate::mobile_shade::ShadeReach::of(phone.android.system_panel).shell_shade() {
                 crate::mobile_shade::prewarm(cx,&mut self.d,&mut self.round,&mut self.icons,&mut self.android_icon,state,screen);
                 self.shade_glass.draw_surface_with_backdrop(cx,
                     rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
