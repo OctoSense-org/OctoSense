@@ -137,6 +137,12 @@ pub fn save_merge_primary(path: &Path, primary: &Provider, env: &BTreeMap<String
     })
 }
 
+/// Upsert env vars only: `config.llm` and everything else stay as they are.
+/// Envelope as [`save_merge`].
+pub fn save_env(path: &Path, env: &BTreeMap<String, String>) -> Result<()> {
+    edit(path, |cfg| upsert_env(cfg, env))
+}
+
 /// Delete env vars (e.g. the key of a provider being removed). A missing
 /// file or name is not an error.
 pub fn remove_env(path: &Path, names: &[String]) -> Result<()> {

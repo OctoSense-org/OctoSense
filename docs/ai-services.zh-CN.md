@@ -103,7 +103,7 @@ flowchart TB
 它和其他应用一样是隔离运行的脚本应用；有特权的一半是 **`llm` 宿主服务**（[`apps/ai-providers/host-service`](../apps/ai-providers/host-service/README.md)）：
 
 - 它写入内核的配置 `<core 目录>/profiles/_main.json`（`config.llm` 和 `config.env_vars` 中的密钥变量），然后重启内核。
-- 密钥存入 macOS 登录钥匙串（服务名 `octos`）；Linux 上存入 `<core 目录>/secrets/<ENV>`（0600）；Android 和 iOS 上存入应用私有的配置文件（0600），因为 octos 在那里没有密钥存储。开发时可用 `OCTOSENSE_LLM_VAULT=file` 把密钥留在配置文件中。
+- 密钥存入 macOS 登录钥匙串（服务名 `octos`）；桌面 Linux 上存入 `<core 目录>/secrets/<ENV>`（0600）；Android、iOS 和 HarmonyOS 上存入应用私有的配置文件（0600）：octos 在 Android 和 iOS 上没有密钥存储，而 HarmonyOS 上内嵌的内核会到 Shell 自己的 `HOME` 下找密钥存储。开发时可用 `OCTOSENSE_LLM_VAULT=file` 把密钥留在配置文件中。
 - 密钥、PIN 和 QR 码只在服务自己的**宿主面板**上输入、绘制和扫描。只有面板能调用 `llm.sheet.*`；应用只看到掩码后的状态（`"set ••••1234"`、`"missing"`）。
 - 它**只服务 `os.*` 应用**（`"llm is for OctoSense's own apps."`）。它管理提供方；没有任何向模型发送提示词的方法。
 

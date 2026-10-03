@@ -306,8 +306,8 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 部分。它把 octos 内核的大模型服务商保存在内核的 profile
 `<core_dir>/profiles/_main.json` 中（由 `octosense-llm-config` 合并 `config.llm` 和
 `config.env_vars`，其他键保持不变），密钥则放在 octos 读取的位置：macOS 上是钥匙串
-`octos` 服务（profile 中写 `keychain:` 标记），Linux 上是 `<core_dir>/secrets/`，
-其他平台（Android）写在应用私有的 profile 中。密钥只在宿主面板上输入，二维码只在
+`octos` 服务（profile 中写 `keychain:` 标记），桌面 Linux 上是 `<core_dir>/secrets/`，
+其他平台（Android，以及内嵌内核读不到密钥文件夹的 HarmonyOS）写在应用私有的 profile 中。密钥只在宿主面板上输入，二维码只在
 宿主面板上显示和扫描；应用只能看到打码后的状态。开启其 `octos-core` feature（Shell
 的默认设置）后，它写入 `octosense_kernel::core_dir()`，并在每次更改后调用
 `octosense_kernel::restart()`，让正在运行的内核读取新的服务商。方法列表与注册
@@ -385,7 +385,7 @@ Shell 默认链接它（cargo feature `octos-core`，在 `mobile-apps` 和原生
   每个使用方只收到自己请求的回复和自己会话的通知。最后一个使用方离开时内核停止。
 - **由 AI 服务商配置。** `llm` 宿主服务写入内核的 profile
   `<core_dir>/profiles/_main.json` 以及密钥（macOS 钥匙串 `octos` 服务配合
-  `keychain:` 标记，Linux 上是 `<core_dir>/secrets/`，其他平台写在 profile 中），
+  `keychain:` 标记，桌面 Linux 上是 `<core_dir>/secrets/`，其他平台（包括 HarmonyOS）写在 profile 中），
   然后调用 `restart()`：正在运行的内核停止，使用方重新连接，新内核读取新的服务商。
 - **使用方。** AppCard（需显式开启）通过其传输层的 `kernel` 模块连接；Rinx 的
   原生小程序宿主可以用同样方式拿到自己的连接，而不是共用 AppCard 的连接。
