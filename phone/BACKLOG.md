@@ -673,7 +673,7 @@ Found in the review of the second sync from mobile on 2026-09-25
   sync; an old id stays in Android placements and in `wm/launcher.hides`.
   Unneeded while the public catalog is empty.
 
-- [ ] **HUB-05 — P3: Small cleanups after the App Hub merge.**
+- [x] **HUB-05 — P3: Small cleanups after the App Hub merge.**
 
   - `apps::is_linked` (`crates/shell/src/apps.rs`) is called only by its
     test.
@@ -686,6 +686,12 @@ Found in the review of the second sync from mobile on 2026-09-25
   why a `card` app without a manifest id does not open (`apps::module_open`:
   `<id> names no app for the card runner`), and `bundled_catalog()` filters
   its rows once, through `catalog_visible`.
+
+  Fixed on 2026-10-03: the non-floating navigation branch draws its band and
+  pill without the `android` conditions it could never meet. `apps::is_linked`
+  stays: since #309 the system agent's grants call it to tell which native
+  apps this build links (`native_system_tools` in
+  `crates/shell/src/system_chat/grants.rs`).
 
 - [x] **CAL-01 — P2: Host the Calendar module from mobile PR #11.**
 

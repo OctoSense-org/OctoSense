@@ -1173,8 +1173,7 @@ impl PhoneSurface {
         } else {
             let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
             if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
-                let band=if android {rect(bottom.pos.x,bottom.pos.y,bottom.size.x,bottom.size.y+phone.insets.bottom)} else {bottom};
-                self.rounded(cx,band,0.0,if state.style.dark {rgb(28,28,31)}else{rgb(244,244,248)});
+                self.rounded(cx,bottom,0.0,if state.style.dark {rgb(28,28,31)}else{rgb(244,244,248)});
             }
             let nav_ink=if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
                 if state.style.dark {rgb(238,238,242)}else{rgb(30,30,34)}
@@ -1187,7 +1186,7 @@ impl PhoneSurface {
                 let cue_ink=if phone.screen==PhoneScreen::Home {ink}else{nav_ink};
                 self.rounded(cx,cue,10.0,alpha(cue_ink,0.12));
                 self.d.icon_centered(cx,Ico::ChevronUp,cue,12.0,alpha(cue_ink,0.90));
-            } else if !(android && phone.insets.bottom>0.0) {
+            } else {
                 self.rounded(cx,rect(bottom.pos.x+bottom.size.x*0.5-60.0,bottom.pos.y+12.0,120.0,4.0),2.0,nav_ink);
             }
             self.hits.push((bottom,PhoneHit::Home));
