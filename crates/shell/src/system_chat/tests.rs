@@ -450,6 +450,39 @@ fn a_kernel_restart_resumes_the_same_session() {
     assert_eq!(d.model.phase(), &Phase::Ready);
 }
 
+/// A kernel that stops before the session opens (on HarmonyOS, a provider
+/// key the embedded core could not read) is started again with a growing
+/// back-off, not twice a second; a session that opens resets it.
+#[test]
+fn a_kernel_that_stops_before_the_session_opens_backs_off() {
+    let (mut d, fake) = driver();
+    let stop = || Some(Closed { restarted: false, why: "the kernel closed its output".into() });
+    let mut delays = Vec::new();
+    d.command(Command::Open);
+    for _ in 0..4 {
+        fake.s().inbox.clear();
+        fake.s().close = stop();
+        settle(&mut d);
+        assert!(matches!(d.model.phase(), Phase::Reconnecting(_)), "{:?}", d.model.phase());
+        delays.push(d.retry_in().expect("a retry is scheduled"));
+        d.retry_now();
+    }
+    let ms: Vec<u128> = delays.iter().map(|d| d.as_millis()).collect();
+    for (got, want) in ms.iter().zip([500, 1000, 2000, 4000]) {
+        assert!(*got > want - 100 && *got <= want, "back-off {ms:?}");
+    }
+    assert_eq!(fake.s().connects, 4);
+    // The fifth start works: the session opens, and the next stop waits the
+    // shortest delay again.
+    fake.s().inbox.clear();
+    settle(&mut d);
+    assert_eq!(d.model.phase(), &Phase::Ready);
+    fake.s().close = stop();
+    settle(&mut d);
+    let again = d.retry_in().expect("a retry is scheduled").as_millis();
+    assert!(again > 400 && again <= 500, "reset to {again} ms");
+}
+
 #[test]
 fn no_provider_and_no_kernel_are_said_plainly() {
     let (mut d, fake) = driver();

@@ -322,6 +322,20 @@ impl Driver {
         self.link.is_some()
     }
 
+    /// How long until the next connection attempt (tests).
+    #[cfg(test)]
+    pub fn retry_in(&self) -> Option<Duration> {
+        self.retry_at.map(|t| t.saturating_duration_since(Instant::now()))
+    }
+
+    /// Make a waiting connection attempt due now (tests).
+    #[cfg(test)]
+    pub fn retry_now(&mut self) {
+        if self.retry_at.is_some() {
+            self.retry_at = Some(Instant::now());
+        }
+    }
+
     fn request(&mut self, method: &str, params: Value, pending: Pending) -> bool {
         self.next_id += 1;
         let id = format!("syschat-{}", self.next_id);
@@ -456,8 +470,10 @@ impl Driver {
         self.model.set_phase(Phase::Connecting);
         match self.connector.connect() {
             Ok(link) => {
+                // The back-off resets only once the session opens: a kernel
+                // that stops before answering (a key it cannot read) would
+                // otherwise be started again twice a second.
                 self.link = Some(link);
-                self.backoff = Duration::from_millis(500);
                 self.retry_at = None;
                 self.request("session/open", json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE}), Pending::Open);
             }
@@ -587,6 +603,7 @@ impl Driver {
                 }
                 None => {
                     self.opened = true;
+                    self.backoff = Duration::from_millis(500);
                     self.model.set_phase(Phase::Ready);
                     self.sync_tools();
                     self.load_history();
