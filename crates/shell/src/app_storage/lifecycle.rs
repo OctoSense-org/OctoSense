@@ -62,12 +62,12 @@ pub fn register_native_specs(storage: &Storage) {
 }
 
 /// A script app's `manifest.json` under App Hub's data root: an installed
-/// app's `<root>/<id>/bundle/`, or the newest unpacked build of a system app
+/// app's bundle ([`crate::apps::installed_bundle`]), or the newest unpacked build of a system app
 /// (`<root>/.system/<id>/<build>/`). `None` before either exists (a system
 /// app the Card runner has not unpacked yet).
 pub fn script_manifest(root: &Path, manifest_id: &str) -> Option<Value> {
     super::validate_app_id(manifest_id).ok()?;
-    let installed = root.join(manifest_id).join("bundle").join("manifest.json");
+    let installed = crate::apps::installed_bundle(root, manifest_id).join("manifest.json");
     let path = if installed.is_file() {
         installed
     } else {

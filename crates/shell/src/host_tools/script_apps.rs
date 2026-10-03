@@ -149,7 +149,7 @@ fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
     let root = octosense_appstore::data_root_if_set().ok_or("App Hub has no apps root yet")?;
     let bundle = match octosense_appstore::system::system_app(app) {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.0,
-        None => root.join(app).join("bundle"),
+        None => crate::apps::installed_bundle(&root, app),
     };
     Ok((root, bundle))
 }
