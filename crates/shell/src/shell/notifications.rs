@@ -184,6 +184,11 @@ pub enum ShellNotificationsAction {
     None,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ToastTarget { More, Activate(u64), Dismiss(u64), Action(u64) }
+struct ToastTouch { uid: u64, start: Vec2d, target: Option<ToastTarget> }
+const TOUCH_SLOP: f64 = 12.0;
+
 #[derive(Script, ScriptHook, Widget)]
 pub struct ShellNotifications {
     #[uid]
@@ -237,6 +242,8 @@ pub struct ShellNotifications {
     /// What the last layout log said, so it is logged once per change.
     #[rust]
     logged: String,
+    #[rust]
+    touch: Option<ToastTouch>,
 }
 
 impl ShellNotifications {
@@ -302,6 +309,75 @@ impl ShellNotifications {
     /// under it.
     pub fn hit(&self, p: Vec2d) -> bool {
         !self.inert && (contains(self.more, p) || self.card_rects.iter().any(|(_, card, close)| contains(*card, p) || contains(*close, p)))
+    }
+
+    fn target(&self, p: Vec2d) -> Option<ToastTarget> {
+        if self.inert { return None; }
+        if contains(self.more, p) { return Some(ToastTarget::More); }
+        let live = |id| self.live.iter().any(|entry| entry.note.id == id);
+        if let Some((id, _)) = self.action_rects.iter().find(|(id, r)| live(*id) && contains(*r, p)) {
+            return Some(ToastTarget::Action(*id));
+        }
+        self.card_rects.iter().find_map(|(id, card, close)| {
+            if !live(*id) { None }
+            else if contains(*close, p) { Some(ToastTarget::Dismiss(*id)) }
+            else if contains(*card, p) { Some(ToastTarget::Activate(*id)) }
+            else { None }
+        })
+    }
+
+    fn reconcile_touch(&mut self, event: &makepad_platform::event::TouchUpdateEvent) {
+        use makepad_platform::event::TouchState;
+        // A higher modal can consume Stop. TouchUpdate lists current fingers;
+        // an absent ID (or a recycled ID's fresh Start) ends the old capture.
+        if self.touch.as_ref().is_some_and(|held| !event.touches.iter().any(|t|
+            t.uid == held.uid && t.state != TouchState::Start)) {
+            self.touch = None;
+        }
+    }
+
+    pub fn owns_pointer(&mut self, event: &Event) -> bool {
+        if self.inert { self.touch = None; return false; }
+        match event {
+            Event::MouseDown(e) => self.hit(e.abs),
+            Event::TouchUpdate(e) => {
+                self.reconcile_touch(e);
+                self.touch.is_some() || e.touches.iter().any(|t|
+                    t.state == makepad_platform::event::TouchState::Start && self.target(t.abs).is_some())
+            }
+            _ => false,
+        }
+    }
+
+    fn activate_target(&mut self, cx: &mut Cx, target: ToastTarget) {
+        let (id, action) = match target {
+            ToastTarget::More => { self.expanded = true; self.redraw(cx); return; }
+            ToastTarget::Activate(id) => (id, ShellNotificationsAction::Activated(id)),
+            ToastTarget::Dismiss(id) => (id, ShellNotificationsAction::Dismissed(id)),
+            ToastTarget::Action(id) => (id, ShellNotificationsAction::Action(id)),
+        };
+        cx.widget_action(self.uid, action);
+        self.dismiss(cx, id);
+    }
+
+    fn touch_event(&mut self, cx: &mut Cx, event: &makepad_platform::event::TouchUpdateEvent) {
+        use makepad_platform::event::TouchState;
+        self.reconcile_touch(event);
+        for t in &event.touches {
+            if self.touch.is_none() && t.state == TouchState::Start {
+                if let Some(target) = self.target(t.abs) {
+                    self.touch = Some(ToastTouch { uid: t.uid, start: t.abs, target: Some(target) });
+                }
+            }
+            let Some(held) = self.touch.as_mut().filter(|held| held.uid == t.uid) else { continue };
+            if (t.abs - held.start).length() > TOUCH_SLOP { held.target = None; }
+            if t.state == TouchState::Stop {
+                let held = self.touch.take().unwrap();
+                if let Some(target) = held.target.filter(|target| self.target(t.abs) == Some(*target)) {
+                    self.activate_target(cx, target);
+                }
+            }
+        }
     }
 
     /// The width a toast's action button takes (none without one).
@@ -549,7 +625,9 @@ impl Widget for ShellNotifications {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if matches!(event, Event::Pause | Event::Background) { self.touch = None; }
         if self.inert {
+            self.touch = None;
             return;
         }
         if let Some(ne) = self.next_frame.is_event(event) {
@@ -581,6 +659,7 @@ impl Widget for ShellNotifications {
             }
         }
         match event {
+            Event::TouchUpdate(e) => self.touch_event(cx, e),
             Event::MouseMove(e) => {
                 let rects = self.card_rects.clone();
                 let mut changed = false;
@@ -672,6 +751,94 @@ pub fn fixtures() -> Vec<Notification> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn touch(state: makepad_platform::event::TouchState, abs: Vec2d) -> Event {
+        use makepad_platform::event::{TouchPoint, TouchUpdateEvent};
+        Event::TouchUpdate(TouchUpdateEvent {
+            time: 0., window_id: CxWindowPool::id_zero(), modifiers: Default::default(),
+            touches: vec![TouchPoint { state, abs, time: 0., uid: 7, rotation_angle: 0., force: 0.,
+                radius: dvec2(1., 1.), handled: Default::default(), sweep_lock: Default::default() }],
+        })
+    }
+    fn toast(cx: &mut Cx) -> (ShellNotifications, u64) {
+        let mut notes = cx.with_vm(ShellNotifications::script_new);
+        // Input regression: seed an already posted notice without starting a
+        // native platform clock/window just to exercise its touch handler.
+        let id = 1;
+        let mut note = fixtures()[0].clone();
+        note.id = id;
+        notes.live.push(Live { note, lifetime: 30., left: 30., hovered: false, posted: 0. });
+        notes.next_id = id;
+        notes.card_rects = vec![(id, rect(10., 10., 300., 100.), rect(280., 10., 30., 30.))];
+        (notes, id)
+    }
+    fn deliver(notes: &mut ShellNotifications, cx: &mut Cx, event: Event) -> Vec<ShellNotificationsAction> {
+        cx.capture_actions(|cx| notes.handle_event(cx, &event, &mut Scope::empty()))
+            .iter().filter_map(|a| a.as_widget_action()).map(|a| a.cast()).collect()
+    }
+    #[test]
+    fn phone_toast_tap_owns_press_and_release_and_emits_one_activation() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut notes, id) = toast(&mut cx);
+        let down = touch(Start, dvec2(40., 50.));
+        assert!(notes.owns_pointer(&down));
+        assert!(deliver(&mut notes, &mut cx, down).is_empty());
+        let up = touch(Stop, dvec2(42., 51.));
+        assert!(notes.owns_pointer(&up), "release must not reach the underlying chat");
+        assert_eq!(deliver(&mut notes, &mut cx, up), vec![ShellNotificationsAction::Activated(id)]);
+        assert!(notes.is_empty());
+        assert!(!notes.owns_pointer(&touch(Stop, dvec2(42., 51.))));
+    }
+    #[test]
+    fn phone_toast_drag_is_cancelled_but_keeps_its_release_out_of_underlying_ui() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut notes, _) = toast(&mut cx);
+        let mut underlying_events = 0;
+        for event in [touch(Start, dvec2(40., 50.)), touch(Move, dvec2(40., 180.)), touch(Stop, dvec2(40., 50.))] {
+            // This is the shell's early routing decision, not a broadcast.
+            if notes.owns_pointer(&event) { assert!(deliver(&mut notes, &mut cx, event).is_empty()); }
+            else { underlying_events += 1; }
+        }
+        assert_eq!(underlying_events, 0);
+        assert!(!notes.is_empty(), "returning after a drag is not a tap");
+        assert!(notes.touch.is_none());
+    }
+    #[test]
+    fn phone_toast_close_dismisses_and_a_withdrawn_target_cannot_activate() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut notes, id) = toast(&mut cx);
+        deliver(&mut notes, &mut cx, touch(Start, dvec2(295., 25.)));
+        assert_eq!(deliver(&mut notes, &mut cx, touch(Stop, dvec2(295., 25.))), vec![ShellNotificationsAction::Dismissed(id)]);
+        let (mut notes, id) = toast(&mut cx);
+        deliver(&mut notes, &mut cx, touch(Start, dvec2(40., 50.)));
+        notes.dismiss(&mut cx, id);
+        let up = touch(Stop, dvec2(40., 50.));
+        assert!(notes.owns_pointer(&up));
+        assert!(deliver(&mut notes, &mut cx, up).is_empty());
+    }
+
+    #[test]
+    fn a_modal_consuming_release_cannot_leave_the_toast_capturing_future_touches() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        for next_uid in [7, 8] {
+            let (mut notes, _) = toast(&mut cx);
+            deliver(&mut notes, &mut cx, touch(Start, dvec2(40., 50.)));
+            // An approval above the toast receives Stop instead. The next
+            // gesture must reach its actual target, even if Android reuses ID.
+            let mut outside = touch(Start, dvec2(40., 300.));
+            if let Event::TouchUpdate(e) = &mut outside { e.touches[0].uid = next_uid; }
+            assert!(!notes.owns_pointer(&outside));
+            assert!(notes.touch.is_none());
+            let down = touch(Start, dvec2(40., 50.));
+            assert!(notes.owns_pointer(&down));
+            assert!(deliver(&mut notes, &mut cx, down).is_empty());
+            assert_eq!(deliver(&mut notes, &mut cx, touch(Stop, dvec2(40., 50.))).len(), 1);
+        }
+    }
 
     /// A toast slides in from the right over its first [`SLIDE_S`], keeps
     /// still, and slides out over its last; one that never expires never
