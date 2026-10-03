@@ -1,0 +1,33 @@
+{
+  "name": "octosense",
+  "productName": "OctoSense",
+  "identifier": "org.octosense.desktop",
+  "description": "The agent shell on top of your operating system",
+  "longDescription": "OctoSense is an agent shell on top of your operating system: a launcher, a dock and tiles, system apps and App Hub store apps, with one agent behind them.",
+  "homepage": "https://github.com/OctoSense-org/OctoSense",
+  "authors": ["OctoSense contributors"],
+  "publisher": "OctoSense",
+  "copyright": "Copyright 2026 OctoSense contributors. Apache License 2.0.",
+  "category": "Productivity",
+  "icons": [
+    "icons/icon_32.png",
+    "icons/icon_64.png",
+    "icons/icon_128.png",
+    "icons/icon_256.png",
+    "icons/icon_512.png",
+    "icons/icon_512@2x.png",
+    "icons/icon.ico"
+  ],
+  "binaries": [{ "path": "octosense", "main": true }],
+  "macos": {
+    "minimumSystemVersion": "11.0",
+    "infoPlistPath": "macos/Info.plist",
+    "entitlements": "macos/entitlements.plist"
+  },
+  "deb": {
+    "section": "utils"
+  },
+  "nsis": {
+    "installMode": "currentUser"
+  }
+}

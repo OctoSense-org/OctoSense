@@ -166,8 +166,10 @@ get "log?n=2000" >"$WORK/remote-log.json"
 grep -q "panicked" "$LOG" "$WORK/remote-log.json" && fail "panic in the log"
 # Known: the catalog's startup Makepad-source probe, and App Hub unpacking and
 # hashing a system bundle, or building an app's Splash VM, on the UI thread
-# the first time it opens.
-KNOWN='makepad_source::makepad_root|octosense_appstore::system::prepare|CxSplashVmExt>::alloc_splash_vm'
+# the first time it opens; a packaged build (OCTOSENSE_BIN=<app>, see
+# desktop/scripts/package.py) reading its resources and fonts from the
+# package on the UI thread at startup and first use.
+KNOWN='makepad_source::makepad_root|octosense_appstore::system::prepare|CxSplashVmExt>::alloc_splash_vm|script::res::load_packaged_resource'
 UNKNOWN=$(grep "\[ui-hang\]" "$LOG" | grep -Ev "$KNOWN" || true)
 [ -z "$UNKNOWN" ] || { echo "$UNKNOWN" | cut -c1-400; fail "unexpected UI hang"; }
 echo "note: $(grep -c "\[ui-hang\]" "$LOG" || true) known UI hang(s) (startup catalog probe, first-open bundle unpack or VM)"

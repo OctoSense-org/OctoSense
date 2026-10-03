@@ -66,6 +66,13 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github/workflows"
 GROUPS = {"desktop": ["desktop.yml"], "phone": ["phone.yml"], "apps": ["apps.yml"], "rom": ["rom.yml"]}
 GROUPS["all"] = [w for g in ("desktop", "phone", "apps", "rom") for w in GROUPS[g]]
+# Workflows ci-local deliberately does not run, and why. --check-drift skips
+# them (an entry naming no workflow, or one ci-local runs, is drift).
+NOT_LOCAL = {
+    "release-desktop.yml": "a release workflow (tag push or manual run): signed packages for three OSes, "
+                           "with a matrix, environments, secrets and artifacts; nothing a pull request merges "
+                           "on depends on it, and its packaging scripts' tests run in desktop.yml",
+}
 KERNEL_BINARY = "octos-kernel/target/release/octos"
 EXIT_BUSY = 75
 
@@ -391,8 +398,16 @@ def jobs_of(workflow_name, data=None):
 def check_drift(workflows=None):
     """Problems where the workflows and the local mapping disagree."""
     problems = []
-    names = workflows or sorted(p.name for p in WORKFLOWS.glob("*.yml"))
+    present = {p.name for p in WORKFLOWS.glob("*.yml")}
+    names = workflows or sorted(present - set(NOT_LOCAL))
     seen_jobs, seen_steps = set(), set()
+    for name, why in NOT_LOCAL.items():
+        if name not in present:
+            problems.append(f"{name}: listed in NOT_LOCAL but no such workflow")
+        if name in GROUPS["all"]:
+            problems.append(f"{name}: both run by ci-local (GROUPS) and listed in NOT_LOCAL")
+        if not why.strip():
+            problems.append(f"{name}: NOT_LOCAL needs the reason ci-local does not run it")
     for name in names:
         try:
             data = load_workflow(name)
