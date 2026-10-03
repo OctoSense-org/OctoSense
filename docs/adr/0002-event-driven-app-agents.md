@@ -1,7 +1,7 @@
 # ADR 0002: Event-driven app agents: apps think on their own triggers and publish cards to the glance screen
 
 - **Date:** 2026-09-27
-- **Status:** Proposed; amended 2026-09-28 by [ADR 0004](0004-native-apps-hosting-and-peers.md) (sections 1, 4, 6, 10, 12 and 13; see the amendment at the end); notes dated 2026-09-29 record what has since changed
+- **Status:** Proposed; amended 2026-09-28 by [ADR 0004](0004-native-apps-hosting-and-peers.md) (sections 1, 4, 6, 10, 12 and 13; see the amendment at the end); notes dated 2026-09-29 record what has since changed; amended 2026-10-03 by [ADR 0006](0006-app-studio-on-the-phone.md) (sections 6 and 7; see the amendment at the end)
 - **Scope:** How the assistant works in OctoSense when no person is typing, for any app: which agent runs, what starts it, which tools and data it may use, how it gathers information, how it produces and checks a card, and where the card and what it learned go.
 - **Relates to:** [ADR 0001](0001-one-octosense-repository.md) (one repository; [`crates/kernel`](../../crates/kernel), [`crates/app-peers`](../../crates/app-peers), [`crates/ai-host`](../../crates/ai-host), [`crates/shell`](../../crates/shell)); [Home ADR 0002](home/0002-agentic-app-security-model.md) (agentic app security model), [Home ADR 0003](home/0003-app-hub-and-store.md) (App Hub), [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (system apps are contained script apps); [Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) (host-owned octos app peers); octos ADR "personal memory tiers" (octos-org/octos#2365); OctoScript [`docs/ui-profile-l0.md`](https://github.com/OctoSense-org/OctoScript/blob/main/docs/ui-profile-l0.md) (the L0/L1/L2 card levels).
 
@@ -89,7 +89,7 @@ Gathering information beyond an app's own data (searching, deep research, crawli
 | `toolbox.web_read` | render one page with a real browser and return its main text | `research` |
 | `toolbox.deep_crawl` | crawl one site within limits (same site, depth, page count, path prefix) | `crawl` |
 | deep research | a planned, multi-source, multi-language investigation of a topic: sub-queries, reading, cross-checking, synthesis with citations. It is a workflow template run with `workflow.run` (below), not a tool of its own, and not octos's `deep_research` pipeline | `research` |
-| `card_render`, `card_critique_payload` | render and measure a card (card-studio) | granted to every app with an agent |
+| `card_render`, `card_critique_payload` | render and measure a card (card-studio). *Amended 2026-10-03: these are the `studio.*` host tools of [ADR 0006](0006-app-studio-on-the-phone.md) §7.* | granted to every app with an agent |
 | `glance.publish` | publish a card to the glance screen | `glance` |
 | `workflow.run`, `workflow.fork` | run a toolbox workflow template with parameters, or fork it into the app's own variant (below) | granted with the capabilities its steps use |
 | memory search and recall | the app's own memory namespace | granted to every app with an agent |
@@ -150,7 +150,7 @@ Because no person is waiting, an app agent spends its time on quality:
 4. **Critique and revise** against a rubric: measured checks (clipped or overflowing text, empty or failed data states, overlap, fits the tile) plus a vision model's judgement (legibility, hierarchy, balance, does it read as this app's card). Stop at a pass or at the run's budget.
 5. **Admit** (level check, lint, approval pin) and **publish** through `glance.publish(card)`.
 
-Heavy evaluation runs where it is cheap: on the desktop or a server, or on the phone only while charging. The phone always keeps the measured checks.
+Heavy evaluation runs where it is cheap: on the desktop or a server, or on the phone only while charging. The phone always keeps the measured checks. *(Amended 2026-10-03, [ADR 0006](0006-app-studio-on-the-phone.md): on the phone a card renders in the shell's own process, not in `card-host --remote`, and renders the person starts are not limited to charging.)*
 
 ### 8. The glance screen is curated
 
@@ -397,3 +397,11 @@ The maintainer changed §6 rule 3 again on 2026-09-29: **search exactly the way 
 - **The person's browser profile is opt-in.** Searching and reading in the person's browser (octos#2615) stays available for engines that need a real browser, off by default (`OCTOS_BROWSER`). When used, results say it and how to turn it off.
 - **Still excluded:** automatic CAPTCHA solving and imitated human input.
 - **Terms.** Search engines' terms may not allow automated queries; Google's and Bing's are the highest risk. As with robots.txt (rule 5), that is weighed against OctoSense acting for one person. The disclosure travels with the feature (octos's docs, the default-on notice and each engine's manifest), and an operator who needs stricter behaviour turns results-page search off (`OCTOS_ALLOW_SERP_SCRAPE=0`).
+
+## Amendment, 2026-10-03 ([ADR 0006](0006-app-studio-on-the-phone.md))
+
+ADR 0006 brings rendering, checking and critique onto the phone and changes this ADR in two places:
+
+- **§6 (toolbox).** `card_render` and `card_critique_payload` become the shell's `studio.*` host tools (`studio.render`, `studio.check`, `studio.compare`, `studio.critique_payload`, `studio.bundle_check`, `studio.install`). In their first release they are granted only while developer mode is on. App Hub's `card-studio` stays the one implementation of the checks and the critique payload, now as a library both renderers feed.
+- **§7 (cards).** On the phone, step 3 renders in the shell's own process, through the target surface's own lowering and size, instead of a hidden `card-host --remote`. The rule that heavy evaluation runs on the phone only while charging does not apply to renders the person starts.
+
