@@ -13,11 +13,11 @@ source note sys.dataset(fields: [title, summary, as_of])
 
 copy app { class: vocabulary, en: "{app}" }
 
-view root Surface(pad: .tight) {
-  Col(gap: 8) {
+view root Panel {
+  Col(gap: 10) {
     Row(gap: 8, align: .center) {
       Icon(name: .{icon}, size: .row)
-      TextCaption(text: copy.app, width: .fill)
+      TextCaption(text: copy.app)
       TextCaption(value: note.as_of)
     }
     TextTitle(text: note.title, width: .fill)

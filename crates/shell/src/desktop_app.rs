@@ -42,6 +42,7 @@ impl App {
     /// sits on the wallpaper with no flat wash beneath; under flat it is
     /// `mod.wm_theme.background` again, as the DSL resolved it.
     pub(super) fn apply_material_to_chrome(&mut self, cx: &mut Cx, material: shell::MaterialTokens, palette: Option<shell::ShellPalette>) {
+        let style = self.state_mut().style.target;
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_bar)).borrow_mut::<shell::bar::ShellBar>() {
             w.set_material(material, palette);
         }
@@ -53,6 +54,8 @@ impl App {
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<shell::notifications::ShellNotifications>() {
             w.set_material(material, palette);
+            w.mobile = style.mobile();
+            w.icon_style = style;
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_osd)).borrow_mut::<shell::osd::ShellOsd>() {
             w.set_material(material, palette);
@@ -62,6 +65,7 @@ impl App {
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<crate::glance_sheet::ShellGlanceSheet>() {
             w.set_material(material, palette);
+            w.mobile = style.mobile();
         }
         // The chat panes: the system chat and "Ask <app>".
         for pane in [ids!(shell_system_chat), ids!(shell_app_chat)] {
