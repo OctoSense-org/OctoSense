@@ -9,10 +9,45 @@
 //! Until the gesture recognizer lands, the shade opens programmatically:
 //! tapping the status bar's left or right half, or `--test-action
 //! shade:<notifications|controls>`.
+//!
+//! With floating navigation (Android) the top edge is the system's, so the
+//! same sides open from a pull down at the home page's left or right
+//! quarter instead ([`ShadeReach`]).
 use crate::mobile_gestures::{Dir, GestureKind, ShadeSide, ShellGesture};
 use crate::{desk::WmState, desktop::DesktopStyle, mobile::PhoneHit, mobile_surface::DrawPhoneRound, octosense::style::AppIconDraw, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussBlurSnapshot, GaussRoundedView}, *};
 use crate::android_integration::AndroidState;
+
+/// How notifications and controls open on this device: whether the
+/// shell's own shade is reachable, and what the home page's hint says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShadeReach {
+    /// The system-wide OctoSense panel (the OctoSense ROM) owns every
+    /// pull-down; the shell's shade stays closed.
+    SystemPanel,
+    /// The shell's shade, pulled down from a top corner.
+    TopCorners,
+    /// The shell's shade, pulled down at either side of the home page:
+    /// floating navigation leaves the top edge to Android's own panel.
+    Sides,
+    /// No shade: OpenHarmony has no notification or control source for it.
+    Unavailable,
+}
+
+impl ShadeReach {
+    /// For this build, given the Android placements' `launcher_shade`.
+    pub fn of(system_panel: bool) -> ShadeReach {
+        Self::on(system_panel, crate::mobile_navigation::ENABLED, cfg!(target_os = "android"))
+    }
+    fn on(system_panel: bool, floating_navigation: bool, android: bool) -> ShadeReach {
+        if system_panel { ShadeReach::SystemPanel }
+        else if !floating_navigation { ShadeReach::TopCorners }
+        else if android { ShadeReach::Sides }
+        else { ShadeReach::Unavailable }
+    }
+    /// The shell's own shade opens: its pull is recognised and it is prewarmed.
+    pub fn shell_shade(self) -> bool { matches!(self, ShadeReach::TopCorners | ShadeReach::Sides) }
+}
 
 /// One notification card. `time` is seconds since app start when it was
 /// posted, so the card shows a relative age.
@@ -764,6 +799,17 @@ mod tests {
     fn settle(s: &mut ShadeState) { for _ in 0..120 { s.step(1.0 / 60.0, None, 100.0); } }
     /// The frame's exclusion zones as the desk rebuilds them: cleared, then the shade's.
     fn zones(s: &ShadeState) -> ExclusionZones { let mut ex = ExclusionZones::default(); if let Some(z) = s.exclusion(screen()) { ex.add(z, [true; 4]); } ex }
+
+    #[test]
+    fn the_shell_shade_opens_unless_the_system_panel_owns_the_pulls_or_nothing_feeds_it() {
+        use ShadeReach::*;
+        assert_eq!(ShadeReach::on(true, true, true), SystemPanel, "the OctoSense ROM's system-wide panel");
+        assert_eq!(ShadeReach::on(false, true, true), Sides, "Android without that panel: Home's own shade");
+        assert_eq!(ShadeReach::on(false, false, false), TopCorners);
+        assert_eq!(ShadeReach::on(false, true, false), Unavailable, "OpenHarmony");
+        assert!(Sides.shell_shade() && TopCorners.shell_shade());
+        assert!(!SystemPanel.shell_shade() && !Unavailable.shell_shade());
+    }
 
     #[test]
     fn connection_access_and_dismissibility_invalidate_cached_shade() {

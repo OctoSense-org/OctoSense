@@ -46,7 +46,7 @@ public final class BridgeSettingsActivity extends Activity {
         text("Connect your launcher to Android. Each access request opens Android's own consent screen. Return to Home to use the shade controls.", 15);
         section("Notifications");
         row("notifications", "Notification access", "notifications");
-        text("After enabling access: pull down from the top left to read notifications. Swipe left for app actions or Reply; swipe right to dismiss. Android may hide sensitive content.", 14);
+        text("After enabling access, pull down at the left side of the OctoSense home page to read notifications, or from the top-left edge when the system-wide OctoSense panel is on. Swipe left for app actions or Reply; swipe right to dismiss. Android may hide sensitive content.", 14);
         section("Network and connections");
         row("internet", "Internet · Wi-Fi and mobile data", "internet");
         row("bluetooth", "Bluetooth · Pair devices", "bluetooth");

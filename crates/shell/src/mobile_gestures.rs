@@ -561,6 +561,28 @@ mod tests {
         assert!(out.iter().all(|g| g.is_none()), "an upward drag on the home page is the drawer's, not a shell gesture: {out:?}");
     }
     #[test]
+    fn with_native_edges_the_home_sides_still_pull_the_shell_shade() {
+        // Android without the system-wide panel: the OS keeps every edge,
+        // and the shade opens from a pull down at either side of the page.
+        let ctx = GestureContext { system_edges: true, shade: true, ..ctx(PhoneScreen::Home) };
+        let zones = ExclusionZones::default();
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &zones, &swipe((370.0, 300.0), (374.0, 500.0), 0.3, 5));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Shade(ShadeSide::Controls)), "{out:?}");
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &zones, &swipe((50.0, 300.0), (54.0, 500.0), 0.3, 5));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Shade(ShadeSide::Notifications)), "{out:?}");
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &zones, &swipe((206.0, 300.0), (210.0, 500.0), 0.3, 5));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch), "the middle is still search: {out:?}");
+        // The edge band and the top band stay Android's.
+        for start in [(404.0, 300.0), (370.0, 10.0)] {
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &ctx, &zones, &swipe(start, (start.0 - 2.0, 500.0), 0.3, 5));
+            assert!(out.iter().all(|g| g.is_none()) && !rec.active(), "{start:?}: {out:?}");
+        }
+    }
+    #[test]
     fn a_downward_drag_in_a_home_column_pulls_that_side_of_the_shade() {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((380.0, 300.0), (384.0, 500.0), 0.3, 5));
