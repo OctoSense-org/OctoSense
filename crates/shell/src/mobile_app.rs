@@ -579,6 +579,7 @@ impl App {
             PhoneHit::Symbols=>{let p=&mut self.state_mut().phone;p.symbols=!p.symbols;}
             PhoneHit::Key(key)=>self.type_phone_key(cx,&key),
             PhoneHit::Back=>{
+                if self.close_glance_card(cx) {return;}
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
                 else {self.phone_back(cx);}
             }
