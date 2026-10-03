@@ -1,0 +1,8 @@
+10-02 18:10:21.131 21876 21898 I Makepad : crates/shell/src/lib.rs:4245:13 - glance: toast 1 opens os.mail/agent-card-e2e-accepted
+10-02 18:10:21.131 21876 21898 I Makepad : crates/shell/src/lib.rs:4252:9 - glance: os.mail notifies os.mail/agent-card-e2e-accepted
+10-02 18:10:21.355 21876 21898 I Makepad : crates/shell/src/shell/notifications.rs:612:13 - notifications: 1 toast(s) 1@-1,5,380,119
+10-02 18:10:22.905 21876 21898 I Makepad : crates/shell/src/glance_sheet.rs:130:9 - glance sheet: opened os.mail/agent-card-e2e-accepted
+10-02 18:10:22.905 21876 21898 I Makepad : crates/shell/src/lib.rs:3832:13 - wm: glance toast opens card os.mail/agent-card-e2e-accepted
+10-02 18:10:23.421 21876 21898 I Makepad : crates/shell/src/glance_sheet.rs:192:17 - glance sheet: os.mail/agent-card-e2e-accepted sheet@16,217,352,376 card@28,261,328,320 close@346,241
+10-02 18:10:23.444 21876 21898 I Makepad : crates/shell/src/glance_sheet.rs:192:17 - glance sheet: os.mail/agent-card-e2e-accepted sheet@16,263,352,282 card@28,307,328,226 close@346,287
+10-02 18:10:24.649 21876 21898 I Makepad : crates/shell/src/glance_sheet.rs:138:13 - glance sheet: closed os.mail/agent-card-e2e-accepted
