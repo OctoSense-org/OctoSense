@@ -3196,6 +3196,9 @@ impl App {
                 }
                 let app = self.state_mut().clients.get(&client).map(|slot| slot.app.clone());
                 let route = self.ai_bus.on_custom_from(client, app.as_deref(), &json);
+                for (to, confirm) in self.ai_bus.take_confirmations() {
+                    self.send_custom(to, confirm);
+                }
                 self.on_bus_route(cx, route);
             }
             AppToStudio::LogItem(item) => {
