@@ -27,7 +27,11 @@ What the phone already has:
   - App agents in developer mode get `write_file`, `edit_file`, `apply_patch`, `view_image` and `dev.run` ([`relay.rs`](../../crates/shell/src/host_tools/relay.rs)).
   - Host-tool results are text only, so an image reaches the model only through a file in the agent's workspace and `view_image`.
 - **Rules that change without a build.** The [system toolbox](../../crates/toolbox) runs Octoscript templates: built-in ones locked by digest, and editable copies under the app's folder that are re-checked on load and can never widen their modules or budgets.
-- **Screen access on the OctoSense ROM.** The platform-signed agent service ([`IAgentPlatform.aidl`](../../rom/vendor/octosense/agent/src/dev/makepad/octosense/agent/IAgentPlatform.aidl)) captures the screen (`screen`), returns another task's last snapshot (`tasks`), and injects `tap`, `swipe` and `startActivity`.
+- **Screen access on the OctoSense ROM.** The platform-signed agent service ([`IAgentPlatform.aidl`](../../rom/vendor/octosense/agent/src/dev/makepad/octosense/agent/IAgentPlatform.aidl)) can:
+  - capture the screen (`captureScreen`);
+  - list tasks and return a task's last snapshot (`getTasks`, `getTaskSnapshot`);
+  - start an app (`startActivity`, `startTask`);
+  - inject input (`tap`, `swipe`, `typeText`, `pressKey`), which it refuses while the keyguard is showing.
 - **No image generation yet.** octos registers an `image_generation` tool but binds no backend, so every call returns "unsupported" (issue #1149).
 - **Developer mode only in developer builds.** Developer mode exists but is honoured only by a development build (`cfg(dev_mode)`; [`dev_mode.rs`](../../crates/shell/src/dev_mode.rs)). The Home APK is built `--release` without the feature, so a phone cannot turn it on today.
 
@@ -56,7 +60,7 @@ An image comes from one of two places.
 - **Generated designs.** The person, or the agent, asks for a design. Generation goes through a provider the person configured in AI providers, with the key held by the host as for every provider. The PNG lands in the studio project's folder. octos's `image_generation` tool gets this backend (#1149) instead of a separate OctoSense tool, so every client sees one tool.
 - **Screenshots of existing apps, to clone them.**
   - On every phone, the person picks screenshots from the gallery (the host's image picker, as AI providers' QR import uses it) or shares them to OctoSense.
-  - On the OctoSense ROM, in developer mode and after the person approves a capture session, the studio drives the agent service. It opens the app (`startActivity`), walks its screens (`tap`, `swipe`) and captures each one (`screen`).
+  - On the OctoSense ROM, in developer mode and after the person approves a capture session, the studio drives the agent service. It opens the app (`startActivity`), walks its screens (`tap`, `swipe`) and captures each one (`captureScreen`).
   - On stock Android, a capture session through MediaProjection, with Android's own consent prompt, comes later.
 
 The Sketch kit stays a desktop tool and is not ported.
@@ -143,7 +147,7 @@ An octos change lets a host-tool result carry an image (`model_media`), which sa
 
 ### 8. Developer mode is turned on in a developer build
 
-- The phone gets a developer build: Home built with `--features dev-mode` (an option of [`build-home.py`](../../rom/scripts/build-home.py)).
+- The phone gets a developer build: Home built with `--features dev-mode`, through a new option of [`build-home.py`](../../rom/scripts/build-home.py), which has none today.
 - Settings gets a row that creates the persistent developer profile, so developer mode does not end after 8 hours.
 - What developer mode grants is unchanged (ADR 0004).
 - On top of that, the studio's capture sessions on the ROM ask the person once per session, even in developer mode, because they see other apps' screens.
