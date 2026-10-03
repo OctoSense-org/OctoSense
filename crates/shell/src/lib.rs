@@ -508,6 +508,8 @@ pub struct App {
     #[rust]
     pub test_capture: Option<(Timer, std::path::PathBuf)>,
     #[rust] pub studio: StudioRenderer,
+    #[rust] pub studio_clients: HashMap<String, ClientId>,
+    #[rust] pub studio_registry_generation: u64,
     #[rust] pub test_capture_ticket: Option<ReadbackTicket>,
     #[rust] pub test_recording: bool,
     /// `--test-action page:<n>`: the home page to jump to, once the phone
@@ -665,6 +667,34 @@ pub struct DividerDrag {
 }
 
 impl App {
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    fn drain_studio(&mut self, cx: &mut Cx) {
+        for instance in studio::apps::take_closes() {
+            if let Some(client) = self.studio_clients.remove(&instance) {
+                self.close_client(cx, client, false);
+            }
+        }
+        for instance in studio::apps::take_launches() {
+            let Some((app_id, title)) = studio::apps::launch_info(&instance) else { continue };
+            let app = apps::studio_row(app_id.unwrap_or_else(|| format!("studio-instance:{instance}")),
+                title, vec![format!("--studio-instance={instance}")]);
+            let client = self.next_id;
+            self.launch_module_as(cx, &studio::module::STUDIO_MODULE, &app);
+            if self.state.as_ref().is_some_and(|state| state.clients.contains_key(&client)) {
+                self.studio_clients.insert(instance, client);
+            } else {
+                studio::apps::shutdown(cx, &instance);
+            }
+        }
+        let generation = host_tools::studio_bundles::generation();
+        if generation != self.studio_registry_generation {
+            self.studio_registry_generation = generation;
+            shell::launcher::invalidate_apps();
+            self.redraw_all(cx);
+        }
+    }
+
+
     fn desk(&self, cx: &mut Cx) -> WidgetRef {
         self.ui.widget(cx, ids!(desk))
     }
@@ -790,6 +820,14 @@ impl App {
                 self.activate_client(cx, client);
                 return;
             }
+        }
+
+        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        if app.bin == "studio-app" {
+            if let Err(error) = host_tools::studio_bundles::request_launch_installed(&app.id) {
+                self.notify(cx, "Could not open developer app", &error);
+            }
+            return;
         }
 
         // In-process hosting (aicontrol §3): a linked module the person
@@ -1963,6 +2001,7 @@ impl App {
     }
 
     fn remove_client(&mut self, cx: &mut Cx, client: ClientId) {
+        self.studio_clients.retain(|_, id| *id != client);
         log!("wm: removing client {}", client);
         peer_link::process_gone(client);
         self.process_close.gone(client);
@@ -3469,6 +3508,7 @@ impl App {
         self.pane_links.reannounce();
         // App peers take `dev.run` and developer grants, or lose them.
         crate::host_tools::developer_mode_changed();
+        shell::launcher::invalidate_apps();
         for notice in dev_mode::take_notices() {
             self.notify(cx, "Developer mode", &notice);
         }
@@ -5137,6 +5177,8 @@ impl App {
     fn route_texture_readbacks(&mut self, cx: &mut Cx) {
         for result in cx.try_take_texture_readbacks() {
             let Some(result) = self.studio.readback(cx, result) else {continue};
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            let Some(result) = studio::apps::readback(cx, result) else {continue};
             #[cfg(target_os = "android")]
             if Some(result.ticket) == self.test_capture_ticket {
                 let Some((_, path)) = self.test_capture.clone() else {continue};
@@ -5286,6 +5328,12 @@ impl App {
                     #[cfg(unix)]
                     if let Some(path) = name.strip_prefix("studio-render:") {
                         if let Err(error) = host_tools::studio::test_action(path) { log!("studio test: {error}"); }
+                        i += 2;
+                        continue;
+                    }
+                    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+                    if let Some(path) = name.strip_prefix("studio-flow:") {
+                        if let Err(error) = host_tools::studio::test_flow(path) { log!("studio flow: {error}"); }
                         i += 2;
                         continue;
                     }
@@ -6230,6 +6278,8 @@ impl MatchEvent for App {
                 // Its tools, grants and kernel tools, as installed (ADR 0004 §7).
                 host_tools::script_app_installed(&id);
             }
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            self.drain_studio(cx);
             self.drain_hub(cx);
             self.drain_client_lines(cx);
             self.drain_module_upstream();
@@ -6350,6 +6400,8 @@ impl App {
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
+        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        studio::apps::tick(cx, event);
         let studio_surface = studio::surface_geometry(cx);
         self.studio.event(cx, event, studio_surface);
         self.route_texture_readbacks(cx);

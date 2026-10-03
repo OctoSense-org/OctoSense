@@ -557,6 +557,8 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     let mut every = shareable_native_tools();
     every.push(super::relay::DEV_RUN.to_string());
     if super::studio::SUPPORTED { every.push(super::studio::RENDER.to_string()); }
+    #[cfg(all(unix, any(feature="app-hub", native_mobile)))]
+    every.extend(super::studio::APP_TOOLS.iter().map(|name| name.to_string()));
     every.sort();
     assert_eq!(offered_names(&relay, "calendar", true, true), every);
 }
@@ -1211,4 +1213,34 @@ fn studio_render_is_scoped_revocable_and_schema_checked() {
     assert_eq!(host.1.lock().unwrap().as_slice(), &["s1".to_string()]);
     assert!(!relay.catalog.offered("os.news", false, true).iter().any(|d| d["name"] == super::studio::RENDER));
     assert!(relay.catalog.offered("os.news", true, true).iter().any(|d| d["name"] == super::studio::RENDER));
+}
+
+#[cfg(all(unix, any(feature="app-hub",native_mobile)))]
+#[test]
+fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
+    let mut relay=Relay::default();
+    let host=Arc::new(Exec::default());
+    relay.set_executor(super::relay::HOST_EXECUTOR,Some(host.clone()));
+    let mut w=World::new(FixedDevMode::all());w.dev_all=true;
+    for (index,name) in super::studio::APP_TOOLS.iter().enumerate(){
+        let id=format!("studio-app-{index}");
+        let mut c=call(&id,name,"os.news");c.app="os.news".into();
+        c.args=match *name {
+            "studio.bundle_check"|"studio.install"|"studio.open"=>json!({"bundle_path":"planner"}),
+            "studio.input"=>json!({"instance_id":"one","widget_id":"button","action":"tap"}),
+            _=>json!({"instance_id":"one"}),
+        };
+        let (r,_)=reply(&id);
+        relay.handle(Event::Call{call:c.clone(),reply:r},&mut w);
+        let (r,sent)=reply(&format!("cross-{index}"));
+        c.call_id=format!("cross-{index}");c.app="os.mail".into();
+        relay.handle(Event::Call{call:c.clone(),reply:r},&mut w);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"not_granted");
+        c.app="os.news".into();c.call_id=format!("revoked-{index}");w.dev_all=false;
+        let (r,sent)=reply(&c.call_id);
+        relay.handle(Event::Call{call:c,reply:r},&mut w);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"not_granted");
+        w.dev_all=true;
+    }
+    assert_eq!(host.0.lock().unwrap().len(),super::studio::APP_TOOLS.len());
 }

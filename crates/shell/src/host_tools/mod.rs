@@ -38,6 +38,8 @@ pub mod files;
 pub mod relay;
 pub mod schema;
 pub mod studio;
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+pub mod studio_bundles;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox;
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -389,7 +391,7 @@ impl HostExecutor {
 
 impl ToolExecutor for HostExecutor {
     fn execute(&self, call: HostToolCall, reply: ToolReply) {
-        if call.name == studio::RENDER {
+        if studio::is_tool(&call.name) {
             return self.studio.execute(call, reply);
         }
         if call.name == relay::DEV_RUN {

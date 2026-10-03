@@ -1,5 +1,9 @@
 //! Foreground-only, unpublished L0 previews. No app policy or live app storage
 //! is inherited: each render receives a disposable, zero-quota isolate.
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+pub mod apps;
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+pub mod module;
 use crate::dev_mode::DevTag;
 use makepad_widgets::*;
 use serde_json::Value;

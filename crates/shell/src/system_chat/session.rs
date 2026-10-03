@@ -113,7 +113,7 @@ impl SystemHost for ShellSystemHost {
         // BEFORE adding this connection-owned host set. No baseline kernel
         // tool grant is needed, and external turns cannot inherit this set.
         if crate::host_tools::studio::SUPPORTED && crate::dev_mode::grants_all(crate::host_tools::SYSTEM) {
-            decls.push(crate::host_tools::studio::declaration(crate::host_tools::SYSTEM));
+            decls.extend(crate::host_tools::studio::declarations(crate::host_tools::SYSTEM));
         }
         decls
     }

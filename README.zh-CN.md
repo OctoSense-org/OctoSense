@@ -18,7 +18,9 @@
 
 初次阅读源码？从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始，沿着入口、原生/脚本托管、数据访问、人类/系统对话、工具路由以及实际 Tokio 任务阅读源码。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充桌面、Home、ROM 和系统应用的运行方式。
 
-[手机上的 App Studio](docs/adr/0006-app-studio-on-the-phone.md) 已通过设计决策，里程碑 1 正在实现。Home 现可显式编译开发者选项并使用独立测试包名（[手机构建选项](phone/README.zh-CN.md#构建与运行)）；完整的渲染、检查、改进与安装循环仍在开发中。设备验收与单元测试、构建检查分别记录。
+[手机上的 App Studio](docs/adr/0006-app-studio-on-the-phone.md) 现已提供开发者工具，可检查、打开、观测、操作并本地安装离线 `main.splash` 应用。预览状态可丢弃；已安装应用的状态在开发者授权范围内持久保留。参见 [Studio 代码导读](docs/architecture-walkthrough.zh-CN.md#从-agent-调用跟到-app-studio-中可运行的应用)。
+
+模型从头编写的 Task Planner 已在 OnePlus 6 上通过 129 次真机工具调用，覆盖交互和已安装状态持久化。[竖屏应用与键盘视觉评审](docs/studio/oneplus6-validation.md)已通过。故障注入仍待完成；图像生成、可编辑工具箱流程与公开发布仍是后续工作。Home 的[构建选项](phone/README.zh-CN.md#构建与运行)提供开发者模式和独立测试包。
 
 ## 整体如何运作
 

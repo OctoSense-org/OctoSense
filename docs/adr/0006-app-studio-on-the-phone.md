@@ -1,45 +1,58 @@
 # ADR 0006: App Studio on the phone
 
 - **Date:** 2026-10-02
-- **Status:** Accepted (2026-10-03). Milestone 1 is in progress; device acceptance is still required. Milestones 2–5 remain unimplemented.
+- **Status:** Accepted (2026-10-03). Implementation in progress: a fresh model-authored app passed physical-device functional checks; portrait visual review passed; fault injection and the full image/workflow pipeline remain pending.
 - **Scope:** How an agent on the phone turns an image (a generated design or a screenshot of an existing app) into an OctoSense app or glance card, looks at its own result and improves it, entirely on the phone, at first in developer mode. Covers the inputs, the in-process renderer, the checks, the rules that can change without a build, the tools agents get, and what of the OctoScript App Design Flow moves to the phone. There is no compile in the loop and no Mac.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (§6 the `card_render` and `card_critique_payload` toolbox tools; §7 a card is rendered, critiqued and revised before it is published; milestone M6); [ADR 0004](0004-native-apps-hosting-and-peers.md) (app agents, host tools, approvals, §13 developer mode); [ADR 0005](0005-app-contract.md) (the app contract and bundles); [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (contained script apps); [Home ADR 0005](home/0005-settings-octoscript-controller.md) and [Home ADR 0006](home/0006-builtin-settings.md) (Settings and its developer options); App Hub's [`card-studio`](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/card-studio) crate and [skill](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/skills/card-studio); the [OctoScript App Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (`flows/image-to-card`, `flows/image-lib`); octos issue #1149, closed, which added the `image_generation` stub (its backend needs a new issue).
 
 ## Implementation status
 
-Milestone 1 is in progress. Its first implementation is a developer-only
-`studio.render` tool for L0 glance previews on Unix hosts, including Android.
-The system conversation uses the workspace confirmed by the kernel; an app
-agent uses its own account/context workspace. The model supplies relative
-`source_path`, optional `data_path`, and optional `dark`; it cannot select a
-workspace, output destination or rendering width. Source is limited to 16 KiB
-and data JSON to 32 KiB. The result is `{path, width, height, settled}`, with a
-relative PNG path for a separate `view_image` call and dimensions in pixels.
+The implementation now covers L0 glance rendering and a local, offline script-app authoring path. A fresh Task Planner authored by **DeepSeek V4 Flash passed 129 instrument-driven tool calls on a physical OnePlus 6**. This establishes the functional path from a new design to a working local app. Portrait app and keyboard visual review also passed; fault injection remains pending. A fixture PNG, a passing unit test or a successful build alone would not establish that result.
 
-This slice uses the real glance width, theme and height bounds, with disposable
-storage, no network or host-service grants, and foreground/cancellation checks.
-Bundle screens, images and interactive chat are not supported by this first
-renderer. The render deadline is 20 seconds, inside the host wait and kernel
-call deadline. It does not implement checks, comparison, the editable studio
-runner, bundle installation, image generation or ROM capture sessions.
+The shell registers the following tools only while developer mode covers the calling system or app agent:
 
-The Android build wrapper accepts `--dev-mode`, separately from the
-`--development` signing choice; `--package-name` selects a standalone Home
-test identity. Python tests cover build plans and receipt guards. Renderer and
-routing validation, followed by OnePlus 6 acceptance and model image delivery,
-are still required before milestone 1 is complete. The [device probe](../../tools/studio-device-probe.py) exercises denial, light/dark PNGs and background cancellation in an already installed, debuggable studio test package; it does not test model image delivery. The remaining sections
-describe the full accepted design, including work for milestones 2–5.
+| Implemented tool | Current behavior |
+| --- | --- |
+| `studio.render` | L0 glance source/data → PNG, using the real glance width and height bounds. Arguments are relative `source_path`, optional `data_path` and `dark`. |
+| `studio.bundle_check` | Copies a workspace-relative bundle into host-private staging, computes its digest and admits that copy. The author's source is unchanged. |
+| `studio.open` | Opens a visible script app from either `bundle_path` (disposable preview) or `app_id` (local developer install with persistent state). |
+| `studio.inspect` | Captures app pixels and scoped Makepad diagnostics. Returns PNG `path`, compact `snapshot.widgets`/check summary, and a full diagnostic JSON `snapshot_path`; optional `offset` follows `next_offset` pagination. |
+| `studio.input` | Sends tap, text or scroll events to visible, enabled widget selectors within the caller's own instance. |
+| `studio.close` | Closes that instance; preview state is discarded and installed state is retained. |
+| `studio.install` | Records a local developer install under `dev.studio.*`, available from Home while its `DevTag` is valid. |
+
+Inspection replies are bounded to 3,800 UTF-8 bytes so actionable selectors survive the pinned kernel's 4 KiB model-output limit. Pages retain exact selectors, report `total_widgets` and `next_offset`, and explicitly mark shortened text/value fields. Pass the returned selector to `studio.input`; a painted label is not an identity. Each page observes the current UI. The full original result is written as pretty-printed JSON (at most 1 MiB) in the caller's workspace, retaining all widget rectangles, geometry, tree and findings. `read_file` can read bounded line ranges through `snapshot_path`. Both artifacts are removed if completion fails, the grant expires or the workspace scope changes.
+
+Tools are not shareable or available to background turns. The relay supplies the trusted caller and workspace: the system session's kernel-confirmed root, or the app peer's confirmed root and own conversation context. The model supplies relative input paths and instance ids, never another app's identity or an output directory. `studio.install` and `studio.input` are `act` tools. A private install receipt binds the authoring app/account/session/context, developer activation, manifest and digest. Launch revalidates it; revocation closes the app and removes launcher availability. A second instance of the same installed app is refused to prevent concurrent state writes.
+
+The first script-app path accepts `main.splash` with storage-only permissions: no app agent, accounts, external network, host services or in-screen resource loader. An original launcher icon may be present in the bundle; rich artwork routes are still future work. Staging permits 128 files/directories, eight directory levels, 2 MiB total, 512 KiB per file and 64 KiB for `main.splash`. The manifest's resolved ceilings are at most 1 MiB app storage, five million script instructions and a 16 MiB heap. These limits are installed before evaluation. Private preview writes are allowed for functional tests and discarded on close; developer installs write only their own persistent jail. No signed catalog or publisher identity is fabricated, and local admission does not count as App Hub publishing approval.
+
+L0 glance rendering remains narrower: 16 KiB source, 32 KiB JSON data, zero storage quota, no chat or image resources. It reports `settled: true` after three matching pixel samples with shaders ready. Interactive app inspection returns `settled: false`, since a current frame does not prove an arbitrary script has stopped changing. PNGs are limited to 5 MiB. UI/render requests have a 20-second deadline inside a 25-second host wait and the normal 30-second kernel call deadline; cancellation, foreground state and the developer grant are checked through readback and encoding.
+
+Android still has no HTTP remote instrument at the pinned Makepad revision. Studio calls Makepad's underlying widget instrument **in process**, rooted only at its own app; it does not inspect other apps or the shell's controls. Current checks report empty geometry, clipped text and small buttons. The shared `card-studio` check/critique port, image comparison, `mod.studio` toolbox adapter, editable workflow templates, image generation and capture sessions remain unimplemented.
+
+Start at [host tools and admission](../../crates/shell/src/host_tools/studio_bundles.rs), then [the visible app runner](../../crates/shell/src/studio/apps.rs) and [the bilingual architecture walkthrough](../architecture-walkthrough.md#follow-app-studio-from-the-agent-to-a-working-app). The [fresh-app brief](../studio/task-planner-brief.md) and [functional device harness](../../tools/studio-flow-device-test.py) define acceptance against a newly authored project. The older [L0 device probe](../../tools/studio-device-probe.py) covers denial, palette/PNG behavior and background cancellation only. The Android wrapper's `--dev-mode` enables developer options; `--development` selects signing and `--package-name` selects an isolated test identity. The physical functional result is recorded below, separately from build and unit results.
+
+### Physical functional evidence
+
+The `adr0006-task-planner-acceptance-v2` run used the isolated `dev.makepad.octosense.studio` test package. Its generation receipt identifies `deepseek/deepseek-v4-flash` and binds the model-authored design, manifest, `main.splash` and icon to bundle digest `7892501e8b69d752b002130879dde11af8f7c7e7b7e620a6854b97892fc95f3b`. The model called `view_image`; its tool result reported `shown_to_model: true`, and the model continued its turn. This records image delivery and continuation, not an independent guarantee that every visual detail was understood.
+
+The 129-call harness reported `functional_passed_visual_review_required`. It exercised task entry, completion and All/Active/Done filters; discarded preview state; verified separate installed storage; and retained installed state through close/reopen and process restart. It also verified exact Chinese text after native input and reopening, and scrolled through seven additional rows. The harness made no direct source or app-storage writes.
+
+Subsequent manual review passed portrait readability, long-title wrapping, bottom-row reachability, Chinese glyphs, app contrast and absence of unintended app overlap. An Android-wide screenshot also confirmed keyboard presentation and correct viewport shrinkage; app-texture PNGs alone exclude keyboard pixels. Generous spacing leaves about one row above the keyboard. A shell floating overlay and low-contrast status bar remain separate observations; rotation/landscape was not established. See the [validation report](../studio/oneplus6-validation.md) for provenance and limits. Malformed saved JSON preservation and reported save failures were **not tested** because they require isolated fault injection. The full image-generation/refinement workflow and `mod.studio` adapter remain unimplemented.
+
+The remaining decision describes the complete intended design. Some local app support from milestone 3 is implemented ahead of the shared checks and workflow adapter; the milestones as a whole are not complete.
 
 ## Context
 
-Making an OctoSense app or card from a picture works today only on a desktop:
+At the time of the proposal, the image-driven app/card flow was provided by these desktop tools. The phone implementation above does not yet port that image pipeline:
 
 - **The OctoScript App Design Flow** is about 12,150 lines of Python tooling (about 16,000 with its tests), plus per-app examples. It runs on a Mac with cargo, Makepad Studio and App Hub's `card-host --remote`, and also needs Python 3.12 with numpy, OpenCV, Pillow and fontTools, Swift and Node. Its two image paths are:
   - the Sketch kit (`flows/kits/sketch`), which needs `sketchtool`, Swift and a licensed kit, and has its own gates (`gate_structure`, `gate_composition`, `gate_fill`, `gate_visual`);
   - image-to-card (`flows/image-to-card`, `flows/image-lib`): crop scenes from an image, read their text with Apple Vision OCR (through Swift), map regions to widgets, generate L0, render and compare. Its gate is `flows/image-lib/gate.py`: native geometry, OCR text, ink and colour checks, and the visual-review receipt.
 - **App Hub's `card-studio`** renders a card in a hidden `card-host --remote`, grabs a PNG, runs measured checks (hidden, clipped or truncated text, overflow, overlap, empty or failed states, fit, lint, realize) and builds a critique payload for a vision model. The checks and the payload are plain Rust that depends only on serde and serde_json. They read the remote instrument's snapshot and dump formats and card-host's widget ids, and the critique prompt is written for an L0 glance card. The rendering needs the remote instrument and a separate process.
 
-On the phone none of that runs:
+The desktop process/HTTP pipeline cannot run unchanged on the phone:
 
 - There is no Python, and no Apple Vision for OCR.
 - Makepad's remote instrument is compiled out on Android (`platform/src/remote.rs`, the `target_os = "android"` stub), and there is no second process to host a card.
@@ -96,7 +109,7 @@ The Sketch kit, its gates included, stays a desktop tool and is not ported.
 ### 3. The output is a glance card or a contained script app
 
 - **A glance card:** L0 only, as for every generated card, published through `glance.publish` as the app.
-- **A script app:** a bundle per [ADR 0005](0005-app-contract.md), with `main.splash`, Octoscript controllers, its kit and its data. In developer mode it installs locally as a developer bundle. App Hub installs only from the signed catalog today, so this adds a local install path: a developer bundle carries developer mode's `DevTag`, runs only while that tag is valid, and is never offered through the catalog. Publishing goes through App Hub's usual gate and signing.
+- **A script app:** a bundle per [ADR 0005](0005-app-contract.md), with `main.splash`, Octoscript controllers, its kit and its data. In developer mode it installs locally as a developer bundle. App Hub's ordinary install path remains tied to its signed catalog. Studio now adds a separate local path for offline, storage-only `main.splash` apps: a developer bundle carries developer mode's `DevTag`, runs only while that tag is valid, and is never offered through the catalog. Broader bundle support remains planned. Publishing goes through App Hub's usual gate and signing.
 
 A cloned app is the person's own prototype. Section 9 says what may and may not be copied.
 
@@ -113,7 +126,7 @@ It then:
 2. reads the pixels back, one readback at a time (makepad's 32 MiB readback budget is shared by every pending readback), composes the premultiplied RGBA onto the surface's backdrop and writes an opaque PNG;
 3. builds the widget-tree capture the checks read, in the capture format `card-studio` reads (section 5).
 
-There is no remote instrument, no `card-host` process and no window grab. Studio renders never go through the glance store, so its publish rate and card limits do not apply. Every preview uses a no-side-effect policy established before source evaluation: a fresh disposable storage jail (or a bounded snapshot copied into it), no live app/account files, and disabled external network access. Bundle artwork is staged by the host through a bounded local asset path; service data comes from explicit preview fixtures. Mutating `host.request` calls are refused, but that gate alone is insufficient: Splash’s direct `fs.write`/`append`/`remove` and network APIs must remain confined or disabled too. Preview state is discarded on completion or cancellation. The target’s layout and lowering are reused; its live storage and service authority are not.
+There is no HTTP remote server, `card-host` process or whole-window grab. The local app path uses Makepad's in-process widget instrument, scoped to its own root. Studio renders never go through the glance store, so its publish rate and card limits do not apply. Every preview uses a policy that confines side effects before source evaluation: a fresh disposable storage jail (or a bounded snapshot copied into it), no live app/account files, and disabled external network access. Bundle artwork is staged by the host through a bounded local asset path; service data comes from explicit preview fixtures. Mutating `host.request` calls are refused, but that gate alone is insufficient: Splash’s direct `fs.write`/`append`/`remove` and network APIs must remain confined or disabled too. A glance render discards its state on completion or cancellation. An interactive preview may write within its disposable jail for functional tests, then discards that state on close; an installed developer app keeps its own private state. The target’s layout and lowering are reused; its live account storage and service authority are not.
 
 ### 5. Checks and comparison are Rust, shared by phone and desktop
 
@@ -156,10 +169,11 @@ The system toolbox's runner becomes the studio runner.
 
 ### 7. Agents drive the loop through host tools
 
-Host tools on the shell:
+The complete design includes these host tools; the implementation table above identifies the current subset:
 
 - `studio.render`, `studio.check`, `studio.compare`, `studio.critique_payload` and `studio.bundle_check`, declared `risk: read`;
-- `studio.install`, for a developer bundle, declared `risk: act`, because it changes what is installed.
+- `studio.install`, for a developer bundle, declared `risk: act`, because it changes what is installed;
+- the implemented interactive app path also has `studio.open`, `studio.inspect` and `studio.close` (`read`), plus `studio.input` (`act`) for stateful behavior tests within the caller's own app.
 
 None is a background tool, because a render needs Home in front (section 10). Each registers a call timeout that covers settle and readback; octos's default is 30 s.
 
@@ -190,7 +204,7 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 
 - **Screenshots can hold personal data.** They stay in the project's folder and are sent only to the model provider the person chose. Deleting a project deletes its folder and purges the conversation sessions that viewed its images, because octos keeps viewed images as message media.
 - **Other apps are captured only in an approved session** started by the person (section 2). A session is visible on screen, never runs in the background, and leaves secure windows out.
-- **A clone is for the person's own use or as a prototype.** Studio projects never ship logos, brand marks, icons or copyrighted images in a bundle. The studio records where every image came from, and `studio.bundle_check` refuses any raster asset derived from a captured screenshot. The studio regenerates or draws artwork instead. Publishing a clone needs the publisher's own assets and goes through App Hub's review.
+- **A clone is for the person's own use or as a prototype.** Studio projects never ship logos, brand marks, icons or copyrighted images in a bundle. The planned image workflow records where every image came from and adds a provenance gate refusing raster assets derived from captured screenshots. The current `studio.bundle_check` checks local developer admission and resource limits; it does not establish image provenance. The studio regenerates or draws artwork instead. Publishing a clone needs the publisher's own assets and goes through App Hub's review.
 - **Generated cards stay L0** and script apps stay contained. The studio widens no policy.
 
 ### 10. Limits on the device
@@ -215,9 +229,9 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 
 ## Milestones
 
-1. **Render on the phone.** Renderer, readback router, `studio.render`, developer build. Verified on a device: pixels and orientation, settle timing, cost of the repaint, the readback when Home leaves the front, and an image reaching DeepSeek V4 Flash (`shown_to_model`).
+1. **Render on the phone.** Renderer, readback router, `studio.render`, developer build. Acceptance requires device evidence for: pixels and orientation, settle timing, cost of the repaint, the readback when Home leaves the front, and an image reaching DeepSeek V4 Flash (`shown_to_model`).
 2. **Check and compare.** `card-studio` as a library, the new checks, comparison with a screenshot, the OCR choice. End-to-end: a screenshot of an app becomes a glance card refined in three iterations.
-3. **Rules in Octoscript.** The studio runner and `mod.studio`; the `card-refine` template; image-to-card code generation; script-app output and developer install.
+3. **Rules in Octoscript.** The studio runner and `mod.studio`; the `card-refine` template; image-to-card code generation. Local offline script-app output, instrumentation and developer install now have a Rust path; the template/adapter port and fault injection remain pending. Fresh-app functional and portrait visual checks have passed on OnePlus 6.
 4. **Images in.** The image-generation backend; capture sessions on the ROM; clone a multi-screen app from captured screens.
 5. **Normal mode.** Approvals for capture and install; MediaProjection on stock Android; background rendering if it is solved.
 
@@ -225,7 +239,7 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 
 - One implementation of checks and comparison for desktop and phone, so a card judged on a Mac and on a phone gets the same report.
 - The design flow's Python shrinks to the Sketch kit and desktop-only tools as the image-to-card parts move to Octoscript and Rust.
-- The shell gains a renderer that can show any card offscreen. It is a new attack surface for script cards, which is why studio renders run without side effects.
+- The shell gains a renderer that can show any card offscreen. It is a new attack surface for script cards, which is why preview effects stay in disposable storage with external services disabled.
 - Rules and templates change on the phone without a build, under the toolbox's digest and budget rules.
 - Developer mode gains the `studio.*` tools, with person-only approvals for capture sessions and any future guarded input that changes external state.
 - ADR 0002 is amended (its amendment of 2026-10-03): its §6 toolbox tools `card_render` and `card_critique_payload` become the `studio.*` host tools, and its §7 rule that the phone evaluates only while charging does not apply to renders the person starts.

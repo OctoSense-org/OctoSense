@@ -74,7 +74,7 @@ pub const HOST_EXECUTOR: &str = "@shell";
 /// Whether `tool` is one the shell runs itself, as the calling app's own
 /// tool, whatever its declaration names (never routed to the app).
 pub fn is_host_run(tool: &str) -> bool {
-    tool == DEV_RUN || tool == super::studio::RENDER || super::files::TOOLS.contains(&tool)
+    tool == DEV_RUN || super::studio::is_tool(tool) || super::files::TOOLS.contains(&tool)
 }
 
 /// A tool the shell runs, as `owner` declares it (its schemas).
@@ -82,8 +82,8 @@ fn host_run_declaration(owner: &str, tool: &str) -> Option<Value> {
     if tool == DEV_RUN {
         return Some(super::dev_run::declaration(owner));
     }
-    if tool == super::studio::RENDER {
-        return Some(super::studio::declaration(owner));
+    if super::studio::is_tool(tool) {
+        return super::studio::declarations(owner).into_iter().find(|d| d["name"] == tool);
     }
     super::files::declarations(owner).into_iter().find(|d| d["name"] == tool)
 }
@@ -384,7 +384,7 @@ impl Catalog {
             out.push(super::dev_run::declaration(app));
         }
         if dev_all && super::studio::SUPPORTED {
-            out.push(super::studio::declaration(app));
+            out.extend(super::studio::declarations(app));
         }
         out
     }
@@ -646,7 +646,7 @@ impl Relay {
         // 1. Authorize by (owning app, tool) and caller.
         let host_run = is_host_run(&tool);
         let (caller, granted) = match call.caller_kind {
-            _ if tool == super::studio::RENDER => (
+            _ if super::studio::is_tool(&tool) => (
                 if call.caller_kind == CallerKind::System { Caller::SystemAgent } else { Caller::OwnAgent { client: call.client.clone() } },
                 super::studio::SUPPORTED && calling == owner && env.grants_all(&calling)
                     && (call.caller_kind == CallerKind::AppPeer || calling == SYSTEM),

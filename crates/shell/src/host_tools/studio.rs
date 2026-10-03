@@ -13,6 +13,38 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub const RENDER: &str = "studio.render";
+pub const APP_TOOLS: &[&str] = &[
+    "studio.bundle_check",
+    "studio.open",
+    "studio.input",
+    "studio.inspect",
+    "studio.close",
+    "studio.install",
+];
+pub fn is_tool(name: &str) -> bool {
+    name == RENDER
+        || cfg!(all(unix, any(feature = "app-hub", native_mobile))) && APP_TOOLS.contains(&name)
+}
+pub fn declarations(app: &str) -> Vec<Value> {
+    let mut out = vec![declaration(app)];
+    if cfg!(all(unix, any(feature = "app-hub", native_mobile))) {
+        out.extend(APP_TOOLS.iter().map(|name| app_declaration(app, name)));
+    }
+    out
+}
+fn app_declaration(app: &str, name: &str) -> Value {
+    let (description,properties,required)=match name {
+        "studio.bundle_check" => ("Stage and validate an offline main.splash developer bundle from your conversation workspace. Computes and stamps the digest only on a private copy; never modifies source, signs a publisher release, or installs.",json!({"bundle_path":{"type":"string","minLength":1,"maxLength":1024}}),vec!["bundle_path"]),
+        "studio.install" => ("Install an offline main.splash bundle locally as a developer app. Requires dev.studio.* id. It appears in Home while its developer grant remains valid; its own state persists across close/reopen. No catalog or publisher signature is created.",json!({"bundle_path":{"type":"string","minLength":1,"maxLength":1024}}),vec!["bundle_path"]),
+        "studio.open" => ("Open a visible contained app. Supply exactly one of bundle_path (disposable preview state) or app_id (previous developer install, persistent app state). Returns an instance id after layout; inspect it before targeting input.",json!({"bundle_path":{"type":"string","minLength":1,"maxLength":1024},"app_id":{"type":"string","minLength":1,"maxLength":100}}),vec![]),
+        "studio.input" => ("Send a real tap or text event to a visible enabled widget in your Studio app instance. Use the widget id from inspect. Never targets another app or host UI.",json!({"instance_id":{"type":"string","minLength":1,"maxLength":100},"widget_id":{"type":"string","minLength":1,"maxLength":512},"action":{"type":"string","enum":["tap","text","scroll"]},"text":{"type":"string","maxLength":2048},"delta_y":{"type":"number","minimum":-2000,"maximum":2000}}),vec!["instance_id","widget_id","action"]),
+        "studio.inspect" => ("Inspect your Studio app. Returns a compact page of visible widget selectors; pass each exact selector to studio.input. Follow next_offset with offset for more. path is a PNG for view_image; snapshot_path is the full diagnostic JSON.",json!({"instance_id":{"type":"string","minLength":1,"maxLength":100},"offset":{"type":"integer","minimum":0}}),vec!["instance_id"]),
+        _ => ("Close your Studio app instance. Preview state is discarded; an installed app's state persists.",json!({"instance_id":{"type":"string","minLength":1,"maxLength":100}}),vec!["instance_id"]),
+    };
+    json!({"name":name,"app":app,"description":description,
+        "input_schema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
+        "output_schema":{"type":"object"},"risk":if name=="studio.install" || name=="studio.input" {"act"} else {"read"},"background":false,"shareable":false})
+}
 pub const SUPPORTED: bool = cfg!(unix);
 pub const SOURCE_MAX: usize = 16 * 1024;
 pub const DATA_MAX: usize = 32 * 1024;
@@ -115,6 +147,8 @@ impl ToolExecutor for StudioExecutor {
             flag.store(true, Ordering::SeqCst);
         }
         crate::studio::cancel(id);
+        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        crate::studio::apps::cancel(id);
     }
 }
 impl StudioExecutor {
@@ -127,18 +161,28 @@ impl StudioExecutor {
             ));
             return;
         };
-        if call.app != app || call.name != RENDER {
+        if call.app != app || !is_tool(&call.name) {
             reply.finish(ToolOutcome::error(
                 "not_granted",
                 "studio.render belongs to the calling agent",
             ));
             return;
         }
-        if let Err(why) = super::schema::check(&declaration(&app)["input_schema"], &call.args) {
+        let decl = if call.name == RENDER {
+            declaration(&app)
+        } else {
+            app_declaration(&app, &call.name)
+        };
+        if let Err(why) = super::schema::check(&decl["input_schema"], &call.args) {
             reply.finish(ToolOutcome::error("invalid_args", why));
             return;
         }
-        crate::dev_mode::audit_tool_call(&app, RENDER, &call.args.to_string(), &call.calling_app);
+        crate::dev_mode::audit_tool_call(
+            &app,
+            &call.name,
+            &call.args.to_string(),
+            &call.calling_app,
+        );
         if IN_FLIGHT.fetch_add(1, Ordering::SeqCst) >= MAX_IN_FLIGHT {
             IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
             reply.finish(ToolOutcome::error(
@@ -162,6 +206,13 @@ impl StudioExecutor {
         }
         let running = self.running.clone();
         std::thread::spawn(move || {
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            let outcome = if call.name != RENDER {
+                super::studio_bundles::execute(&call, &root, &tag, &flag, &reply)
+            } else {
+                render_call(&call, &root, &app, &tag, &flag, &reply)
+            };
+            #[cfg(not(all(unix, any(feature = "app-hub", native_mobile))))]
             let outcome = render_call(&call, &root, &app, &tag, &flag, &reply);
             reply.finish(outcome);
             running
@@ -259,9 +310,14 @@ fn render_call(
 /// launch fixture, never from model tool arguments. No provider is required.
 pub fn test_action(spec_path: &str) -> Result<(), String> {
     let home = crate::octosense::paths::home();
-    makepad_widgets::log!("studio-test-profile: home={} canonical={} build={:?}",
-        home.display(), std::fs::canonicalize(&home).unwrap_or(home.clone()).display(),
-        crate::dev_mode::BuildKind::current());
+    makepad_widgets::log!(
+        "studio-test-profile: home={} canonical={} build={:?}",
+        home.display(),
+        std::fs::canonicalize(&home)
+            .unwrap_or(home.clone())
+            .display(),
+        crate::dev_mode::BuildKind::current()
+    );
     if !crate::dev_mode::grants_all(SYSTEM) {
         return Err("studio test action requires developer mode for system".into());
     }
@@ -314,8 +370,107 @@ pub fn test_action(spec_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Explicit launch-only instrument transport for an already authored project.
+/// It shares the system owner and executor with real agent tools. The private
+/// spool never enables developer mode and is not exposed as an agent tool.
 #[cfg(unix)]
-mod scoped {
+pub fn test_flow(spec_path: &str) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let Some(tag) = crate::dev_mode::tag().filter(|t| authorized(SYSTEM, t)) else {
+        return Err("studio flow requires developer mode for system".into());
+    };
+    let mut text = String::new();
+    std::fs::File::open(spec_path)
+        .map_err(|e| e.to_string())?
+        .take(8193)
+        .read_to_string(&mut text)
+        .map_err(|e| e.to_string())?;
+    if text.len() > 8192 {
+        return Err("studio flow config exceeds limit".into());
+    }
+    let config: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let root = PathBuf::from(config["workspace"].as_str().ok_or("flow needs workspace")?);
+    if !root.is_absolute() {
+        return Err("flow workspace must be absolute".into());
+    }
+    for name in ["requests", "responses"] {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        if std::fs::symlink_metadata(&dir)
+            .map_err(|e| e.to_string())?
+            .file_type()
+            .is_symlink()
+        {
+            return Err("flow directory must not be a symlink".into());
+        }
+    }
+    let scope = scoped::Workspace::open(&root, None)?;
+    std::thread::spawn(move || {
+        let executor = StudioExecutor::default();
+        let mut seen = std::collections::HashSet::new();
+        while authorized(SYSTEM, &tag) && seen.len() < 1024 {
+            let Ok(entries) = std::fs::read_dir(root.join("requests")) else {
+                break;
+            };
+            for entry in entries.flatten() {
+                if seen.len() >= 1024 {
+                    break;
+                }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let Some(id) = name.strip_suffix(".json") else {
+                    continue;
+                };
+                if uuid::Uuid::parse_str(id).is_err() || seen.contains(&name) {
+                    continue;
+                }
+                // A durable response (including an interrupted empty claim)
+                // means this UUID was consumed. Never replay input/install
+                // when the test process restarts to check persistent state.
+                if scope
+                    .read(&format!("responses/{name}"), 1024 * 1024)
+                    .is_ok()
+                {
+                    continue;
+                }
+                let Ok(text) = scope.read(&format!("requests/{name}"), 16 * 1024) else {
+                    continue;
+                };
+                let Ok(request) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                seen.insert(name.clone());
+                let tool = request["name"].as_str().unwrap_or("");
+                if !is_tool(tool) {
+                    continue;
+                }
+                let mut call = match HostToolCall::parse(
+                    &json!({"call_id":id,"name":tool,"app":SYSTEM,"session_id":crate::system_chat::session::SYSTEM_SESSION,"caller":{"kind":"system"},"args":request["args"],"timeout_ms":30_000,"risk":"read"}),
+                ) {
+                    Ok(call) => call,
+                    Err(_) => continue,
+                };
+                call.calling_app = SYSTEM.into();
+                let output = match scope.create_file(&format!("responses/{name}")) {
+                    Ok(file) => file,
+                    Err(_) => continue,
+                };
+                let reply = ToolReply::new(id.to_string(), move |fields| {
+                    let data = fields.to_string();
+                    if data.len() <= 1024 * 1024 {
+                        let mut out = &output;
+                        let _ = out.write_all(data.as_bytes()).and_then(|_| out.sync_all());
+                    }
+                });
+                executor.execute_scoped(call, reply, root.clone());
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(super) mod scoped {
     use super::*;
     use std::ffi::{CString, OsStr};
     use std::fs::File;
@@ -365,6 +520,45 @@ mod scoped {
         Ok(parts)
     }
     impl Workspace {
+        pub fn create_file(&self, path: &str) -> Result<File, String> {
+            let names = parts(path)?;
+            let mut dir = self.dir.clone();
+            for name in &names[..names.len() - 1] {
+                dir = Arc::new(openat(
+                    dir.as_raw_fd(),
+                    name,
+                    libc::O_RDONLY | libc::O_DIRECTORY,
+                )?);
+            }
+            openat(
+                dir.as_raw_fd(),
+                names[names.len() - 1],
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
+            )
+            .map(File::from)
+        }
+        /// Copy only bounded regular files through directory descriptors.
+        /// Neither a symlink swap nor an authored relative path can redirect
+        /// this snapshot outside the calling conversation's workspace.
+        pub fn copy_bundle(
+            &self,
+            path: &str,
+            target: &Path,
+            files: usize,
+            bytes: usize,
+            per_file: usize,
+        ) -> Result<(), String> {
+            let mut dir = self.dir.clone();
+            for name in parts(path)? {
+                dir = Arc::new(openat(
+                    dir.as_raw_fd(),
+                    name,
+                    libc::O_RDONLY | libc::O_DIRECTORY,
+                )?);
+            }
+            let mut budget = (files, bytes);
+            copy_directory(dir.as_raw_fd(), target, 0, &mut budget, per_file)
+        }
         pub fn open(root: &Path, context: Option<&str>) -> Result<Self, String> {
             let mut fd = openat(
                 libc::AT_FDCWD,
@@ -438,7 +632,13 @@ mod scoped {
             .map(File::from)
         }
         pub fn output(&self) -> Result<Output, String> {
-            let name = format!(".studio-{}.png", uuid::Uuid::new_v4());
+            self.output_extension("png")
+        }
+        pub fn output_json(&self) -> Result<Output, String> {
+            self.output_extension("json")
+        }
+        fn output_extension(&self, extension: &str) -> Result<Output, String> {
+            let name = format!(".studio-{}.{}", uuid::Uuid::new_v4(), extension);
             let fd = openat(
                 self.dir.as_raw_fd(),
                 OsStr::new(&name),
@@ -452,6 +652,78 @@ mod scoped {
             })
         }
     }
+    fn copy_directory(
+        fd: i32,
+        target: &Path,
+        depth: usize,
+        budget: &mut (usize, usize),
+        per_file: usize,
+    ) -> Result<(), String> {
+        use std::os::unix::ffi::OsStringExt;
+        if depth > 8 {
+            return Err("bundle directory depth exceeds 8".into());
+        }
+        let duplicate = unsafe { libc::dup(fd) };
+        if duplicate < 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        let stream = unsafe { libc::fdopendir(duplicate) };
+        if stream.is_null() {
+            unsafe {
+                libc::close(duplicate);
+            }
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        struct Dir(*mut libc::DIR);
+        impl Drop for Dir {
+            fn drop(&mut self) {
+                unsafe {
+                    libc::closedir(self.0);
+                }
+            }
+        }
+        let stream = Dir(stream);
+        loop {
+            let entry = unsafe { libc::readdir(stream.0) };
+            if entry.is_null() {
+                break;
+            }
+            let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+            if name == b"." || name == b".." {
+                continue;
+            }
+            if budget.0 == 0 {
+                return Err("bundle exceeds file/directory count limit".into());
+            }
+            budget.0 -= 1;
+            let name = std::ffi::OsString::from_vec(name.to_vec());
+            let input = File::from(openat(fd, &name, libc::O_RDONLY)?);
+            let meta = input.metadata().map_err(|e| e.to_string())?;
+            let output = target.join(&name);
+            if meta.is_dir() {
+                std::fs::create_dir(&output).map_err(|e| e.to_string())?;
+                copy_directory(input.as_raw_fd(), &output, depth + 1, budget, per_file)?;
+            } else if meta.is_file() {
+                let cap = per_file.min(budget.1);
+                if meta.len() > cap as u64 {
+                    return Err("bundle exceeds byte limit".into());
+                }
+                let mut bytes = Vec::new();
+                input
+                    .take(cap as u64 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|e| e.to_string())?;
+                if bytes.len() > cap {
+                    return Err("bundle exceeds byte limit".into());
+                }
+                budget.1 -= bytes.len();
+                std::fs::write(&output, bytes).map_err(|e| e.to_string())?;
+            } else {
+                return Err("bundle accepts only regular files and directories".into());
+            }
+        }
+        Ok(())
+    }
     pub struct Output {
         pub file: File,
         dir: Arc<OwnedFd>,
@@ -459,6 +731,9 @@ mod scoped {
         keep: bool,
     }
     impl Output {
+        pub fn path(&self) -> &str {
+            &self.name
+        }
         pub fn keep(mut self) -> String {
             self.keep = true;
             self.name.clone()
@@ -536,6 +811,8 @@ mod tests {
         let scope = scoped::Workspace::open(&root, None).unwrap();
         {
             let _output = scope.output().unwrap();
+            let artifact = scope.output_json().unwrap();
+            assert!(artifact.path().ends_with(".json"));
         }
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
         std::fs::rename(&root, temp.0.as_path().join("old")).unwrap();
@@ -566,6 +843,23 @@ mod tests {
                 "{extra}"
             );
         }
+    }
+
+    #[test]
+    fn flow_response_claim_survives_restart_without_replaying_a_request() {
+        let temp = crate::app_storage::tests::Scratch::new("studio-flow-claim");
+        std::fs::create_dir(temp.0.join("responses")).unwrap();
+        let path = "responses/11111111-1111-4111-8111-111111111111.json";
+        {
+            let first = scoped::Workspace::open(&temp.0, None).unwrap();
+            let _claim = first.create_file(path).unwrap();
+            assert!(first.create_file(path).is_err());
+        }
+        let restarted = scoped::Workspace::open(&temp.0, None).unwrap();
+        // Even a crash before writing the response consumes the UUID. The
+        // polling loop sees this before adding it to its per-process limit.
+        assert_eq!(restarted.read(path, 1024 * 1024).unwrap(), "");
+        assert!(restarted.create_file(path).is_err());
     }
 
     #[test]

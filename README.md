@@ -18,7 +18,9 @@ It was OctoSense-Desktop; OctoSense-ROM (retired; merged into this repository) a
 
 New to the codebase? Start with [From an app window to an agent turn](docs/architecture-walkthrough.md). It follows executable entry points, native and script hosting, app data access, human/system conversations, tool routing and the actual Tokio tasks. The [product walkthrough](desktop/docs/code-walkthrough.md) adds desktop, Home, ROM and system-app run recipes.
 
-[App Studio on the phone](docs/adr/0006-app-studio-on-the-phone.md) is an accepted plan with milestone 1 in progress. Home can now be packaged with explicit developer options and a separate test identity ([phone build options](phone/README.md#build-and-run)); the complete render/check/refine/install loop remains under development. Device acceptance is recorded separately from unit and build checks.
+[App Studio on the phone](docs/adr/0006-app-studio-on-the-phone.md) now has developer-only tools to check, open, inspect, exercise and locally install an offline `main.splash` app. Preview state is disposable; installed app state persists under its developer grant. Follow the [Studio code walkthrough](docs/architecture-walkthrough.md#follow-app-studio-from-the-agent-to-a-working-app).
+
+A fresh model-authored Task Planner passed 129 physical-device tool calls on OnePlus 6, including interaction and installed-state persistence. [Portrait app and keyboard visual review](docs/studio/oneplus6-validation.md) passed. Fault injection remains pending; image generation, the editable toolbox flow and public publishing remain future work. Home's [build options](phone/README.md#build-and-run) provide developer mode and a separate test package.
 
 ## How it fits together
 
