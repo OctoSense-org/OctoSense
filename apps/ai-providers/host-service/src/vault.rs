@@ -3,12 +3,15 @@
 //! octos (`octos-cli/src/auth/keychain.rs`) resolves a profile env var whose
 //! value is a `keychain:` marker from its secret store: the generic password
 //! with service `octos` and account = the env var name, through the
-//! `security` tool on macOS; the 0600 file `<octos home>/secrets/<account>`
-//! on Linux. On every other platform (Android, iOS, HarmonyOS) octos has no
-//! secret store and reads the raw value in `config.env_vars`, so there the
-//! key is written into the profile itself, which lives in app-private
-//! storage with mode 0600. Sealing it with an Android Keystore key, as Mail
-//! does its passwords, would leave the kernel unable to read it.
+//! `security` tool on macOS; the 0600 file `$HOME/.octos/secrets/<account>`
+//! on Linux. On Android and iOS octos has no secret store and reads the raw
+//! value in `config.env_vars`, so there the key is written into the profile
+//! itself, which lives in app-private storage with mode 0600. HarmonyOS
+//! builds are `target_os = "linux"`, but their kernel is octos embedded in
+//! the shell's own process: octos looks under the shell's `HOME`, never the
+//! kernel's octos home, so a key in the secrets folder is never found and
+//! the profile holds it there too. Sealing it with an Android Keystore key,
+//! as Mail does its passwords, would leave the kernel unable to read it.
 //!
 //! - macOS: [`OctosKeychain`]. An item written through the Security framework
 //!   directly (the `keyring` crate) would trust only the shell, and octos's
@@ -18,7 +21,10 @@
 //!   never on a command line.
 //! - Linux: [`SecretsDir`] under the core dir (the kernel runs with its octos
 //!   home there).
-//! - Elsewhere, and with `OCTOSENSE_LLM_VAULT=file`: [`InProfile`].
+//! - Elsewhere (Android, iOS, HarmonyOS), and with
+//!   `OCTOSENSE_LLM_VAULT=file`: [`InProfile`]. On HarmonyOS, keys an earlier
+//!   build left in the secrets folder move into the profile first
+//!   (`move_secrets_into_profile`).
 //!
 //! A vault that refuses a key (`put` fails) leaves it in the profile: the
 //! kernel must be able to run on it either way.
@@ -75,7 +81,10 @@ pub fn platform(core_dir: &Path) -> Arc<dyn Vault> {
         let _ = core_dir;
         return Arc::new(OctosKeychain::octos());
     }
-    #[cfg(target_os = "linux")]
+    // A move that fails keeps the folder; the next start tries again.
+    #[cfg(target_env = "ohos")]
+    let _ = move_secrets_into_profile(core_dir);
+    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     return Arc::new(SecretsDir::new(core_dir.join("secrets")));
     #[allow(unreachable_code)]
     {
@@ -84,7 +93,38 @@ pub fn platform(core_dir: &Path) -> Arc<dyn Vault> {
     }
 }
 
-/// No store: every key stays in the profile (Android, iOS, development).
+/// Where the kernel cannot read the secrets folder (HarmonyOS), put each key
+/// the profile marks `keychain:` back into the profile, then delete the
+/// folder: nothing else reads it, and a removed provider's key stays there
+/// otherwise. A profile that cannot be written keeps the folder, so no key
+/// is lost. Returns how many keys moved.
+#[cfg_attr(not(target_env = "ohos"), allow(dead_code))]
+fn move_secrets_into_profile(core_dir: &Path) -> Result<usize, String> {
+    use octosense_llm_config::profile;
+    let dir = core_dir.join("secrets");
+    if !dir.is_dir() {
+        return Ok(0);
+    }
+    let folder = SecretsDir::new(dir.clone());
+    let path = profile::profile_path(core_dir);
+    let loaded = profile::load(&path).map_err(|_| "the profile could not be read".to_string())?;
+    let mut keys = BTreeMap::new();
+    for (name, value) in &loaded.env_vars {
+        if let Some(account) = marker_account(value, name) {
+            if let Some(secret) = folder.get(account)? {
+                keys.insert(name.clone(), secret);
+            }
+        }
+    }
+    if !keys.is_empty() {
+        profile::save_env(&path, &keys).map_err(|_| "the profile could not be written".to_string())?;
+    }
+    std::fs::remove_dir_all(&dir).map_err(|_| "the secrets folder could not be deleted".to_string())?;
+    Ok(keys.len())
+}
+
+/// No store: every key stays in the profile (Android, iOS, HarmonyOS,
+/// development).
 pub struct InProfile;
 
 impl Vault for InProfile {
@@ -295,6 +335,64 @@ mod tests {
         assert!(vault.remove("DEEPSEEK_API_KEY").unwrap());
         assert_eq!(vault.get("DEEPSEEK_API_KEY").unwrap(), None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn core_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("llm-vault-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn write_profile(core: &Path, env: serde_json::Value) {
+        let path = octosense_llm_config::profile::profile_path(core);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let profile = serde_json::json!({"id": "_main", "name": "Main", "config": {
+            "llm": {"primary": {"family_id": "deepseek", "model_id": "deepseek-v4-flash", "context_window": 1048576}, "fallbacks": []},
+            "env_vars": env}});
+        std::fs::write(path, serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
+    }
+
+    fn profile_json(core: &Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(octosense_llm_config::profile::profile_path(core)).unwrap()).unwrap()
+    }
+
+    /// HarmonyOS: a key an earlier build kept in the secrets folder, which
+    /// the embedded kernel never reads, moves into the profile; the folder,
+    /// with a removed provider's leftover key, is deleted.
+    #[test]
+    fn keys_in_the_secrets_folder_move_into_the_profile() {
+        let core = core_dir("move");
+        write_profile(&core, serde_json::json!({"DEEPSEEK_API_KEY": "keychain:", "GROQ_API_KEY": "keychain:GROQ_API_KEY::_main"}));
+        let folder = SecretsDir::new(core.join("secrets"));
+        folder.put("DEEPSEEK_API_KEY", "sk-test-move-0001").unwrap();
+        folder.put("GROQ_API_KEY::_main", "gsk-test-move-0002").unwrap();
+        folder.put("MOONSHOT_API_KEY", "sk-test-left-0003").unwrap();
+        assert_eq!(move_secrets_into_profile(&core).unwrap(), 2);
+        let profile = profile_json(&core);
+        assert_eq!(profile["config"]["env_vars"]["DEEPSEEK_API_KEY"], "sk-test-move-0001");
+        assert_eq!(profile["config"]["env_vars"]["GROQ_API_KEY"], "gsk-test-move-0002");
+        assert_eq!(profile["config"]["llm"]["primary"]["context_window"], 1048576, "the selection is kept as it was");
+        assert!(!core.join("secrets").exists(), "the folder and the leftover key are gone");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let path = octosense_llm_config::profile::profile_path(&core);
+            assert_eq!(std::fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        assert_eq!(move_secrets_into_profile(&core).unwrap(), 0, "nothing left to move");
+        let _ = std::fs::remove_dir_all(&core);
+    }
+
+    #[test]
+    fn a_profile_that_cannot_be_read_keeps_the_secrets_folder() {
+        let core = core_dir("keep");
+        let path = octosense_llm_config::profile::profile_path(&core);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"{ not json").unwrap();
+        SecretsDir::new(core.join("secrets")).put("DEEPSEEK_API_KEY", "sk-test-keep-0001").unwrap();
+        assert!(move_secrets_into_profile(&core).is_err());
+        assert_eq!(SecretsDir::new(core.join("secrets")).get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some("sk-test-keep-0001"));
+        let _ = std::fs::remove_dir_all(&core);
     }
 
     /// Touches the login keychain under a test-only service, so it runs only

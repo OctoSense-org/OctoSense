@@ -103,7 +103,7 @@ With Talk to Octos enabled, the kernel uses host-managed loopback WebSocket tran
 It is a contained script app like any other; the privileged half is the **`llm` host service** ([`apps/ai-providers/host-service`](../apps/ai-providers/host-service/README.md)):
 
 - It writes the kernel's profile, `<core dir>/profiles/_main.json` (`config.llm` and the key variables in `config.env_vars`), then restarts the kernel.
-- Keys go to the macOS login keychain (service `octos`), on Linux to `<core dir>/secrets/<ENV>` (0600), on Android and iOS into the app-private profile (0600), since octos has no secret store there. `OCTOSENSE_LLM_VAULT=file` keeps them in the profile for development.
+- Keys go to the macOS login keychain (service `octos`), on desktop Linux to `<core dir>/secrets/<ENV>` (0600), on Android, iOS and HarmonyOS into the app-private profile (0600): octos has no secret store on Android and iOS, and HarmonyOS's embedded kernel would look for one under the shell's own `HOME`. `OCTOSENSE_LLM_VAULT=file` keeps them in the profile for development.
 - Keys, PINs and QR codes are typed, drawn and scanned only on the service's **host sheets**. Only a sheet may call `llm.sheet.*`; the app sees masked status (`"set ••••1234"`, `"missing"`).
 - It serves **`os.*` apps only** (`"llm is for OctoSense's own apps."`). It manages providers; it has no method that sends a prompt to a model.
 

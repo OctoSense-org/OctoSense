@@ -344,8 +344,9 @@ of AI providers. It keeps the octos kernel's LLM providers in the kernel's
 profile, `<core_dir>/profiles/_main.json` (`octosense-llm-config` merges
 `config.llm` and `config.env_vars`, keeping every other key), and the keys
 where octos reads them: the macOS keychain `octos` service behind a
-`keychain:` marker, `<core_dir>/secrets/` on Linux, the app-private profile
-itself elsewhere (Android). Keys are typed, QRs shown and codes scanned only
+`keychain:` marker, `<core_dir>/secrets/` on desktop Linux, the app-private
+profile itself elsewhere (Android, and HarmonyOS, whose embedded kernel cannot
+read the secrets folder). Keys are typed, QRs shown and codes scanned only
 on the host's sheets; the app sees masked status. Built with its `octos-core`
 feature (the shells' default), it writes under
 `octosense_kernel::core_dir()` and calls `octosense_kernel::restart()`
@@ -451,8 +452,8 @@ in `mobile-apps` and native mobile builds):
   consumer leaves.
 - **Configured by AI providers.** The `llm` host service writes the kernel's
   profile, `<core_dir>/profiles/_main.json`, and keys (macOS keychain `octos`
-  service behind `keychain:` markers, `<core_dir>/secrets/` on Linux, the
-  profile itself elsewhere), then calls `restart()`: a running kernel stops,
+  service behind `keychain:` markers, `<core_dir>/secrets/` on desktop Linux,
+  the profile itself elsewhere, HarmonyOS included), then calls `restart()`: a running kernel stops,
   its consumers reconnect and a fresh kernel reads the new providers.
 - **Consumers.** AppCard (opt-in) connects through its transport's `kernel`
   module; Rinx's native mini-app host can take its own connection the same
