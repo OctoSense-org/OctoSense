@@ -1,7 +1,7 @@
 # ADR 0006: App Studio on the phone
 
 - **Date:** 2026-10-02
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-03). Implementation has not started; milestone 1 comes first.
 - **Scope:** How an agent on the phone turns an image (a generated design or a screenshot of an existing app) into an OctoSense app or glance card, looks at its own result and improves it, entirely on the phone, at first in developer mode. Covers the inputs, the in-process renderer, the checks, the rules that can change without a build, the tools agents get, and what of the OctoScript App Design Flow moves to the phone. There is no compile in the loop and no Mac.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (§6 the `card_render` and `card_critique_payload` toolbox tools; §7 a card is rendered, critiqued and revised before it is published; milestone M6); [ADR 0004](0004-native-apps-hosting-and-peers.md) (app agents, host tools, approvals, §13 developer mode); [ADR 0005](0005-app-contract.md) (the app contract and bundles); [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (contained script apps); [Home ADR 0005](home/0005-settings-octoscript-controller.md) and [Home ADR 0006](home/0006-builtin-settings.md) (Settings and its developer options); App Hub's [`card-studio`](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/card-studio) crate and [skill](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/skills/card-studio); the [OctoScript App Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (`flows/image-to-card`, `flows/image-lib`); octos issue #1149, closed, which added the `image_generation` stub (its backend needs a new issue).
 
@@ -59,7 +59,7 @@ There is no compile in the loop and no Mac or server anywhere. The first release
 
 An image comes from one of two places.
 
-- **Generated designs.** The person, or the agent, asks for a design. Generation goes through a provider the person configured in AI providers, and the PNG lands in the studio project's folder. octos's `image_generation` tool gets this backend instead of a separate OctoSense tool, and joins the tool lists that need it (octos's external clients, the system agent, developer app agents), so every client sees one tool. Which component holds the image provider's key on the phone is open: octos resolves provider keys itself, and its keychain store is unsupported on Android.
+- **Generated designs.** The person, or the agent, asks for a design. Generation goes through a provider the person configured in AI providers, and the PNG lands in the studio project's folder. octos's `image_generation` tool gets this backend instead of a separate OctoSense tool, and joins the tool lists that need it (octos's external clients, the system agent, developer app agents), so every client sees one tool. The person types the image provider's key on AI providers' host sheet, and it is kept like every provider key, where the kernel reads it: in the profile's `env_vars` on a phone (app-private, mode 0600), behind a `keychain:` marker on a desktop. octos's backend resolves it from there as it resolves an LLM key, and no app ever sees it.
 - **Screenshots of existing apps, to clone them.**
   - On every phone, the person picks screenshots with the system document picker, as AI providers' QR import does (one PNG or JPEG at a time today; picking several is new), or shares images to OctoSense (Home's share target accepts only text today; image shares are new).
   - On the OctoSense ROM, in developer mode and after the person approves a capture session, the studio drives the agent service. It opens the app (`startActivity`), walks its screens (`tap`, `swipe`) and captures each one (`captureScreen`). A session is bound to one app and ends when another app comes to the front. It only navigates, never types (`typeText` is not used), refuses to start or continue while the phone is locked, and shows a stop control the person can use at any time.
@@ -143,7 +143,7 @@ The agent looks at renders with `view_image` and critiques with its own model:
 
 - It views a render and its source in the same step, because a viewed image reaches the model for one request only.
 - If an image does not reach the model, the loop stops and says so instead of critiquing blind. That happens when `view_image` returns `shown_to_model: false`, or when the provider refuses images, after which octos tells the model the image could not be shown.
-- On the phone the model is DeepSeek V4 Flash. That it takes images is unverified; milestone 1 tests it.
+- On the phone the model is DeepSeek V4 Flash. Its API takes images: on 2026-10-03 a PNG sent as an `image_url` part was described correctly, for about 200 prompt tokens at 64×64. Milestone 1 tests whether octos passes a viewed image through to it (`shown_to_model`) and whether its vision is good enough to critique UI.
 - `model.complete` takes no images and is not used for critique.
 
 Who gets the tools, in the first release only while developer mode is on:
@@ -202,12 +202,12 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 - The shell gains a renderer that can show any card offscreen. It is a new attack surface for script cards, which is why studio renders run without side effects.
 - Rules and templates change on the phone without a build, under the toolbox's digest and budget rules.
 - Developer mode gains the `studio.*` tools and one approval it never answers by itself.
-- ADR 0002 is amended when this is accepted: its §6 toolbox tools `card_render` and `card_critique_payload` become the `studio.*` host tools, and its §7 rule that the phone evaluates only while charging does not apply to renders the person starts.
+- ADR 0002 is amended (its amendment of 2026-10-03): its §6 toolbox tools `card_render` and `card_critique_payload` become the `studio.*` host tools, and its §7 rule that the phone evaluates only while charging does not apply to renders the person starts.
 
 ## Open questions
 
-- Which image-generation providers and models to offer first, what a generation costs, and which component holds an image provider's key on the phone.
-- Whether DeepSeek V4 Flash takes images at all, whether its vision is good enough to critique UI, and which model requirement a studio project declares otherwise.
+- Which image-generation providers and models to offer first, and what a generation costs.
+- Whether DeepSeek V4 Flash's vision is good enough to critique UI, and which model requirement a studio project declares otherwise.
 - Which OCR reads a source image's text on the phone.
 - How the phone hosts a second home with test accounts, for a persistent developer profile.
 - How App Hub treats a published app that began as a clone.
