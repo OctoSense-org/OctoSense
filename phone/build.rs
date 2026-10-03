@@ -16,7 +16,11 @@ fn main() {
     if native_mobile {
         println!("cargo:rustc-cfg=native_mobile");
     }
-    if feature || target_os == "android" || target_env == "ohos" {
+    // Experiment: `OCTOSENSE_OHOS_DESKTOP=1` builds the desktop shell for an
+    // OpenHarmony 2-in-1 (every native app is an in-process module there).
+    println!("cargo:rerun-if-env-changed=OCTOSENSE_OHOS_DESKTOP");
+    let ohos_desktop = target_env == "ohos" && std::env::var_os("OCTOSENSE_OHOS_DESKTOP").is_some_and(|v| v == "1");
+    if feature || target_os == "android" || (target_env == "ohos" && !ohos_desktop) {
         println!("cargo:rustc-cfg=mobile_only");
     }
     // The host's build id: the second this build was configured, as digits.
