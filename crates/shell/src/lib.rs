@@ -73,6 +73,8 @@ pub mod wm_reply;
 pub mod ext;
 pub mod glance;
 pub mod glance_card;
+pub mod studio;
+use studio::Renderer as StudioRenderer;
 pub mod glance_chat;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -505,6 +507,9 @@ pub struct App {
     /// at without a screen (the GPU readback does not need one).
     #[rust]
     pub test_capture: Option<(Timer, std::path::PathBuf)>,
+    #[rust] pub studio: StudioRenderer,
+    #[rust] pub studio_clients: HashMap<String, ClientId>,
+    #[rust] pub studio_registry_generation: u64,
     #[rust] pub test_capture_ticket: Option<ReadbackTicket>,
     #[rust] pub test_recording: bool,
     /// `--test-action page:<n>`: the home page to jump to, once the phone
@@ -662,6 +667,34 @@ pub struct DividerDrag {
 }
 
 impl App {
+    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+    fn drain_studio(&mut self, cx: &mut Cx) {
+        for instance in studio::apps::take_closes() {
+            if let Some(client) = self.studio_clients.remove(&instance) {
+                self.close_client(cx, client, false);
+            }
+        }
+        for instance in studio::apps::take_launches() {
+            let Some((app_id, title)) = studio::apps::launch_info(&instance) else { continue };
+            let app = apps::studio_row(app_id.unwrap_or_else(|| format!("studio-instance:{instance}")),
+                title, vec![format!("--studio-instance={instance}")]);
+            let client = self.next_id;
+            self.launch_module_as(cx, &studio::module::STUDIO_MODULE, &app);
+            if self.state.as_ref().is_some_and(|state| state.clients.contains_key(&client)) {
+                self.studio_clients.insert(instance, client);
+            } else {
+                studio::apps::shutdown(cx, &instance);
+            }
+        }
+        let generation = host_tools::studio_bundles::generation();
+        if generation != self.studio_registry_generation {
+            self.studio_registry_generation = generation;
+            shell::launcher::invalidate_apps();
+            self.redraw_all(cx);
+        }
+    }
+
+
     fn desk(&self, cx: &mut Cx) -> WidgetRef {
         self.ui.widget(cx, ids!(desk))
     }
@@ -787,6 +820,14 @@ impl App {
                 self.activate_client(cx, client);
                 return;
             }
+        }
+
+        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        if app.bin == "studio-app" {
+            if let Err(error) = host_tools::studio_bundles::request_launch_installed(&app.id) {
+                self.notify(cx, "Could not open developer app", &error);
+            }
+            return;
         }
 
         // In-process hosting (aicontrol §3): a linked module the person
@@ -1960,6 +2001,7 @@ impl App {
     }
 
     fn remove_client(&mut self, cx: &mut Cx, client: ClientId) {
+        self.studio_clients.retain(|_, id| *id != client);
         log!("wm: removing client {}", client);
         peer_link::process_gone(client);
         self.process_close.gone(client);
@@ -3466,6 +3508,7 @@ impl App {
         self.pane_links.reannounce();
         // App peers take `dev.run` and developer grants, or lose them.
         crate::host_tools::developer_mode_changed();
+        shell::launcher::invalidate_apps();
         for notice in dev_mode::take_notices() {
             self.notify(cx, "Developer mode", &notice);
         }
@@ -5128,22 +5171,17 @@ impl App {
         self.handle_event(cx, &event);
     }
 
-    /// The test actions' timers: a `capture:` tick writes the next frame; a
-    /// due `ask-appcard:` sends its text to the appcard instance's executor
-    /// exactly as the assistant's `ask` call would.
-    fn fire_test_timers(&mut self, cx: &mut Cx, te: &TimerEvent) {
-        if let Some((timer, path)) = self.test_capture.clone() {
-            if timer.is_timer(te).is_some() {
-                #[cfg(not(target_os = "android"))]
-                {
-                    let tmp = path.with_extension("part.png");
-                    cx.capture_next_frame_to_file(tmp);
-                    let _ = std::fs::rename(path.with_extension("part.png"), path);
-                }
-                #[cfg(target_os = "android")]
-                {
-                    for result in cx.try_take_texture_readbacks() {
-                        if Some(result.ticket) != self.test_capture_ticket { continue; }
+    /// One consumer drains the platform queue; a test capture cannot discard
+    /// Studio's ticket (or vice versa). Cancelled unowned tickets are drained
+    /// too, releasing their platform readback reservation.
+    fn route_texture_readbacks(&mut self, cx: &mut Cx) {
+        for result in cx.try_take_texture_readbacks() {
+            let Some(result) = self.studio.readback(cx, result) else {continue};
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            let Some(result) = studio::apps::readback(cx, result) else {continue};
+            #[cfg(target_os = "android")]
+            if Some(result.ticket) == self.test_capture_ticket {
+                let Some((_, path)) = self.test_capture.clone() else {continue};
                         self.test_capture_ticket = None;
                         let output = if self.test_recording {
                             let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
@@ -5166,7 +5204,26 @@ impl App {
                                 if std::fs::write(&tmp,png).is_ok() { let _ = std::fs::rename(tmp,output); }
                             }
                         }) { Ok(task) => task.detach(), Err(error) => log!("wm: capture worker unavailable: {error}") }
-                    }
+            }
+            #[cfg(not(target_os = "android"))]
+            let _ = result;
+        }
+    }
+
+    /// The test actions' timers: a `capture:` tick writes the next frame; a
+    /// due `ask-appcard:` sends its text to the appcard instance's executor
+    /// exactly as the assistant's `ask` call would.
+    fn fire_test_timers(&mut self, cx: &mut Cx, te: &TimerEvent) {
+        if let Some((timer, _path)) = self.test_capture.clone() {
+            if timer.is_timer(te).is_some() {
+                #[cfg(not(target_os = "android"))]
+                {
+                    let tmp = _path.with_extension("part.png");
+                    cx.capture_next_frame_to_file(tmp);
+                    let _ = std::fs::rename(_path.with_extension("part.png"), _path);
+                }
+                #[cfg(target_os = "android")]
+                {
                     if self.test_capture_ticket.is_none() {
                         let focus = self.state_mut().layout.focused_client();
                         let texture = focus.and_then(|client|self.desk(cx).borrow::<WmDesk>().and_then(|desk|desk.phone_client_texture(client)));
@@ -5265,6 +5322,18 @@ impl App {
                         let app = app.to_string();
                         log!("wm: --test-action launch {}", app);
                         self.launch_app(cx, &app);
+                        i += 2;
+                        continue;
+                    }
+                    #[cfg(unix)]
+                    if let Some(path) = name.strip_prefix("studio-render:") {
+                        if let Err(error) = host_tools::studio::test_action(path) { log!("studio test: {error}"); }
+                        i += 2;
+                        continue;
+                    }
+                    #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+                    if let Some(path) = name.strip_prefix("studio-flow:") {
+                        if let Err(error) = host_tools::studio::test_flow(path) { log!("studio flow: {error}"); }
                         i += 2;
                         continue;
                     }
@@ -6209,6 +6278,8 @@ impl MatchEvent for App {
                 // Its tools, grants and kernel tools, as installed (ADR 0004 §7).
                 host_tools::script_app_installed(&id);
             }
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            self.drain_studio(cx);
             self.drain_hub(cx);
             self.drain_client_lines(cx);
             self.drain_module_upstream();
@@ -6311,6 +6382,8 @@ impl App {
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
         self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
+        // Studio is independent of modal/phone routes that may consume an event.
+        if let Event::Draw(draw) = event { self.studio.draw(cx, draw); }
         // Whatever module panicked during this event — in its tile's event
         // or draw, or in a call the shell made — is contained by now; show
         // it closed and free it before the next event (module_host.rs).
@@ -6327,6 +6400,11 @@ impl App {
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
+        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+        studio::apps::tick(cx, event);
+        let studio_surface = studio::surface_geometry(cx);
+        self.studio.event(cx, event, studio_surface);
+        self.route_texture_readbacks(cx);
         // Quitting, or closing the shell's window, asks the hosted instances
         // first (makepad#65). A termination signal is never refused.
         match event {

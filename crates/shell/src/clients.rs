@@ -134,11 +134,13 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 /// apps and installed apps, read fresh so an install needs no restart).
 pub fn registry() -> Vec<AppDef> {
     let base = crate::octosense::catalog::loaded().as_ref().cloned().unwrap_or_default();
+    let mut installed = crate::apps::installed_card_apps();
+    installed.extend(crate::apps::studio_apps());
     merge_catalog(
         base,
         crate::apps::bundled_modules_catalog(),
         crate::apps::system_card_apps(),
-        crate::apps::installed_card_apps(),
+        installed,
     )
 }
 

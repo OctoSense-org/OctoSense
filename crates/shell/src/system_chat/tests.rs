@@ -27,6 +27,7 @@ struct Script {
     unavailable: Option<Unavailable>,
     /// `session/open` fails with this message.
     open_error: Option<String>,
+    opened_workspace: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -57,7 +58,7 @@ impl Link for FakeLink {
         let reply = match method.as_str() {
             "session/open" => match &s.open_error {
                 Some(e) => json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": e}}),
-                None => json!({"jsonrpc": "2.0", "id": id, "result": {"opened": {"session_id": SYSTEM_SESSION}}}),
+                None => json!({"jsonrpc": "2.0", "id": id, "result": {"opened": {"session_id": SYSTEM_SESSION, "workspace_root": s.opened_workspace}}}),
             },
             "session/hydrate" => json!({"jsonrpc": "2.0", "id": id, "result": {"messages": s.history.clone()}}),
             _ => json!({"jsonrpc": "2.0", "id": id, "result": {}}),
@@ -1069,4 +1070,23 @@ fn the_system_agent_gets_the_read_tools_of_the_native_apps_that_run_here_never_t
     let calculator = crate::native_apps::find("calculator").unwrap();
     assert_eq!(calculator.system_tools, ["calculator.eval"]);
     assert_eq!(crate::native_apps::find("notes").unwrap().system_tools, ["notes.search", "notes.read"]);
+}
+
+#[test]
+fn kernel_confirmed_system_workspace_is_delivered_and_cleared_on_disconnect() {
+    struct Workspaces(Arc<Mutex<Vec<Option<String>>>>);
+    impl SystemHost for Workspaces {
+        fn declarations(&self) -> Vec<Value> { vec![] }
+        fn workspace_opened(&self, path: Option<&str>) { self.0.lock().unwrap().push(path.map(str::to_owned)); }
+    }
+    let fake = Fake::default();
+    fake.s().opened_workspace = Some("/kernel/system-workspace".into());
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut driver = Driver::with_system_host(Box::new(FakeConnector(fake.clone())), Box::new(Workspaces(seen.clone())));
+    driver.command(Command::Open);
+    settle(&mut driver);
+    assert_eq!(seen.lock().unwrap().last().cloned(), Some(Some("/kernel/system-workspace".into())));
+    driver.command(Command::Close);
+    settle(&mut driver);
+    assert_eq!(seen.lock().unwrap().last().cloned(), Some(None));
 }

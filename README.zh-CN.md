@@ -18,6 +18,10 @@
 
 初次阅读源码？从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始，沿着入口、原生/脚本托管、数据访问、人类/系统对话、工具路由以及实际 Tokio 任务阅读源码。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充桌面、Home、ROM 和系统应用的运行方式。
 
+[手机上的 App Studio](docs/adr/0006-app-studio-on-the-phone.md) 现已提供开发者工具，可检查、打开、观测、操作并本地安装离线 `main.splash` 应用。预览状态可丢弃；已安装应用的状态在开发者授权范围内持久保留。参见 [Studio 代码导读](docs/architecture-walkthrough.zh-CN.md#从-agent-调用跟到-app-studio-中可运行的应用)。
+
+模型从头编写的 Task Planner 已在 OnePlus 6 上通过 129 次真机工具调用，覆盖交互和已安装状态持久化。[竖屏应用与键盘视觉评审](docs/studio/oneplus6-validation.md)已通过。故障注入仍待完成；图像生成、可编辑工具箱流程与公开发布仍是后续工作。Home 的[构建选项](phone/README.zh-CN.md#构建与运行)提供开发者模式和独立测试包。
+
 ## 整体如何运作
 
 每台设备一个 Shell 进程，每个 Shell 一个 octos 内核，每个 Agent 都是这个内核中的一个会话。应用 Agent 通过 Shell broker 访问内核。Shell 持有宿主连接和宿主 token，把每个 Agent 工具调用转交给拥有该工具的应用，并通过开发者模式、用户预设的常设规则或确认面板处理审批。下文的可选 AppCard 原型绕过应用 peer broker，直接访问共享内核服务。完整说明，包括代码路径以及哪些已在 `main` 上、哪些还在规划中：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)；相关决策：[ADR 0004（英文）](docs/adr/0004-native-apps-hosting-and-peers.md)。

@@ -48,16 +48,12 @@ rom/scripts/build-home.sh --variant standalone --development \
 
 需要一个 `cargo-makepad` 的 Android SDK/NDK 目录（`cargo-makepad makepad android --sdk-path=<dir> install-toolchain`）、带 platform 35 和 build-tools 35.0.0 的 Android SDK、完整的 JDK 17+ 以及 Gradle 8.11.1；脚本不会安装其中任何一项。加上 `--dry-run` 可打印构建计划；发布版请把 `--development` 换成指向现有签名者的 `--sign-key` 和 `--sign-cert`，签名文件放在检出目录之外。请使用锁定版本的打包工具，而不是上游的：它带有本应用的 Java activity（[docs/build-tool.md（英文）](docs/build-tool.md)）。签名、回执和 ROM 变体见 [rom/docs/home-build.md（英文）](../rom/docs/home-build.md)。
 
-**包名。** Home 的应用 ID 是 `dev.makepad.octosense`，独立版和 ROM 版相同。运行 OctoSense ROM 的手机上已经有这个 ID，并由平台密钥签名，因此开发版无法替换它。要在旁边安装测试版，请在 `phone/` 中以另一个包名直接调用打包工具：
+**开发者选项与测试包。** `--development` 只选择签名方式。另加 `--dev-mode` 才会编译设置中的开发者选项；仍使用 `--release` 优化，也不会自动开启开发者模式。默认构建不包含该 feature。构建回执记录 `development`、`dev_mode` 和 `home_package`，ROM 暂存会拒绝包含开发者模式的产物。
 
-```sh
-../.sources/makepad/target/release/cargo-makepad makepad android \
-  --sdk-path=/path/to/makepad-android \
-  --package-name=dev.makepad.octosense.scriptapps \
-  build -p octosense-home --release
-```
+Home 默认使用 `dev.makepad.octosense`。要在已安装的应用旁构建测试 Home，请给上面的独立版命令加上 `--package-name dev.makepad.octosense.studio`。同时使用两个选项时，默认输出为 `rom/out/home/standalone-dev-mode/dev.makepad.octosense.studio/`。只安装测试 Home APK；配套 Bridge 保持原包名，不能替换设备上已安装的 Bridge。独立测试 Home 仍须满足现有包名与签名检查，才可访问 ROM 的特权服务。
 
-把 `build` 换成 `run` 会同时安装并启动它；用它自己的名字访问，例如 `adb shell am start -n dev.makepad.octosense.scriptapps/.MakepadApp`。
+新增构建计划和回执路径已通过单元测试与 dry-run 检查；APK 和设备验证另行进行。[App Studio 里程碑 1](../docs/adr/0006-app-studio-on-the-phone.md) 正在实现，完整的手机应用创作循环尚不可用。
+[Studio 设备探针](../tools/studio-device-probe.py) 在该独立测试包中检查权限拒绝、浅色/深色 PNG 输出和切入后台后的取消。它需要使用 `MAKEPAD_FORCE_DEBUGGABLE=1` 构建的 `--dev-mode` APK，让 `run-as` 能写入测试夹具。探针会恢复开发者设置并返回主屏；它不安装 APK，也不测试模型能否收到图片。运行前须先处理首次启动的权限提示；渲染不需要定位权限，可以保持拒绝。在记录设备证据前，这些设备检查仍属**未验证**。
 
 **OpenHarmony：** `python3 rom/scripts/build-home-ohos.py --deveco-home ... --packager ... --signing-config ...` 使用现有的 DevEco 签名配置构建普通的 OpenHarmony 应用（[rom/docs/home-build.md（英文）](../rom/docs/home-build.md#openharmony-home)）。**iOS 模拟器：** 在 `phone/` 中运行 `../.sources/makepad/target/release/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense-home --features mobile-only`。两者都不在 CI 中构建。
 

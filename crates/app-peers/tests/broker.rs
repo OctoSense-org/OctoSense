@@ -775,12 +775,15 @@ fn a_tool_call_is_stamped_run_once_answered_on_its_link_and_never_after_a_cancel
     let slug = peer_slug(&script);
     let context_id = calls_of(&script, "peer/context/open")[0].1["context_id"].as_str().unwrap().to_owned();
 
-    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", "t1", Some(&context_id)));
+    let mut incoming = tool_call_params(&slug, "c1", "t1", Some(&context_id));
+    incoming["peer_workspace"] = json!("/forged/workspace");
+    notify(&script, "peer/tool/call", incoming);
     wait_for("the host to get the call", || host.calls.lock().unwrap().len() == 1);
     let (call, reply) = host.calls.lock().unwrap()[0].clone();
     assert_eq!(call.account.as_deref(), Some("@alice:x"), "the account is the host's, never the app's");
     assert_eq!(call.client.as_deref(), Some("mini.news#1"), "the client comes from the context table");
     assert_eq!(call.calling_app, "rinx");
+    assert_eq!(call.peer_workspace.as_deref(), Some(std::path::Path::new("/kernel/ws")), "workspace comes from peer/prepare, never the tool call");
     assert_eq!(call.origin, CallOrigin::Context);
     assert!(reply.acknowledge());
     assert!(reply.finish(ToolOutcome::Ok(json!({"sent": true}))));
