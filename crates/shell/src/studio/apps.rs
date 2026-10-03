@@ -111,6 +111,11 @@ fn finish(p: Pending, result: Result<Value, String>) {
     q.tokens.remove(&id);
     q.request_instances.remove(&id);
 }
+/// A close acknowledgement is a cleanup barrier for a caller reopening the app.
+fn finish_after_cleanup(p: Pending, cleanup: impl FnOnce()) {
+    cleanup();
+    finish(p, Ok(json!({"closed":true})));
+}
 pub fn stage_open(spec: OpenSpec) -> Result<(), String> {
     if !FOREGROUND.load(Ordering::Acquire) {
         return Err("not_foreground".into());
@@ -290,7 +295,7 @@ pub struct StudioApp {
     #[rust]
     text_next: Option<String>,
     #[rust]
-    last_draw: Option<Instant>,
+    input_draw_pending: bool,
 }
 pub fn create(vm: &mut ScriptVm, instance_id: &str) -> WidgetRef {
     let spec = queue()
@@ -592,6 +597,12 @@ impl StudioApp {
         let abs = dvec2(n(0) + n(2) * 0.5, n(1) + n(3) * 0.5);
         Ok(abs)
     }
+    fn redraw_after_input(&mut self, cx: &mut Cx) {
+        // A redraw request only queues Draw; the old cache can still be clean.
+        // Inspect must wait until the changed widget state has been recorded.
+        self.input_draw_pending = true;
+        self.view.redraw(cx);
+    }
     fn scroll(&mut self, cx: &mut Cx, id: &str, dy: f64) -> Result<(), String> {
         let abs = self.target(cx, id)?;
         let window_id = cx.windows.id_iter().next().ok_or("studio_no_window")?;
@@ -609,7 +620,7 @@ impl StudioApp {
                 phase: Default::default(),
             }),
         );
-        self.view.redraw(cx);
+        self.redraw_after_input(cx);
         Ok(())
     }
     fn tap(&mut self, cx: &mut Cx, id: &str) -> Result<(), String> {
@@ -641,7 +652,7 @@ impl StudioApp {
             );
         }
         cx.fingers = fingers;
-        self.view.redraw(cx);
+        self.redraw_after_input(cx);
         Ok(())
     }
     fn pump(&mut self, cx: &mut Cx) {
@@ -679,7 +690,7 @@ impl StudioApp {
                     ..Default::default()
                 }),
             );
-            self.view.redraw(cx);
+            self.redraw_after_input(cx);
             finish(p, Ok(json!({"ok":true})));
             return;
         }
@@ -723,6 +734,13 @@ impl StudioApp {
                 }
             }
             Action::Inspect { .. } => {
+                if self.input_draw_pending {
+                    // Keep the original request/deadline. The UI remains free
+                    // to draw; valid() above cancels a stalled/background app.
+                    self.pending = Some(p);
+                    self.view.redraw(cx);
+                    return;
+                }
                 let snapshot = self.instrument(cx);
                 if snapshot.to_string().len() > 1024 * 1024 {
                     finish(p, Err("studio_snapshot_too_large".into()));
@@ -755,8 +773,7 @@ impl StudioApp {
                 }
             }
             Action::Close => {
-                finish(p, Ok(json!({"closed":true})));
-                self.stop(cx);
+                finish_after_cleanup(p, || self.stop(cx));
             }
         }
     }
@@ -804,7 +821,7 @@ impl Widget for StudioApp {
         };
         if result.is_done() {
             self.draws += 1;
-            self.last_draw = Some(Instant::now());
+            self.input_draw_pending = false;
         }
         result
     }
@@ -946,6 +963,65 @@ mod tests {
         assert!(cache.borrow().unwrap().texture_caching);
         assert!(!cache.borrow().unwrap().show_bg);
         record_frame(&mut cx, &root);
+    }
+    #[test]
+    fn input_redraw_cannot_reuse_the_previous_completed_frame() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let root = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            super::script_mod(vm);
+            let value = script_eval!(vm,{use mod.widgets.* StudioApp{}});
+            WidgetRef::script_from_value(vm, value)
+        });
+        root.splash(&mut cx, ids!(card))
+            .set_text(&mut cx, "Label{text: \"Before input\"}");
+        record_frame(&mut cx, &root);
+        let previous_draws = root.borrow::<StudioApp>().unwrap().draws;
+        {
+            let mut app = root.borrow_mut::<StudioApp>().unwrap();
+            // This is the production invalidation used by tap/scroll and the
+            // second (text delivery) event. A queued redraw is not a frame.
+            app.redraw_after_input(&mut cx);
+            assert!(app.input_draw_pending);
+            assert_eq!(app.draws, previous_draws);
+            app.redraw_after_input(&mut cx);
+            assert!(app.input_draw_pending);
+        }
+        record_frame(&mut cx, &root);
+        let app = root.borrow::<StudioApp>().unwrap();
+        assert!(app.draws > previous_draws);
+        assert!(!app.input_draw_pending);
+        // GPU completion is still checked separately by take_texture_snapshot;
+        // this CPU test does not claim the recorded frame has been painted.
+    }
+    #[test]
+    fn close_acknowledgement_is_sent_only_after_cleanup() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let pending = Pending {
+            request: Request {
+                id: format!("close-order-{}", uuid::Uuid::new_v4()),
+                instance_id: "test-instance".into(),
+                owner: "system".into(),
+                dev_tag: DevTag {
+                    profile_id: "test-only".into(),
+                    since: 0,
+                },
+                action: Action::Close,
+                reply: tx,
+            },
+            started: Instant::now(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let mut disposed = false;
+        finish_after_cleanup(pending, || {
+            assert!(matches!(
+                rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ));
+            disposed = true;
+        });
+        assert!(disposed);
+        assert_eq!(rx.try_recv().unwrap().unwrap(), json!({"closed":true}));
     }
     fn record_frame(cx: &mut Cx, root: &WidgetRef) {
         let pass = DrawPass::new(cx);

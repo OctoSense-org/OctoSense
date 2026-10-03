@@ -35,6 +35,14 @@ The UI is usable, with generous spacing that leaves only about one task row abov
 
 The harness's machine-readable status remains `functional_passed_visual_review_required`; the subsequent manual review recorded here completes the observed portrait visual checks. Rotation/landscape behavior was not established.
 
+## Retained review captures
+
+These unmodified screenshots are from the pre-rebase device run described above.
+
+![Installed Task Planner with Chinese and wrapped long titles](evidence/task-planner-titles.png)
+
+![Android keyboard with Task Planner input and Add still visible](evidence/task-planner-keyboard.png)
+
 ## Remaining limits
 
 Malformed saved JSON preservation and save-failure reporting were not fault-injected. This run does not claim a full-app developer-revocation fault test; earlier L0 denial/background tests cover a narrower path. The app remains a local `dev.studio.*` developer install, with no publisher signature or public catalog admission.
