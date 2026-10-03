@@ -1,0 +1,6 @@
+{
+  "awake": true,
+  "test_activity_foreground": true,
+  "keyguard_dismiss_requested": true,
+  "keyguard_positive_flag_seen": false
+}

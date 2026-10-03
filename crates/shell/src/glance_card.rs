@@ -146,7 +146,17 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
         }
     }
     let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, KIT, HOST_KIT, &octoscript_ui_l0::kit::lower(root)].join("\n");
-    let tree = octoscript_makepad::design::prepare(&kit_source)?;
+    let mut tree = octoscript_makepad::design::prepare(&kit_source)?;
+    if root.kind == "Panel" {
+        // This panel IS the hosted card, not a panel inside a page. The
+        // host clips to its measured bounds and owns the outer spacing;
+        // page margins and an outward shadow otherwise leave a clipped
+        // rectangle behind rounded corners and duplicate the sheet's frame.
+        tree.attrs.margintop = None;
+        tree.attrs.marginx = None;
+        tree.attrs.elevation = None;
+        tree.attrs.border = None;
+    }
     // A measured design (an imported artboard) lowers as the Card runner
     // lowers it; a kit-composed card (columns, rows, text) through the
     // backend's general translation.

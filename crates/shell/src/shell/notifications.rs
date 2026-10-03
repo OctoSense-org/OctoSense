@@ -184,6 +184,11 @@ pub enum ShellNotificationsAction {
     None,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ToastTarget { More, Activate(u64), Dismiss(u64), Action(u64) }
+struct ToastTouch { uid: u64, start: Vec2d, target: Option<ToastTarget> }
+const TOUCH_SLOP: f64 = 12.0;
+
 #[derive(Script, ScriptHook, Widget)]
 pub struct ShellNotifications {
     #[uid]
@@ -212,6 +217,8 @@ pub struct ShellNotifications {
     #[rust]
     pub icon_style: DesktopStyle,
     #[rust]
+    pub mobile: bool,
+    #[rust]
     app_icons: AppIconDraw,
     #[rust]
     area: Area,
@@ -237,6 +244,8 @@ pub struct ShellNotifications {
     /// What the last layout log said, so it is logged once per change.
     #[rust]
     logged: String,
+    #[rust]
+    touch: Option<ToastTouch>,
 }
 
 impl ShellNotifications {
@@ -302,6 +311,75 @@ impl ShellNotifications {
     /// under it.
     pub fn hit(&self, p: Vec2d) -> bool {
         !self.inert && (contains(self.more, p) || self.card_rects.iter().any(|(_, card, close)| contains(*card, p) || contains(*close, p)))
+    }
+
+    fn target(&self, p: Vec2d) -> Option<ToastTarget> {
+        if self.inert { return None; }
+        if contains(self.more, p) { return Some(ToastTarget::More); }
+        let live = |id| self.live.iter().any(|entry| entry.note.id == id);
+        if let Some((id, _)) = self.action_rects.iter().find(|(id, r)| live(*id) && contains(*r, p)) {
+            return Some(ToastTarget::Action(*id));
+        }
+        self.card_rects.iter().find_map(|(id, card, close)| {
+            if !live(*id) { None }
+            else if contains(*close, p) { Some(ToastTarget::Dismiss(*id)) }
+            else if contains(*card, p) { Some(ToastTarget::Activate(*id)) }
+            else { None }
+        })
+    }
+
+    fn reconcile_touch(&mut self, event: &makepad_platform::event::TouchUpdateEvent) {
+        use makepad_platform::event::TouchState;
+        // A higher modal can consume Stop. TouchUpdate lists current fingers;
+        // an absent ID (or a recycled ID's fresh Start) ends the old capture.
+        if self.touch.as_ref().is_some_and(|held| !event.touches.iter().any(|t|
+            t.uid == held.uid && t.state != TouchState::Start)) {
+            self.touch = None;
+        }
+    }
+
+    pub fn owns_pointer(&mut self, event: &Event) -> bool {
+        if self.inert { self.touch = None; return false; }
+        match event {
+            Event::MouseDown(e) => self.hit(e.abs),
+            Event::TouchUpdate(e) => {
+                self.reconcile_touch(e);
+                self.touch.is_some() || e.touches.iter().any(|t|
+                    t.state == makepad_platform::event::TouchState::Start && self.target(t.abs).is_some())
+            }
+            _ => false,
+        }
+    }
+
+    fn activate_target(&mut self, cx: &mut Cx, target: ToastTarget) {
+        let (id, action) = match target {
+            ToastTarget::More => { self.expanded = true; self.redraw(cx); return; }
+            ToastTarget::Activate(id) => (id, ShellNotificationsAction::Activated(id)),
+            ToastTarget::Dismiss(id) => (id, ShellNotificationsAction::Dismissed(id)),
+            ToastTarget::Action(id) => (id, ShellNotificationsAction::Action(id)),
+        };
+        cx.widget_action(self.uid, action);
+        self.dismiss(cx, id);
+    }
+
+    fn touch_event(&mut self, cx: &mut Cx, event: &makepad_platform::event::TouchUpdateEvent) {
+        use makepad_platform::event::TouchState;
+        self.reconcile_touch(event);
+        for t in &event.touches {
+            if self.touch.is_none() && t.state == TouchState::Start {
+                if let Some(target) = self.target(t.abs) {
+                    self.touch = Some(ToastTouch { uid: t.uid, start: t.abs, target: Some(target) });
+                }
+            }
+            let Some(held) = self.touch.as_mut().filter(|held| held.uid == t.uid) else { continue };
+            if (t.abs - held.start).length() > TOUCH_SLOP { held.target = None; }
+            if t.state == TouchState::Stop {
+                let held = self.touch.take().unwrap();
+                if let Some(target) = held.target.filter(|target| self.target(t.abs) == Some(*target)) {
+                    self.activate_target(cx, target);
+                }
+            }
+        }
     }
 
     /// The width a toast's action button takes (none without one).
@@ -371,6 +449,10 @@ impl ShellNotifications {
             self.expanded = false;
         }
         if self.live.is_empty() {
+            return;
+        }
+        if self.mobile {
+            self.draw_phone_stack(cx, screen);
             return;
         }
         let tok = self.d.tokens(self.tokens);
@@ -537,6 +619,95 @@ impl ShellNotifications {
             self.logged = layout;
         }
     }
+
+    fn draw_phone_stack(&mut self, cx: &mut Cx2d, screen: Rect) {
+        use super::ui::{phone_card_colors, HAlign};
+        let safe = cx.display_context.safe_area_insets;
+        let bounds = phone_stack_bounds(screen, safe.left, safe.top, safe.right, safe.bottom);
+        let (fill, foreground) = phone_card_colors(crate::glance_card::dark());
+        let now = cx.seconds_since_app_start();
+        let scale = self.d.text_scale();
+        let (header_h, title_h, body_h) = (24.0 * scale, 21.0 * scale, 18.0 * scale);
+        let mut y = bounds.pos.y;
+        let wanted = if self.expanded { self.live.len() } else { self.live.len().min(2) };
+        for entry in self.live.clone().into_iter().take(wanted) {
+            let note = &entry.note;
+            let text_w = bounds.size.x - 32.0;
+            let mut title = self.d.wrap(cx, true, 15.0 * scale, &note.summary, text_w, 2);
+            let mut body = self.d.wrap(cx, false, 13.0 * scale, &note.body, text_w, 2);
+            let action_h = if note.action.is_some() { 48.0 } else { 0.0 };
+            let height = |titles: usize, lines: usize| 14.0 + header_h + 8.0 + title_h * titles as f64
+                + if lines == 0 { 0.0 } else { 3.0 + body_h * lines as f64 }
+                + 14.0 + action_h;
+            let available = bounds.pos.y + bounds.size.y - y;
+            if !self.card_rects.is_empty() && height(title.len(), body.len()) + 54.0 > available { break; }
+            // In landscape or enlarged text, preserve the title/action and
+            // shorten only the preview. The full card retains the whole body.
+            while !body.is_empty() && height(title.len(), body.len()) > available {
+                if body.len() == 1 { body.clear(); }
+                else { body = self.d.wrap(cx, false, 13.0 * scale, &note.body, text_w, body.len() - 1); }
+            }
+            if height(title.len(), body.len()) > available {
+                title = self.d.wrap(cx, true, 15.0 * scale, &note.summary, text_w, 1);
+            }
+            let h = height(title.len(), body.len());
+            if h > available { break; }
+            let offset = slide_offset(now - entry.posted, entry.left, entry.lifetime);
+            let opacity = (1.0 - offset / SLIDE_PX).clamp(0.0, 1.0) as f32;
+            let card = rect(bounds.pos.x, y - offset * 0.35, bounds.size.x, h);
+            let ink = fade(foreground, opacity);
+            self.d.phone_card(cx, card, fill, opacity);
+            let icon = rect(card.pos.x + 16.0, card.pos.y + 14.0, 20.0, 20.0);
+            if let Some(app) = note.app_icon.as_deref() {
+                self.app_icons.draw(cx, app, self.icon_style, icon, opacity, ink);
+            } else if let Some(icon_kind) = note.icon {
+                self.d.icon_centered(cx, icon_kind, icon, 16.0, ink);
+            }
+            let caption = if note.caption.is_empty() { "Notification" } else { &note.caption };
+            self.d.label_elided(cx, rect(icon.pos.x + 28.0, icon.pos.y, text_w - 66.0, header_h),
+                false, 11.5, fade(ink, 0.68), HAlign::Left, caption);
+            // A visible close affordance with a 44-point touch target.
+            let close = rect(card.pos.x + card.size.x - 48.0, card.pos.y + 2.0, 44.0, 44.0);
+            self.d.icon_centered(cx, Ico::Close, close, 12.0, fade(ink, 0.65));
+            let mut ty = card.pos.y + 14.0 + header_h + 8.0;
+            for line in &title {
+                self.d.label(cx, rect(card.pos.x + 16.0, ty, text_w, title_h), true, 15.0, ink, HAlign::Left, line);
+                ty += title_h;
+            }
+            ty += 3.0;
+            for line in &body {
+                self.d.label(cx, rect(card.pos.x + 16.0, ty, text_w, body_h), false, 13.0, fade(ink, 0.78), HAlign::Left, line);
+                ty += body_h;
+            }
+            if let Some(label) = &note.action {
+                let action = rect(card.pos.x + 12.0, card.pos.y + h - 52.0, card.size.x - 24.0, 44.0);
+                self.d.rounded(cx, action, 12.0, fade(ink, 0.06));
+                self.d.label_elided(cx, action, true, 13.0, ink, HAlign::Center, label);
+                self.action_rects.push((note.id, action));
+            }
+            self.card_rects.push((note.id, card, close));
+            y += h + 10.0;
+        }
+        let hidden = self.live.len() - self.card_rects.len();
+        if hidden > 0 && y + 44.0 <= bounds.pos.y + bounds.size.y {
+            self.more = rect(bounds.pos.x + bounds.size.x - 116.0, y, 116.0, 44.0);
+            self.d.phone_card(cx, self.more, fill, 1.0);
+            self.d.label(cx, self.more, true, 12.0, foreground, HAlign::Center, &format!("{hidden} more"));
+        }
+        let layout = self.card_rects.iter().map(|(id, r, _)| format!("{id}@{},{},{},{}",
+            r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect::<Vec<_>>().join(" ");
+        if layout != self.logged {
+            log!("notifications: {} toast(s) {layout}", self.card_rects.len());
+            self.logged = layout;
+        }
+    }
+}
+
+fn phone_stack_bounds(screen: Rect, left: f64, top: f64, right: f64, bottom: f64) -> Rect {
+    let available = (screen.size.x - left - right - 24.0).max(0.0);
+    let width = available.min(420.0);
+    rect(screen.pos.x + left + 12.0 + (available - width) * 0.5,
+        screen.pos.y + top + 8.0, width, (screen.size.y - top - bottom - 24.0).max(0.0))
 }
 
 impl Widget for ShellNotifications {
@@ -549,7 +720,9 @@ impl Widget for ShellNotifications {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if matches!(event, Event::Pause | Event::Background) { self.touch = None; }
         if self.inert {
+            self.touch = None;
             return;
         }
         if let Some(ne) = self.next_frame.is_event(event) {
@@ -581,6 +754,7 @@ impl Widget for ShellNotifications {
             }
         }
         match event {
+            Event::TouchUpdate(e) => self.touch_event(cx, e),
             Event::MouseMove(e) => {
                 let rects = self.card_rects.clone();
                 let mut changed = false;
@@ -672,6 +846,105 @@ pub fn fixtures() -> Vec<Notification> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phone_notifications_clear_status_bar_and_both_screen_edges() {
+        for (w, h) in [(320.0, 640.0), (384.0, 810.0), (810.0, 384.0)] {
+            let r = phone_stack_bounds(rect(0.0, 0.0, w, h), 8.0, 32.0, 24.0, 24.0);
+            assert!(r.pos.x >= 20.0 && r.pos.y >= 40.0);
+            assert!(r.pos.x + r.size.x <= w - 36.0);
+            assert!(r.pos.y + r.size.y <= h - 24.0);
+            assert!(r.size.x <= 420.0);
+        }
+    }
+
+    fn touch(state: makepad_platform::event::TouchState, abs: Vec2d) -> Event {
+        use makepad_platform::event::{TouchPoint, TouchUpdateEvent};
+        Event::TouchUpdate(TouchUpdateEvent {
+            time: 0., window_id: CxWindowPool::id_zero(), modifiers: Default::default(),
+            touches: vec![TouchPoint { state, abs, time: 0., uid: 7, rotation_angle: 0., force: 0.,
+                radius: dvec2(1., 1.), handled: Default::default(), sweep_lock: Default::default() }],
+        })
+    }
+    fn toast(cx: &mut Cx) -> (ShellNotifications, u64) {
+        let mut notes = cx.with_vm(ShellNotifications::script_new);
+        // Input regression: seed an already posted notice without starting a
+        // native platform clock/window just to exercise its touch handler.
+        let id = 1;
+        let mut note = fixtures()[0].clone();
+        note.id = id;
+        notes.live.push(Live { note, lifetime: 30., left: 30., hovered: false, posted: 0. });
+        notes.next_id = id;
+        notes.card_rects = vec![(id, rect(10., 10., 300., 100.), rect(280., 10., 30., 30.))];
+        (notes, id)
+    }
+    fn deliver(notes: &mut ShellNotifications, cx: &mut Cx, event: Event) -> Vec<ShellNotificationsAction> {
+        cx.capture_actions(|cx| notes.handle_event(cx, &event, &mut Scope::empty()))
+            .iter().filter_map(|a| a.as_widget_action()).map(|a| a.cast()).collect()
+    }
+    #[test]
+    fn phone_toast_tap_owns_press_and_release_and_emits_one_activation() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut notes, id) = toast(&mut cx);
+        let down = touch(Start, dvec2(40., 50.));
+        assert!(notes.owns_pointer(&down));
+        assert!(deliver(&mut notes, &mut cx, down).is_empty());
+        let up = touch(Stop, dvec2(42., 51.));
+        assert!(notes.owns_pointer(&up), "release must not reach the underlying chat");
+        assert_eq!(deliver(&mut notes, &mut cx, up), vec![ShellNotificationsAction::Activated(id)]);
+        assert!(notes.is_empty());
+        assert!(!notes.owns_pointer(&touch(Stop, dvec2(42., 51.))));
+    }
+    #[test]
+    fn phone_toast_drag_is_cancelled_but_keeps_its_release_out_of_underlying_ui() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut notes, _) = toast(&mut cx);
+        let mut underlying_events = 0;
+        for event in [touch(Start, dvec2(40., 50.)), touch(Move, dvec2(40., 180.)), touch(Stop, dvec2(40., 50.))] {
+            // This is the shell's early routing decision, not a broadcast.
+            if notes.owns_pointer(&event) { assert!(deliver(&mut notes, &mut cx, event).is_empty()); }
+            else { underlying_events += 1; }
+        }
+        assert_eq!(underlying_events, 0);
+        assert!(!notes.is_empty(), "returning after a drag is not a tap");
+        assert!(notes.touch.is_none());
+    }
+    #[test]
+    fn phone_toast_close_dismisses_and_a_withdrawn_target_cannot_activate() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut notes, id) = toast(&mut cx);
+        deliver(&mut notes, &mut cx, touch(Start, dvec2(295., 25.)));
+        assert_eq!(deliver(&mut notes, &mut cx, touch(Stop, dvec2(295., 25.))), vec![ShellNotificationsAction::Dismissed(id)]);
+        let (mut notes, id) = toast(&mut cx);
+        deliver(&mut notes, &mut cx, touch(Start, dvec2(40., 50.)));
+        notes.dismiss(&mut cx, id);
+        let up = touch(Stop, dvec2(40., 50.));
+        assert!(notes.owns_pointer(&up));
+        assert!(deliver(&mut notes, &mut cx, up).is_empty());
+    }
+
+    #[test]
+    fn a_modal_consuming_release_cannot_leave_the_toast_capturing_future_touches() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        for next_uid in [7, 8] {
+            let (mut notes, _) = toast(&mut cx);
+            deliver(&mut notes, &mut cx, touch(Start, dvec2(40., 50.)));
+            // An approval above the toast receives Stop instead. The next
+            // gesture must reach its actual target, even if Android reuses ID.
+            let mut outside = touch(Start, dvec2(40., 300.));
+            if let Event::TouchUpdate(e) = &mut outside { e.touches[0].uid = next_uid; }
+            assert!(!notes.owns_pointer(&outside));
+            assert!(notes.touch.is_none());
+            let down = touch(Start, dvec2(40., 50.));
+            assert!(notes.owns_pointer(&down));
+            assert!(deliver(&mut notes, &mut cx, down).is_empty());
+            assert_eq!(deliver(&mut notes, &mut cx, touch(Stop, dvec2(40., 50.))).len(), 1);
+        }
+    }
 
     /// A toast slides in from the right over its first [`SLIDE_S`], keeps
     /// still, and slides out over its last; one that never expires never

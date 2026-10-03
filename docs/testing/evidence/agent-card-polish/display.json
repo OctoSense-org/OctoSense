@@ -1,0 +1,11 @@
+{
+  "screen_width_px": 1080,
+  "screen_height_px": 2280,
+  "density_dpi": 450,
+  "layout_scale": 2.8125,
+  "expected_card_width_px": 967.5,
+  "min_card_height_px": 202.5,
+  "max_card_height_px": 1237.5,
+  "width_tolerance_px": 4,
+  "assumption": "portrait full-window layout; no Makepad DPI override"
+}

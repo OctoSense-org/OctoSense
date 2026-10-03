@@ -1,0 +1,78 @@
+{
+  "01-notification-over-chat.png": {
+    "sha256": "4347dd2c1e005eaad72d3c745aa6c871eebfc38342d10fe8d9a161d83b446eb4",
+    "bytes": 690184,
+    "dimensions_px": [
+      1080,
+      2280
+    ]
+  },
+  "02-full-card.png": {
+    "sha256": "afcfbea457e7e2c8a3dfba6d3c92687b57a74f2853f988d367ecae93a95382e6",
+    "bytes": 345658,
+    "dimensions_px": [
+      1080,
+      2280
+    ]
+  },
+  "03-glance-after-close.png": {
+    "sha256": "964e250077cb7336b902fe625f5b281488f3b87a3eec3abce8553d8fdba92041",
+    "bytes": 336421,
+    "dimensions_px": [
+      1080,
+      2280
+    ]
+  },
+  "agent-evidence.json": {
+    "sha256": "cc6b15ba3cdcb4f6fbef43134c2069c2385719a08a9cf38a195fb48029eaa2f3",
+    "bytes": 5061
+  },
+  "build.json": {
+    "sha256": "d7ba85d211046bd6d7b8be88ea5e4976a8446f350c0158eff56f6a15b8ae7926",
+    "bytes": 3175
+  },
+  "cleanup.json": {
+    "sha256": "33edc99ed89a3bd04743fedcb83b83507a90f9aff81e1fe8a42b78f191770705",
+    "bytes": 275
+  },
+  "display.json": {
+    "sha256": "db177c8b8971ea59b2e17c7017d81c9fb48ff69915591c2d5d80515fce00fed4",
+    "bytes": 303
+  },
+  "final-cleanup.json": {
+    "sha256": "1563153e757bc6e72a9d72b09409ce6373696484a1ece8a0b8d790351fa99bed",
+    "bytes": 884
+  },
+  "foreground.json": {
+    "sha256": "fd4eebab0153e4f55c991d2147d0cb5f42dd5f2baf8ad09ea222207acb6e0425",
+    "bytes": 134
+  },
+  "installed-build.json": {
+    "sha256": "21d2b60f28a3d6e377e61ff742b1374e0db77c4a7b25728bad0d7c7e160e6840",
+    "bytes": 271
+  },
+  "notification-route.log": {
+    "sha256": "f0aa25636e67a9e57a4086d552b23bf1f36ec5b9d516aec14049c0f2f42cb1aa",
+    "bytes": 1344
+  },
+  "observation.json": {
+    "sha256": "ca6fee3af97b6cd861b726f16f7bd8e4ed35a7e8860be3469283fd76a047b8fb",
+    "bytes": 335
+  },
+  "prior-attempt.json": {
+    "sha256": "8f16fc9411d1dfb26d0f5b7b55eea02a4e467a367d2d84e0adbe031ac36e91ed",
+    "bytes": 585
+  },
+  "system-prompt.txt": {
+    "sha256": "604344864fb4af85ee56a9fc0a19efce70809b3e19f4e34c82e93562b31c9619",
+    "bytes": 838
+  },
+  "validation-scope.json": {
+    "sha256": "549b84f135e0fca92a49f0e02e40539495f848e6265040525145b435a862b39d",
+    "bytes": 896
+  },
+  "visual-review.json": {
+    "sha256": "188634eb85c87eabf1aa6e2a3d7d6ed61d2a6bf3c9413dd8752d7d8e54a9762f",
+    "bytes": 789
+  }
+}

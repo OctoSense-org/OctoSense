@@ -1,0 +1,98 @@
+[
+  {
+    "tool_calls": [
+      {
+        "turn_id": "01a100d0-3d07-7e93-ae1c-5608fb45b449",
+        "tool_call_id": "call_00_ET_VdAg07o7CSDFTnfkGKjJ6544",
+        "name": "mail_notify",
+        "arguments": {
+          "body": "Synthetic test: the system agent asked the Mail agent to create this card. Tap the notification to read the full card; it should also appear in Glance.",
+          "card_id": "mail-card-polish-1791014993",
+          "priority": 70,
+          "title": "Mail agent E2E"
+        },
+        "input_complete": true,
+        "start_seq": 1322,
+        "success": true,
+        "output": "{\"card_id\":\"mail-card-polish-1791014993\",\"expires_at\":1791101410685,\"replaced\":false}",
+        "output_is_preview": true,
+        "end_seq": 1324
+      }
+    ],
+    "assistant_finals": [
+      {
+        "turn_id": "01a100d0-3d07-7e93-ae1c-5608fb45b449",
+        "message_id": "_main:api:octosense#peer-os-mail-f6e8245bc1167c11:31:1791015012030475264",
+        "text": "Success.\n\n- **Outcome:** success\n- **card_id:** `mail-card-polish-1791014993`\n- **Replaced existing card:** No — `\"replaced\": false`\n- **Priority:** 70\n- **Expires at:** 1791101410685 (epoch ms)\n\nThe card is published and should appear in Glance.",
+        "terminal_verified": true,
+        "source": "ledger_terminal_message_id"
+      }
+    ],
+    "turn_errors": [
+      {
+        "turn_id": "01a100ce-9df5-7873-bcee-4a513c6b3216",
+        "code": "orphaned_by_restart",
+        "message": "server restarted before this turn finished"
+      }
+    ],
+    "session": "_main:api:octosense#peer-os-mail-f6e8245bc1167c11"
+  },
+  {
+    "tool_calls": [
+      {
+        "turn_id": "31c38ecd-e242-4bb8-974a-ff6befd510fe",
+        "tool_call_id": "call_00_K2B0Sk4wksaywbPWF8oV1167",
+        "name": "peer_list",
+        "arguments": {},
+        "input_complete": true,
+        "start_seq": 229367,
+        "success": true,
+        "output": "peers (6):\n- os.camera 22a12f906cd27b73 (os-camera-22a12f906cd27b73)  running  updated —  turns 0\n  · exec=?\n- os.mail f6e8245bc1167c11 (os-mail-f6e8245bc1167c11)  done  updated 1791007606  turns 7...",
+        "output_is_preview": true,
+        "end_seq": 229369
+      },
+      {
+        "turn_id": "31c38ecd-e242-4bb8-974a-ff6befd510fe",
+        "tool_call_id": "call_00_ET_aUJntbNnpBeoQbRaWU1n3397",
+        "name": "peer_send_input",
+        "arguments": {
+          "slug": "os-mail-f6e8245bc1167c11",
+          "message": "Please publish a synthetic notification card via your mail.notify tool (do not read messages or send email):\n- title: \"Mail agent E2E\"\n- body: \"Synthetic test: the system agent asked the Mail agent to create this card. Tap the notification to read the full card; it should also appear in Glance.\"\n- card_id: \"mail-card-polish-1791014993\"\n- priority: 70\n\nThis is the isolated demo-mail test account. Reply with the real outcome and the card_id."
+        },
+        "input_complete": true,
+        "start_seq": 229376,
+        "success": true,
+        "output": "message sent to peer os-mail-f6e8245bc1167c11 — the peer will process it as its next turn",
+        "output_is_preview": true,
+        "end_seq": 229378
+      },
+      {
+        "turn_id": "31c38ecd-e242-4bb8-974a-ff6befd510fe",
+        "tool_call_id": "call_00_ET_8aEeKUUYVVAgOYtjN0yk8747",
+        "name": "peer_gather",
+        "arguments": {
+          "slugs": [
+            "os-mail-f6e8245bc1167c11"
+          ]
+        },
+        "input_complete": true,
+        "start_seq": 229386,
+        "success": true,
+        "output": "## peer os.mail f6e8245bc1167c11 [os-mail-f6e8245bc1167c11] (done)\nBrief: You are the os.mail app's assistant. You work for the os.mail app inside its own workspace and memory, and you answer to the s...",
+        "output_is_preview": true,
+        "end_seq": 229388
+      }
+    ],
+    "assistant_finals": [
+      {
+        "turn_id": "31c38ecd-e242-4bb8-974a-ff6befd510fe",
+        "message_id": "_main:api:octosense#system:893:1791015016239508804",
+        "text": "Done — delegated to Mail's agent; no direct `mail.notify`, no message reading, no email.\n\n## Real outcome\n- **Consent:** Mail was already `allowed` (peer `os-mail-f6e8245bc1167c11`); no `agents_ask` needed.\n- **Delivery:** `peer_send_input` to that slug.\n- **Mail agent's reply** (`peer_gather`, outcome `completed`, turn 8):\n  - **Outcome:** success\n  - **card_id:** `mail-card-polish-1791014993`\n  - **Replaced existing card:** No — `\"replaced\": false`\n  - **Priority:** 70\n  - **Expires at:** `1791101410685` (epoch ms)\n  - Its note: the card is published and should appear in Glance.\n\nSo the card_id is `mail-card-polish-1791014993`.\n\n**Not claimed:** I did not observe any notification banner, glance entry, or tap — no visual check. That's for you to do separately; I only have the Mail agent's reported result.",
+        "terminal_verified": true,
+        "source": "ledger_terminal_message_id"
+      }
+    ],
+    "turn_errors": [],
+    "session": "_main:api:octosense#system"
+  }
+]

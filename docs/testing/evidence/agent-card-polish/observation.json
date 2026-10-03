@@ -1,0 +1,17 @@
+{
+  "card_id": "mail-card-polish-1791014993",
+  "normal_consent_mode": true,
+  "tap_screen_pixels": [
+    540,
+    270
+  ],
+  "publish_seen": true,
+  "full_card_opened_in_log": true,
+  "close_screen_pixels": [
+    962,
+    1510
+  ],
+  "x_closed_card_in_log": true,
+  "same_activity_after_close": true,
+  "system_terminal_seen": true
+}

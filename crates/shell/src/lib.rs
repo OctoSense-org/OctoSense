@@ -228,11 +228,6 @@ script_mod! {
                         shell_glance := ShellGlancePanel{}
                         shell_panel := ShellPanel{}
                         shell_menu := ShellMenu{}
-                        // One glance card, full size, over a dimmed desk
-                        // (glance_sheet.rs): a card's toast opens it.
-                        shell_glance_sheet := ShellGlanceSheet{}
-                        shell_notes := ShellNotifications{}
-                        shell_osd := ShellOsd{}
                         // The approval surface (approvals/): the shell's
                         // approval and first-use sheets, the time-box
                         // indicator, and Settings > Assistant > Approvals.
@@ -243,6 +238,11 @@ script_mod! {
                         // "Ask <app>" (app_chat/): an app agent's
                         // conversation, both lanes, beside the system chat.
                         shell_app_chat := ShellSystemChat{ app_panel: true }
+                        // A card and its notification remain above full-screen
+                        // phone chat; approvals and the developer banner win.
+                        shell_glance_sheet := ShellGlanceSheet{}
+                        shell_notes := ShellNotifications{}
+                        shell_osd := ShellOsd{}
                         shell_approvals := ShellApprovals{}
                         shell_approvals_settings := ShellApprovalsSettings{}
                         // Developer mode's banner (dev_mode.rs): over
@@ -3796,22 +3796,45 @@ impl App {
             return false;
         }
         sheet.handle_event(cx, event, &mut Scope::empty());
-        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_)) {
+        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) {
             self.redraw_all(cx);
         }
         true
+    }
+
+    /// Close the top card before Back can reach a chat or the app beneath it.
+    fn close_glance_card(&mut self, cx: &mut Cx) -> bool {
+        let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
+        let closed = sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
+            if !s.is_open() { return false; }
+            s.close(cx);
+            true
+        });
+        if closed { self.redraw_all(cx); }
+        closed
     }
 
     /// Open the published card `key` in the card window; when it is gone
     /// (withdrawn, expired), the glance panel instead.
     fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
         self.set_glance_open(cx, false);
+        let phone = self.state.as_ref().is_some_and(|s| s.style.target.mobile());
+        if phone {
+            // Closing the card returns to its live glance feed. Chat turns
+            // continue; only their panes are hidden, as with their Close button.
+            self.close_chat_panes(cx, true);
+            let state = self.state_mut();
+            state.phone.shade.close();
+            state.phone.navigate(mobile::PhoneScreen::Home);
+            state.phone.pages.jump(-1);
+            self.animate_phone(cx);
+        }
         let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.open_card(cx, key));
         if opened {
             log!("wm: glance toast opens card {key}");
         } else {
-            log!("wm: glance card {key} is gone; opening the glance panel");
-            self.set_glance_open(cx, true);
+            log!("wm: glance card {key} is gone; opening the glance feed");
+            if !phone { self.set_glance_open(cx, true); }
         }
         self.redraw_all(cx);
     }
@@ -4074,14 +4097,11 @@ impl App {
         }
     }
 
-    /// A press on a toast (shell/notifications.rs `hit`). Only the press: a
-    /// drag of a pane's frame keeps its moves and its release wherever they
-    /// go.
+    /// A toast owns a touch from its press through release, including a
+    /// cancelled drag. None of that gesture can leak into the pane beneath it.
     fn press_on_toast(&mut self, cx: &mut Cx, event: &Event) -> bool {
-        let Event::MouseDown(e) = event else { return false };
-        let notes = self.ui.widget(cx, ids!(shell_notes));
-        let on = notes.borrow::<shell::notifications::ShellNotifications>().is_some_and(|n| n.hit(e.abs));
-        on
+        self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<shell::notifications::ShellNotifications>()
+            .is_some_and(|mut n| n.owns_pointer(event))
     }
 
     /// The system chat's pane owns the pointer inside its rect while open.
@@ -6367,7 +6387,8 @@ impl App {
         // is not also broadcast through the widget tree.
         if event.back_pressed() && self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
             log!("[phone] back");
-            // An open assistant pane takes Back first, as its own Close does.
+            if self.close_glance_card(cx) { return; }
+            // An open assistant pane takes Back next, as its own Close does.
             if self.close_chat_panes(cx, false) { return; }
             self.phone_action(cx, mobile::PhoneHit::Back);
             return;

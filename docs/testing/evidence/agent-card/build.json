@@ -1,0 +1,17 @@
+{
+  "source_revision": "c3eaea2ce8bc06192e805438b590f885c870db29",
+  "source_dirty": false,
+  "home_package": "dev.makepad.octosense.studio",
+  "home_version_code": 2026100305,
+  "dev_mode": true,
+  "device": "OnePlus 6 / ONEPLUS_A6003",
+  "provider": "DeepSeek",
+  "model": "deepseek-v4-flash",
+  "apk_sha256": "c275722cd60173d13ba490de04425fc0c6c9871acf496fc261df08734b1c60bb",
+  "packaging_harness_revision": "88550095ec519f1c75b48903a9291f4557c452b2",
+  "screenshots": {
+    "01-notification-over-chat.png": "1bf31fb08267bd5f29160127e5e592842a2b3152971c3ab1784724fb8fcf3a15",
+    "02-full-card.png": "9980528cb596f849b39f39d4b883b3e21147dd3c42870f663e7429f17bc65ae4",
+    "03-glance-after-close.png": "8c3d7741f28ee38bb7223ec492f4263fb366fd917457136a82a96edeea2e1069"
+  }
+}

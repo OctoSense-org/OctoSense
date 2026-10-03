@@ -1,0 +1,17 @@
+{
+  "card_id": "agent-card-e2e-accepted",
+  "normal_consent_mode": true,
+  "tap_screen_pixels": [
+    540,
+    175
+  ],
+  "publish_seen": true,
+  "full_card_opened_in_log": true,
+  "close_screen_pixels": [
+    973,
+    807
+  ],
+  "x_closed_card_in_log": true,
+  "same_activity_after_close": true,
+  "system_terminal_seen": true
+}
