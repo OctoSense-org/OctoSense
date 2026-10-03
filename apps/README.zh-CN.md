@@ -60,7 +60,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | 示例相册：回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance` | 无 | Shell 通知服务的 `photos.notify`（原图使用资源挂载） |
+| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；Shell 通知服务的 `photos.notify`（原图使用资源挂载） |
 | [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；搜索和路线地图使用 makepad 预先烘焙的世界地图（`makepad.nl`），驾驶地图仍通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
 | [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
@@ -69,11 +69,11 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | [Calendar](calendar/bundle) | `os.calendar`（桌面端） | 它的 Agent 保存用户的日程，并把日程卡片和议程卡片放到 glance 屏幕上；它自己的窗口还不能列出日程（需要 App Hub 提供 `calendar` 权限） | `storage`、`glance` | 无 | [`calendar`](calendar/host-service)（只供日历的 Agent 使用） |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
-每项权限的含义由 App Hub 的封闭列表定义（`crates/app-policy/src/manifest.rs`
+每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
 中的 `KNOWN_CAPABILITIES`）：`images` 可显示任意公网 https 主机的图片，`web`
 在系统 WebView 中打开网页，`library` 把拍摄内容提供给系统相册，`mail` 访问
 宿主的邮件服务，`llm` 访问宿主的大模型服务商服务，`news` 读取宿主的新闻服务，
-`glance` 向速览屏发布卡片。`net` 只能访问 manifest 列出的主机。
+`glance` 向速览屏发布卡片，`model` 请求有界的单次模型调用。`net` 只能访问 manifest 列出的主机。
 
 ### 状态与已知问题
 
@@ -83,14 +83,27 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **Camera**：在 OnePlus 6 测试中（2026-09-25），Camera 能拍照并在后台释放
   相机，但实时预览是纯黑的，尚未解决。桌面构建没有相机，Android 模拟器拒绝
   提供相机，因此其他环境下拍摄未经测试。
-- **Photos**：bundle 只带 75 张缩略图（`bundle/thumbs/`，约 2 MB）。主屏幕预览
+- **Photos 回忆**：打开 **Memories → Create memories**，可选输入“summer with family”等主题。
+  宿主的 `model.complete` 使用 **设置 → AI providers** 中配置的服务商，整理最多三个
+  带标题、简短叙述和有序幻灯片的故事。只发送相片目录的元数据（日期、地点、姓名、
+  标签、标题和收藏标记），不发送图像数据或凭据。本版本使用示例目录，不导入设备相册，
+  也不分析图像像素。只有用户点击时才生成。最近 12 个故事保存在
+  交替写入的 `accounts/device/memories.json` 和 `memories-backup.json` 快照中，
+  与相簿和收藏分开；写入失败时仍可恢复上一份快照。
+  没有 AI 时仍可浏览本地时刻和已保存的故事。请求失败、无效相片 ID、未配置服务商
+  或预算限制不会覆盖已有故事。模型服务为服务商尝试留出 270 秒；
+  Photos 会在超时后清除加载状态并允许重试，另设 300 秒后备超时以应对没有回调的情况。
+  **Stop waiting** 会忽略迟到的回复；宿主请求仍可能
+  完成并计入预算。独立的 `card-host` 不提供模型服务。
+- **Photos 图像**：bundle 只带 75 张缩略图（`bundle/thumbs/`，约 2 MB）。主屏幕预览
   保持三列，根据卡片的可用宽高显示一、二或三行，并优先显示收藏。照片铺满卡片，
   标题叠加在左下角，不再单独占用顶部空间。卡片尺寸变化
   或重新加载时，Shell 的进程内卡片宿主会在应用自己的 isolate 中调用可选的
   `on_app_resize(width, height)` 回调，并在绘制主屏幕预览帧之前完成队列中的 UI 更新。查看器
   显示的原图只有在 Shell 挂载后才会出现在 `{{assets}}/photos/...`：Home
   挂载 `photos/resources/photos`（约 87 MB，见 `phone/system-apps.json`）；
-  桌面端不挂载任何目录（`desktop/system-apps.json`），所以那里的查看器没有原图。
+  桌面端不挂载任何目录（`desktop/system-apps.json`），所以那里的查看器没有原图，
+  会保留缩略图作为后备。回忆功能在实体手机及真实 AI 服务商上均**未验证**。
 - **Maps**：在 OnePlus 6 上（2026-09-27）搜索、地点详情、路线、添加和移除途经点、
   逐向导航驾驶以及 2D 视图都正常。3D 驾驶视图会画出路线但没有地图瓦片，手机和桌面
   上都是如此，途经点改动前后一样。
@@ -99,8 +112,10 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。Mail 与 `llm` 两个宿主服务使用根目录
   `Cargo.toml` 选定的 App Hub 版本，与 Shell 共用，
   因此一次构建中只有一份 `octosense-appstore` 和一个宿主服务注册表。
-- **脚本 bundle 没有 CI。** [`apps.yml`](../.github/workflows/apps.yml)
-  测试宿主服务、AppCard 和 Shell 服务，不测试 bundle。
+  Manifest 与策略验证使用共享且按版本依赖的 `octosense-app-contract` crate。
+- **脚本 bundle 的检查尚不全面。** [`apps.yml`](../.github/workflows/apps.yml)
+  通过 `cargo test --locked -p octosense-llm-service` 运行 Photos 的 app-contract 准入、Splash 回忆逻辑
+  与模型响应结构检查；News 也有脚本测试。尚未为所有 bundle 提供完整的自动 UI 检查。
 - **AppCard 的 `personal-data` 技能**读取旧原生 Mail 模块的 `mailbox-*.json`
   文件。脚本版 Mail 的邮件现在存放在宿主服务自己的目录
   （`<host_dir>/mail/box-*.json`），该技能大概率已读不到；未验证。

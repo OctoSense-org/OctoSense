@@ -37,6 +37,13 @@ default = []
 octos-core = ["dep:octosense-kernel"]
 
 [dev-dependencies]
+makepad-script = { workspace = true }
+octosense-app-contract = { workspace = true }
 png = "0.17"
 # A non-OctoSense QR for the image tests.
 qrcode = { version = "0.14", default-features = false }
+
+# Exercise Photos' real Splash client, app contract and model-service schema.
+[[test]]
+name = "photos_memories"
+path = "../../photos/tests/memories.rs"
