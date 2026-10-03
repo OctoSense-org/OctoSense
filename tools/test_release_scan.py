@@ -95,6 +95,51 @@ class ContainerTests(unittest.TestCase):
                 self.assertEqual(code, 1, artifact)
                 self.assertIn("macOS user directory", out)
 
+    def test_a_link_target_is_read(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = Path(temp) / "OctoSense.app"
+            app.mkdir()
+            (app / "Applications").symlink_to("/Applications")
+            (app / "icon.png").symlink_to("usr/share/icons/octosense.png")
+            code, out = self.run_scan(app)
+            self.assertEqual(code, 0, out)
+            (app / "leak").symlink_to("/home/someone/build/icon.png")
+            code, out = self.run_scan(app)
+            self.assertEqual(code, 1)
+            self.assertIn("OctoSense.app/leak (link target): Linux home directory", out)
+
+    def test_an_appimage_is_read_except_its_compressed_filesystem(self):
+        def appimage(path, runtime=b"", filesystem=b"", after=b"", file=b"app", link=b"usr/bin/app"):
+            # A shell script standing in for the runtime: it answers the two
+            # options the scan uses. The filesystem starts at 4096 with a
+            # squashfs superblock whose bytes_used (offset 40) covers it.
+            script = (b"#!/bin/sh\n# " + runtime + b"\ncase \"$1\" in\n"
+                      b"  --appimage-offset) echo 4096 ;;\n"
+                      b"  --appimage-extract) mkdir -p squashfs-root/usr/bin && printf '%s' '" + file
+                      + b"' > squashfs-root/usr/bin/app && ln -s '" + link + b"' squashfs-root/AppRun ;;\n"
+                      b"esac\nexit 0\n")
+            squashfs = b"hsqs" + bytes(36) + (48 + len(filesystem)).to_bytes(8, "little") + filesystem
+            path.write_bytes(script.ljust(4096, b"\n") + squashfs + after)
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "octosense_0.1.0_x86_64.AppImage"
+            # zstd's literals back to back: "/home/" then the next run's "io/".
+            appimage(path, filesystem=b"\x28\xb5\x2f\xfd/home/io/\x91\x07")
+            code, out = self.run_scan(path)
+            self.assertEqual(code, 0, out)
+            for kind, where in ((dict(runtime=b"/Users/someone/runtime"), "AppImage (runtime)"),
+                                (dict(after=b"/home/someone/x"), "AppImage (after its filesystem)"),
+                                (dict(file=b"/Users/someone/src"), "AppImage/usr/bin/app"),
+                                (dict(link=b"/home/someone/app"), "AppImage/AppRun (link target)")):
+                appimage(path, **kind)
+                code, out = self.run_scan(path)
+                self.assertEqual(code, 1, kind)
+                self.assertIn(where, out)
+            path.write_bytes(b"#!/bin/sh\necho 0\n")
+            code, out = self.run_scan(path)
+            self.assertEqual(code, 1)
+            self.assertIn("no squashfs filesystem", out)
+
     def test_a_clean_artifact_passes(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "SHA256SUMS"

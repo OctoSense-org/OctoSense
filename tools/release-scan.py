@@ -9,8 +9,15 @@ release ships: `.app` bundles and directories, `.dmg` images (mounted with
 hdiutil on macOS), `.deb` (ar + tar), `.AppImage` (`--appimage-extract` on
 Linux), `.zip`, `.tar.*`, and NSIS installers (7-Zip, when installed; the
 installed files themselves are scanned before packaging on Windows, since
-the release workflow scans the staged payload too). An unreadable container
-fails the scan rather than being skipped.
+the release workflow scans the staged payload too). In a directory, a
+symbolic link's target is read too. An unreadable container fails the scan
+rather than being skipped.
+
+An AppImage's own bytes are read except for its squashfs filesystem, which
+is read through its extracted files and links instead. That filesystem is
+zstd-compressed, and zstd keeps a block's literal bytes back to back, so the
+raw bytes hold text that no file has (in octosense 0.1.0's AppImage, a
+`/home/` path from a literal run followed by the start of the next run).
 
 It fails on:
 
@@ -129,12 +136,16 @@ def scan_bytes(data, where, patterns, findings):
 
 
 def scan_tree(root, label, patterns, findings):
+    """Every file's bytes and every symbolic link's target (links are not followed)."""
     root = Path(root)
     count = 0
     for path in sorted(root.rglob("*")):
-        if path.is_file() and not path.is_symlink():
+        where = f"{label}/{path.relative_to(root).as_posix()}"
+        if path.is_symlink():
+            scan_bytes(os.fsencode(os.readlink(path)), f"{where} (link target)", patterns, findings)
+        elif path.is_file():
             count += 1
-            scan_bytes(path.read_bytes(), f"{label}/{path.relative_to(root).as_posix()}", patterns, findings)
+            scan_bytes(path.read_bytes(), where, patterns, findings)
     return count
 
 
@@ -158,6 +169,33 @@ def ar_members(data):
         pos += 60 + size + (size % 2)
 
 
+def scan_appimage(path, data, patterns, findings):
+    """An AppImage: the runtime before its squashfs, and anything after it,
+    as bytes; the squashfs through `--appimage-extract` (see the module
+    docstring). Only a machine that can run it can extract it (Linux)."""
+    name = path.name
+    with tempfile.TemporaryDirectory() as temp:
+        copy = Path(temp) / name
+        shutil.copy2(path, copy)
+        copy.chmod(0o755)
+
+        def run(option):
+            try:
+                return subprocess.run([str(copy), option], cwd=temp, check=True, capture_output=True).stdout
+            except OSError as e:   # not an executable format this machine runs
+                raise RuntimeError(f"{name}: an AppImage can only be extracted on Linux ({e})") from e
+
+        offset = int(run("--appimage-offset"))
+        superblock = data[offset:offset + 48]
+        if len(superblock) < 48 or superblock[:4] != b"hsqs":
+            raise RuntimeError(f"{name}: no squashfs filesystem at offset {offset}")
+        end = offset + int.from_bytes(superblock[40:48], "little")   # the superblock's bytes_used
+        scan_bytes(data[:offset], f"{name} (runtime)", patterns, findings)
+        scan_bytes(data[end:], f"{name} (after its filesystem)", patterns, findings)
+        run("--appimage-extract")
+        return 1 + scan_tree(Path(temp) / "squashfs-root", name, patterns, findings)
+
+
 def scan_artifact(path, patterns, findings, dmg_bytes_only=False):
     """Scan one artifact and what it contains; returns how many files.
     `dmg_bytes_only`: a .dmg's own bytes only, where it cannot be mounted
@@ -167,8 +205,10 @@ def scan_artifact(path, patterns, findings, dmg_bytes_only=False):
     if path.is_dir():
         return scan_tree(path, name, patterns, findings)
     data = path.read_bytes()
-    scan_bytes(data, name, patterns, findings)
     lower = name.lower()
+    if lower.endswith(".appimage"):
+        return scan_appimage(path, data, patterns, findings)
+    scan_bytes(data, name, patterns, findings)
     if lower.endswith(".dmg"):
         if dmg_bytes_only:
             return 1
@@ -191,15 +231,6 @@ def scan_artifact(path, patterns, findings, dmg_bytes_only=False):
                 scan_tar(blob, f"{name}!{member}", patterns, findings)
                 count += 1
         return count
-    if lower.endswith(".appimage"):
-        if not sys.platform.startswith("linux"):
-            raise RuntimeError(f"{name}: an AppImage can only be extracted on Linux")
-        with tempfile.TemporaryDirectory() as temp:
-            copy = Path(temp) / name
-            shutil.copy2(path, copy)
-            copy.chmod(0o755)
-            subprocess.run([str(copy), "--appimage-extract"], cwd=temp, check=True, capture_output=True)
-            return 1 + scan_tree(Path(temp) / "squashfs-root", name, patterns, findings)
     if lower.endswith(".zip"):
         with zipfile.ZipFile(path) as z:
             for info in z.infolist():
