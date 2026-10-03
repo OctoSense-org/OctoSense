@@ -462,6 +462,17 @@ pub fn catalog_visible(id: &str) -> bool {
     !matches!(id, "card" | "appstore")
 }
 
+/// Registry rows a shell surface launches but no list shows as an app:
+/// `aichat` is the assistant pane's own process (F10), which the pane
+/// starts (`clients::find_app("aichat")`); the dock and the launcher do not.
+pub const PANE_ONLY: &[&str] = &["aichat"];
+
+/// Whether a registry row is listed to the person and the system agent:
+/// the launcher, the dock, the phone's home, the `os` app list.
+pub fn listed(id: &str) -> bool {
+    catalog_visible(id) && !PANE_ONLY.contains(&id)
+}
+
 /// The linked modules as launcher rows.
 pub fn bundled_modules_catalog() -> Vec<crate::clients::AppDef> {
     linked_modules()
@@ -504,7 +515,9 @@ pub fn is_launchable(app: &crate::clients::AppDef) -> bool {
 pub fn manifest_default(declared: crate::native_apps::Hosting, process_form: impl FnOnce() -> bool, vulkan_wayland: bool) -> Hosting {
     use crate::native_apps::Hosting as Declared;
     let wants_process = match declared {
-        Declared::Module => false,
+        // `None` is a process-only app's where it cannot run; nothing links
+        // such an app, so it never reaches here as a module.
+        Declared::Module | Declared::None => false,
         Declared::Process => true,
         Declared::ProcessIfVulkan => vulkan_wayland,
     };
@@ -650,6 +663,17 @@ impl AppRegistry {
 
 #[cfg(test)]
 mod tests {
+    /// The assistant pane's own process is a registry row (F10 starts it
+    /// from there) but no list shows it as an app; the apps people pick
+    /// are listed.
+    #[test]
+    fn the_panes_own_process_is_never_listed_as_an_app() {
+        assert!(!listed("aichat"));
+        assert!(!listed("card") && !listed("appstore"));
+        assert!(listed("notes") && listed("terminal") && listed("os.mail"));
+        assert!(crate::shell::launcher::apps().iter().all(|a| a.id != "apps.aichat" && a.id != "aichat"));
+    }
+
     use super::*;
 
     /// ADR 0004 §3: no script app takes a native app's id or namespace.

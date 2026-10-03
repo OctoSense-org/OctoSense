@@ -195,6 +195,38 @@ pub fn system_call(mut call: HostToolCall, reply: ToolReply) {
     submit(Event::Call { call, reply });
 }
 
+/// A test path, the remote's `/event?data=system-call:<tool> <json args>`:
+/// the system agent's call to `tool` as its session makes it, through the
+/// relay (its grants, the tool's schema, the owning app's bus service),
+/// with the reply logged as `[system-call] <tool> <reply>`. Only a declared
+/// read tool: a test call never acts.
+pub fn system_call_test(spec: &str) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let (tool, args) = spec.split_once(' ').unwrap_or((spec, "{}"));
+    let read = owner_of(tool).and_then(|owner| declaration(&owner, tool)).is_some_and(|d| d["risk"] == "read");
+    if !read {
+        makepad_widgets::log!("[system-call] {tool}: a test call runs only a declared read tool");
+        return;
+    }
+    let Ok(args) = serde_json::from_str::<Value>(args) else {
+        makepad_widgets::log!("[system-call] {tool}: the arguments are not JSON");
+        return;
+    };
+    let id = format!("system-call-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    let params = serde_json::json!({
+        "session_id": crate::system_chat::session::SYSTEM_SESSION, "turn_id": format!("turn-{id}"),
+        "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "test",
+        "name": tool, "caller": {"kind": "system"}, "args": args, "risk": "read", "confirm_required": false,
+    });
+    let Ok(call) = HostToolCall::parse(&params) else {
+        makepad_widgets::log!("[system-call] {tool}: could not form the call");
+        return;
+    };
+    let name = tool.to_string();
+    system_call(call, ToolReply::new(id, move |reply| makepad_widgets::log!("[system-call] {name} {reply}")));
+}
+
 pub fn system_cancel(call_id: &str) {
     submit(Event::Cancel { call_id: call_id.to_string(), reason: "cancelled".into() });
 }

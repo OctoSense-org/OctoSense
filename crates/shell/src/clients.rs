@@ -1538,7 +1538,7 @@ pub fn adopt_legacy_homes_later(layout: &crate::app_storage::Layout) {
         } else {
             Hosting::Module
         };
-        if matches!(hosting, Hosting::Module) {
+        if matches!(hosting, Hosting::Module | Hosting::None) {
             continue;
         }
         if let Ok(paths) = layout.app(app.id) {
@@ -1777,7 +1777,7 @@ mod tests {
     #[test]
     fn makepad_launches_build_outside_cargos_checkout() {
         let apps = crate::octosense::catalog::parse_catalog(
-            br#"[{"id":"browser","label":"Browser","source":"makepad","package":"makepad-browser","bin":"browser"}]"#,
+            br#"[{"id":"example","label":"Example","source":"makepad","package":"makepad-example","bin":"example"}]"#,
             Path::new("/catalog"),
             Some(Path::new("/cargo/checkouts/makepad-d00a/ad8f372")),
         )
@@ -1787,7 +1787,7 @@ mod tests {
         assert!(build.args.windows(2).any(|p| p == ["--manifest-path", "/cargo/checkouts/makepad-d00a/ad8f372/Cargo.toml"]));
         let at = build.args.iter().position(|arg| arg == "--target-dir").expect("builds are redirected out of the cargo cache");
         assert!(!build.args[at + 1].starts_with("/cargo/checkouts"), "{}", build.args[at + 1]);
-        assert_eq!(plan.program, build.target_dir.join("release").join(exe_name("browser")));
+        assert_eq!(plan.program, build.target_dir.join("release").join(exe_name("example")));
         assert_eq!(build.dir, Path::new("/cargo/checkouts/makepad-d00a/ad8f372"), "cargo runs in its checkout");
     }
 

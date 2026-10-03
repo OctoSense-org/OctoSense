@@ -29,7 +29,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | Path | What it is |
 | --- | --- |
 | `src/main.rs` | The entry point (package `octosense`): `octosense_main!()` over the shell's `App`. The shell (tiling, launcher, dock, bar, hosting, the app registry, `shell/`, `octosense/`) is [`../crates/shell/src`](../crates/shell/src). |
-| `config/apps.json` | The default developer-program catalog. `apps.makepad.json` is an identical copy for `--apps`; `apps.overlay.json` holds the adaptations applied when regenerating them. |
+| `config/apps.json` | The default developer-program catalog: the Makepad apps OctoSense picked (`pick` in `apps.overlay.json`), each also a native app in [`../native-apps.json`](../native-apps.json). `apps.makepad.json`, for `--apps`, has every app upstream's registry curates; `apps.overlay.json` holds the adaptations applied when regenerating both. |
 | `system-apps.json` | Which system apps this build packs, and from where (`../apps`). |
 | `scripts/` | `package.py` (the release packages, [Release builds](#release-builds)), `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.sh` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
 | `packaging/` | The release packages' cargo-packager config (`release.json`), app icon (`icons/`, `make_icons.py`) and macOS `Info.plist` additions and entitlements. |
@@ -99,7 +99,7 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
 | `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
 
-A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx, AppCard, Reference and Sheets in-process everywhere, the Terminal as a process on macOS and Windows (and on Linux with a Vulkan build in a Wayland session). `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
+A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx, AppCard, Reference and Sheets in-process everywhere, the Terminal as a process on macOS and Windows (and on Linux with a Vulkan build in a Wayland session), and Task, which has no module, only as a process, and not at all where there are no processes. `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
 
 ```sh
 cargo run --release -p octosense -- --module terminal
@@ -250,7 +250,7 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 
 ### Developer programs and the catalog
 
-`config/apps.json` lists Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, Calendar, Director under the id `studio`, and more). Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The Image, PDF and AI helpers also appear in the launcher unless their ids (`image`, `pdf`, `aichat`) are listed in `wm/launcher.hides` under the state directory.
+`config/apps.json` lists Reference and the Makepad apps OctoSense picked (Browser, Files, Task, Terminal, Sheets, Clock, Weather, Finance, Notes, Reminders, Calculator, Route, and the Image and PDF viewers). Calculator, Clock, Notes, Reminders and Weather are native apps ([`../native-apps.json`](../native-apps.json)): linked by default and opened in-process, with their read tools offered to the system agent while they are open. Task is a native app that runs only as its own process (`"module": null`), sandboxed. Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The `aichat` row is the assistant pane's own process (F10), which the pane starts; no list shows it. A launcher row whose id is listed in `wm/launcher.hides` under the state directory is hidden.
 
 Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it exists, else `config/apps.json`. A catalog is a JSON array; each entry picks one launch target:
 
@@ -275,6 +275,8 @@ The Makepad rows are generated from upstream's app registry at the pinned revisi
 python3 scripts/upstream.py catalog          # report drift
 python3 scripts/upstream.py catalog --apply  # rewrite config/apps.json and apps.makepad.json
 ```
+
+Only the upstream apps named in the overlay's `pick` reach `config/apps.json`: an app upstream curates later stays out until it is picked, and a pick upstream no longer curates is reported. `--apps config/apps.makepad.json` starts the desktop with all of them.
 
 ### The AppCard assistant
 

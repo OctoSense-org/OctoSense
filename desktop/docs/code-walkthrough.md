@@ -38,7 +38,7 @@ cargo run --locked -p octosense-reference
 # Reference linked into the desktop and opened at startup.
 MAKEPAD_WM_TEST_APP=reference cargo run --locked -p octosense --features app-reference -- --module reference
 
-# Standard desktop: App Hub, Rinx, Terminal and kernel integration.
+# Standard desktop: App Hub, Rinx, Terminal, the native Makepad apps and kernel integration.
 cargo run --locked --release -p octosense
 ```
 

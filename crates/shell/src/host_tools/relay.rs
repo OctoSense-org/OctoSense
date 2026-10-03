@@ -57,6 +57,14 @@ pub const SYSTEM: &str = "system";
 pub const TERMINAL_RUN: &str = "terminal.run";
 /// The Terminal, whose tools the relay runs on the AI bus.
 pub const TERMINAL_APP: &str = "terminal";
+
+/// Whether `owner` is a native app whose own tools (`native-apps.json`
+/// `agent.tools`) run on its AI bus service: the Terminal, Calculator,
+/// Notes, every native app that declares tools. A closed app answers that
+/// it is not running.
+pub fn serves_on_bus(owner: &str) -> bool {
+    crate::native_apps::find(owner).is_some_and(|app| app.tools_json != "[]")
+}
 /// Developer mode's command tool (§13), run by the shell ([`super::dev_run`]).
 pub const DEV_RUN: &str = "dev.run";
 /// The executor key of the tools the shell itself runs for an app's own
@@ -749,9 +757,10 @@ impl Relay {
         }
         let target = if self.executors.contains_key(&owner) {
             Target::Executor(owner.clone())
-        } else if owner == TERMINAL_APP {
-            // The Terminal's tools run on its AI bus service, in the
-            // terminal the person sees.
+        } else if serves_on_bus(&owner) {
+            // A native app's own tools run on its AI bus service, in the
+            // instance the person has open: the terminal they see, the
+            // notes they keep.
             Target::Bus
         } else {
             return refuse(&reply, "app_not_running", format!("{} isn't running", crate::approvals::sheet::app_label(&owner)));

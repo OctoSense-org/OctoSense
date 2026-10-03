@@ -5291,6 +5291,33 @@ name = "makepad-byteorder-lite"
 version = "0.1.0"
 
 [[package]]
+name = "makepad-calculator"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-app-module",
+ "makepad-strict-json",
+ "makepad-widgets",
+ "makepad-wm-theme",
+]
+
+[[package]]
+name = "makepad-civil-time"
+version = "0.1.0"
+
+[[package]]
+name = "makepad-clock"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-aichat",
+ "makepad-app-module",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
 name = "makepad-code-editor"
 version = "2.0.0"
 dependencies = [
@@ -5523,6 +5550,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-notes"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-app-module",
+ "makepad-civil-time",
+ "makepad-strict-json",
+ "makepad-widgets",
+ "makepad-wm-theme",
+]
+
+[[package]]
 name = "makepad-objc-sys"
 version = "1.0.0"
 
@@ -5582,6 +5621,18 @@ dependencies = [
 [[package]]
 name = "makepad-regex"
 version = "0.1.0"
+
+[[package]]
+name = "makepad-reminders"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-app-module",
+ "makepad-civil-time",
+ "makepad-strict-json",
+ "makepad-widgets",
+ "makepad-wm-theme",
+]
 
 [[package]]
 name = "makepad-script"
@@ -5660,6 +5711,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-task"
+version = "0.1.0"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
 name = "makepad-terminal"
 version = "0.1.0"
 dependencies = [
@@ -5691,6 +5751,18 @@ version = "1.0.0"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
+]
+
+[[package]]
+name = "makepad-weather"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-aichat",
+ "makepad-app-module",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
 ]
 
 [[package]]
@@ -7668,8 +7740,14 @@ dependencies = [
 name = "octosense-process-apps"
 version = "0.1.0"
 dependencies = [
+ "makepad-calculator",
+ "makepad-clock",
+ "makepad-notes",
+ "makepad-reminders",
  "makepad-sheets",
+ "makepad-task",
  "makepad-terminal",
+ "makepad-weather",
  "octosense-reference",
 ]
 
@@ -7691,11 +7769,16 @@ dependencies = [
  "makepad-ai-services",
  "makepad-aichat",
  "makepad-app-module",
+ "makepad-calculator",
+ "makepad-clock",
  "makepad-network",
+ "makepad-notes",
+ "makepad-reminders",
  "makepad-sheets",
  "makepad-strict-json",
  "makepad-studio-protocol",
  "makepad-terminal",
+ "makepad-weather",
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",

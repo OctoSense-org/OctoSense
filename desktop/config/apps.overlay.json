@@ -1,5 +1,20 @@
 {
   "_": "This project's named adaptations to upstream's curated app registry. Everything else in config/apps.json is generated from the pinned revision by `python3 scripts/upstream.py catalog --apply`.",
+  "_pick": "The upstream apps OctoSense ships, cherry-picked (2 Oct 2026): the utilities and viewers it keeps, each also a native app (native-apps.json). An app upstream curates that is not picked is not in config/apps.json; config/apps.makepad.json, for --apps, keeps every one.",
+  "pick": [
+    "browser",
+    "files",
+    "terminal",
+    "task",
+    "sheets",
+    "clock",
+    "weather",
+    "finance",
+    "notes",
+    "reminders",
+    "calculator",
+    "route"
+  ],
   "rows": [
     {
       "id": "reference",

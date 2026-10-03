@@ -63,7 +63,7 @@ PACKAGES = {"desktop": "desktop/Cargo.toml", "phone": "phone/Cargo.toml"}
 TARGETS = ("macos", "windows", "linux", "android", "ios", "ohos")
 # Targets without child processes (`host::processes_available()` is false).
 MODULE_ONLY = ("android", "ios", "ohos", "wasm")
-HOSTINGS = ("module", "process", "process-if-vulkan")
+HOSTINGS = ("module", "process", "process-if-vulkan", "none")
 # How a package links an app: in its default features, in its `mobile-apps`
 # set, only when asked for, or not at all.
 SHELL_LINKS = ("default", "mobile-apps", "opt-in", "off")
@@ -148,8 +148,17 @@ def validate(data):
             problems.append(f"{where}: source.tag must be a release tag vX.Y.Z or vX.Y.Z-rc.N")
         if isinstance(source, dict) and ident in TAGGED_RELEASES and "tag" not in source:
             problems.append(f"{where}: is taken only as a tagged release (hagency-org/Rinx#37): pin source.tag, not a raw rev")
-        if not modules_of(app) or not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)+", m) for m in modules_of(app)):
-            problems.append(f"{where}: module must be a Rust path (or a list of them)")
+        process_only = app["module"] is None
+        if not process_only and (not modules_of(app) or not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)+", m) for m in modules_of(app))):
+            problems.append(f"{where}: module must be a Rust path (or a list of them), or null for a process-only app")
+        if process_only:
+            # No module: the app runs only as its own desktop process (ADR
+            # 0004 §2: a browser whose engine owns its process, a task
+            # manager). Nothing links it, so no shell names it.
+            if not app["bin"]:
+                problems.append(f"{where}: a process-only app (module null) needs a bin")
+            if app["shells"] != {"desktop": "off", "phone": "off"} if isinstance(app["shells"], dict) else True:
+                problems.append(f"{where}: a process-only app is linked by no shell: shells must be off")
         if app["bin"] is not None and not (isinstance(app["bin"], str) and app["bin"]):
             problems.append(f"{where}: bin must be a binary name or null")
         bin_features = app.get("bin_features", [])
@@ -174,12 +183,16 @@ def validate(data):
                     problems.append(f"{where}: hosting.{target}: unknown target")
                 elif value not in HOSTINGS:
                     problems.append(f"{where}: hosting.{target}: {value!r} is not one of {', '.join(HOSTINGS)}")
-                elif value != "module" and target in MODULE_ONLY:
-                    problems.append(f"{where}: hosting.{target}: {target} has no processes; only 'module'")
+                elif value == "none" and app["module"] is not None:
+                    problems.append(f"{where}: hosting.{target}: 'none' is for a process-only app (module null)")
+                elif value == "module" and app["module"] is None:
+                    problems.append(f"{where}: hosting.{target}: a process-only app (module null) has no module")
+                elif value not in ("module", "none") and target in MODULE_ONLY:
+                    problems.append(f"{where}: hosting.{target}: {target} has no processes; only 'module' (or 'none' for a process-only app)")
                 elif value == "process" and target == "linux":
                     problems.append(f"{where}: hosting.linux: 'process' would run without Vulkan+Wayland; "
                                     "use 'process-if-vulkan' (ADR 0004 §2)")
-                elif value != "module" and not app["bin"]:
+                elif value in ("process", "process-if-vulkan") and not app["bin"]:
                     problems.append(f"{where}: hosting.{target}: '{value}' needs a bin")
         shells = app["shells"]
         if not isinstance(shells, dict) or set(shells) != set(PACKAGES):
@@ -276,7 +289,7 @@ def tool_policy_problems(policy):
     return problems
 
 
-AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget"}
+AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget", "system_tools"}
 # The fields a `tools.json` entry may carry (octos `ToolDecl`, UPCR-2026-035);
 # `app` is the shell's to set.
 DECL_FIELDS = {"name", "description", "input_schema", "output_schema", "risk", "background", "outward", "confirm", "shareable"}
@@ -291,7 +304,9 @@ def agent_problems(ident, agent):
     services), `tools` (null, or its own `tools.json` entries, named
     `<id>.<tool>`), `generic_tools` (the exact octos kernel tools its agent
     gets; never octos's shell), `grants` (other apps' shareable tools,
-    `{"app", "tool"}`), `budget` (`calls_per_turn`, `calls_per_day`)."""
+    `{"app", "tool"}`), `budget` (`calls_per_turn`, `calls_per_day`),
+    `system_tools` (its own tools the system agent may call while the app
+    runs: each one of its `tools`, a shareable read tool, by full name)."""
     problems = []
     unknown = sorted(set(agent) - AGENT_KEYS)
     if unknown:
@@ -349,6 +364,19 @@ def agent_problems(ident, agent):
             problems.append(f"agent.generic_tools: {g!r} is not an octos tool name")
     if len(set(map(str, generic))) != len(generic):
         problems.append("agent.generic_tools names a tool twice")
+    system = agent.get("system_tools", [])
+    declared = {t.get("name"): t for t in (tools or []) if isinstance(t, dict)}
+    if not isinstance(system, list) or not all(isinstance(t, str) for t in system):
+        problems.append("agent.system_tools must be a list of its own tool names")
+        system = []
+    for name in system:
+        tool = declared.get(name)
+        if tool is None:
+            problems.append(f"agent.system_tools: {name} is not one of {ident}'s agent.tools")
+        elif tool.get("risk") != "read" or tool.get("shareable") is not True:
+            problems.append(f"agent.system_tools: {name} must be a shareable read tool (the system agent gets read tools only)")
+    if len(set(system)) != len(system):
+        problems.append("agent.system_tools names a tool twice")
     budget = agent.get("budget")
     if budget is not None:
         if not isinstance(budget, dict) or not set(budget) <= {"calls_per_turn", "calls_per_day"}:
@@ -397,6 +425,7 @@ def feature_of(app):
 
 
 def modules_of(app):
+    """The app's linked modules; none for a process-only app."""
     module = app["module"]
     if isinstance(module, str):
         return [module]
@@ -472,6 +501,8 @@ def shell_blocks(apps):
             fields.append("optional = true")
         return f"{app['crate']} = {{ {', '.join(fields)} }}"
 
+    # A process-only app is no dependency of the shell's: nothing links it.
+    apps = [app for app in apps if modules_of(app)]
     mobile_apps = [feature_of(app) for app in apps if in_mobile_apps(app)] + BASE_DEFAULT
     features = [f"mobile-apps = {toml_list(mobile_apps)}"]
     features += [f"{feature_of(app)} = {toml_list(['dep:' + app['crate']] + app['implies'])}" for app in apps]
@@ -534,7 +565,7 @@ def rust_raw(text):
 
 def rust_hosting(value):
     return {"module": "Hosting::Module", "process": "Hosting::Process",
-            "process-if-vulkan": "Hosting::ProcessIfVulkan"}[value]
+            "process-if-vulkan": "Hosting::ProcessIfVulkan", "none": "Hosting::None"}[value]
 
 
 def render_rust(apps):
@@ -556,8 +587,11 @@ def render_rust(apps):
         "    /// Its own process (`bin`), connected to the shell's hub.",
         "    Process,",
         "    /// Its own process on a Vulkan build in a Wayland session; in the",
-        "    /// shell's process otherwise.",
+        "    /// shell's process otherwise (a process-only app: not there).",
         "    ProcessIfVulkan,",
+        "    /// Not on this target: a process-only app (no module) where",
+        "    /// there are no processes.",
+        "    None,",
         "}",
         "",
         "/// Who shows the person a tool's live confirmation (ADR 0004 §8).",
@@ -626,6 +660,9 @@ def render_rust(apps):
         "    /// `agent.grants`: other apps' shareable tools its agent may call,",
         "    /// as (owning app, tool).",
         "    pub grants: &'static [(&'static str, &'static str)],",
+        "    /// `agent.system_tools`: its own read tools the system agent may",
+        "    /// call while the app runs (full names).",
+        "    pub system_tools: &'static [&'static str],",
         "    /// `agent.budget`: its agent's tool calls per turn and per day",
         "    /// (`None`: the shell's defaults).",
         "    pub calls_per_turn: Option<u32>,",
@@ -636,7 +673,7 @@ def render_rust(apps):
     ]
     for app in apps:
         hosting = dict(app["hosting"])
-        hosting.setdefault("wasm", "module")
+        hosting.setdefault("wasm", "module" if modules_of(app) else "none")
         bin_value = f"Some({s(app['bin'])})" if app["bin"] else "None"
         octos = ", ".join(s(x) for x in app["agent"]["octos"])
         out.append("    NativeApp {")
@@ -670,6 +707,8 @@ def render_rust(apps):
         out.append(f"        generic_tools: &[{generic}],")
         grants = ", ".join(f"({s(g['app'])}, {s(g['tool'])})" for g in agent.get("grants", []))
         out.append(f"        grants: &[{grants}],")
+        system = ", ".join(s(x) for x in agent.get("system_tools", []))
+        out.append(f"        system_tools: &[{system}],")
         budget = agent.get("budget") or {}
         for key in ("calls_per_turn", "calls_per_day"):
             value = f"Some({budget[key]})" if key in budget else "None"
@@ -731,6 +770,8 @@ def render_rust(apps):
         feature = f"feature = {s(feature_of(app))}"
         cfg = f"any({feature}, native_mobile)" if app["native_mobile"] == "always" else feature
         modules = modules_of(app)
+        if not modules:
+            continue
         out.append(f"    #[cfg({cfg})]")
         if len(modules) == 1:
             out.append(f"    out.push(&{modules[0]});")

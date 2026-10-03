@@ -2466,6 +2466,7 @@ impl App {
     fn registry_apps() -> Vec<(String, String)> {
         clients::available_apps()
             .iter()
+            .filter(|a| apps::listed(&a.id))
             .map(|a| (a.id.clone(), a.label.clone()))
             .collect()
     }
@@ -2811,6 +2812,7 @@ impl App {
         let focused = state.layout.focused_client();
         let mut rows: Vec<OsAppRow> = clients::available_apps()
             .iter()
+            .filter(|a| apps::listed(&a.id))
             .map(|a| OsAppRow {
                 id: a.id.clone(),
                 label: a.label.clone(),
@@ -5524,6 +5526,7 @@ fn os_launch_answer(call_id: &str, label: &str, already_running: bool) -> ToolRe
 fn known_app_ids() -> String {
     clients::available_apps()
         .iter()
+        .filter(|a| apps::listed(&a.id))
         .map(|a| a.id.as_str())
         .collect::<Vec<_>>()
         .join(", ")
@@ -6695,6 +6698,16 @@ impl App {
         if self.state.is_some() && matches!(event, Event::TextCopy(_) | Event::TextCut(_)) && self.chat_clipboard(cx, event) {
             self.system_chat_changed(cx);
             return;
+        }
+        // The remote's `/event?data=system-call:<tool> <json>`: a test call
+        // from the system agent to a granted read tool (host_tools.rs
+        // `system_call_test`), logged with its reply.
+        if let Event::Custom(data) = event {
+            if let Some(spec) = data.strip_prefix("system-call:") {
+                host_tools::system_call_test(spec);
+                self.host_tools_pump(cx);
+                return;
+            }
         }
         if let Event::Signal = event {
             if self.state.is_some() {

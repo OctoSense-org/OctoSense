@@ -219,24 +219,44 @@ def package_binaries(checkout):
     }
 
 
-def merge_catalog(rows, overlay):
+def merge_catalog(rows, overlay, picked=True):
     """Upstream's curated rows under this project's own adaptations.
 
-    Adaptations are named, never silent: `drop` removes a row this project
-    does not ship, `overrides` changes what an id runs while keeping the id
-    itself, and `rows` are this project's own apps, which lead the menu.
+    Adaptations are named, never silent: `pick` is the upstream apps this
+    project ships, cherry-picked by id (an app upstream curates later stays
+    out until it is picked; without `pick`, every row upstream curates is
+    taken), `drop` removes a row this project does not ship whatever is
+    picked (an id an OctoSense app takes), `overrides` changes what an id
+    runs while keeping the id itself, and `rows` are this project's own
+    apps, which lead the menu. `picked=False` leaves `pick` out: the full
+    catalog `--apps config/apps.makepad.json` loads.
     """
     dropped = set(overlay.get("drop", ()))
+    pick = set(overlay["pick"]) if picked and "pick" in overlay else None
     overrides = overlay.get("overrides", {})
     merged = list(overlay.get("rows", ()))
     for row in rows:
-        if row["id"] in dropped:
+        if row["id"] in dropped or (pick is not None and row["id"] not in pick):
             continue
         adapted = dict(row)
         adapted.update(overrides.get(row["id"], {}))
         merged.append(adapted)
     merged.extend(overlay.get("append", ()))
     return merged
+
+
+def pick_problems(upstream_rows, overlay):
+    """Picked ids upstream does not curate (gone, or never there) and picked
+    ids that are also dropped: a pick that cannot take effect is named."""
+    curated = {row["id"] for row in upstream_rows}
+    dropped = set(overlay.get("drop", ()))
+    problems = []
+    for identifier in overlay.get("pick", ()):
+        if identifier in dropped:
+            problems.append({"id": identifier, "detail": "picked and dropped"})
+        elif identifier not in curated:
+            problems.append({"id": identifier, "detail": "picked, but upstream's registry does not curate it"})
+    return problems
 
 
 def catalog_problems(rows, packages):
@@ -769,12 +789,15 @@ def sync(root, source=None, to=None, verify=None):
         return report
 
 
+# The shipped catalog (the apps picked) and the full one (`--apps
+# config/apps.makepad.json`: every app upstream curates, adapted the same way).
 CATALOGS = ("config/apps.json", "config/apps.makepad.json")
 OVERLAY_PATH = "config/apps.overlay.json"
 
 
-def generated_catalog(root):
-    """The catalog this project should ship for the revision it pins.
+def generated_catalogs(root):
+    """The catalogs this project should ship for the revision it pins, in
+    `CATALOGS` order, and what is wrong with them.
 
     Upstream's registry is read out of the checkout Cargo already fetched,
     so regenerating needs no second clone and cannot describe a revision
@@ -784,8 +807,18 @@ def generated_catalog(root):
     checkout = pinned_checkout(root)
     registry = (checkout / "apps/wm/src/clients.rs").read_text(errors="replace")
     overlay = json.loads((root / OVERLAY_PATH).read_text())
-    rows = merge_catalog(curated_apps(registry), overlay)
-    return rows, catalog_problems(rows, package_binaries(checkout))
+    upstream = curated_apps(registry)
+    shipped = merge_catalog(upstream, overlay)
+    full = merge_catalog(upstream, overlay, picked=False)
+    packages = package_binaries(checkout)
+    problems = pick_problems(upstream, overlay) + catalog_problems(full, packages)
+    return (shipped, full), problems
+
+
+def generated_catalog(root):
+    """The shipped catalog (`config/apps.json`) and its problems."""
+    (shipped, _full), problems = generated_catalogs(root)
+    return shipped, problems
 
 
 def format_catalog_drift(current, generated, problems):
@@ -849,14 +882,17 @@ def main(argv=None):
         parser.error("update requires --to")
     try:
         if args.command == "catalog":
-            generated, problems = generated_catalog(args.root)
-            current = json.loads((args.root / CATALOGS[0]).read_text())
-            print(format_catalog_drift(current, generated, problems), end="")
+            catalogs, problems = generated_catalogs(args.root)
+            for index, (name, generated) in enumerate(zip(CATALOGS, catalogs)):
+                current = json.loads((args.root / name).read_text())
+                print(f"{name}:")
+                # The problems once, under the first catalog.
+                print(format_catalog_drift(current, generated, problems if index == 0 else []), end="")
             if problems:
                 print("Refusing to write a catalog with rows that cannot start.", file=sys.stderr)
                 return 1
             if args.apply:
-                for name in CATALOGS:
+                for name, generated in zip(CATALOGS, catalogs):
                     (args.root / name).write_text(json.dumps(generated, indent=2) + "\n")
                 print(f"Wrote {', '.join(CATALOGS)}.")
             return 0

@@ -31,15 +31,21 @@ class TheRepository(unittest.TestCase):
 
     def test_the_manifest_declares_todays_native_apps(self):
         apps = native_apps.load(ROOT)
-        self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub"])
+        self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub",
+                                                       "calculator", "clock", "notes", "reminders", "weather",
+                                                       "task"])
         hosting = {app["id"]: app["hosting"] for app in apps}
-        # Terminal is the only process app for now (ADR 0004 §2).
+        # Terminal is the only app that runs both linked and as a process
+        # (ADR 0004 §2); Task has no module and runs only as one.
+        self.assertIsNone(next(app for app in apps if app["id"] == "task")["module"])
+        self.assertEqual(hosting["task"]["macos"], "process")
         self.assertEqual(hosting["terminal"]["macos"], "process")
         self.assertEqual(hosting["terminal"]["windows"], "process")
         self.assertEqual(hosting["terminal"]["linux"], "process-if-vulkan")
         for ident in ("apphub", "rinx", "sheets", "reference", "appcard"):
             self.assertEqual(set(hosting[ident].values()), {"module"}, ident)
-        # Non-Vulkan Linux is in-process for everything.
+        # Non-Vulkan Linux is in-process for every app with a module (a
+        # process-only app is not there).
         for ident, h in hosting.items():
             self.assertIn(h["linux"], ("module", "process-if-vulkan"), ident)
 
@@ -208,6 +214,24 @@ class Validation(Fixture):
         rinx["grants"] = [{"app": "nowhere", "tool": "nowhere.x"}]
         self.assertRefused(r"no native app nowhere")
 
+    def test_the_system_agent_gets_only_an_apps_own_shareable_read_tools(self):
+        """`agent.system_tools`: what the system agent may call of an app's
+        own tools is named per app, and only its shareable read tools
+        qualify; the Terminal's command is never one of them."""
+        terminal = self.app("terminal")["agent"]
+        terminal["system_tools"] = ["terminal.read_screen"]
+        apps = native_apps.validate(self.data)
+        self.assertIn('system_tools: &["terminal.read_screen"],', native_apps.render_rust(apps))
+        terminal["system_tools"] = ["terminal.run"]
+        self.assertRefused(r"agent\.system_tools: terminal\.run must be a shareable read tool")
+        terminal["system_tools"] = ["terminal.nope"]
+        self.assertRefused(r"agent\.system_tools: terminal\.nope is not one of terminal's agent\.tools")
+        terminal["system_tools"] = ["terminal.read_screen", "terminal.read_screen"]
+        self.assertRefused(r"agent\.system_tools names a tool twice")
+        self.app("terminal")["agent"]["tools"][1]["shareable"] = False
+        terminal["system_tools"] = ["terminal.read_screen"]
+        self.assertRefused(r"terminal\.read_screen must be a shareable read tool")
+
     def test_the_agent_block_is_generated(self):
         self.app("rinx")["agent"]["grants"] = [{"app": "terminal", "tool": "terminal.read_screen"}]
         self.app("rinx")["agent"]["budget"] = {"calls_per_day": 99}
@@ -254,25 +278,65 @@ class Generation(Fixture):
 
     def test_a_new_app_reaches_every_place(self):
         extra = copy.deepcopy(self.app("sheets"))
-        extra.update({"id": "notes", "crate": "makepad-notes", "module": "makepad_notes::NOTES_MODULE", "bin": "notes",
+        extra.update({"id": "image", "crate": "makepad-image", "module": "makepad_image::IMAGE_MODULE", "bin": "image",
                       "shells": {"desktop": "default", "phone": "off"}, "native_mobile": "feature"})
-        extra["source"]["local"] = ".sources/makepad/apps/notes"
+        extra["source"]["local"] = ".sources/makepad/apps/image"
         self.data["apps"].append(extra)
         self.save()
         self.assertEqual(self.run_main("--no-lock"), 0)
         root = (self.root / "Cargo.toml").read_text()
         rev = extra["source"]["rev"]  # the Makepad pin, whatever it is today
-        self.assertIn(f'makepad-notes = {{ git = "https://github.com/OctoSense-org/makepad.git", rev = "{rev}", default-features = false }}', root)
-        self.assertIn('makepad-notes = { path = ".sources/makepad/apps/notes" }', root)
+        self.assertIn(f'makepad-image = {{ git = "https://github.com/OctoSense-org/makepad.git", rev = "{rev}", default-features = false }}', root)
+        self.assertIn('makepad-image = { path = ".sources/makepad/apps/image" }', root)
         shell = (self.root / "crates/shell/Cargo.toml").read_text()
-        self.assertIn('makepad-notes = { workspace = true, optional = true }', shell)
-        self.assertIn('app-notes = ["dep:makepad-notes"]', shell)
+        self.assertIn('makepad-image = { workspace = true, optional = true }', shell)
+        self.assertIn('app-image = ["dep:makepad-image"]', shell)
         desktop = (self.root / "desktop/Cargo.toml").read_text()
-        self.assertIn('default = ["octos-core", "app-rinx", "app-terminal", "app-hub", "app-notes"]', desktop)
-        self.assertIn('app-notes = ["octosense-shell/app-notes"]', desktop)
-        self.assertNotIn("app-notes", (self.root / "phone/Cargo.toml").read_text())
+        default = next(line for line in desktop.splitlines() if line.startswith("default = "))
+        self.assertIn('"app-image"', default, "a desktop default app is in the package's default features")
+        self.assertIn('app-image = ["octosense-shell/app-image"]', desktop)
+        self.assertNotIn("app-image", (self.root / "phone/Cargo.toml").read_text())
         rust = (self.root / native_apps.RUST_FILE).read_text()
-        self.assertIn('    #[cfg(feature = "app-notes")]\n    out.push(&makepad_notes::NOTES_MODULE);', rust)
+        self.assertIn('    #[cfg(feature = "app-image")]\n    out.push(&makepad_image::IMAGE_MODULE);', rust)
+
+    def process_only(self):
+        """Task: the manifest's process-only app (`module: null`)."""
+        app = self.app("task")
+        self.assertIsNone(app["module"])
+        return app
+
+    def test_a_process_only_app_is_built_never_linked(self):
+        """`module: null` (ADR 0004 §2): the app runs only as its own
+        desktop process. The process-app crate builds it; no shell links
+        it, and it is not there where there are no processes."""
+        self.process_only()
+        self.save()
+        self.assertEqual(self.run_main("--no-lock"), 0)
+        self.assertIn('makepad-task = { workspace = true }', (self.root / "crates/process-apps/Cargo.toml").read_text())
+        self.assertNotIn("makepad-task", (self.root / "crates/shell/Cargo.toml").read_text())
+        self.assertNotIn("app-task", (self.root / "desktop/Cargo.toml").read_text())
+        rust = (self.root / native_apps.RUST_FILE).read_text()
+        self.assertNotIn('feature = "app-task"', rust, "nothing links it")
+        self.assertIn('bin: Some("task"),\n        macos: Hosting::Process,', rust)
+        self.assertIn("android: Hosting::None,", rust)
+        self.assertIn("wasm: Hosting::None,", rust)
+
+    def test_a_process_only_app_is_checked(self):
+        app = self.process_only()
+        native_apps.validate(self.data)
+        app["bin"] = None
+        self.assertRefused(r"task: a process-only app \(module null\) needs a bin")
+        app["bin"] = "task"
+        app["hosting"]["android"] = "module"
+        self.assertRefused(r"hosting\.android: a process-only app \(module null\) has no module")
+        app["hosting"]["android"] = "process"
+        self.assertRefused(r"hosting\.android: android has no processes")
+        app["hosting"]["android"] = "none"
+        app["shells"]["desktop"] = "default"
+        self.assertRefused(r"task: a process-only app is linked by no shell: shells must be off")
+        app["shells"]["desktop"] = "off"
+        self.app("terminal")["hosting"]["android"] = "none"
+        self.assertRefused(r"terminal: hosting\.android: 'none' is for a process-only app")
 
     def test_native_mobile_links_without_the_feature(self):
         rust = native_apps.render_rust(native_apps.validate(self.data))
