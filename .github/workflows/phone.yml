@@ -59,6 +59,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: phone
+      - name: Validate launcher icons and Apple asset catalogs
+        run: |
+          python3 -m unittest discover -s tools -p test_app_icons.py
+          python3 desktop/packaging/make_icons.py --check
       - name: Compile Home and its bundled modules
         working-directory: phone
         run: |

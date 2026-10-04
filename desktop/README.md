@@ -127,6 +127,35 @@ App Hub's modules have no process form and always open in-process.
 | `OCTOSENSE_GLANCE_DEMO=mail` | Publish two fake Mail action cards (L0, as `os.mail`, with a toast each) at startup: clicking a toast opens that card in the card window, where Reply, Send (demo), Ask and Track work on fake data. They work the same in the glance panel, which opens with them, and on a phone style's glance page. No mail is read and no model is called. `scripts/mail_card_remote.sh` drives it hidden. |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
 
+## Application icons
+
+Both `octosense` and `octosense-home` use OctoSense's green eight-petal mark.
+The workspace's Cargo environment embeds the desktop icons for normal
+`cargo run`/`cargo build`. Each package also supplies the PNG sizes, ICO and
+ICNS files that the pinned `cargo-makepad desktop` commands discover for
+macOS bundles, Windows executable resources and Linux desktop entries.
+Release packages continue to use `packaging/icons/`.
+
+Android builds of either package include legacy density icons, adaptive
+icons and Android 13 themed icons. Both packages supply opaque, correctly
+sized iPhone/iPad asset catalogs; Home's OpenHarmony wrapper replaces the
+framework's application, layered launcher and launch-window artwork too.
+These assets do not change which app targets currently build successfully.
+
+The source geometry and colours live in `packaging/make_icons.py` and
+`packaging/icons/icon.svg`. Generated files are committed; building the app
+needs no image renderer. From the repository root:
+
+```sh
+python3 desktop/packaging/make_icons.py
+python3 desktop/packaging/make_icons.py --check
+python3 -m unittest discover -s tools -p test_app_icons.py
+```
+
+Android resource compilation, iOS asset compilation and macOS ICNS decoding
+were checked locally. Installed-device appearance and Windows/Linux desktop
+integration are **unverified** for this icon change.
+
 ## Release builds
 
 `desktop/scripts/package.py` turns a checkout into installable packages that need neither `.sources/` nor the repository at run time. It needs no secret and always builds **unsigned** packages, so it is also how to test packaging locally. From the repository root, after setup, with [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) installed (`cargo install cargo-packager --locked --version 0.11.8`):

@@ -83,6 +83,7 @@ jobs:
       - name: Desktop tools and scripts
         run: |
           python3 -m unittest discover -s tools -p 'test_*.py'
+          python3 desktop/packaging/make_icons.py --check
           # The release packaging script (no build; release-desktop.yml builds).
           python3 -m unittest discover -s desktop/scripts -p 'test_package.py'
       - name: One Makepad, App Hub, octos and Rinx in the locked graph

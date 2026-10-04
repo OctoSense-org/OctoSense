@@ -127,6 +127,32 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `OCTOSENSE_GLANCE_DEMO=mail` | 启动时以 `os.mail` 身份发布两张假的邮件操作卡片（L0，各带一条通知）：点击通知会在卡片窗口中打开对应卡片，可用假数据试用回复、发送（演示）、提问和跟踪。在随卡片打开的一览面板里，以及手机风格的一览页上，它们同样可用。不读取邮件，也不调用模型。`scripts/mail_card_remote.sh` 以隐藏窗口驱动它。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
+## 应用图标
+
+`octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。
+工作区的 Cargo 环境配置会为普通 `cargo run`/`cargo build` 嵌入桌面图标。
+两个包也都提供锁定版本 `cargo-makepad desktop` 自动发现的 PNG、ICO 和
+ICNS 文件，用于 macOS 应用包、Windows 可执行文件资源和 Linux 桌面入口。
+发布包继续使用 `packaging/icons/`。
+
+两个包的 Android 构建都包含各密度的传统图标、自适应图标和 Android 13
+主题图标，并提供不透明、尺寸正确的 iPhone/iPad 图标资源目录。
+Home 的 OpenHarmony 构建脚本还会替换框架的应用、分层启动器和启动窗口图标。
+这些资源不会改变各应用目标当前能否成功构建。
+
+源几何形状及颜色位于 `packaging/make_icons.py` 和
+`packaging/icons/icon.svg`。生成文件已提交，构建应用不需要图像渲染工具。
+在仓库根目录运行：
+
+```sh
+python3 desktop/packaging/make_icons.py
+python3 desktop/packaging/make_icons.py --check
+python3 -m unittest discover -s tools -p test_app_icons.py
+```
+
+已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。
+本次图标变更在设备安装后的外观以及 Windows/Linux 桌面集成均**未经验证**。
+
 ## 发布构建
 
 `desktop/scripts/package.py` 把一个检出构建成可安装的包，运行时既不需要 `.sources/` 也不需要仓库。它不需要任何密钥，总是构建**未签名**的包，因此也是在本地测试打包的方式。完成准备后，在仓库根目录、安装 [cargo-packager](https://github.com/crabnebula-dev/cargo-packager)（`cargo install cargo-packager --locked --version 0.11.8`）后运行：
