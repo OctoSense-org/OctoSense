@@ -384,6 +384,25 @@ impl PagesState {
         self.glance_scroll = (self.glance_scroll + dy).clamp(0.0, max);
     }
 
+    /// Lock a vertical body drag to the feed, then follow the finger in
+    /// either direction until release. A tap, header pull, shell control,
+    /// or already-claimed horizontal page swipe cannot become a feed drag.
+    pub fn drag_glance(&mut self, gesture: &mut PhoneGesture, at: Vec2d, screen: Rect, claimed: bool) -> bool {
+        if !self.on_glance() || gesture.screen != PhoneScreen::Home { return false; }
+        let delta = at - gesture.start;
+        let dy = if gesture.glance_scroll {
+            gesture.last.y - at.y
+        } else {
+            if claimed || gesture.hit.is_some() || !glance_column(screen, 0.0).contains(gesture.start)
+                || delta.length() <= crate::mobile_gestures::SLOP || delta.y.abs() <= delta.x.abs() * 1.2 { return false; }
+            gesture.glance_scroll = true;
+            gesture.shell = false;
+            -delta.y
+        };
+        self.scroll_glance(dy, screen.size.y);
+        true
+    }
+
     /// The one-line "at a glance" strip on page 0: the date, then the
     /// weather and the next event when the feed has them.
     pub fn strip_text(&self) -> String {
@@ -509,7 +528,7 @@ impl GlanceFinger {
         match gesture {
             // A press on the page itself, not on one of the shell's controls,
             // that no gesture took and that stayed put.
-            Some(g) if g.screen == PhoneScreen::Home && g.hit.is_none() && !claimed && (lift - g.start).length() < TAP_SLOP => Self::Tap(g.start),
+            Some(g) if g.screen == PhoneScreen::Home && g.hit.is_none() && !claimed && !g.glance_scroll && (lift - g.start).length() < TAP_SLOP => Self::Tap(g.start),
             _ => Self::NotATap,
         }
     }
@@ -547,9 +566,32 @@ pub struct GlanceCards {
     clicks: Option<String>,
     /// What the last layout log said, so it is logged once per change.
     logged: String,
+    /// Last viewport/focus pair: reveal an editor on focus or keyboard
+    /// resize, without overriding subsequent manual conversation scrolling.
+    editor_viewport: Option<(Rect, Option<WidgetUid>)>,
 }
 
 impl GlanceCards {
+    pub fn reveal_editor(&mut self, cx: &mut Cx, phone: &mut PhoneState, screen: Rect) {
+        if phone.screen != PhoneScreen::Home || !phone.pages.on_glance() || phone.shade.is_open() {
+            self.editor_viewport = None;
+            return;
+        }
+        let column = glance_column(screen, 0.0);
+        let editor = self.tiles.focused_editor(cx);
+        let state = (column, editor.map(|(uid, _)| uid));
+        if self.editor_viewport != Some(state) {
+            if let Some((_, editor)) = editor {
+                let next = crate::glance_card::editor_scroll(phone.pages.glance_scroll, column, editor, phone.pages.feed.column_height(GLANCE_GAP));
+                if (next - phone.pages.glance_scroll).abs() > 0.5 {
+                    phone.pages.glance_scroll = next;
+                    cx.redraw_all();
+                }
+            }
+            self.editor_viewport = Some(state);
+        }
+    }
+
     /// A new frame: no tile is drawn yet.
     pub fn begin(&mut self) {
         self.drawn.clear();
@@ -1070,7 +1112,75 @@ mod tests {
     }
 
     fn gesture(start: Vec2d, hit: Option<PhoneHit>) -> PhoneGesture {
-        PhoneGesture { start, last: start, time: 0.0, hit, shell: true, screen: PhoneScreen::Home }
+        PhoneGesture { start, last: start, time: 0.0, hit, shell: true, glance_scroll: false, screen: PhoneScreen::Home }
+    }
+
+    #[test]
+    fn glance_finger_drags_reach_the_end_and_never_turn_back_into_a_tap() {
+        use makepad_platform::event::TouchState;
+        let mut feed = GlanceFeed::default();
+        feed.seed((0..12).map(|n| GlanceItem::Note { title: n.to_string(), body: "Long conversation".into() }).collect());
+        let mut pages = PagesState { feed, index: -1.0, ..Default::default() };
+        let screen = rect(0.0, 24.0, 380.0, 700.0);
+        let mut g = gesture(dvec2(180.0, 600.0), None);
+        assert!(!pages.drag_glance(&mut g, dvec2(181.0, 598.0), screen, false));
+        for y in [550.0, 400.0, 100.0, -800.0] {
+            let at = dvec2(180.0, y);
+            assert!(pages.drag_glance(&mut g, at, screen, false));
+            g.last = at;
+        }
+        let end = pages.feed.column_height(GLANCE_GAP) + GLANCE_HEADER - screen.size.y + GLANCE_BOTTOM;
+        assert_eq!(pages.glance_scroll, end, "finger drags reach the last control, just like a wheel");
+        let start = g.start;
+        assert!(pages.drag_glance(&mut g, start, screen, false), "reversing direction retains ownership");
+        assert_eq!(GlanceFinger::of(&touch(TouchState::Stop, g.start, 7), Some(&g), false, Some(7)), GlanceFinger::NotATap);
+        assert!(!g.shell);
+    }
+
+    #[test]
+    fn glance_drag_leaves_headers_controls_and_horizontal_paging_alone() {
+        let mut pages = PagesState { index: -1.0, ..Default::default() };
+        let screen = rect(0.0, 0.0, 380.0, 700.0);
+        for (start, delta, hit, claimed) in [
+            (dvec2(180.0, 60.0), dvec2(0.0, 100.0), None, false),
+            (dvec2(180.0, 500.0), dvec2(100.0, 20.0), None, false),
+            (dvec2(180.0, 500.0), dvec2(0.0, 100.0), Some(PhoneHit::ExpandGlance("mail/card".into())), false),
+            (dvec2(180.0, 500.0), dvec2(0.0, 100.0), None, true),
+        ] {
+            let mut g = gesture(start, hit);
+            assert!(!pages.drag_glance(&mut g, start + delta, screen, claimed));
+            assert!(!g.glance_scroll);
+        }
+        let mut g = gesture(dvec2(180.0, 500.0), None);
+        pages.index = 0.0;
+        assert!(!pages.drag_glance(&mut g, dvec2(180.0, 400.0), screen, false));
+    }
+
+    #[test]
+    fn slow_glance_drags_claim_before_home_search_or_shade() {
+        use crate::mobile_gestures::{FingerPhase, GestureContext, GestureRecognizer, ExclusionZones, SafeInsets};
+        let screen = rect(0.0, 0.0, 380.0, 700.0);
+        let ctx = GestureContext { screen, insets: SafeInsets::default(), phone: PhoneScreen::Home, body: true, system_edges: true, shade: true };
+        for x in [50.0, 190.0, 330.0] {
+            for direction in [-1.0, 1.0] {
+                let mut pages = PagesState { index: -1.0, ..Default::default() };
+                let mut g = gesture(dvec2(x, 400.0), None);
+                let mut recognizer = GestureRecognizer::default();
+                let exclusions = ExclusionZones::default();
+                recognizer.feed(FingerPhase::Down, g.start, 0.0, &ctx, &exclusions);
+                for distance in [4.0, 8.0, 11.0, 30.0, 80.0] {
+                    let at = g.start + dvec2(0.0, direction * distance);
+                    if pages.drag_glance(&mut g, at, screen, recognizer.current().is_some()) {
+                        recognizer.cancel();
+                    } else {
+                        assert!(recognizer.feed(FingerPhase::Move, at, distance / 100.0, &ctx, &exclusions).is_none());
+                    }
+                    g.last = at;
+                }
+                assert!(g.glance_scroll);
+                assert!(!recognizer.active());
+            }
+        }
     }
     fn mouse_up(abs: Vec2d) -> Event {
         Event::MouseUp(MouseUpEvent { abs, button: MouseButton::PRIMARY, window_id: CxWindowPool::id_zero(), modifiers: Default::default(), time: 0.0 })

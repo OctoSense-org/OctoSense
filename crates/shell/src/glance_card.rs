@@ -701,7 +701,7 @@ fn focused_widget(widget: &WidgetRef, focus: Area) -> Option<WidgetUid> {
 /// Keep the editor and its following action row inside a resized viewport.
 /// Only applied on a viewport/focus change, so reading older chat by hand
 /// never snaps the scroll position back to the composer.
-fn editor_scroll(current: f64, viewport: Rect, editor: Rect, content_height: f64) -> f64 {
+pub(crate) fn editor_scroll(current: f64, viewport: Rect, editor: Rect, content_height: f64) -> f64 {
     let actions = 88.0_f64.min((viewport.size.y - editor.size.y - 16.0).max(0.0));
     let top = viewport.pos.y + 8.0;
     let bottom = viewport.pos.y + viewport.size.y - 8.0 - actions;
@@ -722,6 +722,13 @@ pub struct GlanceTiles {
 }
 
 impl GlanceTiles {
+    pub(crate) fn focused_editor(&self, cx: &Cx) -> Option<(WidgetUid, Rect)> {
+        let editor = cx.get_ime_area_rect();
+        if editor.size.y <= 0.0 { return None; }
+        self.tiles.values().find_map(|tile|
+            focused_widget(&tile.frame, cx.key_focus()).map(|uid| (uid, editor)))
+    }
+
     /// Tiles whose cards scroll inside their rect (the card window).
     pub fn scrolling() -> Self {
         GlanceTiles { tiles: HashMap::new(), scroll: true }

@@ -66,6 +66,9 @@ pub struct PhoneGesture {
     /// The gesture recognizer (mobile_gestures.rs) claimed this finger: it
     /// started in a shell band, or in the home page body.
     pub shell: bool,
+    /// A vertical Glance drag owns the rest of this touch, even if it
+    /// returns to its starting point before release.
+    pub glance_scroll: bool,
     pub screen: PhoneScreen,
 }
 
