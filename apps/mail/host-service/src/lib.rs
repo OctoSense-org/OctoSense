@@ -18,7 +18,7 @@
 //! | `mail.mark_read` | `{account, folder?, message}` | `{}` |
 //! | `mail.propose_reply` | `{account, folder?, message, body, reply_key?}` | bounded durable draft; optional key distinguishes an explicitly requested later reply |
 //! | `mail.draft` | `{account, draft_id}` | bounded draft/revision/status snapshot |
-//! | `mail.suggest_reply` | `{account, draft_id, expected_revision, body}` | proposal awaiting the person's acceptance; no authoritative edit |
+//! | `mail.suggest_reply` | `{account, draft_id, expected_revision, body, edit_token?}` | proposal by default; native chat's single-use token saves the requested body at that revision; never sends |
 //! | `mail.propose_send` | `{account, draft_id, expected_revision}` | immutable pending attempt; no approval or SMTP |
 //! | `mail.review_send` | `{account, to, subject, body, compose_id?, expected_revision?, folder?, message?}` | foreground UI only: durable composer and host review, never approval |
 //! | `mail.send` | any | `approval_required`; use the host's review route |

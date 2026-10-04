@@ -42,7 +42,8 @@ const UNMEASURED_CARD: f64 = 320.0;
 const MARGIN: f64 = 16.0;
 const HEADER: f64 = 44.0;
 const PAD: f64 = 12.0;
-const CLOSE: f64 = 28.0;
+const CLOSE: f64 = 44.0;
+const TABS: f64 = 52.0;
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -55,11 +56,12 @@ script_mod! {
         draw_bg +: {}
         d +: {}
         tabs: View {
-            width: Fill height: 44 flow: Right spacing: 8 padding: Inset{left: 14 right: 14 bottom: 6}
-            card_tab := ButtonFlat {width: Fill height: Fill text: "Card & actions"}
-            chat_tab := ButtonFlat {width: Fill height: Fill text: "Chat"}
+            width: Fill height: 52 flow: Right spacing: 8 padding: Inset{left: 14 right: 14 bottom: 8}
+            chat_tab := ButtonFlat {width: Fill height: Fill margin: 0 text: "Chat"}
+            card_tab := ButtonFlat {width: Fill height: Fill margin: 0 text: "Card"}
         }
         chat: CardChat {}
+        mail: MailClip {}
     }
 }
 
@@ -106,6 +108,7 @@ pub struct ShellGlanceSheet {
     tokens: ShellTokens,
     #[find] #[live] tabs: WidgetRef,
     #[find] #[live] chat: WidgetRef,
+    #[find] #[live] mail: WidgetRef,
     #[rust] fullscreen: bool,
     #[rust] insets: SafeInsets,
     #[rust] chatting: bool,
@@ -169,6 +172,11 @@ impl ShellGlanceSheet {
     }
 
     fn select_chat(&mut self, cx: &mut Cx, chatting: bool) {
+        if chatting && self.mail_binding().is_some() {
+            if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() {
+                if mail.flush(cx).is_err() { return; }
+            }
+        }
         if !chatting {
             if let (Some(open), Some(store)) = (&self.open, self.resume_store.take()) {
                 self.live.restore_store(&Self::tile_key(&open.key), store);
@@ -183,6 +191,9 @@ impl ShellGlanceSheet {
     /// The key (`app/card_id`) of the open card.
     pub fn open_key(&self) -> Option<&str> {
         self.open.as_ref().map(|o| o.key.as_str())
+    }
+    fn mail_binding(&self) -> Option<crate::mail_card::Binding> {
+        self.open.as_ref()?.card.l0.as_ref()?.mail.clone()
     }
 
     /// Open the published card `key`. False when it is no longer published.
@@ -229,20 +240,29 @@ impl ShellGlanceSheet {
         // A gesture/error from another card must not target this binding.
         self.close_touch = None;
         self.mail_toolbar = MailToolbar::default();
-        // A fresh isolate and session for each opening: the card starts as
-        // published (lowered now, so one that does not lower says so once).
+        // Mail opens native panes; its admitted L0 publication still identifies
+        // the conversation, but rebuilding its generated layout here is wasted.
         self.tiles.sweep(cx, &[]);
         self.tiles = GlanceTiles::scrolling();
         self.live.clear();
-        self.live.body(&Self::tile_key(key), &card, "glance sheet");
+        if card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
+            self.live.prepare_native(&Self::tile_key(key), &card);
+        } else { self.live.body(&Self::tile_key(key), &card, "glance sheet"); }
         self.chat_available = self.live.session_mut(&Self::tile_key(key)).is_some_and(|s| s.has_chat());
         self.open = Some(Open { key: key.to_string(), card });
+        if let Some(binding) = self.mail_binding() {
+            if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { mail.open(cx, binding); }
+        }
+        self.tabs.button(cx, ids!(card_tab)).set_text(cx, if self.mail_binding().is_some() { "Reply" } else { "Card" });
         log!("glance sheet: opened {key}");
         self.redraw(cx);
         true
     }
 
     pub fn close(&mut self, cx: &mut Cx) {
+        if self.mail_binding().is_some() {
+            if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { let _ = mail.flush(cx); }
+        }
         cx.set_key_focus(Area::Empty);
         cx.hide_text_ime();
         self.chatting = false;
@@ -290,6 +310,7 @@ impl ShellGlanceSheet {
     }
 
     fn replace_publication(&mut self, cx: &mut Cx, card: GlanceCard) {
+        let same_mail = self.mail_binding().is_some() && self.mail_binding() == card.l0.as_ref().and_then(|l| l.mail.clone());
         let Some(open) = self.open.as_mut() else { return; };
         if open.card == card { return; }
         open.card = card;
@@ -301,12 +322,22 @@ impl ShellGlanceSheet {
         self.tiles = GlanceTiles::scrolling();
         self.live.clear();
         self.logged.clear();
-        cx.set_key_focus(Area::Empty);
-        self.chatting = false;
-        self.chat_available = false;
+        if !same_mail {
+            cx.set_key_focus(Area::Empty);
+            self.chatting = false;
+            if let Some(mut chat) = self.chat.borrow_mut::<crate::card_chat::CardChat>() { chat.reset(cx); }
+            cx.hide_text_ime();
+            if let Some(binding) = self.mail_binding() {
+                if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { mail.open(cx, binding); }
+            }
+        }
+        let open = self.open.as_ref().unwrap();
+        let key = Self::tile_key(&open.key);
+        if same_mail || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
+            self.live.prepare_native(&key, &open.card);
+        } else { self.live.body(&key, &open.card, "glance sheet"); }
+        self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat());
         self.resume_store = None;
-        if let Some(mut chat) = self.chat.borrow_mut::<crate::card_chat::CardChat>() { chat.reset(cx); }
-        cx.hide_text_ime();
         self.redraw(cx);
     }
 
@@ -356,6 +387,7 @@ impl Widget for ShellGlanceSheet {
         let ink = self.d.tokens(self.tokens).notifications.surface.text;
         self.style_tabs(cx, ink);
         if let Some(mut chat) = self.chat.borrow_mut::<crate::card_chat::CardChat>() { chat.set_ink(cx, ink); }
+        if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { mail.set_ink(cx, ink); }
         if let Some(open) = &self.open {
             let tok = self.d.tokens(self.tokens);
             let ink = tok.notifications.surface.text;
@@ -370,7 +402,7 @@ impl Widget for ShellGlanceSheet {
                 // KeyboardView has already shortened the available viewport.
                 if self.keyboard_visible { insets.bottom = 0.0; }
                 insets.inset(screen)
-            } else { sheet_rect(screen, if self.chatting {600.0} else {card_h + if self.chat_available {44.0} else {0.0}}) };
+            } else { sheet_rect(screen, if self.chatting || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {600.0} else {card_h + if self.chat_available {TABS} else {0.0}}) };
             self.sheet = sheet;
             if !self.fullscreen { self.d.card(cx, sheet, &tok.notifications.surface); }
             let close = close_rect(sheet);
@@ -392,19 +424,21 @@ impl Widget for ShellGlanceSheet {
             } else {
                 // Only the active pane draws and receives input. The generated
                 // draft and the native chat share the exact publication/session.
-                if !self.chatting {
+                if !self.chatting && open.card.l0.as_ref().is_none_or(|l| l.mail.is_none()) {
                     let new_session = self.live.session_mut(&key).is_none();
                     self.live.body(&key, &open.card, "glance sheet");
                     if new_session { self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat()); }
                 }
                 if self.chat_available {
-                    self.tabs.draw_walk_all(cx, scope, Walk::abs_rect(rect(sheet.pos.x, card.pos.y, sheet.size.x, 44.0)));
-                    card.pos.y += 44.0;
-                    card.size.y = (card.size.y - 44.0).max(0.0);
+                    self.tabs.draw_walk_all(cx, scope, Walk::abs_rect(rect(sheet.pos.x, card.pos.y, sheet.size.x, TABS)));
+                    card.pos.y += TABS;
+                    card.size.y = (card.size.y - TABS).max(0.0);
                 }
                 if self.chatting {
                     if let (Some(session), Some(mut chat)) = (self.live.session_mut(&key), self.chat.borrow_mut::<crate::card_chat::CardChat>()) { chat.sync(cx, session); }
                     self.chat.draw_walk_all(cx, scope, Walk::abs_rect(rect(sheet.pos.x, card.pos.y, sheet.size.x, card.size.y)));
+                } else if open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
+                    self.mail.draw_walk_all(cx, scope, Walk::abs_rect(rect(sheet.pos.x, card.pos.y, sheet.size.x, card.size.y)));
                 } else {
                 #[cfg(any(feature = "app-hub", native_mobile))]
                 let card = if let Some(binding) = open.card.l0.as_ref().and_then(|l| l.mail.as_ref()).filter(|_| !self.keyboard_visible) {
@@ -505,6 +539,23 @@ impl Widget for ShellGlanceSheet {
                     let result = self.live.session_mut(&key).ok_or_else(|| "This conversation is unavailable".to_string()).and_then(|session| session.chat_submit(&text));
                     chat.submitted(cx, result);
                 }
+            }
+            let open_reply = self.chat.borrow_mut::<crate::card_chat::CardChat>().is_some_and(|mut chat| chat.take_open_reply());
+            if open_reply { self.select_chat(cx, false); }
+            return;
+        }
+        if self.mail_binding().is_some() {
+            self.mail.handle_event(cx, event, scope);
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            {
+                if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() {
+                    if let Some(binding) = mail.take_review() {
+                        self.review_generation = crate::mail_card::review_generation(&binding.key());
+                        if let Err(error) = self.review.open_receipt_or_review(&binding) { mail.review_error(cx, &error); }
+                        if self.review.is_active() { cx.hide_text_ime(); cx.set_key_focus(Area::Empty); }
+                    }
+                }
+                self.poll_review(cx);
             }
             return;
         }

@@ -334,6 +334,64 @@ impl Session {
     pub fn seed(&self, source: &str, data: &Value) -> Value {
         seed_values(source, data, &self.snapshot, self.error.as_deref())
     }
+    pub fn snapshot(&self) -> &Value { &self.snapshot }
+
+    /// Native keystrokes stage in memory, outside generated-card state. Disk
+    /// writes are coalesced by the editor; pending text blocks chat and review.
+    pub fn stage(&mut self, field: &str, text: &str) -> Result<(), String> {
+        if !matches!(field, "body" | "to" | "subject") || !account_valid(&self.binding.account) {
+            return Err("This draft cannot be edited".into());
+        }
+        let revision = self.snapshot["revision"].as_u64().ok_or("Missing draft revision")?;
+        invalidate_draft_review(&self.binding);
+        let mut pending = unsaved().lock().unwrap();
+        let dirty = pending.entry(self.binding.draft_key()).or_insert_with(|| Dirty {revision, ..Default::default()});
+        dirty.fields.insert(field.into(), json!(text));
+        dirty.error = "Unsaved changes".into();
+        self.snapshot[field] = json!(text);
+        self.error = Some(dirty.error.clone());
+        Ok(())
+    }
+    pub fn flush(&mut self) -> Result<(), String> {
+        let dirty = unsaved().lock().unwrap().get(&self.binding.draft_key()).cloned();
+        let Some(dirty) = dirty else { return Ok(()); };
+        if !account_valid(&self.binding.account) { return Err("The Mail account changed; your edits are retained".into()); }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        {
+            let b = &self.binding;
+            match octosense_mail_service::drafts::update(&host_dir()?, &b.publisher, &b.account, &b.draft_id, dirty.revision, &Value::Object(dirty.fields)) {
+                Ok(value) => {
+                    unsaved().lock().unwrap().remove(&b.draft_key());
+                    self.snapshot = value;
+                    self.error = None;
+                    self.generation = generation();
+                    action_result(b, &Ok(()));
+                    Ok(())
+                }
+                Err(error) => {
+                    if let Some(dirty) = unsaved().lock().unwrap().get_mut(&b.draft_key()) { dirty.error = error.clone(); }
+                    self.error = Some(error.clone());
+                    Err(error)
+                }
+            }
+        }
+        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        { let _ = dirty; Err("Mail is unavailable".into()) }
+    }
+    /// Explicit conflict resolution from a native control, never an agent.
+    pub fn resolve_edit(&mut self, keep_mine: bool) -> Result<(), String> {
+        let durable = read(&self.binding)?;
+        if keep_mine {
+            if let Some(dirty) = unsaved().lock().unwrap().get_mut(&self.binding.draft_key()) {
+                dirty.revision = durable["revision"].as_u64().ok_or("Missing revision")?;
+            }
+            self.flush()
+        } else {
+            discard_unsaved(&self.binding)?;
+            self.refresh();
+            Ok(())
+        }
+    }
     pub fn chat_binding(&self) -> Result<crate::glance_chat::ContextBinding, String> {
         if let Some(error) = &self.error {
             return Err(error.clone());
@@ -347,6 +405,19 @@ impl Session {
             draft: json!({"draft_id":durable["draft_id"],"revision":durable["revision"],
                 "to":durable["to"],"subject":durable["subject"],"body":durable["body"],"status":durable["status"]}),
         })
+    }
+    /// Only the native user composer requests this capability. Reading a card,
+    /// seeding chat, generated NAV, and background turns never mint one.
+    pub fn chat_edit_binding(&self) -> Result<crate::glance_chat::ContextBinding, String> {
+        let mut binding = self.chat_binding()?;
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if matches!(binding.draft["status"].as_str(), Some("draft" | "awaiting_approval")) {
+            binding.draft["edit_token"] = json!(octosense_mail_service::drafts::issue_chat_edit(
+                &host_dir()?, &self.binding.publisher, &self.binding.account, &self.binding.draft_id,
+                binding.draft["revision"].as_u64().ok_or("Missing draft revision")?,
+            )?);
+        }
+        Ok(binding)
     }
     pub fn perform(
         &mut self,
@@ -458,6 +529,20 @@ impl Session {
             let _ = (write, origin, from_field);
             Err("Mail is unavailable in this packaging".into())
         }
+    }
+}
+
+/// Revokes unused authority when the answer finishes or its callback is dropped.
+pub struct ChatEditLease(Option<String>);
+impl ChatEditLease {
+    pub fn new(binding: Option<&crate::glance_chat::ContextBinding>) -> Self {
+        Self(binding.and_then(|b| b.draft["edit_token"].as_str()).map(str::to_owned))
+    }
+}
+impl Drop for ChatEditLease {
+    fn drop(&mut self) {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if let Some(token) = &self.0 { octosense_mail_service::drafts::revoke_chat_edit(token); }
     }
 }
 

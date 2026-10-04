@@ -2,30 +2,112 @@
 
 English | [简体中文](mail-composable-cards.zh-CN.md)
 
-The ADR0007 draft, chat and review paths are implemented. Both DeepSeek and
-MiniMax have exercised repaired model-authored cards on a OnePlus 6 test build:
-editing, live contextual chat, explicit suggestion acceptance, cancellation,
-injected-approval rejection and restart restoration. Final build 0416 also
-verified concise, plain-text contextual answers from both actual models without
-changing the saved draft. **Physical human approval of a real send and the full
-native UI matrix remain unverified.**
-Android physical touchscreen input is the only positive approval route in this
-iteration; desktop and accessibility approval are deferred requirements.
+The native **Chat / Reply** workspace shares one saved draft. In isolated OnePlus 6
+phone tests, both actual `deepseek-v4-flash` and `MiniMax-M3.1-Flash-Preview`
+changed an appointment time through chat, and the Reply pane and final review
+showed that exact saved change. The earlier controlled shipping demo also
+completed physical human approval and a verified threaded SMTP reply. These
+are separate checkpoints: the new workspace tests did not send real email.
+Only physical Android touchscreen input can approve sending in this iteration;
+desktop/accessibility approval and the complete phone UI matrix remain deferred.
 
 A generated card describes presentation. Rust host code owns the account,
 original email, saved draft, revision and send operation. Editing a field changes
 a durable draft; a generated Review reply chip only opens host review. Neither
 the model nor a card-local `sent` state can authorize SMTP.
 
+## Reply workspace design and current validation
+
+The former interaction had two competing documents: the assistant's suggested
+text and the saved reply. It could say “corrected” while review still read the
+old body. Requested edits in native chat now update the saved draft through a
+revision-bound host capability; successful prose alone cannot update the UI.
+
+| Moment | What the person sees and does | Host behavior |
+| --- | --- | --- |
+| Open a Mail card | One full-screen workspace, with Chat and Reply tabs | Stops drawing the inactive Glance feed; preserves the publication's account, email, draft and thread |
+| Ask for a change | Fixed, growing composer above the keyboard; transcript scrolls independently | Supplies the current saved draft; the edit tool saves only the matching revision |
+| Model finishes | “Reply updated · View reply” appears after a saved model edit | Uses authoritative draft state, never inferred success from assistant text |
+| Read or edit | Recipient, subject and readable body; Edit opens native fields | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
+| Compare with the email | View original email / Back to reply | Reads the bound original email without replacing the reply |
+| Review and send | A separate final review shows From, To, subject and exact body | Only physical Approve & Send authorizes that immutable payload |
+| Save conflict | Unsaved text remains visible, with Use my edit / Use saved reply | Never silently overwrites newer data; blocks chat/review until resolved |
+| Sending or uncertain outcome | Explicit sending, accepted, failed or unknown state | Keeps receipts and requires a fresh review/approval for an explicit retry |
+
+The conversation uses a virtualized `PortalList`, paragraph rows and a separate
+native `TextInput`. Reply has its own scrollable preview/editor. Neither typing
+nor scrolling rebuilds an L0 conversation. Native Mail opening also defers
+unused generated-layout lowering. Tabs and primary controls have at least
+44-point targets; the editor gives the keyboard-adjusted space to the body.
+
+**Paired model checkpoint (Lab build 0427):** fallback providers were disabled.
+The existing DeepSeek-authored L0 source was preserved (SHA-256
+`5186f14c6e692dfc63af20d788876630cdde6e381411404fd3a7d7d765e2ed30`).
+Only the isolated test's authoritative email/draft was replaced with a fictional
+appointment; no Gmail credentials were copied. Both models received the same
+request to change Tuesday at 3:00 pm to Wednesday at 10:00 am and keep the rest.
+Both actually called `mail.suggest_reply`, received `applied: true`, and saved
+revision 2 with the exact expected body. The model did the rewrite. The evaluator
+drove the phone UI and inspected storage, tool records and screenshots.
+
+Both final-review payloads matched the saved revision-2 body; injected approval
+was refused and cancellation returned to draft. DeepSeek's correction survived
+restart. A subsequent native editor change saved revision 3; MiniMax correctly
+read the new personal note from Chat without modifying or sending the email.
+This proves the two-way workspace connection. It is not a new autonomous
+incoming-mail test or a controlled comparison of model quality.
+
+**Final layout/performance checkpoint (Lab build 0429):** actual phone captures
+cover Chat, Reply and the composer above the keyboard. Short warm scrolling
+windows measured frame-gap p95 of 17.5–18.4 ms; fully active windows ran around
+57–59 fps. First-open/tab windows still included 300–380 ms pauses. Those cold
+pauses remain a performance limitation; warm metrics do not describe cold start.
+Lab build 0431 additionally checked long recipients and subjects; metadata now
+wraps within two lines with explicit ellipsis. Secondary controls preserve their
+palette when focused. The final separate user test package is build 0432, using the same production
+code. Installation preserved the active publication, draft, transcript and agent policy byte for byte; no real draft edits or chat submissions were injected.
+
+**Local verification:** 904 shell tests, 53 Mail-service tests and 12 contextual
+chat tests passed; two pre-existing environment-dependent Mail tests remained
+ignored. The native Makepad draw tests cover 200 transcript entries, keyboard
+resizing, a visible composer/review action and deferred layout. Service tests
+cover expired/replayed or mis-scoped capabilities, concurrent manual edits,
+revoked reviews and zero SMTP from chat. Desktop default/mobile-apps checks,
+phone checks and Android builds passed. These checks do not replace on-device
+IME, accessibility, account-switch, storage-failure or uncertain-send acceptance.
+
+**Engineering UX self-review: 9.0/10 for the exercised Chat ↔ Reply flow.** This is
+a scoped reviewer judgment, not a user-study result or a general model rating.
+
+| Criterion | Score | Evidence and deduction |
+| --- | --- | --- |
+| Draft correctness and shared context | 2.0/2 | Both actual models saved the exact requested time; manual edits reached Chat |
+| Navigation and reading | 1.9/2 | One workspace, two clear tabs, original-email access; wider theme/language review remains |
+| Editing and keyboard use | 1.8/2 | Native editor/composer remain visible; full IME and accessibility matrix remains |
+| Save feedback, review and control | 1.9/2 | Host-backed saved state, exact review, conflict protection; device recovery matrix remains |
+| Responsiveness | 1.4/2 | Warm scroll frame times are smooth; first-open pauses still need profiling |
+
 ## Follow one reply through the code
+
+The native workspace now uses **Chat / Reply**. Reply reads the authoritative
+draft through `mail_clip::MailClip`; typing stages in `mail_card::Session`, saves
+after 500 ms idle, and flushes before Chat or review. It retains unsaved text on
+conflict. The native chat can issue a five-minute, one-use body-edit capability
+for the displayed account/draft/revision. With that `edit_token`,
+`mail.suggest_reply` saves the requested change and returns `applied: true`.
+Without it, background suggestions still need explicit acceptance. Only saved
+host state drives “Reply updated”; model prose does not. Neither path sends mail.
+See ADR0007's native-chat exception for the revised contract. Earlier device
+checkpoints below concern the former suggestion-acceptance workflow.
 
 1. The incoming dispatcher starts Mail's app agent under the signed-in account.
    The agent reads the message, then calls `mail.propose_reply` with `message`,
    optional `folder` and suggested `body`. [The Mail service](../apps/mail/host-service/src/drafts.rs)
    derives recipient/reply headers and returns `draft_id`, `revision` and
    `chat_thread`. `mail.draft` reads the saved revision;
-   `mail.suggest_reply` creates a revision-bound suggestion without overwriting
-   edits; `mail.propose_send` prepares an immutable proposal, not a send.
+   `mail.suggest_reply` creates a revision-bound suggestion or consumes the
+   native chat's scoped edit token; `mail.propose_send` prepares an immutable
+   proposal, not a send.
 2. `mail.publish_card` accepts that `draft_id` alongside model-authored L0
    source/data. [The publication route](../crates/shell/src/glance.rs) attaches
    trusted Mail metadata out of band and refuses retargeting an existing bound
@@ -97,11 +179,11 @@ model-tainted for checker purposes: display/edit is allowed, direct reuse in
 an action payload or source selector is not. Host approval authorizes the exact
 stored message, without requiring a person to retype an unchanged AI draft.
 
-The final device run below used build **0416** (`abf06d8f`), which
+The historical device run below used build **0416** (`abf06d8f`), which
 used Octoscript `9ca9545b` and Octoscript-Makepad `a950f7fb`. The current pins
 only apply rustfmt to the same L0 implementation and propagate that revision
-through the wrapper. This formatting-only follow-up was not rebuilt on the
-phone; it does not add a new device-validation claim.
+through the wrapper. The newer 0427–0432 workspace builds use the current pins; their validation
+is recorded above, separately from those historical runs.
 
 The [Makepad overlay](../tools/runtime-patches/makepad-trusted-user-input.patch)
 keeps `trusted_user_input()` false by default. Android JNI checks a positive,
@@ -114,7 +196,9 @@ Keyboard/IME, long press, desktop and accessibility input currently cannot
 approve a send. A compromised OS/root process impersonating hardware lies
 outside this application-level boundary; this is not hardware attestation.
 
-## Verification checkpoint
+<a id="verification-checkpoint"></a>
+
+## Historical verification checkpoint (0414–0416)
 
 The paired-model phone flows below ran on code
 `57b711ae9d8ce595d37a78c7bd0f2253bb3f962b`, Android test build **0414**.

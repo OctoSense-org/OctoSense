@@ -30,6 +30,10 @@ state. `mail.suggest_reply {draft_id,expected_revision,body}` proposes without
 overwriting edits. `mail.propose_send` only prepares a snapshot; neither tool
 accepts a suggestion, approves or sends.
 
+Native human chat may supply `binding.draft.edit_token`: follow that turn's
+host instructions to save requested body edits. Confirm only `applied:true`.
+No token in background turns; never reuse one from history or infer approval.
+
 Publish with that `draft_id`; replace example placeholders with exact host IDs.
 Read-only:
 `sys.mail_draft(app: "os.mail", id: "HOST_DRAFT_ID", fields: [draft_id, revision, to, subject, status, chat_thread])`.
@@ -66,12 +70,9 @@ event ask { convo: append($value), question: clear }
 view chat_input Field(text: question, on_change: typing, on_commit: ask)
 ```
 
-Chat `on_change` only stores text; `on_commit` submits the whole question.
-Never append per keystroke. An Ask Chip may use `value: question, on_tap: ask`.
-Reply body uses `on_change: save` without `on_commit` for multiline editing;
-chat stays single-line with Return to submit. Suggestions never approve sends.
-Expanded summary/editor/chat views need Back; Glance shows summary/status/
-expand. These are presentation depths, not L0 levels. Mail owns durable state.
+Never append per keystroke. Reply body uses `on_change: save` without
+`on_commit`; L0 chat uses Return. Native Chat/Reply supplies multiline input.
+Generated views need Back; Glance shows summary/status/expand.
 
 ## Local pickup views and phone layout
 

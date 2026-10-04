@@ -409,6 +409,7 @@ fn node_arg<'a>(node: &'a octoscript_ui_l0::UiNode, name: &str) -> Option<&'a oc
 
 impl L0Session {
     pub(crate) fn has_chat(&self) -> bool { self.chat_source().is_ok() }
+    pub(crate) fn mail_reply(&self) -> Option<&serde_json::Value> { self.mail.as_ref().map(|m| m.snapshot()) }
 
     pub(crate) fn chat_access(&self) -> (Option<String>, bool) {
         (crate::ai_host::contained::account_of(&self.app), crate::agents::access(&self.app) == crate::agents::Access::Allowed && self.mail.as_ref().is_none_or(|m| crate::mail_card::account_valid(&m.binding.account)))
@@ -441,8 +442,11 @@ impl L0Session {
         let origin = Some(octoscript_ui_l0::ValueOrigin::UserInput);
         match &self.mail {
             Some(mail) => {
-                let binding = mail.chat_binding()?;
-                crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, &data, &write, origin, &binding)?;
+                let binding = mail.chat_edit_binding()?;
+                if let Err(error) = crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, &data, &write, origin, &binding) {
+                    drop(crate::mail_card::ChatEditLease::new(Some(&binding)));
+                    return Err(error);
+                }
             }
             None => { crate::glance_chat::perform(&self.app, &self.source, &self.store, &data, &write, origin)?; }
         }
@@ -624,9 +628,21 @@ struct LiveCard {
     published: std::sync::Arc<crate::glance::L0Source>,
     session: L0Session,
     body: std::sync::Arc<str>,
+    lowered: bool,
 }
 
 impl LiveCards {
+    /// A host-owned pane needs the publication's session, not a generated
+    /// layout. Defer lowering until an actual generated tile asks for it.
+    pub(crate) fn prepare_native(&mut self, tile: &str, card: &crate::glance::GlanceCard) {
+        let Some(l0) = &card.l0 else { self.cards.remove(tile); return; };
+        if self.cards.get(tile).is_some_and(|live| std::sync::Arc::ptr_eq(&live.published, l0)) { return; }
+        self.cards.insert(tile.to_string(), LiveCard {
+            key: card.key(), published: l0.clone(), session: L0Session::new(&card.app, l0),
+            body: card.body.clone(), lowered: false,
+        });
+    }
+
     pub(crate) fn session_mut(&mut self, tile: &str) -> Option<&mut L0Session> {
         self.cards.get_mut(tile).map(|card| &mut card.session)
     }
@@ -634,7 +650,7 @@ impl LiveCards {
     pub(crate) fn restore_store(&mut self, tile: &str, store: octoscript_ui_l0::InstanceStore) {
         if let Some(card) = self.cards.get_mut(tile) {
             card.session.store = store;
-            if let Ok(body) = card.session.body() { card.body = body.into(); }
+            if let Ok(body) = card.session.body() { card.body = body.into(); card.lowered = true; }
         }
     }
     /// What tile `tile` draws for `card`: an L0 card as its session has it
@@ -648,9 +664,9 @@ impl LiveCards {
         };
         if let Some(live) = self.cards.get_mut(tile).filter(|live| std::sync::Arc::ptr_eq(&live.published, l0)) {
             // The shell changed mode: the card takes the new palette.
-            if live.session.mode_moved() || live.session.chat_moved() {
+            if !live.lowered || live.session.mode_moved() || live.session.chat_moved() {
                 match live.session.body() {
-                    Ok(body) => live.body = body.into(),
+                    Ok(body) => { live.body = body.into(); live.lowered = true; }
                     Err(e) => log!("{who}: {} does not lower in the new mode: {e}", live.key),
                 }
             }
@@ -664,7 +680,7 @@ impl LiveCards {
                 card.body.clone()
             }
         };
-        self.cards.insert(tile.to_string(), LiveCard { key: card.key(), published: l0.clone(), session, body: body.clone() });
+        self.cards.insert(tile.to_string(), LiveCard { key: card.key(), published: l0.clone(), session, body: body.clone(), lowered: true });
         body
     }
 
@@ -680,6 +696,7 @@ impl LiveCards {
             }
             if let Some(body) = live.session.run(taps, &format!("{who}: {}", live.key)) {
                 live.body = body.into();
+                live.lowered = true;
                 changed = true;
             }
         }
@@ -1175,6 +1192,23 @@ mod tests {
         session.source = "source a sys.chat(app: \"os.mail\", thread: \"one\", fields: [entries])\nsource b sys.chat(app: \"os.mail\", thread: \"two\", fields: [entries])\nview root Surface { Text(text: \"Card\") }".into();
         assert!(!session.has_chat());
         assert!(session.chat_submit("Which thread?").is_err());
+    }
+
+    #[test]
+    fn native_panes_defer_layout_and_generated_tiles_still_lower_on_demand() {
+        let source = "view root Surface { TextBody(text: \"Authoritative source\") }";
+        let card = crate::glance::GlanceCard {
+            app: "os.mail".into(), card_id: "lazy-layout".into(), title: "Reply".into(),
+            priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
+            route: None, body: "old published layout".into(), contained: false, digests: vec![],
+            l0: Some(std::sync::Arc::new(crate::glance::L0Source { source: source.into(), data: serde_json::json!({}), mail: None })),
+        };
+        let key = card.key();
+        let mut live = LiveCards::default();
+        live.prepare_native(&key, &card);
+        assert!(!live.cards[&key].lowered, "opening native panes must not build a hidden L0 layout");
+        assert!(live.body(&key, &card, "test").contains("Authoritative source"), "later generated rendering cannot reuse the unlowered placeholder");
+        assert!(live.cards[&key].lowered);
     }
 
     #[test]

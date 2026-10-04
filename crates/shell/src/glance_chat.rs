@@ -167,10 +167,17 @@ pub const INSTANCE: &str = "card-chat";
 
 impl Responder for AgentResponder {
     fn respond(&self, request: Request, done: Done) {
+        let lease = crate::mail_card::ChatEditLease::new(request.binding.as_ref());
+        let done: Done = Box::new(move |reply| { drop(lease); done(reply); });
         let Some(app) = crate::agents::all().into_iter().find(|a| a.id == request.app) else {
             return done(Reply::Notice(format!("{} has no agent to answer here yet.", request.app)));
         };
+        let pending = Arc::new(Mutex::new(Some(done)));
+        let worker_pending = pending.clone();
         let spawned = std::thread::Builder::new().name("card-chat".into()).spawn(move || {
+            let done: Done = Box::new(move |reply| {
+                if let Some(done) = worker_pending.lock().unwrap_or_else(|e| e.into_inner()).take() { done(reply); }
+            });
             use crate::ai_host::app_peers::{ContextEvent, ContextOp, EventSink, TurnTrigger};
             let text = match request.agent_text() {
                 Ok(text) => text,
@@ -218,6 +225,9 @@ impl Responder for AgentResponder {
         });
         if let Err(e) = spawned {
             makepad_widgets::log!("glance chat: no thread for the agent: {e}");
+            if let Some(done) = pending.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                done(Reply::Notice("The agent could not start. Your message is kept; please try again.".into()));
+            }
         }
     }
 }

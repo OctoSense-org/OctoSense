@@ -89,6 +89,7 @@ pub mod glance_notice;
 pub mod glance_panel;
 pub mod glance_sheet;
 mod card_chat;
+mod mail_clip;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;
@@ -6353,6 +6354,7 @@ impl App {
         glance_card::script_mod(vm);
         glance_panel::script_mod(vm);
         card_chat::script_mod(vm);
+        mail_clip::script_mod(vm);
         glance_sheet::script_mod(vm);
         approvals::script_mod(vm);
         system_chat::script_mod(vm);

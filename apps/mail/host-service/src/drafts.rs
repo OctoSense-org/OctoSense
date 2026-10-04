@@ -87,6 +87,59 @@ fn unique(kind: &str) -> String {
         ))[..32]
     )
 }
+
+/// A short-lived, single-use edit capability, issued only by the native host
+/// for a person's chat turn. It confers no review or send authority.
+struct ChatEdit {
+    store: PathBuf,
+    app: String,
+    account: String,
+    draft: String,
+    revision: u64,
+    expires: u64,
+}
+fn chat_edits() -> &'static Mutex<BTreeMap<String, ChatEdit>> {
+    static EDITS: OnceLock<Mutex<BTreeMap<String, ChatEdit>>> = OnceLock::new();
+    EDITS.get_or_init(Default::default)
+}
+pub fn issue_chat_edit(host_dir: &Path, app: &str, account: &str, draft: &str, expected: u64) -> Result<String, String> {
+    let (_, vault) = configured()?;
+    issue_chat_edit_in(&Store::at(host_dir, vault), app, account, draft, expected)
+}
+fn issue_chat_edit_in(store: &Store, app: &str, account: &str, draft: &str, expected: u64) -> Result<String, String> {
+    let _guard = lock();
+    let d = load(store, app, account, draft)?;
+    revision(&d, expected)?;
+    if !matches!(text(&d, "status"), "draft" | "awaiting_approval") {
+        return Err("This reply is no longer editable".into());
+    }
+    let mut random = [0u8; 32];
+    rustls::crypto::ring::default_provider().secure_random.fill(&mut random)
+        .map_err(|_| "Cannot create chat edit capability")?;
+    let token: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    let mut edits = chat_edits().lock().unwrap_or_else(|e| e.into_inner());
+    edits.retain(|_, e| e.expires > now());
+    if edits.len() >= 128 { return Err("Too many active reply edits".into()); }
+    edits.insert(token.clone(), ChatEdit {store: store.dir.clone(), app: app.into(), account: account.into(), draft: draft.into(), revision: expected, expires: now() + 300});
+    Ok(token)
+}
+pub fn revoke_chat_edit(token: &str) {
+    let _guard = lock();
+    chat_edits().lock().unwrap_or_else(|e| e.into_inner()).remove(token);
+}
+fn apply_chat_edit(store: &Store, app: &str, account: &str, draft: &str, expected: u64, body: &str, token: &str) -> Result<Value, String> {
+    let _guard = lock();
+    let mut edits = chat_edits().lock().unwrap_or_else(|e| e.into_inner());
+    let grant = edits.get(token).ok_or("Chat edit expired or was already used; ask again")?;
+    if grant.expires <= now() || grant.store != store.dir || grant.app != app || grant.account != account || grant.draft != draft || grant.revision != expected {
+        return Err("Chat edit does not authorize this draft revision".into());
+    }
+    let guard = claim_guard().lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(guard) = guard { guard(store.dir.parent().ok_or("Invalid host root")?, app, account)?; }
+    let d = update_locked(store, app, account, draft, expected, &json!({"body":body}), None, true)?;
+    edits.remove(token);
+    Ok(d)
+}
 fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 96 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
 }
@@ -424,6 +477,10 @@ fn update_in(
     suggestion: Option<&str>,
 ) -> Result<Value, String> {
     let _guard = lock();
+    update_locked(store, app, account, id, expected, changes, suggestion, false)
+}
+#[allow(clippy::too_many_arguments)]
+fn update_locked(store: &Store, app: &str, account: &str, id: &str, expected: u64, changes: &Value, suggestion: Option<&str>, from_chat: bool) -> Result<Value, String> {
     let mut d = load(store, app, account, id)?;
     revision(&d, expected)?;
     if d["attempts"].as_array().unwrap().iter().any(|a| {
@@ -463,7 +520,9 @@ fn update_in(
     }
     fields(text(&d, "to"), text(&d, "subject"), text(&d, "body"))?;
     d["revision"] = json!(expected.checked_add(1).ok_or("Revision limit reached")?);
-    d["body_origin"] = json!(if suggestion.is_some() {
+    d["body_origin"] = json!(if from_chat {
+        "model_chat"
+    } else if suggestion.is_some() {
         "model_accepted"
     } else if object.contains_key("body") {
         "user"
@@ -894,7 +953,7 @@ pub(crate) fn agent_call(
     let allowed: &[&str] = match method {
         "propose_reply" => &["account", "folder", "message", "body", "reply_key"],
         "draft" => &["account", "draft_id"],
-        "suggest_reply" => &["account", "draft_id", "expected_revision", "body"],
+        "suggest_reply" => &["account", "draft_id", "expected_revision", "body", "edit_token"],
         "propose_send" => &["account", "draft_id", "expected_revision"],
         _ => return Err("Unknown reply tool".into()),
     };
@@ -935,6 +994,11 @@ pub(crate) fn agent_call(
             let _guard = lock();
             load(store, app, account, id)?
         }
+        "suggest_reply" if args.get("edit_token").is_some() => apply_chat_edit(
+            store, app, account, id, expected()?,
+            args["body"].as_str().ok_or("body must be text")?,
+            args["edit_token"].as_str().filter(|s| s.len() == 64).ok_or("Invalid chat edit capability")?,
+        )?,
         "suggest_reply" => suggest(
             store,
             app,
@@ -946,7 +1010,8 @@ pub(crate) fn agent_call(
         "propose_send" => propose(store, app, account, id, expected()?)?,
         _ => return Err("Unknown reply tool".into()),
     };
-    let v = for_agent(&d);
+    let mut v = for_agent(&d);
+    if method == "suggest_reply" { v["applied"] = json!(args.get("edit_token").is_some()); }
     if serde_json::to_vec(&v).map_err(|e| e.to_string())?.len() > 3800 {
         return Err("Reply metadata exceeds the model response budget".into());
     }
@@ -1250,6 +1315,69 @@ mod tests {
             invalidate_reviews(&self.root, "one");
             let _ = std::fs::remove_dir_all(&self.root);
         }
+    }
+    #[test]
+    fn chat_requested_edit_saves_exact_body_once_and_invalidates_old_review() {
+        let f = Fixture::new();
+        let d = f.create();
+        let id = text(&d, "draft_id");
+        let old_review = f.review(id, 1);
+        let token = issue_chat_edit_in(&f.store, "os.mail", "one", id, 1).unwrap();
+        let args = json!({"account":"one","draft_id":id,"expected_revision":1,"body":"Wednesday at 10:00, please.","edit_token":token});
+        let result = agent_call(&f.store, "os.mail", "suggest_reply", &args).unwrap();
+        assert_eq!(result["applied"], true);
+        assert_eq!(result["revision"], 2);
+        assert_eq!(f.read(id)["body"], args["body"]);
+        assert_eq!(f.read(id)["body_origin"], "model_chat");
+        assert_eq!(f.read(id)["status"], "draft");
+        assert!(f.read(id)["suggestions"].as_array().unwrap().is_empty());
+        assert!(agent_call(&f.store, "os.mail", "suggest_reply", &args).is_err());
+        assert!(f.send(old_review).is_err());
+        assert_eq!(f.transport.calls.load(Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn chat_edit_scope_expiry_and_concurrent_human_edits_are_enforced() {
+        let f = Fixture::new();
+        let other = Fixture::new();
+        let d = f.create();
+        other.create();
+        let id = text(&d, "draft_id");
+        let token = issue_chat_edit_in(&f.store, "os.mail", "one", id, 1).unwrap();
+        for (store, app, account, draft, rev) in [
+            (&other.store, "os.mail", "one", id, 1),
+            (&f.store, "os.news", "one", id, 1),
+            (&f.store, "os.mail", "two", id, 1),
+            (&f.store, "os.mail", "one", "another-draft", 1),
+            (&f.store, "os.mail", "one", id, 2),
+        ] {
+            assert!(apply_chat_edit(store, app, account, draft, rev, "Wrong", &token).is_err());
+        }
+        update_in(&f.store, "os.mail", "one", id, 1, &json!({"body":"Human changed it while the model was thinking"}), None).unwrap();
+        assert!(apply_chat_edit(&f.store, "os.mail", "one", id, 1, "Old model result", &token).unwrap_err().contains("revision_conflict"));
+        assert_eq!(f.read(id)["body"], "Human changed it while the model was thinking");
+        revoke_chat_edit(&token);
+        assert!(!chat_edits().lock().unwrap().contains_key(&token));
+        let token = issue_chat_edit_in(&f.store, "os.mail", "one", id, 2).unwrap();
+        chat_edits().lock().unwrap().get_mut(&token).unwrap().expires = 0;
+        assert!(apply_chat_edit(&f.store, "os.mail", "one", id, 2, "Expired", &token).is_err());
+        revoke_chat_edit(&token);
+        assert_eq!(f.transport.calls.load(Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn without_native_chat_permission_an_agent_only_creates_a_suggestion() {
+        let f = Fixture::new();
+        let d = f.create();
+        let id = text(&d, "draft_id");
+        let args = json!({"account":"one","draft_id":id,"expected_revision":1,"body":"Background alternative"});
+        let result = agent_call(&f.store, "os.mail", "suggest_reply", &args).unwrap();
+        assert_eq!(result["applied"], false);
+        assert_eq!(f.read(id)["body"], d["body"]);
+        assert_eq!(f.read(id)["revision"], 1);
+        assert_eq!(f.read(id)["suggestions"][0]["body"], args["body"]);
+        let mut forged = args.clone();
+        forged["edit_token"] = json!("0".repeat(64));
+        assert!(agent_call(&f.store, "os.mail", "suggest_reply", &forged).is_err());
+        assert_eq!(f.transport.calls.load(Ordering::SeqCst), 0);
     }
     #[test]
     fn reply_uses_cached_headers_and_deduplicates_creation_without_overwriting_text() {

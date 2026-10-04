@@ -423,7 +423,7 @@
     },
     {
       "name": "mail.suggest_reply",
-      "description": "Propose revised body text against the exact durable draft revision. User edits are never silently overwritten; the person accepts a suggestion in the card. No email is sent.",
+      "description": "Revise the reply body against the exact durable revision. In a native human chat turn, include its host-issued edit_token to save the requested change directly; applied:true confirms the new saved revision. Without a token this only creates a pending suggestion. A conflict preserves newer human edits. Never sends email.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -439,6 +439,12 @@
           "body": {
             "type": "string",
             "maxLength": 8192
+          },
+          "edit_token": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "Optional one-use capability supplied only by the native host for this human chat turn. Never invent or reuse it."
           }
         },
         "required": [

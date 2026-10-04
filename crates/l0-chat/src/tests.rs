@@ -701,3 +701,19 @@ fn bound_agent_context_keeps_revision_and_bounds_untrusted_history() {
     mismatch.thread = "other".into();
     assert!(mismatch.agent_text().is_err());
 }
+
+#[test]
+fn native_edit_instructions_require_a_host_capability_and_saved_receipt() {
+    let mut request = Request {app:"os.mail".into(), thread:"main".into(), text:"Move it to Wednesday at ten".into(), history:vec![], binding:Some(bound_context("one"))};
+    let ordinary = request.agent_text().unwrap();
+    assert!(ordinary.contains("without an edit token"));
+    request.binding.as_mut().unwrap().draft["edit_token"] = json!("a".repeat(64));
+    let native = request.agent_text().unwrap();
+    let (instructions, data) = native.split_once('\n').unwrap();
+    assert!(instructions.contains("applied:true"));
+    assert!(instructions.contains("never discard their newer edits"));
+    assert!(instructions.contains("Chat is never send approval"));
+    let context: Value = serde_json::from_str(data).unwrap();
+    assert_eq!(context["binding"]["draft"]["revision"], 7);
+    assert_eq!(context["question"], request.text);
+}

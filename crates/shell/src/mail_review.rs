@@ -350,7 +350,7 @@ impl MailReview {
             } else if self.retry.is_some() {
                 "Previous send · Mail"
             } else {
-                "Review reply · Mail"
+                "Review your reply"
             },
         );
         self.viewport = rect(
@@ -362,14 +362,13 @@ impl MailReview {
         let payload = &self.snapshot["payload"];
         let text = |name: &str| payload[name].as_str().unwrap_or("");
         let content = format!(
-            "Account: {}\nFrom: {}\nTo: {}\nSubject: {}\n\nMessage\n{}\n\n{}",
-            self.account(),
+            "From: {}\nTo: {}\nSubject: {}\n\n{}\n\n{}",
             text("from"),
             text("to"),
             text("subject"),
             text("body"),
             if self.status.is_empty() {
-                "Only Approve & Send below authorizes this exact message."
+                "Nothing has been sent. Approve & Send sends this exact message."
             } else {
                 ""
             }
@@ -457,13 +456,17 @@ impl MailReview {
         let y = area.pos.y + area.size.y - 48.;
         self.cancel = rect(area.pos.x + 8., y, 88., 44.);
         self.approve = rect(area.pos.x + 104., y, (width - 96.).max(80.), 44.);
+        let mut actions = *tok;
+        actions.controls.selected_color = crate::shell::rgb(54, 104, 232);
+        actions.controls.selected_fill_alpha = 1.0;
+        actions.controls.selected_border_width = 0.0;
         d.button(
             cx,
             self.cancel,
             tok,
             CtrlState::Normal,
             None,
-            if self.has_action() { "Cancel" } else { "Back" },
+            "Back",
             13.,
             ink,
             true,
@@ -472,7 +475,7 @@ impl MailReview {
             d.button(
                 cx,
                 self.approve,
-                tok,
+                &actions,
                 CtrlState::Selected,
                 None,
                 if self.suggestion.is_some() {
@@ -487,7 +490,7 @@ impl MailReview {
                     "Approve & Send"
                 },
                 13.,
-                ink,
+                crate::shell::rgb(255, 255, 255),
                 true,
             );
         } else if self.worker.is_some() {
