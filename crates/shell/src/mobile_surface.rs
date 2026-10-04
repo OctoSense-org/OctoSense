@@ -1,5 +1,5 @@
 //! Phone chrome drawn around compositor-owned application surfaces.
-use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self, HomeLayout, TileSlot, TILE_RADIUS}, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
+use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self, HomeLayout, TileSlot, CARD_TITLE_PX, TILE_RADIUS}, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::mobile_shade::ShadeContentCache;
 use crate::mobile_pages::GlanceCards;
@@ -701,7 +701,7 @@ impl PhoneSurface {
             let text=rect(ix+icon+18.0,r.pos.y,r.size.x-(icon+58.0),r.size.y);
             let mid=text.pos.y+text.size.y*0.5;
             let compact=r.size.y<82.0;
-            self.d.label_elided(cx,rect(text.pos.x,mid-if compact {23.0}else{34.0},text.size.x,24.0),true,15.0,ink,HAlign::Left,&Self::app_label(slot.app));
+            self.d.label_elided(cx,rect(text.pos.x,mid-if compact {23.0}else{34.0},text.size.x,24.0),true,CARD_TITLE_PX,ink,HAlign::Left,&Self::app_label(slot.app));
             self.d.label_elided(cx,rect(text.pos.x,mid+if compact {1.0}else{-8.0},text.size.x,22.0),false,13.0,alpha(ink,0.8*opacity),HAlign::Left,headline);
             if !compact {self.d.label_elided(cx,rect(text.pos.x,mid+14.0,text.size.x,20.0),false,10.5,alpha(ink,0.55*opacity),HAlign::Left,detail);}
         } else {
@@ -729,7 +729,7 @@ impl PhoneSurface {
         let text_x=ix+icon+14.0;
         let text_w=(r.pos.x+r.size.x-text_x-10.0).max(10.0);
         let mid=r.pos.y+r.size.y*0.5;
-        self.d.label_elided(cx,rect(text_x,mid-22.0,text_w,24.0),true,15.0,alpha(ink,opacity),HAlign::Left,"Assistant");
+        self.d.label_elided(cx,rect(text_x,mid-22.0,text_w,24.0),true,CARD_TITLE_PX,alpha(ink,opacity),HAlign::Left,"Assistant");
         self.d.label_elided(cx,rect(text_x,mid+2.0,text_w,20.0),false,12.0,alpha(ink,0.6*opacity),HAlign::Left,"System agent");
         self.hits.push((r,PhoneHit::Assistant));
     }

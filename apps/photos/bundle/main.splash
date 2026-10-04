@@ -926,7 +926,7 @@ HostedView{width: Fill height: Fill
         tile_caption := View{width: Fill height: Fill flow: Down align: Align{y: 1.0} padding: 10
             RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 4 bottom: 4}
                 new_batch: true show_bg: true draw_bg.color: #x000000aa draw_bg.border_radius: 4.0
-                tile_title := Label{text: "Photos" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 13}}
+                tile_title := Label{text: "Photos" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 11.25}}
             }
         }
     }

@@ -66,6 +66,10 @@ pub const HOME_MARGIN: f64 = 16.0;
 pub const TILE_GAP: f64 = 14.0;
 /// Corner radius of a tile capture on screen.
 pub const TILE_RADIUS: f64 = 14.0;
+/// The bold title on a home card: an app's name on its card, a pair's name,
+/// the assistant chip. An app that draws its own card face sets its title
+/// to this size too (Photos' `tile_title`), so the cards read alike.
+pub const CARD_TITLE_PX: f64 = 15.0;
 /// The least a portrait favorites row needs (icon and label).
 const FAVORITES_CELL_MIN: f64 = 88.0;
 /// The strip above the dock kept for the page indicator / App Library target.
