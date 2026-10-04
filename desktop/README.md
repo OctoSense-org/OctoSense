@@ -153,8 +153,10 @@ python3 -m unittest discover -s tools -p test_app_icons.py
 ```
 
 Android resource compilation, iOS asset compilation and macOS ICNS decoding
-were checked locally. Installed-device appearance and Windows/Linux desktop
-integration are **unverified** for this icon change.
+were checked locally. A fresh Home installation on Pixel 7 Pro / Android 17
+shows the branded icon in App info and launches successfully. Other installed
+platforms, Android themed-icon mode and Windows/Linux desktop integration
+remain **unverified** for this icon change.
 
 ## Release builds
 

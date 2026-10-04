@@ -21,7 +21,7 @@
 - Supply a complete iOS catalog instead of Makepad's fallback that reuses a 1024 image for differently sized slots.
 - Supply Android legacy density PNGs, adaptive foreground/background and Android 13 monochrome art.
 - Use the existing OpenHarmony build wrapper's product overlay rather than change the pinned framework.
-- No device installation is authorized by this task; installed-device behavior remains unverified.
+- Initial implementation required no device installation. The user subsequently authorized a fresh installation on the connected Android; its evidence is recorded below.
 
 ## Verification record
 
@@ -34,4 +34,13 @@
 - Full ROM suite: all 95 tests pass with `ANDROID_SDK_ROOT` and `ANDROID_HOME` pointing to the prepared Android 33 SDK. Initially, the Settings-routing test selected the first sorted SDK jar (Android 28 on this host), which lacks four Settings symbols. The initial failure reproduced on unchanged main d93217cb and was resolved solely by selecting the current SDK; no unrelated code or tests changed.
 - All 28 local-CI runner tests pass after adding icon checks to the desktop and phone workflows.
 - Independent read-only packaging review found no actionable issues. Python syntax checks and whitespace checks pass.
-- Installed-device appearance, a complete OpenHarmony HAP build, and native Windows/Linux packaging remain **unverified**. No device was assigned or modified.
+- iOS/OpenHarmony installed-device appearance, Android themed-icon mode, a complete OpenHarmony HAP build, and native Windows/Linux packaging remain **unverified**.
+
+## Android installation follow-up
+
+- Device: Pixel 7 Pro, Android 17, arm64. Fresh development installation of source commit `5fabcc57` as `dev.makepad.octosense.icontest`, label `OctoSense Icons`, version code 1.
+- Built from `phone/` with its system-app selection and the pinned Makepad packager. Included the octos kernel at `056173e85b150e387805fc307fe231064ac1ed35`, verified against its build receipt. The APK passed `apksigner verify` and Android reported installation success.
+- APK SHA-256: `70e7d218227d0f2f8af5b754b0f1dbcd3153f099eed50b2aaf444b4603a9dc17`.
+- Android App info visibly renders the green eight-petal adaptive icon. The app launches and renders Home. Declined the first-run location request; the captured process log contains no fatal exception, fatal signal, panic or ANR marker.
+- Existing `dev.makepad.octosense` and its data were preserved; Pixel Launcher remains the default Home.
+- Local evidence is under ignored `target/app-icons-validation/`: `android-installed-icon.png`, `android-first-launch.png`, `android-startup.log` and `android-build.log`. The APK is `target/android/makepad-android-apk/octosense_home/apk/octo_senseicons.apk`.

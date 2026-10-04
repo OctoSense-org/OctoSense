@@ -78,7 +78,10 @@ iOS 资源目录直接提供 [Apple 应用图标规格](https://developer.apple.
 常规构建使用已提交的资源；重新生成和检查方法见[应用图标](../desktop/README.zh-CN.md#应用图标)。
 
 Android 资源和 iOS 资源目录已通过本机平台工具编译；OpenHarmony 模板替换有打包回归测试。
-本次变更在设备安装后的启动器外观及完整 OpenHarmony HAP 构建均**未经验证**。
+Home 已以 `OctoSense Icons`（`dev.makepad.octosense.icontest`）在运行 Android 17
+的 Pixel 7 Pro 上全新安装：应用信息页显示品牌自适应图标，启动后 Home 页面正常渲染。
+原有安装及默认 Pixel Launcher 均保留。Android 主题图标模式、iOS/OpenHarmony
+安装后的外观及完整 OpenHarmony HAP 构建仍**未经验证**。
 
 ## Home 角色
 

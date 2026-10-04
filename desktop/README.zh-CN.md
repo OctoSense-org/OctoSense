@@ -151,7 +151,9 @@ python3 -m unittest discover -s tools -p test_app_icons.py
 ```
 
 已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。
-本次图标变更在设备安装后的外观以及 Windows/Linux 桌面集成均**未经验证**。
+Home 已在 Pixel 7 Pro / Android 17 上全新安装，应用信息页显示品牌图标，
+应用也能正常启动。其他平台安装后的外观、Android 主题图标模式及
+Windows/Linux 桌面集成仍**未经验证**。
 
 ## 发布构建
 

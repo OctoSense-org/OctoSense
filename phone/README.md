@@ -128,8 +128,12 @@ Normal builds consume committed assets. Regeneration and checks are documented
 in [Application icons](../desktop/README.md#application-icons).
 
 Android resources and iOS catalogs compile with the local platform tools;
-OpenHarmony template replacement has a packaging regression test. Installed
-launcher appearance and a complete OpenHarmony HAP build for this change are
+OpenHarmony template replacement has a packaging regression test. Home was
+freshly installed as `OctoSense Icons` (`dev.makepad.octosense.icontest`) on a
+Pixel 7 Pro running Android 17: App info displays the branded adaptive icon
+and the Home screen renders after launch. The original installation and
+default Pixel Launcher were preserved. Android themed-icon mode, installed
+iOS/OpenHarmony appearance and a complete OpenHarmony HAP build remain
 **unverified**.
 
 ## The Home role
