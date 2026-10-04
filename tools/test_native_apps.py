@@ -214,6 +214,21 @@ class Validation(Fixture):
         rinx["grants"] = [{"app": "nowhere", "tool": "nowhere.x"}]
         self.assertRefused(r"no native app nowhere")
 
+    def test_an_apps_own_agent_may_be_narrowed_to_some_of_its_tools(self):
+        """`agent.own_tools`: the tools an app's own agent may call, by
+        name, each one of its own; without it, every one of them."""
+        apps = native_apps.validate(self.data)
+        rust = native_apps.render_rust(apps)
+        self.assertIn('own_tools: &["terminal.read_screen", "terminal.read_scrollback"],', rust, "the Terminal's agent reads only")
+        self.assertIn('own_tools: &["calculator.eval"],', rust, "an entry that does not narrow keeps every tool")
+        terminal = self.app("terminal")["agent"]
+        terminal["own_tools"] = ["terminal.nope"]
+        self.assertRefused(r"agent\.own_tools: terminal\.nope is not one of terminal's agent\.tools")
+        terminal["own_tools"] = ["terminal.read_screen", "terminal.read_screen"]
+        self.assertRefused(r"agent\.own_tools names a tool twice")
+        terminal["own_tools"] = "terminal.read_screen"
+        self.assertRefused(r"agent\.own_tools must be a list of its own tool names")
+
     def test_the_system_agent_gets_only_an_apps_own_shareable_read_tools(self):
         """`agent.system_tools`: what the system agent may call of an app's
         own tools is named per app, and only its shareable read tools
@@ -243,7 +258,8 @@ class Validation(Fixture):
         self.assertIn('tools_json: r##"[{"name":"terminal.run",', rust)
         agents = native_apps.render_agents(apps)
         self.assertIn('("rinx", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),', agents)
-        self.assertNotIn('"terminal"', agents, "an app granted no octos.* services has no line")
+        self.assertNotIn('"sheets"', agents, "an app granted no octos.* services has no line")
+        self.assertIn('("terminal", &["octos.session.open",', agents, "the Terminal's own agent (read tools only, agent.own_tools)")
 
     def test_the_shipped_agent_blocks(self):
         rinx = self.app("rinx")["agent"]

@@ -70,12 +70,13 @@
       "sandbox": { "network": "any", "processes": true },
       "storage": { "accounts": false, "agent_workspace": "none", "external": ["home:rw"] },
       "agent": {
-        "octos": [],
+        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
         "tools": [
           {"name": "terminal.run", "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real in the terminal they see, inside the Terminal's own sandbox: the person's files and the network are reachable, OctoSense's private data and the build toolchain are not. It returns at once: the output is on the Terminal's screen.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false}, "risk": "destructive", "confirm": "host", "shareable": true},
           {"name": "terminal.read_screen", "description": "Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true},
           {"name": "terminal.read_scrollback", "description": "Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).", "input_schema": {"type": "object", "properties": {"lines": {"type": "integer", "minimum": 1, "maximum": 2000}}, "additionalProperties": false}, "risk": "read", "shareable": true}
         ],
+        "own_tools": ["terminal.read_screen", "terminal.read_scrollback"],
         "tool_policy": { "run": { "confirm": "host", "auto_approvable": false } }
       }
     },

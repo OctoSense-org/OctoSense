@@ -4,7 +4,7 @@
     "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "47a8b47dfc84fb95517aeb6f5f911cb526bbf2dd",
+    "tree": "472690aaf088171431094a4133a7f9fdde33c5be",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -13,7 +13,8 @@
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
       "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
       "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
-      "Calculator lays its keypad out again after every apply (makepad #99): the phone shell's style reapply after a hosted module's first frame left the DSL's 85-point keys, overflowing a 393-point-wide phone."
+      "Calculator lays its keypad out again after every apply (makepad #99): the phone shell's style reapply after a hosted module's first frame left the DSL's 85-point keys, overflowing a 393-point-wide phone.",
+      "The Terminal opens its own agent's link and answers it with its read tools only (makepad #100); typing a command stays the host's terminal.run."
     ],
     "stacked": [
       {
@@ -39,6 +40,10 @@
       {
         "patch": "tools/runtime-patches/makepad-calculator-restyle.patch",
         "sha256": "24896908d7b5616dd2ccd6c6fc56e8776cd8cc9a1e3750e8fefba7ea569dc8af"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-terminal-own-agent.patch",
+        "sha256": "5246bcece67298835bff8ab68d9ff7015ba67a976eebb50a26441bcb205cc240"
       }
     ]
   }

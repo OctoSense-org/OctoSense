@@ -444,9 +444,10 @@ fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
             assert!(!catalog.generic("rinx", dev).iter().any(|t| t == shell), "never octos's shell");
         }
     }
-    // Every declaration names its owning app.
+    // Every declaration names its owning app; the Terminal's own agent is
+    // offered its read tools only (`agent.own_tools`).
     let own = Catalog::shipped().declarations("terminal", false);
-    assert_eq!(own.len(), 3);
+    assert_eq!(own.iter().map(|d| d["name"].as_str().unwrap()).collect::<Vec<_>>(), ["terminal.read_screen", "terminal.read_scrollback"]);
     assert!(own.iter().all(|d| d["app"] == "terminal" && d.get("auto_approvable").is_none()));
 }
 
@@ -499,6 +500,47 @@ fn a_native_apps_read_tool_runs_on_its_bus_service() {
     assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c2"), "calculator".into(), "eval".into(), json!({"expression": "6*7"}).to_string())]);
     relay.handle(Event::BusResult { call_id: "c2".into(), outcome: ToolOutcome::Ok(json!({"text": "42"})) }, &mut w);
     assert_eq!(sent.lock().unwrap()[0]["ok"], true);
+}
+
+/// The Terminal's own agent reads, never types: its entry narrows it to
+/// `read_screen` and `read_scrollback` (`agent.own_tools`), so it is offered
+/// only those and its `run` is refused. The system agent's `run` keeps the
+/// host's sheet: a tool the host confirms never takes the app's link.
+#[test]
+fn the_terminals_own_agent_reads_only_and_run_never_takes_its_link() {
+    let catalog = super::relay::Catalog::shipped();
+    let offered: Vec<String> = catalog.offered("terminal", false, true).iter().filter_map(|d| d["name"].as_str().map(String::from)).collect();
+    assert!(offered.iter().any(|n| n == "terminal.read_screen") && offered.iter().any(|n| n == "terminal.read_scrollback"), "{offered:?}");
+    assert!(!offered.iter().any(|n| n == "terminal.run"), "{offered:?}");
+    assert!(catalog.own_allows("calculator", "calculator.eval"), "an entry that does not narrow keeps every tool");
+
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    w.links.push("terminal".into());
+    // Its own agent: `run` refused, a read over its link.
+    let mut own_run = call("t1", "terminal.run", "terminal");
+    own_run.args = json!({"command": "ls"});
+    let (r, sent) = reply("t1");
+    relay.handle(Event::Call { call: own_run, reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    let mut own_read = call("t2", "terminal.read_screen", "terminal");
+    own_read.args = json!({});
+    own_read.risk = "read".into();
+    let (r, _sent) = reply("t2");
+    relay.handle(Event::Call { call: own_read, reply: r }, &mut w);
+    assert_eq!(w.link_calls.iter().map(|(app, c)| (app.as_str(), c.name.as_str())).collect::<Vec<_>>(), [("terminal", "terminal.read_screen")]);
+    // The system agent's `run`: the host's sheet, not the link.
+    w.system.insert(TERMINAL_RUN.into());
+    let mut system_run = call("t3", TERMINAL_RUN, "system");
+    system_run.args = json!({"command": "ls"});
+    system_run.caller_kind = CallerKind::System;
+    system_run.origin = CallOrigin::System;
+    system_run.risk = "destructive".into();
+    system_run.confirm_required = true;
+    let (r, _sent) = reply("t3");
+    relay.handle(Event::Call { call: system_run, reply: r }, &mut w);
+    assert_eq!(w.link_calls.len(), 1, "run did not take the link");
+    assert_eq!(w.asked.iter().map(|(app, tool, ..)| (app.as_str(), tool.name.as_str())).collect::<Vec<_>>(), [("terminal", TERMINAL_RUN)]);
 }
 
 /// The system toolbox's tools as its catalog declares them (the real ones

@@ -289,7 +289,7 @@ def tool_policy_problems(policy):
     return problems
 
 
-AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget", "system_tools"}
+AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget", "system_tools", "own_tools"}
 # The fields a `tools.json` entry may carry (octos `ToolDecl`, UPCR-2026-035);
 # `app` is the shell's to set.
 DECL_FIELDS = {"name", "description", "input_schema", "output_schema", "risk", "background", "outward", "confirm", "shareable"}
@@ -306,7 +306,9 @@ def agent_problems(ident, agent):
     gets; never octos's shell), `grants` (other apps' shareable tools,
     `{"app", "tool"}`), `budget` (`calls_per_turn`, `calls_per_day`),
     `system_tools` (its own tools the system agent may call while the app
-    runs: each one of its `tools`, a shareable read tool, by full name)."""
+    runs: each one of its `tools`, a shareable read tool, by full name),
+    `own_tools` (the tools its own agent may call, by full name: each one
+    of its `tools`; without it, all of them)."""
     problems = []
     unknown = sorted(set(agent) - AGENT_KEYS)
     if unknown:
@@ -377,6 +379,16 @@ def agent_problems(ident, agent):
             problems.append(f"agent.system_tools: {name} must be a shareable read tool (the system agent gets read tools only)")
     if len(set(system)) != len(system):
         problems.append("agent.system_tools names a tool twice")
+    own = agent.get("own_tools")
+    if own is not None:
+        if not isinstance(own, list) or not all(isinstance(t, str) for t in own):
+            problems.append("agent.own_tools must be a list of its own tool names")
+            own = []
+        for name in own:
+            if name not in declared:
+                problems.append(f"agent.own_tools: {name} is not one of {ident}'s agent.tools")
+        if len(set(own)) != len(own):
+            problems.append("agent.own_tools names a tool twice")
     budget = agent.get("budget")
     if budget is not None:
         if not isinstance(budget, dict) or not set(budget) <= {"calls_per_turn", "calls_per_day"}:
@@ -663,6 +675,9 @@ def render_rust(apps):
         "    /// `agent.system_tools`: its own read tools the system agent may",
         "    /// call while the app runs (full names).",
         "    pub system_tools: &'static [&'static str],",
+        "    /// `agent.own_tools`: the tools its own agent may call (full",
+        "    /// names; every one of `tools` unless the entry narrows them).",
+        "    pub own_tools: &'static [&'static str],",
         "    /// `agent.budget`: its agent's tool calls per turn and per day",
         "    /// (`None`: the shell's defaults).",
         "    pub calls_per_turn: Option<u32>,",
@@ -709,6 +724,10 @@ def render_rust(apps):
         out.append(f"        grants: &[{grants}],")
         system = ", ".join(s(x) for x in agent.get("system_tools", []))
         out.append(f"        system_tools: &[{system}],")
+        own = agent.get("own_tools")
+        if own is None:
+            own = [tool["name"] for tool in agent.get("tools") or []]
+        out.append(f"        own_tools: &[{', '.join(s(x) for x in own)}],")
         budget = agent.get("budget") or {}
         for key in ("calls_per_turn", "calls_per_day"):
             value = f"Some({budget[key]})" if key in budget else "None"
