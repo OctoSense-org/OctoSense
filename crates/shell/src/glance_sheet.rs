@@ -83,6 +83,17 @@ pub fn card_rect(sheet: Rect) -> Rect {
     rect(sheet.pos.x + PAD, sheet.pos.y + HEADER, sheet.size.x - PAD * 2.0, sheet.size.y - HEADER - PAD)
 }
 
+/// Mail's mode switch belongs beside its composer/edit actions. Both rows stay
+/// inside the keyboard-adjusted viewport; general card navigation stays above.
+fn workspace_rects(sheet: Rect, has_tabs: bool, mail: bool) -> (Rect, Option<Rect>) {
+    let mut content = card_rect(sheet);
+    if !has_tabs { return (content, None); }
+    content.size.y = (content.size.y - TABS).max(0.0);
+    let tab_y = if mail { content.pos.y + content.size.y } else { content.pos.y };
+    if !mail { content.pos.y += TABS; }
+    (content, Some(rect(sheet.pos.x, tab_y, sheet.size.x, TABS)))
+}
+
 /// The open card, refreshed when the admitted publication changes.
 struct Open {
     key: String,
@@ -429,11 +440,10 @@ impl Widget for ShellGlanceSheet {
                     self.live.body(&key, &open.card, "glance sheet");
                     if new_session { self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat()); }
                 }
-                if self.chat_available {
-                    self.tabs.draw_walk_all(cx, scope, Walk::abs_rect(rect(sheet.pos.x, card.pos.y, sheet.size.x, TABS)));
-                    card.pos.y += TABS;
-                    card.size.y = (card.size.y - TABS).max(0.0);
-                }
+                let native_mail = open.card.l0.as_ref().is_some_and(|l| l.mail.is_some());
+                let (pane, tabs) = workspace_rects(sheet, self.chat_available, native_mail);
+                card = pane;
+                if let Some(tabs) = tabs { self.tabs.draw_walk_all(cx, scope, Walk::abs_rect(tabs)); }
                 if self.chatting {
                     if let (Some(session), Some(mut chat)) = (self.live.session_mut(&key), self.chat.borrow_mut::<crate::card_chat::CardChat>()) { chat.sync(cx, session); }
                     self.chat.draw_walk_all(cx, scope, Walk::abs_rect(rect(sheet.pos.x, card.pos.y, sheet.size.x, card.size.y)));
@@ -540,8 +550,6 @@ impl Widget for ShellGlanceSheet {
                     chat.submitted(cx, result);
                 }
             }
-            let open_reply = self.chat.borrow_mut::<crate::card_chat::CardChat>().is_some_and(|mut chat| chat.take_open_reply());
-            if open_reply { self.select_chat(cx, false); }
             return;
         }
         if self.mail_binding().is_some() {
@@ -582,6 +590,21 @@ impl Widget for ShellGlanceSheet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mail_mode_switch_stays_beside_bottom_actions_in_keyboard_sized_viewports() {
+        for height in [820.0, 400.0, 820.0] {
+            let sheet = rect(0.0, 0.0, 380.0, height);
+            let (pane, tabs) = workspace_rects(sheet, true, true);
+            let tabs = tabs.unwrap();
+            assert_eq!(pane.pos.y, HEADER, "Mail has no mode controls above the content");
+            assert_eq!(pane.pos.y + pane.size.y, tabs.pos.y);
+            assert_eq!(tabs.pos.y + tabs.size.y, height - PAD);
+            assert!(pane.size.y >= 260.0 && tabs.size.y >= 44.0);
+            let (generic, top_tabs) = workspace_rects(sheet, true, false);
+            assert_eq!(top_tabs.unwrap().pos.y + TABS, generic.pos.y);
+        }
+    }
 
     #[test]
     fn the_window_is_centred_and_sized_to_its_card() {

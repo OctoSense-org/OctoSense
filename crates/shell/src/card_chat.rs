@@ -36,11 +36,6 @@ script_mod! {
         dock := View {
             width: Fill height: Fit flow: Down spacing: 8
             padding: Inset{left: 14 right: 14 top: 8 bottom: 14}
-            updated := ButtonFlat {
-                visible: false margin: 0 width: Fill height: 44 text: "Reply updated · View reply →"
-                draw_bg +: {color: #eaf1ff color_hover: #dce8ff color_down: #d0e0ff border_radius: 12 border_size: 0}
-                draw_text +: {color: #2659b7 color_hover: #2659b7 color_down: #2659b7 text_style: theme.font_regular{font_size: 12}}
-            }
             status := Label {
                 width: Fill height: Fit
                 draw_text.text_style: theme.font_regular{font_size: 10.0}
@@ -110,7 +105,6 @@ pub struct CardChat {
     #[rust] answering: bool,
     #[rust] available: bool,
     #[rust] ink: Option<Vec4f>,
-    #[rust] open_reply: bool,
 }
 
 impl CardChat {
@@ -131,8 +125,6 @@ impl CardChat {
         self.pending = None;
         self.answering = false;
         self.available = false;
-        self.open_reply = false;
-        self.view.widget(cx, ids!(updated)).set_visible(cx, false);
         self.view.text_input(cx, ids!(input)).set_text(cx, "");
     }
 
@@ -148,7 +140,8 @@ impl CardChat {
                 self.answering = snapshot["status"] == "answering";
                 self.available = snapshot["status"] != "unavailable";
                 if self.answering { "Thinking…".to_string() }
-                else if self.available && session.mail_reply().is_some() { "Request changes here. Review the saved email in Reply.".to_string() }
+                else if self.available && session.mail_reply().is_some_and(|d| d["body_origin"] == "model_chat") { "Reply updated · saved".to_string() }
+                else if self.available && session.mail_reply().is_some() { "Changes save to your reply".to_string() }
                 else if self.available { "Ask about this card or request a change".to_string() }
                 else { "This card's conversation is unavailable".to_string() }
             }
@@ -161,7 +154,6 @@ impl CardChat {
         if self.rows.is_empty() && mail.is_some() && self.available {
             self.rows.push(MessageRow {speaker: "Your reply workspace".into(), text: "Ask to change the time, tone or wording. Your saved email is in Reply, where you can edit it and review before sending.".into()});
         }
-        self.view.widget(cx, ids!(updated)).set_visible(cx, mail.is_some_and(|d| d["body_origin"] == "model_chat"));
         self.view.label(cx, ids!(status)).set_text(cx, &status);
         if first { self.view.portal_list(cx, ids!(transcript)).scroll_to_end(cx); }
         self.update_send(cx);
@@ -174,7 +166,6 @@ impl CardChat {
     }
 
     pub fn take_submit(&mut self) -> Option<String> { self.pending.take() }
-    pub fn take_open_reply(&mut self) -> bool { std::mem::take(&mut self.open_reply) }
 
     pub fn submitted(&mut self, cx: &mut Cx, result: Result<(), String>) {
         match result {
@@ -193,7 +184,6 @@ impl CardChat {
 impl Widget for CardChat {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
-        if self.view.button(cx, ids!(updated)).clicked(&actions) { self.open_reply = true; }
         let input = self.view.text_input(cx, ids!(input));
         if let Some(text) = input.changed(&actions) {
             // Local editing only. No host storage, model calls, or L0 parsing.

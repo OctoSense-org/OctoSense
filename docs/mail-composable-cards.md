@@ -25,9 +25,9 @@ revision-bound host capability; successful prose alone cannot update the UI.
 
 | Moment | What the person sees and does | Host behavior |
 | --- | --- | --- |
-| Open a Mail card | One full-screen workspace, with Chat and Reply tabs | Stops drawing the inactive Glance feed; preserves the publication's account, email, draft and thread |
+| Open a Mail card | One full-screen workspace, with Chat and Reply in its bottom control area | Stops drawing the inactive Glance feed; preserves the publication's account, email, draft and thread |
 | Ask for a change | Fixed, growing composer above the keyboard; transcript scrolls independently | Supplies the current saved draft; the edit tool saves only the matching revision |
-| Model finishes | “Reply updated · View reply” appears after a saved model edit | Uses authoritative draft state, never inferred success from assistant text |
+| Model finishes | “Reply updated · saved” appears after a saved model edit | Uses authoritative draft state, never inferred success from assistant text |
 | Read or edit | Recipient, subject and readable body; Edit opens native fields | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
 | Compare with the email | View original email / Back to reply | Reads the bound original email without replacing the reply |
 | Review and send | A separate final review shows From, To, subject and exact body | Only physical Approve & Send authorizes that immutable payload |
@@ -67,7 +67,7 @@ wraps within two lines with explicit ellipsis. Secondary controls preserve their
 palette when focused. The final separate user test package is build 0432, using the same production
 code. Installation preserved the active publication, draft, transcript and agent policy byte for byte; no real draft edits or chat submissions were injected.
 
-**Local verification:** 904 shell tests, 53 Mail-service tests and 12 contextual
+**Local verification:** 905 shell tests, 53 Mail-service tests and 12 contextual
 chat tests passed; two pre-existing environment-dependent Mail tests remained
 ignored. The native Makepad draw tests cover 200 transcript entries, keyboard
 resizing, a visible composer/review action and deferred layout. Service tests
@@ -76,16 +76,27 @@ revoked reviews and zero SMTP from chat. Desktop default/mobile-apps checks,
 phone checks and Android builds passed. These checks do not replace on-device
 IME, accessibility, account-switch, storage-failure or uncertain-send acceptance.
 
-**Engineering UX self-review: 9.0/10 for the exercised Chat ↔ Reply flow.** This is
-a scoped reviewer judgment, not a user-study result or a general model rating.
+**Navigation revision (Lab 0433):** real phone captures verify the grouped bottom controls in Reply, Chat and above the keyboard. The 905-test shell suite and desktop/phone checks passed. Build 0434 carries the same layout in the separate user test app; installation preserves the real card, draft, transcript and policy. This revision did not repeat model calls or SMTP.
 
-| Criterion | Score | Evidence and deduction |
-| --- | --- | --- |
-| Draft correctness and shared context | 2.0/2 | Both actual models saved the exact requested time; manual edits reached Chat |
-| Navigation and reading | 1.9/2 | One workspace, two clear tabs, original-email access; wider theme/language review remains |
-| Editing and keyboard use | 1.8/2 | Native editor/composer remain visible; full IME and accessibility matrix remains |
-| Save feedback, review and control | 1.9/2 | Host-backed saved state, exact review, conflict protection; device recovery matrix remains |
-| Responsiveness | 1.4/2 | Warm scroll frame times are smooth; first-open pauses still need profiling |
+**UX acceptance reopened; the previous 9.0/10 score is withdrawn.** The review
+mistook functional correctness for usability and missed the frequent travel
+between top mode tabs and bottom edit/review controls. The successful model and
+storage tests remain valid; they do not establish a UX pass. No replacement
+numeric score is claimed.
+
+The revised Mail layout places Chat / Reply in the bottom control area, beside
+the active pane's composer or Edit / Review actions. It keeps that arrangement
+above the keyboard, removes the duplicate View reply button, and moves original
+email access next to the message metadata. A saved change has a short status
+instead of another navigation control. Final send review remains a separate
+step with its exact-message approval.
+
+Acceptance now needs the actual repeated task to work comfortably: ask for a
+time change, switch to Reply, edit, switch back to Chat, then review and return.
+Check hand travel, control grouping and visual hierarchy as well as saved data,
+keyboard visibility and performance. Automated geometry checks establish where
+controls are drawn; they do not establish comfortable one-handed operation or
+replace feedback from the person using the phone.
 
 ## Follow one reply through the code
 

@@ -15,6 +15,7 @@ script_mod! {
             to_label := Label {width: Fill height: Fit flow: Right {wrap: true} max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 12}}
             subject_label := Label {width: Fill height: Fit flow: Right {wrap: true} max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_bold{font_size: 16}}
         }
+        original := ButtonFlat {margin: 0 width: Fill height: 44 text: "View original email"}
         recipient_row := View {width: Fill height: 40
             recipient := TextInputFlat {width: Fill height: Fill is_read_only: true empty_text: "Recipient" draw_text.text_style: theme.font_regular{font_size: 12}}
         }
@@ -38,7 +39,6 @@ script_mod! {
             draw_cursor.color: #3668e8 draw_selection.color: #3668e840
           }
         }
-        original := ButtonFlat {margin: 0 width: Fill height: 44 text: "View original email"}
         conflict := View {
             visible: false width: Fill height: Fit flow: Down spacing: 6
             notice := Label {width: Fill height: Fit draw_text.wrap: Words text: "The saved reply changed. Your text is kept. Choose which version to use."}
@@ -54,7 +54,6 @@ script_mod! {
                 draw_text +: {color: #ffffff color_hover: #ffffff color_down: #ffffff}
             }
         }
-        hint := Label {width: Fill height: Fit draw_text.wrap: Words draw_text.text_style: theme.font_regular{font_size: 10} text: "Nothing is sent until you approve the final reply."}
     }
 }
 
@@ -108,7 +107,7 @@ impl MailClip {
         let body_focus = cx.has_key_focus(self.view.text_input(cx, ids!(body)).area());
         for path in [ids!(recipient_row), ids!(subject_row)] { self.view.widget(cx, path).set_visible(cx, self.editing && !self.original && !(self.keyboard && body_focus)); }
         self.view.widget(cx, ids!(metadata)).set_visible(cx, !self.editing || self.original);
-        for path in [ids!(original), ids!(hint)] { self.view.widget(cx, path).set_visible(cx, !self.keyboard); }
+        self.view.widget(cx, ids!(original)).set_visible(cx, !self.keyboard && (!self.editing || self.original));
         let status = s.error.as_deref().unwrap_or_else(|| match d["status"].as_str() {
             Some("accepted") => "SMTP accepted · delivery unconfirmed",
             Some("outcome_unknown") => "Send outcome unknown · check Sent before retrying",
@@ -155,7 +154,7 @@ impl MailClip {
             let mut button = self.view.widget(cx, path);
             script_apply_eval!(cx, button, {draw_bg +: {color: #(face) color_hover: #(face) color_down: #(face) color_focus: #(face) border_size: 0 border_radius: 12} draw_text +: {color: #(ink) color_hover: #(ink) color_down: #(ink) color_focus: #(ink)}});
         }
-        for path in [ids!(state), ids!(hint), ids!(notice), ids!(to_label)] {
+        for path in [ids!(state), ids!(notice), ids!(to_label)] {
             if let Some(mut label) = self.view.label(cx, path).borrow_mut() { label.draw_text.color = crate::shell::alpha(ink, 0.72); }
         }
         if let Some(mut label) = self.view.label(cx, ids!(subject_label)).borrow_mut() { label.draw_text.color = ink; }
@@ -251,7 +250,7 @@ mod tests {
         input.set_text(&mut cx, "Keep my corrected appointment time\n\nWednesday at 10:00.");
         widget.widget(&cx, ids!(editor)).set_visible(&mut cx, true);
         widget.widget(&cx, ids!(preview)).set_visible(&mut cx, false);
-        for path in [ids!(metadata), ids!(recipient_row), ids!(subject_row), ids!(original), ids!(hint)] { widget.widget(&cx, path).set_visible(&mut cx, false); }
+        for path in [ids!(metadata), ids!(recipient_row), ids!(subject_row), ids!(original)] { widget.widget(&cx, path).set_visible(&mut cx, false); }
         let pass = DrawPass::new(&mut cx);
         let mut list = DrawList2d::new(&mut cx);
         for height in [700.0, 260.0, 700.0] {
@@ -271,6 +270,8 @@ mod tests {
                 assert!(r.size.y >= 44.0 && r.pos.y >= 0.0 && r.pos.y + r.size.y <= height, "clipped at {height}: {r:?}");
             }
             assert!(input.area().rect(&cx).size.y > height - 130.0, "the hidden preview must not compete with the editor for space");
+            assert!(widget.button(&cx, ids!(review)).area().rect(&cx).pos.y >= height - 64.0,
+                "review stays beside the mode switch immediately below this pane");
             assert!(input.text().contains("Wednesday at 10:00"));
         }
     }
