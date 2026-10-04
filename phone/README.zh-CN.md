@@ -83,6 +83,10 @@ Home 已以 `OctoSense Icons`（`dev.makepad.octosense.icontest`）在运行 And
 原有安装及默认 Pixel Launcher 均保留。Android 主题图标模式、iOS/OpenHarmony
 安装后的外观及完整 OpenHarmony HAP 构建仍**未经验证**。
 
+`OctoSense Icons` 仅是该独立测试安装通过命令行指定的名称。
+正常 Android/iOS/桌面构建仍名为 **OctoSense**，OpenHarmony 保留原有的
+**OctoSense Home** 名称。
+
 ## Home 角色
 
 该 activity 声明了 `HOME` intent 过滤器，并且是 `singleInstance`。在你能控制的设备上执行：

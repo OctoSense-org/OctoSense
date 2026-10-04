@@ -136,6 +136,10 @@ default Pixel Launcher were preserved. Android themed-icon mode, installed
 iOS/OpenHarmony appearance and a complete OpenHarmony HAP build remain
 **unverified**.
 
+`OctoSense Icons` was a command-line label override for that separate test
+installation. Normal Android/iOS/desktop builds remain named **OctoSense**;
+OpenHarmony retains its existing **OctoSense Home** name.
+
 ## The Home role
 
 The activity offers the `HOME` intent filter and is `singleInstance`. On a device you control:

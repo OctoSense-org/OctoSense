@@ -39,6 +39,7 @@
 ## Android installation follow-up
 
 - Device: Pixel 7 Pro, Android 17, arm64. Fresh development installation of source commit `5fabcc57` as `dev.makepad.octosense.icontest`, label `OctoSense Icons`, version code 1.
+- The user independently confirmed the device result. The test label came solely from `--app-label='OctoSense Icons'`; production naming metadata is unchanged from the base branch: Android/iOS/desktop use `OctoSense`, and OpenHarmony retains `OctoSense Home`.
 - Built from `phone/` with its system-app selection and the pinned Makepad packager. Included the octos kernel at `056173e85b150e387805fc307fe231064ac1ed35`, verified against its build receipt. The APK passed `apksigner verify` and Android reported installation success.
 - APK SHA-256: `70e7d218227d0f2f8af5b754b0f1dbcd3153f099eed50b2aaf444b4603a9dc17`.
 - Android App info visibly renders the green eight-petal adaptive icon. The app launches and renders Home. Declined the first-run location request; the captured process log contains no fatal exception, fatal signal, panic or ANR marker.
