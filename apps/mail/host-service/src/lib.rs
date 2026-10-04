@@ -224,7 +224,10 @@ fn publish_card(store: &Store, app: &str, args: &Value) -> Result<Value, String>
         let id = id.as_str().ok_or("draft_id must be text")?;
         payload["mail_binding"] = drafts::publication_binding(store, app, text(args,"account"), id)?;
     }
-    incoming::publish_once(store, app, text(args, "account"), card_id, || publisher(app, payload))
+    // Fingerprint normalized host payload, including its authoritative binding.
+    // A deliberate repair keeps the card id but must reach the renderer again.
+    let fingerprint = network::hash(&serde_json::to_string(&payload).map_err(|e| e.to_string())?);
+    incoming::publish_revision(store, app, text(args, "account"), card_id, &fingerprint, payload.get("mail_binding"), || publisher(app, payload.clone()))
 }
 
 /// How mail moves: IMAP or POP3 and SMTP in the shell, or a fake in tests.

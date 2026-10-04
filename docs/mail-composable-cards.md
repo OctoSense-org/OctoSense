@@ -66,6 +66,19 @@ expiry may shorten) and durable dismissal/undo state, without sending a new
 notification. Five cache tests and 27 Glance tests passed; actual process-restart
 and phone restoration remain unverified.
 
+Generated views use explicit enum comparisons (`when mode == .brief`), with a
+visible initial branch and reachable Back actions. A bare `when mode` only
+accepts boolean `true`. Chat typing updates local text; `on_commit` appends the
+complete question. Appending on `on_change` sends partial keystrokes and can
+hit the thread's rate/busy limits. Reply-body editing uses `on_change` without
+`on_commit` for the shell's multiline editor.
+
+An identical `mail.publish_card` payload reuses its durable receipt without
+another notification. Corrected source/data under the same card and draft IDs
+is revalidated and republished, honoring the requested `notify` value. An older
+receipt without a payload fingerprint allows one validated refresh.
+
+
 ## Runtime contracts and input provenance
 
 The [tool schemas](../apps/mail/bundle/tools.json) describe the four draft/proposal

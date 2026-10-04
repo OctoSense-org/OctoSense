@@ -287,15 +287,49 @@ pub fn acknowledge_event(
     Ok(true)
 }
 
-/// Store an event's successful publication result beside its pending record.
-/// Retries after a completed save return that receipt without notifying again.
-/// A crash between the external publish and this save remains at-least-once;
-/// the stable card id still replaces the same card at the shell boundary.
+/// Save a successful event notice once. Notice retries retain their existing
+/// event-level behavior; generated-card repairs use `publish_revision` below.
 pub(crate) fn publish_once(
     store: &Store,
     app: &str,
     account: &str,
     card_id: &str,
+    publish: impl FnOnce() -> Result<Value, String>,
+) -> Result<Value, String> {
+    publish_versioned(store, app, account, card_id, None, None, publish)
+}
+
+/// Identical card payloads reuse the durable receipt; an intentional source/data
+/// refresh publishes again under the same stable card identity. Only a successful
+/// callback replaces the receipt. Old receipts lacking a fingerprint refresh once.
+/// A crash between publication and receipt save remains at-least-once.
+pub(crate) fn publish_revision(
+    store: &Store,
+    app: &str,
+    account: &str,
+    card_id: &str,
+    fingerprint: &str,
+    binding: Option<&Value>,
+    publish: impl FnOnce() -> Result<Value, String>,
+) -> Result<Value, String> {
+    publish_versioned(
+        store,
+        app,
+        account,
+        card_id,
+        Some(fingerprint),
+        binding,
+        publish,
+    )
+}
+
+fn publish_versioned(
+    store: &Store,
+    app: &str,
+    account: &str,
+    card_id: &str,
+    fingerprint: Option<&str>,
+    binding: Option<&Value>,
     publish: impl FnOnce() -> Result<Value, String>,
 ) -> Result<Value, String> {
     let _guard = lock();
@@ -306,16 +340,33 @@ pub(crate) fn publish_once(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    if let Some(receipt) = receipts.iter().find(|r| text(r, "id") == card_id) {
-        return Ok(receipt["result"].clone());
+    let previous = receipts.iter().position(|r| text(r, "id") == card_id);
+    let binding = binding.map(|b| json!({"publisher":b["publisher"], "account":b["account"],
+        "draft_id":b["draft_id"], "source_message":b["source_message"], "chat_thread":b["chat_thread"]}));
+    if let Some(index) = previous {
+        if fingerprint.is_some()
+            && !receipts[index]["binding"].is_null()
+            && binding.as_ref() != Some(&receipts[index]["binding"])
+        {
+            return Err("A published Mail card cannot change its account, email or draft".into());
+        }
+        if fingerprint.is_none() || receipts[index]["fingerprint"].as_str() == fingerprint {
+            return Ok(receipts[index]["result"].clone());
+        }
     }
     let pending = box_
         .get("pending_events")
         .and_then(Value::as_array)
         .is_some_and(|events| events.iter().any(|e| text(e, "id") == card_id));
     let result = publish()?;
-    if pending {
-        receipts.push(json!({"id": card_id, "result": result}));
+    if fingerprint.is_some() || pending {
+        let receipt =
+            json!({"id":card_id, "fingerprint":fingerprint, "binding":binding, "result":result});
+        if let Some(index) = previous {
+            receipts[index] = receipt;
+        } else {
+            receipts.push(receipt);
+        }
         if receipts.len() > 256 {
             receipts.remove(0);
         }
@@ -635,6 +686,27 @@ mod tests {
         );
         assert!(captured[0].1.get("account").is_none());
         drop(captured);
+        publish_card(&f.store, "os.mail", &args).unwrap();
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            1,
+            "identical retry does not notify again"
+        );
+        args["source"] = json!("repaired-source-host-checks-this");
+        args["notify"] = json!(true);
+        publish_card(&f.store, "os.mail", &args).unwrap();
+        let captured = seen.lock().unwrap();
+        assert_eq!(
+            captured.len(),
+            2,
+            "changed source reaches the same card publisher"
+        );
+        assert_eq!(captured[1].1["card_id"], "event-1");
+        assert_eq!(
+            captured[1].1["notify"], true,
+            "a deliberate refresh honors explicit notification"
+        );
+        drop(captured);
         on_publish_card(None);
     }
 
@@ -715,6 +787,154 @@ mod tests {
         assert!(acknowledge_event(&f.dir, "os.mail", "a1", &event.id).is_err());
         assert!(f.sync().is_err());
         assert!(!f.store.mailbox_path("a1", INBOX).exists());
+    }
+    #[test]
+    fn changed_card_repairs_after_ack_and_restart_but_identical_retries_do_not_publish() {
+        let f = Fixture::new();
+        f.sync().unwrap();
+        f.add("new");
+        f.sync().unwrap();
+        let event = f.pending().pop().unwrap();
+        let calls = AtomicUsize::new(0);
+        let publish = || {
+            let n = calls.fetch_add(1, Ordering::Relaxed) + 1;
+            Ok(json!({"version":n}))
+        };
+        assert_eq!(
+            publish_revision(&f.store, "os.mail", "a1", &event.id, "source-a", None, publish)
+                .unwrap()["version"],
+            1
+        );
+        assert!(resolve_and_ack_try(&f.dir, "os.mail", "a1", &event.id)
+            .unwrap()
+            .unwrap());
+        assert!(f.pending().is_empty());
+        let reopened = Store::at(&f.dir, Arc::new(MemoryVault));
+        assert_eq!(
+            publish_revision(&reopened, "os.mail", "a1", &event.id, "source-a", None, publish)
+                .unwrap()["version"],
+            1
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            publish_revision(&reopened, "os.mail", "a1", &event.id, "source-b", None, publish)
+                .unwrap()["version"],
+            2
+        );
+        assert_eq!(
+            publish_revision(&reopened, "os.mail", "a1", &event.id, "source-b", None, publish)
+                .unwrap()["version"],
+            2
+        );
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        assert!(publish_revision(
+            &reopened,
+            "os.mail",
+            "a1",
+            &event.id,
+            "invalid",
+            None,
+            || Err("invalid L0".into())
+        )
+        .is_err());
+        assert_eq!(
+            publish_revision(&reopened, "os.mail", "a1", &event.id, "source-b", None, publish)
+                .unwrap()["version"],
+            2
+        );
+        assert!(
+            publish_revision(&reopened, "os.mail", "b2", &event.id, "source-b", None, publish)
+                .is_err()
+        );
+        assert!(publish_revision(
+            &reopened,
+            "other.app",
+            "a1",
+            &event.id,
+            "source-b",
+            None,
+            publish
+        )
+        .is_err());
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        assert!(event_resolved(&f.dir, "os.mail", "a1", &event.id).unwrap());
+        assert!(
+            f.pending().is_empty(),
+            "a repair never recreates an acknowledged event"
+        );
+    }
+    #[test]
+    fn publication_receipt_keeps_draft_binding_across_restart_and_repairs() {
+        let f = Fixture::new();
+        let binding = json!({"publisher":"os.mail","account":"a1","draft_id":"one","draft_revision":1,
+            "source_message":{"message":"m1"},"chat_thread":"thread1"});
+        publish_revision(
+            &f.store,
+            "os.mail",
+            "a1",
+            "card",
+            "first",
+            Some(&binding),
+            || Ok(json!({"ok":true})),
+        )
+        .unwrap();
+        let reopened = Store::at(&f.dir, Arc::new(MemoryVault));
+        let mut edited = binding.clone();
+        edited["draft_revision"] = json!(2);
+        publish_revision(
+            &reopened,
+            "os.mail",
+            "a1",
+            "card",
+            "edited",
+            Some(&edited),
+            || Ok(json!({"ok":true})),
+        )
+        .unwrap();
+        edited["draft_id"] = json!("other");
+        assert!(publish_revision(
+            &reopened,
+            "os.mail",
+            "a1",
+            "card",
+            "retarget",
+            Some(&edited),
+            || panic!("retarget reached publisher")
+        )
+        .is_err());
+        assert!(publish_revision(
+            &reopened,
+            "os.mail",
+            "a1",
+            "card",
+            "unbind",
+            None,
+            || panic!("binding removal reached publisher")
+        )
+        .is_err());
+    }
+    #[test]
+    fn old_event_receipts_allow_one_validated_card_refresh() {
+        let f = Fixture::new();
+        f.sync().unwrap();
+        f.add("new");
+        f.sync().unwrap();
+        let event = f.pending().pop().unwrap();
+        publish_once(&f.store, "os.mail", "a1", &event.id, || {
+            Ok(json!({"old":true}))
+        })
+        .unwrap();
+        let calls = AtomicUsize::new(0);
+        for _ in 0..2 {
+            let result =
+                publish_revision(&f.store, "os.mail", "a1", &event.id, "new", None, || {
+                    calls.fetch_add(1, Ordering::Relaxed);
+                    Ok(json!({"new":true}))
+                })
+                .unwrap();
+            assert_eq!(result["new"], true);
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
     #[test]
     fn concurrent_syncs_emit_once_and_published_receipt_suppresses_retries() {

@@ -235,7 +235,7 @@
     },
     {
       "name": "mail.publish_card",
-      "description": "Publish a Mail L0 glance card with model-authored source, structured data and a notification. Use the incoming event id as card_id so retries replace it. The host fixes publisher/open target to Mail and validates the card. No email is sent and no calendar event is changed. Title is at most 80 characters; notification summary is at most 200 characters. For an editable reply/chat card, supply draft_id from mail.propose_reply. Never include account identity or approval flags in generated data.",
+      "description": "Publish a Mail L0 glance card with model-authored source, structured data and a notification. Use the incoming event id as card_id so retries replace it. The host fixes publisher/open target to Mail and validates the card. No email is sent and no calendar event is changed. Title is at most 80 characters; notification summary is at most 200 characters. For an editable reply/chat card, supply draft_id from mail.propose_reply. Identical payload retries reuse the receipt; corrected source/data with the same card_id and draft_id republish and honor notify. Never include account identity or approval flags in generated data.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -248,7 +248,8 @@
           "source": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 16384
+            "maxLength": 16384,
+            "description": "L0 declarations. Enum views require explicit guards such as when mode == .brief; bare when mode is a boolean test. Reply Field on_change saves the bound draft. Chat Field on_change only stores local text; on_commit appends the complete question. Follow the incoming-mail-triage skill."
           },
           "data": {
             "type": "object",

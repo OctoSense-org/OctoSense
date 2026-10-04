@@ -40,6 +40,8 @@ L0 remains the language capability level. Compact Glance, expanded card and full
 
 Glance shows a short summary, draft/send status and an entry to expand. The expanded card contains the editor, contextual chat and host review region. They may occupy sections or switch between named views within that card. Opening, closing or switching views must preserve the draft. Read-only status is consistent across both surfaces.
 
+On the phone, the shell arrow on a host-bound Mail tile opens that exact published card in the expanded sheet, including the draft toolbar and host review. Closing it returns to Glance. Unbound cards keep their existing full-app shortcut; the Mail launcher still opens the separate Mail app. This route is implemented in source; device validation is pending.
+
 Component state is for temporary UI choices, such as which section is open. Business data must not depend on `InstanceStore` component keys: those keys can change when a model rearranges a view, and they do not provide a global namespace for independently published cards.
 
 ### 2. Bind the card to host-owned Mail data

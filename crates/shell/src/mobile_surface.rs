@@ -447,6 +447,7 @@ impl PhoneSurface {
         };
         Some(match hit {
             PhoneHit::App(id)|PhoneHit::TileApp(id)|PhoneHit::GroupApp(_,id)=>app_label(id),
+            PhoneHit::ExpandGlance(_)=>"Expand Mail card".into(),
             PhoneHit::Glance(id)=>format!("{}, card at a glance",app_label(id)),
             PhoneHit::Card(client)=>format!("{}, recent app",state.clients.get(client).map(|c|c.display_title().to_string()).unwrap_or_default()),
             PhoneHit::Home=>"Home".into(),

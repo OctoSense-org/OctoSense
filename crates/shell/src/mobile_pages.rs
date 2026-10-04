@@ -617,6 +617,18 @@ impl GlanceCards {
     }
 }
 
+/// Choose the shell arrow's destination from admitted metadata, never L0 data.
+/// Mail's bound draft needs its expanded editor/review; generic cards retain
+/// the existing shortcut into their full app.
+fn glance_open_hit(card: &GlanceCard) -> PhoneHit {
+    if card.app == "os.mail" && card.l0.as_ref().and_then(|l| l.mail.as_ref())
+        .is_some_and(|binding| binding.publisher == card.app) {
+        PhoneHit::ExpandGlance(card.key())
+    } else {
+        PhoneHit::Glance(card.open_app.clone())
+    }
+}
+
 // ---------------------------------------------------------------- drawing
 
 impl PhoneSurface {
@@ -661,7 +673,7 @@ impl PhoneSurface {
         if let GlanceItem::Card(card) = item {
             // A published card draws itself (its own surface) at the tile
             // rect, takes its own input and runs its taps ([`GlanceCards`]);
-            // the open button at its corner opens its app. Without App Hub's
+            // the corner arrow expands bound Mail, or opens other cards' apps. Without App Hub's
             // vocabulary a frosted title stands in.
             if !crate::glance_card::CAN_RENDER {
                 self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
@@ -671,7 +683,7 @@ impl PhoneSurface {
             let open = crate::glance_card::open_button(r);
             self.rounded(cx, open, 14.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.22 } else { 0.8 } * opacity));
             self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
-            self.hits.push((open, PhoneHit::Glance(card.open_app.clone())));
+            self.hits.push((open, glance_open_hit(card)));
             return;
         }
         self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
@@ -1040,6 +1052,27 @@ mod tests {
         })
     }
 
+    #[test]
+    fn bound_mail_arrow_expands_exact_publication_but_generic_cards_open_the_app() {
+        let mut card = GlanceCard { app: "os.mail".into(), card_id: "reply-42".into(),
+            title: "Reply".into(), priority: 0, published_ms: 0, expires_ms: u64::MAX,
+            open_app: "mail".into(), route: None, body: "".into(), contained: true,
+            digests: vec![], l0: None };
+        assert_eq!(glance_open_hit(&card), PhoneHit::Glance("mail".into()));
+        card.l0 = Some(std::sync::Arc::new(crate::glance::L0Source {
+            source: String::new(), data: serde_json::json!({"mail":{"draft_id":"forged"}}), mail: None }));
+        assert_eq!(glance_open_hit(&card), PhoneHit::Glance("mail".into()), "card data cannot select the bound route");
+        std::sync::Arc::make_mut(card.l0.as_mut().unwrap()).mail = Some(crate::mail_card::Binding {
+            publisher: "os.mail".into(), account: "test-account".into(), source_message: serde_json::json!({}),
+            draft_id: "draft-42".into(), draft_revision: 1, chat_thread: "thread-42".into(), card_id: "reply-42".into(),
+        });
+        assert_eq!(glance_open_hit(&card), PhoneHit::ExpandGlance("os.mail/reply-42".into()));
+        card.card_id = "reply-43".into();
+        assert_eq!(glance_open_hit(&card), PhoneHit::ExpandGlance("os.mail/reply-43".into()), "route identifies the tapped publication, not just its publisher");
+        card.app = "os.news".into(); card.open_app = "news".into();
+        assert_eq!(glance_open_hit(&card), PhoneHit::Glance("news".into()));
+    }
+
     /// Only the lift of a plain tap on the page itself is a tap for a card:
     /// not a swipe or a pull the recognizer took, not a finger that
     /// travelled, not a press on the shell's own controls, not a finger a
@@ -1053,8 +1086,10 @@ mod tests {
         assert_eq!(GlanceFinger::of(&mouse_up(at + dvec2(3.0, 2.0)), Some(&g), false, None), GlanceFinger::Tap(at));
         assert_eq!(GlanceFinger::of(&mouse_up(at + dvec2(11.0, 0.0)), Some(&g), true, None), GlanceFinger::NotATap, "a page swipe the recognizer took, short as it was");
         assert_eq!(GlanceFinger::of(&mouse_up(at + dvec2(0.0, -40.0)), Some(&g), false, None), GlanceFinger::NotATap, "a drag no gesture took");
-        let open = gesture(at, Some(PhoneHit::Glance("mail".into())));
-        assert_eq!(GlanceFinger::of(&mouse_up(at), Some(&open), false, None), GlanceFinger::NotATap, "the card's open button is the shell's");
+        for hit in [PhoneHit::Glance("mail".into()), PhoneHit::ExpandGlance("os.mail/reply-42".into())] {
+            let open = gesture(at, Some(hit));
+            assert_eq!(GlanceFinger::of(&mouse_up(at), Some(&open), false, None), GlanceFinger::NotATap, "the shell arrow must not also click the card below");
+        }
         assert_eq!(GlanceFinger::of(&mouse_up(at), None, false, None), GlanceFinger::NotATap, "a long press took the finger");
         let elsewhere = PhoneGesture { screen: PhoneScreen::Drawer, ..g.clone() };
         assert_eq!(GlanceFinger::of(&mouse_up(at), Some(&elsewhere), false, None), GlanceFinger::NotATap);

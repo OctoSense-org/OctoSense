@@ -34,6 +34,8 @@ pub enum PhoneHit {
     Scrub,
     /// A published card on the glance page: open the app that published it.
     Glance(String),
+    /// A host-bound Mail card: expand this exact publication, not the full app.
+    ExpandGlance(String),
     /// The assistant chip on the home page: the system chat (#143).
     Assistant,
 }

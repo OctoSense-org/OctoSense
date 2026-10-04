@@ -518,6 +518,7 @@ impl App {
                 self.system_chat_changed(cx);
             }
             PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::ExpandGlance(key)=>{self.open_glance_card(cx,&key);return;}
             PhoneHit::Glance(app)=>{log!("[phone] glance card opens {}",app);self.phone_action(cx,PhoneHit::App(app));return;}
             PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
             PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
