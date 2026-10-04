@@ -2,6 +2,9 @@
 
 [English](mail-events-2026-10-04.md) | 简体中文
 
+[卡片按钮后续试验](mail-card-actions-2026-10-04.zh-CN.md)另行验证本轮初始生成卡片
+缺少的内部交互。
+
 AgentMail 实际邮件到达已连接的 Gmail 后，在独立 Android 测试包
 `dev.makepad.octosense.studio` 中自动启动 Mail Agent。系统 Agent 配置策略，后续也通过
 配置提供审查反馈。没有逐封聊天提示、手动派发 peer 回合，也没有由测试人员重写模型生成的

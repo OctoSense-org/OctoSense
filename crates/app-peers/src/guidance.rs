@@ -6,6 +6,7 @@
 //! separately from its request data. No tool, permission, model or trigger is
 //! changed. The shell admits/persists this text; apps cannot set it over RPC.
 
+#[cfg(any(feature = "broker", test))]
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
@@ -104,6 +105,7 @@ pub fn clear_app(app: &str) {
 /// request contents from changing the separate guidance object's fields.
 /// Both are ordinary text inputs at the kernel protocol layer, not a new
 /// system-message role. Tool policy remains the authorization boundary.
+#[cfg(any(feature = "broker", test))]
 pub(crate) fn turn_input(app: &str, account: &str, text: &str) -> Value {
     let guidance = scopes()
         .lock()

@@ -1,0 +1,2269 @@
+{
+  "card_id": "mail-e0cbea1e5de926bda32840a1c6f839a601e21016",
+  "model": "DeepSeek (parent verified active provider)",
+  "original_inputs": {
+    "artifact": "cards/mail-e0cbea1e5de926bda32840a1c6f839a601e21016.json",
+    "artifact_sha256": "fa62b4ebf382a4e71abea3f3eb87ffddb7ccff7a8ec9aa955a912e4dd1a7339f",
+    "card_id": "mail-e0cbea1e5de926bda32840a1c6f839a601e21016",
+    "source_sha256": "fd6175122343c16de444f3b29889a85edb71c904c9ee9a4877fd025a389eeb8f",
+    "data_semantically_exact": true
+  },
+  "result": "All local interactions pass; fully visible but verbose brief",
+  "runs": {
+    "cap440-redraw": {
+      "native_clicks_passed": true,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_pickup",
+            "key": "root/Col#0/when#0/w:Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                304,
+                17
+              ]
+            }
+          ],
+          "last_text_bottom": 370,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        },
+        "01-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "4821",
+              "rect": [
+                20,
+                142,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Photo ID",
+              "rect": [
+                20,
+                176,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Required to collect",
+              "rect": [
+                20,
+                201,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                231,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 245,
+          "tap_targets": [
+            [
+              20,
+              226,
+              49,
+              24
+            ]
+          ]
+        },
+        "02-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                304,
+                17
+              ]
+            }
+          ],
+          "last_text_bottom": 370,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        },
+        "03-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup location",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+              "rect": [
+                20,
+                142,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "Pickup hours",
+              "rect": [
+                20,
+                192,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "9:00 AM-9:00 PM PDT",
+              "rect": [
+                20,
+                217,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                242,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Mon, Oct 5, 9:00 PM PDT",
+              "rect": [
+                20,
+                267,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                297,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 311,
+          "tap_targets": [
+            [
+              20,
+              292,
+              49,
+              24
+            ]
+          ]
+        },
+        "04-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                216,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                304,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                304,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                304,
+                17
+              ]
+            }
+          ],
+          "last_text_bottom": 370,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        }
+      }
+    },
+    "narrow400-redraw": {
+      "native_clicks_passed": true,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_pickup",
+            "key": "root/Col#0/when#0/w:Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                270,
+                42
+              ]
+            }
+          ],
+          "last_text_bottom": 395,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        },
+        "01-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "4821",
+              "rect": [
+                20,
+                142,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Photo ID",
+              "rect": [
+                20,
+                176,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Required to collect",
+              "rect": [
+                20,
+                201,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                231,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 245,
+          "tap_targets": [
+            [
+              20,
+              226,
+              49,
+              24
+            ]
+          ]
+        },
+        "02-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                270,
+                42
+              ]
+            }
+          ],
+          "last_text_bottom": 395,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        },
+        "03-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup location",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Pickup hours",
+              "rect": [
+                20,
+                192,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "9:00 AM-9:00 PM PDT",
+              "rect": [
+                20,
+                217,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                242,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Mon, Oct 5, 9:00 PM PDT",
+              "rect": [
+                20,
+                267,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                297,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 311,
+          "tap_targets": [
+            [
+              20,
+              292,
+              49,
+              24
+            ]
+          ]
+        },
+        "04-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                270,
+                42
+              ]
+            }
+          ],
+          "last_text_bottom": 395,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        }
+      }
+    },
+    "narrow800-redraw": {
+      "native_clicks_passed": true,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_pickup",
+            "key": "root/Col#0/when#0/w:Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                270,
+                42
+              ]
+            }
+          ],
+          "last_text_bottom": 395,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        },
+        "01-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "4821",
+              "rect": [
+                20,
+                142,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Photo ID",
+              "rect": [
+                20,
+                176,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Required to collect",
+              "rect": [
+                20,
+                201,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                231,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 245,
+          "tap_targets": [
+            [
+              20,
+              226,
+              49,
+              24
+            ]
+          ]
+        },
+        "02-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                270,
+                42
+              ]
+            }
+          ],
+          "last_text_bottom": 395,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        },
+        "03-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Pickup location",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Pickup hours",
+              "rect": [
+                20,
+                192,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "9:00 AM-9:00 PM PDT",
+              "rect": [
+                20,
+                217,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                242,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Mon, Oct 5, 9:00 PM PDT",
+              "rect": [
+                20,
+                267,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Back",
+              "rect": [
+                30,
+                297,
+                29,
+                14
+              ]
+            }
+          ],
+          "last_text_bottom": 311,
+          "tap_targets": [
+            [
+              20,
+              292,
+              49,
+              24
+            ]
+          ]
+        },
+        "04-after": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ]
+            },
+            {
+              "text": "Simulation",
+              "rect": [
+                47,
+                40,
+                182,
+                11
+              ]
+            },
+            {
+              "text": "Oct 4, 2026",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ]
+            },
+            {
+              "text": "Ready for pickup",
+              "rect": [
+                20,
+                97,
+                79,
+                11
+              ]
+            },
+            {
+              "text": "Desk lamp · Demo Supply",
+              "rect": [
+                20,
+                117,
+                270,
+                17
+              ]
+            },
+            {
+              "text": "Delivery attempted; parcel now at the pickup desk.",
+              "rect": [
+                20,
+                142,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                192,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                192,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "A signature was needed, so the parcel is now waiting at the pickup desk.",
+              "rect": [
+                20,
+                208,
+                270,
+                42
+              ]
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                267,
+                98,
+                21
+              ]
+            },
+            {
+              "text": "Pickup details",
+              "rect": [
+                30,
+                310,
+                83,
+                14
+              ]
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                338,
+                14,
+                13
+              ]
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                337,
+                11,
+                13
+              ]
+            },
+            {
+              "text": "Bring the code and photo ID to collect.",
+              "rect": [
+                20,
+                353,
+                270,
+                42
+              ]
+            }
+          ],
+          "last_text_bottom": 395,
+          "tap_targets": [
+            [
+              20,
+              258,
+              146,
+              39
+            ],
+            [
+              20,
+              305,
+              103,
+              24
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "visual_review": {
+    "native_viewed": [
+      "narrow400-redraw/00-before.png",
+      "narrow400-redraw/01-after.png",
+      "narrow400-redraw/03-after.png"
+    ],
+    "phone_viewed": [
+      "phone-full-brief.png",
+      "phone-full-details.png",
+      "phone-glance.png"
+    ],
+    "confirmed": "Stacked Show code and Pickup details buttons avoid baseline MiniMax horizontal overflow. Code4821, address, hours, deadline and Back are present. Native310x400 text rectangles identical to310x800 in all three states: no observed text clipping at400. Brief text bottom395 at310width and370 at344width is verbose and leaves little bottom breathing room in narrower400 viewport.",
+    "feedback": [
+      "Brief duplicates Ready for pickup as title and status. Summary and model gist repeat the same location/update. Reduce repetition.",
+      "Show code hit146x39pt; Pickup details103x24pt and Back49x24pt. Labels fit but smaller targets merit physical checking.",
+      "Unlike MiniMax, address already uses normal TextBody. No giant-address defect to attribute to DeepSeek."
+    ],
+    "capture_caveat": "Original narrow400/00-before PNG had missing glyph draws in temporary standalone host despite complete native text and geometry. Operator harness now forces a fresh whole-window redraw before each capture. Definitive runs use -redraw suffix; original artifacts retained, not a model or phone failure.",
+    "no_claim": "Only local mode transitions, no durable writes. No Mail/browser/send/persistent completion claim. Native styling differs from phone; physical screenshots govern phone appearance."
+  }
+}

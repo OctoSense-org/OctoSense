@@ -73,6 +73,29 @@ def text_of(message):
     return content or ""
 
 
+def request_text(message):
+    """Unwrap the broker's serialized request before interpreting test commands.
+
+    Kernel origin prefixes and joined text parts may surround the JSON blocks.
+    Decode complete objects so braces/commands inside guidance strings cannot
+    be mistaken for the separate request object's contents.
+    """
+    text = text_of(message)
+    decoder = json.JSONDecoder()
+    offset = 0
+    while True:
+        start = text.find("{", offset)
+        if start < 0:
+            return text
+        try:
+            value, offset = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            offset = start + 1
+            continue
+        if isinstance(value, dict) and value.get("kind") == "octosense_request" and isinstance(value.get("text"), str):
+            return value["text"]
+
+
 def shared_blocks(messages):
     return [text_of(m) for m in messages if text_of(m).startswith("<shared_history")]
 
@@ -82,7 +105,7 @@ def own_user_text(messages):
     <shared_history> block."""
     for m in reversed(messages):
         if m.get("role") == "user" and not text_of(m).startswith("<shared_history"):
-            return text_of(m)
+            return request_text(m)
     return ""
 
 
@@ -140,7 +163,7 @@ def decide(body):
     last_user = ""
     for m in reversed(messages):
         if m.get("role") == "user":
-            last_user = text_of(m)
+            last_user = request_text(m)
             break
     host_tool = re.search(r"CALL_TOOL:([a-z0-9_]+) (\{.*\})", last_user)
     if host_tool:
@@ -255,6 +278,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-print(server.server_address[1], flush=True)
-server.serve_forever()
+if __name__ == "__main__":
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    print(server.server_address[1], flush=True)
+    server.serve_forever()

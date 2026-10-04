@@ -1,0 +1,2780 @@
+{
+  "card_id": "mail-dae90737eddc51e8754563d6d1192679445a2770",
+  "model": "DeepSeek (parent verified)",
+  "policy_revision": "7de61723",
+  "input": {
+    "artifact": "cards/mail-dae90737eddc51e8754563d6d1192679445a2770.json",
+    "artifact_sha256": "3bc6c4ba0724e21569142f439c05fb0b88505096bf9213cc04dd447897885991",
+    "card_id": "mail-dae90737eddc51e8754563d6d1192679445a2770",
+    "source_sha256": "0aa13f1c989aa4a62c2e79d8de6b144e7491dc3617ecf5a851689e09d3862903",
+    "data_semantically_exact": true,
+    "policy_revision": "7de61723"
+  },
+  "result": "4 native clicks pass344x440 and310x440; Details inaccessible at310x400",
+  "runs": {
+    "narrow400": {
+      "native_clicks_passed": false,
+      "error": "Expected one visible label 'Details', found 0",
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Col#0/Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "visible": false
+            }
+          ],
+          "last_visible_text_bottom": 382,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              1
+            ]
+          ]
+        },
+        "01-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                136,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "7392 - bring this code and photo ID.",
+              "rect": [
+                20,
+                161,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                195,
+                44,
+                21
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 216,
+          "tap_targets": [
+            [
+              20,
+              186,
+              92,
+              39
+            ]
+          ]
+        },
+        "02-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "visible": false
+            }
+          ],
+          "last_visible_text_bottom": 382,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              1
+            ]
+          ]
+        }
+      }
+    },
+    "cap440": {
+      "native_clicks_passed": true,
+      "error": null,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Col#0/Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_details",
+            "key": "root/Col#0/when#0/w:Col#0/Col#0/Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                215,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                304,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                304,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                214,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                249,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                236,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                236,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                252,
+                304,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                311,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                354,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 368,
+          "tap_targets": [
+            [
+              20,
+              302,
+              146,
+              39
+            ],
+            [
+              20,
+              349,
+              61,
+              24
+            ]
+          ]
+        },
+        "01-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                215,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                304,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                136,
+                304,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "7392 - bring this code and photo ID.",
+              "rect": [
+                20,
+                161,
+                304,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                195,
+                44,
+                21
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 216,
+          "tap_targets": [
+            [
+              20,
+              186,
+              92,
+              39
+            ]
+          ]
+        },
+        "02-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                215,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                304,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                304,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                214,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                249,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                236,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                236,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                252,
+                304,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                311,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                354,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 368,
+          "tap_targets": [
+            [
+              20,
+              302,
+              146,
+              39
+            ],
+            [
+              20,
+              349,
+              61,
+              24
+            ]
+          ]
+        },
+        "03-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                215,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                304,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Pickup location",
+              "rect": [
+                20,
+                136,
+                304,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City. Open 9:00 AM-9:00 PM PDT.",
+              "rect": [
+                20,
+                161,
+                304,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                214,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                249,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                245,
+                44,
+                21
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 266,
+          "tap_targets": [
+            [
+              20,
+              236,
+              92,
+              39
+            ]
+          ]
+        },
+        "04-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                215,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                270,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                304,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                304,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                304,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                214,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                249,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                236,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                236,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                252,
+                304,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                311,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                354,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 368,
+          "tap_targets": [
+            [
+              20,
+              302,
+              146,
+              39
+            ],
+            [
+              20,
+              349,
+              61,
+              24
+            ]
+          ]
+        }
+      }
+    },
+    "narrow440": {
+      "native_clicks_passed": true,
+      "error": null,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Col#0/Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_details",
+            "key": "root/Col#0/when#0/w:Col#0/Col#0/Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                404,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 418,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              24
+            ]
+          ]
+        },
+        "01-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                136,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "7392 - bring this code and photo ID.",
+              "rect": [
+                20,
+                161,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                195,
+                44,
+                21
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 216,
+          "tap_targets": [
+            [
+              20,
+              186,
+              92,
+              39
+            ]
+          ]
+        },
+        "02-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                404,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 418,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              24
+            ]
+          ]
+        },
+        "03-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Pickup location",
+              "rect": [
+                20,
+                136,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City. Open 9:00 AM-9:00 PM PDT.",
+              "rect": [
+                20,
+                161,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                251,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                236,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                295,
+                44,
+                21
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 316,
+          "tap_targets": [
+            [
+              20,
+              286,
+              92,
+              39
+            ]
+          ]
+        },
+        "04-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                404,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 418,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              24
+            ]
+          ]
+        }
+      }
+    },
+    "narrow800": {
+      "native_clicks_passed": true,
+      "error": null,
+      "events": [
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_code",
+            "key": "root/Col#0/when#0/w:Col#0/Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#1/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "show_details",
+            "key": "root/Col#0/when#0/w:Col#0/Col#0/Chip#1",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ],
+        [
+          {
+            "applied": true,
+            "changed": [
+              "mode"
+            ],
+            "event": "back",
+            "key": "root/Col#0/when#2/w:Col#0/Chip#0",
+            "origin": "Authored",
+            "stale": [],
+            "writes": []
+          }
+        ]
+      ],
+      "frames": {
+        "00-before.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                404,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 418,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              24
+            ]
+          ]
+        },
+        "01-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Pickup code",
+              "rect": [
+                20,
+                136,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "7392 - bring this code and photo ID.",
+              "rect": [
+                20,
+                161,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                195,
+                44,
+                21
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 216,
+          "tap_targets": [
+            [
+              20,
+              186,
+              92,
+              39
+            ]
+          ]
+        },
+        "02-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                404,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 418,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              24
+            ]
+          ]
+        },
+        "03-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Pickup location",
+              "rect": [
+                20,
+                136,
+                270,
+                17
+              ],
+              "visible": true
+            },
+            {
+              "text": "Example Pickup Desk, 100 Demo Street, Demo City. Open 9:00 AM-9:00 PM PDT.",
+              "rect": [
+                20,
+                161,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                251,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                236,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "Back",
+              "rect": [
+                44,
+                295,
+                44,
+                21
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 316,
+          "tap_targets": [
+            [
+              20,
+              286,
+              92,
+              39
+            ]
+          ]
+        },
+        "04-after.snap.json": {
+          "labels": [
+            {
+              "text": "",
+              "rect": [
+                20,
+                36,
+                19,
+                19
+              ],
+              "visible": true
+            },
+            {
+              "text": "OctoSense simulation",
+              "rect": [
+                47,
+                40,
+                181,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "2026-10-04",
+              "rect": [
+                236,
+                40,
+                54,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Parcel ready for pickup",
+              "rect": [
+                20,
+                63,
+                270,
+                26
+              ],
+              "visible": true
+            },
+            {
+              "text": "Desk lamp - Demo Supply - SIM-ACTION-4821",
+              "rect": [
+                20,
+                97,
+                270,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "READY FOR PICKUP",
+              "rect": [
+                20,
+                117,
+                95,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Delivery was attempted but no one was available to sign. The desk lamp is now at the pickup desk.",
+              "rect": [
+                20,
+                136,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Collect by",
+              "rect": [
+                20,
+                226,
+                47,
+                11
+              ],
+              "visible": true
+            },
+            {
+              "text": "Mon Oct 5, 2026, 9:00 PM PDT",
+              "rect": [
+                75,
+                211,
+                215,
+                42
+              ],
+              "visible": true
+            },
+            {
+              "text": "",
+              "rect": [
+                20,
+                261,
+                14,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "AI",
+              "rect": [
+                38,
+                261,
+                11,
+                13
+              ],
+              "visible": true
+            },
+            {
+              "text": "No redelivery was arranged, so collect in person - bring the code and photo ID.",
+              "rect": [
+                20,
+                277,
+                270,
+                67
+              ],
+              "visible": true
+            },
+            {
+              "text": "Show code",
+              "rect": [
+                44,
+                361,
+                98,
+                21
+              ],
+              "visible": true
+            },
+            {
+              "text": "Details",
+              "rect": [
+                30,
+                404,
+                41,
+                14
+              ],
+              "visible": true
+            }
+          ],
+          "last_visible_text_bottom": 418,
+          "tap_targets": [
+            [
+              20,
+              352,
+              146,
+              39
+            ],
+            [
+              20,
+              399,
+              61,
+              24
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "findings": [
+    "New pickup code7392 shown correctly, distinct from reference SIM-ACTION-4821.",
+    "Native310x400 has Details label hidden and tap rectangle[20,399,61,1]. 310x440 and310x800 allow all4 transitions. This proves fixed400 failure, not automatic failure in dynamically sized/scrolling physical full sheet.",
+    "344x440 all actions fully visible. Primary Show code target146x39; Details61x24; Back92x39.",
+    "Still verbose: repeated pickup title/status, long summary and gist, explicit reference number and ISO as_of. Short buttons prevent horizontal clipping, but extra brief text increases height.",
+    "No external writes or effects requested/performed. All local transitions change mode and Back restores brief."
+  ],
+  "visual_reviewed": [
+    "narrow400/00-before.png",
+    "cap440/00-before.png"
+  ],
+  "physical_review": {
+    "viewed": [
+      "phone-full-brief.png",
+      "phone-full-code.png",
+      "phone-full-details.png",
+      "phone-glance-code.png"
+    ],
+    "finding": "Physical full-sheet shows both brief actions and complete details; code7392 readable in full sheet and directly in Glance. Item/reference header persists across views. Brief is still verbose. Root reports all4 native-finger full-sheet actions pass; independent reviewer operated no phone."
+  }
+}

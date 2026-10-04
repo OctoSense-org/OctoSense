@@ -2,6 +2,9 @@
 
 English | [简体中文](mail-events-2026-10-04.zh-CN.md)
 
+The [card-button follow-up](mail-card-actions-2026-10-04.md) separately tests
+the interactions missing from these first generated cards.
+
 Real AgentMail emails reached a connected Gmail account and automatically
 started Mail agent turns in the isolated Android package
 `dev.makepad.octosense.studio`. The system agent provisioned the policy and later

@@ -1,0 +1,21 @@
+{
+  "card_id": "mail-7aa5926e1a8c0dc84bd7d0d3ada07e903939ffc0",
+  "data": {
+    "note": {
+      "as_of": "2026-10-04",
+      "metric1_value": "Collect by Mon, Oct 5, 2026 \u00b7 9:00 PM PDT",
+      "metric2_value": "Pickup hours 9:00 AM \u2013 9:00 PM PDT",
+      "pick1_body": "9064",
+      "pick1_title": "Pickup code",
+      "pick2_body": "Pickup code and photo ID",
+      "pick2_title": "Bring photo ID",
+      "subtitle": "Demo Supply \u00b7 Desk lamp",
+      "summary": "Example Pickup Desk, 100 Demo Street, Demo City",
+      "title": "Desk lamp ready"
+    }
+  },
+  "notify": true,
+  "source": "source note sys.dataset(fields: [title, subtitle, summary, as_of, metric1_value, metric2_value, pick1_title, pick1_body, pick2_title, pick2_body])\n\nstate mode { shape: enum[brief, code, details], initial: .brief }\nevent code { mode: set(.code) }\nevent details { mode: set(.details) }\nevent back { mode: set(.brief) }\n\ncopy app { class: vocabulary, en: \"Mail \u00b7 Simulation\" }\ncopy b_code { class: vocabulary, en: \"Show code\" }\ncopy b_details { class: vocabulary, en: \"Details\" }\ncopy b_back { class: vocabulary, en: \"Back\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.app, width: .fill)\n      TextCaption(value: note.as_of)\n    }\n    when mode == .brief {\n      TextTitle(text: note.title, width: .fill)\n      TextCaption(text: note.metric1_value, width: .fill)\n      TextCaption(text: note.pick2_body, width: .fill)\n      Chip(text: copy.b_code, on_tap: code, tone: .primary)\n      Chip(text: copy.b_details, on_tap: details)\n    }\n    when mode == .code {\n      TextCaption(text: note.subtitle, width: .fill)\n      TextEyebrow(text: note.pick1_title)\n      TextTitle(text: note.pick1_body, width: .fill)\n      TextCaption(text: note.pick2_title, width: .fill)\n      Chip(text: copy.b_back, on_tap: back, tone: .primary)\n    }\n    when mode == .details {\n      TextCaption(text: note.subtitle, width: .fill)\n      TextBody(text: note.summary, width: .fill)\n      TextCaption(text: note.metric2_value, width: .fill)\n      TextCaption(text: note.metric1_value, width: .fill)\n      Chip(text: copy.b_back, on_tap: back, tone: .primary)\n    }\n  }\n}",
+  "summary": "Demo Supply desk lamp at Example Pickup Desk. Code 9064. Collect by Mon, Oct 5, 9:00 PM PDT.",
+  "title": "Desk lamp ready for pickup"
+}

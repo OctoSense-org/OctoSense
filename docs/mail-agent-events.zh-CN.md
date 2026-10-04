@@ -41,6 +41,28 @@ Mail 可以处理 Inbox 新邮件，不需要用户逐封发送聊天请求。�
    点击通知会在 Glance 上打开该完整卡片；返回键或关闭按钮回到 Glance。
    卡片已移除时安全回退。卡片中独立的打开应用操作仍进入 Mail。
 
+需要用户处理的邮件，生成卡片内部也应有可用控件。Mail 已接纳的技能现在要求使用声明式
+L0 `Chip` 按钮、具名事件和本地视图状态，例如“配送详情”或“预约详情”，以及“返回”。
+按钮必须展示该邮件中的事实，名称必须准确说明实际效果。正文里的建议、shell 的打开
+Mail 控件，或名为“已发送”的本地状态，都不等于实现了邮件操作。
+[物流](../crates/shell/resources/glance/mail-shipping.card)和
+[请求](../crates/shell/resources/glance/mail-request.card)示例展示交互语法；其中模拟的
+发送、追踪和完成状态不能冒充真实远端操作。从生成卡片发送邮件、预约或修改邮箱仍未实现。
+下述较早设备试验验证了发布和打开，没有验证卡片内按钮。后续
+[配对按钮试验](testing/mail-card-actions-2026-10-04.zh-CN.md)保留较早布局失败，
+并实际验证两个模型在完整卡片及 Glance 上的取件码→返回→详情→返回。
+
+该共同场景是有取件码、无追踪网址的邮件：“显示取件码”和“取件详情”必须展示
+邮件提供的码、地点、截止时间及携带带照片证件的要求，两种视图都能返回。这些本地控件
+实现了[邮件操作卡片计划](../apps/mail/docs/2026-10-01-email-action-card-plan.md)中
+当前可支持的部分。计划中的外部 Track 操作仍需另做宿主集成：L0 虽然收录了 `sys.link`，
+本 shell 并不执行其写操作。没有网址时不能编造链接或显示虚假的追踪成功页面。
+
+当前 shell 有渲染限制：已通过校验的 `Chip(width: .fill)` 可能在 Fit 包装内收缩到不可见。
+因此已接纳技能要求省略 width，使用自然宽度、纵向排列及短标签。这是渲染器限制，
+不是非法 L0 token。[按钮后续试验](testing/mail-card-actions-2026-10-04.zh-CN.md)
+分别记录布局失败、实际手机点击及尚未实现的远端操作范围。
+
 Mail 窗口可以关闭，但 OctoSense 进程必须存活。当前没有 Android JobScheduler/WorkManager、
 前台服务或 Android NotificationManager 集成。通知显示在 OctoSense 自己的通知栏，
 卡片显示在 Glance。不能承诺 Android 挂起或终止进程后仍会送达。

@@ -84,6 +84,38 @@ Read the implementation in this order:
    the sheet's close button returns to Glance. A removed card falls back safely.
    The card's separate app-opening action still opens Mail.
 
+An actionable email also needs usable controls inside its generated card.
+Mail's admitted skill now requests declarative L0 `Chip` buttons, named events
+and local view state: for example, Delivery details or Appointment details,
+then Back. The button must reveal facts from that email and accurately name
+its effect. A suggestion in a text paragraph, the shell's open-Mail control,
+or a local state called “sent” does not implement an email action. The existing
+[shipping](../crates/shell/resources/glance/mail-shipping.card) and
+[request](../crates/shell/resources/glance/mail-request.card) fixtures demonstrate
+the interaction syntax; their demo send/tracking/done states must not be
+presented as real remote operations. Sending, booking and mailbox mutations
+from generated cards remain outside this implementation. The earlier device
+trial below established publication and opening, not in-card button behavior.
+The subsequent [paired button test](testing/mail-card-actions-2026-10-04.md)
+verified Show code → Back → Details → Back for both models in the phone's full
+card and Glance, after preserving earlier failed layouts.
+
+That shared scenario uses a pickup email with a code and no tracking URL:
+Show code and Details reveal the supplied code, location,
+deadline and photo-ID requirement, with Back from both views. These local
+controls address a supported part of the
+[email action-card plan](../apps/mail/docs/2026-10-01-email-action-card-plan.md).
+The plan's external Track action remains separate work: although L0 catalogues
+`sys.link`, this shell does not execute its writes. A missing URL must never
+be replaced with an invented link or a fake tracking-success screen.
+
+The current shell has a rendering limitation: an accepted `Chip(width: .fill)`
+can collapse inside its Fit wrappers and become invisible. The admitted skill
+therefore requests natural-width Chips, stacked vertically, with short labels.
+This is a renderer limitation, not an invalid L0 token. The
+[button follow-up](testing/mail-card-actions-2026-10-04.md) separates failed
+layouts, actual phone taps and the remaining remote-action scope.
+
 The Mail window can be closed during processing, but the OctoSense process must
 remain alive. This implementation has no Android JobScheduler/WorkManager,
 foreground service or Android NotificationManager integration. Notifications
