@@ -235,7 +235,7 @@
     },
     {
       "name": "mail.publish_card",
-      "description": "Publish a Mail L0 glance card with model-authored source, structured data and a notification. Use the incoming event id as card_id so retries replace it. The host fixes publisher/open target to Mail and validates the card. No email is sent and no calendar event is changed. Title is at most 80 characters; notification summary is at most 200 characters.",
+      "description": "Publish a Mail L0 glance card with model-authored source, structured data and a notification. Use the incoming event id as card_id so retries replace it. The host fixes publisher/open target to Mail and validates the card. No email is sent and no calendar event is changed. Title is at most 80 characters; notification summary is at most 200 characters. For an editable reply/chat card, supply draft_id from mail.propose_reply. Never include account identity or approval flags in generated data.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -270,6 +270,12 @@
           },
           "notify": {
             "type": "boolean"
+          },
+          "draft_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Optional durable draft ID returned by mail.propose_reply. The host attaches account/email/draft/chat binding and answers sys.mail_draft and sys.mail_review; source ids must equal this ID."
           }
         },
         "required": [
@@ -346,6 +352,137 @@
       },
       "risk": "act",
       "background": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "mail.propose_reply",
+      "description": "Create or reuse a durable reply draft for the bound account and cached email. The host derives recipient and reply headers. Body is an AI suggestion, not authorization. Return draft_id, revision and chat_thread for a composed card; no email is sent.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "reply_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "description": "Only for an explicitly requested later reply to the same email: keep this key stable across retries. Omit for the initial incoming-event draft."
+          }
+        },
+        "required": [
+          "message",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "mail.draft",
+      "description": "Read the durable draft and revision in this agent account. Use before suggesting edits; do not treat chat history as the draft. No external action.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "draft_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "draft_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "read",
+      "background": true,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "mail.suggest_reply",
+      "description": "Propose revised body text against the exact durable draft revision. User edits are never silently overwritten; the person accepts a suggestion in the card. No email is sent.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "draft_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "draft_id",
+          "expected_revision",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "private_data": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "mail.propose_send",
+      "description": "Prepare an immutable send proposal for the exact durable draft revision. This does not send or approve. Only the host-owned Approve & Send control inside the card can authorize SMTP.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "draft_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "draft_id",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "background": true,
+      "private_data": true,
       "implemented_by": "host-service"
     }
   ]

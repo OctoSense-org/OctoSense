@@ -25,7 +25,7 @@ use octosense_l0_chat::{ChatStore, Done, Reply, Request, Responder};
 use serde_json::Value;
 use std::sync::{Arc, Mutex, OnceLock};
 
-pub use octosense_l0_chat::{check_publisher, Entry, Role};
+pub use octosense_l0_chat::{check_publisher, ContextBinding, Entry, Role};
 
 /// What the demo host answers a message sent from a card (no model call).
 pub const DEMO_ANSWER: &str = "Demo answer: Mail's agent will reply here from the thread. (No model was called.)";
@@ -89,6 +89,49 @@ pub fn perform(
     octosense_l0_chat::perform(store(), &HostResponder, publisher, card, state, data, write, origin, octosense_l0_chat::now_ms())
 }
 
+/// Check every bound read/dispatch against current consent and account. The
+/// publication's original account is never replaced with the current selection.
+fn bound_folder(publisher: &str, binding: &ContextBinding) -> Result<std::path::PathBuf, String> {
+    binding.validate()?;
+    bound_access(publisher, &binding.account)?;
+    let storage = crate::app_storage::host().ok_or("Chat storage unavailable")?;
+    folder_in(storage, publisher, Some(binding.account.clone())).ok_or_else(|| "Chat storage unavailable".into())
+}
+
+fn bound_access(publisher: &str, account: &str) -> Result<(), String> {
+    if crate::agents::access(publisher) != crate::agents::Access::Allowed {
+        return Err("This app's assistant is not allowed".into());
+    }
+    if crate::ai_host::contained::account_of(publisher).as_deref() != Some(account) {
+        return Err("Account changed; reopen the card under its original account".into());
+    }
+    let storage_account = (account != crate::ai_host::contained::ACCOUNT).then_some(account);
+    if !crate::app_storage::host().is_some_and(|storage| !storage.is_signed_out(publisher, storage_account)) {
+        return Err("This card's account is signed out or unavailable".into());
+    }
+    Ok(())
+}
+
+/// Read the exact trusted publication thread. Errors are returned to the host
+/// surface rather than silently falling back to another account's transcript.
+pub fn seed_bound(publisher: &str, card: &str, data: &Value,
+    state: &octoscript_ui_l0::InstanceStore, binding: &ContextBinding) -> Result<Value, String> {
+    let folder = bound_folder(publisher, binding)?;
+    Ok(octosense_l0_chat::seed_bound(store(), publisher, card, data, state, binding, folder))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn perform_bound(publisher: &str, card: &str,
+    state: &octoscript_ui_l0::InstanceStore, data: &Value,
+    write: &octoscript_ui_l0::CollectionWrite,
+    origin: Option<octoscript_ui_l0::ValueOrigin>, binding: &ContextBinding,
+) -> Result<Entry, String> {
+    let folder = bound_folder(publisher, binding)?;
+    // Bound real publications never use the fake Mail demo responder.
+    octosense_l0_chat::perform_bound(store(), &AgentResponder, publisher, card, state,
+        data, write, origin, octosense_l0_chat::now_ms(), binding, folder)
+}
+
 static DEMO_MAIL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Mail's chat answers with the canned demo reply (`OCTOSENSE_GLANCE_DEMO=mail`,
@@ -129,7 +172,15 @@ impl Responder for AgentResponder {
         };
         let spawned = std::thread::Builder::new().name("card-chat".into()).spawn(move || {
             use crate::ai_host::app_peers::{ContextEvent, ContextOp, EventSink, TurnTrigger};
-            let context = match crate::agents::conversation(&app, INSTANCE) {
+            let text = match request.agent_text() {
+                Ok(text) => text,
+                Err(e) => return done(Reply::Notice(e)),
+            };
+            let opened = match &request.binding {
+                Some(binding) => crate::agents::conversation_for_account(&app, INSTANCE, &binding.account),
+                None => crate::agents::conversation(&app, INSTANCE),
+            };
+            let context = match opened {
                 Ok(context) => context,
                 Err(e) => return done(Reply::Notice(e)),
             };
@@ -137,7 +188,13 @@ impl Responder for AgentResponder {
             let finish = {
                 let done = done.clone();
                 let context = context.clone();
+                let account = request.binding.as_ref().map(|b| b.account.clone());
+                let publisher = request.app.clone();
                 move |reply: Reply| {
+                    let reply = match account.as_deref().map(|a| bound_access(&publisher, a)) {
+                        Some(Err(e)) => Reply::Notice(e),
+                        _ => reply,
+                    };
                     if let Some(done) = done.lock().unwrap_or_else(|e| e.into_inner()).take() {
                         done(reply);
                     }
@@ -155,7 +212,7 @@ impl Responder for AgentResponder {
             // The person typed it in a card the host drew, but the card is
             // the app's: approval rules see the app's run, as for an app
             // that says the person asked (ADR 0004 §8).
-            if let Err(e) = context.call(ContextOp::TurnFrom { text: request.text, trigger: TurnTrigger::AppSaysPerson }, sink) {
+            if let Err(e) = context.call(ContextOp::TurnFrom { text, trigger: TurnTrigger::AppSaysPerson }, sink) {
                 finish(Reply::Notice(format!("The agent could not answer: {e}")));
             }
         });
@@ -175,7 +232,7 @@ mod tests {
         let got = Arc::new(Mutex::new(None));
         let sink = got.clone();
         AgentResponder.respond(
-            Request { app: "com.example.noagent".into(), thread: "t".into(), text: "hi".into(), history: Vec::new() },
+            Request { app: "com.example.noagent".into(), thread: "t".into(), text: "hi".into(), history: Vec::new(), binding: None },
             Box::new(move |reply| *sink.lock().unwrap() = Some(reply)),
         );
         let reply = got.lock().unwrap().take();

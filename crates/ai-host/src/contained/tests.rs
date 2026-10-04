@@ -651,3 +651,23 @@ fn guidance_is_host_account_scoped_bounded_and_does_not_prepare_a_peer() {
     set_guidance(APP, ACCOUNT, guidance).unwrap();
     assert!(!revoke(APP), "guidance may be revoked before the peer exists");
 }
+
+#[test]
+fn a_bound_card_conversation_cannot_follow_a_changed_or_signed_out_account() {
+    let _g = serial();
+    fn original(_: &str) -> Option<String> { Some("original".into()) }
+    fn changed(_: &str) -> Option<String> { Some("other".into()) }
+    fn signed_out(_: &str) -> Option<String> { None }
+    let peers = Peers::new(Turn::Reply(json!({"text":"ok"})));
+    set_factory(peers.clone());
+    set_account_of(Some(original));
+    conversation_for_account("os.mail", "card-chat", "original").unwrap();
+    let mail = peers.service("card.os.mail");
+    assert_eq!(mail.specs.lock().unwrap()[0].account, "original");
+    set_account_of(Some(changed));
+    assert!(conversation_for_account("os.mail", "card-chat", "original").is_err());
+    set_account_of(Some(signed_out));
+    assert!(conversation_for_account("os.mail", "card-chat", "original").is_err());
+    assert_eq!(mail.conversations.load(Ordering::SeqCst), 1, "no new context for a stale binding");
+    set_account_of(None);
+}

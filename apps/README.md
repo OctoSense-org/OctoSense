@@ -441,14 +441,18 @@ model lane and tools. Which system apps have one, and how
 | App | `manifest.json` | `tools.json` | Cards |
 | --- | --- | --- | --- |
 | News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
-| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event` (act, background) | L0 card or the shell's notice card |
+| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.draft` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event`, `mail.propose_reply`, `mail.suggest_reply`, `mail.propose_send` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
 | Photos, Maps, YouTube, Camera | `agent` block, `glance` | `photos.notify`, `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
 **A service API is not automatically an agent tool.** Mail explicitly declares
-account-scoped read/sync, publication and event-decision tools. `mail.peek` does
-not mark a message read; `mail.message` and `mail.send` remain UI APIs. The peer's
+account-scoped read/sync, publication, event-decision and draft/proposal tools.
+`mail.peek` does not mark read; `mail.message` remains a UI API. The UI
+`mail.send` path now prepares a host review, not an unapproved SMTP call. No
+agent tool can approve or send. [Composed Mail cards](../docs/mail-composable-cards.md)
+trace durable editing, contextual chat and the Android-only physical approval
+boundary; integrated paired-model phone acceptance remains unverified. The peer's
 workspace does not mount Mail's host database or credential vault. Calendar
 is a working example of an agent reading/writing its app data through declared
 Rust tools; its script window currently only explains how to ask the agent.

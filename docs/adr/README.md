@@ -14,7 +14,7 @@ How these decisions fit together in the code on `main`, and which parts are stil
 | [0004](0004-native-apps-hosting-and-peers.md) | Native apps, app agents and cross-app work: one manifest, hosting per target, an agent for every app, approvals by the person | Implemented |
 | [0005](0005-app-contract.md) | The app contract: one small, versioned interface between App Hub and every app | Implemented |
 | [0006](0006-app-studio-on-the-phone.md) | App Studio on the phone | Accepted |
-| [0007](0007-composable-mail-action-cards.md) | Composable Mail cards with editing, chat and approved actions | Proposed; not implemented |
+| [0007](0007-composable-mail-action-cards.md) | Composable Mail cards with editing, chat and approved actions | Implementation in progress; phone acceptance pending |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 

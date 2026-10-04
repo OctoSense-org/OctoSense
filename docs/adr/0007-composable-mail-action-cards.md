@@ -3,15 +3,17 @@
 English | [简体中文](0007-composable-mail-action-cards.zh-CN.md)
 
 - **Date:** 2026-10-04
-- **Status:** Proposed. The integrated feature is not implemented; the existing L0 fixture validates syntax only.
+- **Status:** Implementation in progress. Draft storage, composed-card adapters, contextual chat and host review are implemented in source; integrated phone/model/human-send acceptance is pending. Desktop and accessibility approval remain deferred.
 - **Scope:** An LLM composes one L0 Mail card from reusable sections. A person reads the email, edits a reply, chats with Mail's agent, and approves sending inside that card. Drafts and outcomes survive view changes and restarts.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (incoming events), [ADR 0004](0004-native-apps-hosting-and-peers.md) (peers and approvals), [ADR 0005](0005-app-contract.md) (admission), [ADR 0006](0006-app-studio-on-the-phone.md) (generation and evaluation), and the [historical Mail action-card plan](../../apps/mail/docs/2026-10-01-email-action-card-plan.md).
 
-## Context: the UI pieces exist, but sending from the card is still a demonstration
+## Original context: sending from the card was still a demonstration
 
 A shipping update can already trigger Mail's agent to generate a card and notification. The next interaction should be equally direct: open the card, ask the agent to draft a reply, edit it, review the actual message, and send it without opening a separate composer or approval app. Publishing a new layout must not erase the person's edits.
 
 Here, **host** means OctoSense's trusted Rust shell and Mail service. The L0 card describes UI; the app agent proposes content and calls its allowed tools; the host owns account access, storage and execution.
+
+The following table records the pre-implementation baseline, not current support. For current APIs, code paths and verification gates, see [Composed Mail cards](../mail-composable-cards.md).
 
 The source review used OctoSense `127ae4bd5a5476f0b813179868e61f80748a044e`, with Octoscript pinned to `5991dfae9344589e732b2605b530f788e8bbcd11` and Octoscript-Makepad to `2cc5ef37d7d6a3d2992673389ce74488f7bb2d87`.
 
@@ -42,7 +44,7 @@ Component state is for temporary UI choices, such as which section is open. Busi
 
 ### 2. Bind the card to host-owned Mail data
 
-The host attaches a trusted binding to the publication. The following are **proposed contract fields**, not an existing L0 source or callable API:
+The host attaches a trusted binding to the publication. These are **host binding fields**, carried out of band by the publication adapter, not model-provided L0 arguments. The implementation is `mail_card::Binding`:
 
 | Field | Meaning and owner |
 | --- | --- |
@@ -74,7 +76,7 @@ Glance and the expanded view subscribe to the same draft and send records. A sou
 
 Choose a **typed, host-issued action reference** for a proposed send. It names an immutable snapshot of the draft revision and its operation identity. Do not use an unguarded append to a generic outbox as authorization. This resolves the historical plan's Send design choice if this ADR is accepted.
 
-The exact catalog/API spelling is an implementation detail to settle in the first contract change. Its required semantics are fixed here: a card can request review of an admitted action reference; only the host can authorize execution. Add the necessary declared capability, checker validation and runtime handler together. Existing L0 composition syntax stays unchanged, and documentation must not advertise the new action until the handler exists. Native kit packs are currently rejected on Glance, so installing a kit alone cannot supply this feature.
+The implemented source is `sys.mail_review(app, id, fields)`: `set` requests review of the bound draft and `clear` cancels pending review. `sys.mail_draft(app, id, fields)` reads draft state and permits single-field edits; the agent tools are `mail.propose_reply`, `mail.draft`, `mail.suggest_reply` and `mail.propose_send`. A card can request review of an admitted action reference; only the host can authorize execution. Add the necessary declared capability, checker validation and runtime handler together. Existing L0 composition syntax stays unchanged, and documentation must not advertise the new action until the handler exists. Native kit packs are currently rejected on Glance, so installing a kit alone cannot supply this feature.
 
 The model can generate a Review reply entry, but the shell renders a distinct host-owned review region **inside the same expanded card surface**. It shows the sending account, complete recipients, subject and body being approved, followed by **Approve & Send** and Cancel. Long content is scrollable and available for inspection. The model cannot replace its contents, conceal the sender or relabel its final control. A summary of the message is insufficient for approval.
 
@@ -185,7 +187,7 @@ Implement in this order:
 
 Report exact model IDs, provider configuration labels without secrets, repository/runtime pins, generated source hashes and test outcomes. Separate local controls, simulated transport outcomes and real delivery evidence. Record visual/interaction shortcomings even if the checker passes. The target for writing and UX review is at least 4.5/5 (A−), alongside the mandatory functional gates; a score cannot replace a failed gate.
 
-**Current acceptance status:** only the pre-existing fixture's syntax baseline and the earlier local-state Android interactions cited above have evidence. No implementation, instrument run or live send test of this ADR's integrated feature has been completed.
+**Current acceptance status:** the catalog, portable pipeline and scoped input guard have passing tests; host/service and integrated shell validation is in progress. The paired-model OnePlus 6 edit/chat/restart flow and final human-approved threaded send remain **unverified**. Only Android physical touchscreen input can currently authorize sending; desktop and accessibility approval are deferred requirements, not completed acceptance. See the [current gate table](../mail-composable-cards.md#verification-gates). The earlier local-state Android evidence does not prove this new flow.
 
 ## Consequences and alternatives
 

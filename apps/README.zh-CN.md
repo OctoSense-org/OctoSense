@@ -383,13 +383,13 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 | 应用 | `manifest.json` | `tools.json` | 卡片 |
 | --- | --- | --- | --- |
 | 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
-| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`（act，后台） | L0 卡片或 Shell 通知卡片 |
+| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.draft`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`、`mail.propose_reply`、`mail.suggest_reply`、`mail.propose_send`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
 | 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
 **宿主服务 API 不会自动成为 Agent 工具。** Mail 显式声明了账户绑定的读取/同步、
-发布和事件决策工具。`mail.peek` 不标记已读；`mail.message` 和 `mail.send` 仍是 UI API。
+发布、事件决策和草稿／提议工具。`mail.peek` 不标记已读；`mail.message` 仍是 UI API。UI 的 `mail.send` 路径现已改为准备宿主审核，而非未经批准调用 SMTP。Agent 工具不能批准或发送。[组合 Mail 卡片](../docs/mail-composable-cards.zh-CN.md)追踪持久编辑、上下文聊天及仅限 Android 实体输入的审批边界；双模型手机集成验收仍未验证。
 Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
 展示了通过显式声明的 Rust 工具读写应用数据的路径；它的脚本窗口目前只是 Agent
 使用说明。见[数据访问源码导读](../desktop/docs/code-walkthrough.zh-CN.md)。

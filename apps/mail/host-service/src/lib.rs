@@ -13,10 +13,15 @@
 //! | `mail.list` | `{account, folder?, offset?, limit?}` | `{folder, total, messages: [{id, sender, address, subject, preview, time, unread}]}` |
 //! | `mail.peek` | `{account, folder?, message, offset?}` | bounded plain-text page without marking read; agent account is host-bound |
 //! | `mail.skip_event` | `{account, event_id, reason}` | durable no-card decision; host alone acknowledges |
-//! | `mail.publish_card` | `{account, card_id, source, data?, title, summary?, notify?, priority?}` | model-authored L0 through the shell; only Mail, host-bound account |
+//! | `mail.publish_card` | `{account, card_id, source, data?, title, summary?, notify?, priority?, draft_id?}` | model-authored L0; an optional draft receives a host-resolved binding |
 //! | `mail.message` | `{account, folder?, message}` | `{id, sender, address, subject, body, html, attachments, date, time}` |
 //! | `mail.mark_read` | `{account, folder?, message}` | `{}` |
-//! | `mail.send` | `{account, to, subject, body}` | `{accepted}` |
+//! | `mail.propose_reply` | `{account, folder?, message, body, reply_key?}` | bounded durable draft; optional key distinguishes an explicitly requested later reply |
+//! | `mail.draft` | `{account, draft_id}` | bounded draft/revision/status snapshot |
+//! | `mail.suggest_reply` | `{account, draft_id, expected_revision, body}` | proposal awaiting the person's acceptance; no authoritative edit |
+//! | `mail.propose_send` | `{account, draft_id, expected_revision}` | immutable pending attempt; no approval or SMTP |
+//! | `mail.review_send` | `{account, to, subject, body, compose_id?, expected_revision?, folder?, message?}` | foreground UI only: durable composer and host review, never approval |
+//! | `mail.send` | any | `approval_required`; use the host's review route |
 //! | `mail.notify` | `{title, body, card_id?, priority?}` | `{card_id, replaced, expires_at}` once the shell put Mail's notice card on the glance screen, with a notification ([`on_notify`]) |
 //!
 //! The app never sees a password or a socket. `mail.add_account` raises the
@@ -35,6 +40,10 @@
 //! injects its trusted peer account and disables prompts. The UI retains its
 //! existing arrays and network folder listing. UI/background sync share the
 //! durable incoming queue in [`collect_inbox`]; the shell owns scheduling.
+//! Reply draft edits and SMTP authorization belong to [`drafts`]' Rust API.
+//! Only a trusted host control may consume its opaque, single-use `Review`;
+//! script arguments and developer mode cannot mint it. SMTP errors after
+//! submission starts remain uncertain, never an automatic retry.
 //!
 //! State lives under the host's own directory (`<host_dir>/mail`), outside
 //! every app's jail: `accounts.json` (no passwords) and `box-<id>…json` (the
@@ -52,6 +61,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub mod contacts;
+pub mod drafts;
 pub mod vault;
 mod html;
 mod imap;
@@ -207,9 +217,14 @@ fn publish_card(store: &Store, app: &str, args: &Value) -> Result<Value, String>
     let data = args.get("data").cloned().unwrap_or(json!({}));
     if !data.is_object() || serde_json::to_vec(&data).map_err(|e| e.to_string())?.len() > 32 * 1024 { return Err("Card data must be an object of at most 32 KiB".into()); }
     let publisher = card_publisher().lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or("This device shows no glance cards.")?;
-    incoming::publish_once(store, app, text(args, "account"), card_id, || publisher(app, json!({"source": source, "data": data, "card_id": card_id, "title": title,
+    let mut payload = json!({"source": source, "data": data, "card_id": card_id, "title": title,
         "summary": text(args, "summary"), "priority": args["priority"].as_i64().unwrap_or(60).clamp(0, 100),
-        "notify": args["notify"].as_bool().unwrap_or(true), "open": {"app": "mail"}})))
+        "notify": args["notify"].as_bool().unwrap_or(true), "open": {"app": "mail"}});
+    if let Some(id) = args.get("draft_id") {
+        let id = id.as_str().ok_or("draft_id must be text")?;
+        payload["mail_binding"] = drafts::publication_binding(store, app, text(args,"account"), id)?;
+    }
+    incoming::publish_once(store, app, text(args, "account"), card_id, || publisher(app, payload))
 }
 
 /// How mail moves: IMAP or POP3 and SMTP in the shell, or a fake in tests.
@@ -224,6 +239,11 @@ pub trait Transport: Send + Sync {
     /// Tell the server a message was read, where it keeps that.
     fn mark_seen(&self, account: &Value, folder: &str, message: &Value) -> Result<(), String>;
     fn send(&self, account: &Value, draft: &Value) -> Result<Value, String>;
+    /// An unclassified backend error is conservatively uncertain. Only a
+    /// backend that knows SMTP submission has not begun may classify failure.
+    fn send_checked(&self, account: &Value, draft: &Value) -> Result<Value, drafts::SendFailure> {
+        self.send(account, draft).map_err(drafts::SendFailure::Unknown)
+    }
 }
 
 fn is_imap(account: &Value) -> bool {
@@ -283,6 +303,9 @@ impl Transport for Network {
     }
     fn send(&self, account: &Value, draft: &Value) -> Result<Value, String> {
         network::send(account, draft)
+    }
+    fn send_checked(&self, account: &Value, draft: &Value) -> Result<Value, drafts::SendFailure> {
+        network::send_checked(account, draft)
     }
 }
 
@@ -433,6 +456,7 @@ pub fn register_with(transport: Arc<dyn Transport>) {
 
 pub fn register_with_vault(transport: Arc<dyn Transport>, vault: Arc<dyn Vault>) {
     incoming::set_backend(transport.clone(), vault.clone());
+    drafts::set_backend(transport.clone(), vault.clone());
     octosense_appstore::services::register_host_service(Box::new(MailService { transport, vault, pending: Arc::default() }));
 }
 
@@ -523,6 +547,7 @@ impl Store {
     }
 
     fn forget(&self, id: &str) {
+        drafts::forget(self, id);
         self.vault.remove(&self.place, id);
         contacts::forget(&self.dir, id);
         if let Ok(entries) = std::fs::read_dir(&self.dir) {
@@ -692,6 +717,8 @@ impl HostService for MailService {
                         return reply.send(Err(e));
                     }
                     let _guard = incoming::lock();
+                    let _draft_guard = drafts::lock();
+                    drafts::invalidate_locked(&call.host_dir, None);
                     let id = network::identity(&account);
                     let mut accounts = store.accounts();
                     let signed_in = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
@@ -717,6 +744,7 @@ impl HostService for MailService {
                         return reply.send(Err(e));
                     }
                     close_sheet_later(&app_id);
+                    drop(_draft_guard);
                     account_event(AccountEvent::Added { app_id: app_id.clone(), account: id.clone() });
                     if let Some((_, waiting)) = pending.lock().unwrap().take() {
                         waiting.send(Ok(json!({"id": id, "address": account["address"]})));
@@ -727,6 +755,10 @@ impl HostService for MailService {
             "remove_account" => {
                 work(move || {
                     let _guard = incoming::lock();
+                    // Linearize account removal with a send claim, never with
+                    // its network wait. Late receipts cannot recreate deleted data.
+                    let _draft_guard = drafts::lock();
+                    drafts::invalidate_locked(&call.host_dir, Some(&account_arg));
                     let mut accounts = store.accounts();
                     let mut removed = false;
                     if let Some(account) = accounts.iter_mut().find(|a| text(a, "id") == account_arg) {
@@ -746,6 +778,7 @@ impl HostService for MailService {
                         store.forget(id);
                     }
                     let saved = store.save_accounts(&accounts);
+                    drop(_draft_guard);
                     if removed && saved.is_ok() {
                         account_event(AccountEvent::Removed { app_id: call.app_id.clone(), account: account_arg.clone() });
                     }
@@ -790,6 +823,13 @@ impl HostService for MailService {
             }
             "skip_event" => work(move || reply.send(incoming::skip_event(&store, &call.app_id, &account_arg, text(&call.args, "event_id"), text(&call.args, "reason")))),
             "publish_card" => work(move || reply.send(publish_card(&store, &call.app_id, &call.args))),
+            "propose_reply" | "draft" | "suggest_reply" | "propose_send" => {
+                work(move || reply.send(drafts::agent_call(&store, &call.app_id, call.method(), &call.args)));
+            }
+            "review_send" => {
+                if !call.may_prompt { return reply.send(Err("Open Mail to review a composed message".into())); }
+                work(move || reply.send(drafts::review_composer(&store, &call.app_id, &call.args)));
+            }
             "list" => {
                 if !call.may_prompt { return reply.send(agent_read(&store, &call.app_id, "list", &call.args)); }
                 if let Err(e) = store.granted(&call.app_id, &account_arg) {
@@ -847,24 +887,7 @@ impl HostService for MailService {
                 });
             }
             "send" => {
-                let account = match store.account_for(&call.app_id, &account_arg) {
-                    Ok(account) => account,
-                    Err(e) => return reply.send(Err(e)),
-                };
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-                let domain = text(&account, "address").split('@').nth(1).unwrap_or("octosense.local").to_string();
-                let draft = json!({
-                    "to": text(&call.args, "to"), "subject": text(&call.args, "subject"), "body": text(&call.args, "body"),
-                    "message_id": format!("<{now:x}@{domain}>"),
-                });
-                let transport = self.transport.clone();
-                work(move || {
-                    let sent = transport.send(&account, &draft);
-                    if sent.is_ok() {
-                        contacts::record_sent(&store.dir, &account_arg, text(&draft, "to"));
-                    }
-                    reply.send(sent)
-                });
+                reply.send(Err("approval_required: use mail.review_send with Mail open, or open the reply card, then use the host's Approve & Send control. mail.send cannot authorize delivery.".into()));
             }
             "notify" => {
                 if account_arg.is_empty() { reply.send(notify(&call.app_id, &call.args)); }
@@ -1104,7 +1127,7 @@ mod tests {
     }
 
     #[test]
-    fn an_app_signs_in_on_the_hosts_sheet_and_reads_and_sends_without_the_password() {
+    fn an_app_signs_in_reads_without_the_password_and_cannot_bypass_send_review() {
         let dir = std::env::temp_dir().join(format!("mail-service-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut html_mail = message("u2", "Second");
@@ -1194,11 +1217,12 @@ mod tests {
         assert_eq!(archive["messages"][0]["subject"], "Archived");
         assert_eq!(ask(&dir, "os.mail", "mail.list", json!({"account": id}), false, &mut host).unwrap()["total"], 2, "folders keep their own mail");
 
-        ask(&dir, "os.mail", "mail.send", json!({"account": id, "to": "alex@example.com", "subject": "Hi", "body": "Hello"}), false, &mut host).unwrap();
-        assert_eq!(fake.sent.lock().unwrap()[0]["to"], "alex@example.com");
+        let refused = ask(&dir, "os.mail", "mail.send", json!({"account": id, "to": "alex@example.com", "subject": "Hi", "body": "Hello"}), false, &mut host).unwrap_err();
+        assert!(refused.contains("approval_required"));
+        assert!(fake.sent.lock().unwrap().is_empty());
         // The approval rules' contacts: the account and whom it wrote to, no password.
-        assert_eq!(contacts::known_addresses(&dir), ["alex@example.com", "me@example.com"]);
-        assert!(!std::fs::read_to_string(dir.join("mail").join(contacts::SENT_TO_FILE)).unwrap().contains("s3cret"));
+        assert_eq!(contacts::known_addresses(&dir), ["me@example.com"]);
+        assert!(!dir.join("mail").join(contacts::SENT_TO_FILE).exists());
 
         // An app that never had the account removes nothing.
         ask(&dir, "os.other", "mail.remove_account", json!({"account": id}), false, &mut host).unwrap();

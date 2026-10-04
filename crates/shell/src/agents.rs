@@ -238,6 +238,22 @@ pub fn conversation(app: &AgentApp, instance: &str) -> Result<Arc<dyn OctosConte
     native_conversation(app, instance)
 }
 
+/// Conversation pinned to a host-owned publication account, never a card argument.
+pub fn conversation_for_account(app: &AgentApp, instance: &str, account: &str) -> Result<Arc<dyn OctosContext>, String> {
+    if access(&app.id) != Access::Allowed {
+        return Err(format!("{}'s assistant is {}", app.name, access(&app.id).as_str()));
+    }
+    if app.native { return Err("Account-bound card chat requires a contained app".into()); }
+    if crate::ai_host::contained::account_of(&app.id).as_deref() != Some(account) {
+        return Err("Account changed; reopen the card under its original account".into());
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    crate::agent_events::install_guidance(&app.id)?;
+    let context = crate::ai_host::contained::conversation_for_account(&app.id, instance, account)?;
+    set_prepared(&app.id, Some(Prepared::Ready));
+    Ok(context)
+}
+
 #[cfg(kernel)]
 fn native_conversation(app: &AgentApp, instance: &str) -> Result<Arc<dyn OctosContext>, String> {
     use crate::ai_host::app_peers::{ContextSpec, OctosAppService};

@@ -160,6 +160,8 @@ sequenceDiagram
 
 邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会在后台同步收件箱，每来一封新邮件就启动一次 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。其他应用还没有事件；详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。
 
+在 Android 上点击卡片通知会打开准确对应的展开卡片；过期通知回退到 Glance。
+
 ### 一个应用 Agent，两条通道
 
 系统 Agent 和用户与同一个应用 Agent 对话，但各走各的通道：
@@ -308,7 +310,11 @@ sequenceDiagram
 
 #### 卡内对话
 
-卡片可以声明 `sys.chat(app, thread, fields)`。用户在卡片里输入，只有发布卡片的应用自己的 Agent 回答，回答在用户的通道里进行。对话记录归 Shell 所有，保存在应用的账号文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。目前还没有 Agent 发布的卡片声明对话；演示卡片 [`mail-request.card`](crates/shell/resources/glance/mail-request.card) 用固定的回复展示了这一功能。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
+**当前可用情况：**模型生成的 Mail 卡片携带宿主签发的 `draft_id` 发布后，可以把持久编辑器、带上下文的 `sys.chat` 和宿主审核绑定到该邮件／账户。`mail.propose_reply`、`mail.draft`、`mail.suggest_reply`、`mail.propose_send` 只提供草稿／提议操作，都不能授权发送。开发者模式和长期审批规则都不能代批；宿主审核要求可信的 Android 实体触摸。双模型手机集成验收仍未验证，桌面／无障碍审批暂缓。见[组合 Mail 卡片](docs/mail-composable-cards.zh-CN.md)。旧的 [`mail-request.card`](crates/shell/resources/glance/mail-request.card) 在 `OCTOSENSE_GLANCE_DEMO=mail` 下仍使用固定回答和本地演示状态。
+
+L0 卡片可以声明 `sys.chat(app, thread, fields)` 并绘制 `ChatEntry` 行。它也可以显示模型撰写的文字（`class: model-copy`），这些文字会标为 AI 撰写，且从不作为操作执行（[#263](https://github.com/OctoSense-org/OctoSense/pull/263)）。
+
+对话记录归宿主所有。只有发布卡片的应用自己的 Agent 可以回答，回答在用户通道中进行；只有用户亲手输入的内容才会记为用户的话。线程保存在 `apps/<app>/accounts/<account>/chat/<thread>.json`。详见 [`crates/l0-chat`](crates/l0-chat/README.md) 和 [`glance_chat.rs`](crates/shell/src/glance_chat.rs)。
 
 #### 提问
 

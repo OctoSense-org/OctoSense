@@ -199,7 +199,13 @@ fn register_host_services() {
         // `mail.notify` (Mail's agent's tool): the shell's notice card, as
         // Mail, only when its manifest was granted `glance`.
         octosense_mail_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));
-        octosense_mail_service::on_publish_card(Some(std::sync::Arc::new(|app: &str, args: serde_json::Value| crate::glance::publish_l0_for(app, &args))));
+        octosense_mail_service::on_publish_card(Some(std::sync::Arc::new(|app: &str, args: serde_json::Value| crate::glance::publish_mail_l0_for(app, &args))));
+        octosense_mail_service::drafts::on_change(Some(std::sync::Arc::new(makepad_widgets::makepad_platform::SignalToUI::set_ui_signal)));
+        octosense_mail_service::drafts::on_review_requested(Some(std::sync::Arc::new(|review| {
+            let key = format!("os.mail/compose-{}", review.snapshot()["draft_id"].as_str().ok_or("Missing draft identity")?);
+            crate::mail_card::queue_review(key, review);
+            Ok(())
+        })));
         // Calendar's events and cards (its agent's `calendar.*` tools),
         // published the same way.
         octosense_calendar_service::register();
@@ -209,6 +215,7 @@ fn register_host_services() {
         // stands in for one.
         let served = crate::glance_notice::serve_system_apps();
         makepad_widgets::log!("glance: the notice service answers {served:?} (no service of their own)");
+        crate::mail_card::publication_host_ready();
     });
 }
 

@@ -22,6 +22,15 @@ use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, Ico, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellTokens};
 use makepad_widgets::*;
 
+#[cfg(any(feature = "app-hub", native_mobile))]
+use crate::mail_review::{MailReview, MailToolbar};
+#[cfg(not(any(feature = "app-hub", native_mobile)))]
+#[derive(Default)]
+struct MailReview;
+#[cfg(not(any(feature = "app-hub", native_mobile)))]
+#[derive(Default)]
+struct MailToolbar;
+
 pub const SHEET_WIDTH: f64 = 380.0;
 /// The window's least height, and its card's height before it is measured.
 pub const SHEET_MIN_HEIGHT: f64 = 160.0;
@@ -63,7 +72,7 @@ pub fn card_rect(sheet: Rect) -> Rect {
     rect(sheet.pos.x + PAD, sheet.pos.y + HEADER, sheet.size.x - PAD * 2.0, sheet.size.y - HEADER - PAD)
 }
 
-/// The open card, as it was published when the window opened.
+/// The open card, refreshed when the admitted publication changes.
 struct Open {
     key: String,
     card: GlanceCard,
@@ -107,6 +116,14 @@ pub struct ShellGlanceSheet {
     // beneath the sheet; modal takeover/Android pointer reuse cancels it.
     #[rust]
     close_touch: Option<(u64, Vec2d, bool)>,
+    #[rust]
+    review: MailReview,
+    #[rust]
+    review_generation: u64,
+    #[rust]
+    publication_generation: u64,
+    #[rust]
+    mail_toolbar: MailToolbar,
 }
 
 impl ShellGlanceSheet {
@@ -117,10 +134,42 @@ impl ShellGlanceSheet {
 
     /// Open the published card `key`. False when it is no longer published.
     pub fn open_card(&mut self, cx: &mut Cx, key: &str) -> bool {
-        let Some(card) = crate::glance::card(key) else {
-            self.close(cx);
-            return false;
+        self.publication_generation = crate::glance::generation();
+        let card = match crate::glance::card(key) {
+            Some(card) => card,
+            None => {
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if let Some(review) = crate::mail_card::take_review(key) {
+                    // Superseding a view revokes its token only: both reviews
+                    // may refer to the same deduplicated send operation.
+                    self.review.replace();
+                    self.close(cx);
+                    // A legacy Mail composer supplies an opaque host review,
+                    // not generated card source or authority-bearing JSON.
+                    self.open = Some(Open { key: key.into(), card: GlanceCard {
+                        app: "os.mail".into(), card_id: "host-review".into(), title: "Mail reply".into(),
+                        priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
+                        route: None, body: "".into(), contained: false, digests: Vec::new(), l0: None,
+                    }});
+                    self.review.open(review);
+                    self.review_generation = crate::mail_card::review_generation(key);
+                    cx.set_key_focus(Area::Empty);
+                    cx.hide_text_ime();
+                    self.redraw(cx);
+                    return true;
+                }
+                self.close(cx);
+                return false;
+            }
         };
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        {
+            if let Some(old) = self.open.as_ref().filter(|old| old.key != key) { crate::mail_card::cancel_for(&old.key); }
+            self.review.replace();
+        }
+        // A gesture/error from another card must not target this binding.
+        self.close_touch = None;
+        self.mail_toolbar = MailToolbar::default();
         // A fresh isolate and session for each opening: the card starts as
         // published (lowered now, so one that does not lower says so once).
         self.tiles.sweep(cx, &[]);
@@ -135,7 +184,11 @@ impl ShellGlanceSheet {
 
     pub fn close(&mut self, cx: &mut Cx) {
         self.close_touch = None;
+        self.mail_toolbar = MailToolbar::default();
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        self.review.close();
         if let Some(open) = self.open.take() {
+            crate::mail_card::cancel_for(&open.key);
             log!("glance sheet: closed {}", open.key);
         }
         self.tiles.sweep(cx, &[]);
@@ -158,6 +211,54 @@ impl ShellGlanceSheet {
         format!("sheet:{key}")
     }
 
+    fn refresh_publication(&mut self, cx: &mut Cx) {
+        let generation = crate::glance::generation();
+        if generation == self.publication_generation { return; }
+        self.publication_generation = generation;
+        let Some(open) = &self.open else { return; };
+        // The native composer has no Glance publication to refresh.
+        if open.card.card_id == "host-review" && open.card.l0.is_none() && open.card.body.is_empty() { return; }
+        match crate::glance::card(&open.key) {
+            Some(card) => self.replace_publication(cx, card),
+            None => self.close(cx),
+        }
+    }
+
+    fn replace_publication(&mut self, cx: &mut Cx, card: GlanceCard) {
+        let Some(open) = self.open.as_mut() else { return; };
+        if open.card == card { return; }
+        open.card = card;
+        // Throw away old source and queued NAV events; durable Mail state and
+        // unsaved edits live in the host's draft-scoped Session store.
+        self.close_touch = None;
+        self.mail_toolbar = MailToolbar::default();
+        self.tiles.sweep(cx, &[]);
+        self.tiles = GlanceTiles::scrolling();
+        self.live.clear();
+        self.logged.clear();
+        cx.set_key_focus(Area::Empty);
+        cx.hide_text_ime();
+        self.redraw(cx);
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    fn poll_review(&mut self, cx: &mut Cx) {
+        if let Some(open) = &self.open {
+            let generation = crate::mail_card::review_generation(&open.key);
+            if self.review.is_active() && generation != self.review_generation {
+                self.review.invalidate("This card or its review changed. Request a fresh review before sending.");
+                self.review_generation = generation;
+            }
+            if let Some(review) = crate::mail_card::take_review(&open.key) {
+                self.review.open(review);
+                self.review_generation = generation;
+                cx.set_key_focus(Area::Empty);
+                cx.hide_text_ime();
+            }
+        }
+        self.review.poll();
+    }
+
     /// Run the open card's queued taps through its L0 session, and lower it
     /// again when the agent's reply came (glance_card.rs `LiveCards`).
     fn dispatch_taps(&mut self, cx: &mut Cx) {
@@ -171,6 +272,9 @@ impl Widget for ShellGlanceSheet {
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
+        self.refresh_publication(cx);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        self.poll_review(cx);
         // Every frame, open or closed: the kit keeps its overlay in tree order.
         self.d.begin_surface(cx);
         if let Some(open) = &self.open {
@@ -178,16 +282,37 @@ impl Widget for ShellGlanceSheet {
             let ink = tok.notifications.surface.text;
             self.d.solid(cx, screen, vec4(0.0, 0.0, 0.0, 0.55));
             let card_h = crate::glance_card::measured_height(&Self::tile_key(&open.key)).unwrap_or(UNMEASURED_CARD);
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let card_h = if self.review.is_active() { 560.0 } else if open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) { card_h + MailToolbar::HEIGHT } else { card_h };
             let sheet = sheet_rect(screen, card_h);
             self.sheet = sheet;
             self.d.card(cx, sheet, &tok.notifications.surface);
             let close = close_rect(sheet);
-            self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), false, 12.0, alpha(ink, 0.7), HAlign::Left, &open.card.title);
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let heading = if self.review.is_active() { "Mail reply" } else { &open.card.title };
+            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            let heading = &open.card.title;
+            self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), false, 12.0, alpha(ink, 0.7), HAlign::Left, heading);
             self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
             let card = card_rect(sheet);
             let key = Self::tile_key(&open.key);
-            let body = self.live.body(&key, &open.card, "glance sheet");
-            self.tiles.draw(cx, &key, &open.card.app, open.card.contained, &body, card);
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let reviewing = self.review.is_active();
+            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            let reviewing = false;
+            if reviewing {
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                self.review.draw(cx, &mut self.d, card, &tok);
+            } else {
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                let card = if let Some(binding) = open.card.l0.as_ref().and_then(|l| l.mail.as_ref()) {
+                    let toolbar = rect(card.pos.x, card.pos.y + (card.size.y - MailToolbar::HEIGHT).max(0.), card.size.x, MailToolbar::HEIGHT);
+                    self.mail_toolbar.draw(cx, &mut self.d, toolbar, &tok, binding);
+                    rect(card.pos.x, card.pos.y, card.size.x, (card.size.y - MailToolbar::HEIGHT).max(20.))
+                } else { card };
+                let body = self.live.body(&key, &open.card, "glance sheet");
+                self.tiles.draw(cx, &key, &open.card.app, open.card.contained, &body, card);
+            }
             let layout = format!("{} sheet@{},{},{},{} card@{},{},{},{} close@{},{}", open.key, sheet.pos.x as i32, sheet.pos.y as i32, sheet.size.x as i32, sheet.size.y as i32, card.pos.x as i32, card.pos.y as i32, card.size.x as i32, card.size.y as i32, (close.pos.x + close.size.x * 0.5) as i32, (close.pos.y + close.size.y * 0.5) as i32);
             if layout != self.logged {
                 log!("glance sheet: {layout}");
@@ -200,10 +325,13 @@ impl Widget for ShellGlanceSheet {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        self.refresh_publication(cx);
         if matches!(event, Event::Pause | Event::Background) { self.close_touch = None; }
         if self.open.is_none() {
             return;
         }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        self.poll_review(cx);
         if let Event::TouchUpdate(e) = event {
             use makepad_platform::event::TouchState;
             if self.close_touch.as_ref().is_some_and(|(uid, _, _)| !e.touches.iter().any(|t|
@@ -242,8 +370,32 @@ impl Widget for ShellGlanceSheet {
             }
             _ => {}
         }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if self.review.is_active() {
+            self.review.handle_event(event);
+            if !self.review.is_active() && self.open.as_ref().is_some_and(|o| o.card.card_id == "host-review" && o.card.l0.is_none() && o.card.body.is_empty()) {
+                self.close(cx);
+            }
+            self.redraw(cx);
+            return; // Host review is modal within this sheet; no L0 NAV dispatch.
+        }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if let Some(binding) = self.open.as_ref().and_then(|o| o.card.l0.as_ref()).and_then(|l| l.mail.clone()) {
+            if self.mail_toolbar.handle_event(event, &binding, &mut self.review) {
+                if self.review.is_active() {
+                    self.review_generation = crate::mail_card::review_generation(&binding.key());
+                    cx.set_key_focus(Area::Empty);
+                    cx.hide_text_ime();
+                }
+                self.poll_review(cx);
+                self.redraw(cx);
+                return;
+            }
+        }
         self.tiles.handle_event(cx, event);
         self.dispatch_taps(cx);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        { self.poll_review(cx); if self.review.is_active() { self.redraw(cx); } }
     }
 }
 
@@ -274,6 +426,7 @@ mod tests {
     fn opened(cx: &mut Cx) -> ShellGlanceSheet {
         let mut sheet = cx.with_vm(ShellGlanceSheet::script_new);
         sheet.sheet = rect(20., 60., 340., 400.);
+        sheet.publication_generation = crate::glance::generation();
         sheet.open = Some(Open { key: "test/card".into(), card: GlanceCard {
             app: "test".into(), card_id: "card".into(), title: "Card".into(), priority: 0,
             published_ms: 0, expires_ms: u64::MAX, open_app: "test".into(), route: None,
@@ -333,6 +486,20 @@ mod tests {
         assert!(!sheet.is_open());
     }
 
+
+    #[test]
+    fn republishing_refreshes_visible_source_and_cancels_old_touch_capture() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut sheet = opened(&mut cx);
+        sheet.close_touch = Some((9, dvec2(330., 82.), true));
+        let mut replacement = sheet.open.as_ref().unwrap().card.clone();
+        replacement.title = "Updated reply".into();
+        replacement.body = "new source".into();
+        sheet.replace_publication(&mut cx, replacement.clone());
+        assert_eq!(sheet.open.as_ref().unwrap().card, replacement);
+        assert_eq!(sheet.open_key(), Some("test/card"));
+        assert!(sheet.close_touch.is_none());
+    }
 
     #[test]
     fn withdrawn_card_key_closes_the_previous_sheet_instead_of_showing_wrong_content() {

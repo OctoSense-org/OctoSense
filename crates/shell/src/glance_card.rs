@@ -376,6 +376,7 @@ pub struct L0Session {
     pub source: String,
     pub data: serde_json::Value,
     pub store: octoscript_ui_l0::InstanceStore,
+    pub mail: Option<crate::mail_card::Session>,
     /// The chat generation the card was last lowered at.
     chat_generation: u64,
     /// The card reads a `sys.chat` (worked out once: every event asks).
@@ -413,6 +414,7 @@ impl L0Session {
             source: l0.source.clone(),
             data: l0.data.clone(),
             store: Default::default(),
+            mail: l0.mail.clone().map(crate::mail_card::Session::new),
             chat_generation: crate::glance_chat::generation(),
             reads_chat: crate::glance_chat::reads_chat(&l0.source),
             dark: dark(),
@@ -422,11 +424,19 @@ impl L0Session {
     /// The data the card reads now: as published, with the host's answer
     /// to each `sys.chat`.
     fn data_now(&self) -> serde_json::Value {
+        if let Some(mail) = &self.mail {
+            let seeded = mail.seed(&self.source, &self.data);
+            return match mail.chat_binding().and_then(|binding| crate::glance_chat::seed_bound(&self.app, &self.source, &seeded, &self.store, &binding)) {
+                Ok(data) => data,
+                Err(_) => crate::mail_card::unavailable_chat(&self.source, &seeded),
+            };
+        }
         crate::glance_chat::seed(&self.app, &self.source, &self.data, &self.store)
     }
 
     /// The card as it stands now, lowered for a Splash.
     pub fn body(&mut self) -> Result<String, String> {
+        if let Some(mail) = &mut self.mail { mail.refresh(); }
         self.chat_generation = crate::glance_chat::generation();
         self.dark = dark();
         lower_with_state(&self.source, &self.data_now(), &self.store)
@@ -441,7 +451,8 @@ impl L0Session {
     /// A conversation the card reads changed since it was last lowered (a
     /// reply arrived): lower it again.
     pub fn chat_moved(&self) -> bool {
-        self.reads_chat && self.chat_generation != crate::glance_chat::generation()
+        (self.reads_chat && self.chat_generation != crate::glance_chat::generation())
+            || self.mail.as_ref().is_some_and(crate::mail_card::Session::moved)
     }
 
     /// Carry out one tile's queued `NAV` calls, in order, then lower the
@@ -502,7 +513,7 @@ impl L0Session {
         };
         let outcome = octoscript_ui_l0::dispatch_reporting_with_origin(&self.source, &mut self.store, &key, &event, payload.as_ref(), &data, origin.unwrap_or(octoscript_ui_l0::ValueOrigin::Authored));
         for write in &outcome.writes {
-            self.perform(write, origin, &data);
+            self.perform(write, origin, &data, keystroke);
         }
         let moved = !outcome.changed.is_empty() || !outcome.writes.is_empty();
         Ok(TapOutcome { event, applied: outcome.applied, relower: moved && !keystroke })
@@ -510,9 +521,18 @@ impl L0Session {
 
     /// A §5.12 write the card reported, performed by the host: a
     /// `sys.chat` append (glance_chat.rs). The demo host performs no other.
-    fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite, origin: Option<octoscript_ui_l0::ValueOrigin>, data: &serde_json::Value) {
+    fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite, origin: Option<octoscript_ui_l0::ValueOrigin>, data: &serde_json::Value, from_field: bool) {
+        if matches!(write.helper.as_str(), "sys.mail_draft" | "sys.mail_review") {
+            let result = self.mail.as_mut().ok_or_else(|| "Mail card has no host binding".to_string()).and_then(|mail| mail.perform(write, origin, from_field));
+            if let Err(error) = result { log!("glance: Mail write refused: {error}"); }
+            return;
+        }
         if write.helper == "sys.chat" {
-            match crate::glance_chat::perform(&self.app, &self.source, &self.store, data, write, origin) {
+            let result = match &self.mail {
+                Some(mail) => mail.chat_binding().and_then(|binding| crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, data, write, origin, &binding)),
+                None => crate::glance_chat::perform(&self.app, &self.source, &self.store, data, write, origin),
+            };
+            match result {
                 Ok(entry) => log!("glance: {} chat {} recorded {}", self.app, write.source, entry.id),
                 Err(e) => log!("glance: {} chat {} refused: {e}", self.app, write.source),
             }
@@ -554,7 +574,7 @@ impl LiveCards {
         };
         if let Some(live) = self.cards.get_mut(tile).filter(|live| std::sync::Arc::ptr_eq(&live.published, l0)) {
             // The shell changed mode: the card takes the new palette.
-            if live.session.mode_moved() {
+            if live.session.mode_moved() || live.session.chat_moved() {
                 match live.session.body() {
                     Ok(body) => live.body = body.into(),
                     Err(e) => log!("{who}: {} does not lower in the new mode: {e}", live.key),
@@ -993,7 +1013,7 @@ mod tests {
 
     fn mail_session(card_id: &str) -> L0Session {
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == card_id).unwrap();
-        L0Session::new("os.mail", &crate::glance::L0Source { source, data })
+        L0Session::new("os.mail", &crate::glance::L0Source { source, data, mail: None })
     }
 
     /// The tap targets a body offers, in order, as `(key, event)`.
@@ -1098,7 +1118,7 @@ mod tests {
         crate::glance_chat::store().seed_if_empty("os.mail", "marks", &[(crate::glance_chat::Role::User, "Q?"), (crate::glance_chat::Role::Model, "A."), (crate::glance_chat::Role::Host, "Searched 3 messages.")], 0);
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ana-contract").unwrap();
         let source = source.replace("thread: \"ana-contract\"", "thread: \"marks\"");
-        let mut s = L0Session::new("os.mail", &crate::glance::L0Source { source, data });
+        let mut s = L0Session::new("os.mail", &crate::glance::L0Source { source, data, mail: None });
         let ask = target_for(&s.body().unwrap(), "ask");
         s.tap(&ask, None).unwrap();
         let body = s.body().unwrap();

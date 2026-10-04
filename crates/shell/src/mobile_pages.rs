@@ -1019,7 +1019,7 @@ mod tests {
     fn the_feed_keeps_a_cards_l0_source_for_its_tile() {
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ups-lamp").unwrap();
         let GlanceItem::Card(mut published) = card("os.mail", "ups-lamp", 50, 1) else { unreachable!() };
-        published.l0 = Some(std::sync::Arc::new(crate::glance::L0Source { source, data }));
+        published.l0 = Some(std::sync::Arc::new(crate::glance::L0Source { source, data, mail: None }));
         let mut feed = GlanceFeed::default();
         feed.replace_cards(vec![published.clone()]);
         assert_eq!(feed.cards().next(), Some(&published));

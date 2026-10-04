@@ -4,6 +4,8 @@ English | [简体中文](architecture.zh-CN.md)
 
 How OctoSense fits together: processes, agents, tools, approvals, storage and trust boundaries. Follow the [code walkthrough](architecture-walkthrough.md) for calls and ownership. Dependency versions come from [Cargo.toml](../Cargo.toml) and [native-runtime.lock.json](../native-runtime.lock.json); the dated design notes below record earlier decisions.
 
+**Mail reply implementation:** [ADR0007](adr/0007-composable-mail-action-cards.md) now has draft/editor/chat/review adapters in source. Mail agents can propose drafts and review, but cannot approve or send. Even developer mode requires the host-owned review control; currently only physical Android touch can authorize it. The [current code and verification gates](mail-composable-cards.md) supersede older Mail demo/send-path descriptions below. Integrated phone/model acceptance and desktop/accessibility approval remain incomplete.
+
 Every statement carries its status:
 
 - **On main**: merged, read in this repository's code (a path is given).

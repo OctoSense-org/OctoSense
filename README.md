@@ -160,6 +160,8 @@ The `<app>.notify` tools fill a fixed card template ([`notice.card`](crates/shel
 
 Mail's agent can also start on its own. Once the person has signed in, allowed Mail's agent and asked the system agent to turn on new-mail processing (`agents.provision`), a host worker syncs the inbox and starts the agent for each new message. The agent reads the message with its scoped tools and decides whether to post a card. No other app has events yet; the [Mail event walkthrough](docs/mail-agent-events.md) has the details.
 
+On Android, tapping a card notification opens its exact expanded card. A stale notification falls back to Glance.
+
 ### One app agent, two lanes
 
 The system agent and the person talk to the same app agent, each in a lane of their own:
@@ -299,7 +301,7 @@ sequenceDiagram
 </details>
 
 - **The relay** ([`crates/shell/src/host_tools/`](crates/shell/src/host_tools/)) receives every `peer/tool/call`. It checks that this caller may use this tool, validates the arguments against the tool's schema and charges the caller's budget (by default 32 tool calls a turn and 1000 a day). Only then does it run the tool in the app that owns it: a native app's open window, a script app's host service, or a process app over its peer link. It checks the result against the schema too.
-- **The approval router** ([`crates/shell/src/approvals/`](crates/shell/src/approvals/)) decides in a fixed order. Developer mode, which only the person can turn on, approves everything for the apps it covers. A `confirm: app` tool goes to the app's own sheet. Calls that must always ask, such as a Terminal command, go straight to a sheet. Everything else may be decided by the person's standing rules, and otherwise a shell sheet shows the exact arguments. Every decision is written to an audit log. [The walkthrough](docs/architecture-walkthrough.md#approval-order) gives the full order.
+- **The approval router** ([`crates/shell/src/approvals/`](crates/shell/src/approvals/)) decides in a fixed order. Developer mode, which only the person can turn on, approves routed calls for the apps it covers. Mail sending still requires its separate host-owned review and physical approval; developer mode and standing rules cannot authorize it. A `confirm: app` tool goes to the app's own sheet. Calls that must always ask, such as a Terminal command, go straight to a sheet. Everything else may be decided by the person's standing rules, and otherwise a shell sheet shows the exact arguments. Every decision is written to an audit log. [The walkthrough](docs/architecture-walkthrough.md#approval-order) gives the full order.
 - **Deadlines.** An approval or question nobody answers in 10 minutes is denied, never approved. If the turn is still running 30 seconds later, the shell interrupts it so the next turn can start.
 
 ### Cards and questions
@@ -308,7 +310,11 @@ An app with the `glance` permission publishes cards as itself (`glance.publish`,
 
 #### In-card chat
 
-A card can declare `sys.chat(app, thread, fields)`. The person types in the card, and only the publishing app's own agent answers, in the person's lane. The shell owns the transcript, kept in the app's account folder, and records as the person's only what the person typed. Model-written text is marked as AI-written and never runs as an action. No agent-published card declares a chat yet; the demo card [`mail-request.card`](crates/shell/resources/glance/mail-request.card) shows one with canned replies. See [`crates/l0-chat`](crates/l0-chat/README.md).
+**Current availability:** a model-authored Mail card published with a host-issued `draft_id` can bind its durable editor, contextual `sys.chat` and host review to that email/account. `mail.propose_reply`, `mail.draft`, `mail.suggest_reply` and `mail.propose_send` expose draft/proposal operations; none authorizes sending. The host review requires a trusted physical Android touch even in developer mode. Integrated paired-model phone acceptance remains unverified, and desktop/accessibility approval is deferred. See [Composed Mail cards](docs/mail-composable-cards.md). The older [`mail-request.card`](crates/shell/resources/glance/mail-request.card) under `OCTOSENSE_GLANCE_DEMO=mail` still uses canned replies and local demo state.
+
+An L0 card can declare `sys.chat(app, thread, fields)` and draw `ChatEntry` rows. It can also display model-written text (`class: model-copy`), which is marked AI-written and never executed as an action ([#263](https://github.com/OctoSense-org/OctoSense/pull/263)).
+
+The host owns the transcript. Only the publishing app’s own agent answers, in the person’s lane, and only text the person typed is recorded as theirs. Threads are stored in `apps/<app>/accounts/<account>/chat/<thread>.json`. See [`crates/l0-chat`](crates/l0-chat/README.md) and [`glance_chat.rs`](crates/shell/src/glance_chat.rs).
 
 #### Questions
 

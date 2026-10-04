@@ -135,6 +135,19 @@ The broker's `driver_of` and `take_over` handle multiple native instances sharin
 
 The shipped `<app>.notify`, `calendar.notify` and `calendar.agenda` templates contain no `sys.chat`; their agents are reached through “Ask <app>”. The `OCTOSENSE_GLANCE_DEMO=mail` demonstration card has chat but uses canned replies (`glance_chat::HostResponder`). The card-chat route above applies to a card that declares `sys.chat`.
 
+A bound Mail reply card adds a durable host path: `mail.propose_reply` creates
+an account/email-bound draft, and `mail.publish_card` carries its `draft_id`.
+`mail_card.rs` answers `sys.mail_draft` and checks Field-origin edits against the
+displayed revision. Its `sys.mail_review` write requests the host's
+`mail_review.rs` UI, never approval. `drafts.rs` owns the immutable attempt and
+SMTP receipt; the agent cannot send directly. Chat includes the bound email,
+acknowledged draft and bounded history in the existing Mail peer. Only verified
+Android physical touch can approve in this iteration; desktop/accessibility
+approval and complete paired-model phone acceptance remain pending. Follow the
+[implementation and gate table](mail-composable-cards.md) before treating the
+new flow as validated.
+
+
 Phone touch navigation does not yet expose a control to open the Ask-app panel. App-owned chat and published-card chat remain separate surfaces.
 
 Stopping work depends on the entry point:
@@ -210,7 +223,7 @@ For the Calendar question, the executor reads `calendar/events.json` under Calen
 | App | Current data/tool boundary |
 | --- | --- |
 | News | `news.list`, `news.read` and `news.notify` |
-| Mail | Account-scoped accounts/folders/sync/list/peek, notify/publish_card and explicit event skip; no send or credential tool |
+| Mail | Account-scoped accounts/folders/sync/list/peek, notify/publish_card/skip_event, plus propose_reply/draft/suggest_reply/propose_send; no send, approve or credential tool |
 | Photos, Maps, Camera, YouTube | Only their own `<app>.notify`, publishing a shared notice card through [glance_notice.rs](../crates/shell/src/glance_notice.rs) |
 | AI providers | No app agent |
 

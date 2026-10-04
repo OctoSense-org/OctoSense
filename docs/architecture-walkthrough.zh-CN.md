@@ -135,6 +135,9 @@ sequenceDiagram
 
 随产品提供的 `<app>.notify`、`calendar.notify` 与 `calendar.agenda` 模板不含 `sys.chat`，通过 “Ask <app>” 与其 Agent 对话。`OCTOSENSE_GLANCE_DEMO=mail` 演示卡片带有聊天，但由 `glance_chat::HostResponder` 返回预设答案。上表的卡片聊天路线适用于声明了 `sys.chat` 的卡片。
 
+绑定草稿的 Mail 回复卡片新增持久化宿主路径：`mail.propose_reply` 创建账户／邮件绑定草稿，`mail.publish_card` 携带其 `draft_id`。`mail_card.rs` 回答 `sys.mail_draft`，按显示中的修订号校验 Field 来源的编辑。`sys.mail_review` 写入只请求 `mail_review.rs` 宿主 UI，不构成批准。`drafts.rs` 拥有不可变尝试和 SMTP 回执，agent 不能直接发送。聊天在已有 Mail peer 中包含绑定邮件、已确认保存的草稿和有限历史。本轮只有经过验证的 Android 实体触摸可批准；桌面／无障碍审批及完整双模型手机验收仍待完成。将新路径视为已验证前，请看[实现与验证表](mail-composable-cards.zh-CN.md)。
+
+
 手机触控导航尚无打开 Ask-app 面板的对应控件。应用自己的聊天与卡片聊天仍是独立入口。
 
 不同入口的停止操作影响不同通道：
@@ -206,7 +209,7 @@ Shell 将聊天输入动作标为 `TurnTrigger::Person`。脚本调用 `octos.tu
 | 应用 | 当前数据/工具边界 |
 | --- | --- |
 | News | `news.list`、`news.read`、`news.notify` |
-| Mail | 绑定账户的 accounts/folders/sync/list/peek，notify/publish_card，以及事件无操作决策 skip_event；不暴露发信或密码 |
+| Mail | 绑定账户的 accounts/folders/sync/list/peek、notify/publish_card/skip_event，以及 propose_reply/draft/suggest_reply/propose_send；不暴露发送、批准或凭据工具 |
 | Photos、Maps、Camera、YouTube | 仅各自的 `<app>.notify`，经 [glance_notice.rs](../crates/shell/src/glance_notice.rs) 发布共享通知卡片 |
 | AI providers | 没有应用 Agent |
 

@@ -80,6 +80,9 @@ pub mod ext;
 pub mod glance;
 pub mod glance_card;
 pub mod glance_chat;
+pub mod mail_card;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod mail_review;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_notice;
@@ -6755,6 +6758,15 @@ impl App {
         if let Event::Signal = event {
             if self.state.is_some() {
                 self.system_chat_changed(cx);
+                // Review requested from Glance or the native Mail composer:
+                // always use the same host-owned region in the card sheet.
+                if let Some(key) = mail_card::requested_card() {
+                    let already_open = self.ui.widget(cx, ids!(shell_glance_sheet))
+                        .borrow::<glance_sheet::ShellGlanceSheet>()
+                        .is_some_and(|s| s.open_key() == Some(key.as_str()));
+                    if !already_open { self.open_glance_card(cx, &key); }
+                    self.redraw_all(cx);
+                }
             }
             // A card was published, replaced or withdrawn (glance.rs).
             if glance::generation() != self.glance_generation && self.state.is_some() {

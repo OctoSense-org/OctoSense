@@ -363,8 +363,8 @@ pub(crate) mod tests {
         let dir = stamped_bundle("mail", "tools", |_, _| {});
         let loaded = from_bundle(&dir).unwrap();
         let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert_eq!(names.into_iter().collect::<BTreeSet<_>>(), ["mail.accounts", "mail.folders", "mail.sync", "mail.list", "mail.peek", "mail.notify", "mail.publish_card", "mail.skip_event"].into_iter().collect());
-        assert_eq!(loaded.host_service_tools.len(), 8);
+        assert_eq!(names.into_iter().collect::<BTreeSet<_>>(), ["mail.accounts", "mail.folders", "mail.sync", "mail.list", "mail.peek", "mail.notify", "mail.publish_card", "mail.skip_event", "mail.propose_reply", "mail.draft", "mail.suggest_reply", "mail.propose_send"].into_iter().collect());
+        assert_eq!(loaded.host_service_tools.len(), 12);
         assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
         assert!(loaded.tools.iter().all(|t| t["shareable"] == false), "Mail's tools are its own agent's");
         assert!(["mail", "glance"].iter().all(|f| loaded.families.contains(*f)));
@@ -373,6 +373,29 @@ pub(crate) mod tests {
         assert!(!loaded.skills.is_empty());
         assert!(loaded.background);
         assert_eq!(loaded.triggers, ["mail.messages.new"]);
+        // Model tools can propose a reply/review, never supply an account or
+        // manufacture host approval. Check the admitted schemas, not raw JSON.
+        for name in ["mail.propose_reply", "mail.draft", "mail.suggest_reply", "mail.propose_send"] {
+            let tool = loaded.tools.iter().find(|t| t["name"] == name).unwrap();
+            let schema = &tool["input_schema"];
+            assert_eq!(schema["additionalProperties"], false);
+            let properties = schema["properties"].as_object().unwrap();
+            for forbidden in ["account", "publisher", "approved", "authorization", "send"] {
+                assert!(!properties.contains_key(forbidden), "{name} exposes {forbidden}");
+            }
+            if matches!(name, "mail.suggest_reply" | "mail.propose_send") {
+                assert_eq!(properties["expected_revision"]["type"], "integer");
+                assert!(schema["required"].as_array().unwrap().iter().any(|v| v == "expected_revision"));
+            }
+        }
+        assert!(!loaded.tools.iter().any(|t| matches!(t["name"].as_str(), Some("mail.send" | "mail.approve"))));
+        let guidance_bytes = loaded.agent_md.as_ref().unwrap().len()
+            + loaded.skills.iter().map(|(_, text)| text.len()).sum::<usize>();
+        assert!(guidance_bytes <= 6800, "bundle guidance leaves insufficient room for provisioned policy: {guidance_bytes}");
+        let skill = loaded.skills.iter().map(|(_, text)| text.as_str()).collect::<Vec<_>>().join("\n");
+        for contract in ["sys.mail_draft", "sys.mail_review", "sys.chat", "on_change: save", "body: set($value)"] {
+            assert!(skill.contains(contract), "missing editor/chat contract {contract}");
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -4,6 +4,8 @@
 
 OctoSense 的进程、Agent、工具、审批、存储与信任边界。具体调用和所有权见[代码导读](architecture-walkthrough.zh-CN.md)。依赖版本以 [Cargo.toml](../Cargo.toml) 和 [native-runtime.lock.json](../native-runtime.lock.json) 为准；下方带日期的设计记录保留早期决策。
 
+**Mail 回复实现：** [ADR0007](adr/0007-composable-mail-action-cards.zh-CN.md) 的草稿／编辑／聊天／审核适配器已在源码中实现。Mail Agent 可以提议草稿与审核，不能批准或发送。开发者模式也必须经过宿主审核控件；当前只有 Android 实体触摸能授权。[当前代码与验证条件](mail-composable-cards.zh-CN.md)取代下文较早的 Mail 演示／发送路径描述。手机／模型集成验收，以及桌面／无障碍审批仍未完成。
+
 每条陈述都标明状态：
 
 - **已在 main**：已合入，在本仓库代码中读过（给出路径）。
