@@ -211,8 +211,13 @@ impl PhoneState {
         // and a search's keyboard is made room for before that resize, so
         // the bubble clears the lifted search bar (`search_keyboard_lift`).
         let lift = self.search_keyboard_lift(crate::host::now());
-        Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x,
-            (self.viewport.size.y - self.keyboard - lift).max(1.0)) }
+        let height = (self.viewport.size.y - self.keyboard - lift).max(1.0);
+        // Keep the app-local navigation in Glance's reserved header. Its
+        // normal mid-screen position otherwise obscures live card content.
+        let height = if self.screen == PhoneScreen::Home && self.pages.on_glance() {
+            height.min(crate::mobile_pages::GLANCE_HEADER)
+        } else { height };
+        Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x, height) }
     }
     pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
         self.native_keyboard=match event {

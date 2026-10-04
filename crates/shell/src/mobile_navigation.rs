@@ -228,6 +228,25 @@ mod tests {
     }
 
     #[test]
+    fn glance_navigation_stays_outside_card_content_with_and_without_ime() {
+        let mut phone = crate::mobile::PhoneState::default();
+        phone.viewport = screen();
+        phone.pages.index = -1.0;
+        for height in [777.0, 447.0, 280.0] {
+            phone.viewport.size.y = height;
+            let header = phone.navigation_rect();
+            let layout = phone.navigation.layout(header);
+            let content_top = phone.viewport.pos.y + crate::mobile_pages::GLANCE_HEADER;
+            for r in [layout.bubble, layout.panel] {
+                assert!(r.pos.y + r.size.y <= content_top, "navigation is confined to the reserved header");
+            }
+            assert_eq!(phone.navigation.hit(header, dvec2(300.0, content_top + 40.0)), None);
+        }
+        phone.pages.index = 0.0;
+        assert_eq!(phone.navigation_rect(), phone.viewport, "ordinary home keeps its movable navigation");
+    }
+
+    #[test]
     fn mobile_floating_layout_avoids_system_edges_at_both_docks_and_after_resize() {
         for size in [dvec2(406.0, 777.0), dvec2(777.0, 320.0), dvec2(320.0, 440.0), dvec2(406.0, 280.0)] {
             let screen = Rect { pos: dvec2(8.0, 58.0), size };

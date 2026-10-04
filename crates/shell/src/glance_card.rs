@@ -14,12 +14,13 @@
 //!
 //! **Tile size.** Width: the glance column (the phone's screen minus 40 pt,
 //! the desktop panel's 328 pt). Height: the card's own measured height,
-//! clamped to [`TILE_MIN_HEIGHT`]..=[`TILE_MAX_HEIGHT`] (room for a whole
-//! action card, its buttons included); until the first draw measures it,
-//! [`TILE_DEFAULT_HEIGHT`]. A taller card is clipped at the cap ([`overflow`]
-//! says by how much), or scrolled inside its tile where the surface offers
-//! that ([`GlanceTiles::draw_scrolled`]: the glance panel); the app is one
-//! tap away. A script card should size its root `Fit`.
+//! bounded below by [`TILE_MIN_HEIGHT`]; until the first draw measures it,
+//! [`TILE_DEFAULT_HEIGHT`]. The phone feed uses the full measured height so
+//! its scroll range includes trailing controls. Desktop tiles are capped
+//! at [`TILE_MAX_HEIGHT`] ([`overflow`] reports the excess), with scrolling
+//! inside the tile where offered ([`GlanceTiles::draw_scrolled`]). The
+//! expanded card scrolls its focused editor into view when resized, leaving
+//! room for the following action row. A script card should size its root `Fit`.
 //!
 //! **Policy.** A tile's isolate runs under the publishing app's resolved
 //! policy, applied exactly as the Card runner applies it
@@ -646,6 +647,14 @@ pub fn tile_height(key: &str) -> f64 {
     HEIGHTS.with(|h| h.borrow().get(key).copied()).map(clamp_height).unwrap_or(TILE_DEFAULT_HEIGHT)
 }
 
+/// A phone feed scrolls the entire card instead of clipping it at a tile
+/// cap. Include long chat replies and the controls following them in its
+/// scroll extent; desktop tiles retain their own bounded scrolling policy.
+pub fn feed_height(key: &str) -> f64 {
+    measured_height(key).filter(|h| h.is_finite())
+        .map(|h| h.max(TILE_MIN_HEIGHT)).unwrap_or(TILE_DEFAULT_HEIGHT)
+}
+
 fn record_height(key: &str, measured: f64) -> bool {
     HEIGHTS.with(|h| {
         let mut h = h.borrow_mut();
@@ -675,6 +684,31 @@ struct Tile {
     /// The publishing app, whose requests the tile's calls go out as.
     app: String,
     contained: bool,
+    viewport: Option<Rect>,
+    focused: Option<WidgetUid>,
+}
+
+fn focused_widget(widget: &WidgetRef, focus: Area) -> Option<WidgetUid> {
+    if focus.is_empty() { return None; }
+    if widget.area() == focus { return Some(widget.widget_uid()); }
+    let mut found = None;
+    widget.children(&mut |_, child| {
+        if found.is_none() { found = focused_widget(&child, focus); }
+    });
+    found
+}
+
+/// Keep the editor and its following action row inside a resized viewport.
+/// Only applied on a viewport/focus change, so reading older chat by hand
+/// never snaps the scroll position back to the composer.
+fn editor_scroll(current: f64, viewport: Rect, editor: Rect, content_height: f64) -> f64 {
+    let actions = 88.0_f64.min((viewport.size.y - editor.size.y - 16.0).max(0.0));
+    let top = viewport.pos.y + 8.0;
+    let bottom = viewport.pos.y + viewport.size.y - 8.0 - actions;
+    let delta = if editor.pos.y + editor.size.y > bottom {
+        editor.pos.y + editor.size.y - bottom
+    } else if editor.pos.y < top { editor.pos.y - top } else { 0.0 };
+    (current + delta).clamp(0.0, (content_height - viewport.size.y).max(0.0))
 }
 
 /// The live tiles one surface draws, by card key. A surface keeps one of
@@ -730,11 +764,29 @@ impl GlanceTiles {
         if measured > 1.0 && record_height(key, measured) {
             cx.redraw_all();
         }
+        if self.scroll {
+            let focused = focused_widget(&tile.frame, cx.key_focus());
+            let resized = tile.viewport.is_none_or(|old| old != rect);
+            if focused.is_some() && (resized || focused != tile.focused) {
+                let editor = cx.get_ime_area_rect();
+                if editor.size.y > 0.0 {
+                    let view = tile.frame.as_view();
+                    let current = view.scroll_pos();
+                    let next = editor_scroll(current.y, rect, editor, measured);
+                    if (next - current.y).abs() > 0.5 {
+                        view.set_scroll_pos(cx, dvec2(current.x, next));
+                        tile.frame.redraw(cx);
+                    }
+                }
+            }
+            tile.viewport = Some(rect);
+            tile.focused = focused;
+        }
     }
 
     /// The tile for `key`, made and seated on first use, running `body`.
     pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
-        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), body: "".into(), app: app.to_string(), contained });
+        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), body: "".into(), app: app.to_string(), contained, viewport: None, focused: None });
         if tile.frame.is_empty() {
             let scroll = self.scroll;
             tile.frame = cx.with_vm(|vm| {
@@ -1341,5 +1393,81 @@ mod tests {
         assert_eq!(clamp_height(900.0), TILE_MAX_HEIGHT);
         assert_eq!(clamp_height(120.0), 120.0);
         assert_eq!(tile_height("nobody/never"), TILE_DEFAULT_HEIGHT);
+    }
+
+    #[test]
+    fn phone_feed_keeps_long_chat_and_its_trailing_controls_reachable() {
+        let key = "os.mail/long-chat-feed";
+        record_height(key, 1600.0);
+        assert_eq!(feed_height(key), 1600.0, "feed scrolling includes the full conversation and Ask/Back controls");
+        assert_eq!(tile_height(key), TILE_MAX_HEIGHT, "desktop tiles retain their bounded scrolling");
+        record_height(key, 120.0);
+        assert_eq!(feed_height(key), 120.0, "returning to the brief removes the old long scroll extent");
+    }
+
+    #[test]
+    fn keyboard_resize_keeps_composer_and_action_row_inside_card_viewport() {
+        let viewport = Rect { pos: dvec2(20.0, 150.0), size: dvec2(340.0, 260.0) };
+        let editor = Rect { pos: dvec2(34.0, 680.0), size: dvec2(312.0, 46.0) };
+        let next = editor_scroll(500.0, viewport, editor, 1600.0);
+        let after = editor.translate(dvec2(0.0, 500.0 - next));
+        assert!(after.pos.y >= viewport.pos.y);
+        assert!(after.pos.y + after.size.y + 88.0 <= viewport.pos.y + viewport.size.y);
+        assert_eq!(editor_scroll(next, viewport, after, 1600.0), next, "settled geometry must not oscillate");
+        let already_visible = Rect { pos: dvec2(34.0, 180.0), size: dvec2(312.0, 46.0) };
+        assert_eq!(editor_scroll(100.0, viewport, already_visible, 1600.0), 100.0);
+    }
+
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn focused_card_editor_and_ask_remain_visible_after_keyboard_resize() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        let body: std::sync::Arc<str> = r#"View { width: Fill height: Fit flow: Down
+            View { width: Fill height: 1000 }
+            composer := TextInput { width: Fill height: 46 text: "A draft question" }
+            ask := Button { width: Fill height: 48 text: "Ask" }
+        }"#.into();
+        let splash = tiles.open(&mut cx, "resize/editor", "mail", false, &body);
+        let frame = tiles.tiles["resize/editor"].frame.clone();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let mut draw = |cx: &mut Cx, tiles: &mut GlanceTiles, height: f64| {
+            let size = dvec2(340.0, height);
+            pass.set_size(cx, size);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw(&mut draw, "resize/editor", "mail", false, &body, Rect { pos: dvec2(0.0, 0.0), size });
+            draw.end_turtle();
+            list.end(&mut draw);
+            draw.end_pass(&pass);
+        };
+        draw(&mut cx, &mut tiles, 600.0);
+        frame.as_view().set_scroll_pos(&mut cx, dvec2(0.0, 500.0));
+        draw(&mut cx, &mut tiles, 600.0);
+        let editor = splash.text_input(&cx, ids!(composer));
+        assert!(!editor.is_empty());
+        editor.take_key_focus(&mut cx);
+        cx.send_trigger(editor.area(), Trigger { id: live_id!(focus), from: Area::Empty });
+        cx.handle_triggers();
+        assert!(focused_widget(&frame, cx.key_focus()).is_some(), "focus must be found across the Splash boundary");
+        draw(&mut cx, &mut tiles, 260.0);
+        draw(&mut cx, &mut tiles, 260.0);
+        for area in [editor.area(), splash.button(&cx, ids!(ask)).area()] {
+            let rect = area.rect(&cx);
+            assert!(rect.size.y > 0.0 && rect.pos.y >= 0.0 && rect.pos.y + rect.size.y <= 260.5, "control outside resized viewport: {rect:?}");
+        }
+        let settled = frame.as_view().scroll_pos();
+        draw(&mut cx, &mut tiles, 260.0);
+        assert_eq!(frame.as_view().scroll_pos(), settled);
+        // Reading earlier messages must not snap the user back to the editor.
+        frame.as_view().set_scroll_pos(&mut cx, dvec2(0.0, 100.0));
+        draw(&mut cx, &mut tiles, 260.0);
+        assert_eq!(frame.as_view().scroll_pos().y, 100.0);
     }
 }

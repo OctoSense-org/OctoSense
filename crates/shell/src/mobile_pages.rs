@@ -75,7 +75,9 @@ impl GlanceItem {
             GlanceItem::Event { .. } => 78.0,
             GlanceItem::Fetch { .. } => 88.0,
             GlanceItem::Note { .. } => 104.0,
-            GlanceItem::Card(card) => crate::glance_card::tile_height(&card.key()),
+            // The phone scrolls the whole feed. Capping the tile here hides
+            // the tail of a long conversation and its reply controls forever.
+            GlanceItem::Card(card) => crate::glance_card::feed_height(&card.key()),
         }
     }
     pub fn title(&self) -> &str {
@@ -397,10 +399,16 @@ impl PagesState {
     }
 }
 
-/// Points above the glance column (its header) and below it (the dock).
-const GLANCE_HEADER: f64 = 96.0;
-const GLANCE_BOTTOM: f64 = 124.0;
+/// Glance owns the page: navigation stays in the header, and the bottom
+/// leaves room for the system gesture area rather than the home app dock.
+pub(crate) const GLANCE_HEADER: f64 = 112.0;
+const GLANCE_BOTTOM: f64 = 32.0;
 const GLANCE_GAP: f64 = 12.0;
+
+fn glance_column(screen: Rect, dx: f64) -> Rect {
+    rect(screen.pos.x + dx, screen.pos.y + GLANCE_HEADER, screen.size.x,
+        (screen.size.y - GLANCE_HEADER - GLANCE_BOTTOM).max(0.0))
+}
 
 /// Refresh the page model from the shell each frame before the home draws:
 /// the favorites (the launcher's apps minus the dock), the capacities of
@@ -643,25 +651,27 @@ impl PhoneSurface {
         let dimmed = rect(page.pos.x, page.pos.y - i.top, page.size.x, page.size.y + i.top + i.bottom);
         self.rounded(cx, dimmed, 0.0, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
         let ink = alpha(self.theme_ink(if dark { rgb(255, 255, 255) } else { rgb(26, 26, 32) }), opacity);
-        let landscape = screen.size.x > screen.size.y;
-        let top = page.pos.y + if landscape { 30.0 } else { 52.0 };
+        let top = page.pos.y + 36.0;
         let left = page.pos.x + 20.0;
         let width = page.size.x - 40.0;
-        self.d.label_elided(cx, rect(left, top, width, 30.0), true, 24.0, ink, HAlign::Left, "At a glance");
-        self.d.label_elided(cx, rect(left, top + 32.0, width, 20.0), false, 13.0, alpha(ink, 0.7 * opacity), HAlign::Left, &phone.pages.date);
-        let bottom = screen.pos.y + screen.size.y - GLANCE_BOTTOM;
-        // Where a finger can tap a card: the page on screen, above the page
-        // indicator and the dock (a tall card reaches under them).
-        let column = page.clip((screen.pos, dvec2(screen.pos.x + screen.size.x, bottom)));
-        let mut y = top + 64.0 - phone.pages.glance_scroll;
+        let heading_width = if crate::mobile_navigation::ENABLED { width - 84.0 } else { width };
+        self.d.label_elided(cx, rect(left, top, heading_width, 30.0), true, 24.0, ink, HAlign::Left, "At a glance");
+        self.d.label_elided(cx, rect(left, top + 32.0, heading_width, 20.0), false, 13.0, alpha(ink, 0.7 * opacity), HAlign::Left, &phone.pages.date);
+        let column = glance_column(screen, dx).clip((screen.pos, screen.pos + screen.size));
+        let bottom = column.pos.y + column.size.y;
+        let mut y = page.pos.y + GLANCE_HEADER - phone.pages.glance_scroll;
         let items: Vec<GlanceItem> = phone.pages.feed.items().cloned().collect();
+        // Painting and hit testing use the same viewport. Previously only
+        // hits were clipped, so text painted behind the launcher controls.
+        cx.begin_turtle(Walk::abs_rect(column), Layout::default());
         for item in &items {
             let h = item.height();
-            if y + h > top + 56.0 && y < bottom {
+            if y + h > column.pos.y && y < bottom {
                 self.draw_glance_card(cx, rect(left, y, width, h), column, item, style, dark, ink, opacity);
             }
             y += h + GLANCE_GAP;
         }
+        cx.end_turtle();
         let live: Vec<String> = phone.pages.feed.cards().map(GlanceCard::key).collect();
         self.glance_cards.sweep(cx, live);
         if dx == 0.0 {
@@ -683,7 +693,10 @@ impl PhoneSurface {
             let open = crate::glance_card::open_button(r);
             self.rounded(cx, open, 14.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.22 } else { 0.8 } * opacity));
             self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
-            self.hits.push((open, glance_open_hit(card)));
+            let visible_open = tappable(open, column);
+            if visible_open.size.x > 0.0 && visible_open.size.y > 0.0 {
+                self.hits.push((visible_open, glance_open_hit(card)));
+            }
             return;
         }
         self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
@@ -977,14 +990,32 @@ mod tests {
         let mut p = PagesState { feed, date: "Monday, 14 September 2026".into(), ..Default::default() };
         assert_eq!(p.strip_text(), "Monday, 14 September 2026  ·  24° Clear  ·  Standup 10:00");
         // The column scrolls only as far as it overflows the screen.
-        // 434 of cards under a 96 header on a 500 screen with 124 kept for
-        // the dock: 154 points hidden.
+        // 434 of cards under a 112 header on a 500 screen with 32 kept for
+        // the system edge: 78 points hidden, all reachable by scrolling.
         p.scroll_glance(1000.0, 500.0);
-        assert_eq!(p.glance_scroll, 434.0 + 96.0 - (500.0 - 124.0));
+        assert_eq!(p.glance_scroll, 78.0);
         p.scroll_glance(-1000.0, 500.0);
         assert_eq!(p.glance_scroll, 0.0);
         p.scroll_glance(50.0, 5000.0);
         assert_eq!(p.glance_scroll, 0.0, "a tall screen shows everything");
+    }
+
+    #[test]
+    fn glance_scroll_reaches_the_last_control_above_the_keyboard() {
+        let mut feed = GlanceFeed::default();
+        feed.seed((0..8).map(|n| GlanceItem::Note { title: n.to_string(), body: "Long conversation".into() }).collect());
+        let mut pages = PagesState { feed, ..Default::default() };
+        for height in [800.0, 380.0, 260.0] {
+            let screen = rect(8.0, 24.0, 353.0, height);
+            let column = glance_column(screen, 0.0);
+            pages.scroll_glance(10000.0, height);
+            let last_bottom = screen.pos.y + GLANCE_HEADER + pages.feed.column_height(GLANCE_GAP) - pages.glance_scroll;
+            assert_eq!(last_bottom, column.pos.y + column.size.y);
+            assert_eq!(column.pos.y, screen.pos.y + GLANCE_HEADER);
+            assert!(last_bottom <= screen.pos.y + screen.size.y - 32.0);
+            let hidden_open = rect(280.0, screen.pos.y + 20.0, 28.0, 28.0);
+            assert_eq!(tappable(hidden_open, column).size.y, 0.0, "a scrolled-off arrow cannot intercept the header");
+        }
     }
 
     fn card(app: &str, id: &str, priority: i64, published_ms: u64) -> GlanceItem {

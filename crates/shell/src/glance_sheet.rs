@@ -124,6 +124,8 @@ pub struct ShellGlanceSheet {
     publication_generation: u64,
     #[rust]
     mail_toolbar: MailToolbar,
+    #[rust]
+    keyboard_visible: bool,
 }
 
 impl ShellGlanceSheet {
@@ -283,7 +285,7 @@ impl Widget for ShellGlanceSheet {
             self.d.solid(cx, screen, vec4(0.0, 0.0, 0.0, 0.55));
             let card_h = crate::glance_card::measured_height(&Self::tile_key(&open.key)).unwrap_or(UNMEASURED_CARD);
             #[cfg(any(feature = "app-hub", native_mobile))]
-            let card_h = if self.review.is_active() { 560.0 } else if open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) { card_h + MailToolbar::HEIGHT } else { card_h };
+            let card_h = if self.review.is_active() { 560.0 } else if !self.keyboard_visible && open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) { card_h + MailToolbar::HEIGHT } else { card_h };
             let sheet = sheet_rect(screen, card_h);
             self.sheet = sheet;
             self.d.card(cx, sheet, &tok.notifications.surface);
@@ -305,7 +307,7 @@ impl Widget for ShellGlanceSheet {
                 self.review.draw(cx, &mut self.d, card, &tok);
             } else {
                 #[cfg(any(feature = "app-hub", native_mobile))]
-                let card = if let Some(binding) = open.card.l0.as_ref().and_then(|l| l.mail.as_ref()) {
+                let card = if let Some(binding) = open.card.l0.as_ref().and_then(|l| l.mail.as_ref()).filter(|_| !self.keyboard_visible) {
                     let toolbar = rect(card.pos.x, card.pos.y + (card.size.y - MailToolbar::HEIGHT).max(0.), card.size.x, MailToolbar::HEIGHT);
                     self.mail_toolbar.draw(cx, &mut self.d, toolbar, &tok, binding);
                     rect(card.pos.x, card.pos.y, card.size.x, (card.size.y - MailToolbar::HEIGHT).max(20.))
@@ -325,6 +327,15 @@ impl Widget for ShellGlanceSheet {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if let Event::VirtualKeyboard(keyboard) = event {
+            let visible = match keyboard {
+                VirtualKeyboardEvent::WillShow { height, .. } | VirtualKeyboardEvent::DidShow { height, .. } => *height > 0.0,
+                VirtualKeyboardEvent::WillHide { .. } | VirtualKeyboardEvent::DidHide { .. } => false,
+            };
+            if visible != self.keyboard_visible { self.mail_toolbar = MailToolbar::default(); }
+            self.keyboard_visible = visible;
+            self.redraw(cx);
+        }
         self.refresh_publication(cx);
         if matches!(event, Event::Pause | Event::Background) { self.close_touch = None; }
         if self.open.is_none() {
@@ -380,7 +391,7 @@ impl Widget for ShellGlanceSheet {
             return; // Host review is modal within this sheet; no L0 NAV dispatch.
         }
         #[cfg(any(feature = "app-hub", native_mobile))]
-        if let Some(binding) = self.open.as_ref().and_then(|o| o.card.l0.as_ref()).and_then(|l| l.mail.clone()) {
+        if let Some(binding) = self.open.as_ref().and_then(|o| o.card.l0.as_ref()).and_then(|l| l.mail.clone()).filter(|_| !self.keyboard_visible) {
             if self.mail_toolbar.handle_event(event, &binding, &mut self.review) {
                 if self.review.is_active() {
                     self.review_generation = crate::mail_card::review_generation(&binding.key());

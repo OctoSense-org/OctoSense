@@ -833,6 +833,9 @@ impl PhoneSurface {
                 if home {self.hits.push((r,PhoneHit::App(id.clone())));}
             }
         }
+        // Glance is a reading and editing surface. Home's pinned apps and
+        // page dots must not cover its cards, especially above a native IME.
+        if phone.pages.on_glance() { return; }
         let dock=Self::home_dock(screen);
         if ios {self.glass.draw_surface_with_backdrop(cx,dock,backdrop,opacity);}
         let cell=dock.size.x/4.0;

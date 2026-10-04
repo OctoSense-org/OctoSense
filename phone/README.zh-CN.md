@@ -135,6 +135,8 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 搜索只能通过在桌面上下拉打开；应用库没有搜索栏。与 iOS 一样，搜索框位于底部、键盘上方；未输入时列表为空，每输入一个字符就会缩小结果：应用名称或其中某个词（词内的大写字母也算词首，因此 "tube" 能找到 YouTube）以输入内容开头即为匹配，不区分大小写和重音。名称以输入内容开头的应用排在前面，按回车即可打开最佳匹配。在应用库中，右侧的字母栏可快速跳转网格；获得使用情况访问权限后，顶部会显示一行“建议”，列出最近使用的应用。应用在通知面板中有通知时，其图标会带一个圆点。最近任务以卡片形式列出托管应用；在 Android 设置中授予使用情况访问权限后（最近任务中的卡片可打开该设置），还会显示一行最近使用过的 Android 应用。每个可点按区域都是带有语音标签的无障碍节点，因此 TalkBack 和 UI 自动化都能读取并操作 Shell（已在安装 TalkBack 的情况下以及通过 UiAutomation 探针验证：无障碍焦点能落到节点上，其点击操作可以打开应用、通知面板或应用抽屉；注意 `adb shell input` 的点按会绕过 TalkBack 的触摸浏览，因此无法用脚本模拟真实的读屏触摸）。标签会跟随 Android 的字体大小设置。Shell 跟随 Android 的深色主题，并绘制在透明的系统栏之下；通知面板中的深色模式磁贴会覆盖外观设置，直到系统设置下一次变更。桥接层的失败原因会以通俗的句子呈现给用户（见 `crates/shell/src/android_integration.rs` 中的 `result_copy`），而不是原因代码。
 
+概览页为导航预留顶部区域，卡片只绘制在阅读区域内，桌面程序坞和分页圆点在此隐藏。长卡片可滚动浏览全部内容，包括聊天输入框和操作按钮。在展开的卡片中，输入框获得焦点或键盘改变可用高度时，视图会滚动到输入框及其后的操作区域。键盘打开期间，固定的邮件草稿工具栏会收起，键盘关闭后恢复；**Review reply** 仍进入宿主的发送审批流程。
+
 ## 内置设置
 
 在应用目录中打开 **OctoSense Settings**，可使用共享主题、受支持的显示与声音控制以及设备信息。它的 Octoscript–Makepad 界面会跟随实时的主题和字体大小变化，同时保留当前页面。导航、搜索、草稿、审阅和应用事件处理都在 [Octoscript 控制器](resources/settings/controller) 中执行；原生代码负责渲染、文本输入和有类型的 Android 绑定。参见 [移植设计与验证状态（英文）](../docs/adr/home/0005-settings-octoscript-controller.md)。完整替代系统设置的工作仍在进行中，部分区域仍会打开 Android 设置。参见 [当前控制项与验证（英文）](docs/android/settings.md)、[功能对齐清单（英文）](docs/android/settings-parity.md) 和 [架构决策（英文）](../docs/adr/home/0006-builtin-settings.md)。
