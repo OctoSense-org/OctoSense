@@ -89,13 +89,19 @@ receipt without a payload fingerprint allows one validated refresh.
 
 The [tool schemas](../apps/mail/bundle/tools.json) describe the four draft/proposal
 tools. Catalog contracts are pinned to Octoscript
-`9ca9545b6cba489ab72ec988dfd649fb7c13ce17`; Octoscript-Makepad is pinned to
-`a950f7fb7c5560eb0583d643ea1cf11d4558e6d8`. Both Mail sources require literal app
+`2e37d9e657a246f16718d9a475e167ccd2d5b5fa`; Octoscript-Makepad is pinned to
+`27e9c1bfdbf6021bcad87214ae4ebbe6d683b406`. Both Mail sources require literal app
 identity; this host additionally requires their literal draft ID to match the
 trusted publication. Draft `to`, `subject`, `body` and `suggestion_body` remain
 model-tainted for checker purposes: display/edit is allowed, direct reuse in
 an action payload or source selector is not. Host approval authorizes the exact
 stored message, without requiring a person to retype an unchanged AI draft.
+
+The final device run below used build **0416** (`abf06d8f`), which
+used Octoscript `9ca9545b` and Octoscript-Makepad `a950f7fb`. The current pins
+only apply rustfmt to the same L0 implementation and propagate that revision
+through the wrapper. This formatting-only follow-up was not rebuilt on the
+phone; it does not add a new device-validation claim.
 
 The [Makepad overlay](../tools/runtime-patches/makepad-trusted-user-input.patch)
 keeps `trusted_user_input()` false by default. Android JNI checks a positive,

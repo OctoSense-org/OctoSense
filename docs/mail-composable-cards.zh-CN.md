@@ -32,7 +32,9 @@ ADR0007 的草稿、聊天与审核路径已实现。DeepSeek 和 MiniMax 都通
 
 ## 运行时契约与输入来源
 
-[工具 schema](../apps/mail/bundle/tools.json)定义四个草稿／提议工具。目录契约固定在 Octoscript `9ca9545b6cba489ab72ec988dfd649fb7c13ce17`，Octoscript-Makepad 固定在 `a950f7fb7c5560eb0583d643ea1cf11d4558e6d8`。两个 Mail 源都要求应用身份为字面量；本宿主还要求草稿 ID 字面量与可信发布绑定一致。检查器将草稿 `to`、`subject`、`body` 和 `suggestion_body` 保守地视为模型文本：可以显示／编辑，不能直接复用为操作载荷或源选择参数。宿主批准授权准确的已保存邮件，不要求用户把未经修改的 AI 草稿重新输入一遍。
+[工具 schema](../apps/mail/bundle/tools.json)定义四个草稿／提议工具。目录契约固定在 Octoscript `2e37d9e657a246f16718d9a475e167ccd2d5b5fa`，Octoscript-Makepad 固定在 `27e9c1bfdbf6021bcad87214ae4ebbe6d683b406`。两个 Mail 源都要求应用身份为字面量；本宿主还要求草稿 ID 字面量与可信发布绑定一致。检查器将草稿 `to`、`subject`、`body` 和 `suggestion_body` 保守地视为模型文本：可以显示／编辑，不能直接复用为操作载荷或源选择参数。宿主批准授权准确的已保存邮件，不要求用户把未经修改的 AI 草稿重新输入一遍。
+
+下文的最终真机运行对应 **0416**（`abf06d8f`），当时使用 Octoscript `9ca9545b` 和 Octoscript-Makepad `a950f7fb`。当前固定版本仅对同一份 L0 实现应用 rustfmt，并将该修订同步到包装层。本次纯格式调整未重新构建手机 APK，不增加新的真机验证声明。
 
 [Makepad 补丁](../tools/runtime-patches/makepad-trusted-user-input.patch)默认令 `trusted_user_input()` 为 false。Android JNI 检查正数且非虚拟的设备 ID、触摸屏来源、未遮挡标志及非取消输入；空对象或 Java 异常不会入队可信输入。作用域 guard 只在原生 TouchUpdate 处理器执行期间生效。远程／嵌套模拟分发、延后的 action 和脚本任务不能继承它。宿主审核要求相匹配的可信按下与释放。`with_untrusted_input` 只能移除信任。目前键盘／输入法、长按、桌面和无障碍输入都不能批准发送。受攻击的 OS／root 进程冒充硬件，不在这一应用级边界内；这不是硬件认证。
 
