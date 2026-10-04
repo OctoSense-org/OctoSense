@@ -508,4 +508,4 @@ impl PeerFactory for KernelPeers {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

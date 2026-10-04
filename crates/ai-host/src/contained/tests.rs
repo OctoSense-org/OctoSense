@@ -212,7 +212,10 @@ fn ask(app: &str, service: &str, args: Value, from_sheet: bool) -> Result<Value,
     }
 }
 
-fn serial() -> std::sync::MutexGuard<'static, ()> {
+/// Held by every test that touches the contained state: the live peers,
+/// [`set_factory`]'s factory and the registered `octos` service. The crate's
+/// `start` test holds it too, because `start` registers the kernel's own.
+pub(crate) fn serial() -> std::sync::MutexGuard<'static, ()> {
     let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     reset_for_tests();
     guard

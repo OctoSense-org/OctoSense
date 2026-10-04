@@ -158,6 +158,10 @@ fn each_platform_runs_its_own_kernel() {
 /// start so the others see a fresh crate.
 #[test]
 fn start_is_once_and_starts_no_kernel() {
+    // `start` registers the kernel's `octos` service and peer factory for the
+    // whole process; without the contained tests' lock it can replace theirs
+    // mid-test, and they then fail with "no octos kernel".
+    let _contained = crate::contained::tests::serial();
     let dir = std::env::temp_dir().join(format!("octosense-ai-host-{}", std::process::id()));
     let host = Host {
         data_dir: Some(dir.to_string_lossy().into_owned()),
