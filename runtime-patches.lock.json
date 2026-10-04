@@ -4,14 +4,15 @@
     "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "3eadf628ee75eb4c9b672446bf14c7b95d9f0f5b",
+    "tree": "7e7a9c13450eacf7f7fa8377078d71e07eca764b",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
       "System Back callback owners suppress compatibility Back keys to avoid duplicate navigation on Android 13+.",
       "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11).",
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
-      "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire."
+      "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
+      "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids."
     ],
     "stacked": [
       {
@@ -29,6 +30,10 @@
       {
         "patch": "tools/runtime-patches/makepad-windows-frame-completion.patch",
         "sha256": "8d58e16bc12aae5f4313fdc5c9d3f6944b96ee20e609fe5ff069fe2403954595"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-application-extension.patch",
+        "sha256": "133099ee598a9794ec5df61dfbef30bca25df7bc03a66deecdb66355a8b8e6bf"
       }
     ]
   }

@@ -59,6 +59,12 @@ rom/scripts/build-home.sh --variant standalone --development \
 
 把 `build` 换成 `run` 会同时安装并启动它；用它自己的名字访问，例如 `adb shell am start -n dev.makepad.octosense.scriptapps/.MakepadApp`。
 
+清单中的 `dev.makepad.android.APPLICATION_EXTENSION` 元数据让应用 ID 改变后
+仍使用同一个 Java 集成类。准备好运行时补丁后，应重新构建锁定版本的打包工具；
+旧加载器可能忽略此设置，导致自定义包名的测试版未加载 Android 返回操作及其他
+平台集成功能。安装测试版后，打开 News 或 Photos，检查从屏幕边缘向内滑动返回
+是否回到 OctoSense Home。
+
 **OpenHarmony：** `python3 rom/scripts/build-home-ohos.py --deveco-home ... --packager ... --signing-config ...` 使用现有的 DevEco 签名配置构建普通的 OpenHarmony 应用（[rom/docs/home-build.md（英文）](../rom/docs/home-build.md#openharmony-home)）。**iOS 模拟器：** 在 `phone/` 中运行 `../.sources/makepad/target/release/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense-home --features mobile-only`。两者都不在 CI 中构建。
 
 ## 应用图标

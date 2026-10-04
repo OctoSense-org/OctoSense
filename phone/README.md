@@ -100,6 +100,13 @@ package name, from `phone/`:
 `run` in place of `build` also installs and starts it; address it with its own
 name, for example `adb shell am start -n dev.makepad.octosense.scriptapps/.MakepadApp`.
 
+The manifest's `dev.makepad.android.APPLICATION_EXTENSION` metadata keeps
+the Java integration class fixed when the application ID changes. Rebuild the
+pinned packager after preparing runtime patches: an older loader may ignore
+this setting and silently omit Android Back handling and other platform
+integration in a custom package. After installing a test build, open News or
+Photos and verify that an edge Back swipe returns to OctoSense Home.
+
 **OpenHarmony:** `python3 rom/scripts/build-home-ohos.py --deveco-home ...
 --packager ... --signing-config ...` builds a normal OpenHarmony app with an
 existing DevEco signing profile

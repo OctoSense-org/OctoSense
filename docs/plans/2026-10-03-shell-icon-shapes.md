@@ -36,3 +36,17 @@ Completed on macOS and the connected Pixel 7 Pro. All five tasks above are compl
 - Final code review found no remaining actionable issues.
 
 iOS, Windows, Linux and OpenHarmony native builds/devices are **unverified**. Rendering their shell styles in the macOS preview is not native-platform validation. No packaging names, icon source artwork or runtime dependency pins changed.
+
+## Android Back follow-up — 2026-10-04
+
+The first custom-package APK rendered the icons correctly but did not load the Android application extension. The pinned activity looked only for `<application id>.MakepadAppExtension`, ignoring the explicit `dev.makepad.android.APPLICATION_EXTENSION` already in Home's manifest. In News, an edge Back swipe therefore left the test app for Pixel Launcher; the same gesture in the old normal package returned to OctoSense Home.
+
+A small locked runtime patch now honors the manifest class and retains the conventional package fallback. A JVM test executes the real loader with Android metadata doubles; it failed with the missing integration before the fix and passes after it. It covers explicit selection, precedence, empty/absent metadata and ordinary apps without an extension.
+
+- `python3 -m unittest discover -s rom/tests -p test_android_application_extension.py -v`: passed.
+- From `rom/`, `python3 -m unittest discover -s tests` with the prepared Android 33 SDK selected: all 96 tests passed.
+- Rebuilt the patched packager and release APK. Updated `dev.makepad.octosense.shapetest` to version code `2026100409`, still named OctoSense, preserving its data and the older normal installation.
+- Pixel 7 Pro: left- and right-edge Back from both News and Photos passed (four cases). Captured screens confirmed the app opened and Home returned; pixel checks confirmed the Home icon grid and Android reported the test app still in the foreground. Pixel Launcher remains the default Home.
+- Runtime setup/Cargo graph check and whitespace check passed; review found no actionable issues. The base dependency revisions remain unchanged; the runtime patch lock records the added loader fix.
+
+This follow-up was not run on the OnePlus or other devices; those results remain **unverified**.

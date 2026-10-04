@@ -21,3 +21,7 @@ Follow the [repository rules](../AGENTS.md) and use the
 - Run the root's phone/shared-shell checks after code changes. Update both
   README languages when build flags, platform behavior or supported entry
   points change.
+- Custom Android test packages must load the manifest-declared application
+  extension. Rebuild the pinned packager after runtime patches, and check
+  edge Back from a hosted app after installation; a visible Home screen
+  alone does not establish that the Java integration loaded.
