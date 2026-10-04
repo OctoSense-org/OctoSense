@@ -4104,13 +4104,13 @@ impl App {
         }
     }
 
-    /// A press on a toast (shell/notifications.rs `hit`). Only the press: a
-    /// drag of a pane's frame keeps its moves and its release wherever they
-    /// go.
+    /// A toast owns its native touch gesture through release, even after a
+    /// drag cancels activation. Mouse handling takes only the press so a pane
+    /// dragged across a toast keeps its own movement and release.
     fn press_on_toast(&mut self, cx: &mut Cx, event: &Event) -> bool {
-        let Event::MouseDown(e) = event else { return false };
         let notes = self.ui.widget(cx, ids!(shell_notes));
-        let on = notes.borrow::<shell::notifications::ShellNotifications>().is_some_and(|n| n.hit(e.abs));
+        let on = notes.borrow_mut::<shell::notifications::ShellNotifications>()
+            .is_some_and(|mut n| n.owns_pointer(event));
         on
     }
 
