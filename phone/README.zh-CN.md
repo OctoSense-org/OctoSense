@@ -61,6 +61,32 @@ rom/scripts/build-home.sh --variant standalone --development \
 
 **OpenHarmony：** `python3 rom/scripts/build-home-ohos.py --deveco-home ... --packager ... --signing-config ...` 使用现有的 DevEco 签名配置构建普通的 OpenHarmony 应用（[rom/docs/home-build.md（英文）](../rom/docs/home-build.md#openharmony-home)）。**iOS 模拟器：** 在 `phone/` 中运行 `../.sources/makepad/target/release/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense-home --features mobile-only`。两者都不在 CI 中构建。
 
+## 应用图标
+
+Home 与桌面包使用相同的绿色八瓣 OctoSense 标识：
+
+| 平台 | 打包的图标资源 |
+| --- | --- |
+| Android | 五种传统启动器图标密度、自适应前景/背景层，以及 Android 13 主题图标使用的单色层；常规清单直接引用这些资源 |
+| iOS/iPadOS | `packaging/ios/icons/Assets.xcassets`，包含尺寸正确的 iPhone、iPad 和 App Store PNG；不透明方形图片由 iOS 添加圆角遮罩 |
+| OpenHarmony | `ohos/icons/`，由 `rom/scripts/build-home-ohos.py` 覆盖锁定模板中的应用、分层启动器和启动窗口图标 |
+| 桌面预览 | `resources/icon_*.png`、`icon.ico`、`icon.icns`，以及工作区的 Cargo 图标环境配置 |
+
+Android 前景位于平台的[自适应图标安全区](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)内。
+iOS 资源目录直接提供 [Apple 应用图标规格](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/AppIconType.html)要求的尺寸，
+避免 Makepad 的回退逻辑在所有尺寸复用同一张图片。
+常规构建使用已提交的资源；重新生成和检查方法见[应用图标](../desktop/README.zh-CN.md#应用图标)。
+
+Android 资源和 iOS 资源目录已通过本机平台工具编译；OpenHarmony 模板替换有打包回归测试。
+Home 已以 `OctoSense Icons`（`dev.makepad.octosense.icontest`）在运行 Android 17
+的 Pixel 7 Pro 上全新安装：应用信息页显示品牌自适应图标，启动后 Home 页面正常渲染。
+原有安装及默认 Pixel Launcher 均保留。Android 主题图标模式、iOS/OpenHarmony
+安装后的外观及完整 OpenHarmony HAP 构建仍**未经验证**。
+
+`OctoSense Icons` 仅是该独立测试安装通过命令行指定的名称。
+正常 Android/iOS/桌面构建仍名为 **OctoSense**，OpenHarmony 保留原有的
+**OctoSense Home** 名称。
+
 ## Home 角色
 
 该 activity 声明了 `HOME` intent 过滤器，并且是 `singleInstance`。在你能控制的设备上执行：

@@ -108,6 +108,38 @@ existing DevEco signing profile
 `../.sources/makepad/target/release/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense-home --features mobile-only`.
 Neither is built in CI.
 
+## Application icons
+
+Home uses the same green eight-petal OctoSense mark as the desktop package:
+
+| Platform | Packaged artwork |
+| --- | --- |
+| Android | Five legacy launcher densities, adaptive foreground/background layers, and Android 13 monochrome artwork for themed icons; the normal manifest names these resources |
+| iOS/iPadOS | `packaging/ios/icons/Assets.xcassets`, with correctly sized iPhone, iPad and App Store PNGs; opaque squares let iOS apply the corner mask |
+| OpenHarmony | `ohos/icons/`, copied by `rom/scripts/build-home-ohos.py` over the pinned template's application, layered launcher and launch-window icons |
+| Desktop preview | `resources/icon_*.png`, `icon.ico` and `icon.icns`, plus the workspace's Cargo icon environment |
+
+The Android foreground fits the platform's
+[adaptive-icon safe area](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive).
+The iOS catalog supplies the
+[Apple app-icon slots](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/AppIconType.html)
+directly, avoiding Makepad's fallback that reuses one image at every size.
+Normal builds consume committed assets. Regeneration and checks are documented
+in [Application icons](../desktop/README.md#application-icons).
+
+Android resources and iOS catalogs compile with the local platform tools;
+OpenHarmony template replacement has a packaging regression test. Home was
+freshly installed as `OctoSense Icons` (`dev.makepad.octosense.icontest`) on a
+Pixel 7 Pro running Android 17: App info displays the branded adaptive icon
+and the Home screen renders after launch. The original installation and
+default Pixel Launcher were preserved. Android themed-icon mode, installed
+iOS/OpenHarmony appearance and a complete OpenHarmony HAP build remain
+**unverified**.
+
+`OctoSense Icons` was a command-line label override for that separate test
+installation. Normal Android/iOS/desktop builds remain named **OctoSense**;
+OpenHarmony retains its existing **OctoSense Home** name.
+
 ## The Home role
 
 The activity offers the `HOME` intent filter and is `singleInstance`. On a device you control:

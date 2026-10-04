@@ -22,6 +22,31 @@ def load(name, path):
 
 build = load("build_home", "scripts/build-home.py")
 stage = load("stage_home", "scripts/stage-home.py")
+ohos = load("build_home_ohos", "scripts/build-home-ohos.py")
+
+
+class OpenHarmonyIconTests(unittest.TestCase):
+    def test_product_icons_replace_the_template_on_every_build(self):
+        self.assertTrue(callable(getattr(ohos, "stage_app_icons", None)), "Home must replace Makepad's template icons")
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            app_media = project / "AppScope/resources/base/media"
+            entry_media = project / "entry/src/main/resources/base/media"
+            source = ROOT.parent / "phone/ohos/icons"
+            for base, names in ((app_media, ("app_icon.png",)),
+                                (entry_media, ("foreground.png", "background.png", "startIcon.png"))):
+                base.mkdir(parents=True)
+                for name in names:
+                    (base / name).write_bytes(b"framework placeholder")
+            (entry_media / "unrelated.png").write_bytes(b"keep")
+            for _ in range(2):
+                ohos.stage_app_icons(project, ROOT.parent / "phone")
+                for base, mapping in ((app_media, {"app_icon.png": "app_icon.png"}),
+                                      (entry_media, {"foreground.png": "foreground.png", "background.png": "background.png",
+                                                     "startIcon.png": "app_icon.png"})):
+                    for target, name in mapping.items():
+                        self.assertEqual((base / target).read_bytes(), (source / name).read_bytes())
+            self.assertEqual((entry_media / "unrelated.png").read_bytes(), b"keep")
 
 
 class BuildTests(unittest.TestCase):

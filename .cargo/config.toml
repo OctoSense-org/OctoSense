@@ -4,6 +4,17 @@
 MAKEPAD_BUNDLE_NAME = { value = "OctoSense", force = true }
 MAKEPAD_BUNDLE_IDENTIFIER = { value = "dev.makepad.octosense", force = true }
 
+# Plain cargo run/build does not use cargo-makepad's per-crate discovery.
+# Paths are relative to this workspace, including when Cargo runs in phone/.
+# Explicit build environment overrides (including release packaging) still win.
+MAKEPAD_APP_ICON_32 = { value = "desktop/resources/icon_32.png", relative = true }
+MAKEPAD_APP_ICON_64 = { value = "desktop/resources/icon_64.png", relative = true }
+MAKEPAD_APP_ICON_128 = { value = "desktop/resources/icon_128.png", relative = true }
+MAKEPAD_APP_ICON_256 = { value = "desktop/resources/icon_256.png", relative = true }
+MAKEPAD_APP_ICON_512 = { value = "desktop/resources/icon_512.png", relative = true }
+MAKEPAD_APP_ICON_1024 = { value = "desktop/resources/icon_1024.png", relative = true }
+MAKEPAD_APP_ICON_ICO = { value = "desktop/resources/icon.ico", relative = true }
+
 # AppCard embeds assets from the pinned framework checkouts (tools/setup.py).
 OCTOSENSE_WORKSPACE = { value = ".sources", relative = true }
 
