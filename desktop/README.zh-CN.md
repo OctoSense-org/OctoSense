@@ -278,7 +278,7 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 
 ### 开发者程序与目录
 
-`config/apps.json` 列出 Reference 和 OctoSense 挑选的 Makepad 应用（Browser、Files、Task、Terminal、Sheets、Clock、Weather、Finance、Notes、Reminders、Calculator、Route，以及 Image 和 PDF 查看器）。Calculator、Clock、Notes、Reminders 和 Weather 是原生应用（[`../native-apps.json`](../native-apps.json)）：默认链接、在进程内打开，打开期间它们的只读工具提供给系统 Agent。Task 是只作为独立进程运行的原生应用（`"module": null`），在沙箱中运行。Terminal 同时以链接方式提供（`app-terminal`，默认开启）；它在 `config/apps.json` 中的条目是它在 macOS 和 Windows 上使用的独立进程形式，链接的模块是进程内形式。`aichat` 条目是助手面板自己的进程（F10），由面板启动；任何列表都不显示它。id 写在状态目录下 `wm/launcher.hides` 中的 launcher 条目会被隐藏。
+`config/apps.json` 列出 Reference 和 OctoSense 挑选的 Makepad 应用（Browser、Files、Task、Terminal、Sheets、Clock、Weather、Finance、Notes、Reminders、Calculator、Route，以及 Image 和 PDF 查看器）。Calculator、Clock、Notes、Reminders 和 Weather 是原生应用（[`../native-apps.json`](../native-apps.json)）：在桌面端和手机上都默认链接、在进程内打开，打开期间它们的只读工具提供给系统 Agent。Task 是只作为独立进程运行的原生应用（`"module": null`），在沙箱中运行。Terminal 同时以链接方式提供（`app-terminal`，默认开启）；它在 `config/apps.json` 中的条目是它在 macOS 和 Windows 上使用的独立进程形式，链接的模块是进程内形式。`aichat` 条目是助手面板自己的进程（F10），由面板启动；任何列表都不显示它。id 写在状态目录下 `wm/launcher.hides` 中的 launcher 条目会被隐藏。
 
 目录查找顺序：给了 `--apps <file>` 就用它；否则若存在 `~/.octosense/apps.json` 就用它；否则用 `config/apps.json`。目录是一个 JSON 数组，每个条目选择一种启动目标：
 

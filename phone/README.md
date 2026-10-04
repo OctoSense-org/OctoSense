@@ -10,8 +10,9 @@ The OctoSense phone shell: a Makepad app that is the device's Home screen.
 Home pages with live tiles and app pairs, a gesture layer, the shade
 (notifications left, controls right), Recents, a live island for ongoing
 activities, and hosted apps drawn in-process inside its tiles: App Hub and
-the apps it runs, the system apps, Reference and Sheets, and the octos agent
-kernel as a service. (AppCard is not shipped for now; it links only with
+the apps it runs, the system apps, Reference and Sheets, the Makepad apps
+Calculator, Clock, Notes, Reminders and Weather (each with its own agent),
+and the octos agent kernel as a service. (AppCard is not shipped for now; it links only with
 `--features app-appcard`.)
 
 Home is one of the three products in this repository (the

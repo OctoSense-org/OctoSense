@@ -5363,6 +5363,18 @@ impl App {
                         i += 2;
                         continue;
                     }
+                    // style:<android|ios>: switch to that phone shell first,
+                    // so a later launch-<app id> opens the app at a phone's
+                    // size (an app's phone layout, checked on a desktop).
+                    if let Some(style) = name.strip_prefix("style:") {
+                        match style.trim() {
+                            "android" => self.set_desktop_style(cx, desktop::DesktopStyle::Android),
+                            "ios" => self.set_desktop_style(cx, desktop::DesktopStyle::Ios),
+                            other => log!("wm: --test-action style: no phone style {other:?} (android or ios)"),
+                        }
+                        i += 2;
+                        continue;
+                    }
                     // shade:<notifications|controls>: open the shade on that
                     // side (switching to the Android phone shell first when
                     // the desk is up), for scripted screenshots.
