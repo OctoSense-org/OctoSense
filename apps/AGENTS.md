@@ -32,6 +32,14 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
 - Validate on a phone through Home (`phone/`) built as a separate test
   package; never replace the device's installed Home.
+- Text on a page follows the host's appearance. On a phone, a page drawn by a
+  plain `View` shows the host's light or dark background, not the app's own
+  `ground` colour (**unverified** on the desktop), so a Label on it uses
+  `theme.color_text`. Keep a fixed dark colour (the apps' `ink`) for text on a
+  surface the app paints itself: a `SolidView` page like Mail's, a text field,
+  a white card or the tab bar. News's title and then Photos' headings
+  shipped in a fixed `ink` and vanished in dark mode, so check every page you
+  change in dark mode as well as light.
 - Mail's service: change `apps/mail/host-service` and run
   `cargo test --locked -p octosense-mail-service`. Calendar's and News's:
   `apps/calendar/host-service`, `apps/news/host-service`, and

@@ -689,6 +689,9 @@ fn boot(){
 }
 start_timeout(0.05, || boot())
 
+// Text on the page uses theme.color_text: the page shows the host's light or
+// dark background. ink is only for text on the light surfaces this script
+// paints itself (the tab bar and the text fields).
 let ink = #x1c1c1e
 let secondary = #x8e8e93
 let accent = #x007aff
@@ -707,7 +710,7 @@ let SegmentOn = Segment{
     draw_text +: {color: accent color_hover: accent color_down: accent}
 }
 let Heading = View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 18 bottom: 8 left: 4 right: 4}
-    name := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
+    name := Label{width: Fill text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
     detail := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
 }
 let Cell = GestureView{width: Fill height: Fit
@@ -719,12 +722,12 @@ let SelectCell = GestureView{width: Fill height: Fit flow: Overlay
 }
 let AlbumCard = GestureView{width: Fill height: Fit flow: Down spacing: 6
     cover := Image{width: Fill height: 164 fit: ImageFit.CropToFill}
-    name := Label{text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
+    name := Label{text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 14}}
     count := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
 }
 let PersonChip = GestureView{width: 84 height: Fit flow: Down spacing: 6 align: Align{x: 0.5}
     face := Image{width: 72 height: 72 fit: ImageFit.CropToFill}
-    name := Label{text: "" draw_text.color: ink draw_text.text_style.font_size: 12}
+    name := Label{text: "" draw_text.color: theme.color_text draw_text.text_style.font_size: 12}
 }
 let MemoryCard = GestureView{width: Fill height: 240 flow: Overlay
     cover := Image{width: Fill height: 240 fit: ImageFit.CropToFill}
@@ -745,7 +748,7 @@ HostedView{width: Fill height: Fill
                 edit := View{width: Fit height: Fit Flat{text: "Edit" on_click: || edit_album()}}
             }
             View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 bottom: 6} spacing: 2
-                title := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 30}}
+                title := Label{width: Fill text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 30}}
                 subtitle := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
                 message := Label{width: Fill text: "" draw_text.color: #xff3b30 draw_text.text_style.font_size: 12}
             }
@@ -774,7 +777,7 @@ HostedView{width: Fill height: Fill
                         if route == "collections" {
                             if memories.len() > 0 {
                                 View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{top: 12 left: 4}
-                                    Label{width: Fill text: "Memories" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
+                                    Label{width: Fill text: "Memories" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
                                     Flat{text: "See all" on_click: || go_to("memories", "")}
                                 }
                                 let m = memories[0]
@@ -813,7 +816,7 @@ HostedView{width: Fill height: Fill
                         }
                         else if route == "memories" {
                             View{width: Fill height: Fit flow: Down padding: Inset{left: 8 right: 8 top: 8 bottom: 12} spacing: 8
-                                Label{width: Fill text: "Create a memory" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
+                                Label{width: Fill text: "Create a memory" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
                                 Label{width: Fill text: "Choose a theme, or let AI find a story." draw_text.color: secondary draw_text.text_style.font_size: 13}
                                 TextInput{width: Fill height: 40 text: memory_prompt empty_text: "Summer with family (optional)"
                                     on_change: |text| { memory_prompt = "" + text }
@@ -828,7 +831,7 @@ HostedView{width: Fill height: Fill
                                     } else { Flat{text: "Create memories" on_click: || generate_memories()} }
                                 }
                                 Label{width: Fill text: "Uses photo details with your configured AI provider." draw_text.color: secondary draw_text.text_style.font_size: 11}
-                                if memory_status != "" { Label{width: Fill text: memory_status draw_text.color: ink draw_text.text_style.font_size: 13} }
+                                if memory_status != "" { Label{width: Fill text: memory_status draw_text.color: theme.color_text draw_text.text_style.font_size: 13} }
                             }
                             for index m in memories {
                                 if index == 0 && saved_memories.len() > 0 { Heading{name.text: "Made for you" detail.text: "Saved"} }
@@ -842,7 +845,7 @@ HostedView{width: Fill height: Fill
                         else {
                             if route == "memory" {
                                 View{width: Fill height: Fit flow: Down spacing: 10 padding: Inset{left: 8 right: 8 top: 8 bottom: 14}
-                                    Label{width: Fill text: route_arg.summary draw_text.color: ink draw_text.text_style.font_size: 15}
+                                    Label{width: Fill text: route_arg.summary draw_text.color: theme.color_text draw_text.text_style.font_size: 15}
                                     Flat{text: "Play memory" on_click: || play_story(route_arg)}
                                 }
                             }
