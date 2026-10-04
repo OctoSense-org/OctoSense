@@ -4,7 +4,7 @@
     "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "7e7a9c13450eacf7f7fa8377078d71e07eca764b",
+    "tree": "47a8b47dfc84fb95517aeb6f5f911cb526bbf2dd",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -12,7 +12,8 @@
       "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11).",
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
       "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
-      "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids."
+      "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
+      "Calculator lays its keypad out again after every apply (makepad #99): the phone shell's style reapply after a hosted module's first frame left the DSL's 85-point keys, overflowing a 393-point-wide phone."
     ],
     "stacked": [
       {
@@ -34,6 +35,10 @@
       {
         "patch": "tools/runtime-patches/makepad-application-extension.patch",
         "sha256": "133099ee598a9794ec5df61dfbef30bca25df7bc03a66deecdb66355a8b8e6bf"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-calculator-restyle.patch",
+        "sha256": "24896908d7b5616dd2ccd6c6fc56e8776cd8cc9a1e3750e8fefba7ea569dc8af"
       }
     ]
   }
