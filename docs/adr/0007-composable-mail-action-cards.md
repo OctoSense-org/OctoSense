@@ -3,7 +3,7 @@
 English | [简体中文](0007-composable-mail-action-cards.zh-CN.md)
 
 - **Date:** 2026-10-04
-- **Status:** Implementation in progress. Draft storage, composed-card adapters, contextual chat and host review are implemented in source; integrated phone/model/human-send acceptance is pending. Desktop and accessibility approval remain deferred.
+- **Status:** Implementation in progress. DeepSeek and MiniMax have exercised phone editing, contextual chat, suggestion acceptance, cancellation, injected-approval rejection and restart with their repaired model-authored cards. Remaining native/device checks and physical human-approved sending are pending. Desktop and accessibility approval remain deferred.
 - **Scope:** An LLM composes one L0 Mail card from reusable sections. A person reads the email, edits a reply, chats with Mail's agent, and approves sending inside that card. Drafts and outcomes survive view changes and restarts.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (incoming events), [ADR 0004](0004-native-apps-hosting-and-peers.md) (peers and approvals), [ADR 0005](0005-app-contract.md) (admission), [ADR 0006](0006-app-studio-on-the-phone.md) (generation and evaluation), and the [historical Mail action-card plan](../../apps/mail/docs/2026-10-01-email-action-card-plan.md).
 
@@ -40,7 +40,7 @@ L0 remains the language capability level. Compact Glance, expanded card and full
 
 Glance shows a short summary, draft/send status and an entry to expand. The expanded card contains the editor, contextual chat and host review region. They may occupy sections or switch between named views within that card. Opening, closing or switching views must preserve the draft. Read-only status is consistent across both surfaces.
 
-On the phone, the shell arrow on a host-bound Mail tile opens that exact published card in the expanded sheet, including the draft toolbar and host review. Closing it returns to Glance. Unbound cards keep their existing full-app shortcut; the Mail launcher still opens the separate Mail app. This route is implemented in source; device validation is pending.
+On the phone, the shell arrow on a host-bound Mail tile opens that exact published card in the expanded sheet, including the draft toolbar and host review. Closing it returns to Glance. Unbound cards keep their existing full-app shortcut; the Mail launcher still opens the separate Mail app. The bound-card route has been exercised on the OnePlus 6 test build. Build 0415 also verified that tapping a real notification opens the exact bound card; this navigation input does not authorize sending.
 
 Component state is for temporary UI choices, such as which section is open. Business data must not depend on `InstanceStore` component keys: those keys can change when a model rearranges a view, and they do not provide a global namespace for independently published cards.
 
@@ -113,7 +113,7 @@ Cancelling before the claim prevents sending. Closing the card, cancelling an ag
 
 The chat request includes the trusted account/message binding, bounded thread history and a snapshot of the current durable draft revision. Unsaved editor text is excluded unless the person explicitly submits it as a suggestion. Responses and proposed edits return to that same thread and revision. A delayed answer may remain useful as chat, but its stale draft patch cannot apply automatically.
 
-Use the existing broker: one app peer per `(app, account)`, with conversation contexts within that peer. Components, draft editors and chat sections do not start kernels or create new app agents. The present adapter uses the label `card-chat`, but the broker already gives each conversation a fresh context ID; the missing behavior is context/history binding, not a collision between those IDs. Context can be reconstructed from the bound thread's bounded history rather than keeping an unbounded live turn.
+Use the existing broker: one app peer per `(app, account)`, with conversation contexts within that peer. Components, draft editors and chat sections do not start kernels or create new app agents. The adapter uses the label `card-chat`, while the broker gives each conversation a fresh context ID. The implementation adds explicit email/draft binding and bounded thread history; the original gap was this missing context, not a collision between those IDs. Context is reconstructed from the bound thread's bounded history rather than keeping an unbounded live turn.
 
 Both the system agent's requests and the person's card chat reach Mail's own peer under their existing caller and lane policies. A system agent can ask Mail to prepare a reply and report the result; it cannot approve that reply for the person. Mail tools remain account-scoped, and their declared availability does not widen another app's grant.
 
@@ -189,7 +189,13 @@ Implement in this order:
 
 Report exact model IDs, provider configuration labels without secrets, repository/runtime pins, generated source hashes and test outcomes. Separate local controls, simulated transport outcomes and real delivery evidence. Record visual/interaction shortcomings even if the checker passes. The target for writing and UX review is at least 4.5/5 (A−), alongside the mandatory functional gates; a score cannot replace a failed gate.
 
-**Current acceptance status:** the catalog, portable pipeline and scoped input guard have passing tests; host/service and integrated shell validation is in progress. The paired-model OnePlus 6 edit/chat/restart flow and final human-approved threaded send remain **unverified**. Only Android physical touchscreen input can currently authorize sending; desktop and accessibility approval are deferred requirements, not completed acceptance. See the [current gate table](../mail-composable-cards.md#verification-gates). The earlier local-state Android evidence does not prove this new flow.
+**Current acceptance status:** on test build 0414 (`57b711ae`), both models' repaired cards exercised editing, live email/draft-bound chat, explicit suggestion acceptance, cancellation, injected-approval rejection and restart. Separate native-shell checks also passed within their stated scope. Final agent reviews, including the 0416 phone answers, scored DeepSeek 4.1/5 visual and 4.4/5 scoped usability; MiniMax scored 4.2/5 and 4.4/5. Both remain below the target.
+
+Build 0415 (`97a23a3f`) passed 888 shell tests, desktop/phone and dependency-graph checks. Its notification touch fix was exercised on the OnePlus 6: a real banner opened the exact bound card with the saved draft intact. Full phone IME, selection, theme, touch-target and failure-matrix coverage remains incomplete. The earlier Mail suite passed 50 tests with two existing live/environment tests ignored; pinned L0/portable UI suites passed 315/86.
+
+Build 0416 (`abf06d8f`) adds presentation guidance to the bound card-chat request; 11 chat tests passed. Both actual models answered the same fresh read-only question concisely in plain text with the correct saved note, no Markdown or raw IDs, and no change to revision 44 or its body. Repeated injected approval left the operation awaiting approval; Cancel returned it to draft.
+
+Physical human-approved SMTP sending and threaded-reply receipts remain **unverified**. Only Android physical touchscreen input can authorize sending; desktop/accessibility approval remains deferred. See the [current checkpoint](../mail-composable-cards.md#verification-checkpoint) for source hashes, failed attempts and operator-harness limits. Guidance and host fixes changed between providers, so these are engineering checks, not a controlled model benchmark.
 
 ## Consequences and alternatives
 
