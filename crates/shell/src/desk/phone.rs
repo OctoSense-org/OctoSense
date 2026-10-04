@@ -458,14 +458,14 @@ impl WmDesk {
             if perf {crate::mobile_perf::span(cx.cx,ch.glass,t);}
             Some(b)
         }else{None};
-        if plan.home && !hit {
+        if plan.home && !hit && !phone.card_open {
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_ui.glance_cards.reveal_editor(cx, &mut state.phone, screen);
             self.phone_content(screen);
             state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;
         }
         self.phone_ui.publish_home_geometry(cx,state,full,screen);
-        if plan.home && !hit && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if plan.home && !hit && !phone.card_open && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
         if record {
             // The scene is complete: its pyramid, to the deepest level an
             // overlay reads (the group window's 4), then the frame ends and

@@ -629,7 +629,7 @@ impl GlanceCards {
 
     /// The card a finger at `p` is on: the tile drawn there, as much of it
     /// as the page shows.
-    fn under(&self, p: Vec2d) -> Option<&str> {
+    pub(crate) fn under(&self, p: Vec2d) -> Option<&str> {
         self.drawn.iter().rev().find(|(_, r)| r.size.x > 0.0 && r.size.y > 0.0 && r.contains(p)).map(|(key, _)| key.as_str())
     }
 

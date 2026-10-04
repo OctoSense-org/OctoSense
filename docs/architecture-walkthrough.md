@@ -133,6 +133,8 @@ The broker's `driver_of` and `take_over` handle multiple native instances sharin
 | A script app's own chat | Exact granted `octos.session.open`, `octos.session.history`, `octos.turn.start`, `octos.turn.interrupt` calls through `host.request`. The shipped system-app agents are shell-driven without their scripts declaring these calls. |
 | A published card's chat | `sys.chat` → [l0-chat](../crates/l0-chat/src/lib.rs) and [glance_chat.rs](../crates/shell/src/glance_chat.rs). Publisher checks bind it to the card's owning app. |
 
+On a phone, a Glance card is a preview: tapping it opens the exact publication in `ShellGlanceSheet`'s full-screen workspace. `card_chat.rs` follows the conversation layout in `octoscode-app`: a `PortalList` draws visible message paragraphs while a separate native composer stays above the keyboard. The generated Card & actions pane and the Chat pane share the `L0Session`. `chat_submit` uses the declared `sys.chat` source and existing publisher/account/thread checks; it does not open a second agent or replace the model-generated source. Mail draft edits and send approval still use the host-bound draft/review flow. Other Glance cards stop drawing while this workspace is open.
+
 The shipped `<app>.notify`, `calendar.notify` and `calendar.agenda` templates contain no `sys.chat`; their agents are reached through “Ask <app>”. The `OCTOSENSE_GLANCE_DEMO=mail` demonstration card has chat but uses canned replies (`glance_chat::HostResponder`). The card-chat route above applies to a card that declares `sys.chat`.
 
 A bound Mail reply card adds a durable host path: `mail.propose_reply` creates

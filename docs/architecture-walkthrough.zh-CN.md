@@ -133,6 +133,8 @@ sequenceDiagram
 | 脚本应用自己的聊天 | 经 `host.request` 调用确切获授权的 `octos.session.open`、`octos.session.history`、`octos.turn.start`、`octos.turn.interrupt`。随产品提供的系统应用 Agent 由 Shell 驱动，其脚本无需声明这些调用。 |
 | 已发布卡片中的聊天 | `sys.chat` 经 [l0-chat](../crates/l0-chat/src/lib.rs) 与 [glance_chat.rs](../crates/shell/src/glance_chat.rs) 到达发布者的 Agent；宿主核对卡片归属。 |
 
+手机上的 Glance 卡片作为预览入口：点按后，`ShellGlanceSheet` 在全屏工作区打开对应的已发布卡片。`card_chat.rs` 参考 `octoscode-app` 的对话布局，以 `PortalList` 绘制可见消息段落，并将独立的原生输入框固定在键盘上方。生成的卡片与操作页和聊天页共享 `L0Session`；`chat_submit` 仍使用声明的 `sys.chat` 数据源及现有的发布者、账户、线程校验，不另建 Agent，也不替换模型生成的源代码。邮件草稿编辑和发送审批继续使用宿主绑定的草稿与审批流程。工作区打开期间，其他 Glance 卡片停止绘制。
+
 随产品提供的 `<app>.notify`、`calendar.notify` 与 `calendar.agenda` 模板不含 `sys.chat`，通过 “Ask <app>” 与其 Agent 对话。`OCTOSENSE_GLANCE_DEMO=mail` 演示卡片带有聊天，但由 `glance_chat::HostResponder` 返回预设答案。上表的卡片聊天路线适用于声明了 `sys.chat` 的卡片。
 
 绑定草稿的 Mail 回复卡片新增持久化宿主路径：`mail.propose_reply` 创建账户／邮件绑定草稿，`mail.publish_card` 携带其 `draft_id`。`mail_card.rs` 回答 `sys.mail_draft`，按显示中的修订号校验 Field 来源的编辑。`sys.mail_review` 写入只请求 `mail_review.rs` 宿主 UI，不构成批准。`drafts.rs` 拥有不可变尝试和 SMTP 回执，agent 不能直接发送。聊天在已有 Mail peer 中包含绑定邮件、已确认保存的草稿和有限历史。本轮只有经过验证的 Android 实体触摸可批准；桌面／无障碍审批及完整双模型手机验收仍待完成。将新路径视为已验证前，请看[实现与验证表](mail-composable-cards.zh-CN.md)。

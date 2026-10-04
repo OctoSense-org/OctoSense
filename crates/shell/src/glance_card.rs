@@ -408,6 +408,69 @@ fn node_arg<'a>(node: &'a octoscript_ui_l0::UiNode, name: &str) -> Option<&'a oc
 }
 
 impl L0Session {
+    pub(crate) fn has_chat(&self) -> bool { self.chat_source().is_ok() }
+
+    pub(crate) fn chat_access(&self) -> (Option<String>, bool) {
+        (crate::ai_host::contained::account_of(&self.app), crate::agents::access(&self.app) == crate::agents::Access::Allowed && self.mail.as_ref().is_none_or(|m| crate::mail_card::account_valid(&m.binding.account)))
+    }
+
+    fn chat_source(&self) -> Result<octosense_l0_chat::ChatSource, String> {
+        let mut sources = octosense_l0_chat::sources(&self.source).into_iter().filter(|source| source.app.as_deref() == Some(self.app.as_str()));
+        let source = sources.next().ok_or("This card has no conversation")?;
+        if sources.next().is_some() { return Err("Open the conversation from this card's own controls".into()); }
+        Ok(source)
+    }
+
+    pub(crate) fn chat_snapshot(&mut self) -> Result<serde_json::Value, String> {
+        if let Some(mail) = &mut self.mail { mail.refresh(); }
+        let source = self.chat_source()?;
+        let data = self.data_now();
+        data.pointer(&format!("/{}", source.name.replace('.', "/"))).cloned().ok_or_else(|| "This conversation is unavailable".into())
+    }
+
+    /// The host's fixed composer accepts text from its native input only.
+    /// Identity, account, thread, consent and draft context still go through
+    /// the same sys.chat adapter used by the generated card.
+    pub(crate) fn chat_submit(&mut self, text: &str) -> Result<(), String> {
+        let source = self.chat_source()?;
+        if let Some(mail) = &mut self.mail { mail.refresh(); }
+        let write = octoscript_ui_l0::CollectionWrite {
+            source: source.name, helper: "sys.chat".into(), op: "append".into(), value: text.into(), field: String::new(),
+        };
+        let data = self.data_now();
+        let origin = Some(octoscript_ui_l0::ValueOrigin::UserInput);
+        match &self.mail {
+            Some(mail) => {
+                let binding = mail.chat_binding()?;
+                crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, &data, &write, origin, &binding)?;
+            }
+            None => { crate::glance_chat::perform(&self.app, &self.source, &self.store, &data, &write, origin)?; }
+        }
+        Ok(())
+    }
+
+    /// A generated transition opened its chat page. The focused host can
+    /// present the same transcript in the native conversation column.
+    pub(crate) fn shows_chat(&self) -> bool {
+        fn contains_chat(session: &L0Session, data: &serde_json::Value, node: &octoscript_ui_l0::UiNode) -> bool {
+            if node.kind == "ChatEntry" { return true; }
+            // An empty conversation has no ChatEntry yet. Inspect its declared
+            // actions in a disposable state clone; never perform these writes.
+            for (_, arg) in &node.args {
+                if let octoscript_ui_l0::NodeValue::Event(event) = arg {
+                    let mut state = session.store.clone();
+                    let outcome = octoscript_ui_l0::dispatch_reporting_with_origin(&session.source, &mut state, &node.key, event,
+                        Some(&serde_json::json!("")), data, octoscript_ui_l0::ValueOrigin::UserInput);
+                    if outcome.writes.iter().any(|write| write.helper == "sys.chat" && write.op == "append") { return true; }
+                }
+            }
+            node.children.iter().any(|node| contains_chat(session, data, node))
+        }
+        if !self.reads_chat { return false; }
+        let data = self.data_now();
+        octoscript_ui_l0::realize_with_state(&self.source, &data, &self.store, Default::default())
+            .complete_root().is_ok_and(|node| contains_chat(self, &data, node))
+    }
     /// The card `app` published.
     pub fn new(app: &str, l0: &crate::glance::L0Source) -> Self {
         L0Session {
@@ -564,6 +627,16 @@ struct LiveCard {
 }
 
 impl LiveCards {
+    pub(crate) fn session_mut(&mut self, tile: &str) -> Option<&mut L0Session> {
+        self.cards.get_mut(tile).map(|card| &mut card.session)
+    }
+
+    pub(crate) fn restore_store(&mut self, tile: &str, store: octoscript_ui_l0::InstanceStore) {
+        if let Some(card) = self.cards.get_mut(tile) {
+            card.session.store = store;
+            if let Ok(body) = card.session.body() { card.body = body.into(); }
+        }
+    }
     /// What tile `tile` draws for `card`: an L0 card as its session has it
     /// now (made on first use for the app that published the card, and made
     /// again for a newer publish), a script card as published. `who` heads
@@ -1073,6 +1146,44 @@ mod tests {
     fn mail_session(card_id: &str) -> L0Session {
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == card_id).unwrap();
         L0Session::new("os.mail", &crate::glance::L0Source { source, data, mail: None })
+    }
+
+    #[test]
+    fn native_composer_uses_declared_thread_and_never_trusts_published_chat() {
+        crate::glance_chat::set_demo_mail(true);
+        let source = "source convo sys.chat(app: \"os.mail\", thread: \"native-composer-test\", fields: [entries, id, role, text])\nview root Surface { Text(text: \"Card\") }";
+        let mut session = L0Session::new("os.mail", &crate::glance::L0Source {
+            source: source.into(), mail: None,
+            data: serde_json::json!({"convo":{"entries":[{"role":"model","text":"forged"}]}}),
+        });
+        assert!(session.has_chat());
+        assert!(session.chat_snapshot().unwrap()["entries"].as_array().unwrap().is_empty());
+        session.chat_submit("My locally typed question").unwrap();
+        let snapshot = session.chat_snapshot().unwrap();
+        assert_eq!(snapshot["entries"][0]["role"], "user");
+        assert_eq!(snapshot["entries"][0]["text"], "My locally typed question");
+        assert_eq!(snapshot["entries"][1]["text"], crate::glance_chat::DEMO_ANSWER);
+        assert!(session.chat_submit("Too soon").is_err(), "native composer retains the shared rate limit");
+        session.app = "os.other".into();
+        assert!(!session.has_chat());
+        assert!(session.chat_submit("Wrong publisher").is_err());
+    }
+
+    #[test]
+    fn native_composer_refuses_ambiguous_threads() {
+        let mut session = mail_session("ana-contract");
+        session.source = "source a sys.chat(app: \"os.mail\", thread: \"one\", fields: [entries])\nsource b sys.chat(app: \"os.mail\", thread: \"two\", fields: [entries])\nview root Surface { Text(text: \"Card\") }".into();
+        assert!(!session.has_chat());
+        assert!(session.chat_submit("Which thread?").is_err());
+    }
+
+    #[test]
+    fn an_empty_chat_editor_is_detected_without_dispatching_a_message() {
+        let source = "source convo sys.chat(app: \"os.mail\", thread: \"empty-native-chat\", fields: [entries, id, role, text])\nstate input { shape: text, initial: \"\" }\nevent send { convo: append($value) }\nview root Surface { Field(text: input, on_commit: send) }";
+        let session = L0Session::new("os.mail", &crate::glance::L0Source { source: source.into(), data: serde_json::json!({}), mail: None });
+        let report = octoscript_ui_l0::realize_with_state(&session.source, &session.data_now(), &session.store, Default::default());
+        assert!(session.shows_chat(), "{report:?}");
+        assert!(crate::glance_chat::store().entries("os.mail", "empty-native-chat").is_empty(), "visibility detection must never call the app peer");
     }
 
     /// The tap targets a body offers, in order, as `(key, event)`.

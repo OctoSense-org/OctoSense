@@ -88,6 +88,7 @@ pub mod glance_digest;
 pub mod glance_notice;
 pub mod glance_panel;
 pub mod glance_sheet;
+mod card_chat;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;
@@ -3803,6 +3804,9 @@ impl App {
             return false;
         }
         sheet.handle_event(cx, event, &mut Scope::empty());
+        if let Some(state) = self.state.as_mut() {
+            state.phone.card_open = sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
+        }
         if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) {
             self.redraw_all(cx);
         }
@@ -3817,7 +3821,10 @@ impl App {
             s.close(cx);
             true
         });
-        if closed { self.redraw_all(cx); }
+        if closed {
+            if let Some(state) = self.state.as_mut() { state.phone.card_open = false; }
+            self.redraw_all(cx);
+        }
         closed
     }
 
@@ -3836,7 +3843,12 @@ impl App {
             state.phone.pages.jump(-1);
             self.animate_phone(cx);
         }
-        let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.open_card(cx, key));
+        let insets = self.state.as_ref().map(|s| s.phone.insets).unwrap_or_default();
+        let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
+            s.set_presentation(phone, insets);
+            s.open_card(cx, key)
+        });
+        if phone { self.state_mut().phone.card_open = opened; }
         if opened {
             log!("wm: glance toast opens card {key}");
         } else {
@@ -6340,6 +6352,7 @@ impl App {
         shell::script_mod(vm);
         glance_card::script_mod(vm);
         glance_panel::script_mod(vm);
+        card_chat::script_mod(vm);
         glance_sheet::script_mod(vm);
         approvals::script_mod(vm);
         system_chat::script_mod(vm);
@@ -6516,19 +6529,29 @@ impl App {
                 return;
             }
         }
-        // The glance page's live cards (mobile_pages.rs `GlanceCards`):
-        // every event, and the pointer while the page is what the person
-        // sees. Their taps then run as the desktop panel's do, a card's
-        // clicks only for a plain tap on it: what the finger is (a tap, or a
-        // swipe, a pull, a long press, a press on the shell's controls) is
-        // the shell's to say, read before the shell handles the event. The
-        // shell keeps each card's open button for itself.
+        // Phone Glance is a preview. A plain body tap opens the exact card
+        // in its dedicated workspace; preview editors never claim focus.
+        // Background events still refresh previews while no workspace covers them.
         if self.state.is_some() && self.state_mut().style.target.mobile() {
             let claimed = self.phone_gestures.current().is_some();
             let phone = &self.state_mut().phone;
-            let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open();
+            let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open() && !phone.card_open;
+            let card_open = phone.card_open;
             let finger = mobile_pages::GlanceFinger::of(event, phone.gesture.as_ref(), claimed, phone.touch);
-            if showing || !event.requires_visibility() {
+            if showing {
+                if let mobile_pages::GlanceFinger::Tap(at) = finger {
+                    let key = self.desk(cx).borrow::<WmDesk>().and_then(|desk| desk.phone_ui.glance_cards.under(at).map(str::to_owned));
+                    if let Some(key) = key {
+                        // Finish the Home gesture, then promote the exact publication.
+                        // Preview controls never edit or dispatch inside the feed.
+                        self.phone_pointer(cx, event);
+                        self.open_glance_card(cx, &key);
+                        return;
+                    }
+                }
+            }
+            let preview_input = matches!(event, Event::TouchUpdate(_) | Event::MouseDown(_) | Event::MouseMove(_) | Event::MouseUp(_) | Event::Scroll(_) | Event::KeyDown(_) | Event::KeyUp(_) | Event::TextInput(_) | Event::TextCopy(_) | Event::TextCut(_));
+            if !preview_input && !card_open {
                 let changed = self.desk(cx).borrow_mut::<WmDesk>().is_some_and(|mut desk| desk.phone_ui.glance_cards.handle_event(cx, event, finger));
                 if changed {
                     self.redraw_all(cx);
@@ -6807,6 +6830,8 @@ impl App {
             self.drain_pane_links(cx);
         }
 
+        let focused_card = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
+        if let Some(state) = self.state.as_mut() { state.phone.card_open = focused_card && state.style.target.mobile(); }
         self.match_event(cx, event);
         if let Some(state) = self.state.as_mut() {
             let mut scope = Scope::with_data(state);
