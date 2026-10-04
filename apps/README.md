@@ -152,8 +152,8 @@ reaches only the hosts the manifest lists.
   sheet came up, the agent added an event and its card opened the glance
   panel. Not packed on the phone. Its host service's tests are not in
   `apps.yml` yet.
-- Only Camera ships its own launcher icon (`bundle/icon.png`); the shells
-  draw the others.
+- Camera and AI providers ship PNG launcher artwork; YouTube ships SVG
+  artwork. The shell frames bundle icons for the selected platform style.
 
 ## How the shells pack them
 
@@ -241,7 +241,7 @@ appcard/                     the native AppCard assistant
 apps/<name>/bundle/
   manifest.json     id, version, name, capabilities, network.hosts, integrity
   main.splash       the program
-  icon.png|svg      optional launcher art (Camera has one)
+  icon.png|svg      optional launcher artwork; the shell owns the outer shape
   thumbs/ ...       any other files the app loads, as {{assets}}/<path>
 ```
 
@@ -264,6 +264,51 @@ the same network allowlist. How to write such an app (language, APIs, the
 `octo` CLI) is in
 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
 (`docs/QUICKSTART.md`, `docs/SCRIPT-API.md`).
+
+## Launcher icon artwork
+
+App identity belongs to the app; the outer shape belongs to the selected
+shell style. Home, the dock, App Library, group previews and shell app badges
+use the shared `octosense::style::AppIconDraw` renderer. This also covers apps
+installed from App Hub. Do not render bundle images directly on these surfaces.
+
+| Shell style | Outer shape |
+| --- | --- |
+| Android | Circle, matching OctoSense's existing Android icon set |
+| macOS / OctoSense | Rounded square with the macOS icon set's inset |
+| iOS | Rounded square with the iOS icon set's inset |
+| Windows | Softly rounded tile |
+| NextStep | Square tile |
+| Omarchy / Windows 2000 | Keep the theme's freeform artwork convention |
+
+Native Android package icons are already drawn by Android with its device
+mask and user/profile badges. The shell preserves those pixels. Android does
+not require a circle on every device: [adaptive icon masks vary by
+OEM](https://source.android.com/docs/core/display/adaptive-icons).
+[Apple's app icon guidance](https://developer.apple.com/design/human-interface-guidelines/app-icons)
+uses rounded rectangles for iOS, iPadOS and macOS.
+
+For new bundle icons, supply a square PNG or supported SVG with a full-bleed
+background. Keep essential marks inside the central 66% of the canvas so
+platform corners cannot cut them off. Do not bake a circle, rounded corners
+or an outer shadow into the source. Transparent artwork is supported and
+receives a neutral backing in tile-based styles. Keep the logo and brand
+colours; adapting the frame should not redesign the identity.
+
+Shell-owned SVG icons use `icon_frame::styled_svg` and an explicit background
+element. The same frame policy masks bundle PNG/SVG artwork at draw time, so
+switching styles updates installed icons too. Review Android, macOS and iOS
+at launcher and badge sizes, on light and dark backgrounds. The shell's
+icon-frame/style tests run in the Phone workflow.
+
+For a visual regression check, build the `icon_shapes` example from `phone/`
+with `mobile-apps`. Run it with an isolated `OCTOSENSE_HOME`, hidden windows
+and the Makepad remote control surface (see the root `AGENTS.md`). It shows
+all seven styles, bundled and store PNG/SVG artwork, transparent backgrounds,
+small badges and half-opacity icons. Capture `/g?scale=1` and check the PNG
+with `tools/check_icon_shape_preview.py` (optional dependency: Pillow).
+The default capture offset is the macOS caption; use `--body-y` for another
+backend. Native Android package icons must still be checked on a device.
 
 ## Running a bundle during development
 

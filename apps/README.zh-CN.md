@@ -122,7 +122,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **日历**（2026-10-01，桌面端，隐藏窗口的 `--remote` 运行，接真实模型）：系统 Agent
   请日历的 Agent 放一张卡片；首次使用面板弹出，Agent 添加了一个日程，它的卡片打开了
   glance 面板。手机上没有打包。它的宿主服务测试还不在 `apps.yml` 中。
-- 只有 Camera 自带启动器图标（`bundle/icon.png`），其他应用的图标由 Shell 绘制。
+- Camera 和 AI providers 自带 PNG 启动器图案，YouTube 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
 
@@ -202,7 +202,7 @@ appcard/                     原生 AppCard 助手
 apps/<name>/bundle/
   manifest.json     id、version、name、capabilities、network.hosts、integrity
   main.splash       程序
-  icon.png|svg      可选的启动器图标（Camera 有）
+  icon.png|svg      可选的启动器图案；外形由 Shell 统一控制
   thumbs/ ...       应用加载的其他文件，路径为 {{assets}}/<path>
 ```
 
@@ -224,6 +224,45 @@ bundle 的源地址（Photos：`let assets = "{{assets}}"`，然后
 应用（语言、API、`octo` 命令行）见
 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
 （`docs/QUICKSTART.md`、`docs/SCRIPT-API.md`）。
+
+## 启动器图标规范
+
+应用负责品牌图案，当前 Shell 风格负责外形。Home、Dock、应用资源库、
+分组预览和 Shell 中的应用标识统一使用 `octosense::style::AppIconDraw`，
+包括从 App Hub 安装的应用。不要在这些位置直接绘制 bundle 图片。
+
+| Shell 风格 | 外形 |
+| --- | --- |
+| Android | 圆形，与 OctoSense 现有 Android 图标一致 |
+| macOS / OctoSense | 圆角方形，使用 macOS 图标集的边距 |
+| iOS | 圆角方形，使用 iOS 图标集的边距 |
+| Windows | 轻度圆角方块 |
+| NextStep | 方块 |
+| Omarchy / Windows 2000 | 保留主题的自由外形惯例 |
+
+原生 Android 应用的图标已经由 Android 按设备蒙版绘制，并可能带用户或
+工作资料标记；Shell 保留这些像素，不再次裁剪。Android 并非所有设备都
+必须使用圆形：[自适应图标蒙版由 OEM 决定](https://source.android.com/docs/core/display/adaptive-icons)。
+[Apple 图标指南](https://developer.apple.com/design/human-interface-guidelines/app-icons)
+规定 iOS、iPadOS 和 macOS 使用圆角矩形。
+
+新的 bundle 图标应使用正方形 PNG 或受支持的 SVG，背景铺满画布。重要
+图案放在画布中央 66% 区域内，避免被平台外形裁掉。不要在原图中烘焙
+圆形蒙版、圆角或外部阴影。支持透明图案；使用方块或圆形外框的风格会
+添加中性的底色。保留 Logo 和品牌颜色，外框适配不应重新设计应用标识。
+
+Shell 自有 SVG 使用 `icon_frame::styled_svg` 和显式背景元素；bundle
+PNG/SVG 在绘制时使用同一外框策略，因此切换风格也会更新已安装应用的
+图标。检查 Android、macOS、iOS 风格下的启动器和小标识尺寸，以及明暗
+背景。外框和风格回归测试随 Phone 工作流执行。
+
+需要视觉回归检查时，在 `phone/` 中启用 `mobile-apps` 构建 `icon_shapes`
+示例。使用隔离的 `OCTOSENSE_HOME`、隐藏窗口和 Makepad 远程控制接口运行
+（参见根目录 `AGENTS.md`）。示例覆盖七种风格、内置和商店 PNG/SVG 图案、
+透明背景、小尺寸标识及半透明图标。通过 `/g?scale=1` 截图，再用
+`tools/check_icon_shape_preview.py` 检查 PNG（可选依赖：Pillow）。默认偏移
+对应 macOS 标题栏，其他后端可传入 `--body-y`。原生 Android 应用图标仍需
+在真实设备上检查。
 
 ## 开发时运行 bundle
 

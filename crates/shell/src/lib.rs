@@ -6252,6 +6252,7 @@ impl App {
         host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
+        octosense::icon_frame::script_mod(vm);
 
         // The theme: evaluated before any module that reads
         // mod.wm_theme. This IS the theming system — splash.

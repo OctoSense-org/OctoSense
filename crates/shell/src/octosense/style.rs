@@ -1,5 +1,8 @@
 //! OctoSense's additional desktop style, layered on the upstream widget API.
 use makepad_widgets::{app_icon, desktop_style::{DesktopStyle as UpstreamStyle, StyleSheet}, *};
+use super::icon_frame;
+#[cfg(any(feature = "app-hub", native_mobile))]
+use super::icon_frame::{DrawIconImage, SvgIconTexture};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DesktopStyle {
@@ -107,10 +110,10 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
             }
         }
     }
-    wear(&mut assets, "apphub", apphub_svg().into());
+    wear(&mut assets, "apphub", icon_frame::styled_svg(apphub_svg(), style));
     // The system chat's dock entry and home chip (#143): its own art, so it
     // never reads as the AI pane's app.
-    wear(&mut assets, "assistant", include_str!("../../resources/icons/apps/assistant.svg").into());
+    wear(&mut assets, "assistant", icon_frame::styled_svg(include_str!("../../resources/icons/apps/assistant.svg"), style));
     assets.sort_by(|a, b| a.name.cmp(&b.name));
     assets
 }
@@ -127,7 +130,7 @@ fn apphub_svg() -> &'static str {
 /// Whether the icon catalog still wears this shell's art for `style`: its
 /// App Hub icon, which the framework's own catalog does not have.
 fn wears_shell_art(cx: &mut Cx, style: UpstreamStyle) -> bool {
-    *app_icon::source(cx, style, "apphub") == *apphub_svg()
+    app_icon::source(cx, style, "apphub").contains(icon_frame::SHELL_ART_MARKER)
 }
 
 /// News and OctosMap as `tools/build_app_icons.py` draws them, in that order.
@@ -162,7 +165,7 @@ pub struct AppIconDraw {
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
         #[cfg(any(feature = "app-hub", native_mobile))]
-        if self.library.draw(cx, name, rect, opacity) { return; }
+        if self.library.draw(cx, name, style.framework(), rect, opacity) { return; }
         let style = style.framework();
         // A style can be drawn before its sheet is applied (a crossfade's
         // target, the first frame); the framework would then fall back to
@@ -187,11 +190,11 @@ struct InstalledIcons {
     entries: std::collections::HashMap<String, Option<InstalledIcon>>,
 }
 #[cfg(any(feature = "app-hub", native_mobile))]
-enum InstalledIcon { Svg(DrawSvg), Png(DrawImage, Texture) }
+enum InstalledIcon { Svg(DrawIconImage, SvgIconTexture), Png(DrawIconImage, Texture) }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 impl InstalledIcons {
-    fn draw(&mut self, cx: &mut Cx2d, name: &str, rect: Rect, opacity: f32) -> bool {
+    fn draw(&mut self, cx: &mut Cx2d, name: &str, style: UpstreamStyle, rect: Rect, opacity: f32) -> bool {
         use octosense_app_hub_app::icons::{self, IconData};
         // A system app's own art, when its bundle ships one (ADR 0004).
         let system = name.strip_prefix("hub:").is_none() && crate::apps::system_card_apps().iter().any(|a| a.id == name);
@@ -208,28 +211,34 @@ impl InstalledIcons {
             let data = if system { octosense_app_hub_app::system_icon(id)? } else { icons::read_installed_icon(&root, id)? };
             match data {
                 IconData::Svg(source) => {
-                    let mut draw = cx.with_vm(|vm| DrawSvg::script_new_with_default(vm));
-                    draw.load_from_str(&source);
-                    let (width, height) = draw.svg_doc.as_ref()?.logical_size();
-                    draw.content_bounds = (0.0, 0.0, width, height);
-                    Some(InstalledIcon::Svg(draw))
+                    let texture = SvgIconTexture::new(cx, &source)?;
+                    let mut draw = cx.with_vm(|vm| DrawIconImage::script_new_with_default(vm));
+                    draw.premultiplied = 1.;
+                    Some(InstalledIcon::Svg(draw, texture))
                 }
                 IconData::Png(data) => {
                     let buffer = image_cache::ImageBuffer::from_png(&data).ok()?;
+                    let source_size = vec2(buffer.width as f32, buffer.height as f32);
                     let texture = buffer.into_new_texture(cx);
-                    let draw = cx.with_vm(|vm| DrawImage::script_new_with_default(vm));
+                    let mut draw = cx.with_vm(|vm| DrawIconImage::script_new_with_default(vm));
+                    draw.source_size = source_size;
                     Some(InstalledIcon::Png(draw, texture))
                 }
             }
         });
+        let (rect, radius, backing) = icon_frame::placement(style, rect);
         match icon {
-            Some(InstalledIcon::Svg(draw)) => {
-                draw.color = vec4(-1.0, -1.0, -1.0, -1.0);
+            Some(InstalledIcon::Svg(draw, texture)) => {
+                draw.draw_vars.set_texture(0, texture.texture(cx, rect.size));
+                draw.radius = radius;
+                draw.backing = backing;
                 draw.opacity = opacity;
                 draw.draw_abs(cx, rect);
             }
             Some(InstalledIcon::Png(draw, texture)) => {
                 draw.draw_vars.set_texture(0, texture);
+                draw.radius = radius;
+                draw.backing = backing;
                 draw.opacity = opacity;
                 draw.draw_abs(cx, rect);
             }
@@ -245,6 +254,21 @@ mod tests {
 
     fn svg_of<'a>(assets: &'a [app_icon::IconAsset], name: &str) -> &'a str {
         &assets.iter().find(|asset| asset.name == name).unwrap_or_else(|| panic!("no {name} icon")).svg
+    }
+
+    #[test]
+    fn added_app_icons_follow_the_selected_platform_shape() {
+        for name in ["apphub", "assistant"] {
+            let android = icon_assets(UpstreamStyle::Android);
+            assert!(svg_of(&android, name).contains("<circle cx=\"32\" cy=\"32\" r=\"31\""),
+                "{name} must share Android's circular silhouette");
+            let macos = icon_assets(UpstreamStyle::Macos);
+            assert!(svg_of(&macos, name).contains("width=\"58\" height=\"57\" rx=\"13\""),
+                "{name} must share macOS's rounded tile");
+            let ios = icon_assets(UpstreamStyle::Ios);
+            assert!(svg_of(&ios, name).contains("width=\"62\" height=\"62\" rx=\"15\""),
+                "{name} must share iOS's rounded tile");
+        }
     }
 
     #[test]

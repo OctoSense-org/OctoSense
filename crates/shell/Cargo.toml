@@ -20,6 +20,10 @@ publish = false
 [lib]
 doctest = false
 
+[[example]]
+name = "icon_shapes"
+required-features = ["mobile-apps"]
+
 [dependencies]
 # The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
 libc = "0.2"
