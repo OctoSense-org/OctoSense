@@ -87,6 +87,12 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   --features octos-core --test real_kernel`); see its README.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
+- Launcher artwork follows [the icon guidelines](README.md#launcher-icon-artwork):
+  use a square canvas and keep essential marks inside the central safe area.
+  The shell applies the active platform's shape to both PNG and SVG bundle
+  icons. Do not bake rounded corners, circular masks or outer shadows into
+  new artwork, or add an app-specific rendering path to bypass that policy.
+  Review the icon in Android, macOS and iOS styles, on light and dark grounds.
 
 ## AppCard (apps/appcard)
 
