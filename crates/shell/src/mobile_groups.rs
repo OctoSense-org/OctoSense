@@ -10,7 +10,7 @@
 //! Gesture contract (mobile_gestures.rs): a committed `HomeUp` leaves the
 //! split like leaving an app; the divider's band is an exclusion zone, so
 //! no shell gesture starts on it.
-use crate::{hub::ClientId, mobile::{self, PhoneHit, PhoneScreen, PhoneState}, mobile_gestures::{GestureKind, ShellGesture}, mobile_tiles::{TileKind, TileSlot, TILE_RADIUS}};
+use crate::{hub::ClientId, mobile::{self, PhoneHit, PhoneScreen, PhoneState}, mobile_gestures::{GestureKind, ShellGesture}, mobile_tiles::{TileKind, TileSlot, CARD_TITLE_PX, TILE_RADIUS}};
 use makepad_widgets::*;
 
 /// The groups every phone starts with, from the linked apps. A member that
@@ -376,7 +376,7 @@ impl PhoneSurface {
         let text_x = mx + mosaic + 18.0;
         let text_w = (r.pos.x + r.size.x - text_x - 10.0).max(10.0);
         let mid = r.pos.y + r.size.y * 0.5;
-        self.d.label_elided(cx, rect(text_x, mid - 22.0, text_w, 24.0), true, 15.0, alpha(ink, opacity), HAlign::Left, name);
+        self.d.label_elided(cx, rect(text_x, mid - 22.0, text_w, 24.0), true, CARD_TITLE_PX, alpha(ink, opacity), HAlign::Left, name);
         let sub = if group.pair && members.len() == 2 { "App pair".to_string() } else { format!("{} app{}", members.len(), if members.len() == 1 { "" } else { "s" }) };
         self.d.label_elided(cx, rect(text_x, mid + 2.0, text_w, 20.0), false, 12.0, alpha(ink, 0.6 * opacity), HAlign::Left, &sub);
         self.hits.push((r, PhoneHit::Group(name.to_string())));

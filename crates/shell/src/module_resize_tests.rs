@@ -198,8 +198,17 @@ View{width: Fill height: Fill
 }
 
 #[test]
-fn photos_preview_fills_the_card_with_its_title_overlaid_at_the_bottom() {
-    let (mut cx, tile, root, outer) = hosted_card();
+fn photos_preview_title_is_the_size_of_every_card_title() {
+    let (mut cx, _tile, root, outer) = hosted_card();
+    set_photos_preview(&mut cx, &root, outer);
+    let title = root.label(&cx, ids!(tile_title));
+    assert_eq!(
+        title.borrow().unwrap().draw_text.text_style.font_size,
+        crate::shell::ui::px_to_pt(crate::mobile_tiles::CARD_TITLE_PX)
+    );
+}
+
+fn set_photos_preview(cx: &mut Cx, root: &WidgetRef, outer: SplashVmId) {
     let model = PHOTOS.split_once("\nstart_timeout(").unwrap().0;
     let preview = PHOTOS
         .rsplit_once("\n    tile: ")
@@ -209,12 +218,18 @@ fn photos_preview_fills_the_card_with_its_title_overlaid_at_the_bottom() {
         .strip_suffix('}')
         .unwrap();
     set_card_body(
-        &mut cx,
-        &root,
+        cx,
+        root,
         outer,
         &format!("{model}\nlet accent = #x007aff\npreview := {preview}"),
     );
-    widget_tree::set_ui_root(&mut cx, &root);
+    widget_tree::set_ui_root(cx, root);
+}
+
+#[test]
+fn photos_preview_fills_the_card_with_its_title_overlaid_at_the_bottom() {
+    let (mut cx, tile, root, outer) = hosted_card();
+    set_photos_preview(&mut cx, &root, outer);
     let preview = root.view(&cx, ids!(preview));
     {
         let preview = preview.borrow().unwrap();
