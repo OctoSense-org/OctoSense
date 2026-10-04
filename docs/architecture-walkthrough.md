@@ -19,7 +19,7 @@ We will use one question throughout: **“What is on my calendar today?”** On 
 | Session / turn | A session identifies a conversation and its state. A turn is one execution responding to input; it can include several model requests and tool calls. |
 | Peer / request context | A peer is a durable cooperating agent identity. A context is another session belonging to that peer, with its own transcript, workspace and a separate memory area under the peer’s namespace. |
 | Tool / host service | A tool is an operation offered to the model. A host service is Rust code called by an app or tool executor. Exposing one API does not automatically expose the other. |
-| `AGENTS.md` / `AGENT.md` | Repository contributor instructions / an app-bundle agent-instructions artifact. The bundle artifact is admitted by App Hub, but is not yet loaded into the shell peer's prompt. |
+| `AGENTS.md` / `AGENT.md` | Repository contributor instructions / an app-bundle agent-instructions artifact. The bundle artifact is admitted by App Hub and supplied as host-guidance text on each turn; this is not kernel-native skill installation. |
 
 The companion code tours cover [Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/218b25d2460d64f843932f67d419467618464fb9/docs/CODE-WALKTHROUGH.md), [App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/19bb52d402e80e89e085dea989615e3ec612d359/docs/CODE-WALKTHROUGH.md), [Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/fb29b6b1cb6e16f38d99a8aef60431a9565dfd59/docs/architecture-walkthrough.md) and [octos](https://github.com/octos-org/octos/blob/82900bf149d3a53016c1c1492ffc075d2d4fb0ed/docs/octosense-integration-walkthrough.md). These links select published documentation revisions; runtime versions remain controlled by each consumer's dependency pins.
 
@@ -210,7 +210,7 @@ For the Calendar question, the executor reads `calendar/events.json` under Calen
 | App | Current data/tool boundary |
 | --- | --- |
 | News | `news.list`, `news.read` and `news.notify` |
-| Mail | **Only `mail.notify`**; the UI’s read/send APIs are not agent tools |
+| Mail | Account-scoped accounts/folders/sync/list/peek, notify/publish_card and explicit event skip; no send or credential tool |
 | Photos, Maps, Camera, YouTube | Only their own `<app>.notify`, publishing a shared notice card through [glance_notice.rs](../crates/shell/src/glance_notice.rs) |
 | AI providers | No app agent |
 
@@ -292,4 +292,4 @@ cargo test --locked -p octosense-kernel -p octosense-app-peers \
 
 Optional real-kernel tests return early when their binary environment variables are absent; see the [app-peers test instructions](../crates/app-peers/README.md) before treating those as integration evidence. Visible UI, real-provider conversations and device behavior require separate runs.
 
-Remaining implementation work includes bundle `AGENT.md` prompt loading, automatic bundle triggers/skills, script-implemented agent tool dispatch and a general app-to-system-agent conversation RPC. Follow declarations through their executor before building a workflow around one of these paths.
+Mail now has an opt-in incoming-event dispatcher. Admitted `AGENT.md` and skill text accompany each turn, with account-scoped preferences provisioned by the system agent; see the [Mail event walkthrough](mail-agent-events.md). General triggers/cron, kernel-native skill installation, script-implemented agent tool dispatch and a general app-to-system-agent conversation RPC remain unimplemented.

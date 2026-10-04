@@ -78,6 +78,7 @@ pub fn account_of(app_id: &str) -> Option<String> {
 /// revokes the old account's contexts and the host's lifecycle signs in or
 /// out). True when a peer was live.
 pub fn account_changed(app_id: &str) -> bool {
+    clear_guidance(app_id);
     let Some(service) = live(|l| l.get(app_id).cloned()) else { return false };
     service.set_account(account_of(app_id).as_deref());
     true
@@ -207,6 +208,23 @@ fn obtain(app_id: &str, factory: &dyn PeerFactory) -> Result<Arc<dyn OctosAppSer
     Ok(service)
 }
 
+/// Trusted instruction/skill TEXT supplied separately on each peer turn. This
+/// does not install kernel skills or grant any tools. Scope is the host's exact
+/// active account; loading/persisting admitted base text and overlays belongs
+/// to the shell. Updates affect existing peers on their next turn.
+pub use octosense_app_peers::guidance::{NamedSkill, TrustedGuidance};
+
+pub fn set_guidance(app_id: &str, account: &str, guidance: TrustedGuidance) -> Result<(), String> {
+    if account_of(app_id).as_deref() != Some(account) {
+        return Err("App guidance does not belong to the active account".into());
+    }
+    octosense_app_peers::guidance::set(&format!("{PEER_PREFIX}{app_id}"), account, guidance)
+}
+
+pub fn clear_guidance(app_id: &str) {
+    octosense_app_peers::guidance::clear_app(&format!("{PEER_PREFIX}{app_id}"));
+}
+
 /// The shell prepares `app_id`'s agent (the person allowed it): its peer is
 /// created or resumed and its tools registered now, without a turn. Blocks
 /// (at most a minute): call it off the UI thread. Consent is the caller's
@@ -271,6 +289,7 @@ pub(crate) fn reset_for_tests() {
 /// now, closing its contexts and any running turn. A later call needs
 /// consent again and then gets a fresh peer. True when one was live.
 pub fn revoke(app_id: &str) -> bool {
+    clear_guidance(app_id);
     let service = live(|l| l.remove(app_id));
     match service {
         Some(service) => {

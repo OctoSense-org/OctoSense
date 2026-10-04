@@ -1,0 +1,26 @@
+{
+  "card_id": "mail-e0cbea1e5de926bda32840a1c6f839a601e21016",
+  "data": {
+    "note": {
+      "as_of": "Oct 4, 2026",
+      "metric1_label": "Pickup code",
+      "metric1_value": "4821",
+      "metric2_label": "Collect by",
+      "metric2_value": "Mon, Oct 5, 9:00 PM PDT",
+      "pick1_body": "Example Pickup Desk, 100 Demo Street, Demo City",
+      "pick1_title": "Pickup location",
+      "pick2_body": "9:00 AM-9:00 PM PDT",
+      "pick2_title": "Pickup hours",
+      "pick3_body": "Required to collect",
+      "pick3_title": "Photo ID",
+      "status": "Ready for pickup",
+      "subtitle": "Desk lamp \u00b7 Demo Supply",
+      "summary": "Delivery attempted; parcel now at the pickup desk.",
+      "title": "Ready for pickup"
+    }
+  },
+  "notify": true,
+  "source": "source note sys.dataset(fields: [title, subtitle, summary, as_of, status, metric1_label, metric1_value, metric2_label, metric2_value, pick1_title, pick1_body, pick2_title, pick2_body, pick3_title, pick3_body])\n\ncopy sim { class: vocabulary, en: \"Simulation\" }\ncopy b_code { class: vocabulary, en: \"Show code\" }\ncopy b_details { class: vocabulary, en: \"Pickup details\" }\ncopy b_back { class: vocabulary, en: \"Back\" }\ncopy gist { class: model-copy, en: \"A signature was needed, so the parcel is now waiting at the pickup desk.\" }\ncopy next { class: model-copy, en: \"Bring the code and photo ID to collect.\" }\n\nstate mode { shape: enum[brief, code, pickup], initial: .brief }\nevent show_code { mode: set(.code) }\nevent show_pickup { mode: set(.pickup) }\nevent back { mode: set(.brief) }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.sim, width: .fill)\n      TextCaption(value: note.as_of)\n    }\n    TextTitle(text: note.title, width: .fill)\n    TextCaption(value: note.status)\n    when mode == .brief {\n      TextBody(text: note.subtitle, width: .fill)\n      TextBody(text: note.summary, width: .fill)\n      TextBody(text: copy.gist, width: .fill)\n      Chip(text: copy.b_code, on_tap: show_code, tone: .primary)\n      Chip(text: copy.b_details, on_tap: show_pickup, tone: .normal)\n      TextBody(text: copy.next, width: .fill)\n    }\n    when mode == .code {\n      TextBody(text: note.metric1_label, width: .fill)\n      TextTitle(text: note.metric1_value, width: .fill)\n      TextBody(text: note.pick3_title, width: .fill)\n      TextBody(text: note.pick3_body, width: .fill)\n      Chip(text: copy.b_back, on_tap: back, tone: .normal)\n    }\n    when mode == .pickup {\n      TextBody(text: note.pick1_title, width: .fill)\n      TextBody(text: note.pick1_body, width: .fill)\n      TextBody(text: note.pick2_title, width: .fill)\n      TextBody(text: note.pick2_body, width: .fill)\n      TextBody(text: note.metric2_label, width: .fill)\n      TextBody(text: note.metric2_value, width: .fill)\n      Chip(text: copy.b_back, on_tap: back, tone: .normal)\n    }\n  }\n}",
+  "summary": "Collect by Mon Oct 5, 9:00 PM PDT \u2014 bring the pickup code and photo ID to Example Pickup Desk.",
+  "title": "Pickup ready \u2014 collect by Oct 5"
+}

@@ -140,7 +140,7 @@ sequenceDiagram
 | 拥有 Agent 的应用 | 工具与实现 |
 | --- | --- |
 | News | `news.list`、`news.read`、`news.notify`；News 宿主服务处理调用，并将通知交给 Shell。 |
-| Mail | 只有 `mail.notify`；Mail 服务调用 Shell 的 `on_notify` 回调。`mail.list`、`mail.message`、`mail.send` 等 UI 操作没有对应的 Agent 声明。 |
+| Mail | accounts/folders/sync/list/peek 绑定 broker 账户；peek 不标记已读。notify/publish_card 经 Shell 发布，skip_event 记录无需操作的决策。发信和凭据仍不对 Agent 开放。 |
 | Calendar | `calendar.events`、`add_event`、`remove_event`、`notify`、`agenda`；Rust 服务管理日程及事件/议程卡片模板。 |
 | Photos、Maps、YouTube、Camera | 只有 `<namespace>.notify`；Shell 的 `NoticeService` 处理各应用的命名空间。Camera 由 Home 打包。 |
 

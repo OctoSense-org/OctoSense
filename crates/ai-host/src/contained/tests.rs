@@ -629,3 +629,25 @@ fn a_failed_or_panicking_launch_lets_the_next_caller_launch() {
     assert_eq!(prepare_within_seconds(), Ok(()));
     assert_eq!(peers.ids(), vec![format!("card.{APP}")]);
 }
+
+#[test]
+fn guidance_is_host_account_scoped_bounded_and_does_not_prepare_a_peer() {
+    let _g = serial();
+    let peers = Peers::new(Turn::Reply(json!({"text":"ok"})));
+    register(true, &peers);
+    let guidance = TrustedGuidance {
+        instructions: "Notify only important messages".into(),
+        skills: vec![NamedSkill { name: "triage".into(), text: "Read then decide".into() }],
+    };
+    assert!(set_guidance(APP, "another-account", guidance.clone()).is_err());
+    set_guidance(APP, ACCOUNT, guidance.clone()).unwrap();
+    assert!(peers.ids().is_empty(), "provisioning cannot prepare or authorize a peer");
+    let oversized = TrustedGuidance {
+        instructions: "x".repeat(octosense_app_peers::guidance::MAX_TEXT_BYTES + 1),
+        ..Default::default()
+    };
+    assert!(set_guidance(APP, ACCOUNT, oversized).is_err());
+    clear_guidance(APP);
+    set_guidance(APP, ACCOUNT, guidance).unwrap();
+    assert!(!revoke(APP), "guidance may be revoked before the peer exists");
+}

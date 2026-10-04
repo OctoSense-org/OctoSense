@@ -1,0 +1,59 @@
+[
+  {
+    "case": "minimax",
+    "card_id": "mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b",
+    "notification_to_full": true,
+    "full_code_back_details_back": true,
+    "glance_code": true,
+    "layout_pass": false,
+    "finding": "Second primary action horizontally clipped; title too long; address uses oversized title."
+  },
+  {
+    "case": "deepseek",
+    "card_id": "mail-e0cbea1e5de926bda32840a1c6f839a601e21016",
+    "notification_to_full": true,
+    "full_code_back_details_back": true,
+    "glance_code": false,
+    "layout_pass": false,
+    "finding": "All controls visible but repetitive oversized summary; detail views lose item identity. Glance code was not clicked before provider policy update."
+  },
+  {
+    "case": "deepseek-final",
+    "card_id": "mail-dae90737eddc51e8754563d6d1192679445a2770",
+    "notification_to_full": true,
+    "full_code_back_details_back": true,
+    "glance_code_back_details_back": true,
+    "observed_pickup_code": "7392",
+    "layout_pass": false,
+    "finding": "Physical phone controls allvisible/work; stillverbose, reference+ISOdate retained; fails tighter310x400nativecompact target despite working dynamicphone layout."
+  },
+  {
+    "case": "minimax-final",
+    "card_id": "mail-c6f667ed0f5738885fddd9e3dd1ac29677c9e731",
+    "notification_to_full": true,
+    "full_code_back_details_back": false,
+    "glance_code_back_details_back": false,
+    "layout_pass": false,
+    "finding": "No visible action buttons in actual full sheet despite declared width.fill Chips. Physical button sequence not runnable. Source also invents what happens after deadline and mislabels status as Tracking ref."
+  },
+  {
+    "case": "deepseek-repair",
+    "card_id": "mail-bc9c7d2f87620754da754c3d569db25f2b7ed176",
+    "notification_to_full": true,
+    "full_code_back_details_back": true,
+    "glance_code_back_details_back": true,
+    "observed_pickup_code": "9064",
+    "layout_pass": true,
+    "finding": "Compact controls/facts fully visible in full sheet and Glance. All8actual taps logged applied/relower true. Detail times lack explicit hours/deadline labels; natural default Details remains a small touch target."
+  },
+  {
+    "case": "minimax-repair",
+    "card_id": "mail-7aa5926e1a8c0dc84bd7d0d3ada07e903939ffc0",
+    "notification_to_full": true,
+    "full_code_back_details_back": true,
+    "glance_code_back_details_back": true,
+    "observed_pickup_code": "9064",
+    "layout_pass": true,
+    "finding": "Compact controls and facts visible in full sheet/Glance; correct explicit code/hours/deadline labels, no invented consequence. All8actual taps logged applied/relower true. Default Details is a small touch target."
+  }
+]

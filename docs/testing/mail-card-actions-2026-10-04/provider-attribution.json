@@ -1,0 +1,26 @@
+[
+  {
+    "turn_id": "fbb2f74d-da25-410b-8835-dcec13a965ba",
+    "model": "MiniMax-M3.1-Flash-Preview"
+  },
+  {
+    "turn_id": "937576fc-cbf8-4f9c-a451-61ca15946619",
+    "model": "deepseek-v4-flash"
+  },
+  {
+    "turn_id": "56598abc-bde9-439f-8585-07781fa81f9e",
+    "model": "deepseek-v4-flash"
+  },
+  {
+    "turn_id": "de0a48d3-4e07-4a9c-9c08-734edccb583c",
+    "model": "MiniMax-M3.1-Flash-Preview"
+  },
+  {
+    "turn_id": "9dbdc244-36e0-4ec9-8fbd-9dbebbd04bf6",
+    "model": "deepseek-v4-flash"
+  },
+  {
+    "turn_id": "91445793-f7d9-43b5-b708-5a5bae5edf20",
+    "model": "MiniMax-M3.1-Flash-Preview"
+  }
+]

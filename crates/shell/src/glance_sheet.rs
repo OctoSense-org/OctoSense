@@ -103,6 +103,10 @@ pub struct ShellGlanceSheet {
     #[redraw]
     #[rust]
     area: Area,
+    // Retain a close gesture through release so it cannot activate content
+    // beneath the sheet; modal takeover/Android pointer reuse cancels it.
+    #[rust]
+    close_touch: Option<(u64, Vec2d, bool)>,
 }
 
 impl ShellGlanceSheet {
@@ -114,6 +118,7 @@ impl ShellGlanceSheet {
     /// Open the published card `key`. False when it is no longer published.
     pub fn open_card(&mut self, cx: &mut Cx, key: &str) -> bool {
         let Some(card) = crate::glance::card(key) else {
+            self.close(cx);
             return false;
         };
         // A fresh isolate and session for each opening: the card starts as
@@ -129,6 +134,7 @@ impl ShellGlanceSheet {
     }
 
     pub fn close(&mut self, cx: &mut Cx) {
+        self.close_touch = None;
         if let Some(open) = self.open.take() {
             log!("glance sheet: closed {}", open.key);
         }
@@ -194,8 +200,36 @@ impl Widget for ShellGlanceSheet {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if matches!(event, Event::Pause | Event::Background) { self.close_touch = None; }
         if self.open.is_none() {
             return;
+        }
+        if let Event::TouchUpdate(e) = event {
+            use makepad_platform::event::TouchState;
+            if self.close_touch.as_ref().is_some_and(|(uid, _, _)| !e.touches.iter().any(|t|
+                t.uid == *uid && t.state != TouchState::Start)) {
+                self.close_touch = None;
+            }
+            let sheet = self.sheet;
+            let closes = |p| contains(close_rect(sheet), p) || !contains(sheet, p);
+            let mut consumed = self.close_touch.is_some();
+            for t in &e.touches {
+                if self.close_touch.is_none() && t.state == TouchState::Start && closes(t.abs) {
+                    self.close_touch = Some((t.uid, t.abs, true));
+                    consumed = true;
+                }
+                if let Some((uid, start, armed)) = self.close_touch.as_mut() {
+                    if *uid == t.uid {
+                        if (t.abs - *start).length() > 12.0 { *armed = false; }
+                        if t.state == TouchState::Stop {
+                            let should_close = *armed && closes(t.abs);
+                            self.close_touch = None;
+                            if should_close { self.close(cx); return; }
+                        }
+                    }
+                }
+            }
+            if consumed { return; }
         }
         match event {
             Event::MouseDown(e) if contains(close_rect(self.sheet), e.abs) || !contains(self.sheet, e.abs) => {
@@ -236,4 +270,77 @@ mod tests {
         let small = sheet_rect(rect(0.0, 0.0, 360.0, 480.0), 600.0);
         assert!(small.size.x <= 328.0 && small.size.y <= 448.0 && small.pos.x >= 16.0);
     }
+
+    fn opened(cx: &mut Cx) -> ShellGlanceSheet {
+        let mut sheet = cx.with_vm(ShellGlanceSheet::script_new);
+        sheet.sheet = rect(20., 60., 340., 400.);
+        sheet.open = Some(Open { key: "test/card".into(), card: GlanceCard {
+            app: "test".into(), card_id: "card".into(), title: "Card".into(), priority: 0,
+            published_ms: 0, expires_ms: u64::MAX, open_app: "test".into(), route: None,
+            body: "".into(), contained: false, digests: Vec::new(), l0: None,
+        }});
+        sheet
+    }
+    fn touch(sheet: &mut ShellGlanceSheet, cx: &mut Cx, state: makepad_platform::event::TouchState, abs: Vec2d) {
+        use makepad_platform::event::{TouchPoint, TouchUpdateEvent};
+        let event = Event::TouchUpdate(TouchUpdateEvent {
+            time: 0., window_id: CxWindowPool::id_zero(), modifiers: Default::default(),
+            touches: vec![TouchPoint { state, abs, time: 0., uid: 9, rotation_angle: 0., force: 0.,
+                radius: dvec2(1., 1.), handled: Default::default(), sweep_lock: Default::default() }],
+        });
+        sheet.handle_event(cx, &event, &mut Scope::empty());
+    }
+    #[test]
+    fn phone_card_close_and_backdrop_taps_close_on_release_only() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        for at in [dvec2(330., 82.), dvec2(5., 500.)] {
+            let mut sheet = opened(&mut cx);
+            touch(&mut sheet, &mut cx, Start, at);
+            assert!(sheet.is_open(), "the modal keeps ownership through release");
+            touch(&mut sheet, &mut cx, Stop, at);
+            assert!(!sheet.is_open());
+            assert!(sheet.close_touch.is_none());
+        }
+    }
+    #[test]
+    fn dragging_from_the_phone_card_close_target_does_not_close_it() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut sheet = opened(&mut cx);
+        let at = dvec2(330., 82.);
+        touch(&mut sheet, &mut cx, Start, at);
+        touch(&mut sheet, &mut cx, Move, at + dvec2(0., 60.));
+        touch(&mut sheet, &mut cx, Stop, at);
+        assert!(sheet.is_open());
+        assert!(sheet.close_touch.is_none());
+    }
+
+    #[test]
+    fn a_modal_consuming_card_close_release_does_not_poison_the_next_gesture() {
+        use makepad_platform::event::TouchState::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut sheet = opened(&mut cx);
+        touch(&mut sheet, &mut cx, Start, dvec2(330., 82.));
+        // Stop is consumed above this sheet. A new Start reusing Android's
+        // pointer ID inside the card must cancel that old close gesture.
+        touch(&mut sheet, &mut cx, Start, dvec2(100., 200.));
+        assert!(sheet.close_touch.is_none());
+        touch(&mut sheet, &mut cx, Stop, dvec2(100., 200.));
+        assert!(sheet.is_open());
+        touch(&mut sheet, &mut cx, Start, dvec2(330., 82.));
+        touch(&mut sheet, &mut cx, Stop, dvec2(330., 82.));
+        assert!(!sheet.is_open());
+    }
+
+
+    #[test]
+    fn withdrawn_card_key_closes_the_previous_sheet_instead_of_showing_wrong_content() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut sheet = opened(&mut cx);
+        assert!(!sheet.open_card(&mut cx, "missing-publisher/withdrawn-card"));
+        assert!(!sheet.is_open());
+        assert!(sheet.open_key().is_none());
+    }
+
 }

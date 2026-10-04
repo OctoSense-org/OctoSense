@@ -1,0 +1,23 @@
+{
+  "card_id": "mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b",
+  "data": {
+    "note": {
+      "as_of": "Oct 4, 2026",
+      "metric1_label": "Pickup code",
+      "metric1_value": "4821",
+      "metric2_label": "Location",
+      "metric2_value": "Example Pickup Desk, 100 Demo Street, Demo City",
+      "pick1_body": "9:00 AM - 9:00 PM PDT",
+      "pick1_title": "Pickup hours",
+      "pick2_body": "Mon, Oct 5, 2026, 9:00 PM PDT",
+      "pick2_title": "Collect by",
+      "status": "Ready for pickup",
+      "summary": "Desk lamp is waiting at the pickup desk",
+      "title": "Desk lamp ready for pickup"
+    }
+  },
+  "notify": true,
+  "source": "source note sys.dataset(fields: [title, summary, as_of, status, metric1_label, metric1_value, metric2_label, metric2_value, pick1_title, pick1_body, pick2_title, pick2_body])\n\nstate mode { shape: enum[brief, code, details], initial: .brief }\nevent show_code { mode: set(.code) }\nevent show_details { mode: set(.details) }\nevent back { mode: set(.brief) }\n\ncopy app { class: vocabulary, en: \"Mail\" }\ncopy sim { class: vocabulary, en: \"Simulation\" }\ncopy l_code { class: vocabulary, en: \"Show pickup code\" }\ncopy l_details { class: vocabulary, en: \"Pickup details\" }\ncopy l_back { class: vocabulary, en: \"Back\" }\ncopy gist { class: model-copy, en: \"Bring code 4821 and photo ID to the pickup desk by Mon, Oct 5, 9:00 PM PDT.\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.app, width: .fill)\n      TextCaption(value: note.as_of)\n    }\n    Row(gap: 6, align: .center) {\n      TextCaption(text: copy.sim)\n      TextCaption(value: note.status)\n    }\n    when mode == .brief {\n      TextTitle(text: note.title, width: .fill)\n      TextBody(text: note.summary, width: .fill)\n      TextCaption(text: copy.gist, width: .fill)\n      Row(gap: 8) {\n        Chip(text: copy.l_code, on_tap: show_code, tone: .primary)\n        Chip(text: copy.l_details, on_tap: show_details, tone: .primary)\n      }\n    }\n    when mode == .code {\n      TextCaption(text: note.metric1_label, width: .fill)\n      TextTitle(text: note.metric1_value, width: .fill)\n      TextCaption(text: copy.gist, width: .fill)\n      Chip(text: copy.l_back, on_tap: back, tone: .normal)\n    }\n    when mode == .details {\n      TextTitle(text: note.metric2_value, width: .fill)\n      TextCaption(text: note.metric2_label, width: .fill)\n      TextCaption(text: note.pick1_title, width: .fill)\n      TextBody(text: note.pick1_body, width: .fill)\n      TextCaption(text: note.pick2_title, width: .fill)\n      TextBody(text: note.pick2_body, width: .fill)\n      Chip(text: copy.l_back, on_tap: back, tone: .normal)\n    }\n  }\n}",
+  "summary": "Collect desk lamp by Mon Oct 5, 9:00 PM PDT. Show pickup code 4821 with photo ID.",
+  "title": "Pickup: desk lamp ready, collect by Oct 5 9 PM PDT"
+}

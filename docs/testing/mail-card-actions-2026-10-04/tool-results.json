@@ -1,0 +1,132 @@
+[
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax-final / SIM-ACTION-4821",
+    "turn_id": "fbb2f74d-da25-410b-8835-dcec13a965ba",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax-final / SIM-ACTION-4821",
+    "turn_id": "fbb2f74d-da25-410b-8835-dcec13a965ba",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-c6f667ed0f5738885fddd9e3dd1ac29677c9e731",
+    "source_path": "cards/mail-c6f667ed0f5738885fddd9e3dd1ac29677c9e731.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek-final / SIM-ACTION-4821",
+    "turn_id": "937576fc-cbf8-4f9c-a451-61ca15946619",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek-final / SIM-ACTION-4821",
+    "turn_id": "937576fc-cbf8-4f9c-a451-61ca15946619",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-dae90737eddc51e8754563d6d1192679445a2770",
+    "source_path": "cards/mail-dae90737eddc51e8754563d6d1192679445a2770.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek-repair / SIM-ACTION-4821",
+    "turn_id": "56598abc-bde9-439f-8585-07781fa81f9e",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek-repair / SIM-ACTION-4821",
+    "turn_id": "56598abc-bde9-439f-8585-07781fa81f9e",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-bc9c7d2f87620754da754c3d569db25f2b7ed176",
+    "source_path": "cards/mail-bc9c7d2f87620754da754c3d569db25f2b7ed176.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax-repair / SIM-ACTION-4821",
+    "turn_id": "de0a48d3-4e07-4a9c-9c08-734edccb583c",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax-repair / SIM-ACTION-4821",
+    "turn_id": "de0a48d3-4e07-4a9c-9c08-734edccb583c",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-7aa5926e1a8c0dc84bd7d0d3ada07e903939ffc0",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 29:43: TextEyebrow has no argument \"width\""
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax-repair / SIM-ACTION-4821",
+    "turn_id": "de0a48d3-4e07-4a9c-9c08-734edccb583c",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-7aa5926e1a8c0dc84bd7d0d3ada07e903939ffc0",
+    "source_path": "cards/mail-7aa5926e1a8c0dc84bd7d0d3ada07e903939ffc0.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek / SIM-ACTION-4821",
+    "turn_id": "9dbdc244-36e0-4ec9-8fbd-9dbebbd04bf6",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek / SIM-ACTION-4821",
+    "turn_id": "9dbdc244-36e0-4ec9-8fbd-9dbebbd04bf6",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-e0cbea1e5de926bda32840a1c6f839a601e21016",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 1:1: sys.dataset cannot answer \"item\". It offers: title, subtitle, summary, coverage, status, as_of, met..."
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek / SIM-ACTION-4821",
+    "turn_id": "9dbdc244-36e0-4ec9-8fbd-9dbebbd04bf6",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-e0cbea1e5de926bda32840a1c6f839a601e21016",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 29:55: \".secondary\" is not a legal token for Chip.tone; expected one of .normal, .primary, .danger; 37:4..."
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / deepseek / SIM-ACTION-4821",
+    "turn_id": "9dbdc244-36e0-4ec9-8fbd-9dbebbd04bf6",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-e0cbea1e5de926bda32840a1c6f839a601e21016",
+    "source_path": "cards/mail-e0cbea1e5de926bda32840a1c6f839a601e21016.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax / SIM-ACTION-4821",
+    "turn_id": "91445793-f7d9-43b5-b708-5a5bae5edf20",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax / SIM-ACTION-4821",
+    "turn_id": "91445793-f7d9-43b5-b708-5a5bae5edf20",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 1:1: sys.dataset cannot answer \"code_label\". It offers: title, subtitle, summary, coverage, status, as_o..."
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax / SIM-ACTION-4821",
+    "turn_id": "91445793-f7d9-43b5-b708-5a5bae5edf20",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 39:45: \".neutral\" is not a legal token for Chip.tone; expected one of .normal, .primary, .danger; 48:45:..."
+  },
+  {
+    "subject": "[OctoSense simulation] Pickup action validation / minimax / SIM-ACTION-4821",
+    "turn_id": "91445793-f7d9-43b5-b708-5a5bae5edf20",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b",
+    "source_path": "cards/mail-f8faa121399a4db82b4ccd81e1d533dbd3272c6b.json"
+  }
+]

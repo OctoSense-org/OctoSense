@@ -1,0 +1,17 @@
+{
+  "scope": "Synthetic fixture delivery; recipient and transport message identifiers omitted. Final common policy and pickup code9064.",
+  "receipts": [
+    {
+      "http_status": 200,
+      "provider_requested": "deepseek-repair",
+      "body_sha256": "b8e70de66a15af2a610213bc361665b766dcf71e65e290e373c2c29c5d75472f",
+      "sent_at": "2026-10-04T03:26:51.936888+00:00"
+    },
+    {
+      "http_status": 200,
+      "provider_requested": "minimax-repair",
+      "body_sha256": "b8e70de66a15af2a610213bc361665b766dcf71e65e290e373c2c29c5d75472f",
+      "sent_at": "2026-10-04T03:31:03.487774+00:00"
+    }
+  ]
+}

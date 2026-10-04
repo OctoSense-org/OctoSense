@@ -5,6 +5,24 @@
 - **Scope:** How the assistant works in OctoSense when no person is typing, for any app: which agent runs, what starts it, which tools and data it may use, how it gathers information, how it produces and checks a card, and where the card and what it learned go.
 - **Relates to:** [ADR 0001](0001-one-octosense-repository.md) (one repository; [`crates/kernel`](../../crates/kernel), [`crates/app-peers`](../../crates/app-peers), [`crates/ai-host`](../../crates/ai-host), [`crates/shell`](../../crates/shell)); [Home ADR 0002](home/0002-agentic-app-security-model.md) (agentic app security model), [Home ADR 0003](home/0003-app-hub-and-store.md) (App Hub), [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (system apps are contained script apps); [Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) (host-owned octos app peers); octos ADR "personal memory tiers" (octos-org/octos#2365); OctoScript [`docs/ui-profile-l0.md`](https://github.com/OctoSense-org/OctoScript/blob/main/docs/ui-profile-l0.md) (the L0/L1/L2 card levels).
 
+## Implementation amendment: Mail incoming events (2026-10-03)
+
+The [Mail event walkthrough](../mail-agent-events.md) records the implemented
+slice and verification limits. Mail has account-scoped read/sync tools, a durable
+new-Inbox-message queue and an opt-in host dispatcher. The system agent can call
+`agents.provision` to supplement admitted instructions with account preferences
+and named skill text, and enable/disable processing. This amends section 1's
+blanket statement that the system agent never writes app-agent prompts: it can
+provision policy once, but it does not prompt Mail for each incoming message.
+
+Instructions and skill text are supplied as separate host-guidance text on every
+turn. This does **not** install kernel-native skills or implement the general
+scheduler/model-selection/budget UI described below. New mail stays an
+`Incoming` trigger; it is never relabeled as a person's request. The initial sync
+is a baseline. Pending events are acknowledged only after a completed turn and
+host-recorded publication or explicit no-action decision. Android process
+suspension and OS notification delivery remain outside this slice.
+
 ## Context
 
 OctoSense's premise is that the assistant is driven by time, events and changing data, not only by a person's questions. A new message, a moved meeting, a delayed flight, a weather warning, a burst of stories on a followed topic or a change in health data should make the relevant apps summarise and prepare. The person sees the result as cards and confirms only what matters.

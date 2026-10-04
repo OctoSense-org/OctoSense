@@ -1,0 +1,19 @@
+{
+  "name": "incoming-mail-triage",
+  "version": "1.0.0",
+  "description": "Read new mail and publish useful Mail cards under the person\u2019s host-owned policy.",
+  "uses": [
+    "mail.peek",
+    "mail.publish_card",
+    "mail.notify",
+    "mail.folders",
+    "mail.sync",
+    "mail.list",
+    "mail.skip_event"
+  ],
+  "prompts": {
+    "include": [
+      "SKILL.md"
+    ]
+  }
+}

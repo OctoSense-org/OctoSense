@@ -194,9 +194,15 @@ fn real_kernel_an_allowed_apps_agent_is_prepared_listed_and_shares_its_conversat
     let host_dir = dir.join("apps/.host");
     std::fs::create_dir_all(&host_dir).unwrap();
     octosense_news_service::register_with(octosense_news_service::Options::default().host_dir(&host_dir).timer(false));
-    let bundle = super::script_apps::tests::stamped_bundle("news", "agents", |_, _| {});
+    // Preparation now reloads admitted guidance as well as tools. Initialize
+    // the same App Hub root/registry the running shell owns, rather than only
+    // injecting tools from an otherwise unregistered temporary bundle.
+    let apps_root = dir.join("apps");
+    octosense_appstore::set_data_root(apps_root.clone());
+    let system = octosense_app_hub_app::system_apps().into_iter().find(|app| app.id == "os.news").expect("News ships in the system catalog");
+    let bundle = octosense_appstore::system::prepare(&apps_root, &system).expect("News's system bundle is admitted").0;
     let news = crate::apps::script_agent_app(&bundle.join("manifest.json"), "os.news", "News").expect("News has an agent");
-    super::script_apps::install("os.news", super::script_apps::from_bundle(&bundle).unwrap(), host_dir.clone());
+    super::script_apps::load("os.news").expect("News's tools and guidance load from the host root");
     let peers = Arc::new(TestPeers { core: core.clone(), state: dir.join("host-state"), made: Mutex::default() });
     crate::ai_host::contained::set_factory(peers.clone());
 

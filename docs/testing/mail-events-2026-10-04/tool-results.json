@@ -1,0 +1,208 @@
+[
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / minimax / validated",
+    "turn_id": "aa9201b1-3ff5-43c3-a1e3-125be741fa41",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / minimax / validated",
+    "turn_id": "aa9201b1-3ff5-43c3-a1e3-125be741fa41",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-b792eeb4329f77167aa740481b03a6b7d2201930",
+    "source_path": "cards/mail-b792eeb4329f77167aa740481b03a6b7d2201930.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / deepseek",
+    "turn_id": "f7334efb-cc79-4736-af5e-6d38df392f83",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / deepseek",
+    "turn_id": "f7334efb-cc79-4736-af5e-6d38df392f83",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-49911c976a8a7e4b496af5abe4efd3b55abc7012",
+    "error": "mail.publish_card failed (host:app_error): summary must be a string of at most 200 characters"
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / deepseek",
+    "turn_id": "f7334efb-cc79-4736-af5e-6d38df392f83",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-49911c976a8a7e4b496af5abe4efd3b55abc7012",
+    "source_path": "cards/mail-49911c976a8a7e4b496af5abe4efd3b55abc7012.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / deepseek",
+    "turn_id": "39618ccc-73fb-4b5e-a99b-0c05fe185f19",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / deepseek",
+    "turn_id": "39618ccc-73fb-4b5e-a99b-0c05fe185f19",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-065ee45aa8fceb779aa8e0d59188086563e05800",
+    "source_path": "cards/mail-065ee45aa8fceb779aa8e0d59188086563e05800.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Routine newsletter: nothing to do / deepseek",
+    "turn_id": "83aad0ea-8212-49b8-abbb-4e9cd7b37a5c",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Routine newsletter: nothing to do / deepseek",
+    "turn_id": "83aad0ea-8212-49b8-abbb-4e9cd7b37a5c",
+    "tool": "mail_skip_event",
+    "success": true,
+    "event_id": "mail-87b4e8902f1636a8c635214ac5527b015d6f6a26",
+    "reason": "no_action"
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / validated",
+    "turn_id": "90edcf8f-3ef2-481d-a9a6-ca7699ff12eb",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / validated",
+    "turn_id": "90edcf8f-3ef2-481d-a9a6-ca7699ff12eb",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-70e8b219577ceaf5bf7cbc4b606483cb1ce9dc6c",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 1:1: sys.dataset cannot answer \"headline\". It offers: title, subtitle, summary, coverage, status, as_of,..."
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / validated",
+    "turn_id": "90edcf8f-3ef2-481d-a9a6-ca7699ff12eb",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-70e8b219577ceaf5bf7cbc4b606483cb1ce9dc6c",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 18:45: \".fixed\" is not a legal token for TextCaption.width; expected one of .fill, .fit, .day, .rank, .t..."
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / validated",
+    "turn_id": "90edcf8f-3ef2-481d-a9a6-ca7699ff12eb",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-70e8b219577ceaf5bf7cbc4b606483cb1ce9dc6c",
+    "source_path": "cards/mail-70e8b219577ceaf5bf7cbc4b606483cb1ce9dc6c.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / deepseek / compact",
+    "turn_id": "3e8bf44e-5f36-4e99-8b3c-065a2623bfbc",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / deepseek / compact",
+    "turn_id": "3e8bf44e-5f36-4e99-8b3c-065a2623bfbc",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-fd404e122eff5ccf16fea26f13b6dc0c3657a45b",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 1:1: sys.dataset cannot answer \"window\". It offers: title, subtitle, summary, coverage, status, as_of, m..."
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / deepseek / compact",
+    "turn_id": "3e8bf44e-5f36-4e99-8b3c-065a2623bfbc",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-fd404e122eff5ccf16fea26f13b6dc0c3657a45b",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 9:19: \"sim\" is not a declared name"
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / deepseek / compact",
+    "turn_id": "3e8bf44e-5f36-4e99-8b3c-065a2623bfbc",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-fd404e122eff5ccf16fea26f13b6dc0c3657a45b",
+    "source_path": "cards/mail-fd404e122eff5ccf16fea26f13b6dc0c3657a45b.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / deepseek / compact",
+    "turn_id": "fb6838b1-deba-4f92-86ab-e8cd8b53e348",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / deepseek / compact",
+    "turn_id": "fb6838b1-deba-4f92-86ab-e8cd8b53e348",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-d2816b85e7954d613b4bfa575be1ab50042dcaf1",
+    "source_path": "cards/mail-d2816b85e7954d613b4bfa575be1ab50042dcaf1.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / compact",
+    "turn_id": "1d6a9657-ec51-47a6-92f6-36277d75b7c9",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / compact",
+    "turn_id": "1d6a9657-ec51-47a6-92f6-36277d75b7c9",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-ba0133d4d705c7a6dedcaf3688b6fdc5aa26cf63",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 1:1: sys.dataset cannot answer \"window\". It offers: title, subtitle, summary, coverage, status, as_of, m..."
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / compact",
+    "turn_id": "1d6a9657-ec51-47a6-92f6-36277d75b7c9",
+    "tool": "mail_publish_card",
+    "success": false,
+    "event_id": "mail-ba0133d4d705c7a6dedcaf3688b6fdc5aa26cf63",
+    "error": "mail.publish_card failed (host:app_error): the card is not admissible at L0 (derived level L0): 20:14: TextBody has no argument \"value\"; 21:14: TextBody has no argument \"value\""
+  },
+  {
+    "subject": "[OctoSense simulation] Shipping: signature needed for Tuesday delivery / minimax / compact",
+    "turn_id": "1d6a9657-ec51-47a6-92f6-36277d75b7c9",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-ba0133d4d705c7a6dedcaf3688b6fdc5aa26cf63",
+    "source_path": "cards/mail-ba0133d4d705c7a6dedcaf3688b6fdc5aa26cf63.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / minimax / compact",
+    "turn_id": "b9c07ff7-e532-4f0f-b1c6-80ddc28e6c01",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Appointment request: Wednesday at 10:30 AM / minimax / compact",
+    "turn_id": "b9c07ff7-e532-4f0f-b1c6-80ddc28e6c01",
+    "tool": "mail_publish_card",
+    "success": true,
+    "event_id": "mail-23e446607da0fbfc2119549451bbe519b2a6a6cf",
+    "source_path": "cards/mail-23e446607da0fbfc2119549451bbe519b2a6a6cf.json"
+  },
+  {
+    "subject": "[OctoSense simulation] Routine newsletter: nothing to do / minimax / compact",
+    "turn_id": "f295a2a6-873a-4c5c-a4e5-5411c94f70a2",
+    "tool": "mail_peek",
+    "success": true,
+    "event_id": null
+  },
+  {
+    "subject": "[OctoSense simulation] Routine newsletter: nothing to do / minimax / compact",
+    "turn_id": "f295a2a6-873a-4c5c-a4e5-5411c94f70a2",
+    "tool": "mail_skip_event",
+    "success": true,
+    "event_id": "mail-3795dea9e48b1a30c279cd0af4206eee6c735318",
+    "reason": "no_action"
+  }
+]

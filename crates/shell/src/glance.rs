@@ -206,6 +206,44 @@ pub fn check_level(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Model-authored Mail cards deliberately use the declaration-only L0 subset.
+pub fn check_generated_l0(source: &str) -> Result<(), String> {
+    check_level(source)?;
+    if octoscript_ui_l0::check_ui_l0(source).level != octoscript_ui_l0::Level::L0 {
+        return Err("Generated Mail cards must use L0 declarations; L1 expressions are not allowed".into());
+    }
+    Ok(())
+}
+
+/// A syntactically valid generated card can still render only placeholders if
+/// its dataset values are flat instead of keyed by the declared source name.
+/// Reject that publication so the model can repair its own tool arguments.
+fn check_generated_data(source: &str, data: &Value) -> Result<(), String> {
+    use octoscript_ui_l0::SourceArg;
+    let plan = octoscript_ui_l0::source_plan(source);
+    if !plan.diagnostics.is_empty() {
+        return Err("Generated card source dependencies must resolve without cycles or errors".into());
+    }
+    for request in plan.requests {
+        if request.helper != "sys.dataset" {
+            continue;
+        }
+        let record = request.name.split('.').try_fold(data, |v, key| v.get(key))
+            .and_then(Value::as_object)
+            .ok_or_else(|| format!("Missing dataset object data.{}; nest extracted facts under the declared source name", request.name))?;
+        let fields = match request.args.iter().find(|(name, _)| name == "fields") {
+            Some((_, SourceArg::List(fields))) if !fields.is_empty() => fields,
+            _ => return Err(format!("Dataset {} must declare a nonempty fields list for its extracted facts", request.name)),
+        };
+        for field in fields {
+            if record.get(field).is_none_or(Value::is_null) {
+                return Err(format!("Missing dataset field data.{}.{field}; supply the email fact or explicit unknown text", request.name));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The card's `sys.digest` sources, resolved for `caller` into `data`: the
 /// value under the source's name and its lifecycle under `$status`, both
 /// replacing anything the publisher sent. Returns the bound run ids and the
@@ -729,6 +767,17 @@ pub fn publish_for(app: &str, args: &Value) -> Result<Value, String> {
     request(&caller, "glance.publish", args)
 }
 
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn publish_l0_for(app: &str, args: &Value) -> Result<Value, String> {
+    if args.get("script").is_some() {
+        return Err("Generated Mail cards accept L0 source only".into());
+    }
+    let source = args["source"].as_str().ok_or("Missing L0 source")?;
+    check_generated_l0(source)?;
+    check_generated_data(source, &args["data"])?;
+    publish_for(app, args)
+}
+
 // ---------------------------------------------------------------- the demo
 
 /// The sample News digest card (L0) and fake data, for trying the glance
@@ -881,6 +930,35 @@ mod tests {
     fn args(card_id: &str) -> Value {
         let (source, data) = demo_digest();
         json!({"card_id": card_id, "title": "News digest", "source": source, "data": data, "open": {"app": "news"}})
+    }
+
+    #[test]
+    fn generated_mail_cards_cannot_opt_into_l1() {
+        assert!(check_generated_l0(&demo_digest().0).is_ok());
+        let l1 = "# level: L1\nsource quote sys.quote(ticker: state.sym, fields: [last])\nstate sym { shape: text, initial: \"NVDA\" }\nstate shares { shape: number, initial: 10 }\nview root Surface { TextHero(value: shares * quote.last) }\n";
+        assert!(check_level(l1).is_ok(), "general glance admission still supports declared L1");
+        assert!(check_generated_l0(l1).unwrap_err().contains("L1 expressions"));
+        assert!(check_generated_l0("ui.label(\"x\").set_text(\"y\")").is_err());
+    }
+
+    #[test]
+    fn generated_mail_data_must_bind_every_declared_dataset_field() {
+        let source = "source note sys.dataset(fields: [title, summary])\nview root Surface { TextTitle(text: note.title) }";
+        assert!(check_generated_l0(source).is_ok());
+        let flat = json!({"title": "Delivery", "summary": "Tuesday"});
+        assert!(check_generated_data(source, &flat).unwrap_err().contains("data.note"));
+        assert!(check_generated_data(source, &json!({"note": flat})).is_ok());
+        assert!(check_generated_data(source, &json!({"note": {"title": "Delivery"}})).unwrap_err().contains("data.note.summary"));
+        assert!(check_generated_data(source, &json!({"note": {"title": "Delivery", "summary": null}})).is_err());
+        let no_fields = source.replace("fields: [title, summary]", "");
+        assert!(check_generated_data(&no_fields, &json!({"note": {}})).unwrap_err().contains("nonempty fields list"));
+        let empty_fields = source.replace("[title, summary]", "[]");
+        assert!(check_generated_data(&empty_fields, &json!({"note": {}})).is_err());
+        let nested = source.replace("note", "mail.note");
+        assert!(check_generated_data(&nested, &json!({"mail": {"note": {"title": "Delivery", "summary": "Date unknown"}}})).is_ok());
+        let cycle = "source a sys.dataset(id: b.title, fields: [title])\nsource b sys.dataset(id: a.title, fields: [title])\nview root Surface { TextTitle(text: a.title) }";
+        assert!(check_generated_l0(cycle).is_ok());
+        assert!(check_generated_data(cycle, &json!({})).unwrap_err().contains("dependencies"));
     }
 
     #[test]

@@ -1,0 +1,17 @@
+{
+  "scope": "Synthetic fixture send receipts, without recipient or transport message identifiers. Common corrected policy; final pickup code differs from initial fixture.",
+  "receipts": [
+    {
+      "http_status": 200,
+      "provider_requested": "deepseek-final",
+      "body_sha256": "7aa003a36d36b3fb81625921cfdaf86150a711a1480f8cbb3b9daa0670d1b930",
+      "sent_at": "2026-10-04T03:16:03.689514+00:00"
+    },
+    {
+      "http_status": 200,
+      "provider_requested": "minimax-final",
+      "body_sha256": "7aa003a36d36b3fb81625921cfdaf86150a711a1480f8cbb3b9daa0670d1b930",
+      "sent_at": "2026-10-04T03:19:59.493310+00:00"
+    }
+  ]
+}

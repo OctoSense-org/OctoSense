@@ -17,7 +17,7 @@ OctoSense-System-Apps 仓库（已归档）。
   任何开发者通过 App Hub 发布的应用形态的完整示例。
 - **邮件的宿主服务**（`mail/host-service`）是 Mail 的 Rust 部分：
   IMAP/POP3/SMTP、账户存储和登录面板，由 Shell 运行。应用拿到的是邮件，
-  永远拿不到密码或 socket。它还运行邮件 Agent 的工具 `mail.notify`，把一张通知卡片
+  永远拿不到密码或 socket。它还运行邮件 Agent 的账户绑定读取/同步工具，以及 `mail.notify`/`mail.publish_card`，把卡片
   放到 glance 屏幕上。
 - **日历的宿主服务**（`calendar/host-service`）把日历的日程保存在宿主目录中，并运行日历
   Agent 的工具：`calendar.events`、`add_event`、`remove_event`，以及把日程卡片或议程卡片
@@ -344,14 +344,14 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 | 应用 | `manifest.json` | `tools.json` | 卡片 |
 | --- | --- | --- | --- |
 | 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
-| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.notify`（act，后台） | Shell 的通知卡片 |
+| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
 | 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
-**宿主服务 API 不会自动成为 Agent 工具。** Mail 的 Agent 工具文件目前仅暴露
-`mail.notify`；UI 使用的 `mail.list`、`mail.message` 和 `mail.send` 不会因此对
-Agent 开放。Peer 的工作目录也不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
+**宿主服务 API 不会自动成为 Agent 工具。** Mail 显式声明了账户绑定的读取/同步、
+发布和事件决策工具。`mail.peek` 不标记已读；`mail.message` 和 `mail.send` 仍是 UI API。
+Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
 展示了通过显式声明的 Rust 工具读写应用数据的路径；它的脚本窗口目前只是 Agent
 使用说明。见[数据访问源码导读](../desktop/docs/code-walkthrough.zh-CN.md)。
 
@@ -365,8 +365,10 @@ Agent 开放。Peer 的工作目录也不会挂载 Mail 的宿主数据库或凭
   Agent 用 `agents.ask` 询问时，弹出这个面板）。之后 Shell 准备好 peer，系统 Agent
   就能用 `peer_send_input` 找到它。`agents.ask` 会等待用户的回答和 peer 就绪（它声明为
   `outward` 且 `confirm: app`，内核会像对待审批一样一直等它，而不是只给读取类工具的 30 秒），
-  然后把 peer 的 slug 交给系统 Agent，让请求在同一轮里继续。只有系统 Agent、用户或卡片的卡内对话发起请求时才会
-  开始一轮：还没有触发器或定时任务（ADR 0002 M3，计划中）。
+  然后把 peer 的 slug 交给系统 Agent，让请求在同一轮里继续。Mail 还支持由
+  `agents.provision` 启用的 `mail.messages.new`：OctoSense 进程存活时，持久队列自动
+  启动 incoming 回合。宿主记录发布成功或明确跳过，且回合成功后，才确认事件。
+  通用应用触发器/cron 仍待实现。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
 - **直接与它对话。** 用户可以直接与应用的 Agent 对话，而不只是通过系统 Agent：在 Shell
   为每个拥有 Agent 的应用提供的 “Ask <app>” 面板里（这些应用都不绘制自己的对话界面）。
   这些回合在用户的通道里运行，与系统 Agent 的通道并列，带着应用的工具。
@@ -385,7 +387,8 @@ Agent 开放。Peer 的工作目录也不会挂载 Mail 的宿主数据库或凭
   `card_id` 会替换该应用之前的通知。邮件和新闻的服务把 `notify` 交给 Shell；照片、地图、YouTube
   和相机没有自己的服务，由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历
   自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
-  （应用需要 `glance` 权限）。模型只提供文字，从不编写卡片代码。
+  （应用需要 `glance` 权限）。这些固定模板工具由模型提供文字；`mail.publish_card`
+  另接收经宿主校验的模型 L0 源码。
 - **试一试**（桌面端）：打开助手（F8），请系统 Agent 让某个应用的 Agent（邮件、日历、新闻、照片、
   地图或 YouTube）在 glance 屏幕上放一张卡片；在弹出的面板上允许该 Agent。邮件需要一个已登录的账户（下文的演示邮箱即可）。
   邮件更完整的操作卡片（[计划（英文）](mail/docs/2026-10-01-email-action-card-plan.md)）目前只是

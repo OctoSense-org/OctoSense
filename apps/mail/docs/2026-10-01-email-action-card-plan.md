@@ -1,5 +1,37 @@
 # Plan: Mail's email action card (desktop validation)
 
+## Status amendment — 2026-10-04
+
+The dated plan below records the original target, not today's complete feature
+set. Mail now has opt-in background Inbox collection, incoming app-agent turns,
+account-scoped read tools, model-authored L0 publication and explicit quiet
+decisions. Host-provisioned instructions and named skill text are supplied on
+each turn; they are not kernel-native skill installation. See the current
+[implementation walkthrough](../../../docs/mail-agent-events.md) and its
+[Chinese counterpart](../../../docs/mail-agent-events.zh-CN.md).
+
+The first Android trial verified publication, notification opening and return
+to Glance, but its generated cards omitted in-card action buttons. That did
+not meet this plan's interaction goal. The admitted guidance now requires
+real L0 `Chip`/event/state interactions appropriate to the email. The follow-up
+paired DeepSeek/MiniMax scenario used a pickup notice with a code and no
+tracking URL: **Show code**, **Details**, and **Back** must reveal
+the actual code, location, deadline and photo-ID requirement. The final paired
+[Android test](../../../docs/testing/mail-card-actions-2026-10-04.md) passed these
+local controls in the full card and Glance for both models. Earlier failed
+layouts and remaining small-target caveats are retained. The models authored
+the final source/data; real remote effects remain outside this completed slice.
+
+These controls only switch read-only card views. The plan's real reply/send,
+booking, mark-read and outcome-memory behavior remains unimplemented here;
+the old fixture's success states are demonstrations, not those operations.
+External **Track** still requires a URL from the message and an implemented
+host handler. L0's `sys.link` catalogue entry alone is insufficient: the shell
+currently does not execute that write. No link or remote-success result may
+be invented to fill the gap.
+
+## Original plan — historical scope
+
 - **Date:** 2026-10-01
 - **Status:** Plan, in progress. Two decisions are open (end of this page). On `main` (2026-10-01): the card MVP on the desktop with fake data (#261, `OCTOSENSE_GLANCE_DEMO=mail`), model-copy and the in-card chat `sys.chat` (#263, `crates/l0-chat`), and Mail's agent with one tool, `mail.notify`, which puts a notice card on the glance screen (#267). Not yet: background sync and the new-mail trigger, the `triage` and `email-card` skills and `AGENTS.md`, Mail's read tools as agent tools, `mail.draft_reply`.
 - **Relates to:** [ADR 0002](../../../docs/adr/0002-event-driven-app-agents.md) (app agents, triggers, cards; Mail's row), [ADR 0004](../../../docs/adr/0004-native-apps-hosting-and-peers.md) (one agent per app and account, host tools, approvals, interactive cards), [ADR 0005](../../../docs/adr/0005-app-contract.md) (the app contract), the L0 card language (Octoscript `docs/ui-profile-l0.md`) and the a2app L0 cards (`apps/appcard/a2app-l0/`).

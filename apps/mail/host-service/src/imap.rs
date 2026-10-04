@@ -175,9 +175,9 @@ impl Imap {
             }
         }
         uids.sort_unstable();
-        let newest = uids.last().copied().unwrap_or(last);
         let has_more = uids.len() > limit;
-        let wanted: Vec<u64> = uids.into_iter().rev().take(limit).collect();
+        let wanted = fetch_page(uids, limit, reset);
+        let newest = wanted.iter().copied().max().unwrap_or(last);
         let mut messages = Vec::new();
         if !wanted.is_empty() {
             let set = wanted.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
@@ -226,6 +226,13 @@ impl Imap {
     pub fn logout(mut self) {
         let _ = self.command("LOGOUT");
     }
+}
+
+/// Start with recent mail, then drain unseen bursts oldest-first so a high
+/// watermark never skips the middle of a burst larger than one batch.
+fn fetch_page(uids: Vec<u64>, limit: usize, baseline: bool) -> Vec<u64> {
+    if baseline { uids.into_iter().rev().take(limit).collect() }
+    else { let mut page: Vec<u64> = uids.into_iter().take(limit).collect(); page.reverse(); page }
 }
 
 enum Part<'a> {
@@ -463,6 +470,16 @@ mod tests {
         imap.logout();
         let heard = server.join().unwrap();
         assert_eq!(heard[0], "LOGIN \"me@example.com\" {9}<pässword>", "a non-ASCII password goes as a literal");
+    }
+
+    #[test]
+    fn baseline_is_recent_but_subsequent_batches_do_not_skip_unseen_uids() {
+        assert_eq!(fetch_page((1..=60).collect(), 25, true), (36..=60).rev().collect::<Vec<_>>());
+        let first = fetch_page((61..=120).collect(), 25, false);
+        assert_eq!(first, (61..=85).rev().collect::<Vec<_>>());
+        let cursor = *first.iter().max().unwrap();
+        assert_eq!(fetch_page((cursor + 1..=120).collect(), 25, false), (86..=110).rev().collect::<Vec<_>>());
+        assert!(fetch_page(Vec::new(), 25, false).is_empty());
     }
 
     /// Reaches Gmail: `cargo test -- --ignored gmail`.

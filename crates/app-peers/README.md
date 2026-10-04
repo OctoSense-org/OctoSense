@@ -144,3 +144,27 @@ cargo test --locked -p octosense-app-peers --features octos-core,ws   # unit + s
 # The real kernel (UPCR-2026-034) with a scripted local model (python3):
 OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test -p octosense-app-peers --features octos-core --test real_kernel -- --nocapture
 ```
+
+## Host-provisioned app guidance
+
+The shell can call `contained::set_guidance(app_id, account, TrustedGuidance)`
+before preparing a contained app's peer or between turns. The broker snapshots
+that app/account's instructions and named skill texts for each request-context,
+conversation, and system `peer/input` turn. Updates affect the next turn without
+recreating the peer or deleting its history. The combined text is limited to
+16 KiB and 16 skills; the host must check consent and persist any overlay itself.
+Account changes and revocation clear the in-memory guidance.
+
+This supplies host-provisioned **text**, not kernel-native skill installation or
+discovery. Guidance and request data are separately serialized ordinary text
+inputs; they are not separate kernel system-message roles. Tool grants and the
+original `TurnTrigger` remain the authorization boundary, including for incoming
+email. Incoming text cannot replace the host's structured guidance fields.
+
+Validation for this bridge: `cargo test --locked -p octosense-app-peers
+--features broker` passed (26 unit, 62 broker, one ancillary test); after adding
+the account-clear regression, `cargo test --locked -p octosense-app-peers
+--features broker guidance` passed all three guidance unit tests and the broker
+integration test. These use scripted connectors, not a provider or phone. The
+integration test covers incoming approval provenance, unchanged request data,
+all three entry points and updates without peer recreation.

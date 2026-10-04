@@ -18,7 +18,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **Mail's host service** (`mail/host-service`) is the Rust half of Mail:
   IMAP/POP3/SMTP, the account store and the sign-in sheet, run by the shell.
   The app gets mail, never a password or a socket. It also runs Mail's
-  agent's tool `mail.notify`, which puts a notice card on the glance screen.
+  agent's account-scoped read/sync tools and `mail.notify`/`mail.publish_card`, which publish Mail cards on the glance screen.
 - **Calendar's host service** (`calendar/host-service`) keeps Calendar's
   events in the host's directory and runs Calendar's agent's tools:
   `calendar.events`, `add_event`, `remove_event`, and `notify` and `agenda`,
@@ -396,15 +396,15 @@ model lane and tools. Which system apps have one, and how
 | App | `manifest.json` | `tools.json` | Cards |
 | --- | --- | --- | --- |
 | News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
-| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.notify` (act, background) | the shell's notice card |
+| Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
 | Photos, Maps, YouTube, Camera | `agent` block, `glance` | `photos.notify`, `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
-**A service API is not automatically an agent tool.** Mail currently exposes
-only `mail.notify` in its agent tool file; its UI's `mail.list`, `mail.message`
-and `mail.send` methods are not thereby available to its agent. The peer's
-workspace also does not mount Mail's host database or credential vault. Calendar
+**A service API is not automatically an agent tool.** Mail explicitly declares
+account-scoped read/sync, publication and event-decision tools. `mail.peek` does
+not mark a message read; `mail.message` and `mail.send` remain UI APIs. The peer's
+workspace does not mount Mail's host database or credential vault. Calendar
 is a working example of an agent reading/writing its app data through declared
 Rust tools; its script window currently only explains how to ask the agent.
 See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a-tool-into-app-data-and-glance).
@@ -425,10 +425,11 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   `peer_send_input`. `agents.ask` waits for the person's answer and the
   peer (it is declared `outward` with `confirm: app`, so the kernel holds
   it as long as an approval, not a read tool's 30 s), then gives the system
-  agent the peer's slug, so the request goes on in the same turn. A turn
-  starts only when the system agent, the person
-  or a card's in-card chat asks: there are no triggers or schedules yet
-  (ADR 0002 M3, planned).
+  agent the peer's slug, so the request goes on in the same turn. Mail also
+  supports opt-in `mail.messages.new` events configured by `agents.provision`: a
+  durable queue starts incoming turns while OctoSense is alive. Successful host
+  publication or explicit skip plus turn completion is required before ack.
+  General app triggers/cron remain planned. See [Mail events](../docs/mail-agent-events.md).
 - **Talking to it yourself.** The person can chat with the app's agent
   directly, not only through the system agent: in the "Ask <app>" panel,
   which the shell draws for every app with an agent (none of these apps
@@ -455,8 +456,9 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   shell's notice service answers it. `calendar.notify` and
   `calendar.agenda` fill Calendar's own event and agenda cards. Every card
   is published with `notify` through the shell's `glance` service as the
-  app (the app needs the `glance` capability). The model only supplies the
-  text; it never writes card code.
+  app (the app needs the `glance` capability). These fixed-template tools take
+  model-supplied text; `mail.publish_card` additionally takes model-authored L0
+  source validated by the host.
 - **Trying it** on the desktop: open the assistant (F8) and ask the system
   agent to have an app's agent (Mail, Calendar, News, Photos, Maps or
   YouTube) put a card on the glance screen;
