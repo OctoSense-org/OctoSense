@@ -115,8 +115,9 @@ are in [appcard/AGENTS.md](appcard/AGENTS.md); in short:
 Trace each tool from `bundle/tools.json` through
 `../crates/shell/src/host_tools/script_apps.rs` to its executor. Test schemas,
 caller identity, approval behavior and results at that boundary. Keep UI API
-methods separate from the tools actually declared for the agent: Mail currently
-exposes only `mail.notify`; News exposes list/read/notify; Photos, Maps, YouTube
+methods separate from the tools actually declared for the agent: Mail exposes
+account-scoped accounts/folders/sync/list/peek and notify/publish_card; its
+credentials, send and mark-read APIs remain host/UI-only. News exposes list/read/notify; Photos, Maps, YouTube
 and Camera expose notify only. AI providers declares no app agent.
 
 Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
@@ -125,5 +126,8 @@ requesting app's grant and App Hub admission offer together. Keep credentials in
 the host service; expose business data through a narrow method or tool.
 
 Update both README languages when declarations, storage or runtime support
-change. Add agent scheduling claims only when the trigger dispatcher exists;
-News's fetch timer currently collects data without starting an LLM turn.
+change. Mail's opt-in dispatcher is `crates/shell/src/agent_events.rs`: an
+initial baseline, durable pending events, incoming-trigger turns, successful-turn
+acknowledgment and bounded retries. News's fetch timer still collects data
+without starting an LLM turn. Host-provisioned skill text is not kernel-native
+skill installation; never claim the general ADR 0002 scheduler is complete.

@@ -97,7 +97,7 @@ The system chat also registers host tools on the session: `agents.list` and `age
 | --- | --- | --- | --- |
 | Rinx (native) | `native-apps.json` `agent.octos` (the four `octos.*` services) and `agent.generic_tools` | octos's generic tools in its list; its own assistant UI | – |
 | News (`os.news`) | `apps/news/bundle/tools.json`, the manifest's `agent` block | `news.list`, `news.read`, `news.notify` (the `news` host service and shell notice callback) | a notice card with a notification |
-| Mail (`os.mail`) | `apps/mail/bundle/tools.json`, the manifest's `agent` block and `glance` | `mail.notify` (the `mail` host service) | a notice card with a notification |
+| Mail (`os.mail`) | `apps/mail/bundle/tools.json`, admitted instructions/skills, background event declaration and `glance` | Account-scoped `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.notify`, `mail.publish_card`, `mail.skip_event` | a model-authored L0 card or notice, with an OctoSense notification |
 | Calendar (`os.calendar`, desktop only) | `apps/calendar/bundle/tools.json`, the manifest's `agent` block and `glance` | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (destructive: enters the approval router), `calendar.notify`, `calendar.agenda` (the `calendar` host service) | an event card or an agenda card, with a notification |
 | Photos, Maps, YouTube; Camera on phone | Their bundle `tools.json`, `agent` block and `glance` | Each app's `<app>.notify` (shell `NoticeService`) | a notice card with a notification |
 
@@ -107,7 +107,7 @@ A script app has an agent when its manifest declares `octos.*` names or an `agen
 
 On Unix, a consented app agent with an available workspace also gets the host read tools `files.list`, `files.read` and `files.search` over its account folder; these do not expose every host-service database. On the phone, which builds `toolbox-peers` by default, it also gets the system toolbox's tools when its manifest asks for `research` or `crawl`, which no app does yet.
 
-`AGENT.md`, skills and triggers ([ADR 0002](docs/adr/0002-event-driven-app-agents.md)) are not built: an app agent runs only when the system agent, the person or a card asks it.
+Mail has an opt-in incoming-email path: after account sign-in and agent consent, the system agent uses `agents.provision` to configure instructions, skill text and polling. A host worker syncs Inbox, queues new-message events durably and starts the Mail agent without a chat prompt. The agent reads through scoped tools and decides whether to publish a card. Initial sync establishes a baseline; existing mail does not trigger a backlog. Admitted `AGENT.md` and skill text accompany each turn; this is not kernel-native skill installation. Other bundle triggers and schedules remain unimplemented. See the [Mail event walkthrough](docs/mail-agent-events.md) for boundaries and current verification limits.
 
 **From the system agent to a card on the glance screen**:
 
@@ -140,7 +140,7 @@ sequenceDiagram
 
 </details>
 
-The model supplies text, never card code. The host fills fixed templates:
+For the following notice/calendar tools, the model supplies text and the host fills fixed templates. Mail additionally offers `mail.publish_card`, which accepts model-authored L0 source checked by the host:
 
 - **Notice cards.** Mail, News, Photos and the other `<app>.notify` tools use the shell’s [`notice.card`](crates/shell/resources/glance/notice.card). The shell supplies the app’s icon and name; the call supplies the title and body. Reusing a `card_id` replaces the app’s earlier notice.
 - **Calendar cards.** `calendar.notify` and `calendar.agenda` use Calendar’s [event and agenda templates](apps/calendar/host-service/resources).

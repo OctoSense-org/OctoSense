@@ -579,6 +579,7 @@ impl App {
             PhoneHit::Symbols=>{let p=&mut self.state_mut().phone;p.symbols=!p.symbols;}
             PhoneHit::Key(key)=>self.type_phone_key(cx,&key),
             PhoneHit::Back=>{
+                if self.close_glance_card(cx) { return; }
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
                 // An open shade takes Back before the page under it.
                 else if self.state_mut().phone.shade.is_open() {self.state_mut().phone.shade.close();}
@@ -591,14 +592,11 @@ impl App {
                 self.toggle_phone_appearance(cx);
                 self.android_system_bars(cx);
             }
-            // A card's notification opens the glance page, where it is live.
-            PhoneHit::Shade(ShadeHit::Note(id)) if self.glance_shade_notes.contains(&id)=>{
-                self.glance_shade_notes.retain(|n|*n!=id);
-                let phone=&mut self.state_mut().phone;
-                phone.shade.dismiss(id);
-                phone.shade.close();
-                phone.navigate(PhoneScreen::Home);
-                phone.pages.jump(-1);
+            // Resolve the notification's stored key, never whichever card is
+            // newest. The full-card opener supplies a safe Glance fallback.
+            PhoneHit::Shade(ShadeHit::Note(id)) if self.glance_shade_notes.contains(id)=>{
+                let key = take_glance_notification(&mut self.glance_shade_notes, &mut self.state.as_mut().unwrap().phone.shade, id);
+                if let Some(key) = key { self.open_glance_card(cx, &key); }
             }
             PhoneHit::Shade(hit)=>{
                 if matches!(hit,ShadeHit::Toggle(_)) {self.android_haptic(cx,"tick");}
@@ -1191,5 +1189,46 @@ impl App {
             }
             _=>phone.screen!=PhoneScreen::App,
         }
+    }
+}
+
+/// Consume only the notification actually tapped. A dismissed/stale shade hit
+/// cannot reopen a card, and another publisher's notification stays intact.
+fn take_glance_notification(targets: &mut crate::glance::NoteTargets, shade: &mut ShadeState, id: u64) -> Option<String> {
+    let key = targets.activated(id)?;
+    if !shade.notifications.iter().any(|note| note.id == id) { return None; }
+    shade.dismiss(id);
+    shade.close();
+    Some(key)
+}
+
+#[cfg(test)]
+mod card_notification_tests {
+    use super::*;
+
+    #[test]
+    fn shade_tap_opens_its_exact_publisher_card_once() {
+        let mut shade = ShadeState::default();
+        let first = shade.post("os.mail", "Earlier", "", 0., vec![]);
+        let second = shade.post("os.news", "Latest", "", 1., vec![]);
+        let mut targets = crate::glance::NoteTargets::default();
+        targets.record(first, "os.mail/mail-event-1");
+        targets.record(second, "os.news/news-card-2");
+        assert_eq!(take_glance_notification(&mut targets, &mut shade, first).as_deref(), Some("os.mail/mail-event-1"));
+        assert!(targets.contains(second));
+        assert_eq!(shade.notifications.len(), 1);
+        assert_eq!(shade.notifications[0].app, "os.news");
+        assert!(take_glance_notification(&mut targets, &mut shade, first).is_none());
+    }
+
+    #[test]
+    fn dismissed_shade_hit_cannot_open_a_card_or_consume_another_notification() {
+        let mut shade = ShadeState::default();
+        let id = shade.post("os.mail", "Gone", "", 0., vec![]);
+        let mut targets = crate::glance::NoteTargets::default();
+        targets.record(id, "os.mail/gone");
+        shade.dismiss(id);
+        assert!(take_glance_notification(&mut targets, &mut shade, id).is_none());
+        assert!(!targets.contains(id));
     }
 }

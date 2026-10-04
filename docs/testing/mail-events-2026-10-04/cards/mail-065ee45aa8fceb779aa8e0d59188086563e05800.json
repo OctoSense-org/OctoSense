@@ -1,0 +1,14 @@
+{
+  "card_id": "mail-065ee45aa8fceb779aa8e0d59188086563e05800",
+  "data": {
+    "note": {
+      "as_of": "2026-10-04T01:43:47+00:00",
+      "summary": "Who: Example Health Clinic \u00b7 Proposal: routine appointment, Wednesday, October 7, 2026, 10:30 AM America/Los_Angeles (PDT, UTC-07:00) \u00b7 Duration: 30 min \u00b7 Place: Example Health Clinic, 100 Example Avenue, Demo City \u00b7 Status: Proposed, awaiting your confirmation \u2014 NOT booked \u00b7 Reference: DEEPSEEK-20261004-APPOINTMENT. Next action: review whether the time suits you; confirm only if you agree. No confirmation has been sent.",
+      "title": "Simulation: Appointment proposed \u2014 Wed Oct 7, 10:30 AM PDT"
+    }
+  },
+  "notify": true,
+  "source": "source note sys.dataset(fields: [title, summary, as_of])\n\ncopy app { class: vocabulary, en: \"Mail\" }\ncopy gist { class: model-copy, en: \"Simulation only \u2014 no real appointment. This is a proposal awaiting your confirmation, not a booking; no reply has been sent on your behalf.\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.app, width: .fill)\n      TextCaption(value: note.as_of)\n    }\n    TextTitle(text: note.title, width: .fill)\n    TextBody(text: note.summary, width: .fill)\n    TextBody(text: copy.gist, width: .fill)\n  }\n}",
+  "summary": "Example Health Clinic proposes a routine visit Wed Oct 7, 10:30 AM PDT (30 min), 100 Example Avenue, Demo City. Status: proposed, not booked. Review the time; no confirmation sent.",
+  "title": "Simulation: Appointment proposed for Wed"
+}

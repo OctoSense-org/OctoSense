@@ -313,6 +313,7 @@ pub fn fetch(account: &Value, seen: &HashSet<String>) -> Result<Value, String> {
     let _ = wire.pop("QUIT");
     Ok(
         json!({"address":account["address"],"account_id":identity(account),"messages":messages,"available":available,
+        "uid_snapshot":rows.iter().filter_map(|line| std::str::from_utf8(line).ok()?.split_whitespace().nth(1)).collect::<Vec<_>>(),
         "skipped_uids":skipped,"has_more":remaining.len()>25,"synced_at":chrono::Utc::now().to_rfc3339(),"tls_verified":true,"host":account["host"],"transport":"device-pop3"}),
     )
 }

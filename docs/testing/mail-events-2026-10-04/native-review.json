@@ -1,0 +1,370 @@
+{
+  "scope": "Native macOS Makepad hidden-window card-host + HTTP instrument, exact model L0/data. Not an Android screenshot or shell-identical font/palette test.",
+  "pins": {
+    "makepad": "c155f61d0e1600d2ec474209374444a38a09a470",
+    "octoscript": "5991dfae9344589e732b2605b530f788e8bbcd11",
+    "framework": "2cc5ef37d7d6a3d2992673389ce74488f7bb2d87",
+    "apphub": "0d5b47a2ae9eb98020feca26b7c895a3cf797dc1"
+  },
+  "checks": [
+    {
+      "kind": "appointment",
+      "viewport": [
+        384,
+        440
+      ],
+      "full_text_bottom": 504,
+      "clipped_text": [
+        {
+          "widget": "beauty_0_0_3",
+          "text": "Simulation only — no real appointment. This is a proposal awaiting your confirmation, not a booking; no reply has been sent on your behalf.",
+          "visible_height": 3,
+          "full_height": 67,
+          "full_bottom": 504
+        }
+      ],
+      "all_text_visible_at_target": false,
+      "method": "Same-width native instrument label rect comparison against taller render; automatic fits flag is insufficient.",
+      "viewport_purpose": "production_max_height_reference",
+      "actual_phone_clipping_proven": true
+    },
+    {
+      "kind": "shipping",
+      "viewport": [
+        384,
+        440
+      ],
+      "full_text_bottom": 441,
+      "clipped_text": [],
+      "all_text_visible_at_target": false,
+      "method": "Same-width native instrument label rect comparison against taller render; automatic fits flag is insufficient.",
+      "viewport_purpose": "production_max_height_reference",
+      "actual_phone_clipping_proven": false
+    },
+    {
+      "kind": "compact-shipping",
+      "viewport": [
+        384,
+        240
+      ],
+      "full_text_bottom": 228,
+      "clipped_text": [],
+      "all_text_visible_at_target": true,
+      "method": "Same-width native instrument label rect comparison against taller render; automatic fits flag is insufficient.",
+      "viewport_purpose": "aspirational_design_target",
+      "actual_phone_clipping_proven": false
+    },
+    {
+      "kind": "compact-shipping",
+      "viewport": [
+        344,
+        240
+      ],
+      "full_text_bottom": 266,
+      "clipped_text": [
+        {
+          "widget": "beauty_0_0_6",
+          "text": "Signature required — have someone available during the window.",
+          "visible_height": 16,
+          "full_height": 42,
+          "full_bottom": 266
+        }
+      ],
+      "all_text_visible_at_target": false,
+      "method": "Same-width native instrument label rect comparison against taller render; automatic fits flag is insufficient.",
+      "viewport_purpose": "aspirational_design_target",
+      "actual_phone_clipping_proven": false
+    },
+    {
+      "kind": "compact-appointment",
+      "viewport": [
+        344,
+        240
+      ],
+      "viewport_purpose": "aspirational_design_target",
+      "full_text_bottom": 228,
+      "clipped_text": [],
+      "all_text_visible_at_target": true,
+      "actual_phone_clipping_proven": false,
+      "phone_review": "Actual phone screenshot independently viewed: complete appointment content, readable date/time/PDT, proposed-not-booked status and confirmation action. Title one line. No card-internal clipping observed."
+    }
+  ],
+  "limitations": [
+    "card-host defaults to dark palette and backend font; the phone shell selects light palette and theme fonts.",
+    "384x1200 requested tall renders were constrained by macOS to384x897; all measured card text fits within that actual viewport.",
+    "Automatic card-studio fits/hidden_text misses partially clipped labels; comparison above uses real same-width tall captures.",
+    "AI-mark parent geometry produces overlap findings even when tall PNG visually separates badge and paragraph; do not report every automatic warning as a model layout defect."
+  ],
+  "source_evidence": [
+    {
+      "file": "crates/shell/src/mobile_pages.rs",
+      "lines": "636-637",
+      "fact": "Glance tile width is screen width minus40 logical points."
+    },
+    {
+      "file": "crates/shell/src/glance_card.rs",
+      "lines": "59-60,136-188",
+      "fact": "Tile cap440; shell-specific light/dark palette and theme-font substitution."
+    },
+    {
+      "file": "AppHub crates/card-studio/src/render.rs",
+      "lines": "206-250,310-316",
+      "fact": "Temporary preview bundle copies exact card/data and launches hidden card-host."
+    }
+  ],
+  "sizing_semantics": {
+    "actual_phone": "Source lower_report switches root Fill to Fit; GlanceTiles records measured Splash height. Phone GlanceItem::height uses tile_height, clamped72..440.240pt is a guidance target, not a runtime clamp.",
+    "sources": [
+      "crates/shell/src/glance_card.rs:156",
+      "crates/shell/src/glance_card.rs:608",
+      "crates/shell/src/glance_card.rs:625",
+      "crates/shell/src/glance_card.rs:709",
+      "crates/shell/src/mobile_pages.rs:72",
+      "crates/shell/src/mobile_pages.rs:637"
+    ],
+    "compact_shipping_conclusion": "Fails artificial344x240 target but can fit the dynamic production tile: native text bottom266, less than440. This test is not evidence of actual phone content clipping. Parent independently observed full shipping text on phone."
+  },
+  "minimax_initial_binding_reviews": [
+    {
+      "kind": "minimax-shipping",
+      "viewport": [
+        344,
+        440
+      ],
+      "syntax_valid": true,
+      "realization_truncated": false,
+      "runtime_log_errors": 0,
+      "sources": [
+        {
+          "helper": "sys.dataset",
+          "name": "note",
+          "state": "pending"
+        }
+      ],
+      "dataset_ready": false,
+      "provided_data_keys": [
+        "as_of",
+        "metric1_value",
+        "metric2_value",
+        "status",
+        "subtitle",
+        "summary",
+        "title"
+      ],
+      "declared_dataset_note_present": false,
+      "placeholder_bound_fields": 7,
+      "expected_bound_fields": 7,
+      "fact_coverage": 0,
+      "displayed_text": [
+        "",
+        "Mail",
+        "—",
+        "Simulation",
+        "—",
+        "—",
+        "—",
+        "—",
+        "—",
+        "—",
+        "",
+        "AI",
+        "Fictional OctoSense test message: no real shipment, carrier or purchase exists behind these details."
+      ],
+      "accepted_by_earlier_host": true,
+      "ux_result": "FAIL: all7 source-bound facts absent; literal disclaimer is not successful mail content.",
+      "source_and_data_unchanged": true
+    },
+    {
+      "kind": "minimax-appointment",
+      "viewport": [
+        344,
+        440
+      ],
+      "syntax_valid": true,
+      "realization_truncated": false,
+      "runtime_log_errors": 0,
+      "sources": [
+        {
+          "helper": "sys.dataset",
+          "name": "note",
+          "state": "pending"
+        }
+      ],
+      "dataset_ready": false,
+      "provided_data_keys": [
+        "as_of",
+        "metric1_value",
+        "metric2_value",
+        "status",
+        "subtitle",
+        "summary",
+        "title"
+      ],
+      "declared_dataset_note_present": false,
+      "placeholder_bound_fields": 7,
+      "expected_bound_fields": 7,
+      "fact_coverage": 0,
+      "displayed_text": [
+        "",
+        "Mail",
+        "—",
+        "Simulation",
+        "—",
+        "—",
+        "—",
+        "—",
+        "—",
+        "—",
+        "",
+        "AI",
+        "Fictional OctoSense test message: no real clinic, patient or clinician is involved, and nothing is booked or confirmed."
+      ],
+      "accepted_by_earlier_host": true,
+      "ux_result": "FAIL: all7 source-bound facts absent; literal disclaimer is not successful mail content.",
+      "source_and_data_unchanged": true
+    }
+  ],
+  "minimax_corrected_reviews": [
+    {
+      "kind": "minimax-corrected-shipping",
+      "viewport": [
+        344,
+        440
+      ],
+      "syntax_valid": true,
+      "sources": [
+        {
+          "helper": "sys.dataset",
+          "name": "note",
+          "state": "ready"
+        }
+      ],
+      "dataset_ready": true,
+      "required_rendered_bindings": 8,
+      "fact_binding_coverage": "8/8 used fields displayed; as_of is supplied but not referenced by this source",
+      "supplied_but_unrendered_keys": [
+        "as_of"
+      ],
+      "em_dash_placeholders": 0,
+      "native_full_text_bottom": 308,
+      "native_label_rects_match_tall_render": true,
+      "actual_production_cap_points": 440,
+      "compact_guidance_target_points": 240,
+      "meets_240_target": false,
+      "actual_phone_review": "Full card text independently viewed, no card-internal clipping. Date/time/PDT, status and next action are readable. Phone title wraps two lines; native default-font title is one line. Item/Carrier labels occupy separate oddly-indented lines above values; redundant Simulation footer uses another AI badge and two body lines. Functional but substantially less compact than requested. Floating shell control overlaps right card region; this is shell chrome, not model-authored card layout.",
+      "source_and_data_unchanged": true
+    },
+    {
+      "kind": "minimax-final-appointment",
+      "viewport": [
+        344,
+        440
+      ],
+      "syntax_valid": true,
+      "sources": [
+        {
+          "helper": "sys.dataset",
+          "name": "note",
+          "state": "ready"
+        }
+      ],
+      "dataset_ready": true,
+      "required_rendered_bindings": 7,
+      "fact_binding_coverage": "7/7 used fields displayed; summary and as_of are supplied but not referenced by this source",
+      "supplied_but_unrendered_keys": [
+        "as_of",
+        "summary"
+      ],
+      "em_dash_placeholders": 0,
+      "native_full_text_bottom": 214,
+      "native_label_rects_match_tall_render": true,
+      "runtime_log_errors": 0,
+      "actual_production_cap_points": 440,
+      "compact_guidance_target_points": 240,
+      "native_review": "All appointment facts and next action visible at344x440, same rectangles in344x800. One-line title; complete date/time/PDT; address wraps across two lines without truncation. Simulation appears once, Proposed remains visible; no claim booking occurred. AI next-action caption is much smaller than body text, a minor hierarchy/readability limitation. Full text extent214pt, comfortably below440cap and within240target before bottom padding.",
+      "actual_phone_review": "Pending parent capture; no phone claim based solely on native fallback font/palette.",
+      "source_and_data_unchanged": true
+    }
+  ],
+  "model_artifacts": [
+    {
+      "file": "cards/mail-065ee45aa8fceb779aa8e0d59188086563e05800.json",
+      "file_sha256": "dcb0621a76c1ca4a54d30f26f3ecc5efd72b51effb69180000c33a07053b3746",
+      "source_sha256": "3cd8ebcb538fb2d1847efcb7969c85e891d629cfb7fc5083ca772204ef13efeb"
+    },
+    {
+      "file": "cards/mail-23e446607da0fbfc2119549451bbe519b2a6a6cf.json",
+      "file_sha256": "ead0c143f6be0f431fde7ffc9ff2671eab4ffa61c096f9a62ce8eaa6e41590ea",
+      "source_sha256": "693fe1f5da88f5fdec23b7342515c7119f38f05182185774511ef7e7c64e5dbc"
+    },
+    {
+      "file": "cards/mail-49911c976a8a7e4b496af5abe4efd3b55abc7012.json",
+      "file_sha256": "e92b90000d78cd8f27de8c69a9199b597f185cd34aca35c680d8a567f7f18942",
+      "source_sha256": "653159c244cae4fa3d163bdea6631c83c469ff302a2fb0af52036f6f26f08cc7"
+    },
+    {
+      "file": "cards/mail-70e8b219577ceaf5bf7cbc4b606483cb1ce9dc6c.json",
+      "file_sha256": "8fdfa99fd10fb08267612e92dc98f2915cc1cbb3d48022699f3aa57b7ba4b832",
+      "source_sha256": "0315764fc5b7d64c83d2342e286f320618bffcd231bec5506526ab4d89fee5e3"
+    },
+    {
+      "file": "cards/mail-b792eeb4329f77167aa740481b03a6b7d2201930.json",
+      "file_sha256": "cfca7933c618d3d5f3a6c04754e07c4169be8e5a7c28db61f90dfda6a03ba89b",
+      "source_sha256": "75c1698d62d08c4bf1153d422a00a13e533272962ea000999053604d05e7f4cd"
+    },
+    {
+      "file": "cards/mail-ba0133d4d705c7a6dedcaf3688b6fdc5aa26cf63.json",
+      "file_sha256": "fbe67e829256e898d3809bfc04fbf1980cc09c1bafe3bd184899e57d6e9c3d7d",
+      "source_sha256": "3e55ef760c1f7781a3d5103c21dcffecac336fdf5d5aee8eb103661e7f61d835"
+    },
+    {
+      "file": "cards/mail-d2816b85e7954d613b4bfa575be1ab50042dcaf1.json",
+      "file_sha256": "b79b12d41c120fd6651373455ea01c9bc06a2f721fe8eb993ee714d557bb5a3b",
+      "source_sha256": "30cff78aea041a61f6041b82ef08de1d2f9e009ad74814199690f51daa7fb2ba"
+    },
+    {
+      "file": "cards/mail-fd404e122eff5ccf16fea26f13b6dc0c3657a45b.json",
+      "file_sha256": "17cf8c53b126a3c41dd8067468bea3677e54b01d24702d81351ad6d201c15c94",
+      "source_sha256": "30cff78aea041a61f6041b82ef08de1d2f9e009ad74814199690f51daa7fb2ba"
+    }
+  ],
+  "native_binary_build": {
+    "apphub_pin": "0d5b47a2ae9eb98020feca26b7c895a3cf797dc1",
+    "inputs": {
+      "makepad_widgets": {
+        "file": "libmakepad_widgets-3867acf341f5d446.rlib",
+        "sha256": "fdb5933095030193eb10d3e3fffdbca05f7152748ba1ad7092e9d7e877859da2"
+      },
+      "octosense_app_policy": {
+        "file": "liboctosense_app_policy-74a383e300aac3af.rlib",
+        "sha256": "96ac1af0c45a509e6a3a5c30c8c8951ac9471e7dd448498daf65d117a39130c8"
+      },
+      "octoscript_makepad": {
+        "file": "liboctoscript_makepad-1f2df8a55c79ec56.rlib",
+        "sha256": "c34500772b9da52fc2a81a33cebf7afceef3497d7d8012bc75bab092593d37c8"
+      },
+      "octoscript_ui_l0": {
+        "file": "liboctoscript_ui_l0-114c2a0b07c9186d.rlib",
+        "sha256": "5ad554fc2285a4f921a1bfe5cff24d70f6f1ba43533981c3d0c59b254f2b1fa4"
+      },
+      "octoscript_widgets": {
+        "file": "liboctoscript_widgets-2cd7385edc372f08.rlib",
+        "sha256": "bbb3e115a43a591b77eff8b87e435c53640e4a633589d29137a47c7c0fc10e81"
+      },
+      "serde_json": {
+        "file": "libserde_json-19b491d76ff77f15.rlib",
+        "sha256": "39aeffc0d068f3d3c19ee9416ed3eef2c33023955294f99f935283aadc8bd5e3"
+      },
+      "octosense_appstore": {
+        "file": "liboctosense_appstore-c605540749102591.rlib",
+        "sha256": "a3123f5d4c28972a5c5608a7204f6cbdd381c8e88eff5cd0dab6899f9c179310"
+      },
+      "serde": {
+        "file": "libserde-04f10701c2b36282.rlib",
+        "sha256": "0be363e52ed7bb1a619d438fd2f3625959095a11d960cec7d81d479c259c93e5"
+      }
+    },
+    "card-host": "54cab235d18c50e46b26499afbd77f7b05cdd1ee3d1186bd2b4307e67b42bf1e",
+    "card-studio": "30b51cf81ad649085c8e7e816974b522c3795ec12976ba56f37f1b77f5070f32"
+  }
+}

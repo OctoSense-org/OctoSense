@@ -199,6 +199,7 @@ fn register_host_services() {
         // `mail.notify` (Mail's agent's tool): the shell's notice card, as
         // Mail, only when its manifest was granted `glance`.
         octosense_mail_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));
+        octosense_mail_service::on_publish_card(Some(std::sync::Arc::new(|app: &str, args: serde_json::Value| crate::glance::publish_l0_for(app, &args))));
         // Calendar's events and cards (its agent's `calendar.*` tools),
         // published the same way.
         octosense_calendar_service::register();

@@ -456,6 +456,41 @@ fn wait(what: &str, done: impl Fn() -> bool) {
     }
 }
 
+/// These tests replace the peer transport, not bundle admission. Give each
+/// fake app real, digest-checked instruction text before opening its agent.
+#[cfg(any(feature = "app-hub", native_mobile))]
+struct AgentFixture(std::path::PathBuf);
+#[cfg(any(feature = "app-hub", native_mobile))]
+impl AgentFixture {
+    fn new(app: &str) -> Self {
+        let root = octosense_appstore::data_root_if_set().unwrap_or_else(|| {
+            let root = std::env::temp_dir().join(format!("octosense-chat-bundles-{}", std::process::id()));
+            octosense_appstore::set_data_root(root.clone());
+            root
+        });
+        let bundle = root.join(".bundles").join(app).join("bundle");
+        std::fs::create_dir_all(&bundle).unwrap();
+        std::fs::write(bundle.join("AGENT.md"), "Answer questions about this fixture app.").unwrap();
+        let mut manifest = json!({
+            "schema":1, "id":app, "name":"Conversation fixture", "version":"1.0.0",
+            "capabilities":["storage"], "agent":{"profile":"read-only", "instructions":"AGENT.md"},
+            "integrity":{"bundle_blake3":""}
+        });
+        std::fs::write(bundle.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        manifest["integrity"]["bundle_blake3"] = json!(octosense_app_contract::digest_dir(&bundle).unwrap());
+        std::fs::write(bundle.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let loaded = crate::host_tools::script_apps::guidance(app).expect("fixture must pass real bundle admission");
+        assert_eq!(loaded.agent_md.as_deref(), Some("Answer questions about this fixture app."));
+        Self(bundle)
+    }
+}
+#[cfg(any(feature = "app-hub", native_mobile))]
+impl Drop for AgentFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 /// The panel, end to end on a fake peer: it asks consent first; once the
 /// person allowed the agent it opens a SHARING context on the app's peer
 /// (`open_conversation`, never a plain context), follows both lanes, loads
@@ -466,6 +501,8 @@ fn wait(what: &str, done: impl Fn() -> bool) {
 fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
     const APP: &str = "org.example.asktest";
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    let _fixture = AgentFixture::new(APP);
     if crate::approvals::with(|_| ()).is_none() {
         crate::approvals::init_memory();
     }
@@ -539,6 +576,8 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
     }
     assert_eq!(peers.0.lock().unwrap().len(), 1, "one peer per app");
     const OTHER: &str = "org.example.asktest2";
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    let _other_fixture = AgentFixture::new(OTHER);
     let other = AgentApp { id: OTHER.into(), name: "Other".into(), ..app.clone() };
     // The person has not answered the sheet: the call is held, and a call
     // that waited too long says they have not.
@@ -577,6 +616,8 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
 fn reopening_the_panel_keeps_the_persons_rows_and_the_live_follower() {
     const APP: &str = "org.example.askreopen";
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    let _fixture = AgentFixture::new(APP);
     if crate::approvals::with(|_| ()).is_none() {
         crate::approvals::init_memory();
     }
@@ -668,7 +709,11 @@ fn the_system_agent_is_told_about_agents_it_cannot_list() {
     // The tools it can call, answered by the shell.
     let declarations = crate::agents::declarations();
     let names: Vec<String> = declarations.iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
-    assert_eq!(names, [crate::agents::LIST_TOOL, crate::agents::ASK_TOOL]);
+    let mut expected = vec![crate::agents::LIST_TOOL, crate::agents::ASK_TOOL];
+    if cfg!(any(feature = "app-hub", native_mobile)) {
+        expected.extend([crate::agents::PROVISION_TOOL, crate::agents::STATUS_TOOL]);
+    }
+    assert_eq!(names, expected);
     // agents.ask's confirmation is the shell's own sheet, so the kernel
     // holds the call as long as an approval, not a read tool's 30 s.
     let ask = &declarations[1];

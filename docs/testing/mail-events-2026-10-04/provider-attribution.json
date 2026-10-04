@@ -1,0 +1,52 @@
+[
+  {
+    "turn_id": "aa9201b1-3ff5-43c3-a1e3-125be741fa41",
+    "model": "MiniMax-M3.1-Flash-Preview",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "f7334efb-cc79-4736-af5e-6d38df392f83",
+    "model": "deepseek-v4-flash",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "39618ccc-73fb-4b5e-a99b-0c05fe185f19",
+    "model": "deepseek-v4-flash",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "83aad0ea-8212-49b8-abbb-4e9cd7b37a5c",
+    "model": "deepseek-v4-flash",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "90edcf8f-3ef2-481d-a9a6-ca7699ff12eb",
+    "model": "MiniMax-M3.1-Flash-Preview",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "3e8bf44e-5f36-4e99-8b3c-065a2623bfbc",
+    "model": "deepseek-v4-flash",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "fb6838b1-deba-4f92-86ab-e8cd8b53e348",
+    "model": "deepseek-v4-flash",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "1d6a9657-ec51-47a6-92f6-36277d75b7c9",
+    "model": "MiniMax-M3.1-Flash-Preview",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "b9c07ff7-e532-4f0f-b1c6-80ddc28e6c01",
+    "model": "MiniMax-M3.1-Flash-Preview",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  },
+  {
+    "turn_id": "f295a2a6-873a-4c5c-a4e5-5411c94f70a2",
+    "model": "MiniMax-M3.1-Flash-Preview",
+    "evidence": "ledger.event.metadata.token_cost.model"
+  }
+]

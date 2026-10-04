@@ -10,6 +10,8 @@
 #![allow(dead_code)] // shell surface (icons, OSD, panels) built ahead of the flows that use it
 
 pub mod agents;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod agent_events;
 pub mod ai_bus;
 pub mod app_chat;
 pub mod app_storage;
@@ -228,11 +230,6 @@ script_mod! {
                         shell_glance := ShellGlancePanel{}
                         shell_panel := ShellPanel{}
                         shell_menu := ShellMenu{}
-                        // One glance card, full size, over a dimmed desk
-                        // (glance_sheet.rs): a card's toast opens it.
-                        shell_glance_sheet := ShellGlanceSheet{}
-                        shell_notes := ShellNotifications{}
-                        shell_osd := ShellOsd{}
                         // The approval surface (approvals/): the shell's
                         // approval and first-use sheets, the time-box
                         // indicator, and Settings > Assistant > Approvals.
@@ -243,6 +240,11 @@ script_mod! {
                         // "Ask <app>" (app_chat/): an app agent's
                         // conversation, both lanes, beside the system chat.
                         shell_app_chat := ShellSystemChat{ app_panel: true }
+                        // Cards and notifications stay above phone chat;
+                        // approval sheets and the developer banner remain above them.
+                        shell_glance_sheet := ShellGlanceSheet{}
+                        shell_notes := ShellNotifications{}
+                        shell_osd := ShellOsd{}
                         shell_approvals := ShellApprovals{}
                         shell_approvals_settings := ShellApprovalsSettings{}
                         // Developer mode's banner (dev_mode.rs): over
@@ -424,14 +426,14 @@ pub struct App {
     pub quit_waiting_since: Option<f64>,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
-    /// shade's ids, which open the glance page.
+    /// shade's ids and the exact card each opens.
     #[rust]
     pub glance_toasts: GlanceNoteTargets,
     /// The toast offering to undo the last dismissal in the glance panel.
     #[rust]
     pub glance_undo_toast: Option<u64>,
     #[rust]
-    pub glance_shade_notes: Vec<u64>,
+    pub glance_shade_notes: GlanceNoteTargets,
     /// The developer-mode generation last acted on (dev_mode.rs).
     #[rust]
     pub dev_generation: u64,
@@ -3796,22 +3798,45 @@ impl App {
             return false;
         }
         sheet.handle_event(cx, event, &mut Scope::empty());
-        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_)) {
+        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) {
             self.redraw_all(cx);
         }
         true
+    }
+
+    /// Close the top card before Back reaches the chat or app below it.
+    fn close_glance_card(&mut self, cx: &mut Cx) -> bool {
+        let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
+        let closed = sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
+            if !s.is_open() { return false; }
+            s.close(cx);
+            true
+        });
+        if closed { self.redraw_all(cx); }
+        closed
     }
 
     /// Open the published card `key` in the card window; when it is gone
     /// (withdrawn, expired), the glance panel instead.
     fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
         self.set_glance_open(cx, false);
+        let phone = self.state.as_ref().is_some_and(|s| s.style.target.mobile());
+        if phone {
+            // Closing the card returns to its live glance feed. Chat turns
+            // continue; only their panes are hidden, as with their Close button.
+            self.close_chat_panes(cx, true);
+            let state = self.state_mut();
+            state.phone.shade.close();
+            state.phone.navigate(mobile::PhoneScreen::Home);
+            state.phone.pages.jump(-1);
+            self.animate_phone(cx);
+        }
         let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.open_card(cx, key));
         if opened {
             log!("wm: glance toast opens card {key}");
         } else {
-            log!("wm: glance card {key} is gone; opening the glance panel");
-            self.set_glance_open(cx, true);
+            log!("wm: glance card {key} is gone; opening the glance feed");
+            if !phone { self.set_glance_open(cx, true); }
         }
         self.redraw_all(cx);
     }
@@ -4200,8 +4225,8 @@ impl App {
 
     /// Announce a card that asked for it (`glance.publish` with `notify`):
     /// a toast on a desktop, which opens that card in the card window
-    /// (glance_sheet.rs); a shade notification on the phone, which opens the
-    /// glance page.
+    /// (glance_sheet.rs); a shade notification on the phone opens that same
+    /// card, with its Glance feed underneath for Close/Back.
     fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
         let body = if note.summary.is_empty() { "Open the card at a glance" } else { note.summary.as_str() };
         let notes = self.ui.widget(cx, ids!(shell_notes));
@@ -4229,7 +4254,7 @@ impl App {
         let now = cx.seconds_since_app_start();
         if let Some(state) = self.state.as_mut() {
             let id = state.phone.shade.post(&note.app, &note.title, body, now, Vec::new());
-            self.glance_shade_notes.push(id);
+            self.glance_shade_notes.record(id, &note.key);
         }
         log!("glance: {} notifies {}", note.app, note.key);
         self.redraw_all(cx);
@@ -6367,7 +6392,8 @@ impl App {
         // is not also broadcast through the widget tree.
         if event.back_pressed() && self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
             log!("[phone] back");
-            // An open assistant pane takes Back first, as its own Close does.
+            if self.close_glance_card(cx) { return; }
+            // An open assistant pane takes Back next, as its own Close does.
             if self.close_chat_panes(cx, false) { return; }
             self.phone_action(cx, mobile::PhoneHit::Back);
             return;

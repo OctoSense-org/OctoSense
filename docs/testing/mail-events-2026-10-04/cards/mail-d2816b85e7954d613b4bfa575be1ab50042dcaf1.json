@@ -1,0 +1,21 @@
+{
+  "card_id": "mail-d2816b85e7954d613b4bfa575be1ab50042dcaf1",
+  "data": {
+    "note": {
+      "as_of": "Oct 3, 6:53 PM PDT",
+      "metric1_label": "Clinic",
+      "metric1_value": "Example Health Clinic",
+      "metric2_label": "Where",
+      "metric2_value": "100 Example Avenue",
+      "status": "Proposed \u2014 not booked",
+      "subtitle": "Wed, Oct 7 \u00b7 10:30 AM PDT",
+      "summary": "Your confirmation is needed to accept this time (~30 min).",
+      "title": "Routine visit proposed"
+    }
+  },
+  "notify": true,
+  "priority": 50,
+  "source": "source note sys.dataset(fields: [title, subtitle, status, summary, metric1_label, metric1_value, metric2_label, metric2_value, as_of])\n\ncopy sim { class: vocabulary, en: \"Simulation\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 8) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.sim, width: .fill)\n      TextCaption(value: note.as_of)\n    }\n    TextTitle(text: note.title, width: .fill)\n    TextCaption(value: note.subtitle)\n    TextCaption(value: note.status)\n    Row(gap: 8, align: .center) {\n      TextCaption(value: note.metric1_label)\n      TextBody(text: note.metric1_value, width: .fill)\n    }\n    Row(gap: 8, align: .center) {\n      TextCaption(value: note.metric2_label)\n      TextBody(text: note.metric2_value, width: .fill)\n    }\n    TextBody(text: note.summary, width: .fill)\n  }\n}\n",
+  "summary": "Simulation: Example Health Clinic proposes Wed, Oct 7 at 10:30 AM PDT (~30 min). Proposed, not booked \u2014 your confirmation is needed.",
+  "title": "Appointment proposed Wednesday"
+}

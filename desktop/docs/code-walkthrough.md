@@ -162,7 +162,7 @@ The shipped declarations provide these operations:
 | Agent-enabled app | Tools and implementation |
 | --- | --- |
 | News | `news.list`, `news.read` and `news.notify`; News's host service handles them and hands notices to the shell. |
-| Mail | `mail.notify` only; Mail's service calls the shell's `on_notify` hook. UI operations such as `mail.list`, `mail.message` and `mail.send` have no corresponding agent declarations. |
+| Mail | accounts/folders/sync/list/peek are bound to the broker account; peek never marks mail read. notify/publish_card publish through the shell; skip_event records an explicit no-action decision. Sending and credentials remain unavailable to the agent. |
 | Calendar | `calendar.events`, `add_event`, `remove_event`, `notify`, `agenda`; its Rust service owns events and event/agenda card templates. |
 | Photos, Maps, YouTube, Camera | `<namespace>.notify` only; the shell's `NoticeService` handles each application's namespace. Camera is packaged by Home. |
 

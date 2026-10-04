@@ -52,6 +52,12 @@ pub struct Loaded {
     pub families: BTreeSet<String>,
     /// The admitted manifest (the toolbox reads its grant from it).
     pub manifest: Value,
+    /// Admitted instruction and skill text. These are per-turn guidance,
+    /// not kernel-native skill installation or additional tool grants.
+    pub agent_md: Option<String>,
+    pub skills: Vec<(String, String)>,
+    pub background: bool,
+    pub triggers: Vec<String>,
 }
 
 /// A `tools.json` entry for the relay's catalog: `outward` goes on to the
@@ -98,7 +104,17 @@ pub fn from_bundle(bundle: &Path) -> Result<Loaded, String> {
     // and refuses the rest at admission; `kernel_tools` is exactly those.
     loaded.asks = agent.generic_tools.iter().filter(|name| name.contains('.')).cloned().collect();
     loaded.generic = agent.kernel_tools().into_iter().filter(|name| !super::relay::OCTOS_SHELL.contains(&name.as_str())).collect();
+    loaded.agent_md = agent.agent_md;
+    loaded.skills = agent.skills.into_iter().map(|skill| (skill.name, skill.skill_md)).collect();
+    loaded.background = agent.background;
+    loaded.triggers = agent.triggers.events;
     Ok(loaded)
+}
+
+/// Read guidance only from the admitted, digest-checked bundle.
+pub fn guidance(app: &str) -> Result<Loaded, String> {
+    let (_, bundle) = admitted_bundle(app)?;
+    from_bundle(&bundle)
 }
 
 /// The owning app of a tool another app asks for, by its namespace
@@ -193,6 +209,25 @@ impl ServiceHost for NoSheet {
     fn close_sheet(&mut self) {}
 }
 
+/// Mail tools cannot select an account through model-generated arguments.
+/// The broker stamps the account after authenticating the calling context.
+fn scoped_args(app: &str, call: &HostToolCall) -> Result<Value, String> {
+    if app != "os.mail" || !call.name.starts_with("mail.") {
+        return Ok(call.args.clone());
+    }
+    if super::relay::app_of_peer(&call.calling_app) != app {
+        return Err("Mail data tools are available only to Mail's own agent".into());
+    }
+    let account = call.account.as_deref().filter(|s| !s.is_empty() && *s != "device")
+        .ok_or("Mail's agent has no signed-in account")?;
+    let mut args = call.args.as_object().cloned().ok_or("Mail tool arguments must be an object")?;
+    if args.get("account").is_some_and(|value| value.as_str() != Some(account)) {
+        return Err("Mail tools cannot access another account".into());
+    }
+    args.insert("account".into(), json!(account));
+    Ok(Value::Object(args))
+}
+
 impl ToolExecutor for HostServiceExecutor {
     fn execute(&self, call: HostToolCall, reply: ToolReply) {
         if !reply.is_open() {
@@ -211,9 +246,16 @@ impl ToolExecutor for HostServiceExecutor {
             reply.finish(ToolOutcome::error("not_granted", format!("{} was not granted the {family} service", self.app)));
             return;
         }
+        let args = match scoped_args(&self.app, &call) {
+            Ok(args) => args,
+            Err(message) => {
+                reply.finish(ToolOutcome::error("account_scope", message));
+                return;
+            }
+        };
         let key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { call_id: call.call_id.clone(), reply });
-        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args: call.args.clone(), from_sheet: false,
+        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args, from_sheet: false,
             // A tool call has no surface for a sheet: the person is not in the app.
             may_prompt: false, host_dir: self.host_dir.clone() };
         octosense_appstore::services::dispatch(service_call, key, 0, &mut NoSheet);
@@ -273,11 +315,18 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("octosense-bundle-{name}-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        for entry in std::fs::read_dir(&src).unwrap().flatten() {
-            if entry.file_type().unwrap().is_file() {
-                std::fs::copy(entry.path(), dir.join(entry.file_name())).unwrap();
+        fn copy_tree(src: &Path, dst: &Path) {
+            std::fs::create_dir_all(dst).unwrap();
+            for entry in std::fs::read_dir(src).unwrap().flatten() {
+                let target = dst.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy_tree(&entry.path(), &target);
+                } else {
+                    std::fs::copy(entry.path(), target).unwrap();
+                }
             }
         }
+        copy_tree(&src, &dir);
         let mut manifest: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
         edit(&dir, &mut manifest);
         manifest["integrity"]["bundle_blake3"] = json!(octosense_app_contract::digest_dir(&dir).unwrap());
@@ -307,20 +356,23 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Mail's bundle gives its agent `mail.notify` on the `mail` host
-    /// service, and Mail is granted `glance` (what `mail.notify` publishes
-    /// under). octos takes a tool only with object schemas.
+    /// Mail's admitted guidance and data tools travel together; notification
+    /// publication does not give other agents access to its private mailbox.
     #[test]
     fn mail_offers_its_tools_and_notify_from_its_bundle() {
         let dir = stamped_bundle("mail", "tools", |_, _| {});
         let loaded = from_bundle(&dir).unwrap();
         let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert_eq!(names, ["mail.notify"]);
-        assert_eq!(loaded.host_service_tools.len(), 1);
+        assert_eq!(names.into_iter().collect::<BTreeSet<_>>(), ["mail.accounts", "mail.folders", "mail.sync", "mail.list", "mail.peek", "mail.notify", "mail.publish_card", "mail.skip_event"].into_iter().collect());
+        assert_eq!(loaded.host_service_tools.len(), 8);
         assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
         assert!(loaded.tools.iter().all(|t| t["shareable"] == false), "Mail's tools are its own agent's");
         assert!(["mail", "glance"].iter().all(|f| loaded.families.contains(*f)));
         assert_eq!(loaded.generic, ["ask_user_question"]);
+        assert!(loaded.agent_md.as_ref().is_some_and(|text| !text.is_empty()));
+        assert!(!loaded.skills.is_empty());
+        assert!(loaded.background);
+        assert_eq!(loaded.triggers, ["mail.messages.new"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -463,6 +515,28 @@ pub(crate) mod tests {
 
     fn call(name: &str) -> HostToolCall {
         HostToolCall::parse(&json!({"peer": "p", "session_id": "s", "turn_id": "t", "call_id": format!("c-{name}"), "name": name, "args": {"q": 1}})).unwrap()
+    }
+
+    #[test]
+    fn mail_agent_arguments_are_bound_to_the_authenticated_account() {
+        let mut request = call("mail.peek");
+        request.args = json!({"message":"42"});
+        request.calling_app = "card.os.mail".into();
+        assert!(scoped_args("os.mail", &request).is_err());
+        request.account = Some("account-one".into());
+        assert_eq!(scoped_args("os.mail", &request).unwrap(), json!({"message":"42","account":"account-one"}));
+        request.args["account"] = json!("account-two");
+        assert!(scoped_args("os.mail", &request).unwrap_err().contains("another account"));
+        request.args["account"] = Value::Null;
+        assert!(scoped_args("os.mail", &request).is_err());
+        request.args = json!({});
+        request.name = "mail.accounts".into();
+        assert_eq!(scoped_args("os.mail", &request).unwrap(), json!({"account":"account-one"}));
+        request.calling_app = "os.news".into();
+        assert!(scoped_args("os.mail", &request).unwrap_err().contains("own agent"));
+        request.calling_app = "card.os.mail".into();
+        request.account = Some("device".into());
+        assert!(scoped_args("os.mail", &request).is_err());
     }
 
     fn reply() -> (ToolReply, Arc<Mutex<Vec<Value>>>) {

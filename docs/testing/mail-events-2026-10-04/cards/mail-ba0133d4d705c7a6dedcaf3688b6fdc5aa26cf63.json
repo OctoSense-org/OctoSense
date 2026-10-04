@@ -1,0 +1,17 @@
+{
+  "card_id": "mail-ba0133d4d705c7a6dedcaf3688b6fdc5aa26cf63",
+  "data": {
+    "as_of": "Oct 4",
+    "metric1_value": "Item: Desk lamp - Demo Supply",
+    "metric2_value": "Carrier: Example Parcel",
+    "status": "In transit",
+    "subtitle": "Tue, Oct 6 - 2:00-6:00 PM PDT",
+    "summary": "Signature required - have someone there",
+    "title": "Signature needed for delivery"
+  },
+  "notify": true,
+  "priority": 60,
+  "source": "source note sys.dataset(fields: [title, subtitle, status, as_of, metric1_value, metric2_value, summary])\n\ncopy app { class: vocabulary, en: \"Mail\" }\ncopy sim { class: vocabulary, en: \"Simulation\" }\ncopy gist { class: model-copy, en: \"Fictional OctoSense test message: no real shipment, carrier or purchase exists behind these details.\" }\n\nview root Surface(pad: .tight) {\n  Col(gap: 6) {\n    Row(gap: 8, align: .center) {\n      Icon(name: .mail, size: .row)\n      TextCaption(text: copy.app, width: .fill)\n      TextCaption(value: note.as_of)\n    }\n    Row(gap: 6, align: .center) {\n      TextCaption(text: copy.sim)\n      TextCaption(value: note.status)\n    }\n    TextTitle(text: note.title, width: .fill)\n    TextCaption(value: note.subtitle)\n    TextBody(text: note.metric1_value, width: .fill)\n    TextBody(text: note.metric2_value, width: .fill)\n    TextBody(text: note.summary, width: .fill)\n    TextCaption(text: copy.gist, width: .fill)\n  }\n}",
+  "summary": "Simulation: Demo Supply desk lamp via Example Parcel arrives Tue, Oct 6, 2:00-6:00 PM PDT. Signature required at delivery.",
+  "title": "Signature needed for Tue delivery"
+}

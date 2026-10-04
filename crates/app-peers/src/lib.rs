@@ -22,6 +22,7 @@
 //! `peer/input`; [`host_tools`]).
 
 pub mod contract;
+pub mod guidance;
 pub mod host_approvals;
 /// UPCR-2026-035: the host's tool relay seam (registration, calls, `peer/input`).
 pub mod host_tools;

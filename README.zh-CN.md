@@ -97,7 +97,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | Rinx（原生） | `native-apps.json` 的 `agent.octos`（四个 `octos.*` 服务）和 `agent.generic_tools` | 其列表中的 octos 通用工具；它自己的助手界面 | – |
 | 新闻（`os.news`） | `apps/news/bundle/tools.json`、manifest 中的 `agent` 块 | `news.list`、`news.read`、`news.notify`（`news` 宿主服务与 Shell 通知回调） | 通知卡片与通知 |
-| 邮件（`os.mail`） | `apps/mail/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `mail.notify`（`mail` 宿主服务） | 一张通知卡片，并发出一条通知 |
+| 邮件（`os.mail`） | `apps/mail/bundle/tools.json`、已接纳的指令/技能、后台事件声明和 `glance` | 绑定账户的 `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.notify`、`mail.publish_card`、`mail.skip_event` | 模型编写的 L0 卡片或通知卡片，并发出 OctoSense 通知 |
 | 日历（`os.calendar`，仅桌面端） | `apps/calendar/bundle/tools.json`、manifest 中的 `agent` 块和 `glance` | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（破坏性操作：进入审批路由）、`calendar.notify`、`calendar.agenda`（`calendar` 宿主服务） | 一张日程卡片或议程卡片，并发出一条通知 |
 | Photos、Maps、YouTube；手机上的 Camera | 各自包内的 `tools.json`、`agent` 块与 `glance` | 各应用的 `<app>.notify`（Shell `NoticeService`） | 通知卡片与通知 |
 
@@ -107,7 +107,7 @@ AI providers 没有应用 Agent。
 
 在 Unix 上，已获同意且有可用 workspace 的应用 Agent 还能用宿主只读工具 `files.list`、`files.read` 和 `files.search` 读取账号文件夹；这些工具不会暴露所有宿主服务数据库。手机默认构建 `toolbox-peers`，因此在手机上，manifest 申请了 `research` 或 `crawl` 的应用 Agent 还会得到系统工具箱的工具；目前还没有应用申请。
 
-`AGENT.md`、技能和触发器（[ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)）尚未实现：应用 Agent 只在系统 Agent、用户或卡片请求时运行。
+Mail 已有可选的新邮件处理路径：登录并允许 Agent 后，系统 Agent 用 `agents.provision` 配置指令、技能文本和轮询。宿主同步 Inbox、持久保存新邮件事件，自动启动 Mail Agent；Agent 用账户绑定工具读取邮件，自行判断是否发布卡片。首次同步只建立基线，不处理历史邮件。已接纳的 `AGENT.md` 和技能文本随每轮提供，这不是内核原生技能安装。其他应用触发器和 cron 仍未实现。见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。
 
 **从系统 Agent 到 glance 屏幕上的一张卡片**：
 
@@ -140,7 +140,7 @@ sequenceDiagram
 
 </details>
 
-模型只提供文字，从不编写卡片代码。宿主填充固定模板：
+以下通知/日历工具由模型提供文字、宿主填充固定模板。Mail 另有 `mail.publish_card`，接收由模型编写并经宿主校验的 L0 源码：
 
 - **通知卡片。** 邮件、新闻、照片及其他 `<app>.notify` 工具使用 Shell 的 [`notice.card`](crates/shell/resources/glance/notice.card)。Shell 提供应用图标和名称；调用提供标题和正文。重复使用同一个 `card_id` 会替换该应用之前的通知。
 - **日历卡片。** `calendar.notify` 和 `calendar.agenda` 使用日历自己的[日程与议程模板](apps/calendar/host-service/resources)。

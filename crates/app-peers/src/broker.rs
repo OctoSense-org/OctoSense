@@ -2075,7 +2075,7 @@ impl Inner {
     /// `system_agent` itself and refuses any other label on it).
     fn start_input(self: &Arc<Self>, input: PeerInput) {
         // The link the input came on: only there may it be refused.
-        let (link, peer) = {
+        let (link, peer, account) = {
             let mut st = self.lock();
             let link = st.link.clone();
             let peer = st.peer.as_ref().map(|(_, p)| p.clone());
@@ -2089,14 +2089,15 @@ impl Inner {
                 speaker: Speaker { kind: host_tools::TurnOrigin::SystemAgent, label: None },
                 at: rfc3339_now(),
             });
-            (link, peer)
+            (link, peer, st.account.clone())
         };
+        let turn_input = crate::guidance::turn_input(&self.cfg.app_id, account.as_deref().unwrap_or(""), &input.text);
         let inner = self.clone();
         self.rt().spawn(async move {
             let params = json!({
                 "session_id": input.session_id,
                 "turn_id": input.turn_id,
-                "input": [{"kind": "text", "text": input.text}],
+                "input": turn_input,
             });
             let turn = input.turn_id.clone();
             let still = move |inner: &Inner| inner.lock().peer_turn.as_deref() == Some(turn.as_str());
@@ -3053,7 +3054,7 @@ impl ContextInner {
         let params = json!({
             "session_id": session,
             "turn_id": turn_id,
-            "input": [{"kind": "text", "text": text}],
+            "input": crate::guidance::turn_input(&inner.cfg.app_id, &self.account, &text),
             "origin": speaker.to_json(),
         });
         let me = Arc::downgrade(self);
@@ -3204,7 +3205,7 @@ impl ContextInner {
                         json!({
                             "session_id": session,
                             "turn_id": turn_id,
-                            "input": [{"kind": "text", "text": text}],
+                            "input": crate::guidance::turn_input(&inner.cfg.app_id, &self.account, &text),
                         }),
                     )
                     .await;

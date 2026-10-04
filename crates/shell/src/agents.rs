@@ -49,6 +49,8 @@ pub(crate) static FACTORY_TESTS: Mutex<()> = Mutex::new(());
 /// The host tools the system chat registers on the system session.
 pub const LIST_TOOL: &str = "agents.list";
 pub const ASK_TOOL: &str = "agents.ask";
+pub const PROVISION_TOOL: &str = "agents.provision";
+pub const STATUS_TOOL: &str = "agents.status";
 /// Their owner, as the kernel shows it.
 pub const OWNER: &str = "agents";
 
@@ -155,6 +157,11 @@ pub fn prepare(app: &AgentApp) {
     set_prepared(&app.id, Some(Prepared::Preparing));
     let id = app.id.clone();
     let spawned = std::thread::Builder::new().name(format!("prepare-{id}")).spawn(move || {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if let Err(error) = crate::agent_events::install_guidance(&id) {
+            set_prepared(&id, Some(Prepared::Failed(error)));
+            return;
+        }
         // Its manifest's storage block first: which account it acts for.
         let outcome = match crate::app_storage::host() {
             Some(storage) => crate::app_storage::lifecycle::prepare_agent_with(storage, storage.layout().apps_root(), &id, |_| crate::ai_host::contained::prepare(&id)),
@@ -191,6 +198,8 @@ pub fn prepare_allowed() {
 /// already allowed.
 pub fn start() {
     let _ = std::thread::Builder::new().name("agents-start".into()).spawn(prepare_allowed);
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    crate::agent_events::start();
 }
 
 /// The apps the person just allowed (the first-use sheet, Settings) get
@@ -220,6 +229,8 @@ pub fn conversation(app: &AgentApp, instance: &str) -> Result<Arc<dyn OctosConte
         return Err(format!("{}'s assistant is {}", app.name, access(&app.id).as_str()));
     }
     if !app.native {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        crate::agent_events::install_guidance(&app.id)?;
         let context = crate::ai_host::contained::conversation(&app.id, instance)?;
         set_prepared(&app.id, Some(Prepared::Ready));
         return Ok(context);
@@ -363,7 +374,7 @@ pub fn strip_note(text: &str) -> &str {
 
 /// The host tools for the system session.
 pub fn declarations() -> Vec<Value> {
-    vec![
+    let mut tools = vec![
         json!({
             "name": LIST_TOOL,
             "app": OWNER,
@@ -385,12 +396,34 @@ pub fn declarations() -> Vec<Value> {
             "outward": true,
             "confirm": "app",
         }),
-    ]
+    ];
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    tools.extend([
+        json!({
+            "name": PROVISION_TOOL, "app": OWNER,
+            "description": "Configure instructions, skill text and incoming-email processing for an already allowed Mail agent. Use only when the person requests this automation. Bound to Mail's current signed-in account; does not grant access, tools or credentials. The initial inbox sync establishes a baseline; only subsequent new mail triggers the agent. Runs while OctoSense is alive. Set enabled=false to stop. Instructions and skills replace the previous host provision, supplementing the app's admitted base guidance.",
+            "input_schema": {"type":"object","properties":{
+                "app":{"type":"string","enum":["os.mail"]},
+                "enabled":{"type":"boolean"},
+                "instructions":{"type":"string","maxLength":8192},
+                "skills":{"type":"array","maxItems":8,"items":{"type":"object","properties":{"name":{"type":"string","maxLength":64},"text":{"type":"string","maxLength":8192}},"required":["name","text"],"additionalProperties":false}},
+                "poll_interval_secs":{"type":"integer","minimum":30,"maximum":3600}
+            },"required":["app","enabled","instructions","skills"],"additionalProperties":false},
+            "risk":"act", "outward":false
+        }),
+        json!({
+            "name": STATUS_TOOL, "app": OWNER,
+            "description":"Read Mail's current background configuration, poll state and event processing receipts. Reports actual host state without exposing message bodies or credentials.",
+            "input_schema":{"type":"object","properties":{"app":{"type":"string","enum":["os.mail"]}},"required":["app"],"additionalProperties":false},
+            "risk":"read"
+        }),
+    ]);
+    tools
 }
 
 /// Whether `tool` is one of [`declarations`].
 pub fn is_agents_tool(tool: &str) -> bool {
-    tool == LIST_TOOL || tool == ASK_TOOL
+    tool == LIST_TOOL || tool == ASK_TOOL || cfg!(any(feature = "app-hub", native_mobile)) && matches!(tool, PROVISION_TOOL | STATUS_TOOL)
 }
 
 /// Answer the system agent's call of one of [`declarations`] (the system
@@ -398,6 +431,16 @@ pub fn is_agents_tool(tool: &str) -> bool {
 pub fn call(tool: &str, args: &Value) -> ToolOutcome {
     match tool {
         LIST_TOOL => ToolOutcome::Ok(list()),
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        PROVISION_TOOL => match crate::agent_events::provision(args.clone()) {
+            Ok(value) => ToolOutcome::Ok(value),
+            Err(error) => ToolOutcome::error("agent_provision", error),
+        },
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        STATUS_TOOL => match crate::agent_events::status(args.clone()) {
+            Ok(value) => ToolOutcome::Ok(value),
+            Err(error) => ToolOutcome::error("agent_status", error),
+        },
         // Answered at once (the system chat holds the call instead, until
         // the person answered: system_chat `pump`).
         ASK_TOOL => match ask_app(args) {

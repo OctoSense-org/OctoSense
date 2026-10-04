@@ -151,3 +151,24 @@ create real instances (Rinx included) live with each shell's
 
 The Android APK's kernel artifact (`liboctos.so`) is built by
 `tools/kernel-artifact.py`; the graph guards are `tools/check-shell-graph.sh`.
+
+## Host-provisioned app guidance
+
+The shell can call `contained::set_guidance(app_id, account, TrustedGuidance)`
+before preparing a contained app's peer or between turns. The broker snapshots
+that app/account's instructions and named skill texts for each request-context,
+conversation, and system `peer/input` turn. Updates affect the next turn without
+recreating the peer or deleting its history. The combined text is limited to
+16 KiB and 16 skills; the host must check consent and persist any overlay itself.
+Account changes and revocation clear the in-memory guidance.
+
+This supplies host-provisioned **text**, not kernel-native skill installation or
+discovery. Guidance and request data are separately serialized ordinary text
+inputs; they are not separate kernel system-message roles. Tool grants and the
+original `TurnTrigger` remain the authorization boundary, including for incoming
+email. Incoming text cannot replace the host's structured guidance fields.
+
+`cargo test --locked -p octosense-ai-host --features octos-core,llm` passed
+39 tests with isolated host/data directories and hidden windows. The new
+guidance test checks account mismatch, payload limits and provisioning without
+preparing a peer. No provider or device was exercised.

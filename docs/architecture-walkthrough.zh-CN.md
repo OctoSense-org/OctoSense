@@ -19,7 +19,7 @@
 | Session / turn | Session 保存一次对话的身份与状态；turn 是响应一次输入的执行过程，可包含多次模型请求与工具调用。 |
 | Peer / request context | Peer 是持久的协作 Agent 身份；context 是属于该 peer 的另一个 session，有独立记录、工作目录，以及 peer 记忆命名空间下的独立存储区域。 |
 | Tool / host service | Tool 是模型可选择的操作；host service 是应用或执行器调用的 Rust 服务。分别检查它们的授权与入口。 |
-| `AGENTS.md` / `AGENT.md` | 前者指导仓库贡献者；后者是应用包的 Agent 指令文件。App Hub 会准入后者，但 Shell 尚未把它加载进 peer 提示词。 |
+| `AGENTS.md` / `AGENT.md` | 前者指导仓库贡献者；后者是应用包的 Agent 指令文件。App Hub 准入后者，Shell 每轮提供其宿主指令文本；这不是内核原生技能安装。 |
 
 相关仓库的导读：[Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/218b25d2460d64f843932f67d419467618464fb9/docs/CODE-WALKTHROUGH.md)、[App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/19bb52d402e80e89e085dea989615e3ec612d359/docs/CODE-WALKTHROUGH.md)、[Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/fb29b6b1cb6e16f38d99a8aef60431a9565dfd59/docs/architecture-walkthrough.md)、[octos](https://github.com/octos-org/octos/blob/82900bf149d3a53016c1c1492ffc075d2d4fb0ed/docs/octosense-integration-walkthrough.md)。这些链接指向已发布的文档版本；运行时版本仍由使用方的依赖锁定文件控制。
 
@@ -206,7 +206,7 @@ Shell 将聊天输入动作标为 `TurnTrigger::Person`。脚本调用 `octos.tu
 | 应用 | 当前数据/工具边界 |
 | --- | --- |
 | News | `news.list`、`news.read`、`news.notify` |
-| Mail | **只有 `mail.notify`**；UI 的读信/发信 API 尚未开放为 Agent 工具 |
+| Mail | 绑定账户的 accounts/folders/sync/list/peek，notify/publish_card，以及事件无操作决策 skip_event；不暴露发信或密码 |
 | Photos、Maps、Camera、YouTube | 仅各自的 `<app>.notify`，经 [glance_notice.rs](../crates/shell/src/glance_notice.rs) 发布共享通知卡片 |
 | AI providers | 没有应用 Agent |
 
@@ -286,4 +286,4 @@ cargo test --locked -p octosense-kernel -p octosense-app-peers \
 
 可选真实内核测试在缺少二进制环境变量时提前返回；将结果当作集成证据前，阅读 [app-peers 测试说明](../crates/app-peers/README.md)。可见 UI、真实提供方对话和设备行为需要分别运行。
 
-尚待实现：应用包 `AGENT.md` 提示词加载、自动 triggers/skills、脚本实现的 Agent 工具分发，以及通用应用到系统 Agent 对话 RPC。围绕这些路径设计流程前，沿声明追到实际执行器。
+Mail 已有可选的新邮件事件调度器，已接纳的 `AGENT.md` 和技能文本会随每轮注入，系统 Agent 可配置账户级补充指令。见[邮件事件导读](mail-agent-events.zh-CN.md)。通用触发器/cron、内核原生技能安装、脚本实现的 Agent 工具分发，以及通用应用到系统 Agent 对话 RPC 仍待实现。
