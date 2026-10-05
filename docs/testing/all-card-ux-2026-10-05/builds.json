@@ -1,0 +1,40 @@
+{
+  "device": "OnePlus 6",
+  "package": "dev.makepad.octosense.studio.ux",
+  "builds": [
+    {
+      "package": "dev.makepad.octosense.studio.ux",
+      "version_code": 2026100501,
+      "apk_sha256": "0a8d62bb82d5ae8376d9a35f8f3a7e33f089dc0ba61cab631efe611dc6e875e4",
+      "device": "OnePlus 6",
+      "base": "a2a0524d761b4ed0a5223688d71b87b4d3be4499",
+      "source_state": "base plus uncommitted acceptance changes at build time"
+    },
+    {
+      "base": "a2a0524d",
+      "version_code": 2026100502,
+      "apk_sha256": "bdee351371eb9d74adf36d51507c731c365681a50c83f7600b17adbc000d0300",
+      "working_tree_patch_sha256": "25dd7e024c1ec968ea661126b2d420f2ea94c98d3b5a552ff934cf50dbebef28",
+      "source_state": "base plus uncommitted acceptance changes at build time"
+    },
+    {
+      "base": "a2a0524d",
+      "version_code": 2026100503,
+      "apk_sha256": "46e244ef515a91bcf62dd523bd769255a795d53325627cc8fe900f4bfc649746",
+      "working_tree_patch_sha256": "91ef741052725b531d09cc4456593737dd65a886da50c5632d2ee2833605f38f",
+      "source_state": "base plus uncommitted acceptance changes at build time"
+    },
+    {
+      "base": "a2a0524d761b4ed0a5223688d71b87b4d3be4499",
+      "version_code": 2026100504,
+      "apk_sha256": "f8e789a015ccdff15e68a5648bb27c6c2e8e11cf01a955596ec2b9f46a04b39a",
+      "source_sha256": {
+        "crates/shell/src/glance_card.rs": "cb5a3d41d3e9cfb47609c196f0a7ee64d2901f376120c6f99086d98b0c9f9b41",
+        "crates/shell/src/glance.rs": "188e57e7c26cee064bfffc3019f9eba49cd40086c94b308fbc14251b3325b111",
+        "apps/calendar/host-service/resources/event.card": "11262be4152ee453e98aed2a8697cc865fc2400cbdefa0f4fe197d09302f6d95",
+        "apps/calendar/host-service/resources/agenda.card": "d53d22a6a8fb752219313232cac995f2e923a767e33c0c0b9e2c7decdb3d5c92"
+      },
+      "source_state": "base plus uncommitted acceptance changes at build time"
+    }
+  ]
+}

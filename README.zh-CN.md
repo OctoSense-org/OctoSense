@@ -314,6 +314,11 @@ sequenceDiagram
 - **邮件回复卡片**有 **Email** 和 **Chat** 两个标签页，共用一份保存的草稿。Agent 可以修改草稿并提议发送，但只有用户能发送：用户要在宿主自己的审阅界面上亲手触摸，确认确切的邮件内容。开发者模式不能跳过这一步，桌面端的确认还没有实现。详情和手机上的测试结果见[可组合的邮件卡片](docs/mail-composable-cards.zh-CN.md)。
 - **声明了 `sys.chat(app, thread, fields)` 的卡片**保留它声明的对话线程。
 
+工作区为 Splash 的 `Fill` 根视图分配视口，自然高度的 L0 内容使用外层滚动。
+发布大小限制分别为 L0 源码 16 KiB、Splash 脚本 64 KiB。
+[全卡片手机 UX 验收](docs/testing/all-card-ux-2026-10-05/README.zh-CN.md)
+记录随产品交付的发布者、两组模型集合、实际修复和验证边界。
+
 所有对话记录都归 Shell 所有，保存在应用的账号文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
 
 #### 提问

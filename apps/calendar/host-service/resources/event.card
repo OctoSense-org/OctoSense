@@ -18,9 +18,11 @@ view root Surface(pad: .tight) {
       TextCaption(value: ev.as_of)
     }
     TextTitle(text: ev.title, width: .fill)
-    Row(gap: 8) {
-      Tile(label: ev.metric1_label, value: ev.metric1_value)
-      Tile(label: ev.metric2_label, value: ev.metric2_value)
+    Col(gap: 4) {
+      TextCaption(value: ev.metric1_label, width: .fill)
+      TextRow(text: ev.metric1_value, width: .fill)
+      TextCaption(value: ev.metric2_label, width: .fill)
+      TextRow(text: ev.metric2_value, width: .fill)
     }
     Row(gap: 8, align: .center) {
       Icon(name: .location, size: .row)

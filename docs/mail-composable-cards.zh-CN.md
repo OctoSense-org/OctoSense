@@ -51,6 +51,13 @@
 
 ## 所有发布者共用的卡片工作区
 
+[2026-10-05 全卡片验收](testing/all-card-ux-2026-10-05/README.zh-CN.md)
+在下方较早的 L0 检查点基础上，覆盖所有随产品交付的卡片发布者，以及两组六类
+Splash 集合。全高根视图现在获得实际视口；键盘焦点定位同时处理内部滚动容器与
+宿主滚动。L0 源码仍限 16 KiB，Splash 程序单独限 64 KiB。生成源码由原来的
+Android 模型修正，来源记录保存在 App Design Flow。请结合报告中的范围和剩余
+限制阅读，本地原型交互通过不等于业务集成通过。
+
 所有 Glance 发布者（包括 L0 与 Splash 卡片）共用全屏过渡，无须启动发布者的完整应用。Mail 保留专用的 **Email / Chat**；其他卡片使用原有生成界面，发布者声明应用 agent 时提供 **Card / Chat**。没有 agent 的卡片仍可全屏打开，但不会凭空获得助手或能力。
 
 `glance::GlanceCard.account` 在发布时记录宿主账户，打开旧卡片不能把它重新绑定到新账户。没有显式 `sys.chat` 的卡片由 `glance_card::WorkspaceChat` 提供独立、宿主拥有的会话，不会往模型生成源码中插入聊天声明。其 `ContextKind::Card` 绑定包含发布信息与 L0 本地状态，两部分各限 12 KiB；这是不可信上下文，不是工具或批准。实际工具仍由原有应用 peer 按权限执行。首次 **Enable assistant** 打开现有宿主同意面板。Mail 正文编辑凭证必须使用 `ContextKind::Mail`，通用绑定不能取得该权限。Splash 聊天能读取发布上下文，但不能读取任意 isolate 变量快照。

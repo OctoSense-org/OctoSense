@@ -131,6 +131,15 @@ replace feedback from the person using the phone.
 
 ## Shared workspaces for all card publishers
 
+The [2026-10-05 all-card acceptance](testing/all-card-ux-2026-10-05/README.md)
+extends the earlier L0 checkpoint below to every shipping card publisher and
+the two six-family Splash collections. Full-height roots now receive an actual
+viewport; keyboard focus follows nested scroll containers as well as the host
+scroller. L0 source remains capped at 16 KiB; Splash programs have a separate
+64 KiB cap. Generated-source repairs belong to the original Android models,
+with source receipts in App Design Flow. Read the report's scope and remaining
+limits before treating a local prototype interaction as a business integration.
+
 The full-screen transition is shared by every Glance publisher, including L0
 and Splash cards. It does not launch the publisher's full app. Mail keeps its
 specialized **Email / Chat** panes; other cards use their original generated UI

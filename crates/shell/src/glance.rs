@@ -45,7 +45,7 @@
 //! app's UI does. Caps: `card_id` 1–64 of `[A-Za-z0-9._-]`, `title` ≤ 80
 //! characters, `summary` ≤ 200 (the notification's second line; without
 //! one it is the card's own `summary` or `note.summary` in its data, or
-//! nothing), `source`/`script` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route`
+//! nothing), L0 `source` ≤ 16 KiB, Splash `script` ≤ 64 KiB, `data` ≤ 32 KiB as JSON, `route`
 //! ≤ 256. `priority` 0–100 (default 50). `expires` is seconds from now, 60 s
 //! to 7 days (default 24 h); an expired card is dropped. Each app may publish
 //! [`RATE_LIMIT`] times per [`RATE_WINDOW_MS`] (a replace counts, and so
@@ -88,6 +88,9 @@ pub const TITLE_MAX: usize = 80;
 /// A notification's second line, in characters.
 pub const SUMMARY_MAX: usize = 200;
 pub const SOURCE_MAX: usize = 16 * 1024;
+/// A retained full-app workspace carries its view program and local handlers.
+/// Keep it bounded independently of a compact declarative L0 card.
+pub const SCRIPT_MAX: usize = 64 * 1024;
 pub const DATA_MAX: usize = 32 * 1024;
 pub const ROUTE_MAX: usize = 256;
 pub const PRIORITY_DEFAULT: i64 = 50;
@@ -352,8 +355,9 @@ impl GlanceStore {
             (None, Some(script)) => ("script", script),
             _ => return Err("give either source (an L0 card) or script (a Splash program)".into()),
         };
-        if source.len() > SOURCE_MAX {
-            return Err(format!("{kind} is {} bytes, over the {SOURCE_MAX}-byte cap", source.len()));
+        let source_max = if kind == "script" { SCRIPT_MAX } else { SOURCE_MAX };
+        if source.len() > source_max {
+            return Err(format!("{kind} is {} bytes, over the {source_max}-byte cap", source.len()));
         }
         if kind == "script" && args.get("data").is_some_and(|d| !d.is_null()) {
             return Err("data is for a source card; a script carries its own values".into());
@@ -1362,7 +1366,13 @@ mod tests {
         with_data["data"] = json!({"x": 1});
         assert!(store.publish(&news(), &with_data, 0).unwrap_err().contains("data is for a source card"));
         let mut big = a.clone();
-        big["script"] = json!("x".repeat(SOURCE_MAX + 1));
+        let prefix = "View{}\n//";
+        let full_program = format!("{prefix}{}", "x".repeat(SCRIPT_MAX - prefix.len()));
+        assert_eq!(full_program.len(), SCRIPT_MAX);
+        big["script"] = json!(full_program);
+        store.publish(&news(), &big, 0).expect("full workspace at the script cap");
+        assert_eq!(store.shown(0, 9)[0].body.len(), SCRIPT_MAX);
+        big["script"] = json!("x".repeat(SCRIPT_MAX + 1));
         assert!(store.publish(&news(), &big, 0).unwrap_err().contains("script is"));
         // A native module's card runs with no grants.
         store.publish(&Caller::Native("news".into()), &json!({"card_id": "n", "title": "t", "script": "View{}"}), 0).unwrap();

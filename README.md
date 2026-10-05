@@ -314,6 +314,11 @@ A card can carry a conversation with its app's agent, which answers in the perso
 - **Mail reply cards** have **Email** and **Chat** tabs over one saved draft. The agent can edit the draft and propose sending it, but only the person sends, by approving the exact message on a host-owned review with a physical touch. Developer mode cannot skip that review, and desktop approval is not built yet. [Composed Mail cards](docs/mail-composable-cards.md) has the details and the phone test results.
 - **A card that declares `sys.chat(app, thread, fields)`** keeps its declared thread.
 
+The workspace gives a Splash `Fill` root a viewport, while natural-height L0
+content uses the outer scroller. Publication limits are 16 KiB for L0 source
+and 64 KiB for Splash scripts. See the [all-card phone UX acceptance](docs/testing/all-card-ux-2026-10-05/README.md)
+for shipping publishers, both model collections, actual fixes and verification limits.
+
 The shell owns every transcript, kept in the app's account folder, and records as the person's only what the person typed. Model-written text is marked as AI-written and never runs as an action. See [`crates/l0-chat`](crates/l0-chat/README.md).
 
 #### Questions
