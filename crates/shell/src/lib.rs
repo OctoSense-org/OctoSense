@@ -80,11 +80,17 @@ pub mod ext;
 pub mod glance;
 pub mod glance_card;
 pub mod glance_chat;
+pub mod mail_card;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod mail_review;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_notice;
 pub mod glance_panel;
 pub mod glance_sheet;
+mod card_presentation;
+mod card_chat;
+mod mail_clip;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;
@@ -517,6 +523,7 @@ pub struct App {
     /// home has laid its pages out at the phone's size (mobile_pages.rs).
     #[rust]
     pub test_page: Option<(Timer, i64)>,
+    #[rust] pub test_glance_fixtures: Option<(Timer, String)>,
     /// The hidden WebView that renders pages for the octos reader where
     /// there is no Chrome (the phone): serves `webview_render::renderer`.
     #[rust]
@@ -3792,53 +3799,70 @@ impl App {
         self.ui.widget(cx, ids!(shell_glance)).borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open)
     }
 
-    /// The card window (glance_sheet.rs) is modal: while a card is open
-    /// every pointer event is its own (a press outside the card closes it).
+    fn sync_glance_presentation(&mut self, cx: &Cx) {
+        let (open, covered) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>()
+            .map(|s| (s.is_open(), s.covers_background())).unwrap_or_default();
+        if let Some(state) = self.state.as_mut() {
+            state.phone.card_open = open && state.style.target.mobile();
+            state.phone.card_covers_home = covered && state.style.target.mobile();
+            if !open && state.phone.pages.workspace_source.is_some() { state.phone.pages.clear_card_anchor(state.phone.viewport.size.y); }
+        }
+    }
+
+    /// The workspace owns every pointer stream until dismissal completes.
     fn glance_sheet_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
         let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
-        if !sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open()) {
-            return false;
-        }
+        if !sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.accepts_pointer(event)) { return false; }
         sheet.handle_event(cx, event, &mut Scope::empty());
-        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) {
-            self.redraw_all(cx);
-        }
+        self.sync_glance_presentation(cx);
+        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) { self.redraw_all(cx); }
         true
     }
 
-    /// Close the top card before Back reaches the chat or app below it.
+    /// Back dismisses the IME, then review, then the workspace.
     fn close_glance_card(&mut self, cx: &mut Cx) -> bool {
-        let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
-        let closed = sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
+        let handled = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
             if !s.is_open() { return false; }
-            s.close(cx);
-            true
+            s.back(cx); true
         });
-        if closed { self.redraw_all(cx); }
-        closed
+        if handled { self.sync_glance_presentation(cx); self.redraw_all(cx); }
+        handled
     }
 
-    /// Open the published card `key` in the card window; when it is gone
-    /// (withdrawn, expired), the glance panel instead.
+    /// Open directly above the current phone screen. Glance supplies a visual
+    /// origin only when that exact summary is visible; notifications need no
+    /// detour through the feed, no activity launch, and no agent restart.
     fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
         self.set_glance_open(cx, false);
         let phone = self.state.as_ref().is_some_and(|s| s.style.target.mobile());
+        let mut origin = None;
         if phone {
-            // Closing the card returns to its live glance feed. Chat turns
-            // continue; only their panes are hidden, as with their Close button.
             self.close_chat_panes(cx, true);
             let state = self.state_mut();
             state.phone.shade.close();
-            state.phone.navigate(mobile::PhoneScreen::Home);
-            state.phone.pages.jump(-1);
-            self.animate_phone(cx);
+            state.phone.pages.feed.sync_published();
+            if state.phone.screen == mobile::PhoneScreen::Home {
+                origin = state.phone.pages.summary_rect(key, state.phone.viewport);
+                if origin.is_some() { state.phone.pages.anchor_card(key); }
+            }
+            state.phone.gesture = None;
+            state.phone.touch = None;
+            state.phone.navigation.cancel();
         }
-        let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.open_card(cx, key));
-        if opened {
-            log!("wm: glance toast opens card {key}");
-        } else {
+        let insets = self.state.as_ref().map(|s| s.phone.insets).unwrap_or_default();
+        let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
+            s.set_presentation(phone, insets);
+            if !s.open_card(cx, key) { return false; }
+            s.present(cx, origin); true
+        });
+        self.sync_glance_presentation(cx);
+        if opened { log!("wm: glance opens resident workspace {key}"); }
+        else {
             log!("wm: glance card {key} is gone; opening the glance feed");
-            if !phone { self.set_glance_open(cx, true); }
+            if phone {
+                let state = self.state_mut(); state.phone.navigate(mobile::PhoneScreen::Home); state.phone.pages.jump(-1);
+                self.animate_phone(cx);
+            } else { self.set_glance_open(cx, true); }
         }
         self.redraw_all(cx);
     }
@@ -4101,13 +4125,13 @@ impl App {
         }
     }
 
-    /// A press on a toast (shell/notifications.rs `hit`). Only the press: a
-    /// drag of a pane's frame keeps its moves and its release wherever they
-    /// go.
+    /// A toast owns its native touch gesture through release, even after a
+    /// drag cancels activation. Mouse handling takes only the press so a pane
+    /// dragged across a toast keeps its own movement and release.
     fn press_on_toast(&mut self, cx: &mut Cx, event: &Event) -> bool {
-        let Event::MouseDown(e) = event else { return false };
         let notes = self.ui.widget(cx, ids!(shell_notes));
-        let on = notes.borrow::<shell::notifications::ShellNotifications>().is_some_and(|n| n.hit(e.abs));
+        let on = notes.borrow_mut::<shell::notifications::ShellNotifications>()
+            .is_some_and(|mut n| n.owns_pointer(event));
         on
     }
 
@@ -5207,6 +5231,13 @@ impl App {
                 }
             }
         }
+        #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+        if self.test_glance_fixtures.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
+            if let Some((_, path)) = self.test_glance_fixtures.take() {
+                log!("glance fixture admission: {:?}", glance::publish_test_fixtures(&path));
+                self.redraw_all(cx);
+            }
+        }
         if let Some((timer, n)) = &self.test_page {
             if timer.is_timer(te).is_some() {
                 let n = *n;
@@ -5265,6 +5296,12 @@ impl App {
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
                     if self.groups_test_action(cx, name) { i += 2; continue; }
+                    #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+                    if let Some(path) = name.strip_prefix("glance-fixtures:") {
+                        self.test_glance_fixtures = Some((cx.start_timeout(1.5), path.into()));
+                        i += 2;
+                        continue;
+                    }
                     // webview-crawl:<url>,<url>…: a small crawl through the
                     // octos reader with the hidden WebView renderer, one
                     // `[webview-crawl]` log line per page (on-device check).
@@ -6337,6 +6374,8 @@ impl App {
         shell::script_mod(vm);
         glance_card::script_mod(vm);
         glance_panel::script_mod(vm);
+        card_chat::script_mod(vm);
+        mail_clip::script_mod(vm);
         glance_sheet::script_mod(vm);
         approvals::script_mod(vm);
         system_chat::script_mod(vm);
@@ -6400,7 +6439,10 @@ impl App {
         ai_host::handle_event(cx, event);
         if self.android_event(cx, event) { return; }
         // Android's Home button or gesture, with OctoSense as the Home app.
-        if matches!(event, Event::HomeIntent) { self.phone_home_intent(cx); return; }
+        if matches!(event, Event::HomeIntent) {
+            if let Some(mut sheet) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>() { sheet.hide_workspace(cx); }
+            self.sync_glance_presentation(cx); self.phone_home_intent(cx); return;
+        }
         self.phone_animation_event(cx,event);
         // Android's Back key (and a platform Back of any kind) is the phone's
         // Back: the foreground app is offered it first (mobile_back.rs), so it
@@ -6513,24 +6555,26 @@ impl App {
                 return;
             }
         }
-        // The glance page's live cards (mobile_pages.rs `GlanceCards`):
-        // every event, and the pointer while the page is what the person
-        // sees. Their taps then run as the desktop panel's do, a card's
-        // clicks only for a plain tap on it: what the finger is (a tap, or a
-        // swipe, a pull, a long press, a press on the shell's controls) is
-        // the shell's to say, read before the shell handles the event. The
-        // shell keeps each card's open button for itself.
+        // Phone Glance paints summaries without generated widgets. A plain
+        // tap promotes the exact publication above the feed into a workspace.
         if self.state.is_some() && self.state_mut().style.target.mobile() {
             let claimed = self.phone_gestures.current().is_some();
             let phone = &self.state_mut().phone;
-            let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open();
+            let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open() && !phone.card_open;
             let finger = mobile_pages::GlanceFinger::of(event, phone.gesture.as_ref(), claimed, phone.touch);
-            if showing || !event.requires_visibility() {
-                let changed = self.desk(cx).borrow_mut::<WmDesk>().is_some_and(|mut desk| desk.phone_ui.glance_cards.handle_event(cx, event, finger));
-                if changed {
-                    self.redraw_all(cx);
+            if showing {
+                if let mobile_pages::GlanceFinger::Tap(at) = finger {
+                    let key = self.desk(cx).borrow::<WmDesk>().and_then(|desk| desk.phone_ui.glance_cards.under(at).map(str::to_owned));
+                    if let Some(key) = key {
+                        // Finish the Home gesture, then promote the exact publication.
+                        // Preview controls never edit or dispatch inside the feed.
+                        self.phone_pointer(cx, event);
+                        self.open_glance_card(cx, &key);
+                        return;
+                    }
                 }
             }
+
         }
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
@@ -6755,6 +6799,15 @@ impl App {
         if let Event::Signal = event {
             if self.state.is_some() {
                 self.system_chat_changed(cx);
+                // Review requested from Glance or the native Mail composer:
+                // always use the same host-owned region in the card sheet.
+                if let Some(key) = mail_card::requested_card() {
+                    let already_open = self.ui.widget(cx, ids!(shell_glance_sheet))
+                        .borrow::<glance_sheet::ShellGlanceSheet>()
+                        .is_some_and(|s| s.open_key() == Some(key.as_str()));
+                    if !already_open { self.open_glance_card(cx, &key); }
+                    self.redraw_all(cx);
+                }
             }
             // A card was published, replaced or withdrawn (glance.rs).
             if glance::generation() != self.glance_generation && self.state.is_some() {
@@ -6795,6 +6848,7 @@ impl App {
             self.drain_pane_links(cx);
         }
 
+        self.sync_glance_presentation(cx);
         self.match_event(cx, event);
         if let Some(state) = self.state.as_mut() {
             let mut scope = Scope::with_data(state);
@@ -6802,6 +6856,7 @@ impl App {
         } else {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
+        self.sync_glance_presentation(cx);
         // A focus that couldn't land at launch (tile not yet drawn) is
         // re-asserted for a process tile when its first frame arrives
         // (PresentableDraw). A module tile sends no frame, so retry after the

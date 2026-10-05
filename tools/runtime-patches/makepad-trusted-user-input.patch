@@ -1,0 +1,271 @@
+diff --git a/platform/src/input_provenance.rs b/platform/src/input_provenance.rs
+new file mode 100644
+index 000000000..371b5401b
+--- /dev/null
++++ b/platform/src/input_provenance.rs
+@@ -0,0 +1,103 @@
++//! Input provenance for host-owned approval controls.
++//!
++//! Only the Android native touchscreen path currently establishes trust. Other
++//! platforms, remote input and synthetic dispatch default to false. This is an
++//! app-level boundary, not attestation against a compromised OS/root process
++//! that can impersonate a physical input device.
++use std::cell::Cell;
++
++thread_local! {
++    static TRUSTED: Cell<bool> = const { Cell::new(false) };
++}
++
++/// True only during a verified native input's synchronous application handler.
++/// This is not a persistent approval token; hosts must bind the actual gesture
++/// and reviewed operation. Script tasks and subsequent actions are untrusted.
++pub fn trusted_user_input() -> bool {
++    TRUSTED.with(Cell::get)
++}
++
++/// Run synthetic/direct-widget input without inheriting a surrounding native
++/// gesture. This API can remove trust but cannot create it.
++pub fn with_untrusted_input<R>(f: impl FnOnce() -> R) -> R {
++    let _guard = InputTrustGuard::enter(false);
++    f()
++}
++
++pub(crate) struct InputTrustGuard(bool);
++impl InputTrustGuard {
++    pub(crate) fn enter(trusted: bool) -> Self {
++        Self(TRUSTED.with(|value| value.replace(trusted)))
++    }
++}
++impl Drop for InputTrustGuard {
++    fn drop(&mut self) {
++        TRUSTED.with(|value| value.set(self.0));
++    }
++}
++
++/// Android MotionEvent metadata. Missing/virtual devices, non-touch sources,
++/// obscured windows and cancellation never establish approval provenance.
++#[cfg(any(target_os = "android", test))]
++pub(crate) fn android_touch_is_trusted(
++    device_id: i32,
++    physical_device: bool,
++    source: i32,
++    flags: i32,
++    action: i32,
++) -> bool {
++    const SOURCE_TOUCHSCREEN: i32 = 0x1002;
++    const OBSCURED: i32 = 0x1 | 0x2;
++    device_id > 0
++        && physical_device
++        && source & SOURCE_TOUCHSCREEN == SOURCE_TOUCHSCREEN
++        && flags & OBSCURED == 0
++        && matches!(action, 0 | 1 | 2 | 5 | 6)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn synthetic_nested_dispatch_cannot_inherit_native_trust() {
++        assert!(!trusted_user_input());
++        {
++            let _native = InputTrustGuard::enter(true);
++            assert!(trusted_user_input());
++            with_untrusted_input(|| {
++                assert!(!trusted_user_input());
++                with_untrusted_input(|| assert!(!trusted_user_input()));
++            });
++            assert!(trusted_user_input());
++        }
++        assert!(!trusted_user_input());
++    }
++
++    #[test]
++    fn unwind_restores_previous_scope_and_threads_do_not_share_trust() {
++        let _native = InputTrustGuard::enter(true);
++        assert!(!std::thread::spawn(trusted_user_input).join().unwrap());
++        let result = std::panic::catch_unwind(|| with_untrusted_input(|| panic!("test")));
++        assert!(result.is_err());
++        assert!(trusted_user_input());
++    }
++
++    #[test]
++    fn android_requires_physical_unobscured_touch_and_never_cancel() {
++        for action in [0, 1, 2, 5, 6] {
++            assert!(android_touch_is_trusted(4, true, 0x1002, 0, action));
++        }
++        for (id, physical, source, flags, action) in [
++            (0, true, 0x1002, 0, 1),
++            (-1, true, 0x1002, 0, 1),
++            (4, false, 0x1002, 0, 1),
++            (4, true, 0x2002, 0, 1),
++            (4, true, 0x1002, 1, 1),
++            (4, true, 0x1002, 2, 1),
++            (4, true, 0x1002, 0, 3),
++        ] {
++            assert!(!android_touch_is_trusted(id, physical, source, flags, action));
++        }
++    }
++}
+diff --git a/platform/src/lib.rs b/platform/src/lib.rs
+index 2b1f2ffb6..6e041dd51 100644
+--- a/platform/src/lib.rs
++++ b/platform/src/lib.rs
+@@ -1,4 +1,6 @@
+ //#![cfg_attr(all(unix), feature(unix_socket_ancillary_data))]
++mod input_provenance;
++pub use input_provenance::{trusted_user_input, with_untrusted_input};
+ pub mod gl_render_bridge;
+ pub mod home;
+ pub mod archive_cache;
+diff --git a/platform/src/os/cx_shared.rs b/platform/src/os/cx_shared.rs
+index 2ff06e69a..d11b9b962 100644
+--- a/platform/src/os/cx_shared.rs
++++ b/platform/src/os/cx_shared.rs
+@@ -1238,6 +1238,11 @@ pub(crate) fn handle_pending_clear_hover(&mut self) {
+     }
+ 
+     pub(crate) fn call_event_handler(&mut self, event: &Event) {
++        self.call_event_handler_with_input_trust(event, false);
++    }
++
++    pub(crate) fn call_event_handler_with_input_trust(&mut self, event: &Event, trusted: bool) {
++        let _untrusted = crate::input_provenance::InputTrustGuard::enter(false);
+         let _phase = crate::thread::ui_event_phase(event);
+         if self.event_dispatch_is_reentrant(event) {
+             return;
+@@ -1305,7 +1310,10 @@ pub(crate) fn call_event_handler(&mut self, event: &Event) {
+         if let Event::PermissionResult(result) = event {
+             self.handle_camera_permission_result(result);
+         }
+-        self.inner_call_event_handler(event);
++        {
++            let _native = crate::input_provenance::InputTrustGuard::enter(trusted);
++            self.inner_call_event_handler(event);
++        }
+         // Dispatch any synthetic geom changes queued during the original
+         // handler (e.g. runtime dpi_override updates) before triggers and
+         // actions, so layout-dependent reactions see the new geometry.
+diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
+index de787641c..8d910fc7b 100644
+--- a/platform/src/os/linux/android/android.rs
++++ b/platform/src/os/linux/android/android.rs
+@@ -430,7 +430,7 @@ pub fn main_loop(&mut self, from_java_rx: mpsc::Receiver<FromJavaMessage>) {
+                             FromJavaMessage::Wake => continue,
+                             _ => {}
+                         }
+-                        if let FromJavaMessage::Touch { ref touches, cancelled } = msg {
++                        if let FromJavaMessage::Touch { ref touches, cancelled, .. } = msg {
+                             if !cancelled && touches
+                                 .iter()
+                                 .all(|t| t.state == crate::event::finger::TouchState::Move)
+@@ -929,7 +929,7 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+                 });
+                 self.call_event_handler(&e);
+             }
+-            FromJavaMessage::Touch { mut touches, cancelled } => {
++            FromJavaMessage::Touch { mut touches, cancelled, trusted } => {
+                 if touches.is_empty() { return; }
+                 let time = touches[0].time;
+                 let window = &self.windows[CxWindowPool::id_zero()];
+@@ -962,7 +962,7 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+                     touches,
+                     modifiers: Default::default(),
+                 });
+-                self.call_event_handler(&e);
++                self.call_event_handler_with_input_trust(&e, trusted && !cancelled);
+                 let e = if let Event::TouchUpdate(e) = e {
+                     e
+                 } else {
+diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
+index 1ae0c3e61..2f3608350 100644
+--- a/platform/src/os/linux/android/android_jni.rs
++++ b/platform/src/os/linux/android/android_jni.rs
+@@ -128,7 +128,7 @@ pub enum FromJavaMessage {
+         // The SystemClock time (in seconds) when the LongClick occurred.
+         time: f64,
+     },
+-    Touch { touches: Vec<TouchPoint>, cancelled: bool },
++    Touch { touches: Vec<TouchPoint>, cancelled: bool, trusted: bool },
+     Character {
+         character: u32,
+     },
+@@ -1152,13 +1152,54 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
+     _: jni_sys::jclass,
+     event: jni_sys::jobject,
+ ) {
++    // Never turn a missing object or Java failure into a positive hardware
++    // result. Preserve pending exceptions for the Java caller; enqueue no input.
++    if env.is_null() || event.is_null() {
++        return;
++    }
++    let java_failed = || unsafe { (**env).ExceptionCheck.unwrap()(env) != 0 };
++    if java_failed() {
++        return;
++    }
+     let action_masked =
+         unsafe { ndk_utils::call_int_method!(env, event, "getActionMasked", "()I") };
++    let device_id = unsafe { ndk_utils::call_int_method!(env, event, "getDeviceId", "()I") };
++    let source = unsafe { ndk_utils::call_int_method!(env, event, "getSource", "()I") };
++    let flags = unsafe { ndk_utils::call_int_method!(env, event, "getFlags", "()I") };
++    if java_failed() {
++        return;
++    }
++    let device = unsafe {
++        ndk_utils::call_object_method!(env, event, "getDevice", "()Landroid/view/InputDevice;")
++    };
++    if java_failed() {
++        if !device.is_null() {
++            unsafe { (**env).DeleteLocalRef.unwrap()(env, device); }
++        }
++        return;
++    }
++    let physical_device = if device.is_null() {
++        false
++    } else {
++        let virtual_device = unsafe { ndk_utils::call_bool_method!(env, device, "isVirtual", "()Z") } != 0;
++        unsafe { (**env).DeleteLocalRef.unwrap()(env, device); }
++        if java_failed() {
++            return;
++        }
++        !virtual_device
++    };
++    let trusted = crate::input_provenance::android_touch_is_trusted(
++        device_id, physical_device, source, flags, action_masked,
++    );
+     let action_index = unsafe { ndk_utils::call_int_method!(env, event, "getActionIndex", "()I") };
+     let touch_count = unsafe { ndk_utils::call_int_method!(env, event, "getPointerCount", "()I") };
+ 
+     let time = unsafe { ndk_utils::call_long_method!(env, event, "getEventTime", "()J") } as i64;
+ 
++    if java_failed() || !(1..=32).contains(&touch_count)
++        || !(0..touch_count).contains(&action_index) {
++        return;
++    }
+     let mut touches = Vec::with_capacity(touch_count as usize);
+     for touch_index in 0..touch_count {
+         let id =
+@@ -1208,7 +1249,10 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
+             time: time as f64 / 1000.0,
+         });
+     }
+-    send_from_java_message(FromJavaMessage::Touch { touches, cancelled: action_masked == 3 });
++    if java_failed() {
++        return;
++    }
++    send_from_java_message(FromJavaMessage::Touch { touches, cancelled: action_masked == 3, trusted });
+ }
+ 
+ #[no_mangle]
+diff --git a/platform/src/remote.rs b/platform/src/remote.rs
+index 6b0d6a6a3..4d348fa72 100644
+--- a/platform/src/remote.rs
++++ b/platform/src/remote.rs
+@@ -997,6 +997,7 @@ pub(crate) fn next_grab_deadline() -> Option<Instant> {
+     }
+ 
+     fn poll_with_present(cx: &mut Cx, mut present: impl FnMut(&mut Cx, WindowId) -> Option<bool>) -> bool {
++        let _untrusted = crate::input_provenance::InputTrustGuard::enter(false);
+         if !ACTIVE.load(Ordering::Relaxed) {
+             return false;
+         }

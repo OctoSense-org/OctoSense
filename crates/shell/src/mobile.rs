@@ -34,6 +34,8 @@ pub enum PhoneHit {
     Scrub,
     /// A published card on the glance page: open the app that published it.
     Glance(String),
+    /// A host-bound Mail card: expand this exact publication, not the full app.
+    ExpandGlance(String),
     /// The assistant chip on the home page: the system chat (#143).
     Assistant,
 }
@@ -64,11 +66,18 @@ pub struct PhoneGesture {
     /// The gesture recognizer (mobile_gestures.rs) claimed this finger: it
     /// started in a shell band, or in the home page body.
     pub shell: bool,
+    /// A vertical Glance drag owns the rest of this touch, even if it
+    /// returns to its starting point before release.
+    pub glance_scroll: bool,
     pub screen: PhoneScreen,
 }
 
 #[derive(Clone)]
 pub struct PhoneState {
+    /// The card workspace owns input, including during its transition.
+    pub card_open: bool,
+    /// Only the settled opaque workspace suppresses background drawing.
+    pub card_covers_home: bool,
     pub theme: Option<crate::mobile_theme::Selection>,
     pub navigation: crate::mobile_navigation::FloatingNavigation,
     pub android: crate::android_integration::AndroidState,
@@ -167,7 +176,7 @@ pub struct PhoneState {
 }
 impl Default for PhoneState {
     fn default() -> Self {
-        Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, return_to: None, order: Vec::new(),
+        Self { card_open: false, card_covers_home: false, clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, return_to: None, order: Vec::new(),
             navigation: Default::default(), theme: None,
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
@@ -209,8 +218,13 @@ impl PhoneState {
         // and a search's keyboard is made room for before that resize, so
         // the bubble clears the lifted search bar (`search_keyboard_lift`).
         let lift = self.search_keyboard_lift(crate::host::now());
-        Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x,
-            (self.viewport.size.y - self.keyboard - lift).max(1.0)) }
+        let height = (self.viewport.size.y - self.keyboard - lift).max(1.0);
+        // Keep the app-local navigation in Glance's reserved header. Its
+        // normal mid-screen position otherwise obscures live card content.
+        let height = if self.screen == PhoneScreen::Home && self.pages.on_glance() {
+            height.min(crate::mobile_pages::GLANCE_HEADER)
+        } else { height };
+        Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x, height) }
     }
     pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
         self.native_keyboard=match event {
@@ -345,6 +359,7 @@ impl PhoneState {
         // open and comes back as it closes.
         self.island.set_shade_open(self.shade.wants_open());
         active |= self.pages.step_with_motion(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None }, reduced);
+        active |= self.pages.step_glance(dt, self.viewport.size.y, self.gesture.is_none() && self.screen == PhoneScreen::Home, reduced);
         if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
     }

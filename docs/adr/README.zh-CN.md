@@ -14,6 +14,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 | [0004](0004-native-apps-hosting-and-peers.md)（英文） | 原生应用、应用智能体与跨应用协作：一份清单、按目标平台托管、每个应用都有智能体、由本人批准 | 已实施 |
 | [0005](0005-app-contract.md)（英文） | 应用契约：App Hub 与每个应用之间一个小而带版本的接口 | 已实施 |
 | [0006](0006-app-studio-on-the-phone.md)（英文） | 手机上的 App Studio | 已接受 |
+| [0007](0007-composable-mail-action-cards.zh-CN.md) | 可组合的 Mail 卡片：编辑、聊天与经批准的操作 | 实现中；手机验收待完成 |
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 

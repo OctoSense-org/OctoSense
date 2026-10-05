@@ -133,7 +133,22 @@ The broker's `driver_of` and `take_over` handle multiple native instances sharin
 | A script app's own chat | Exact granted `octos.session.open`, `octos.session.history`, `octos.turn.start`, `octos.turn.interrupt` calls through `host.request`. The shipped system-app agents are shell-driven without their scripts declaring these calls. |
 | A published card's chat | `sys.chat` → [l0-chat](../crates/l0-chat/src/lib.rs) and [glance_chat.rs](../crates/shell/src/glance_chat.rs). Publisher checks bind it to the card's owning app. |
 
-The shipped `<app>.notify`, `calendar.notify` and `calendar.agenda` templates contain no `sys.chat`; their agents are reached through “Ask <app>”. The `OCTOSENSE_GLANCE_DEMO=mail` demonstration card has chat but uses canned replies (`glance_chat::HostResponder`). The card-chat route above applies to a card that declares `sys.chat`.
+Phone Glance renders compact summaries without executing generated UI. A tap uses that summary's screen rectangle to reveal `glance_sheet.rs` above the feed at full viewport size. `card_presentation.rs` owns the reversible Makepad frame animation; it does not spawn Tokio tasks, launch an app or change the app peer. Email and Chat share one row. The original email and directly editable draft are in `mail_clip.rs`; `card_chat.rs` virtualizes the transcript and pins the native composer above the keyboard. Both panes use the same authoritative draft. `chat_submit` checks the declared `sys.chat` source, publisher, account and thread, then issues a one-use editing capability for the saved draft revision. Mail consumes it through `mail.suggest_reply`; without it, the tool only proposes a suggestion. This never authorizes sending. Dismissal preserves the resident widgets/session and revokes pending review authority; retained clean workspaces are bounded, and invalidated accounts/publications are retired. Final sending still requires physical approval of the exact host review.
+
+The shared workspace also hosts Calendar, News, Photos, YouTube and other publishers. When an agent-enabled publisher omits `sys.chat`, `L0Session::for_card` adds a host-owned Card / Chat conversation without rewriting its L0 or Splash source. `ContextKind::Card` carries bounded publication data and current L0 state, scoped to the original publication account and a stable card thread. It grants no Mail edit token or additional tools. First use opens the existing permission sheet through Enable assistant; a publisher without an agent has no Chat tab. Existing explicit `sys.chat` declarations keep their threads. Thus shipped notice and Calendar cards can use native workspace chat as well as desktop “Ask <app>”. The explicit `OCTOSENSE_GLANCE_DEMO=mail` chat remains canned. Local L0 changes and interacted Splash isolates are exempt from clean-cache eviction; stale accounts cannot reopen their old publications.
+
+A bound Mail reply card adds a durable host path: `mail.propose_reply` creates
+an account/email-bound draft, and `mail.publish_card` carries its `draft_id`.
+`mail_card.rs` answers `sys.mail_draft` and checks Field-origin edits against the
+displayed revision. Its `sys.mail_review` write requests the host's
+`mail_review.rs` UI, never approval. `drafts.rs` owns the immutable attempt and
+SMTP receipt; the agent cannot send directly. Chat includes the bound email,
+acknowledged draft and bounded history in the existing Mail peer. Only verified
+Android physical touch can approve in this iteration; desktop/accessibility
+approval and complete paired-model phone acceptance remain pending. Follow the
+[implementation and gate table](mail-composable-cards.md) before treating the
+new flow as validated.
+
 
 Phone touch navigation does not yet expose a control to open the Ask-app panel. App-owned chat and published-card chat remain separate surfaces.
 
@@ -210,7 +225,7 @@ For the Calendar question, the executor reads `calendar/events.json` under Calen
 | App | Current data/tool boundary |
 | --- | --- |
 | News | `news.list`, `news.read` and `news.notify` |
-| Mail | Account-scoped accounts/folders/sync/list/peek, notify/publish_card and explicit event skip; no send or credential tool |
+| Mail | Account-scoped accounts/folders/sync/list/peek, notify/publish_card/skip_event, plus propose_reply/draft/suggest_reply/propose_send; no send, approve or credential tool |
 | Photos, Maps, Camera, YouTube | Only their own `<app>.notify`, publishing a shared notice card through [glance_notice.rs](../crates/shell/src/glance_notice.rs) |
 | AI providers | No app agent |
 

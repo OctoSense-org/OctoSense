@@ -4,6 +4,8 @@
 
 OctoSense 的进程、Agent、工具、审批、存储与信任边界。具体调用和所有权见[代码导读](architecture-walkthrough.zh-CN.md)。依赖版本以 [Cargo.toml](../Cargo.toml) 和 [native-runtime.lock.json](../native-runtime.lock.json) 为准；下方带日期的设计记录保留早期决策。
 
+**Mail 回复实现：** [ADR0007](adr/0007-composable-mail-action-cards.zh-CN.md) 的草稿／编辑／聊天／审核适配器已在源码中实现。Mail Agent 可以提议草稿与审核，不能批准或发送。开发者模式也必须经过宿主审核控件；当前只有 Android 实体触摸能授权。[当前代码与验证条件](mail-composable-cards.zh-CN.md)取代下文较早的 Mail 演示／发送路径描述。其中记录了 OnePlus 6 上 DeepSeek 与 MiniMax 的限定范围测试；完整设备／UX 矩阵和桌面／无障碍发送审批仍未完成。
+
 每条陈述都标明状态：
 
 - **已在 main**：已合入，在本仓库代码中读过（给出路径）。
@@ -142,7 +144,7 @@ Shell 在运行时如何决定（`crates/shell/src/apps.rs`，`AppRegistry::host
 
 ### 脚本应用
 
-脚本应用（系统应用 News、Photos、Maps、Mail、AI providers 和 YouTube，加上仅桌面端的 Calendar 和仅手机上的 Camera，来自 `desktop/system-apps.json` 和 `phone/system-apps.json`，以及商店应用）是 OctoScript 应用包。它们都在进程内、在 App Hub 的 **Card runner**（`octosense-app-hub-app` 的 `CARD_MODULE`）中运行：每个应用实例一个嵌套隔离环境，去掉了 `mod.res` 和 `mod.run`，有 jail 和配额。应用只能通过 `host.request("<family>.<method>", …)` 调用其清单获授权的服务族来访问 Shell。脚本的错误只会在它自己的隔离环境中失败。**已在 main。**
+脚本应用（系统应用 News、Photos、Maps、Mail、Calendar、AI providers 和 YouTube，加上仅手机上的 Camera，来自 `desktop/system-apps.json` 和 `phone/system-apps.json`，以及商店应用）是 OctoScript 应用包。它们都在进程内、在 App Hub 的 **Card runner**（`octosense-app-hub-app` 的 `CARD_MODULE`）中运行：每个应用实例一个嵌套隔离环境，去掉了 `mod.res` 和 `mod.run`，有 jail 和配额。应用只能通过 `host.request("<family>.<method>", …)` 调用其清单获授权的服务族来访问 Shell。脚本的错误只会在它自己的隔离环境中失败。**已在 main。**
 
 ```mermaid
 flowchart TB
@@ -278,13 +280,15 @@ Agent 的工具来源：
 
 | 来源 | 示例 | 在哪里运行 | 状态 |
 | --- | --- | --- | --- |
-| 应用自己的工具（`tools.json`：名称 `<app>.<tool>`、schema、`risk`、`confirm: host` 或 `app`、`shareable`） | `news.list`、`terminal.read_screen`、`mail.notify`、`calendar.add_event` | 应用的宿主服务、模块或进程（或 Shell 的通知服务），由 Shell 调用 | 已在 main（`crates/shell/src/host_tools/`）：原生应用从 `native-apps.json` 的 `agent.tools` 声明，脚本应用从准入后应用包的 `tools.json` 声明（`host_tools/script_apps.rs`，使用 App Hub 的加载器）；按（所属应用，工具）和调用方授权，参数和结果按声明的 schema 检查，计入预算，盖上账号、上下文和客户端，并路由到进程应用的 peer link、进程内模块的执行器（`OctosAppService::set_tool_executor`）、脚本应用的宿主服务（`HostServiceExecutor`：工具命名空间对应的服务，应用的清单必须获授权该服务，系统应用自己的命名空间除外，例如 Calendar 的 `calendar`）或 Terminal 的 AI 总线服务。News 提供 `news.list`、`news.read` 和 `news.notify`；Mail 提供 `mail.notify`；Calendar 提供 `calendar.events`、`calendar.add_event`、`calendar.remove_event`（破坏性，`confirm: host`）、`calendar.notify` 和 `calendar.agenda`；Photos、Maps、YouTube 和 Camera 提供 `<app>.notify`，由 Shell 的通知服务执行；Terminal 提供 `terminal.run` 及其读取工具 |
+| 应用自己的工具（`tools.json`：名称 `<app>.<tool>`、schema、`risk`、`confirm: host` 或 `app`、`shareable`） | `news.list`、`terminal.read_screen`、`mail.notify`、`calendar.add_event` | 应用的宿主服务、模块或进程（或 Shell 的通知服务），由 Shell 调用 | 已在 main（`crates/shell/src/host_tools/`）：原生应用从 `native-apps.json` 的 `agent.tools` 声明，脚本应用从准入后应用包的 `tools.json` 声明（`host_tools/script_apps.rs`，使用 App Hub 的加载器）；按（所属应用，工具）和调用方授权，参数和结果按声明的 schema 检查，计入预算，盖上账号、上下文和客户端，并路由到进程应用的 peer link、进程内模块的执行器（`OctosAppService::set_tool_executor`）、脚本应用的宿主服务（`HostServiceExecutor`：工具命名空间对应的服务，应用的清单必须获授权该服务，系统应用自己的命名空间除外，例如 Calendar 的 `calendar`）或 Terminal 的 AI 总线服务。News 提供 `news.list`、`news.read` 和 `news.notify`；Mail 提供账户绑定读取、草稿／提议工具、`mail.notify` 和 `mail.publish_card`（完整列表见 `apps/mail/bundle/tools.json`）；Calendar 提供 `calendar.events`、`calendar.add_event`、`calendar.remove_event`（破坏性，`confirm: host`）、`calendar.notify` 和 `calendar.agenda`；Photos、Maps、YouTube 和 Camera 提供 `<app>.notify`，由 Shell 的通知服务执行；Terminal 提供 `terminal.run` 及其读取工具 |
 | 系统工具箱，按能力授予（`research`、`crawl`） | `toolbox.search`、`toolbox.web_read`、`toolbox.deep_crawl`、`workflow.run` | 宿主（`crates/toolbox`） | 已在 main，位于 `toolbox-peers` 特性之后（[#151](https://github.com/OctoSense-org/OctoSense/pull/151)；手机构建默认开启，桌面端默认关闭；`crates/ai-host/src/toolbox_peers.rs`）：`research` 提供 `workflow.run`、`workflow.fork`、`toolbox.search` 和 `toolbox.web_read`，`crawl` 提供 `toolbox.deep_crawl`，只在用户同意后提供。在 App Hub 检查这些能力之前，脚本应用的声明只对系统应用有效，目前还没有应用声明其中任何一个 |
 | octos 的通用工具 | 限定在工作区内的文件读取、记忆、`web_search`、`deep_search` | octos | 已在 main 上按应用设置：每个 peer 注册时带着它被授予的精确 `generic_tools`（Rinx：工作区文件、`ask_user_question`、记忆、网页）；没有授予的应用一个也没有；octos 的 `shell` 从不在其中（生成器、目录和脚本加载器都会去掉它），`_main` profile 的 `tool_policy` 也拒绝它 |
 | 其他应用可共享的工具，由 Shell 路由 | Calendar 的 Agent 调用 Mail 的 `mail.send`（规划中：Mail 还没有声明这个工具） | 所属应用，经 Shell | 已在 main（`relay::Catalog`）：按（所属应用，工具）授予，原生应用来自 `native-apps.json` 的 `agent.grants`，脚本应用来自其 `agent.tools` 中带点的名称（安装时）；注册时标明所属应用，每次调用都检查。News 的 `news.list` 和 `news.read` 是可共享的，但还没有应用申请其他应用的工具 |
 | 命令执行 | `terminal.run`（Terminal 的可共享工具：`confirm: host`、`auto_approvable: false`） | 宿主工具，在用户可见的终端中 | 系统 Agent 已在 main：Setup › Assistant › Command execution 开启、且 Terminal 作为自己的沙箱进程运行时（它最近一次启动在其操作系统沙箱中运行：macOS，以及有 Vulkan 和 Wayland 的 Linux；Windows 不行，它的沙箱尚未实现），注册在其会话上，每次调用经路由作为命令实时批准，输入到正在运行的 Terminal。进程内 Terminal 只提供读取工具，并按 ADR 0004 §10（2026-09-29 决定）保持只读。授予应用 Agent 属于步骤 11 |
 
-**Agent 放到 glance 屏幕上的内容**（[#267](https://github.com/OctoSense-org/OctoSense/pull/267)、[#273](https://github.com/OctoSense-org/OctoSense/pull/273)、[#274](https://github.com/OctoSense-org/OctoSense/pull/274)）。**已在 main。** 每个 `<app>.notify` 都填充 Shell 的同一张通知卡片（`crates/shell/resources/glance/notice.card`、`crates/shell/src/glance_notice.rs`）：应用的图标和名称由 Shell 填入，标题和正文来自调用，同一个 `card_id` 会替换该应用之前的通知。Mail 和 News 的宿主服务把 `notify` 交给它；没有自己服务的应用由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充 Calendar 自己的 `event.card` 和 `agenda.card`（`apps/calendar/host-service/resources/`）。模型只写文字，从不编写卡片代码。每张卡片都经 glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份发布，前提是它的清单获准使用 `glance`（`glance::publish_for`），并发出一条通知。在桌面端，通知是一个 toast，点击它会在单独的卡片窗口中打开这张卡片（`glance_sheet.rs`）；每来一张新卡片，glance 面板（`glance_panel.rs`，顶栏的铃铛、F9）也会打开，除非卡片窗口已经打开，而 toast 叠放在打开的面板左侧（`crates/shell/src/shell/notifications.rs`，`keep_clear_of`）。鼠标悬停的卡片会显示一个移除按钮（`glance::dismiss`），移除可以撤销（[#290](https://github.com/OctoSense-org/OctoSense/pull/290)）。在手机上，通知是通知栏中的一条通知，点击它会打开 glance 页面。这些卡片都没有声明卡内对话（`sys.chat`）；唯一带对话的内置卡片是 `OCTOSENSE_GLANCE_DEMO=mail` 的演示卡片（`crates/shell/resources/glance/mail-request.card`），它的对话用固定的演示回复作答。
+**Agent 放到 Glance 屏幕上的内容。** `<app>.notify` 填充宿主的固定通知模板（`crates/shell/resources/glance/notice.card`）；Calendar 的 `notify` 与 `agenda` 填充其日程／议程模板，这些工具由模型提供文字。Mail 另有 `mail.publish_card`，接收模型编写的 L0 源码，并可附加宿主签发的草稿绑定。发布仍要求调用应用获得 `glance` 准入；重复卡片 ID 替换该应用的原发布。
+
+手机通知在当前屏幕上方打开准确对应的卡片工作区；过期卡片回退到 Glance。紧凑摘要不执行生成界面，点击后驻留工作区展开到根安全视口，无须启动另一个应用。有 Agent 的发布者即使在 L0 或 Splash 源码中没有 `sys.chat`，也能使用原生 Card / Chat；宿主把有大小限制的发布信息和 L0 状态绑定到原账户。Mail 专用 Email / Chat 读取同一持久草稿，发送另经宿主审核。显式 `sys.chat` 保留声明的线程；显式 Mail 演示仍使用固定回复。桌面 toast、Glance 面板及移除／撤销保留原有入口。代码和实机证据见[卡片工作区导读](mail-composable-cards.zh-CN.md#所有发布者共用的卡片工作区)。
 
 **系统 Agent 的工具集**（`crates/kernel/src/system_tools.rs`，[#117](https://github.com/OctoSense-org/OctoSense/pull/117)）。**已在 main**，已生效：
 
@@ -299,7 +303,7 @@ Agent 的工具来源：
 
 **授权不等于审批。** 授权表示 Agent 可以*拥有*某个工具；审批表示*这一次*调用、带着这些确切参数，可以执行。只读和应用内操作类工具授权后即可运行；对外或破坏性的调用（发送、发布、分享、购买、删除、运行命令）需要用户实时批准或由常设规则批准。只有用户能批准；系统 Agent 从不批准，Agent 自己输出的文字也从不作为审批界面（ADR 0004 §8）。
 
-**Agent 的工具调用，而不是用户自己的操作。** 审批路由和 Shell 的面板管的是 Agent 的工具调用（`peer/tool/call`）。用户在应用自己的界面中所做的操作，包括它在 glance 屏幕上和通知背后的卡片，都是应用自己的操作：在应用的策略下，经 Card runner 的服务关口和各宿主服务自己的检查运行，Shell 不再另加审批（ADR 0004 §4 和 §8，2026-09-29 决定；卡片操作的安全加固推迟）。应用可以画出貌似审批卡片的界面，但只有 Shell 的宿主连接能回答 `approval/respond`。自 [#153](https://github.com/OctoSense-org/OctoSense/pull/153) 起**已在 main**：每个 glance 磁贴都在自己的隔离环境中、按发布应用解析后的策略运行，并接受输入（`crates/shell/src/glance_card.rs`），它的 `host.request` 调用以该应用的身份经过 Card runner 的关口。脚本卡片的处理函数在它被绘制的任何地方都会运行。L0 卡片的点按和字段编辑在桌面端的卡片窗口（`glance_sheet.rs`，从卡片的 toast 打开）和 glance 面板中运行，两者走同一条路径（`glance_card.rs` 的 `LiveCards`，[#278](https://github.com/OctoSense-org/OctoSense/pull/278)）；在手机的 glance 页面上，它们不起作用。
+**Agent 工具调用与用户操作。** 审批路由处理 `peer/tool/call`；普通应用 UI 操作按发布者策略经过 Card runner 服务关口及宿主服务检查。Mail 发送还必须经过宿主拥有的确切邮件审核及 Android 实体批准，包括旧版编辑器的发送入口；生成按钮、开发者模式及常设规则都不能授权 SMTP。仿冒卡片不能回答 `approval/respond` 或获得 Mail 审核凭证。生成卡片在发布者策略下的隔离环境中运行。L0 操作由 `glance_card::LiveCards` 分发；手机上只在展开工作区中执行，收起的摘要不执行这些操作。
 
 **审批路由**（`crates/shell/src/approvals/router.rs`，[#120](https://github.com/OctoSense-org/OctoSense/pull/120)）是 Shell 中唯一回答审批请求的地方，依据的是确切参数。**已在 main。** 对每个请求依次：
 
@@ -407,7 +411,7 @@ flowchart TB
 
 ## 8. 完整示例：用邮件发送会议邀请
 
-此 ADR 0004 示例组合了已实现的 Calendar 操作与**规划中的 Mail 发信工具**。Calendar（仅桌面端）已提供 `calendar.add_event`；Mail 当前只向 Agent 暴露 `mail.notify`。完成流程还需要声明可共享的 `mail.send`、准入与调用方授权，以及执行器。下方的 broker、relay 与审批机制已经实现。
+这是 **ADR 0004 的历史草图，不是已实现的发信流程**。Calendar 提供 `calendar.add_event`；Mail 现有账户绑定读取、草稿／提议操作和卡片发布，但没有声明可共享的 Agent 工具 `mail.send`。ADR0007 已取代草图中假设的常设规则发信方式：当前 Mail 必须由用户实体批准确切的宿主审核。下图只说明当时提出的跨应用中继形态，不代表当前 Mail 的审批契约。实际回复流程见[组合 Mail 卡片](mail-composable-cards.zh-CN.md)。
 
 ```mermaid
 sequenceDiagram
@@ -443,12 +447,12 @@ sequenceDiagram
 | 步骤 | 发生什么 | 状态 |
 | --- | --- | --- |
 | 1 | 用户在系统对话 `_main:api:octosense#system` 中向系统 Agent 提出请求。 | 已在 main：Shell 的系统对话（[#132](https://github.com/OctoSense-org/OctoSense/pull/132)），或已配对的 Talk to Octos 客户端（系统助手面板与应用的 Makepad `aichat` 总线接口分别实现） |
-| 2 | 系统 Agent 做计划。有歧义就提问，不去猜（“两个 Edward？”）；有限的读取可以直接调用获授权的工具。需要 Calendar 自己判断的工作用 `peer_send_input` 交给 Calendar 的 Agent；如果用户还没有允许 Calendar 的 Agent，`agents.ask` 会向用户显示首次使用面板并等待回答。 | `peer_send_input`、`agents.list` 和 `agents.ask` 已在 main，relay 授权也已实现；系统 Agent 目前唯一的宿主工具授权是 `terminal.run`，此示例的 Mail 工具和授权仍在规划中 |
+| 2 | 系统 Agent 做计划。有歧义就提问，不去猜（“两个 Edward？”）；有限的读取可以直接调用获授权的工具。需要 Calendar 自己判断的工作用 `peer_send_input` 交给 Calendar 的 Agent；如果用户还没有允许 Calendar 的 Agent，`agents.ask` 会向用户显示首次使用面板并等待回答。 | `peer_send_input`、`agents.list` 和 `agents.ask` 已在 main，relay 授权也已实现；系统 Agent 的宿主工具见第 4 节，此示例的 Mail 工具和授权尚未实现 |
 | 3 | octos 把输入以 `peer/input` 送到 Shell；Shell 在 Calendar 的 peer 上用 `turn/start` 启动回合，使其带有 Calendar 的工具、记忆和账号上下文。如果 Calendar 的 peer 没有宿主连接，系统 Agent 会被告知该应用未连接。 | 已在 main（锁定版本含 [octos#2567](https://github.com/octos-org/octos/pull/2567)；由 broker 启动回合） |
-| 4 | Calendar 的 Agent 调用 `calendar.add_event`（自己的工具，`act`：运行时不弹面板），并为每位受邀者调用一次 Mail 可共享的 `mail.send`。每次调用都以 `peer/tool/call` 到达 Shell；Shell 盖上调用方（Calendar 的 Agent）、账号和上下文。 | Calendar 操作（仅桌面端；`calendar` 宿主服务把日程保存在 `<host_dir>/calendar/events.json`）与中继已实现；`mail.send` 规划中 |
+| 4 | Calendar 的 Agent 调用 `calendar.add_event`（自己的工具，`act`：运行时不弹面板），并为每位受邀者调用一次 Mail 可共享的 `mail.send`。每次调用都以 `peer/tool/call` 到达 Shell；Shell 盖上调用方（Calendar 的 Agent）、账号和上下文。 | Calendar 操作（`calendar` 宿主服务把日程保存在 `<host_dir>/calendar/events.json`）与中继已实现；`mail.send` 规划中 |
 | 5 | Shell 检查 Calendar 的清单是否获授权 `mail.send`（脚本应用在安装时授权）；不需要第二道 Agent 级别的同意。 | Relay 与 App Hub 准入检查已实现；此特定授权/工具尚不存在 |
 | 6 | `mail.send` 是对外的 `confirm: host` 工具，由审批路由处理：开发者模式未开启；不是 `confirm: app`；不是 `auto_approvable: false`；如果有针对（Mail，`mail.send`）的常设规则（例如“发给我的联系人”），就由规则批准（通知并审计；只有用户打开了“在审批规则中使用我的联系人”，联系人条件才会成立），否则一个合并的 Shell 面板列出每封邀请：所属应用 Mail、工具 `mail.send`、调用方应用 Calendar 以及确切参数。 | 路由、规则、面板和审计已在 main（[#120](https://github.com/OctoSense-org/OctoSense/pull/120)）；经中继由内核的 `host_tool` 审批提交请求，Calendar 的破坏性工具 `calendar.remove_event` 如今就走这条路径；`mail.send` 还在规划中 |
-| 7 | 批准后，Shell 把每次调用交给 Mail 的宿主服务，它用用户在 Mail 宿主面板上登录的账号发送（密码永远不会到达 Agent），并把结果以 `peer/tool/result` 返回内核。 | Mail 宿主服务已实现（它的 `mail.send` 方法服务于 Mail 自己的界面）；Agent 已有 `mail.notify`，`mail.send` 作为 Agent 工具仍在规划中 |
+| 7 | 批准后，Shell 把每次调用交给 Mail 的宿主服务，它用用户在 Mail 宿主面板上登录的账号发送（密码永远不会到达 Agent），并把结果以 `peer/tool/result` 返回内核。 | Mail 宿主服务已实现（旧版 `mail.send` 入口也要求宿主审核）；Agent 已有 `mail.notify`，`mail.send` 作为 Agent 工具仍在规划中 |
 | 8 | Calendar 的回合结束，octos 写入 `peers/<slug>/result.md` 和 `turns.txt`；系统 Agent 用 `peer_gather` 读取。失败的邀请会被点名，结果未知的邀请未经用户同意绝不重试。 | 黑板已在 main（octos） |
 | 9 | 系统 Agent 宣布“已预订周二下午 3 点；已向 3 人发送邀请”。Calendar 和 Mail 自己的界面会显示变化，因为它们的数据变了。 | 规划中：Calendar 自己的窗口还不能列出日程（它需要 App Hub 的 `calendar` 能力）；如今 `calendar.notify` 可以把日程放到 glance 屏幕上 |
 

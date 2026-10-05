@@ -142,6 +142,17 @@ pub enum Change {
 /// (`storage.accounts: false`) acts for the device, which never signs out.
 pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Option<&str>, current: Option<&str>) -> Change {
     let app = app_of(service_app);
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if app == "os.mail" && previous != current {
+        // Retire old capabilities before changing suspension/folder state.
+        // This takes the same short lock as the service's SMTP claim, never
+        // the network wait. A worker holding a removed Review cannot send.
+        let host_dir = storage.layout().apps_root().join(".host");
+        match previous {
+            Some(account) => octosense_mail_service::drafts::invalidate_reviews(&host_dir, account),
+            None => octosense_mail_service::drafts::invalidate_all_reviews(&host_dir),
+        }
+    }
     if !storage.spec(app).accounts {
         return Change::None;
     }
@@ -239,6 +250,9 @@ fn mail_account_storage(storage: &Arc<Storage>, event: &octosense_mail_service::
     match event {
         AccountEvent::Added { app_id, account } => account_changed(storage, app_id, None, Some(account)),
         AccountEvent::Removed { app_id, account } => {
+            if app_of(app_id) == "os.mail" {
+                octosense_mail_service::drafts::invalidate_reviews(&storage.layout().apps_root().join(".host"), account);
+            }
             if !storage.spec(app_id).accounts {
                 return Change::None;
             }
@@ -371,11 +385,31 @@ pub fn install(storage: &'static Arc<Storage>) {
     })));
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
+        octosense_mail_service::drafts::on_claim(Some(Arc::new(move |host_dir, app, account| {
+            mail_claim_allowed(storage, host_dir, app, account)
+        })));
         octosense_mail_service::on_account_event(Some(Arc::new(move |event| {
             mail_account(storage, &event);
         })));
         mail_secrets_at_startup(storage);
     }
+}
+
+/// Last check inside the Mail service's atomic send claim. It deliberately
+/// reads storage and account metadata only: no broker locks, draft calls, UI
+/// callbacks or networking. Account metadata writers hold the claim lock too.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn mail_claim_allowed(storage: &Storage, host_dir: &Path, app: &str, account: &str) -> Result<(), String> {
+    if app != "os.mail" || host_dir != storage.layout().apps_root().join(".host") {
+        return Err("The review does not belong to this Mail host".into());
+    }
+    if storage.is_signed_out(app, Some(account)) {
+        return Err("The Mail account is signed out; review is no longer valid".into());
+    }
+    if octosense_mail_service::active_account(host_dir, app).as_deref() != Some(account) {
+        return Err("The selected Mail account changed; review again under the original account".into());
+    }
+    Ok(())
 }
 
 /// Mail's passwords in the host's secrets (ADR 0004 §11), not under

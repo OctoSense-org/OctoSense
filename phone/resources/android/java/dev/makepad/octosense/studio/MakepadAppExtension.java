@@ -8,7 +8,7 @@ import dev.makepad.android.MakepadActivity;
  * The pinned activity looks up <application package>.MakepadAppExtension.
  * Keep the isolated Studio test APK on the same integration path as Home.
  */
-public final class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
+public class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
     private final dev.makepad.octosense.MakepadAppExtension delegate;
 
     public MakepadAppExtension(MakepadActivity activity) {

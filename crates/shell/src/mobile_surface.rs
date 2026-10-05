@@ -447,6 +447,7 @@ impl PhoneSurface {
         };
         Some(match hit {
             PhoneHit::App(id)|PhoneHit::TileApp(id)|PhoneHit::GroupApp(_,id)=>app_label(id),
+            PhoneHit::ExpandGlance(_)=>"Expand Mail card".into(),
             PhoneHit::Glance(id)=>format!("{}, card at a glance",app_label(id)),
             PhoneHit::Card(client)=>format!("{}, recent app",state.clients.get(client).map(|c|c.display_title().to_string()).unwrap_or_default()),
             PhoneHit::Home=>"Home".into(),
@@ -832,6 +833,9 @@ impl PhoneSurface {
                 if home {self.hits.push((r,PhoneHit::App(id.clone())));}
             }
         }
+        // Glance is a reading and editing surface. Home's pinned apps and
+        // page dots must not cover its cards, especially above a native IME.
+        if phone.pages.on_glance() { return; }
         let dock=Self::home_dock(screen);
         if ios {self.glass.draw_surface_with_backdrop(cx,dock,backdrop,opacity);}
         let cell=dock.size.x/4.0;

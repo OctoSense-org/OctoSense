@@ -250,10 +250,20 @@ pub fn is_live(app_id: &str) -> bool {
 /// person's lane): a new sharing context on the app's one peer, created if
 /// needed. Consent is the caller's check.
 pub fn conversation(app_id: &str, instance: &str) -> Result<Arc<dyn OctosContext>, String> {
+    let account = account_of(app_id).ok_or(SIGN_IN)?;
+    conversation_for_account(app_id, instance, &account)
+}
+
+/// Open on exactly the host-bound account. A changed selection must never
+/// retarget a card; the broker also rejects a stale account in ContextSpec.
+pub fn conversation_for_account(app_id: &str, instance: &str, account: &str) -> Result<Arc<dyn OctosContext>, String> {
+    let check = || if account_of(app_id).as_deref() == Some(account) { Ok(()) }
+        else { Err("Account changed; reopen the card under its original account".to_string()) };
+    check()?;
     let factory = FACTORY.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or(UNAVAILABLE)?;
     let service = obtain(app_id, factory.as_ref())?;
-    let account = account_of(app_id).ok_or(SIGN_IN)?;
-    service.open_conversation(ContextSpec { account, instance: instance.to_owned(), services: service.services() })
+    check()?;
+    service.open_conversation(ContextSpec { account: account.to_owned(), instance: instance.to_owned(), services: service.services() })
 }
 
 /// The contained apps' peers.

@@ -110,7 +110,7 @@ These apps have an agent:
 | Terminal (desktop) | native, its own process | `terminal.read_screen`, `terminal.read_scrollback` | `terminal.run`, behind Setup's switch, approved per command |
 | Calculator, Clock, Notes, Reminders, Weather | native, in the shell | each app's read tools | the same read tools |
 | Mail | script app | `mail.*` tools scoped to the signed-in account, including `mail.publish_card` | – |
-| Calendar (desktop) | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
+| Calendar | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
 | News | script app | `news.list`, `news.read`, `news.notify` | – |
 | Photos, Maps, YouTube; Camera on phones | script apps | `<app>.notify` | – |
 
@@ -160,6 +160,8 @@ The `<app>.notify` tools fill a fixed card template ([`notice.card`](crates/shel
 
 Mail's agent can also start on its own. Once the person has signed in, allowed Mail's agent and asked the system agent to turn on new-mail processing (`agents.provision`), a host worker syncs the inbox and starts the agent for each new message. The agent reads the message with its scoped tools and decides whether to post a card. No other app has events yet; the [Mail event walkthrough](docs/mail-agent-events.md) has the details.
 
+On Android, tapping a card notification opens its exact expanded card. A stale notification falls back to Glance.
+
 ### One app agent, two lanes
 
 The system agent and the person talk to the same app agent, each in a lane of their own:
@@ -204,7 +206,7 @@ The person can talk to any app's agent directly. These turns run in the person's
 | Where | How |
 | --- | --- |
 | **"Ask &lt;app&gt;"** panel | A shell panel for every app with an agent, opened from the bar's "Ask &lt;app&gt;" button or with Shift+F8. On the desktop it opens beside the system chat. The phone draws it full screen but has no touch control for it yet. |
-| **In-card chat** | Type in a glance card that declares a chat ([below](#in-card-chat)). |
+| **In-card chat** | Open Chat in an agent-enabled card workspace, or type in a card that declares `sys.chat` ([below](#in-card-chat)). |
 | **The app's own UI** | An app can open the person's lane itself ([next section](#how-an-app-uses-its-agent)). Rinx draws its own assistant UI; for the other apps, the "Ask &lt;app&gt;" panel is the way in. |
 
 The panel asks for consent first and shows both lanes, each message with its speaker. Its Stop button ends only the person's own turn. [docs/architecture.md §2](docs/architecture.md#2-agents) covers the rest of its behavior.
@@ -299,7 +301,7 @@ sequenceDiagram
 </details>
 
 - **The relay** ([`crates/shell/src/host_tools/`](crates/shell/src/host_tools/)) receives every `peer/tool/call`. It checks that this caller may use this tool, validates the arguments against the tool's schema and charges the caller's budget (by default 32 tool calls a turn and 1000 a day). Only then does it run the tool in the app that owns it: a native app's open window, a script app's host service, or a process app over its peer link. It checks the result against the schema too.
-- **The approval router** ([`crates/shell/src/approvals/`](crates/shell/src/approvals/)) decides in a fixed order. Developer mode, which only the person can turn on, approves everything for the apps it covers. A `confirm: app` tool goes to the app's own sheet. Calls that must always ask, such as a Terminal command, go straight to a sheet. Everything else may be decided by the person's standing rules, and otherwise a shell sheet shows the exact arguments. Every decision is written to an audit log. [The walkthrough](docs/architecture-walkthrough.md#approval-order) gives the full order.
+- **The approval router** ([`crates/shell/src/approvals/`](crates/shell/src/approvals/)) decides in a fixed order. Developer mode, which only the person can turn on, approves routed calls for the apps it covers. Mail sending still requires its separate host-owned review and physical approval; developer mode and standing rules cannot authorize it. A `confirm: app` tool goes to the app's own sheet. Calls that must always ask, such as a Terminal command, go straight to a sheet. Everything else may be decided by the person's standing rules, and otherwise a shell sheet shows the exact arguments. Every decision is written to an audit log. [The walkthrough](docs/architecture-walkthrough.md#approval-order) gives the full order.
 - **Deadlines.** An approval or question nobody answers in 10 minutes is denied, never approved. If the turn is still running 30 seconds later, the shell interrupts it so the next turn can start.
 
 ### Cards and questions
@@ -308,7 +310,11 @@ An app with the `glance` permission publishes cards as itself (`glance.publish`,
 
 #### In-card chat
 
-A card can declare `sys.chat(app, thread, fields)`. The person types in the card, and only the publishing app's own agent answers, in the person's lane. The shell owns the transcript, kept in the app's account folder, and records as the person's only what the person typed. Model-written text is marked as AI-written and never runs as an action. No agent-published card declares a chat yet; the demo card [`mail-request.card`](crates/shell/resources/glance/mail-request.card) shows one with canned replies. See [`crates/l0-chat`](crates/l0-chat/README.md).
+On the phone, a compact Glance summary expands into a resident full-screen workspace. An agent-enabled publisher gets **Card / Chat** even without an embedded `sys.chat`; the host binds the conversation to the original publication account and supplies bounded card data and local L0 state. The generated source stays unchanged. Local selections are context, not proof of a completed external action; chat uses only the app's existing tools and consent. Cards without an agent have no Chat tab.
+
+A Mail reply card published with a host-issued `draft_id` uses **Email / Chat**, sharing one saved draft. Requested chat edits save through a revision-bound capability, and final review reads the exact saved recipient, subject and body. Only trusted physical Android touch can approve sending, including in developer mode. Desktop/accessibility send approval remains deferred. See [Composed Mail cards](docs/mail-composable-cards.md) for the DeepSeek/MiniMax phone results, formatting failure/retry and remaining UX limits.
+
+An explicit `sys.chat(app, thread, fields)` keeps its declared thread. The host owns the transcript in the app's account folder; only what the person typed is recorded as theirs. The older [`mail-request.card`](crates/shell/resources/glance/mail-request.card) under `OCTOSENSE_GLANCE_DEMO=mail` still answers with canned text. See [`crates/l0-chat`](crates/l0-chat/README.md) and [`glance_chat.rs`](crates/shell/src/glance_chat.rs).
 
 #### Questions
 

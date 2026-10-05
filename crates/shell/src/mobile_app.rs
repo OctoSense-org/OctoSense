@@ -518,6 +518,7 @@ impl App {
                 self.system_chat_changed(cx);
             }
             PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::ExpandGlance(key)=>{self.open_glance_card(cx,&key);return;}
             PhoneHit::Glance(app)=>{log!("[phone] glance card opens {}",app);self.phone_action(cx,PhoneHit::App(app));return;}
             PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
             PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
@@ -1099,11 +1100,12 @@ impl App {
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) && hit.is_none() {return false;}
                 phone.search_touch(p.y,time);
+                phone.pages.glance_touch(p.y, time);
                 if hit==Some(PhoneHit::Scrub) {
                     if let Some(scroll)=scrub_at {phone.search_scroll=scroll;}
                 }
                 if shell || hit.is_some() || old!=PhoneScreen::App {
-                    phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,screen:old});
+                    phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,glance_scroll:false,screen:old});
                     phone.gesture_out=None;
                     self.redraw_all(cx);
                     return true;
@@ -1112,6 +1114,18 @@ impl App {
             }
             PhonePointerPhase::Move=>{
                 let Some(g)=phone.gesture.as_mut() else{return phone.screen!=PhoneScreen::App;};
+                // Glance's vertical body drags scroll the feed before the
+                // Home recognizer can turn them into search/shade pulls.
+                // Horizontal paging and gestures starting in the header
+                // keep their existing paths.
+                if !phone.shade.is_open() && phone.pages.drag_glance(g, p, screen, self.phone_gestures.current().is_some()) {
+                    g.last=p;
+                    phone.pages.glance_sample(p.y, time);
+                    self.phone_gestures.cancel();
+                    phone.gesture_out=None;
+                    self.animate_phone(cx);
+                    return true;
+                }
                 let delta=p-g.start;let last=p-g.last;g.last=p;
                 let (shell,from)=(g.shell,g.screen);
                 let divider=g.hit==Some(PhoneHit::Divider);
@@ -1137,6 +1151,13 @@ impl App {
             }
             PhonePointerPhase::Up=>{
                 let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
+                if g.glance_scroll {
+                    phone.pages.glance_lift(time);
+                    self.phone_gestures.cancel();
+                    phone.gesture_out=None;
+                    self.animate_phone(cx);
+                    return true;
+                }
                 let delta=p-g.start;
                 // A drawer scroll lifted at speed keeps going; a lift after a
                 // pause, or anything else, stops it.

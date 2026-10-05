@@ -137,6 +137,33 @@ fn a_contained_apps_peer_id_names_its_storage() {
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 #[test]
+fn mail_send_claim_rechecks_current_host_selection_and_suspension() {
+    let home = Scratch::new("mail-send-claim");
+    let host = storage(&home.0);
+    let dir = host.layout().apps_root().join(".host");
+    let accounts = dir.join("mail/accounts.json");
+    write_json(&accounts, &json!([
+        {"id":"one","address":"one@example.com","apps":["os.mail"],"signed_in":1}
+    ]));
+    assert!(mail_claim_allowed(&host, &dir, "os.mail", "one").is_ok());
+    assert!(mail_claim_allowed(&host, &dir, "os.other", "one").is_err());
+    assert!(mail_claim_allowed(&host, &dir.join("other"), "os.mail", "one").is_err());
+    write_json(&accounts, &json!([
+        {"id":"one","address":"one@example.com","apps":["os.mail"],"signed_in":1},
+        {"id":"two","address":"two@example.com","apps":["os.mail"],"signed_in":2}
+    ]));
+    assert!(mail_claim_allowed(&host, &dir, "os.mail", "one").unwrap_err().contains("selected Mail account changed"));
+    assert!(mail_claim_allowed(&host, &dir, "os.mail", "two").is_ok());
+    host.sign_out("os.mail", Some("two"));
+    assert!(mail_claim_allowed(&host, &dir, "os.mail", "two").unwrap_err().contains("signed out"));
+    host.sign_in("os.mail", Some("two"));
+    assert!(mail_claim_allowed(&host, &dir, "os.mail", "two").is_ok());
+    write_json(&accounts, &json!([]));
+    assert!(mail_claim_allowed(&host, &dir, "os.mail", "two").is_err());
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
 fn mails_accounts_open_and_remove_their_folders() {
     use octosense_mail_service::AccountEvent;
     let home = Scratch::new("mail");

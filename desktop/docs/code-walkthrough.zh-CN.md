@@ -183,7 +183,7 @@ relay 也必须授权。准入还检查 `HostLimits.offered_tools`：默认提�
 桌面上聚焦拥有 Agent 的应用，从栏按钮、Shift+F8 或菜单打开 **Ask &lt;app&gt;**。
 F8 打开系统 Agent。`agents.list` 报告应用 Agent；`agents.ask` 等待首次同意和 peer
 准备完成，再返回 peer slug。系统 Agent 用 `peer_send_input` 发送任务，用 `peer_gather`
-获取答案。声明了 `sys.chat` 的卡片也可以访问其应用 Agent。随产品提供的通知与 Calendar 模板没有聊天，应通过 “Ask <app>” 访问其 Agent；Mail 演示卡片返回预设文本。手机触控导航尚无打开 Ask-app 面板的控件。
+获取答案。声明了 `sys.chat` 的卡片也可以访问其应用 Agent。工作区中的发布者如果声明了 agent 却没有内嵌会话，宿主会提供 Card / Chat 页签及绑定账户的会话；发布数据和当前 L0 状态只是上下文，不授予工具权限。Enable assistant 打开首次使用许可。这也适用于手机上的内置通知和 Calendar 卡片。显式 Mail 演示会话仍返回预设文本。手机触控导航尚无打开独立 Ask-app 面板的控件。
 
 继续阅读 [`app_chat/`](../../crates/shell/src/app_chat/mod.rs)、
 [`system_chat/`](../../crates/shell/src/system_chat/mod.rs)、

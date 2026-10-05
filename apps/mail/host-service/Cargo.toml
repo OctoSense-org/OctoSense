@@ -2,8 +2,8 @@
 #
 # Mail as a service the shell offers to contained apps: IMAP, and the POP3/SMTP code of
 # the native Mail app, run on the host with the credentials the host holds.
-# An app granted `mail` gets accounts, message lists, messages and a send;
-# it never gets a socket or a password. Sign-in happens on a host-owned sheet,
+# An app granted `mail` gets accounts, messages and a host-owned send review;
+# it never authorizes SMTP, gets a socket or sees a password. Sign-in uses a host-owned sheet,
 # and passwords go to the keychain (Apple) or behind an Android Keystore key.
 [package]
 name = "octosense-mail-service"

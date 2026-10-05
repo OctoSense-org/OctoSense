@@ -110,7 +110,7 @@ flowchart LR
 | Terminal（桌面端） | 原生，独立进程 | `terminal.read_screen`、`terminal.read_scrollback` | `terminal.run`，受 Setup 开关控制，每条命令都要批准 |
 | Calculator、Clock、Notes、Reminders、Weather | 原生，在 Shell 内 | 各自的只读工具 | 同样的只读工具 |
 | 邮件 | 脚本应用 | 绑定当前登录账号的 `mail.*` 工具，包括 `mail.publish_card` | – |
-| 日历（桌面端） | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
+| 日历 | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
 | 新闻 | 脚本应用 | `news.list`、`news.read`、`news.notify` | – |
 | 相册、地图、YouTube；手机上的相机 | 脚本应用 | `<app>.notify` | – |
 
@@ -160,6 +160,8 @@ sequenceDiagram
 
 邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会在后台同步收件箱，每来一封新邮件就启动一次 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。其他应用还没有事件；详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。
 
+在 Android 上点击卡片通知会打开准确对应的展开卡片；过期通知回退到 Glance。
+
 ### 一个应用 Agent，两条通道
 
 系统 Agent 和用户与同一个应用 Agent 对话，但各走各的通道：
@@ -204,7 +206,7 @@ flowchart TB
 | 入口 | 怎么用 |
 | --- | --- |
 | **“Ask &lt;app&gt;”** 面板 | Shell 为每个有 Agent 的应用提供的面板，从顶栏的 “Ask &lt;app&gt;” 按钮或按 Shift+F8 打开。桌面端上它出现在系统对话旁边。手机上它全屏显示，但还没有可以打开它的触控入口。 |
-| **卡内对话** | 在声明了对话的 glance 卡片里输入（[见下文](#卡内对话)）。 |
+| **卡内对话** | 在有 Agent 的卡片工作区打开 Chat，或在显式声明 `sys.chat` 的卡片里输入（[见下文](#卡内对话)）。 |
 | **应用自己的界面** | 应用可以自己打开用户的通道（[见下一节](#应用如何使用自己的-agent)）。Rinx 绘制自己的助手界面；其他应用通过 “Ask &lt;app&gt;” 面板进入。 |
 
 面板会先征得同意，然后显示两条通道，每条消息都标明说话者。面板上的“停止”只结束用户自己的回合。面板的其他行为见 [docs/architecture.zh-CN.md 第 2 节](docs/architecture.zh-CN.md#2-agent)。
@@ -299,7 +301,7 @@ sequenceDiagram
 </details>
 
 - **中转**（[`crates/shell/src/host_tools/`](crates/shell/src/host_tools/)）接收每一个 `peer/tool/call`。它先检查这个调用方能否使用这个工具，按工具的 schema 校验参数，并从调用方的预算中扣除（默认每轮 32 次、每天 1000 次工具调用）；之后才在拥有该工具的应用中运行它：原生应用已打开的窗口、脚本应用的宿主服务，或经 peer link 交给进程应用。结果同样要按 schema 检查。
-- **审批路由**（[`crates/shell/src/approvals/`](crates/shell/src/approvals/)）按固定顺序做决定。开发者模式只能由用户打开，它会批准所覆盖应用的一切调用。`confirm: app` 的工具交给应用自己的面板。必须每次都问的调用（例如 Terminal 的命令）直接弹出面板。其余调用可以由用户的常设规则决定，否则由 Shell 面板展示确切参数，请用户确认。每个决定都会写入审计日志。完整顺序见[导读](docs/architecture-walkthrough.zh-CN.md#审批顺序)。
+- **审批路由**（[`crates/shell/src/approvals/`](crates/shell/src/approvals/)）按固定顺序做决定。开发者模式只能由用户打开，它会批准所覆盖应用经路由处理的调用。邮件发送仍要求独立的宿主审核和实体批准；开发者模式和常设规则不能授权发送。`confirm: app` 的工具交给应用自己的面板。必须每次都问的调用（例如 Terminal 的命令）直接弹出面板。其余调用可以由用户的常设规则决定，否则由 Shell 面板展示确切参数，请用户确认。每个决定都会写入审计日志。完整顺序见[导读](docs/architecture-walkthrough.zh-CN.md#审批顺序)。
 - **时限。** 10 分钟内无人回答的审批或提问会被拒绝，绝不会被批准。如果 30 秒后这一轮仍在运行，Shell 会中断它，好让下一轮开始。
 
 ### 卡片与提问
@@ -308,7 +310,11 @@ sequenceDiagram
 
 #### 卡内对话
 
-卡片可以声明 `sys.chat(app, thread, fields)`。用户在卡片里输入，只有发布卡片的应用自己的 Agent 回答，回答在用户的通道里进行。对话记录归 Shell 所有，保存在应用的账号文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。目前还没有 Agent 发布的卡片声明对话；演示卡片 [`mail-request.card`](crates/shell/resources/glance/mail-request.card) 用固定的回复展示了这一功能。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
+在手机上，紧凑的 Glance 摘要展开为驻留的全屏工作区。有 Agent 的发布者即使没有内嵌 `sys.chat`，也会获得 **Card / Chat**；宿主把会话绑定到发布时的账户，并提供有大小限制的卡片数据和 L0 本地状态。生成源码保持不变。本地选项是上下文，不代表外部操作已经完成；聊天只使用应用已有的工具和同意权限。没有 Agent 的卡片不显示 Chat 页签。
+
+携带宿主签发 `draft_id` 的 Mail 回复卡片使用 **Email / Chat**，共用一份已保存草稿。用户要求的聊天修改通过绑定修订号的凭证保存，最终审核读取确切的已保存收件人、主题和正文。即使在开发者模式，发送仍只能由可信 Android 实体触摸批准；桌面／无障碍发送审批暂缓。DeepSeek／MiniMax 实机结果、格式失败及重试、剩余 UX 限制见[组合 Mail 卡片](docs/mail-composable-cards.zh-CN.md)。
+
+显式 `sys.chat(app, thread, fields)` 保留声明的线程。对话记录由宿主保存在应用账户文件夹中，只有用户亲手输入的内容才记为用户的话。旧的 [`mail-request.card`](crates/shell/resources/glance/mail-request.card) 在 `OCTOSENSE_GLANCE_DEMO=mail` 下仍使用固定回答。详见 [`crates/l0-chat`](crates/l0-chat/README.zh-CN.md) 和 [`glance_chat.rs`](crates/shell/src/glance_chat.rs)。
 
 #### 提问
 

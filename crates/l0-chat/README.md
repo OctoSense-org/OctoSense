@@ -1,5 +1,7 @@
 # octosense-l0-chat: the host side of an L0 card's in-card chat
 
+English | [简体中文](README.zh-CN.md)
+
 > **Where this fits.** An app's agent can put an L0 card on the glance screen, and the person can chat with that agent inside the card. The card only declares the chat; this crate is everything the host decides about it: who may chat, who wrote what, the limits, and where the transcript is kept. The shell's glance cards and card window (`crates/shell/src/glance_chat.rs`) and AppCard's L0 cards both use it. The agent behind the chat is the app's own (one host-owned octos peer per app and account, [`crates/app-peers`](../app-peers/README.md)); the overview is in the root README, [The system agent and the app agents](../../README.md#the-system-agent-and-the-app-agents).
 
 A card declares a conversation with its app's agent (Octoscript profile §5.15,
@@ -34,8 +36,27 @@ answers:
 | `Canned` | the shell under `OCTOSENSE_GLANCE_DEMO=mail` (Mail's demo cards, fake data) | a fixed `model` reply; no model is called |
 | `NoAgent` | AppCard | a `host` notice: its agent does not answer inside a card yet |
 
-The agent gets the person's message (`Request::text`); the shell's responder
-does not pass the thread's earlier entries (`Request::history`) to the agent.
+Explicit unbound `sys.chat` cards retain their existing message-only adapter.
+For agent-enabled publications without a chat source, the shell supplies a
+host-owned conversation even for Splash cards. `ContextKind::Card` binds the
+original publication account and card thread, includes bounded publication data
+and current L0 state, and explicitly distinguishes local selections from external
+actions. It does not mint Mail edit tokens or add tools. The existing consent
+sheet must allow the app's agent first. Generated source remains unchanged.
+
+`ContextKind::Mail` remains separate. For a host-bound Mail
+card, `ContextBinding` supplies the original account, email context, durable draft
+snapshot (including its revision), and chat thread. `seed_bound` and
+`perform_bound` use the explicitly resolved account folder and reject a different
+thread. The shell rejects a switched account or revoked assistant rather than
+retargeting the card. Late replies stay in the original transcript.
+
+`Request::agent_text` serializes that binding (at most 32 KiB), the last 20
+history entries within 16 KiB, and the question. Email, draft and transcript text
+are labelled untrusted data; they confer no tool grants or send approval. The
+shell opens an account-bound conversation on the existing app peer and preserves
+`TurnTrigger::AppSaysPerson`. This API does not by itself publish a composed card
+or authorize sending.
 
 ## Model-written text in a card
 

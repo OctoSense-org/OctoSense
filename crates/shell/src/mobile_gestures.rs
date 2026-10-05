@@ -163,7 +163,7 @@ struct Track {
 }
 
 /// Movement before a touch is a drag, not a tap.
-const SLOP: f64 = 10.0;
+pub(crate) const SLOP: f64 = 10.0;
 /// Jitter tolerated while "holding still".
 const STILL: f64 = 4.0;
 /// How far back the lift velocity looks.

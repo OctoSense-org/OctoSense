@@ -133,7 +133,12 @@ sequenceDiagram
 | 脚本应用自己的聊天 | 经 `host.request` 调用确切获授权的 `octos.session.open`、`octos.session.history`、`octos.turn.start`、`octos.turn.interrupt`。随产品提供的系统应用 Agent 由 Shell 驱动，其脚本无需声明这些调用。 |
 | 已发布卡片中的聊天 | `sys.chat` 经 [l0-chat](../crates/l0-chat/src/lib.rs) 与 [glance_chat.rs](../crates/shell/src/glance_chat.rs) 到达发布者的 Agent；宿主核对卡片归属。 |
 
-随产品提供的 `<app>.notify`、`calendar.notify` 与 `calendar.agenda` 模板不含 `sys.chat`，通过 “Ask <app>” 与其 Agent 对话。`OCTOSENSE_GLANCE_DEMO=mail` 演示卡片带有聊天，但由 `glance_chat::HostResponder` 返回预设答案。上表的卡片聊天路线适用于声明了 `sys.chat` 的卡片。
+手机 Glance 只绘制紧凑摘要，不执行生成 UI。点按使用摘要的屏幕矩形，让 `glance_sheet.rs` 在信息流上方展开至完整可用视口。`card_presentation.rs` 在 Makepad 帧循环中管理可反向切换的动画，不创建 Tokio 任务、不启动应用，也不改变应用 peer。Email 与 Chat 位于同一行。`mail_clip.rs` 提供原邮件和可直接编辑的草稿；`card_chat.rs` 虚拟化消息并将原生输入框固定在键盘上方。两页共享权威草稿。`chat_submit` 校验声明的 `sys.chat` 源、发布者、账户和线程，然后签发绑定已保存修订号的一次性编辑凭证。Mail 通过 `mail.suggest_reply` 消费凭证；没有凭证时只提出建议，不授权发送。关闭展示时保留常驻控件／会话并撤销待批准审核；干净工作区缓存有数量限制，账户或发布失效时清理对应工作区。最终发送仍需实体输入批准准确的宿主审核内容。
+
+共享工作区同样承载 Calendar、News、Photos、YouTube 等发布者。声明了 agent 的发布者未提供 `sys.chat` 时，`L0Session::for_card` 会添加宿主拥有的 Card / Chat 会话，不改写 L0 或 Splash 源码。`ContextKind::Card` 携带有大小限制的发布数据及当前 L0 状态，并绑定原发布账户和稳定的卡片线程；它不签发 Mail 编辑凭证，也不新增工具。首次使用可通过 Enable assistant 打开现有权限面板；没有 agent 的发布者不显示 Chat。显式 `sys.chat` 保留原线程。因此内置通知和 Calendar 卡片既可使用原生工作区聊天，也可使用桌面的 “Ask <app>”。显式 `OCTOSENSE_GLANCE_DEMO=mail` 聊天仍返回预设答案。L0 本地修改和已交互的 Splash 实例不参与干净缓存淘汰；账户失效后不能重开旧发布。
+
+绑定草稿的 Mail 回复卡片新增持久化宿主路径：`mail.propose_reply` 创建账户／邮件绑定草稿，`mail.publish_card` 携带其 `draft_id`。`mail_card.rs` 回答 `sys.mail_draft`，按显示中的修订号校验 Field 来源的编辑。`sys.mail_review` 写入只请求 `mail_review.rs` 宿主 UI，不构成批准。`drafts.rs` 拥有不可变尝试和 SMTP 回执，agent 不能直接发送。聊天在已有 Mail peer 中包含绑定邮件、已确认保存的草稿和有限历史。本轮只有经过验证的 Android 实体触摸可批准；桌面／无障碍审批及完整双模型手机验收仍待完成。将新路径视为已验证前，请看[实现与验证表](mail-composable-cards.zh-CN.md)。
+
 
 手机触控导航尚无打开 Ask-app 面板的对应控件。应用自己的聊天与卡片聊天仍是独立入口。
 
@@ -206,7 +211,7 @@ Shell 将聊天输入动作标为 `TurnTrigger::Person`。脚本调用 `octos.tu
 | 应用 | 当前数据/工具边界 |
 | --- | --- |
 | News | `news.list`、`news.read`、`news.notify` |
-| Mail | 绑定账户的 accounts/folders/sync/list/peek，notify/publish_card，以及事件无操作决策 skip_event；不暴露发信或密码 |
+| Mail | 绑定账户的 accounts/folders/sync/list/peek、notify/publish_card/skip_event，以及 propose_reply/draft/suggest_reply/propose_send；不暴露发送、批准或凭据工具 |
 | Photos、Maps、Camera、YouTube | 仅各自的 `<app>.notify`，经 [glance_notice.rs](../crates/shell/src/glance_notice.rs) 发布共享通知卡片 |
 | AI providers | 没有应用 Agent |
 

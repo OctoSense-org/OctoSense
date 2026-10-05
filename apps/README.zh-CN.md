@@ -21,8 +21,8 @@ OctoSense-System-Apps 仓库（已归档）。
   放到 glance 屏幕上。
 - **日历的宿主服务**（`calendar/host-service`）把日历的日程保存在宿主目录中，并运行日历
   Agent 的工具：`calendar.events`、`add_event`、`remove_event`，以及把日程卡片或议程卡片
-  放到 glance 屏幕上的 `notify` 和 `agenda`。日历是桌面端的系统应用
-  （`desktop/system-apps.json`）。
+  放到 glance 屏幕上的 `notify` 和 `agenda`。日历同时随桌面与手机 Shell 发布
+  （`desktop/system-apps.json` 与 `phone/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
   Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
@@ -66,7 +66,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
-| [Calendar](calendar/bundle) | `os.calendar`（桌面端） | 它的 Agent 保存用户的日程，并把日程卡片和议程卡片放到 glance 屏幕上；它自己的窗口还不能列出日程（需要 App Hub 提供 `calendar` 权限） | `storage`、`glance` | 无 | [`calendar`](calendar/host-service)（只供日历的 Agent 使用） |
+| [Calendar](calendar/bundle) | `os.calendar` | 它的 Agent 保存用户的日程，并把日程卡片和议程卡片放到 glance 屏幕上；它自己的窗口还不能列出日程（需要 App Hub 提供 `calendar` 权限） | `storage`、`glance` | 无 | [`calendar`](calendar/host-service)（只供日历的 Agent 使用） |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -383,13 +383,13 @@ Shell 把日历 Agent 的 `calendar.*` 工具当作这个系统应用自己的�
 | 应用 | `manifest.json` | `tools.json` | 卡片 |
 | --- | --- | --- | --- |
 | 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
-| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`（act，后台） | L0 卡片或 Shell 通知卡片 |
+| 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.draft`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`、`mail.propose_reply`、`mail.suggest_reply`、`mail.propose_send`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
 | 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
 **宿主服务 API 不会自动成为 Agent 工具。** Mail 显式声明了账户绑定的读取/同步、
-发布和事件决策工具。`mail.peek` 不标记已读；`mail.message` 和 `mail.send` 仍是 UI API。
+发布、事件决策和草稿／提议工具。`mail.peek` 不标记已读；`mail.message` 仍是 UI API。UI 的 `mail.send` 路径现已改为准备宿主审核，而非未经批准调用 SMTP。Agent 工具不能批准或发送。[组合 Mail 卡片](../docs/mail-composable-cards.zh-CN.md)追踪持久编辑、上下文聊天及仅限 Android 实体输入的审批边界；双模型手机集成验收仍未验证。
 Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
 展示了通过显式声明的 Rust 工具读写应用数据的路径；它的脚本窗口目前只是 Agent
 使用说明。见[数据访问源码导读](../desktop/docs/code-walkthrough.zh-CN.md)。

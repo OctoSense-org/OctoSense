@@ -60,3 +60,5 @@ Start with the [architecture walkthrough](docs/architecture-walkthrough.md) and 
 - For a new tool, update its manifest, `tools.json`, admission offer, caller grant and executable handler. Show which host service or workspace owns its data and how approval reaches the router.
 - Read external code at the Cargo/runtime pins. Use current `desktop/`, `phone/`, `rom/` and `apps/` paths when writing product instructions.
 - Record test execution in the PR: distinguish unit/scripted connectors from optional real-kernel tests that return early without a binary. Mark unrun launch/device recipes unverified.
+
+For shared Glance workspaces, preserve original publication accounts and model-authored source. Native fallback chat is only for declared app agents and uses `ContextKind::Card`; Mail draft-edit leases require `ContextKind::Mail`. Exercise local state and unsent input across more than three inactive workspaces. Developer `glance-fixtures:<path>` actions must retain normal app grants; `test.*` native prototypes have no app capabilities or agent. Test fixture rendering/local actions separately from actual model calls and external business effects.

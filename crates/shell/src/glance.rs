@@ -54,7 +54,7 @@
 //!
 //! **Notifications.** `notify: true` also posts a notification for the card
 //! (the phone's shade, the desktop's toast). Tapping it opens the glance
-//! page on the phone; on a desktop, clicking the toast opens THAT card in the
+//! workspace directly on the phone; on a desktop, clicking the toast opens THAT card in the
 //! card window (glance_sheet.rs), App Clip style, by the key the
 //! notification carries ([`GlanceNote::key`], [`NoteTargets`], [`card`]).
 //! The shell drains them with [`take_notifications`].
@@ -141,8 +141,12 @@ impl Caller {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GlanceCard {
     pub app: String,
+    /// Account at publication, supplied by the host, never by card arguments.
+    pub account: Option<String>,
     pub card_id: String,
     pub title: String,
+    /// Bounded publication summary. Phone previews never execute the card.
+    pub summary: String,
     pub priority: i64,
     pub published_ms: u64,
     pub expires_ms: u64,
@@ -169,9 +173,17 @@ pub struct GlanceCard {
 pub struct L0Source {
     pub source: String,
     pub data: Value,
+    /// Out-of-band Mail service metadata; never deserialized from card data.
+    pub mail: Option<crate::mail_card::Binding>,
 }
 
 impl GlanceCard {
+    pub(crate) fn account_valid(&self) -> bool {
+        self.account.as_ref().is_none_or(|account|
+            crate::ai_host::contained::account_of(&self.app).as_ref() == Some(account)
+            && crate::app_storage::host().is_some_and(|s| !s.is_signed_out(&self.app,
+                (account != crate::ai_host::contained::ACCOUNT).then_some(account.as_str()))))
+    }
     pub fn key(&self) -> String {
         format!("{}/{}", self.app, self.card_id)
     }
@@ -307,6 +319,13 @@ impl GlanceStore {
 
     /// `glance.publish`, for `caller`, at `now_ms`.
     pub fn publish(&mut self, caller: &Caller, args: &Value, now_ms: u64) -> Result<Value, String> {
+        if args.get("mail_binding").is_some() {
+            return Err("Mail bindings can only be attached by the Mail host service".into());
+        }
+        self.publish_bound(caller, args, now_ms, None)
+    }
+
+    fn publish_bound(&mut self, caller: &Caller, args: &Value, now_ms: u64, mail: Option<crate::mail_card::Binding>) -> Result<Value, String> {
         self.expire(now_ms);
         caller.may_use()?;
         let app = caller.app().to_string();
@@ -369,6 +388,13 @@ impl GlanceStore {
             Some(r) => Some(r.as_str().filter(|r| r.len() <= ROUTE_MAX).ok_or_else(|| format!("open.route must be a string of at most {ROUTE_MAX} bytes"))?.to_string()),
         };
         let replacing = self.cards.iter().position(|c| c.app == app && c.card_id == card_id);
+        if let Some(previous) = replacing.and_then(|i| self.cards[i].l0.as_ref()).and_then(|l| l.mail.as_ref()) {
+            let next = mail.as_ref().ok_or("A bound Mail card cannot lose its draft on republish")?;
+            if previous.account != next.account || previous.draft_id != next.draft_id || previous.source_message != next.source_message {
+                return Err("A Mail card cannot change its account, email or draft on republish".into());
+            }
+            crate::mail_card::cancel_for(&previous.key());
+        }
         if replacing.is_none() && self.cards.iter().filter(|c| c.app == app).count() >= PER_APP_CARDS {
             return Err(format!("{app} already has {PER_APP_CARDS} cards on the glance screen; withdraw or replace one"));
         }
@@ -379,20 +405,28 @@ impl GlanceStore {
             (source.into(), Vec::new(), None)
         } else {
             check_level(source)?;
+            crate::mail_card::check_sources(source, mail.as_ref())?;
             // A card's `sys.digest` values are the host's (glance_digest.rs),
             // resolved into the data the card keeps.
             let (digests, digest_expires) = resolve_digests(caller, source, &mut data, self.digest_root.as_deref(), now_ms)?;
             // A card's `sys.chat` is its own app's (glance_chat.rs), and its
             // transcript is the host's, never the data's.
             crate::glance_chat::check_publisher(source, &app)?;
-            let seeded = crate::glance_chat::seed(&app, source, &data, &Default::default());
+            let seeded = match &mail {
+                Some(binding) => crate::mail_card::seed_publication(binding, source, &data)?,
+                None => crate::glance_chat::seed(&app, source, &data, &Default::default()),
+            };
             (crate::glance_card::lower(source, &seeded)?.into(), digests, digest_expires)
         };
         let binds_digests = !digests.is_empty();
+        let summary = note_summary(&json!({"summary": args.get("summary"), "data": &data}));
         let card = GlanceCard {
             app: app.clone(),
+            account: mail.as_ref().map(|b| b.account.clone()).or_else(||
+                crate::app_storage::host().and_then(|_| crate::ai_host::contained::account_of(&app))),
             card_id: card_id.to_string(),
             title: title.to_string(),
+            summary,
             priority,
             published_ms: now_ms,
             // Never past the digest it shows.
@@ -402,7 +436,7 @@ impl GlanceStore {
             body,
             contained: matches!(caller, Caller::Contained { .. }),
             digests,
-            l0: (kind == "source").then(|| Arc::new(L0Source { source: source.to_string(), data })),
+            l0: (kind == "source").then(|| Arc::new(L0Source { source: source.to_string(), data, mail })),
         };
         let expires_at = card.expires_ms;
         if let Some(i) = replacing {
@@ -635,14 +669,41 @@ pub fn generation() -> u64 {
 /// Serve one `glance.*` call for `caller`: the same API for a contained app
 /// (through the Card runner's host service) and a native one.
 pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, String> {
+    request_bound(caller, service, args, None)
+}
+
+fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crate::mail_card::Binding>) -> Result<Value, String> {
+    let gate = crate::mail_card::publication_guard();
     let now = now_ms();
     let method = service.strip_prefix("glance.").unwrap_or(service);
+    caller.may_use()?;
+    if method == "withdraw" {
+        let id = args["card_id"].as_str().filter(|id| valid_card_id(id)).ok_or("Invalid card_id")?;
+        crate::mail_card::remove_publication(&gate, &format!("{}/{id}", caller.app()))?;
+    }
+    let before = with_store(|store| store.cards.clone());
+    let binding = mail.clone();
     let result = with_store(|store| match method {
-        "publish" => store.publish(caller, args, now),
+        "publish" => match mail {
+            Some(binding) => store.publish_bound(caller, args, now, Some(binding)),
+            None => store.publish(caller, args, now),
+        },
         "withdraw" => store.withdraw(caller, args, now),
         "list" => store.list(caller, now),
         other => Err(format!("glance has no method {other:?}")),
     });
+    if result.is_ok() && method != "list" {
+        let after = with_store(|store| store.cards.clone());
+        for old in &before {
+            if !after.iter().any(|card| card.key() == old.key()) {
+                crate::mail_card::set_publication_dismissed(&gate, old, true)?;
+            }
+        }
+        if let Some(binding) = &binding {
+            let card = after.iter().find(|card| card.key() == binding.key()).ok_or("Published card missing")?;
+            crate::mail_card::save_publication(&gate, args, binding, card.published_ms, card.expires_ms)?;
+        }
+    }
     if result.is_ok() && method == "publish" && args.get("notify").and_then(Value::as_bool) == Some(true) {
         let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or_default();
         let title = args.get("title").and_then(Value::as_str).unwrap_or_default().trim();
@@ -670,14 +731,20 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
 /// Drop expired cards, bumping the generation when any went. Cheap: a
 /// surface calls it every frame it draws the glance screen.
 pub fn expire_now() {
-    if with_store(|store| store.expire(now_ms())) {
+    crate::mail_card::restore_publications();
+    if with_store(|store| {
+        let before = store.len();
+        store.expire(now_ms());
+        store.cards.retain(GlanceCard::account_valid);
+        before != store.len()
+    }) {
         changed();
     }
 }
 
 /// The published card with this key (`app/card_id`), while it is live.
 pub fn card(key: &str) -> Option<GlanceCard> {
-    with_store(|store| store.card(key, now_ms()))
+    with_store(|store| store.card(key, now_ms())).filter(GlanceCard::account_valid)
 }
 
 /// The person dismissed the card with this key (`app/card_id`).
@@ -693,7 +760,14 @@ static UNDO: Mutex<Vec<GlanceCard>> = Mutex::new(Vec::new());
 /// withdrawn them, and the next [`undo_dismiss`] brings them back. How many
 /// went.
 pub fn dismiss_all(keys: &[String]) -> usize {
-    let gone: Vec<GlanceCard> = with_store(|store| keys.iter().filter_map(|key| store.take(key)).collect());
+    let gate = crate::mail_card::publication_guard();
+    let gone: Vec<GlanceCard> = with_store(|store| keys.iter().filter_map(|key| {
+        let card = store.card(key, now_ms())?;
+        match crate::mail_card::set_publication_dismissed(&gate, &card, true) {
+            Ok(true) => store.take(key),
+            _ => None,
+        }
+    }).collect());
     let count = gone.len();
     if count > 0 {
         *UNDO.lock().unwrap() = gone;
@@ -705,7 +779,13 @@ pub fn dismiss_all(keys: &[String]) -> usize {
 /// Put back the cards the last dismiss took: the keys of those that came
 /// back (one its app published anew meanwhile stays as it is now).
 pub fn undo_dismiss() -> Vec<String> {
+    let gate = crate::mail_card::publication_guard();
     let cards = std::mem::take(&mut *UNDO.lock().unwrap());
+    let cards: Vec<_> = cards.into_iter().filter(|card| {
+        card.expires_ms > now_ms() && crate::glance::card(&card.key()).is_none()
+            && crate::mail_card::publication_can_undo(card, now_ms())
+            && crate::mail_card::set_publication_dismissed(&gate, card, false) == Ok(true)
+    }).collect();
     let keys: Vec<String> = cards.iter().map(|c| c.key()).collect();
     let now = now_ms();
     let back = with_store(|store| {
@@ -776,6 +856,84 @@ pub fn publish_l0_for(app: &str, args: &Value) -> Result<Value, String> {
     check_generated_l0(source)?;
     check_generated_data(source, &args["data"])?;
     publish_for(app, args)
+}
+
+/// Opt-in developer harness; normal app attribution/admission still applies.
+#[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+pub(crate) fn publish_test_fixtures(path: &str) -> Result<usize, String> {
+    // Real app publishers pass their admitted glance grant. test.*
+    // prototypes carry no app capabilities and have no agent.
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path).map_err(|e| e.to_string())?
+        .take(256 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() > 256 * 1024 { return Err("Fixture file too large".into()); }
+    let fixtures: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if fixtures.len() > 12 { return Err("Too many fixtures".into()); }
+    for fixture in &fixtures {
+        let app = fixture["app"].as_str().ok_or("Missing fixture publisher")?;
+        if app.starts_with("test.") {
+            request(&Caller::Native(app.into()), "glance.publish", &fixture["args"])?;
+        } else { publish_for(app, &fixture["args"])?; }
+    }
+    Ok(fixtures.len())
+}
+
+/// Only installed as the Rust Mail service callback. Ordinary glance.publish
+/// rejects the reserved field, even when the caller is os.mail.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn publish_mail_l0_for(app: &str, args: &Value) -> Result<Value, String> {
+    let Some(metadata) = args.get("mail_binding") else { return publish_l0_for(app, args); };
+    if app != "os.mail" || args.get("script").is_some() { return Err("Bound Mail cards require os.mail L0 source".into()); }
+    let source = args["source"].as_str().ok_or("Missing L0 source")?;
+    check_generated_l0(source)?;
+    check_generated_data(source, &args["data"])?;
+    let mut binding: crate::mail_card::Binding = serde_json::from_value(metadata.clone()).map_err(|_| "Invalid Mail host binding")?;
+    binding.card_id = args["card_id"].as_str().ok_or("Missing card_id")?.to_string();
+    binding.validate()?;
+    let caller = Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
+    request_bound(&caller, "glance.publish", args, Some(binding))
+}
+
+/// Hide an inactive account's cards without dismissing its durable publications.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn hide_other_mail_accounts(active: Option<&str>) {
+    let removed = with_store(|store| {
+        let before = store.cards.len();
+        store.cards.retain(|card| card.l0.as_ref().and_then(|l| l.mail.as_ref())
+            .is_none_or(|binding| active == Some(binding.account.as_str())));
+        before != store.cards.len()
+    });
+    if removed { changed(); }
+}
+
+/// Revalidate cached L0, retaining the original absolute lifetime. The caller
+/// holds the publication gate; restore neither notifies nor rewrites the cache.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::Binding, published: u64, expires: u64) -> Result<(), String> {
+    let now = now_ms();
+    if expires <= now || published >= expires { return Err("Expired Mail publication".into()); }
+    let source = args["source"].as_str().ok_or("Missing L0 source")?;
+    check_generated_l0(source)?;
+    check_generated_data(source, &args["data"])?;
+    let caller = Caller::Contained { app: binding.publisher.clone(), granted: crate::host_tools::script_apps::grants(&binding.publisher, "glance") };
+    let mut temporary = GlanceStore::default().with_digest_root(crate::glance_digest::digest_root());
+    let mut args = args.clone();
+    args["notify"] = json!(false);
+    args["expires"] = json!(EXPIRES_MAX_S);
+    temporary.publish_bound(&caller, &args, now, Some(binding))?;
+    let mut card = temporary.cards.pop().ok_or("Missing restored Mail card")?;
+    card.published_ms = published;
+    card.expires_ms = card.expires_ms.min(expires);
+    let inserted = with_store(|store| {
+        store.expire(now);
+        if store.cards.iter().any(|old| old.key() == card.key()) || store.cards.len() >= STORE_CARDS
+            || store.cards.iter().filter(|old| old.app == card.app).count() >= PER_APP_CARDS { return false; }
+        store.cards.push(card);
+        true
+    });
+    if inserted { changed(); }
+    Ok(())
 }
 
 // ---------------------------------------------------------------- the demo
@@ -1474,4 +1632,17 @@ mod tests {
         assert!(take_replies_for(&[9104])[0].2.as_ref().unwrap().contains("true"));
         assert!(!shown().iter().any(|c| c.key() == "os.news/dispatch-test"));
     }
+    #[test]
+    fn publication_account_is_host_metadata_and_stale_accounts_cannot_open() {
+        let mut store = GlanceStore::default();
+        let mut input = args("account-bound");
+        input.as_object_mut().unwrap().remove("open");
+        input["account"] = json!("forged-account");
+        store.publish(&Caller::granted("os.account-probe"), &input, 0).unwrap();
+        let mut card = store.card("os.account-probe/account-bound", 0).unwrap();
+        assert_ne!(card.account.as_deref(), Some("forged-account"));
+        card.account = Some("signed-out-test-account".into());
+        assert!(!card.account_valid(), "opening cannot rebind an old publication to the new account");
+    }
+
 }

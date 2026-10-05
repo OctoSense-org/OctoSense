@@ -30,6 +30,13 @@ host handler. L0's `sys.link` catalogue entry alone is insufficient: the shell
 currently does not execute that write. No link or remote-success result may
 be invented to fill the gap.
 
+[ADR 0007](../../../docs/adr/0007-composable-mail-action-cards.md)
+([中文](../../../docs/adr/0007-composable-mail-action-cards.zh-CN.md)) proposes the
+next slice: one composed L0 card with durable reply drafts, contextual chat and
+host-owned approval inside the card. It specifies a typed action reference and
+revision-bound sending in place of the open Send design choice below, if
+accepted. The ADR is proposed, and this integrated feature remains unimplemented.
+
 ## Original plan — historical scope
 
 - **Date:** 2026-10-01
