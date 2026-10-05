@@ -1,5 +1,7 @@
 # Photos Memories Implementation Plan
 
+**Status (2026-10-04):** Done: merged in [#266](https://github.com/OctoSense-org/OctoSense/pull/266) (a3098486), including f6ba06a6 (memory snapshots use the account data path) and a5f1a6e1 (Photos' agent stays read-only). Live providers and physical phones remain unverified.
+
 **Goal:** Turn Photos' preset moment card into a browsable collection of saved AI-curated stories, optionally guided by a prompt.
 
 **Architecture:** Photos calls the existing host-owned `model.complete` service with bounded catalog metadata and a strict story schema. It validates membership and uniqueness of photo IDs, persists accepted stories separately from the existing album store, and keeps local moments available without an AI provider. No image bytes or credentials enter the request.

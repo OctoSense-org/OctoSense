@@ -81,7 +81,7 @@ flowchart LR
 
 - **Shell** 承载窗口管理器、原生应用、运行脚本应用的 Card runner、系统对话、审批路由和宿主工具中转。它的 AI 部分是 [`crates/ai-host`](crates/ai-host/README.md)，其中的 [app-peers 代理](crates/app-peers/README.md)负责驱动每个应用 Agent。
 - **octos 内核**（[`crates/kernel`](crates/kernel/README.zh-CN.md)）在第一个连接到来时启动，随 Shell 一起退出。桌面端和 Android 上，它是通过 stdio 讲 OUP 的子进程；OpenHarmony 上，它在 Shell 进程内运行；iOS 上没有内核。用户在 **AI providers** 应用中、在宿主面板上选择模型并输入密钥。密钥留在 Shell 一侧（macOS 上存入钥匙串，其他平台存入仅所有者可读的文件），永远不会到达应用。
-- **进程应用**在 Shell 之外运行，处在系统沙箱中（macOS 上是 Seatbelt，Linux 上是 Landlock 和 seccomp，Windows 上尚未实现）。目前只有桌面端的 Terminal 是进程应用。它通过 Shell 的本地 hub 发送画面，并通过同一连接上的 peer link 使用自己的 Agent。
+- **进程应用**在 Shell 之外运行，处在系统沙箱中（macOS 上是 Seatbelt，Linux 上是 Landlock 和 seccomp，Windows 上尚未实现）。目前的进程应用是 Terminal 和 Task（Task Manager，没有 Agent），而且只在从源码检出构建的桌面端上；发布包还不附带它们的二进制，所以发布包里 Terminal 运行在 Shell 内，也没有 Task。Terminal 通过 Shell 的本地 hub 发送画面，并通过同一连接上的 peer link 使用自己的 Agent。
 - **外部客户端**（Talk to Octos，需手动开启）可以凭受限的 token 从浏览器或终端使用系统对话，但拿不到任何应用 Agent、`peer/*` 方法或宿主工具。
 
 可选的 AppCard 原型是唯一的例外：它不经过代理，而是自己打开内核连接。想看带代码路径的完整说明，请读 [docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)；信任模型以及如何在本地测试 AI 服务，见 [docs/ai-services.zh-CN.md](docs/ai-services.zh-CN.md)；背后的决策见 [ADR 0004（英文）](docs/adr/0004-native-apps-hosting-and-peers.md)。
@@ -91,13 +91,13 @@ flowchart LR
 **系统 Agent** 是 octos 会话 `_main:api:octosense#system`。用户在系统对话中与它交谈：桌面端按 F8 或点 Dock 上的 Assistant 图标，手机上点 Assistant 磁贴。它有两组工具：
 
 - **它自己的内核工具**，即 [`SYSTEM_AGENT_TOOLS`](crates/kernel/src/system_tools.rs) 中固定的列表：用于监督应用 Agent 的 `peer_*` 工具，以及自己工作区里的文件、记忆、向用户提问和网页搜索。octos 自带的 shell 工具永远不在其中。
-- **Shell 为它注册的宿主工具**：`agents.list` 和 `agents.ask` 用来查找应用 Agent、请用户允许某个 Agent；`agents.provision` 和 `agents.status` 用来运行邮件的新邮件自动处理；Setup 中的 Command execution 开关打开时还有 `terminal.run`；以及原生应用共享给它的只读工具（见下表最后一列）。
+- **Shell 为它注册的宿主工具**：`agents.list` 和 `agents.ask` 用来查找应用 Agent、请用户允许某个 Agent；`agents.provision` 和 `agents.status` 用来运行邮件的新邮件自动处理；Setup 中的 Command execution 开关打开、且 Terminal 作为独立的沙箱进程运行时，还有 `terminal.run`；以及原生应用共享给它的只读工具（见下表最后一列）。
 
 系统 Agent 永远不能批准工具调用，只有用户可以。
 
 **应用 Agent** 要等用户允许后才会存在，每个应用只问一次。它何时运行取决于应用的类型：
 
-- **脚本应用**的 Agent 在 Shell 启动时就准备好，并注册了应用的工具，所以即使应用没有打开，系统 Agent 的 `peer_list` 也能看到它。
+- **脚本应用**的 Agent 在获准时立即准备好，此后每次启动时也会准备，并注册应用的工具，所以即使应用没有打开，系统 Agent 的 `peer_list` 也能看到它。
 - **原生应用**的 Agent 属于应用已打开的窗口，只在应用打开期间运行；它的记忆和对话记录在两次打开之间会保留。它的工具也在那个窗口里运行：Notes 没打开时，调用会回答 “Open Notes first”。
 
 退出登录会保留 Agent；删除账号或卸载应用会清除它的对话记录和记忆。
@@ -107,7 +107,7 @@ flowchart LR
 | 应用 | 类型 | 它的 Agent 自己的工具 | 系统 Agent 可以调用 |
 | --- | --- | --- | --- |
 | Rinx（Matrix 聊天） | 原生，在 Shell 内 | octos 的文件、记忆和网页工具 | – |
-| Terminal（桌面端） | 原生，独立进程 | `terminal.read_screen`、`terminal.read_scrollback` | `terminal.run`，受 Setup 开关控制，每条命令都要批准 |
+| Terminal（桌面端） | 原生；源码检出构建中为独立进程，发布包中在 Shell 内 | `terminal.read_screen`、`terminal.read_scrollback` | `terminal.run`，只在它作为独立的沙箱进程运行时提供，受 Setup 开关控制，每条命令都要批准 |
 | Calculator、Clock、Notes、Reminders、Weather | 原生，在 Shell 内 | 各自的只读工具 | 同样的只读工具 |
 | 邮件 | 脚本应用 | 绑定当前登录账号的 `mail.*` 工具，包括 `mail.publish_card` | – |
 | 日历 | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
@@ -251,13 +251,13 @@ fn ask(){
 
 Agent 能做什么，取决于应用交给它什么。脚本应用把这些都声明在应用包里；原生应用则声明在 `native-apps.json` 的条目里。
 
-- **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md`。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
+- **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
 - **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有宿主服务，而标为 `implemented_by: "app"` 的工具在 Card runner 中还没有执行器。所以目前商店应用的 Agent 能对话、能提问、能读取自己的文件夹，但还不能通过自己的工具做事。
 - **数据。** 默认情况下，Agent 在它所属账号的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账号的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。应用也可以声明 `storage.agent_workspace: "none"`；Calculator、Clock、Notes、Reminders、Weather 和 Terminal 就是这样，它们的 Agent 只能看到自己的工具返回的内容。任何 Agent 都看不到别的账号的文件夹。
 - **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账号一起清除。
 - **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。
-- **事件**（目前只有邮件）。一个 `triggers.events` 条目、一项技能和 `AGENT.md`，让邮件的 Agent 不等人开口就能处理新邮件；在这些回合里，Shell 会附上已接纳的指令和技能文本。
+- **事件**（目前只有邮件）。一个 `triggers.events` 条目让邮件的 Agent 不等人开口就能处理新邮件，并由它的 `AGENT.md` 和一项分拣技能指导。
 
 新增一个工具的步骤（manifest、`tools.json`、授权、处理代码、审批路径）见 [AGENTS.md（英文）](AGENTS.md#architecture-documentation-and-code-walkthroughs)，设计见 [ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)。
 
@@ -328,7 +328,7 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 - **到内核只有一条连接。** 系统对话和每个应用 Agent 的代理共用一条通往内核的流。一个小小的路由器（[`crates/kernel/src/router.rs`](crates/kernel/src/router.rs)）为每个请求分配唯一的 id，并把每条通知只发给关心该会话的使用方。
 - **线程按服务分配，而不是按回合。** 回合是 Tokio 任务。在 Shell 中，内核服务运行在一个有两个工作线程的 Tokio 运行时上，每个活跃应用 Agent 的代理有自己的单线程运行时（所以一个慢吞吞的 Agent 拖不住别的 Agent，也拖不住界面），系统对话则用一个线程，只在有变化时才通过 Makepad 的 `SignalToUI` 唤醒界面。octos 子进程（桌面端和 Android）使用 Tokio 的默认运行时，每个 CPU 核心一个工作线程。
 - **按需启动，空闲即停。** 内核在第一个连接到来时启动：如果用户已经允许过某个脚本应用的 Agent，就在 Shell 启动时；否则在某个 Agent 或系统对话第一次需要它时。系统对话只在面板打开或有回合运行时才保持连接。Talk to Octos 关闭时，最后一个连接断开，内核就停止。没有获准 Agent 的应用既没有代理，也没有 peer。
-- **应用共享 Shell 进程。** 脚本应用是同一个 Card runner 中的隔离环境，原生应用是模块，所以大多数应用不单独占用进程。脚本出错只影响它自己的隔离环境，原生模块的 panic 在模块边界被捕获。只有需要系统沙箱的应用才作为独立进程运行。
+- **应用共享 Shell 进程。** 脚本应用是同一个 Card runner 中的隔离环境，原生应用是模块，所以大多数应用不单独占用进程。脚本出错只影响它自己的隔离环境，原生模块的 panic 在模块边界被捕获。只有声明为独立进程的应用（为了系统沙箱的 Terminal，以及没有模块的 Task）才作为进程运行，前提是有它的二进制。
 - **进程应用的画面零拷贝。** Terminal 的画面以共享 GPU 表面的形式到达 Shell：macOS 上是 IOSurface，Windows 上是 D3D11 共享句柄，Linux 配 Vulkan 时是 DMA_BUF。在只能靠 CPU 拷贝的环境（Linux 配 OpenGL）中，所有应用都改在 Shell 内运行。
 
 ## 目录结构

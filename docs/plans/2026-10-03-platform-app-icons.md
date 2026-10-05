@@ -1,5 +1,7 @@
 # Platform app icons implementation plan
 
+**Status (2026-10-04):** Done: merged in [#323](https://github.com/OctoSense-org/OctoSense/pull/323) (5a707de8); the Android installation follow-up is below.
+
 **Goal:** Use OctoSense's existing eight-petal green mark in installed mobile apps and desktop builds.
 
 **Architecture:** Extend the deterministic, standard-library icon generator in `desktop/packaging/make_icons.py`. Keep desktop release artwork intact, generate assets at the paths the pinned Makepad packager reads, and overlay OpenHarmony's template icons in the product build wrapper. Commit generated assets so normal builds require no image tools.

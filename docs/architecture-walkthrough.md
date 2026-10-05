@@ -32,7 +32,7 @@ The launch choices come from [native-apps.json](../native-apps.json), [AppRegist
 | What you launch | Follow the code | What is actually running |
 | --- | --- | --- |
 | Native Rust module, such as Reference or Rinx | [module_host.rs](../crates/shell/src/module_host.rs): module creation, scoped handles, assistant/storage offers | Rust code and UI in the shell process; each instance gets a script isolate. The isolate does not isolate arbitrary Rust memory. |
-| Native process app, currently desktop Terminal where supported | [clients.rs](../crates/shell/src/clients.rs), [hub.rs](../crates/shell/src/hub.rs), [process-apps](../crates/process-apps/src/lib.rs) | A child executable exchanges frames, input and AI-bus messages over the authenticated Makepad hub socket. An `octos_peer` envelope on that socket also supports its assistant link; see §5. Shipped process apps currently request no `agent.octos` services. |
+| Native process app, currently the desktop Terminal and Task where supported | [clients.rs](../crates/shell/src/clients.rs), [hub.rs](../crates/shell/src/hub.rs), [process-apps](../crates/process-apps/src/lib.rs) | A child executable exchanges frames, input and AI-bus messages over the authenticated Makepad hub socket. An `octos_peer` envelope on that socket also supports its assistant link; see §5. The Terminal requests `agent.octos` services for its own agent, which only reads the screen and scrollback. |
 | Contained script app | App Hub's `CARD_MODULE`, reached through `apps.rs` | The Card runner admits the bundle and makes a restricted, nested Splash VM; capabilities limit access to host services and platform APIs. No Rust executable is compiled per bundle. |
 | Glance card | [glance.rs](../crates/shell/src/glance.rs), [glance_chat.rs](../crates/shell/src/glance_chat.rs) | An L0/L1 `source` card is checked and lowered with host data; a Splash `script` card runs interactive handlers under its publisher's policy. `notify` adds a toast/shade entry. UI dismissal calls `glance::dismiss`; apps use `glance.withdraw`. Chat reaches the publisher's peer. |
 
@@ -44,12 +44,12 @@ python3 tools/setup.py --check --cargo
 cargo run --release -p octosense
 # An opt-in, in-process Rust example:
 MAKEPAD_WM_TEST_APP=reference cargo run --release -p octosense --features app-reference -- --module reference
-# A shell with the kernel integration; point at a binary built from Cargo.toml's octos rev:
+# The default build has the kernel service; point it at a kernel built from Cargo.toml's octos rev:
 OCTOS_APP_CORE_BIN=/path/to/pinned/octos \
-  cargo run --release -p octosense --features octos-core
+  cargo run --release -p octosense
 ```
 
-The AI providers host-owned sheet must also configure a provider/model before a real conversation can run. A Rust build does not provision those credentials. `OCTOS_APP_CORE_BIN` names a file; this kernel launcher does not search `PATH`. For automated UI work use the existing hidden-window instructions in the product README.
+Before a real conversation can run, set a provider and model on the AI providers app's host sheet. A Rust build does not provision those credentials. `OCTOS_APP_CORE_BIN` names a file; this kernel launcher does not search `PATH`. For automated UI work use the existing hidden-window instructions in the product README.
 
 For a script app, Design Flow's Python `tools/octo` CLI wraps App Hub's `card-host` and `hub` commands. Run a bundle with `tools/octo run /path/to/bundle` from the Design Flow checkout (unverified launch recipe). The standalone runner exercises contained UI and policy. Use a shell to test Mail, Calendar, provider and peer services; those are registered by the shell. A `hub check` pass validates the bundle's admission contract.
 
@@ -59,7 +59,7 @@ Read [ai-host/src/lib.rs](../crates/ai-host/src/lib.rs), then [kernel/src/lib.rs
 
 1. The shell calls `ai_host::start`, registering host services and configuring the kernel source. `model.complete` is a one-shot provider request; it does not create a peer or run a tool loop.
 2. The first authorized consumer calls `Core::connect`. It obtains a logical `Connection`; subsequent consumers share the same kernel generation.
-3. `launch::resolve` selects a desktop child (`OCTOS_APP_CORE_BIN` or an explicit program), Android's executable packaged as `liboctos.so`, or an embedded OpenHarmony service. iOS has no kernel here.
+3. `launch::resolve` selects a desktop child (an explicit program, `OCTOS_APP_CORE_BIN`, or the packaged `octos-kernel` beside the shell, checked against the pinned revision), Android's executable packaged as `liboctos.so`, or an embedded OpenHarmony service. iOS has no kernel here.
 4. `kernel::supervise` owns the running process/task and frame pump. `Router` correlates consumer request IDs and session events over the one physical protocol connection.
 5. The protocol is OUP, JSON-RPC messages and asynchronous notifications. Ordinary mode uses newline-delimited JSON over stdio. Enabling Talk to Octos selects a host-managed loopback WebSocket; it does not start an extra kernel for each client.
 6. Provider changes restart the generation. Consumers must reconnect and rebind. A peer's memory outlives any `Connection`.
@@ -72,9 +72,9 @@ Open [system_chat/mod.rs](../crates/shell/src/system_chat/mod.rs), [session.rs](
 
 The assistant pane sends a `Command` to its worker. The `Driver` opens `_main:api:octosense#system`, reads history and starts a turn. Incoming events update a chat model, and `SignalToUI` wakes the Makepad event loop to draw a snapshot.
 
-The system agent is a session on the `_main` profile. The host narrows its kernel tools using `session/tool_list/set`; `SYSTEM_AGENT_TOOLS` includes `peer_list`, `peer_send_input`, `peer_gather` and `peer_respond`. Its normal command-execution route, if the person enables it, is the shell's `terminal.run` tool and approval UI. It is not octos's builtin `shell` tool.
+The system agent is a session on the `_main` profile. The host narrows its kernel tools using `session/tool_list/set`; `SYSTEM_AGENT_TOOLS` includes `peer_list`, `peer_send_input`, `peer_gather` and `peer_respond`. Its normal command-execution route, if the person enables it, is the shell's `terminal.run` tool and approval UI. It is not octos's builtin `shell` tool. It also gets the read tools native apps share (`agent.system_tools`, such as `calculator.eval`), which the app's open instance answers.
 
-[agents.rs](../crates/shell/src/agents.rs) adds two useful host tools: `agents.list` discovers app agents and their availability; `agents.ask` opens first-use consent and waits for a ready peer slug—the identifier issued by the kernel for that peer. On success the system agent uses `peer_send_input` to submit the task; the ask call itself only prepares access. The person controls first-use consent.
+[agents.rs](../crates/shell/src/agents.rs) adds two useful host tools: `agents.list` discovers app agents and their availability; `agents.ask` opens first-use consent and waits for a ready peer slug—the identifier issued by the kernel for that peer. On success the system agent uses `peer_send_input` to submit the task; the ask call itself only prepares access. The person controls first-use consent. For a native app, `agents.ask` returns as soon as the agent is allowed: its peer belongs to the app's open instance, which the shell does not prepare, so the system agent reaches it only while the app is open. A script app's peer is prepared as soon as it is allowed (and at each later startup).
 
 ## 5. Prepare one app peer, then give it two lanes
 
@@ -95,7 +95,7 @@ Process death cancels outstanding work and closes request contexts while keeping
 
 `card.os.news` is the broker's app identity, not necessarily the kernel's generated peer slug. `peer/prepare` returns that slug, the peer session and a host credential; use the returned values. Peers are keyed by app and account. Accountless apps use `device`; Mail uses the host-reported signed-in account. `ensure_peer` resumes the recorded peer, verifies its namespace, and registers tools before a turn can run.
 
-In the Calendar example, delegation runs on the system lane; “Ask Calendar” runs on a human lane. The **blackboard** below is the kernel’s shared record of peer work and results, which the system agent can read with `peer_gather`.
+In the Calendar example, delegation runs on the system agent's lane; “Ask Calendar” runs on a person's lane. The **blackboard** below is the kernel’s shared record of peer work and results, which the system agent can read with `peer_gather`.
 
 ```mermaid
 sequenceDiagram
@@ -109,46 +109,31 @@ sequenceDiagram
     K->>B: peer/input notification
     B->>B: check account, consent, tool registration; queue input
     B->>K: turn/start on peer session, with input id
-    K->>A: execute system lane turn
-    H->>B: Ask app: ContextOp::Turn
+    K->>A: execute system agent's lane turn
+    H->>B: Ask app: ContextOp::TurnFrom (Person)
     B->>K: peer/context/open with share_history; turn/start
-    K->>C: execute human lane turn
+    K->>C: execute person's lane turn
     A-->>K: completed turn / peer result
     K-->>S: blackboard result available to peer_gather
     C-->>B: streamed events and completion
     B-->>H: app conversation / in-card chat reply
 ```
 
-The app peer session is the **system lane**. `open_conversation` creates a request context with `share_history` for a **human lane**. They have separate transcripts and turn state; bounded recent text from the other lane is supplied read-only. Multiple human surfaces may create separate conversation contexts of the same peer. `open_context` is the non-sharing path for per-client work, such as Rinx mini apps. A request context is its own kernel session, but is not another app peer.
+The app peer session is the **system agent's lane**. `open_conversation` creates a request context with `share_history` for a **person's lane**. They have separate transcripts and turn state; bounded recent text from the other lane is supplied read-only. Several of the person's surfaces may create separate conversation contexts of the same peer. `open_context` is the non-sharing path for per-client work, such as Rinx mini apps. A request context is its own kernel session, but is not another app peer.
 
-The broker's `driver_of` and `take_over` handle multiple native instances sharing a peer: one broker drives the system-lane input queue. This prevents every open app window from independently running the same `peer/input`. Human-context work is separate and can run while that queue's current turn is active.
+The broker's `driver_of` and `take_over` handle multiple native instances sharing a peer: one broker drives the input queue of the system agent's lane. This prevents every open app window from independently running the same `peer/input`. Work in the person's context is separate and can run while that queue's current turn is active.
 
 ## 6. Where a person talks, and where the answer goes
 
 | Surface | Implementation and behavior |
 | --- | --- |
 | System assistant pane, F8 | `system_chat`: system session; routes app questions raised during system-delegated work here too. |
-| “Ask <app>”, Shift+F8 | [app_chat/mod.rs](../crates/shell/src/app_chat/mod.rs): `agents::conversation`, subscription to both lanes and merged history. Send starts the person's context turn. |
+| “Ask &lt;app&gt;”, Shift+F8 | [app_chat/mod.rs](../crates/shell/src/app_chat/mod.rs): `agents::conversation`, subscription to both lanes and merged history. Send starts the person's context turn. |
 | An app's own native chat | Injected `OctosAppService::open_conversation`; the app renders its events. |
 | A script app's own chat | Exact granted `octos.session.open`, `octos.session.history`, `octos.turn.start`, `octos.turn.interrupt` calls through `host.request`. The shipped system-app agents are shell-driven without their scripts declaring these calls. |
 | A published card's chat | `sys.chat` → [l0-chat](../crates/l0-chat/src/lib.rs) and [glance_chat.rs](../crates/shell/src/glance_chat.rs). Publisher checks bind it to the card's owning app. |
 
-Phone Glance renders compact summaries without executing generated UI. A tap uses that summary's screen rectangle to reveal `glance_sheet.rs` above the feed at full viewport size. `card_presentation.rs` owns the reversible Makepad frame animation; it does not spawn Tokio tasks, launch an app or change the app peer. Email and Chat share one row. The original email and directly editable draft are in `mail_clip.rs`; `card_chat.rs` virtualizes the transcript and pins the native composer above the keyboard. Both panes use the same authoritative draft. `chat_submit` checks the declared `sys.chat` source, publisher, account and thread, then issues a one-use editing capability for the saved draft revision. Mail consumes it through `mail.suggest_reply`; without it, the tool only proposes a suggestion. This never authorizes sending. Dismissal preserves the resident widgets/session and revokes pending review authority; retained clean workspaces are bounded, and invalidated accounts/publications are retired. Final sending still requires physical approval of the exact host review.
-
-The shared workspace also hosts Calendar, News, Photos, YouTube and other publishers. When an agent-enabled publisher omits `sys.chat`, `L0Session::for_card` adds a host-owned Card / Chat conversation without rewriting its L0 or Splash source. `ContextKind::Card` carries bounded publication data and current L0 state, scoped to the original publication account and a stable card thread. It grants no Mail edit token or additional tools. First use opens the existing permission sheet through Enable assistant; a publisher without an agent has no Chat tab. Existing explicit `sys.chat` declarations keep their threads. Thus shipped notice and Calendar cards can use native workspace chat as well as desktop “Ask <app>”. The explicit `OCTOSENSE_GLANCE_DEMO=mail` chat remains canned. Local L0 changes and interacted Splash isolates are exempt from clean-cache eviction; stale accounts cannot reopen their old publications.
-
-A bound Mail reply card adds a durable host path: `mail.propose_reply` creates
-an account/email-bound draft, and `mail.publish_card` carries its `draft_id`.
-`mail_card.rs` answers `sys.mail_draft` and checks Field-origin edits against the
-displayed revision. Its `sys.mail_review` write requests the host's
-`mail_review.rs` UI, never approval. `drafts.rs` owns the immutable attempt and
-SMTP receipt; the agent cannot send directly. Chat includes the bound email,
-acknowledged draft and bounded history in the existing Mail peer. Only verified
-Android physical touch can approve in this iteration; desktop/accessibility
-approval and complete paired-model phone acceptance remain pending. Follow the
-[implementation and gate table](mail-composable-cards.md) before treating the
-new flow as validated.
-
+The shipped `<app>.notify`, `calendar.notify` and `calendar.agenda` templates contain no `sys.chat`; their agents are reached through “Ask &lt;app&gt;”. The `OCTOSENSE_GLANCE_DEMO=mail` demonstration card has chat but uses canned replies (`glance_chat::HostResponder`). The card-chat route above applies to a card that declares `sys.chat`.
 
 Phone touch navigation does not yet expose a control to open the Ask-app panel. App-owned chat and published-card chat remain separate surfaces.
 
@@ -156,8 +141,8 @@ Stopping work depends on the entry point:
 
 | Action | What it interrupts |
 | --- | --- |
-| Ask-app panel’s Stop | The human lane |
-| “Stop the system agent’s task” | The system lane |
+| Ask-app panel’s Stop | The person's lane |
+| “Stop the system agent’s task” | The system agent's lane |
 | Lower-level `ContextOp::Interrupt` | Can interrupt both lanes |
 
 Hiding the Ask panel keeps its context and subscription. Changing app or revoking access closes them.
@@ -187,7 +172,7 @@ The executor depends on the tool's owner. [host_tools/mod.rs](../crates/shell/sr
 | Tool route | Executor boundary |
 | --- | --- |
 | Contained app, `implemented_by: "host-service"` | `HostServiceExecutor` invokes the admitted owner's Rust service. |
-| Native module | Its `OctosAppService::set_tool_executor` callback handles the call. |
+| Native module | The open instance answers over its peer link with Makepad's `OctosPeer::serve_tools` (Calculator, Clock, Notes, Reminders, Weather), or else on its AI bus service. An installed `OctosAppService::set_tool_executor` callback takes precedence. |
 | Native process | `peer_link` sends a tool request to the client over its authenticated hub socket; registration and grants are still required. |
 | System `terminal.run` | The shell types an approved command into the visible Terminal through its AI bus; enabled by the Command execution setting. |
 | `files.list/read/search` | Shell executor over the caller's permitted account workspace, on Unix. |
@@ -225,8 +210,10 @@ For the Calendar question, the executor reads `calendar/events.json` under Calen
 | App | Current data/tool boundary |
 | --- | --- |
 | News | `news.list`, `news.read` and `news.notify` |
-| Mail | Account-scoped accounts/folders/sync/list/peek, notify/publish_card/skip_event, plus propose_reply/draft/suggest_reply/propose_send; no send, approve or credential tool |
+| Mail | Account-scoped accounts/folders/sync/list/peek, notify/publish_card and explicit event skip; no send or credential tool |
 | Photos, Maps, Camera, YouTube | Only their own `<app>.notify`, publishing a shared notice card through [glance_notice.rs](../crates/shell/src/glance_notice.rs) |
+| Calculator, Clock, Notes, Reminders, Weather | Their own read tools, which the system agent may also call; no workspace (`agent_workspace: "none"`) |
+| Terminal | `terminal.read_screen` and `terminal.read_scrollback`; typing a command stays the system agent's `terminal.run` |
 | AI providers | No app agent |
 
 The older AppCard personal-data importer is not automatically synchronized with current Mail’s store.
@@ -259,9 +246,9 @@ Follow the direct “Ask Calendar” question across those boundaries:
 1. The Makepad UI submits a context request to Calendar’s broker.
 2. The broker’s runtime sends `turn/start` through a shared kernel `Connection`; the kernel-service supervisor carries it across the transport.
 3. octos spawns a turn orchestration task. It waits at a start barrier until the active-turn registry accepts it, then starts agent processing.
-4. If the model calls `calendar.events`, its tool future waits while the broker and shell relay deliver the request to Calendar’s host service. The returned data lets the model continue; reply events travel back to the human context and wake the UI.
+4. If the model calls `calendar.events`, its tool future waits while the broker and shell relay deliver the request to Calendar’s host service. The returned data lets the model continue; reply events travel back to the person's context and wake the UI.
 
-These are scheduling boundaries, not a new thread or process for every peer. Use this table to locate their owners:
+These are scheduling boundaries: the kernel adds no thread or process per peer, but each live peer's broker in the shell has one worker thread. Use this table to locate their owners:
 
 | Layer | Actual execution model | Source |
 | --- | --- | --- |
@@ -270,6 +257,7 @@ These are scheduling boundaries, not a new thread or process for every peer. Use
 | Shell kernel service | Lazily built Tokio runtime: **2 worker threads**, **8 MiB stacks**. One generation supervisor task owns transport and process lifecycle, with auxiliary I/O tasks | `kernel/src/lib.rs::Inner::runtime`, `kernel.rs::supervise` |
 | App broker | **Each `Broker::new` builds a runtime with 1 worker thread**. Link pump, request futures, retries and deadline tasks run there. Multiple brokers may share one durable peer | `app-peers/src/broker.rs` |
 | Embedded OpenHarmony kernel | `serve_io` is spawned on the host runtime over `tokio::io::duplex`; no child executable | `kernel.rs::start` |
+| octos child (desktop, Android) | Its own process: `ServeCommand::execute` builds Tokio's default multi-thread runtime, one worker per CPU core | pinned octos `crates/octos-cli/src/commands/serve.rs` |
 | octos OUP turn | A spawned orchestration task waits on a `oneshot` start barrier until active-turn admission succeeds; `run_standalone_turn` then spawns agent processing and auxiliary tasks | pinned octos `crates/octos-cli/src/api/ui_protocol_transport.rs` |
 | octos transport output | WebSocket has an async writer task; embedded/stdio uses a bounded synchronous queue and an ordinary writer thread. Transport variants are not identical | same octos file |
 | Host service / file executor | Depends on the service: UI pump, callback/reply queues, worker threads for blocking operations. Not universally a Tokio task per service or app | `host_tools/files.rs`, App Hub `services.rs`, app host services |
@@ -283,7 +271,7 @@ flowchart LR
     C --> SUP["Kernel-service supervisor task"]
     SUP <-->|"stdio or host WebSocket"| OUP["octos protocol dispatcher"]
     OUP --> T1["System-lane turn task"]
-    OUP --> T2["Human-context turn task"]
+    OUP --> T2["Person's-lane turn task"]
     T1 --> TOOL["tool future waits for host reply"]
     TOOL --> B
     B --> Q["Shell relay queue"]

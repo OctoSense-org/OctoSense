@@ -129,15 +129,9 @@ provision supplements admitted app guidance; email content cannot provision an
 agent or expand its tools. Disabling the provision or revoking agent access
 stops new turns and cancels the dispatcher's active context.
 
-Verification: on the assigned OnePlus 6, AgentMail messages delivered through
-Gmail triggered real DeepSeek and MiniMax Mail turns without a per-email prompt.
-Both models explicitly skipped the routine newsletter. DeepSeek's revised
-shipping and appointment cards were readable; MiniMax's first pair had missing
-data bindings despite successful publication. That failure led to the generated
-data gate and model feedback. Its shipping retry displayed complete facts and
-opened from the notification. After sender verification, a fresh MiniMax
-appointment published on its first attempt and passed the phone notification,
-full-card and Android Back checks. See the [recorded test](testing/mail-events-2026-10-04.md)
-for build boundaries, source artifacts and limitations. The trial policy handles
-only subjects prefixed `[OctoSense simulation]`; it skips other incoming messages
-without reading their bodies.
+Verification: on a OnePlus 6, mail delivered through Gmail started real DeepSeek and MiniMax
+Mail turns without a per-email prompt. Both models skipped a routine newsletter and published
+readable shipping and appointment cards (MiniMax's opened from their notifications); a MiniMax card with
+missing data bindings led to the generated-data gate. The [recorded test](testing/mail-events-2026-10-04.md)
+has the builds, artifacts and limitations. The trial policy handles only subjects prefixed
+`[OctoSense simulation]` and skips other messages without reading their bodies.

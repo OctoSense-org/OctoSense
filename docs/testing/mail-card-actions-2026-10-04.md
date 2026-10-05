@@ -52,6 +52,8 @@ card was authored by its model through `mail.publish_card`; no tester wrote
 or patched the final source/data. Reviewers changed policy through the system
 agent and operated the UI. There was no per-email chat prompt or manual peer
 dispatch. Initial and intermediate receipts remain separate from final passes.
+Each stage's APK also shipped revised bundled Mail guidance (`SKILL.md`; hashes in
+the build receipts); Git keeps only the final 0409 version.
 
 | Policy stage / APK / pickup code | DeepSeek | MiniMax |
 | --- | --- | --- |
