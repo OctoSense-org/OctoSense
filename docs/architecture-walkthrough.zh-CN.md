@@ -17,7 +17,7 @@
 | `dev_mode::init`、`approvals::init` | 先是开发者模式，再是审批路由 |
 | `host_tools::init` | 让 Shell 成为每个代理的工具宿主，连同中转（[第 7 节](#7-把工具追到-rust-代码)） |
 | `system_chat::init` | 系统 Agent 的授权，在内核第一次启动之前交给它 |
-| `agents::start` | 一个线程，为用户已允许的每个脚本应用准备 peer（[第 5 节](#5-准备-peer给它两条通道)），以及邮件的事件工作线程 |
+| `agents::start` | 一个线程，为用户已允许的每个脚本应用准备 peer（[第 5 节](#5-准备-peer给它两条通道)），以及邮件的收取和投递线程 |
 
 顺序正是关键：在任何 Agent 能调用工具之前，审批路由和中转就已经存在。如果用户在之前的运行中已经允许了日历的 Agent，`agents::start` 会立即准备它的 peer，而这第一个连接就会启动内核。
 
@@ -205,6 +205,8 @@ peer 是存储的状态，回合是 octos 中的一组 Tokio 任务；线程属�
 | 层 | 如何运行 | 去哪里看 |
 | --- | --- | --- |
 | Shell 界面 | Makepad 的 UI 线程：绘制、事件，以及运行中转的 `host_tools::pump` | `lib.rs`、`host_tools/mod.rs` |
+| Mail 事件 | 两个 `std::thread`：独立收取与串行投递，各事件独立退避。Android 仅在前台或有时限的系统任务内允许执行。 | `agent_events.rs`、`mail_background.rs` |
+| Android Mail 后台任务 | Java JobService 工作线程无需 Activity 即可加载同一个 Rust 宿主，驱动同步的工具中继；一个要求联网的周期任务，不创建第二个内核或对等代理。 | `phone/src/android_mail.rs`、`MailJobService.java`、`runtime_host.rs` |
 | 系统对话 | 一个 `std::thread`，用 `link::poll_for` 轮询内核 | `system_chat/mod.rs`、`link.rs` |
 | 内核服务 | 一个首次使用时才创建的 Tokio 运行时：2 个工作线程，8 MiB 栈；每个代际一个 supervisor 任务 | `kernel/src/lib.rs` 的 `Inner::runtime`、`kernel.rs` 的 `supervise` |
 | 应用代理 | 每次 `Broker::new` 创建一个运行时，1 个工作线程：链路循环、请求、重试、时限 | `app-peers/src/broker.rs` |

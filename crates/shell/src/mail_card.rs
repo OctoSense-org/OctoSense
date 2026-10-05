@@ -80,7 +80,7 @@ pub fn generation() -> u64 {
     }
 }
 
-fn read(binding: &Binding) -> Result<Value, String> {
+pub(crate) fn read(binding: &Binding) -> Result<Value, String> {
     binding.validate()?;
     if !account_valid(&binding.account) {
         return Err(

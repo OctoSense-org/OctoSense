@@ -145,3 +145,10 @@ initial baseline, durable pending events, incoming-trigger turns, successful-tur
 acknowledgment and bounded retries. News's fetch timer still collects data
 without starting an LLM turn. Host-provisioned skill text is not kernel-native
 skill installation; never claim the general ADR 0002 scheduler is complete.
+Android's Mail-only JobService adapter is in `phone/src/android_mail.rs` and
+`phone/resources/android/java/dev/makepad/octosense/MailJobService.java`;
+`runtime_host` initializes the same host once, and `mail_background` owns bounded
+execution leases and account-scoped notification restoration. A Rust worker
+thread alone is not Android background execution. Test a cold process and a
+stopped job, distinguish forced from natural scheduling, and preserve physical
+send approval. See ADR 0008.

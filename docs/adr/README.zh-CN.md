@@ -15,6 +15,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 | [0005](0005-app-contract.md)（英文） | 应用契约：App Hub 与每个应用之间一个小而带版本的接口 | 已实施 |
 | [0006](0006-app-studio-on-the-phone.md)（英文） | 手机上的 App Studio | 已接受 |
 | [0007](0007-composable-mail-action-cards.zh-CN.md) | 可组合的 Mail 卡片：编辑、聊天与经批准的操作 | 实现中；手机验收待完成 |
+| [0008](0008-quiet-android-mail-jobs.zh-CN.md) | Android 静默邮件后台任务与原生卡片通知 | 本次变更已实现；设备验收进行中 |
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 

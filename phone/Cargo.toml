@@ -66,6 +66,9 @@ makepad-aichat = { workspace = true, optional = true }
 octosense-reference = { workspace = true }
 octosense-app-hub-app = { workspace = true }
 
+[target.'cfg(target_os = "android")'.dependencies]
+makepad-jni-sys = "0.4.0"
+
 [features]
 # The standalone mobile shell: the Android phone shell fills the window, no
 # desk bar, no style switcher, no desktop styles. Android builds get it

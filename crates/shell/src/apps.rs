@@ -193,7 +193,7 @@ pub(crate) mod test_system_apps {
 /// and registers with the kernel in `ai_host::start`, at startup, with the
 /// `model` service (`model.complete`, ADR 0002) over the same providers.
 #[cfg(any(feature = "app-hub", native_mobile))]
-fn register_host_services() {
+pub fn register_mail_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         crate::glance::register();
@@ -217,6 +217,15 @@ fn register_host_services() {
             crate::mail_card::queue_review(key, review);
             Ok(())
         })));
+        crate::mail_card::publication_host_ready();
+    });
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn register_host_services() {
+    register_mail_services();
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
         // Calendar's events and cards (its agent's `calendar.*` tools),
         // published the same way.
         octosense_calendar_service::register();
@@ -226,7 +235,6 @@ fn register_host_services() {
         // stands in for one.
         let served = crate::glance_notice::serve_system_apps();
         makepad_widgets::log!("glance: the notice service answers {served:?} (no service of their own)");
-        crate::mail_card::publication_host_ready();
     });
 }
 

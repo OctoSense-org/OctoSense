@@ -7633,6 +7633,7 @@ dependencies = [
  "makepad-ai-services",
  "makepad-aichat",
  "makepad-app-module",
+ "makepad-jni-sys",
  "makepad-strict-json",
  "makepad-studio-protocol",
  "makepad-widgets",

@@ -17,9 +17,10 @@
 //! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
 //! **Threads.** Brokers call in on their own threads and the system chat on
-//! its own; every call, cancel and approval is queued and handled on the UI
-//! thread in [`pump`] (the shell calls it on every signal and every tick),
-//! where the approval router, the peer links and the AI bus live. The
+//! its own; every call, cancel and approval is queued for [`pump`]. The
+//! window calls it on signals/ticks; Android's bounded Mail job may also
+//! drive it without a window. A pump gate serializes the two callers. The
+//! approval router, peer links and AI bus communicate through synchronized state. The
 //! router's decisions and the peer links' outcomes come back through queues
 //! too, so nothing here re-enters a lock it holds.
 //!
@@ -103,9 +104,13 @@ pub fn submit(event: Event) {
     makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
 }
 
-/// On the UI thread: handle everything queued (and what that queues), and
-/// deliver the host services' answers to script apps' tool calls.
+/// Handle queued calls and deliver host-service replies, from a window or
+/// Android Mail job. A concurrent pump yields; no executor receives a Cx.
+/// Human approvals remain pending until a trusted host surface answers.
 pub fn pump() {
+    // A headless Android job and a live window share the same relay.
+    static PUMP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let Ok(_pump) = PUMP.try_lock() else { return };
     #[cfg(any(feature = "app-hub", native_mobile))]
     script_apps::poll();
     for _ in 0..8 {

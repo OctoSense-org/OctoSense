@@ -149,6 +149,8 @@ L0 的本地修改和已交互的 Splash 实例也不参与干净缓存淘汰。
 
 News、Photos、Maps、Camera、Mail、AI 提供商和 YouTube 都是隔离运行的脚本应用（[ADR 0004（英文）](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)）。它们的应用包位于 [`apps/`](../apps/README.zh-CN.md)（`apps/<name>/bundle/`）；本目录的 `system-apps.json` 指定本 Home 附带哪些应用，并挂载由 Home 自有的素材（Photos 的示例图库 `apps/photos/resources/photos`）。无论是在独立的 Home 中还是在 ROM 中，App Hub 的 Card 运行器都会按照各应用清单中的策略，在各自独立的 isolate 中运行它们。每个应用都保留简短的启动器 id（`os.news` 对应 `news`），因此图标、磁贴和程序坞都不受影响。
 
+Android 上，已启用的 Mail 代理还会使用静默且要求联网的后台任务，约每 15 分钟一次，Android 可能延迟执行。无需打开 Home 即可收取并评估邮件。只有模型决定发布且 `notify: true` 的卡片才发出原生通知；点击会恢复原始账户的卡片。重要性偏好由系统代理配置，普通邮件会跳过。强行停止后，必须重新打开应用才会恢复任务。见[邮件事件](../docs/mail-agent-events.zh-CN.md)及 [ADR 0008](../docs/adr/0008-quiet-android-mail-jobs.zh-CN.md)。
+
 Mail 通过 `mail` 宿主服务（[`apps/mail/host-service`](../apps/mail/host-service)）收发邮件：用户在宿主自己的面板上登录，密码保存在钥匙串中或由 Android Keystore 密钥保护，应用本身从不持有套接字或密码。使用演示邮箱（密码为 `demo`）：
 
 ```sh

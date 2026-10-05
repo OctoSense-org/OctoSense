@@ -493,6 +493,31 @@ mod tests {
         assert!(f.pending().is_empty());
     }
     #[test]
+    fn collecting_new_mail_preserves_unresolved_older_events_without_notifying() {
+        let f = Fixture::new();
+        f.sync().unwrap();
+        f.add("waiting-for-model");
+        f.sync().unwrap();
+        let oldest = f.pending()[0].clone();
+        // No model completion or acknowledgement occurs before this next
+        // fetch. Collection must still commit the newly arrived message.
+        f.add("new-appointment");
+        let report = f.sync().unwrap();
+        assert_eq!(report.new, 1);
+        assert_eq!(report.pending, 2);
+        let pending = f.pending();
+        assert_eq!(pending[0], oldest);
+        assert_eq!(pending[1].message, "new-appointment");
+        let box_ = f.store.mailbox("a1", INBOX);
+        assert_eq!(box_["messages"].as_array().unwrap().len(), 2);
+        assert!(box_["publication_receipts"]
+            .as_array()
+            .is_none_or(Vec::is_empty));
+        assert!(box_["skip_decisions"].as_array().is_none_or(Vec::is_empty));
+        assert_eq!(f.fake.marks.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
     fn failed_fetch_and_failed_save_leave_cursor_and_queue_unchanged() {
         let f = Fixture::new();
         f.sync().unwrap();

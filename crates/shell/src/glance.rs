@@ -680,6 +680,8 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
     if method == "withdraw" {
         let id = args["card_id"].as_str().filter(|id| valid_card_id(id)).ok_or("Invalid card_id")?;
         crate::mail_card::remove_publication(&gate, &format!("{}/{id}", caller.app()))?;
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        crate::mail_background::dismiss(&format!("{}/{id}", caller.app()), true)?;
     }
     let before = with_store(|store| store.cards.clone());
     let binding = mail.clone();
@@ -702,6 +704,13 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
         if let Some(binding) = &binding {
             let card = after.iter().find(|card| card.key() == binding.key()).ok_or("Published card missing")?;
             crate::mail_card::save_publication(&gate, args, binding, card.published_ms, card.expires_ms)?;
+        }
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if result.is_ok() && method == "publish" {
+        let key = format!("{}/{}", caller.app(), args["card_id"].as_str().unwrap_or_default());
+        if let Some(card) = with_store(|store| store.card(&key, now)) {
+            crate::mail_background::record(args, &card)?;
         }
     }
     if result.is_ok() && method == "publish" && args.get("notify").and_then(Value::as_bool) == Some(true) {
@@ -764,7 +773,11 @@ pub fn dismiss_all(keys: &[String]) -> usize {
     let gone: Vec<GlanceCard> = with_store(|store| keys.iter().filter_map(|key| {
         let card = store.card(key, now_ms())?;
         match crate::mail_card::set_publication_dismissed(&gate, &card, true) {
-            Ok(true) => store.take(key),
+            Ok(true) => {
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if crate::mail_background::dismiss(key, true).is_err() { return None; }
+                store.take(key)
+            },
             _ => None,
         }
     }).collect());
@@ -786,6 +799,8 @@ pub fn undo_dismiss() -> Vec<String> {
             && crate::mail_card::publication_can_undo(card, now_ms())
             && crate::mail_card::set_publication_dismissed(&gate, card, false) == Ok(true)
     }).collect();
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    let cards: Vec<_> = cards.into_iter().filter(|c| crate::mail_background::dismiss(&c.key(), false).is_ok()).collect();
     let keys: Vec<String> = cards.iter().map(|c| c.key()).collect();
     let now = now_ms();
     let back = with_store(|store| {
@@ -927,7 +942,53 @@ pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::
     card.expires_ms = card.expires_ms.min(expires);
     let inserted = with_store(|store| {
         store.expire(now);
-        if store.cards.iter().any(|old| old.key() == card.key()) || store.cards.len() >= STORE_CARDS
+        if let Some(index) = store.cards.iter().position(|old| old.key() == card.key()) {
+            if store.cards[index].published_ms >= card.published_ms { return false; }
+            store.cards.remove(index);
+        }
+        if store.cards.len() >= STORE_CARDS
+            || store.cards.iter().filter(|old| old.app == card.app).count() >= PER_APP_CARDS { return false; }
+        store.cards.push(card);
+        true
+    });
+    if inserted { changed(); }
+    Ok(())
+}
+
+/// Native notification restore: the account comes from private host storage.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn restore_mail_notification(args: &Value, account: &str, published: u64, expires: u64) -> Result<(), String> {
+    let _gate = crate::mail_card::publication_guard();
+    if crate::ai_host::contained::account_of("os.mail").as_deref() != Some(account) { return Err("Inactive account".into()); }
+    if let Some(metadata) = args.get("mail_binding") {
+        let mut binding: crate::mail_card::Binding = serde_json::from_value(metadata.clone()).map_err(|_| "Invalid binding")?;
+        binding.card_id = args["card_id"].as_str().ok_or("Missing card id")?.into();
+        if binding.account != account { return Err("Wrong account".into()); }
+        crate::mail_card::read(&binding)?;
+        return restore_mail_publication(args, binding, published, expires);
+    }
+    let now = now_ms();
+    if expires <= now || published >= expires { return Err("Expired publication".into()); }
+    let source = args["source"].as_str().ok_or("Missing source")?;
+    check_generated_l0(source)?;
+    check_generated_data(source, &args["data"])?;
+    let caller = Caller::Contained { app:"os.mail".into(), granted:crate::host_tools::script_apps::grants("os.mail", "glance") };
+    let mut temporary = GlanceStore::default().with_digest_root(crate::glance_digest::digest_root());
+    let mut args = args.clone();
+    args["notify"] = json!(false);
+    args["expires"] = json!(EXPIRES_MAX_S);
+    temporary.publish(&caller, &args, now)?;
+    let mut card = temporary.cards.pop().ok_or("Missing publication")?;
+    card.account = Some(account.to_owned());
+    card.published_ms = published;
+    card.expires_ms = card.expires_ms.min(expires);
+    let inserted = with_store(|store| {
+        store.expire(now);
+        if let Some(index) = store.cards.iter().position(|old| old.key() == card.key()) {
+            if store.cards[index].published_ms >= card.published_ms { return false; }
+            store.cards.remove(index);
+        }
+        if store.cards.len() >= STORE_CARDS
             || store.cards.iter().filter(|old| old.app == card.app).count() >= PER_APP_CARDS { return false; }
         store.cards.push(card);
         true

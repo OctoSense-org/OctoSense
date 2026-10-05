@@ -406,7 +406,8 @@ Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Cal
   `outward` 且 `confirm: app`，内核会像对待审批一样一直等它，而不是只给读取类工具的 30 秒），
   然后把 peer 的 slug 交给系统 Agent，让请求在同一轮里继续。Mail 还支持由
   `agents.provision` 启用的 `mail.messages.new`：OctoSense 进程存活时，持久队列自动
-  启动 incoming 回合。宿主记录发布成功或明确跳过，且回合成功后，才确认事件。
+  启动 incoming 回合。收件箱收取独立于这些回合运行，失败事件分别重试，避免一次失败
+  阻塞后续所有邮件。宿主记录发布成功或明确跳过，且回合成功后，才确认事件。
   通用应用触发器/cron 仍待实现。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
 - **直接与它对话。** 用户可以直接与应用的 Agent 对话，而不只是通过系统 Agent：在 Shell
   为每个拥有 Agent 的应用提供的 “Ask <app>” 面板里（这些应用都不绘制自己的对话界面）。

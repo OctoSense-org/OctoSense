@@ -476,7 +476,9 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   it as long as an approval, not a read tool's 30 s), then gives the system
   agent the peer's slug, so the request goes on in the same turn. Mail also
   supports opt-in `mail.messages.new` events configured by `agents.provision`: a
-  durable queue starts incoming turns while OctoSense is alive. Successful host
+  durable queue starts incoming turns while OctoSense is alive. Inbox collection
+  runs independently of those turns, and failed events retry individually so
+  one failure cannot block all later mail. Successful host
   publication or explicit skip plus turn completion is required before ack.
   General app triggers/cron remain planned. See [Mail events](../docs/mail-agent-events.md).
 - **Talking to it yourself.** The person can chat with the app's agent

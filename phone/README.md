@@ -222,6 +222,8 @@ isolate under its manifest's policy, in the standalone Home and in the ROM
 alike. Each keeps its short launcher id (`news` for `os.news`), so icons,
 tiles and the dock are unchanged.
 
+On Android, an enabled Mail agent also uses quiet, network-constrained background jobs approximately every 15 minutes; Android may delay them. It can collect and assess mail without opening Home. Only a model-approved `notify: true` card posts a native notification, whose tap reopens the original account-bound card. The importance policy is provisioned by the system agent; ordinary mail is skipped. Force-stop pauses jobs until the app is opened again. See [Mail events](../docs/mail-agent-events.md) and [ADR 0008](../docs/adr/0008-quiet-android-mail-jobs.md).
+
 Mail reads and sends through the `mail` host service
 ([`apps/mail/host-service`](../apps/mail/host-service)): the person signs in on the host's own sheet, the
 password stays in the keychain or behind an Android Keystore key, and the app
