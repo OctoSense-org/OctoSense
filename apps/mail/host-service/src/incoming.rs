@@ -460,6 +460,16 @@ mod tests {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
+    // Other tests may momentarily own the process-wide lock. Wait only in
+    // this test helper, never in either production try API.
+    fn retry(operation: &dyn Fn() -> Result<Option<bool>, String>) -> Result<Option<bool>, String> {
+        loop {
+            match operation() {
+                Ok(None) => std::thread::yield_now(),
+                result => break result,
+            }
+        }
+    }
 
     #[test]
     fn baseline_retry_restart_ack_and_deduplication() {
@@ -745,14 +755,6 @@ mod tests {
         f.add("new");
         f.sync().unwrap();
         let event = f.pending().pop().unwrap();
-        // Other tests may momentarily own the process-wide lock. Wait only
-        // in this test helper, never in either production try API.
-        let retry = |operation: &dyn Fn() -> Result<Option<bool>, String>| loop {
-            match operation() {
-                Ok(None) => std::thread::yield_now(),
-                result => break result,
-            }
-        };
         let ack = || resolve_and_ack_try(&f.dir, "os.mail", "a1", &event.id);
         assert_eq!(retry(&ack).unwrap(), Some(false));
         assert_eq!(f.pending().len(), 1);
@@ -805,9 +807,11 @@ mod tests {
                 .unwrap()["version"],
             1
         );
-        assert!(resolve_and_ack_try(&f.dir, "os.mail", "a1", &event.id)
-            .unwrap()
-            .unwrap());
+        assert!(
+            retry(&|| resolve_and_ack_try(&f.dir, "os.mail", "a1", &event.id))
+                .unwrap()
+                .unwrap()
+        );
         assert!(f.pending().is_empty());
         let reopened = Store::at(&f.dir, Arc::new(MemoryVault));
         assert_eq!(
