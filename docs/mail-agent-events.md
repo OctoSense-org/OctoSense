@@ -2,136 +2,90 @@
 
 English | [简体中文](mail-agent-events.zh-CN.md)
 
-Mail can process new Inbox messages without a person sending a chat prompt for
-each message. A person first connects an account on the host-owned sign-in
-sheet, allows Mail's agent, and asks the system agent to configure the automation.
-The system agent calls `agents.provision` with instructions, named skill text,
-an enabled flag and a polling interval. `agents.status` reports the current
-configuration and processing state. Provider credentials and mail passwords
-stay with the host; message text read by the agent goes to the configured model.
+Mail's agent handles new mail without being asked. A worker in the shell syncs the Inbox, queues each new message as an event and starts a turn of Mail's agent, which reads the message and either posts a glance card or records why not. [Key concepts](../README.md#key-concepts) explains agents, lanes and cards.
+
+## Turning it on
+
+The person signs in to Mail on the shell's sheet, allows Mail's agent and asks the system agent to turn on new-mail processing. The system agent calls `agents.provision` with `enabled`, `instructions`, named `skills` text and an optional `poll_interval_secs` (30 to 3600 seconds, default 60). It cannot name an account: the shell binds the provision to the signed-in one and keeps it outside the agent's folder. Its instructions are appended to Mail's admitted `AGENT.md`, and a skill named like an admitted one replaces that skill's text; neither grants a tool. `enabled: false` turns processing off, and `agents.status` reports the settings, the queue and the last outcome.
+
+Mail passwords and provider keys stay with the shell, but the mail the agent reads goes to the person's model provider.
 
 ```mermaid
 sequenceDiagram
     participant Person
     participant System as System agent
-    participant Host as Mail host and dispatcher
-    participant Mail as Mail app agent
+    participant Host as Shell: Mail service and worker
+    participant Mail as Mail's agent
     participant UI as Glance and notification
-    Person->>Host: Sign in and allow Mail's agent
-    Person->>System: Configure new-email automation
-    System->>Host: agents.provision(instructions, skills, enabled)
-    Host->>Host: Sync Inbox; establish initial baseline
-    loop New mail after baseline
-        Host->>Host: Atomically save messages, cursor and pending event
-        Host->>Mail: Incoming event with message IDs
+    Person->>Host: Sign in, allow Mail's agent
+    Host->>Host: The first Inbox sync sets a baseline
+    Person->>System: Turn on new-mail processing
+    System->>Host: agents.provision(enabled, instructions, skills)
+    loop Each new Inbox message
+        Host->>Host: Save messages, cursor and event atomically
+        Host->>Mail: Turn: event_id, message, sender, subject
         Mail->>Host: mail.peek(message)
-        Host-->>Mail: Bounded plain-text message
-        Mail->>Mail: Decide whether attention is needed
-        opt A card is useful
-            Mail->>Host: mail.publish_card(source, data, event ID)
-            Host->>UI: Validate L0, publish as Mail, notify
+        Host-->>Mail: Plain text, in pages
+        Mail->>Mail: Decide whether to tell the person
+        alt A card helps
+            Mail->>Host: mail.publish_card(card_id = event_id, source, data)
+            Host->>UI: Check L0 and data, publish as Mail, notify
+        else No card needed
+            Mail->>Host: mail.skip_event(event_id, reason)
         end
-        opt No card needed
-            Mail->>Host: mail.skip_event(event ID, reason)
-        end
-        Mail-->>Host: Complete turn
-        Host->>Host: Check publication/skip receipt, then acknowledge
+        Mail-->>Host: Turn completes
+        Host->>Host: Acknowledge if a receipt exists
     end
 ```
 
-The worker polls only the currently active, consented account with an enabled
-provision. First sync and server UID resets establish a baseline without turning
-old mail into notifications. Pending events survive restart. Failed turns remain
-pending and retry with backoff. Acknowledgement requires both a successful turn
-and a durable host receipt for publication or an explicit `mail.skip_event`
-decision (`no_action`, `duplicate` or `outside_policy`). A final answer after a
-failed tool call does not satisfy this check.
+## From new mail to a turn
 
-Read the implementation in this order:
+The worker is one thread in the shell process. The first sync of an account's Inbox only sets a baseline and queues nothing, as does a sync after an IMAP server renumbers the folder. After that, every Inbox sync (the worker's, the Mail window's or the agent's `mail.sync`) turns each new message into a pending event with a stable id. Messages, server cursor and events are saved in one atomic write and survive restarts. The queue holds 128 events; a sync that would overflow it fails without moving the cursor.
 
-1. [`incoming.rs`](../apps/mail/host-service/src/incoming.rs) serializes UI and
-   background sync. The cursor, messages and pending event queue share an atomic
-   mailbox save. Queue backpressure prevents advancing past undelivered events.
-2. [`agent_events.rs`](../crates/shell/src/agent_events.rs) persists account-bound
-   provisions outside the app workspace, starts incoming turns and checks
-   cancellation, consent and account changes while waiting for completion.
-   Status uses a nonblocking queue snapshot (`pending: null`, `queue_busy: true`
-   during a sync). Completion checks the saved decision and acknowledges under
-   one nonblocking service lock; a busy queue retries without freezing the UI.
-3. [`script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs) loads admitted
-   `AGENT.md`/skill text and binds every Mail tool call to the broker's account.
-   A model cannot choose another account through tool arguments. `mail.folders`
-   and `mail.list` read caches; `mail.sync` refreshes a folder in bounded batches;
-   `mail.peek` reads plain text without marking mail read. Neither the password
-   vault nor the mailbox directory is mounted into the peer workspace.
-4. [`guidance.rs`](../crates/app-peers/src/guidance.rs) snapshots host-provisioned
-   instruction and skill **text** on each turn, including existing peers. The
-   guidance and untrusted request occupy separate serialized text blocks. This
-   does not create a kernel system-message role or install native skills; tool
-   grants and account checks remain the enforceable authority boundary.
-5. [`glance.rs`](../crates/shell/src/glance.rs) validates generated L0 source and
-   named dataset objects before publishing with Mail's attribution. Each dataset
-   requires a nonempty fields list and values for those fields; cyclic source
-   dependencies are rejected. This detects missing bindings, not factual accuracy
-   or visual quality. The model uses the stable incoming event
-   ID as `card_id`. A recorded publication receipt suppresses repeat publication;
-   a crash between publication and receipt persistence can still repeat a
-   notification. The stable card ID replaces the card rather than adding another.
-   Glance cards themselves are currently in memory; these receipts do not restore
-   visible cards after a process restart.
-6. [`mobile_app.rs`](../crates/shell/src/mobile_app.rs) remembers the exact card
-   key behind each notification. A tap opens that full card over Glance; Back or
-   the sheet's close button returns to Glance. A removed card falls back safely.
-   The card's separate app-opening action still opens Mail.
+Each cycle takes the oldest event, syncing first when none is waiting. Its turn runs in the person's lane as the app's own (trigger `incoming`) and has 180 seconds. The worker then waits the poll interval or, after a failure, 30 seconds, doubling up to 15 minutes.
 
-An actionable email also needs usable controls inside its generated card.
-Mail's admitted skill now requests declarative L0 `Chip` buttons, named events
-and local view state: for example, Delivery details or Appointment details,
-then Back. The button must reveal facts from that email and accurately name
-its effect. A suggestion in a text paragraph, the shell's open-Mail control,
-or a local state called “sent” does not implement an email action. The existing
-[shipping](../crates/shell/resources/glance/mail-shipping.card) and
-[request](../crates/shell/resources/glance/mail-request.card) fixtures demonstrate
-the interaction syntax; their demo send/tracking/done states must not be
-presented as real remote operations. Sending, booking and mailbox mutations
-from generated cards remain outside this implementation. The earlier device
-trial below established publication and opening, not in-card button behavior.
-The subsequent [paired button test](testing/mail-card-actions-2026-10-04.md)
-verified Show code → Back → Details → Back for both models in the phone's full
-card and Glance, after preserving earlier failed layouts.
+## What the agent decides
 
-That shared scenario uses a pickup email with a code and no tracking URL:
-Show code and Details reveal the supplied code, location,
-deadline and photo-ID requirement, with Back from both views. These local
-controls address a supported part of the
-[email action-card plan](../apps/mail/docs/2026-10-01-email-action-card-plan.md).
-The plan's external Track action remains separate work: although L0 catalogues
-`sys.link`, this shell does not execute its writes. A missing URL must never
-be replaced with an invented link or a fake tracking-success screen.
+The turn carries the event's ids, sender and subject as untrusted JSON, with Mail's guidance in a separate block. The triage skill has the agent read the message and settle the event:
 
-The current shell has a rendering limitation: an accepted `Chip(width: .fill)`
-can collapse inside its Fit wrappers and become invisible. The admitted skill
-therefore requests natural-width Chips, stacked vertically, with short labels.
-This is a renderer limitation, not an invalid L0 token. The
-[button follow-up](testing/mail-card-actions-2026-10-04.md) separates failed
-layouts, actual phone taps and the remaining remote-action scope.
+| Tool | Use |
+| --- | --- |
+| `mail.peek` | Reads the message as plain text, up to 2,000 bytes a page, without marking it read. |
+| `mail.publish_card` | Publishes a card the model wrote, with the event id as `card_id`. |
+| `mail.notify` | The fallback when no valid card can be made: a plain notice, same `card_id`. |
+| `mail.skip_event` | Records `no_action`, `duplicate` or `outside_policy`. |
 
-The Mail window can be closed during processing, but the OctoSense process must
-remain alive. This implementation has no Android JobScheduler/WorkManager,
-foreground service or Android NotificationManager integration. Notifications
-appear in OctoSense's own shade, and cards appear on its Glance screen. Do not
-promise delivery after Android suspends or kills the process.
+The shell binds every Mail tool call to the signed-in account; that binding and the tool grants, not the guidance, limit the agent. No tool sends mail.
 
-Only Mail's `mail.messages.new` trigger is implemented here. Generic cron,
-arbitrary app event routing, model selection per app, native skill discovery and
-the remaining ADR 0002 budget/Settings UI are separate work. The system agent's
-provision supplements admitted app guidance; email content cannot provision an
-agent or expand its tools. Disabling the provision or revoking agent access
-stops new turns and cancels the dispatcher's active context.
+## When an event is done
 
-Verification: on a OnePlus 6, mail delivered through Gmail started real DeepSeek and MiniMax
-Mail turns without a per-email prompt. Both models skipped a routine newsletter and published
-readable shipping and appointment cards (MiniMax's opened from their notifications); a MiniMax card with
-missing data bindings led to the generated-data gate. The [recorded test](testing/mail-events-2026-10-04.md)
-has the builds, artifacts and limitations. The trial policy handles only subjects prefixed
-`[OctoSense simulation]` and skips other messages without reading their bodies.
+The worker acknowledges an event, removing it from the queue, only if the turn completed, the agent is still allowed for the same account, the provision is unchanged, and Mail's host service holds a receipt for that event id: a publication or a skip. A final answer after a failed tool call leaves no receipt, so the event is retried. Turning processing off or withdrawing the agent closes the running turn within 250 ms and leaves its event pending.
+
+Delivery is at least once: a failure between publishing and saving the receipt repeats the notification; while the shell runs, the same card id replaces the card.
+
+## Cards
+
+A card from `mail.publish_card` is L0 only, with no expressions or script. The shell checks that each `sys.dataset` source declares a nonempty `fields` list with a value in `data` for every field, and that sources form no cycle. The check catches missing bindings, not wrong facts. The shell then publishes the card as Mail and notifies; tapping the notification opens that exact card.
+
+For mail that needs action, the skill wants working `Chip` buttons that switch local views (`state`, `event`, `when`), such as Show code, Details and Back. They only change what the card shows: they never send, book, track or touch the mailbox, and their labels must not pretend to. [`mail-shipping.card`](../crates/shell/resources/glance/mail-shipping.card) and [`mail-request.card`](../crates/shell/resources/glance/mail-request.card) show the syntax; their send, track and done states are demos.
+
+## Limits
+
+- The Mail window may be closed, but nothing runs while Android suspends or kills OctoSense, and notifications appear in OctoSense's own shade, not Android's.
+- Glance cards live in memory, so a restart removes them; a card already published is not published again.
+- Mail keeps at most four live cards. A fifth card or notice is refused, and unless the agent skips that event, it stays first in the queue until a card is dismissed or expires (after 24 hours by default).
+- Events queue even while processing is off, and only the worker removes them. Once 128 are waiting, every Inbox sync that finds new mail fails, the Mail window's included, until processing drains the queue.
+- Not yet: events for other apps, scheduled triggers, per-app model choice, kernel-native skills, the budget and Settings UI of [ADR 0002](adr/0002-event-driven-app-agents.md), and the remote actions of the [email action-card plan](../apps/mail/docs/2026-10-01-email-action-card-plan.md); the shell has no `sys.link` handler.
+
+## Reading the code
+
+1. [`incoming.rs`](../apps/mail/host-service/src/incoming.rs): the queue (`collect`, `publish_once`, `skip_event`, `resolve_and_ack_try`).
+2. [`agent_events.rs`](../crates/shell/src/agent_events.rs): `provision`, `status` and the worker (`poll`, `deliver`).
+3. [`script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs): admitted guidance (`guidance`) and account binding (`scoped_args`).
+4. [`guidance.rs`](../crates/app-peers/src/guidance.rs): the per-turn guidance block, at most 16 KiB.
+5. [`glance.rs`](../crates/shell/src/glance.rs): `publish_l0_for` and `check_generated_data`.
+6. [`mobile_app.rs`](../crates/shell/src/mobile_app.rs): notification taps on the phone.
+
+## How it was tested
+
+On a OnePlus 6, with DeepSeek and MiniMax: the [new-mail test](testing/mail-events-2026-10-04.md) and the [card-button test](testing/mail-card-actions-2026-10-04.md).
