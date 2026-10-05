@@ -2,7 +2,7 @@
 
 English | [简体中文](mail-composable-cards.zh-CN.md)
 
-The native **Chat / Reply** workspace shares one saved draft. In isolated OnePlus 6
+The native **Email / Chat** workspace shares one saved draft. In isolated OnePlus 6
 phone tests, both actual `deepseek-v4-flash` and `MiniMax-M3.1-Flash-Preview`
 changed an appointment time through chat, and the Reply pane and final review
 showed that exact saved change. The earlier controlled shipping demo also
@@ -25,11 +25,11 @@ revision-bound host capability; successful prose alone cannot update the UI.
 
 | Moment | What the person sees and does | Host behavior |
 | --- | --- | --- |
-| Open a Mail card | Summary first; tap unfolds one card in place, with Details / Reply / Chat in one row | Collapsed summaries run no generated UI; only the expanded publication owns a live session |
+| Open a Mail card | Summary first; tap expands to a full-screen Email / Chat workspace | Collapsed summaries run no generated UI; the workspace retains its own session |
 | Ask for a change | Fixed, growing composer above the keyboard; transcript scrolls independently | Supplies the current saved draft; the edit tool saves only the matching revision |
 | Model finishes | “Reply updated · saved” appears after a saved model edit | Uses authoritative draft state, never inferred success from assistant text |
-| Read or edit | Recipient, subject and readable body; Edit opens native fields | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
-| Compare with the email | Details / Reply in the same mode row | Reads the bound original email without replacing the reply |
+| Read or edit | Recipient, subject and body are directly editable | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
+| Compare with the email | View original email inside Email | Reads the bound original email without replacing the reply |
 | Review and send | A separate final review shows From, To, subject and exact body | Only physical Approve & Send authorizes that immutable payload |
 | Save conflict | Unsaved text remains visible, with Use my edit / Use saved reply | Never silently overwrites newer data; blocks chat/review until resolved |
 | Sending or uncertain outcome | Explicit sending, accepted, failed or unknown state | Keeps receipts and requires a fresh review/approval for an explicit retry |
@@ -84,11 +84,42 @@ between top mode tabs and bottom edit/review controls. The successful model and
 storage tests remain valid; they do not establish a UX pass. No replacement
 numeric score is claimed.
 
-The current revision supersedes the full-screen and bottom-tab layouts above. Glance paints fixed-height summaries and adds momentum after vertical drags. Tapping unfolds one card in its existing slot; other publications remain summaries. The expanded Mail card keeps its summary above a single **Details / Reply / Chat** row. Details shows the bound original email, Reply the saved draft, and Chat the native transcript/composer. Typing temporarily lifts the same card above the keyboard. The final send review remains a separate surface with exact-message physical approval. Feed drags beginning outside the expanded card retain feed ownership; drags in the active pane scroll that pane.
+The current revision replaces the feed-sized expansion with a resident full-screen workspace. The summary supplies an animation origin; active layout uses the shell's safe viewport and never the feed header, margins or height cap. The feed stays compact and cannot receive input while covered. **Email / Chat** share one row. Email contains the original-message toggle and directly editable draft; Chat pins its composer and links to the actual saved update. Review occupies the workspace and preserves exact-message physical approval. Back dismisses keyboard, review and workspace in that order. Collapse retains the session, unsent chat and widget state; three inactive clean workspaces are cached, and dirty human input is excluded from clean eviction. This retention is within the current process. Account invalidation and publication withdrawal retire the relevant view; pending review authority is never retained. Reduced Motion or a missing source rectangle uses an immediate transition. Notification entry opens above the current phone screen without first navigating through Glance. Native first-open/session costs remain separate from presentation animation and must be measured.
+
+**Full-screen workspace checkpoint (Lab 0454/0456, user test build 0457):**
+The OnePlus 6 now draws the workspace at the root safe viewport (`384 × 758`
+logical points in the recorded portrait layout), independently of the feed's
+margins and former 620-point cap. Native captures verify Email/Chat, the original
+message toggle, directly editable fields and the composer above the keyboard.
+Unsent chat text survives keyboard dismissal, workspace collapse, opening a
+different card and returning to the cached conversation. Exact review matches
+the saved recipient, subject, body and revision; Back cancels review without
+changing that draft. No send approval or SMTP was performed.
+
+An initial Lab run exposed a missing Android extension for the isolated UX
+package: system Back finished its activity and interrupted a request. The UX
+package now delegates to Home's existing extension. After the fix, Back retains
+the activity and kernel processes. Across six warm open/close cycles (12
+transitions), 157 host frame intervals measured median **16.68 ms**, p95
+**18.78 ms**, maximum **19.53 ms**, with none above 25 ms. This measures frames
+between open/suspend and settled markers; it excludes first-open setup and is
+not display-presentation or input-to-photon latency. It does not establish the
+complete device or usability matrix.
+
+The new DeepSeek edit request failed at network connection: Wi-Fi was enabled
+but disconnected, DNS failed, and no saved network appeared in the scan. The
+saved draft stayed unchanged. **Fresh paired-model validation is incomplete**;
+MiniMax was not rerun while offline. The successful Lab 0427 model checkpoint
+above is historical evidence, not a pass for this build. Local verification:
+**911 shell tests**, 12 contextual-chat tests, final Mail pane draw tests,
+desktop default/mobile-apps and phone checks, both shell graphs, runtime pins
+and Android packaging passed. Build **0457** is installed in the separate user
+test app; installation preserved its real publication, draft, transcript,
+policy and provider configuration byte for byte. No numeric UX score is claimed.
 
 The 0429 frame measurements above were for the **Chat pane**, not the Glance feed. They cannot substantiate feed performance.
 
-**Glance measurement (Lab 0439):** 12 alternating 600 ms vertical swipes on the OnePlus 6, with four bound Mail publications and two shell items. Across 430 consecutive active frame intervals: median **16.74 ms**, p95 **17.62 ms**, maximum **35.67 ms**; nine exceeded 25 ms. These are host frame markers, including stalls and excluding inactive transitions, not display-presentation or input-to-photon latency. Three extra publications were explicitly labelled layout fixtures using the existing model-authored L0 source and fictional Lab draft; this did not generate emails or run a model. The preview no longer constructs or dispatches any generated UI. Lab 0443 verifies expansion, Details/Reply, exact review/back, and retirement of the workspace when entering Recents; 0441 also checks the focused native editor above the keyboard. An unsent Chat input survives switching to Reply and back. A review creates a cancelled attempt record when backed out; the draft revision, recipient, subject and body remain unchanged. Build **0444** is installed in the separate user test package; the real publication, draft, transcript and policy were byte-identical immediately after installation. The final **907 shell tests**, desktop default/mobile-apps and phone checks, both shell graphs, runtime pins and Android builds pass. This UI revision runs no new model turn or SMTP send. The final phone captures check summary, expansion, same-row modes, editor and keyboard composer; they do not establish a 9/10 usability pass.
+**Historical Glance measurement (Lab 0439–0444):** 12 alternating 600 ms vertical swipes on the OnePlus 6, with four bound Mail publications and two shell items. Across 430 consecutive active frame intervals: median **16.74 ms**, p95 **17.62 ms**, maximum **35.67 ms**; nine exceeded 25 ms. These are host frame markers, including stalls and excluding inactive transitions, not display-presentation or input-to-photon latency. Three extra publications were explicitly labelled layout fixtures using the existing model-authored L0 source and fictional Lab draft; this did not generate emails or run a model. The preview no longer constructs or dispatches any generated UI. Lab 0443 verifies expansion, Details/Reply, exact review/back, and retirement of the workspace when entering Recents; 0441 also checks the focused native editor above the keyboard. An unsent Chat input survives switching to Reply and back. A review creates a cancelled attempt record when backed out; the draft revision, recipient, subject and body remain unchanged. Build **0444** was installed in the separate user test package; the real publication, draft, transcript and policy were byte-identical immediately after installation. The final **907 shell tests**, desktop default/mobile-apps and phone checks, both shell graphs, runtime pins and Android builds pass. This UI revision runs no new model turn or SMTP send. The final phone captures check summary, expansion, same-row modes, editor and keyboard composer; they do not establish a 9/10 usability pass.
 Acceptance now needs the actual repeated task to work comfortably: ask for a
 time change, switch to Reply, edit, switch back to Chat, then review and return.
 Check hand travel, control grouping and visual hierarchy as well as saved data,

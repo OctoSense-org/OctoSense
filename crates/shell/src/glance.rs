@@ -54,7 +54,7 @@
 //!
 //! **Notifications.** `notify: true` also posts a notification for the card
 //! (the phone's shade, the desktop's toast). Tapping it opens the glance
-//! page on the phone; on a desktop, clicking the toast opens THAT card in the
+//! workspace directly on the phone; on a desktop, clicking the toast opens THAT card in the
 //! card window (glance_sheet.rs), App Clip style, by the key the
 //! notification carries ([`GlanceNote::key`], [`NoteTargets`], [`card`]).
 //! The shell drains them with [`take_notifications`].

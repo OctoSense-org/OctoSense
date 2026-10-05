@@ -133,7 +133,7 @@ sequenceDiagram
 | 脚本应用自己的聊天 | 经 `host.request` 调用确切获授权的 `octos.session.open`、`octos.session.history`、`octos.turn.start`、`octos.turn.interrupt`。随产品提供的系统应用 Agent 由 Shell 驱动，其脚本无需声明这些调用。 |
 | 已发布卡片中的聊天 | `sys.chat` 经 [l0-chat](../crates/l0-chat/src/lib.rs) 与 [glance_chat.rs](../crates/shell/src/glance_chat.rs) 到达发布者的 Agent；宿主核对卡片归属。 |
 
-手机概览页先显示紧凑摘要；点按在原位置展开一张卡片，Details / Reply / Chat 同行。`card_chat.rs` 参考 `octoscode-app` 的布局，以 `PortalList` 绘制可见段落，原生输入框固定在键盘上方。绑定的 Mail 卡片将 Chat 与 `mail_clip.rs` 的原生 Reply 页配对，两者使用同一份权威草稿。手工输入在内存中暂存并合并保存。`chat_submit` 校验声明的 `sys.chat` 源、发布者、账户和线程，再为已保存草稿修订号签发一次性正文编辑凭证。Mail 服务通过 `mail.suggest_reply` 消费凭证；没有凭证时工具仅生成建议。此流程不另建 agent、不改变发布的 L0 源码，也不授权发送。发送仍需实体输入批准准确的宿主审核内容。其余 Glance 卡片保持紧凑摘要，不运行生成的 UI；信息流支持惯性滚动。
+手机 Glance 只绘制紧凑摘要，不执行生成 UI。点按使用摘要的屏幕矩形，让 `glance_sheet.rs` 在信息流上方展开至完整可用视口。`card_presentation.rs` 在 Makepad 帧循环中管理可反向切换的动画，不创建 Tokio 任务、不启动应用，也不改变应用 peer。Email 与 Chat 位于同一行。`mail_clip.rs` 提供原邮件和可直接编辑的草稿；`card_chat.rs` 虚拟化消息并将原生输入框固定在键盘上方。两页共享权威草稿。`chat_submit` 校验声明的 `sys.chat` 源、发布者、账户和线程，然后签发绑定已保存修订号的一次性编辑凭证。Mail 通过 `mail.suggest_reply` 消费凭证；没有凭证时只提出建议，不授权发送。关闭展示时保留常驻控件／会话并撤销待批准审核；干净工作区缓存有数量限制，账户或发布失效时清理对应工作区。最终发送仍需实体输入批准准确的宿主审核内容。
 
 随产品提供的 `<app>.notify`、`calendar.notify` 与 `calendar.agenda` 模板不含 `sys.chat`，通过 “Ask <app>” 与其 Agent 对话。`OCTOSENSE_GLANCE_DEMO=mail` 演示卡片带有聊天，但由 `glance_chat::HostResponder` 返回预设答案。上表的卡片聊天路线适用于声明了 `sys.chat` 的卡片。
 

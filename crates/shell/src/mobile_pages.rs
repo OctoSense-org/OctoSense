@@ -192,17 +192,17 @@ pub struct PagesState {
     pub feed: GlanceFeed,
     /// The glance column's scroll offset, in points.
     pub glance_scroll: f64,
-    pub expanded: Option<String>,
+    /// Stable return anchor; opening a workspace never changes feed item sizes.
+    pub workspace_source: Option<String>,
     glance_velocity: f64,
     glance_track: Vec<(f64, f64)>,
-    expansion: f64,
     /// Today's date as the glance header shows it.
     pub date: String,
 }
 
 impl Default for PagesState {
     fn default() -> Self {
-        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, expanded: None, glance_velocity: 0.0, glance_track: Vec::new(), expansion: 0.0, date: String::new() }
+        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, workspace_source: None, glance_velocity: 0.0, glance_track: Vec::new(), date: String::new() }
     }
 }
 
@@ -376,45 +376,32 @@ impl PagesState {
         true
     }
 
-    pub fn expand(&mut self, key: &str, height: f64) -> bool {
-        if !self.feed.cards().any(|card| card.key() == key) { return false; }
-        self.expanded = Some(key.into());
-        self.expansion = 0.0;
+    pub fn anchor_card(&mut self, key: &str) {
+        self.workspace_source = Some(key.into());
         self.glance_velocity = 0.0;
-        // Reveal only as much as needed. The summary remains the anchor.
-        let screen = rect(0.0, 0.0, 380.0, height);
-        if let Some(r) = self.expanded_rect(screen) {
-            let top = r.pos.y.clamp(GLANCE_HEADER, (height - GLANCE_BOTTOM - Self::expanded_height(height)).max(GLANCE_HEADER));
-            self.glance_scroll += r.pos.y - top;
-        }
-        true
+        self.glance_track.clear();
     }
-    pub fn collapse(&mut self, height: f64) {
-        self.expanded = None;
-        self.expansion = 0.0;
+    pub fn clear_card_anchor(&mut self, height: f64) {
+        self.workspace_source = None;
         self.scroll_glance(0.0, height);
     }
-    fn expanded_height(height: f64) -> f64 { (height - GLANCE_HEADER - GLANCE_BOTTOM).clamp(SUMMARY_HEIGHT, 620.0) }
-    pub fn item_height(&self, item: &GlanceItem, height: f64) -> f64 {
-        if matches!(item, GlanceItem::Card(card) if self.expanded.as_deref() == Some(&card.key())) {
-            SUMMARY_HEIGHT + (Self::expanded_height(height) - SUMMARY_HEIGHT) * self.expansion
-        } else { item.height() }
-    }
-    fn glance_height(&self, height: f64) -> f64 {
-        self.feed.items().map(|i| self.item_height(i, height) + GLANCE_GAP).sum::<f64>() - if self.feed.is_empty() {0.0} else {GLANCE_GAP}
-    }
-    pub fn expanded_rect(&self, screen: Rect) -> Option<Rect> {
-        let key = self.expanded.as_deref()?;
+    fn glance_height(&self, _height: f64) -> f64 { self.feed.column_height(GLANCE_GAP) }
+    fn card_rect(&self, key: &str, screen: Rect) -> Option<Rect> {
         let mut y = screen.pos.y + GLANCE_HEADER - self.glance_scroll;
         for item in self.feed.items() {
-            let h = self.item_height(item, screen.size.y);
             if matches!(item, GlanceItem::Card(card) if card.key() == key) {
-                return Some(rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, h));
+                return Some(rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, item.height()));
             }
-            y += h + GLANCE_GAP;
+            y += item.height() + GLANCE_GAP;
         }
         None
     }
+    pub fn summary_rect(&self, key: &str, screen: Rect) -> Option<Rect> {
+        if !self.on_glance() { return None; }
+        let r = tappable(self.card_rect(key, screen)?, glance_column(screen, 0.0));
+        (r.size.x > 0.0 && r.size.y > 0.0).then_some(r)
+    }
+    fn anchor_rect(&self, screen: Rect) -> Option<Rect> { self.card_rect(self.workspace_source.as_deref()?, screen) }
     pub fn glance_touch(&mut self, y: f64, time: f64) {
         self.glance_velocity = 0.0;
         self.glance_track.clear();
@@ -433,12 +420,8 @@ impl PagesState {
         if self.glance_velocity.abs() < 250.0 { self.glance_velocity = 0.0; }
         self.glance_track.clear();
     }
-    pub fn step_glance(&mut self, dt: f64, height: f64, idle: bool, reduced: bool) -> bool {
+    pub fn step_glance(&mut self, dt: f64, height: f64, idle: bool, _reduced: bool) -> bool {
         let mut active = false;
-        if self.expanded.is_some() && self.expansion < 1.0 {
-            self.expansion = if reduced {1.0} else {(self.expansion + dt / 0.20).min(1.0)};
-            active = self.expansion < 1.0;
-        }
         if self.glance_velocity != 0.0 {
             if idle && self.on_glance() {
                 let before = self.glance_scroll;
@@ -533,9 +516,9 @@ pub fn sync(phone: &mut PhoneState, style: DesktopStyle, screen: Rect) {
     if phone.pages.date != date { phone.pages.date = date; }
     phone.pages.feed.seed(shell_cards(&ids, &phone.tiles));
     // What apps published (glance.rs): re-read only when it changed.
-    let anchor = phone.pages.expanded_rect(screen).map(|r| r.pos.y);
+    let anchor = phone.pages.anchor_rect(screen).map(|r| r.pos.y);
     phone.pages.feed.sync_published();
-    if let (Some(before), Some(after)) = (anchor, phone.pages.expanded_rect(screen)) {
+    if let (Some(before), Some(after)) = (anchor, phone.pages.anchor_rect(screen)) {
         phone.pages.glance_scroll += after.pos.y - before;
     }
 }
@@ -666,7 +649,7 @@ impl PhoneSurface {
         // hits were clipped, so text painted behind the launcher controls.
         cx.begin_turtle(Walk::abs_rect(column), Layout::default());
         for item in &items {
-            let h = phone.pages.item_height(item, screen.size.y);
+            let h = item.height();
             if y + h > column.pos.y && y < bottom {
                 self.draw_glance_card(cx, rect(left, y, width, h), column, item, style, dark, ink, opacity);
             }
@@ -1020,26 +1003,24 @@ mod tests {
     }
 
     #[test]
-    fn summaries_expand_one_slot_and_keep_all_other_cards_compact() {
-        let mut pages = PagesState::default();
+    fn opening_a_workspace_keeps_feed_geometry_and_scroll_unchanged() {
+        let mut pages = PagesState { index: -1.0, ..Default::default() };
         for n in 0..6 { pages.feed.push(card("os.mail", &n.to_string(), 0, n)); }
-        let screen = rect(0.0, 24.0, 353.0, 800.0);
+        let screen = rect(0.0, 24.0, 353.0, 400.0);
+        pages.scroll_glance(90.0, 400.0);
+        let height = pages.glance_height(400.0);
+        let scroll = pages.glance_scroll;
+        let before = pages.summary_rect("os.mail/4", screen).unwrap();
+        pages.anchor_card("os.mail/4");
+        pages.step_glance(0.3, 400.0, true, false);
+        assert_eq!(pages.summary_rect("os.mail/4", screen), Some(before));
+        assert_eq!(pages.glance_height(400.0), height);
+        assert_eq!(pages.glance_scroll, scroll);
         assert!(pages.feed.items().all(|i| i.height() == SUMMARY_HEIGHT));
-        let before = pages.glance_height(800.0);
-        assert!(pages.expand("os.mail/4", 800.0));
-        assert_eq!(pages.expanded_rect(screen).unwrap().size.y, SUMMARY_HEIGHT);
-        pages.step_glance(0.2, 800.0, true, false);
-        let slot = pages.expanded_rect(screen).unwrap();
-        assert_eq!(slot.size.y, 620.0);
-        assert_eq!(pages.glance_height(800.0), before + 620.0 - SUMMARY_HEIGHT);
-        assert!(slot.pos.y >= screen.pos.y + GLANCE_HEADER);
-        assert!(slot.pos.y + slot.size.y <= screen.pos.y + screen.size.y - GLANCE_BOTTOM);
-        assert!(pages.expand("os.mail/3", 800.0));
-        pages.step_glance(0.2, 800.0, true, false);
-        assert_eq!(pages.glance_height(800.0), before + 620.0 - SUMMARY_HEIGHT);
-        pages.collapse(800.0);
-        assert_eq!(pages.glance_height(800.0), before);
-        assert!(pages.expanded_rect(screen).is_none());
+        pages.clear_card_anchor(400.0);
+        assert_eq!(pages.glance_scroll, scroll);
+        assert!(pages.workspace_source.is_none());
+        assert!(pages.summary_rect("os.mail/missing", screen).is_none());
     }
 
     #[test]

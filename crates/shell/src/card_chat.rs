@@ -36,6 +36,7 @@ script_mod! {
         dock := View {
             width: Fill height: Fit flow: Down spacing: 8
             padding: Inset{left: 14 right: 14 top: 8 bottom: 14}
+            reply := ButtonFlat {visible: false width: Fill height: 44 margin: 0 text: "View updated email →"}
             status := Label {
                 width: Fill height: Fit
                 draw_text.text_style: theme.font_regular{font_size: 10.0}
@@ -105,6 +106,7 @@ pub struct CardChat {
     #[rust] answering: bool,
     #[rust] available: bool,
     #[rust] ink: Option<Vec4f>,
+    #[rust] reply_requested: bool,
 }
 
 impl CardChat {
@@ -120,8 +122,11 @@ impl CardChat {
         if let Some(mut label) = self.view.label(cx, ids!(status)).borrow_mut() { label.draw_text.color = crate::shell::alpha(ink, 0.7); }
         self.view.redraw(cx);
     }
+    pub fn has_unsent_input(&self, cx: &Cx) -> bool { !self.view.text_input(cx, ids!(input)).text().trim().is_empty() }
+    pub fn take_reply_request(&mut self) -> bool { std::mem::take(&mut self.reply_requested) }
     pub fn reset(&mut self, cx: &mut Cx) {
         self.rows.clear();
+        self.reply_requested = false;
         self.generation = None;
         self.pending = None;
         self.answering = false;
@@ -149,11 +154,12 @@ impl CardChat {
             Err(error) => { self.available = false; self.rows.clear(); error }
         };
         let mail = session.mail_reply();
+        self.view.widget(cx, ids!(reply)).set_visible(cx, self.available && mail.is_some_and(|d| d["body_origin"] == "model_chat"));
         let input = self.view.text_input(cx, ids!(input));
         let placeholder = if mail.is_some() { "Change the time, tone or wording…" } else { "Message the app…" };
         if input.empty_text() != placeholder { input.set_empty_text(cx, placeholder.into()); }
         if self.rows.is_empty() && mail.is_some() && self.available {
-            self.rows.push(MessageRow {speaker: "Your reply workspace".into(), text: "Ask to change the time, tone or wording. Your saved email is in Reply, where you can edit it and review before sending.".into()});
+            self.rows.push(MessageRow {speaker: "Your reply workspace".into(), text: "Ask to change the time, tone or wording. Your saved reply is in Email, where you can edit it and review before sending.".into()});
         }
         self.view.label(cx, ids!(status)).set_text(cx, &status);
         if first { self.view.portal_list(cx, ids!(transcript)).scroll_to_end(cx); }
@@ -185,6 +191,7 @@ impl CardChat {
 impl Widget for CardChat {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
+        if self.view.button(cx, ids!(reply)).clicked(&actions) { self.reply_requested = true; }
         let input = self.view.text_input(cx, ids!(input));
         if let Some(text) = input.changed(&actions) {
             // Local editing only. No host storage, model calls, or L0 parsing.

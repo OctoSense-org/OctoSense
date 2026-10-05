@@ -359,7 +359,7 @@ impl WmDesk {
         // The home-up drag on an open app (its window pulling back over the
         // overview glass) is the same still scene, so it is kept as well;
         // its first frame records, since a settled app draws no home page.
-        let cache_scene=(matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
+        let cache_scene=!phone.card_open && (matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
                 && (phone.openness<0.001 || phone.overview>0.001)
             || phone.screen==PhoneScreen::App && phone.overview>0.001)
             && phone.keyboard<0.5 && phone.drag.is_none()
@@ -458,13 +458,13 @@ impl WmDesk {
             if perf {crate::mobile_perf::span(cx.cx,ch.glass,t);}
             Some(b)
         }else{None};
-        if plan.home && !hit && !phone.card_open {
+        if plan.home && !hit && !phone.card_covers_home {
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
             state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;
         }
         self.phone_ui.publish_home_geometry(cx,state,full,screen);
-        if plan.home && !hit && !phone.card_open && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if plan.home && !hit && !phone.card_covers_home && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
         if record {
             // The scene is complete: its pyramid, to the deepest level an
             // overlay reads (the group window's 4), then the frame ends and
