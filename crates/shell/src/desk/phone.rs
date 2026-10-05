@@ -460,7 +460,6 @@ impl WmDesk {
         }else{None};
         if plan.home && !hit && !phone.card_open {
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
-            self.phone_ui.glance_cards.reveal_editor(cx, &mut state.phone, screen);
             self.phone_content(screen);
             state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;
         }

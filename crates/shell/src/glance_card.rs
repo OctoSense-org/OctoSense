@@ -45,7 +45,7 @@
 //! isolate gets a host `NAV` ([`install_nav`]) that queues the call with the
 //! isolate's heap key; nothing else reads it. The card window
 //! (glance_sheet.rs), the desktop's glance panel (glance_panel.rs) and the
-//! phone's glance page (mobile_pages.rs `GlanceCards`) keep their L0 cards
+//! expanded phone workspace (glance_sheet.rs) keep their L0 cards
 //! in a [`LiveCards`], one path for all three: a tile's own isolate's calls
 //! ([`take_taps`], never another tile's) run through its card's
 //! [`L0Session`], made for the app that published the card: the declared
@@ -1198,7 +1198,7 @@ mod tests {
     fn native_panes_defer_layout_and_generated_tiles_still_lower_on_demand() {
         let source = "view root Surface { TextBody(text: \"Authoritative source\") }";
         let card = crate::glance::GlanceCard {
-            app: "os.mail".into(), card_id: "lazy-layout".into(), title: "Reply".into(),
+            app: "os.mail".into(), card_id: "lazy-layout".into(), title: "Reply".into(), summary: String::new(),
             priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
             route: None, body: "old published layout".into(), contained: false, digests: vec![],
             l0: Some(std::sync::Arc::new(crate::glance::L0Source { source: source.into(), data: serde_json::json!({}), mail: None })),

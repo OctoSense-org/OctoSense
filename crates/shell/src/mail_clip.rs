@@ -15,7 +15,6 @@ script_mod! {
             to_label := Label {width: Fill height: Fit flow: Right {wrap: true} max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 12}}
             subject_label := Label {width: Fill height: Fit flow: Right {wrap: true} max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_bold{font_size: 16}}
         }
-        original := ButtonFlat {margin: 0 width: Fill height: 44 text: "View original email"}
         recipient_row := View {width: Fill height: 40
             recipient := TextInputFlat {width: Fill height: Fill is_read_only: true empty_text: "Recipient" draw_text.text_style: theme.font_regular{font_size: 12}}
         }
@@ -88,6 +87,16 @@ impl MailClip {
         self.render(cx, false);
         result
     }
+    pub fn show_details(&mut self, cx: &mut Cx, details: bool) -> bool {
+        if self.original == details { return true; }
+        if self.flush(cx).is_err() { return false; }
+        self.original = details;
+        self.editing = false;
+        self.focus_editor = false;
+        self.render(cx, true);
+        self.view.portal_list(cx, ids!(content)).set_first_id_and_scroll(0, 0.0);
+        true
+    }
     pub fn take_review(&mut self) -> Option<Binding> { self.review_requested.take() }
     pub fn review_error(&mut self, cx: &mut Cx, error: &str) {
         self.view.label(cx, ids!(state)).set_text(cx, error);
@@ -107,7 +116,7 @@ impl MailClip {
         let body_focus = cx.has_key_focus(self.view.text_input(cx, ids!(body)).area());
         for path in [ids!(recipient_row), ids!(subject_row)] { self.view.widget(cx, path).set_visible(cx, self.editing && !self.original && !(self.keyboard && body_focus)); }
         self.view.widget(cx, ids!(metadata)).set_visible(cx, !self.editing || self.original);
-        self.view.widget(cx, ids!(original)).set_visible(cx, !self.keyboard && (!self.editing || self.original));
+        self.view.widget(cx, ids!(actions)).set_visible(cx, !self.original);
         let status = s.error.as_deref().unwrap_or_else(|| match d["status"].as_str() {
             Some("accepted") => "SMTP accepted · delivery unconfirmed",
             Some("outcome_unknown") => "Send outcome unknown · check Sent before retrying",
@@ -116,12 +125,11 @@ impl MailClip {
             _ if d["body_origin"] == "model_chat" => "Updated from chat · saved",
             _ => "Draft saved",
         });
-        self.view.label(cx, ids!(state)).set_text(cx, status);
+        self.view.label(cx, ids!(state)).set_text(cx, if self.original {"Original email"} else {status});
         self.view.widget(cx, ids!(conflict)).set_visible(cx, conflict);
         self.view.button(cx, ids!(edit)).set_disabled(cx, !editable || self.original);
         self.view.button(cx, ids!(review)).set_disabled(cx, s.error.is_some() || self.original || d["status"] == "sending" || d["status"] == "accepted");
         self.view.button(cx, ids!(edit)).set_text(cx, if self.editing { "Done" } else { "Edit" });
-        self.view.button(cx, ids!(original)).set_text(cx, if self.original { "Back to reply" } else { "View original email" });
         for path in [ids!(recipient), ids!(subject)] {
             self.view.text_input(cx, path).set_is_read_only(cx, !self.editing || self.original || !editable);
         }
@@ -146,9 +154,10 @@ impl MailClip {
         self.ink = Some(ink);
         let light = ink.x + ink.y + ink.z < 1.5;
         let face = if light {crate::shell::rgb(243, 246, 250)} else {crate::shell::rgb(35, 39, 48)};
+        let hint = crate::shell::alpha(ink, 0.55);
         for path in [ids!(recipient), ids!(subject), ids!(body)] {
             let mut input = self.view.widget(cx, path);
-            script_apply_eval!(cx, input, {draw_bg +: {color: #(face) border_radius: 10} draw_text +: {color: #(ink)}});
+            script_apply_eval!(cx, input, {draw_bg +: {color: #(face) color_hover: #(face) color_focus: #(face) border_radius: 10} draw_text +: {color: #(ink) color_hover: #(ink) color_focus: #(ink) color_empty: #(hint) color_empty_hover: #(hint) color_empty_focus: #(hint)}});
         }
         for path in [ids!(edit), ids!(original), ids!(mine), ids!(saved)] {
             let mut button = self.view.widget(cx, path);
@@ -188,12 +197,6 @@ impl Widget for MailClip {
                 self.render(cx, true);
                 self.focus_editor = self.editing;
             }
-        }
-        if self.view.button(cx, ids!(original)).clicked(&actions) && self.flush(cx).is_ok() {
-            self.original = !self.original;
-            cx.hide_text_ime(); cx.set_key_focus(Area::Empty);
-            self.render(cx, true);
-            self.view.portal_list(cx, ids!(content)).set_first_id_and_scroll(0, 0.0);
         }
         for (path, keep) in [(ids!(mine), true), (ids!(saved), false)] {
             if self.view.button(cx, path).clicked(&actions) {

@@ -115,7 +115,8 @@ impl CardChat {
         let mut form = self.view.widget(cx, ids!(form));
         script_apply_eval!(cx, form, {draw_bg +: {color: #(face)}});
         let mut input = self.view.widget(cx, ids!(input));
-        script_apply_eval!(cx, input, {draw_text +: {color: #(ink)}});
+        let hint = crate::shell::alpha(ink, 0.55);
+        script_apply_eval!(cx, input, {draw_text +: {color: #(ink) color_hover: #(ink) color_focus: #(ink) color_empty: #(hint) color_empty_hover: #(hint) color_empty_focus: #(hint)}});
         if let Some(mut label) = self.view.label(cx, ids!(status)).borrow_mut() { label.draw_text.color = crate::shell::alpha(ink, 0.7); }
         self.view.redraw(cx);
     }

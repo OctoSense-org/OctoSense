@@ -1100,6 +1100,7 @@ impl App {
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) && hit.is_none() {return false;}
                 phone.search_touch(p.y,time);
+                phone.pages.glance_touch(p.y, time);
                 if hit==Some(PhoneHit::Scrub) {
                     if let Some(scroll)=scrub_at {phone.search_scroll=scroll;}
                 }
@@ -1119,6 +1120,7 @@ impl App {
                 // keep their existing paths.
                 if !phone.shade.is_open() && phone.pages.drag_glance(g, p, screen, self.phone_gestures.current().is_some()) {
                     g.last=p;
+                    phone.pages.glance_sample(p.y, time);
                     self.phone_gestures.cancel();
                     phone.gesture_out=None;
                     self.animate_phone(cx);
@@ -1150,6 +1152,7 @@ impl App {
             PhonePointerPhase::Up=>{
                 let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
                 if g.glance_scroll {
+                    phone.pages.glance_lift(time);
                     self.phone_gestures.cancel();
                     phone.gesture_out=None;
                     self.animate_phone(cx);

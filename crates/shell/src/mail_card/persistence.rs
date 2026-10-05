@@ -394,7 +394,7 @@ mod tests {
         GlanceCard {
             app: "os.mail".into(),
             card_id: p.binding.card_id.clone(),
-            title: "Mail".into(),
+            title: "Mail".into(), summary: String::new(),
             priority: 50,
             published_ms: p.published,
             expires_ms: p.expires,

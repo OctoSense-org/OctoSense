@@ -3797,16 +3797,17 @@ impl App {
         self.ui.widget(cx, ids!(shell_glance)).borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open)
     }
 
-    /// The card window (glance_sheet.rs) is modal: while a card is open
-    /// every pointer event is its own (a press outside the card closes it).
+    /// Desktop card windows and final review are modal. An inline phone card
+    /// owns only streams starting inside it; the surrounding feed can scroll.
     fn glance_sheet_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
         let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
-        if !sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open()) {
+        if !sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.accepts_pointer(event)) {
             return false;
         }
         sheet.handle_event(cx, event, &mut Scope::empty());
         if let Some(state) = self.state.as_mut() {
-            state.phone.card_open = sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
+            state.phone.card_open = sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_modal());
+            if !sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open()) { state.phone.pages.collapse(state.phone.viewport.size.y); }
         }
         if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) {
             self.redraw_all(cx);
@@ -3823,7 +3824,7 @@ impl App {
             true
         });
         if closed {
-            if let Some(state) = self.state.as_mut() { state.phone.card_open = false; }
+            if let Some(state) = self.state.as_mut() { state.phone.card_open = false; state.phone.pages.collapse(state.phone.viewport.size.y); }
             self.redraw_all(cx);
         }
         closed
@@ -3849,7 +3850,13 @@ impl App {
             s.set_presentation(phone, insets);
             s.open_card(cx, key)
         });
-        if phone { self.state_mut().phone.card_open = opened; }
+        if phone {
+            let state = self.state_mut();
+            state.phone.pages.feed.sync_published();
+            let inline = opened && state.phone.pages.expand(key, state.phone.viewport.size.y);
+            state.phone.card_open = opened && !inline;
+            if let Some(mut sheet) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>() { sheet.set_inline(inline); }
+        }
         if opened {
             log!("wm: glance toast opens card {key}");
         } else {
@@ -6531,14 +6538,12 @@ impl App {
                 return;
             }
         }
-        // Phone Glance is a preview. A plain body tap opens the exact card
-        // in its dedicated workspace; preview editors never claim focus.
-        // Background events still refresh previews while no workspace covers them.
+        // Phone Glance paints summaries without generated widgets. A plain
+        // tap expands the exact publication in its reserved feed slot.
         if self.state.is_some() && self.state_mut().style.target.mobile() {
             let claimed = self.phone_gestures.current().is_some();
             let phone = &self.state_mut().phone;
             let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open() && !phone.card_open;
-            let card_open = phone.card_open;
             let finger = mobile_pages::GlanceFinger::of(event, phone.gesture.as_ref(), claimed, phone.touch);
             if showing {
                 if let mobile_pages::GlanceFinger::Tap(at) = finger {
@@ -6552,13 +6557,7 @@ impl App {
                     }
                 }
             }
-            let preview_input = matches!(event, Event::TouchUpdate(_) | Event::MouseDown(_) | Event::MouseMove(_) | Event::MouseUp(_) | Event::Scroll(_) | Event::KeyDown(_) | Event::KeyUp(_) | Event::TextInput(_) | Event::TextCopy(_) | Event::TextCut(_));
-            if !preview_input && !card_open {
-                let changed = self.desk(cx).borrow_mut::<WmDesk>().is_some_and(|mut desk| desk.phone_ui.glance_cards.handle_event(cx, event, finger));
-                if changed {
-                    self.redraw_all(cx);
-                }
-            }
+
         }
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
@@ -6832,8 +6831,11 @@ impl App {
             self.drain_pane_links(cx);
         }
 
-        let focused_card = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open());
-        if let Some(state) = self.state.as_mut() { state.phone.card_open = focused_card && state.style.target.mobile(); }
+        let (focused_card, open_card) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow::<glance_sheet::ShellGlanceSheet>().map(|s| (s.is_modal(), s.is_open())).unwrap_or_default();
+        if let Some(state) = self.state.as_mut() {
+            state.phone.card_open = focused_card && state.style.target.mobile();
+            if !open_card && state.phone.pages.expanded.is_some() { state.phone.pages.collapse(state.phone.viewport.size.y); }
+        }
         self.match_event(cx, event);
         if let Some(state) = self.state.as_mut() {
             let mut scope = Scope::with_data(state);

@@ -25,11 +25,11 @@ revision-bound host capability; successful prose alone cannot update the UI.
 
 | Moment | What the person sees and does | Host behavior |
 | --- | --- | --- |
-| Open a Mail card | One full-screen workspace, with Chat and Reply in its bottom control area | Stops drawing the inactive Glance feed; preserves the publication's account, email, draft and thread |
+| Open a Mail card | Summary first; tap unfolds one card in place, with Details / Reply / Chat in one row | Collapsed summaries run no generated UI; only the expanded publication owns a live session |
 | Ask for a change | Fixed, growing composer above the keyboard; transcript scrolls independently | Supplies the current saved draft; the edit tool saves only the matching revision |
 | Model finishes | “Reply updated · saved” appears after a saved model edit | Uses authoritative draft state, never inferred success from assistant text |
 | Read or edit | Recipient, subject and readable body; Edit opens native fields | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
-| Compare with the email | View original email / Back to reply | Reads the bound original email without replacing the reply |
+| Compare with the email | Details / Reply in the same mode row | Reads the bound original email without replacing the reply |
 | Review and send | A separate final review shows From, To, subject and exact body | Only physical Approve & Send authorizes that immutable payload |
 | Save conflict | Unsaved text remains visible, with Use my edit / Use saved reply | Never silently overwrites newer data; blocks chat/review until resolved |
 | Sending or uncertain outcome | Explicit sending, accepted, failed or unknown state | Keeps receipts and requires a fresh review/approval for an explicit retry |
@@ -84,13 +84,11 @@ between top mode tabs and bottom edit/review controls. The successful model and
 storage tests remain valid; they do not establish a UX pass. No replacement
 numeric score is claimed.
 
-The revised Mail layout places Chat / Reply in the bottom control area, beside
-the active pane's composer or Edit / Review actions. It keeps that arrangement
-above the keyboard, removes the duplicate View reply button, and moves original
-email access next to the message metadata. A saved change has a short status
-instead of another navigation control. Final send review remains a separate
-step with its exact-message approval.
+The current revision supersedes the full-screen and bottom-tab layouts above. Glance paints fixed-height summaries and adds momentum after vertical drags. Tapping unfolds one card in its existing slot; other publications remain summaries. The expanded Mail card keeps its summary above a single **Details / Reply / Chat** row. Details shows the bound original email, Reply the saved draft, and Chat the native transcript/composer. Typing temporarily lifts the same card above the keyboard. The final send review remains a separate surface with exact-message physical approval. Feed drags beginning outside the expanded card retain feed ownership; drags in the active pane scroll that pane.
 
+The 0429 frame measurements above were for the **Chat pane**, not the Glance feed. They cannot substantiate feed performance.
+
+**Glance measurement (Lab 0439):** 12 alternating 600 ms vertical swipes on the OnePlus 6, with four bound Mail publications and two shell items. Across 430 consecutive active frame intervals: median **16.74 ms**, p95 **17.62 ms**, maximum **35.67 ms**; nine exceeded 25 ms. These are host frame markers, including stalls and excluding inactive transitions, not display-presentation or input-to-photon latency. Three extra publications were explicitly labelled layout fixtures using the existing model-authored L0 source and fictional Lab draft; this did not generate emails or run a model. The preview no longer constructs or dispatches any generated UI. Lab 0443 verifies expansion, Details/Reply, exact review/back, and retirement of the workspace when entering Recents; 0441 also checks the focused native editor above the keyboard. An unsent Chat input survives switching to Reply and back. A review creates a cancelled attempt record when backed out; the draft revision, recipient, subject and body remain unchanged. Build **0444** is installed in the separate user test package; the real publication, draft, transcript and policy were byte-identical immediately after installation. The final **907 shell tests**, desktop default/mobile-apps and phone checks, both shell graphs, runtime pins and Android builds pass. This UI revision runs no new model turn or SMTP send. The final phone captures check summary, expansion, same-row modes, editor and keyboard composer; they do not establish a 9/10 usability pass.
 Acceptance now needs the actual repeated task to work comfortably: ask for a
 time change, switch to Reply, edit, switch back to Chat, then review and return.
 Check hand travel, control grouping and visual hierarchy as well as saved data,

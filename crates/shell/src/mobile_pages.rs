@@ -20,17 +20,12 @@
 //! Drawing lives here too (`impl PhoneSurface`): the glance cards in the
 //! frosted style of the App Library, the spill pages, the indicator row.
 //!
-//! The published cards on the glance page are live, as in the desktop's
-//! glance panel and card window ([`GlanceCards`], glance_card.rs
-//! `LiveCards`): their chips, buttons, fields and in-card chat work here.
-//! The shell, not a card, decides what a tap is ([`GlanceFinger`]): a page
-//! swipe, a pull, a long press or a press on the shell's own controls clicks
-//! no card, and a plain tap clicks only the card under it. What the person
-//! types in a card's field is theirs, whatever the finger did.
+//! Phone Glance paints bounded summaries without running generated widgets.
+//! A tap expands one publication in its feed slot. The host workspace owns
+//! its controls; collapsed cards cannot claim input or run background UI.
 use crate::{
     desktop::DesktopStyle,
     glance::GlanceCard,
-    glance_card::{GlanceTiles, LiveCards},
     mobile::{PhoneGesture, PhoneHit, PhoneScreen, PhoneState},
     mobile_gestures::{Dir, GestureKind, ShellGesture},
     mobile_surface::{dock_ids, PhoneSurface},
@@ -62,7 +57,7 @@ pub enum GlanceItem {
     /// A card an app published through `glance.publish`, as the glance
     /// service holds it (glance.rs): its publisher (the caller's id, with
     /// its card id the dedupe key), the launcher id its open button opens,
-    /// and the L0 card its tile keeps live ([`GlanceCards`]).
+    /// and the L0 card opened on expansion. [`GlanceCards`] keeps summary hit regions only.
     Card(GlanceCard),
 }
 
@@ -75,9 +70,7 @@ impl GlanceItem {
             GlanceItem::Event { .. } => 78.0,
             GlanceItem::Fetch { .. } => 88.0,
             GlanceItem::Note { .. } => 104.0,
-            // The phone scrolls the whole feed. Capping the tile here hides
-            // the tail of a long conversation and its reply controls forever.
-            GlanceItem::Card(card) => crate::glance_card::feed_height(&card.key()),
+            GlanceItem::Card(_) => SUMMARY_HEIGHT,
         }
     }
     pub fn title(&self) -> &str {
@@ -199,13 +192,17 @@ pub struct PagesState {
     pub feed: GlanceFeed,
     /// The glance column's scroll offset, in points.
     pub glance_scroll: f64,
+    pub expanded: Option<String>,
+    glance_velocity: f64,
+    glance_track: Vec<(f64, f64)>,
+    expansion: f64,
     /// Today's date as the glance header shows it.
     pub date: String,
 }
 
 impl Default for PagesState {
     fn default() -> Self {
-        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, date: String::new() }
+        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, expanded: None, glance_velocity: 0.0, glance_track: Vec::new(), expansion: 0.0, date: String::new() }
     }
 }
 
@@ -257,6 +254,7 @@ impl PagesState {
     pub fn on_glance(&self) -> bool {
         self.current() < 0
     }
+    pub(crate) fn glance_requested(&self) -> bool { self.target == -1 || self.pending == Some(-1) }
     /// The horizontal offset of page `k` for a screen `width` wide.
     pub fn page_offset(&self, k: i64, width: f64) -> f64 {
         (k as f64 - self.position()) * width
@@ -378,9 +376,84 @@ impl PagesState {
         true
     }
 
+    pub fn expand(&mut self, key: &str, height: f64) -> bool {
+        if !self.feed.cards().any(|card| card.key() == key) { return false; }
+        self.expanded = Some(key.into());
+        self.expansion = 0.0;
+        self.glance_velocity = 0.0;
+        // Reveal only as much as needed. The summary remains the anchor.
+        let screen = rect(0.0, 0.0, 380.0, height);
+        if let Some(r) = self.expanded_rect(screen) {
+            let top = r.pos.y.clamp(GLANCE_HEADER, (height - GLANCE_BOTTOM - Self::expanded_height(height)).max(GLANCE_HEADER));
+            self.glance_scroll += r.pos.y - top;
+        }
+        true
+    }
+    pub fn collapse(&mut self, height: f64) {
+        self.expanded = None;
+        self.expansion = 0.0;
+        self.scroll_glance(0.0, height);
+    }
+    fn expanded_height(height: f64) -> f64 { (height - GLANCE_HEADER - GLANCE_BOTTOM).clamp(SUMMARY_HEIGHT, 620.0) }
+    pub fn item_height(&self, item: &GlanceItem, height: f64) -> f64 {
+        if matches!(item, GlanceItem::Card(card) if self.expanded.as_deref() == Some(&card.key())) {
+            SUMMARY_HEIGHT + (Self::expanded_height(height) - SUMMARY_HEIGHT) * self.expansion
+        } else { item.height() }
+    }
+    fn glance_height(&self, height: f64) -> f64 {
+        self.feed.items().map(|i| self.item_height(i, height) + GLANCE_GAP).sum::<f64>() - if self.feed.is_empty() {0.0} else {GLANCE_GAP}
+    }
+    pub fn expanded_rect(&self, screen: Rect) -> Option<Rect> {
+        let key = self.expanded.as_deref()?;
+        let mut y = screen.pos.y + GLANCE_HEADER - self.glance_scroll;
+        for item in self.feed.items() {
+            let h = self.item_height(item, screen.size.y);
+            if matches!(item, GlanceItem::Card(card) if card.key() == key) {
+                return Some(rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, h));
+            }
+            y += h + GLANCE_GAP;
+        }
+        None
+    }
+    pub fn glance_touch(&mut self, y: f64, time: f64) {
+        self.glance_velocity = 0.0;
+        self.glance_track.clear();
+        self.glance_sample(y, time);
+    }
+    pub fn glance_sample(&mut self, y: f64, time: f64) {
+        self.glance_track.retain(|(_, t)| time - *t <= 0.12);
+        if self.glance_track.len() >= 16 { self.glance_track.remove(0); }
+        self.glance_track.push((y, time));
+    }
+    pub fn glance_lift(&mut self, time: f64) {
+        self.glance_velocity = match (self.glance_track.first(), self.glance_track.last()) {
+            (Some(&(y0, t0)), Some(&(y1, t1))) if t1 - t0 > 0.004 && time - t1 < 0.08 => ((y0 - y1) / (t1 - t0)).clamp(-4000.0, 4000.0),
+            _ => 0.0,
+        };
+        if self.glance_velocity.abs() < 250.0 { self.glance_velocity = 0.0; }
+        self.glance_track.clear();
+    }
+    pub fn step_glance(&mut self, dt: f64, height: f64, idle: bool, reduced: bool) -> bool {
+        let mut active = false;
+        if self.expanded.is_some() && self.expansion < 1.0 {
+            self.expansion = if reduced {1.0} else {(self.expansion + dt / 0.20).min(1.0)};
+            active = self.expansion < 1.0;
+        }
+        if self.glance_velocity != 0.0 {
+            if idle && self.on_glance() {
+                let before = self.glance_scroll;
+                self.scroll_glance(self.glance_velocity * dt.min(0.05), height);
+                self.glance_velocity *= (-dt * 5.0).exp();
+                if self.glance_velocity.abs() < 30.0 || before == self.glance_scroll { self.glance_velocity = 0.0; }
+                active |= self.glance_velocity != 0.0;
+            } else { self.glance_velocity = 0.0; }
+        }
+        active
+    }
+
     /// Scroll the glance column by `dy` points on a screen `height` tall.
     pub fn scroll_glance(&mut self, dy: f64, height: f64) {
-        let max = (self.feed.column_height(GLANCE_GAP) + GLANCE_HEADER - (height - GLANCE_BOTTOM)).max(0.0);
+        let max = (self.glance_height(height) + GLANCE_HEADER - (height - GLANCE_BOTTOM)).max(0.0);
         self.glance_scroll = (self.glance_scroll + dy).clamp(0.0, max);
     }
 
@@ -420,7 +493,8 @@ impl PagesState {
 
 /// Glance owns the page: navigation stays in the header, and the bottom
 /// leaves room for the system gesture area rather than the home app dock.
-pub(crate) const GLANCE_HEADER: f64 = 112.0;
+pub(crate) const SUMMARY_HEIGHT: f64 = 124.0;
+pub const GLANCE_HEADER: f64 = 112.0;
 const GLANCE_BOTTOM: f64 = 32.0;
 const GLANCE_GAP: f64 = 12.0;
 
@@ -459,7 +533,11 @@ pub fn sync(phone: &mut PhoneState, style: DesktopStyle, screen: Rect) {
     if phone.pages.date != date { phone.pages.date = date; }
     phone.pages.feed.seed(shell_cards(&ids, &phone.tiles));
     // What apps published (glance.rs): re-read only when it changed.
+    let anchor = phone.pages.expanded_rect(screen).map(|r| r.pos.y);
     phone.pages.feed.sync_published();
+    if let (Some(before), Some(after)) = (anchor, phone.pages.expanded_rect(screen)) {
+        phone.pages.glance_scroll += after.pos.y - before;
+    }
 }
 
 /// The cards the shell can fill in by itself. The weather tile's data lives
@@ -543,139 +621,20 @@ pub fn tappable(tile: Rect, column: Rect) -> Rect {
 
 const WHO: &str = "glance page";
 
-/// The glance page's published cards, live as in the desktop's glance panel
-/// and card window (glance_card.rs): each card's tile (a Splash under the
-/// publishing app's policy) and its L0 session ([`LiveCards`]), so a card's
-/// chips, buttons, field edits and in-card chat (`sys.chat`, with the
-/// publishing app's own agent) run here through the same path, as that app.
-/// What differs is the finger: a card's clicks (its tap targets' calls) run
-/// only for a plain tap on that card ([`GlanceFinger`]); those of any other
-/// finger are dropped. Its field edits (what the person typed) always run.
-/// A card's state lasts while it is published, scrolled or paged out of view
-/// included; a newer publish starts it over.
+/// Visible summary hit regions only: no Splash tiles or L0 sessions in the feed.
 #[derive(Default)]
-pub struct GlanceCards {
-    pub tiles: GlanceTiles,
-    live: LiveCards,
-    /// The published cards' keys, as of the last draw.
-    keys: Vec<String>,
-    /// The part of each tile a finger can tap, as drawn this frame.
-    drawn: Vec<(String, Rect)>,
-    /// The card whose clicks count: the one the last pointer event was a
-    /// plain tap on, if it was one.
-    clicks: Option<String>,
-    /// What the last layout log said, so it is logged once per change.
-    logged: String,
-    /// Last viewport/focus pair: reveal an editor on focus or keyboard
-    /// resize, without overriding subsequent manual conversation scrolling.
-    editor_viewport: Option<(Rect, Option<WidgetUid>)>,
-}
-
+pub struct GlanceCards { drawn: Vec<(String, Rect)>, logged: String }
 impl GlanceCards {
-    pub fn reveal_editor(&mut self, cx: &mut Cx, phone: &mut PhoneState, screen: Rect) {
-        if phone.screen != PhoneScreen::Home || !phone.pages.on_glance() || phone.shade.is_open() {
-            self.editor_viewport = None;
-            return;
-        }
-        let column = glance_column(screen, 0.0);
-        let editor = self.tiles.focused_editor(cx);
-        let state = (column, editor.map(|(uid, _)| uid));
-        if self.editor_viewport != Some(state) {
-            if let Some((_, editor)) = editor {
-                let next = crate::glance_card::editor_scroll(phone.pages.glance_scroll, column, editor, phone.pages.feed.column_height(GLANCE_GAP));
-                if (next - phone.pages.glance_scroll).abs() > 0.5 {
-                    phone.pages.glance_scroll = next;
-                    cx.redraw_all();
-                }
-            }
-            self.editor_viewport = Some(state);
-        }
+    pub fn begin(&mut self) { self.drawn.clear(); }
+    pub fn record(&mut self, card: &GlanceCard, tile: Rect, column: Rect) {
+        self.drawn.push((card.key(), tappable(tile, column)));
     }
-
-    /// A new frame: no tile is drawn yet.
-    pub fn begin(&mut self) {
-        self.drawn.clear();
-    }
-
-    /// Draw `card` at `tile` as its session has it now (made on first use
-    /// for the app that published it); `column` is where the page lets a
-    /// finger tap ([`tappable`]).
-    pub fn draw(&mut self, cx: &mut Cx2d, card: &GlanceCard, tile: Rect, column: Rect) {
-        let key = card.key();
-        let body = self.live.body(&key, card, WHO);
-        self.tiles.draw(cx, &key, &card.app, card.contained, &body, tile);
-        self.drawn.push((key, tappable(tile, column)));
-    }
-
-    /// The end of the page's draw: `live` are the published cards' keys.
-    /// The others' tiles stop and their sessions go.
-    pub fn sweep(&mut self, cx: &mut Cx, live: Vec<String>) {
-        self.tiles.sweep(cx, &live);
-        self.live.retain(&live);
-        self.keys = live;
-    }
-
-    /// Where the tiles landed (their tappable parts), logged once per
-    /// change: evidence for a remote run. The page calls it at rest only,
-    /// not on every frame of a swipe.
     pub fn log_layout(&mut self) {
-        let layout: Vec<String> = self.drawn.iter().map(|(key, r)| format!("{key}@{},{},{},{}", r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
-        let layout = layout.join(" ");
-        if layout != self.logged {
-            log!("{WHO}: {} card(s) {layout}", self.drawn.len());
-            self.logged = layout;
-        }
+        let layout = self.drawn.iter().map(|(key, r)| format!("{key}@{},{},{},{}", r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect::<Vec<_>>().join(" ");
+        if layout != self.logged { log!("{WHO}: {} summaries {layout}", self.drawn.len()); self.logged = layout; }
     }
-
-    /// The card a finger at `p` is on: the tile drawn there, as much of it
-    /// as the page shows.
     pub(crate) fn under(&self, p: Vec2d) -> Option<&str> {
         self.drawn.iter().rev().find(|(_, r)| r.size.x > 0.0 && r.size.y > 0.0 && r.contains(p)).map(|(key, _)| key.as_str())
-    }
-
-    /// One event for the cards: the tiles get it (glance_card.rs
-    /// `GlanceTiles::handle_event`), then the cards' queued taps run through
-    /// their sessions (`LiveCards::dispatch`), as do the cards whose chat
-    /// moved (a reply came); true when a card changed, and the page redraws.
-    ///
-    /// A tap target calls `NAV` once the event's handlers have run (a
-    /// widget's script call runs at the end of the event's cycle), so a click
-    /// is queued after the pointer event it came from, and judged on a later
-    /// event by that pointer event: `finger`, what the shell says it is, is
-    /// kept until the next pointer event. Clicks of every card but the one a
-    /// plain tap was on are dropped before the taps run.
-    pub fn handle_event(&mut self, cx: &mut Cx, event: &Event, finger: GlanceFinger) -> bool {
-        for key in &self.keys {
-            if self.clicks.as_deref() == Some(key.as_str()) {
-                continue;
-            }
-            let Some(heap) = self.tiles.heap_key(cx, key) else { continue };
-            let dropped = crate::glance_card::drop_clicks(heap);
-            if dropped > 0 {
-                let why = if self.clicks.is_some() { "the tap was on another card" } else { "not a tap" };
-                log!("{WHO}: {key}: {dropped} tap(s) dropped ({why})");
-            }
-        }
-        let changed = self.live.dispatch(cx, &self.tiles, WHO);
-        self.tiles.handle_event(cx, event);
-        match finger {
-            GlanceFinger::NotPointer => {}
-            GlanceFinger::Tap(at) => self.clicks = self.under(at).map(str::to_string),
-            GlanceFinger::NotATap => self.clicks = None,
-        }
-        changed
-    }
-}
-
-/// Choose the shell arrow's destination from admitted metadata, never L0 data.
-/// Mail's bound draft needs its expanded editor/review; generic cards retain
-/// the existing shortcut into their full app.
-fn glance_open_hit(card: &GlanceCard) -> PhoneHit {
-    if card.app == "os.mail" && card.l0.as_ref().and_then(|l| l.mail.as_ref())
-        .is_some_and(|binding| binding.publisher == card.app) {
-        PhoneHit::ExpandGlance(card.key())
-    } else {
-        PhoneHit::Glance(card.open_app.clone())
     }
 }
 
@@ -707,37 +666,30 @@ impl PhoneSurface {
         // hits were clipped, so text painted behind the launcher controls.
         cx.begin_turtle(Walk::abs_rect(column), Layout::default());
         for item in &items {
-            let h = item.height();
+            let h = phone.pages.item_height(item, screen.size.y);
             if y + h > column.pos.y && y < bottom {
                 self.draw_glance_card(cx, rect(left, y, width, h), column, item, style, dark, ink, opacity);
             }
             y += h + GLANCE_GAP;
         }
         cx.end_turtle();
-        let live: Vec<String> = phone.pages.feed.cards().map(GlanceCard::key).collect();
-        self.glance_cards.sweep(cx, live);
-        if dx == 0.0 {
+        if dx == 0.0 && phone.gesture.is_none() && phone.pages.glance_velocity == 0.0 {
             self.glance_cards.log_layout();
         }
     }
 
     fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, column: Rect, item: &GlanceItem, style: DesktopStyle, dark: bool, ink: Vec4f, opacity: f32) {
         if let GlanceItem::Card(card) = item {
-            // A published card draws itself (its own surface) at the tile
-            // rect, takes its own input and runs its taps ([`GlanceCards`]);
-            // the corner arrow expands bound Mail, or opens other cards' apps. Without App Hub's
-            // vocabulary a frosted title stands in.
-            if !crate::glance_card::CAN_RENDER {
-                self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
-                self.d.label_elided(cx, rect(r.pos.x + 16.0, r.pos.y + 16.0, r.size.x - 32.0, 22.0), true, 15.0, ink, HAlign::Left, &card.title);
-            }
-            self.glance_cards.draw(cx, card, r, column);
-            let open = crate::glance_card::open_button(r);
-            self.rounded(cx, open, 14.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.22 } else { 0.8 } * opacity));
-            self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
-            let visible_open = tappable(open, column);
-            if visible_open.size.x > 0.0 && visible_open.size.y > 0.0 {
-                self.hits.push((visible_open, glance_open_hit(card)));
+            self.rounded(cx, r, 10.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.18 } else { 0.92 } * opacity));
+            self.glance_cards.record(card, rect(r.pos.x, r.pos.y, r.size.x, SUMMARY_HEIGHT), column);
+            let pad = 16.0;
+            let w = r.size.x - pad * 2.0;
+            self.d.label_elided(cx, rect(r.pos.x + pad, r.pos.y + 12.0, w - 44.0, 18.0), true, 10.0, alpha(ink, 0.62), HAlign::Left, &card.open_app.to_uppercase());
+            self.d.icon_centered(cx, Ico::ChevronDown, rect(r.pos.x + r.size.x - 48.0, r.pos.y + 4.0, 44.0, 44.0), 14.0, ink);
+            self.d.label_elided(cx, rect(r.pos.x + pad, r.pos.y + 35.0, w, 23.0), true, 15.0, ink, HAlign::Left, &card.title);
+            let summary = if card.summary.is_empty() { "Tap to view this card" } else { &card.summary };
+            for (n, line) in self.d.wrap(cx, false, 13.0, summary, w, 2).iter().enumerate() {
+                self.d.label(cx, rect(r.pos.x + pad, r.pos.y + 65.0 + n as f64 * 19.0, w, 19.0), false, 13.0, alpha(ink, 0.72), HAlign::Left, line);
             }
             return;
         }
@@ -1062,9 +1014,54 @@ mod tests {
 
     fn card(app: &str, id: &str, priority: i64, published_ms: u64) -> GlanceItem {
         GlanceItem::Card(GlanceCard {
-            app: app.into(), card_id: id.into(), title: format!("{app}/{id}"), priority, published_ms, expires_ms: 0,
+            app: app.into(), card_id: id.into(), title: format!("{app}/{id}"), summary: String::new(), priority, published_ms, expires_ms: 0,
             open_app: app.trim_start_matches("os.").into(), route: None, body: "".into(), contained: true, digests: Vec::new(), l0: None,
         })
+    }
+
+    #[test]
+    fn summaries_expand_one_slot_and_keep_all_other_cards_compact() {
+        let mut pages = PagesState::default();
+        for n in 0..6 { pages.feed.push(card("os.mail", &n.to_string(), 0, n)); }
+        let screen = rect(0.0, 24.0, 353.0, 800.0);
+        assert!(pages.feed.items().all(|i| i.height() == SUMMARY_HEIGHT));
+        let before = pages.glance_height(800.0);
+        assert!(pages.expand("os.mail/4", 800.0));
+        assert_eq!(pages.expanded_rect(screen).unwrap().size.y, SUMMARY_HEIGHT);
+        pages.step_glance(0.2, 800.0, true, false);
+        let slot = pages.expanded_rect(screen).unwrap();
+        assert_eq!(slot.size.y, 620.0);
+        assert_eq!(pages.glance_height(800.0), before + 620.0 - SUMMARY_HEIGHT);
+        assert!(slot.pos.y >= screen.pos.y + GLANCE_HEADER);
+        assert!(slot.pos.y + slot.size.y <= screen.pos.y + screen.size.y - GLANCE_BOTTOM);
+        assert!(pages.expand("os.mail/3", 800.0));
+        pages.step_glance(0.2, 800.0, true, false);
+        assert_eq!(pages.glance_height(800.0), before + 620.0 - SUMMARY_HEIGHT);
+        pages.collapse(800.0);
+        assert_eq!(pages.glance_height(800.0), before);
+        assert!(pages.expanded_rect(screen).is_none());
+    }
+
+    #[test]
+    fn glance_flick_coasts_but_paused_lift_and_new_touch_stop_it() {
+        let mut p = PagesState { index: -1.0, ..Default::default() };
+        for n in 0..6 { p.feed.push(card("os.mail", &n.to_string(), 0, n)); }
+        p.glance_touch(600.0, 1.0);
+        for n in 1..=5 { p.glance_sample(600.0 - n as f64 * 20.0, 1.0 + n as f64 * 0.02); }
+        p.glance_lift(1.11);
+        assert!(p.glance_velocity > 900.0);
+        assert!(p.step_glance(1.0/60.0, 400.0, true, false));
+        assert!(p.glance_scroll > 0.0);
+        for _ in 0..240 { p.step_glance(1.0/60.0, 400.0, true, false); }
+        assert_eq!(p.glance_velocity, 0.0);
+        let stopped = p.glance_scroll;
+        p.glance_touch(500.0, 2.0);
+        p.glance_sample(300.0, 2.1); p.glance_lift(2.4);
+        assert_eq!(p.glance_velocity, 0.0, "holding before lift is not a fling");
+        p.step_glance(0.016, 400.0, true, false);
+        assert_eq!(p.glance_scroll, stopped);
+        p.glance_velocity = -1000.0; p.glance_touch(400.0, 3.0);
+        assert_eq!(p.glance_velocity, 0.0, "touching interrupts a coast");
     }
 
     #[test]
@@ -1094,8 +1091,8 @@ mod tests {
         }
         assert_eq!(feed.cards().count(), crate::glance::SHOWN_CARDS);
         assert!(feed.cards().all(|c| c.priority >= 60));
-        // A card's height is its tile's (glance_card.rs), before it has drawn.
-        assert_eq!(card("os.y", "new", 1, 1).height(), crate::glance_card::TILE_DEFAULT_HEIGHT);
+        // Summary height is independent of the generated card body.
+        assert_eq!(card("os.y", "new", 1, 1).height(), SUMMARY_HEIGHT);
     }
 
     /// The feed keeps a published card as the glance service gives it, its
@@ -1194,32 +1191,6 @@ mod tests {
     }
 
     #[test]
-    fn bound_mail_arrow_expands_exact_publication_but_generic_cards_open_the_app() {
-        let mut card = GlanceCard { app: "os.mail".into(), card_id: "reply-42".into(),
-            title: "Reply".into(), priority: 0, published_ms: 0, expires_ms: u64::MAX,
-            open_app: "mail".into(), route: None, body: "".into(), contained: true,
-            digests: vec![], l0: None };
-        assert_eq!(glance_open_hit(&card), PhoneHit::Glance("mail".into()));
-        card.l0 = Some(std::sync::Arc::new(crate::glance::L0Source {
-            source: String::new(), data: serde_json::json!({"mail":{"draft_id":"forged"}}), mail: None }));
-        assert_eq!(glance_open_hit(&card), PhoneHit::Glance("mail".into()), "card data cannot select the bound route");
-        std::sync::Arc::make_mut(card.l0.as_mut().unwrap()).mail = Some(crate::mail_card::Binding {
-            publisher: "os.mail".into(), account: "test-account".into(), source_message: serde_json::json!({}),
-            draft_id: "draft-42".into(), draft_revision: 1, chat_thread: "thread-42".into(), card_id: "reply-42".into(),
-        });
-        assert_eq!(glance_open_hit(&card), PhoneHit::ExpandGlance("os.mail/reply-42".into()));
-        card.card_id = "reply-43".into();
-        assert_eq!(glance_open_hit(&card), PhoneHit::ExpandGlance("os.mail/reply-43".into()), "route identifies the tapped publication, not just its publisher");
-        card.app = "os.news".into(); card.open_app = "news".into();
-        assert_eq!(glance_open_hit(&card), PhoneHit::Glance("news".into()));
-    }
-
-    /// Only the lift of a plain tap on the page itself is a tap for a card:
-    /// not a swipe or a pull the recognizer took, not a finger that
-    /// travelled, not a press on the shell's own controls, not a finger a
-    /// long press took (the shell let go of it), not another touch, and no
-    /// other pointer event. Typing and answers are not the pointer at all.
-    #[test]
     fn only_a_plain_taps_lift_is_a_tap_for_a_card() {
         use makepad_platform::event::TouchState;
         let at = dvec2(120.0, 300.0);
@@ -1261,91 +1232,4 @@ mod tests {
         assert_eq!(gone.under(dvec2(100.0, 776.0)), None, "nothing of it shows");
     }
 
-    /// The tap target for `event` a lowered card offers (its `NAV` call).
-    #[cfg(feature = "app-hub")]
-    fn target(body: &str, event: &str) -> String {
-        body.split("NAV(t: ")
-            .skip(1)
-            .filter_map(|rest| serde_json::from_str::<String>(&rest[..rest.find("\"}\"").map(|i| i + 3).unwrap_or(0)]).ok())
-            .find(|t| crate::glance_card::parse_tap(t).is_some_and(|(_, e, _)| e == event))
-            .unwrap_or_else(|| panic!("no {event} in {body}"))
-    }
-
-    /// The glance page's cards run their L0 taps as the desktop's panel
-    /// does (glance_card.rs `LiveCards`), as the app that published them,
-    /// and a card's clicks only for a plain tap on that card. A tap target
-    /// calls `NAV` at the end of the event's cycle, so each click here is
-    /// queued after the pointer event it came from and judged on the next
-    /// event by that pointer event: a swipe's lift drops it, as does a tap
-    /// on another card or under the column; a field's edit (it carries what
-    /// the person typed) runs whatever the finger did. Before, the page drew
-    /// the chips and ran none of them.
-    #[cfg(feature = "app-hub")]
-    #[test]
-    fn the_glance_pages_cards_run_their_taps_for_a_plain_tap_only() {
-        use crate::glance::{Caller, GlanceStore};
-        use crate::glance_card::{queue_tap_for_test as queue, take_taps, Tap};
-        let (_, title, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ups-lamp").unwrap();
-        let mut store = GlanceStore::default();
-        store.publish(&Caller::granted("com.example.shop"), &serde_json::json!({"card_id": "parcel", "title": title, "source": source, "data": data}), 0).unwrap();
-        store.publish(&Caller::granted("com.example.other"), &serde_json::json!({"card_id": "c", "title": "Other", "script": "View{}"}), 0).unwrap();
-        let shop = store.card("com.example.shop/parcel", 0).unwrap();
-        let other = store.card("com.example.other/c", 0).unwrap();
-        let mut cx = Cx::new(Box::new(|_, _| {}));
-        cx.with_vm(|vm| {
-            makepad_widgets::script_mod(vm);
-            crate::glance_card::script_mod(vm);
-        });
-        let mut cards = GlanceCards::default();
-        let body = cards.live.body(&shop.key(), &shop, WHO);
-        cards.tiles.open(&mut cx, &shop.key(), &shop.app, true, &"View{}".into());
-        cards.tiles.open(&mut cx, &other.key(), &other.app, true, &"View{}".into());
-        let heap = cards.tiles.heap_key(&mut cx, &shop.key()).unwrap();
-        let other_heap = cards.tiles.heap_key(&mut cx, &other.key()).unwrap();
-        cards.keys = vec![shop.key(), other.key()];
-        cards.drawn = vec![(shop.key(), rect(20.0, 160.0, 360.0, 200.0)), (other.key(), rect(20.0, 372.0, 360.0, 148.0))];
-        let track = target(&body, "track");
-        let click = |target: &str| Tap { heap, target: target.into(), typed: None };
-        let tracking = |cards: &mut GlanceCards| cards.live.body(&shop.key(), &shop, WHO).contains("Opening the carrier's tracking page");
-        let on_shop = dvec2(100.0, 200.0);
-        let up = mouse_up(on_shop);
-        let next = Event::Signal;
-
-        // A page swipe that began on Track: its lift is no tap, and the
-        // click Track queued after it is dropped on the next event.
-        assert!(!cards.handle_event(&mut cx, &up, GlanceFinger::NotATap));
-        queue(click(&track));
-        assert!(!cards.handle_event(&mut cx, &next, GlanceFinger::NotPointer));
-        assert!(!tracking(&mut cards) && take_taps(heap).is_empty(), "dropped, not left queued");
-        // A plain tap on the other card: this card's click is not its; that
-        // card's own stays for it.
-        cards.handle_event(&mut cx, &up, GlanceFinger::Tap(dvec2(100.0, 400.0)));
-        queue(click(&track));
-        queue(Tap { heap: other_heap, target: "l0:{}".into(), typed: None });
-        assert!(!cards.handle_event(&mut cx, &next, GlanceFinger::NotPointer));
-        assert!(!tracking(&mut cards) && take_taps(heap).is_empty());
-        assert_eq!(take_taps(other_heap).len(), 1);
-        // Below the column (the indicator's and the dock's): no card's.
-        cards.handle_event(&mut cx, &up, GlanceFinger::Tap(dvec2(100.0, 900.0)));
-        queue(click(&track));
-        cards.handle_event(&mut cx, &next, GlanceFinger::NotPointer);
-        assert!(!tracking(&mut cards) && take_taps(heap).is_empty());
-        // A plain tap on this card runs it, as the app that published it,
-        // also when other events (not the pointer) come between.
-        cards.handle_event(&mut cx, &up, GlanceFinger::Tap(on_shop));
-        cards.handle_event(&mut cx, &next, GlanceFinger::NotPointer);
-        queue(click(&track));
-        assert!(cards.handle_event(&mut cx, &next, GlanceFinger::NotPointer), "the card changed");
-        assert!(tracking(&mut cards));
-        // A field's edit carries the person's text: it runs after a finger
-        // that was no tap too.
-        cards.handle_event(&mut cx, &up, GlanceFinger::NotATap);
-        let back = target(&cards.live.body(&shop.key(), &shop, WHO), "back");
-        queue(Tap { heap, target: back, typed: Some(String::new()) });
-        assert!(cards.handle_event(&mut cx, &next, GlanceFinger::NotPointer));
-        assert!(!tracking(&mut cards), "back to Track");
-        // A card no longer published takes its tile and session with it.
-        cards.sweep(&mut cx, vec![other.key()]);
-        assert!(cards.tiles.heap_key(&mut cx, &shop.key()).is_none());
-    }
 }

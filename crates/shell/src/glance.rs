@@ -143,6 +143,8 @@ pub struct GlanceCard {
     pub app: String,
     pub card_id: String,
     pub title: String,
+    /// Bounded publication summary. Phone previews never execute the card.
+    pub summary: String,
     pub priority: i64,
     pub published_ms: u64,
     pub expires_ms: u64,
@@ -409,10 +411,12 @@ impl GlanceStore {
             (crate::glance_card::lower(source, &seeded)?.into(), digests, digest_expires)
         };
         let binds_digests = !digests.is_empty();
+        let summary = note_summary(&json!({"summary": args.get("summary"), "data": &data}));
         let card = GlanceCard {
             app: app.clone(),
             card_id: card_id.to_string(),
             title: title.to_string(),
+            summary,
             priority,
             published_ms: now_ms,
             // Never past the digest it shows.

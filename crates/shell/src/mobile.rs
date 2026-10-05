@@ -74,7 +74,7 @@ pub struct PhoneGesture {
 
 #[derive(Clone)]
 pub struct PhoneState {
-    /// A dedicated card workspace covers Home; do not draw or interact with its feed.
+    /// A modal card/review covers Home; inline Glance expansion leaves this false.
     pub card_open: bool,
     pub theme: Option<crate::mobile_theme::Selection>,
     pub navigation: crate::mobile_navigation::FloatingNavigation,
@@ -357,6 +357,7 @@ impl PhoneState {
         // open and comes back as it closes.
         self.island.set_shade_open(self.shade.wants_open());
         active |= self.pages.step_with_motion(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None }, reduced);
+        active |= self.pages.step_glance(dt, self.viewport.size.y, self.gesture.is_none() && self.screen == PhoneScreen::Home, reduced);
         if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
     }
