@@ -9,16 +9,16 @@ How these decisions fit together in the code on `main`, and which parts are stil
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-one-octosense-repository.md) | One OctoSense repository for the shell, its services, the system apps and both packagings | Accepted |
-| [0002](0002-event-driven-app-agents.md) | Event-driven app agents: apps think on their own triggers and publish cards to the glance screen | Proposed |
+| [0002](0002-event-driven-app-agents.md) | Event-driven app agents: apps think on their own triggers and publish cards to the glance screen | Proposed; partly implemented |
 | [0003](0003-shared-octos-client-access.md) | Talk to Octos: one kernel for native and external clients (opt-in) | Implemented; Android unverified |
-| [0004](0004-native-apps-hosting-and-peers.md) | Native apps, app agents and cross-app work: one manifest, hosting per target, an agent for every app, approvals by the person | Implemented |
+| [0004](0004-native-apps-hosting-and-peers.md) | Native apps, app agents and cross-app work: one manifest, hosting per target, an agent for every app, approvals by the person | Implemented; three plan items open |
 | [0005](0005-app-contract.md) | The app contract: one small, versioned interface between App Hub and every app | Implemented |
 | [0006](0006-app-studio-on-the-phone.md) | App Studio on the phone | Accepted |
 | [0007](0007-composable-mail-action-cards.md) | Composable Mail cards with editing, chat and approved actions | Implementation in progress; phone acceptance pending |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 
-Written in OctoSense-ROM (retired; merged into this repository) `home/docs/adr/` before the repositories merged, and kept here unchanged as history under [`home/`](home/). They keep their own numbers; cite them as "Home ADR 0004". Where one names a path such as `home/src/` or `home/apps/`, read `crates/shell/src/` (the shell; Settings is in `phone/src/`) and `apps/` (see ADR 0001). Their status is as they recorded it.
+Written in OctoSense-ROM (retired; merged into this repository) `home/docs/adr/` and kept here as history under [`home/`](home/); on 2026-09-28 Home 0002 and 0004 gained dated amendments and Home 0004's implementation-status line and last Consequences bullet were updated; on 2026-10-04 Home 0001 and 0002 gained dated notes. Cite them as "Home ADR 0004"; inside them "ADR 000N" means a Home ADR, except in those 2026-09-28 additions (this repository's ADR 0004). Paths are relative to the old `home/` or belong to other repositories: `src/` → `crates/shell/src/` (Settings: `phone/src/`), `resources/` and `android/` → `phone/resources/` and `phone/android/`, `octosense-rom/` → `rom/`, OctoSense-System-Apps `apps/` → `apps/` (ADR 0001); `crates/app-policy` and `crates/app-hub-app` are App Hub's; `apps/calendar/cards/` was Octoscript-AppCard's. Their status is as they recorded it.
 
 | Home ADR | Title | Date | Status |
 | --- | --- | --- | --- |

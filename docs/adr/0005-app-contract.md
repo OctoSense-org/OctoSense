@@ -62,8 +62,8 @@ Within `1.x`:
 
 - `octosense-app-contract` is published to a registry, so consumers write `octosense-app-contract = "1"` and Cargo resolves one `1.x` for the whole build. No lockstep, no duplicate copies, no host-alias tricks.
 - **Registry: crates.io (decided 2026-09-30).** App Hub's source is already public, and Rinx, OctoSense and third-party apps can depend on it with no credentials or setup. A published version can never be deleted, only yanked, so releases go through review. A private registry was the alternative, rejected because every consumer's CI and machine would need a token and outside app developers could not use it. Plain git dependencies cannot work: Cargo never unifies two git commits.
-- OctoSense's root `Cargo.toml` states `octosense-app-contract = "1"`, and its `Cargo.lock` records the exact version it ships with (1.0.0 today); apps state the lowest `1.x` they need. Inside OctoSense, OctoSense's lock is what links.
-- Rinx's CI should build against the lowest and the highest `1.x` it claims. *Not yet in place (2026-10-01): with only 1.0.0 published both are the same version; the check joins Rinx's CI (`main.yml`) with the first 1.1.0.*
+- OctoSense's root `Cargo.toml` states `octosense-app-contract = "1"`, and its `Cargo.lock` records the exact version it ships with (1.0.0 today; *2026-10-04: 1.1.0 since [#312](https://github.com/OctoSense-org/OctoSense/pull/312)*); apps state the lowest `1.x` they need. Inside OctoSense, OctoSense's lock is what links.
+- Rinx's CI should build against the lowest and the highest `1.x` it claims. *Not yet in place (2026-10-01): with only 1.0.0 published both are the same version; the check joins Rinx's CI (`main.yml`) with the first 1.1.0.* *(2026-10-04: 1.1.0 is published; the check is still not in Rinx's CI.)*
 
 ### 4. Breaking changes
 
@@ -71,7 +71,7 @@ A change that cannot be additive becomes `octosense-app-contract 2.0`. Hosts sup
 
 ### 5. Who changes the contract
 
-The contract crate lives in the App Hub repository under `crates/app-contract`, with its own changelog. A pull request that touches it needs review from App Hub and from one app owner (Rinx). *Not yet enforced (2026-10-01): App Hub has no CODEOWNERS; the rule is followed by hand until a CODEOWNERS entry for `crates/app-contract` is added.* CI runs: the fixture corpus, a public-API diff (`cargo public-api` or `cargo semver-checks`) that fails on any non-additive change within `1.x`, and Rinx's build against the new version.
+The contract crate lives in the App Hub repository under `crates/app-contract`, with its own changelog. A pull request that touches it needs review from App Hub and from one app owner (Rinx). *Not yet enforced (2026-10-01): App Hub has no CODEOWNERS; the rule is followed by hand until a CODEOWNERS entry for `crates/app-contract` is added.* CI runs: the fixture corpus, a public-API diff (`cargo public-api` or `cargo semver-checks`) that fails on any non-additive change within `1.x`, and Rinx's build against the new version. *(2026-10-04: not in place for Rinx: App Hub's CI runs the fixtures and `cargo semver-checks`, but builds no Rinx.)*
 
 ## Consequences
 

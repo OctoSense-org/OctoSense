@@ -2,80 +2,98 @@
 
 [English](mail-agent-events.md) | 简体中文
 
-Mail 可以处理 Inbox 新邮件，不需要用户逐封发送聊天请求。用户先在宿主登录面板中连接账户，
-允许 Mail Agent，再让系统 Agent 配置自动处理。系统 Agent 用 `agents.provision`
-设置指令、具名技能文本、启用状态和轮询间隔；`agents.status` 返回配置与处理状态。
-模型密钥和邮箱密码留在宿主中；Agent 读取的邮件文本会发送给所配置的模型。
+邮件的 Agent 不用别人开口就能处理新邮件。Shell 中的一个工作线程同步收件箱，把每封新邮件记为一个事件排入队列，并为它启动邮件的 Agent 的一个回合；Agent 读完邮件，要么发布一张 glance 卡片（如果用户的策略要求回复，卡片会带一份回复草稿），要么记下不发的理由。Agent、通道和卡片的概念见[关键概念](../README.zh-CN.md#关键概念)。
 
-流程是：宿主同步 Inbox → 原子保存邮件、同步游标和待处理事件 → Mail Agent 收到带邮件 ID
-的 incoming 事件 → 用 `mail.peek` 读取正文 → 自行判断是否需要卡片 → 用
-`mail.publish_card` 发布模型编写的 L0 卡片和通知 → 回合成功且宿主有发布记录后确认事件。
-无需卡片时必须调用 `mail.skip_event`，原因是 `no_action`、`duplicate` 或 `outside_policy`；
-宿主保存决策，回合成功后才确认。工具失败后的普通模型回答不能满足确认条件。每封邮件不需要系统 Agent 或测试人员另发提示词。
+## 开启
 
-轮询只作用于当前已获用户许可、且配置已启用的账户。首次同步或服务器 UID 重置只建立基线，
-不会将历史邮件转成一批通知。待处理事件持久保存；失败或缺少宿主决策记录的回合保留并退避重试。
+用户在 Shell 的面板上登录邮件账号、允许邮件的 Agent，再请系统 Agent 打开新邮件处理。系统 Agent 随即调用 `agents.provision`，参数为 `enabled`、`instructions`、具名的 `skills` 文本，以及可选的 `poll_interval_secs`（30 到 3600 秒，默认 60）。它不能指定账号：Shell 把这份配置绑定到当前登录的账号，并保存在 Agent 的文件夹之外。其中的 instructions 追加在邮件应用已接纳的 `AGENT.md` 之后；与已接纳技能同名的技能会替换那项技能的文本。两者都不授予任何工具。`enabled: false` 关闭处理，`agents.status` 报告配置、队列和最近一次的结果。
 
-按以下顺序阅读源码：
+邮箱密码和模型提供方的密钥都留在 Shell 一侧，但 Agent 读到的邮件会发送给用户配置的模型提供方。
 
-1. [`incoming.rs`](../apps/mail/host-service/src/incoming.rs) 串行处理 UI 和后台同步。
-   邮件、游标和事件队列一次原子保存；队列满时不会推进游标丢失事件。
-2. [`agent_events.rs`](../crates/shell/src/agent_events.rs) 在应用工作区之外保存绑定账户的
-   配置，启动 incoming 回合，并在等待期间检查取消、授权撤销和账户变化。
-   状态读取不会等待同步锁；队列繁忙时返回 `pending: null`、`queue_busy: true`。
-   完成处理在同一次非阻塞服务锁中检查已保存的决策并确认事件；繁忙时重试，不冻结 UI。
-3. [`script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs) 加载已接纳的
-   `AGENT.md`/技能文本，将 Mail 工具调用绑定到 broker 提供的账户。模型不能用参数选择
-   另一个账户。`mail.folders`、`mail.list` 读缓存；`mail.sync` 分批刷新指定文件夹；
-   `mail.peek` 读取纯文本且不标记已读。Peer 工作区不会挂载密码保险库或邮箱数据库。
-4. [`guidance.rs`](../crates/app-peers/src/guidance.rs) 为每轮快照宿主指令与技能**文本**，
-   已存在的 peer 下一轮也会用新配置。指令和不可信请求放在两个独立序列化文本块中。
-   这没有增加内核 system 消息角色，也没有安装原生技能；工具授权和账户检查才是可强制执行的边界。
-5. [`glance.rs`](../crates/shell/src/glance.rs) 校验 L0 源码及具名数据集对象，以 Mail 身份发布。
-   每个数据集必须声明非空字段列表并提供各字段的值；循环依赖会被拒绝。
-   这能发现缺失绑定，但不能证明事实正确或布局好看。
-   模型用稳定事件 ID 作为 `card_id`；已记录的发布结果阻止重复发布。若在发布后、记录前崩溃，
-   通知仍可能重复，但相同卡片 ID 会替换卡片而非新增另一张。Glance 卡片本身目前只保存在内存，
-   这些记录不会在进程重启后恢复可见卡片。
-6. [`mobile_app.rs`](../crates/shell/src/mobile_app.rs) 保存每条通知对应的准确卡片键。
-   点击通知会在 Glance 上打开该完整卡片；返回键或关闭按钮回到 Glance。
-   卡片已移除时安全回退。卡片中独立的打开应用操作仍进入 Mail。
+```mermaid
+sequenceDiagram
+    participant Person as 用户
+    participant System as 系统 Agent
+    participant Host as Shell 中的邮件服务与工作线程
+    participant Mail as 邮件的 Agent
+    participant UI as glance 卡片与通知
+    Person->>Host: 登录，允许邮件的 Agent
+    Host->>Host: 收件箱首次同步只建立基线
+    Person->>System: 打开新邮件处理
+    System->>Host: agents.provision(enabled, instructions, skills)
+    loop 每封新到的收件箱邮件
+        Host->>Host: 原子保存邮件、游标和事件
+        Host->>Mail: 回合：event_id、message、sender、subject
+        Mail->>Host: mail.peek(message)
+        Host-->>Mail: 纯文本，分页返回
+        Mail->>Mail: 判断要不要告诉用户
+        alt 卡片有用
+            opt 策略要求回复
+                Mail->>Host: mail.propose_reply(message, body)
+                Host-->>Mail: draft_id、revision、chat_thread
+            end
+            Mail->>Host: mail.publish_card(card_id = event_id, source, data, draft_id)
+            Host->>UI: 检查 L0、数据和草稿绑定，以邮件应用身份发布并通知
+        else 不需要卡片
+            Mail->>Host: mail.skip_event(event_id, reason)
+        end
+        Mail-->>Host: 回合完成
+        Host->>Host: 有回执才确认事件
+    end
+```
 
-需要用户处理的邮件，生成卡片内部也应有可用控件。Mail 已接纳的技能现在要求使用声明式
-L0 `Chip` 按钮、具名事件和本地视图状态，例如“配送详情”或“预约详情”，以及“返回”。
-按钮必须展示该邮件中的事实，名称必须准确说明实际效果。正文里的建议、shell 的打开
-Mail 控件，或名为“已发送”的本地状态，都不等于实现了邮件操作。
-[物流](../crates/shell/resources/glance/mail-shipping.card)和
-[请求](../crates/shell/resources/glance/mail-request.card)示例展示交互语法；其中模拟的
-发送、追踪和完成状态不能冒充真实远端操作。从生成卡片发送邮件、预约或修改邮箱仍未实现。
-下述较早设备试验验证了发布和打开，没有验证卡片内按钮。后续
-[配对按钮试验](testing/mail-card-actions-2026-10-04.zh-CN.md)保留较早布局失败，
-并实际验证两个模型在完整卡片及 Glance 上的取件码→返回→详情→返回。
+## 从新邮件到回合
 
-该共同场景是有取件码、无追踪网址的邮件：“显示取件码”和“取件详情”必须展示
-邮件提供的码、地点、截止时间及携带带照片证件的要求，两种视图都能返回。这些本地控件
-实现了[邮件操作卡片计划](../apps/mail/docs/2026-10-01-email-action-card-plan.md)中
-当前可支持的部分。计划中的外部 Track 操作仍需另做宿主集成：L0 虽然收录了 `sys.link`，
-本 shell 并不执行其写操作。没有网址时不能编造链接或显示虚假的追踪成功页面。
+工作线程只有一个，运行在 Shell 进程中。某个账号的收件箱第一次同步时只建立基线，不排入任何事件；IMAP 服务器给文件夹重新编号之后的那次同步也是如此。此后，每一次收件箱同步（工作线程的、邮件窗口的，或 Agent 自己调用的 `mail.sync`）都会把每封新邮件变成一个待处理事件，事件 id 固定不变。邮件、服务器游标和事件在一次原子写入中保存，重启后依然保留。
 
-当前 shell 有渲染限制：已通过校验的 `Chip(width: .fill)` 可能在 Fit 包装内收缩到不可见。
-因此已接纳技能要求省略 width，使用自然宽度、纵向排列及短标签。这是渲染器限制，
-不是非法 L0 token。[按钮后续试验](testing/mail-card-actions-2026-10-04.zh-CN.md)
-分别记录布局失败、实际手机点击及尚未实现的远端操作范围。
+每个周期只处理一个事件，即最早的那个；没有待处理事件时先同步一次。它的回合在用户的通道中运行，算作应用自己的回合（触发方式为 `incoming`），限时 180 秒。之后工作线程等待一个轮询间隔；如果失败，则先等 30 秒，每次翻倍，最长 15 分钟。
 
-Mail 窗口可以关闭，但 OctoSense 进程必须存活。当前没有 Android JobScheduler/WorkManager、
-前台服务或 Android NotificationManager 集成。通知显示在 OctoSense 自己的通知栏，
-卡片显示在 Glance。不能承诺 Android 挂起或终止进程后仍会送达。
+## Agent 如何决定
 
-这里只实现 Mail 的 `mail.messages.new`。通用 cron、任意应用事件路由、每应用模型选择、
-内核原生技能发现，以及 ADR 0002 剩余预算和 Settings 界面仍是后续工作。系统 Agent 的配置
-补充应用已接纳的指令；邮件内容不能配置 Agent 或扩大工具权限。关闭配置或撤销 Agent
-访问权会停止新回合并取消调度器的活动上下文。
+回合以不可信 JSON 的形式带来事件的各个 id、发件人和主题，邮件应用的指导文本则放在另一个独立的块中。Agent 按照分拣技能读取邮件，然后用下面的工具了结这个事件：
 
-验证：指定 OnePlus 6 收到 AgentMail 经 Gmail 投递的邮件后，确实自动触发了 DeepSeek
-和 MiniMax 的 Mail 回合，没有逐封人工提示。两个模型均明确跳过普通简报。
-DeepSeek 改进后的物流、预约卡片可读；MiniMax 第一组虽然发布成功，但数据绑定缺失，
-这促成了生成数据校验和模型反馈。其物流重试已经完整显示事实，并可由通知打开；
-发件账户验证后，新的 MiniMax 预约卡片首次发布成功，通知、完整卡片及 Android 返回键实测均通过。构建范围、原始生成源码和限制见
-[测试记录](testing/mail-events-2026-10-04.zh-CN.md)。试验策略仅处理主题以
-`[OctoSense simulation]` 开头的邮件；其他新邮件不读正文，直接跳过。
+| 工具 | 用途 |
+| --- | --- |
+| `mail.peek` | 以纯文本读取邮件，每页最多 2,000 字节，不会把邮件标为已读。 |
+| `mail.propose_reply` | 如果策略要求回复：为这封邮件新建或复用一份草稿，收件人由宿主填写，并返回它的 `draft_id`。 |
+| `mail.publish_card` | 发布模型编写的卡片，以事件 id 作为 `card_id`；如果是回复，再附上 `draft_id`。 |
+| `mail.notify` | 生成不了有效卡片时的后备：一条普通通知，`card_id` 相同。 |
+| `mail.skip_event` | 记录 `no_action`、`duplicate` 或 `outside_policy`。 |
+
+Shell 把邮件应用的每一次工具调用都绑定到当前登录的账号；限制 Agent 的是这一绑定和工具授权，而不是指导文本。没有任何 Agent 工具能发送邮件：`mail.propose_send` 只准备一份发送提议，只有宿主的审核在 Android 手机上经实体触摸批准，才能授权 SMTP 发送；开发者模式或常设规则也绕不过去。
+
+## 事件何时算处理完
+
+只有在回合已经完成、Agent 对同一账号仍然获准、配置没有变化，并且邮件应用的宿主服务持有该事件 id 的回执（一次发布或一次跳过）时，工作线程才确认事件，把它移出队列。创建草稿不算回执。工具调用失败后给出的最终回答不会留下回执，所以事件会被重试。关闭处理或撤回对 Agent 的允许，会在 250 毫秒内关闭正在运行的回合，它的事件仍保持待处理。
+
+投递至少一次：发布之后、保存回执之前出错，通知会重复，但相同的卡片 id 会替换仍在显示的卡片。完全相同的重试会沿用回执，不再通知；修正过的卡片会以同一个 id 重新发布。
+
+## 卡片
+
+`mail.publish_card` 发布的卡片只能是 L0：没有表达式，也没有脚本。Shell 会检查每个 `sys.dataset` 源都声明了非空的 `fields` 列表，并在 `data` 中为每个字段提供了值，还会检查各个源之间没有循环依赖。这项检查能发现缺失的绑定，发现不了错误的事实。之后 Shell 以邮件应用的身份发布卡片并发出通知；点按通知打开的正是这张卡片，手机上以全屏工作区显示。
+
+带 `draft_id` 时，邮件应用的宿主服务把卡片绑定到账号、邮件、草稿和聊天线程，这个绑定，模型既不能提供，也不能更改。卡片随后可以编辑回复（`sys.mail_draft`）、就回复聊天（`sys.chat`），并打开宿主的审核（`sys.mail_review`）。一封回复从草稿到 SMTP 的路径见[组合 Mail 卡片](mail-composable-cards.zh-CN.md#沿代码追踪一封回复)。
+
+其他需要用户处理的邮件，会得到能用的 `Chip` 按钮，在本地视图之间切换（`state`、`event`、`when`），例如 Show code、Details 和 Back。这些按钮只改变卡片显示的内容，名称也不能声称会发送、预约或追踪。[`mail-shipping.card`](../crates/shell/resources/glance/mail-shipping.card) 和 [`mail-request.card`](../crates/shell/resources/glance/mail-request.card) 展示了语法；其中的发送、追踪和完成状态只是演示。
+
+## 限制
+
+- 邮件窗口可以关闭，但 Android 挂起或终止 OctoSense 期间什么都不会运行；通知显示在 OctoSense 自己的通知栏里，而不是 Android 的通知栏。
+- glance 卡片只保存在内存中，重启会清除它们；绑定草稿的邮件卡片例外，Shell 会为当前登录的账号恢复它们，且不再发出通知。
+- 邮件最多保留四张有效卡片。第五张卡片或通知会被拒绝；除非 Agent 跳过该事件，它会留在队首，直到有卡片被关闭或过期（默认 24 小时后）。
+- 关闭处理时事件仍会排队，而且只有工作线程会移除它们。积满 128 个后，凡是发现新邮件的收件箱同步都会失败且游标不会前移（包括邮件窗口的同步），直到处理消化掉队列。
+- 尚未实现：其他应用的事件、定时触发、按应用选择模型、内核原生技能、[ADR 0002（英文）](adr/0002-event-driven-app-agents.md)中的预算与设置界面，以及回复之外的远端操作（Shell 没有 `sys.link` 的处理程序）。
+
+## 阅读源码
+
+1. [`incoming.rs`](../apps/mail/host-service/src/incoming.rs)：队列（`collect`、`skip_event`、`resolve_and_ack_try`）和发布回执（`publish_revision`、`publish_once`）。
+2. [`agent_events.rs`](../crates/shell/src/agent_events.rs)：`provision`、`status` 和工作线程（`poll`、`deliver`）。
+3. [`script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs)：已接纳的指导文本（`guidance`）和账号绑定（`scoped_args`）。
+4. [`guidance.rs`](../crates/app-peers/src/guidance.rs)：每个回合附带的指导文本，最多 16 KiB。
+5. [`glance.rs`](../crates/shell/src/glance.rs)：`publish_mail_l0_for` 和 `check_generated_data`。
+6. [`mail_card.rs`](../crates/shell/src/mail_card.rs)：绑定卡片的源（`check_sources`）；其中的 `persistence.rs` 负责恢复绑定卡片。
+7. [`mobile_app.rs`](../crates/shell/src/mobile_app.rs)：手机上的通知点按。
+
+## 测试情况
+
+在 OnePlus 6 上用 DeepSeek 和 MiniMax 测试：见[新邮件测试](testing/mail-events-2026-10-04.zh-CN.md)和[卡片按钮测试](testing/mail-card-actions-2026-10-04.zh-CN.md)。回复卡片的检查记录在[组合 Mail 卡片](mail-composable-cards.zh-CN.md)中。

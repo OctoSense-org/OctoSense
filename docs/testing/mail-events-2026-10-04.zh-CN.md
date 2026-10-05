@@ -28,23 +28,23 @@ MiniMax 第一组 L0 语法有效，但数据放在顶层，而非 `data.note`�
 这些失败结果仍保留。宿主现在会拒绝缺失的数据集对象/字段、未声明字段列表及循环依赖，
 让模型收到可自行修复的错误。
 
-[工具结果](mail-events-2026-10-04/tool-results.json) 同时保留失败和成功。
+[过滤后的工具结果](mail-events-2026-10-04/tool-results.json) 同时保留校验失败和成功。
 [模型归属](mail-events-2026-10-04/provider-attribution.json) 来自各已完成回合的内核
-ledger 元数据，不依赖邮件主题或模型自述。[生成参数](mail-events-2026-10-04/cards/)
+ledger 中的模型元数据，不依赖邮件主题或模型自述。[生成参数](mail-events-2026-10-04/cards/)
 保留模型的原始源码字符串和数据值，没有人工修改。
 
 ## 手机与原生 Makepad 审查
 
-手机 Glance 显示了改进后的 DeepSeek 卡片及修正后的 MiniMax 物流卡片。
+手机 Glance 显示了改进后的 DeepSeek 卡片；修正后的 MiniMax 物流卡片同时显示在 Glance 和完整卡片面板中。
 点击后者的 Mail 通知打开了对应完整卡片。最终 MiniMax 预约在 `2026100406` 上也通过了
 “通知→完整卡片→Android 返回键→Glance”，测试应用始终保持前台。较早构建的返回键失败，
 原因是固定版本 Makepad 按 APK 包名查找扩展类。给独立包增加转发扩展后问题修复，
-没有替换 Home 或修改 Makepad 版本。卡片关闭按钮另有单元测试，未实测其触摸点击。
+没有替换 Home 或修改 Makepad 版本。完整卡片面板的关闭按钮另有单元测试，未实测其触摸点击。
 
 | 截图 | 证明范围 |
 | --- | --- |
-| [DeepSeek Glance](mail-events-2026-10-04/screenshots/deepseek-compact-glance.png) | 完整预约事实、尚未预约状态及下一步 |
-| [MiniMax 通知](mail-events-2026-10-04/screenshots/minimax-shipping-notification.png) | Mail 归属及物流通知 |
+| [DeepSeek Glance](mail-events-2026-10-04/screenshots/deepseek-compact-glance.png) | 完整预约事实、“提议中、尚未预约”状态及下一步 |
+| [MiniMax 通知](mail-events-2026-10-04/screenshots/minimax-shipping-notification.png) | Mail 归属及生成的物流通知 |
 | [MiniMax Glance](mail-events-2026-10-04/screenshots/minimax-shipping-glance.png) | 修正后的数据实际显示 |
 | [MiniMax 完整卡片](mail-events-2026-10-04/screenshots/minimax-shipping-full-card.png) | 点击通知后打开对应物流卡片 |
 | [最终预约](mail-events-2026-10-04/screenshots/minimax-appointment-full-card.png) | 最终构建的新邮件打开完整卡片 |
@@ -57,7 +57,7 @@ ledger 元数据，不依赖邮件主题或模型自述。[生成参数](mail-ev
 修正后的物流卡片显示了全部八个被引用字段。
 
 原生工具的配色及字体与手机 shell 不同。自动 `fits` 可能遗漏部分文字被裁切的情况，
-因此还比较了同宽高画布的 instrument 文字矩形，并查看实际手机截图。
+因此将同宽度下的 instrument 文字矩形与更高画布的渲染结果对比，并查看实际手机截图。
 [原生测量](mail-events-2026-10-04/native-review.json) 记录了这些差异。
 这是少量迭代案例，不能据此宣称通用速度或质量排名。本轮 DeepSeek 更符合紧凑信息层次；
 MiniMax 修正后的物流仍重复模拟免责声明，并用额外行分开标签和值。
