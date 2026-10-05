@@ -4,7 +4,7 @@
 
 这是阅读 OctoSense Agent 代码的路线。它跟着一个问题，从用户输入它的窗口出发，经过 Shell 和 octos 内核，一直走到回答它的 Rust 代码。每一步都说明要打开哪个文件和符号、在那里看什么，以及为什么重要。概念见 README 的[关键概念](../README.zh-CN.md#关键概念)；完整参考见 [architecture.zh-CN.md](architecture.zh-CN.md)。
 
-这个问题是桌面端上的 **“我今天有哪些日程？”**，日历在这里是一个系统脚本应用。用户可以问系统 Agent，由它委派给日历的 Agent，在**系统 Agent 的通道**里处理；也可以在日历的 “Ask Calendar” 面板里直接问日历的 Agent，走**用户的通道**。两条路线最后都可能调用同一个工具 `calendar.events`，答案各自回到提问的那段对话。两者都需要内核、提供方和用户的同意。
+这个问题是 **“我今天有哪些日程？”**，日历是一个系统脚本应用。用户可以问系统 Agent，由它委派给日历的 Agent，在**系统 Agent 的通道**里处理；也可以直接问日历的 Agent，在它的 “Ask Calendar” 面板或日历卡片的 Chat 标签页里，走**用户的通道**。两条路线最后都可能调用同一个工具 `calendar.events`，答案各自回到提问的那段对话。两者都需要内核、提供方和用户的同意。
 
 ## 1. 从可执行入口开始
 
@@ -114,9 +114,11 @@ sequenceDiagram
 | 原生应用自己的对话（经注入的服务） | `OctosAppService::open_conversation`。Rinx 只用 `open_context`，供小程序的私有上下文使用。 |
 | 其他原生应用的对话 | Makepad 的 `OctosPeer`，经由 peer link：不带 `client` 的 `octos.session.open`（[peer_link/link.rs](../crates/shell/src/peer_link/link.rs)） |
 | 脚本应用自己的对话 | `host.request("octos.turn.start")`，由 `contained.rs` 应答，限于 manifest 声明的名称 |
-| 卡内对话（`sys.chat`） | [glance_chat.rs](../crates/shell/src/glance_chat.rs) 和 [l0-chat](../crates/l0-chat/src/lib.rs) |
+| 卡片的 Chat 标签页，或声明了 `sys.chat` 的卡片 | [glance_chat.rs](../crates/shell/src/glance_chat.rs) 和 [l0-chat](../crates/l0-chat/src/lib.rs) |
 
-尚未实现：还没有随附的应用从自己的界面打开用户的通道；入口是 “Ask &lt;app&gt;” 面板。
+**卡片工作区**（[卡内对话](../README.zh-CN.md#卡内对话)）。[glance_sheet.rs](../crates/shell/src/glance_sheet.rs) 显示打开的卡片：手机上全屏，桌面端居中。如果发布者有 Agent，而卡片没有声明对话，`L0Session::for_card`（[glance_card.rs](../crates/shell/src/glance_card.rs)）会在 Card / Chat 标签页后面加上宿主拥有的 `WorkspaceChat`。`chat_submit` 把每一轮经由 `glance_chat::perform_bound` 发往发布这张卡片的账号（`agents::conversation_for_account`），卡片的数据和本地状态只作为上下文（`ContextKind::Card`），从不作为工具。邮件回复卡片则用 Email / Chat 共用一份保存的草稿；Chat 的每一轮都带着一个一次性令牌（`drafts::issue_chat_edit`），让 `mail.suggest_reply` 能保存这次修改（[可组合的邮件卡片](mail-composable-cards.zh-CN.md)）。
+
+尚未实现：还没有随附的应用从自己的界面打开用户的通道；入口是 Shell 的面板和卡片。
 
 触发方式决定了审批在多大程度上信任一个回合。只有 Shell 自己的界面（“Ask &lt;app&gt;” 面板和系统对话）才会标注 `TurnTrigger::Person`；进程内模块本可以经注入的服务这样做，但目前都没有。应用说 `"trigger": "person"` 时，会被记为 `AppSaysPerson`（`TurnTrigger::from_args`），中转把它作为应用发起的运行交给审批路由（`host_tools/relay.rs` 中的 `trigger_of`）；卡内对话也得到同样的标注。不带触发方式的 `ContextOp::Turn`（Rinx 的小程序就这样发送）是 `Unknown`，常设规则会跳过它。邮件的新邮件事件（[agent_events.rs](../crates/shell/src/agent_events.rs)）以 `TurnTrigger::Incoming` 在这条通道里运行；其他应用还没有事件。
 
@@ -162,6 +164,8 @@ sequenceDiagram
 
 决定会写入 `logs/approvals-audit.jsonl` 审计日志；时限就是 `app-peers/src/host_tools.rs` 中的 `DEFAULT_PROMPT_DEADLINE`（10 分钟）和 `EXPIRY_GRACE`（30 秒）。系统 Agent 不能批准：octos 拒绝它用 `peer_respond` 回答审批。每一步的含义见 [architecture.zh-CN.md 第 5 节](architecture.zh-CN.md#5-审批)。
 
+发送邮件从不经过这个审批路由。`mail.propose_send` 只准备确切的邮件内容；卡片里宿主自己的审阅界面（`mail_review.rs`）只有在用户亲手触摸之后（`trusted_user_gesture`，目前只在 Android 上）才调用 `drafts::approve_and_send`，开发者模式不能代替这一步。
+
 ## 8. 数据存放在哪里
 
 应用的数据分几处存放，每处各有一个所有者：
@@ -169,7 +173,7 @@ sequenceDiagram
 | 数据 | 位置 | Agent 如何访问 |
 | --- | --- | --- |
 | 账号文件夹 | `apps/<app id>/accounts/<account hash>/`，或 `accounts/device/`（[app_storage/mod.rs](../crates/shell/src/app_storage/mod.rs)） | 它是 peer 的工作区，在 peer 创建时固定。用户的通道运行在自己的 `contexts/<id>/` 中，通过 `read_parent` 或宿主的 `files.*` 工具读取账号文件夹（[files.rs](../crates/shell/src/host_tools/files.rs)：仅限 Unix；每次读取最多 128 KiB，列目录最多 500 项，搜索最多 100 条匹配）。 |
-| 宿主服务的数据 | App Hub 的宿主目录 `<apps root>/.host/` | 只能通过该服务的工具访问；任何工作区都不包含它。 |
+| 宿主服务的数据 | App Hub 的宿主目录 `<apps root>/.host/`：日历的日程，邮件的邮件和回复草稿（`drafts.rs`） | 只能通过该服务的工具访问；任何工作区都不包含它。 |
 | 对话记录和记忆 | octos 中，命名空间 `app/<app>/acct-<tag>` | 归 Agent 自己。`<tag>` 是 FNV-1a 哈希（`account_tag`）；文件夹名则是另一种哈希，SHA-256（`account_hash`）。 |
 | 机密 | 应用机密：macOS 和 iOS 上存入钥匙串（索引在 `<home>/secrets/<app id>/`），其他平台是该文件夹中的文件。提供方密钥：macOS 上存入钥匙串，其他平台存入内核核心目录下的文件（除 Windows 外仅所有者可读） | 永远不能访问。`app_storage::check` 会拒绝任何包含或链接到机密的工作区。 |
 

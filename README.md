@@ -109,8 +109,8 @@ These apps have an agent:
 | Rinx (Matrix chat) | native, in the shell | octos's file, memory and web tools | – |
 | Terminal (desktop) | native; its own process in a checkout build, inside the shell in a release package | `terminal.read_screen`, `terminal.read_scrollback` | `terminal.run`, only while it runs as its own sandboxed process, behind Setup's switch, approved per command |
 | Calculator, Clock, Notes, Reminders, Weather | native, in the shell | each app's read tools | the same read tools |
-| Mail | script app | `mail.*` tools scoped to the signed-in account, including `mail.publish_card` | – |
-| Calendar (desktop) | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
+| Mail | script app | `mail.*` tools scoped to the signed-in account: reads, cards (`mail.publish_card`), and reply drafts it can propose but never send | – |
+| Calendar | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
 | News | script app | `news.list`, `news.read`, `news.notify` | – |
 | Photos, Maps, YouTube; Camera on phones | script apps | `<app>.notify` | – |
 
@@ -204,7 +204,7 @@ The person can talk to any app's agent directly. These turns run in the person's
 | Where | How |
 | --- | --- |
 | **"Ask &lt;app&gt;"** panel | A shell panel for every app with an agent, opened from the bar's "Ask &lt;app&gt;" button or with Shift+F8. On the desktop it opens beside the system chat. The phone draws it full screen but has no touch control for it yet. |
-| **In-card chat** | Type in a glance card that declares a chat ([below](#in-card-chat)). |
+| **In-card chat** | Open a card from an app with an agent and switch to its Chat tab, or type in a card that declares `sys.chat` ([below](#in-card-chat)). |
 | **The app's own UI** | An app can open the person's lane itself ([next section](#how-an-app-uses-its-agent)), though no shipped app does yet; for all of them the "Ask &lt;app&gt;" panel is the way in. |
 
 The panel asks for consent first and shows both lanes, each message with its speaker. Its Stop button ends only the person's own turn. [docs/architecture.md §2](docs/architecture.md#2-agents) covers the rest of its behavior.
@@ -299,16 +299,22 @@ sequenceDiagram
 </details>
 
 - **The relay** ([`crates/shell/src/host_tools/`](crates/shell/src/host_tools/)) receives every `peer/tool/call`. It checks that this caller may use this tool, validates the arguments against the tool's schema and charges the caller's budget (by default 32 tool calls a turn and 1000 a day). Only then does it run the tool in the app that owns it: a native app's open window, a script app's host service, or a process app over its peer link. It checks the result against the schema too.
-- **The approval router** ([`crates/shell/src/approvals/`](crates/shell/src/approvals/)) decides in a fixed order. Developer mode, which only the person can turn on, approves everything for the apps it covers. A `confirm: app` tool goes to the app's own sheet. Calls that must always ask, such as a Terminal command, go straight to a sheet. Everything else may be decided by the person's standing rules, and otherwise a shell sheet shows the exact arguments. Every decision is written to an audit log. [architecture.md §5](docs/architecture.md#5-approvals) gives the full order.
+- **The approval router** ([`crates/shell/src/approvals/`](crates/shell/src/approvals/)) decides in a fixed order. Developer mode, which only the person can turn on, approves routed calls for the apps it covers. A `confirm: app` tool goes to the app's own sheet. Calls that must always ask, such as a Terminal command, go straight to a sheet. Everything else may be decided by the person's standing rules, and otherwise a shell sheet shows the exact arguments. Every decision is written to an audit log. [architecture.md §5](docs/architecture.md#5-approvals) gives the full order. Sending mail is outside this order: the person always approves the exact message on a host-owned review, by touch on the phone, and developer mode cannot skip it.
 - **Deadlines.** An approval or question nobody answers in 10 minutes is denied, never approved. If the turn is still running 30 seconds later, the shell interrupts it so the next turn can start.
 
 ### Cards and questions
 
-An app with the `glance` permission publishes cards as itself (`glance.publish`, `glance.withdraw`, `glance.list`); the shell takes the publisher from the caller, never from the arguments. A card runs under its app's own permissions, so a button pressed in a card is the app's own action, not an agent tool call. The desktop README describes [the glance panel](desktop/README.md#the-glance-panel) where cards appear.
+An app with the `glance` permission publishes cards as itself (`glance.publish`, `glance.withdraw`, `glance.list`); the shell takes the publisher from the caller, never from the arguments. A card runs under its app's own permissions, so a button pressed in a card is the app's own action, not an agent tool call. The desktop README describes [the glance panel](desktop/README.md#the-glance-panel) where cards appear. On the phone, a card's notification opens that card's workspace, or the glance page if the card is gone.
 
 #### In-card chat
 
-A card can declare `sys.chat(app, thread, fields)`. The person types in the card, and only the publishing app's own agent answers, in the person's lane. The shell owns the transcript, kept in the app's account folder, and records as the person's only what the person typed. Model-written text is marked as AI-written and never runs as an action. No agent-published card declares a chat yet; the demo card [`mail-request.card`](crates/shell/resources/glance/mail-request.card) shows one with canned replies. See [`crates/l0-chat`](crates/l0-chat/README.md).
+A card can carry a conversation with its app's agent, which answers in the person's lane:
+
+- **An opened card** becomes a workspace: full screen on the phone, a centred window on the desktop. If the publishing app has an agent, the workspace has **Card** and **Chat** tabs, even when the card declares no chat. The shell gives the agent the card's data and local state as context, bound to the account that published it, and the chat uses only the app's existing tools and consent.
+- **Mail reply cards** have **Email** and **Chat** tabs over one saved draft. The agent can edit the draft and propose sending it, but only the person sends, by approving the exact message on a host-owned review with a physical touch. Developer mode cannot skip that review, and desktop approval is not built yet. [Composed Mail cards](docs/mail-composable-cards.md) has the details and the phone test results.
+- **A card that declares `sys.chat(app, thread, fields)`** keeps its declared thread.
+
+The shell owns every transcript, kept in the app's account folder, and records as the person's only what the person typed. Model-written text is marked as AI-written and never runs as an action. See [`crates/l0-chat`](crates/l0-chat/README.md).
 
 #### Questions
 

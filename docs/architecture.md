@@ -4,7 +4,7 @@ English | [简体中文](architecture.zh-CN.md)
 
 This is the full picture of how OctoSense is built, with the code behind each part. It assumes the README's [Key concepts](../README.md#key-concepts) and [How it fits together](../README.md#how-it-fits-together). [ai-services.md](ai-services.md) covers what each kind of app can call and how to run the AI services locally, and the [code walkthrough](architecture-walkthrough.md) reads the code in order.
 
-The decisions behind it are [ADR 0001](adr/0001-one-octosense-repository.md) (one repository), [ADR 0002](adr/0002-event-driven-app-agents.md) (event-driven app agents; Proposed, partly built), [ADR 0003](adr/0003-shared-octos-client-access.md) (Talk to Octos) and [ADR 0004](adr/0004-native-apps-hosting-and-peers.md) (native apps, app agents, cross-app work and approvals). The text describes the code as it is; what is not built yet is marked **Not yet** or **Planned**.
+The decisions behind it are [ADR 0001](adr/0001-one-octosense-repository.md) (one repository), [ADR 0002](adr/0002-event-driven-app-agents.md) (event-driven app agents; Proposed, partly built), [ADR 0003](adr/0003-shared-octos-client-access.md) (Talk to Octos) [ADR 0004](adr/0004-native-apps-hosting-and-peers.md) (native apps, app agents, cross-app work and approvals) and [ADR 0007](adr/0007-composable-mail-action-cards.md) (Mail cards with drafts, chat and host-approved sending; in progress). The text describes the code as it is; what is not built yet is marked **Not yet** or **Planned**.
 
 ## Contents
 
@@ -265,7 +265,7 @@ The manifest declares, the person grants at install, and the shell enforces on e
 
 | Source | Declared in | Runs on | Today |
 | --- | --- | --- | --- |
-| The app's own tools, `<app>.<tool>` | `tools.json`; `agent.tools` | the app's host service, the notice service, or the app's window | `own_tools` narrows the Terminal's to its two read tools |
+| The app's own tools, `<app>.<tool>` | `tools.json`; `agent.tools` | the app's host service, the notice service, or the app's window | `own_tools` narrows the Terminal's to its two read tools; Mail's agent drafts and proposes replies but has no tool that sends |
 | octos's kernel tools | plain names in `agent.tools`; `agent.generic_tools` | octos | script apps only `ask_user_question`; Rinx files, memory and web; other native agents none |
 | `files.list`, `files.read`, `files.search` | the shell, on consented peers with a workspace (Unix) | the shell, over the caller's account folder | at most 128 KiB a read, 500 entries a listing, 100 matches a search |
 | Other apps' shareable tools | dotted names in `agent.tools`; `agent.grants` | the owning app, through the relay | News shares `news.list` and `news.read`; no app asks for one yet |
@@ -292,7 +292,9 @@ Before every kernel start, `enforce` (`crates/kernel/src/system_tools.rs`) write
 
 ### What an agent puts on the glance screen
 
-The glance service (`crates/shell/src/glance.rs`) publishes every card as the calling app, and only with its `glance` grant. An app may publish at most 6 times a minute and keep at most 4 cards; the glance screen shows 6 of the 32 cards the service keeps. The README describes the card templates under [How the system agent and an app agent talk](../README.md#how-the-system-agent-and-an-app-agent-talk), and the cards' own policy and in-card chat under [Cards and questions](../README.md#cards-and-questions).
+The glance service (`crates/shell/src/glance.rs`) publishes every card as the calling app, under the account the host records, and only with the app's `glance` grant. An app may publish at most 6 times a minute and keep at most 4 cards; the glance screen shows 6 of the 32 cards the service keeps. `mail.publish_card` can also bind a card to one of Mail's saved drafts, and a bound card cannot move to another account, email or draft.
+
+On a phone, the glance feed draws compact summaries and runs no generated UI (`mobile_pages.rs`). Tapping a summary expands it into a resident full-screen workspace (`glance_sheet.rs`), and a notification opens its card's workspace directly; on the desktop the workspace opens centred. A publisher with an agent gets Card / Chat tabs even when its card declares no `sys.chat` (`WorkspaceChat` in `glance_card.rs`), and a Mail reply card gets Email / Chat over one saved draft. [Composed Mail cards](mail-composable-cards.md#shared-workspaces-for-all-card-publishers) has the details. The README describes the card templates under [How the system agent and an app agent talk](../README.md#how-the-system-agent-and-an-app-agent-talk), and the cards' own policy and in-card chat under [Cards and questions](../README.md#cards-and-questions).
 
 ## 5. Approvals
 
@@ -334,11 +336,13 @@ flowchart TB
 4. **Standing rules** on (owning app, tool), whoever calls. Runs started by incoming content or an unknown trigger skip them unless a rule opts in.
 5. **A shell-drawn sheet** with the owning app, tool, exact arguments and any calling app. The system agent's approvals for one request can share one sheet.
 
+**Mail sending** never goes through the router. Mail's own composer (`mail.review_send`) and its reply cards end in one host-owned review of the exact message, drawn by the shell inside the card (`crates/shell/src/mail_review.rs`); Mail's agent can only propose a send (`mail.propose_send`). Only a trusted press and release of the review's Approve & Send control sends. Today that means physical touch on Android, through a reviewed Makepad patch (`tools/runtime-patches/makepad-trusted-user-input.patch`); desktop and accessibility approval are deferred. Developer mode and standing rules cannot authorize a send, and `mail.send` answers only `approval_required`. [Composed Mail cards](mail-composable-cards.md) describes the flow.
+
 **Standing rules** (`approvals/rules.rs`) can require recipients in contacts or in the thread, no attachments, a person's trigger, or count and amount limits; a fact that cannot be read fails the condition. A rule made from a sheet is capped at 20 uses a day by default, the everything-for-one-app rule lasts at most 60 minutes, and one tap turns all rules off. Only the person creates rules. "Recipients in contacts" uses Mail's data only after the person allows it (`approvals/contacts.rs`).
 
 **Developer mode** (`crates/shell/src/dev_mode.rs`) is turned on only by the person: in Settings, with a typed phrase or the phone's developer-options gesture, or at launch with `OCTOSENSE_DEV_MODE` or `--dev-grant-all`. Release builds take only the flag, and store builds never turn it on.
 
-It covers all apps or the ones the person chose. Outside a developer profile it ends after 8 hours or at restart. While it is on, the shell shows a banner, audits every call in `logs/dev-audit.jsonl` and adds `dev.run` to the covered apps' peers. It never reaches external clients.
+It covers all apps or the ones the person chose. Outside a developer profile it ends after 8 hours or at restart. While it is on, the shell shows a banner, audits every call in `logs/dev-audit.jsonl` and adds `dev.run` to the covered apps' peers. It never reaches external clients and cannot send mail.
 
 **Inputs.** The router gets the kernel's `host_tool` approvals through the relay; every other approval on an app's peer or contexts, as that app agent's call (the app hears only `approval/handled_by_host`); the system chat's approvals; and the AI pane's calls to `confirm: host` tools.
 
@@ -401,6 +405,7 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
 | App ↔ kernel | No app speaks OUP or sees the host token |
 | Peer ↔ peer | octos gives each peer its own workspace (overlaps refused), memory namespace and transcript |
 | Agent ↔ secrets | Secrets outside every jail and workspace; the startup check |
+| Agent ↔ Mail delivery | No agent tool or generated card sends: only the host's review of the exact message, approved by trusted physical touch |
 | External client ↔ kernel | The external token, method and tool allowlists, `Host` and `Origin` checks |
 
 **The process sandbox** (`crates/shell/src/sandbox/`) is built from the entry's `sandbox` and `storage` blocks. It closes the person's home and volumes except the app's jail, its secrets folder and its reviewed `external` grants (the Terminal's `home:rw`), and keeps everything the next build reads or runs read-only. `network: none` leaves only the hub's port, `processes: false` forbids fork and exec, and the app inherits only an allow-list of the shell's environment, never a key or token.
@@ -409,7 +414,7 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
 
 ## 8. Worked example: emailing a meeting invite
 
-This example from ADR 0004 joins Calendar's real `calendar.add_event` to a **planned** `mail.send`: Mail's agent has no send tool yet. It needs Mail to declare a shareable `mail.send`, Calendar's manifest to ask for it, and App Hub to admit the grant. The rest of the path exists.
+This is ADR 0004's original sketch of cross-app work: Calendar's real `calendar.add_event`, then a cross-app `mail.send`. The Mail half is **not built**, and ADR 0007 has replaced how it would be approved: no standing rule or developer mode may approve a Mail send, and each message needs the host's review and a physical touch ([section 5](#5-approvals)). The diagram keeps the sketch's relay path and marks what ADR 0007 replaced. [Composed Mail cards](mail-composable-cards.md) describes how Mail sends today.
 
 ```mermaid
 sequenceDiagram
@@ -417,7 +422,7 @@ sequenceDiagram
   participant S as System agent
   participant SH as Shell (host connection)
   participant C as Calendar's agent (peer)
-  participant R as Approval router
+  participant R as Shell: approval
   participant M as Mail (host service)
   P->>S: "Invite Ana, Bo and Edward to Tuesday 3 pm"
   S->>C: peer_send_input (brief)
@@ -425,16 +430,13 @@ sequenceDiagram
   SH->>C: turn/start (Calendar's tools, memory, account)
   C->>SH: peer/tool/call calendar.add_event
   SH-->>C: result
-  C->>SH: peer/tool/call mail.send x3 (planned, caller: Calendar)
+  C->>SH: peer/tool/call mail.send x3 (not built, caller: Calendar)
   SH->>SH: grant check: was Calendar granted mail.send?
   SH->>R: approval (Mail, mail.send, exact args, caller Calendar)
-  alt a standing rule on (Mail, mail.send) matches
-    R-->>SH: approved (notified, audited)
-  else no rule
-    R->>P: a sheet per invitation
-    P-->>R: approve each
-  end
-  SH->>M: run mail.send x3 (planned)
+  Note over R,P: ADR 0004 let a standing rule or a sheet approve this.<br/>ADR 0007 replaced that: no rule or developer mode may approve a Mail send.
+  R->>P: the host's review of each exact message
+  P-->>R: approves each, by physical touch
+  SH->>M: send x3 (not built)
   M-->>SH: results
   SH-->>C: peer/tool/result
   C->>C: octos writes peers/(slug)/result.md
@@ -443,11 +445,11 @@ sequenceDiagram
 ```
 
 - The system agent asks about ambiguity ("two Edwards?") rather than guessing. If Calendar's agent is not allowed yet, `agents.ask` shows the first-use sheet first.
-- `calendar.add_event` is `act`, so it runs without a sheet; only the desktop ships Calendar.
-- The grant uses the existing mechanism: `mail.send` would be a dotted name in Calendar's `agent.tools`, granted at install.
-- The approval takes the path `calendar.remove_event` takes today. A rule such as "recipients in my contacts" can approve the calls; otherwise each invitation gets its own sheet with its owning app, calling app and exact arguments. Only the system agent's own calls share a sheet today.
-- Mail's host service already has a `mail.send` method for Mail's own window. It sends with the account the person signed in to; the password never reaches the agent.
-- An invitation with an unknown outcome is never retried without the person.
+- `calendar.add_event` is `act`, so it runs without a sheet. Calendar ships on the desktop and the phone.
+- The grant would use the existing mechanism: `mail.send` as a dotted name in Calendar's `agent.tools`, granted at install. Mail declares no such tool.
+- ADR 0004 had the approval router decide each send, so a standing rule such as "recipients in my contacts" could approve it, and otherwise each invitation got its own sheet. ADR 0007 replaced that for Mail: whoever proposes a send, it ends in the host's review of the exact message ([section 5](#5-approvals)). Mail's agent can only propose a send (`mail.propose_send`).
+- Mail's host service sends with the account the person signed in to; the password never reaches the agent. Its `mail.send` method now answers only `approval_required`.
+- A send with an unknown outcome is never repeated automatically; a retry needs a fresh review and approval.
 - **Not yet:** Calendar's window cannot list events; `calendar.notify` can put the event on the glance screen.
 
 ## Where the code and the ADRs disagree
@@ -463,7 +465,8 @@ Each item is an ADR decision that the code at HEAD does not follow.
 7. **Rinx.** ADR 0004 §9 confirms Rinx's send tool on its own `confirm: app` sheet, §11 moves its data under `apps/rinx/`, and §13 lets developer mode override every app's sheet. At its pinned tag Rinx declares no agent tools, registers no sheet with the router, keeps its own data folder, and its send sheet still asks in developer mode.
 8. **The Windows sandbox.** ADR 0004 §3 gives Windows process apps an AppContainer. It is not built, so they run with the person's rights, and `terminal.run` is never offered there.
 9. **Process apps in release packages.** ADR 0004 §2 ships their binaries; release packages ship only `octosense` and the kernel (`desktop/packaging/release.json`).
-10. **The in-process Terminal still offers `run`.** ADR 0004 §10 makes the in-process Terminal read-only. The shell, though, replaces its module's read-only executor with one that also offers `run` (`host_executor` in `crates/shell/src/module_host.rs`, kept by a test). So wherever the desktop runs the Terminal in process (Linux without Vulkan and Wayland, or switched to a module), the desktop's AI pane can still type a command, behind the approval router. The system agent's `terminal.run` follows the ADR: it needs the Terminal as a sandboxed process.
+10. **Mail sending.** ADR 0004 §8 lets a standing rule answer an outward call such as `mail.send`, and §13 lets developer mode override every approval. The code follows ADR 0007 instead: a Mail send needs the host's review and a physical touch whatever the rules or developer mode say, and ADR 0004 does not mention the exception.
+11. **The in-process Terminal still offers `run`.** ADR 0004 §10 makes the in-process Terminal read-only. The shell, though, replaces its module's read-only executor with one that also offers `run` (`host_executor` in `crates/shell/src/module_host.rs`, kept by a test). So wherever the desktop runs the Terminal in process (Linux without Vulkan and Wayland, or switched to a module), the desktop's AI pane can still type a command, behind the approval router. The system agent's `terminal.run` follows the ADR: it needs the Terminal as a sandboxed process.
 
 ## Source map
 

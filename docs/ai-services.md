@@ -49,7 +49,7 @@ flowchart TB
   kernel -- "peer/tool/call, approvals" --> relay
   relay --> router
   relay --> exec
-  exec -- "notify" --> glance
+  exec -- "cards" --> glance
   router -- "sheets" --> person
 ```
 
@@ -88,7 +88,8 @@ Keys live where the kernel reads them (`vault.rs`): in the login keychain on mac
 | **Secrets are typed only on host sheets.** | App Hub accepts a `<family>.sheet.*` call only from a host sheet, never from the app. Password fields are inert in a script app, and the App Hub gate refuses a bundle that declares one. |
 | **Apps never speak the kernel protocol.** | Apps reach their agents only through the app-peers broker, which stamps the app's identity on every call. |
 | **Least privilege, by exact name.** | An app gets the `octos.*` services it declares, that exist and that the host grants. `octos.` or `octos.admin` grants nothing (`crates/app-peers/src/contract.rs`, `hosted.rs`). |
-| **Approvals belong to the person.** | Every approval an app's peer raises goes to the shell's router; the app hears only `approval/handled_by_host`. The system agent cannot approve. Developer mode, which only the person turns on, approves for the apps it covers ([the order](architecture.md#5-approvals)). |
+| **Approvals belong to the person.** | Every approval an app's peer raises goes to the shell's router; the app hears only `approval/handled_by_host`. The system agent cannot approve. Developer mode, which only the person turns on, approves routed calls for the apps it covers ([the order](architecture.md#5-approvals)). |
+| **Mail leaves only when the person approves the exact message.** | No agent tool sends mail, and `mail.send` refuses. Only a physical touch on Approve & Send, in the host's review of the exact From, To, subject and body, authorizes sending; developer mode and standing rules cannot. That works on Android touchscreens only for now (`mail_review.rs`, [Composed Mail cards](mail-composable-cards.md)). |
 | **A turn carries its origin.** | The shell stamps who started a turn on its tool calls and approvals ([below](#the-calls)). |
 | **Memory and files belong to one app and account.** | Each peer has its own memory namespace, `app/<app>/acct-<hash>`, and at most its own account's folder. |
 
@@ -105,7 +106,8 @@ Four kinds of app have agents: Rinx, through the injected service; the other nat
 | Tools of its own for its agent | Not yet: its tools serve only the AI pane | Works: read tools, run in the open window | Works: run on its host service or the shell's notice service | Not yet: no host service or app executor runs them |
 | `AGENT.md` and skills sent with every turn | – | – | Works (only Mail ships them) | Works |
 | Events that start its agent | Not yet | Not yet | Partly: Mail's new-mail trigger only | Not yet |
-| Cards on the glance screen | Not yet | Not yet | Works, with `glance` | Works, with `glance` |
+| Cards on the glance screen | Not yet | Not yet | Works, with `glance`; Mail's can carry a reply draft | Works, with `glance` |
+| Chat about one of its cards | Not yet | Not yet | Works: Card / Chat (Email / Chat for a Mail reply) | Works: Card / Chat |
 | One-shot model calls | – | – | Works, with `model` (Photos) | Works, with `model` |
 | The system toolbox | Unused¹ | Unused¹ | Unused¹ | Not yet |
 | A model chosen for its agent | Not yet² | Not yet² | Not yet² | Not yet² |
@@ -115,6 +117,8 @@ Four kinds of app have agents: Rinx, through the injected service; the other nat
 ² Every agent runs on the providers set in AI providers; the shell does not read a manifest's `model.needs`.
 
 Kernel tools are granted, not inherited: Rinx's agent keeps octos's file, memory and web tools, a script app's agent only `ask_user_question` (the one App Hub admits), and the other native apps' agents none.
+
+No agent acts outside the device on its own. Mail's agent drafts replies (`mail.propose_reply`, `mail.suggest_reply`) and proposes sending them (`mail.propose_send`), but it has no send tool: the person sends from the host's review ([the trust model](#the-trust-model)).
 
 ## Script apps and the `octos` service
 
@@ -137,7 +141,7 @@ An app may call only the `octos.*` names its manifest declares: the Card runner'
 | `octos.turn.start` | `{text, trigger?, from?}`, `text` up to 32 KiB | `{turn_id, text, speaker, lane}` once the turn ends |
 | `octos.turn.interrupt` | `{}` | `{interrupted, turns}`: the running turns of both lanes stop |
 
-`trigger` says what started the turn: `person` (the app says the person asked), `app`, `schedule` or `background` (its own run), or `incoming` with `from` (content someone else sent). Left out, the turn is `unknown`, the least trusted (`TurnTrigger` in `crates/app-peers/src/contract.rs`). The transcript labels a `person` turn as the person's, but approval rules treat it as the app's own run: only the shell's own surfaces, such as the "Ask &lt;app&gt;" panel, vouch for the person. Standing rules skip incoming and unknown runs unless a rule opts in.
+`trigger` says what started the turn: `person` (the app says the person asked), `app`, `schedule` or `background` (its own run), or `incoming` with `from` (content someone else sent). Left out, the turn is `unknown`, the least trusted (`TurnTrigger` in `crates/app-peers/src/contract.rs`). The transcript labels a `person` turn as the person's, but approval rules treat it as the app's own run: only the shell's "Ask &lt;app&gt;" panel vouches for the person. Chat in a card counts as the app's run too, although the shell draws it. Standing rules skip incoming and unknown runs unless a rule opts in.
 
 An app runs one turn at a time, and the broker interrupts a turn after 180 seconds. A script app gets no pushed events, so it reads `octos.session.history`, which includes the system agent's turns. No argument carries an approval decision. Design Flow's guide has [a minimal call](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md#a-minimal-call-and-handling-unavailable).
 
@@ -178,7 +182,9 @@ The system toolbox ([`crates/toolbox`](../crates/toolbox/README.md)) gives app a
 
 ## Glance cards
 
-An app with the `glance` capability publishes cards to the glance panel (desktop) or glance page (phone) through the `glance` service ([`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)): `glance.publish`, `glance.withdraw` and `glance.list`. The shell takes the publisher from the caller, never from the arguments, and lets each app publish 6 times a minute and keep 4 cards. System apps' agents publish through their own tools, such as `<app>.notify`, which fills a fixed card template with the model's text. The README's [Cards and questions](../README.md#cards-and-questions) covers the rest.
+An app with the `glance` capability publishes cards to the glance panel (desktop) or glance page (phone) through the `glance` service ([`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)): `glance.publish`, `glance.withdraw` and `glance.list`. The shell takes the publisher from the caller, never from the arguments, binds the card to the account it was published under, and lets each app publish 6 times a minute and keep 4 cards. System apps' agents publish through their own tools: `<app>.notify` fills a fixed card template with the model's text, and Mail's `mail.publish_card` checks a card the model wrote and, given a `draft_id`, binds it to a host-owned reply draft.
+
+The phone's feed shows only summaries and runs no generated UI. Opening a card shows its workspace, which keeps its state between openings: full screen on the phone, centred on the desktop. It has Card / Chat tabs when the publisher has an agent, even without `sys.chat`, and Email / Chat over one saved draft for a Mail reply. The README's [Cards and questions](../README.md#cards-and-questions) covers the workspace; [Composed Mail cards](mail-composable-cards.md) covers Mail's drafts, review and tests.
 
 ## Run and test locally
 
@@ -239,4 +245,5 @@ OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test --locked -p octosense-app-
 | The `octos` service | [`crates/ai-host/src/contained.rs`](../crates/ai-host/src/contained.rs) |
 | The `llm` and `model` services, the key vault | [`apps/ai-providers/host-service/src`](../apps/ai-providers/host-service/src) (`lib.rs`, `vault.rs`, `complete/`) |
 | Which apps have agents, and their preparation | [`crates/shell/src/apps.rs`](../crates/shell/src/apps.rs) (`agent_apps`), [`crates/shell/src/agents.rs`](../crates/shell/src/agents.rs) |
+| Mail drafts and the send review | [`apps/mail/host-service/src/drafts.rs`](../apps/mail/host-service/src/drafts.rs), [`crates/shell/src/mail_review.rs`](../crates/shell/src/mail_review.rs) |
 | Everything else | [architecture.md § Source map](architecture.md#source-map) |

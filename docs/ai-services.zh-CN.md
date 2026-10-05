@@ -49,7 +49,7 @@ flowchart TB
   kernel -- "peer/tool/call、审批" --> relay
   relay --> router
   relay --> exec
-  exec -- "notify" --> glance
+  exec -- "卡片" --> glance
   router -- "面板" --> person
 ```
 
@@ -88,7 +88,8 @@ flowchart TB
 | **机密只在宿主面板上输入。** | App Hub 只接受来自宿主面板的 `<family>.sheet.*` 调用，从不接受应用发来的。脚本应用中的密码输入框不起作用，App Hub 的准入检查也会拒绝声明了此类输入框的应用包。 |
 | **应用从不使用内核协议。** | 应用只能经由 app-peers 代理访问自己的 Agent，代理在每次调用上标注应用的身份。 |
 | **最小权限，按精确名称。** | 应用得到的 `octos.*` 服务，必须是它声明了、确实存在、并且宿主授予了的。`octos.` 或 `octos.admin` 不授予任何权限（`crates/app-peers/src/contract.rs`、`hosted.rs`）。 |
-| **审批属于用户。** | 应用的 peer 提出的每一次审批都交给 Shell 的审批路由；应用只收到 `approval/handled_by_host`。系统 Agent 不能批准。开发者模式只能由用户打开，它会替所覆盖的应用批准（[判定顺序](architecture.zh-CN.md#5-审批)）。 |
+| **审批属于用户。** | 应用的 peer 提出的每一次审批都交给 Shell 的审批路由；应用只收到 `approval/handled_by_host`。系统 Agent 不能批准。开发者模式只能由用户打开，它会批准所覆盖应用经路由的调用（[判定顺序](architecture.zh-CN.md#5-审批)）。 |
+| **邮件只有在用户确认确切内容后才会发出。** | 没有哪个 Agent 工具能发送邮件，`mail.send` 也会拒绝。只有在宿主的审阅界面（展示确切的发件人、收件人、主题和正文）上亲手触摸 Approve & Send，才能授权发送；开发者模式和常设规则都不能。目前只有 Android 触摸屏能这样确认（`mail_review.rs`，[可组合的邮件卡片](mail-composable-cards.zh-CN.md)）。 |
 | **每一轮都带着来源。** | Shell 把这一轮由谁发起标注在它的工具调用和审批上（[见下文](#调用)）。 |
 | **记忆和文件属于一个应用、一个账号。** | 每个 peer 有自己的记忆命名空间 `app/<app>/acct-<hash>`，最多只能访问自己账号的文件夹。 |
 
@@ -105,7 +106,8 @@ flowchart TB
 | Agent 使用应用自己的工具 | 尚未支持：它的工具只服务于 AI 面板 | 可用：只读工具，在已打开的窗口中运行 | 可用：在应用的宿主服务或 Shell 的通知服务上运行 | 尚未支持：没有宿主服务或应用执行器来运行它们 |
 | 每一轮都附带 `AGENT.md` 和技能 | – | – | 可用（只有邮件附带了它们） | 可用 |
 | 由事件启动 Agent | 尚未支持 | 尚未支持 | 部分可用：只有邮件的新邮件触发器 | 尚未支持 |
-| glance 屏幕上的卡片 | 尚未支持 | 尚未支持 | 可用，需 `glance` 权限 | 可用，需 `glance` 权限 |
+| glance 屏幕上的卡片 | 尚未支持 | 尚未支持 | 可用，需 `glance` 权限；邮件的卡片可以带回复草稿 | 可用，需 `glance` 权限 |
+| 就自己的卡片与 Agent 对话 | 尚未支持 | 尚未支持 | 可用：Card / Chat（邮件回复为 Email / Chat） | 可用：Card / Chat |
 | 一次性模型调用 | – | – | 可用，需 `model` 权限（相册在用） | 可用，需 `model` 权限 |
 | 系统工具箱 | 未使用¹ | 未使用¹ | 未使用¹ | 尚未支持 |
 | 为 Agent 选择模型 | 尚未支持² | 尚未支持² | 尚未支持² | 尚未支持² |
@@ -115,6 +117,8 @@ flowchart TB
 ² 每个 Agent 都使用 AI providers 中设置的提供方；Shell 不读取 manifest 的 `model.needs`。
 
 内核工具要授予，不会继承：Rinx 的 Agent 保留 octos 的文件、记忆和网页工具，脚本应用的 Agent 只保留 `ask_user_question`（App Hub 唯一准入的内核工具），其他原生应用的 Agent 一个也没有。
+
+没有哪个 Agent 会自行在设备之外采取行动。邮件的 Agent 会起草回复（`mail.propose_reply`、`mail.suggest_reply`）并提议发送（`mail.propose_send`），但它没有发送工具：由用户在宿主的审阅界面上发送（[信任模型](#信任模型)）。
 
 ## 脚本应用与 `octos` 服务
 
@@ -137,7 +141,7 @@ flowchart TB
 | `octos.turn.start` | `{text, trigger?, from?}`，`text` 最多 32 KiB | 这一轮结束后返回 `{turn_id, text, speaker, lane}` |
 | `octos.turn.interrupt` | `{}` | `{interrupted, turns}`：两条通道上正在运行的回合都会停止 |
 
-`trigger` 说明这一轮由什么发起：`person`（应用声称是用户发起的）、`app`、`schedule` 或 `background`（应用自己的运行），或者带 `from` 的 `incoming`（别人发来的内容）。不填时，这一轮记为 `unknown`，最不受信任（`crates/app-peers/src/contract.rs` 中的 `TurnTrigger`）。对话记录会把 `person` 的回合标为用户的话，但审批规则把它当作应用自己的运行：只有 Shell 自己的界面（例如 “Ask &lt;app&gt;” 面板）才能为用户作证。常设规则会跳过 `incoming` 和 `unknown` 的运行，除非某条规则明确选择包含它们。
+`trigger` 说明这一轮由什么发起：`person`（应用声称是用户发起的）、`app`、`schedule` 或 `background`（应用自己的运行），或者带 `from` 的 `incoming`（别人发来的内容）。不填时，这一轮记为 `unknown`，最不受信任（`crates/app-peers/src/contract.rs` 中的 `TurnTrigger`）。对话记录会把 `person` 的回合标为用户的话，但审批规则把它当作应用自己的运行：只有 Shell 的 “Ask &lt;app&gt;” 面板能为用户作证。卡片里的对话虽然由 Shell 绘制，也算作应用自己的运行。常设规则会跳过 `incoming` 和 `unknown` 的运行，除非某条规则明确选择包含它们。
 
 每个应用同一时间只运行一轮，一轮超过 180 秒会被代理中断。脚本应用收不到推送的事件，所以它读取 `octos.session.history`，其中也包含系统 Agent 的回合。没有任何参数能携带审批决定。Design Flow 的指南中有[最小调用示例](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#最小调用示例与不可用状态)。
 
@@ -178,7 +182,9 @@ Design Flow 的[一次性模型调用](https://github.com/OctoSense-org/OctoScri
 
 ## glance 卡片
 
-拥有 `glance` 权限的应用通过 `glance` 服务（[`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)）把卡片发布到 glance 面板（桌面端）或 glance 页面（手机端）：`glance.publish`、`glance.withdraw` 和 `glance.list`。Shell 从调用方取得发布者，从不读取参数中的发布者，并限制每个应用每分钟最多发布 6 次、最多保留 4 张卡片。系统应用的 Agent 通过自己的工具发布卡片，例如 `<app>.notify`，它用模型写的文字填充固定的卡片模板。其余内容见 README 的[卡片与提问](../README.zh-CN.md#卡片与提问)。
+拥有 `glance` 权限的应用通过 `glance` 服务（[`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)）把卡片发布到 glance 面板（桌面端）或 glance 页面（手机端）：`glance.publish`、`glance.withdraw` 和 `glance.list`。Shell 从调用方取得发布者，从不读取参数中的发布者；它把卡片绑定到发布时的账号，并限制每个应用每分钟最多发布 6 次、最多保留 4 张卡片。系统应用的 Agent 通过自己的工具发布卡片：`<app>.notify` 用模型写的文字填充固定的卡片模板；邮件的 `mail.publish_card` 检查模型编写的卡片，并在提供 `draft_id` 时把它绑定到宿主保存的回复草稿。
+
+手机上的 glance 列表只显示摘要，不运行生成的界面。打开卡片会显示它的工作区，再次打开时状态依旧：手机上全屏，桌面端居中。发布者有 Agent 时，工作区有 Card / Chat 标签页，即使卡片没有声明 `sys.chat`；邮件回复则是 Email / Chat，共用一份保存的草稿。工作区见 README 的[卡片与提问](../README.zh-CN.md#卡片与提问)；邮件的草稿、审阅和测试见[可组合的邮件卡片](mail-composable-cards.zh-CN.md)。
 
 ## 本地运行与测试
 
@@ -239,4 +245,5 @@ OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test --locked -p octosense-app-
 | `octos` 服务 | [`crates/ai-host/src/contained.rs`](../crates/ai-host/src/contained.rs) |
 | `llm` 与 `model` 服务、密钥库 | [`apps/ai-providers/host-service/src`](../apps/ai-providers/host-service/src)（`lib.rs`、`vault.rs`、`complete/`） |
 | 哪些应用有 Agent，以及何时准备 | [`crates/shell/src/apps.rs`](../crates/shell/src/apps.rs)（`agent_apps`）、[`crates/shell/src/agents.rs`](../crates/shell/src/agents.rs) |
+| 邮件草稿与发送审阅 | [`apps/mail/host-service/src/drafts.rs`](../apps/mail/host-service/src/drafts.rs)、[`crates/shell/src/mail_review.rs`](../crates/shell/src/mail_review.rs) |
 | 其他 | [architecture.zh-CN.md § 源码位置](architecture.zh-CN.md#源码位置) |

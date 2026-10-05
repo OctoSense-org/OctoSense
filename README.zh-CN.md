@@ -109,8 +109,8 @@ flowchart LR
 | Rinx（Matrix 聊天） | 原生，在 Shell 内 | octos 的文件、记忆和网页工具 | – |
 | Terminal（桌面端） | 原生；源码检出构建中为独立进程，发布包中在 Shell 内 | `terminal.read_screen`、`terminal.read_scrollback` | `terminal.run`，只在它作为独立的沙箱进程运行时提供，受 Setup 开关控制，每条命令都要批准 |
 | Calculator、Clock、Notes、Reminders、Weather | 原生，在 Shell 内 | 各自的只读工具 | 同样的只读工具 |
-| 邮件 | 脚本应用 | 绑定当前登录账号的 `mail.*` 工具，包括 `mail.publish_card` | – |
-| 日历（桌面端） | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
+| 邮件 | 脚本应用 | 绑定当前登录账号的 `mail.*` 工具：读取、卡片（`mail.publish_card`），以及它可以提议但永远不能发送的回复草稿 | – |
+| 日历 | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
 | 新闻 | 脚本应用 | `news.list`、`news.read`、`news.notify` | – |
 | 相册、地图、YouTube；手机上的相机 | 脚本应用 | `<app>.notify` | – |
 
@@ -204,7 +204,7 @@ flowchart TB
 | 入口 | 怎么用 |
 | --- | --- |
 | **“Ask &lt;app&gt;”** 面板 | Shell 为每个有 Agent 的应用提供的面板，从顶栏的 “Ask &lt;app&gt;” 按钮或按 Shift+F8 打开。桌面端上它出现在系统对话旁边。手机上它全屏显示，但还没有可以打开它的触控入口。 |
-| **卡内对话** | 在声明了对话的 glance 卡片里输入（[见下文](#卡内对话)）。 |
+| **卡内对话** | 打开有 Agent 的应用发布的卡片，切换到 Chat 标签页；或在声明了 `sys.chat` 的卡片里输入（[见下文](#卡内对话)）。 |
 | **应用自己的界面** | 应用可以自己打开用户的通道（[见下一节](#应用如何使用自己的-agent)），但随附的应用都还没有这样做；所有应用都通过 “Ask &lt;app&gt;” 面板进入。 |
 
 面板会先征得同意，然后显示两条通道，每条消息都标明说话者。面板上的“停止”只结束用户自己的回合。面板的其他行为见 [docs/architecture.zh-CN.md 第 2 节](docs/architecture.zh-CN.md#2-agent)。
@@ -299,16 +299,22 @@ sequenceDiagram
 </details>
 
 - **中转**（[`crates/shell/src/host_tools/`](crates/shell/src/host_tools/)）接收每一个 `peer/tool/call`。它先检查这个调用方能否使用这个工具，按工具的 schema 校验参数，并从调用方的预算中扣除（默认每轮 32 次、每天 1000 次工具调用）；之后才在拥有该工具的应用中运行它：原生应用已打开的窗口、脚本应用的宿主服务，或经 peer link 交给进程应用。结果同样要按 schema 检查。
-- **审批路由**（[`crates/shell/src/approvals/`](crates/shell/src/approvals/)）按固定顺序做决定。开发者模式只能由用户打开，它会批准所覆盖应用的一切调用。`confirm: app` 的工具交给应用自己的面板。必须每次都问的调用（例如 Terminal 的命令）直接弹出面板。其余调用可以由用户的常设规则决定，否则由 Shell 面板展示确切参数，请用户确认。每个决定都会写入审计日志。完整顺序见 [architecture.zh-CN.md 第 5 节](docs/architecture.zh-CN.md#5-审批)。
+- **审批路由**（[`crates/shell/src/approvals/`](crates/shell/src/approvals/)）按固定顺序做决定。开发者模式只能由用户打开，它会批准所覆盖应用经路由的调用。`confirm: app` 的工具交给应用自己的面板。必须每次都问的调用（例如 Terminal 的命令）直接弹出面板。其余调用可以由用户的常设规则决定，否则由 Shell 面板展示确切参数，请用户确认。每个决定都会写入审计日志。完整顺序见 [architecture.zh-CN.md 第 5 节](docs/architecture.zh-CN.md#5-审批)。发送邮件不走这个顺序：总是由用户在宿主自己的审阅界面上确认确切的邮件内容，在手机上需要亲手触摸，开发者模式也不能跳过。
 - **时限。** 10 分钟内无人回答的审批或提问会被拒绝，绝不会被批准。如果 30 秒后这一轮仍在运行，Shell 会中断它，好让下一轮开始。
 
 ### 卡片与提问
 
-拥有 `glance` 权限的应用以自己的身份发布卡片（`glance.publish`、`glance.withdraw`、`glance.list`）；Shell 从调用方取得发布者，从不读取参数中的发布者。卡片在应用自己的权限下运行，所以在卡片上按下按钮是应用自己的操作，不是 Agent 的工具调用。卡片显示在桌面端的[一览面板](desktop/README.zh-CN.md#一览面板)中，桌面端 README 对它有详细说明。
+拥有 `glance` 权限的应用以自己的身份发布卡片（`glance.publish`、`glance.withdraw`、`glance.list`）；Shell 从调用方取得发布者，从不读取参数中的发布者。卡片在应用自己的权限下运行，所以在卡片上按下按钮是应用自己的操作，不是 Agent 的工具调用。卡片显示在桌面端的[一览面板](desktop/README.zh-CN.md#一览面板)中，桌面端 README 对它有详细说明。在手机上，卡片的通知会打开那张卡片的工作区；卡片已不存在时打开 glance 页面。
 
 #### 卡内对话
 
-卡片可以声明 `sys.chat(app, thread, fields)`。用户在卡片里输入，只有发布卡片的应用自己的 Agent 回答，回答在用户的通道里进行。对话记录归 Shell 所有，保存在应用的账号文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。目前还没有 Agent 发布的卡片声明对话；演示卡片 [`mail-request.card`](crates/shell/resources/glance/mail-request.card) 用固定的回复展示了这一功能。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
+卡片可以带着与其应用 Agent 的对话，Agent 在用户的通道里回答：
+
+- **打开的卡片**会成为一个工作区：手机上是全屏，桌面端是居中的窗口。如果发布卡片的应用有 Agent，工作区就有 **Card** 和 **Chat** 两个标签页，即使卡片没有声明对话也是如此。Shell 把卡片的数据和本地状态作为上下文交给 Agent，并绑定到发布卡片的账号；对话只使用应用已有的工具和已有的同意。
+- **邮件回复卡片**有 **Email** 和 **Chat** 两个标签页，共用一份保存的草稿。Agent 可以修改草稿并提议发送，但只有用户能发送：用户要在宿主自己的审阅界面上亲手触摸，确认确切的邮件内容。开发者模式不能跳过这一步，桌面端的确认还没有实现。详情和手机上的测试结果见[可组合的邮件卡片](docs/mail-composable-cards.zh-CN.md)。
+- **声明了 `sys.chat(app, thread, fields)` 的卡片**保留它声明的对话线程。
+
+所有对话记录都归 Shell 所有，保存在应用的账号文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
 
 #### 提问
 

@@ -4,7 +4,7 @@ English | [简体中文](architecture-walkthrough.zh-CN.md)
 
 This is the reading path through OctoSense's agent code. It follows one question from the window where the person types it, through the shell and the octos kernel, to the Rust that answers it. Each step names the file and symbol to open, what to look for, and why it matters. The concepts are in the README's [key concepts](../README.md#key-concepts); the full reference is [architecture.md](architecture.md).
 
-The question is **"What is on my calendar today?"**, on the desktop, where Calendar is a system script app. The person can ask the system agent, which delegates it to Calendar's agent in the **system agent's lane**, or ask Calendar's agent in its "Ask Calendar" panel, in the **person's lane**. Both routes can end in the same tool call, `calendar.events`, and each answer returns to the conversation that asked. Either needs a kernel, a provider and the person's consent.
+The question is **"What is on my calendar today?"**, and Calendar is a system script app. The person can ask the system agent, which delegates it to Calendar's agent in the **system agent's lane**, or ask Calendar's agent directly, in its "Ask Calendar" panel or a Calendar card's Chat tab, in the **person's lane**. Both routes can end in the same tool call, `calendar.events`, and each answer returns to the conversation that asked. Either needs a kernel, a provider and the person's consent.
 
 ## 1. Start at the executable
 
@@ -114,9 +114,11 @@ Every surface but the system chat opens the person's lane:
 | A native app's own chat, through the injected service | `OctosAppService::open_conversation`. Rinx uses only `open_context`, for its mini apps' private contexts. |
 | Another native app's chat | Makepad's `OctosPeer` over the peer link: `octos.session.open` without a `client` ([peer_link/link.rs](../crates/shell/src/peer_link/link.rs)) |
 | A script app's own chat | `host.request("octos.turn.start")`, served by `contained.rs` for the names its manifest declares |
-| A card's chat (`sys.chat`) | [glance_chat.rs](../crates/shell/src/glance_chat.rs) and [l0-chat](../crates/l0-chat/src/lib.rs) |
+| A card's Chat tab, or a card that declares `sys.chat` | [glance_chat.rs](../crates/shell/src/glance_chat.rs) and [l0-chat](../crates/l0-chat/src/lib.rs) |
 
-Not yet: no shipped app opens the person's lane from its own UI; the "Ask &lt;app&gt;" panel is the way in.
+**Card workspaces** ([in-card chat](../README.md#in-card-chat)). [glance_sheet.rs](../crates/shell/src/glance_sheet.rs) shows an opened card full screen on the phone, centred on the desktop. If the publisher has an agent and the card declares no chat, `L0Session::for_card` ([glance_card.rs](../crates/shell/src/glance_card.rs)) adds a host-owned `WorkspaceChat` behind Card / Chat tabs. `chat_submit` sends each turn through `glance_chat::perform_bound` to the account that published the card (`agents::conversation_for_account`), with the card's data and local state as context (`ContextKind::Card`), never as tools. Mail's reply cards show Email / Chat over one saved draft; a Chat turn carries a one-use token (`drafts::issue_chat_edit`) that lets `mail.suggest_reply` save the edit ([Composed Mail cards](mail-composable-cards.md)).
+
+Not yet: no shipped app opens the person's lane from its own UI; the shell's panel and cards are the way in.
 
 The trigger decides how far approvals trust a turn. Only the shell's own surfaces, the "Ask &lt;app&gt;" panel and the system chat, stamp `TurnTrigger::Person`; an in-process module could through the injected service, but none does. An app's `"trigger": "person"` becomes `AppSaysPerson` (`TurnTrigger::from_args`), which the relay hands the router as an app run (`trigger_of` in `host_tools/relay.rs`); a card's chat gets the same stamp. Rinx's mini apps send a bare `ContextOp::Turn`, which is `Unknown`; standing rules skip it. Mail's new-mail events ([agent_events.rs](../crates/shell/src/agent_events.rs)) run in this lane as `TurnTrigger::Incoming`; no other app has events yet.
 
@@ -162,6 +164,8 @@ First-use consent, a tool grant and a per-call approval are separate checks. For
 
 Decisions are audited in `logs/approvals-audit.jsonl`, and the deadlines are `DEFAULT_PROMPT_DEADLINE` (10 minutes) and `EXPIRY_GRACE` (30 seconds) in `app-peers/src/host_tools.rs`. The system agent cannot approve: octos refuses its `peer_respond` for approvals. What each step means is in [architecture.md §5](architecture.md#5-approvals).
 
+Sending mail never reaches this router. `mail.propose_send` only prepares the exact message; the host's review in the card (`mail_review.rs`) calls `drafts::approve_and_send` only after a physical touch (`trusted_user_gesture`, Android only for now), and developer mode cannot stand in for it.
+
 ## 8. Where the data lives
 
 An app's data lives in several stores, each with one owner:
@@ -169,7 +173,7 @@ An app's data lives in several stores, each with one owner:
 | Data | Where | How an agent reaches it |
 | --- | --- | --- |
 | The account folder | `apps/<app id>/accounts/<account hash>/`, or `accounts/device/` ([app_storage/mod.rs](../crates/shell/src/app_storage/mod.rs)) | It is the peer's workspace, fixed when the peer is created. The person's lane runs in its own `contexts/<id>/` and reads the folder through `read_parent` or the host's `files.*` tools ([files.rs](../crates/shell/src/host_tools/files.rs): Unix only; 128 KiB a read, 500 entries, 100 matches). |
-| A host service's data | App Hub's host directory, `<apps root>/.host/` | Only through that service's tools; no workspace includes it. |
+| A host service's data | App Hub's host directory, `<apps root>/.host/`: Calendar's events, Mail's messages and reply drafts (`drafts.rs`) | Only through that service's tools; no workspace includes it. |
 | Transcripts and memory | octos, under the namespace `app/<app>/acct-<tag>` | The agent's own. `<tag>` is an FNV-1a hash (`account_tag`); the folder name is a different, SHA-256 hash (`account_hash`). |
 | Secrets | App secrets: the keychain on macOS and iOS (indexed in `<home>/secrets/<app id>/`), elsewhere files there. Provider keys: the macOS keychain, elsewhere files under the kernel's core directory (owner-only, except on Windows) | Never. `app_storage::check` refuses a workspace that contains or links to them. |
 

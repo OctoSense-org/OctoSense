@@ -4,7 +4,7 @@
 
 本文完整说明 OctoSense 是怎样构建的，并给出每个部分背后的代码。阅读前请先了解 README 的[关键概念](../README.zh-CN.md#关键概念)和[整体如何运作](../README.zh-CN.md#整体如何运作)。各类应用能调用什么、如何在本地运行 AI 服务，见 [ai-services.zh-CN.md](ai-services.zh-CN.md)；想按顺序读源码，请看[代码导读](architecture-walkthrough.zh-CN.md)。
 
-背后的决策是 [ADR 0001](adr/0001-one-octosense-repository.md)（英文，一个仓库）、[ADR 0002](adr/0002-event-driven-app-agents.md)（英文，事件驱动的应用 Agent；Proposed，部分已实现）、[ADR 0003](adr/0003-shared-octos-client-access.md)（英文，Talk to Octos）和 [ADR 0004](adr/0004-native-apps-hosting-and-peers.md)（英文，原生应用、应用 Agent、跨应用协作与审批）。正文描述代码的现状；尚未实现的部分标为**尚未实现**或**规划中**。
+背后的决策是 [ADR 0001](adr/0001-one-octosense-repository.md)（英文，一个仓库）、[ADR 0002](adr/0002-event-driven-app-agents.md)（英文，事件驱动的应用 Agent；Proposed，部分已实现）、[ADR 0003](adr/0003-shared-octos-client-access.md)（英文，Talk to Octos）、[ADR 0004](adr/0004-native-apps-hosting-and-peers.md)（英文，原生应用、应用 Agent、跨应用协作与审批）和 [ADR 0007](adr/0007-composable-mail-action-cards.zh-CN.md)（带草稿、对话和宿主审批发送的邮件卡片；进行中）。正文描述代码的现状；尚未实现的部分标为**尚未实现**或**规划中**。
 
 ## 目录
 
@@ -265,7 +265,7 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 
 | 来源 | 声明于 | 运行在 | 现状 |
 | --- | --- | --- | --- |
-| 应用自己的工具，`<app>.<tool>` | `tools.json`；`agent.tools` | 应用的宿主服务、通知服务或应用的窗口 | `own_tools` 把 Terminal 的工具限定为两个只读工具 |
+| 应用自己的工具，`<app>.<tool>` | `tools.json`；`agent.tools` | 应用的宿主服务、通知服务或应用的窗口 | `own_tools` 把 Terminal 的工具限定为两个只读工具；邮件的 Agent 能起草和提议回复，但没有能发送的工具 |
 | octos 的内核工具 | `agent.tools` 中不带点的名称；`agent.generic_tools` | octos | 脚本应用只有 `ask_user_question`；Rinx 有文件、记忆和网页工具；其他原生 Agent 没有 |
 | `files.list`、`files.read`、`files.search` | Shell，注册在已获同意、有工作区的 peer 上（Unix） | Shell，作用于调用方的账号文件夹 | 每次读取最多 128 KiB，每次列出最多 500 项，每次搜索最多 100 个匹配 |
 | 其他应用可共享的工具 | `agent.tools` 中带点的名称；`agent.grants` | 所属应用，经中转 | 新闻共享 `news.list` 和 `news.read`；还没有应用申请 |
@@ -292,7 +292,9 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 
 ### Agent 往 glance 屏幕上放什么
 
-glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份发布每张卡片，而且只在它有 `glance` 授权时才发布。一个应用每分钟最多发布 6 次，最多保留 4 张卡片；glance 屏幕显示服务保存的 32 张卡片中的 6 张。卡片模板见 README 的[系统 Agent 如何与应用 Agent 通信](../README.zh-CN.md#系统-agent-如何与应用-agent-通信)，卡片自己的策略和卡内对话见[卡片与提问](../README.zh-CN.md#卡片与提问)。
+glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在宿主记录的账号下发布每张卡片，而且只在应用有 `glance` 授权时才发布。一个应用每分钟最多发布 6 次，最多保留 4 张卡片；glance 屏幕显示服务保存的 32 张卡片中的 6 张。`mail.publish_card` 还能把卡片绑定到邮件已保存的某份草稿上；绑定后的卡片不能再换到别的账号、邮件或草稿。
+
+在手机上，glance 列表只绘制紧凑的摘要，不运行任何生成的界面（`mobile_pages.rs`）。点按摘要会把它展开成常驻的全屏工作区（`glance_sheet.rs`），通知则直接打开它对应卡片的工作区；在桌面端，工作区居中打开。有 Agent 的发布者即使卡片没有声明 `sys.chat`，也会得到 Card / Chat 两个标签（`glance_card.rs` 中的 `WorkspaceChat`）；邮件的回复卡片则在同一份已保存的草稿上提供 Email / Chat。细节见[组合式邮件卡片](mail-composable-cards.zh-CN.md#所有发布者共用的卡片工作区)。卡片模板见 README 的[系统 Agent 如何与应用 Agent 通信](../README.zh-CN.md#系统-agent-如何与应用-agent-通信)，卡片自己的策略和卡内对话见[卡片与提问](../README.zh-CN.md#卡片与提问)。
 
 ## 5. 审批
 
@@ -334,11 +336,13 @@ flowchart TB
 4. **常设规则**，按（所属应用，工具）匹配，不论调用方是谁。由收到的内容或未知来源触发的运行会跳过规则，除非某条规则明确纳入。
 5. 否则由 **Shell 绘制的面板**列出所属应用、工具、确切参数和调用方应用（如有）。系统 Agent 为同一请求发起的审批可以合并到一个面板中。
 
+**发送邮件**从不经过审批路由。邮件自己的写信界面（`mail.review_send`）和它的回复卡片，最终都进入同一个由宿主拥有的确切邮件审阅界面，由 Shell 绘制在卡片内（`crates/shell/src/mail_review.rs`）；邮件的 Agent 只能提议发送（`mail.propose_send`）。只有对审阅界面上 Approve & Send 控件的一次可信按下和松开才会发送。目前这意味着 Android 上的物理触摸，由一个经审查的 Makepad 补丁提供（`tools/runtime-patches/makepad-trusted-user-input.patch`）；桌面端和无障碍方式的批准推迟实现。开发者模式和常设规则都不能授权发送，`mail.send` 只会回答 `approval_required`。流程见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
+
 **常设规则**（`approvals/rules.rs`）可以要求收件人在联系人中或在本线程中、没有附件、由用户触发，或限定次数和金额；读不到所需事实的条件视为不满足。从面板创建的规则默认每天最多使用 20 次，“该应用的一切请求”这条最宽的规则最多持续 60 分钟，一次点按即可关闭所有规则。只有用户能创建规则。“收件人在联系人中”只有在用户允许后才使用邮件的数据（`approvals/contacts.rs`）。
 
 **开发者模式**（`crates/shell/src/dev_mode.rs`）只能由用户打开：在设置中输入确认短语，或在手机上使用开发者选项手势；也可以在启动时使用 `OCTOSENSE_DEV_MODE` 或 `--dev-grant-all`。发布构建只接受该启动参数，商店构建永远不能打开。
 
-它覆盖全部应用或用户选定的应用。不在开发者专用的主目录中时，它在 8 小时后或重启时结束。开启期间，Shell 显示横幅，把每次调用审计到 `logs/dev-audit.jsonl`，并给所覆盖应用的 peer 添加 `dev.run`。它永远不作用于外部客户端。
+它覆盖全部应用或用户选定的应用。不在开发者专用的主目录中时，它在 8 小时后或重启时结束。开启期间，Shell 显示横幅，把每次调用审计到 `logs/dev-audit.jsonl`，并给所覆盖应用的 peer 添加 `dev.run`。它永远不作用于外部客户端，也不能发送邮件。
 
 **输入。**审批路由接收经中转送来的内核 `host_tool` 审批；应用 peer 或其上下文上的其他所有审批，作为该应用 Agent 的调用（应用只会收到 `approval/handled_by_host`）；系统对话的审批；以及 AI 面板对 `confirm: host` 工具的调用。
 
@@ -401,6 +405,7 @@ Rinx（通过 `OctosAppService::set_account`）和邮件的宿主服务会报告
 | 应用 ↔ 内核 | 没有应用直接使用 OUP，也没有应用看得到宿主 token |
 | peer ↔ peer | octos 为每个 peer 提供独立的工作区（拒绝重叠）、记忆命名空间和对话记录 |
 | Agent ↔ 机密 | 机密在所有 jail 和工作区之外；启动检查 |
+| Agent ↔ 邮件投递 | 没有任何 Agent 工具或生成的卡片能发送：只有宿主对确切邮件的审阅，经可信的物理触摸批准后才发送 |
 | 外部客户端 ↔ 内核 | 外部 token、方法与工具允许列表、`Host` 和 `Origin` 检查 |
 
 **进程沙箱**（`crates/shell/src/sandbox/`）根据条目的 `sandbox` 和 `storage` 块构建。它封闭用户的主目录和各个卷，只开放应用的 jail、它的机密文件夹和经审查的 `external` 授权（例如 Terminal 的 `home:rw`），并让下一次构建要读取或运行的一切保持只读。`network: none` 只留下 hub 的端口，`processes: false` 禁止 fork 和 exec；应用只继承 Shell 环境变量中允许列表内的那些，从不包括密钥或 token。
@@ -409,7 +414,7 @@ Rinx（通过 `OctosAppService::set_account`）和邮件的宿主服务会报告
 
 ## 8. 完整示例：用邮件发送会议邀请
 
-这个出自 ADR 0004 的例子，把日历已有的 `calendar.add_event` 和一个**规划中**的 `mail.send` 连在一起：邮件的 Agent 还没有发送工具。要实现它，需要邮件声明一个可共享的 `mail.send`，日历的 manifest 申请它，App Hub 准入这项授权。路径上的其余部分都已存在。
+这是 ADR 0004 对跨应用协作的最初设想：先调用日历已有的 `calendar.add_event`，再跨应用调用 `mail.send`。邮件这一半**尚未实现**，而且 ADR 0007 已经改变了它的批准方式：任何常设规则或开发者模式都不能批准发送邮件，每封邮件都需要宿主的审阅和一次物理触摸（见[第 5 节](#5-审批)）。下图保留这个设想中的中转路径，并标出被 ADR 0007 取代的部分。邮件现在如何发送，见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
 
 ```mermaid
 sequenceDiagram
@@ -417,7 +422,7 @@ sequenceDiagram
   participant S as 系统 Agent
   participant SH as Shell（宿主连接）
   participant C as 日历的 Agent（peer）
-  participant R as 审批路由
+  participant R as Shell：审批
   participant M as 邮件（宿主服务）
   P->>S: "邀请 Ana、Bo 和 Edward 周二下午 3 点开会"
   S->>C: peer_send_input（任务说明）
@@ -425,16 +430,13 @@ sequenceDiagram
   SH->>C: turn/start（日历的工具、记忆、账号）
   C->>SH: peer/tool/call calendar.add_event
   SH-->>C: 结果
-  C->>SH: peer/tool/call mail.send x3（规划中；调用方：日历）
+  C->>SH: peer/tool/call mail.send x3（尚未实现，调用方：日历）
   SH->>SH: 授权检查：日历是否获授权 mail.send？
   SH->>R: 审批（邮件、mail.send、确切参数、调用方日历）
-  alt 针对（邮件, mail.send）的常设规则匹配
-    R-->>SH: 批准（通知并审计）
-  else 没有规则
-    R->>P: 每封邀请一个面板
-    P-->>R: 逐一批准
-  end
-  SH->>M: 执行 mail.send x3（规划中）
+  Note over R,P: ADR 0004 允许常设规则或面板批准这一步。<br/>ADR 0007 取代了它：任何规则或开发者模式都不能批准发送邮件。
+  R->>P: 宿主对每封确切邮件的审阅
+  P-->>R: 逐封批准，用物理触摸
+  SH->>M: 发送 x3（尚未实现）
   M-->>SH: 结果
   SH-->>C: peer/tool/result
   C->>C: octos 写入 peers/(slug)/result.md
@@ -443,11 +445,11 @@ sequenceDiagram
 ```
 
 - 系统 Agent 遇到歧义会先问（“有两个 Edward？”），而不是去猜。如果日历的 Agent 还没获准，`agents.ask` 会先弹出首次使用面板。
-- `calendar.add_event` 是 `act`，所以无需面板即可运行；只有桌面端附带日历。
-- 授权沿用现有机制：`mail.send` 会是日历 `agent.tools` 中一个带点的名称，在安装时授予。
-- 审批走的正是 `calendar.remove_event` 现在走的路径。像“收件人都在我的联系人中”这样的规则可以批准这些调用；否则每封邀请各有一个面板，列出它的所属应用、调用方应用和确切参数。目前只有系统 Agent 自己的调用会共用一个面板。
-- 邮件的宿主服务已经有一个供邮件自己的窗口使用的 `mail.send` 方法。它用用户登录的账号发送；密码永远不会到达 Agent。
-- 结果未知的邀请，不经用户绝不重试。
+- `calendar.add_event` 是 `act`，所以无需面板即可运行。桌面端和手机都附带日历。
+- 授权会沿用现有机制：`mail.send` 作为日历 `agent.tools` 中一个带点的名称，在安装时授予。邮件并没有声明这个工具。
+- ADR 0004 让审批路由决定每次发送，所以像“收件人都在我的联系人中”这样的常设规则可以批准它，否则每封邀请各有一个面板。ADR 0007 为邮件取代了这一做法：不论谁提议发送，最终都进入宿主对确切邮件的审阅（见[第 5 节](#5-审批)）。邮件的 Agent 只能提议发送（`mail.propose_send`）。
+- 邮件的宿主服务用用户登录的账号发送；密码永远不会到达 Agent。它的 `mail.send` 方法现在只会回答 `approval_required`。
+- 结果未知的发送绝不会自动重发；重试需要重新审阅并批准。
 - **尚未实现：**日历的窗口还不能列出日程；`calendar.notify` 可以把日程放到 glance 屏幕上。
 
 ## 代码与 ADR 不一致之处
@@ -463,7 +465,8 @@ sequenceDiagram
 7. **Rinx。**ADR 0004 §9 让 Rinx 的发送工具在它自己的 `confirm: app` 面板上确认，§11 把它的数据移到 `apps/rinx/` 下，§13 让开发者模式覆盖每个应用的面板。在其锁定的版本中，Rinx 不声明任何 Agent 工具，不向审批路由注册面板，仍使用自己的数据文件夹，而且在开发者模式下它的发送面板仍会询问。
 8. **Windows 沙箱。**ADR 0004 §3 为 Windows 上的进程应用提供 AppContainer。它还没有实现，所以这些应用以用户的权限运行，Windows 上也从不提供 `terminal.run`。
 9. **发布包中的进程应用。**ADR 0004 §2 要求附带它们的二进制；发布包只附带 `octosense` 和内核（`desktop/packaging/release.json`）。
-10. **进程内的 Terminal 仍提供 `run`。**ADR 0004 §10 规定进程内的 Terminal 只读。但 Shell 用另一个执行器替换了它模块自带的只读执行器，新执行器也提供 `run`（`crates/shell/src/module_host.rs` 中的 `host_executor`，有测试固定这一行为）。所以只要桌面端在进程内运行 Terminal（没有 Vulkan 和 Wayland 的 Linux，或被切换为模块时），桌面端的 AI 面板仍能经审批路由输入命令。系统 Agent 的 `terminal.run` 则符合 ADR：它要求 Terminal 作为沙箱进程运行。
+10. **发送邮件。**ADR 0004 §8 允许常设规则回答 `mail.send` 这类对外调用，§13 允许开发者模式覆盖所有审批。代码遵循的是 ADR 0007：不论常设规则或开发者模式怎么说，发送邮件都需要宿主的审阅和一次物理触摸；ADR 0004 没有提到这个例外。
+11. **进程内的 Terminal 仍提供 `run`。**ADR 0004 §10 规定进程内的 Terminal 只读。但 Shell 用另一个执行器替换了它模块自带的只读执行器，新执行器也提供 `run`（`crates/shell/src/module_host.rs` 中的 `host_executor`，有测试固定这一行为）。所以只要桌面端在进程内运行 Terminal（没有 Vulkan 和 Wayland 的 Linux，或被切换为模块时），桌面端的 AI 面板仍能经审批路由输入命令。系统 Agent 的 `terminal.run` 则符合 ADR：它要求 Terminal 作为沙箱进程运行。
 
 ## 源码位置
 
