@@ -22,8 +22,8 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **Calendar's host service** (`calendar/host-service`) keeps Calendar's
   events in the host's directory and runs Calendar's agent's tools:
   `calendar.events`, `add_event`, `remove_event`, and `notify` and `agenda`,
-  which put an event or agenda card on the glance screen. Calendar is a
-  desktop system app (`desktop/system-apps.json`).
+  which put an event or agenda card on the glance screen. Calendar ships in both shells
+  (`desktop/system-apps.json` and `phone/system-apps.json`).
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
   and `news.notify` (the shell draws the notice).
@@ -74,7 +74,7 @@ OctoScript-App-Design-Flow:
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
-| [Calendar](calendar/bundle) | `os.calendar` (desktop) | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
+| [Calendar](calendar/bundle) | `os.calendar` | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
