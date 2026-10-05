@@ -110,7 +110,7 @@ These apps have an agent:
 | Terminal (desktop) | native, its own process | `terminal.read_screen`, `terminal.read_scrollback` | `terminal.run`, behind Setup's switch, approved per command |
 | Calculator, Clock, Notes, Reminders, Weather | native, in the shell | each app's read tools | the same read tools |
 | Mail | script app | `mail.*` tools scoped to the signed-in account, including `mail.publish_card` | – |
-| Calendar (desktop) | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
+| Calendar | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
 | News | script app | `news.list`, `news.read`, `news.notify` | – |
 | Photos, Maps, YouTube; Camera on phones | script apps | `<app>.notify` | – |
 
@@ -206,7 +206,7 @@ The person can talk to any app's agent directly. These turns run in the person's
 | Where | How |
 | --- | --- |
 | **"Ask &lt;app&gt;"** panel | A shell panel for every app with an agent, opened from the bar's "Ask &lt;app&gt;" button or with Shift+F8. On the desktop it opens beside the system chat. The phone draws it full screen but has no touch control for it yet. |
-| **In-card chat** | Type in a glance card that declares a chat ([below](#in-card-chat)). |
+| **In-card chat** | Open Chat in an agent-enabled card workspace, or type in a card that declares `sys.chat` ([below](#in-card-chat)). |
 | **The app's own UI** | An app can open the person's lane itself ([next section](#how-an-app-uses-its-agent)). Rinx draws its own assistant UI; for the other apps, the "Ask &lt;app&gt;" panel is the way in. |
 
 The panel asks for consent first and shows both lanes, each message with its speaker. Its Stop button ends only the person's own turn. [docs/architecture.md §2](docs/architecture.md#2-agents) covers the rest of its behavior.
@@ -310,11 +310,11 @@ An app with the `glance` permission publishes cards as itself (`glance.publish`,
 
 #### In-card chat
 
-**Current availability:** a model-authored Mail card published with a host-issued `draft_id` can bind its durable editor, contextual `sys.chat` and host review to that email/account. `mail.propose_reply`, `mail.draft`, `mail.suggest_reply` and `mail.propose_send` expose draft/proposal operations; none authorizes sending. The host review requires a trusted physical Android touch even in developer mode. Integrated paired-model phone acceptance remains unverified, and desktop/accessibility approval is deferred. See [Composed Mail cards](docs/mail-composable-cards.md). The older [`mail-request.card`](crates/shell/resources/glance/mail-request.card) under `OCTOSENSE_GLANCE_DEMO=mail` still uses canned replies and local demo state.
+On the phone, a compact Glance summary expands into a resident full-screen workspace. An agent-enabled publisher gets **Card / Chat** even without an embedded `sys.chat`; the host binds the conversation to the original publication account and supplies bounded card data and local L0 state. The generated source stays unchanged. Local selections are context, not proof of a completed external action; chat uses only the app's existing tools and consent. Cards without an agent have no Chat tab.
 
-An L0 card can declare `sys.chat(app, thread, fields)` and draw `ChatEntry` rows. It can also display model-written text (`class: model-copy`), which is marked AI-written and never executed as an action ([#263](https://github.com/OctoSense-org/OctoSense/pull/263)).
+A Mail reply card published with a host-issued `draft_id` uses **Email / Chat**, sharing one saved draft. Requested chat edits save through a revision-bound capability, and final review reads the exact saved recipient, subject and body. Only trusted physical Android touch can approve sending, including in developer mode. Desktop/accessibility send approval remains deferred. See [Composed Mail cards](docs/mail-composable-cards.md) for the DeepSeek/MiniMax phone results, formatting failure/retry and remaining UX limits.
 
-The host owns the transcript. Only the publishing app’s own agent answers, in the person’s lane, and only text the person typed is recorded as theirs. Threads are stored in `apps/<app>/accounts/<account>/chat/<thread>.json`. See [`crates/l0-chat`](crates/l0-chat/README.md) and [`glance_chat.rs`](crates/shell/src/glance_chat.rs).
+An explicit `sys.chat(app, thread, fields)` keeps its declared thread. The host owns the transcript in the app's account folder; only what the person typed is recorded as theirs. The older [`mail-request.card`](crates/shell/resources/glance/mail-request.card) under `OCTOSENSE_GLANCE_DEMO=mail` still answers with canned text. See [`crates/l0-chat`](crates/l0-chat/README.md) and [`glance_chat.rs`](crates/shell/src/glance_chat.rs).
 
 #### Questions
 
