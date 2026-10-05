@@ -126,6 +126,15 @@ pub struct OpenedPeerLinks {
     links: Vec<(SplashVmId, makepad_ai_services::peer::PeerLink)>,
 }
 
+/// Kernel ports module code opened (Makepad's `OctosUiPort::open`, which
+/// parks the host's end in `PendingUiPorts`), each with the isolate whose
+/// code was running, exactly as [`OpenedPeerLinks`]. [`ModuleHost::pump_peer_links`]
+/// connects each that its app's entry grants ([`crate::kernel_port`]).
+#[derive(Default)]
+pub struct OpenedUiPorts {
+    ports: Vec<(SplashVmId, makepad_ai_services::ui_port::UiPortLink)>,
+}
+
 /// The isolates whose module code is running now, innermost last: a
 /// `contain` inside another (a host call a module's code made) must not
 /// take the outer module's links as stray or as its own.
@@ -143,6 +152,10 @@ fn enter_isolate(cx: &mut Cx, vm_id: SplashVmId) {
             if !stray.is_empty() {
                 log!("wm: {} peer link(s) opened outside any module instance dropped", stray.len());
             }
+            for port in cx.global::<makepad_ai_services::ui_port::PendingUiPorts>().take() {
+                crate::kernel_port::refuse(port, "opened outside any app");
+                log!("wm: a kernel port opened outside any module instance closed");
+            }
         }
     }
     cx.global::<RunningIsolates>().0.push(vm_id);
@@ -157,11 +170,16 @@ fn leave_isolate(cx: &mut Cx, vm_id: SplashVmId) {
     }
 }
 
-/// After module code of isolate `vm_id` ran: the links it opened are its.
+/// After module code of isolate `vm_id` ran: the links and kernel ports it
+/// opened are its.
 fn claim_peer_links(cx: &mut Cx, vm_id: SplashVmId) {
     let links = cx.global::<makepad_ai_services::peer::PendingPeerLinks>().take();
     if !links.is_empty() {
         cx.global::<OpenedPeerLinks>().links.extend(links.into_iter().map(|link| (vm_id, link)));
+    }
+    let ports = cx.global::<makepad_ai_services::ui_port::PendingUiPorts>().take();
+    if !ports.is_empty() {
+        cx.global::<OpenedUiPorts>().ports.extend(ports.into_iter().map(|port| (vm_id, port)));
     }
 }
 
@@ -301,6 +319,9 @@ pub struct AppInstance {
     /// A link it opened without a granted agent: not served, but each of
     /// its requests is answered `no_agent` (not a link: [`ModuleHost::has_peer_link`] is false).
     refused_peer: Option<crate::ai_host::module_peer::ModulePeerLink>,
+    /// Its kernel port, when its code opened Makepad's `OctosUiPort` and
+    /// its entry grants one (`kernel`): connected in the app's scope.
+    kernel_port: Option<crate::kernel_port::KernelPortBridge>,
     /// The executor's manifest, read once (contained) at creation: the
     /// shell asks for it again after a failure, when the executor is gone.
     manifest: ServiceManifest,
@@ -494,6 +515,19 @@ fn apply_module_style(vm: &mut ScriptVm, sheet: &desktop_style::StyleSheet) {
     });
 }
 
+/// Point the preludes' `theme` at `mod.theme` again, right before a module
+/// registers: styling an isolate (the sheet's phases, then the WM's palette)
+/// leaves them naming an earlier theme object, while a stock isolate's name
+/// the one theme. A module that adds a role of its own (OctosCode's
+/// `color_text_muted`) assigns it to `mod.theme`, and its widgets read it
+/// through the prelude's `theme`, so both must be the same object.
+fn sync_prelude_theme(vm: &mut ScriptVm) {
+    script_eval!(vm, {
+        mod.prelude.widgets = {..mod.prelude.widgets, theme: mod.theme}
+        mod.prelude.widgets_internal = {..mod.prelude.widgets_internal, theme: mod.theme}
+    });
+}
+
 impl ModuleHost {
     /// Build one instance of `module` for the client id the WM gave it.
     /// `viewport` is the tile size the layout will give it.
@@ -567,6 +601,7 @@ impl ModuleHost {
                     apply_module_style(vm, sheet);
                 }
                 makepad_wm_theme::apply(vm);
+                sync_prelude_theme(vm);
                 module.register(vm);
                 module.create(vm, open, handles)
             });
@@ -613,6 +648,7 @@ impl ModuleHost {
                 assistant,
                 peer: None,
                 refused_peer: None,
+                kernel_port: None,
                 manifest,
                 failed: None,
                 released: false,
@@ -632,6 +668,7 @@ impl ModuleHost {
                     apply_module_style(vm, sheet);
                     vm.with_reload(|vm| {
                         makepad_wm_theme::apply(vm);
+                        sync_prelude_theme(vm);
                         instance.module.register(vm);
                     });
                     let source=instance.root.widget_type_id().and_then(|ty|vm.bx.heap.type_default_for_id(ty)).unwrap_or_else(||instance.root.script_source());
@@ -812,6 +849,32 @@ impl ModuleHost {
                 instance.refused_peer = Some(link);
             }
         }
+        let ports = std::mem::take(&mut cx.global::<OpenedUiPorts>().ports);
+        for (vm_id, port) in ports {
+            let Some(instance) = self.instances.values_mut().find(|i| i.vm_id == vm_id && i.failed.is_none()) else {
+                crate::kernel_port::refuse(port, "the app instance is gone");
+                continue;
+            };
+            if instance.kernel_port.is_some() {
+                crate::kernel_port::refuse(port, "one kernel port per app instance");
+                log!("wm: {} opened a second kernel port; closed", instance.label());
+                continue;
+            }
+            let app = instance.module.id();
+            match crate::native_apps::find(app).map(|a| a.kernel) {
+                #[cfg(kernel)]
+                Some(crate::native_apps::KernelPort::Coding) => {
+                    log!("wm: {} opened its kernel port (coding scope)", instance.label());
+                    instance.kernel_port = Some(crate::kernel_port::KernelPortBridge::open(app, port, crate::coding_scope::for_app(app)));
+                }
+                #[cfg(not(kernel))]
+                Some(crate::native_apps::KernelPort::Coding) => crate::kernel_port::refuse(port, "this build has no octos kernel"),
+                _ => {
+                    log!("wm: {} opened a kernel port its entry does not grant; closed", instance.label());
+                    crate::kernel_port::refuse(port, &format!("{app} has no kernel port"));
+                }
+            }
+        }
         for instance in self.instances.values().filter(|i| i.failed.is_none()) {
             for link in instance.peer.iter().chain(instance.refused_peer.iter()) {
                 for frame in link.take_up() {
@@ -824,6 +887,12 @@ impl ModuleHost {
     /// Whether `client` has a peer link (it opened Makepad's `OctosPeer`).
     pub fn has_peer_link(&self, client: ClientId) -> bool {
         self.instances.get(&client).is_some_and(|i| i.peer.is_some())
+    }
+
+    /// Whether `client` has a connected kernel port (it opened Makepad's
+    /// `OctosUiPort` and its entry grants one).
+    pub fn has_kernel_port(&self, client: ClientId) -> bool {
+        self.instances.get(&client).is_some_and(|i| i.kernel_port.is_some())
     }
 
     /// Whether `client` is an instance whose module panicked.
@@ -1081,8 +1150,10 @@ impl ModuleHost {
 }
 
 /// The instance's peer link goes as a process's does when it exits: its
-/// calls fail, its contexts close, its app's peer stays.
+/// calls fail, its contexts close, its app's peer stays. Its kernel port
+/// closes with it.
 fn close_peer_link(instance: &mut AppInstance) {
+    instance.kernel_port = None;
     instance.refused_peer = None;
     if instance.peer.take().is_some() {
         crate::peer_link::process_gone(instance.client);
