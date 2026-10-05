@@ -97,7 +97,7 @@ fn composer_height(text: &str, width: f64) -> f64 {
     20.0 * lines.clamp(2.0, 5.0) + 22.0
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct CardChat {
     #[deref] view: View,
     #[rust] rows: Vec<MessageRow>,
@@ -107,6 +107,12 @@ pub struct CardChat {
     #[rust] available: bool,
     #[rust] ink: Option<Vec4f>,
     #[rust] reply_requested: bool,
+}
+
+impl ScriptHook for CardChat {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        if !apply.is_eval() { self.ink = None; }
+    }
 }
 
 impl CardChat {

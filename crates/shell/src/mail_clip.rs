@@ -61,7 +61,7 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct MailClip {
     #[deref] view: View,
     #[rust] session: Option<Session>,
@@ -73,6 +73,14 @@ pub struct MailClip {
     #[rust] keyboard: bool,
     #[rust] focus_editor: bool,
     #[rust] review_requested: Option<Binding>,
+}
+
+impl ScriptHook for MailClip {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // A theme reapply restores child defaults even when the shell's ink
+        // is unchanged. Reassert the workspace palette on the next draw.
+        if !apply.is_eval() { self.ink = None; }
+    }
 }
 
 impl MailClip {
@@ -242,6 +250,29 @@ impl Widget for MailClip {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn theme_reapply_restores_palette_without_discarding_typed_text() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            super::script_mod(vm);
+            let value = script_eval!(vm, {use mod.widgets.* MailClip{}});
+            let mut widget = WidgetRef::script_from_value(vm, value);
+            let ink = crate::shell::rgb(26, 26, 32);
+            vm.with_cx_mut(|cx| {
+                widget.text_input(cx, ids!(body)).set_text(cx, "Keep my unsaved correction");
+                widget.borrow_mut::<MailClip>().unwrap().set_ink(cx, ink);
+            });
+            widget.script_apply(vm, &Apply::ScriptReapply, &mut Scope::empty(), value);
+            vm.with_cx_mut(|cx| {
+                let mut clip = widget.borrow_mut::<MailClip>().unwrap();
+                assert!(clip.ink.is_none(), "theme refresh must invalidate cached child styling");
+                clip.set_ink(cx, ink);
+                assert_eq!(clip.view.label(cx, ids!(summary)).borrow().unwrap().draw_text.color, crate::shell::alpha(ink, 0.72));
+                assert_eq!(clip.view.text_input(cx, ids!(body)).text(), "Keep my unsaved correction");
+            });
+        });
+    }
     #[test]
     fn reply_editor_and_review_action_fit_above_the_keyboard() {
         use makepad_widgets::makepad_draw::cx_draw::CxDraw;

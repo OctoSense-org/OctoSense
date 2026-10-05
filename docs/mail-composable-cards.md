@@ -86,7 +86,7 @@ numeric score is claimed.
 
 The current revision replaces the feed-sized expansion with a resident full-screen workspace. The summary supplies an animation origin; active layout uses the shell's safe viewport and never the feed header, margins or height cap. The feed stays compact and cannot receive input while covered. **Email / Chat** share one row. Email contains the original-message toggle and directly editable draft; Chat pins its composer and links to the actual saved update. Review occupies the workspace and preserves exact-message physical approval. Back dismisses keyboard, review and workspace in that order. Collapse retains the session, unsent chat and widget state; three inactive clean workspaces are cached, and dirty human input is excluded from clean eviction. This retention is within the current process. Account invalidation and publication withdrawal retire the relevant view; pending review authority is never retained. Reduced Motion or a missing source rectangle uses an immediate transition. Notification entry opens above the current phone screen without first navigating through Glance. Native first-open/session costs remain separate from presentation animation and must be measured.
 
-**Full-screen workspace checkpoint (Lab 0454/0456, user test build 0457):**
+**Full-screen workspace checkpoint (Lab 0454/0456/0458, user test build 0459):**
 The OnePlus 6 now draws the workspace at the root safe viewport (`384 × 758`
 logical points in the recorded portrait layout), independently of the feed's
 margins and former 620-point cap. Native captures verify Email/Chat, the original
@@ -111,11 +111,13 @@ but disconnected, DNS failed, and no saved network appeared in the scan. The
 saved draft stayed unchanged. **Fresh paired-model validation is incomplete**;
 MiniMax was not rerun while offline. The successful Lab 0427 model checkpoint
 above is historical evidence, not a pass for this build. Local verification:
-**911 shell tests**, 12 contextual-chat tests, final Mail pane draw tests,
+**912 shell tests**, 12 contextual-chat tests, final Mail pane draw tests,
 desktop default/mobile-apps and phone checks, both shell graphs, runtime pins
-and Android packaging passed. Build **0457** is installed in the separate user
+and Android packaging passed. Build **0459** is installed in the separate user
 test app; installation preserved its real publication, draft, transcript,
-policy and provider configuration byte for byte. No numeric UX score is claimed.
+policy and provider configuration byte for byte. A final theme-refresh regression
+resets cached child colors after script reapplication while preserving typed
+text; Lab 0458 and the user test app use that fix. No numeric UX score is claimed.
 
 The 0429 frame measurements above were for the **Chat pane**, not the Glance feed. They cannot substantiate feed performance.
 

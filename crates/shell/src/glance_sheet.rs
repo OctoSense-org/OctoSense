@@ -118,7 +118,7 @@ impl Retained {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct ShellGlanceSheet {
     #[uid]
     uid: WidgetUid,
@@ -183,6 +183,12 @@ pub struct ShellGlanceSheet {
     mail_toolbar: MailToolbar,
     #[rust]
     keyboard_visible: bool,
+}
+
+impl ScriptHook for ShellGlanceSheet {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        if !apply.is_eval() { self.tabs_style = None; }
+    }
 }
 
 impl ShellGlanceSheet {
