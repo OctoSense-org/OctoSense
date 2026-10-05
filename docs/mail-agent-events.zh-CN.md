@@ -80,6 +80,21 @@ Shell 把邮件应用的每一次工具调用都绑定到当前登录的账号�
 
 带 `draft_id` 时，邮件应用的宿主服务把卡片绑定到账号、邮件、草稿和聊天线程，这个绑定，模型既不能提供，也不能更改。卡片随后可以编辑回复（`sys.mail_draft`）、就回复聊天（`sys.chat`），并打开宿主的审核（`sys.mail_review`）。一封回复从草稿到 SMTP 的路径见[组合 Mail 卡片](mail-composable-cards.zh-CN.md#沿代码追踪一封回复)。
 
+系统代理的配置区分自动草稿和 **Compose reply（撰写回复）**。可回复的重要邮件
+可以自动附带草稿；自动发送或 no-reply 邮件则可以先保持信息卡片，等用户点击
+Compose reply。宿主为新邮件事件卡片提供该操作，在后台线程根据账号的持久发布
+记录和邮件缓存确定原邮件，再请 Mail 代理创建草稿，并用原卡片 id、`draft_id` 和
+`notify:false` 重新发布。生成的数据不能指定原邮件身份；原邮件缺失时显示错误，
+不会选择其他邮件。
+
+缺少 `draft_id` 时，卡片只有通用 Card/Chat，无法编辑邮件草稿。代理附加草稿后，
+宿主在原处初始化 Email/Chat 工作区，并保留尚未提交的聊天输入。生成的摘要不应
+重复制作这些标签页或输入框。在上下文预算允许时，邮件聊天还附带卡片 id 和当前
+源码/data，代理可以直接修复发布内容，无需搜索无关工作区文件。自动发送或 no-reply
+邮件需要提醒用户检查收件人，
+不得编造替代地址。Compose reply 只授权创建草稿；发送始终需要用户在宿主审核
+界面上亲自确认。只要原邮件缓存和发布记录仍在，旧邮件事件卡片也支持该操作。
+
 其他需要用户处理的邮件，会得到能用的 `Chip` 按钮，在本地视图之间切换（`state`、`event`、`when`），例如 Show code、Details 和 Back。这些按钮只改变卡片显示的内容，名称也不能声称会发送、预约或追踪。[`mail-shipping.card`](../crates/shell/resources/glance/mail-shipping.card) 和 [`mail-request.card`](../crates/shell/resources/glance/mail-request.card) 展示了语法；其中的发送、追踪和完成状态只是演示。
 
 ## 限制

@@ -403,6 +403,16 @@ fn bounded_context(value: serde_json::Value) -> serde_json::Value {
     else { serde_json::json!({"omitted": "Exceeds card context limit"}) }
 }
 
+fn attach_mail_publication(binding: &mut crate::glance_chat::ContextBinding, source: &str, data: &serde_json::Value) {
+    let publication = bounded_context(serde_json::json!({"source":source, "data":data}));
+    binding.source_message["publication"] = publication;
+    // Preserve the authoritative email/draft/lease when a large publication
+    // would exceed the combined context budget. Never truncate its JSON/source.
+    if binding.validate().is_err() {
+        binding.source_message.as_object_mut().unwrap().remove("publication");
+    }
+}
+
 impl WorkspaceChat {
     fn new(card: &crate::glance::GlanceCard, account: String) -> Self {
         use sha2::Digest;
@@ -519,7 +529,8 @@ impl L0Session {
         }
         match &self.mail {
             Some(mail) => {
-                let binding = mail.chat_edit_binding()?;
+                let mut binding = mail.chat_edit_binding()?;
+                attach_mail_publication(&mut binding, &self.source, &self.data);
                 if let Err(error) = crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, &data, &write, origin, &binding) {
                     drop(crate::mail_card::ChatEditLease::new(Some(&binding)));
                     return Err(error);
@@ -527,6 +538,34 @@ impl L0Session {
             }
             None => { crate::glance_chat::perform(&self.app, &self.source, &self.store, &data, &write, origin)?; }
         }
+        Ok(())
+    }
+
+    /// Native Compose reply action. Keep implementation details out of the
+    /// visible human transcript; source identity travels as host-bound context.
+    pub(crate) fn compose_reply(&mut self, source_email: &serde_json::Value) -> Result<(), String> {
+        if self.app != "os.mail" || self.mail.is_some() || !self.account_valid() {
+            return Err("This card cannot start a reply".into());
+        }
+        let source = self.chat_source()?;
+        let data = self.data_now();
+        let mut binding = if let Some(chat) = &self.workspace_chat { chat.binding(&self.store) }
+        else {
+            crate::glance_chat::ContextBinding {
+                kind: octosense_l0_chat::ContextKind::Card,
+                account: self.opening_account.clone().ok_or("Missing card account")?,
+                thread: octosense_l0_chat::thread_of(&source, &self.store, &data).ok_or("Missing card thread")?,
+                source_message: serde_json::json!({}), draft: serde_json::json!({}),
+            }
+        };
+        binding.source_message["compose_reply"] = source_email.clone();
+        let write = octoscript_ui_l0::CollectionWrite {
+            source: source.name, helper: "sys.chat".into(), op: "append".into(),
+            value: "Compose an editable reply to this email. Let me review it before sending.".into(), field: String::new(),
+        };
+        let declaration = self.workspace_chat.as_ref().map(|c| c.declaration.as_str()).unwrap_or(&self.source);
+        crate::glance_chat::perform_bound(&self.app, declaration, &self.store, &data, &write,
+            Some(octoscript_ui_l0::ValueOrigin::UserInput), &binding)?;
         Ok(())
     }
 
@@ -1113,6 +1152,25 @@ fn ensure_vocabulary(cx: &mut Cx) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mail_chat_receives_exact_publication_but_keeps_large_draft_context_valid() {
+        let mut binding = crate::glance_chat::ContextBinding {
+            kind: octosense_l0_chat::ContextKind::Mail, account: "account".into(), thread: "reply-test".into(),
+            source_message: serde_json::json!({"card_id":"mail-card", "email":{"body":"x".repeat(20 * 1024)}}),
+            draft: serde_json::json!({"body":"y".repeat(6 * 1024), "edit_token":"host-lease"}),
+        };
+        let original_draft = binding.draft.clone();
+        attach_mail_publication(&mut binding, "original model source", &serde_json::json!({"note":{"title":"Original fact"}}));
+        assert_eq!(binding.source_message["publication"]["source"], "original model source");
+        assert_eq!(binding.source_message["publication"]["data"]["note"]["title"], "Original fact");
+        assert!(binding.validate().is_ok());
+        attach_mail_publication(&mut binding, &"z".repeat(8 * 1024), &serde_json::json!({}));
+        assert!(binding.source_message.get("publication").is_none());
+        assert_eq!(binding.draft, original_draft);
+        assert_eq!(binding.source_message["card_id"], "mail-card");
+        assert!(binding.validate().is_ok());
+    }
 
     #[test]
     fn the_demo_digest_lowers_through_the_card_pipeline() {

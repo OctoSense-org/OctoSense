@@ -402,7 +402,7 @@ impl Session {
             kind: octosense_l0_chat::ContextKind::Mail,
             account: self.binding.account.clone(),
             thread: self.binding.chat_thread.clone(),
-            source_message: json!({"identity":self.binding.source_message,"email":durable["email"]}),
+            source_message: json!({"card_id":self.binding.card_id,"identity":self.binding.source_message,"email":durable["email"]}),
             draft: json!({"draft_id":durable["draft_id"],"revision":durable["revision"],
                 "to":durable["to"],"subject":durable["subject"],"body":durable["body"],"status":durable["status"]}),
         })

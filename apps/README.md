@@ -446,6 +446,8 @@ model lane and tools. Which system apps have one, and how
 | Photos, Maps, YouTube, Camera | `agent` block, `glance` | `photos.notify`, `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
+**Mail card reply modes.** The system agent can provision automatic drafts for replyable important mail and Compose reply on request for automated/no-reply mail. The host adds Compose reply to informational incoming-email cards, verifies the original message and asks the Mail agent to create a draft. The same card becomes Email/Chat with saved editing and host review. See [Mail events](../docs/mail-agent-events.md).
+
 **A service API is not automatically an agent tool.** Mail explicitly declares
 account-scoped read/sync, publication, event-decision and draft/proposal tools.
 `mail.peek` does not mark read; `mail.message` remains a UI API. The UI

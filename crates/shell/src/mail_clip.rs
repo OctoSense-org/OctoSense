@@ -84,6 +84,8 @@ impl ScriptHook for MailClip {
 }
 
 impl MailClip {
+    #[cfg(test)]
+    pub(crate) fn opened_draft(&self) -> Option<&str> { self.session.as_ref().map(|s| s.binding.draft_id.as_str()) }
     pub fn open(&mut self, cx: &mut Cx, binding: Binding) {
         cx.stop_timer(self.save_timer);
         self.editing = true;

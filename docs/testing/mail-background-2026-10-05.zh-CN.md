@@ -8,13 +8,13 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| 在 `phone/` 运行 `cargo test --locked --features mobile-apps -p octosense-shell -p octosense-mail-service` | 930 个 Shell 测试、54 个 Mail 测试通过；2 个可选 Mail 测试忽略 |
+| 在 `phone/` 运行 `cargo test --locked --features mobile-apps -p octosense-shell -p octosense-mail-service` | 932 个 Shell 测试、55 个 Mail 测试通过；2 个可选 Mail 测试忽略 |
 | 在 `phone/` 运行 `cargo check --locked -p octosense-home --features mobile-apps` | 通过 |
 | 根目录运行 `cargo check --locked -p octosense`，以及带 `--features mobile-apps` 的版本 | 通过 |
 | 根目录 `bash tools/check-shell-graph.sh -p octosense`；手机版本使用 `-p octosense-home` | 通过，仅一个固定 octos 修订版 |
 | `python3 tools/setup.py --check --cargo`；`python3 tools/native_apps.py --check` | 通过 |
 | `python3 -m unittest discover -s rom/tests -p test_no_local_paths.py` | 通过 |
-| 独立、可调试 Android APK，保留账户数据与内核哈希 | 构建并安装；最新测试版本 2026100512 |
+| 独立、可调试 Android APK，保留账户数据与内核哈希 | 构建并安装；最新测试版本 2026100513 |
 
 最终检查使用隔离的 `OCTOSENSE_HOME` 与 `RINX_DATA_DIR`。两个忽略项分别需要真实 Gmail 凭据失败测试或 macOS 钥匙串。模拟上下文和传输测试验证调度、回执、取消与持久化边界，不代表真实模型表现；真实 DeepSeek 与设备证据单独列在下方。
 
@@ -46,3 +46,35 @@
 - 大量积压、慢模型或 Mail 的四张存活卡片上限会延迟后续决定。队列仍限于 128 个事件。模型的重要性判断不保证完全符合每个人的偏好。
 
 截图、模型与审计对应关系、已脱敏的数量/时间观察和构建哈希保留在本地。公开记录不包含原始邮件、草稿、账户标识、提供商配置或私有产物路径。
+
+
+## Compose reply 回归验证
+
+系统代理已保存并回读用户偏好：可回复的重要邮件可以自动生成草稿；自动发送或
+no-reply 邮件等用户明确点击 Compose reply 后再生成。重要性筛选和实体发送审批
+要求保留。
+
+在 2026100513 上，原本未绑定草稿的真实邮件卡片显示了宿主新增的 Compose reply。
+添加按钮时没有改动原模型卡片源码。Codex 通过 ADB 操作；DeepSeek
+`deepseek-v4-flash` 读取宿主核实的原邮件，创建草稿，修复两次发布拒绝后，用原卡片
+id、草稿 id 和 `notify:false` 成功发布。当前工作区就地从 Card/Chat 切换到
+Email/Chat，显示原生编辑器和 Review reply。没有发送邮件。
+
+随后通过 Chat 请求把未发送的测试草稿改为询问周五 6:15 PM 到达是否可行，并明确
+不确认安排、不发送。DeepSeek 使用当前回合的编辑租约，草稿从修订 1 变为 2，
+`body_origin:model_chat`，Email 编辑器中出现了要求的时间，收件人未改变。
+收件人提醒末尾仍被截断。请求缩短提醒时，代理因缺少当前卡片发布内容而搜索工作区，
+并耗尽工具预算。2026100515 已为邮件聊天附上卡片 id 和受限的源码/data 上下文，
+32 KiB 上下文预算回归测试通过；这项最终模型修复尚未在手机上验证。
+
+直接编辑到审核的完整往返仍未验证：Android 的 `input text` 无法输入 Unicode
+连接号，且测试期间出现了额外的草稿编辑和审核请求。为避免覆盖用户操作，已暂停
+手机输入。观察到的审核尝试均已取消，没有批准或发送尝试。本报告不打 UX 分数，
+不把发布成功当作完整 UX 验收。截图来自 ADB/平台；Rust 控件测试不能代替 Makepad
+instrument 几何数据或实际呈现帧测量。
+
+并行编译 APK 和测试期间，一个既有并发测试超时。编译结束后，同一完整测试集通过：
+932 个 Shell 测试、55 个 Mail 测试，另有两个可选测试忽略。2026100514 仅缩短了
+Compose 提示，2026100515 还加入发布上下文。最终 APK 已构建；本记录最后安装的
+版本是 2026100513。测试强制运行推进了任务的下次窗口，随后重置了该测试任务，
+Android 再次显示正常的 15 分钟周期。

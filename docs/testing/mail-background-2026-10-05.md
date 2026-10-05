@@ -8,13 +8,13 @@ Scope: independent collection/delivery, selective model decisions, and [ADR 0008
 
 | Check | Result |
 | --- | --- |
-| From `phone/`: `cargo test --locked --features mobile-apps -p octosense-shell -p octosense-mail-service` | 930 shell + 54 Mail tests passed; 2 optional Mail tests ignored |
+| From `phone/`: `cargo test --locked --features mobile-apps -p octosense-shell -p octosense-mail-service` | 932 shell + 55 Mail tests passed; 2 optional Mail tests ignored |
 | From `phone/`: `cargo check --locked -p octosense-home --features mobile-apps` | Passed |
 | Root: `cargo check --locked -p octosense`, with and without `--features mobile-apps` | Passed |
 | Root: `bash tools/check-shell-graph.sh -p octosense`; phone equivalent with `-p octosense-home` | Passed; one pinned octos revision |
 | `python3 tools/setup.py --check --cargo`; `python3 tools/native_apps.py --check` | Passed |
 | `python3 -m unittest discover -s rom/tests -p test_no_local_paths.py` | Passed |
-| Separate debuggable Android APK, preserved account data and bundled kernel hash | Built and installed; latest test version 2026100512 |
+| Separate debuggable Android APK, preserved account data and bundled kernel hash | Built through 2026100515; device acceptance through 2026100513 |
 
 Tests ran with isolated `OCTOSENSE_HOME` and `RINX_DATA_DIR` directories for the final checks. The two ignored tests require a real Gmail credential failure or macOS keychain. Fake context/transport tests establish scheduling, receipt, cancellation and persistence boundaries; they do not establish real model behavior. Real DeepSeek/device evidence is listed separately below.
 
@@ -36,6 +36,47 @@ Tests ran with isolated `OCTOSENSE_HOME` and `RINX_DATA_DIR` directories for the
 | Restart duplication | A previously tapped/delivered notification was not posted again after the APK upgrade; its private outbox record remained delivered |
 
 Native publication was observed on versions 2026100509 and 2026100512. The first full notification → process restart → card/Back sequence used 2026100509. The final version additionally tightens notification-permission handling, silent republish persistence and publication version precedence.
+
+## Compose reply regression
+
+The person's preference was saved by the system agent and read back from the
+host provision: replyable important mail may receive automatic drafts;
+automated/no-reply mail waits for an explicit Compose reply request. The existing
+importance gate and physical SMTP approval requirement remain in that provision.
+
+On build 2026100513, a real informational incoming card initially had no draft
+binding. Its original model source remained unchanged when the host added
+Compose reply. Codex injected the navigation/action through ADB; DeepSeek
+`deepseek-v4-flash` read the host-resolved email, proposed a draft and repaired two
+rejected publications before successfully republishing the same card with its
+saved draft and `notify:false`. The open workspace changed from Card/Chat to
+Email/Chat and displayed the native editor and Review reply. No SMTP send occurred.
+
+A subsequent native Chat request asked for a proposed 6:15 PM arrival, explicitly
+without confirming plans or sending. DeepSeek used the turn's edit lease: the
+saved draft advanced from revision 1 to 2 with `body_origin:model_chat`, and the
+requested time appeared in the Email editor. The sender address was unchanged.
+The recipient warning was visible but clipped at its end. Asking the agent to
+shorten it exposed missing publication context: the agent searched its workspace
+and exhausted its tool budget. Build 2026100515 supplies the current card id and
+bounded source/data in Mail chat; its 32 KiB context-budget regression test passes.
+That final model repair is **not yet device-verified**.
+
+The direct-edit/review round trip remains **unverified**: Android's `input text`
+rejected a Unicode dash, and additional draft edits/review requests occurred
+during the run. Phone input was paused to avoid overwriting the person's work.
+The observed review attempts were cancelled, with no approved/send attempt.
+This report does not award a UX score or treat publication as full UX acceptance.
+Captures are ADB/platform captures; Rust widget tests are separate from Makepad
+instrument geometry or presented-frame measurements.
+
+One existing concurrency test timed out while the APK and tests compiled in
+parallel. The complete unchanged suite passed after compilation finished:
+932 shell + 55 Mail tests, with the same two optional tests ignored. Build
+2026100514 only shortened the Compose hint; 2026100515 also includes publication
+context. The final APK is built; the last installed build in this record is
+2026100513. An explicitly forced job schedule was reset after test forcing had
+advanced its next window; Android again reported the normal 15-minute period.
 
 ## Remaining checks and limits
 

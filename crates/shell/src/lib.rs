@@ -94,6 +94,7 @@ pub mod glance_sheet;
 mod card_presentation;
 mod card_chat;
 mod mail_clip;
+mod mail_compose;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;

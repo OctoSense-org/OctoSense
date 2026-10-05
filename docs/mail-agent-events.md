@@ -80,6 +80,26 @@ A card from `mail.publish_card` is L0 only, with no expressions or script. The s
 
 With a `draft_id`, Mail's host service binds the card to the account, email, draft and chat thread, a binding the model can neither supply nor change. The card can then edit the reply (`sys.mail_draft`), chat about it (`sys.chat`) and open the host's review (`sys.mail_review`). [Composed Mail cards](mail-composable-cards.md#follow-one-reply-through-the-code) follows a reply from draft to SMTP.
 
+The system agent's provision distinguishes automatic drafts from **Compose
+reply**. Replyable important mail can include a draft immediately; automated or
+no-reply mail can remain informational until the person taps Compose reply.
+The host adds that action to incoming-email cards, resolves their original
+message from the account's durable publication and message cache off the UI
+thread, and asks the Mail agent to draft and republish the same card with
+`draft_id` and `notify:false`. No generated data can supply the source identity.
+A missing source produces an error instead of choosing another email.
+
+Without `draft_id`, the card has generic Card/Chat and cannot edit a Mail draft.
+After the agent attaches the draft, the host initializes the native Email/Chat
+workspace in place, preserving unsubmitted chat input. The generated summary
+should not duplicate those tabs or the composer. Mail chat also receives the
+card id and current source/data when they fit its context budget, so the agent
+can repair the publication without searching unrelated workspace files. Automated/no-reply messages
+need a recipient warning; never invent an alternative address. A Compose reply
+request authorizes draft creation only. Sending always requires physical host
+approval. Older event cards use the same action if their original cached email
+and publication receipt are still available.
+
 Other mail that needs action gets working `Chip` buttons that switch local views (`state`, `event`, `when`), such as Show code, Details and Back. They only change what the card shows, and their labels must not claim to send, book or track. [`mail-shipping.card`](../crates/shell/resources/glance/mail-shipping.card) and [`mail-request.card`](../crates/shell/resources/glance/mail-request.card) show the syntax; their send, track and done states are demos.
 
 ## Limits

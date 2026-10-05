@@ -153,10 +153,7 @@ pub(crate) fn collect(
             if pending.len() >= MAX_PENDING {
                 return Err("Incoming mail queue is full; acknowledge pending events before collecting again".into());
             }
-            let event_id = format!(
-                "mail-{}",
-                &network::hash(&json!([account, folder, id]).to_string())[..40]
-            );
+            let event_id = event_id(account, folder, id);
             pending.push(
                 IncomingEvent {
                     id: event_id,
@@ -223,6 +220,31 @@ pub fn pending_events_try(
     let store = Store::at(host_dir, vault::platform());
     store.granted(app, account)?;
     read_pending(&mailbox(&store, account, INBOX)?).map(Some)
+}
+
+pub(crate) fn event_id(account: &str, folder: &str, message: &str) -> String {
+    format!("mail-{}", &network::hash(&json!([account, folder, message]).to_string())[..40])
+}
+
+/// Resolve an incoming card to its cached source without trusting model data.
+/// Called off the UI thread. Atomic mailbox reads do not wait for network sync.
+pub fn source_for_card(host_dir: &Path, app: &str, account: &str, card_id: &str) -> Result<Value, String> {
+    source_for_card_in(&Store::at(host_dir, vault::platform()), app, account, card_id)
+}
+
+fn source_for_card_in(store: &Store, app: &str, account: &str, card_id: &str) -> Result<Value, String> {
+    if app != "os.mail" { return Err("Only Mail can compose from a Mail card".into()); }
+    store.granted(app, account)?;
+    let box_ = mailbox(store, account, INBOX)?;
+    if !box_["publication_receipts"].as_array().is_some_and(|rows|
+        rows.iter().any(|row| row["id"] == card_id)) {
+        return Err("This card has no saved Mail publication; open the message in Mail".into());
+    }
+    let message = box_["messages"].as_array().into_iter().flatten().find(|message| {
+        let id = text(message, "id");
+        !id.is_empty() && card_id == event_id(account, INBOX, id)
+    }).ok_or("The card's original email is no longer cached; open it in Mail")?;
+    Ok(json!({"folder":INBOX, "message":message["id"]}))
 }
 
 /// Verify a durable publication/skip decision and acknowledge under one lock.
@@ -687,6 +709,26 @@ mod tests {
     }
 
     #[test]
+    fn compose_resolves_acknowledged_card_without_drafting_or_network() {
+        let f = Fixture::new();
+        f.add("old"); f.sync().unwrap();
+        f.add("second"); f.sync().unwrap();
+        let id = event_id("a1", INBOX, "second");
+        let mut saved = mailbox(&f.store, "a1", INBOX).unwrap();
+        saved["publication_receipts"] = json!([{"id":id,"result":{}}]);
+        saved["pending_events"] = json!([]);
+        f.store.save_mailbox("a1", INBOX, &saved).unwrap();
+        assert_eq!(source_for_card_in(&f.store, "os.mail", "a1", &id).unwrap(), json!({"folder":INBOX,"message":"second"}));
+        assert_eq!(mailbox(&f.store, "a1", INBOX).unwrap(), saved);
+        assert!(source_for_card_in(&f.store, "other.app", "a1", &id).is_err());
+        assert!(source_for_card_in(&f.store, "os.mail", "b2", &id).is_err());
+        assert!(source_for_card_in(&f.store, "os.mail", "a1", &event_id("a1", INBOX, "old")).is_err());
+        saved["messages"] = json!([]);
+        f.store.save_mailbox("a1", INBOX, &saved).unwrap();
+        assert!(source_for_card_in(&f.store, "os.mail", "a1", &id).unwrap_err().contains("no longer cached"));
+    }
+
+    #[test]
     fn card_bridge_fixes_publisher_target_and_rejects_unauthorized_account() {
         let f = Fixture::new();
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -742,6 +784,14 @@ mod tests {
             "a deliberate refresh honors explicit notification"
         );
         drop(captured);
+        f.add("reply-source"); f.sync().unwrap();
+        let draft = drafts::agent_call(&f.store, "os.mail", "propose_reply",
+            &json!({"account":"a1","message":"reply-source","body":"A proposed response."})).unwrap();
+        args["draft_id"] = draft["draft_id"].clone();
+        args["card_id"] = json!(event_id("a1", INBOX, "different-message"));
+        assert!(publish_card(&f.store, "os.mail", &args).unwrap_err().contains("does not belong"));
+        args["card_id"] = json!(event_id("a1", INBOX, "reply-source"));
+        publish_card(&f.store, "os.mail", &args).unwrap();
         on_publish_card(None);
     }
 
