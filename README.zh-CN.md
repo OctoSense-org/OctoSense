@@ -246,7 +246,7 @@ sequenceDiagram
 
 </details>
 
-- **工具调用**：octos 把 `peer/tool/call` 发给 Shell 的中转（`crates/shell/src/host_tools/`）。中转按（拥有工具的应用，工具）和调用方检查授权，按工具的 schema 检查参数，检查调用方的预算，再把调用路由到拥有工具的应用的执行器：进程内模块的执行器、脚本应用的宿主服务、进程应用的 peer link，或 AI bus 上 Terminal 的 `run`。
+- **工具调用**：octos 把 `peer/tool/call` 发给 Shell 的中转（`crates/shell/src/host_tools/`）。中转按（拥有工具的应用，工具）和调用方检查授权，按工具的 schema 检查参数，检查调用方的预算，再把调用路由到拥有工具的应用的执行器：进程内模块的执行器、脚本应用的宿主服务、进程应用的 peer link，或 AI bus 上 Terminal 的 `run`。由宿主确认的工具（`confirm: host`，如 Terminal 的 `run`），若应用同时在 AI bus 上提供它，就不经过应用的 peer link，由宿主的审批面板决定。应用自己的 Agent 只能调用其 `native-apps.json` 条目允许的工具（`agent.own_tools`；条目未收窄时为它的全部工具）：Terminal 自己的 Agent 只读取屏幕和回滚内容，输入命令仍是系统 Agent 的 `terminal.run`，受 Setup 中的开关控制。
 - **审批**交给 `crates/shell/src/approvals/`：外部客户端保留自己的提示；开发者模式批准覆盖应用的调用；`confirm: app` 使用所属应用注册的确认面板；必须现场决定的请求跳过规则；随后常设规则可决定符合条件的调用，其余由 Shell 面板询问用户。系统 Agent 无法批准。[导读](docs/architecture-walkthrough.zh-CN.md#审批顺序)列出完整顺序、时限与审计行为。
 - **时限与停止**（[#167](https://github.com/OctoSense-org/OctoSense/pull/167)）：Shell 为应用 peer 持有的审批或提问在 10 分钟后过期（`OCTOSENSE_PROMPT_DEADLINE_SECS`）：审批路由拒绝它，提问被婉拒，两者都保持显示为 "Expired: no answer in 10 min"。如果 30 秒后这一轮仍在运行，代理会中断它，好让下一轮开始。面板上的 “Stop <App>'s agent” 会结束两条通道上正在运行的回合，包括用户的和系统 Agent 的；“Ask <app>” 面板的“停止”只结束用户自己的回合（[见上文](#直接与应用的-agent-对话)）。
 - **外部客户端的提示**留在客户端：Shell 不回答、也不让 Talk to Octos 客户端各轮的审批过期（octos#2624）。
