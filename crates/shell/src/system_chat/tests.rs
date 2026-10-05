@@ -1102,4 +1102,5 @@ fn the_system_agent_gets_the_read_tools_of_the_native_apps_that_run_here_never_t
     let calculator = crate::native_apps::find("calculator").unwrap();
     assert_eq!(calculator.system_tools, ["calculator.eval"]);
     assert_eq!(crate::native_apps::find("notes").unwrap().system_tools, ["notes.search", "notes.read"]);
+    assert_eq!(crate::native_apps::find("apphub").unwrap().system_tools, ["apphub.search", "apphub.installed", "apphub.updates"]);
 }

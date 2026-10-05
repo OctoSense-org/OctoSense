@@ -426,7 +426,8 @@ fn the_shipped_catalog_offers_the_terminals_run_to_those_granted_it() {
 }
 
 /// G3: the native apps' agent blocks (`native-apps.json`) are the shipped
-/// catalog: the Terminal's own tools, each app's exact kernel tools.
+/// catalog: the Terminal's own tools, App Hub's read tools, each app's
+/// exact kernel tools.
 #[test]
 fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
     let catalog = Catalog::shipped();
@@ -449,6 +450,10 @@ fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
     let own = Catalog::shipped().declarations("terminal", false);
     assert_eq!(own.iter().map(|d| d["name"].as_str().unwrap()).collect::<Vec<_>>(), ["terminal.read_screen", "terminal.read_scrollback"]);
     assert!(own.iter().all(|d| d["app"] == "terminal" && d.get("auto_approvable").is_none()));
+    // App Hub's own agent only reads: the catalog, the library, the updates.
+    let hub = Catalog::shipped().declarations("apphub", false);
+    assert_eq!(hub.iter().map(|d| d["name"].as_str().unwrap()).collect::<Vec<_>>(), ["apphub.search", "apphub.installed", "apphub.updates"]);
+    assert!(hub.iter().all(|d| d["app"] == "apphub" && d["risk"] == "read"), "{hub:?}");
 }
 
 #[test]

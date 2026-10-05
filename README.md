@@ -109,12 +109,13 @@ These apps have an agent:
 | Rinx (Matrix chat) | native, in the shell | octos's file, memory and web tools | – |
 | Terminal (desktop) | native; its own process in a checkout build, inside the shell in a release package | `terminal.read_screen`, `terminal.read_scrollback` | `terminal.run`, only while it runs as its own sandboxed process, behind Setup's switch, approved per command |
 | Calculator, Clock, Notes, Reminders, Weather | native, in the shell | each app's read tools | the same read tools |
+| App Hub | native, in the shell | `apphub.search`, `apphub.installed`, `apphub.updates`, read only: installs and updates stay on App Hub's own screens | the same read tools |
 | Mail | script app | `mail.*` tools scoped to the signed-in account: reads, cards (`mail.publish_card`), and reply drafts it can propose but never send | – |
 | Calendar | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
 | News | script app | `news.list`, `news.read`, `news.notify` | – |
 | Photos, Maps, YouTube; Camera on phones | script apps | `<app>.notify` | – |
 
-App Hub and AI providers have no agent.
+AI providers has no agent.
 
 ### How the system agent and an app agent talk
 
