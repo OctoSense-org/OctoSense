@@ -1,0 +1,265 @@
+{
+  "build": 2026100504,
+  "scene": "six model L0 summaries plus existing fictional Mail publication",
+  "swipes": 12,
+  "frames": 506,
+  "gaps": 490,
+  "ms": {
+    "p50": 16.759219,
+    "p95": 17.880833,
+    "max": 520.191667
+  },
+  "over25ms": 15,
+  "measurement": "CPU frame markers, not display presentation or input latency",
+  "touch_bounded": {
+    "touches": 12,
+    "consecutive_gaps": 416,
+    "p50_ms": 16.7419795,
+    "p95_ms": 17.720208,
+    "max_ms": 36.572917,
+    "over25ms": 9,
+    "method": "Both frame markers must fall in the same recorded Down-to-Up touch. Post-release fling excluded."
+  },
+  "unsegmented_warning": "The raw active-flag statistic above includes pauses between separate ADB gestures. All six >80 ms intervals cross touch boundaries; they are not measured within a drag.",
+  "surfaceflinger": [
+    {
+      "sample": 1,
+      "raw_report_sha256": "d84c0a67fa0bb38bd0ffa3f8e5b46e34a3d79bd09d6c3a26f80e66d6ccf694eb",
+      "refresh_period_ns": 16666666,
+      "summary": {
+        "presents": 47,
+        "all_intervals": {
+          "intervals": 46,
+          "fps": 15.519632790103508,
+          "p50_ms": 16.746927,
+          "p95_ms": 284.672865,
+          "max_ms": 1004.706457,
+          "over_34_ms": 5,
+          "over_250_ms": 3,
+          "refresh_multiple_counts": {
+            "1": 41,
+            "7": 1,
+            "9": 1,
+            "17": 1,
+            "43": 1,
+            "60": 1
+          },
+          "missed_refreshes": 131
+        },
+        "activity_span": {
+          "intervals": 43,
+          "fps": 45.04795268133718,
+          "p50_ms": 16.745781,
+          "p95_ms": 16.766197,
+          "max_ms": 150.702657,
+          "over_34_ms": 2,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 41,
+            "7": 1,
+            "9": 1
+          },
+          "missed_refreshes": 14
+        },
+        "legacy_burst": {
+          "intervals": 43,
+          "fps": 45.04795268133718,
+          "p50_ms": 16.745781,
+          "p95_ms": 16.766197,
+          "max_ms": 150.702657,
+          "over_34_ms": 2,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 41,
+            "7": 1,
+            "9": 1
+          },
+          "missed_refreshes": 14
+        },
+        "activity_boundaries": "inferred; leading/trailing gaps >=250 ms trimmed",
+        "status": "measured",
+        "input_boundary": "shell-received touch Down; frames submitted before it excluded",
+        "first_post_input_present_ms": 38.325261,
+        "first_state_response": null,
+        "marked_activity": {
+          "statistics": {
+            "intervals": 41,
+            "fps": 59.715106190273715,
+            "p50_ms": 16.745521,
+            "p95_ms": 16.755156,
+            "max_ms": 16.766197,
+            "over_34_ms": 0,
+            "over_250_ms": 0,
+            "refresh_multiple_counts": {
+              "1": 41
+            },
+            "missed_refreshes": 0
+          },
+          "span_present_counts": [
+            42
+          ],
+          "method": "submission timestamp joined to scene markers; gaps within an active span retained"
+        }
+      }
+    },
+    {
+      "sample": 2,
+      "raw_report_sha256": "63cea3493c1f642db12136ced008defb77f4f9369a1bec72b183a60f13779529",
+      "refresh_period_ns": 16666666,
+      "summary": {
+        "presents": 43,
+        "all_intervals": {
+          "intervals": 42,
+          "fps": 18.999207344022366,
+          "p50_ms": 16.747761,
+          "p95_ms": 33.502396,
+          "max_ms": 1021.574218,
+          "over_34_ms": 2,
+          "over_250_ms": 2,
+          "refresh_multiple_counts": {
+            "1": 38,
+            "2": 2,
+            "29": 1,
+            "61": 1
+          },
+          "missed_refreshes": 90
+        },
+        "activity_span": {
+          "intervals": 40,
+          "fps": 56.86531718881107,
+          "p50_ms": 16.747709,
+          "p95_ms": 33.490052,
+          "max_ms": 33.502396,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 38,
+            "2": 2
+          },
+          "missed_refreshes": 2
+        },
+        "legacy_burst": {
+          "intervals": 40,
+          "fps": 56.86531718881107,
+          "p50_ms": 16.747709,
+          "p95_ms": 33.490052,
+          "max_ms": 33.502396,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 38,
+            "2": 2
+          },
+          "missed_refreshes": 2
+        },
+        "activity_boundaries": "inferred; leading/trailing gaps >=250 ms trimmed",
+        "status": "measured",
+        "input_boundary": "shell-received touch Down; frames submitted before it excluded",
+        "first_post_input_present_ms": 46.257709,
+        "first_state_response": null,
+        "marked_activity": {
+          "statistics": {
+            "intervals": 40,
+            "fps": 56.86531718881107,
+            "p50_ms": 16.747709,
+            "p95_ms": 33.490052,
+            "max_ms": 33.502396,
+            "over_34_ms": 0,
+            "over_250_ms": 0,
+            "refresh_multiple_counts": {
+              "1": 38,
+              "2": 2
+            },
+            "missed_refreshes": 2
+          },
+          "span_present_counts": [
+            41
+          ],
+          "method": "submission timestamp joined to scene markers; gaps within an active span retained"
+        }
+      }
+    },
+    {
+      "sample": 3,
+      "raw_report_sha256": "7c1e479d541ad5f1762bbb5547c6443f7891cb8285dd686c73458dbfc97d705e",
+      "refresh_period_ns": 16666666,
+      "summary": {
+        "presents": 45,
+        "all_intervals": {
+          "intervals": 44,
+          "fps": 15.639948836381336,
+          "p50_ms": 16.747761,
+          "p95_ms": 251.181094,
+          "max_ms": 1004.724739,
+          "over_34_ms": 4,
+          "over_250_ms": 3,
+          "refresh_multiple_counts": {
+            "1": 39,
+            "2": 1,
+            "8": 1,
+            "15": 1,
+            "44": 1,
+            "60": 1
+          },
+          "missed_refreshes": 124
+        },
+        "activity_span": {
+          "intervals": 41,
+          "fps": 49.96147537655203,
+          "p50_ms": 16.7475,
+          "p95_ms": 16.816042,
+          "max_ms": 134.022447,
+          "over_34_ms": 1,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 39,
+            "2": 1,
+            "8": 1
+          },
+          "missed_refreshes": 8
+        },
+        "legacy_burst": {
+          "intervals": 41,
+          "fps": 49.96147537655203,
+          "p50_ms": 16.7475,
+          "p95_ms": 16.816042,
+          "max_ms": 134.022447,
+          "over_34_ms": 1,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 39,
+            "2": 1,
+            "8": 1
+          },
+          "missed_refreshes": 8
+        },
+        "activity_boundaries": "inferred; leading/trailing gaps >=250 ms trimmed",
+        "status": "measured",
+        "input_boundary": "shell-received touch Down; frames submitted before it excluded",
+        "first_post_input_present_ms": 34.999792,
+        "first_state_response": null,
+        "marked_activity": {
+          "statistics": {
+            "intervals": 40,
+            "fps": 58.25724805658333,
+            "p50_ms": 16.7475,
+            "p95_ms": 16.816042,
+            "max_ms": 33.477969,
+            "over_34_ms": 0,
+            "over_250_ms": 0,
+            "refresh_multiple_counts": {
+              "1": 39,
+              "2": 1
+            },
+            "missed_refreshes": 1
+          },
+          "span_present_counts": [
+            41
+          ],
+          "method": "submission timestamp joined to scene markers; gaps within an active span retained"
+        }
+      }
+    }
+  ],
+  "surfaceflinger_scope": "Three additional Glance drags. marked_activity joins submission timestamps to CPU scene markers; all_intervals includes idle time. first_post_input_present is a presentation boundary, not verified visual response latency; first_state_response is null."
+}

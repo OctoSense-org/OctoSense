@@ -19,18 +19,26 @@ view root Surface(pad: .tight) {
       TextCaption(value: day.as_of)
     }
     TextTitle(text: day.title, width: .fill)
-    Row(gap: 8) {
-      TextRow(text: day.pick1_title, width: .fill)
-      TextCaption(text: day.pick1_body)
+    when day.pick1_title != "" {
+      Col(gap: 4) {
+        TextRow(text: day.pick1_title, width: .fill)
+        TextCaption(text: day.pick1_body, width: .fill)
+      }
     }
-    Row(gap: 8) {
-      TextRow(text: day.pick2_title, width: .fill)
-      TextCaption(text: day.pick2_body)
+    when day.pick2_title != "" {
+      Col(gap: 4) {
+        TextRow(text: day.pick2_title, width: .fill)
+        TextCaption(text: day.pick2_body, width: .fill)
+      }
     }
-    Row(gap: 8) {
-      TextRow(text: day.pick3_title, width: .fill)
-      TextCaption(text: day.pick3_body)
+    when day.pick3_title != "" {
+      Col(gap: 4) {
+        TextRow(text: day.pick3_title, width: .fill)
+        TextCaption(text: day.pick3_body, width: .fill)
+      }
     }
-    TextCaption(value: day.summary)
+    when day.summary != "" {
+      TextCaption(value: day.summary, width: .fill)
+    }
   }
 }

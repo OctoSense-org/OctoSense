@@ -20,7 +20,8 @@
 //! at [`TILE_MAX_HEIGHT`] ([`overflow`] reports the excess), with scrolling
 //! inside the tile where offered ([`GlanceTiles::draw_scrolled`]). The
 //! expanded card scrolls its focused editor into view when resized, leaving
-//! room for the following action row. A script card should size its root `Fit`.
+//! room for the following action row. A script can also use a `Fill` root with
+//! its own scrolling viewport.
 //!
 //! **Policy.** A tile's isolate runs under the publishing app's resolved
 //! policy, applied exactly as the Card runner applies it
@@ -873,6 +874,50 @@ fn focused_widget(widget: &WidgetRef, focus: Area) -> Option<WidgetUid> {
     found
 }
 
+fn widget_at_area(widget: &WidgetRef, area: Area) -> Option<WidgetRef> {
+    if widget.area() == area { return Some(widget.clone()); }
+    let mut found = None;
+    widget.children(&mut |_, child| {
+        if found.is_none() { found = widget_at_area(&child, area); }
+    });
+    found
+}
+
+/// The navigation tree identifies actual scroll containers, including those
+/// inside a publisher's Splash program. Move the innermost one first; moving
+/// only the host's outer scroller cannot reveal a clipped nested editor.
+fn reveal_editor(cx: &mut Cx, frame: &WidgetRef, viewport: Rect, mut editor: Rect) {
+    use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+    let Some(root) = frame.area().draw_list_id() else { return };
+    let focus = cx.key_focus();
+    let Some((_, stack)) = CxDraw::iterate_nav_stops(cx, root, |_, stop|
+        (stop.area == focus).then_some(focus)) else { return };
+    for area in stack.into_iter().rev().filter(|area| *area != focus) {
+        let Some(widget) = widget_at_area(frame, area) else { continue };
+        let view = widget.as_view();
+        if view.is_empty() { continue; }
+        let bounds = area.rect(cx);
+        let top = bounds.pos.y.max(viewport.pos.y);
+        let bottom = (bounds.pos.y + bounds.size.y).min(viewport.pos.y + viewport.size.y);
+        if bottom <= top { continue; }
+        let visible = Rect { pos: dvec2(bounds.pos.x, top), size: dvec2(bounds.size.x, bottom - top) };
+        let current = view.scroll_pos();
+        let mut content_bottom = bounds.pos.y;
+        widget.children(&mut |_, child| {
+            let r = child.area().rect(cx);
+            content_bottom = content_bottom.max(r.pos.y + r.size.y);
+        });
+        let content_height = content_bottom - bounds.pos.y + current.y;
+        let next = editor_scroll(current.y, visible, editor, content_height);
+        if (next - current.y).abs() > 0.5 {
+            view.set_scroll_pos(cx, dvec2(current.x, next));
+            // Use the clamped position, not the requested one, for outer ancestors.
+            editor.pos.y -= view.scroll_pos().y - current.y;
+            widget.redraw(cx);
+        }
+    }
+}
+
 /// Keep the editor and its following action row inside a resized viewport.
 /// Only applied on a viewport/focus change, so reading older chat by hand
 /// never snaps the scroll position back to the composer.
@@ -931,6 +976,18 @@ impl GlanceTiles {
         }
         ensure_vocabulary(cx);
         let splash = self.open(cx, key, app, contained, body);
+        if self.scroll {
+            // A full-app Splash root cannot resolve Fill under our Fit-sized
+            // wrapper: its viewport collapses to zero. Give such a root the
+            // workspace's actual height. Natural-height L0/script cards keep
+            // Fit so the outer scroll view can reach all their content. This
+            // changes the host slot, never the publisher's program or state.
+            let children: Vec<_> = splash.borrow().map(|s| s.view.children.iter().map(|(_, child)| child.clone()).collect()).unwrap_or_default();
+            let fills = children.iter().any(|child| matches!(child.walk(cx).height, Size::Fill { .. }));
+            if let Some(mut s) = splash.borrow_mut() {
+                s.view.walk.height = if fills { Size::Fixed(rect.size.y) } else { Size::fit() };
+            }
+        }
         let Some(tile) = self.tiles.get_mut(key) else { return };
         if !self.scroll {
             tile.frame.as_view().set_scroll_pos(cx, dvec2(0.0, scroll.max(0.0)));
@@ -952,13 +1009,7 @@ impl GlanceTiles {
             if focused.is_some() && (resized || focused != tile.focused) {
                 let editor = cx.get_ime_area_rect();
                 if editor.size.y > 0.0 {
-                    let view = tile.frame.as_view();
-                    let current = view.scroll_pos();
-                    let next = editor_scroll(current.y, rect, editor, measured);
-                    if (next - current.y).abs() > 0.5 {
-                        view.set_scroll_pos(cx, dvec2(current.x, next));
-                        tile.frame.redraw(cx);
-                    }
+                    reveal_editor(cx, &tile.frame, rect, editor);
                 }
             }
             tile.viewport = Some(rect);
@@ -1654,6 +1705,94 @@ mod tests {
         assert_eq!(editor_scroll(next, viewport, after, 1600.0), next, "settled geometry must not oscillate");
         let already_visible = Rect { pos: dvec2(34.0, 180.0), size: dvec2(312.0, 46.0) };
         assert_eq!(editor_scroll(100.0, viewport, already_visible, 1600.0), 100.0);
+    }
+
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn full_app_splash_gets_a_viewport_and_keeps_its_editor_when_resized() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let body: std::sync::Arc<str> = r#"View { width: Fill height: Fill flow: Down
+            heading := Label { width: Fill height: Fit text: "Full app" }
+            ScrollYView { width: Fill height: Fill flow: Down
+                View { width: Fill height: 1000 }
+            }
+            composer := TextInput { width: Fill height: 46 text: "Keep this draft" }
+            ask := Button { width: Fill height: 48 text: "Ask" }
+        }"#.into();
+        let splash = tiles.open(&mut cx, "full/app", "test.app", false, &body);
+        for height in [650.0, 270.0, 650.0] {
+            let size = dvec2(360.0, height);
+            pass.set_size(&mut cx, size);
+            let event = DrawEvent::default();
+            {
+                let mut draw = CxDraw::new(&mut cx, &event);
+                let mut draw = Cx2d::new(&mut draw);
+                draw.begin_pass(&pass, Some(1.0)); list.begin_always(&mut draw);
+                draw.begin_root_turtle(size, Layout::default());
+                tiles.draw(&mut draw, "full/app", "test.app", false, &body, Rect {pos: dvec2(0.0, 0.0), size});
+                draw.end_turtle(); list.end(&mut draw); draw.end_pass(&pass);
+            }
+            assert_eq!(splash.area().rect(&cx).size.y, height);
+            for area in [splash.text_input(&cx, ids!(composer)).area(), splash.button(&cx, ids!(ask)).area()] {
+                let rect = area.rect(&cx);
+                assert!(rect.size.y >= 44.0 && rect.pos.y >= 0.0 && rect.pos.y + rect.size.y <= height + 0.5, "{rect:?} outside {height}");
+            }
+            assert_eq!(splash.text_input(&cx, ids!(composer)).text(), "Keep this draft");
+        }
+    }
+
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn nested_full_app_editor_and_actions_follow_keyboard_resize() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        let body: std::sync::Arc<str> = r#"View { width: Fill height: Fill flow: Down
+            View { width: Fill height: 40 }
+            reader := ScrollYView { width: Fill height: Fill flow: Down
+                View { width: Fill height: Fit flow: Down
+                    View { width: Fill height: 1000 }
+                    composer := TextInput { width: Fill height: 46 text: "Keep my edited time" }
+                    ask := Button { width: Fill height: 48 text: "Ask" }
+                }
+            }
+        }"#.into();
+        let splash = tiles.open(&mut cx, "nested/editor", "test.app", false, &body);
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let mut draw = |cx: &mut Cx, tiles: &mut GlanceTiles, height: f64| {
+            let size = dvec2(340.0, height);
+            pass.set_size(cx, size);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0)); list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw(&mut draw, "nested/editor", "test.app", false, &body, Rect { pos: dvec2(0.0, 0.0), size });
+            draw.end_turtle(); list.end(&mut draw); draw.end_pass(&pass);
+        };
+        draw(&mut cx, &mut tiles, 600.0);
+        let reader = splash.view(&cx, ids!(reader));
+        reader.set_scroll_pos(&mut cx, dvec2(0.0, 500.0));
+        draw(&mut cx, &mut tiles, 600.0);
+        let editor = splash.text_input(&cx, ids!(composer));
+        editor.take_key_focus(&mut cx);
+        cx.send_trigger(editor.area(), Trigger { id: live_id!(focus), from: Area::Empty });
+        cx.handle_triggers();
+        draw(&mut cx, &mut tiles, 260.0);
+        draw(&mut cx, &mut tiles, 260.0);
+        for area in [editor.area(), splash.button(&cx, ids!(ask)).area()] {
+            let r = area.rect(&cx);
+            assert!(r.size.y >= 44.0 && r.pos.y >= 40.0 && r.pos.y + r.size.y <= 260.5, "nested editor/action outside viewport: {r:?}");
+        }
+        assert_eq!(editor.text(), "Keep my edited time");
+        reader.set_scroll_pos(&mut cx, dvec2(0.0, 100.0));
+        draw(&mut cx, &mut tiles, 260.0);
+        assert_eq!(reader.scroll_pos().y, 100.0, "manual reading must not snap back");
     }
 
     #[cfg(feature = "app-hub")]

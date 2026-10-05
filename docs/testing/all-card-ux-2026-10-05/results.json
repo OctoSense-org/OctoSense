@@ -1,0 +1,1613 @@
+{
+  "date": "2026-10-05",
+  "device": "OnePlus 6",
+  "scope": "Seven shipping Glance publishers; nine shipping template cases plus two six-family L0/Splash prototype collections. 33 input configurations. Not all native apps or external services.",
+  "interaction_driver": "ADB on assigned isolated Lab; Makepad headless drawing regressions separately. No new Studio Instrument session.",
+  "authorship": "Models on Android edited generated sources; operator supplied screenshots, feedback, native runtime fixes and tests.",
+  "overall_verdict": "Scoped workspace acceptance completed with documented visual caveats; not a 9/10 production UX sign-off.",
+  "cases": [
+    {
+      "id": "shipping-camera",
+      "publisher": "os.camera",
+      "syntax": "L0",
+      "source_sha256": "8f9553f9533bb97226834899ae91ac272f6c9093b65e83c86eb63d14ee9f8a15",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "host consent allowed by test operator",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/notice-camera-opened.png",
+        "screenshots/dark0503--dark-notice-deepseek-camera.png",
+        "screenshots/notice-camera-typed-ime.png"
+      ]
+    },
+    {
+      "id": "shipping-photos",
+      "publisher": "os.photos",
+      "syntax": "L0",
+      "source_sha256": "13e4168cfe48f29a1b2fcb7bcfb663f08838b1a636b048b0e33d0fc587cc0cc5",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "host consent allowed by test operator",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/notice-photos-opened.png",
+        "screenshots/dark0503--dark-notice-deepseek-photos.png",
+        "screenshots/notice-photos-typed-ime.png"
+      ]
+    },
+    {
+      "id": "shipping-youtube",
+      "publisher": "os.youtube",
+      "syntax": "L0",
+      "source_sha256": "379292e2069781d533fefdadf959d3828d94d1b1691bd118968f28ca3e2309d2",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "host consent allowed by test operator",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/notice-youtube-opened.png",
+        "screenshots/dark0503--dark-notice-deepseek-youtube.png",
+        "screenshots/notice-youtube-typed-ime.png"
+      ]
+    },
+    {
+      "id": "shipping-news",
+      "publisher": "os.news",
+      "syntax": "L0",
+      "source_sha256": "490f626d6beb7c1b23c119bb7cc2ddf7c8f99b04e973055dba1ae4f734bdeea4",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "assistant unavailable shown",
+        "opened",
+        "scroll driven",
+        "host consent allowed by test operator",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/notice-news-opened.png",
+        "screenshots/dark0503--dark-notice-deepseek-news.png",
+        "screenshots/news0504--notice-news-typed-ime.png"
+      ]
+    },
+    {
+      "id": "shipping-mail",
+      "publisher": "os.mail",
+      "syntax": "L0",
+      "source_sha256": "8e2f4b9d65107daa06b5acd6f1295d84fd2af60b2918fdad8ead8aec4486e647",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/notice-mail-opened.png",
+        "screenshots/dark0503--dark-notice-deepseek-mail.png",
+        "screenshots/notice-mail-typed-ime.png"
+      ]
+    },
+    {
+      "id": "shipping-calendar",
+      "publisher": "os.calendar",
+      "syntax": "L0",
+      "source_sha256": "11262be4152ee453e98aed2a8697cc865fc2400cbdefa0f4fe197d09302f6d95",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/followups0504--fixed-calendar.png",
+        "screenshots/dark0503--dark-notice-deepseek-calendar.png"
+      ]
+    },
+    {
+      "id": "shipping-agenda",
+      "publisher": "os.calendar",
+      "syntax": "L0",
+      "source_sha256": "d53d22a6a8fb752219313232cac995f2e923a767e33c0c0b9e2c7decdb3d5c92",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/followups0504--fixed-agenda.png",
+        "screenshots/dark0503--dark-notice-deepseek-agenda.png"
+      ]
+    },
+    {
+      "id": "shipping-empty",
+      "publisher": "os.calendar",
+      "syntax": "L0",
+      "source_sha256": "d53d22a6a8fb752219313232cac995f2e923a767e33c0c0b9e2c7decdb3d5c92",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/followups0504--fixed-empty.png",
+        "screenshots/dark0503--dark-notice-deepseek-empty.png"
+      ]
+    },
+    {
+      "id": "shipping-maps",
+      "publisher": "os.maps",
+      "syntax": "L0",
+      "source_sha256": "664c70a8f61c302e0750cb07c09e12de300a1a2fe8751d7da188e023a2470069",
+      "checked": [
+        "opened",
+        "scroll driven",
+        "native input with keyboard",
+        "unsent input survives collapse/reopen",
+        "card/chat switch"
+      ],
+      "verdict": "Scoped workspace checks completed",
+      "evidence": [
+        "screenshots/notice-maps-opened.png",
+        "screenshots/dark0503--dark-notice-deepseek-maps.png",
+        "screenshots/notice-maps-typed-ime.png"
+      ]
+    },
+    {
+      "id": "l0-deepseek-mail",
+      "publisher": "os.mail",
+      "syntax": "L0",
+      "model": "deepseek",
+      "source_sha256": "ca4b0266fc1682920f8938e7e4b6a76f8b2f5011c954526ccb516170e2a7f262",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/caption0504--l0-deepseek-mail-action.png",
+        "screenshots/dark-captions0504--dark-l0-deepseek-mail.png"
+      ]
+    },
+    {
+      "id": "l0-deepseek-calendar",
+      "publisher": "os.calendar",
+      "syntax": "L0",
+      "model": "deepseek",
+      "source_sha256": "aef15e44cf3f29150859ce650020272c9138aa58735ad564a75fa7c9ef8385ed",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/caption0504--l0-deepseek-calendar-action.png",
+        "screenshots/dark-captions0504--dark-l0-deepseek-calendar.png"
+      ]
+    },
+    {
+      "id": "l0-deepseek-news",
+      "publisher": "os.news",
+      "syntax": "L0",
+      "model": "deepseek",
+      "source_sha256": "3f808b454d3e50aadb6f7719184643349f540bc4678ce2b4881d73ebb7da4bc9",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "consent declined; input unavailable"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/caption0504--l0-deepseek-news-action.png",
+        "screenshots/dark-captions0504--dark-l0-deepseek-news.png"
+      ]
+    },
+    {
+      "id": "l0-deepseek-finance",
+      "publisher": "test.finance",
+      "syntax": "L0",
+      "model": "deepseek",
+      "source_sha256": "cb1dfdf479175a4ec17ca889178c1859c4ad80a1a4e0844f54e1665af0d518ab",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "no invented agent"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/caption0504--l0-deepseek-finance-action.png",
+        "screenshots/dark-captions0504--dark-l0-deepseek-finance.png"
+      ]
+    },
+    {
+      "id": "l0-deepseek-photo",
+      "publisher": "os.photos",
+      "syntax": "L0",
+      "model": "deepseek",
+      "source_sha256": "73cfa19c057e8f48f5402c5d7786877f2aa6a6fc8b9114253d0692260c65183a",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/final-l0-0503--l0-deepseek-photo-action.png",
+        "screenshots/dark0503--dark-l0-deepseek-photo.png"
+      ]
+    },
+    {
+      "id": "l0-deepseek-youtube",
+      "publisher": "os.youtube",
+      "syntax": "L0",
+      "model": "deepseek",
+      "source_sha256": "9f9d6439b4b165cea038f608e64429f00504d2226ca3a0255f09a0b180eac37a",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/final-l0-0503--l0-deepseek-youtube-action.png",
+        "screenshots/dark0503--dark-l0-deepseek-youtube.png"
+      ]
+    },
+    {
+      "id": "splash-deepseek-mail",
+      "publisher": "os.mail",
+      "syntax": "Splash",
+      "model": "deepseek",
+      "interaction_source_sha256": "da77c06903d46c3fa6ca480afc3a0eafbdfd450eef7ccce55d7bb9245f8db890",
+      "latest_source_sha256": "ac8221280ec69ba23ad7cf9a4c197c120b328fd69ce2ac9ef6f60eaa48db5342",
+      "checked": [
+        "open",
+        "L1",
+        "reply pane opened; editor tested separately",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven",
+        "Loading",
+        "Empty",
+        "Error"
+      ],
+      "followups": [
+        "Exact-case Ready selector completed on 0504",
+        "Model editor accepts text with IME and retains local draft after collapse; no send action"
+      ],
+      "baseline_script_result": "failed",
+      "baseline_operator_error": "target ^Ready$: ['Ready', 'ready']",
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-deepseek-mail-expanded.png",
+        "screenshots/final0503--splash-deepseek-mail-full.png",
+        "screenshots/dark0504--dark-splash-deepseek-mail.png",
+        "screenshots/followups0504--deepseek-editor-ime.png",
+        "screenshots/followups0504--deepseek-editor-retained.png"
+      ]
+    },
+    {
+      "id": "splash-deepseek-calendar",
+      "publisher": "os.calendar",
+      "syntax": "Splash",
+      "model": "deepseek",
+      "interaction_source_sha256": "6402fc807b8ad75885e9cde173bee326a88af71b5ad25b38a75141854a9751e6",
+      "latest_source_sha256": "78ac370582a39af198a8cc87a4c6946536e6038dd09f774a076df8a0ae37d3c7",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven",
+        "Loading",
+        "Empty",
+        "Error",
+        "Ready"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-deepseek-calendar-expanded.png",
+        "screenshots/final0503--splash-deepseek-calendar-full.png",
+        "screenshots/dark0504--dark-splash-deepseek-calendar.png"
+      ]
+    },
+    {
+      "id": "splash-deepseek-news",
+      "publisher": "os.news",
+      "syntax": "Splash",
+      "model": "deepseek",
+      "interaction_source_sha256": "8c6f823363c9a7bab5ecffc39772d7def17ac36ce1808cfb49feebd7bc2ff978",
+      "latest_source_sha256": "f7287ceb5296deabd1a0cc1a39874409dfcc3ea61ca8e7d38966401a06f51a1f",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven",
+        "Loading",
+        "Empty",
+        "Error",
+        "Ready"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-deepseek-news-expanded.png",
+        "screenshots/final0503--splash-deepseek-news-full.png",
+        "screenshots/dark0504--dark-splash-deepseek-news.png"
+      ]
+    },
+    {
+      "id": "splash-deepseek-finance",
+      "publisher": "test.finance",
+      "syntax": "Splash",
+      "model": "deepseek",
+      "interaction_source_sha256": "27ec7af55be569d9b653aba16ecd7982bf8fd604533a0508103fdda6239c3564",
+      "latest_source_sha256": "f1ea687b8da10909efac5de2ef082bbfc08b113a80a7bf31c6d8459b4eb2015c",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven",
+        "Loading",
+        "Empty",
+        "Error",
+        "Ready"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-deepseek-finance-expanded.png",
+        "screenshots/final0503--splash-deepseek-finance-full.png",
+        "screenshots/dark0504--dark-splash-deepseek-finance.png"
+      ]
+    },
+    {
+      "id": "splash-deepseek-photo",
+      "publisher": "os.photos",
+      "syntax": "Splash",
+      "model": "deepseek",
+      "interaction_source_sha256": "be7697fbd5a9cc0d70c3802051342d385da5fc6ba4c89eab6146d356f6ef9d76",
+      "latest_source_sha256": "57089382690865cdc9f4363d9fc95f99069d42979fe5e84e3afe79dbf6cd6cfb",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven",
+        "Loading",
+        "Empty",
+        "Error",
+        "Ready"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-deepseek-photo-expanded.png",
+        "screenshots/final0503--splash-deepseek-photo-full.png",
+        "screenshots/dark0504--dark-splash-deepseek-photo.png"
+      ]
+    },
+    {
+      "id": "splash-deepseek-youtube",
+      "publisher": "os.youtube",
+      "syntax": "Splash",
+      "model": "deepseek",
+      "interaction_source_sha256": "8839ce19c60b098265a6498b5f7b3503e6744e811d5b1a4247942fefca7d8517",
+      "latest_source_sha256": "ade822a3b541a3dc7845d5a615d4faceaeab4a84705635d0a0525a0fba0c8be1",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven",
+        "Loading",
+        "Empty",
+        "Error",
+        "Ready"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-deepseek-youtube-expanded.png",
+        "screenshots/final0503--splash-deepseek-youtube-full.png",
+        "screenshots/dark0504--dark-splash-deepseek-youtube.png"
+      ]
+    },
+    {
+      "id": "l0-minimax-mail",
+      "publisher": "os.mail",
+      "syntax": "L0",
+      "model": "minimax",
+      "source_sha256": "5f68ae4f92c328e460a040e5944e3567d53fbce94968e4ea1ca19ca5a4cacec7",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/settled-l0-0503--l0-minimax-mail-action.png",
+        "screenshots/dark0503--dark-l0-minimax-mail.png"
+      ]
+    },
+    {
+      "id": "l0-minimax-calendar",
+      "publisher": "os.calendar",
+      "syntax": "L0",
+      "model": "minimax",
+      "source_sha256": "97ef6dc3b94af0f8cef5cda3d842537223073b62c13ecf2c710521eae48fee97",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/settled-l0-0503--l0-minimax-calendar-action.png",
+        "screenshots/dark0503--dark-l0-minimax-calendar.png"
+      ]
+    },
+    {
+      "id": "l0-minimax-news",
+      "publisher": "os.news",
+      "syntax": "L0",
+      "model": "minimax",
+      "source_sha256": "6f888a123d890cfb24f756336441e0b32c508a765eb522d2d4acc8405f4d0b3f",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "consent declined; input unavailable"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/settled-l0-0503--l0-minimax-news-action.png",
+        "screenshots/dark0503--dark-l0-minimax-news.png"
+      ]
+    },
+    {
+      "id": "l0-minimax-finance",
+      "publisher": "test.finance",
+      "syntax": "L0",
+      "model": "minimax",
+      "source_sha256": "669f2332e56ffc9c9564e76d4b66e80ae2ae20b1cc2d703eba8281cf7da34342",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "no invented agent"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/settled-l0-0503--l0-minimax-finance-action.png",
+        "screenshots/dark0503--dark-l0-minimax-finance.png"
+      ]
+    },
+    {
+      "id": "l0-minimax-photo",
+      "publisher": "os.photos",
+      "syntax": "L0",
+      "model": "minimax",
+      "source_sha256": "b5db30b6fc5cf58b09a8265b6f5f58a9433b88b0ed3af2293314544c8103b190",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/settled-l0-0503--l0-minimax-photo-action.png",
+        "screenshots/dark0503--dark-l0-minimax-photo.png"
+      ]
+    },
+    {
+      "id": "l0-minimax-youtube",
+      "publisher": "os.youtube",
+      "syntax": "L0",
+      "model": "minimax",
+      "source_sha256": "ce69c58c24c687310455ddf09b9c457d189c70b99cc1ba47a7323d90221ffa95",
+      "checked": [
+        "open",
+        "local action",
+        "collapse/reopen",
+        "composer reachable with IME"
+      ],
+      "verdict": "Local interactions completed; prototype visual caveats",
+      "evidence": [
+        "screenshots/settled-l0-0503--l0-minimax-youtube-action.png",
+        "screenshots/dark0503--dark-l0-minimax-youtube.png"
+      ]
+    },
+    {
+      "id": "splash-minimax-mail",
+      "publisher": "os.mail",
+      "syntax": "Splash",
+      "model": "minimax",
+      "interaction_source_sha256": "b0d68d4ccde75012e9ce586605313d63b7adb74271f5dee4912977ae13de6120",
+      "latest_source_sha256": "5739f8474cf1ba932b96c995bdf2fa0b59a226fe06ab57ea1027a5460b8aac13",
+      "checked": [
+        "open",
+        "L1",
+        "reply pane opened; editor tested separately",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven"
+      ],
+      "followups": [
+        "Model editor accepts text with IME and retains local draft after collapse; no send action"
+      ],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-minimax-mail-expanded.png",
+        "screenshots/final0503--splash-minimax-mail-full.png",
+        "screenshots/dark0504--dark-splash-minimax-mail.png",
+        "screenshots/followups0504--minimax-editor-ime.png",
+        "screenshots/followups0504--minimax-editor-retained.png"
+      ]
+    },
+    {
+      "id": "splash-minimax-calendar",
+      "publisher": "os.calendar",
+      "syntax": "Splash",
+      "model": "minimax",
+      "interaction_source_sha256": "ec8fdf555bb66c826d6db4b22b18a9107200d5b2bd0776066c0f30637c80cf66",
+      "latest_source_sha256": "ec8fdf555bb66c826d6db4b22b18a9107200d5b2bd0776066c0f30637c80cf66",
+      "checked": [
+        "open",
+        "L1",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven"
+      ],
+      "followups": [
+        "Going updates answered count and survives collapse on 0504"
+      ],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": "target ^RSVP:: []",
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-minimax-calendar-expanded.png",
+        "screenshots/final0503--splash-minimax-calendar-full.png",
+        "screenshots/dark0503--dark-splash-minimax-calendar.png",
+        "screenshots/followups0504--mm-rsvp-retained.png"
+      ]
+    },
+    {
+      "id": "splash-minimax-news",
+      "publisher": "os.news",
+      "syntax": "Splash",
+      "model": "minimax",
+      "interaction_source_sha256": "4ac0923154598527e48ac0c87ef076d976605c13adc4cd5c363e99ff49ef4abe",
+      "latest_source_sha256": "4ac0923154598527e48ac0c87ef076d976605c13adc4cd5c363e99ff49ef4abe",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-minimax-news-expanded.png",
+        "screenshots/final0503--splash-minimax-news-full.png",
+        "screenshots/dark0503--dark-splash-minimax-news.png"
+      ]
+    },
+    {
+      "id": "splash-minimax-finance",
+      "publisher": "test.finance",
+      "syntax": "Splash",
+      "model": "minimax",
+      "interaction_source_sha256": "7d80be0c7e0f1753a0368c7f0fda5be751169b3aee84bd93070f5fd396ce1a06",
+      "latest_source_sha256": "7d80be0c7e0f1753a0368c7f0fda5be751169b3aee84bd93070f5fd396ce1a06",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-minimax-finance-expanded.png",
+        "screenshots/final0503--splash-minimax-finance-full.png",
+        "screenshots/dark0503--dark-splash-minimax-finance.png"
+      ]
+    },
+    {
+      "id": "splash-minimax-photo",
+      "publisher": "os.photos",
+      "syntax": "Splash",
+      "model": "minimax",
+      "interaction_source_sha256": "99d535019dc451db5948703843327c21ae86aaab7f07ac9ad14df553b0ba5353",
+      "latest_source_sha256": "99d535019dc451db5948703843327c21ae86aaab7f07ac9ad14df553b0ba5353",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-minimax-photo-expanded.png",
+        "screenshots/final0503--splash-minimax-photo-full.png",
+        "screenshots/dark0503--dark-splash-minimax-photo.png"
+      ]
+    },
+    {
+      "id": "splash-minimax-youtube",
+      "publisher": "os.youtube",
+      "syntax": "Splash",
+      "model": "minimax",
+      "interaction_source_sha256": "1bc00cc92f7dfe0b125e74bb3a87385c5fdfe88a870f4af660b1de6d323f0f61",
+      "latest_source_sha256": "1bc00cc92f7dfe0b125e74bb3a87385c5fdfe88a870f4af660b1de6d323f0f61",
+      "checked": [
+        "open",
+        "L1",
+        "local action",
+        "collapse/reopen",
+        "L2",
+        "L2 scroll driven"
+      ],
+      "followups": [],
+      "baseline_script_result": "completed; visual review pending",
+      "baseline_operator_error": null,
+      "verdict": "Local interactions completed with explicit follow-ups; prototype visual caveats",
+      "evidence": [
+        "screenshots/final0503--splash-minimax-youtube-expanded.png",
+        "screenshots/final0503--splash-minimax-youtube-full.png",
+        "screenshots/dark0503--dark-splash-minimax-youtube.png"
+      ]
+    }
+  ],
+  "six_card_cache": [
+    {
+      "family": "mail",
+      "expected": "Keep six cards",
+      "visible": true,
+      "evidence": "screenshots/perf0504--cache-mail-retained.png"
+    },
+    {
+      "family": "calendar",
+      "expected": "Maybe",
+      "visible": true,
+      "evidence": "screenshots/perf0504--cache-calendar-retained.png"
+    },
+    {
+      "family": "news",
+      "expected": "Saved",
+      "visible": true,
+      "evidence": "screenshots/perf0504--cache-news-retained.png"
+    },
+    {
+      "family": "finance",
+      "expected": "Watching",
+      "visible": true,
+      "evidence": "screenshots/perf0504--cache-finance-retained.png"
+    },
+    {
+      "family": "photo",
+      "expected": "Favorited",
+      "visible": true,
+      "evidence": "screenshots/perf0504--cache-photo-retained.png"
+    },
+    {
+      "family": "youtube",
+      "expected": "Watch later",
+      "visible": true,
+      "evidence": "screenshots/perf0504--cache-youtube-retained.png"
+    }
+  ],
+  "checks": {
+    "shared_shell": 924,
+    "calendar_service": 3,
+    "desktop_default": "passed",
+    "desktop_mobile_apps": "passed",
+    "phone_mobile_apps": "passed",
+    "shell_graphs": "both passed",
+    "runtime_pins": "passed"
+  },
+  "not_verified": [
+    "fresh blind-email trigger",
+    "SMTP send",
+    "real invitation response",
+    "routing/navigation",
+    "camera capture",
+    "photo access",
+    "video playback",
+    "live finance quotes",
+    "App Hub admission/install",
+    "complete Chinese translation",
+    "landscape",
+    "screen reader",
+    "large fonts"
+  ],
+  "visual_caveats": [
+    "Prototype review chrome differs from native Email/Chat",
+    "Model-painted light surfaces do not adapt to dark host",
+    "MiniMax fixed header/footer leave a small reply viewport with IME; review may require scrolling or hiding keyboard"
+  ],
+  "failure_history": "Initial admission failures, intermediate captures, duplicate/incorrect selectors, first DeepSeek navigation patch and provider failures are retained separately; follow-ups do not erase failed runs.",
+  "screenshots": [
+    {
+      "file": "screenshots/notice-camera-opened.png",
+      "case": "shipping-camera",
+      "label": "Shipping template · light",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "e6d785617aa1f96f2986f6107660b119bf01415cd195aedae47a5010b54f2d80"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-camera.png",
+      "case": "shipping-camera",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "6f5c7cd322adf85b8f00d8b0d5b49f484ee7db0c9e6d1415d7cb561d9639f835"
+    },
+    {
+      "file": "screenshots/notice-camera-typed-ime.png",
+      "case": "shipping-camera",
+      "label": "Native Chat · keyboard input",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "8316331e19d76b3f7a18470a87af9d9e4523093c91e68b99445b5890a0077c39"
+    },
+    {
+      "file": "screenshots/notice-photos-opened.png",
+      "case": "shipping-photos",
+      "label": "Shipping template · light",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "6312c727dc6c72b3f434977beac2e01037b7fa6de4eeece23419ce61e9e85259"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-photos.png",
+      "case": "shipping-photos",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "c266281d5c9055a1494a371c39c327105a19c6f3f5fc52096913bd185122712b"
+    },
+    {
+      "file": "screenshots/notice-photos-typed-ime.png",
+      "case": "shipping-photos",
+      "label": "Native Chat · keyboard input",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "58f067418a8c23e40d04bfe67c3b4b81f48ad3e57be3bf2690b15d3fc53099b3"
+    },
+    {
+      "file": "screenshots/notice-youtube-opened.png",
+      "case": "shipping-youtube",
+      "label": "Shipping template · light",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "3dfd78fdbd83685e8b414b7ceb2ffd6ed8792683afbff55f55438a67ec15786d"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-youtube.png",
+      "case": "shipping-youtube",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "8c11f1eb93a076d3d7b6d341cc9980039eba3698de4421c8b264f24baa6a72ea"
+    },
+    {
+      "file": "screenshots/notice-youtube-typed-ime.png",
+      "case": "shipping-youtube",
+      "label": "Native Chat · keyboard input",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "fa062786be8d9329980e0b691887d562f1c9c1101886601cec40dbe13a11559f"
+    },
+    {
+      "file": "screenshots/notice-news-opened.png",
+      "case": "shipping-news",
+      "label": "Shipping template · light",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "178cd1844430d0755420a4dc11fc5e208ad7fe0fa78a1ea45dafb6bf758a64a5"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-news.png",
+      "case": "shipping-news",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "1e79b12cc43a540e50922f9e4c4a99b3810cc105ac79678cd1237615cb1efe81"
+    },
+    {
+      "file": "screenshots/news0504--notice-news-typed-ime.png",
+      "case": "shipping-news",
+      "label": "Native Chat after Allow · keyboard input",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "3ed8e90508431875978e03c1e2770071e472d164e5efc50ba740e256e2e00713"
+    },
+    {
+      "file": "screenshots/notice-mail-opened.png",
+      "case": "shipping-mail",
+      "label": "Shipping template · light",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "15a8de7d78d6e14fb6ee05f8f6a44d4e2f20ad7030f88e6002c9d7d3e6a8bdc9"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-mail.png",
+      "case": "shipping-mail",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "6560af5e48d6a0b577f090e3ac322329f01bf51edd8c52201b72fe85d675b785"
+    },
+    {
+      "file": "screenshots/notice-mail-typed-ime.png",
+      "case": "shipping-mail",
+      "label": "Native Chat · keyboard input",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "9433928b58886dade978884f3f2844bf342eb9fa1a8b93802070904027635aa4"
+    },
+    {
+      "file": "screenshots/followups0504--fixed-calendar.png",
+      "case": "shipping-calendar",
+      "label": "Shipping template · light",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "e8880db6509c84c522e478b26417d1228165a9aca7156633d7e2f4849cef198b"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-calendar.png",
+      "case": "shipping-calendar",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "a4c7daf1c5698b515d0d977a442f77a29978d91c1877e1c76bdbc338fa4da60d"
+    },
+    {
+      "file": "screenshots/followups0504--fixed-agenda.png",
+      "case": "shipping-agenda",
+      "label": "Shipping template · light",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "aac3dc53861232d57ccc66a9908f4c4f916c4a2d30177e0cd213910b592030ea"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-agenda.png",
+      "case": "shipping-agenda",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "7dfc73db8b321e3d78a543d8f4e58a945f12389f9554ea79f7a6c386358c176d"
+    },
+    {
+      "file": "screenshots/followups0504--fixed-empty.png",
+      "case": "shipping-empty",
+      "label": "Shipping template · light",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "a74b919337b049bc648686aee3bb137979580daeb821d02b798962bb6cab16b2"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-empty.png",
+      "case": "shipping-empty",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "a86af62edf47fc0e75a62f6a82d62d9bbd79537563de89b77567e0035727ae1d"
+    },
+    {
+      "file": "screenshots/notice-maps-opened.png",
+      "case": "shipping-maps",
+      "label": "Shipping template · light",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "5ca0a4f210714920bb8d15f835bb24aa6f58ef8da2fe921424ffd46c6bc9bb7b"
+    },
+    {
+      "file": "screenshots/dark0503--dark-notice-deepseek-maps.png",
+      "case": "shipping-maps",
+      "label": "Shipping template · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "1193fb78e159e65de3d09b1e7be4a0ac14f7ef836c42e965b071732a64264102"
+    },
+    {
+      "file": "screenshots/notice-maps-typed-ime.png",
+      "case": "shipping-maps",
+      "label": "Native Chat · keyboard input",
+      "build": 2026100501,
+      "phase": "accepted checkpoint",
+      "sha256": "8e7545e963904a719da54719ace8c04957d65fb1d585b0e5d2c20e4060d4101c"
+    },
+    {
+      "file": "screenshots/caption0504--l0-deepseek-mail-action.png",
+      "case": "l0-deepseek-mail",
+      "label": "Local action · light",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "333d67a6d5798be1e377ab3b02a6ef0fe3505e8c62de0bc11bb6a48aac7b1492"
+    },
+    {
+      "file": "screenshots/dark-captions0504--dark-l0-deepseek-mail.png",
+      "case": "l0-deepseek-mail",
+      "label": "Initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "885f34a4a31a7dfce8822abaaf30ad81404e3f1c94c743a25d43417c35e72f0a"
+    },
+    {
+      "file": "screenshots/caption0504--l0-deepseek-calendar-action.png",
+      "case": "l0-deepseek-calendar",
+      "label": "Local action · light",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "041ed6b59322e3c364c23da2e1a499c9175e6eff7be6034e4cf450ba3150b3c0"
+    },
+    {
+      "file": "screenshots/dark-captions0504--dark-l0-deepseek-calendar.png",
+      "case": "l0-deepseek-calendar",
+      "label": "Initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "107bdd8df2bf61fd55c1b03aace60575bd9a1eeec2a7e781aa322847dd9e8b8b"
+    },
+    {
+      "file": "screenshots/caption0504--l0-deepseek-news-action.png",
+      "case": "l0-deepseek-news",
+      "label": "Local action · light",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "5e4a5e0b5508edfca3d142c6299bf71cc27e6f5b6be18f334f298c8864cd2e44"
+    },
+    {
+      "file": "screenshots/dark-captions0504--dark-l0-deepseek-news.png",
+      "case": "l0-deepseek-news",
+      "label": "Initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "98918d6b66038f12b4914eb5b95ddf0617805cb994dd018f82e42454271ef88c"
+    },
+    {
+      "file": "screenshots/caption0504--l0-deepseek-finance-action.png",
+      "case": "l0-deepseek-finance",
+      "label": "Local action · light",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "4246af48b1b0300ddc1000a5249c2bc30ac7f30d1bca6d3a053fcb80a4b4aa1f"
+    },
+    {
+      "file": "screenshots/dark-captions0504--dark-l0-deepseek-finance.png",
+      "case": "l0-deepseek-finance",
+      "label": "Initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "c1d507bacd2b5ef841b7183c200a45719c122bcd8deb3a295fba0db849a8c61f"
+    },
+    {
+      "file": "screenshots/final-l0-0503--l0-deepseek-photo-action.png",
+      "case": "l0-deepseek-photo",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "d4833d88fb69bc831f9213dd3192e0b25dacf959276c9a158bd18e1e06779258"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-deepseek-photo.png",
+      "case": "l0-deepseek-photo",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "06b18ee8041236bcc253378cc132b07949f8f1a757f9a62ea4d9c609b1fde2f1"
+    },
+    {
+      "file": "screenshots/final-l0-0503--l0-deepseek-youtube-action.png",
+      "case": "l0-deepseek-youtube",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "5c675d9581033b695fab5ff1d4d5ee084049ef5b41fd1a03f4fd254ab4c0cacc"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-deepseek-youtube.png",
+      "case": "l0-deepseek-youtube",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "eb6b4348084c7f4097dee50946b1cbc51130d19428b026c2b9e0769645fbefd1"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-mail-expanded.png",
+      "case": "splash-deepseek-mail",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "7e05e9ac5b2b12b23362e470792f12a5b1893f509249b86b2315ea837a55e393"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-mail-full.png",
+      "case": "splash-deepseek-mail",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "7411ebb8a1ea1d63d21a4b089a657634f5b4f70ab12c7b5e096c2f8c89a90ba0"
+    },
+    {
+      "file": "screenshots/dark0504--dark-splash-deepseek-mail.png",
+      "case": "splash-deepseek-mail",
+      "label": "Latest initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "3088ae5453b11157197781a6e5b05d71c4946c37ceeac687ac7c5ed0cb08e8ef"
+    },
+    {
+      "file": "screenshots/followups0504--deepseek-editor-ime.png",
+      "case": "splash-deepseek-mail",
+      "label": "Generated reply editor · ime",
+      "build": 2026100504,
+      "phase": "IME regression; DeepSeek navigation received a later typography-only correction",
+      "sha256": "ff355cc8d0f1f792a6c91e4c3d75e80a1df65c9a210332a5df51e769d9e889c9"
+    },
+    {
+      "file": "screenshots/followups0504--deepseek-editor-retained.png",
+      "case": "splash-deepseek-mail",
+      "label": "Generated reply editor · retained",
+      "build": 2026100504,
+      "phase": "IME regression; DeepSeek navigation received a later typography-only correction",
+      "sha256": "b2f9dde2cd17d03d3b27dd631df6244cb15c400c19a7b07989e52dde8a029c98"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-calendar-expanded.png",
+      "case": "splash-deepseek-calendar",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "e7a7585961bf28b0f3928b60cd26ef8dadf94a18ad57a829b2e3564b2cbf3bf4"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-calendar-full.png",
+      "case": "splash-deepseek-calendar",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "9b24759e2ffc770532b7ccceb5f1dae01ebb8c619e4d2c1de624a427e656228f"
+    },
+    {
+      "file": "screenshots/dark0504--dark-splash-deepseek-calendar.png",
+      "case": "splash-deepseek-calendar",
+      "label": "Latest initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "ae8c3c0c7336031f379853ec232ea7ec7f77a8389ecd0eb4365eb4e6f7ba138f"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-news-expanded.png",
+      "case": "splash-deepseek-news",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "d44c4335191ed7ba935f6ebe58b3e366c97282a12d8cdca5ae8621efb7316f1f"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-news-full.png",
+      "case": "splash-deepseek-news",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "12b801a439ee753b77e6fe49f1626fe606d27d4dcd4284b21414a48b10e69c84"
+    },
+    {
+      "file": "screenshots/dark0504--dark-splash-deepseek-news.png",
+      "case": "splash-deepseek-news",
+      "label": "Latest initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "84baba3505825df79661c7e1dda0ccb6d1b4ae916e9339e07add246a0ce0ba2f"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-finance-expanded.png",
+      "case": "splash-deepseek-finance",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "5c6e16553055170e33f6f887fd8027e1d7ce19634075ed7daa3aac5c6dfc9c82"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-finance-full.png",
+      "case": "splash-deepseek-finance",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "33a3fe8cff5a0971575482e1d775a6cd0c06bee390c7a63637d406768ed00317"
+    },
+    {
+      "file": "screenshots/dark0504--dark-splash-deepseek-finance.png",
+      "case": "splash-deepseek-finance",
+      "label": "Latest initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "f431087c7fe43caa01f1572ed6505d85255c011826e82bc2915324fd1b00e27d"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-photo-expanded.png",
+      "case": "splash-deepseek-photo",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "554f88951cdbeb75258c8b67ccb1ef0562b10c63c93f9fcc0e9ac24c1826003f"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-photo-full.png",
+      "case": "splash-deepseek-photo",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "d198fd04b160f802532e92ceb7c5bee7e73af13bd005d40e0aae4b36c41cf334"
+    },
+    {
+      "file": "screenshots/dark0504--dark-splash-deepseek-photo.png",
+      "case": "splash-deepseek-photo",
+      "label": "Latest initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "288dbbdc2f878be4e8e7728ee358ebf4dcb90e2295e1a36e334e36341f96108e"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-youtube-expanded.png",
+      "case": "splash-deepseek-youtube",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "a0742b513c179fa6862f5ee4891dd8b26ad4afcfd5a83b2fbe96be208ce281ca"
+    },
+    {
+      "file": "screenshots/final0503--splash-deepseek-youtube-full.png",
+      "case": "splash-deepseek-youtube",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "bf5d17db5e65f3c4a495003b60aaee588eb4270acbeda0d3dbd76e275c9821d9"
+    },
+    {
+      "file": "screenshots/dark0504--dark-splash-deepseek-youtube.png",
+      "case": "splash-deepseek-youtube",
+      "label": "Latest initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "3ec4f8a6410ba4307cef6d1d5a5fda08491bd726eaacb0cf20cfa0e2fcc17350"
+    },
+    {
+      "file": "screenshots/settled-l0-0503--l0-minimax-mail-action.png",
+      "case": "l0-minimax-mail",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "3fc016662bf4ee48a9168001e9c126ebd2e6bbf5a8a2a492a4d347b3d4c695a5"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-minimax-mail.png",
+      "case": "l0-minimax-mail",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "316dcf5344ca64cbe6742c38105b6a83df007fdb8d4f748619312527ec9bb5b3"
+    },
+    {
+      "file": "screenshots/settled-l0-0503--l0-minimax-calendar-action.png",
+      "case": "l0-minimax-calendar",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "18be6ba3b497f9f7fe0aa5788b01e0a23f62b643e3d4dff7e7c395d4b293b65a"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-minimax-calendar.png",
+      "case": "l0-minimax-calendar",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "18de7130d345d62a5cb532f829a3bd3098b3040ef46739e5eba8b9555ceb30bd"
+    },
+    {
+      "file": "screenshots/settled-l0-0503--l0-minimax-news-action.png",
+      "case": "l0-minimax-news",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "304b61e8d191446a8a2d25028542a2f25c41b8bc5ab8e649976ab800136e97c3"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-minimax-news.png",
+      "case": "l0-minimax-news",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "6b72f61509d84ceaa092e5a2820489cb21132ddb078acf31f26979a8e7b027ed"
+    },
+    {
+      "file": "screenshots/settled-l0-0503--l0-minimax-finance-action.png",
+      "case": "l0-minimax-finance",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "824be9850a34eec866c16c67cae8da79059f5b5e59b717050fb0d5d839b1aaa8"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-minimax-finance.png",
+      "case": "l0-minimax-finance",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "bc08ec0e04d88ade45b3536995d39d5598a9fc018661149a80719249e419f1fb"
+    },
+    {
+      "file": "screenshots/settled-l0-0503--l0-minimax-photo-action.png",
+      "case": "l0-minimax-photo",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "fb575f436825378f33af402cd4e4f09c8d067666338631fbb9c2fc792870dd26"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-minimax-photo.png",
+      "case": "l0-minimax-photo",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "9b5ff7fa83e02c5cdb59dbddfa6aae42dd50b9e79b1d0a6165fde83108a1dfe8"
+    },
+    {
+      "file": "screenshots/settled-l0-0503--l0-minimax-youtube-action.png",
+      "case": "l0-minimax-youtube",
+      "label": "Local action · light",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "af82a50d4c5e9e2d4fb1a3f029b91fda5c2d69624dfcc2ef38724f5d23303810"
+    },
+    {
+      "file": "screenshots/dark0503--dark-l0-minimax-youtube.png",
+      "case": "l0-minimax-youtube",
+      "label": "Initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "e8b434ce8cbb3d292e85b382a79412ed06245915798982846da89436cdd5aa89"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-mail-expanded.png",
+      "case": "splash-minimax-mail",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "60fe701ef5edccdccdad3c2ef4828e489135e4de18d1bcae8203f53d4def7050"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-mail-full.png",
+      "case": "splash-minimax-mail",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "e1da3c272a7c6876221edfde1fa39a5e01088fe0636f7ce9c504186e2279bdbd"
+    },
+    {
+      "file": "screenshots/dark0504--dark-splash-minimax-mail.png",
+      "case": "splash-minimax-mail",
+      "label": "Latest initial render · dark host",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "e72430182c3db2de137d85cfd274ac8edf38a6996a135ec2cad0c1b0205efdec"
+    },
+    {
+      "file": "screenshots/followups0504--minimax-editor-ime.png",
+      "case": "splash-minimax-mail",
+      "label": "Generated reply editor · ime",
+      "build": 2026100504,
+      "phase": "IME regression; DeepSeek navigation received a later typography-only correction",
+      "sha256": "b0bcf308beae98f0e953ac6ad5094c571bbbfb204ffff686822544f5a2b29dda"
+    },
+    {
+      "file": "screenshots/followups0504--minimax-editor-retained.png",
+      "case": "splash-minimax-mail",
+      "label": "Generated reply editor · retained",
+      "build": 2026100504,
+      "phase": "IME regression; DeepSeek navigation received a later typography-only correction",
+      "sha256": "ae6bfc2b8b9177912b244c5f337cf6a60c64bc67e8ee26ce050b43dcf6e48ae2"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-calendar-expanded.png",
+      "case": "splash-minimax-calendar",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "e0679dbc47e9fe79f8eace407720ca01f26767a3c859ffd6ad84c4744e172ea5"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-calendar-full.png",
+      "case": "splash-minimax-calendar",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "2108d39a1e9cf33d4e959abe61dc49c02993b8961635ccef468413b83617e975"
+    },
+    {
+      "file": "screenshots/dark0503--dark-splash-minimax-calendar.png",
+      "case": "splash-minimax-calendar",
+      "label": "Latest initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "5540e4c033dff2b01eb9093807f743c16a840013b83afdaf3b73c95300d22b96"
+    },
+    {
+      "file": "screenshots/followups0504--mm-rsvp-retained.png",
+      "case": "splash-minimax-calendar",
+      "label": "RSVP state retained",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "465b8d48d76bac7d8141b43b5c4aecddc46fa00837f856cb21b6c97413bebb9b"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-news-expanded.png",
+      "case": "splash-minimax-news",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "5cad9db13195aedecdcfcb23cc7cddf17fdd44608ef1aea5497cece53f595294"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-news-full.png",
+      "case": "splash-minimax-news",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "5a42f52d86592e496c4edbfb3d794af8da135eed1e0103d7b56d9711781b9998"
+    },
+    {
+      "file": "screenshots/dark0503--dark-splash-minimax-news.png",
+      "case": "splash-minimax-news",
+      "label": "Latest initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "093981e41ef54143b1d49d85fb05d1f1a3acbd492ee035a747e0b2b1d4e87e72"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-finance-expanded.png",
+      "case": "splash-minimax-finance",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "60f8c63e69d0b94486d61f11ba4fe5f180be440fb555ac8ab2173527762fdb57"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-finance-full.png",
+      "case": "splash-minimax-finance",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "6b9ce3754e84fbe82edfcf61bd55b43bee97f6770768da98608d967563b37bcc"
+    },
+    {
+      "file": "screenshots/dark0503--dark-splash-minimax-finance.png",
+      "case": "splash-minimax-finance",
+      "label": "Latest initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "b78fed80d02b0a92965f126302e129de41e8d396061b1fa7afe2262a358b1ad3"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-photo-expanded.png",
+      "case": "splash-minimax-photo",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "0eee3c20cebf0a611aed15b2b10b5d2a2e3074aa92d12361ae781a73de25334f"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-photo-full.png",
+      "case": "splash-minimax-photo",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "28275a4999de254a4ae6d1fc119fa2c57b1075e216ac8d845e9e7c46362f1ec1"
+    },
+    {
+      "file": "screenshots/dark0503--dark-splash-minimax-photo.png",
+      "case": "splash-minimax-photo",
+      "label": "Latest initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "4ecf87b6f96db1dd353ef1a318a121f5cceb6114df17af5cede13b2bd06f2cdc"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-youtube-expanded.png",
+      "case": "splash-minimax-youtube",
+      "label": "L1 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "dc8f60d915cd3630262590d306b0ec295d89580af368caa0f636414b3ad1fae2"
+    },
+    {
+      "file": "screenshots/final0503--splash-minimax-youtube-full.png",
+      "case": "splash-minimax-youtube",
+      "label": "L2 view · light",
+      "build": 2026100503,
+      "phase": "Interaction baseline before model chrome/reply corrections",
+      "sha256": "2553c444d4368ab87dde2ca94ea74ec170365e21a60eb371cc4c94fb479c20e4"
+    },
+    {
+      "file": "screenshots/dark0503--dark-splash-minimax-youtube.png",
+      "case": "splash-minimax-youtube",
+      "label": "Latest initial render · dark host",
+      "build": 2026100503,
+      "phase": "accepted checkpoint",
+      "sha256": "770f129354d463a2c761bb0dd4489816092ea6c995272319b20bdc3600802b47"
+    },
+    {
+      "file": "screenshots/perf0504--cache-mail-retained.png",
+      "case": "multi-card-cache",
+      "label": "Six-card state retention · mail",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "8db8167531dc65ba6466fbdaa3ee9de844450d498418f6d65030c958a9536ddf"
+    },
+    {
+      "file": "screenshots/perf0504--cache-calendar-retained.png",
+      "case": "multi-card-cache",
+      "label": "Six-card state retention · calendar",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "52dfcbb3cd210d80029a536c4c725d928cd6673a1a29f92de80012ea34f94968"
+    },
+    {
+      "file": "screenshots/perf0504--cache-news-retained.png",
+      "case": "multi-card-cache",
+      "label": "Six-card state retention · news",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "db6a412bb08e62b68c6e9e73ab5fdde91508fa773df252b7e358a2ea6b482312"
+    },
+    {
+      "file": "screenshots/perf0504--cache-finance-retained.png",
+      "case": "multi-card-cache",
+      "label": "Six-card state retention · finance",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "e4e20905e12079b9fa9fa2dc6b568803d7eb38b1db1b16203bb5a0408cbd49c2"
+    },
+    {
+      "file": "screenshots/perf0504--cache-photo-retained.png",
+      "case": "multi-card-cache",
+      "label": "Six-card state retention · photo",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "f8841b9f252c3df4075aa5ea06aad8124f282bbd7c1fa129c2789129157028f7"
+    },
+    {
+      "file": "screenshots/perf0504--cache-youtube-retained.png",
+      "case": "multi-card-cache",
+      "label": "Six-card state retention · youtube",
+      "build": 2026100504,
+      "phase": "accepted checkpoint",
+      "sha256": "7abafe54ebf7a0c6f306e68266bf2d6b09d728181ef9f296b117ce678d0a0e01"
+    },
+    {
+      "file": "screenshots/notice-agenda-opened.png",
+      "case": "shipping-agenda",
+      "label": "Before: metadata squeezes titles",
+      "build": 2026100501,
+      "phase": "Comparison or performance evidence; not a separate passed case",
+      "sha256": "c2da4bdbd53974634cdcb3b0a70741b3d1d9fd4df95fcf1f396aeba1948b2fa5"
+    },
+    {
+      "file": "screenshots/notice-calendar-opened.png",
+      "case": "shipping-calendar",
+      "label": "Before: half-width date tiles",
+      "build": 2026100501,
+      "phase": "Comparison or performance evidence; not a separate passed case",
+      "sha256": "2ae86b6edb510dc1c5eb15395c85d632e26bc8b3fbb0687809ecb332a2cdb075"
+    },
+    {
+      "file": "screenshots/l0-deepseek-photo-action.png",
+      "case": "l0-deepseek-photo",
+      "label": "Before: clipped explanation",
+      "build": 2026100501,
+      "phase": "Comparison or performance evidence; not a separate passed case",
+      "sha256": "6d296223e37b2a6258f025946dc96b64f4ba2b8b6bd4bd7a21ee8411967fce46"
+    },
+    {
+      "file": "screenshots/final-l0-0503--l0-deepseek-news-action.png",
+      "case": "l0-deepseek-news",
+      "label": "Before: clipped explanation",
+      "build": 2026100503,
+      "phase": "Comparison or performance evidence; not a separate passed case",
+      "sha256": "0a0fa7f2f4107ec0a5a2cabef3633a857c9c8783d903a9e6e3ea6de66ca68dce"
+    },
+    {
+      "file": "screenshots/dark0503--dark-splash-deepseek-mail.png",
+      "case": "splash-deepseek-mail",
+      "label": "Before: clipped navigation",
+      "build": 2026100503,
+      "phase": "Comparison or performance evidence; not a separate passed case",
+      "sha256": "813edd1662e9d9ecbf7f2b83513d60fda6c2e14722151a19b0354039b88779a7"
+    },
+    {
+      "file": "screenshots/perf0504--six-card-feed-before.png",
+      "case": "multi-card-cache",
+      "label": "Feed used for scrolling measurement",
+      "build": 2026100504,
+      "phase": "Comparison or performance evidence; not a separate passed case",
+      "sha256": "2d25285ba3bc7b9f21717384dad4fc6047819f1e2d9c487cf443bd0d37e34c40"
+    }
+  ]
+}
