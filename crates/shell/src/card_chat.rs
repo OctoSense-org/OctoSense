@@ -37,6 +37,11 @@ script_mod! {
             width: Fill height: Fit flow: Down spacing: 8
             padding: Inset{left: 14 right: 14 top: 8 bottom: 14}
             reply := ButtonFlat {visible: false width: Fill height: 44 margin: 0 text: "View updated email →"}
+            enable := ButtonFlat {
+                visible: false width: Fill height: 44 margin: 0 text: "Enable assistant…"
+                draw_bg +: {color: #3668e8 color_hover: #2854c4 color_down: #2148ad border_size: 0 border_radius: 12}
+                draw_text +: {color: #ffffff color_hover: #ffffff color_down: #ffffff}
+            }
             status := Label {
                 width: Fill height: Fit
                 draw_text.text_style: theme.font_regular{font_size: 10.0}
@@ -101,12 +106,13 @@ fn composer_height(text: &str, width: f64) -> f64 {
 pub struct CardChat {
     #[deref] view: View,
     #[rust] rows: Vec<MessageRow>,
-    #[rust] generation: Option<(u64, u64, Option<String>, bool)>,
+    #[rust] generation: Option<(u64, u64, Option<String>, bool, crate::agents::Access)>,
     #[rust] pending: Option<String>,
     #[rust] answering: bool,
     #[rust] available: bool,
     #[rust] ink: Option<Vec4f>,
     #[rust] reply_requested: bool,
+    #[rust] publisher: String,
 }
 
 impl ScriptHook for CardChat {
@@ -141,10 +147,14 @@ impl CardChat {
     }
 
     pub fn sync(&mut self, cx: &mut Cx, session: &mut crate::glance_card::L0Session) {
+        self.publisher = session.app.clone();
         let access = session.chat_access();
-        let generation = (crate::glance_chat::generation(), crate::mail_card::generation(), access.0, access.1);
+        let consent = crate::agents::access(&self.publisher);
+        let generation = (crate::glance_chat::generation(), crate::mail_card::generation(), access.0, access.1, consent);
         if self.generation.as_ref() == Some(&generation) { return; }
         self.generation = Some(generation);
+        self.view.widget(cx, ids!(enable)).set_visible(cx, session.account_valid()
+            && consent == crate::agents::Access::NotAsked);
         let first = self.rows.is_empty();
         let status = match session.chat_snapshot() {
             Ok(snapshot) => {
@@ -154,7 +164,7 @@ impl CardChat {
                 if self.answering { "Thinking…".to_string() }
                 else if self.available && session.mail_reply().is_some_and(|d| d["body_origin"] == "model_chat") { "Reply updated · saved".to_string() }
                 else if self.available && session.mail_reply().is_some() { "Changes save to your reply".to_string() }
-                else if self.available { "Ask about this card or request a change".to_string() }
+                else if self.available { "Ask this app about the card".to_string() }
                 else { "This card's conversation is unavailable".to_string() }
             }
             Err(error) => { self.available = false; self.rows.clear(); error }
@@ -166,6 +176,8 @@ impl CardChat {
         if input.empty_text() != placeholder { input.set_empty_text(cx, placeholder.into()); }
         if self.rows.is_empty() && mail.is_some() && self.available {
             self.rows.push(MessageRow {speaker: "Your reply workspace".into(), text: "Ask to change the time, tone or wording. Your saved reply is in Email, where you can edit it and review before sending.".into()});
+        } else if self.rows.is_empty() && self.available {
+            self.rows.push(MessageRow {speaker: "This card’s assistant".into(), text: "Ask about the card. What the assistant can change depends on the app’s available tools.".into()});
         }
         self.view.label(cx, ids!(status)).set_text(cx, &status);
         if first { self.view.portal_list(cx, ids!(transcript)).scroll_to_end(cx); }
@@ -197,6 +209,13 @@ impl CardChat {
 impl Widget for CardChat {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
+        if self.view.button(cx, ids!(enable)).clicked(&actions) {
+            if let Some(app) = crate::agents::find(&self.publisher) {
+                crate::agents::ask(&app);
+                cx.hide_text_ime(); cx.set_key_focus(Area::Empty);
+                self.generation = None;
+            }
+        }
         if self.view.button(cx, ids!(reply)).clicked(&actions) { self.reply_requested = true; }
         let input = self.view.text_input(cx, ids!(input));
         if let Some(text) = input.changed(&actions) {

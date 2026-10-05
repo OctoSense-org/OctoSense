@@ -523,6 +523,7 @@ pub struct App {
     /// home has laid its pages out at the phone's size (mobile_pages.rs).
     #[rust]
     pub test_page: Option<(Timer, i64)>,
+    #[rust] pub test_glance_fixtures: Option<(Timer, String)>,
     /// The hidden WebView that renders pages for the octos reader where
     /// there is no Chrome (the phone): serves `webview_render::renderer`.
     #[rust]
@@ -5230,6 +5231,13 @@ impl App {
                 }
             }
         }
+        #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+        if self.test_glance_fixtures.as_ref().is_some_and(|(timer, _)| timer.is_timer(te).is_some()) {
+            if let Some((_, path)) = self.test_glance_fixtures.take() {
+                log!("glance fixture admission: {:?}", glance::publish_test_fixtures(&path));
+                self.redraw_all(cx);
+            }
+        }
         if let Some((timer, n)) = &self.test_page {
             if timer.is_timer(te).is_some() {
                 let n = *n;
@@ -5288,6 +5296,12 @@ impl App {
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
                     if self.groups_test_action(cx, name) { i += 2; continue; }
+                    #[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+                    if let Some(path) = name.strip_prefix("glance-fixtures:") {
+                        self.test_glance_fixtures = Some((cx.start_timeout(1.5), path.into()));
+                        i += 2;
+                        continue;
+                    }
                     // webview-crawl:<url>,<url>…: a small crawl through the
                     // octos reader with the hidden WebView renderer, one
                     // `[webview-crawl]` log line per page (on-device check).

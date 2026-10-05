@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "source": "../apps",
-  "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers", "youtube"],
+  "apps": ["news", "photos", "maps", "camera", "mail", "calendar", "ai-providers", "youtube"],
   "assets": {
     "photos": { "photos": "../apps/photos/resources/photos" }
   }

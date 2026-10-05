@@ -36,7 +36,15 @@ answers:
 | `Canned` | the shell under `OCTOSENSE_GLANCE_DEMO=mail` (Mail's demo cards, fake data) | a fixed `model` reply; no model is called |
 | `NoAgent` | AppCard | a `host` notice: its agent does not answer inside a card yet |
 
-Unbound cards retain their existing message-only adapter. For a host-bound Mail
+Explicit unbound `sys.chat` cards retain their existing message-only adapter.
+For agent-enabled publications without a chat source, the shell supplies a
+host-owned conversation even for Splash cards. `ContextKind::Card` binds the
+original publication account and card thread, includes bounded publication data
+and current L0 state, and explicitly distinguishes local selections from external
+actions. It does not mint Mail edit tokens or add tools. The existing consent
+sheet must allow the app's agent first. Generated source remains unchanged.
+
+`ContextKind::Mail` remains separate. For a host-bound Mail
 card, `ContextBinding` supplies the original account, email context, durable draft
 snapshot (including its revision), and chat thread. `seed_bound` and
 `perform_bound` use the explicitly resolved account folder and reject a different

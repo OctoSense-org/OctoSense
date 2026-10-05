@@ -141,6 +141,8 @@ impl Caller {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GlanceCard {
     pub app: String,
+    /// Account at publication, supplied by the host, never by card arguments.
+    pub account: Option<String>,
     pub card_id: String,
     pub title: String,
     /// Bounded publication summary. Phone previews never execute the card.
@@ -176,6 +178,12 @@ pub struct L0Source {
 }
 
 impl GlanceCard {
+    pub(crate) fn account_valid(&self) -> bool {
+        self.account.as_ref().is_none_or(|account|
+            crate::ai_host::contained::account_of(&self.app).as_ref() == Some(account)
+            && crate::app_storage::host().is_some_and(|s| !s.is_signed_out(&self.app,
+                (account != crate::ai_host::contained::ACCOUNT).then_some(account.as_str()))))
+    }
     pub fn key(&self) -> String {
         format!("{}/{}", self.app, self.card_id)
     }
@@ -414,6 +422,8 @@ impl GlanceStore {
         let summary = note_summary(&json!({"summary": args.get("summary"), "data": &data}));
         let card = GlanceCard {
             app: app.clone(),
+            account: mail.as_ref().map(|b| b.account.clone()).or_else(||
+                crate::app_storage::host().and_then(|_| crate::ai_host::contained::account_of(&app))),
             card_id: card_id.to_string(),
             title: title.to_string(),
             summary,
@@ -722,14 +732,19 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
 /// surface calls it every frame it draws the glance screen.
 pub fn expire_now() {
     crate::mail_card::restore_publications();
-    if with_store(|store| store.expire(now_ms())) {
+    if with_store(|store| {
+        let before = store.len();
+        store.expire(now_ms());
+        store.cards.retain(GlanceCard::account_valid);
+        before != store.len()
+    }) {
         changed();
     }
 }
 
 /// The published card with this key (`app/card_id`), while it is live.
 pub fn card(key: &str) -> Option<GlanceCard> {
-    with_store(|store| store.card(key, now_ms()))
+    with_store(|store| store.card(key, now_ms())).filter(GlanceCard::account_valid)
 }
 
 /// The person dismissed the card with this key (`app/card_id`).
@@ -841,6 +856,27 @@ pub fn publish_l0_for(app: &str, args: &Value) -> Result<Value, String> {
     check_generated_l0(source)?;
     check_generated_data(source, &args["data"])?;
     publish_for(app, args)
+}
+
+/// Opt-in developer harness; normal app attribution/admission still applies.
+#[cfg(all(feature = "dev-mode", any(feature = "app-hub", native_mobile)))]
+pub(crate) fn publish_test_fixtures(path: &str) -> Result<usize, String> {
+    // Real app publishers pass their admitted glance grant. test.*
+    // prototypes carry no app capabilities and have no agent.
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path).map_err(|e| e.to_string())?
+        .take(256 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() > 256 * 1024 { return Err("Fixture file too large".into()); }
+    let fixtures: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if fixtures.len() > 12 { return Err("Too many fixtures".into()); }
+    for fixture in &fixtures {
+        let app = fixture["app"].as_str().ok_or("Missing fixture publisher")?;
+        if app.starts_with("test.") {
+            request(&Caller::Native(app.into()), "glance.publish", &fixture["args"])?;
+        } else { publish_for(app, &fixture["args"])?; }
+    }
+    Ok(fixtures.len())
 }
 
 /// Only installed as the Rust Mail service callback. Ordinary glance.publish
@@ -1596,4 +1632,17 @@ mod tests {
         assert!(take_replies_for(&[9104])[0].2.as_ref().unwrap().contains("true"));
         assert!(!shown().iter().any(|c| c.key() == "os.news/dispatch-test"));
     }
+    #[test]
+    fn publication_account_is_host_metadata_and_stale_accounts_cannot_open() {
+        let mut store = GlanceStore::default();
+        let mut input = args("account-bound");
+        input.as_object_mut().unwrap().remove("open");
+        input["account"] = json!("forged-account");
+        store.publish(&Caller::granted("os.account-probe"), &input, 0).unwrap();
+        let mut card = store.card("os.account-probe/account-bound", 0).unwrap();
+        assert_ne!(card.account.as_deref(), Some("forged-account"));
+        card.account = Some("signed-out-test-account".into());
+        assert!(!card.account_valid(), "opening cannot rebind an old publication to the new account");
+    }
+
 }

@@ -129,9 +129,89 @@ keyboard visibility and performance. Automated geometry checks establish where
 controls are drawn; they do not establish comfortable one-handed operation or
 replace feedback from the person using the phone.
 
+## Shared workspaces for all card publishers
+
+The full-screen transition is shared by every Glance publisher, including L0
+and Splash cards. It does not launch the publisher's full app. Mail keeps its
+specialized **Email / Chat** panes; other cards use their original generated UI
+and **Card / Chat** when the publisher declares an app agent. A card without an
+agent still opens full-screen, with no invented assistant or capabilities.
+
+`glance::GlanceCard.account` records the host's account at publication. Opening
+cannot rebind an old card to a new account. `glance_card::WorkspaceChat` provides
+a separate host-owned conversation when the card has no explicit `sys.chat`;
+it never inserts chat declarations into the model-authored source. Its
+`ContextKind::Card` binding contains the publication and L0 local state, bounded
+separately to 12 KiB. These are untrusted context, not tools or approval. The
+existing app peer executes permitted tools. First-use **Enable assistant** opens
+the existing host consent sheet. Mail's draft-edit lease requires
+`ContextKind::Mail` and cannot be issued from this generic binding. Splash chat
+receives publication context, not a snapshot of arbitrary isolate variables.
+
+Local L0 changes, interacted Splash views and unsent native chat are protected
+from the three-clean-workspace cache limit. Same-layout L0 republication keeps
+local state; identical Splash bodies retain their isolate. A changed non-Mail
+layout is deferred while that workspace contains local work, until withdrawal
+or expiry; the feed can show the newer summary meanwhile. Retention is within
+the process. Expiry, withdrawal and account invalidation retire workspaces.
+
+**Six-family OnePlus 6 checkpoint (Lab 0460/0464/0466):** the existing Android
+DeepSeek turn-12 and MiniMax turn-14 collections supplied six original L0
+`glance.card` / `glance.data.json` pairs each. Source and data hashes were
+recorded; no generated source was rewritten. All 12 published cards opened
+from compact summaries into the root `384 × 758` logical-point workspace.
+The evaluator drove ADB; models authored the templates and handled the separate
+live chat requests. The developer fixture loader uses normal app admission.
+Calendar is now included in the phone's system-app catalog.
+
+| Family | Observed local interaction in both collections | Scope |
+| --- | --- | --- |
+| Mail | Reply view; unsent native chat retained after visiting five other cards; MiniMax's typed generated reply also retained | Prototype reply is local, separate from the bound Mail service test below |
+| Calendar | RSVP selection: DeepSeek Maybe, MiniMax Going | No invitation response sent |
+| News | Save | Local state, not a backend bookmark |
+| Finance | Watch | Unprivileged `test.finance`; no shipping Finance app or agent |
+| Photos | Favorite; retained on return | Synthetic metadata, no photo-library access |
+| YouTube | Watch later | Local state, no playback or remote playlist update |
+
+Actual `deepseek-v4-flash` and `MiniMax-M3.1-Flash-Preview` Calendar agents then
+answered the same question about the event, current RSVP and whether anything
+was sent. Both read their card data and actual local choice correctly, and both
+said nothing was sent. Fallbacks were disabled; ledger terminal messages
+confirm each provider. This compares context handling, not model performance:
+the two original templates contain different event data. MiniMax's answer also
+contained unnecessary implementation wording and literal Markdown emphasis.
+
+**Fresh bound-Mail regression (Lab 0466):** DeepSeek called `mail.suggest_reply`
+and saved Thursday at 2 pm as revision 4, preserving the personal note and other
+text. MiniMax saved Wednesday at 10 am as revision 5, but introduced literal
+backslash-n characters instead of paragraph breaks. After explicit feedback
+through the same Chat pane, MiniMax saved real line breaks in revision 6; it
+also removed one dangling comma. The first formatting attempt failed, and the
+retry does not prove exact punctuation preservation. Both final Email views
+and review payloads matched the saved recipient, subject, body and revision.
+Back cancelled each review. No send approval or SMTP occurred, and no Gmail
+credentials were copied into the isolated Lab. These fresh live calls supersede
+the earlier offline model-validation gap; the failed 0459 checkpoint remains
+historical evidence.
+
+**Remaining acceptance:** DeepSeek Photos and YouTube captions still clip in
+the unchanged authored templates. The new phone pass covers L0 cards; full
+Splash bundles, the complete account/IME/accessibility matrix and cold-open
+latency remain unverified by this pass. Existing frame measurements above are
+historical; no new timing or numeric UX score is claimed. Local validation:
+**916 shell tests**, **13 contextual-chat tests**, three final native-chat draw
+tests, desktop default/mobile-apps and phone checks, both shell graphs, runtime
+pins and Android packaging passed.
+
+Lab **0468** also verifies declining first-use assistant consent: the Enable
+assistant control disappears and chat remains unavailable. User test build
+**0469** carries this final consent-state refresh. Installation preserves the
+real publication, draft, transcript, policy and provider configuration byte for
+byte; publication, draft, transcript and provider remain unchanged after startup.
+
 ## Follow one reply through the code
 
-The native workspace now uses **Chat / Reply**. Reply reads the authoritative
+The native workspace now uses **Email / Chat**. Email reads the authoritative
 draft through `mail_clip::MailClip`; typing stages in `mail_card::Session`, saves
 after 500 ms idle, and flushes before Chat or review. It retains unsaved text on
 conflict. The native chat can issue a five-minute, one-use body-edit capability

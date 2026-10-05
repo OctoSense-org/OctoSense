@@ -392,6 +392,7 @@ mod tests {
     }
     fn card(p: &Publication) -> GlanceCard {
         GlanceCard {
+            account: Some(p.binding.account.clone()),
             app: "os.mail".into(),
             card_id: p.binding.card_id.clone(),
             title: "Mail".into(), summary: String::new(),

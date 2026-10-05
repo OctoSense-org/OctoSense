@@ -23,7 +23,9 @@ for m in convo.entries key m.id { ChatEntry(text: m.text, role: m.role) }
 
 Shell 的 `AgentResponder` 在得到应用助手许可后，通过应用 peer 的会话发送 `TurnTrigger::AppSaysPerson`。没有 Agent 时显示宿主提示。Mail 演示模式使用固定回答，不调用模型；AppCard 当前使用 `NoAgent`。
 
-普通未绑定卡片保留原来的单条问题适配器。绑定 Mail 卡片使用宿主创建的 `ContextBinding`，包含原账户、邮件上下文、带版本号的持久草稿快照及线程 ID。`seed_bound`、`perform_bound` 使用明确指定的账户目录，拒绝线程不匹配。账户切换或助手权限撤销后，Shell 拒绝操作，不会将旧卡片转到新账户。晚到的回答仍属于原聊天记录。
+显式未绑定的 `sys.chat` 卡片保留原来的单条问题适配器。声明了 agent 却没有聊天源的发布（包括 Splash 卡片），由 shell 提供宿主拥有的会话。`ContextKind::Card` 绑定原发布账户和卡片线程，包含有大小限制的发布数据及当前 L0 状态，并明确区分本地选择和外部操作；它不签发 Mail 编辑凭证，也不新增工具。应用 agent 必须先经过现有许可面板。生成源码保持不变。
+
+`ContextKind::Mail` 单独处理邮件。绑定 Mail 卡片使用宿主创建的 `ContextBinding`，包含原账户、邮件上下文、带版本号的持久草稿快照及线程 ID。`seed_bound`、`perform_bound` 使用明确指定的账户目录，拒绝线程不匹配。账户切换或助手权限撤销后，Shell 拒绝操作，不会将旧卡片转到新账户。晚到的回答仍属于原聊天记录。
 
 `Request::agent_text` 将绑定信息（最多 32 KiB）、最近最多 20 条且合计不超过 16 KiB 的历史消息和当前问题序列化为数据。邮件、草稿和历史内容明确标为不可信数据，不授予工具权限或发送许可。会话仍在同一个应用 peer 上；这个接口本身不发布组合卡片，也不授权发送邮件。
 

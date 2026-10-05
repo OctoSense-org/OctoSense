@@ -110,10 +110,12 @@ struct Retained {
     open: Open, live: LiveCards, tiles: GlanceTiles,
     chat: WidgetRef, mail: WidgetRef,
     chatting: bool, chat_available: bool, resume_store: Option<InstanceStore>,
+    script_interacted: bool,
 }
 impl Retained {
     fn dirty(&self, cx: &Cx) -> bool {
         self.chat.borrow::<crate::card_chat::CardChat>().is_some_and(|c| c.has_unsent_input(cx))
+            || self.live.has_local_changes() || self.script_interacted
             || self.open.card.l0.as_ref().and_then(|l| l.mail.as_ref()).is_some_and(|b| crate::mail_card::card_status(b).unsaved)
     }
 }
@@ -151,6 +153,7 @@ pub struct ShellGlanceSheet {
     #[rust] chatting: bool,
     #[rust] chat_available: bool,
     #[rust] resume_store: Option<InstanceStore>,
+    #[rust] script_interacted: bool,
     #[rust] tabs_style: Option<(bool, Vec4f)>,
     #[rust]
     open: Option<Open>,
@@ -293,6 +296,7 @@ impl ShellGlanceSheet {
 
     /// Open the published card `key`. False when it is no longer published.
     pub fn open_card(&mut self, cx: &mut Cx, key: &str) -> bool {
+        if !self.live.accounts_valid() { self.close(cx); }
         if self.mail_binding().is_some() {
             if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() {
                 // Unsaved conflicts stay in the draft-scoped store and in the
@@ -312,12 +316,13 @@ impl ShellGlanceSheet {
                 return true;
             }
             self.retain_current(cx);
-            if let Some(index) = self.retained.iter().position(|entry| entry.open.key == key) {
+            if let Some(index) = self.retained.iter().position(|entry| entry.open.key == key && entry.live.accounts_valid()) {
                 let entry = self.retained.remove(index);
                 self.open = Some(entry.open); self.live = entry.live; self.tiles = entry.tiles;
                 self.chat = entry.chat; self.mail = entry.mail;
                 self.chatting = entry.chatting; self.chat_available = entry.chat_available;
                 self.resume_store = entry.resume_store; self.tabs_style = None;
+                self.script_interacted = entry.script_interacted;
                 self.replace_publication(cx, card);
                 self.tabs.button(cx, ids!(card_tab)).set_text(cx, if self.mail_binding().is_some() { "Email" } else { "Card" });
                 self.presentation.activate(); self.redraw(cx);
@@ -328,6 +333,7 @@ impl ShellGlanceSheet {
         self.chatting = false;
         self.chat_available = false;
         self.resume_store = None;
+        self.script_interacted = false;
         if let Some(mut chat) = self.chat.borrow_mut::<crate::card_chat::CardChat>() { chat.reset(cx); }
         cx.set_key_focus(Area::Empty);
         cx.hide_text_ime();
@@ -344,6 +350,7 @@ impl ShellGlanceSheet {
                     // A legacy Mail composer supplies an opaque host review,
                     // not generated card source or authority-bearing JSON.
                     self.open = Some(Open { key: key.into(), card: GlanceCard {
+                        account: None,
                         app: "os.mail".into(), card_id: "host-review".into(), title: "Mail reply".into(), summary: String::new(),
                         priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
                         route: None, body: "".into(), contained: false, digests: Vec::new(), l0: None,
@@ -401,9 +408,10 @@ impl ShellGlanceSheet {
             open, live: std::mem::take(&mut self.live), tiles: std::mem::replace(&mut self.tiles, GlanceTiles::scrolling()),
             chat: std::mem::replace(&mut self.chat, chat), mail: std::mem::replace(&mut self.mail, mail),
             chatting: self.chatting, chat_available: self.chat_available, resume_store: self.resume_store.take(),
+            script_interacted: std::mem::take(&mut self.script_interacted),
         });
-        // Three inactive clean workspaces plus the active one. Human text is
-        // not evicted merely to meet a rendering cache limit.
+        // Three inactive clean workspaces plus the active one. Human text
+        // and local card changes are not evicted to meet a rendering cache limit.
         while self.retained.iter().filter(|entry| !entry.dirty(cx)).count() > 3 {
             let index = self.retained.iter().position(|entry| !entry.dirty(cx)).unwrap();
             self.retained.remove(index).tiles.sweep(cx, &[]);
@@ -451,11 +459,11 @@ impl ShellGlanceSheet {
 
     fn refresh_publication(&mut self, cx: &mut Cx) {
         self.retained.retain_mut(|entry| {
-            let valid = crate::glance::card(&entry.open.key).is_some() && entry.open.card.l0.as_ref().and_then(|l| l.mail.as_ref()).is_none_or(|b| crate::mail_card::account_valid(&b.account));
+            let valid = crate::glance::card(&entry.open.key).is_some() && entry.live.accounts_valid() && entry.open.card.l0.as_ref().and_then(|l| l.mail.as_ref()).is_none_or(|b| crate::mail_card::account_valid(&b.account));
             if !valid { entry.tiles.sweep(cx, &[]); }
             valid
         });
-        if self.mail_binding().is_some_and(|b| !crate::mail_card::account_valid(&b.account)) { self.close(cx); return; }
+        if !self.live.accounts_valid() || self.mail_binding().is_some_and(|b| !crate::mail_card::account_valid(&b.account)) { self.close(cx); return; }
         let generation = crate::glance::generation();
         if generation == self.publication_generation { return; }
         self.publication_generation = generation;
@@ -472,6 +480,27 @@ impl ShellGlanceSheet {
         let same_mail = self.mail_binding().is_some() && self.mail_binding() == card.l0.as_ref().and_then(|l| l.mail.clone());
         let Some(open) = self.open.as_mut() else { return; };
         if open.card == card { return; }
+        let same_layout = match (&open.card.l0, &card.l0) {
+            (Some(old), Some(new)) => old.source == new.source && old.mail == new.mail,
+            (None, None) => open.card.body == card.body,
+            _ => false,
+        };
+        // A background layout replacement must not destroy local edits or
+        // an unfinished conversation. Keep that workspace's snapshot until
+        // withdrawal/expiry; the feed still shows the newest publication.
+        let dirty = self.live.has_local_changes() || self.script_interacted
+            || self.chat.borrow::<crate::card_chat::CardChat>().is_some_and(|c| c.has_unsent_input(cx));
+        if !same_mail && !same_layout && dirty { return; }
+        if same_layout && card.l0.is_none() {
+            self.live.refresh_script_metadata(&Self::tile_key(&open.key), &card);
+            open.card = card;
+            self.redraw(cx);
+            return;
+        }
+        let keep_conversation = same_mail || (open.card.app == card.app && self.live.accounts_valid());
+        let previous = if same_layout && card.l0.is_some() {
+            self.live.session_mut(&Self::tile_key(&open.key)).map(|s| s.store.clone())
+        } else { None };
         open.card = card;
         // Throw away old source and queued NAV events; durable Mail state and
         // unsaved edits live in the host's draft-scoped Session store.
@@ -481,7 +510,7 @@ impl ShellGlanceSheet {
         self.tiles = GlanceTiles::scrolling();
         self.live.clear();
         self.logged.clear();
-        if !same_mail {
+        if !keep_conversation {
             cx.set_key_focus(Area::Empty);
             self.chatting = false;
             if let Some(mut chat) = self.chat.borrow_mut::<crate::card_chat::CardChat>() { chat.reset(cx); }
@@ -496,7 +525,8 @@ impl ShellGlanceSheet {
             self.live.prepare_native(&key, &open.card);
         } else { self.live.body(&key, &open.card, "glance sheet"); }
         self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat());
-        self.resume_store = None;
+        if let Some(store) = previous { self.live.restore_store(&key, store); }
+        if !same_layout { self.resume_store = None; }
         self.redraw(cx);
     }
 
@@ -770,6 +800,12 @@ impl Widget for ShellGlanceSheet {
                 return;
             }
         }
+        // Splash state lives in its resident isolate, not InstanceStore. Be
+        // conservative: once interacted with, do not evict its clean cache slot.
+        if self.open.as_ref().is_some_and(|o| o.card.l0.is_none())
+            && matches!(event, Event::TextInput(_) | Event::MouseDown(_) | Event::TouchUpdate(_)) {
+            self.script_interacted = true;
+        }
         self.tiles.handle_event(cx, event);
         self.dispatch_taps(cx);
         #[cfg(any(feature = "app-hub", native_mobile))]
@@ -888,6 +924,7 @@ mod tests {
         sheet.sheet = rect(20., 60., 340., 400.);
         sheet.publication_generation = crate::glance::generation();
         sheet.open = Some(Open { key: "test/card".into(), card: GlanceCard {
+            account: None,
             app: "test".into(), card_id: "card".into(), title: "Card".into(), summary: String::new(), priority: 0,
             published_ms: 0, expires_ms: u64::MAX, open_app: "test".into(), route: None,
             body: "".into(), contained: false, digests: Vec::new(), l0: None,
@@ -983,6 +1020,40 @@ mod tests {
         assert!(!sheet.open_card(&mut cx, "missing-publisher/withdrawn-card"));
         assert!(!sheet.is_open());
         assert!(sheet.open_key().is_none());
+    }
+
+    #[test]
+    fn six_workspaces_do_not_evict_an_interacted_script_or_unsent_chat() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let widget = workspace_widget(&mut cx);
+        let mut sheet = widget.borrow_mut::<ShellGlanceSheet>().unwrap();
+        for index in 0..6 {
+            let source = opened(&mut cx);
+            sheet.open = source.open;
+            sheet.open.as_mut().unwrap().key = format!("test/card-{index}");
+            sheet.script_interacted = index == 0;
+            if index == 1 { sheet.chat.text_input(&cx, ids!(input)).set_text(&mut cx, "Keep my unfinished question"); }
+            sheet.retain_current(&mut cx);
+        }
+        assert_eq!(sheet.retained.len(), 5, "two dirty and three clean workspaces");
+        assert!(sheet.retained.iter().any(|entry| entry.open.key == "test/card-0" && entry.dirty(&cx)));
+        assert!(sheet.retained.iter().any(|entry| entry.open.key == "test/card-1" && entry.dirty(&cx)));
+        assert!(!sheet.retained.iter().any(|entry| entry.open.key == "test/card-2"));
+    }
+
+    #[test]
+    fn a_new_background_layout_cannot_erase_local_script_work() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut sheet = opened(&mut cx);
+        let original = sheet.open.as_ref().unwrap().card.clone();
+        sheet.script_interacted = true;
+        let mut replacement = original.clone(); replacement.body = "View{}".into();
+        sheet.replace_publication(&mut cx, replacement);
+        assert_eq!(sheet.open.as_ref().unwrap().card, original);
+        let mut metadata = original.clone(); metadata.title = "Fresh summary".into();
+        sheet.replace_publication(&mut cx, metadata.clone());
+        assert_eq!(sheet.open.as_ref().unwrap().card, metadata);
+        assert!(sheet.script_interacted);
     }
 
 }

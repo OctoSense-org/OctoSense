@@ -378,12 +378,56 @@ pub struct L0Session {
     pub data: serde_json::Value,
     pub store: octoscript_ui_l0::InstanceStore,
     pub mail: Option<crate::mail_card::Session>,
+    /// Host-owned conversation for publishers with an agent but no sys.chat.
+    /// Never changes the model-authored source or grants the agent new tools.
+    workspace_chat: Option<WorkspaceChat>,
+    opening_account: Option<String>,
+    local_changes: bool,
     /// The chat generation the card was last lowered at.
     chat_generation: u64,
     /// The card reads a `sys.chat` (worked out once: every event asks).
     reads_chat: bool,
     /// The shell's mode the card was last lowered in.
     dark: bool,
+}
+
+struct WorkspaceChat {
+    account: String,
+    thread: String,
+    declaration: String,
+    publication: serde_json::Value,
+}
+
+fn bounded_context(value: serde_json::Value) -> serde_json::Value {
+    if serde_json::to_vec(&value).is_ok_and(|bytes| bytes.len() <= 12 * 1024) { value }
+    else { serde_json::json!({"omitted": "Exceeds card context limit"}) }
+}
+
+impl WorkspaceChat {
+    fn new(card: &crate::glance::GlanceCard, account: String) -> Self {
+        use sha2::Digest;
+        let thread = format!("card-{:x}", sha2::Sha256::digest(card.key().as_bytes()));
+        let thread = thread[..53].to_string();
+        let declaration = format!("source workspace_conversation sys.chat(app: {}, thread: {}, fields: [entries, id, role, text])\nview root Surface {{ TextBody(text: \"\") }}",
+            serde_json::to_string(&card.app).unwrap(), serde_json::to_string(&thread).unwrap());
+        Self { account, thread, declaration, publication: bounded_context(serde_json::json!({
+            "publisher": card.app, "card_id": card.card_id, "title": card.title, "summary": card.summary,
+            "published_ms": card.published_ms, "data": card.l0.as_ref().map(|l| &l.data),
+        })) }
+    }
+    fn binding(&self, state: &octoscript_ui_l0::InstanceStore) -> crate::glance_chat::ContextBinding {
+        crate::glance_chat::ContextBinding {
+            kind: octosense_l0_chat::ContextKind::Card,
+            account: self.account.clone(), thread: self.thread.clone(),
+            source_message: self.publication.clone(),
+            draft: bounded_context(serde_json::json!({"local_state": state})),
+        }
+    }
+    fn account_valid(&self, app: &str) -> bool {
+        crate::ai_host::contained::account_of(app).as_deref() == Some(&self.account)
+            && crate::app_storage::host().is_some_and(|s| !s.is_signed_out(app,
+                (self.account != crate::ai_host::contained::ACCOUNT).then_some(self.account.as_str())))
+    }
 }
 
 /// What a tap did to an [`L0Session`].
@@ -412,10 +456,35 @@ impl L0Session {
     pub(crate) fn mail_reply(&self) -> Option<&serde_json::Value> { self.mail.as_ref().map(|m| m.snapshot()) }
 
     pub(crate) fn chat_access(&self) -> (Option<String>, bool) {
-        (crate::ai_host::contained::account_of(&self.app), crate::agents::access(&self.app) == crate::agents::Access::Allowed && self.mail.as_ref().is_none_or(|m| crate::mail_card::account_valid(&m.binding.account)))
+        (crate::ai_host::contained::account_of(&self.app), crate::agents::access(&self.app) == crate::agents::Access::Allowed && self.account_valid())
+    }
+
+    pub(crate) fn account_valid(&self) -> bool {
+        self.mail.as_ref().is_none_or(|m| crate::mail_card::account_valid(&m.binding.account))
+            && self.workspace_chat.as_ref().is_none_or(|chat| chat.account_valid(&self.app))
+            && self.opening_account.as_ref().is_none_or(|account|
+                crate::ai_host::contained::account_of(&self.app).as_ref() == Some(account)
+                && crate::app_storage::host().is_some_and(|s| !s.is_signed_out(&self.app,
+                    (account != crate::ai_host::contained::ACCOUNT).then_some(account.as_str()))))
+    }
+
+    fn for_card(card: &crate::glance::GlanceCard) -> Self {
+        let mut session = Self::new(&card.app, &card.l0.as_deref().cloned().unwrap_or(crate::glance::L0Source {
+            source: String::new(), data: serde_json::json!({}), mail: None,
+        }));
+        session.opening_account = card.account.clone();
+        if session.mail.is_none() && !session.reads_chat && crate::agents::all().iter().any(|agent| agent.id == card.app) {
+            if let Some(account) = card.account.clone() {
+                session.workspace_chat = Some(WorkspaceChat::new(card, account));
+            }
+        }
+        session
     }
 
     fn chat_source(&self) -> Result<octosense_l0_chat::ChatSource, String> {
+        if let Some(chat) = &self.workspace_chat {
+            return octosense_l0_chat::sources(&chat.declaration).into_iter().next().ok_or_else(|| "Invalid workspace conversation".into());
+        }
         let mut sources = octosense_l0_chat::sources(&self.source).into_iter().filter(|source| source.app.as_deref() == Some(self.app.as_str()));
         let source = sources.next().ok_or("This card has no conversation")?;
         if sources.next().is_some() { return Err("Open the conversation from this card's own controls".into()); }
@@ -423,6 +492,10 @@ impl L0Session {
     }
 
     pub(crate) fn chat_snapshot(&mut self) -> Result<serde_json::Value, String> {
+        if let Some(chat) = &self.workspace_chat {
+            let data = crate::glance_chat::seed_bound(&self.app, &chat.declaration, &serde_json::json!({}), &self.store, &chat.binding(&self.store))?;
+            return Ok(data["workspace_conversation"].clone());
+        }
         if let Some(mail) = &mut self.mail { mail.refresh(); }
         let source = self.chat_source()?;
         let data = self.data_now();
@@ -440,6 +513,10 @@ impl L0Session {
         };
         let data = self.data_now();
         let origin = Some(octoscript_ui_l0::ValueOrigin::UserInput);
+        if let Some(chat) = &self.workspace_chat {
+            crate::glance_chat::perform_bound(&self.app, &chat.declaration, &self.store, &data, &write, origin, &chat.binding(&self.store))?;
+            return Ok(());
+        }
         match &self.mail {
             Some(mail) => {
                 let binding = mail.chat_edit_binding()?;
@@ -483,6 +560,9 @@ impl L0Session {
             data: l0.data.clone(),
             store: Default::default(),
             mail: l0.mail.clone().map(crate::mail_card::Session::new),
+            workspace_chat: None,
+            opening_account: None,
+            local_changes: false,
             chat_generation: crate::glance_chat::generation(),
             reads_chat: crate::glance_chat::reads_chat(&l0.source),
             dark: dark(),
@@ -580,6 +660,7 @@ impl L0Session {
             }
         };
         let outcome = octoscript_ui_l0::dispatch_reporting_with_origin(&self.source, &mut self.store, &key, &event, payload.as_ref(), &data, origin.unwrap_or(octoscript_ui_l0::ValueOrigin::Authored));
+        self.local_changes |= !outcome.changed.is_empty();
         for write in &outcome.writes {
             self.perform(write, origin, &data, keystroke);
         }
@@ -614,8 +695,8 @@ impl L0Session {
 /// [`L0Session`] and the body its tile draws now. The card window keeps one
 /// for its card, and the glance panel and the phone's glance page one for
 /// their tiles, so a tap runs the same way on each (module docs, "L0
-/// taps"). A script card is not kept here: it runs as published and keeps
-/// its own state.
+/// taps"). A script card keeps only its host conversation here; its original
+/// body and local widget state remain in the resident Splash isolate.
 #[derive(Default)]
 pub struct LiveCards {
     cards: HashMap<String, LiveCard>,
@@ -625,7 +706,7 @@ struct LiveCard {
     /// The card's key (`app/card_id`), for the log.
     key: String,
     /// The publish the session runs: a newer publish of the card starts over.
-    published: std::sync::Arc<crate::glance::L0Source>,
+    published: crate::glance::GlanceCard,
     session: L0Session,
     body: std::sync::Arc<str>,
     lowered: bool,
@@ -635,12 +716,19 @@ impl LiveCards {
     /// A host-owned pane needs the publication's session, not a generated
     /// layout. Defer lowering until an actual generated tile asks for it.
     pub(crate) fn prepare_native(&mut self, tile: &str, card: &crate::glance::GlanceCard) {
-        let Some(l0) = &card.l0 else { self.cards.remove(tile); return; };
-        if self.cards.get(tile).is_some_and(|live| std::sync::Arc::ptr_eq(&live.published, l0)) { return; }
+        if self.cards.get(tile).is_some_and(|live| live.published == *card) { return; }
         self.cards.insert(tile.to_string(), LiveCard {
-            key: card.key(), published: l0.clone(), session: L0Session::new(&card.app, l0),
+            key: card.key(), published: card.clone(), session: L0Session::for_card(card),
             body: card.body.clone(), lowered: false,
         });
+    }
+
+    pub(crate) fn has_local_changes(&self) -> bool {
+        self.cards.values().any(|card| card.session.local_changes)
+    }
+
+    pub(crate) fn accounts_valid(&self) -> bool {
+        self.cards.values().all(|card| card.session.account_valid())
     }
 
     pub(crate) fn session_mut(&mut self, tile: &str) -> Option<&mut L0Session> {
@@ -650,7 +738,17 @@ impl LiveCards {
     pub(crate) fn restore_store(&mut self, tile: &str, store: octoscript_ui_l0::InstanceStore) {
         if let Some(card) = self.cards.get_mut(tile) {
             card.session.store = store;
+            card.session.local_changes = true;
             if let Ok(body) = card.session.body() { card.body = body.into(); card.lowered = true; }
+        }
+    }
+
+    pub(crate) fn refresh_script_metadata(&mut self, tile: &str, card: &crate::glance::GlanceCard) {
+        if let Some(live) = self.cards.get_mut(tile) {
+            if let Some(chat) = &mut live.session.workspace_chat {
+                *chat = WorkspaceChat::new(card, chat.account.clone());
+            }
+            live.published = card.clone();
         }
     }
     /// What tile `tile` draws for `card`: an L0 card as its session has it
@@ -658,30 +756,16 @@ impl LiveCards {
     /// again for a newer publish), a script card as published. `who` heads
     /// the log lines (`glance panel`).
     pub fn body(&mut self, tile: &str, card: &crate::glance::GlanceCard, who: &str) -> std::sync::Arc<str> {
-        let Some(l0) = &card.l0 else {
-            self.cards.remove(tile);
-            return card.body.clone();
-        };
-        if let Some(live) = self.cards.get_mut(tile).filter(|live| std::sync::Arc::ptr_eq(&live.published, l0)) {
-            // The shell changed mode: the card takes the new palette.
-            if !live.lowered || live.session.mode_moved() || live.session.chat_moved() {
-                match live.session.body() {
-                    Ok(body) => { live.body = body.into(); live.lowered = true; }
-                    Err(e) => log!("{who}: {} does not lower in the new mode: {e}", live.key),
-                }
+        self.prepare_native(tile, card);
+        let live = self.cards.get_mut(tile).unwrap();
+        if card.l0.is_none() { return card.body.clone(); }
+        if !live.lowered || live.session.mode_moved() || live.session.chat_moved() {
+            match live.session.body() {
+                Ok(body) => { live.body = body.into(); live.lowered = true; }
+                Err(e) => log!("{who}: {} does not lower in the new mode: {e}", live.key),
             }
-            return live.body.clone();
         }
-        let mut session = L0Session::new(&card.app, l0);
-        let body: std::sync::Arc<str> = match session.body() {
-            Ok(body) => body.into(),
-            Err(e) => {
-                log!("{who}: {} lowers as published only: {e}", card.key());
-                card.body.clone()
-            }
-        };
-        self.cards.insert(tile.to_string(), LiveCard { key: card.key(), published: l0.clone(), session, body: body.clone(), lowered: true });
-        body
+        live.body.clone()
     }
 
     /// Run each live card's queued taps, those of its own tile's isolate
@@ -690,6 +774,7 @@ impl LiveCards {
     pub fn dispatch(&mut self, cx: &mut Cx, tiles: &GlanceTiles, who: &str) -> bool {
         let mut changed = false;
         for (tile, live) in &mut self.cards {
+            if live.published.l0.is_none() { continue; }
             let taps = tiles.heap_key(cx, tile).map(take_taps).unwrap_or_default();
             if taps.is_empty() && !live.session.chat_moved() && !live.session.mode_moved() {
                 continue;
@@ -1198,6 +1283,7 @@ mod tests {
     fn native_panes_defer_layout_and_generated_tiles_still_lower_on_demand() {
         let source = "view root Surface { TextBody(text: \"Authoritative source\") }";
         let card = crate::glance::GlanceCard {
+            account: None,
             app: "os.mail".into(), card_id: "lazy-layout".into(), title: "Reply".into(), summary: String::new(),
             priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
             route: None, body: "old published layout".into(), contained: false, digests: vec![],
@@ -1622,4 +1708,34 @@ mod tests {
         draw(&mut cx, &mut tiles, 260.0);
         assert_eq!(frame.as_view().scroll_pos().y, 100.0);
     }
+    #[test]
+    fn workspace_context_is_card_scoped_bounded_and_preserves_authored_source() {
+        let mut store = crate::glance::GlanceStore::default();
+        let source = "state saved { shape: enum[no, yes], initial: .no }\nevent save { saved: set(.yes) }\nview root Surface { Chip(text: \"Save\", on_tap: save) }";
+        store.publish(&crate::glance::Caller::Native("test.news".into()), &serde_json::json!({
+            "card_id":"brief", "title":"News", "source":source, "data":{"article":"Fictional article"}
+        }), 0).unwrap();
+        let card = store.card("test.news/brief", 0).unwrap();
+        let mut session = L0Session::for_card(&card);
+        assert!(!session.has_chat(), "an undeclared agent must not acquire chat");
+        let chat = WorkspaceChat::new(&card, "account-a".into());
+        assert!(octosense_l0_chat::valid_thread(&chat.thread));
+        assert_eq!(octosense_l0_chat::sources(&chat.declaration).len(), 1);
+        session.workspace_chat = Some(chat);
+        assert!(session.has_chat());
+        assert_eq!(session.source, source);
+        let body = session.body().unwrap();
+        session.tap(&target_for(&body, "save"), None).unwrap();
+        assert!(session.local_changes);
+        let binding = session.workspace_chat.as_ref().unwrap().binding(&session.store);
+        assert!(binding.validate().is_ok());
+        assert_eq!(binding.source_message["data"]["article"], "Fictional article");
+        assert!(binding.draft.to_string().contains("yes"), "chat sees the actual local selection");
+        assert!(session.chat_submit("Read this card").is_err(), "an unbound or disallowed account cannot dispatch");
+        let mut other = card.clone(); other.card_id = "other".into();
+        assert_ne!(WorkspaceChat::new(&other, "account-a".into()).thread, binding.thread);
+        assert_eq!(WorkspaceChat::new(&card, "account-b".into()).thread, binding.thread, "account isolation is in the bound folder");
+        assert!(bounded_context(serde_json::json!({"large":"x".repeat(20_000)}))["omitted"].is_string());
+    }
+
 }

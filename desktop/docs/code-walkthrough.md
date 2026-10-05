@@ -214,9 +214,12 @@ Shift+F8 or the menu. F8 opens the system agent. `agents.list` reports app agent
 `agents.ask` waits for first-use consent and peer preparation, then returns the
 peer slug. The system agent sends the task with `peer_send_input` and gathers its
 answer with `peer_gather`. A card declaring `sys.chat` can address its own app
-agent. Shipped notice and Calendar templates have no chat, so use “Ask <app>”
-for those agents; the Mail demo card answers with canned text.
-Phone touch navigation has no Ask-app panel-opening control yet.
+agent. In a card workspace, an agent-enabled publisher without an embedded
+conversation gets native Card / Chat tabs and a host-bound conversation. Its
+publication and local L0 state are context, not tool grants; Enable assistant
+opens first-use consent. This also covers shipped notice and Calendar cards on
+the phone. The explicit Mail demo conversation still answers with canned text.
+Phone touch navigation has no separate Ask-app panel-opening control yet.
 
 Follow [`app_chat/`](../../crates/shell/src/app_chat/mod.rs),
 [`system_chat/`](../../crates/shell/src/system_chat/mod.rs),

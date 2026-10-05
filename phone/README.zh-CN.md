@@ -137,6 +137,10 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 Glance 保持紧凑的发布摘要。点按后，选中的卡片在信息流上方展开为常驻的全屏工作区；摘要矩形只作为动画起点，不再决定工作区大小，信息流条目也不增高。其余卡片被覆盖且不能接收输入。**Email / Chat** 位于同一行。Email 显示摘要、原邮件切换按钮，以及可直接编辑的收件人、主题和正文；**Review reply** 打开准确邮件内容的批准界面。Chat 使用虚拟化记录和键盘上方的固定输入框；模型修改实际保存后，显示 **View updated email** 并读取同一份权威草稿。返回键依次关闭键盘、审核、工作区。回到概览后，同一进程内保留草稿、未发送聊天文字、页面和控件滚动位置；缓存三个非活动的干净工作区，未发送的人类输入不参与干净缓存淘汰。账户失效或发布撤销时退出对应工作区。草稿持久保存，但不承诺进程退出后保留未发送聊天输入。展示切换不启动新的 Activity、应用、agent 或模型生成。设备证据及已撤回的 UX 评分见 [Mail 工作流](../docs/mail-composable-cards.zh-CN.md)。
 
+Calendar、News、Photos、YouTube 以及 Finance 原型卡片均使用同一套工作区。声明了 agent 的应用，即使发布的 L0 或 Splash 界面没有内嵌 `sys.chat`，也会获得原生 **Card / Chat** 页签。宿主将补充会话绑定到发布者、账户和卡片，把发布数据与当前 L0 状态作为有大小限制的不可信上下文传给该应用的 agent。已有的显式会话保留其线程。聊天不新增工具，也不授权外部操作；没有 agent 的应用不显示 Chat。Home 的系统应用列表现已包含 Calendar；Finance 仍不是内置系统应用。
+
+L0 的本地修改和已交互的 Splash 实例也不参与干净缓存淘汰。仅数据变化的 L0 重新发布保留本地状态；如果工作区有本地修改或未发送聊天，新的布局会暂缓替换。此时信息流可显示更新摘要，驻留工作区保留原交互快照，直到发布撤销、到期或账户失效。这是进程内保留，并非通用的应用状态持久化服务。Mail 的保存草稿、修改工具和实体发送批准仍是 Mail 专属能力。
+
 ## 内置设置
 
 在应用目录中打开 **OctoSense Settings**，可使用共享主题、受支持的显示与声音控制以及设备信息。它的 Octoscript–Makepad 界面会跟随实时的主题和字体大小变化，同时保留当前页面。导航、搜索、草稿、审阅和应用事件处理都在 [Octoscript 控制器](resources/settings/controller) 中执行；原生代码负责渲染、文本输入和有类型的 Android 绑定。参见 [移植设计与验证状态（英文）](../docs/adr/home/0005-settings-octoscript-controller.md)。完整替代系统设置的工作仍在进行中，部分区域仍会打开 Android 设置。参见 [当前控制项与验证（英文）](docs/android/settings.md)、[功能对齐清单（英文）](docs/android/settings-parity.md) 和 [架构决策（英文）](../docs/adr/home/0006-builtin-settings.md)。

@@ -399,6 +399,7 @@ impl Session {
         // Chat always uses acknowledged durable text, never a dirty overlay.
         let durable = read(&self.binding)?;
         Ok(crate::glance_chat::ContextBinding {
+            kind: octosense_l0_chat::ContextKind::Mail,
             account: self.binding.account.clone(),
             thread: self.binding.chat_thread.clone(),
             source_message: json!({"identity":self.binding.source_message,"email":durable["email"]}),
@@ -536,7 +537,7 @@ impl Session {
 pub struct ChatEditLease(Option<String>);
 impl ChatEditLease {
     pub fn new(binding: Option<&crate::glance_chat::ContextBinding>) -> Self {
-        Self(binding.and_then(|b| b.draft["edit_token"].as_str()).map(str::to_owned))
+        Self(binding.filter(|b| matches!(b.kind, octosense_l0_chat::ContextKind::Mail)).and_then(|b| b.draft["edit_token"].as_str()).map(str::to_owned))
     }
 }
 impl Drop for ChatEditLease {
