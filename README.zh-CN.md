@@ -109,12 +109,13 @@ flowchart LR
 | Rinx（Matrix 聊天） | 原生，在 Shell 内 | octos 的文件、记忆和网页工具 | – |
 | Terminal（桌面端） | 原生；源码检出构建中为独立进程，发布包中在 Shell 内 | `terminal.read_screen`、`terminal.read_scrollback` | `terminal.run`，只在它作为独立的沙箱进程运行时提供，受 Setup 开关控制，每条命令都要批准 |
 | Calculator、Clock、Notes、Reminders、Weather | 原生，在 Shell 内 | 各自的只读工具 | 同样的只读工具 |
+| App Hub | 原生，在 Shell 内 | `apphub.search`、`apphub.installed`、`apphub.updates`，只读：安装和更新仍在 App Hub 自己的界面上进行 | 同样的只读工具 |
 | 邮件 | 脚本应用 | 绑定当前登录账号的 `mail.*` 工具：读取、卡片（`mail.publish_card`），以及它可以提议但永远不能发送的回复草稿 | – |
 | 日历 | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
 | 新闻 | 脚本应用 | `news.list`、`news.read`、`news.notify` | – |
 | 相册、地图、YouTube；手机上的相机 | 脚本应用 | `<app>.notify` | – |
 
-App Hub 和 AI providers 没有 Agent。
+AI providers 没有 Agent。
 
 ### 系统 Agent 如何与应用 Agent 通信
 

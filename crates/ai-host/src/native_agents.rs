@@ -8,6 +8,7 @@
 pub const NATIVE_AGENTS: &[(&str, &[&str])] = &[
     ("rinx", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),
     ("terminal", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),
+    ("apphub", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),
     ("calculator", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),
     ("clock", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),
     ("notes", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),

@@ -100,7 +100,7 @@
       "id": "apphub",
       "feature": "app-hub",
       "crate": "octosense-app-hub-app",
-      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "0d5b47a2ae9eb98020feca26b7c895a3cf797dc1", "local": null },
+      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "d74b1f3f372548c0371ff73a252600973cb568dc", "local": null },
       "module": ["octosense_app_hub_app::APP_HUB_MODULE", "octosense_app_hub_app::CARD_MODULE"],
       "bin": null,
       "default_features": true,
@@ -111,7 +111,15 @@
       "native_mobile": "always",
       "sandbox": { "network": "any", "processes": false },
       "storage": { "accounts": false, "agent_workspace": "none", "external": [] },
-      "agent": { "octos": [], "tools": null }
+      "agent": {
+        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
+        "tools": [
+          {"name": "apphub.search", "description": "Find apps in the signed OctoSense catalog whose name, description, category or publisher match every word of the query. Answers each app's id, name, subtitle, category, publisher, version and status (available, installed, update available, built in or unavailable). Does not install anything.", "input_schema": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 200}, "category": {"type": "string", "maxLength": 64}}, "required": ["query"], "additionalProperties": false}, "risk": "read", "shareable": true},
+          {"name": "apphub.installed", "description": "List the apps installed from App Hub: id, name, version and whether an update is available.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true},
+          {"name": "apphub.updates", "description": "List the installed apps that have a newer release in the catalog: id, name and the catalog's version. Does not update anything.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true}
+        ],
+        "system_tools": ["apphub.search", "apphub.installed", "apphub.updates"]
+      }
     },
     {
       "id": "calculator",

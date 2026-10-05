@@ -111,7 +111,7 @@ only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
   scope in octos's `Scope` shape under the top-level `research` object, App
   Hub #26's shape) is, **temporarily**, granted only to system apps (`os.*`)
   until the host reads App Hub's verified grant. The shells' App Hub pin
-  (`0d5b47a2`) already includes #26; the code still keeps the `os.*` gate
+  (`d74b1f3f`) already includes #26; the code still keeps the `os.*` gate
   (`system_app_only`). No system app declares `research` or `crawl` yet.
 - `ToolboxExecutor`: the relay's executor for the `toolbox` owner. It checks
   the calling app's grant again (a forged `toolbox.deep_crawl` is

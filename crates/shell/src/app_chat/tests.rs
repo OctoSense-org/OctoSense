@@ -462,7 +462,8 @@ fn wait(what: &str, done: impl Fn() -> bool) {
 struct AgentFixture(std::path::PathBuf);
 #[cfg(any(feature = "app-hub", native_mobile))]
 impl AgentFixture {
-    fn new(app: &str) -> Self {
+    fn new(app: &'static str) -> Self {
+        crate::apps::test_system_apps::note_installed(app);
         let root = octosense_appstore::data_root_if_set().unwrap_or_else(|| {
             let root = std::env::temp_dir().join(format!("octosense-chat-bundles-{}", std::process::id()));
             octosense_appstore::set_data_root(root.clone());
