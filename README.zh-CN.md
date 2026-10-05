@@ -330,7 +330,7 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 - **线程按服务分配，而不是按回合。** 回合是 Tokio 任务。在 Shell 中，内核服务运行在一个有两个工作线程的 Tokio 运行时上，每个活跃应用 Agent 的代理有自己的单线程运行时（所以一个慢吞吞的 Agent 拖不住别的 Agent，也拖不住界面），系统对话则用一个线程，只在有变化时才通过 Makepad 的 `SignalToUI` 唤醒界面。octos 子进程（桌面端和 Android）使用 Tokio 的默认运行时，每个 CPU 核心一个工作线程。
 - **按需启动，空闲即停。** 内核在第一个连接到来时启动：如果用户已经允许过某个脚本应用的 Agent，就在 Shell 启动时；否则在某个 Agent 或系统对话第一次需要它时。系统对话只在面板打开或有回合运行时才保持连接。Talk to Octos 关闭时，最后一个连接断开，内核就停止。没有获准 Agent 的应用既没有代理，也没有 peer。
 - **应用共享 Shell 进程。** 脚本应用是同一个 Card runner 中的隔离环境，原生应用是模块，所以大多数应用不单独占用进程。脚本出错只影响它自己的隔离环境，原生模块的 panic 在模块边界被捕获。只有声明为独立进程的应用（为了系统沙箱的 Terminal，以及没有模块的 Task）才作为进程运行，前提是有它的二进制。
-- **进程应用的画面零拷贝。** Terminal 的画面以共享 GPU 表面的形式到达 Shell：macOS 上是 IOSurface，Windows 上是 D3D11 共享句柄，Linux 配 Vulkan 时是 DMA_BUF。在只能靠 CPU 拷贝的环境（Linux 配 OpenGL）中，所有应用都改在 Shell 内运行。
+- **进程应用的画面零拷贝。** Terminal 的画面以共享 GPU 表面的形式到达 Shell：macOS 上是 IOSurface，Windows 上是 D3D11 共享句柄，Linux 上是 DMA_BUF。在 Linux 上，Shell 只在 Vulkan 构建且处于 Wayland 会话时把 Terminal 作为进程启动，否则在 Shell 内运行它。Task 没有模块，所以在 Linux 上总是作为进程运行；GL 驱动无法导出 DMA_BUF 时，它的画面经 CPU 拷贝送到 Shell。
 
 ## 目录结构
 

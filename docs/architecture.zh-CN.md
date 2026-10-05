@@ -463,10 +463,10 @@ sequenceDiagram
 5. **事后控制。**ADR 0004 §8 承诺提供带撤销窗口的发送队列，并在审计中记录自动批准的参数。目前既没有队列也没有撤销，审计只保存参数摘要。
 6. **按客户端的文件授权。**ADR 0004 §11 按应用的按客户端授权来收窄宿主读取工具；目前还没有 manifest 字段能声明这类授权。
 7. **Rinx。**ADR 0004 §9 让 Rinx 的发送工具在它自己的 `confirm: app` 面板上确认，§11 把它的数据移到 `apps/rinx/` 下，§13 让开发者模式覆盖每个应用的面板。在其锁定的版本中，Rinx 不声明任何 Agent 工具，不向审批路由注册面板，仍使用自己的数据文件夹，而且在开发者模式下它的发送面板仍会询问。
-8. **Windows 沙箱。**ADR 0004 §3 为 Windows 上的进程应用提供 AppContainer。它还没有实现，所以这些应用以用户的权限运行，Windows 上也从不提供 `terminal.run`。
+8. **Windows 沙箱。**ADR 0004 §3 为 Windows 上的进程应用提供 AppContainer。它还没有实现，所以这些应用以用户的权限运行。系统 Agent 在 Windows 上拿不到 `terminal.run`，但其他调用方仍能向 Terminal 输入命令（第 11 条）。
 9. **发布包中的进程应用。**ADR 0004 §2 要求附带它们的二进制；发布包只附带 `octosense` 和内核（`desktop/packaging/release.json`）。
 10. **发送邮件。**ADR 0004 §8 允许常设规则回答 `mail.send` 这类对外调用，§13 允许开发者模式覆盖所有审批。代码遵循的是 ADR 0007：不论常设规则或开发者模式怎么说，发送邮件都需要宿主的审阅和一次物理触摸；ADR 0004 没有提到这个例外。
-11. **进程内的 Terminal 仍提供 `run`。**ADR 0004 §10 规定进程内的 Terminal 只读。但 Shell 用另一个执行器替换了它模块自带的只读执行器，新执行器也提供 `run`（`crates/shell/src/module_host.rs` 中的 `host_executor`，有测试固定这一行为）。所以只要桌面端在进程内运行 Terminal（没有 Vulkan 和 Wayland 的 Linux，或被切换为模块时），桌面端的 AI 面板仍能经审批路由输入命令。系统 Agent 的 `terminal.run` 则符合 ADR：它要求 Terminal 作为沙箱进程运行。
+11. **只有系统 Agent 的 `terminal.run` 检查沙箱。**ADR 0004 §10 只允许 Terminal 的 AI 在 Terminal 作为独立的沙箱进程运行时输入命令。系统 Agent 的 `terminal.run` 会检查这一点（`sandbox::launch_sandboxed`），其他路径都不检查。进程形式的 Terminal 无论沙箱是否生效，都会把自己的 `run` 提供给桌面端的 AI 面板；在开发者模式下，宿主工具中转还会把 `terminal.run` 授予所覆盖的每个应用 Agent。所以在还没有沙箱的 Windows 上，AI 面板能经审批路由向没有沙箱的 Terminal 输入命令，开发者模式下这些 Agent 也能。发布包里没有 AI 面板。进程内的 Terminal 符合 ADR，因为 Shell 公布的是它模块自带的只读 manifest。`crates/shell/src/module_host.rs` 中的 `host_executor` 换上了一个也能执行 `run` 的执行器，但没有调用会把 `run` 发给它：AI 面板只调用 manifest 声明过的工具，Shell 自己的调用（`AiBus::shell_call`）也按同一份 manifest 检查。
 
 ## 源码位置
 
