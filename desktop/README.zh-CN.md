@@ -125,6 +125,7 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `OCTOS_APP_CORE_BIN`、`OCTOS_APP_CORE_DIR` | Shell 内核服务运行的 octos 内核二进制，不做检查（未设置：使用随附的 `octos-kernel`，见[构建与运行](#构建与运行)）及其 core 目录（默认 `~/octos-home/.octos`；AI 提供商的 profile 为 `<dir>/profiles/_main.json`）。 |
 | `OCTOSENSE_GLANCE_DEMO=1` | 启动时以 `os.news` 身份向一览屏发布一张示例 L0 新闻摘要卡片：桌面风格下按 F9 查看，手机风格下在一览页查看。用于测试 `glance` 服务。 |
 | `OCTOSENSE_GLANCE_DEMO=mail` | 启动时以 `os.mail` 身份发布两张假的邮件操作卡片（L0，各带一条通知）：点击通知会在卡片窗口中打开对应卡片，可用假数据试用回复、发送（演示）、提问和跟踪。在随卡片打开的一览面板里，以及手机风格的一览页上，它们同样可用。不读取邮件，也不调用模型。`scripts/mail_card_remote.sh` 以隐藏窗口驱动它。 |
+| `OCTOSENSE_REDUCE_MOTION=1` | 一览面板及其 toast 不再滑入滑出，保持静止（见[一览面板](#一览面板)）。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
 ## 应用图标
@@ -317,6 +318,20 @@ cargo run --release -p octosense --features app-appcard -- --module appcard
 ```
 
 它不会自己启动内核，而是连接 Shell 的内核。在桌面上即随附的 `octos-kernel` 或 `OCTOS_APP_CORE_BIN`（`OCTOS_APP_CORE_DIR` 可选）；没有内核时显示登录 / WebSocket 界面。所有 octos crate 都来自 octos-org/octos，且只有根目录 `Cargo.toml` 固定的那一个版本。
+
+## 一览面板
+
+应用及其 Agent 用 `glance.publish` 发布一览卡片（[卡片如何工作](../README.zh-CN.md#卡片与提问)）。在桌面端，它们显示在这里：
+
+| 界面 | 行为 |
+| --- | --- |
+| 面板 | 新卡片会打开一览面板，除非已有卡片窗口打开。顶栏铃铛或 F9 也可以打开面板。点击卡片上自身控件以外的地方，会在卡片窗口中打开它。鼠标悬停的卡片会显示打开和移除操作，刚到的卡片旁会有几秒钟的强调色标记。放不下的那张卡片会在列表末尾露出一部分。卡片在面板里有高度上限，更高的卡片可以用滚轮在原处滚动；带卡内对话的卡片停在最新的消息处，输入框和最近一轮对话始终可见。用 F9（或在面板里点击）打开时，面板接管键盘：方向键在卡片之间移动焦点环，Return 打开卡片，Delete 移除卡片，Esc 关闭面板。 |
+| 通知 | 以 `notify` 发布的卡片还会弹出 toast，显示应用的图标和名称、卡片标题及其 `summary`（没有时用卡片自带的摘要）。点击 toast 会在独立窗口中打开卡片。同时最多显示三条 toast，其余的由下方的“+N more”标签展开。面板打开时，toast 叠放在面板左侧。 |
+| 移除 | 鼠标悬停的卡片会显示移除按钮：`glance::dismiss` 会移除卡片，效果如同应用撤回了它。“Clear all”会移除所有卡片。移除的卡片可以在报告这次移除的 toast 上撤销（Undo），面板接管键盘时也可以按 ⌘Z 撤销。面板本身另有关闭按钮。 |
+
+在手机上，`notify` 改为在通知栏发出通知，点击后打开一览页。
+
+未声明主题的卡片使用 Shell 的浅色或深色配色。toast 和面板会滑入；设置 `OCTOSENSE_REDUCE_MOTION=1` 则保持静止。代码见 [`glance_panel.rs`](../crates/shell/src/glance_panel.rs)、[`glance_sheet.rs`](../crates/shell/src/glance_sheet.rs) 和 [`notifications.rs`](../crates/shell/src/shell/notifications.rs)。
 
 ## 演示
 

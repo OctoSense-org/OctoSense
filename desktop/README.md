@@ -125,6 +125,7 @@ App Hub's modules have no process form and always open in-process.
 | `OCTOS_APP_CORE_BIN`, `OCTOS_APP_CORE_DIR` | The octos kernel binary the shell's kernel service runs, unchecked (unset: the packaged `octos-kernel`, see [Build and run](#build-and-run)) and its core dir (default `~/octos-home/.octos`; the AI providers profile is `<dir>/profiles/_main.json`). |
 | `OCTOSENSE_GLANCE_DEMO=1` | Publish a sample L0 News digest card (as `os.news`) to the glance screen at startup: F9 on a desktop style, the glance page on a phone style. A test path for the `glance` service. |
 | `OCTOSENSE_GLANCE_DEMO=mail` | Publish two fake Mail action cards (L0, as `os.mail`, with a toast each) at startup: clicking a toast opens that card in the card window, where Reply, Send (demo), Ask and Track work on fake data. They work the same in the glance panel, which opens with them, and on a phone style's glance page. No mail is read and no model is called. `scripts/mail_card_remote.sh` drives it hidden. |
+| `OCTOSENSE_REDUCE_MOTION=1` | Keep the glance panel and its toasts still instead of sliding them in and out ([The glance panel](#the-glance-panel)). |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
 
 ## Application icons
@@ -320,6 +321,20 @@ cargo run --release -p octosense --features app-appcard -- --module appcard
 ```
 
 It starts no kernel of its own: it connects to the shell's. On desktop that is the packaged `octos-kernel` or `OCTOS_APP_CORE_BIN` (and optionally `OCTOS_APP_CORE_DIR`); without a kernel it shows its login / WebSocket screen. Every octos crate comes from octos-org/octos at the one revision the root `Cargo.toml` pins.
+
+## The glance panel
+
+Apps and their agents publish glance cards with `glance.publish` ([how cards work](../README.md#cards-and-questions)). On the desktop they appear here:
+
+| Surface | What happens |
+| --- | --- |
+| Panel | A new card opens the glance panel unless a card window is already open. The bar’s bell or F9 also opens the panel. A press on a card outside its own controls opens it in the card window. The hovered card shows its open and dismiss actions, and a card that just came wears an accent mark for a few seconds. A card that does not fit whole peeks in at the end of the list. A card taller than its tile scrolls inside it with the wheel; a card with an in-card chat stays at its newest rows, so its field and the latest exchange stay in view. Opened with F9 (or a press in it), the panel has the keyboard: the arrows move a focus ring from card to card, Return opens the card, Delete dismisses it and Esc closes the panel. |
+| Notifications | A card published with `notify` also posts a toast with the app’s icon and name, the card’s title and its `summary` (else the card’s own). Selecting the toast opens the card in its own window. At most three toasts show at once; a “+N more” chip under them shows the rest. While the panel is open, toasts stack to its left. |
+| Dismissal | The hovered card shows a dismiss button: `glance::dismiss` removes the card as if the app had withdrawn it. Clear all dismisses every card. A dismissal can be undone from the toast that reports it, or with ⌘Z while the panel has the keyboard. The panel has a separate close button. |
+
+On a phone, `notify` posts a shade notification instead, and selecting it opens the glance page.
+
+A card that names no theme takes the shell’s light or dark palette. Toasts and the panel slide in; `OCTOSENSE_REDUCE_MOTION=1` keeps them still. The code: [`glance_panel.rs`](../crates/shell/src/glance_panel.rs), [`glance_sheet.rs`](../crates/shell/src/glance_sheet.rs) and [`notifications.rs`](../crates/shell/src/shell/notifications.rs).
 
 ## Demos
 
