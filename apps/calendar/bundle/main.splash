@@ -93,10 +93,12 @@ fn edit_existing(){
     ui.e_title.set_text(selected.title)
     let start_parts = selected.start.split("T")
     ui.e_date.set_text(start_parts[0])
-    ui.e_start.set_text(start_parts[1])
+    let time = ""
+    if start_parts.len() > 1 { time = start_parts[1] }
+    ui.e_start.set_text(time)
     let end = ""
     let end_date = start_parts[0]
-    if selected.end != nil { let parts = selected.end.split("T"); end_date = parts[0]; end = parts[1] }
+    if selected.end != nil { let parts = selected.end.split("T"); end_date = parts[0]; if parts.len() > 1 { end = parts[1] } }
     ui.e_end_date.set_text(end_date)
     ui.e_end.set_text(end)
     let tz = ""
@@ -114,7 +116,9 @@ fn save(){
     ui.edit_status.set_text("Saving…")
     let end = ""
     if ui.e_end.text() != "" { end = ui.e_end_date.text() + "T" + ui.e_end.text() }
-    let args = {title: ui.e_title.text() start: ui.e_date.text() + "T" + ui.e_start.text() end: end timezone: ui.e_zone.text() location: ui.e_place.text() notes: ui.e_notes.text()}
+    let start = ui.e_date.text()
+    if ui.e_start.text() != "" { start = start + "T" + ui.e_start.text() }
+    let args = {title: ui.e_title.text() start: start end: end timezone: ui.e_zone.text() location: ui.e_place.text() notes: ui.e_notes.text()}
     let method = "calendar.add_event"
     if selected != nil { method = "calendar.update_event"; args.id = selected.id; args.expected = selected }
     host.request(method, args, fn(r){
@@ -248,6 +252,7 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
             edit_heading := Label{width: Fill text: "New event" align: Align{x: 0.5} draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 17}}
             Primary{text: "Save" on_click: || save()}
         }
+        edit_status := Caption{padding: Inset{left: 18 right: 18 bottom: 10} text: ""}
         ScrollYView{width: Fill height: Fill flow: Down padding: 18 spacing: 10
             Caption{text: "Title"}
             e_title := Field{empty_text: "Event title"}
@@ -258,7 +263,7 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
                 }
                 View{width: Fill height: Fit flow: Down spacing: 8
                     Caption{text: "Start · 24-hour time"}
-                    e_start := Field{empty_text: "09:00"}
+                    e_start := Field{empty_text: "All day if empty"}
                 }
             }
             View{width: Fill height: Fit flow: Right spacing: 12
@@ -277,7 +282,6 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
             e_place := Field{empty_text: "Add a location"}
             Caption{text: "Notes"}
             e_notes := Field{height: 150 empty_text: "Add notes"}
-            edit_status := Caption{text: ""}
         }
     }
 }

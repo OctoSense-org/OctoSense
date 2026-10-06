@@ -408,7 +408,7 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Calendar's bundle gives its agent its five tools, all on its own
+    /// Calendar's bundle gives its agent its six tools, all on its own
     /// `calendar` host service; removing an event is destructive (the
     /// person approves it); Calendar is granted `glance`.
     #[test]
@@ -416,12 +416,15 @@ pub(crate) mod tests {
         let dir = stamped_bundle("calendar", "tools", |_, _| {});
         let loaded = from_bundle(&dir).unwrap();
         let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert_eq!(names, ["calendar.events", "calendar.add_event", "calendar.remove_event", "calendar.notify", "calendar.agenda"]);
-        assert_eq!(loaded.host_service_tools.len(), 5);
+        assert_eq!(names, ["calendar.events", "calendar.add_event", "calendar.update_event", "calendar.remove_event", "calendar.notify", "calendar.agenda"]);
+        assert_eq!(loaded.host_service_tools.len(), 6);
         assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
         let remove = loaded.tools.iter().find(|t| t["name"] == "calendar.remove_event").unwrap();
         assert_eq!(remove["risk"], "destructive");
-        assert!(loaded.families.contains("glance") && !loaded.families.contains("calendar"), "no `calendar` capability exists to grant");
+        assert!(loaded.families.contains("glance") && loaded.families.contains("calendar"));
+        let edit = loaded.tools.iter().find(|t| t["name"] == "calendar.update_event").unwrap();
+        assert_ne!(edit["shareable"], true, "editing is not granted to other apps");
+        assert!(edit["input_schema"]["required"].as_array().unwrap().iter().any(|v| v == "expected"));
         assert_eq!(loaded.generic, ["ask_user_question"]);
         let _ = std::fs::remove_dir_all(dir);
     }
