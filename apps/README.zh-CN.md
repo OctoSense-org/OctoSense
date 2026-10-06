@@ -371,6 +371,8 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 再发布日历卡片。Android Mail 冷启动任务注册日历服务并加载获授执行器，无需打开
 日历或启动第二个代理。这是本地日程，不是 Google Calendar 同步、邀请或定时提醒。
 
+验证：[Mail → 日历检查与手机证据](../docs/testing/mail-calendar-2026-10-05.zh-CN.md)。
+
 ### `llm` 服务
 
 `octosense-llm-service`（`apps/ai-providers/host-service`）是 AI providers 的 Rust

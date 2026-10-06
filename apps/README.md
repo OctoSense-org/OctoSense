@@ -431,6 +431,8 @@ card. Cold Android Mail jobs register Calendar's service and load its granted
 executor without opening Calendar or preparing another agent. These are local
 events, not Google Calendar sync, invitations or scheduled reminder alarms.
 
+Validation: [Mail → Calendar checks and phone evidence](../docs/testing/mail-calendar-2026-10-05.md).
+
 ### The `llm` service
 
 `octosense-llm-service` (`apps/ai-providers/host-service`) is the Rust half
