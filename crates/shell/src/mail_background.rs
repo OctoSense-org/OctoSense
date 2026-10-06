@@ -160,15 +160,18 @@ pub fn record(args: &Value, card: &GlanceCard) -> Result<(), String> {
     save(&dir, &entries)
 }
 pub fn dismiss(key: &str, dismissed: bool) -> Result<(), String> {
+    let Some(account) = crate::ai_host::contained::account_of("os.mail") else { return Ok(()); };
+    dismiss_for_account(key, &account, dismissed)
+}
+pub(crate) fn dismiss_for_account(key: &str, account: &str, dismissed: bool) -> Result<(), String> {
     if !cfg!(target_os = "android") || !key.starts_with("os.mail/") {
         return Ok(());
     }
-    let account = crate::ai_host::contained::account_of("os.mail");
     let _guard = OUTBOX.lock().unwrap();
     let dir = directory()?;
     let mut entries = read(&dir)?;
     for entry in &mut entries {
-        if entry.key == key && Some(&entry.account) == account.as_ref() {
+        if entry.key == key && entry.account == account {
             entry.dismissed = dismissed;
         }
     }
@@ -194,8 +197,8 @@ fn active() -> Vec<Entry> {
 /// Revalidate model source/account on every cold restore. Restoring does not
 /// publish a second notification, extend expiry, or reconstruct a lost draft.
 fn restore(entry: &Entry) -> bool {
-    if crate::glance::card(&entry.key).is_some_and(|card| card.published_ms >= entry.published) {
-        return true;
+    if let Some(card) = crate::glance::card(&entry.key).filter(|card| card.published_ms >= entry.published) {
+        return card.l0.as_ref().and_then(|l| l.mail.as_ref()).is_none_or(|b| !crate::mail_card::completed(b));
     }
     crate::glance::restore_mail_notification(
         &entry.args,
@@ -207,6 +210,7 @@ fn restore(entry: &Entry) -> bool {
         && crate::glance::card(&entry.key).is_some()
 }
 pub fn state() -> Value {
+    crate::glance::expire_now();
     let mut state = crate::agent_events::background_status();
     let entries: Vec<_> = active().into_iter().filter(restore).collect();
     state["active"] = json!(entries.iter().map(|e| e.token.clone()).collect::<Vec<_>>());

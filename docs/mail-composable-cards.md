@@ -11,6 +11,12 @@ are separate checkpoints: the new workspace tests did not send real email.
 Only physical Android touchscreen input can approve sending in this iteration;
 desktop/accessibility approval and the complete phone UI matrix remain deferred.
 
+After a saved transport receipt confirms SMTP acceptance, the bound reply card
+and notification leave Glance. The draft and send receipt remain stored, and an
+open success review stays visible until Back. Failed or uncertain sends remain
+actionable. New incoming messages can produce new important-mail cards; this
+does not merge their chat threads. See [completion validation](testing/mail-completion-2026-10-05.md).
+
 A generated card describes presentation. Rust host code owns the account,
 original email, saved draft, revision and send operation. Editing a field changes
 a durable draft; a generated Review reply chip only opens host review. Neither

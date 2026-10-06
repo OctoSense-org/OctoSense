@@ -826,6 +826,24 @@ pub fn dismiss(key: &str) -> bool {
     dismiss_all(&[key.to_string()]) == 1
 }
 
+/// Retire a completed host-bound reply without deleting its draft or receipts,
+/// changing the person's Undo action, or revoking the visible send receipt.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn retire_completed_mail(_gate: &std::sync::MutexGuard<'static, ()>, binding: &crate::mail_card::Binding) {
+    let key = binding.key();
+    let removed = with_store(|store| {
+        let matches = store.cards.iter().find(|card| card.key() == key)
+            .and_then(|card| card.l0.as_ref()).and_then(|l| l.mail.as_ref())
+            .is_some_and(|current| current.account == binding.account && current.draft_id == binding.draft_id
+                && current.source_message == binding.source_message);
+        matches && store.take(&key).is_some()
+    });
+    if removed {
+        NOTES.lock().unwrap().retain(|note| note.key != key);
+        changed();
+    }
+}
+
 /// The cards the person dismissed last (one card's close, or Clear all),
 /// kept so [`undo_dismiss`] can bring them back.
 static UNDO: Mutex<Vec<GlanceCard>> = Mutex::new(Vec::new());
@@ -971,6 +989,12 @@ pub fn publish_mail_l0_for(app: &str, args: &Value) -> Result<Value, String> {
     binding.card_id = args["card_id"].as_str().ok_or("Missing card_id")?.to_string();
     binding.validate()?;
     let caller = Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
+    caller.may_use()?;
+    if crate::mail_card::completed(&binding) {
+        // A repair/retry of a completed message must not resurrect its card or
+        // notification. Return a receipt so the incoming event can finish.
+        return Ok(json!({"card_id":binding.card_id, "replaced":false, "expires_at":now_ms(), "processed":true}));
+    }
     request_bound(&caller, "glance.publish", args, Some(binding))
 }
 
@@ -992,6 +1016,7 @@ pub(crate) fn hide_other_mail_accounts(active: Option<&str>) {
 pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::Binding, published: u64, expires: u64) -> Result<(), String> {
     let now = now_ms();
     if expires <= now || published >= expires { return Err("Expired Mail publication".into()); }
+    if crate::mail_card::completed(&binding) { return Err("This reply is completed; its card is no longer active".into()); }
     let source = args["source"].as_str().ok_or("Missing L0 source")?;
     check_generated_l0(source)?;
     check_generated_data(source, &args["data"])?;
@@ -1186,6 +1211,48 @@ pub fn publish_demo_if_asked() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn completed_mail_retirement_keeps_other_accounts_new_messages_and_undo() {
+        let gate = crate::mail_card::publication_guard();
+        let now = now_ms();
+        let mut local = GlanceStore::default();
+        local.publish(&news(), &args("completion-template"), now).unwrap();
+        let template = local.cards.pop().unwrap();
+        let binding = crate::mail_card::Binding {
+            publisher:"os.mail".into(), account:"completion-account".into(),
+            source_message:json!({"folder":"INBOX","message":"m1"}),
+            draft_id:"completion_draft".into(), draft_revision:1, chat_thread:"completion-chat".into(),
+            card_id:"completion-old".into(),
+        };
+        let make_card = |b: &crate::mail_card::Binding| {
+            let mut card = template.clone();
+            card.app = b.publisher.clone(); card.card_id = b.card_id.clone(); card.account = Some(b.account.clone());
+            let mut source = (**card.l0.as_ref().unwrap()).clone(); source.mail = Some(b.clone());
+            card.l0 = Some(Arc::new(source)); card
+        };
+        let mut next = binding.clone(); next.card_id = "completion-new-message".into();
+        next.draft_id = "completion_next_draft".into(); next.source_message["message"] = json!("m2");
+        with_store(|store| store.cards.extend([make_card(&binding), make_card(&next)]));
+        for mismatch in ["account", "draft", "source"] {
+            let mut wrong = binding.clone();
+            match mismatch {
+                "account" => wrong.account = "another-account".into(),
+                "draft" => wrong.draft_id = "another_draft".into(),
+                _ => wrong.source_message["message"] = json!("another-message"),
+            }
+            retire_completed_mail(&gate, &wrong);
+            assert!(with_store(|store| store.card(&binding.key(), now).is_some()), "stale {mismatch} completion must not remove a current publication");
+        }
+        let undo_before: Vec<_> = UNDO.lock().unwrap().iter().map(GlanceCard::key).collect();
+        retire_completed_mail(&gate, &binding);
+        assert!(with_store(|store| store.card(&binding.key(), now).is_none()));
+        assert!(with_store(|store| store.card(&next.key(), now).is_some()), "a newly arrived message stays actionable");
+        assert_eq!(UNDO.lock().unwrap().iter().map(GlanceCard::key).collect::<Vec<_>>(), undo_before, "automatic completion must not replace a person's Undo");
+        retire_completed_mail(&gate, &binding); // idempotent repeat
+        with_store(|store| { store.take(&next.key()); });
+    }
 
     fn news() -> Caller {
         Caller::granted("os.news")

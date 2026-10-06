@@ -275,6 +275,9 @@ impl ShellGlanceSheet {
         }
         #[cfg(any(feature = "app-hub", native_mobile))]
         if self.review.is_active() && self.open.as_ref().is_some_and(|o| o.card.card_id != "host-review") {
+            if self.open.as_ref().is_some_and(|o| crate::glance::card(&o.key).is_none()) {
+                self.close(cx); return;
+            }
             self.revoke_review(); self.redraw(cx); return;
         }
         self.dismiss(cx);
@@ -483,7 +486,13 @@ impl ShellGlanceSheet {
         if open.card.card_id == "host-review" && open.card.l0.is_none() && open.card.body.is_empty() { return; }
         match crate::glance::card(&open.key) {
             Some(card) => self.replace_publication(cx, card),
-            None => self.close(cx),
+            None => {
+                // Completion clears the feed immediately, but the person who
+                // just sent a reply can still read the authoritative receipt.
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if self.review.is_active() && self.mail_binding().as_ref().is_some_and(crate::mail_card::completed) { return; }
+                self.close(cx);
+            }
         }
     }
 
@@ -799,7 +808,9 @@ impl Widget for ShellGlanceSheet {
         #[cfg(any(feature = "app-hub", native_mobile))]
         if self.review.is_active() {
             self.review.handle_event(event);
-            if !self.review.is_active() && self.open.as_ref().is_some_and(|o| o.card.card_id == "host-review" && o.card.l0.is_none() && o.card.body.is_empty()) {
+            if !self.review.is_active() && self.open.as_ref().is_some_and(|o|
+                (o.card.card_id == "host-review" && o.card.l0.is_none() && o.card.body.is_empty())
+                || crate::glance::card(&o.key).is_none()) {
                 self.close(cx);
             }
             self.redraw(cx);

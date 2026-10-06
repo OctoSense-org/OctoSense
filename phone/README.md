@@ -180,6 +180,15 @@ payload budgets and expiry bound storage independently of the scroll viewport.
 Under payload pressure, older cards can retire; saved Mail drafts remain in
 the Mail service.
 
+A bound Mail reply leaves Glance after its saved send receipt confirms SMTP
+acceptance. Its draft and receipt remain stored; the current success view stays
+open until Back. Opening, editing, cancelling or an uncertain/failed send does
+not complete a card. Restart and notification restore cannot resurrect the
+accepted reply. New incoming messages still pass through the importance filter
+and can publish their own cards; conversation-wide card/chat merging is not
+implemented. Other apps retain their existing completion rules. See
+[completion validation](../docs/testing/mail-completion-2026-10-05.md).
+
 Separate Android test packages are separate copies of the shell, each with
 private accounts and cards. They do not contribute cards to the normal Home.
 Launcher acceptance must start from Android's actual Home role, swipe into

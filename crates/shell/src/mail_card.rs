@@ -108,6 +108,19 @@ pub(crate) fn read(binding: &Binding) -> Result<Value, String> {
     }
 }
 
+/// Completion comes from the saved host receipt, never generated card data or
+/// an assistant saying it sent something. SMTP acceptance is not delivery.
+pub(crate) fn reply_completed(snapshot: &Value) -> bool {
+    snapshot["status"] == "accepted"
+        && snapshot["attempts"].as_array().and_then(|a| a.last()).is_some_and(|attempt| {
+            attempt["status"] == "accepted" && attempt["receipt"]["accepted"] == true
+        })
+}
+
+pub(crate) fn completed(binding: &Binding) -> bool {
+    read(binding).is_ok_and(|snapshot| reply_completed(&snapshot))
+}
+
 /// Check every Mail source against the out-of-band host binding. Mail source
 /// IDs are literal host-issued IDs, never mutable state or model data.
 pub fn check_sources(source: &str, binding: Option<&Binding>) -> Result<(), String> {
@@ -755,6 +768,23 @@ pub(crate) use persistence::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_a_confirmed_saved_send_completes_a_mail_card() {
+        let accepted = json!({"status":"accepted", "attempts":[{"status":"accepted", "receipt":{"accepted":true}}]});
+        assert!(reply_completed(&accepted));
+        for status in ["draft", "awaiting_approval", "sending", "cancelled", "failed_before_delivery", "outcome_unknown"] {
+            let mut pending = accepted.clone();
+            pending["status"] = json!(status);
+            assert!(!reply_completed(&pending), "{status} must stay visible");
+        }
+        assert!(!reply_completed(&json!({"status":"accepted", "body":"I sent the reply"})), "prose and status without a receipt are insufficient");
+        let mut no_receipt = accepted.clone();
+        no_receipt["attempts"][0]["receipt"] = json!({});
+        assert!(!reply_completed(&no_receipt));
+        let mut failed_last = accepted;
+        failed_last["attempts"].as_array_mut().unwrap().push(json!({"status":"outcome_unknown"}));
+        assert!(!reply_completed(&failed_last), "a historic acceptance cannot complete a different last attempt");
+    }
     fn binding() -> Binding {
         Binding {
             publisher: "os.mail".into(),
