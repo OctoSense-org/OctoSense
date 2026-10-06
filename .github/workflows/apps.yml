@@ -75,6 +75,13 @@ jobs:
           cargo clippy --locked -p octosense-app-peers --all-targets --features octos-core,ws --no-deps -- -D warnings
       - name: AI providers config
         run: cargo test --locked -p octosense-llm-config
+      - name: Connected provider protocols and Linux host adapter
+        run: |
+          # Deterministic provider transports; no credentials or live writes.
+          cargo test --locked -p octosense-oauth-service
+          # Compile the Linux Secret Service adapter even on CI runners that
+          # have no unlocked user session. Compilation is not a vault login.
+          cargo check --locked -p octosense-oauth-service --features host
       - name: L0 in-card chat (sys.chat, host side)
         run: |
           cargo test --locked -p octosense-l0-chat
@@ -146,6 +153,10 @@ jobs:
         run: |
           cargo test --locked -p octosense-mail-service -p octosense-llm-service -p octosense-news-service
           cargo clippy --locked -p octosense-news-service --all-targets --no-deps -- -D warnings
+      - name: Connected accounts and Rinx editor
+        run: |
+          cargo test --locked -p octosense-oauth-service --features host
+          cargo test --locked -p octosense-markdown-editor --lib
       - name: Shell AI services (crates/ai-host)
         run: |
           cargo test --locked -p octosense-ai-host
