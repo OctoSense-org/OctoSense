@@ -61,6 +61,13 @@ script_mod! {
         }
         chat: CardChat {}
         mail: MailClip {}
+        compose: View {width: Fill height: 82 flow: Down spacing: 5 padding: Inset{left: 4 right: 4 top: 6 bottom: 4}
+            action := ButtonFlat {width: Fill height: 44 margin: 0 text: "Compose reply"
+                draw_bg +: {color: #3668e8 color_hover: #2854c4 color_down: #2148ad border_size: 0 border_radius: 14}
+                draw_text +: {color: #ffffff color_hover: #ffffff color_down: #ffffff}
+            }
+            hint := Label {width: Fill height: Fit flow: Right {wrap: true} max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 10}}
+        }
     }
 }
 
@@ -91,7 +98,8 @@ pub fn card_rect(sheet: Rect) -> Rect {
 }
 
 /// All peer modes share one row directly above the active pane.
-fn workspace_rects(sheet: Rect, has_tabs: bool, _mail: bool) -> (Rect, Option<Rect>) {
+fn workspace_rects(sheet: Rect, has_tabs: bool, focus_layout: bool) -> (Rect, Option<Rect>) {
+    if focus_layout { return (sheet, None); }
     let mut content = card_rect(sheet);
     if !has_tabs { return (content, None); }
     content.size.y = (content.size.y - TABS).max(0.0);
@@ -104,6 +112,7 @@ fn workspace_rects(sheet: Rect, has_tabs: bool, _mail: bool) -> (Rect, Option<Re
 struct Open {
     key: String,
     card: GlanceCard,
+    compose: crate::mail_compose::ComposeReply,
 }
 
 struct Retained {
@@ -141,6 +150,7 @@ pub struct ShellGlanceSheet {
     #[find] #[live] tabs: WidgetRef,
     #[find] #[live] chat: WidgetRef,
     #[find] #[live] mail: WidgetRef,
+    #[find] #[live] compose: WidgetRef,
     #[rust] fullscreen: bool,
     #[rust] saved_bar_appearance: Option<SystemBarAppearance>,
     #[rust] presentation: Presentation,
@@ -155,6 +165,7 @@ pub struct ShellGlanceSheet {
     #[rust] resume_store: Option<InstanceStore>,
     #[rust] script_interacted: bool,
     #[rust] tabs_style: Option<(bool, Vec4f)>,
+    #[rust] focus_layout: bool,
     #[rust]
     open: Option<Open>,
     #[rust]
@@ -264,6 +275,9 @@ impl ShellGlanceSheet {
         }
         #[cfg(any(feature = "app-hub", native_mobile))]
         if self.review.is_active() && self.open.as_ref().is_some_and(|o| o.card.card_id != "host-review") {
+            if self.open.as_ref().is_some_and(|o| crate::glance::card(&o.key).is_none()) {
+                self.close(cx); return;
+            }
             self.revoke_review(); self.redraw(cx); return;
         }
         self.dismiss(cx);
@@ -349,7 +363,7 @@ impl ShellGlanceSheet {
                     self.close(cx);
                     // A legacy Mail composer supplies an opaque host review,
                     // not generated card source or authority-bearing JSON.
-                    self.open = Some(Open { key: key.into(), card: GlanceCard {
+                    self.open = Some(Open { key: key.into(), compose: Default::default(), card: GlanceCard {
                         account: None,
                         app: "os.mail".into(), card_id: "host-review".into(), title: "Mail reply".into(), summary: String::new(),
                         priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
@@ -384,7 +398,7 @@ impl ShellGlanceSheet {
             self.live.prepare_native(&Self::tile_key(key), &card);
         } else { self.live.body(&Self::tile_key(key), &card, "glance sheet"); }
         self.chat_available = self.live.session_mut(&Self::tile_key(key)).is_some_and(|s| s.has_chat());
-        self.open = Some(Open { key: key.to_string(), card });
+        self.open = Some(Open { key: key.to_string(), card, compose: Default::default() });
         if let Some(binding) = self.mail_binding() {
             if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { mail.open(cx, binding); }
         }
@@ -472,11 +486,19 @@ impl ShellGlanceSheet {
         if open.card.card_id == "host-review" && open.card.l0.is_none() && open.card.body.is_empty() { return; }
         match crate::glance::card(&open.key) {
             Some(card) => self.replace_publication(cx, card),
-            None => self.close(cx),
+            None => {
+                // Completion clears the feed immediately, but the person who
+                // just sent a reply can still read the authoritative receipt.
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if self.review.is_active() && self.mail_binding().as_ref().is_some_and(crate::mail_card::completed) { return; }
+                self.close(cx);
+            }
         }
     }
 
     fn replace_publication(&mut self, cx: &mut Cx, card: GlanceCard) {
+        let previous_binding = self.mail_binding();
+        let next_binding = card.l0.as_ref().and_then(|l| l.mail.clone());
         let same_mail = self.mail_binding().is_some() && self.mail_binding() == card.l0.as_ref().and_then(|l| l.mail.clone());
         let Some(open) = self.open.as_mut() else { return; };
         if open.card == card { return; }
@@ -490,7 +512,9 @@ impl ShellGlanceSheet {
         // withdrawal/expiry; the feed still shows the newest publication.
         let dirty = self.live.has_local_changes() || self.script_interacted
             || self.chat.borrow::<crate::card_chat::CardChat>().is_some_and(|c| c.has_unsent_input(cx));
-        if !same_mail && !same_layout && dirty { return; }
+        let composed = open.compose.requested && crate::mail_compose::eligible(&open.card)
+            && next_binding.is_some() && open.card.account == card.account;
+        if !same_mail && !same_layout && dirty && !composed { return; }
         if same_layout && card.l0.is_none() {
             self.live.refresh_script_metadata(&Self::tile_key(&open.key), &card);
             open.card = card;
@@ -515,10 +539,17 @@ impl ShellGlanceSheet {
             self.chatting = false;
             if let Some(mut chat) = self.chat.borrow_mut::<crate::card_chat::CardChat>() { chat.reset(cx); }
             cx.hide_text_ime();
-            if let Some(binding) = self.mail_binding() {
+        }
+        // Keeping the conversation widget must not leave the native editor
+        // bound to the previous draft (or empty after Card -> Email promotion).
+        if previous_binding != next_binding {
+            if let Some(binding) = next_binding {
                 if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { mail.open(cx, binding); }
             }
+            if let Some(mut chat) = self.chat.borrow_mut::<crate::card_chat::CardChat>() { chat.refresh(); }
         }
+        if composed { self.chatting = false; cx.set_key_focus(Area::Empty); cx.hide_text_ime(); }
+        self.tabs.button(cx, ids!(card_tab)).set_text(cx, if self.mail_binding().is_some() { "Email" } else { "Card" });
         let open = self.open.as_ref().unwrap();
         let key = Self::tile_key(&open.key);
         if same_mail || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
@@ -527,6 +558,23 @@ impl ShellGlanceSheet {
         self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat());
         if let Some(store) = previous { self.live.restore_store(&key, store); }
         if !same_layout { self.resume_store = None; }
+        self.redraw(cx);
+    }
+
+    fn poll_compose(&mut self, cx: &mut Cx) {
+        let Some(open) = self.open.as_mut() else { return; };
+        let Some(ready) = open.compose.take_ready() else { return; };
+        let result = ready.and_then(|source| {
+            if !open.card.account_valid() || !crate::mail_compose::eligible(&open.card) {
+                return Err("The Mail account or card changed; reopen it".into());
+            }
+            self.live.session_mut(&Self::tile_key(&open.key))
+                .ok_or_else(|| "This card's assistant is unavailable".to_string())?.compose_reply(&source)
+        });
+        match result {
+            Ok(()) => { open.compose.requested = true; self.select_chat(cx, true); }
+            Err(error) => open.compose.error = Some(error),
+        }
         self.redraw(cx);
     }
 
@@ -561,6 +609,10 @@ impl ShellGlanceSheet {
                 self.select_chat(cx, true);
             }
             self.redraw(cx);
+        }
+        if let Some((app, route)) = self.live.take_open_request() {
+            self.hide_workspace(cx);
+            cx.widget_action(self.uid, crate::glance_panel::ShellGlancePanelAction::Open { app, route });
         }
     }
 }
@@ -606,6 +658,16 @@ impl Widget for ShellGlanceSheet {
             } else { sheet_rect(screen, if self.chatting || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {600.0} else {card_h + if self.chat_available {TABS} else {0.0}}) };
             let sheet = self.presentation.rect(destination);
             self.sheet = sheet;
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let reviewing = self.review.is_active();
+            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            let reviewing = false;
+            let native_mail = open.card.l0.as_ref().is_some_and(|l| l.mail.is_some());
+            let focus_layout = self.fullscreen && self.keyboard_visible && destination.size.y < 260.0
+                && native_mail && !self.chatting && !reviewing
+                && cx.has_key_focus(self.mail.text_input(cx, ids!(body)).area());
+            if self.focus_layout != focus_layout { self.close_touch = None; }
+            self.focus_layout = focus_layout;
             if self.fullscreen {
                 if self.presentation.covers_background() { self.d.solid(cx, screen, background); }
                 else { self.round.color = background; self.round.radius = self.presentation.radius(); self.round.draw_abs(cx, sheet); }
@@ -620,14 +682,12 @@ impl Widget for ShellGlanceSheet {
             let heading = if self.review.is_active() { "Mail reply" } else { &open.card.title };
             #[cfg(not(any(feature = "app-hub", native_mobile)))]
             let heading = &open.card.title;
-            self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
-            self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
+            if !focus_layout {
+                self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
+                self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
+            }
             let mut card = card_rect(sheet);
             let key = Self::tile_key(&open.key);
-            #[cfg(any(feature = "app-hub", native_mobile))]
-            let reviewing = self.review.is_active();
-            #[cfg(not(any(feature = "app-hub", native_mobile)))]
-            let reviewing = false;
             if reviewing {
                 #[cfg(any(feature = "app-hub", native_mobile))]
                 self.review.draw(cx, &mut self.d, card, &tok);
@@ -639,20 +699,29 @@ impl Widget for ShellGlanceSheet {
                     self.live.body(&key, &open.card, "glance sheet");
                     if new_session { self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat()); }
                 }
-                let native_mail = open.card.l0.as_ref().is_some_and(|l| l.mail.is_some());
                 // Layout at the final size throughout the reveal. The surface
                 // translates and clips; text is never squeezed/reflowed each frame.
                 let body_sheet = Rect { pos: sheet.pos, size: destination.size };
-                let (pane, tabs) = workspace_rects(body_sheet, self.chat_available || native_mail, native_mail);
+                let (pane, tabs) = workspace_rects(body_sheet, self.chat_available || native_mail, focus_layout);
                 card = pane;
                 if let Some(tabs) = tabs { self.tabs.draw_walk_all(cx, scope, Walk::abs_rect(tabs)); }
+                if !self.chatting && crate::mail_compose::eligible(&open.card) {
+                    let height = 82.0_f64.min(card.size.y);
+                    let dock = rect(card.pos.x, card.pos.y + card.size.y - height, card.size.x, height);
+                    card.size.y = (card.size.y - height).max(0.0);
+                    self.compose.button(cx, ids!(action)).set_text(cx, if open.compose.busy() { "Preparing reply…" } else { "Compose reply" });
+                    self.compose.button(cx, ids!(action)).set_disabled(cx, open.compose.busy() || !self.chat_available || !open.card.account_valid());
+                    self.compose.label(cx, ids!(hint)).set_text(cx, open.compose.error.as_deref().unwrap_or("Draft only · Review recipient before sending."));
+                    if let Some(mut label) = self.compose.label(cx, ids!(hint)).borrow_mut() { label.draw_text.color = crate::shell::alpha(ink, 0.72); }
+                    self.compose.draw_walk_all(cx, scope, Walk::abs_rect(dock));
+                }
                 if self.chatting {
                     if let (Some(session), Some(mut chat)) = (self.live.session_mut(&key), self.chat.borrow_mut::<crate::card_chat::CardChat>()) { chat.sync(cx, session); }
                     self.chat.draw_walk_all(cx, scope, Walk::abs_rect(rect(body_sheet.pos.x, card.pos.y, body_sheet.size.x, card.size.y)));
                 } else if open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
                     if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() {
-                        mail.set_summary(cx, &open.card.summary);
                         mail.set_keyboard(cx, self.keyboard_visible);
+                        mail.set_focus_layout(cx, focus_layout);
                     }
                     self.mail.draw_walk_all(cx, scope, Walk::abs_rect(rect(body_sheet.pos.x, card.pos.y, body_sheet.size.x, card.size.y)));
                 } else {
@@ -699,6 +768,7 @@ impl Widget for ShellGlanceSheet {
             self.redraw(cx);
         }
         if !self.is_open() { return; }
+        self.poll_compose(cx);
         #[cfg(any(feature = "app-hub", native_mobile))]
         self.poll_review(cx);
         if let Event::TouchUpdate(e) = event {
@@ -708,7 +778,7 @@ impl Widget for ShellGlanceSheet {
                 self.close_touch = None;
             }
             let sheet = self.sheet;
-            let closes = |p| contains(close_rect(sheet), p) || (!self.fullscreen && !contains(sheet, p));
+            let closes = |p| (!self.focus_layout && contains(close_rect(sheet), p)) || (!self.fullscreen && !contains(sheet, p));
             let mut consumed = self.close_touch.is_some();
             for t in &e.touches {
                 if self.close_touch.is_none() && t.state == TouchState::Start && closes(t.abs) {
@@ -729,7 +799,7 @@ impl Widget for ShellGlanceSheet {
             if consumed { return; }
         }
         match event {
-            Event::MouseDown(e) if contains(close_rect(self.sheet), e.abs) || (!self.fullscreen && !contains(self.sheet, e.abs)) => {
+            Event::MouseDown(e) if (!self.focus_layout && contains(close_rect(self.sheet), e.abs)) || (!self.fullscreen && !contains(self.sheet, e.abs)) => {
                 self.dismiss(cx);
                 return;
             }
@@ -742,16 +812,27 @@ impl Widget for ShellGlanceSheet {
         #[cfg(any(feature = "app-hub", native_mobile))]
         if self.review.is_active() {
             self.review.handle_event(event);
-            if !self.review.is_active() && self.open.as_ref().is_some_and(|o| o.card.card_id == "host-review" && o.card.l0.is_none() && o.card.body.is_empty()) {
+            if !self.review.is_active() && self.open.as_ref().is_some_and(|o|
+                (o.card.card_id == "host-review" && o.card.l0.is_none() && o.card.body.is_empty())
+                || crate::glance::card(&o.key).is_none()) {
                 self.close(cx);
             }
             self.redraw(cx);
             return; // Host review is modal within this sheet; no L0 NAV dispatch.
         }
-        if self.chat_available || self.mail_binding().is_some() {
+        if !self.focus_layout && (self.chat_available || self.mail_binding().is_some()) {
             let actions = cx.capture_actions(|cx| self.tabs.handle_event(cx, event, scope));
             if self.tabs.button(cx, ids!(card_tab)).clicked(&actions) { self.select_chat(cx, false); return; }
             if self.tabs.button(cx, ids!(chat_tab)).clicked(&actions) { self.select_chat(cx, true); return; }
+        }
+        if !self.chatting && self.open.as_ref().is_some_and(|o| crate::mail_compose::eligible(&o.card)) {
+            let actions = cx.capture_actions(|cx| self.compose.handle_event(cx, event, scope));
+            if self.compose.button(cx, ids!(action)).clicked(&actions) {
+                let open = self.open.as_mut().unwrap();
+                open.compose.start(&open.card);
+                self.redraw(cx);
+                return;
+            }
         }
         if self.chatting {
             let key = Self::tile_key(&self.open.as_ref().unwrap().key);
@@ -866,13 +947,17 @@ mod tests {
     #[test]
     fn mode_row_precedes_the_active_pane_at_every_viewport_size() {
         for height in [820.0, 340.0, 820.0] {
-            let (pane, tabs) = workspace_rects(rect(0.0, 0.0, 380.0, height), true, true);
+            let (pane, tabs) = workspace_rects(rect(0.0, 0.0, 380.0, height), true, false);
             let tabs = tabs.unwrap();
             assert_eq!(tabs.pos.y, HEADER);
             assert_eq!(tabs.pos.y + tabs.size.y, pane.pos.y);
             assert_eq!(pane.pos.y + pane.size.y, height - PAD);
             assert!(tabs.size.y >= 44.0);
         }
+        let viewport = rect(0.0, 24.0, 760.0, 96.0);
+        let (pane, tabs) = workspace_rects(viewport, true, true);
+        assert!(tabs.is_none(), "typing in a short landscape viewport temporarily hides navigation");
+        assert_eq!(pane, viewport, "the keyboard must not consume the entire editor below fixed headers");
     }
 
     #[test]
@@ -923,7 +1008,7 @@ mod tests {
         sheet.presentation.activate();
         sheet.sheet = rect(20., 60., 340., 400.);
         sheet.publication_generation = crate::glance::generation();
-        sheet.open = Some(Open { key: "test/card".into(), card: GlanceCard {
+        sheet.open = Some(Open { key: "test/card".into(), compose: Default::default(), card: GlanceCard {
             account: None,
             app: "test".into(), card_id: "card".into(), title: "Card".into(), summary: String::new(), priority: 0,
             published_ms: 0, expires_ms: u64::MAX, open_app: "test".into(), route: None,
@@ -998,6 +1083,35 @@ mod tests {
         assert!(!sheet.is_open());
     }
 
+
+    #[test]
+    fn compose_promotion_opens_saved_editor_and_retains_unsent_chat() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let widget = workspace_widget(&mut cx);
+        let mut sheet = widget.borrow_mut::<ShellGlanceSheet>().unwrap();
+        let mut original = opened(&mut cx).open.unwrap();
+        original.card.app = "os.mail".into();
+        original.card.account = Some("a1".into());
+        original.card.card_id = format!("mail-{}", "1".repeat(40));
+        original.key = original.card.key();
+        original.card.l0 = Some(std::sync::Arc::new(crate::glance::L0Source {
+            source: "view root Surface { TextBody(text: \"\") }".into(), data: serde_json::json!({}), mail: None,
+        }));
+        original.compose.requested = true;
+        let mut replacement = original.card.clone();
+        let binding = crate::mail_card::Binding { publisher: "os.mail".into(), account: "a1".into(),
+            card_id: replacement.card_id.clone(), draft_id: "draft-promoted".into(), draft_revision: 1,
+            source_message: serde_json::json!({"folder":"Inbox","message":"second-email"}), chat_thread: "reply-promoted".into() };
+        std::sync::Arc::make_mut(replacement.l0.as_mut().unwrap()).mail = Some(binding);
+        sheet.open = Some(original);
+        sheet.chatting = true;
+        sheet.chat.text_input(&cx, ids!(input)).set_text(&mut cx, "Keep my next question");
+        sheet.replace_publication(&mut cx, replacement);
+        assert!(!sheet.chatting);
+        assert_eq!(sheet.tabs.button(&cx, ids!(card_tab)).text(), "Email");
+        assert_eq!(sheet.mail.borrow::<crate::mail_clip::MailClip>().unwrap().opened_draft(), Some("draft-promoted"));
+        assert_eq!(sheet.chat.text_input(&cx, ids!(input)).text(), "Keep my next question");
+    }
 
     #[test]
     fn republishing_refreshes_visible_source_and_cancels_old_touch_capture() {

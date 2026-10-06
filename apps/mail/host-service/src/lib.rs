@@ -66,7 +66,7 @@ pub mod vault;
 mod html;
 mod imap;
 mod incoming;
-pub use incoming::{acknowledge_event, collect_inbox, event_resolved, pending_events, pending_events_try, resolve_and_ack_try, CollectReport, IncomingEvent};
+pub use incoming::{acknowledge_event, collect_inbox, event_resolved, pending_events, pending_events_try, resolve_and_ack_try, source_for_card, CollectReport, IncomingEvent};
 
 use vault::Vault;
 
@@ -223,6 +223,13 @@ fn publish_card(store: &Store, app: &str, args: &Value) -> Result<Value, String>
     if let Some(id) = args.get("draft_id") {
         let id = id.as_str().ok_or("draft_id must be text")?;
         payload["mail_binding"] = drafts::publication_binding(store, app, text(args,"account"), id)?;
+        // An incoming-event card cannot acquire a draft for a different email.
+        if card_id.strip_prefix("mail-").is_some_and(|id| id.len() == 40 && id.bytes().all(|b| b.is_ascii_hexdigit())) {
+            let source = &payload["mail_binding"]["source_message"];
+            if card_id != incoming::event_id(text(args, "account"), text(source, "folder"), text(source, "message")) {
+                return Err("The reply draft does not belong to this incoming email card".into());
+            }
+        }
     }
     // Fingerprint normalized host payload, including its authoritative binding.
     // A deliberate repair keeps the card id but must reach the renderer again.

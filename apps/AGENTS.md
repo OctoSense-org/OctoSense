@@ -138,6 +138,14 @@ Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,
 requesting app's grant and App Hub admission offer together. Keep credentials in
 the host service; expose business data through a narrow method or tool.
+For shipped bundles, register the per-app host offer with
+`octosense_appstore::system::set_agent_tool_offer` before `system::prepare`.
+`AgentBundle::load` alone does not verify the host's admission offer. Test a
+cold process: Mail must load Calendar's granted executor and register its host
+service without opening Calendar or preparing its peer. Calendar scheduling
+uses an explicit event timezone and a stable retry key; unknown end times stay
+omitted. A human request or provisioned scheduling policy supplies intent,
+never instructions inside the email itself.
 
 Update both README languages when declarations, storage or runtime support
 change. Mail's opt-in dispatcher is `crates/shell/src/agent_events.rs`: an
@@ -145,3 +153,17 @@ initial baseline, durable pending events, incoming-trigger turns, successful-tur
 acknowledgment and bounded retries. News's fetch timer still collects data
 without starting an LLM turn. Host-provisioned skill text is not kernel-native
 skill installation; never claim the general ADR 0002 scheduler is complete.
+Android's Mail-only JobService adapter is in `phone/src/android_mail.rs` and
+`phone/resources/android/java/dev/makepad/octosense/MailJobService.java`;
+`runtime_host` initializes the same host once, and `mail_background` owns bounded
+execution leases and account-scoped notification restoration. A Rust worker
+thread alone is not Android background execution. Test a cold process and a
+stopped job, distinguish forced from natural scheduling, and preserve physical
+send approval. See ADR 0008.
+
+Calendar UI acceptance uses the same `.host/calendar/events.json` as the tools.
+Exercise month/day markers, a saved-event card’s `event/<id>` navigation, direct
+editing with stale-snapshot refusal, quiet card refresh, restart restoration and
+dismissal. `calendar.view` is UI-only; `calendar.update_event` belongs to Calendar’s UI
+and own agent, not new Mail/system grants. Keep App Hub’s explicit `calendar` capability, permission
+wording and the consumer’s single contract source aligned.

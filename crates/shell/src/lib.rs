@@ -10,6 +10,9 @@
 #![allow(dead_code)] // shell surface (icons, OSD, panels) built ahead of the flows that use it
 
 pub mod agents;
+pub mod runtime_host;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod mail_background;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod agent_events;
 pub mod ai_bus;
@@ -91,6 +94,7 @@ pub mod glance_sheet;
 mod card_presentation;
 mod card_chat;
 mod mail_clip;
+mod mail_compose;
 use glance::NoteTargets as GlanceNoteTargets;
 // The App derive takes a plain type name for a field.
 use approvals::RequestNotices as ApprovalNotices;
@@ -3725,7 +3729,7 @@ impl App {
             glance_panel::ShellGlancePanelAction::Open { app, route } => {
                 log!("wm: glance card opens {} (route {:?})", app, route);
                 self.set_glance_open(cx, false);
-                self.launch_app(cx, &app);
+                self.launch_glance_app(cx, &app, route.as_deref());
             }
             // A card pressed in the panel: the card window, as its
             // notification opens it.
@@ -3819,6 +3823,20 @@ impl App {
         true
     }
 
+    fn launch_glance_app(&mut self, cx: &mut Cx, app: &str, route: Option<&str>) {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if app == "calendar" {
+            if let Some(id) = route.and_then(|route| route.strip_prefix("event/")) {
+                let root = octosense_app_hub_app::data_root(cx).join(".host");
+                if let Err(error) = octosense_calendar_service::focus_event(&root, id) {
+                    self.notify(cx, "Calendar", &error);
+                }
+            }
+        }
+        let _ = route;
+        self.launch_app(cx, app);
+    }
+
     /// Back dismisses the IME, then review, then the workspace.
     fn close_glance_card(&mut self, cx: &mut Cx) -> bool {
         let handled = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| {
@@ -3832,7 +3850,7 @@ impl App {
     /// Open directly above the current phone screen. Glance supplies a visual
     /// origin only when that exact summary is visible; notifications need no
     /// detour through the feed, no activity launch, and no agent restart.
-    fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
+    pub fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
         self.set_glance_open(cx, false);
         let phone = self.state.as_ref().is_some_and(|s| s.style.target.mobile());
         let mut origin = None;
@@ -5851,42 +5869,8 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
-        // Where App Hub keeps what it installs: `$OCTOSENSE_APP_DATA`, else
-        // `apps/` in the platform data directory or OctoSense's own state.
-        // App storage (ADR 0004 §11): the one source of every app's jail,
-        // account folders and secrets; the startup check refuses any agent
-        // workspace that reaches the secrets.
-        let storage = app_storage::init(cx.get_data_dir().map(std::path::PathBuf::from));
-        #[cfg(any(feature = "app-hub", native_mobile))]
-        octosense_app_hub_app::set_data_root(storage.map(|s| s.layout().apps_root().to_path_buf())
-            .unwrap_or_else(|| cx.get_data_dir().map(std::path::PathBuf::from)
-                .unwrap_or_else(octosense::paths::home).join("apps")));
-        let _ = storage;
-        // The assistant's services (octosense-ai-host): the octos kernel,
-        // configured here and started when a consumer (AppCard, Rinx)
-        // connects, and AI providers' `llm` service, which writes its profile
-        // and restarts it after a change. A no-op where the build links none.
-        // Its octos home is OctoSense's own (`<data dir>/octos-home`; on a
-        // desktop, OctoSense's state dir), never the person's `~/octos-home`.
-        ai_host::start(ai_host::Host::platform(cx.get_data_dir().or_else(|| {
-            Some(octosense::paths::home().to_string_lossy().into_owned())
-        })));
-        // Developer mode (ADR 0004 §13): from this launch's flag or
-        // environment, or a developer profile's saved state; before any app
-        // starts, so grants and approvals see it from the first call.
-        dev_mode::init(&octosense::paths::home());
-        octosense::paths::scope_linked_app_data();
+        runtime_host::init(cx.get_data_dir(), None);
         self.dev_generation = dev_mode::generation();
-        // Approvals (ADR 0004 §8, §4): this home's standing rules, consent
-        // and audit, before any app can ask for an approval.
-        approvals::init(&octosense::paths::home());
-        // The shell is every app agent's tool host (octos UPCR-2026-035):
-        // brokers register app tools and hand their calls, cancels,
-        // approvals and the system agent's inputs to `host_tools`.
-        host_tools::init();
-        // The system agent's grants (Setup > Assistant > Command execution),
-        // handed to the kernel before it first starts.
-        system_chat::init(std::path::Path::new(&octosense::paths::home()));
         // An agent for every app that declares one (ADR 0004 §4): the ones
         // the person already allowed get their peer now, so the system
         // agent's peer_list shows them.
@@ -6744,7 +6728,9 @@ impl App {
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }
-            // Stop the octos kernel, if one runs, and let it release its data dir.
+            // On Android an Activity can end while a Mail job owns the same
+            // process/kernel. The OS owns that process lifetime.
+            #[cfg(not(target_os = "android"))]
             ai_host::shutdown();
         }
         if let Event::Timer(te) = event {

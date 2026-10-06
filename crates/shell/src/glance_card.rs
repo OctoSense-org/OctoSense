@@ -382,6 +382,9 @@ pub struct L0Session {
     /// Never changes the model-authored source or grants the agent new tools.
     workspace_chat: Option<WorkspaceChat>,
     opening_account: Option<String>,
+    /// Navigation is limited to this publication’s declared own-app target.
+    open_url: Option<String>,
+    open_requested: bool,
     local_changes: bool,
     /// The chat generation the card was last lowered at.
     chat_generation: u64,
@@ -389,6 +392,10 @@ pub struct L0Session {
     reads_chat: bool,
     /// The shell's mode the card was last lowered in.
     dark: bool,
+}
+
+fn publication_open_url(card: &crate::glance::GlanceCard) -> String {
+    format!("app://{}{}", card.open_app, card.route.as_ref().map(|r| format!("/{r}")).unwrap_or_default())
 }
 
 struct WorkspaceChat {
@@ -401,6 +408,16 @@ struct WorkspaceChat {
 fn bounded_context(value: serde_json::Value) -> serde_json::Value {
     if serde_json::to_vec(&value).is_ok_and(|bytes| bytes.len() <= 12 * 1024) { value }
     else { serde_json::json!({"omitted": "Exceeds card context limit"}) }
+}
+
+fn attach_mail_publication(binding: &mut crate::glance_chat::ContextBinding, source: &str, data: &serde_json::Value) {
+    let publication = bounded_context(serde_json::json!({"source":source, "data":data}));
+    binding.source_message["publication"] = publication;
+    // Preserve the authoritative email/draft/lease when a large publication
+    // would exceed the combined context budget. Never truncate its JSON/source.
+    if binding.validate().is_err() {
+        binding.source_message.as_object_mut().unwrap().remove("publication");
+    }
 }
 
 impl WorkspaceChat {
@@ -473,6 +490,7 @@ impl L0Session {
             source: String::new(), data: serde_json::json!({}), mail: None,
         }));
         session.opening_account = card.account.clone();
+        session.open_url = Some(publication_open_url(card));
         if session.mail.is_none() && !session.reads_chat && crate::agents::all().iter().any(|agent| agent.id == card.app) {
             if let Some(account) = card.account.clone() {
                 session.workspace_chat = Some(WorkspaceChat::new(card, account));
@@ -519,7 +537,8 @@ impl L0Session {
         }
         match &self.mail {
             Some(mail) => {
-                let binding = mail.chat_edit_binding()?;
+                let mut binding = mail.chat_edit_binding()?;
+                attach_mail_publication(&mut binding, &self.source, &self.data);
                 if let Err(error) = crate::glance_chat::perform_bound(&self.app, &self.source, &self.store, &data, &write, origin, &binding) {
                     drop(crate::mail_card::ChatEditLease::new(Some(&binding)));
                     return Err(error);
@@ -527,6 +546,34 @@ impl L0Session {
             }
             None => { crate::glance_chat::perform(&self.app, &self.source, &self.store, &data, &write, origin)?; }
         }
+        Ok(())
+    }
+
+    /// Native Compose reply action. Keep implementation details out of the
+    /// visible human transcript; source identity travels as host-bound context.
+    pub(crate) fn compose_reply(&mut self, source_email: &serde_json::Value) -> Result<(), String> {
+        if self.app != "os.mail" || self.mail.is_some() || !self.account_valid() {
+            return Err("This card cannot start a reply".into());
+        }
+        let source = self.chat_source()?;
+        let data = self.data_now();
+        let mut binding = if let Some(chat) = &self.workspace_chat { chat.binding(&self.store) }
+        else {
+            crate::glance_chat::ContextBinding {
+                kind: octosense_l0_chat::ContextKind::Card,
+                account: self.opening_account.clone().ok_or("Missing card account")?,
+                thread: octosense_l0_chat::thread_of(&source, &self.store, &data).ok_or("Missing card thread")?,
+                source_message: serde_json::json!({}), draft: serde_json::json!({}),
+            }
+        };
+        binding.source_message["compose_reply"] = source_email.clone();
+        let write = octoscript_ui_l0::CollectionWrite {
+            source: source.name, helper: "sys.chat".into(), op: "append".into(),
+            value: "Compose an editable reply to this email. Let me review it before sending.".into(), field: String::new(),
+        };
+        let declaration = self.workspace_chat.as_ref().map(|c| c.declaration.as_str()).unwrap_or(&self.source);
+        crate::glance_chat::perform_bound(&self.app, declaration, &self.store, &data, &write,
+            Some(octoscript_ui_l0::ValueOrigin::UserInput), &binding)?;
         Ok(())
     }
 
@@ -562,6 +609,8 @@ impl L0Session {
             mail: l0.mail.clone().map(crate::mail_card::Session::new),
             workspace_chat: None,
             opening_account: None,
+            open_url: None,
+            open_requested: false,
             local_changes: false,
             chat_generation: crate::glance_chat::generation(),
             reads_chat: crate::glance_chat::reads_chat(&l0.source),
@@ -668,12 +717,20 @@ impl L0Session {
         Ok(TapOutcome { event, applied: outcome.applied, relower: moved && !keystroke })
     }
 
-    /// A §5.12 write the card reported, performed by the host: a
-    /// `sys.chat` append (glance_chat.rs). The demo host performs no other.
+    /// Perform only supported, host-bound collection writes.
     fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite, origin: Option<octoscript_ui_l0::ValueOrigin>, data: &serde_json::Value, from_field: bool) {
         if matches!(write.helper.as_str(), "sys.mail_draft" | "sys.mail_review") {
             let result = self.mail.as_mut().ok_or_else(|| "Mail card has no host binding".to_string()).and_then(|mail| mail.perform(write, origin, from_field));
             if let Err(error) = result { log!("glance: Mail write refused: {error}"); }
+            return;
+        }
+        if write.helper == "sys.link" {
+            // A declared control may open only the destination bound at publication.
+            // Arbitrary URLs, app IDs, field edits and unbound sessions are inert.
+            if write.op == "set" && origin.is_some() && !from_field && self.account_valid()
+                && self.open_url.as_deref() == Some(write.value.as_str()) {
+                self.open_requested = true;
+            }
             return;
         }
         if write.helper == "sys.chat" {
@@ -721,6 +778,21 @@ impl LiveCards {
             key: card.key(), published: card.clone(), session: L0Session::for_card(card),
             body: card.body.clone(), lowered: false,
         });
+    }
+
+    /// Consume navigation once, and reject a removed/replaced publication.
+    pub(crate) fn take_open_request(&mut self) -> Option<(String, Option<String>)> {
+        self.take_open_request_with(crate::glance::card)
+    }
+
+    fn take_open_request_with(&mut self, current: impl Fn(&str) -> Option<crate::glance::GlanceCard>) -> Option<(String, Option<String>)> {
+        for live in self.cards.values_mut() {
+            if std::mem::take(&mut live.session.open_requested) && live.session.account_valid()
+                && current(&live.key).as_ref() == Some(&live.published) {
+                return Some((live.published.open_app.clone(), live.published.route.clone()));
+            }
+        }
+        None
     }
 
     pub(crate) fn has_local_changes(&self) -> bool {
@@ -1115,6 +1187,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn mail_chat_receives_exact_publication_but_keeps_large_draft_context_valid() {
+        let mut binding = crate::glance_chat::ContextBinding {
+            kind: octosense_l0_chat::ContextKind::Mail, account: "account".into(), thread: "reply-test".into(),
+            source_message: serde_json::json!({"card_id":"mail-card", "email":{"body":"x".repeat(20 * 1024)}}),
+            draft: serde_json::json!({"body":"y".repeat(6 * 1024), "edit_token":"host-lease"}),
+        };
+        let original_draft = binding.draft.clone();
+        attach_mail_publication(&mut binding, "original model source", &serde_json::json!({"note":{"title":"Original fact"}}));
+        assert_eq!(binding.source_message["publication"]["source"], "original model source");
+        assert_eq!(binding.source_message["publication"]["data"]["note"]["title"], "Original fact");
+        assert!(binding.validate().is_ok());
+        attach_mail_publication(&mut binding, &"z".repeat(8 * 1024), &serde_json::json!({}));
+        assert!(binding.source_message.get("publication").is_none());
+        assert_eq!(binding.draft, original_draft);
+        assert_eq!(binding.source_message["card_id"], "mail-card");
+        assert!(binding.validate().is_ok());
+    }
+
+    #[test]
     fn the_demo_digest_lowers_through_the_card_pipeline() {
         let (source, data) = crate::glance::demo_digest();
         let body = lower(&source, &data).expect("lowers");
@@ -1451,6 +1542,43 @@ mod tests {
         assert!(take_taps(A).is_empty(), "taken once");
         drop_taps(B);
         assert!(take_taps(B).is_empty(), "a swept tile's taps go with it");
+    }
+
+    #[test]
+    fn in_card_navigation_is_bound_to_the_current_publication() {
+        use crate::glance::{Caller, GlanceStore};
+        let source = r#"source destination sys.link(fields: [url])
+            source info sys.dataset(fields: [url1])
+            event open { destination: set($value) }
+            view root Surface { Chip(text: "Open Calendar", on_tap: open, value: info.url1) }"#;
+        let args = serde_json::json!({"card_id":"navigation", "title":"Appointment", "source":source,
+            "data":{"info":{"url1":"app://calendar/event/fixture"}}, "open":{"app":"calendar","route":"event/fixture"}});
+        let mut store = GlanceStore::default();
+        store.publish(&Caller::granted("os.calendar"), &args, 0).unwrap();
+        let card = store.card("os.calendar/navigation", 0).unwrap();
+        let mut live = LiveCards::default();
+        live.prepare_native("tile", &card);
+        let session = live.session_mut("tile").unwrap();
+        let target = target_for(&session.body().unwrap(), "open");
+        session.tap(&target, None).unwrap();
+        assert_eq!(live.take_open_request_with(|_| Some(card.clone())), Some(("calendar".into(), Some("event/fixture".into()))));
+        assert!(live.take_open_request_with(|_| Some(card.clone())).is_none(), "consumed once");
+        for url in ["app://mail", "app://calendar/event/other", "https://example.com"] {
+            let session = live.session_mut("tile").unwrap();
+            session.data["info"]["url1"] = serde_json::json!(url);
+            let target = target_for(&session.body().unwrap(), "open");
+            session.tap(&target, None).unwrap();
+            assert!(live.take_open_request_with(|_| Some(card.clone())).is_none(), "undeclared target: {url}");
+        }
+        live.clear(); live.prepare_native("tile", &card);
+        live.session_mut("tile").unwrap().tap(&target, None).unwrap();
+        assert!(live.take_open_request_with(|_| None).is_none(), "withdrawn card");
+        live.session_mut("tile").unwrap().tap(&target, None).unwrap();
+        let mut replacement = card.clone(); replacement.route = Some("event/replaced".into());
+        assert!(live.take_open_request_with(|_| Some(replacement.clone())).is_none(), "replaced card");
+        let mut unbound = L0Session::new(&card.app, card.l0.as_ref().unwrap());
+        unbound.tap(&target, None).unwrap();
+        assert!(!unbound.open_requested, "source alone confers no navigation binding");
     }
 
     /// The glance panel's tiles dispatch as the card window does (both keep

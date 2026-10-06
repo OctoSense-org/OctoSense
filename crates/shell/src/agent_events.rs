@@ -1,5 +1,6 @@
 //! Host-owned incoming-mail scheduling. Settings are scoped to the host's
-//! active account, outside app-writable storage. A single worker delivers one
+//! active account, outside app-writable storage. Collection runs independently
+//! of model turns and their retries. A single delivery worker delivers one
 //! durable event at a time; only a successfully completed, still-authorized
 //! turn with a durable publication or explicit skip receipt may acknowledge it.
 //! Delivery is at least once (a crash after a tool
@@ -64,6 +65,89 @@ struct RuntimeStatus {
     last_poll_at: Option<u64>,
     last_success_at: Option<u64>,
     last_error: Option<String>,
+    #[serde(default)]
+    last_collection_success_at: Option<u64>,
+    #[serde(default)]
+    last_collection_error: Option<String>,
+    #[serde(default)]
+    last_delivery_error: Option<String>,
+}
+
+impl RuntimeStatus {
+    fn record(&mut self, at: u64, outcome: &str) {
+        // Preserve a failure loaded from the previous on-disk schema until
+        // its own stage succeeds; a successful fetch must not hide it.
+        if self.last_collection_error.is_none() && self.last_delivery_error.is_none() {
+            if self.last_error.as_deref() == Some("collection_failed") {
+                self.last_collection_error = self.last_error.clone();
+            } else {
+                self.last_delivery_error = self.last_error.clone();
+            }
+        }
+        match outcome {
+            "collection_completed" | "polled" | "collection_failed" => {
+                self.last_poll_at = Some(at);
+                self.last_collection_error =
+                    (outcome == "collection_failed").then(|| outcome.to_owned());
+                if outcome != "collection_failed" {
+                    self.baseline_ready = true;
+                    self.last_collection_success_at = Some(at);
+                }
+            }
+            "completed" => {
+                self.last_success_at = Some(at);
+                self.last_delivery_error = None;
+            }
+            error => self.last_delivery_error = Some(error.to_owned()),
+        }
+        self.last_error = self
+            .last_delivery_error
+            .clone()
+            .or_else(|| self.last_collection_error.clone());
+    }
+}
+
+/// Retry eligibility belongs to an event, never to inbox collection. Choose
+/// the earliest due event, preserving inbox order for equal deadlines. An
+/// unsuccessful first event therefore cannot monopolize the delivery worker.
+#[derive(Default)]
+struct EventSchedule {
+    events: BTreeMap<String, RetryState>,
+}
+
+struct RetryState {
+    due: Instant,
+    failures: u32,
+}
+
+impl EventSchedule {
+    fn next<'a>(
+        &mut self,
+        pending: &'a [IncomingEvent],
+        now: Instant,
+    ) -> Option<&'a IncomingEvent> {
+        self.events
+            .retain(|id, _| pending.iter().any(|event| &event.id == id));
+        for event in pending {
+            self.events.entry(event.id.clone()).or_insert(RetryState {
+                due: now,
+                failures: 0,
+            });
+        }
+        pending
+            .iter()
+            .filter(|event| self.events[&event.id].due <= now)
+            .min_by_key(|event| self.events[&event.id].due)
+    }
+
+    fn finish(&mut self, id: &str, success: bool, now: Instant) {
+        if success {
+            self.events.remove(id);
+        } else if let Some(state) = self.events.get_mut(id) {
+            state.failures = state.failures.saturating_add(1);
+            state.due = now + retry_delay(state.failures);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -458,7 +542,7 @@ fn deliver(
     account: &str,
     valid: impl Fn() -> bool,
     timeout: Duration,
-    acknowledge: impl FnOnce() -> Result<bool, &'static str>,
+    mut acknowledge: impl FnMut() -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     let text = event_text(event, account).map_err(|_| "invalid_event")?;
     if !valid() {
@@ -481,6 +565,7 @@ fn deliver(
         )
         .map_err(|_| "turn_failed")?;
     let deadline = Instant::now() + timeout;
+    let mut completed = false;
     loop {
         if !valid() {
             context.close();
@@ -491,18 +576,22 @@ fn deliver(
             context.close();
             return Err("timed_out");
         }
-        match rx.recv_timeout(remaining.min(CHECK_INTERVAL)) {
-            Ok(Ok(())) => {
-                if !valid() {
-                    context.close();
-                    return Err("cancelled");
+        if completed {
+            // Collection can own Mail's store when a successful turn ends.
+            // Retry only the acknowledgement, without repeating the model
+            // turn or holding SETTINGS while the collector is busy.
+            match acknowledge() {
+                Ok(true) => return Ok(()),
+                Ok(false) => return Err("ack_failed"),
+                Err("queue_busy") => {
+                    std::thread::sleep(remaining.min(CHECK_INTERVAL));
+                    continue;
                 }
-                return match acknowledge() {
-                    Ok(true) => Ok(()),
-                    Ok(false) => Err("ack_failed"),
-                    Err(code) => Err(code),
-                };
+                Err(code) => return Err(code),
             }
+        }
+        match rx.recv_timeout(remaining.min(CHECK_INTERVAL)) {
+            Ok(Ok(())) => completed = true,
             Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => return Err("turn_failed"),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
@@ -533,21 +622,7 @@ fn receipt(scope: &Scope, config: &Config, event: Option<&IncomingEvent>, outcom
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    if matches!(
-        outcome,
-        "polled" | "collection_completed" | "collection_failed"
-    ) {
-        current.runtime.last_poll_at = Some(at);
-    }
-    if matches!(outcome, "polled" | "collection_completed" | "completed") {
-        current.runtime.baseline_ready = true;
-        current.runtime.last_error = None;
-    } else {
-        current.runtime.last_error = Some(outcome.into());
-    }
-    if outcome == "completed" {
-        current.runtime.last_success_at = Some(at);
-    }
+    current.runtime.record(at, outcome);
     current.receipt = Some(Receipt {
         at,
         event_id: event.map(|e| e.id.clone()),
@@ -568,48 +643,105 @@ fn retry_delay(failures: u32) -> Duration {
     )
 }
 
-/// One serialized thread for this shell process. It neither starts a second
-/// kernel nor polls the provider on the UI thread. Android may suspend this
-/// process; this is not a guaranteed OS background service or push transport.
+/// Independent collection and serialized delivery threads in this shell
+/// process. Neither starts a second kernel or blocks the UI. On Android,
+/// execution requires a foreground window or a bounded JobService lease;
+/// threads by themselves do not keep an Android process alive.
 pub fn start() {
     static STARTED: OnceLock<()> = OnceLock::new();
     STARTED.get_or_init(|| {
+        let _ = std::thread::Builder::new()
+            .name("incoming-mail-collector".into())
+            .spawn(collector);
         let _ = std::thread::Builder::new()
             .name("incoming-mail-agent".into())
             .spawn(worker);
     });
 }
 
+fn enabled_scope() -> Option<(Scope, Config, String)> {
+    let scope = active_scope().ok()?;
+    let config = read_config(&scope.config_path, &scope.account).ok()??;
+    if !config.enabled || !allowed(&scope) {
+        return None;
+    }
+    let key = format!(
+        "{}:{}",
+        app_storage::account_hash(&scope.account),
+        config.revision
+    );
+    Some((scope, config, key))
+}
+
+/// Android schedules only an already provisioned and consented account.
+/// No model output or message contents cross this status boundary.
+pub fn background_status() -> Value {
+    let Some((scope, config, _)) = enabled_scope() else {
+        return json!({"enabled":false});
+    };
+    let pending = incoming::pending_events_try(&scope.host_dir, APP, &scope.account)
+        .ok()
+        .flatten()
+        .map(|events| events.len());
+    json!({"enabled":true, "pending":pending,
+        "last_poll_at":config.runtime.last_poll_at,
+        "last_collection_success_at":config.runtime.last_collection_success_at})
+}
+
+fn collector() {
+    let mut schedule: Option<(String, Instant)> = None;
+    loop {
+        std::thread::sleep(CHECK_INTERVAL);
+        if !crate::mail_background::execution_allowed() {
+            continue;
+        }
+        let Some((scope, config, key)) = enabled_scope() else {
+            schedule = None;
+            continue;
+        };
+        if schedule
+            .as_ref()
+            .is_some_and(|(k, due)| k == &key && Instant::now() < *due)
+        {
+            continue;
+        }
+        if admitted().is_ok() && lease_valid(&scope, &config) {
+            let outcome = match incoming::collect_inbox(&scope.host_dir, APP, &scope.account) {
+                Ok(report) if report.pending == 0 => "polled",
+                Ok(_) => "collection_completed",
+                Err(_) => "collection_failed",
+            };
+            receipt(&scope, &config, None, outcome);
+        }
+        // A model failure, slow turn, pending queue or delivery backoff never
+        // changes this cadence. The service retains its bounded queue and
+        // atomic cursor/queue backpressure when it actually reaches capacity.
+        schedule = Some((
+            key,
+            Instant::now() + Duration::from_secs(config.poll_interval_secs),
+        ));
+    }
+}
+
 fn worker() {
     let mut retained: Option<(String, Arc<dyn OctosContext>)> = None;
     let mut schedule: Option<(String, Instant)> = None;
-    let mut failures: u32 = 0;
+    let mut events = EventSchedule::default();
     loop {
         std::thread::sleep(CHECK_INTERVAL);
-        let scope = match active_scope() {
-            Ok(s) => s,
-            Err(_) => {
-                discard(&mut retained);
-                schedule = None;
-                continue;
-            }
+        if !crate::mail_background::execution_allowed() {
+            discard(&mut retained);
+            continue;
+        }
+        let Some((scope, config, key)) = enabled_scope() else {
+            discard(&mut retained);
+            schedule = None;
+            events = EventSchedule::default();
+            continue;
         };
-        let config = match read_config(&scope.config_path, &scope.account) {
-            Ok(Some(c)) if c.enabled && allowed(&scope) => c,
-            _ => {
-                discard(&mut retained);
-                schedule = None;
-                continue;
-            }
-        };
-        let key = format!(
-            "{}:{}",
-            app_storage::account_hash(&scope.account),
-            config.revision
-        );
         if schedule.as_ref().is_none_or(|(k, _)| k != &key) {
             discard(&mut retained);
-            failures = 0;
+            events = EventSchedule::default();
             schedule = Some((key.clone(), Instant::now()));
         }
         if schedule
@@ -618,15 +750,27 @@ fn worker() {
         {
             continue;
         }
-        let outcome = poll(&scope, &config, &mut retained);
-        let delay = if outcome.is_ok() {
-            failures = 0;
-            Duration::from_secs(config.poll_interval_secs)
-        } else {
-            failures = failures.saturating_add(1);
-            retry_delay(failures)
+        let pending = match incoming::pending_events_try(&scope.host_dir, APP, &scope.account) {
+            Ok(Some(events)) => events,
+            Ok(None) => continue, // A collection may be in flight; never wait behind it.
+            Err(_) => {
+                receipt(&scope, &config, None, "queue_failed");
+                schedule = Some((
+                    key,
+                    Instant::now() + Duration::from_secs(config.poll_interval_secs),
+                ));
+                continue;
+            }
         };
-        schedule = Some((key, Instant::now() + delay));
+        let Some(event) = events.next(&pending, Instant::now()) else {
+            schedule = Some((key, Instant::now() + Duration::from_secs(1)));
+            continue;
+        };
+        let outcome = process_event(&scope, &config, &mut retained, event);
+        events.finish(&event.id, outcome.is_ok(), Instant::now());
+        // Polling controls network collection, not already durable decisions.
+        // A bounded background job should spend its budget doing useful work.
+        schedule = Some((key, Instant::now() + Duration::from_secs(1)));
     }
 }
 
@@ -636,47 +780,17 @@ fn discard(retained: &mut Option<(String, Arc<dyn OctosContext>)>) {
     }
 }
 
-fn poll(
+fn process_event(
     scope: &Scope,
     config: &Config,
     retained: &mut Option<(String, Arc<dyn OctosContext>)>,
+    event: &IncomingEvent,
 ) -> Result<(), ()> {
     if admitted().is_err() || install_guidance(APP).is_err() || !lease_valid(scope, config) {
         discard(retained);
         receipt(scope, config, None, "not_authorized");
         return Err(());
     }
-    // Drain pending work first: collecting a full queue must not prevent its
-    // events from ever being acknowledged. One event per cycle bounds work.
-    let mut pending = match incoming::pending_events(&scope.host_dir, APP, &scope.account) {
-        Ok(events) => events,
-        Err(_) => {
-            receipt(scope, config, None, "queue_failed");
-            return Err(());
-        }
-    };
-    if pending.is_empty() {
-        if incoming::collect_inbox(&scope.host_dir, APP, &scope.account).is_err() {
-            receipt(scope, config, None, "collection_failed");
-            return Err(());
-        }
-        receipt(scope, config, None, "collection_completed");
-        if !lease_valid(scope, config) {
-            discard(retained);
-            return Err(());
-        }
-        pending = match incoming::pending_events(&scope.host_dir, APP, &scope.account) {
-            Ok(events) => events,
-            Err(_) => {
-                receipt(scope, config, None, "queue_failed");
-                return Err(());
-            }
-        };
-    }
-    let Some(event) = pending.first() else {
-        receipt(scope, config, None, "polled");
-        return Ok(());
-    };
     if retained
         .as_ref()
         .is_none_or(|(a, c)| a != &scope.account || !c.is_open())
@@ -696,11 +810,11 @@ fn poll(
         context,
         event,
         &scope.account,
-        || lease_valid(scope, config),
+        || lease_valid(scope, config) && crate::mail_background::execution_allowed(),
         TURN_DEADLINE,
         || {
             let _guard = SETTINGS.lock().unwrap_or_else(|e| e.into_inner());
-            if !lease_valid(scope, config) {
+            if !lease_valid(scope, config) || !crate::mail_background::execution_allowed() {
                 return Err("cancelled");
             }
             // Receipt validation and durable removal share one nonblocking
@@ -730,6 +844,94 @@ fn poll(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    #[test]
+    fn failed_oldest_event_does_not_block_later_mail_and_is_not_lost() {
+        let now = Instant::now();
+        let mut first = event();
+        first.id = "first".into();
+        let mut second = event();
+        second.id = "second".into();
+        let mut pending = vec![first, second];
+        let mut schedule = EventSchedule::default();
+        assert_eq!(schedule.next(&pending, now).unwrap().id, "first");
+        schedule.finish("first", false, now);
+        // Even when the first event's retry has become due, the waiting
+        // second email must run. The failed event remains pending afterward.
+        let later = now + Duration::from_secs(30);
+        assert_eq!(schedule.next(&pending, later).unwrap().id, "second");
+        schedule.finish("second", true, later);
+        pending.remove(1);
+        assert_eq!(schedule.next(&pending, later).unwrap().id, "first");
+        schedule.finish("first", false, later);
+        assert!(schedule
+            .next(&pending, later + Duration::from_secs(30))
+            .is_none());
+        assert_eq!(
+            schedule
+                .next(&pending, later + Duration::from_secs(60))
+                .unwrap()
+                .id,
+            "first"
+        );
+    }
+
+    #[test]
+    fn new_mail_runs_during_an_older_events_backoff_and_removed_events_are_pruned() {
+        let now = Instant::now();
+        let mut pending = vec![event()];
+        let mut schedule = EventSchedule::default();
+        schedule.next(&pending, now).unwrap();
+        schedule.finish(&pending[0].id, false, now);
+        let mut newer = event();
+        newer.id = "new-arrival".into();
+        pending.push(newer);
+        assert_eq!(
+            schedule
+                .next(&pending, now + Duration::from_secs(1))
+                .unwrap()
+                .id,
+            "new-arrival"
+        );
+        pending.remove(0);
+        schedule.next(&pending, now + Duration::from_secs(2));
+        assert_eq!(schedule.events.len(), 1);
+        assert!(!schedule.events.contains_key("mail-123"));
+        schedule.next(&[], now + Duration::from_secs(3));
+        assert!(schedule.events.is_empty());
+    }
+
+    #[test]
+    fn collection_and_delivery_failures_recover_independently_in_status() {
+        let mut status = RuntimeStatus::default();
+        status.record(1, "turn_failed");
+        status.record(2, "collection_completed");
+        assert_eq!(status.last_error.as_deref(), Some("turn_failed"));
+        assert_eq!(status.last_collection_success_at, Some(2));
+        assert_eq!(status.last_success_at, None);
+        status.record(3, "collection_failed");
+        status.record(4, "completed");
+        assert_eq!(status.last_error.as_deref(), Some("collection_failed"));
+        assert_eq!(status.last_success_at, Some(4));
+        assert_eq!(status.last_poll_at, Some(3));
+        status.record(5, "polled");
+        assert_eq!(status.last_error, None);
+        assert_eq!(status.last_collection_success_at, Some(5));
+        assert_eq!(status.last_success_at, Some(4));
+    }
+
+    #[test]
+    fn previous_runtime_schema_preserves_delivery_failure_after_successful_fetch() {
+        let mut status: RuntimeStatus = serde_json::from_value(json!({
+            "baseline_ready": true, "last_poll_at": 1,
+            "last_success_at": null, "last_error": "turn_failed"
+        }))
+        .unwrap();
+        status.record(2, "collection_completed");
+        assert_eq!(status.last_error.as_deref(), Some("turn_failed"));
+        status.record(3, "completed");
+        assert_eq!(status.last_error, None);
+    }
 
     fn event() -> IncomingEvent {
         IncomingEvent {
@@ -823,7 +1025,7 @@ mod tests {
         // receipt+removal atomicity and try_lock behavior with a held mutex.
         for (reply, expected) in [
             (Ok(Some(false)), "unresolved_decision"),
-            (Ok(None), "queue_busy"),
+            (Ok(None), "timed_out"),
             (Err("private storage error".to_string()), "ack_failed"),
         ] {
             let context: Arc<dyn OctosContext> = fake(Some(true), None);
@@ -834,12 +1036,60 @@ mod tests {
                     &event().account,
                     || true,
                     Duration::from_millis(10),
-                    || finish_delivery(reply)
+                    || finish_delivery(reply.clone())
                 ),
                 Err(expected)
             );
         }
         assert_eq!(finish_delivery(Ok(Some(true))), Ok(true));
+    }
+
+    #[test]
+    fn collection_contention_retries_ack_without_repeating_a_successful_turn() {
+        let fake = fake(Some(true), None);
+        let context: Arc<dyn OctosContext> = fake.clone();
+        let mut attempts = 0;
+        assert_eq!(
+            deliver(
+                &context,
+                &event(),
+                &event().account,
+                || true,
+                Duration::from_secs(2),
+                || {
+                    attempts += 1;
+                    finish_delivery(Ok(if attempts == 1 { None } else { Some(true) }))
+                }
+            ),
+            Ok(())
+        );
+        assert_eq!(attempts, 2);
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn revocation_while_ack_waits_for_collection_leaves_event_pending() {
+        let fake = fake(Some(true), None);
+        let context: Arc<dyn OctosContext> = fake.clone();
+        let revoked = AtomicBool::new(false);
+        let mut attempts = 0;
+        assert_eq!(
+            deliver(
+                &context,
+                &event(),
+                &event().account,
+                || !revoked.load(Ordering::SeqCst),
+                Duration::from_secs(2),
+                || {
+                    attempts += 1;
+                    revoked.store(true, Ordering::SeqCst);
+                    Err("queue_busy")
+                }
+            ),
+            Err("cancelled")
+        );
+        assert_eq!(attempts, 1);
+        assert!(fake.closed.load(Ordering::SeqCst));
     }
 
     #[test]

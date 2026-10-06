@@ -11,6 +11,12 @@ are separate checkpoints: the new workspace tests did not send real email.
 Only physical Android touchscreen input can approve sending in this iteration;
 desktop/accessibility approval and the complete phone UI matrix remain deferred.
 
+After a saved transport receipt confirms SMTP acceptance, the bound reply card
+and notification leave Glance. The draft and send receipt remain stored, and an
+open success review stays visible until Back. Failed or uncertain sends remain
+actionable. New incoming messages can produce new important-mail cards; this
+does not merge their chat threads. See [completion validation](testing/mail-completion-2026-10-05.md).
+
 A generated card describes presentation. Rust host code owns the account,
 original email, saved draft, revision and send operation. Editing a field changes
 a durable draft; a generated Review reply chip only opens host review. Neither
@@ -28,7 +34,7 @@ revision-bound host capability; successful prose alone cannot update the UI.
 | Open a Mail card | Summary first; tap expands to a full-screen Email / Chat workspace | Collapsed summaries run no generated UI; the workspace retains its own session |
 | Ask for a change | Fixed, growing composer above the keyboard; transcript scrolls independently | Supplies the current saved draft; the edit tool saves only the matching revision |
 | Model finishes | “Reply updated · saved” appears after a saved model edit | Uses authoritative draft state, never inferred success from assistant text |
-| Read or edit | Recipient, subject and body are directly editable | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
+| Read or edit | Body is directly editable; Details expands recipient/subject fields | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
 | Compare with the email | View original email inside Email | Reads the bound original email without replacing the reply |
 | Review and send | A separate final review shows From, To, subject and exact body | Only physical Approve & Send authorizes that immutable payload |
 | Save conflict | Unsaved text remains visible, with Use my edit / Use saved reply | Never silently overwrites newer data; blocks chat/review until resolved |
@@ -39,6 +45,12 @@ native `TextInput`. Reply has its own scrollable preview/editor. Neither typing
 nor scrolling rebuilds an L0 conversation. Native Mail opening also defers
 unused generated-layout lowering. Tabs and primary controls have at least
 44-point targets; the editor gives the keyboard-adjusted space to the body.
+
+Original, Details and Review now share one compact row. Recipient and subject
+editing expand on demand, while the body keeps the remaining space. Selection
+uses a muted blue-gray band without changing the editor background. See the
+[compact-editor validation](testing/mail-compact-editor-2026-10-05.md) for the
+current checks and limits; historical checkpoints below describe earlier builds.
 
 **Paired model checkpoint (Lab build 0427):** fallback providers were disabled.
 The existing DeepSeek-authored L0 source was preserved (SHA-256

@@ -136,6 +136,8 @@ impl CardChat {
     }
     pub fn has_unsent_input(&self, cx: &Cx) -> bool { !self.view.text_input(cx, ids!(input)).text().trim().is_empty() }
     pub fn take_reply_request(&mut self) -> bool { std::mem::take(&mut self.reply_requested) }
+    /// Rebind transcript/status while retaining the person's unsubmitted text.
+    pub fn refresh(&mut self) { self.generation = None; }
     pub fn reset(&mut self, cx: &mut Cx) {
         self.rows.clear();
         self.reply_requested = false;

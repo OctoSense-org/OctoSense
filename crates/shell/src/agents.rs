@@ -417,7 +417,7 @@ pub fn declarations() -> Vec<Value> {
     tools.extend([
         json!({
             "name": PROVISION_TOOL, "app": OWNER,
-            "description": "Configure instructions, skill text and incoming-email processing for an already allowed Mail agent. Use only when the person requests this automation. Bound to Mail's current signed-in account; does not grant access, tools or credentials. The initial inbox sync establishes a baseline; only subsequent new mail triggers the agent. Runs while OctoSense is alive. Set enabled=false to stop. Instructions and skills replace the previous host provision, supplementing the app's admitted base guidance.",
+            "description": "Configure instructions, skill text and incoming-email processing for an already allowed Mail agent. Use only when the person requests this automation. Bound to Mail's current signed-in account; does not grant access, tools or credentials. The initial inbox sync establishes a baseline; only subsequent new mail triggers the agent. Runs at the configured interval while OctoSense is active; Android also schedules quiet periodic background jobs (15-minute period, subject to OS delays). Set enabled=false to stop. Instructions and skills replace the previous host provision, supplementing the app's admitted base guidance.",
             "input_schema": {"type":"object","properties":{
                 "app":{"type":"string","enum":["os.mail"]},
                 "enabled":{"type":"boolean"},

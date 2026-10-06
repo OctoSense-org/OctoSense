@@ -3,11 +3,23 @@
   "id": "os.calendar",
   "version": "1.0.0",
   "name": "Calendar",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "glance"],
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "calendar",
+    "glance"
+  ],
   "agent": {
     "profile": "read-only",
-    "tools": ["ask_user_question"],
-    "model": { "needs": ["tool_calling"] }
+    "tools": [
+      "ask_user_question"
+    ],
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    },
+    "instructions": "AGENT.md"
   }
 }

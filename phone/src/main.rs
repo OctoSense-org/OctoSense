@@ -15,6 +15,7 @@ pub use octosense_shell::*;
 use octosense_shell::App as ShellApp;
 
 mod android_settings;
+mod android_mail;
 mod settings_app;
 mod settings_script;
 mod settings_script_bridge;
@@ -152,6 +153,7 @@ impl AppMain for App {
             self.settings_runtime.entries.cancel();
         }
         self.shell.shell_handle_event(cx, event);
+        crate::android_mail::event(self, cx, event);
         // After the shell: the Android packets it queued for Settings.
         self.settings_android_packets(cx);
         // After the shell: Settings' requests to the host, attributed by the

@@ -76,6 +76,8 @@ The editor distinguishes unsaved, saving, saved and conflict/error states. Send 
 
 Glance and the expanded view subscribe to the same draft and send records. A source refresh may replace presentation, but retains the host binding and draft identity. Hiding or dismissing a card does not delete its draft. Account deletion uses Mail's data-removal policy; a card is not an extra copy of credentials or account storage.
 
+**Completed replies (2026-10-05):** the host retires a bound reply card and its notification when the saved draft and latest attempt are `accepted` and the latest transport receipt contains `accepted: true`. SMTP acceptance does not prove recipient delivery. Model prose, generated data, reading, editing, cancellation and failed/unknown sends cannot complete a card. Retirement persists without deleting the draft or receipt or replacing the person's Undo action. An already open success review remains visible until Back. Restore, Undo and retries of the same bound publication cannot resurrect it. A new incoming message remains a separate event, subject to the importance policy; this change does not merge email conversations or automatically complete other app families. See [validation](../testing/mail-completion-2026-10-05.md).
+
 ### 4. Use a typed action reference and host-owned approval inside the card
 
 Choose a **typed, host-issued action reference** for a proposed send. It names an immutable snapshot of the draft revision and its operation identity. Do not use an unguarded append to a generic outbox as authorization. This resolves the historical plan's Send design choice if this ADR is accepted.

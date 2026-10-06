@@ -2,7 +2,7 @@
 
 [English](mail-agent-events.md) | 简体中文
 
-邮件的 Agent 不用别人开口就能处理新邮件。Shell 中的一个工作线程同步收件箱，把每封新邮件记为一个事件排入队列，并为它启动邮件的 Agent 的一个回合；Agent 读完邮件，要么发布一张 glance 卡片（如果用户的策略要求回复，卡片会带一份回复草稿），要么记下不发的理由。Agent、通道和卡片的概念见[关键概念](../README.zh-CN.md#关键概念)。
+邮件的 Agent 不用别人开口就能处理新邮件。Shell 独立于模型回合同步收件箱，把每封新邮件记为一个事件排入队列，并为它启动邮件的 Agent 的一个回合；Agent 读完邮件，要么发布一张 glance 卡片（如果用户的策略要求回复，卡片会带一份回复草稿），要么记下不发的理由。Agent、通道和卡片的概念见[关键概念](../README.zh-CN.md#关键概念)。
 
 ## 开启
 
@@ -44,11 +44,17 @@ sequenceDiagram
 
 ## 从新邮件到回合
 
-工作线程只有一个，运行在 Shell 进程中。某个账号的收件箱第一次同步时只建立基线，不排入任何事件；IMAP 服务器给文件夹重新编号之后的那次同步也是如此。此后，每一次收件箱同步（工作线程的、邮件窗口的，或 Agent 自己调用的 `mail.sync`）都会把每封新邮件变成一个待处理事件，事件 id 固定不变。邮件、服务器游标和事件在一次原子写入中保存，重启后依然保留。
+Shell 进程中有两个线程：`incoming-mail-collector` 同步收件箱，`incoming-mail-agent` 串行投递队列中的事件。某个账号的收件箱第一次同步时只建立基线，不排入任何事件；IMAP 服务器给文件夹重新编号之后的那次同步也是如此。此后，每一次收件箱同步（工作线程的、邮件窗口的，或 Agent 自己调用的 `mail.sync`）都会把每封新邮件变成一个待处理事件，事件 id 固定不变。邮件、服务器游标和事件在一次原子写入中保存，重启后依然保留。
 
-每个周期只处理一个事件，即最早的那个；没有待处理事件时先同步一次。它的回合在用户的通道中运行，算作应用自己的回合（触发方式为 `incoming`），限时 180 秒。之后工作线程等待一个轮询间隔；如果失败，则先等 30 秒，每次翻倍，最长 15 分钟。
+每次收取结束后，收取线程等待配置的轮询间隔，即使队列非空、模型回合仍在运行或已经失败，也继续收取。投递线程选择最早到期的可处理事件；到期时间相同时保持队列顺序。每个失败事件独立退避：先等 30 秒，每次翻倍，最长 15 分钟。等待期间其他到期事件仍可处理，旧事件的重试也不会反复抢在更早等待的事件前面。进程重启或策略变更会重置重试计时，持久化事件不会丢失。
+
+每个回合在用户通道中运行，算作应用自己的回合（触发方式为 `incoming`），限时 180 秒。每次投递尝试后等待一秒再选择下一个可执行事件；收取使用独立的轮询间隔。慢回合仍会延迟其他回合，但不会阻止收取。收取期间邮件服务仍串行访问存储；界面状态和投递队列检查使用非阻塞锁。
+
+`agents.status.runtime` 分别报告收取与投递：`last_poll_at` 是最近一次已结束的收取尝试，`last_collection_success_at` 是最近一次成功收取，`last_success_at` 是最近一次成功确认事件。`last_collection_error` 和 `last_delivery_error` 仅在各自阶段成功后清除，成功收取不会掩盖模型回合失败。`last_receipt` 是两个线程中最近一次的结果。
 
 ## Agent 如何决定
+
+同步和评估邮件本身不会通知用户。系统 Agent 可以配置选择性策略：先阅读，再仅对医疗、物流、日程、学校/工作或家庭事项中与用户有关且有操作、期限或重要变化的邮件通知。常规自动提醒、新闻订阅和无需操作的更新应使用 `mail.skip_event`；普通通知的后备路径也必须遵守同样的重要性门槛。这是模型指导文本，不是宿主中的确定性分类器。
 
 回合以不可信 JSON 的形式带来事件的各个 id、发件人和主题，邮件应用的指导文本则放在另一个独立的块中。Agent 按照分拣技能读取邮件，然后用下面的工具了结这个事件：
 
@@ -64,35 +70,63 @@ Shell 把邮件应用的每一次工具调用都绑定到当前登录的账号�
 
 ## 事件何时算处理完
 
-只有在回合已经完成、Agent 对同一账号仍然获准、配置没有变化，并且邮件应用的宿主服务持有该事件 id 的回执（一次发布或一次跳过）时，工作线程才确认事件，把它移出队列。创建草稿不算回执。工具调用失败后给出的最终回答不会留下回执，所以事件会被重试。关闭处理或撤回对 Agent 的允许，会在 250 毫秒内关闭正在运行的回合，它的事件仍保持待处理。
+只有在回合已经完成、Agent 对同一账号仍然获准、配置没有变化，并且邮件应用的宿主服务持有该事件 id 的回执（一次发布或一次跳过）时，工作线程才确认事件，把它移出队列。创建草稿不算回执。如果回合成功后收取线程仍占用邮箱锁，投递线程会在同一期限内重试确认，不再请求模型；账号、授权和策略检查仍然生效。工具调用失败后给出的最终回答不会留下回执，所以事件会被重试。关闭处理或撤回对 Agent 的允许，会在 250 毫秒内关闭正在运行的回合，它的事件仍保持待处理。
 
 投递至少一次：发布之后、保存回执之前出错，通知会重复，但相同的卡片 id 会替换仍在显示的卡片。完全相同的重试会沿用回执，不再通知；修正过的卡片会以同一个 id 重新发布。
 
 ## 卡片
 
+在 Android 上，Home 右滑页面与通知打开的卡片工作区读取**同一个安装包内**的
+Glance 数据。独立的 Home 与测试 APK 各自保存账号、代理配置、草稿和卡片；
+在测试 APK 中连接 Gmail，不会填充已安装 Home 的 Glance 页面。验收日常桌面
+入口前，必须确认哪个包持有 Home 角色；点击测试 APK 的通知，只能证明该
+测试包的入口有效。[`GlanceFeed::sync_published`](../crates/shell/src/mobile_pages.rs)
+读取当前包发布的卡片，展开摘要后进入保留状态的工作区。
+
+同一个包内的 Mail、Calendar、News 等发布应用共用这一信息流。跨包迁移 Mail
+数据不会转移 Android Keystore 访问权：Gmail 加密凭据需要在目标 Home 中通过
+Mail 的 **Reconnect account（重新连接账号）**重新登录。使用相同账号、用户名和收件
+服务器设置，才能保留账号身份与已保存的草稿。
+
 `mail.publish_card` 发布的卡片只能是 L0：没有表达式，也没有脚本。Shell 会检查每个 `sys.dataset` 源都声明了非空的 `fields` 列表，并在 `data` 中为每个字段提供了值，还会检查各个源之间没有循环依赖。这项检查能发现缺失的绑定，发现不了错误的事实。之后 Shell 以邮件应用的身份发布卡片并发出通知；点按通知打开的正是这张卡片，手机上以全屏工作区显示。
 
 带 `draft_id` 时，邮件应用的宿主服务把卡片绑定到账号、邮件、草稿和聊天线程，这个绑定，模型既不能提供，也不能更改。卡片随后可以编辑回复（`sys.mail_draft`）、就回复聊天（`sys.chat`），并打开宿主的审核（`sys.mail_review`）。一封回复从草稿到 SMTP 的路径见[组合 Mail 卡片](mail-composable-cards.zh-CN.md#沿代码追踪一封回复)。
+
+系统代理的配置区分自动草稿和 **Compose reply（撰写回复）**。可回复的重要邮件
+可以自动附带草稿；自动发送或 no-reply 邮件则可以先保持信息卡片，等用户点击
+Compose reply。宿主为新邮件事件卡片提供该操作，在后台线程根据账号的持久发布
+记录和邮件缓存确定原邮件，再请 Mail 代理创建草稿，并用原卡片 id、`draft_id` 和
+`notify:false` 重新发布。生成的数据不能指定原邮件身份；原邮件缺失时显示错误，
+不会选择其他邮件。
+
+缺少 `draft_id` 时，卡片只有通用 Card/Chat，无法编辑邮件草稿。代理附加草稿后，
+宿主在原处初始化 Email/Chat 工作区，并保留尚未提交的聊天输入。生成的摘要不应
+重复制作这些标签页或输入框。在上下文预算允许时，邮件聊天还附带卡片 id 和当前
+源码/data，代理可以直接修复发布内容，无需搜索无关工作区文件。自动发送或 no-reply
+邮件需要提醒用户检查收件人，
+不得编造替代地址。Compose reply 只授权创建草稿；发送始终需要用户在宿主审核
+界面上亲自确认。只要原邮件缓存和发布记录仍在，旧邮件事件卡片也支持该操作。
 
 其他需要用户处理的邮件，会得到能用的 `Chip` 按钮，在本地视图之间切换（`state`、`event`、`when`），例如 Show code、Details 和 Back。这些按钮只改变卡片显示的内容，名称也不能声称会发送、预约或追踪。[`mail-shipping.card`](../crates/shell/resources/glance/mail-shipping.card) 和 [`mail-request.card`](../crates/shell/resources/glance/mail-request.card) 展示了语法；其中的发送、追踪和完成状态只是演示。
 
 ## 限制
 
-- 邮件窗口可以关闭，但 Android 挂起或终止 OctoSense 期间什么都不会运行；通知显示在 OctoSense 自己的通知栏里，而不是 Android 的通知栏。
-- glance 卡片只保存在内存中，重启会清除它们；绑定草稿的邮件卡片例外，Shell 会为当前登录的账号恢复它们，且不再发出通知。
-- 邮件最多保留四张有效卡片。第五张卡片或通知会被拒绝；除非 Agent 跳过该事件，它会留在队首，直到有卡片被关闭或过期（默认 24 小时后）。
+- Android 为已启用且已授权的 Mail 账户注册持久化、要求联网的 JobScheduler 任务：周期 15 分钟，弹性窗口 5 分钟。Doze、配额和网络条件可能推迟执行；这是定期轮询，不是推送。强行停止应用后，必须由用户重新打开才会恢复任务。任务无需 Activity 即可启动同一个 Rust 宿主，每次最多四分钟，也可能被 Android 提前停止；无需前台服务常驻通知。见 [ADR 0008](adr/0008-quiet-android-mail-jobs.zh-CN.md)。
+- Android 为 Mail 发布保存有上限的私有通知发件箱。模型根据已配置的重要性偏好作出决定后，只有 `notify: true` 的卡片才产生 Android 原生通知，仍受通知权限和频道设置限制。点击通知会为原始且当前有效的账户恢复原始、重新验证过的卡片，不能批准发送回复。绑定草稿的卡片仍读取权威的已保存草稿。其他应用卡片若无专用持久化能力，仍仅保存在内存中。
+- Glance 可滚动浏览所有保留卡片：第五张 Mail 卡片可以发布，第六张之后也可以滚动到达。每应用每分钟六次的发布频率限制仍存在。负载保留预算（每应用 8 MiB、合计 32 MiB）和到期规则独立控制工作集，不取决于视口；容量紧张时淘汰旧卡片，但保留新的有效发布。Mail 服务中的草稿和原邮件不会因此删除。
 - 关闭处理时事件仍会排队，而且只有工作线程会移除它们。积满 128 个后，凡是发现新邮件的收件箱同步都会失败且游标不会前移（包括邮件窗口的同步），直到处理消化掉队列。
 - 尚未实现：其他应用的事件、定时触发、按应用选择模型、内核原生技能、[ADR 0002（英文）](adr/0002-event-driven-app-agents.md)中的预算与设置界面，以及回复之外的远端操作（Shell 没有 `sys.link` 的处理程序）。
 
 ## 阅读源码
 
 1. [`incoming.rs`](../apps/mail/host-service/src/incoming.rs)：队列（`collect`、`skip_event`、`resolve_and_ack_try`）和发布回执（`publish_revision`、`publish_once`）。
-2. [`agent_events.rs`](../crates/shell/src/agent_events.rs)：`provision`、`status` 和工作线程（`poll`、`deliver`）。
+2. [`agent_events.rs`](../crates/shell/src/agent_events.rs)：`provision`、`status` 和收取与投递线程（`collector`、`worker`、`EventSchedule`、`process_event`、`deliver`）。
 3. [`script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs)：已接纳的指导文本（`guidance`）和账号绑定（`scoped_args`）。
 4. [`guidance.rs`](../crates/app-peers/src/guidance.rs)：每个回合附带的指导文本，最多 16 KiB。
 5. [`glance.rs`](../crates/shell/src/glance.rs)：`publish_mail_l0_for` 和 `check_generated_data`。
 6. [`mail_card.rs`](../crates/shell/src/mail_card.rs)：绑定卡片的源（`check_sources`）；其中的 `persistence.rs` 负责恢复绑定卡片。
-7. [`mobile_app.rs`](../crates/shell/src/mobile_app.rs)：手机上的通知点按。
+7. [`mail_background.rs`](../crates/shell/src/mail_background.rs)：执行租约、私有通知发件箱、账户与到期检查、通知恢复。
+8. [`android_mail.rs`](../phone/src/android_mail.rs) 和 [`MailJobService.java`](../phone/resources/android/java/dev/makepad/octosense/MailJobService.java)：无界面的 JNI 入口、有时限的系统任务与通知导航。[`runtime_host.rs`](../crates/shell/src/runtime_host.rs) 仅初始化一次共享服务，不创建第二个内核或对等代理。
 
 ## 测试情况
 

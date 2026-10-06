@@ -17,7 +17,7 @@
 | `dev_mode::init`、`approvals::init` | 先是开发者模式，再是审批路由 |
 | `host_tools::init` | 让 Shell 成为每个代理的工具宿主，连同中转（[第 7 节](#7-把工具追到-rust-代码)） |
 | `system_chat::init` | 系统 Agent 的授权，在内核第一次启动之前交给它 |
-| `agents::start` | 一个线程，为用户已允许的每个脚本应用准备 peer（[第 5 节](#5-准备-peer给它两条通道)），以及邮件的事件工作线程 |
+| `agents::start` | 一个线程，为用户已允许的每个脚本应用准备 peer（[第 5 节](#5-准备-peer给它两条通道)），以及邮件的收取和投递线程 |
 
 顺序正是关键：在任何 Agent 能调用工具之前，审批路由和中转就已经存在。如果用户在之前的运行中已经允许了日历的 Agent，`agents::start` 会立即准备它的 peer，而这第一个连接就会启动内核。
 
@@ -31,7 +31,7 @@
 | 进程应用（源码检出构建中的 Terminal 和 Task） | [clients.rs](../crates/shell/src/clients.rs)、[hub.rs](../crates/shell/src/hub.rs) | hub 只接纳出示了本次启动从 stdin 读到的密钥的子进程 socket；`sandbox_policy` 构建系统沙箱。 |
 | 脚本应用（日历、邮件、所有商店应用） | `apps.rs` 中的 `system_card_apps`，然后是 App Hub 的 `CARD_MODULE` | `card` 模块，也就是 Card runner，托管所有系统应用和已安装应用，每个实例一个隔离环境。 |
 
-`system_card_apps` 生成日历的启动器条目，并在第一次时注册 Shell 的宿主服务（`register_host_services`）。日历自己的窗口不列出任何日程，因为 App Hub 没有可以授予它的 `calendar` 能力；只有它的 Agent 的工具能读到日程。
+`system_card_apps` 生成日历的启动器条目，并在第一次时注册 Shell 的宿主服务（`register_host_services`）。日历的 `calendar` 能力让其隔离 UI 调用所属服务。月历、按日列表、编辑器及日历 Agent 工具共用 `.host/calendar/events.json`。Glance 日程卡片是同一记录的投影，卡片内的 **Open Calendar** 按钮通过绑定在发布记录中的 `event/<id>` 路由，在真实日历应用中打开该日程。跨应用 Agent 调用仍须下文的独立授权。
 
 运行方法见桌面端 README 的[构建与运行](../desktop/README.zh-CN.md#构建与运行)，其中用 `python3 tools/kernel-artifact.py --host --stage target/release` 准备锁定版本的内核。
 
@@ -53,7 +53,7 @@
 - `Driver` 打开 `SYSTEM_SESSION`（`_main:api:octosense#system`），把每条消息作为 `turn/start` 发出。每次连接后，它都在自己的链路上注册系统 Agent 的宿主工具（不带 `peer` 的 `peer/tools/register`）。
 - `link::poll_for` 用一个会唤醒（unpark）该线程的 waker 轮询内核，所以系统对话不需要 Tokio 运行时。只有在面板打开或有回合运行时，它才保持连接。
 
-系统 Agent 的内核工具（[kernel/src/system_tools.rs](../crates/kernel/src/system_tools.rs) 中的 `SYSTEM_AGENT_TOOLS`）没有一个能读日历，所以它必须去问日历的 Agent。[agents.rs](../crates/shell/src/agents.rs) 中的两个宿主工具帮它做到这一点，它们由系统对话自己应答（`agents::call`）：
+系统 Agent 的内核工具（[kernel/src/system_tools.rs](../crates/kernel/src/system_tools.rs) 中的 `SYSTEM_AGENT_TOOLS`）没有一个能读日历。它单独注册的宿主工具现已显式获授 `calendar.events`、`calendar.add_event`、`calendar.notify`，简单请求可以直接执行；需要日历自身上下文或判断时仍可委派。[agents.rs](../crates/shell/src/agents.rs) 中的两个宿主工具帮它做到这一点，它们由系统对话自己应答（`agents::call`）：
 
 - `agents.list` 返回每个有 Agent 的应用、用户是否允许了它，以及它的 peer slug。
 - `agents.ask` 在用户还没决定时显示日历的首次使用面板，并一直挂起这次调用，直到用户回答、peer 准备好；然后返回 slug。
@@ -130,7 +130,7 @@ sequenceDiagram
 
 从声明一直跟到它读取的文件，看 `calendar.events` 走过的路：
 
-1. **声明**于 [apps/calendar/bundle/tools.json](../apps/calendar/bundle/tools.json)：它的 schema、`risk: "read"`、`implemented_by: "host-service"`，没有标为 `shareable`。
+1. **声明**于 [apps/calendar/bundle/tools.json](../apps/calendar/bundle/tools.json)：它的 schema、`risk: "read"`、`implemented_by: "host-service"`，标为 `shareable: true`（调用者仍须显式授权）。
 2. **加载**：[host_tools/script_apps.rs](../crates/shell/src/host_tools/script_apps.rs) 中的 `from_bundle` 通过 App Hub 会核对摘要的加载器读取它。`install` 把工具加入中转的目录，并为 `os.calendar` 安装一个 `HostServiceExecutor`。
 3. **注册**：`broker.rs` 中的 `register_tools` 用 `ShellToolHost::declarations`（[host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)）返回的声明进行注册。
 4. **调用**：octos 在注册它的那条链路上发送 `peer/tool/call`。代理把账号、上下文和调用方标注进一个 `HostToolCall`（[app-peers/src/host_tools.rs](../crates/app-peers/src/host_tools.rs)），由 `ShellToolHost::tool_call` 排队交给 UI 线程。
@@ -194,7 +194,7 @@ sequenceDiagram
 3. 对脚本应用包，App Hub 的准入提供了这个名称（`HostLimits.offered_tools`）。
 4. `Catalog::owner_of` 能从命名空间找到所有者：工具箱、同名的原生应用，否则是系统应用 `os.<namespace>`。
 
-日历的工具没有一个可共享，所以其他 Agent 只能去问日历的 Agent；新闻共享了 `news.list` 和 `news.read`。尚未实现：`owner_of` 从不解析到商店应用，所以商店应用还不能共享工具。
+日历共享 `calendar.events`、`calendar.add_event`、`calendar.notify`；Mail 的 manifest 恰好申请这三项，系统 Agent 则有单独的显式授权。加载 Mail 时也加载经接纳的日历目录和执行器，无需启动日历 peer 或窗口。Mail 读取已确认的邮件、解析日期与时区、先查日历，再用稳定重试键添加，验证保存结果并发布归属日历的卡片。安排日程须有用户请求或明确配置的策略。具名时区不受设备时区差异影响；这写入本地日历，并非 Google Calendar。新闻共享 `news.list` 和 `news.read`。尚未实现：`owner_of` 从不解析到商店应用，所以商店应用还不能共享工具。
 
 **求助。** [questions/mod.rs](../crates/shell/src/questions/mod.rs) 按回合的来源路由 Agent 的 `ask_user_question`：`peer/input` 回合的问题进系统对话，其余的进应用的对话。只有用户能回答，而且只能在 Shell 界面上回答。系统设施只以获授权的工具的形式提供给应用的 Agent，例如[工具箱](../crates/toolbox/README.md)的工作流。尚未实现：应用不能与系统 Agent 发起对话，`OctosAppService` 没有这样的调用。
 
@@ -205,10 +205,12 @@ peer 是存储的状态，回合是 octos 中的一组 Tokio 任务；线程属�
 | 层 | 如何运行 | 去哪里看 |
 | --- | --- | --- |
 | Shell 界面 | Makepad 的 UI 线程：绘制、事件，以及运行中转的 `host_tools::pump` | `lib.rs`、`host_tools/mod.rs` |
+| Mail 事件 | 两个 `std::thread`：独立收取与串行投递，各事件独立退避。Android 仅在前台或有时限的系统任务内允许执行。 | `agent_events.rs`、`mail_background.rs` |
+| Android Mail 后台任务 | Java JobService 工作线程无需 Activity 即可加载同一个 Rust 宿主，驱动同步的工具中继；一个要求联网的周期任务，不创建第二个内核或对等代理。 | `phone/src/android_mail.rs`、`MailJobService.java`、`runtime_host.rs` |
 | 系统对话 | 一个 `std::thread`，用 `link::poll_for` 轮询内核 | `system_chat/mod.rs`、`link.rs` |
 | 内核服务 | 一个首次使用时才创建的 Tokio 运行时：2 个工作线程，8 MiB 栈；每个代际一个 supervisor 任务 | `kernel/src/lib.rs` 的 `Inner::runtime`、`kernel.rs` 的 `supervise` |
 | 应用代理 | 每次 `Broker::new` 创建一个运行时，1 个工作线程：链路循环、请求、重试、时限 | `app-peers/src/broker.rs` |
-| 宿主服务 | 由 App Hub 的 `services::dispatch` 在调用方的线程上调用：工具调用时就是 UI 线程，日历在那里应答。邮件（`work` 线程、`mail-fetch`）和新闻（`news-fetch`）把网络工作放到自己的线程上。 | `script_apps.rs`、`apps/*/host-service/` |
+| 宿主服务 | 由 App Hub 的 `services::dispatch` 在调用方的线程上调用：工具调用时就是中转泵调用线程（UI 或 Android Mail 任务），日历在那里应答。邮件（`work` 线程、`mail-fetch`）和新闻（`news-fetch`）把网络工作放到自己的线程上。 | `script_apps.rs`、`apps/*/host-service/` |
 | 桌面端和 Android 上的 octos | 独立进程，使用 Tokio 的默认运行时：每个 CPU 核心一个工作线程（`ServeCommand::execute`） | octos 的 `crates/octos-cli/src/commands/serve.rs` |
 | OpenHarmony 上的 octos | `serve_io` 运行在内核服务的运行时上，经由 `tokio::io::duplex` 通信 | `kernel.rs` 的 `start` |
 | 一个 octos 回合 | 一个 spawn 出来的任务，先在 `oneshot` 启动屏障处等待，然后运行 `run_standalone_turn` 及其自己的任务 | octos 的 `crates/octos-cli/src/api/ui_protocol_transport.rs` |

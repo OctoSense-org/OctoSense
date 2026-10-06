@@ -17,7 +17,7 @@ The question is **"What is on my calendar today?"**, and Calendar is a system sc
 | `dev_mode::init`, `approvals::init` | Developer mode, then the approval router |
 | `host_tools::init` | The shell as every broker's tool host, with the relay ([§7](#7-trace-a-tool-to-rust-code)) |
 | `system_chat::init` | The system agent's grants, before the kernel first starts |
-| `agents::start` | A thread that prepares the peer of every script app the person allowed ([§5](#5-prepare-a-peer-and-give-it-two-lanes)), and Mail's event worker |
+| `agents::start` | A thread that prepares the peer of every script app the person allowed ([§5](#5-prepare-a-peer-and-give-it-two-lanes)), and Mail's collection/delivery threads |
 
 The order is the point: the router and the relay exist before any agent can call a tool. If the person allowed Calendar's agent in an earlier run, `agents::start` prepares its peer at once, and that first connection starts the kernel.
 
@@ -31,7 +31,7 @@ Where an app runs decides how it reaches its agent and where its tools execute. 
 | Process app (the Terminal and Task, in a checkout build) | [clients.rs](../crates/shell/src/clients.rs), [hub.rs](../crates/shell/src/hub.rs) | The hub admits a child's socket only with the secret its launch read on stdin; `sandbox_policy` builds the OS sandbox. |
 | Script app (Calendar, Mail, every store app) | `system_card_apps` in `apps.rs`, then App Hub's `CARD_MODULE` | The `card` module, the Card runner, hosts every system and installed app, one isolate per instance. |
 
-`system_card_apps` makes Calendar's launcher row and, the first time, registers the shell's host services (`register_host_services`). Calendar's window lists no events, because App Hub has no `calendar` capability to grant it; only its agent's tools reach them.
+`system_card_apps` makes Calendar's launcher row and, the first time, registers the shell's host services (`register_host_services`). Calendar's `calendar` capability grants its contained UI access to the owning service. Month/day views, the editor and Calendar-owned tools all read and write `.host/calendar/events.json`. The app's Glance event card is a projection of that record; its in-card **Open Calendar** action uses the publication-bound `event/<id>` route to open that same event in Calendar. Cross-app agent calls still require the separate grants described below.
 
 To run the desktop, follow its README's [Build and run](../desktop/README.md#build-and-run), which stages the pinned kernel with `python3 tools/kernel-artifact.py --host --stage target/release`.
 
@@ -53,7 +53,7 @@ Open [system_chat/mod.rs](../crates/shell/src/system_chat/mod.rs), then [session
 - The `Driver` opens `SYSTEM_SESSION` (`_main:api:octosense#system`) and sends each message as `turn/start`. After every connect it registers the system agent's host tools on its link (`peer/tools/register` without a `peer`).
 - `link::poll_for` polls the kernel with a waker that unparks the thread, so the chat needs no Tokio runtime. It stays connected only while its pane is open or a turn runs.
 
-None of the system agent's kernel tools (`SYSTEM_AGENT_TOOLS` in [kernel/src/system_tools.rs](../crates/kernel/src/system_tools.rs)) reads a calendar, so it must ask Calendar's agent. Two host tools from [agents.rs](../crates/shell/src/agents.rs), answered by the system chat itself (`agents::call`), get it there:
+The system agent's kernel tools (`SYSTEM_AGENT_TOOLS` in [kernel/src/system_tools.rs](../crates/kernel/src/system_tools.rs)) do not read a calendar. Its separately registered host tools now include explicitly granted `calendar.events`, `calendar.add_event` and `calendar.notify`, so a bounded request can run directly. For work needing Calendar's own reasoning/context, it can still delegate. Two host tools from [agents.rs](../crates/shell/src/agents.rs), answered by the system chat itself (`agents::call`), get it there:
 
 - `agents.list` returns every app with an agent, whether the person allowed it, and its peer slug.
 - `agents.ask` shows Calendar's first-use sheet if the person has not decided, and holds the call until they answer and the peer is ready; then it returns the slug.
@@ -130,10 +130,10 @@ Stop works per lane: the panel's Stop ends only the person's turn (`app_chat::st
 
 Follow `calendar.events` from its declaration to the file it reads:
 
-1. **Declared** in [apps/calendar/bundle/tools.json](../apps/calendar/bundle/tools.json): its schemas, `risk: "read"`, `implemented_by: "host-service"`, and not `shareable`.
+1. **Declared** in [apps/calendar/bundle/tools.json](../apps/calendar/bundle/tools.json): its schemas, `risk: "read"`, `implemented_by: "host-service"`, and `shareable: true` (a caller still needs an explicit grant).
 2. **Loaded** by `from_bundle` in [host_tools/script_apps.rs](../crates/shell/src/host_tools/script_apps.rs), through App Hub's digest-checking loader. `install` adds the tools to the relay's catalog, with a `HostServiceExecutor` for `os.calendar`.
 3. **Registered** by `register_tools` in `broker.rs`, with what `ShellToolHost::declarations` ([host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)) returns.
-4. **Called.** octos sends `peer/tool/call` on the registering link. The broker stamps the account, context and caller into a `HostToolCall` ([app-peers/src/host_tools.rs](../crates/app-peers/src/host_tools.rs)), which `ShellToolHost::tool_call` queues for the UI thread.
+4. **Called.** octos sends `peer/tool/call` on the registering link. The broker stamps the account, context and caller into a `HostToolCall` ([app-peers/src/host_tools.rs](../crates/app-peers/src/host_tools.rs)), which `ShellToolHost::tool_call` queues for the host relay. The UI normally pumps it; Android Mail jobs can pump the same synchronized relay without a window.
 5. **Checked** by `Relay::handle` ([relay.rs](../crates/shell/src/host_tools/relay.rs)): the grant, consent, a signed-out account, the arguments' size and `input_schema`, then the caller's budget (by default 32 calls a turn and 1000 a day).
 6. **Run.** `HostServiceExecutor::execute` dispatches a `ServiceCall` to App Hub's service registry as `os.calendar`, with no sheet. `CalendarService::call` ([apps/calendar/host-service/src/lib.rs](../apps/calendar/host-service/src/lib.rs)) loads `<apps root>/.host/calendar/events.json` and filters it by `from`, `to` and `limit`.
 7. **Answered.** `script_apps::poll` takes the reply from App Hub's queue, `checked_reply` (in `relay.rs`) checks it against `output_schema` and a size cap, and the `ToolReply` sends `peer/tool/result` once.
@@ -194,7 +194,7 @@ Three operations are easy to confuse.
 3. For a script bundle, App Hub's admission offers the name (`HostLimits.offered_tools`).
 4. `Catalog::owner_of` finds the owner from the namespace: the toolbox, the native app of that id, or else the system app `os.<namespace>`.
 
-None of Calendar's tools is shareable, so other agents must ask Calendar's agent; News shares `news.list` and `news.read`. Not yet: `owner_of` never resolves to a store app, so store apps cannot share tools.
+Calendar shares `calendar.events`, `calendar.add_event` and `calendar.notify`; Mail requests exactly those in its manifest and the system agent has a separate explicit grant. Loading Mail also loads Calendar's admitted catalog and executor, without launching a Calendar peer or window. Mail reads the confirmed email, resolves its date/timezone, reads Calendar, adds with a stable retry key, verifies the saved event and publishes a Calendar-owned card. Scheduling requires a human request or explicit provisioned policy. Named timezones survive device timezone differences; this writes local Calendar storage, not Google Calendar. News shares `news.list` and `news.read`. Not yet: `owner_of` never resolves to a store app, so store apps cannot share tools.
 
 **Asking for help.** [questions/mod.rs](../crates/shell/src/questions/mod.rs) routes an agent's `ask_user_question` by the turn's origin: to the system chat for a `peer/input` turn, to the app's conversation otherwise. Only the person answers, on a shell surface. System facilities reach an app's agent only as granted tools, such as the [toolbox](../crates/toolbox/README.md)'s workflows. Not yet: an app cannot start a conversation with the system agent; `OctosAppService` has no call for it.
 
@@ -205,10 +205,12 @@ A peer is stored state and a turn is a group of Tokio tasks in octos; threads be
 | Layer | How it runs | Where to look |
 | --- | --- | --- |
 | Shell UI | The Makepad UI thread: drawing, events, and `host_tools::pump` with the relay | `lib.rs`, `host_tools/mod.rs` |
+| Mail events | Two `std::thread`s: independent collection and serialized delivery with per-event retries. Android permits them while foregrounded or inside a bounded OS job. | `agent_events.rs`, `mail_background.rs` |
+| Android Mail job | A Java JobService worker loads the same Rust host without an Activity and pumps its synchronized relay; one network-constrained periodic job, no second kernel or peer. | `phone/src/android_mail.rs`, `MailJobService.java`, `runtime_host.rs` |
 | System chat | One `std::thread`, polling the kernel with `link::poll_for` | `system_chat/mod.rs`, `link.rs` |
 | Kernel service | One Tokio runtime, built on first use: 2 workers, 8 MiB stacks; one supervisor task per generation | `kernel/src/lib.rs` `Inner::runtime`, `kernel.rs` `supervise` |
 | App broker | A runtime per `Broker::new`, with 1 worker: the link loop, requests, retries, deadlines | `app-peers/src/broker.rs` |
-| Host services | Called on the caller's thread by App Hub's `services::dispatch`: for a tool call, the UI thread, where Calendar answers. Mail (`work` threads, `mail-fetch`) and News (`news-fetch`) run network work on their own threads. | `script_apps.rs`, `apps/*/host-service/` |
+| Host services | Called on the caller's thread by App Hub's `services::dispatch`: for a tool call, the relay pump caller (UI or Android Mail job), where Calendar answers. Mail (`work` threads, `mail-fetch`) and News (`news-fetch`) run network work on their own threads. | `script_apps.rs`, `apps/*/host-service/` |
 | octos, desktop and Android | Its own process, on Tokio's default runtime: one worker per CPU core (`ServeCommand::execute`) | octos `crates/octos-cli/src/commands/serve.rs` |
 | octos, OpenHarmony | `serve_io` on the kernel service's runtime, over `tokio::io::duplex` | `kernel.rs` `start` |
 | An octos turn | A spawned task behind a `oneshot` start barrier, then `run_standalone_turn` and its own tasks | octos `crates/octos-cli/src/api/ui_protocol_transport.rs` |

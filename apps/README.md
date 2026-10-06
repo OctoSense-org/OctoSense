@@ -74,7 +74,7 @@ OctoScript-App-Design-Flow:
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
-| [Calendar](calendar/bundle) | `os.calendar` | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
+| [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -393,23 +393,57 @@ directory (`<host_dir>/mail`), outside every app's jail. Each account is
 granted only to the apps that added it. The service tests an account before
 keeping it.
 
+Mail’s Inbox offers **Reconnect account**, which opens the same host-owned
+sign-in sheet. Enter the same account address, username and incoming-server settings to
+update its credentials without removing its cached messages or saved drafts.
+On Android, the encrypted password file is tied to the installed package’s
+Keystore key: copying it from a test package to Home cannot restore sign-in.
+Reconnect inside the destination package; never use Remove account as a
+credential-reset workaround.
+
 ### The `calendar` service
 
 `octosense-calendar-service` (`apps/calendar/host-service/src/lib.rs`) answers
-only Calendar (`os.calendar`): App Hub's capability list has no `calendar`,
-so no other app can be granted it, and the shell runs Calendar's agent's
-`calendar.*` tools on it as the system app's own service.
+as Calendar (`os.calendar`). Its executor owns the service call even when Mail
+or the system agent is the caller. Both have explicit grants for the shareable
+`calendar.events`, `calendar.add_event` and `calendar.notify` tools. The relay
+checks the caller before routing. Calendar’s own UI separately requests the
+`calendar` capability; the service checks `os.calendar` identity. Removal, update, UI
+view and agenda are not included in these cross-app grants.
 
 | Method | Args | Answer |
 | --- | --- | --- |
-| `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes}]}`, soonest first |
-| `calendar.add_event` | `{title, start, end?, location?, notes?}` | `{id, start}` |
+| `calendar.view` (UI only) | `{month?, day?, direction?, take_focus?}` | Month grid, marked days, selected day’s events, and pending saved-event navigation |
+| `calendar.update_event` (Calendar UI/agent only) | `{id, expected, title, start, end?, timezone?, location?, notes?}` | Saved event; stale expected snapshots are refused; existing event cards refresh quietly |
+| `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes, timezone?, request_id?}]}`, soonest first |
+| `calendar.add_event` | `{title, start, end?, location?, notes?, timezone?, request_id?}` | `{id, start, reused?}` |
 | `calendar.remove_event` | `{id}` | `{removed}` |
 | `calendar.notify` | `{event}` or `{title, when, location?, notes?}`, and `{card_id?, priority?}` | `{card_id, replaced, expires_at}` once an event card (`resources/event.card`) is on the glance screen, with a notification |
 | `calendar.agenda` | `{days?}` | the same, for the agenda card (`resources/agenda.card`): the next three events within `days` (7) |
 
-Times are local (`2026-10-02T15:00`, or a date for the whole day). Events
-live in `<host_dir>/calendar/events.json`, outside every app's jail.
+Events live in `<host_dir>/calendar/events.json`, outside every app's jail.
+The app’s month/day list and editor use this same store. A saved event’s card
+keeps its id in `open.route = "event/<id>"`. **Open Calendar** sits inside the
+card, below its date/time, and opens that event in the actual app. Its L0
+`sys.link` action uses `app://calendar/event/<id>`; the host accepts only the
+current publication’s declared own-app destination. Other URLs or routes do
+not launch anything. `calendar/cards.json` records saved-event publications, their
+original expiry and dismissals. Restart restores active cards without a new
+notification, identical live notify retries reuse the card, and edits refresh
+its data. Ad-hoc notices and agenda cards are not durable saved-event records.
+An explicit IANA `timezone` retains the event wall time and shows its zone on
+the card; omitted zones retain legacy device-local behavior. Ambiguous or
+missing daylight-saving times are refused. Use RFC3339 offsets for precise
+`from`/`to` filters. A stable `request_id` reuses an exact saved request; changed
+fields with the same key are refused. Omit an unknown end time.
+
+Mail schedules only on a human request or an explicit provisioned policy, reads
+the calendar first, verifies the saved event and then publishes its Calendar
+card. Cold Android Mail jobs register Calendar's service and load its granted
+executor without opening Calendar or preparing another agent. These are local
+events, not Google Calendar sync, invitations or scheduled reminder alarms.
+
+Validation: [Mail → Calendar checks and phone evidence](../docs/testing/mail-calendar-2026-10-05.md).
 
 ### The `llm` service
 
@@ -446,6 +480,8 @@ model lane and tools. Which system apps have one, and how
 | Photos, Maps, YouTube, Camera | `agent` block, `glance` | `photos.notify`, `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
+**Mail card reply modes.** The system agent can provision automatic drafts for replyable important mail and Compose reply on request for automated/no-reply mail. The host adds Compose reply to informational incoming-email cards, verifies the original message and asks the Mail agent to create a draft. The same card becomes Email/Chat with saved editing and host review. See [Mail events](../docs/mail-agent-events.md).
+
 **A service API is not automatically an agent tool.** Mail explicitly declares
 account-scoped read/sync, publication, event-decision and draft/proposal tools.
 `mail.peek` does not mark read; `mail.message` remains a UI API. The UI
@@ -476,7 +512,9 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   it as long as an approval, not a read tool's 30 s), then gives the system
   agent the peer's slug, so the request goes on in the same turn. Mail also
   supports opt-in `mail.messages.new` events configured by `agents.provision`: a
-  durable queue starts incoming turns while OctoSense is alive. Successful host
+  durable queue starts incoming turns while OctoSense is alive. Inbox collection
+  runs independently of those turns, and failed events retry individually so
+  one failure cannot block all later mail. Successful host
   publication or explicit skip plus turn completion is required before ack.
   General app triggers/cron remain planned. See [Mail events](../docs/mail-agent-events.md).
 - **Talking to it yourself.** The person can chat with the app's agent

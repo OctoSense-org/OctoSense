@@ -159,7 +159,7 @@ sequenceDiagram
 
 The `<app>.notify` tools fill a fixed card template ([`notice.card`](crates/shell/resources/glance/notice.card), or Calendar's [event and agenda cards](apps/calendar/host-service/resources)), so the model writes only the text. Mail also has `mail.publish_card`, which takes a card the model wrote and checks it before publishing. Either way the shell publishes as the app and requires its `glance` permission.
 
-Mail's agent can also start on its own. Once the person has signed in, allowed Mail's agent and asked the system agent to turn on new-mail processing (`agents.provision`), a host worker syncs the inbox and starts the agent for each new message. The agent reads the message with its scoped tools and decides whether to post a card. No other app has events yet; the [Mail event walkthrough](docs/mail-agent-events.md) has the details.
+Mail's agent can also start on its own. Once the person has signed in, allowed Mail's agent and asked the system agent to turn on new-mail processing (`agents.provision`), the host syncs the inbox independently of model turns and queues each new message for the agent. The agent reads the message with its scoped tools and decides whether to post a card. No other app has events yet; the [Mail event walkthrough](docs/mail-agent-events.md) has the details.
 
 ### One app agent, two lanes
 

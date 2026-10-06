@@ -182,7 +182,7 @@ Design Flow 的[一次性模型调用](https://github.com/OctoSense-org/OctoScri
 
 ## glance 卡片
 
-拥有 `glance` 权限的应用通过 `glance` 服务（[`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)）把卡片发布到 glance 面板（桌面端）或 glance 页面（手机端）：`glance.publish`、`glance.withdraw` 和 `glance.list`。Shell 从调用方取得发布者，从不读取参数中的发布者；它把卡片绑定到发布时的账号，并限制每个应用每分钟最多发布 6 次、最多保留 4 张卡片。系统应用的 Agent 通过自己的工具发布卡片：`<app>.notify` 用模型写的文字填充固定的卡片模板；邮件的 `mail.publish_card` 检查模型编写的卡片，并在提供 `draft_id` 时把它绑定到宿主保存的回复草稿。
+拥有 `glance` 权限的应用通过 `glance` 服务（[`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)）把卡片发布到 glance 面板（桌面端）或 glance 页面（手机端）：`glance.publish`、`glance.withdraw` 和 `glance.list`。Shell 从调用方取得发布者，从不读取参数中的发布者；它把卡片绑定到发布时的账号，每个应用每分钟最多发布 6 次。信息流可滚动浏览所有保留卡片，不再按每个应用的卡片数量设限。源码、data 与降级后 UI 内容按负载字节预算保留：每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，同时接收新的发布。系统应用的 Agent 通过自己的工具发布卡片：`<app>.notify` 用模型写的文字填充固定的卡片模板；邮件的 `mail.publish_card` 检查模型编写的卡片，并在提供 `draft_id` 时把它绑定到宿主保存的回复草稿。
 
 手机上的 glance 列表只显示摘要，不运行生成的界面。打开卡片会显示它的工作区，再次打开时状态依旧：手机上全屏，桌面端居中。发布者有 Agent 时，工作区有 Card / Chat 标签页，即使卡片没有声明 `sys.chat`；邮件回复则是 Email / Chat，共用一份保存的草稿。工作区见 README 的[卡片与提问](../README.zh-CN.md#卡片与提问)；邮件的草稿、审阅和测试见[可组合的邮件卡片](mail-composable-cards.zh-CN.md)。
 

@@ -1542,6 +1542,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
     }
     @Override public void onResume() {
+        MailBackground.resume(activity);
         windowFocused=activity.hasWindowFocus();
         settingsAccessibility.setWindowFocused(windowFocused);
         resumed=true;settingsAccessibility.onResume(); homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); main.post(() -> { if(!destroyed && agent!=null) agent.bind(); }); requestResync();
@@ -1549,6 +1550,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         offer(() -> {emitUiMode();emitHints();publishRecentApps();flushEvents();});
     }
     @Override public void onPause() {
+        MailBackground.pause();
         if(captionCustomSettings!=null)captionCustomSettings.retireInBackground();
         resumed=false;windowFocused=false;settingsAccessibility.onPause();if(soundsSettings!=null)agent.stopSoundInBackground();closePlacementMenu();replyComposer.close(); homeGeometry.onPause(); widgets.onPause();
         // Retain the latest lifecycle observation too: a queued pre-pause
@@ -1573,6 +1575,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
     }
     @Override public void onIntent(Intent intent) {
+        String mailToken = MailBackground.entry(intent);
+        if (mailToken != null) offer(() -> emit("mail.notification.open", json("token", mailToken)));
         if(intent!=null) {
             try {
                 String action=intent.getAction();

@@ -109,6 +109,30 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 （`…navbar.gestural` 可恢复手势导航。）特权路线（接管手势区域和最近任务）的工作量评估见 [docs/android/launcher-plan.md（英文）](docs/android/launcher-plan.md)，尚未开始。
 
+## 所有应用共用一个 Glance 页面
+
+从 Home 的第一页右滑，进入共享 Glance 信息流。Mail、Calendar、News 以及其他
+获得 Glance 能力的应用，都向同一个宿主卡片库发布。每张卡片保留发布应用、账号
+和条目身份；点击摘要后，打开该卡片的工作区。Card/Chat 连接发布应用自己的代理，
+Mail 的 Email/Chat 则操作同一份已保存的回复草稿。退出工作区后回到共享信息流。
+Mail 不需要独立的 Glance 应用。
+
+信息流按优先级和时间排序，可以滚动浏览所有保留卡片。只绘制可见摘要；屏幕外
+卡片不会运行生成 UI。不再限制每应用四张卡片，也不再将手机信息流截断为六张。
+负载预算与到期规则独立控制存储，不取决于滚动视口。负载紧张时旧卡片可能被
+淘汰；已保存的 Mail 草稿继续保留在 Mail 服务中。
+
+带宿主绑定的 Mail 回复，在已保存发送回执确认 SMTP 接受后自动退出 Glance。
+草稿和回执继续保存；当前成功结果界面保留至用户返回。打开、编辑、取消以及发送
+失败或结果不明都不算完成。重启或恢复通知不会让已接受的回复卡片重新出现。
+新收到的邮件仍经过重要性筛选，可以发布各自的卡片；目前尚未按整个邮件会话合并
+卡片或聊天。其他应用继续使用原有完成规则。见
+[完成状态验证](../docs/testing/mail-completion-2026-10-05.zh-CN.md)。
+
+独立 Android 测试包是 Shell 的另一份安装，各自拥有私有账号和卡片，不会向正常
+Home 贡献卡片。启动器验收必须从 Android 实际指定的 Home 开始，右滑进入 Glance，
+再打开不同应用发布的卡片；直接打开测试包不能证明这条路径已经接通。
+
 ## 手势
 
 | 位置 | 手势 | 作用 |
@@ -135,7 +159,7 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 搜索只能通过在桌面上下拉打开；应用库没有搜索栏。与 iOS 一样，搜索框位于底部、键盘上方；未输入时列表为空，每输入一个字符就会缩小结果：应用名称或其中某个词（词内的大写字母也算词首，因此 "tube" 能找到 YouTube）以输入内容开头即为匹配，不区分大小写和重音。名称以输入内容开头的应用排在前面，按回车即可打开最佳匹配。在应用库中，右侧的字母栏可快速跳转网格；获得使用情况访问权限后，顶部会显示一行“建议”，列出最近使用的应用。应用在通知面板中有通知时，其图标会带一个圆点。最近任务以卡片形式列出托管应用；在 Android 设置中授予使用情况访问权限后（最近任务中的卡片可打开该设置），还会显示一行最近使用过的 Android 应用。每个可点按区域都是带有语音标签的无障碍节点，因此 TalkBack 和 UI 自动化都能读取并操作 Shell（已在安装 TalkBack 的情况下以及通过 UiAutomation 探针验证：无障碍焦点能落到节点上，其点击操作可以打开应用、通知面板或应用抽屉；注意 `adb shell input` 的点按会绕过 TalkBack 的触摸浏览，因此无法用脚本模拟真实的读屏触摸）。标签会跟随 Android 的字体大小设置。Shell 跟随 Android 的深色主题，并绘制在透明的系统栏之下；通知面板中的深色模式磁贴会覆盖外观设置，直到系统设置下一次变更。桥接层的失败原因会以通俗的句子呈现给用户（见 `crates/shell/src/android_integration.rs` 中的 `result_copy`），而不是原因代码。
 
-Glance 保持紧凑的发布摘要。点按后，选中的卡片在信息流上方展开为常驻的全屏工作区；摘要矩形只作为动画起点，不再决定工作区大小，信息流条目也不增高。其余卡片被覆盖且不能接收输入。**Email / Chat** 位于同一行。Email 显示摘要、原邮件切换按钮，以及可直接编辑的收件人、主题和正文；**Review reply** 打开准确邮件内容的批准界面。Chat 使用虚拟化记录和键盘上方的固定输入框；模型修改实际保存后，显示 **View updated email** 并读取同一份权威草稿。返回键依次关闭键盘、审核、工作区。回到概览后，同一进程内保留草稿、未发送聊天文字、页面和控件滚动位置；缓存三个非活动的干净工作区，未发送的人类输入不参与干净缓存淘汰。账户失效或发布撤销时退出对应工作区。草稿持久保存，但不承诺进程退出后保留未发送聊天输入。展示切换不启动新的 Activity、应用、agent 或模型生成。设备证据及已撤回的 UX 评分见 [Mail 工作流](../docs/mail-composable-cards.zh-CN.md)。
+Glance 保持紧凑的发布摘要。点按后，选中的卡片在信息流上方展开为常驻的全屏工作区；摘要矩形只作为动画起点，不再决定工作区大小，信息流条目也不增高。其余卡片被覆盖且不能接收输入。**Email / Chat** 位于同一行。Email 把主要空间留给可编辑正文。**Original / Details / Review** 共用一行紧凑操作栏；Details 展开收件人和主题编辑，Review 打开准确邮件内容的批准界面。原邮件与其头部信息一起滚动。文字选择使用柔和蓝灰色高亮，不再使整个编辑框变暗。横屏键盘使可用高度过小时，正文编辑临时收起标题、页签与操作栏；关闭键盘后恢复。Chat 使用虚拟化记录和键盘上方的固定输入框；模型修改实际保存后，显示 **View updated email** 并读取同一份权威草稿。返回键依次关闭键盘、审核、工作区。回到概览后，同一进程内保留草稿、未发送聊天文字、页面和控件滚动位置；缓存三个非活动的干净工作区，未发送的人类输入不参与干净缓存淘汰。账户失效或发布撤销时退出对应工作区。草稿持久保存，但不承诺进程退出后保留未发送聊天输入。展示切换不启动新的 Activity、应用、agent 或模型生成。设备证据及已撤回的 UX 评分见 [Mail 工作流](../docs/mail-composable-cards.zh-CN.md)。
 
 Calendar、News、Photos、YouTube 以及 Finance 原型卡片均使用同一套工作区。声明了 agent 的应用，即使发布的 L0 或 Splash 界面没有内嵌 `sys.chat`，也会获得原生 **Card / Chat** 页签。宿主将补充会话绑定到发布者、账户和卡片，把发布数据与当前 L0 状态作为有大小限制的不可信上下文传给该应用的 agent。已有的显式会话保留其线程。聊天不新增工具，也不授权外部操作；没有 agent 的应用不显示 Chat。Home 的系统应用列表现已包含 Calendar；Finance 仍不是内置系统应用。
 
@@ -148,6 +172,8 @@ L0 的本地修改和已交互的 Splash 实例也不参与干净缓存淘汰。
 ## 系统应用
 
 News、Photos、Maps、Camera、Mail、AI 提供商和 YouTube 都是隔离运行的脚本应用（[ADR 0004（英文）](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)）。它们的应用包位于 [`apps/`](../apps/README.zh-CN.md)（`apps/<name>/bundle/`）；本目录的 `system-apps.json` 指定本 Home 附带哪些应用，并挂载由 Home 自有的素材（Photos 的示例图库 `apps/photos/resources/photos`）。无论是在独立的 Home 中还是在 ROM 中，App Hub 的 Card 运行器都会按照各应用清单中的策略，在各自独立的 isolate 中运行它们。每个应用都保留简短的启动器 id（`os.news` 对应 `news`），因此图标、磁贴和程序坞都不受影响。
+
+Android 上，已启用的 Mail 代理还会使用静默且要求联网的后台任务，约每 15 分钟一次，Android 可能延迟执行。无需打开 Home 即可收取并评估邮件。只有模型决定发布且 `notify: true` 的卡片才发出原生通知；点击会恢复原始账户的卡片。重要性偏好由系统代理配置，普通邮件会跳过。强行停止后，必须重新打开应用才会恢复任务。见[邮件事件](../docs/mail-agent-events.zh-CN.md)及 [ADR 0008](../docs/adr/0008-quiet-android-mail-jobs.zh-CN.md)。
 
 Mail 通过 `mail` 宿主服务（[`apps/mail/host-service`](../apps/mail/host-service)）收发邮件：用户在宿主自己的面板上登录，密码保存在钥匙串中或由 Android Keystore 密钥保护，应用本身从不持有套接字或密码。使用演示邮箱（密码为 `demo`）：
 

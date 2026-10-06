@@ -11,7 +11,16 @@ use std::sync::{Mutex, MutexGuard};
 static CACHE: Mutex<()> = Mutex::new(());
 static READY: AtomicBool = AtomicBool::new(false);
 static RESTORING: AtomicBool = AtomicBool::new(false);
-static SCAN: Mutex<(Option<PathBuf>, Option<String>, u64)> = Mutex::new((None, None, 0));
+struct Scan {
+    root: Option<PathBuf>,
+    account: Option<String>,
+    scanned: u64,
+    generation: u64,
+    checked_completion: u64,
+}
+static SCAN: Mutex<Scan> = Mutex::new(Scan {
+    root: None, account: None, scanned: 0, generation: 0, checked_completion: 0,
+});
 const MAX_BYTES: u64 = 128 * 1024;
 const MAX_FILES: usize = 256;
 pub(crate) fn publication_guard() -> MutexGuard<'static, ()> {
@@ -207,7 +216,7 @@ pub(crate) fn publication_can_undo(card: &GlanceCard, now: u64) -> bool {
     let Some(b) = card.l0.as_ref().and_then(|l| l.mail.as_ref()) else {
         return true;
     };
-    if !account_valid(&b.account) || super::read(b).is_err() {
+    if !account_valid(&b.account) || !super::read(b).is_ok_and(|snapshot| !super::reply_completed(&snapshot)) {
         return false;
     }
     let Ok(cache) = host_dir().and_then(|root| Cache::at(&root)) else {
@@ -257,22 +266,27 @@ pub(crate) fn restore_publications() {
         };
         let active = crate::ai_host::contained::account_of("os.mail").filter(|a| account_valid(a));
         let now = crate::glance::now_ms();
-        {
-            let mut scan = SCAN.lock().unwrap_or_else(|e| e.into_inner());
-            if scan.0.as_ref() == Some(&root)
-                && scan.1 == active
-                && now.saturating_sub(scan.2) < 1000
-            {
-                return;
-            }
-            *scan = (Some(root.clone()), active.clone(), now);
-        }
         let Ok(_guard) = CACHE.try_lock() else { return };
         let Ok(cache) = Cache::at(&root) else { return };
+        let check_completion = {
+            let mut scan = SCAN.lock().unwrap_or_else(|e| e.into_inner());
+            let generation = super::generation();
+            let changed = scan.root.as_ref() != Some(&root) || scan.account != active || scan.generation != generation;
+            // Retry transient read failures even without another draft edit,
+            // while avoiding draft I/O on every Glance frame/outbox poll.
+            let check = changed || now.saturating_sub(scan.checked_completion) >= 30_000;
+            if now.saturating_sub(scan.scanned) < 1000 && !check {
+                return;
+            }
+            if check { scan.checked_completion = now; }
+            scan.root = Some(root.clone()); scan.account = active.clone();
+            scan.scanned = now; scan.generation = generation;
+            check
+        };
         crate::glance::hide_other_mail_accounts(active.as_deref());
         let mut entries = cache.entries();
         entries.sort_by_key(|(_, p)| std::cmp::Reverse(p.published));
-        for (path, p) in entries {
+        for (path, mut p) in entries {
             let granted = accounts.iter().any(|a| {
                 a["id"].as_str() == Some(p.binding.account.as_str())
                     && a["apps"]
@@ -286,13 +300,24 @@ pub(crate) fn restore_publications() {
             if !p.visible(active.as_deref(), now) {
                 continue;
             }
-            if crate::glance::card(&p.binding.key()).is_some() {
+            let live = crate::glance::card(&p.binding.key()).is_some();
+            if live && !check_completion {
                 continue;
             }
             // A removed/corrupt draft cannot be reconstructed from cached data.
-            if super::read(&p.binding).is_err() {
+            let Ok(snapshot) = super::read(&p.binding) else { continue; };
+            if super::reply_completed(&snapshot) {
+                p.dismissed = true;
+                if cache.save(&p).is_err() {
+                    makepad_widgets::log!("Mail completion: publication cache update failed");
+                }
+                if crate::mail_background::dismiss_for_account(&p.binding.key(), &p.binding.account, true).is_err() {
+                    makepad_widgets::log!("Mail completion: notification cache update failed");
+                }
+                crate::glance::retire_completed_mail(&_guard, &p.binding);
                 continue;
             }
+            if live { continue; }
             if let Err(error) =
                 crate::glance::restore_mail_publication(&p.args, p.binding, p.published, p.expires)
             {

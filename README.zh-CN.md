@@ -159,7 +159,7 @@ sequenceDiagram
 
 `<app>.notify` 工具填充固定的卡片模板（[`notice.card`](crates/shell/resources/glance/notice.card)，或日历的[日程与议程卡片](apps/calendar/host-service/resources)），模型只负责文字。邮件另有 `mail.publish_card`，它接收模型编写的卡片，检查后再发布。无论哪种方式，Shell 都以应用的身份发布，并要求应用拥有 `glance` 权限。
 
-邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会在后台同步收件箱，每来一封新邮件就启动一次 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。其他应用还没有事件；详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。
+邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。其他应用还没有事件；详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。
 
 ### 一个应用 Agent，两条通道
 

@@ -141,11 +141,12 @@ sequenceDiagram
 | --- | --- |
 | News | `news.list`、`news.read`、`news.notify`；News 宿主服务处理调用，并将通知交给 Shell。 |
 | Mail | accounts/folders/sync/list/peek 绑定 broker 账户；peek 不标记已读。notify/publish_card 经 Shell 发布，skip_event 记录无需操作的决策。发信和凭据仍不对 Agent 开放。 |
-| Calendar | `calendar.events`、`add_event`、`remove_event`、`notify`、`agenda`；Rust 服务管理日程及事件/议程卡片模板。 |
+| Calendar | `calendar.events`、`add_event`、`update_event`、`remove_event`、`notify`、`agenda`；Rust 服务管理日程及事件/议程卡片模板。 |
 | Photos、Maps、YouTube、Camera | 只有 `<namespace>.notify`；Shell 的 `NoticeService` 处理各应用的命名空间。Camera 由 Home 打包。 |
 
-AI providers 配置宿主，目前不声明应用 Agent。Calendar 的脚本窗口介绍如何询问其 Agent；
-日程通过上述工具访问，App Hub 还没有提供脚本 `calendar` 能力。
+AI providers 配置宿主，目前不声明应用 Agent。Calendar 的月历、按日列表和编辑器
+使用显式 `calendar` 能力，与上述 Agent 工具共享本地日程存储。Glance 中已保存日程
+的卡片可打开 Calendar 中同一条记录；编辑日程也会刷新它的卡片。
 
 共用通知的实现见 [`glance_notice.rs`](../../crates/shell/src/glance_notice.rs) 和
 [`resources/glance/notice.card`](../../crates/shell/resources/glance/notice.card)。
