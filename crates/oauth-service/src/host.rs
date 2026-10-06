@@ -176,7 +176,7 @@ impl DesktopVault {
     }
     fn entry(&self, key: &str) -> Result<keyring::Entry, String> {
         keyring::Entry::new(&self.service, key)
-            .map_err(|_| "The OS credential service is unavailable")
+            .map_err(|_| "The OS credential service is unavailable".to_owned())
     }
 }
 #[cfg(any(target_os = "windows", target_os = "linux"))]

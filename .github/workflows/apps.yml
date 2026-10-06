@@ -58,7 +58,8 @@ jobs:
         with:
           components: clippy, rustfmt
       # The workspace's [patch] tables name .sources/: prepare them even
-      # though these crates do not build Makepad.
+      # though most protocol crates do not build Makepad. The OAuth host
+      # adapter also checks App Hub's Makepad-linked service integration.
       - run: python3 tools/setup.py
       - uses: Swatinem/rust-cache@v2
         with:
@@ -77,6 +78,17 @@ jobs:
         run: cargo test --locked -p octosense-llm-config
       - name: Connected provider protocols and Linux host adapter
         run: |
+          if [ "$(uname -s)" = Linux ]; then
+            # The hosted runner is disposable. Local CI uses the build host's
+            # preinstalled packages and never requests sudo there.
+            if [ "${GITHUB_ACTIONS:-false}" = true ]; then
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends pkg-config libssl-dev libx11-dev libxcursor-dev \
+                libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+                libasound2-dev libpulse-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev libva-dev
+            fi
+            pkg-config --exists wayland-client xkbcommon
+          fi
           # Deterministic provider transports; no credentials or live writes.
           cargo test --locked -p octosense-oauth-service
           # Compile the Linux Secret Service adapter even on CI runners that
