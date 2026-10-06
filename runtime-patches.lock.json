@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "makepad": {
-    "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
+    "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "b93c3353b9a33e77adf52b0b03e838e742468501",
+    "tree": "07accf83864ac912d5b9ef04f785634ad43caa9e",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -13,8 +13,6 @@
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
       "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
       "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
-      "Calculator lays its keypad out again after every apply (makepad #99): the phone shell's style reapply after a hosted module's first frame left the DSL's 85-point keys, overflowing a 393-point-wide phone.",
-      "The Terminal opens its own agent's link and answers it with its read tools only (makepad #100); typing a command stays the host's terminal.run.",
       "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Other platforms remain untrusted; compromised OS/root impersonation is outside this app-level boundary."
     ],
     "stacked": [
@@ -37,14 +35,6 @@
       {
         "patch": "tools/runtime-patches/makepad-application-extension.patch",
         "sha256": "133099ee598a9794ec5df61dfbef30bca25df7bc03a66deecdb66355a8b8e6bf"
-      },
-      {
-        "patch": "tools/runtime-patches/makepad-calculator-restyle.patch",
-        "sha256": "24896908d7b5616dd2ccd6c6fc56e8776cd8cc9a1e3750e8fefba7ea569dc8af"
-      },
-      {
-        "patch": "tools/runtime-patches/makepad-terminal-own-agent.patch",
-        "sha256": "5246bcece67298835bff8ab68d9ff7015ba67a976eebb50a26441bcb205cc240"
       },
       {
         "patch": "tools/runtime-patches/makepad-trusted-user-input.patch",
