@@ -97,10 +97,12 @@ pub struct ShellSystemHost;
 
 impl SystemHost for ShellSystemHost {
     fn declarations(&self) -> Vec<Value> {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        crate::host_tools::ensure_loaded("card.os.calendar");
         let mut decls: Vec<Value> = super::grants::host_tools()
             .into_iter()
             .filter_map(|tool| {
-                let owner = tool.split('.').next().unwrap_or(&tool).to_string();
+                let owner = crate::host_tools::owner_of(&tool)?;
                 crate::host_tools::declaration(&owner, &tool)
             })
             .collect();

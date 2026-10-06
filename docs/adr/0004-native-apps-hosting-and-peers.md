@@ -205,6 +205,8 @@ The shell stamps the app's identity from the socket, enforces #2567's host oblig
 - **Ambiguity is asked**, not guessed (two Edwards, no free slot).
 - **Completion** is announced by the system app ("booked; invites sent to 4"); each app's own UI shows the change because its data changed.
 
+**Implementation update (2026-10-05).** Calendar shares `calendar.events`, `calendar.add_event` and `calendar.notify`; Mail requests these three and the system agent has its own explicit grant. The host admission offer, caller grant and Calendar executor are separate checks. Cold Mail jobs load that executor without launching Calendar. Events can retain an IANA timezone; stable `request_id` values deduplicate identical retries and reject changed payloads. Mail scheduling requires a human request or explicit provisioned policy. This updates local Calendar only; it does not implement the invitation example above, Google Calendar sync or reminder alarms. See the [app service contract](../../apps/README.md#the-calendar-service).
+
 ### 8. Approvals: by the person, live or in advance
 
 Only the person approves. The system agent never does, and cannot be talked into it: it reads untrusted text, and rules are checked mechanically. Everything in this section holds **outside developer mode**; developer mode overrides every approval, `auto_approvable: false` included (section 13).

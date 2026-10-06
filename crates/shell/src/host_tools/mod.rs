@@ -451,7 +451,7 @@ pub fn interrupt_agent_lane(app: &str, lane: &str) -> Vec<String> {
 
 /// A script app's agent block, loaded from its admitted bundle the first
 /// time its peer registers (a native app's is in the shipped catalog).
-fn ensure_loaded(app_id: &str) {
+pub(crate) fn ensure_loaded(app_id: &str) {
     if app_id == app_of_peer(app_id) {
         return;
     }

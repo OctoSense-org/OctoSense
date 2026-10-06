@@ -14,7 +14,7 @@ Rust 线程并不等于 Android 后台执行授权。原来的 Mail 收取线程
 
 为已授权、已配置开启的 Mail 账户注册一个持久化且要求联网的 Android `JobScheduler` 任务，周期 15 分钟、弹性窗口 5 分钟。界面打开时仍使用配置的收取间隔（30–3600 秒）；后台调度由 Android 决定。这不是 IMAP IDLE、推送、精确闹钟或前台服务。Android 官方文档说明了[周期及持久化约束](https://developer.android.com/reference/android/app/job/JobInfo.Builder#setPeriodic(long,long))与 [JobService 执行和停止契约](https://developer.android.com/reference/android/app/job/JobService#onStopJob(android.app.job.JobParameters))。
 
-`MailJobService` 无需启动 Activity 即可加载同一个原生库。`runtime_host::init` 在每个进程内仅初始化一次存储、共享内核服务、批准路由和工具中继。无界面启动仅注册 Mail 与 Glance 服务，然后准备 Mail 已有的对等代理。之后打开界面会复用这些服务，不会重置批准状态、复制凭据或创建第二个代理或内核。
+`MailJobService` 无需启动 Activity 即可加载同一个原生库。`runtime_host::init` 在每个进程内仅初始化一次存储、共享内核服务、批准路由和工具中继。无界面启动注册 Mail、Glance 和 Calendar 宿主服务，然后仅准备 Mail 已有的对等代理。Mail 经接纳的跨应用授权加载日历工具执行器，无需创建日历 peer 或窗口。之后打开界面会复用这些服务，不会重置批准状态、复制凭据或创建第二个代理或内核。
 
 收取线程与串行投递线程独立。即使存在待处理事件或模型失败，仍继续收取。失败事件分别指数退避，其他等待事件可以继续；投递尝试之间间隔一秒。Android 上，前台生命周期标志或四分钟的系统任务租约允许执行。两者都失效后不再启动新工作，正在运行的回合在下一次有效性检查时关闭，正常调度下不超过 250 毫秒。已开始的网络读取可能等待传输超时才结束，但取消后不会再启动模型回合。持久化事件保留给下一次获准执行。
 

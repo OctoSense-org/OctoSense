@@ -31,7 +31,7 @@ Where an app runs decides how it reaches its agent and where its tools execute. 
 | Process app (the Terminal and Task, in a checkout build) | [clients.rs](../crates/shell/src/clients.rs), [hub.rs](../crates/shell/src/hub.rs) | The hub admits a child's socket only with the secret its launch read on stdin; `sandbox_policy` builds the OS sandbox. |
 | Script app (Calendar, Mail, every store app) | `system_card_apps` in `apps.rs`, then App Hub's `CARD_MODULE` | The `card` module, the Card runner, hosts every system and installed app, one isolate per instance. |
 
-`system_card_apps` makes Calendar's launcher row and, the first time, registers the shell's host services (`register_host_services`). Calendar's window lists no events, because App Hub has no `calendar` capability to grant it; only its agent's tools reach them.
+`system_card_apps` makes Calendar's launcher row and, the first time, registers the shell's host services (`register_host_services`). Calendar's window lists no events, because App Hub has no `calendar` capability to grant it; Calendar-owned tools reach them, including the explicitly granted cross-app calls described below.
 
 To run the desktop, follow its README's [Build and run](../desktop/README.md#build-and-run), which stages the pinned kernel with `python3 tools/kernel-artifact.py --host --stage target/release`.
 
@@ -53,7 +53,7 @@ Open [system_chat/mod.rs](../crates/shell/src/system_chat/mod.rs), then [session
 - The `Driver` opens `SYSTEM_SESSION` (`_main:api:octosense#system`) and sends each message as `turn/start`. After every connect it registers the system agent's host tools on its link (`peer/tools/register` without a `peer`).
 - `link::poll_for` polls the kernel with a waker that unparks the thread, so the chat needs no Tokio runtime. It stays connected only while its pane is open or a turn runs.
 
-None of the system agent's kernel tools (`SYSTEM_AGENT_TOOLS` in [kernel/src/system_tools.rs](../crates/kernel/src/system_tools.rs)) reads a calendar, so it must ask Calendar's agent. Two host tools from [agents.rs](../crates/shell/src/agents.rs), answered by the system chat itself (`agents::call`), get it there:
+The system agent's kernel tools (`SYSTEM_AGENT_TOOLS` in [kernel/src/system_tools.rs](../crates/kernel/src/system_tools.rs)) do not read a calendar. Its separately registered host tools now include explicitly granted `calendar.events`, `calendar.add_event` and `calendar.notify`, so a bounded request can run directly. For work needing Calendar's own reasoning/context, it can still delegate. Two host tools from [agents.rs](../crates/shell/src/agents.rs), answered by the system chat itself (`agents::call`), get it there:
 
 - `agents.list` returns every app with an agent, whether the person allowed it, and its peer slug.
 - `agents.ask` shows Calendar's first-use sheet if the person has not decided, and holds the call until they answer and the peer is ready; then it returns the slug.
@@ -130,7 +130,7 @@ Stop works per lane: the panel's Stop ends only the person's turn (`app_chat::st
 
 Follow `calendar.events` from its declaration to the file it reads:
 
-1. **Declared** in [apps/calendar/bundle/tools.json](../apps/calendar/bundle/tools.json): its schemas, `risk: "read"`, `implemented_by: "host-service"`, and not `shareable`.
+1. **Declared** in [apps/calendar/bundle/tools.json](../apps/calendar/bundle/tools.json): its schemas, `risk: "read"`, `implemented_by: "host-service"`, and `shareable: true` (a caller still needs an explicit grant).
 2. **Loaded** by `from_bundle` in [host_tools/script_apps.rs](../crates/shell/src/host_tools/script_apps.rs), through App Hub's digest-checking loader. `install` adds the tools to the relay's catalog, with a `HostServiceExecutor` for `os.calendar`.
 3. **Registered** by `register_tools` in `broker.rs`, with what `ShellToolHost::declarations` ([host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)) returns.
 4. **Called.** octos sends `peer/tool/call` on the registering link. The broker stamps the account, context and caller into a `HostToolCall` ([app-peers/src/host_tools.rs](../crates/app-peers/src/host_tools.rs)), which `ShellToolHost::tool_call` queues for the host relay. The UI normally pumps it; Android Mail jobs can pump the same synchronized relay without a window.
@@ -194,7 +194,7 @@ Three operations are easy to confuse.
 3. For a script bundle, App Hub's admission offers the name (`HostLimits.offered_tools`).
 4. `Catalog::owner_of` finds the owner from the namespace: the toolbox, the native app of that id, or else the system app `os.<namespace>`.
 
-None of Calendar's tools is shareable, so other agents must ask Calendar's agent; News shares `news.list` and `news.read`. Not yet: `owner_of` never resolves to a store app, so store apps cannot share tools.
+Calendar shares `calendar.events`, `calendar.add_event` and `calendar.notify`; Mail requests exactly those in its manifest and the system agent has a separate explicit grant. Loading Mail also loads Calendar's admitted catalog and executor, without launching a Calendar peer or window. Mail reads the confirmed email, resolves its date/timezone, reads Calendar, adds with a stable retry key, verifies the saved event and publishes a Calendar-owned card. Scheduling requires a human request or explicit provisioned policy. Named timezones survive device timezone differences; this writes local Calendar storage, not Google Calendar. News shares `news.list` and `news.read`. Not yet: `owner_of` never resolves to a store app, so store apps cannot share tools.
 
 **Asking for help.** [questions/mod.rs](../crates/shell/src/questions/mod.rs) routes an agent's `ask_user_question` by the turn's origin: to the system chat for a `peer/input` turn, to the app's conversation otherwise. Only the person answers, on a shell surface. System facilities reach an app's agent only as granted tools, such as the [toolbox](../crates/toolbox/README.md)'s workflows. Not yet: an app cannot start a conversation with the system agent; `OctosAppService` has no call for it.
 

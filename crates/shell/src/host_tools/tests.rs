@@ -170,6 +170,104 @@ fn reply_pair(id: &str) -> (ToolReply, Sent) {
     reply(id)
 }
 
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn cold_mail_loads_calendar_without_preparing_its_agent() {
+    // Process-wide registries must start empty; a separate test process also
+    // keeps its temporary app root away from concurrently running UI tests.
+    const CHILD: &str = "OCTOSENSE_TEST_COLD_MAIL_CALENDAR";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "host_tools::tests::cold_mail_loads_calendar_without_preparing_its_agent", "--nocapture"])
+            .env(CHILD, "1").output().unwrap();
+        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        return;
+    }
+    use crate::system_chat::session::{ShellSystemHost, SystemHost};
+    let root = std::env::temp_dir().join(format!("octosense-cold-mail-calendar-{}", std::process::id()));
+    octosense_appstore::set_data_root(root.clone());
+    octosense_app_hub_app::system_apps();
+    crate::apps::register_mail_services();
+    assert!(!super::with_relay(|r| r.catalog.knows("os.calendar")));
+    super::script_apps::load("os.mail").unwrap();
+    let shared: BTreeSet<String> = super::with_relay(|r| r.catalog.declarations("os.mail", false))
+        .iter().filter(|d| d["app"] == "os.calendar")
+        .map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(shared, ["calendar.events", "calendar.add_event", "calendar.notify"].into_iter().map(String::from).collect());
+    assert_eq!(crate::agents::prepared("os.calendar"), None);
+    let system = ShellSystemHost.declarations();
+    for name in &shared {
+        assert!(system.iter().any(|d| d["name"] == *name && d["app"] == "os.calendar"));
+    }
+    assert!(!system.iter().any(|d| d["name"] == "calendar.remove_event"));
+    let mut request = call("cold-read", "calendar.events", "card.os.mail");
+    request.app = "os.calendar".into(); request.args = json!({});
+    let (reply, sent) = reply("cold-read");
+    let mut world = World::new(FixedDevMode::off());
+    super::with_relay(|r| r.handle(Event::Call { call: request, reply }, &mut world));
+    super::script_apps::poll();
+    assert_eq!(sent.lock().unwrap()[0]["ok"], true, "cold Mail registered Calendar's real host service");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn admitted_mail_calendar_grants_route_to_the_real_calendar_store() {
+    use super::script_apps::{self, HostServiceExecutor};
+    let calendar_dir = script_apps::tests::stamped_bundle("calendar", "mail-cross-app", |_, _| {});
+    let mail_dir = script_apps::tests::stamped_bundle("mail", "calendar-cross-app", |_, _| {});
+    let calendar = script_apps::from_bundle(&calendar_dir).unwrap();
+    let mail = script_apps::from_bundle(&mail_dir).unwrap();
+    let root = calendar_dir.join("test-host");
+    octosense_calendar_service::register();
+    let mut relay = Relay::default();
+    relay.catalog.declare("os.calendar", calendar.tools);
+    relay.catalog.declare("os.mail", mail.tools);
+    relay.set_executor("os.calendar", Some(Arc::new(HostServiceExecutor {
+        app: "os.calendar".into(), tools: calendar.host_service_tools,
+        families: calendar.families, host_dir: root.clone(),
+    })));
+    let mut world = World::new(FixedDevMode::off());
+    let mut add = call("delivery-without-grant", "calendar.add_event", "card.os.mail");
+    add.app = "os.calendar".into();
+    add.args = json!({"title":"Fixture delivery", "start":"2026-10-06T09:00",
+        "timezone":"America/Los_Angeles", "request_id":"fictional-delivery"});
+    let (r, sent) = reply("delivery-without-grant");
+    relay.handle(Event::Call { call: add.clone(), reply:r }, &mut world);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    assert!(octosense_calendar_service::load(&root).is_empty());
+    for tool in &mail.asks { relay.catalog.grant("os.mail", "os.calendar", tool); }
+    let offered = relay.catalog.declarations("os.mail", false);
+    let shared: BTreeSet<_> = offered.iter().filter(|d| d["app"] == "os.calendar")
+        .map(|d| d["name"].as_str().unwrap()).collect();
+    assert_eq!(shared, ["calendar.events", "calendar.add_event", "calendar.notify"].into_iter().collect());
+    assert!(!relay.catalog.may_call("os.mail", "os.calendar", "calendar.remove_event", false));
+    assert!(!relay.catalog.may_call("os.news", "os.calendar", "calendar.add_event", false));
+    for (id, system) in [("delivery-mail", false), ("delivery-system", true)] {
+        let mut request = add.clone(); request.call_id = id.into();
+        if system {
+            request.caller_kind = CallerKind::System;
+            request.origin = CallOrigin::System;
+            world.system.insert("calendar.add_event".into());
+        }
+        let (r, sent) = reply(id);
+        relay.handle(Event::Call { call: request, reply:r }, &mut world);
+        for _ in 0..100 {
+            script_apps::poll();
+            if !sent.lock().unwrap().is_empty() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(sent.lock().unwrap()[0]["ok"], true, "the owner's executor answers {id}");
+    }
+    let events = octosense_calendar_service::load(&root);
+    assert_eq!(events.len(), 1, "the same delivery is not duplicated by another caller's retry");
+    assert_eq!(events[0].timezone, "America/Los_Angeles");
+    assert_eq!(events[0].start, "2026-10-06T09:00");
+    assert!(world.asked.is_empty(), "a granted local calendar write is not an outward send");
+    let _ = std::fs::remove_dir_all(calendar_dir);
+    let _ = std::fs::remove_dir_all(mail_dir);
+}
+
 #[test]
 fn another_apps_agent_needs_a_grant_and_the_system_agent_its_own() {
     let mut relay = Relay::default();

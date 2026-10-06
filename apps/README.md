@@ -74,7 +74,7 @@ OctoScript-App-Design-Flow:
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
-| [Calendar](calendar/bundle) | `os.calendar` | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
+| [Calendar](calendar/bundle) | `os.calendar` | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -404,20 +404,32 @@ credential-reset workaround.
 ### The `calendar` service
 
 `octosense-calendar-service` (`apps/calendar/host-service/src/lib.rs`) answers
-only Calendar (`os.calendar`): App Hub's capability list has no `calendar`,
-so no other app can be granted it, and the shell runs Calendar's agent's
-`calendar.*` tools on it as the system app's own service.
+as Calendar (`os.calendar`). Its executor owns the service call even when Mail
+or the system agent is the caller. Both have explicit grants for the shareable
+`calendar.events`, `calendar.add_event` and `calendar.notify` tools. The relay
+checks the caller before routing; there is no direct Calendar capability for
+a script UI. Removal and agenda are not included in these cross-app grants.
 
 | Method | Args | Answer |
 | --- | --- | --- |
-| `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes}]}`, soonest first |
-| `calendar.add_event` | `{title, start, end?, location?, notes?}` | `{id, start}` |
+| `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes, timezone?, request_id?}]}`, soonest first |
+| `calendar.add_event` | `{title, start, end?, location?, notes?, timezone?, request_id?}` | `{id, start, reused?}` |
 | `calendar.remove_event` | `{id}` | `{removed}` |
 | `calendar.notify` | `{event}` or `{title, when, location?, notes?}`, and `{card_id?, priority?}` | `{card_id, replaced, expires_at}` once an event card (`resources/event.card`) is on the glance screen, with a notification |
 | `calendar.agenda` | `{days?}` | the same, for the agenda card (`resources/agenda.card`): the next three events within `days` (7) |
 
-Times are local (`2026-10-02T15:00`, or a date for the whole day). Events
-live in `<host_dir>/calendar/events.json`, outside every app's jail.
+Events live in `<host_dir>/calendar/events.json`, outside every app's jail.
+An explicit IANA `timezone` retains the event wall time and shows its zone on
+the card; omitted zones retain legacy device-local behavior. Ambiguous or
+missing daylight-saving times are refused. Use RFC3339 offsets for precise
+`from`/`to` filters. A stable `request_id` reuses an exact saved request; changed
+fields with the same key are refused. Omit an unknown end time.
+
+Mail schedules only on a human request or an explicit provisioned policy, reads
+the calendar first, verifies the saved event and then publishes its Calendar
+card. Cold Android Mail jobs register Calendar's service and load its granted
+executor without opening Calendar or preparing another agent. These are local
+events, not Google Calendar sync, invitations or scheduled reminder alarms.
 
 ### The `llm` service
 

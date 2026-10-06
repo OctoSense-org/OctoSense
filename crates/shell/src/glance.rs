@@ -1321,7 +1321,7 @@ mod tests {
         let event = cal::event_card_args("Dentist", "Fri 2 Oct", "15:00\u{2013}16:00", "Main St", "Bring the form", "ev-1", 70);
         assert!(store.publish(&Caller::granted("os.calendar"), &event, 1_000).is_ok());
         let now = cal::parse_time("2026-10-01T09:00").unwrap();
-        let events = vec![cal::Event { id: "a".into(), title: "Standup".into(), start: "2026-10-02T09:30".into(), end: None, location: String::new(), notes: String::new() }];
+        let events = vec![cal::Event { id: "a".into(), title: "Standup".into(), start: "2026-10-02T09:30".into(), end: None, location: String::new(), notes: String::new(), request_id: String::new(), timezone: String::new() }];
         let agenda = cal::agenda_card_args(&events, 7, now);
         assert!(store.publish(&Caller::granted("os.calendar"), &agenda, 1_000).is_ok());
         let shown = store.shown(1_000, usize::MAX);

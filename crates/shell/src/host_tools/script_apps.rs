@@ -153,7 +153,16 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
 pub fn load(app: &str) -> Result<(), String> {
     let (root, bundle) = admitted_bundle(app)?;
     let loaded = from_bundle(&bundle)?;
+    let owners: BTreeSet<_> = loaded.asks.iter().map(|tool| owner_for(tool)).collect();
     install(app, loaded, root.join(".host"));
+    // Register granted owners before the caller takes its tool offer. This
+    // loads executors, not agents or UI, including in a cold Mail job. The
+    // installed caller is already known, so reciprocal grants do not recurse.
+    for owner in owners {
+        if owner != app && owner != super::relay::TOOLBOX && crate::native_apps::find(&owner).is_none() {
+            super::ensure_loaded(&format!("card.{owner}"));
+        }
+    }
     Ok(())
 }
 

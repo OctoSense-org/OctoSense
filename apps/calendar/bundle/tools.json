@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "calendar.events",
-      "description": "List the person's calendar events, soonest first: id, title, start, end, location and notes. Times are local, like 2026-10-02T15:00. Filter with from and to (a time or a date); limit caps the list.",
+      "description": "List the person's calendar events, soonest first: id, title, start, end, location and notes. Times are local, like 2026-10-02T15:00. Filter with from and to (a time or a date); limit caps the list. Entries may include request_id for retry deduplication. These are OctoSense local events, not a Google Calendar account. A returned timezone belongs to that event; from/to filters use device local time unless RFC3339 offsets are supplied.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -40,11 +40,12 @@
       "risk": "read",
       "background": true,
       "private_data": true,
-      "implemented_by": "host-service"
+      "implemented_by": "host-service",
+      "shareable": true
     },
     {
       "name": "calendar.add_event",
-      "description": "Add an event to the person's calendar. start (and end) are local times like 2026-10-02T15:00, or a date like 2026-10-02 for the whole day. Answers the new event's id.",
+      "description": "Add an event to the person's calendar. start (and end) are local times like 2026-10-02T15:00, or a date like 2026-10-02 for the whole day. Answers the new event's id. For retries supply the same stable request_id and exact event fields; it reuses the saved event. Changed fields with that key are refused instead of duplicating it. This is OctoSense local storage, not Google Calendar sync. Supply timezone (IANA, e.g. America/Los_Angeles) to preserve the event wall time independently of device settings. Missing timezone uses device local time. Do not guess an unspecified end.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -69,6 +70,16 @@
           "notes": {
             "type": "string",
             "maxLength": 600
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
           }
         },
         "required": [
@@ -93,7 +104,8 @@
       },
       "risk": "act",
       "background": true,
-      "implemented_by": "host-service"
+      "implemented_by": "host-service",
+      "shareable": true
     },
     {
       "name": "calendar.remove_event",
@@ -187,7 +199,8 @@
       },
       "risk": "act",
       "background": true,
-      "implemented_by": "host-service"
+      "implemented_by": "host-service",
+      "shareable": true
     },
     {
       "name": "calendar.agenda",
