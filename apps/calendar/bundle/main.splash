@@ -118,6 +118,7 @@ fn save(){
     if ui.e_end.text() != "" { end = ui.e_end_date.text() + "T" + ui.e_end.text() }
     let start = ui.e_date.text()
     if ui.e_start.text() != "" { start = start + "T" + ui.e_start.text() }
+    else { if ui.e_end.text() == "" && ui.e_end_date.text() != ui.e_date.text() { end = ui.e_end_date.text() } }
     let args = {title: ui.e_title.text() start: start end: end timezone: ui.e_zone.text() location: ui.e_place.text() notes: ui.e_notes.text()}
     let method = "calendar.add_event"
     if selected != nil { method = "calendar.update_event"; args.id = selected.id; args.expected = selected }
