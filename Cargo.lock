@@ -7536,7 +7536,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=09fe160b85c0fadc969e4fabd60324c7b6227f1e#09fe160b85c0fadc969e4fabd60324c7b6227f1e"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f#db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7555,7 +7555,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=09fe160b85c0fadc969e4fabd60324c7b6227f1e#09fe160b85c0fadc969e4fabd60324c7b6227f1e"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f#db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7583,7 +7583,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=09fe160b85c0fadc969e4fabd60324c7b6227f1e#09fe160b85c0fadc969e4fabd60324c7b6227f1e"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f#db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f"
 dependencies = [
  "makepad-widgets",
  "octosense-app-contract",
@@ -7605,7 +7605,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=09fe160b85c0fadc969e4fabd60324c7b6227f1e#09fe160b85c0fadc969e4fabd60324c7b6227f1e"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f#db7ef46aea22e6f1e8b5c7ed7a72548bf94feb7f"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
