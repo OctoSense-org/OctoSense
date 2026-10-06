@@ -2,6 +2,9 @@
 
 [English](mail-calendar-2026-10-05.md) | 简体中文
 
+
+后续：[Calendar 实用界面、自有卡片与重启验证](calendar-ui-2026-10-06.zh-CN.md)。下文保留此前构建的实际观察。
+
 Mail 现申请日历可共享的 `calendar.events`、`calendar.add_event`、`calendar.notify`。
 系统 Agent 对这三项有单独的显式授权。App Hub 按应用提供的宿主接纳范围、manifest
 申请与 Shell 中转的调用者检查是不同环节。服务调用仍归属日历执行器；Mail 不会

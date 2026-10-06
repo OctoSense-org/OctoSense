@@ -2,6 +2,9 @@
 
 English | [简体中文](mail-calendar-2026-10-05.zh-CN.md)
 
+
+Follow-up: [functional Calendar UI, app-owned cards and restart validation](calendar-ui-2026-10-06.md). The observations below describe the earlier build.
+
 Mail now requests Calendar's shareable `calendar.events`, `calendar.add_event`
 and `calendar.notify`. The system agent has its own explicit grant for the same
 three tools. App Hub's per-app host admission offer is separate from those
