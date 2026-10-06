@@ -93,8 +93,7 @@ multiline input.
 
 Pickup notices preserve supplied code/address/hours/deadline/ID requirements;
 exclude passwords/authentication codes. Local views do not change remote state; do not label
-local navigation Send/Confirm/Track/Mark done. `sys.link` can only open the current publication’s exact declared own-app
-destination; arbitrary web links are not executed. Opening Mail is not a reply route.
+local navigation Send/Confirm/Track/Mark done. `sys.link` opens only the publication-bound own-app target; Mail launch is not reply.
 
 Use explicit enum guards. Initial views show actions; deeper views need Back.
 At 310 points, wrap text and use short Chips without width. Invent no props
