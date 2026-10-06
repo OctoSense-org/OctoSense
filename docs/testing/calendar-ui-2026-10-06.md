@@ -113,3 +113,5 @@ available to its own agent, not newly granted to Mail or the system agent.
 Phone keyboard editing, accessibility, multi-day calendar layout, background-job
 Calendar publication, and a fresh model benchmark remain unverified in this
 follow-up. No numeric UX score or complete scheduling-product claim is made.
+
+Follow-up: [in-card Open Calendar and a live medical email test](mail-medical-calendar-2026-10-06.md) supersede the header placement described in this historical build.
