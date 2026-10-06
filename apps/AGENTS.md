@@ -138,6 +138,14 @@ Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,
 requesting app's grant and App Hub admission offer together. Keep credentials in
 the host service; expose business data through a narrow method or tool.
+For shipped bundles, register the per-app host offer with
+`octosense_appstore::system::set_agent_tool_offer` before `system::prepare`.
+`AgentBundle::load` alone does not verify the host's admission offer. Test a
+cold process: Mail must load Calendar's granted executor and register its host
+service without opening Calendar or preparing its peer. Calendar scheduling
+uses an explicit event timezone and a stable retry key; unknown end times stay
+omitted. A human request or provisioned scheduling policy supplies intent,
+never instructions inside the email itself.
 
 Update both README languages when declarations, storage or runtime support
 change. Mail's opt-in dispatcher is `crates/shell/src/agent_events.rs`: an
