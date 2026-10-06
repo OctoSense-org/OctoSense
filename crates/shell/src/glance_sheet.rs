@@ -98,7 +98,8 @@ pub fn card_rect(sheet: Rect) -> Rect {
 }
 
 /// All peer modes share one row directly above the active pane.
-fn workspace_rects(sheet: Rect, has_tabs: bool, _mail: bool) -> (Rect, Option<Rect>) {
+fn workspace_rects(sheet: Rect, has_tabs: bool, focus_layout: bool) -> (Rect, Option<Rect>) {
+    if focus_layout { return (sheet, None); }
     let mut content = card_rect(sheet);
     if !has_tabs { return (content, None); }
     content.size.y = (content.size.y - TABS).max(0.0);
@@ -164,6 +165,7 @@ pub struct ShellGlanceSheet {
     #[rust] resume_store: Option<InstanceStore>,
     #[rust] script_interacted: bool,
     #[rust] tabs_style: Option<(bool, Vec4f)>,
+    #[rust] focus_layout: bool,
     #[rust]
     open: Option<Open>,
     #[rust]
@@ -643,6 +645,16 @@ impl Widget for ShellGlanceSheet {
             } else { sheet_rect(screen, if self.chatting || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {600.0} else {card_h + if self.chat_available {TABS} else {0.0}}) };
             let sheet = self.presentation.rect(destination);
             self.sheet = sheet;
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let reviewing = self.review.is_active();
+            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            let reviewing = false;
+            let native_mail = open.card.l0.as_ref().is_some_and(|l| l.mail.is_some());
+            let focus_layout = self.fullscreen && self.keyboard_visible && destination.size.y < 260.0
+                && native_mail && !self.chatting && !reviewing
+                && cx.has_key_focus(self.mail.text_input(cx, ids!(body)).area());
+            if self.focus_layout != focus_layout { self.close_touch = None; }
+            self.focus_layout = focus_layout;
             if self.fullscreen {
                 if self.presentation.covers_background() { self.d.solid(cx, screen, background); }
                 else { self.round.color = background; self.round.radius = self.presentation.radius(); self.round.draw_abs(cx, sheet); }
@@ -657,14 +669,12 @@ impl Widget for ShellGlanceSheet {
             let heading = if self.review.is_active() { "Mail reply" } else { &open.card.title };
             #[cfg(not(any(feature = "app-hub", native_mobile)))]
             let heading = &open.card.title;
-            self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
-            self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
+            if !focus_layout {
+                self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
+                self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
+            }
             let mut card = card_rect(sheet);
             let key = Self::tile_key(&open.key);
-            #[cfg(any(feature = "app-hub", native_mobile))]
-            let reviewing = self.review.is_active();
-            #[cfg(not(any(feature = "app-hub", native_mobile)))]
-            let reviewing = false;
             if reviewing {
                 #[cfg(any(feature = "app-hub", native_mobile))]
                 self.review.draw(cx, &mut self.d, card, &tok);
@@ -676,11 +686,10 @@ impl Widget for ShellGlanceSheet {
                     self.live.body(&key, &open.card, "glance sheet");
                     if new_session { self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat()); }
                 }
-                let native_mail = open.card.l0.as_ref().is_some_and(|l| l.mail.is_some());
                 // Layout at the final size throughout the reveal. The surface
                 // translates and clips; text is never squeezed/reflowed each frame.
                 let body_sheet = Rect { pos: sheet.pos, size: destination.size };
-                let (pane, tabs) = workspace_rects(body_sheet, self.chat_available || native_mail, native_mail);
+                let (pane, tabs) = workspace_rects(body_sheet, self.chat_available || native_mail, focus_layout);
                 card = pane;
                 if let Some(tabs) = tabs { self.tabs.draw_walk_all(cx, scope, Walk::abs_rect(tabs)); }
                 if !self.chatting && crate::mail_compose::eligible(&open.card) {
@@ -699,6 +708,7 @@ impl Widget for ShellGlanceSheet {
                 } else if open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
                     if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() {
                         mail.set_keyboard(cx, self.keyboard_visible);
+                        mail.set_focus_layout(cx, focus_layout);
                     }
                     self.mail.draw_walk_all(cx, scope, Walk::abs_rect(rect(body_sheet.pos.x, card.pos.y, body_sheet.size.x, card.size.y)));
                 } else {
@@ -755,7 +765,7 @@ impl Widget for ShellGlanceSheet {
                 self.close_touch = None;
             }
             let sheet = self.sheet;
-            let closes = |p| contains(close_rect(sheet), p) || (!self.fullscreen && !contains(sheet, p));
+            let closes = |p| (!self.focus_layout && contains(close_rect(sheet), p)) || (!self.fullscreen && !contains(sheet, p));
             let mut consumed = self.close_touch.is_some();
             for t in &e.touches {
                 if self.close_touch.is_none() && t.state == TouchState::Start && closes(t.abs) {
@@ -776,7 +786,7 @@ impl Widget for ShellGlanceSheet {
             if consumed { return; }
         }
         match event {
-            Event::MouseDown(e) if contains(close_rect(self.sheet), e.abs) || (!self.fullscreen && !contains(self.sheet, e.abs)) => {
+            Event::MouseDown(e) if (!self.focus_layout && contains(close_rect(self.sheet), e.abs)) || (!self.fullscreen && !contains(self.sheet, e.abs)) => {
                 self.dismiss(cx);
                 return;
             }
@@ -795,7 +805,7 @@ impl Widget for ShellGlanceSheet {
             self.redraw(cx);
             return; // Host review is modal within this sheet; no L0 NAV dispatch.
         }
-        if self.chat_available || self.mail_binding().is_some() {
+        if !self.focus_layout && (self.chat_available || self.mail_binding().is_some()) {
             let actions = cx.capture_actions(|cx| self.tabs.handle_event(cx, event, scope));
             if self.tabs.button(cx, ids!(card_tab)).clicked(&actions) { self.select_chat(cx, false); return; }
             if self.tabs.button(cx, ids!(chat_tab)).clicked(&actions) { self.select_chat(cx, true); return; }
@@ -922,13 +932,17 @@ mod tests {
     #[test]
     fn mode_row_precedes_the_active_pane_at_every_viewport_size() {
         for height in [820.0, 340.0, 820.0] {
-            let (pane, tabs) = workspace_rects(rect(0.0, 0.0, 380.0, height), true, true);
+            let (pane, tabs) = workspace_rects(rect(0.0, 0.0, 380.0, height), true, false);
             let tabs = tabs.unwrap();
             assert_eq!(tabs.pos.y, HEADER);
             assert_eq!(tabs.pos.y + tabs.size.y, pane.pos.y);
             assert_eq!(pane.pos.y + pane.size.y, height - PAD);
             assert!(tabs.size.y >= 44.0);
         }
+        let viewport = rect(0.0, 24.0, 760.0, 96.0);
+        let (pane, tabs) = workspace_rects(viewport, true, true);
+        assert!(tabs.is_none(), "typing in a short landscape viewport temporarily hides navigation");
+        assert_eq!(pane, viewport, "the keyboard must not consume the entire editor below fixed headers");
     }
 
     #[test]

@@ -72,6 +72,7 @@ pub struct MailClip {
     #[rust] ink: Option<Vec4f>,
     #[rust] keyboard: bool,
     #[rust] short_viewport: bool,
+    #[rust] focus_layout: bool,
     #[rust] focus_editor: bool,
     #[rust] review_requested: Option<Binding>,
 }
@@ -117,6 +118,9 @@ impl MailClip {
     pub fn set_keyboard(&mut self, cx: &mut Cx, visible: bool) {
         if self.keyboard != visible { self.keyboard = visible; self.render(cx, false); }
     }
+    pub fn set_focus_layout(&mut self, cx: &mut Cx, enabled: bool) {
+        if self.focus_layout != enabled { self.focus_layout = enabled; self.render(cx, false); }
+    }
     pub fn take_review(&mut self) -> Option<Binding> { self.review_requested.take() }
     pub fn review_error(&mut self, cx: &mut Cx, error: &str) {
         self.view.label(cx, ids!(state)).set_text(cx, error);
@@ -129,6 +133,10 @@ impl MailClip {
         }
     }
     fn render(&mut self, cx: &mut Cx, text: bool) {
+        // The landscape IME can leave less than 120 points. While typing,
+        // Android's keyboard-dismiss control restores the normal action rows.
+        self.view.widget(cx, ids!(actions)).set_visible(cx, !self.focus_layout);
+        self.view.widget(cx, ids!(state)).set_visible(cx, !self.focus_layout || self.session.as_ref().is_some_and(|s| s.error.is_some()));
         let Some(s) = &self.session else { return; };
         let d = s.snapshot();
         let editable = matches!(d["status"].as_str(), Some("draft" | "awaiting_approval"));
@@ -328,7 +336,8 @@ mod tests {
         for path in [ids!(metadata), ids!(recipient_row), ids!(subject_row)] { widget.widget(&cx, path).set_visible(&mut cx, false); }
         let pass = DrawPass::new(&mut cx);
         let mut list = DrawList2d::new(&mut cx);
-        for (width, height) in [(380.0, 700.0), (280.0, 260.0), (760.0, 220.0), (380.0, 700.0)] {
+        for (width, height, focus_layout) in [(380.0, 700.0, false), (280.0, 260.0, false), (760.0, 220.0, false), (760.0, 96.0, true), (380.0, 700.0, false)] {
+            widget.borrow_mut::<MailClip>().unwrap().set_focus_layout(&mut cx, focus_layout);
             for _ in 0..2 {
                 let size = dvec2(width, height);
                 pass.set_size(&mut cx, size);
@@ -340,17 +349,26 @@ mod tests {
                 widget.draw_walk_all(&mut draw, &mut Scope::empty(), Walk::fixed(width, height));
                 draw.end_turtle(); list.end(&mut draw); draw.end_pass(&pass);
             }
-            for area in [input.area(), widget.button(&cx, ids!(review)).area(), widget.button(&cx, ids!(original)).area(), widget.button(&cx, ids!(details)).area()] {
+            let mut areas = vec![input.area()];
+            if !focus_layout { areas.extend([widget.button(&cx, ids!(review)).area(), widget.button(&cx, ids!(original)).area(), widget.button(&cx, ids!(details)).area()]); }
+            for area in areas {
                 let r = area.rect(&cx);
                 assert!(r.size.y >= 44.0 && r.pos.y >= 0.0 && r.pos.y + r.size.y <= height && r.pos.x + r.size.x <= width, "clipped at {width}x{height}: {r:?}");
             }
             assert!(input.area().rect(&cx).size.y > height * 0.60, "message must own most of even a short keyboard viewport: {width}x{height}, editor {:?}", input.area().rect(&cx));
+            assert_eq!(widget.widget(&cx, ids!(actions)).visible(), !focus_layout);
+            assert_eq!(widget.widget(&cx, ids!(state)).visible(), !focus_layout);
+            assert!(input.text().contains("Wednesday at 10:00"));
+            if focus_layout {
+                assert!(input.area().rect(&cx).size.y > height * 0.85, "landscape typing must reclaim the action rows");
+                println!("Mail focus viewport {width}x{height}, editor {:?}", input.area().rect(&cx));
+                continue;
+            }
             let review = widget.button(&cx, ids!(review)).area().rect(&cx);
             for path in [ids!(original), ids!(details)] {
                 assert_eq!(widget.button(&cx, path).area().rect(&cx).pos.y, review.pos.y, "related actions share one row");
             }
             assert!(review.pos.y + review.size.y <= input.area().rect(&cx).pos.y, "actions cannot overlay the message");
-            assert!(input.text().contains("Wednesday at 10:00"));
             println!("Mail viewport {width}x{height}, editor {:?}, actions {:?}", input.area().rect(&cx), review);
         }
     }
