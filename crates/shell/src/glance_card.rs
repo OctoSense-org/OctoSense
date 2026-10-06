@@ -40,7 +40,8 @@
 //! app, the way the app's own UI calls go out. Background tiles cannot raise
 //! service sheets. An explicitly opened viewport workspace may use only the
 //! prompt authority its admitted policy granted: the host mounts its sheet in
-//! a separate, host-owned isolate, and routes modal input there exclusively.
+//! a separate, host-owned isolate, and draws and routes modal input there
+//! exclusively. The app stays resident but is not drawn underneath its review.
 //! Dismissal, suspension or account/publication retirement cancels unsubmitted
 //! reviews and stops the sheet isolate, while preserving the app's local draft.
 //! An already approved external write remains bound to its original request.
@@ -1064,6 +1065,18 @@ impl GlanceTiles {
         }
         let walk = Walk { abs_pos: Some(rect.pos), width: Size::Fixed(rect.size.x), height: Size::Fixed(rect.size.y), ..Walk::default() };
         let mut scope = Scope::empty();
+        if tile.workspace && tile.sheet.borrow().is_some_and(|s| s.view.visible) {
+            // A modal review replaces the workspace surface. Drawing both
+            // siblings lets the renderer batch app text above the host's opaque
+            // background. Keep the app VM/draft resident, but emit no app draw
+            // calls while reviewing; lazy host widgets also need their own VM.
+            let sheet = tile.sheet.clone();
+            match isolate_of(cx, &sheet) {
+                Some(vm_id) => widget_async::with_isolate(cx, vm_id, |cx| sheet.draw_walk_all(cx, &mut scope, walk)),
+                None => sheet.draw_walk_all(cx, &mut scope, walk),
+            }
+            return;
+        }
         // Inside the card's isolate, as the Card runner draws its card.
         match isolate_of(cx, &splash) {
             Some(vm_id) => widget_async::with_isolate(cx, vm_id, |cx| tile.frame.draw_walk_all(cx, &mut scope, walk)),
@@ -1469,6 +1482,7 @@ mod tests {
     }
     thread_local! {
         static TYPED: RefCell<String> = RefCell::new(String::new());
+        static DRAWN_HEAPS: RefCell<Vec<usize>> = RefCell::new(Vec::new());
     }
     impl Widget for GlanceInputProbe {
         fn handle_event(&mut self, cx: &mut Cx, event: &Event, _: &mut Scope) {
@@ -1479,9 +1493,68 @@ mod tests {
                 });
             }
         }
-        fn draw_walk(&mut self, _: &mut Cx2d, _: &mut Scope, _: Walk) -> DrawStep {
-            DrawStep::done()
+        fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+            let heap = cx.with_vm(|vm| vm.bx.heap.heap_key());
+            DRAWN_HEAPS.with(|drawn| drawn.borrow_mut().push(heap));
+            self.view.draw_walk(cx, scope, walk)
         }
+    }
+
+    /// Modal review must emit no underlying app geometry, even on its first
+    /// draw. An opaque quad alone does not isolate shared text draw batches.
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn foreground_review_draws_only_host_isolate_and_restores_resident_draft() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        register_test_app("os.glancedraw");
+        widget_async::register_splash_isolate_mod(|vm| { script_mod(vm); });
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        tiles.set_foreground(&mut cx, true);
+        let body: std::sync::Arc<str> = r#"GlanceInputProbe { width: Fill height: Fill
+            draft := TextInput { text: "Unsent local draft — 保留" }
+        }"#.into();
+        let app = tiles.open(&mut cx, "workspace", "os.glancedraw", true, &body);
+        let app_heap = heap_of(&mut cx, &app);
+        let sheet = tiles.tiles["workspace"].sheet.clone();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let size = dvec2(340.0, 600.0);
+        let mut draw = |cx: &mut Cx, tiles: &mut GlanceTiles| {
+            DRAWN_HEAPS.with(|drawn| drawn.borrow_mut().clear());
+            pass.set_size(cx, size);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw_workspace(&mut draw, "workspace", "os.glancedraw", true,
+                &body, Rect { pos: dvec2(0.0, 0.0), size });
+            draw.end_turtle();
+            list.end(&mut draw);
+            draw.end_pass(&pass);
+        };
+        draw(&mut cx, &mut tiles);
+        assert_eq!(DRAWN_HEAPS.with(|drawn| drawn.borrow().clone()), [app_heap]);
+        for _ in 0..3 {
+            sheet.set_text(&mut cx, "GlanceInputProbe { width: Fill height: Fill }");
+            let sheet_heap = heap_of(&mut cx, &sheet);
+            assert_ne!(sheet_heap, app_heap);
+            for _ in 0..2 {
+                draw(&mut cx, &mut tiles);
+                assert_eq!(DRAWN_HEAPS.with(|drawn| drawn.borrow().clone()), [sheet_heap],
+                    "only host geometry, evaluated inside its own isolate");
+                assert_eq!(sheet.area().rect(&cx).size, size, "review fills the workspace");
+            }
+            tiles.dismiss_host_sheets(&mut cx);
+            draw(&mut cx, &mut tiles);
+            assert_eq!(DRAWN_HEAPS.with(|drawn| drawn.borrow().clone()), [app_heap]);
+            assert_eq!(heap_of(&mut cx, &app), app_heap, "app VM was not replaced");
+            assert_eq!(app.text_input(&cx, ids!(draft)).text(), "Unsent local draft — 保留");
+        }
+        tiles.sweep(&mut cx, &[]);
     }
 
     /// Input reaches a tile's card, inside its isolate, and the request the

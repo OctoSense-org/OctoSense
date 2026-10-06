@@ -4,7 +4,7 @@
     "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "4d551700429705f326a9f86f2562c1320a5077ea",
+    "tree": "f09a9d268e2112bdd46f8d6c9a2b38e16397f20f",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -16,7 +16,8 @@
       "Calculator lays its keypad out again after every apply (makepad #99): the phone shell's style reapply after a hosted module's first frame left the DSL's 85-point keys, overflowing a 393-point-wide phone.",
       "The Terminal opens its own agent's link and answers it with its read tools only (makepad #100); typing a command stays the host's terminal.run.",
       "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Compromised OS/root impersonation is outside this app-level boundary; the subsequent desktop patch adds macOS pointer provenance.",
-      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; Windows/Linux physical approval is unsupported."
+      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; Windows/Linux physical approval is unsupported.",
+      "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics."
     ],
     "stacked": [
       {
@@ -54,6 +55,10 @@
       {
         "patch": "tools/runtime-patches/makepad-desktop-trusted-input.patch",
         "sha256": "0bb2bbc7d776bb9c8b8064b2f44bcec6e9442c10e1fbf84acbdfd03f0b89be50"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-android-enter-composition.patch",
+        "sha256": "36e7a22c999cf4a85e9d85f7a2b94bdfe9e6f375b703274735ca3816953e3280"
       }
     ]
   }

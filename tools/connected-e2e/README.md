@@ -74,10 +74,48 @@ Android, Windows, Linux, public catalog publication or a human approval tap.
 | macOS OS credential adapter | [One explicit Keychain test passed](evidence/macos-vault.json): store/reopen/logical revocation and no plaintext credential in profile files. No live OAuth. |
 | Linux protocols and host adapter | [43 protocol tests and host compilation passed](evidence/linux-provider.json). The explicit vault test failed because the build host had no usable unlocked Secret Service. No GUI/display was available. |
 | Windows | [Cross-compile attempt blocked before the host crate](evidence/windows-unverified.json) by missing Windows SDK headers on macOS. Native execution remains unverified. |
-| OnePlus 6 | ADB reports no attached device. Google native authorization is not implemented by this shared service. Phone keyboard, lifecycle and real provider acceptance remain pending. |
+| OnePlus 6 | [Local Notes device checks passed after the Enter fix](evidence/notes-oneplus-20261006/README.md): soft/hardware input, preview and exact cold recovery. [Reproduction](android-notes.md) uses a separate signed test APK. Phone UI polish and live provider acceptance remain open; shared Google native authorization is not implemented. |
+| Post-soak fixes | [954 shell tests and all desktop/Home build/graph checks passed](evidence/glance-modal-validation.json) for exclusive host-review rendering. The later Java-only Enter fix passed [96 ROM tests, 18 setup tests and source-stack validation](evidence/android-enter-validation.json), then the separate phone retest above. |
 
 For shell unit tests that instantiate optional native apps, set `RINX_DATA_DIR`
 to a fresh private absolute directory before starting the process. Rinx caches
 its root on first access; changing it later cannot isolate an already running
 process. Do not run acceptance against the developer's normal Matrix profile.
 Do not export raw shell logs or model profiles as public evidence.
+
+## Repeated Notes UX soak
+
+```sh
+python3 tools/connected-e2e/notes_soak.py \
+  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle \
+  --cycles 36 --duration-seconds 600
+```
+
+The soak alternates short and long Unicode documents in an isolated signed
+installation. Each cycle checks exact persisted Markdown after switching Write,
+Markdown and Preview, scrolling/refocusing and returning from Repository. Every
+sixth cycle edits the native rich input, undoes that edit, opens the exact host
+review and cancels. Timed idle windows verify that callbacks do not change the
+draft; the final process restart must restore the same note and destination.
+The provider journal must contain no write attempts.
+
+Receipts keep every cycle's content hash, persisted revision, active duration,
+idle duration and process RSS, plus p50/p95/max operation timing. These timings
+are Makepad instrument round trips with native frame waits and polling, not FPS
+or measured display latency. Memory trends cover a finite session and include
+editor history, renderer caches and native screenshot allocations; they do not
+alone establish a leak or prove its absence. Original PNGs and first failures
+remain under `target/connected-notes-soak/run-*` for separate visual review.
+
+The [2026-10-06 recorded Notes soak](evidence/notes-soak-20261006/README.md)
+passed 36 cycles over ten minutes and a separate 120-cycle burst. It records
+exact draft retention, native pixel review, timing boundaries and memory growth.
+
+Calendar and Inbox have their own reusable soaks and evidence in App Design
+Flow: [Calendar](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/google-calendar/ACCEPTANCE.md)
+and [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/inbox/README.md).
+They exercise different hosts: Calendar's provider host and Inbox's full Shell
+with actual DeepSeek turns. Do not combine their latency or memory figures into
+a single benchmark. The latest [three-bundle signed installation check](evidence/signed-install-after-soak.json)
+includes Inbox's corrected monitoring-status bundle; all three passed reopening
+and tamper refusal without changing the public catalog.

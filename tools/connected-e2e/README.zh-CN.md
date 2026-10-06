@@ -63,8 +63,38 @@ Android／Windows／Linux 原生界面、公开目录发布或真人批准。
 | macOS 系统凭据适配器 | [一次明确的 Keychain 测试通过](evidence/macos-vault.json)：保存／重开／逻辑撤销及配置文件无明文凭据。不代表真实 OAuth。 |
 | Linux 协议及主机适配器 | [43 项协议测试及主机编译通过](evidence/linux-provider.json)。明确运行的原生凭据库测试因主机没有可用、已解锁的 Secret Service 而失败。没有 GUI／显示环境。 |
 | Windows | [在 Mac 上交叉编译](evidence/windows-unverified.json)因缺少 Windows SDK 头文件，在到达主机 crate 前停止。原生运行未验证。 |
-| OnePlus 6 | ADB 未发现连接的设备。此共享服务尚未实现 Google 原生授权；手机键盘、生命周期和真实提供商验收待完成。 |
+| OnePlus 6 | [Enter 修复后通过本地 Notes 真机检查](evidence/notes-oneplus-20261006/README.zh-CN.md)：软键盘／硬件输入、预览和精确冷恢复。[复现](android-notes.zh-CN.md)使用独立签名测试 APK。手机界面优化及真实提供商验收仍待完成；共享 Google 原生授权尚未实现。 |
+| 浸泡后的修复 | 宿主审核独占绘制修复通过 [954 项 shell 测试及所有桌面／Home 构建和源码图检查](evidence/glance-modal-validation.json)。之后仅改 Java 的 Enter 修复通过 [96 项 ROM、18 项 setup 测试和补丁栈检查](evidence/android-enter-validation.json)，并完成上述独立手机重测。 |
 
 启动包含可选原生应用的 shell 单元测试前，应将 `RINX_DATA_DIR` 指向全新、私有、
 绝对路径目录。Rinx 首次访问时缓存根目录，运行中修改不能隔离已有进程。
 验收不得使用开发者日常 Matrix 配置；不要把原始 shell 日志或模型配置作为公开证据导出。
+
+## Notes 重复 UX 浸泡测试
+
+```sh
+python3 tools/connected-e2e/notes_soak.py \
+  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle \
+  --cycles 36 --duration-seconds 600
+```
+
+该测试使用隔离的签名安装，交替输入长短 Unicode 文档；每轮切换 Write、Markdown、
+Preview，滚动、重新聚焦并往返 Repository，然后核对持久化 Markdown 的精确内容。
+每六轮通过原生富文本控件编辑并撤销，打开精确宿主审核后取消。间隔空闲时间检查异步
+回调没有改动草稿；最后重启进程核对原文和目标。供应商日志必须没有任何写入尝试。
+
+回执保留每轮内容摘要、持久化版本、活动和空闲时间、进程 RSS，以及操作耗时的
+p50/p95/最大值。这里计量的是包含原生帧等待和状态轮询的 Makepad instrument 往返，
+不是 FPS 或真实显示延迟。有限会话的内存趋势包含编辑历史、渲染缓存和截图分配，
+不能单独证明有无泄漏。原始截图及首次失败保留在 `target/connected-notes-soak/run-*`，
+视觉检查与功能断言分开记录。
+
+[2026-10-06 Notes 浸泡记录](evidence/notes-soak-20261006/README.zh-CN.md)通过十分钟
+36 轮及独立 120 轮密集测试，保留精确草稿、原生截图检查、耗时边界与内存增长记录。
+
+Calendar 和 Inbox 的独立驱动及证据位于 App Design Flow：
+[Calendar](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/google-calendar/ACCEPTANCE.md)
+及 [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/inbox/README.zh-CN.md)。
+两者主机不同：Calendar 使用提供商主机，Inbox 使用完整 Shell 并实际调用 DeepSeek，
+不能将耗时与内存数值合成同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)
+包含修正监控状态后的 Inbox 包，三者均通过重开和篡改拒绝，未修改公开目录。

@@ -94,5 +94,15 @@ fn main() {
     let mut text=android_ime::EditorState{text:"a😀中文".into(),selection:(3,3),composition:None};
     assert!(text.apply(&android_ime::Edit{kind:11,text:String::new(),start:0,end:0,cursor:0}));assert_eq!(text.text,"a中文");
     text.selection=(0,3);assert!(text.apply(&android_ime::Edit{kind:11,text:String::new(),start:0,end:0,cursor:0}));assert_eq!(text.text,"");
+    // Java hardware Enter must finish the current composing word before its
+    // newline commit. Exercise both operations through the real native owner.
+    cx.widget=Some((46,state("# OnePlus Notes test")));cx.publish();
+    let enter_session=cx.os.ime_editor_session;
+    cx.widget.as_mut().unwrap().1.composition=Some(CharOffset(16)..CharOffset(20));
+    cx.edit(35,enter_session,true,3,"");
+    assert_eq!(cx.widget.as_ref().unwrap().1.text,"# OnePlus Notes test");
+    assert!(cx.widget.as_ref().unwrap().1.composition.is_none());
+    cx.edit(36,enter_session,true,1,"\n");
+    assert_eq!(cx.widget.as_ref().unwrap().1.text,"# OnePlus Notes test\n");
     println!("Canonical editor ordering, composition, sessions, retirement and Unicode passed");
 }
