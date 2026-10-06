@@ -59,8 +59,10 @@ use std::path::{Path, PathBuf};
 
 /// The largest run-result file read.
 pub const FILE_MAX: u64 = 512 * 1024;
-pub const SUMMARY_MAX: usize = 800;
-pub const POINTS_MAX: usize = 8;
+// Match the toolbox's validated digest limits so a focused research card
+// retains the entire summary and all twelve points, not its old preview cap.
+pub const SUMMARY_MAX: usize = 1000;
+pub const POINTS_MAX: usize = 12;
 pub const TEXT_MAX: usize = 400;
 pub const LABEL_MAX: usize = 40;
 pub const SOURCES_MAX: usize = 8;

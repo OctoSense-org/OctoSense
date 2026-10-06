@@ -732,7 +732,11 @@ impl Widget for ShellGlanceSheet {
                     rect(card.pos.x, card.pos.y, card.size.x, (card.size.y - MailToolbar::HEIGHT).max(20.))
                 } else { card };
                 let body = self.live.body(&key, &open.card, "glance sheet");
+                // The workspace owns a fixed clipped viewport even when a
+                // publication grows asynchronously beyond the screen.
+                cx.begin_turtle(Walk::abs_rect(card), Layout::default());
                 self.tiles.draw(cx, &key, &open.card.app, open.card.contained, &body, card);
+                cx.end_turtle();
                 }
             }
             cx.end_turtle();

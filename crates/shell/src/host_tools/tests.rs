@@ -212,6 +212,137 @@ fn cold_mail_loads_calendar_without_preparing_its_agent() {
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 #[test]
+fn cold_contextual_apps_route_only_granted_tools_to_owner_stores() {
+    // Run each entry into the reciprocal dependency graph in a fresh process:
+    // another test's registered owner must not conceal a cold-load failure.
+    const CHILD: &str = "OCTOSENSE_TEST_COLD_CONTEXTUAL_APP";
+    let entry = match std::env::var(CHILD) {
+        Ok(entry) => entry,
+        Err(_) => {
+            for entry in ["os.photos", "os.news", "os.youtube"] {
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "host_tools::tests::cold_contextual_apps_route_only_granted_tools_to_owner_stores", "--nocapture"])
+                    .env(CHILD, entry).output().unwrap();
+                assert!(output.status.success(), "cold {entry}:\n{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            }
+            return;
+        }
+    };
+    let root = std::env::temp_dir().join(format!("octosense-cold-contextual-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let host = root.join(".host");
+    // Fictional stored business data, not live network/model results. Defer
+    // every built-in News feed so this routing test never needs the network.
+    let now = (crate::glance::now_ms() / 1000) as i64;
+    let mut news = octosense_news_service::store::Data::default();
+    news.items.push(octosense_news_service::Item {
+        id: "fixture-story".into(), title: "Fixture park opens".into(),
+        url: "https://example.org/fixture-park".into(), fetched: now,
+        summary: "Fictional owner-store routing fixture.".into(),
+        ..Default::default()
+    });
+    for source in octosense_news_service::sources::app_feeds().into_iter()
+        .chain(octosense_news_service::sources::default_feeds()) {
+        news.state.insert(source.id, octosense_news_service::store::SourceState {
+            next_due: now + 86_400, ..Default::default()
+        });
+    }
+    octosense_news_service::store::Store::at(&host).save(&news).unwrap();
+    let youtube = host.join("youtube");
+    std::fs::create_dir_all(&youtube).unwrap();
+    std::fs::write(youtube.join("recommendations.json"), json!({
+        "enabled":false,"slots":[],"published":{},"videos":[{
+            "id":"fixture1234","title":"Fictional cached music","channel":"Fixture",
+            "length":"3:00","query":"fixture","retrieved_at":now
+        }]
+    }).to_string()).unwrap();
+    let photos = root.join("os.photos/accounts/device");
+    std::fs::create_dir_all(&photos).unwrap();
+    std::fs::write(photos.join("library.json"), json!({
+        "version":1,"albums":[{"id":9,"title":"Fixture collection","photos":["coast"]}],
+        "favorites":["coast"]
+    }).to_string()).unwrap();
+    octosense_appstore::set_data_root(root.clone());
+    // Normal host registration, without an app window or a prepared peer.
+    crate::apps::system_card_apps();
+    for owner in ["os.photos", "os.news", "os.youtube"] {
+        assert!(!super::with_relay(|r| r.catalog.knows(owner)), "{owner} was cold");
+        assert_eq!(crate::agents::prepared(owner), None);
+    }
+    super::script_apps::load(&entry).unwrap();
+    for (caller, owner, expected) in [
+        ("os.photos", "os.news", &["news.list", "news.read", "news.research", "news.research_result", "news.publish_card"][..]),
+        ("os.news", "os.youtube", &["youtube.search", "youtube.read", "youtube.recommend", "youtube.publish"][..]),
+        ("os.youtube", "os.photos", &["photos.list", "photos.read", "photos.collections", "photos.publish_card"][..]),
+    ] {
+        let offered: BTreeSet<String> = super::with_relay(|r| r.catalog.declarations(caller, false))
+            .iter().filter(|d| d["app"] == owner)
+            .map(|d| d["name"].as_str().unwrap().to_string()).collect();
+        assert_eq!(offered, expected.iter().map(|name| name.to_string()).collect(), "{caller} -> {owner}");
+        assert!(super::with_relay(|r| r.has_executor(owner)), "cold {owner} executor");
+    }
+    let mut world = World::new(FixedDevMode::off());
+    let run = |world: &mut World, id: &str, caller: &str, owner: &str, name: &str, args: Value| {
+        let mut request = call(id, name, &format!("card.{caller}"));
+        request.app = owner.into(); request.args = args; request.risk = "read".into();
+        request.account = Some("device".into());
+        let (reply, sent) = reply(id);
+        super::with_relay(|r| r.handle(Event::Call { call: request, reply }, world));
+        for _ in 0..100 {
+            super::script_apps::poll();
+            if !sent.lock().unwrap().is_empty() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let replies = sent.lock().unwrap();
+        assert_eq!(replies.len(), 1, "{id} answered once");
+        replies[0].clone()
+    };
+    let read = run(&mut world, "photos-news", "os.photos", "os.news", "news.read", json!({"id":"fixture-story"}));
+    assert_eq!(read["data"]["item"]["title"], "Fixture park opens", "{read}");
+    let read = run(&mut world, "news-youtube", "os.news", "os.youtube", "youtube.read", json!({"id":"fixture1234"}));
+    assert_eq!(read["data"]["video"]["title"], "Fictional cached music", "{read}");
+    let read = run(&mut world, "youtube-photos", "os.youtube", "os.photos", "photos.collections", json!({}));
+    assert_eq!(read["data"]["albums"][0]["title"], "Fixture collection", "{read}");
+    assert_eq!(read["data"]["favorites"], json!(["coast"]));
+    // Loading the entire owner graph must not turn grants into transitive
+    // permissions, expose owner-only settings/UI routes, or accept scope args.
+    for (id, caller, owner, name, args, kind) in [
+        ("no-transitive", "os.photos", "os.youtube", "youtube.read", json!({"id":"fixture1234"}), "not_granted"),
+        ("no-private-settings", "os.news", "os.youtube", "youtube.preferences", json!({"enabled":true}), "not_granted"),
+        ("no-ui-method", "os.youtube", "os.photos", "photos.view", json!({}), "not_granted"),
+        ("no-scope-injection", "os.youtube", "os.photos", "photos.read", json!({"id":"coast","account":"other"}), "invalid_args"),
+    ] {
+        let refused = run(&mut world, id, caller, owner, name, args);
+        assert_eq!(refused["error"]["kind"], kind, "{refused}");
+    }
+    world.consent = false;
+    let refused = run(&mut world, "consent-revoked", "os.youtube", "os.photos", "photos.collections", json!({}));
+    assert_eq!(refused["error"]["kind"], "consent_pending", "{refused}");
+    world.consent = true;
+    // Cancel before the App Hub reply queue is pumped. The late owner reply
+    // must not reach the caller, including for a cold cross-app request.
+    let mut request = call("cancel-owner-read", "photos.collections", "card.os.youtube");
+    request.app = "os.photos".into(); request.args = json!({});
+    let (reply, sent) = reply("cancel-owner-read");
+    super::with_relay(|r| {
+        r.handle(Event::Call { call: request, reply }, &mut world);
+        assert_eq!(super::script_apps::waiting(), 1, "the owner executed before cancellation");
+        assert!(sent.lock().unwrap().is_empty(), "the owner reply is still queued");
+        r.handle(Event::Cancel { call_id:"cancel-owner-read".into(), reason:"test cancellation".into() }, &mut world);
+    });
+    let before = sent.lock().unwrap().clone();
+    super::script_apps::poll();
+    assert_eq!(*sent.lock().unwrap(), before, "cancelled owner reply was not delivered late");
+    assert_eq!(super::script_apps::waiting(), 0);
+    assert!(world.links.is_empty() && world.link_calls.is_empty() && world.bus.is_empty());
+    for owner in ["os.photos", "os.news", "os.youtube"] {
+        assert_eq!(crate::agents::prepared(owner), None, "business calls never prepared {owner}'s agent");
+    }
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
 fn admitted_mail_calendar_grants_route_to_the_real_calendar_store() {
     use super::script_apps::{self, HostServiceExecutor};
     let calendar_dir = script_apps::tests::stamped_bundle("calendar", "mail-cross-app", |_, _| {});

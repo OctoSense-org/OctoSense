@@ -16,6 +16,7 @@ How these decisions fit together in the code on `main`, and which parts are stil
 | [0006](0006-app-studio-on-the-phone.md) | App Studio on the phone | Accepted |
 | [0007](0007-composable-mail-action-cards.md) | Composable Mail cards with editing, chat and approved actions | Implementation in progress; phone acceptance pending |
 | [0008](0008-quiet-android-mail-jobs.md) | Quiet Android Mail jobs and native card notifications | Implemented in this change; device acceptance in progress |
+| [0009](0009-contextual-app-cards-and-private-preferences.md) | Contextual News, Photos and YouTube cards, cross-app APIs and private preference memory | Accepted; implemented in this change; acceptance recorded separately |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 

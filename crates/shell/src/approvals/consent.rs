@@ -32,7 +32,7 @@ pub struct AgentSummary {
 }
 
 impl AgentSummary {
-    /// From a script app's `manifest.json` (its `capabilities` and
+    /// From a script app's admitted `manifest.json` (its `capabilities` and
     /// `storage`) or a `native-apps.json` entry (`agent` and `storage`),
     /// with the grants the person gave at install and the model's place.
     pub fn from_manifest(app: &str, name: &str, manifest: &Value, granted: &[String], model: &str) -> AgentSummary {
@@ -59,6 +59,18 @@ impl AgentSummary {
         uses.dedup();
         if uses.is_empty() {
             uses.push(format!("{name}'s own tools"));
+        }
+        // Script apps' dotted agent.tools entries are the cross-app requests
+        // admitted by App Hub. They are not octos capability names, so the
+        // capability-only `granted` list must not hide them from first use.
+        // This is disclosure only: the relay still checks the exact caller
+        // grant, owner's shareability and consent on every tool execution.
+        for tool in manifest["agent"]["tools"].as_array().into_iter().flatten()
+            .filter_map(Value::as_str).filter(|tool| tool.contains('.')) {
+            let description = describe_capability(tool);
+            if !uses.contains(&description) {
+                uses.push(description);
+            }
         }
         // A script app's agent that keeps App Hub's one kernel tool for
         // contained apps (`ask_user_question`), in the store's words.
@@ -240,4 +252,42 @@ pub fn granted(app: &str) -> bool {
 /// An app asks for its agent; the first-use sheet shows if undecided.
 pub fn ask(summary: AgentSummary) -> State {
     super::consent_ask(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn first_use_discloses_contextual_apps_exact_cross_app_tools() {
+        for (id, name, manifest, expected) in [
+            ("os.photos", "Photos", include_str!("../../../../apps/photos/bundle/manifest.json"),
+                &["news.list", "news.read", "news.research", "news.research_result", "news.publish_card"][..]),
+            ("os.news", "News", include_str!("../../../../apps/news/bundle/manifest.json"),
+                &["youtube.search", "youtube.read", "youtube.recommend", "youtube.publish"][..]),
+            ("os.youtube", "YouTube", include_str!("../../../../apps/youtube/bundle/manifest.json"),
+                &["photos.list", "photos.read", "photos.collections", "photos.publish_card"][..]),
+        ] {
+            let manifest = serde_json::from_str(manifest).unwrap();
+            // AgentApp.octos is empty for these tool-only bundles. Their
+            // admitted grants still appear on the actual queued consent sheet.
+            let summary = AgentSummary::from_manifest(id, name, &manifest, &[], "Fixture provider");
+            let mut consent = ConsentStore::memory();
+            assert_eq!(consent.ask(summary, false), State::Undecided);
+            let prompt = consent.prompt().unwrap();
+            let disclosed: Vec<_> = prompt.uses.iter()
+                .filter_map(|usage| usage.strip_prefix("Another app's tool: ")).collect();
+            assert_eq!(disclosed, expected, "{id} disclosure");
+            assert_eq!(prompt.model, "Fixture provider");
+            assert!(!consent.granted(id, false), "disclosure never grants access");
+        }
+    }
+
+    #[test]
+    fn cross_app_disclosure_deduplicates_without_inventing_plain_tool_grants() {
+        let manifest = json!({"agent":{"tools":["photos.read","photos.read","ask_user_question","shell"]}});
+        let summary = AgentSummary::from_manifest("os.youtube", "YouTube", &manifest, &[], "m");
+        assert_eq!(summary.uses, ["YouTube's own tools", "Another app's tool: photos.read", "Ask you questions"]);
+    }
 }

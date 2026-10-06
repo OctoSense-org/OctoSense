@@ -1,0 +1,32 @@
+# ledger youtube.recommendation@1.0.0
+# level: L0
+# profile: ui/l0
+# Host-owned presentation of a real YouTube search result. Native Card/Chat
+# belongs to the shell; this template does not fabricate another chat surface.
+source video sys.dataset(fields: [title, subtitle, summary, as_of, metric1_label, metric1_value, pick1_source, url1])
+source destination sys.link(fields: [url])
+event play { destination: set($value) }
+copy app { class: vocabulary, en: "YouTube", zh: "YouTube" }
+copy play { class: vocabulary, en: "Play in YouTube", zh: "在 YouTube 播放" }
+view root Surface(pad: .page) {
+  Col(gap: 12) {
+    Row(gap: 8, align: .center) {
+      Icon(name: .play, size: .row)
+      TextCaption(text: copy.app, width: .fill)
+      TextCaption(text: video.as_of)
+    }
+    TextTitle(text: video.title, width: .fill)
+    Row(gap: 12, align: .center) {
+      Thumb(src: video.pick1_source)
+      Col(gap: 6, width: .fill) {
+        TextRow(text: video.subtitle, width: .fill)
+        Row(gap: 6) {
+          TextCaption(text: video.metric1_label)
+          TextCaption(text: video.metric1_value)
+        }
+      }
+    }
+    Chip(text: copy.play, on_tap: play, value: video.url1, tone: .primary)
+    TextBody(text: video.summary, width: .fill)
+  }
+}

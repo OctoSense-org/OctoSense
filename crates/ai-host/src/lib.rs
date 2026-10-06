@@ -77,6 +77,10 @@ pub use qr::{ImageSource, PickError, QrImport, DROP_APP};
 /// The app-peers contract (for a shell's module-host tests: `Deployment`,
 /// `SettingsEntry`, `injection`).
 pub use octosense_app_peers as app_peers;
+/// Host-only schema-checked completions, sharing the configured providers and
+/// accounting ledger. Script apps still enter through their capability gate.
+#[cfg(feature = "llm")]
+pub use octosense_llm_service::complete as model_complete;
 /// The kernel service itself, where this build hosts one.
 #[cfg(kernel)]
 pub use octosense_kernel as kernel;

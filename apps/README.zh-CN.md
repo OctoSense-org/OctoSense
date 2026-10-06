@@ -24,7 +24,7 @@ OctoSense-System-Apps 仓库（已归档）。
   放到 glance 屏幕上的 `notify` 和 `agenda`。日历同时随桌面与手机 Shell 发布
   （`desktop/system-apps.json` 与 `phone/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
-  Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
+  Agent 的新闻读取、卡片发布及有预算限制的 octos 研究工具。参见 [News 卡片](news/README.zh-CN.md)。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
@@ -60,12 +60,12 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；Shell 通知服务的 `photos.notify`（原图使用资源挂载） |
+| [Photos](photos/README.zh-CN.md) | `os.photos` | 示例图库、已保存相簿与收藏、AI 回忆、已选照片 Glance 卡片 | `storage`、`glance`、`model`、`photos` | 无（宿主调用模型） | 专用 `photos` 宿主服务；回忆使用 `model.complete` |
 | [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；搜索和路线地图使用 makepad 预先烘焙的世界地图（`makepad.nl`），驾驶地图仍通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
 | [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
-| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
+| [YouTube](youtube/README.zh-CN.md) | `os.youtube` | 公共搜索、主动开启的分时音乐与 Glance 卡片；点击进入既有 WebReader 播放器 | `storage`、`net`、`glance`、`youtube` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | 使用 Makepad 平台网络的专用 `youtube` 宿主服务 |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
@@ -78,8 +78,8 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 ### 状态与已知问题
 
 - **YouTube**：在 OnePlus 6 上测试（2026-09-27），搜索、结果、播放和播放记录都正常；
-  关闭播放器会结束页面（makepad#43，已在运行时中）。播放打开的是 YouTube 移动版观看页，
-  它会静音自动播放，并显示自己的“Open App”提示。搜索读取 YouTube 的搜索结果页，依赖其布局。
+  关闭播放器会结束页面（makepad#43，已在运行时中）。当时打开 YouTube 移动版观看页，
+  会静音自动播放并显示“Open App”提示。当前点击播放保留移动版观看地址；本次结果见[卡片验收](../docs/testing/contextual-app-cards-2026-10-06.zh-CN.md)。搜索读取 YouTube 的搜索结果页，依赖其布局。
 - **Camera**：在 OnePlus 6 测试中（2026-09-25），Camera 能拍照并在后台释放
   相机，但实时预览是纯黑的，尚未解决。桌面构建没有相机，Android 模拟器拒绝
   提供相机，因此其他环境下拍摄未经测试。
@@ -406,10 +406,12 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 
 | 应用 | `manifest.json` | `tools.json` | 卡片 |
 | --- | --- | --- | --- |
-| 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
+| 新闻 | `agent`、`glance`、有限 `research` | `news.list/read`、`news.publish_card/research/research_result`；私有通知 | 新闻与带引用的研究，原生 Card/Chat |
 | 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.draft`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`、`mail.propose_reply`、`mail.suggest_reply`、`mail.propose_send`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
-| 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
+| 照片 | `agent`、`glance`、`photos` | `photos.list/read/collections/publish_card`；私有通知 | 示例照片集合、打开照片、原生 Card/Chat |
+| YouTube | `agent`、`glance`、`youtube` | `youtube.search/read/recommend/publish`；私有偏好及通知 | 真实搜索视频、播放、原生 Card/Chat |
+| 地图、相机 | `agent`、`glance` | `maps.notify`、`camera.notify` | Shell 通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
 **邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审核。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
@@ -450,8 +452,8 @@ Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Cal
   （[`../crates/shell/resources/glance/notice.card`](../crates/shell/resources/glance/notice.card)，
   由 [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs) 填充），带有应用的
   图标和名称、时间，以及 Agent 写的标题（最多 80 个字符）和正文（最多 600 个字符）；同一个
-  `card_id` 会替换该应用之前的通知。邮件和新闻的服务把 `notify` 交给 Shell；照片、地图、YouTube
-  和相机没有自己的服务，由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历
+  `card_id` 会替换该应用之前的通知。邮件和新闻的服务把 `notify` 交给 Shell；照片和 YouTube 的专用服务也委派给公共通知渲染器；
+  地图和相机直接由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历
   自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
   （应用需要 `glance` 权限）。这些固定模板工具由模型提供文字；`mail.publish_card`
   另接收经宿主校验的模型 L0 源码。
@@ -591,3 +593,7 @@ AppCard 来自 OctoSense-org/OctoSense-AppCard（`d0a836b8`），它是从
 OctoScript-App-Design-Flow 的 `app/` 在 `cbbda4da` 拆分出来的。
 
 Apache-2.0（[LICENSE](LICENSE)）。第三方组件见 [NOTICE](NOTICE)。
+
+Photos 和 YouTube 的资料库及搜索界面需要 OctoSense 专用宿主服务；单独运行 `card-host` 无法提供这些服务。
+
+[情境卡片指南](../docs/contextual-app-cards.zh-CN.md) 说明新闻研究、照片集合、分时音乐、跨应用授权及私有偏好记忆。

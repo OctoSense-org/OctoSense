@@ -169,6 +169,7 @@ pub fn load(app: &str) -> Result<(), String> {
 /// `app`'s admitted bundle: a system app's packed bundle, or an installed
 /// one, with App Hub's apps root.
 fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
+    crate::apps::register_agent_tool_offers();
     // Never a native app's tools, executor or grants (ADR 0004 §3, §7).
     crate::apps::check_script_app_id(app)?;
     let root = octosense_appstore::data_root_if_set().ok_or("App Hub has no apps root yet")?;
@@ -351,13 +352,13 @@ pub(crate) mod tests {
         let dir = stamped_bundle("news", "tools", |_, _| {});
         let loaded = from_bundle(&dir).unwrap();
         let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert_eq!(names, ["news.list", "news.read", "news.notify"]);
+        assert_eq!(names, ["news.list", "news.read", "news.notify", "news.publish_card", "news.research", "news.research_result"]);
         let (read, notify) = loaded.tools.split_at(2);
         assert!(read.iter().all(|t| t["risk"] == "read" && t["shareable"] == true && t.get("implemented_by").is_none()));
         assert_eq!((notify[0]["risk"].as_str(), notify[0]["shareable"].as_bool()), (Some("act"), Some(false)), "News's notices are its own agent's");
         assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
-        assert_eq!(loaded.host_service_tools.len(), 3);
-        assert!(["news", "glance"].iter().all(|f| loaded.families.contains(*f)), "News is granted its service and glance");
+        assert_eq!(loaded.host_service_tools.len(), 6);
+        assert!(["news", "glance", "research"].iter().all(|f| loaded.families.contains(*f)), "News is granted its service, glance and bounded research");
         assert_eq!(loaded.generic, ["ask_user_question"], "News's agent may ask the person");
         // A tampered bundle is refused (App Hub's digest check).
         std::fs::write(dir.join("tools.json"), "{}").unwrap();
@@ -429,21 +430,19 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Photos, Maps, YouTube and Camera each give their agent one tool,
-    /// `<namespace>.notify`, on their own namespace: no service of their
-    /// own answers it, so the shell's notice service does
-    /// (glance_notice.rs). Each is granted `glance`, and nothing else new
-    /// (Photos' `model` is for its Memories, not for the agent).
+    /// Every app retains its notice tool. Photos and YouTube also declare
+    /// actual app-owned business tools rather than only generic notices.
     #[test]
     fn photos_maps_youtube_and_camera_offer_notify_from_their_bundles() {
-        for (app, kept) in [("photos", &["storage", "model"][..]), ("maps", &["storage", "net", "location"]), ("youtube", &["storage", "net"]), ("camera", &["storage", "camera", "microphone", "library"])] {
+        for (app, kept) in [("photos", &["storage", "model", "photos"][..]), ("maps", &["storage", "net", "location"]), ("youtube", &["storage", "net", "youtube"]), ("camera", &["storage", "camera", "microphone", "library"])] {
             let dir = stamped_bundle(app, "notify", |_, _| {});
             let loaded = from_bundle(&dir).unwrap();
             let _ = std::fs::remove_dir_all(dir);
             let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
-            assert_eq!(names, [format!("{app}.notify")], "{app}");
-            assert_eq!(loaded.host_service_tools.len(), 1, "{app}");
-            let tool = &loaded.tools[0];
+            assert!(names.contains(&format!("{app}.notify").as_str()), "{app}");
+            let expected = match app { "photos" => 5, "youtube" => 6, _ => 1 };
+            assert_eq!(loaded.host_service_tools.len(), expected, "{app}");
+            let tool = loaded.tools.iter().find(|tool| tool["name"] == format!("{app}.notify")).unwrap();
             assert!(tool["input_schema"]["type"] == "object" && tool["output_schema"]["type"] == "object", "{app}: octos takes object schemas only");
             assert_eq!((tool["risk"].as_str(), tool["shareable"].as_bool(), tool["background"].as_bool()), (Some("act"), Some(false), Some(true)), "{app}");
             let mut granted: Vec<&str> = kept.to_vec();
@@ -479,7 +478,7 @@ pub(crate) mod tests {
     #[test]
     fn a_script_apps_agent_block_splits_kernel_tools_from_other_apps_tools() {
         let dir = stamped_bundle("news", "agent", |_, m| {
-            m["agent"] = json!({"profile": "read-only", "tools": ["ask_user_question", "mail.send"], "model": {"needs": ["tool_calling"]}});
+            m["agent"] = json!({"profile": "read-only", "tools": ["ask_user_question", "mail.send"], "instructions":"AGENT.md", "model": {"needs": ["tool_calling"]}});
         });
         let loaded = from_bundle(&dir).unwrap();
         assert_eq!(loaded.generic, ["ask_user_question"]);
@@ -488,7 +487,7 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(dir);
         for tool in ["web_search", "shell", "read_file"] {
             let dir = stamped_bundle("news", tool, |_, m| {
-                m["agent"] = json!({"profile": "read-only", "tools": ["ask_user_question", tool], "model": {"needs": ["tool_calling"]}});
+                m["agent"] = json!({"profile": "read-only", "tools": ["ask_user_question", tool], "instructions":"AGENT.md", "model": {"needs": ["tool_calling"]}});
             });
             let refused = from_bundle(&dir).unwrap_err();
             assert!(refused.contains("may keep only ask_user_question"), "{tool}: {refused}");

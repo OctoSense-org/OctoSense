@@ -26,7 +26,8 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   (`desktop/system-apps.json` and `phone/system-apps.json`).
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
-  and `news.notify` (the shell draws the notice).
+  and `news.notify`, plus stored-story cards and bounded octos research.
+  See [News cards](news/README.md).
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
@@ -68,12 +69,12 @@ OctoScript-App-Design-Flow:
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; `photos.notify` via the shell notice service (full-size photos use the asset mount) |
+| [Photos](photos/README.md) | `os.photos` | Sample library, saved albums/favorites, AI Memories and selected-photo Glance cards | `storage`, `glance`, `model`, `photos` | none (the host calls the model) | Dedicated `photos` host service; `model.complete` for Memories |
 | [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the search and route map draws makepad's pre-baked world map (`makepad.nl`), the drive maps still read OpenStreetMap through Overpass | `storage`, `net`, `location`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
-| [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
+| [YouTube](youtube/README.md) | `os.youtube` | Public search, opt-in music slots and Glance cards; tap to open the existing WebReader player | `storage`, `net`, `glance`, `youtube` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | Dedicated `youtube` host service using Makepad platform networking |
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
@@ -90,8 +91,9 @@ reaches only the hosts the manifest lists.
 
 - **YouTube**: on the OnePlus 6 (2026-09-27) search, results, playback and
   history worked; closing the player ends the page (makepad#43, in the
-  runtime). Playback opens YouTube's mobile watch page, which autoplays muted
-  and shows its own "Open App" prompt. Search reads YouTube's results page and
+  runtime). That earlier build opened YouTube's mobile watch page, which autoplayed muted
+  and showed its own "Open App" prompt. Current tap-to-play preserves that mobile watch route; see the
+  [current card validation](../docs/testing/contextual-app-cards-2026-10-06.md). Search reads YouTube's results page and
   depends on its layout.
 - **Camera**: on the OnePlus 6 test run (2026-09-25) Camera captured a photo
   and released the camera in the background, but the live preview drew pure
@@ -474,10 +476,12 @@ model lane and tools. Which system apps have one, and how
 
 | App | `manifest.json` | `tools.json` | Cards |
 | --- | --- | --- | --- |
-| News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
+| News | `agent`, `glance`, bounded `research` | `news.list/read`, `news.publish_card/research/research_result`; private `news.notify` | stored story + cited research, native Card/Chat |
 | Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.draft` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event`, `mail.propose_reply`, `mail.suggest_reply`, `mail.propose_send` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
-| Photos, Maps, YouTube, Camera | `agent` block, `glance` | `photos.notify`, `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
+| Photos | `agent`, `glance`, `photos` | `photos.list/read/collections/publish_card`; private notice | sample photo selection, Open Photos, native Card/Chat |
+| YouTube | `agent`, `glance`, `youtube` | `youtube.search/read/recommend/publish`; private preferences and notice | real searched video, Play, native Card/Chat |
+| Maps, Camera | `agent`, `glance` | `maps.notify`, `camera.notify` | shell notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
 **Mail card reply modes.** The system agent can provision automatic drafts for replyable important mail and Compose reply on request for automated/no-reply mail. The host adds Compose reply to informational incoming-email cards, verifies the original message and asks the Mail agent to create a draft. The same card becomes Email/Chat with saved editing and host review. See [Mail events](../docs/mail-agent-events.md).
@@ -539,8 +543,8 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   with the app's icon and name, the time, and the agent's title (at most 80
   characters) and text (at most 600); the same `card_id` replaces the app's
   earlier notice. Mail's and News's services hand `notify` to the shell;
-  Photos, Maps, YouTube and Camera have no service of their own, so the
-  shell's notice service answers it. `calendar.notify` and
+  Photos and YouTube delegate notices from their own host services; Maps and
+  Camera use the shell's notice service directly. `calendar.notify` and
   `calendar.agenda` fill Calendar's own event and agenda cards. Every card
   is published with `notify` through the shell's `glance` service as the
   app (the app needs the `glance` capability). These fixed-template tools take
@@ -705,3 +709,5 @@ OctoScript-App-Design-Flow's `app/` at `cbbda4da`.
 
 Apache-2.0 ([LICENSE](LICENSE)). Third-party components are listed in
 [NOTICE](NOTICE).
+
+See [contextual cards](../docs/contextual-app-cards.md) for News research, Photos collections, music slots, cross-app grants, and private preference memory.

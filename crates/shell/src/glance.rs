@@ -629,6 +629,13 @@ impl GlanceStore {
         self.cards.iter().find(|c| c.expires_ms > now_ms && c.key() == key).cloned()
     }
 
+    fn require_current(&self, expected: &GlanceCard, now_ms: u64) -> Result<(), String> {
+        if self.card(&expected.key(), now_ms).as_ref() != Some(expected) {
+            return Err("This card was dismissed, expired or replaced".into());
+        }
+        Ok(())
+    }
+
     pub fn len(&self) -> usize {
         self.cards.len()
     }
@@ -733,8 +740,16 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
 }
 
 fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crate::mail_card::Binding>) -> Result<Value, String> {
+    request_bound_current(caller, service, args, mail, None)
+}
+
+fn request_bound_current(caller: &Caller, service: &str, args: &Value, mail: Option<crate::mail_card::Binding>, expected: Option<&GlanceCard>) -> Result<Value, String> {
     let gate = crate::mail_card::publication_guard();
     let now = now_ms();
+    if let Some(expected) = expected {
+        if !expected.account_valid() { return Err("This card's account changed".into()); }
+        with_store(|store| store.require_current(expected, now))?;
+    }
     let method = service.strip_prefix("glance.").unwrap_or(service);
     caller.may_use()?;
     if method == "withdraw" {
@@ -810,6 +825,8 @@ pub fn expire_now() {
     crate::mail_card::restore_publications();
     #[cfg(any(feature = "app-hub", native_mobile))]
     restore_calendar_publications();
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    restore_contextual_publications();
     if with_store(|store| {
         let before = store.len();
         store.expire(now_ms());
@@ -952,6 +969,16 @@ pub fn publish_for(app: &str, args: &Value) -> Result<Value, String> {
     request(&caller, "glance.publish", args)
 }
 
+/// Replace precisely the live publication a background job started from.
+/// The existing publication guard makes dismissal/replacement atomic with this
+/// check. An old completion cannot resurrect or overwrite a newer workspace.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn publish_for_if_current(expected: &GlanceCard, args: &Value) -> Result<Value, String> {
+    if args["card_id"].as_str() != Some(expected.card_id.as_str()) { return Err("Publication identity changed".into()); }
+    let caller = Caller::Contained { app: expected.app.clone(), granted: crate::host_tools::script_apps::grants(&expected.app, "glance") };
+    request_bound_current(&caller, "glance.publish", args, None, Some(expected))
+}
+
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn withdraw_for(app: &str, id: &str) -> Result<(), String> {
     let caller = Caller::Contained {app:app.into(),granted:crate::host_tools::script_apps::grants(app,"glance")};
@@ -960,11 +987,59 @@ pub fn withdraw_for(app: &str, id: &str) -> Result<(), String> {
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn calendar_dismissed(card: &GlanceCard, dismissed: bool) -> Result<(), String> {
-    if card.app != "os.calendar" { return Ok(()); }
     if let Some(host) = crate::app_storage::host() {
-        octosense_calendar_service::set_dismissed(&host.layout().apps_root().join(".host"),&card.card_id,dismissed)?;
+        let root = host.layout().apps_root().join(".host");
+        match card.app.as_str() {
+            "os.calendar" => octosense_calendar_service::set_dismissed(&root,&card.card_id,dismissed)?,
+            "os.photos" => crate::photos::set_dismissed(&root,&card.card_id,dismissed)?,
+            "os.youtube" => crate::youtube::set_dismissed(&root,&card.card_id,dismissed)?,
+            "os.news" => crate::news_cards::set_dismissed(&root,&card.card_id,dismissed)?,
+            _ => {},
+        }
     }
     Ok(())
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn restore_contextual_publications() {
+    static RESTORED: std::sync::OnceLock<std::sync::Mutex<std::collections::BTreeSet<(std::path::PathBuf, &'static str)>>> = std::sync::OnceLock::new();
+    let Some(host) = crate::app_storage::host() else { return; };
+    let apps_root = host.layout().apps_root();
+    // Storage can be installed before App Hub and its system-app catalog.
+    // Waiting for those cheap readiness signals is not a failed admission:
+    // do not spend the 30-second retry window before a bundle can be checked.
+    if octosense_appstore::data_root_if_set().as_deref() != Some(apps_root) { return; }
+    let root = apps_root.join(".host");
+    for app in ["os.news", "os.photos", "os.youtube"] {
+        if octosense_appstore::system::system_app(app).is_none() { continue; }
+        let key = (root.clone(), app);
+        let seen = RESTORED.get_or_init(Default::default);
+        if seen.lock().unwrap_or_else(|e| e.into_inner()).contains(&key) { continue; }
+        // This function runs during drawing: never hash packed bundles on
+        // every frame, and throttle a failed startup while services settle.
+        static RETRY: std::sync::OnceLock<std::sync::Mutex<std::collections::BTreeMap<(std::path::PathBuf, &'static str), u64>>> = std::sync::OnceLock::new();
+        let now = now_ms();
+        {
+            let mut retry = RETRY.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+            if retry.get(&key).is_some_and(|at| now < *at) { continue; }
+            retry.insert(key.clone(),now.saturating_add(30_000));
+        }
+        if !crate::host_tools::script_apps::grants(app,"glance") { continue; }
+        if !seen.lock().unwrap_or_else(|e| e.into_inner()).insert(key.clone()) { continue; }
+        let result = match app {
+            "os.news" => crate::news_cards::restore(&root),
+            "os.photos" => crate::photos::restore(&root),
+            _ => crate::youtube::restore(&root),
+        };
+        match result {
+            Ok(count) if count > 0 => makepad_widgets::log!("glance: {app} restored {count} saved cards"),
+            Ok(_) => {},
+            Err(error) => {
+                seen.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
+                makepad_widgets::log!("glance: {app} restoration deferred: {error}");
+            }
+        }
+    }
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -1307,6 +1382,21 @@ mod tests {
     fn args(card_id: &str) -> Value {
         let (source, data) = demo_digest();
         json!({"card_id": card_id, "title": "News digest", "source": source, "data": data, "open": {"app": "news"}})
+    }
+
+    #[test]
+    fn background_completion_requires_the_same_live_publication() {
+        let mut store=GlanceStore::default();
+        let args=args("background-result");
+        store.publish(&news(),&args,1_000).unwrap();
+        let original=store.card("os.news/background-result",1_000).unwrap();
+        assert!(store.require_current(&original,2_000).is_ok());
+        store.take(&original.key());
+        assert!(store.require_current(&original,2_000).is_err(),"dismissal invalidates completion");
+        store.publish(&news(),&args,3_000).unwrap();
+        assert!(store.require_current(&original,3_000).is_err(),"a new publication is not the old job's target");
+        let current=store.card(&original.key(),3_000).unwrap();
+        assert!(store.require_current(&current,current.expires_ms).is_err(),"expiry invalidates completion");
     }
 
     #[test]

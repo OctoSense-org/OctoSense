@@ -385,6 +385,10 @@ pub struct L0Session {
     /// Navigation is limited to this publication’s declared own-app target.
     open_url: Option<String>,
     open_requested: bool,
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    news_research: Option<crate::news_cards::ResearchAction>,
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    research_requested: bool,
     local_changes: bool,
     /// The chat generation the card was last lowered at.
     chat_generation: u64,
@@ -410,6 +414,40 @@ fn bounded_context(value: serde_json::Value) -> serde_json::Value {
     else { serde_json::json!({"omitted": "Exceeds card context limit"}) }
 }
 
+/// Keep the admitted publication identity even when its research/photo data is
+/// too large for a turn. App tools can retrieve the complete owner-held record.
+fn workspace_publication(card: &crate::glance::GlanceCard) -> serde_json::Value {
+    let mut publication=serde_json::json!({
+        "publisher":card.app,"card_id":card.card_id,"title":card.title,"summary":card.summary,
+        "published_ms":card.published_ms,"open":{"app":card.open_app,"route":card.route},
+        "data":card.l0.as_ref().map(|l|&l.data),
+    });
+    if serde_json::to_vec(&publication).is_ok_and(|bytes|bytes.len()<=12*1024) {return publication;}
+    let original=publication["data"].clone();
+    let mut data=serde_json::json!({});
+    let valid_id=|s:&str| !s.is_empty() && s.len()<=64 && s.bytes().all(|b|b.is_ascii_alphanumeric() || matches!(b,b'_'|b'-'));
+    match card.app.as_str() {
+        "os.news" => {
+            if let Some(id)=original["story"]["id"].as_str().filter(|s|crate::news_cards::valid_story_id(s)) {
+                data["story"]=serde_json::json!({"id":id});
+            }
+        },
+        "os.photos" => {
+            let ids:Vec<_>=original["photo_context"]["ids"].as_array().into_iter().flatten().filter_map(|v|v.as_str().filter(|s|valid_id(s))).take(32).collect();
+            data["photo_context"]=serde_json::json!({"ids":ids});
+            if original["photo_context"]["source"]=="sample" {data["photo_context"]["source"]=serde_json::json!("sample");}
+            if let Some(id)=card.route.as_deref().and_then(|r|r.strip_prefix("selection/")).filter(|s|valid_id(s)) {data["selection"]=serde_json::json!({"id":id});}
+        },
+        "os.youtube" => {
+            if let Some(id)=card.route.as_deref().and_then(|r|r.strip_prefix("video/")).filter(|s|s.len()==11 && valid_id(s)) {data["video"]=serde_json::json!({"id":id});}
+        },
+        _ => {},
+    }
+    publication["data"]=data;
+    publication["data_omitted"]=serde_json::json!("Large display data omitted; use the publishing app's tools with these IDs for complete content.");
+    publication
+}
+
 fn attach_mail_publication(binding: &mut crate::glance_chat::ContextBinding, source: &str, data: &serde_json::Value) {
     let publication = bounded_context(serde_json::json!({"source":source, "data":data}));
     binding.source_message["publication"] = publication;
@@ -427,10 +465,7 @@ impl WorkspaceChat {
         let thread = thread[..53].to_string();
         let declaration = format!("source workspace_conversation sys.chat(app: {}, thread: {}, fields: [entries, id, role, text])\nview root Surface {{ TextBody(text: \"\") }}",
             serde_json::to_string(&card.app).unwrap(), serde_json::to_string(&thread).unwrap());
-        Self { account, thread, declaration, publication: bounded_context(serde_json::json!({
-            "publisher": card.app, "card_id": card.card_id, "title": card.title, "summary": card.summary,
-            "published_ms": card.published_ms, "data": card.l0.as_ref().map(|l| &l.data),
-        })) }
+        Self { account, thread, declaration, publication: workspace_publication(card) }
     }
     fn binding(&self, state: &octoscript_ui_l0::InstanceStore) -> crate::glance_chat::ContextBinding {
         crate::glance_chat::ContextBinding {
@@ -491,6 +526,8 @@ impl L0Session {
         }));
         session.opening_account = card.account.clone();
         session.open_url = Some(publication_open_url(card));
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        { session.news_research = crate::news_cards::ResearchAction::from_card(card); }
         if session.mail.is_none() && !session.reads_chat && crate::agents::all().iter().any(|agent| agent.id == card.app) {
             if let Some(account) = card.account.clone() {
                 session.workspace_chat = Some(WorkspaceChat::new(card, account));
@@ -611,6 +648,10 @@ impl L0Session {
             opening_account: None,
             open_url: None,
             open_requested: false,
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            news_research: None,
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            research_requested: false,
             local_changes: false,
             chat_generation: crate::glance_chat::generation(),
             reads_chat: crate::glance_chat::reads_chat(&l0.source),
@@ -666,6 +707,16 @@ impl L0Session {
                     relower |= outcome.relower;
                 }
                 Err(e) => log!("{who} tap refused: {e}"),
+            }
+        }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if std::mem::take(&mut self.research_requested) {
+            if let Some(action) = self.news_research.clone() {
+                if let Err(error) = crate::news_cards::research_from_card(action) {
+                    self.data["story"]["status"] = serde_json::json!("failed");
+                    self.data["story"]["coverage"] = serde_json::json!(error);
+                }
+                relower = true;
             }
         }
         if !relower {
@@ -725,6 +776,12 @@ impl L0Session {
             return;
         }
         if write.helper == "sys.link" {
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            if write.op == "set" && origin.is_some() && !from_field && self.account_valid()
+                && self.news_research.as_ref().is_some_and(|action| action.accepts(&write.value)) {
+                self.research_requested = true;
+                return;
+            }
             // A declared control may open only the destination bound at publication.
             // Arbitrary URLs, app IDs, field edits and unbound sessions are inert.
             if write.op == "set" && origin.is_some() && !from_field && self.account_valid()
@@ -920,7 +977,9 @@ script_mod! {
     }
     // The card window's frame: a card taller than the window scrolls.
     mod.widgets.GlanceSheetFrame = ScrollYView {
-        width: Fill height: Fill flow: Down
+        // ScrollYView inherits unclipped ViewBase in the pinned renderer.
+        // Long/updated card content must never paint over the workspace tabs.
+        width: Fill height: Fill flow: Down clip_x: true clip_y: true
         card := Splash { width: Fill height: Fit }
     }
 }
@@ -1157,6 +1216,9 @@ pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSe
         }
     };
     let mut settings = policy.isolate_settings(&root);
+    if app == "os.photos" {
+        if let Some(host) = crate::photos::asset_host() { settings.hosts.push(host); }
+    }
     settings.host_prompts = false;
     std::fs::create_dir_all(&settings.jail_root).map_err(|e| format!("the app's storage: {e}"))?;
     Ok(settings)
@@ -1579,6 +1641,55 @@ mod tests {
         let mut unbound = L0Session::new(&card.app, card.l0.as_ref().unwrap());
         unbound.tap(&target, None).unwrap();
         assert!(!unbound.open_requested, "source alone confers no navigation binding");
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn native_news_research_tap_is_a_bound_action_not_authored_human_chat() {
+        use crate::glance::{Caller, GlanceStore};
+        let item=octosense_news_service::Item {id:octosense_news_service::item::item_id("https://example.org/science"),title:"Synthetic research topic".into(),..Default::default()};
+        let args=crate::news_cards::publish_args(&item,&serde_json::json!({}),"missing");
+        let mut store=GlanceStore::default();
+        store.publish(&Caller::granted("os.news"),&args,0).unwrap();
+        let card=store.card(&format!("os.news/{}",args["card_id"].as_str().unwrap()),0).unwrap();
+        let mut session=L0Session::for_card(&card);
+        let target=target_for(&session.body().unwrap(),"research");
+        session.tap(&target,None).unwrap();
+        assert!(session.research_requested,"the actual lowered native target reaches the host action");
+        assert!(!session.open_requested,"Research does not launch the app");
+        assert!(!session.reads_chat,"native Card/Chat supplies context; no fabricated user message");
+        let mut unbound=L0Session::new(&card.app,card.l0.as_ref().unwrap());
+        unbound.tap(&target,None).unwrap();
+        assert!(!unbound.research_requested,"source/data alone cannot grant the host action");
+        let mut session=L0Session::for_card(&card);
+        session.data["story"]["url2"]=serde_json::json!(format!("app://news/research/{}","b".repeat(16)));
+        let forged=target_for(&session.body().unwrap(),"research");
+        session.tap(&forged,None).unwrap();
+        assert!(!session.research_requested,"a different story cannot borrow the publication binding");
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn a_large_research_chat_keeps_complete_story_identity_and_discards_bulk() {
+        use crate::glance::{Caller, GlanceStore};
+        let item=octosense_news_service::Item {id:"c".repeat(16),title:"Synthetic topic".into(),summary:"Readable summary".into(),..Default::default()};
+        let args=crate::news_cards::publish_args(&item,&serde_json::json!({}),"partial");
+        let mut store=GlanceStore::default();
+        store.publish(&Caller::granted("os.news"),&args,0).unwrap();
+        let mut card=store.card(&format!("os.news/{}",args["card_id"].as_str().unwrap()),0).unwrap();
+        let mut l0=card.l0.as_ref().unwrap().as_ref().clone();
+        l0.data["brief"]=serde_json::json!({"summary":"Large research content ".repeat(1000)});
+        card.l0=Some(std::sync::Arc::new(l0));
+        let chat=WorkspaceChat::new(&card,"fictional-account".into());
+        let binding=chat.binding(&Default::default());
+        binding.validate().unwrap();
+        assert_eq!(binding.source_message["data"]["story"]["id"],item.id);
+        assert_eq!(binding.source_message["publisher"],"os.news");
+        assert_eq!(binding.source_message["card_id"],card.card_id);
+        assert_eq!(binding.source_message["title"],item.title);
+        assert_eq!(binding.source_message["summary"],item.summary);
+        assert!(binding.source_message["data"].get("brief").is_none());
+        assert!(serde_json::to_vec(&binding.source_message).unwrap().len()<12*1024);
     }
 
     /// The glance panel's tiles dispatch as the card window does (both keep

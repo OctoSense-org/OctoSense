@@ -50,8 +50,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   Add the implementation before adding a tool declaration; `implemented_by:
   "app"` still has no Card runner executor.
 - For a notification tool, follow `../crates/shell/src/glance_notice.rs`.
-  Mail/News install `on_notify` callbacks; the shell's `NoticeService` serves
-  Photos, Maps, YouTube and Camera. The fixed notice template lives in
+  Mail/News install `on_notify` callbacks; Photos and YouTube have owner services
+  in the shell that delegate notices to the common renderer. `NoticeService`
+  directly serves Maps and Camera. The fixed notice template lives in
   `../crates/shell/resources/glance/notice.card`; Calendar keeps its own event
   and agenda templates. Grant `glance` in the manifest and publish as the app.
 - For richer app-owned cards, use `glance.publish` with either L0 `source` and
@@ -131,8 +132,21 @@ Trace each tool from `bundle/tools.json` through
 caller identity, approval behavior and results at that boundary. Keep UI API
 methods separate from the tools actually declared for the agent: Mail exposes
 account-scoped accounts/folders/sync/list/peek and notify/publish_card; its
-credentials, send and mark-read APIs remain host/UI-only. News exposes list/read/notify; Photos, Maps, YouTube
-and Camera expose notify only. AI providers declares no app agent.
+credentials, send and mark-read APIs remain host/UI-only. News exposes
+list/read/research/research_result/publish_card/notify. Photos exposes
+list/read/collections/publish_card/notify; YouTube exposes
+search/read/recommend/publish/preferences/notify. Their view/navigation APIs stay
+UI-only. Maps and Camera expose notify only. AI providers declares no app agent.
+
+News research uses the bounded octos toolbox executor, not a second model client.
+Keep story identity, citations, cancellation and conditional publication intact.
+Photos' service and UI share `photos/catalog.json` and the saved library; label
+the bundled photos as samples. YouTube recommendations use real resolved IDs,
+require opt-in for foreground scheduling and never play on a timer. Keep each
+card's Open/Play action inside its content and exercise native Card/Chat. See
+[contextual cards](../docs/contextual-app-cards.md) and ADR 0009 for cross-app grants
+and the system-only private preference store. Never include a provider profile,
+real user conversation or raw device trace in committed test evidence.
 
 Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,

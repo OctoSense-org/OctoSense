@@ -240,7 +240,10 @@ mod tests {
             assert!(octosense_appstore::services::has_service(family), "{family}");
         }
         assert!(ask("os.maps", "photos.notify", json!({"title": "x", "body": "y"})).unwrap_err().contains("serves os.photos only"));
-        assert!(ask("os.photos", "photos.list", json!({})).unwrap_err().contains("no method"));
+        // Photos keeps its own business service; the generic fallback must not replace it.
+        let photos = ask("os.photos", "photos.list", json!({"limit": 1})).unwrap();
+        assert_eq!(photos["sample_library"], true);
+        assert_eq!(photos["items"].as_array().unwrap().len(), 1);
         // Its own app reaches the notice (a blank title is refused there,
         // before anything is published).
         for (app, service) in [("os.photos", "photos.notify"), ("os.ai-providers", "ai-providers.notify")] {

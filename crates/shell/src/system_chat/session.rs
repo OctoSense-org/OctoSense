@@ -109,6 +109,7 @@ impl SystemHost for ShellSystemHost {
         // Which apps have an agent, and asking the person to allow one
         // (ADR 0004 §4; answered by the chat itself, `crate::agents`).
         decls.extend(crate::agents::declarations());
+        decls.extend(crate::private_preferences::declarations());
         decls
     }
 }
@@ -299,6 +300,12 @@ impl Driver {
         } else {
             crate::ai_host::app_peers::TurnTrigger::SystemAgent
         };
+        // Private memory never enters the app relay, even in developer mode.
+        // These local bounded operations run on this session's worker.
+        if let Some(outcome) = crate::private_preferences::handle_tool(&call) {
+            reply.finish(outcome);
+            return;
+        }
         self.calls.insert(call.call_id.clone(), reply.clone());
         self.effects.push(Effect::ToolCall { call, reply });
     }
@@ -402,7 +409,8 @@ impl Driver {
                 self.sync_tools();
                 let turn = new_turn_id();
                 self.model.start_turn(&turn, &text);
-                let input = if note.is_empty() { text } else { format!("{note}\n{text}") };
+                let memory_note = if text.starts_with('/') { "" } else { crate::private_preferences::system_note() };
+                let input = if note.is_empty() { format!("{memory_note}{text}") } else { format!("{memory_note}{note}\n{text}") };
                 let params = json!({"session_id": SYSTEM_SESSION, "turn_id": turn, "input": [{"kind": "text", "text": input}]});
                 self.request("turn/start", params, Pending::Turn { turn });
             }

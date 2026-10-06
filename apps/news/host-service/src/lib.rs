@@ -103,6 +103,8 @@ pub struct SourceReport {
 
 type Hook = Arc<dyn Fn(&FetchReport) + Send + Sync>;
 type Notify = Arc<dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync>;
+type Card = Arc<dyn Fn(&str, &Item, &Value) -> Result<Value, String> + Send + Sync>;
+type View = Arc<dyn Fn() -> Result<Value, String> + Send + Sync>;
 type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 /// How the service runs. `Options::default()` is what a shell wants.
@@ -113,6 +115,8 @@ pub struct Options {
     reader: Option<Arc<dyn ArticleReader>>,
     on_fetch: Option<Hook>,
     on_notify: Option<Notify>,
+    on_card: Option<Card>,
+    on_view: Option<View>,
     clock: Clock,
     timer: bool,
     interval: Duration,
@@ -137,6 +141,8 @@ impl Default for Options {
             reader: None,
             on_fetch: None,
             on_notify: None,
+            on_card: None,
+            on_view: None,
             clock: Arc::new(|| chrono::Utc::now().timestamp()),
             timer: true,
             interval: Duration::from_secs(900),
@@ -186,6 +192,17 @@ impl Options {
     /// one, `news.notify` is refused.
     pub fn on_notify(mut self, f: impl Fn(&str, &Value) -> Result<Value, String> + Send + Sync + 'static) -> Self {
         self.on_notify = Some(Arc::new(f));
+        self
+    }
+    /// App-owned cards and bounded research. The service resolves the stored
+    /// story first: callers cannot substitute article facts or another URL.
+    pub fn on_card(mut self, f: impl Fn(&str, &Item, &Value) -> Result<Value, String> + Send + Sync + 'static) -> Self {
+        self.on_card = Some(Arc::new(f));
+        self
+    }
+    /// Consume the host's trusted own-app route, once, when News opens.
+    pub fn on_view(mut self, f: impl Fn() -> Result<Value, String> + Send + Sync + 'static) -> Self {
+        self.on_view = Some(Arc::new(f));
         self
     }
     /// Unix seconds; tests move time.
@@ -709,6 +726,19 @@ impl HostService for NewsService {
         let method = call.method().to_string();
         let args = call.args;
         match method.as_str() {
+            "publish_card" | "research" | "research_result" => {
+                let result = if call.app_id != "os.news" {
+                    Err("News cards belong to os.news; other agents need a granted News tool.".into())
+                } else {
+                    news.item(args["id"].as_str().unwrap_or("")).and_then(|item| {
+                        news.core.options.on_card.as_ref().ok_or("News cards unavailable".to_string())?(&method, &item, &args)
+                    })
+                };
+                reply.send(result);
+            }
+            "view" => reply.send(if call.app_id != "os.news" { Err("News view is private".into()) } else {
+                news.core.options.on_view.as_ref().ok_or("News view unavailable".to_string()).and_then(|view| view())
+            }),
             "list" => reply.send(news.list(&query_from(&args))),
             "read" => {
                 let id = args["id"].as_str().unwrap_or("").to_string();

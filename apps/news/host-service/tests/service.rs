@@ -474,7 +474,9 @@ fn the_card_runner_reaches_the_tools() {
             .fetcher(fixtures.clone())
             .spacing(Duration::ZERO, Duration::ZERO)
             .clock(move || tick.load(Ordering::SeqCst))
-            .on_fetch(move |r| reports.lock().unwrap().push(r.clone())),
+            .on_fetch(move |r| reports.lock().unwrap().push(r.clone()))
+            .on_card(|method,item,_| Ok(json!({"method":method,"id":item.id,"title":item.title})))
+            .on_view(|| Ok(json!({"id":null}))),
     );
 
     let empty = ask("os.news", &dir, "news.list", json!({"feed": "hn", "current": true})).unwrap();
@@ -486,6 +488,15 @@ fn the_card_runner_reaches_the_tools() {
     let id = hn["items"][0]["id"].clone();
     let read = ask("os.news", &dir, "news.read", json!({"id": id})).unwrap();
     assert_eq!(read["item"]["title"], "Show HN: A tiny news reader");
+    for method in ["publish_card", "research", "research_result"] {
+        let service = format!("news.{method}");
+        let projected = ask("os.news", &dir, &service, json!({"id":id,"title":"forged"})).unwrap();
+        assert_eq!(projected["title"],read["item"]["title"],"only the stored story reaches the host");
+        assert!(ask("os.news",&dir,&service,json!({"id":"missing"})).is_err());
+        assert!(ask("os.photos",&dir,&service,json!({"id":id})).is_err(),"cross-app calls require the agent relay, not a raw UI family request");
+    }
+    assert_eq!(ask("os.news",&dir,"news.view",json!({})).unwrap(),json!({"id":null}));
+    assert!(ask("os.photos",&dir,"news.view",json!({})).is_err());
     let topics = ask("os.news", &dir, "news.topics.set", json!({"topics": [{"query": "fusion energy", "lang": "en", "region": "GB"}]})).unwrap();
     assert_eq!(topics["topics"][0]["region"], "GB");
     assert_eq!(ask("os.news", &dir, "news.topics.get", json!({})).unwrap(), topics);

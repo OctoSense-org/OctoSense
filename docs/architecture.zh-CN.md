@@ -284,7 +284,7 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 4. **确认** `confirm: app` 调用：先向内核确认收到，再交给所属应用的面板（见[第 5 节](#5-审批)）。
 5. **只回答一次**，结果要符合 `output_schema`（最多 256 KiB）；取消之后什么都不再运行。每次调用都会连同参数摘要记录到 `logs/tool-calls.jsonl`。
 
-脚本应用中 `implemented_by: "host-service"` 的工具，以该应用的身份在其命名空间对应的宿主服务上运行，前提是应用获授了该服务族，或该服务族就是这个系统应用自己的。Shell 的 `NoticeService` 为相册、地图、YouTube 和相机应答 `<app>.notify`。**尚未实现：**`implemented_by: "app"` 没有执行器，商店应用也没有宿主服务，所以商店应用的 Agent 还不能通过自己的工具做事。
+脚本应用中 `implemented_by: "host-service"` 的工具，以该应用的身份在其命名空间对应的宿主服务上运行，前提是应用获授了该服务族，或该服务族就是这个系统应用自己的。Photos 与 YouTube 的专用宿主服务提供数据和卡片工具，并委派共用通知渲染器；Shell 的 `NoticeService` 直接为地图和相机应答 `<app>.notify`。**尚未实现：**`implemented_by: "app"` 没有执行器，商店应用也没有宿主服务，所以商店应用的 Agent 还不能通过自己的工具做事。
 
 ### 系统 Agent 的工具集
 

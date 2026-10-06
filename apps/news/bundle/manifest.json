@@ -7,8 +7,13 @@
     },
     "profile": "read-only",
     "tools": [
-      "ask_user_question"
-    ]
+      "ask_user_question",
+      "youtube.search",
+      "youtube.read",
+      "youtube.recommend",
+      "youtube.publish"
+    ],
+    "instructions": "AGENT.md"
   },
   "capabilities": [
     "storage",
@@ -16,7 +21,8 @@
     "images",
     "web",
     "news",
-    "glance"
+    "glance",
+    "research"
   ],
   "id": "os.news",
   "integrity": {
@@ -36,5 +42,16 @@
     ]
   },
   "schema": 1,
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "research": {
+    "langs": [
+      "en",
+      "zh"
+    ],
+    "categories": [
+      "news"
+    ],
+    "max_age_days": 7,
+    "max_results": 20
+  }
 }
