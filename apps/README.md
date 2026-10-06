@@ -393,6 +393,14 @@ directory (`<host_dir>/mail`), outside every app's jail. Each account is
 granted only to the apps that added it. The service tests an account before
 keeping it.
 
+Mail’s Inbox offers **Reconnect account**, which opens the same host-owned
+sign-in sheet. Enter the same account address, username and incoming-server settings to
+update its credentials without removing its cached messages or saved drafts.
+On Android, the encrypted password file is tied to the installed package’s
+Keystore key: copying it from a test package to Home cannot restore sign-in.
+Reconnect inside the destination package; never use Remove account as a
+credential-reset workaround.
+
 ### The `calendar` service
 
 `octosense-calendar-service` (`apps/calendar/host-service/src/lib.rs`) answers

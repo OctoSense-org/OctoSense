@@ -2,7 +2,7 @@
 
 English | [简体中文](mail-background-2026-10-05.zh-CN.md)
 
-Scope: independent collection/delivery, selective model decisions, and [ADR 0008](../adr/0008-quiet-android-mail-jobs.md). Tests used an assigned OnePlus 6, Android API 35, the separate `dev.makepad.octosense.studio` (OctoSenseMailTest) package and its existing DeepSeek `deepseek-v4-flash` profile. The installed Home and ROM were not replaced. Gmail and provider credential-file hashes remained unchanged across upgrades. No reply was sent by the test driver.
+Scope: independent collection/delivery, selective model decisions, and [ADR 0008](../adr/0008-quiet-android-mail-jobs.md). Tests used an assigned OnePlus 6, Android API 35, the separate `dev.makepad.octosense.studio` (OctoSenseMailTest) package and its existing DeepSeek `deepseek-v4-flash` profile. This initial test phase did not replace the installed Home or ROM. The later, user-requested normal Home deployment is recorded in the [shared Glance follow-up](shared-glance-home-2026-10-05.md). Gmail and provider credential-file hashes remained unchanged across upgrades. No reply was sent by the test driver.
 
 ## Local checks
 
@@ -80,7 +80,7 @@ advanced its next window; Android again reported the normal 15-minute period.
 
 ## Remaining checks and limits
 
-- The user's everyday Home → swipe right → Mail card flow has **not passed**. A follow-up device check found that `dev.makepad.octosense` build 2026100216 still held the Home role, while the configured Gmail account and three undismissed, unexpired Mail publications were in `dev.makepad.octosense.studio` build 2026100513. These packages do not share the Glance store. The earlier notification/card/Back test does not establish integration with the default Home. Selecting the configured package as Home or deploying and configuring Mail in the normal Home still requires its own device validation.
+- The initial everyday Home → swipe right → Mail card check **failed**. A follow-up device check found that `dev.makepad.octosense` build 2026100216 still held the Home role, while the configured Gmail account and three undismissed, unexpired Mail publications were in `dev.makepad.octosense.studio` build 2026100513. These packages do not share the Glance store. The earlier notification/card/Back test does not establish integration with the default Home. The [follow-up](shared-glance-home-2026-10-05.md) records the corrected normal Home deployment and mixed Mail/News feed, with Gmail reauthentication still pending.
 - The shipping simulation reached the Inbox and is pending behind the existing queue. Its final card outcome is still under observation.
 - AgentMail accepted a separately labeled no-action control. Its arrival in the monitored Inbox has not yet been established; it must not be counted as an agent skip.
 - The exercised jobs were explicitly forced through Android's test command. A natural periodic/Doze/reboot cycle is **unverified** at this point; registration does not prove its delivery latency.

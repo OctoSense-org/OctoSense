@@ -36,8 +36,9 @@ fn load_accounts(){
 }
 fn add_account(){
     ui.welcome_note.set_text("Sign in on the sheet OctoSense shows.")
+    status("Sign in on the sheet OctoSense shows.")
     host.request("mail.add_account", {}, fn(r){
-        if r.is_ok { load_accounts() } else { ui.welcome_note.set_text(r.error) }
+        if r.is_ok { load_accounts() } else { ui.welcome_note.set_text(r.error) status(r.error) }
     })
 }
 fn sync(){
@@ -214,7 +215,9 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
                 Hr{}
             }
         }}
-        View{width: Fill height: Fit padding: Inset{left: 8 bottom: 8}
+        View{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{left: 8 right: 8 bottom: 8}
+            Bar{height: 44 text: "Reconnect account" on_click: || add_account()}
+            View{width: Fill height: 1}
             ButtonFlat{text: "Remove account" on_click: || remove_account()
                 draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 border_size: 0.0}
                 draw_text +: {color: #xff3b30 color_hover: #xff3b30 color_down: #xff3b30 text_style +: {font_size: 12}}}

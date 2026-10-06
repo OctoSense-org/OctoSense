@@ -2,7 +2,7 @@
 
 [English](mail-background-2026-10-05.md) | 简体中文
 
-范围：独立收取与投递、模型按重要性作出决定，以及 [ADR 0008](../adr/0008-quiet-android-mail-jobs.zh-CN.md)。使用指定的 OnePlus 6（Android API 35）、独立测试包 `dev.makepad.octosense.studio`（OctoSenseMailTest）及其中已有的 DeepSeek `deepseek-v4-flash` 配置。没有替换已安装的 Home 或 ROM。升级前后 Gmail 凭据与提供商配置文件的哈希一致。测试驱动没有发送回复邮件。
+范围：独立收取与投递、模型按重要性作出决定，以及 [ADR 0008](../adr/0008-quiet-android-mail-jobs.zh-CN.md)。使用指定的 OnePlus 6（Android API 35）、独立测试包 `dev.makepad.octosense.studio`（OctoSenseMailTest）及其中已有的 DeepSeek `deepseek-v4-flash` 配置。这一初始测试阶段没有替换已安装的 Home 或 ROM。之后按用户要求部署正常 Home 的结果见[共享 Glance 后续验证](shared-glance-home-2026-10-05.zh-CN.md)。升级前后 Gmail 凭据与提供商配置文件的哈希一致。测试驱动没有发送回复邮件。
 
 ## 本地检查
 
@@ -39,7 +39,7 @@
 
 ## 待检查项与限制
 
-- 用户日常使用的 Home → 右滑 → Mail 卡片路径**尚未通过验收**。后续设备检查发现，Home 角色仍属于 `dev.makepad.octosense`（版本 2026100216）；已连接的 Gmail 账号及三张未关闭、未过期的 Mail 发布记录位于 `dev.makepad.octosense.studio`（版本 2026100513）。两个安装包不共享 Glance 数据。此前的通知/卡片/返回测试不能证明已接通默认 Home；将已配置的测试包设为 Home，或在正常 Home 中部署并配置 Mail，都仍需分别进行设备验证。
+- 最初的日常 Home → 右滑 → Mail 卡片路径检查**失败**。后续设备检查发现，Home 角色仍属于 `dev.makepad.octosense`（版本 2026100216）；已连接的 Gmail 账号及三张未关闭、未过期的 Mail 发布记录位于 `dev.makepad.octosense.studio`（版本 2026100513）。两个安装包不共享 Glance 数据。此前的通知/卡片/返回测试不能证明已接通默认 Home；[后续验证](shared-glance-home-2026-10-05.zh-CN.md)记录了正常 Home 部署与 Mail/News 混合信息流；Gmail 仍待重新认证。
 - 物流模拟邮件已进入收件箱，仍排在已有队列后面；最终卡片结果正在观察。
 - AgentMail 已接受单独标注的无操作对照邮件，但尚未证明它到达被监控的收件箱，不能算作代理已跳过。
 - 当前运行的任务通过 Android 测试命令强制触发；自然周期、Doze 与重启周期目前均**未验证**。注册成功不代表延迟已经验证。

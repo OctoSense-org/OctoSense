@@ -109,6 +109,18 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 （`…navbar.gestural` 可恢复手势导航。）特权路线（接管手势区域和最近任务）的工作量评估见 [docs/android/launcher-plan.md（英文）](docs/android/launcher-plan.md)，尚未开始。
 
+## 所有应用共用一个 Glance 页面
+
+从 Home 的第一页右滑，进入共享 Glance 信息流。Mail、Calendar、News 以及其他
+获得 Glance 能力的应用，都向同一个宿主卡片库发布。每张卡片保留发布应用、账号
+和条目身份；点击摘要后，打开该卡片的工作区。Card/Chat 连接发布应用自己的代理，
+Mail 的 Email/Chat 则操作同一份已保存的回复草稿。退出工作区后回到共享信息流。
+Mail 不需要独立的 Glance 应用。
+
+独立 Android 测试包是 Shell 的另一份安装，各自拥有私有账号和卡片，不会向正常
+Home 贡献卡片。启动器验收必须从 Android 实际指定的 Home 开始，右滑进入 Glance，
+再打开不同应用发布的卡片；直接打开测试包不能证明这条路径已经接通。
+
 ## 手势
 
 | 位置 | 手势 | 作用 |

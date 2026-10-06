@@ -164,6 +164,21 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 (`…navbar.gestural` restores gestures.) The privileged route — owning the gesture zone and Recents — is sized in [docs/android/launcher-plan.md](docs/android/launcher-plan.md) and not started.
 
+## One Glance feed for all apps
+
+Swipe right from the first Home page to see the shared Glance feed. Mail,
+Calendar, News and other apps with the Glance capability publish into the same
+host store. A card keeps its publishing app, account and item identity; tapping
+its summary opens that card's workspace. Card/Chat uses that app's agent, while
+Mail's Email/Chat workspace uses its saved reply draft. Returning closes the
+workspace back to the shared feed. Mail does not need a separate Glance app.
+
+Separate Android test packages are separate copies of the shell, each with
+private accounts and cards. They do not contribute cards to the normal Home.
+Launcher acceptance must start from Android's actual Home role, swipe into
+Glance and open cards from multiple publishers; opening a test package directly
+does not establish that integration.
+
 ## Gestures
 
 | Where | Gesture | Does |

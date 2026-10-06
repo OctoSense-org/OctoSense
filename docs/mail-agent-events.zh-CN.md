@@ -83,6 +83,11 @@ Glance 数据。独立的 Home 与测试 APK 各自保存账号、代理配置�
 测试包的入口有效。[`GlanceFeed::sync_published`](../crates/shell/src/mobile_pages.rs)
 读取当前包发布的卡片，展开摘要后进入保留状态的工作区。
 
+同一个包内的 Mail、Calendar、News 等发布应用共用这一信息流。跨包迁移 Mail
+数据不会转移 Android Keystore 访问权：Gmail 加密凭据需要在目标 Home 中通过
+Mail 的 **Reconnect account（重新连接账号）**重新登录。使用相同账号、用户名和收件
+服务器设置，才能保留账号身份与已保存的草稿。
+
 `mail.publish_card` 发布的卡片只能是 L0：没有表达式，也没有脚本。Shell 会检查每个 `sys.dataset` 源都声明了非空的 `fields` 列表，并在 `data` 中为每个字段提供了值，还会检查各个源之间没有循环依赖。这项检查能发现缺失的绑定，发现不了错误的事实。之后 Shell 以邮件应用的身份发布卡片并发出通知；点按通知打开的正是这张卡片，手机上以全屏工作区显示。
 
 带 `draft_id` 时，邮件应用的宿主服务把卡片绑定到账号、邮件、草稿和聊天线程，这个绑定，模型既不能提供，也不能更改。卡片随后可以编辑回复（`sys.mail_draft`）、就回复聊天（`sys.chat`），并打开宿主的审核（`sys.mail_review`）。一封回复从草稿到 SMTP 的路径见[组合 Mail 卡片](mail-composable-cards.zh-CN.md#沿代码追踪一封回复)。

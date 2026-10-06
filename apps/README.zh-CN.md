@@ -341,6 +341,11 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 账户元数据（不含密码）和已拉取的邮件存放在宿主自己的目录（`<host_dir>/mail`），
 位于所有应用沙箱之外。每个账户只授权给添加它的应用。服务会先测试账户可用，再保存。
 
+Mail 收件箱的 **Reconnect account（重新连接账号）**会打开同一个宿主登录面板。
+输入相同邮箱地址、用户名与收件服务器设置，即可更新凭据，同时保留邮件缓存和已保存草稿。
+Android 的密码文件由该安装包的 Keystore 密钥加密；从测试包复制到 Home 并不能
+恢复登录。请在目标包内重新连接，不要用 Remove account 删除账号来重置凭据。
+
 ### `calendar` 服务
 
 `octosense-calendar-service`（`apps/calendar/host-service/src/lib.rs`）只为日历

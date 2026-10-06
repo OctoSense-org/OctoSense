@@ -85,6 +85,12 @@ works; opening a card from the test APK's notification verifies only that APK.
 [`GlanceFeed::sync_published`](../crates/shell/src/mobile_pages.rs) reads the package's
 published cards, and expanding a summary opens its retained workspace.
 
+The feed is shared by all publishers in that package, including Mail, Calendar
+and News. Moving existing Mail data between packages does not transfer Android
+Keystore access: the encrypted Gmail credential requires a fresh sign-in through
+Mail’s **Reconnect account** action in the destination Home. Use the same account, username
+and incoming-server settings to preserve its identity and saved drafts.
+
 A card from `mail.publish_card` is L0 only, with no expressions or script. The shell checks that each `sys.dataset` source declares a nonempty `fields` list with a value in `data` for every field, and that sources form no cycle. The check catches missing bindings, not wrong facts. The shell then publishes the card as Mail and notifies; tapping the notification opens that exact card, which the phone shows as a full-screen workspace.
 
 With a `draft_id`, Mail's host service binds the card to the account, email, draft and chat thread, a binding the model can neither supply nor change. The card can then edit the reply (`sys.mail_draft`), chat about it (`sys.chat`) and open the host's review (`sys.mail_review`). [Composed Mail cards](mail-composable-cards.md#follow-one-reply-through-the-code) follows a reply from draft to SMTP.
