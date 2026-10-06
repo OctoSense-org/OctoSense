@@ -36,6 +36,8 @@ This repository holds the shell, its services, the system apps, and the three pr
 
 To read the code in order, start with [From an app window to an agent turn](docs/architecture-walkthrough.md). The [product walkthrough](desktop/docs/code-walkthrough.md) adds how to run each product.
 
+Connected App Hub samples now share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. Live provider acceptance is pending, and Google sign-in on Android still needs its native adapter.
+
 ## How it fits together
 
 One shell process per device, one octos kernel per shell, and every agent is a session in that kernel. The shell is the kernel's only full client. It starts octos and holds its host token, starts every app agent's turns, relays every call to an app's tools, and owns every approval. Apps never talk to the kernel.
@@ -161,7 +163,7 @@ sequenceDiagram
 
 The `<app>.notify` tools fill a fixed card template ([`notice.card`](crates/shell/resources/glance/notice.card), or Calendar's [event and agenda cards](apps/calendar/host-service/resources)), so the model writes only the text. Mail also has `mail.publish_card`, which takes a card the model wrote and checks it before publishing. Either way the shell publishes as the app and requires its `glance` permission.
 
-Mail's agent can also start on its own. Once the person has signed in, allowed Mail's agent and asked the system agent to turn on new-mail processing (`agents.provision`), the host syncs the inbox independently of model turns and queues each new message for the agent. The agent reads the message with its scoped tools and decides whether to post a card. No other app has events yet; the [Mail event walkthrough](docs/mail-agent-events.md) has the details.
+Mail's agent can also start on its own. Once the person has signed in, allowed Mail's agent and asked the system agent to turn on new-mail processing (`agents.provision`), the host syncs the inbox independently of model turns and queues each new message for the agent. The agent reads the message with its scoped tools and decides whether to post a card. The [Mail event walkthrough](docs/mail-agent-events.md) describes this built-in path. Independently installed Gmail apps can declare an account-bound `<app namespace>.new_message` trigger through the connected-app service; see the [OAuth guide](crates/oauth-service/README.md).
 
 ### One app agent, two lanes
 

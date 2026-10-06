@@ -1,0 +1,398 @@
+diff --git a/libs/apple_sys/src/lib.rs b/libs/apple_sys/src/lib.rs
+index c2eb26281..34cacd828 100644
+--- a/libs/apple_sys/src/lib.rs
++++ b/libs/apple_sys/src/lib.rs
+@@ -192,6 +192,7 @@ pub fn CGImageDestinationCreateWithURL(
+ #[link(name = "CoreGraphics", kind = "framework")]
+ extern "C" {
+     pub fn CGEventSourceCreate(state_id: u32) -> ObjcId;
++    pub fn CGEventGetIntegerValueField(event: ObjcId, field: u32) -> i64;
+     pub fn CGEventSetIntegerValueField(event: ObjcId, field: u32, value: u64);
+     pub fn CGEventCreateMouseEvent(
+         source: ObjcId,
+diff --git a/platform/src/input_provenance.rs b/platform/src/input_provenance.rs
+index 371b5401b..172a09162 100644
+--- a/platform/src/input_provenance.rs
++++ b/platform/src/input_provenance.rs
+@@ -1,13 +1,15 @@
+ //! Input provenance for host-owned approval controls.
+ //!
+-//! Only the Android native touchscreen path currently establishes trust. Other
+-//! platforms, remote input and synthetic dispatch default to false. This is an
++//! Android touchscreen metadata and macOS AppKit pointer metadata establish
++//! trust. Other platforms, remote input and synthetic dispatch default to false.
++//! This is an
+ //! app-level boundary, not attestation against a compromised OS/root process
+ //! that can impersonate a physical input device.
+ use std::cell::Cell;
+ 
+ thread_local! {
+     static TRUSTED: Cell<bool> = const { Cell::new(false) };
++    static FORCE_UNTRUSTED: Cell<bool> = const { Cell::new(false) };
+ }
+ 
+ /// True only during a verified native input's synchronous application handler.
+@@ -20,13 +22,14 @@ pub fn trusted_user_input() -> bool {
+ /// Run synthetic/direct-widget input without inheriting a surrounding native
+ /// gesture. This API can remove trust but cannot create it.
+ pub fn with_untrusted_input<R>(f: impl FnOnce() -> R) -> R {
+-    let _guard = InputTrustGuard::enter(false);
++    let _guard = UntrustedInputGuard::enter();
+     f()
+ }
+ 
+ pub(crate) struct InputTrustGuard(bool);
+ impl InputTrustGuard {
+     pub(crate) fn enter(trusted: bool) -> Self {
++        let trusted = trusted && !FORCE_UNTRUSTED.with(Cell::get);
+         Self(TRUSTED.with(|value| value.replace(trusted)))
+     }
+ }
+@@ -36,6 +39,35 @@ fn drop(&mut self) {
+     }
+ }
+ 
++/// Synthetic dispatch is a sticky deny for its entire synchronous scope,
++/// including a nested native callback. Restores both flags during unwind.
++pub(crate) struct UntrustedInputGuard {
++    previous_trust: bool,
++    previous_forced: bool,
++}
++impl UntrustedInputGuard {
++    pub(crate) fn enter() -> Self {
++        Self {
++            previous_trust: TRUSTED.with(|value| value.replace(false)),
++            previous_forced: FORCE_UNTRUSTED.with(|value| value.replace(true)),
++        }
++    }
++}
++impl Drop for UntrustedInputGuard {
++    fn drop(&mut self) {
++        FORCE_UNTRUSTED.with(|value| value.set(self.previous_forced));
++        TRUSTED.with(|value| value.set(self.previous_trust));
++    }
++}
++
++/// AppKit must supply an actual CGEvent from the HID source with no source
++/// process. A nil CGEvent, combined/private event source or posted process is
++/// rejected. This is source metadata, not attestation against forged HID input.
++#[cfg(any(target_os = "macos", test))]
++pub(crate) fn macos_pointer_is_trusted(has_cg_event: bool, source_state: i64, source_pid: i64) -> bool {
++    has_cg_event && source_state == 1 && source_pid == 0
++}
++
+ /// Android MotionEvent metadata. Missing/virtual devices, non-touch sources,
+ /// obscured windows and cancellation never establish approval provenance.
+ #[cfg(any(target_os = "android", test))]
+@@ -68,6 +100,8 @@ fn synthetic_nested_dispatch_cannot_inherit_native_trust() {
+             with_untrusted_input(|| {
+                 assert!(!trusted_user_input());
+                 with_untrusted_input(|| assert!(!trusted_user_input()));
++                let _nested_native = InputTrustGuard::enter(true);
++                assert!(!trusted_user_input());
+             });
+             assert!(trusted_user_input());
+         }
+@@ -83,6 +117,17 @@ fn unwind_restores_previous_scope_and_threads_do_not_share_trust() {
+         assert!(trusted_user_input());
+     }
+ 
++    #[test]
++    fn macos_requires_an_event_from_the_hid_source_without_a_posting_process() {
++        assert!(macos_pointer_is_trusted(true, 1, 0));
++        for (present, state, pid) in [
++            (false, 1, 0), (true, 0, 0), (true, -1, 0),
++            (true, 1, 123), (true, 1, -1), (true, 42, 0),
++        ] {
++            assert!(!macos_pointer_is_trusted(present, state, pid));
++        }
++    }
++
+     #[test]
+     fn android_requires_physical_unobscured_touch_and_never_cancel() {
+         for action in [0, 1, 2, 5, 6] {
+diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
+index df40d386d..064e008f0 100644
+--- a/platform/src/os/apple/macos/macos.rs
++++ b/platform/src/os/apple/macos/macos.rs
+@@ -1067,9 +1067,9 @@ fn cocoa_event_callback(
+         }
+         // send a mouse up when dragging starts
+         match &event {
+-            MacosEvent::MouseDown(_)
++            MacosEvent::MouseDown(_, _)
+             | MacosEvent::MouseMove(_)
+-            | MacosEvent::MouseUp(_)
++            | MacosEvent::MouseUp(_, _)
+             | MacosEvent::Scroll(_)
+             | MacosEvent::KeyDown(_)
+             | MacosEvent::KeyUp(_)
+@@ -1505,7 +1505,7 @@ fn cocoa_event_callback(
+                 // ok here we send out to all our childprocesses
+                 self.handle_repaint(metal_windows, metal_cx);
+             }
+-            MacosEvent::MouseDown(mut e) => {
++            MacosEvent::MouseDown(mut e, trusted) => {
+                 if !self.windows.is_valid(e.window_id) || !self.windows[e.window_id].is_created {
+                     return EventFlow::Wait;
+                 }
+@@ -1513,7 +1513,7 @@ fn cocoa_event_callback(
+                 self.dpi_override_scale(&mut e.abs, e.window_id);
+                 self.fingers.process_tap_count(e.abs, e.time);
+                 self.fingers.mouse_down(e.button, e.window_id);
+-                self.call_event_handler(&Event::MouseDown(e.into()));
++                self.call_event_handler_with_input_trust(&Event::MouseDown(e.into()), trusted);
+                 self.update_pointer_capture_pacing();
+             }
+             MacosEvent::MouseMove(mut e) => {
+@@ -1545,7 +1545,7 @@ fn cocoa_event_callback(
+                 self.fingers.cycle_hover_area(live_id!(mouse).into());
+                 self.fingers.switch_captures();
+             }
+-            MacosEvent::MouseUp(mut e) => {
++            MacosEvent::MouseUp(mut e, trusted) => {
+                 if !self.windows.is_valid(e.window_id) || !self.windows[e.window_id].is_created {
+                     return EventFlow::Wait;
+                 }
+@@ -1553,7 +1553,7 @@ fn cocoa_event_callback(
+                 let button = e.button;
+                 let abs = e.abs;
+                 let modifiers = e.modifiers;
+-                self.call_event_handler(&Event::MouseUp(e.into()));
++                self.call_event_handler_with_input_trust(&Event::MouseUp(e.into()), trusted);
+                 self.fingers.mouse_up(button);
+                 self.fingers.cycle_hover_area(live_id!(mouse).into());
+                 self.update_pointer_capture_pacing();
+diff --git a/platform/src/os/apple/macos/macos_delegates.rs b/platform/src/os/apple/macos/macos_delegates.rs
+index c6b24a5e6..feb00ec91 100644
+--- a/platform/src/os/apple/macos/macos_delegates.rs
++++ b/platform/src/os/apple/macos/macos_delegates.rs
+@@ -563,6 +563,27 @@ extern "C" fn needs_panel_to_become_key(this: &Object, _sel: Sel) -> BOOL {
+         }
+     }
+ 
++    // Inspect the NSEvent here, where AppKit owns the live native event. Do not
++    // query NSApplication.currentEvent later: a synthetic/reentrant callback
++    // could otherwise borrow the provenance of an unrelated physical gesture.
++    fn pointer_event_is_trusted(event: ObjcId) -> bool {
++        if event.is_null() {
++            return false;
++        }
++        unsafe {
++            let cg_event: ObjcId = msg_send![event, CGEvent];
++            if cg_event.is_null() {
++                return false;
++            }
++            // CGEventField: kCGEventSourceStateID=45, kCGEventSourceUnixProcessID=41.
++            crate::input_provenance::macos_pointer_is_trusted(
++                true,
++                CGEventGetIntegerValueField(cg_event, 45),
++                CGEventGetIntegerValueField(cg_event, 41),
++            )
++        }
++    }
++
+     extern "C" fn mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
+         let cw = get_cocoa_window(this);
+         unsafe {
+@@ -572,25 +593,41 @@ extern "C" fn mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
+             }
+         }
+         let modifiers = get_event_key_modifier(event);
+-        cw.send_mouse_down(MouseButton::PRIMARY, modifiers);
++        cw.send_mouse_down_with_input_trust(
++            MouseButton::PRIMARY,
++            modifiers,
++            pointer_event_is_trusted(event),
++        );
+     }
+ 
+     extern "C" fn mouse_up(this: &Object, _sel: Sel, event: ObjcId) {
+         let cw = get_cocoa_window(this);
+         let modifiers = get_event_key_modifier(event);
+-        cw.send_mouse_up(MouseButton::PRIMARY, modifiers);
++        cw.send_mouse_up_with_input_trust(
++            MouseButton::PRIMARY,
++            modifiers,
++            pointer_event_is_trusted(event),
++        );
+     }
+ 
+     extern "C" fn right_mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
+         let cw = get_cocoa_window(this);
+         let modifiers = get_event_key_modifier(event);
+-        cw.send_mouse_down(MouseButton::SECONDARY, modifiers);
++        cw.send_mouse_down_with_input_trust(
++            MouseButton::SECONDARY,
++            modifiers,
++            pointer_event_is_trusted(event),
++        );
+     }
+ 
+     extern "C" fn right_mouse_up(this: &Object, _sel: Sel, event: ObjcId) {
+         let cw = get_cocoa_window(this);
+         let modifiers = get_event_key_modifier(event);
+-        cw.send_mouse_up(MouseButton::SECONDARY, modifiers);
++        cw.send_mouse_up_with_input_trust(
++            MouseButton::SECONDARY,
++            modifiers,
++            pointer_event_is_trusted(event),
++        );
+     }
+ 
+     extern "C" fn touches_began_with_event(this: &Object, _sel: Sel, event: ObjcId) {
+@@ -626,14 +663,22 @@ extern "C" fn other_mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
+         let cw = get_cocoa_window(this);
+         let modifiers = get_event_key_modifier(event);
+         let raw_button = get_event_mouse_button(event);
+-        cw.send_mouse_down(MouseButton::from_raw_button(raw_button), modifiers);
++        cw.send_mouse_down_with_input_trust(
++            MouseButton::from_raw_button(raw_button),
++            modifiers,
++            pointer_event_is_trusted(event),
++        );
+     }
+ 
+     extern "C" fn other_mouse_up(this: &Object, _sel: Sel, event: ObjcId) {
+         let cw = get_cocoa_window(this);
+         let modifiers = get_event_key_modifier(event);
+         let raw_button = get_event_mouse_button(event);
+-        cw.send_mouse_up(MouseButton::from_raw_button(raw_button), modifiers);
++        cw.send_mouse_up_with_input_trust(
++            MouseButton::from_raw_button(raw_button),
++            modifiers,
++            pointer_event_is_trusted(event),
++        );
+     }
+ 
+     fn mouse_pos_from_event(view: &Object, event: ObjcId) -> Vec2d {
+diff --git a/platform/src/os/apple/macos/macos_event.rs b/platform/src/os/apple/macos/macos_event.rs
+index cb3a97518..82d005387 100644
+--- a/platform/src/os/apple/macos/macos_event.rs
++++ b/platform/src/os/apple/macos/macos_event.rs
+@@ -34,8 +34,9 @@ pub enum MacosEvent {
+         target_presentation_time: f64,
+     },
+ 
+-    MouseDown(MouseDownEvent),
+-    MouseUp(MouseUpEvent),
++    // The bit is set only by the AppKit NSEvent pointer delegates.
++    MouseDown(MouseDownEvent, bool),
++    MouseUp(MouseUpEvent, bool),
+     MouseMove(MouseMoveEvent),
+     Scroll(ScrollEvent),
+ 
+diff --git a/platform/src/os/apple/macos/macos_window.rs b/platform/src/os/apple/macos/macos_window.rs
+index 1fc97ec10..3b0090bfd 100644
+--- a/platform/src/os/apple/macos/macos_window.rs
++++ b/platform/src/os/apple/macos/macos_window.rs
+@@ -936,6 +936,15 @@ pub fn mouse_down_can_drag_window(&mut self) -> bool {
+     }
+ 
+     pub fn send_mouse_down(&mut self, button: MouseButton, modifiers: KeyModifiers) {
++        self.send_mouse_down_with_input_trust(button, modifiers, false);
++    }
++
++    pub(super) fn send_mouse_down_with_input_trust(
++        &mut self,
++        button: MouseButton,
++        modifiers: KeyModifiers,
++        trusted: bool,
++    ) {
+         if self.retired {
+             return;
+         }
+@@ -944,17 +953,29 @@ pub fn send_mouse_down(&mut self, button: MouseButton, modifiers: KeyModifiers)
+         activate_cocoa_window_on_pointer_down(self.window);
+         let () = unsafe { msg_send![self.window, makeFirstResponder: self.view] };
+         self.buttons_down.insert(button);
+-        self.do_callback(MacosEvent::MouseDown(MouseDownEvent {
+-            button,
+-            modifiers,
+-            window_id: self.window_id,
+-            abs: self.last_mouse_pos,
+-            time: self.time_now(),
+-            handled: Cell::new(Area::Empty),
+-        }));
++        self.do_callback(MacosEvent::MouseDown(
++            MouseDownEvent {
++                button,
++                modifiers,
++                window_id: self.window_id,
++                abs: self.last_mouse_pos,
++                time: self.time_now(),
++                handled: Cell::new(Area::Empty),
++            },
++            trusted,
++        ));
+     }
+ 
+     pub fn send_mouse_up(&mut self, button: MouseButton, modifiers: KeyModifiers) {
++        self.send_mouse_up_with_input_trust(button, modifiers, false);
++    }
++
++    pub(super) fn send_mouse_up_with_input_trust(
++        &mut self,
++        button: MouseButton,
++        modifiers: KeyModifiers,
++        trusted: bool,
++    ) {
+         if self.retired {
+             return;
+         }
+@@ -970,13 +991,16 @@ pub fn send_mouse_up(&mut self, button: MouseButton, modifiers: KeyModifiers) {
+             });
+         }
+         self.buttons_down.remove(button);
+-        self.do_callback(MacosEvent::MouseUp(MouseUpEvent {
+-            button,
+-            modifiers,
+-            window_id: self.window_id,
+-            abs: self.last_mouse_pos,
+-            time: self.time_now(),
+-        }));
++        self.do_callback(MacosEvent::MouseUp(
++            MouseUpEvent {
++                button,
++                modifiers,
++                window_id: self.window_id,
++                abs: self.last_mouse_pos,
++                time: self.time_now(),
++            },
++            trusted,
++        ));
+     }
+ 
+     /// A buttonless `mouseMoved:` (AppKit sends `mouseDragged:` while a
+diff --git a/platform/src/os/cx_shared.rs b/platform/src/os/cx_shared.rs
+index d11b9b962..0ca4dfa38 100644
+--- a/platform/src/os/cx_shared.rs
++++ b/platform/src/os/cx_shared.rs
+@@ -1312,6 +1312,14 @@ pub(crate) fn call_event_handler_with_input_trust(&mut self, event: &Event, trus
+         }
+         {
+             let _native = crate::input_provenance::InputTrustGuard::enter(trusted);
++            if matches!(event, Event::MouseDown(_) | Event::MouseUp(_)) {
++                crate::trace!(
++                    "input.provenance",
++                    "pointer down={} trusted={}",
++                    matches!(event, Event::MouseDown(_)),
++                    crate::input_provenance::trusted_user_input(),
++                );
++            }
+             self.inner_call_event_handler(event);
+         }
+         // Dispatch any synthetic geom changes queued during the original
+diff --git a/platform/src/remote.rs b/platform/src/remote.rs
+index 4d348fa72..147397b49 100644
+--- a/platform/src/remote.rs
++++ b/platform/src/remote.rs
+@@ -997,7 +997,7 @@ pub(crate) fn next_grab_deadline() -> Option<Instant> {
+     }
+ 
+     fn poll_with_present(cx: &mut Cx, mut present: impl FnMut(&mut Cx, WindowId) -> Option<bool>) -> bool {
+-        let _untrusted = crate::input_provenance::InputTrustGuard::enter(false);
++        let _untrusted = crate::input_provenance::UntrustedInputGuard::enter();
+         if !ACTIVE.load(Ordering::Relaxed) {
+             return false;
+         }

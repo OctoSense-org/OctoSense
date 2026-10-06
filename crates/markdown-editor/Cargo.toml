@@ -1,0 +1,14 @@
+[package]
+name = "octosense-markdown-editor"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Contained Markdown editor using Rinx's reusable article components"
+
+[dependencies]
+makepad-widgets = { workspace = true }
+article-core = { workspace = true }
+article-makepad = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

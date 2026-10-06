@@ -226,10 +226,33 @@ pub fn register_mail_services() {
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
-fn register_host_services() {
+pub fn register_host_services() {
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        octosense_markdown_editor::register();
+        crate::connected_review::register();
+        octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);
+        octosense_oauth_service::host_inbox::set_publication_verifier(|app, account, card_id| {
+            crate::glance::card(&format!("{app}/{card_id}")).is_some_and(|card|
+                card.app == app && card.card_id == card_id && card.account.as_deref() == Some(account)
+                && crate::mail_background::has_publication(app,account,card_id,card.published_ms))
+        });
+        crate::connected_events::start();
+        octosense_oauth_service::host::register(std::sync::Arc::new(|app, provider, scopes| {
+            use octosense_oauth_service::Provider;
+            let granted = |family| crate::host_tools::script_apps::grants(app, family);
+            granted("auth") && scopes.iter().all(|scope| match provider {
+                Provider::Github => scope == "read:user" || granted("github"),
+                Provider::Google => match scope.as_str() {
+                    "openid" | "email" | "profile" => true,
+                    s if s.starts_with("https://www.googleapis.com/auth/calendar.") => granted("gcalendar"),
+                    s if s.starts_with("https://www.googleapis.com/auth/gmail.") => granted("gmail"),
+                    _ => false,
+                },
+            })
+        }));
+        octosense_oauth_service::host_api::register();
         // Calendar's events and cards (its agent's `calendar.*` tools),
         // published the same way.
         register_calendar_services();

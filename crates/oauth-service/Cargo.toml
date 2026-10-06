@@ -1,0 +1,30 @@
+[package]
+name = "octosense-oauth-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[features]
+default = []
+host = ["dep:octosense-appstore", "dep:octosense-mail-service", "dep:keyring"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+url = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+octosense-appstore = { workspace = true, optional = true }
+octosense-mail-service = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"], optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"], optional = true }

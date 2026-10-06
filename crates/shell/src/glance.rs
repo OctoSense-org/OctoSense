@@ -729,7 +729,40 @@ pub fn generation() -> u64 {
 /// Serve one `glance.*` call for `caller`: the same API for a contained app
 /// (through the Card runner's host service) and a native one.
 pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, String> {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if matches!(service, "glance.publish" | "publish") && args.get("template").is_some() {
+        caller.may_use()?;
+        let Caller::Contained {app, ..} = caller else {return Err("Templates belong to installed apps".into());};
+        let template = args["template"].as_str().ok_or("template must be an admitted asset name")?;
+        let body = crate::host_tools::script_apps::glance_template(app, template)?;
+        let account = crate::ai_host::contained::account_of(app).ok_or("Connect the app's account first")?;
+        let args = template_args(args, &body, &account)?;
+        // Persist the exact resolved source, so restoration does not silently
+        // replace this publication with a later version of the app template.
+        return request_bound(caller, service, &args, None);
+    }
     request_bound(caller, service, args, None)
+}
+
+#[cfg(any(feature = "app-hub", native_mobile, test))]
+fn template_args(args: &Value, body: &str, account: &str) -> Result<Value, String> {
+    if args.get("script").is_some() || args.get("source").is_some() || args.get("data").is_some() {
+        return Err("A template publication uses initial values, not source/script/data".into());
+    }
+    let mut initial = args["initial"].as_object().cloned().ok_or("initial must be an object")?;
+    // This contract exposes a connection handle, never credentials. The model
+    // cannot select a second account or turn live content into fixture mode.
+    initial.insert("connection".into(), json!(account));
+    initial.insert("demo".into(), json!(false));
+    let encoded = serde_json::to_string(&initial).map_err(|_| "Cannot encode template values")?;
+    if encoded.len() > DATA_MAX {return Err("Template values exceed the data budget".into());}
+    let script = format!("let initial = {}.parse_json()\nlet card_source = \"\"\n{body}", json!(encoded));
+    if script.len() > SOURCE_MAX {return Err("Template exceeds the source budget".into());}
+    let mut resolved = args.clone();
+    let object = resolved.as_object_mut().ok_or("Publication must be an object")?;
+    object.remove("template"); object.remove("initial");
+    object.insert("script".into(), json!(script));
+    Ok(resolved)
 }
 
 fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crate::mail_card::Binding>) -> Result<Value, String> {
@@ -808,6 +841,8 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
 /// surface calls it every frame it draws the glance screen.
 pub fn expire_now() {
     crate::mail_card::restore_publications();
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    crate::mail_background::restore_publications();
     #[cfg(any(feature = "app-hub", native_mobile))]
     restore_calendar_publications();
     if with_store(|store| {
@@ -927,6 +962,14 @@ impl octosense_appstore::services::HostService for GlanceService {
         "glance"
     }
     fn call(&mut self, call: octosense_appstore::services::ServiceCall, reply: octosense_appstore::services::Replier, _host: &mut dyn octosense_appstore::services::ServiceHost) {
+        if call.method() == "take_open" {
+            if call.from_sheet || !call.may_prompt {
+                reply.send(Err("Open routes belong to the foreground app".into()));
+            } else {
+                reply.send(Ok(json!({"route":crate::glance_routes::take(&call.app_id)})));
+            }
+            return;
+        }
         // The identity is the runner's, never the app's arguments. A call from
         // the app's own isolate passed the runner's gate, which requires the
         // `glance` capability; a host sheet's isolate has no app policy and
@@ -1082,6 +1125,28 @@ pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::
 }
 
 /// Native notification restore: the account comes from private host storage.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn restore_notification_for(app: &str, args: &Value, account: &str, published: u64, expires: u64) -> Result<(), String> {
+    if app == "os.mail" {return restore_mail_notification(args,account,published,expires);}
+    crate::apps::check_script_app_id(app)?;
+    if crate::ai_host::contained::account_of(app).as_deref() != Some(account)
+        || crate::app_storage::host().is_none_or(|s|s.is_signed_out(app,Some(account))) {
+        return Err("Inactive account".into());
+    }
+    let now = now_ms();
+    if expires <= now || published >= expires {return Err("Expired publication".into());}
+    let caller = Caller::Contained {app:app.into(),granted:crate::host_tools::script_apps::grants(app,"glance")};
+    let mut temporary = GlanceStore::default().with_digest_root(crate::glance_digest::digest_root());
+    let mut args = args.clone(); args["notify"]=json!(false); args["expires"]=json!(EXPIRES_MAX_S);
+    temporary.publish(&caller,&args,now)?;
+    let mut card = temporary.cards.pop().ok_or("Missing restored publication")?;
+    if card.account.as_deref() != Some(account) {return Err("Publication account changed".into());}
+    card.published_ms=published; card.expires_ms=card.expires_ms.min(expires);
+    if with_store(|store|store.restore_publication(card,now)) {changed();}
+    Ok(())
+}
+
+/// Legacy Mail L0/binding restoration keeps its stricter source contract.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub(crate) fn restore_mail_notification(args: &Value, account: &str, published: u64, expires: u64) -> Result<(), String> {
     let _gate = crate::mail_card::publication_guard();
@@ -1258,6 +1323,25 @@ pub fn publish_demo_if_asked() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_initial_values_are_data_and_cannot_change_host_account() {
+        let injected="\"; host.request(\"gmail.send\",{}); //";
+        let input=json!({"template":"workspace.splash","card_id":"a1","title":"Fixture",
+            "initial":{"connection":"other","demo":true,"message":{"body":injected}}});
+        let resolved=template_args(&input,"Label {text: initial.message.body}","owned").unwrap();
+        let script=resolved["script"].as_str().unwrap();
+        let literal=script.lines().next().unwrap().strip_prefix("let initial = ").unwrap().strip_suffix(".parse_json()").unwrap();
+        let encoded:String=serde_json::from_str(literal).unwrap();
+        let decoded:Value=serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded["connection"],"owned");assert_eq!(decoded["demo"],false);
+        assert_eq!(decoded["message"]["body"],injected);
+        assert!(resolved.get("template").is_none());assert!(resolved.get("initial").is_none());
+        let mut mixed=input.clone();mixed["script"]=json!("Button {}");
+        assert!(template_args(&mixed,"Label {}","owned").is_err());
+        let mut oversized=input;oversized["initial"]["message"]=json!("x".repeat(DATA_MAX+1));
+        assert!(template_args(&oversized,"Label {}","owned").is_err());
+    }
 
     #[cfg(any(feature = "app-hub", native_mobile))]
     #[test]

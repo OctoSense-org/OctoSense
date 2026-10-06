@@ -83,7 +83,7 @@ mod jni {
                     std::path::Path::new(&files),
                 );
                 runtime_host::init(Some(files), Some(PathBuf::from(kernel)));
-                apps::register_mail_services();
+                apps::register_host_services();
                 agent_events::start();
             });
             if let Some(app) = agents::find("os.mail") {

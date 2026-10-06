@@ -4,7 +4,7 @@
     "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "b93c3353b9a33e77adf52b0b03e838e742468501",
+    "tree": "4d551700429705f326a9f86f2562c1320a5077ea",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -15,7 +15,8 @@
       "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
       "Calculator lays its keypad out again after every apply (makepad #99): the phone shell's style reapply after a hosted module's first frame left the DSL's 85-point keys, overflowing a 393-point-wide phone.",
       "The Terminal opens its own agent's link and answers it with its read tools only (makepad #100); typing a command stays the host's terminal.run.",
-      "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Other platforms remain untrusted; compromised OS/root impersonation is outside this app-level boundary."
+      "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Compromised OS/root impersonation is outside this app-level boundary; the subsequent desktop patch adds macOS pointer provenance.",
+      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; Windows/Linux physical approval is unsupported."
     ],
     "stacked": [
       {
@@ -49,6 +50,10 @@
       {
         "patch": "tools/runtime-patches/makepad-trusted-user-input.patch",
         "sha256": "48ac389a3b0fab5051092539700f63d4d58b7dd21cb60af43c30b0fda60a6b32"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-desktop-trusted-input.patch",
+        "sha256": "0bb2bbc7d776bb9c8b8064b2f44bcec6e9442c10e1fbf84acbdfd03f0b89be50"
       }
     ]
   }
