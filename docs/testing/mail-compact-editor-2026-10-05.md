@@ -65,6 +65,34 @@ However, opening the landscape keyboard exposed another failure: the fixed
 title and tab rows consumed the remaining editor space. That observation prompted
 the focused-body layout above; 0521 is not a landscape-keyboard pass.
 
-Final local checks and OnePlus 6 observations of that follow-up are pending. No new model quality
-comparison, complete accessibility acceptance or SMTP delivery is claimed.
-Private mail, drafts and device screenshots remain outside this public report.
+The follow-up source at `f2fe188f4e2ddce0ee7d38c9d6552ae0990cac60` passed
+935 Shell and 55 Mail tests (two optional Mail tests ignored), desktop checks
+with and without mobile apps, phone checks, both dependency graphs, runtime
+pins, catalog and private-path checks, and the release Android build. The native
+geometry test now includes a 96-point keyboard viewport: the focused editor
+gets 88 points, and returning to 700 points restores the 44-point action row
+without changing the text.
+
+Normal OnePlus 6 Home **2026100522** is installed. Its APK SHA-256 is
+`2eca35530ae17c208ce6c50d45a120084a10fef8d15c82bc01e1cdb604ef6493`;
+the two compiled host source hashes match the revision above. On that build,
+ADB/platform captures verified the compact portrait editor, readable Select all,
+the body above the landscape keyboard, cursor navigation, restoration of the
+normal controls after Android Back, and exact review followed by Back. The first
+landscape keyboard opening left the cursor line partially at the lower clip edge;
+cursor navigation scrolled it into view. This is not a complete IME/caret-scroll
+acceptance result. Dark appearance was not exercised on the phone.
+
+The 0522 upgrade preserved all thirteen draft files byte-for-byte. After the
+read/selection/review checks, all thirteen recipients, subjects, bodies and
+revisions remained unchanged; one draft's attempts list changed when review was
+cancelled. Codex authored the native host changes and drove ADB; no draft text
+was entered, cut or pasted, no new model turn was requested, and no send approval
+was activated. Model-authored live L0 card source was not rewritten. Temporary
+orientation/stay-awake settings were restored and ADB returned to its non-root
+shell UID.
+
+The phone observations are ADB/platform captures; the layout measurements are
+native Makepad widget tests. No new model quality comparison, full accessibility
+acceptance, display-frame benchmark or SMTP delivery is claimed. Private mail,
+drafts and device screenshots remain outside this public report.
