@@ -1,0 +1,37 @@
+# ledger news.story@1.0.0
+# level: L0
+# profile: ui/l0
+source story sys.dataset(fields: [title, summary, subtitle, status, coverage, url1, url2])
+source brief sys.digest(app: "os.news", id: "{thread}", fields: [summary, points, sources, id, text, cite, n, title, source, url])
+source destination sys.link(fields: [url])
+copy research { class: vocabulary, en: "Research topic", zh: "深入研究" }
+copy open { class: vocabulary, en: "Open News", zh: "打开新闻" }
+copy searching { class: vocabulary, en: "Researching sources… You can keep reading or chat.", zh: "正在研究来源…你可以继续阅读或聊天。" }
+copy partial { class: vocabulary, en: "Partial research · some sources could not be read", zh: "部分研究结果 · 部分来源无法读取" }
+copy failed { class: vocabulary, en: "Research unavailable. Tap Research topic to retry.", zh: "研究暂不可用，点击深入研究重试。" }
+copy sources { class: vocabulary, en: "Sources", zh: "来源" }
+event research { destination: set($value) }
+event open { destination: set($value) }
+view root Surface(pad: .page) {
+  Col(gap: 10) {
+    TextCaption(text: story.subtitle)
+    TextTitle(text: story.title, width: .fill)
+    TextBody(text: story.summary, width: .fill)
+    Row(gap: 8) {
+      Chip(text: copy.research, on_tap: research, value: story.url2)
+      Chip(text: copy.open, on_tap: open, value: story.url1)
+    }
+    when story.status == "running" { TextBody(text: copy.searching, width: .fill) }
+    when story.status == "partial" { TextCaption(text: copy.partial) }
+    when story.status == "failed" { TextBody(text: copy.failed, width: .fill) }
+    TextBody(text: story.coverage, width: .fill)
+    TextBody(text: brief.summary, width: .fill)
+    for p in brief.points key p.id {
+      Col(gap: 3) { TextBody(text: p.text, width: .fill) TextCaption(text: p.cite) }
+    }
+    TextCaption(text: copy.sources)
+    for s in brief.sources key s.id {
+      Col(gap: 3) { TextCaption(text: s.n) TextBody(text: s.title, width: .fill) TextCaption(text: s.source) TextBody(text: s.url, width: .fill) }
+    }
+  }
+}

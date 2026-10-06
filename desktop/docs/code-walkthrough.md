@@ -161,10 +161,11 @@ The shipped declarations provide these operations:
 
 | Agent-enabled app | Tools and implementation |
 | --- | --- |
-| News | `news.list`, `news.read` and `news.notify`; News's host service handles them and hands notices to the shell. |
+| News | `news.list/read`, `news.research/research_result`, `news.publish_card/notify`; the owner service researches stored stories through the existing octos toolbox and publishes cited results. |
 | Mail | accounts/folders/sync/list/peek are bound to the broker account; peek never marks mail read. notify/publish_card publish through the shell; skip_event records an explicit no-action decision. Sending and credentials remain unavailable to the agent. |
 | Calendar | `calendar.events`, `add_event`, `update_event`, `remove_event`, `notify`, `agenda`; its Rust service owns events and event/agenda card templates. |
-| Photos, Maps, YouTube, Camera | `<namespace>.notify` only; the shell's `NoticeService` handles each application's namespace. Camera is packaged by Home. |
+| Photos, YouTube | Dedicated `photos.rs` and `youtube.rs` shell services own data, recommendations, publication tools and UI navigation; [contextual cards](../../docs/contextual-app-cards.md) explains cross-app grants and private preferences. |
+| Maps, Camera | `<namespace>.notify`; the shell's `NoticeService` handles notices. Camera is packaged by Home. |
 
 AI providers configures the host and currently declares no app agent. Calendar's
 contained month/day view and editor use the explicit `calendar` capability. Its

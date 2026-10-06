@@ -178,7 +178,7 @@ fn optional(it, key, fallback){
 }
 
 fn service_row(it){
-    let row = {title: it.title link: it.url source: it.source published: it.published summary: it.summary
+    let row = {id: it.id title: it.title link: it.url source: it.source published: it.published summary: it.summary
         image: optional(it, "image", "") discussion: optional(it, "discussion", "")
         points: optional(it, "points", nil) comments: optional(it, "comments", nil)}
     row
@@ -372,6 +372,30 @@ fn close_story(){
     reading = nil
 }
 
+fn publish_reading(research){
+    if reading == nil { return }
+    let id = optional(reading, "id", "")
+    if !use_service || id == "" { ui.reader_fail.set_text("Refresh News to load this story into the local library."); return }
+    let method = "news.publish_card"
+    if research { method = "news.research" }
+    ui.reader_fail.set_text("Opening Glance card…")
+    host.request(method, {id: id}, fn(r){
+        if r.is_ok {
+            if research { ui.reader_fail.set_text("Research started. The result will appear in Glance; you can chat there.") }
+            else { ui.reader_fail.set_text("Added to Glance. Open its summary to read or chat.") }
+        } else { ui.reader_fail.set_text(r.error) }
+    })
+}
+
+fn consume_focus(){
+    if !use_service { return }
+    host.request("news.view", {}, fn(r){
+        if r.is_ok && r.data.id != nil {
+            host.request("news.read", {id: r.data.id}, fn(story){ if story.is_ok { open_story(service_row(story.data.item)) } })
+        }
+    })
+}
+
 fn empty_text(){
     if tab == "saved" { return "Long-press a story, or tap Save while reading, to keep it here." }
     if query != "" { return "No stories match." }
@@ -386,9 +410,11 @@ fn boot(){
     ui.tile_list.render()
     use_service = host.has("news")
     refresh()
+    consume_focus()
 }
 start_timeout(0.05, || boot())
 start_interval(900, || refresh_due())
+start_interval(1.0, || consume_focus())
 
 let ink = #x1c1c1e
 let secondary = #x8e8e93
@@ -489,6 +515,10 @@ HostedView{width: Fill height: Fill
                 save := BarButton{text: "Save" on_click: || { if reading != nil { toggle_save(reading) } }}
             }
             reader_fail := Label{width: Fill padding: Inset{left: 18 right: 18} text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            View{width: Fill height: Fit flow: Right spacing: 8 padding: Inset{left: 12 right: 12}
+                BarButton{text: "Research topic" on_click: || publish_reading(true)}
+                BarButton{text: "Add to Glance" on_click: || publish_reading(false)}
+            }
             reader := WebReader{width: Fill height: Fill on_error: || ui.reader_fail.set_text(ui.reader.error())}
         }
     }

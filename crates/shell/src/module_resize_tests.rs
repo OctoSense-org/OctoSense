@@ -2,6 +2,13 @@ use crate::module_view::MpModuleView;
 use makepad_widgets::{makepad_draw::cx_draw::CxDraw, widget_async::with_isolate, *};
 
 const PHOTOS: &str = include_str!("../../../apps/photos/bundle/main.splash");
+// These geometry probes omit asynchronous boot. Seed its host response from
+// the exact production catalog; missing-service behavior has a separate VM test.
+fn photos_model() -> String {
+    let model = PHOTOS.split_once("\nstart_timeout(").unwrap().0;
+    let catalog = serde_json::to_string(include_str!("../../../apps/photos/catalog.json")).unwrap();
+    format!("{model}\ncatalog = {catalog}.parse_json().photos\n")
+}
 const RESIZE_PROBE: &str = r#"
 mod.resize_history = []
 fn on_app_resize(width, height) {
@@ -11,7 +18,7 @@ View{width: Fill height: Fill}
 "#;
 
 fn photo_model(expression: &str) -> serde_json::Value {
-    let source = PHOTOS.split_once("\nstart_timeout(").unwrap().0;
+    let source = photos_model();
     let mut host = ScriptVmHost::new((), ());
     let mut vm = ScriptVm {
         host: &mut host,
@@ -173,7 +180,7 @@ fn reloaded_card_receives_its_size_even_when_the_slot_is_unchanged() {
 #[test]
 fn photos_preview_renders_resized_rows_before_the_frame_is_captured() {
     let (mut cx, tile, root, outer) = hosted_card();
-    let model = PHOTOS.split_once("\nstart_timeout(").unwrap().0;
+    let model = photos_model();
     let preview = r#"
 View{width: Fill height: Fill
     tile_grid := View{width: Fill height: Fill flow: Down on_render: || {
@@ -209,7 +216,7 @@ fn photos_preview_title_is_the_size_of_every_card_title() {
 }
 
 fn set_photos_preview(cx: &mut Cx, root: &WidgetRef, outer: SplashVmId) {
-    let model = PHOTOS.split_once("\nstart_timeout(").unwrap().0;
+    let model = photos_model();
     let preview = PHOTOS
         .rsplit_once("\n    tile: ")
         .unwrap()

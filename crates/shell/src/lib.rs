@@ -89,6 +89,13 @@ pub mod mail_review;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_notice;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod news_cards;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod photos;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod youtube;
+pub mod private_preferences;
 pub mod glance_panel;
 pub mod glance_sheet;
 mod card_presentation;
@@ -3825,6 +3832,17 @@ impl App {
 
     fn launch_glance_app(&mut self, cx: &mut Cx, app: &str, route: Option<&str>) {
         #[cfg(any(feature = "app-hub", native_mobile))]
+        if let Some(route) = route {
+            let root = octosense_app_hub_app::data_root(cx).join(".host");
+            let result = match app {
+                "news" => route.strip_prefix("story/").ok_or("Invalid News route".into()).and_then(crate::news_cards::focus_story),
+                "photos" => crate::photos::focus_route(&root, route),
+                "youtube" => route.strip_prefix("video/").ok_or("Invalid YouTube route".into()).and_then(|id| crate::youtube::focus_video(&root, id)),
+                _ => Ok(()),
+            };
+            if let Err(error) = result { self.notify(cx, app, &error); return; }
+        }
+        #[cfg(any(feature = "app-hub", native_mobile))]
         if app == "calendar" {
             if let Some(id) = route.and_then(|route| route.strip_prefix("event/")) {
                 let root = octosense_app_hub_app::data_root(cx).join(".host");
@@ -6738,6 +6756,11 @@ impl App {
             if self.tick.is_timer(te).is_some() && self.state.is_some() {
                 self.reap_exited(cx);
                 self.poll_backgrounds(cx);
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if let Some(root) = octosense_app_hub_app::data_root_if_set() {
+                    crate::youtube::tick(&root.join(".host"));
+                    crate::news_cards::tick();
+                }
                 self.drain_client_lines(cx);
                 self.explain_first_exec_scan(cx);
                 self.update_status(cx);

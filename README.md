@@ -112,10 +112,15 @@ These apps have an agent:
 | App Hub | native, in the shell | `apphub.search`, `apphub.installed`, `apphub.updates`, read only: installs and updates stay on App Hub's own screens | the same read tools |
 | Mail | script app | `mail.*` tools scoped to the signed-in account: reads, cards (`mail.publish_card`), and reply drafts it can propose but never send | – |
 | Calendar | script app | `calendar.events`, `calendar.add_event`, `calendar.remove_event` (asks first), `calendar.notify`, `calendar.agenda` | – |
-| News | script app | `news.list`, `news.read`, `news.notify` | – |
-| Photos, Maps, YouTube; Camera on phones | script apps | `<app>.notify` | – |
+| News | script app | `news.list/read`, `news.research/research_result`, `news.publish_card/notify` | – |
+| Photos | script app | `photos.list/read/collections/publish_card/notify` | – |
+| YouTube | script app | `youtube.search/read/recommend/publish/preferences/notify` | – |
+| Maps; Camera on phones | script apps | `<app>.notify` | – |
 
 AI providers has no agent.
+
+[Contextual cards and private preferences](docs/contextual-app-cards.md) explains
+News research, photo selections, scheduled music, cross-app grants and Card/Chat.
 
 ### How the system agent and an app agent talk
 
@@ -252,7 +257,7 @@ An agent can only work with what its app hands it. A script app declares all of 
 
 - **A declaration.** The manifest's `agent` block names the kernel tools the agent may use (the system apps ask only for `ask_user_question`), the model features it needs (`tool_calling`) and, optionally, an `AGENT.md` with instructions and skills, which the shell sends with every turn. A native app's entry also says which of its tools its own agent may call (`own_tools`) and which the system agent may call (`system_tools`).
 - **Tools.** `tools.json` describes each tool, named `<app>.<tool>`: its input schema, its `risk` (`read`, `act` or `destructive`), who confirms it (`confirm: host` for a shell sheet, `app` for the app's own sheet) and whether other apps' agents may use it (`shareable`).
-- **Something to run the tools.** A declared tool needs an executor: the app's host service (Mail, Calendar, News), the shell's notice service (`<app>.notify` for the other system apps) or a native app's open window. Store apps have no host service, and a tool marked `implemented_by: "app"` has no executor in the Card runner yet. So today a store app's agent can talk, ask questions and read its folder, but cannot act through tools of its own.
+- **Something to run the tools.** A declared tool needs an executor: the app's host service (Mail, Calendar, News, Photos, YouTube), the shell's notice service (`<app>.notify` for Maps and Camera) or a native app's open window. Store apps have no host service, and a tool marked `implemented_by: "app"` has no executor in the Card runner yet. So today a store app's agent can talk, ask questions and read its folder, but cannot act through tools of its own.
 - **Data.** The agent works in its account's folder, `apps/<app id>/accounts/<account hash>/` (a single `device` folder for an app without accounts), and reads it with the host's read-only `files.list`, `files.read` and `files.search` (on Unix). A script app can declare `storage.agent_workspace: "none"` to give its agent no folder, so it sees only what its tools return; a native app's agent gets its folder either way. No agent sees another account's folder.
 - **Memory.** Each agent has its own memory namespace, `app/<app>/acct-<hash>`, erased with the account.
 - **A way to reach the person.** With the `glance` permission, its tools can publish cards.

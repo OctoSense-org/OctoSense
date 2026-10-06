@@ -1,11 +1,13 @@
-// YouTube: search YouTube, list what exists right now, play a tap in the
-// system web view. Results come from the runtime's keyless `sys.video`
-// helper, which reads YouTube's own results page (public Piped/Invidious
-// instances were dead when it was written); nothing here remembers a video id
-// it did not just get from a search.
-let chips = ["lofi hip hop radio" "news live" "music" "NASA" "cooking" "documentary"]
+// YouTube search and recommendations share the host-owned searched-video cache.
+// Only a human tap opens the WebReader player. Native Card/Chat lives in Glance.
+let music_slots = [{id: "morning" label: "Morning"} {id: "noon" label: "Noon break"} {id: "afternoon" label: "Relax"} {id: "dinner" label: "Dinner"} {id: "sleep" label: "Sleep"}]
+let daily_music = false
+let music_agent_allowed = false
+let search_generation = 0
+let view_busy = false
 let q = "lofi hip hop radio"
 let loaded_q = ""
+let searching = false
 let failed = false
 let hits = []
 let history = []
@@ -42,27 +44,81 @@ fn load_state(){
     }
 }
 
-// The helper answers "—" while the results page loads and "n/a" once the
-// fetch has failed for good; otherwise how many results it parsed.
+// The host does bounded network work off the UI thread and caches the exact
+// result. Chat and a card's Play action resolve the same video identity.
 fn read_hits(){
     if q == "" || loaded_q == q { return }
-    let n = sys.video(q, 0, "count")
-    if n == "—" { return }
     loaded_q = q
+    searching = true
+    search_generation = search_generation + 1
+    let generation = search_generation
+    host.request("youtube.search", {query: q limit: 10}, fn(r){
+        if generation != search_generation { return }
+        searching = false
+        hits = []
+        failed = !r.is_ok
+        if r.is_ok { hits = r.data.videos }
+        sync_status()
+        if !r.is_ok { ui.status.set_text(r.error) }
+        ui.list.render()
+    })
+}
+fn recommend_music(slot){
+    searching = true
+    search_generation = search_generation + 1
+    let generation = search_generation
+    q = slot.label + " music"
+    loaded_q = q
+    failed = false
     hits = []
-    failed = n == "n/a"
-    // Rows until the helper runs out: past the last result it answers "".
-    if !failed {
-        for i in 20 {
-            let id = sys.video(q, i, "id")
-            if id == "" || id == "—" || id == "n/a" { break }
-            hits.push({id: id title: sys.video(q, i, "title") channel: sys.video(q, i, "channel")
-                length: sys.video(q, i, "length") views: sys.video(q, i, "views") age: sys.video(q, i, "age")
-                thumb: sys.video(q, i, "thumb") embed: sys.video(q, i, "embed")})
+    show("search")
+    ui.status.set_text("Finding music for " + slot.label + "…")
+    host.request("youtube.recommend", {slot: slot.id limit: 5}, fn(r){
+        if generation != search_generation { return }
+        searching = false
+        failed = !r.is_ok
+        if !r.is_ok { ui.status.set_text(r.error); return }
+        q = r.data.query
+        loaded_q = q
+        hits = r.data.videos
+        sync_status()
+        ui.list.render()
+        if hits.len() > 0 {
+            host.request("youtube.publish", {id: hits[0].id slot: slot.id}, fn(p){
+                if generation != search_generation { return }
+                if p.is_ok { ui.status.set_text(slot.label + " recommendation is in Glance. Tap Play there, or chat to refine it.") }
+                else { ui.status.set_text(p.error) }
+            })
         }
-    }
-    sync_status()
-    ui.list.render()
+    })
+}
+fn sync_music_label(){
+    if daily_music && !music_agent_allowed { ui.daily.set_text("Daily music: paused") }
+    else if daily_music { ui.daily.set_text("Daily music: on") }
+    else { ui.daily.set_text("Daily music: off") }
+}
+fn toggle_daily(){
+    host.request("youtube.preferences", {enabled: !daily_music}, fn(r){
+        if !r.is_ok { ui.status.set_text(r.error); return }
+        daily_music = r.data.enabled
+        music_agent_allowed = r.data.agent_allowed
+        sync_music_label()
+        if daily_music && !music_agent_allowed { ui.status.set_text("Daily music is paused. Enable YouTube’s agent in Settings to allow scheduled suggestions. Times use this device’s local timezone.") }
+        else if daily_music { ui.status.set_text("Quiet daily suggestions enabled in device local time while OctoSense is running. Chat can review or change times.") }
+        else { ui.status.set_text("Daily suggestions are off. You can still choose a music occasion.") }
+    })
+}
+fn check_focus(){
+    if view_busy { return }
+    view_busy = true
+    host.request("youtube.view", {}, fn(r){
+        view_busy = false
+        if !r.is_ok { return }
+        daily_music = r.data.preferences.enabled
+        music_agent_allowed = r.data.preferences.agent_allowed
+        sync_music_label()
+        if r.data.focus != nil { play(r.data.focus) }
+    })
 }
 
 fn search_for(text){
@@ -81,8 +137,9 @@ fn search_for(text){
 
 fn sync_status(){
     let text = ""
-    if screen == "history" { text = "" }
-    else if q != "" && loaded_q != q { text = "Searching YouTube for “" + q + "”…" }
+    if daily_music && !music_agent_allowed { text = "Daily music is paused. Enable YouTube’s agent in Settings; scheduled times use this device’s local timezone." }
+    else if screen == "history" { text = "" }
+    else if searching || q != "" && loaded_q != q { text = "Searching YouTube for “" + q + "”…" }
     else if failed { text = "Couldn't reach YouTube. Check the connection and search again." }
     else if hits.len() == 0 { text = "No videos found for “" + q + "”." }
     else { text = "Results for “" + q + "”" }
@@ -123,7 +180,9 @@ fn play(h){
     ui.player_meta.set_text(meta(h))
     ui.player_fail.set_text("")
     show("player")
-    ui.reader.open(h.embed)
+    // Derive from the exact video identity, including older history entries
+    // whose saved embed URL predates the mobile watch-page playback fix.
+    ui.reader.open("https://m.youtube.com/watch?v=" + h.id)
 }
 
 fn close_player(){
@@ -149,9 +208,10 @@ fn boot(){
     sync_status()
     ui.list.render()
     read_hits()
+    check_focus()
 }
 start_timeout(0.05, || boot())
-start_interval(0.5, || read_hits())
+start_interval(1.0, || check_focus())
 
 let ground = #x0f0f0f
 let ink = #xf1f1f1
@@ -193,7 +253,8 @@ SolidView{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: gr
             RoundedView{width: 30 height: 21 align: Align{x: 0.5 y: 0.5} new_batch: true show_bg: true draw_bg.color: red draw_bg.border_radius: 6.0
                 Label{text: "▶" draw_text.color: #xffffff draw_text.text_style.font_size: 10}
             }
-            Label{text: "YouTube" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 19}}
+            Label{width: Fill text: "YouTube" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 19}}
+            daily := Chip{text: "Daily music: off" on_click: || toggle_daily()}
         }
         View{width: Fill height: Fit padding: Inset{left: 12 right: 12 bottom: 8}
             search := TextInput{width: Fill height: 40 empty_text: "Search YouTube"
@@ -208,9 +269,8 @@ SolidView{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: gr
             on_render: || {
                 if screen == "history" { ChipOn{text: "History" on_click: || show("history")} }
                 else { Chip{text: "History" on_click: || show("history")} }
-                for c in chips {
-                    if screen == "search" && c == q { ChipOn{text: c on_click: || search_for(c)} }
-                    else { Chip{text: c on_click: || search_for(c)} }
+                for slot in music_slots {
+                    Chip{text: slot.label on_click: || recommend_music(slot)}
                 }
             }
         }

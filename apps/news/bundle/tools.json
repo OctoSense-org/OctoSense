@@ -7,23 +7,54 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "since": { "type": "integer", "description": "Only stories fetched at or after this Unix time." },
-          "topic": { "type": "string", "maxLength": 200 },
-          "lang": { "type": "string", "maxLength": 16 },
-          "feed": { "type": "string", "maxLength": 200 },
-          "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
-          "offset": { "type": "integer", "minimum": 0 }
+          "since": {
+            "type": "integer",
+            "description": "Only stories fetched at or after this Unix time."
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "lang": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "feed": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "additionalProperties": false
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "total": { "type": "integer" },
-          "offset": { "type": "integer" },
-          "items": { "type": "array", "items": { "type": "object" } }
+          "total": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
         },
-        "required": ["total", "items"]
+        "required": [
+          "total",
+          "items"
+        ]
       },
       "risk": "read",
       "shareable": true,
@@ -34,14 +65,31 @@
       "description": "Read one collected story by its id: the story and its stored summary.",
       "input_schema": {
         "type": "object",
-        "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 128 } },
-        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "id"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
         "type": "object",
-        "properties": { "item": { "type": "object" }, "text": { "type": "string" } },
-        "required": ["item"]
+        "properties": {
+          "item": {
+            "type": "object"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ]
       },
       "risk": "read",
       "shareable": true,
@@ -53,21 +101,132 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "title": { "type": "string", "minLength": 1, "maxLength": 80 },
-          "body": { "type": "string", "minLength": 1, "maxLength": 600 },
-          "card_id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
-          "priority": { "type": "integer", "minimum": 0, "maximum": 100 }
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "card_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
         },
-        "required": ["title", "body"],
+        "required": [
+          "title",
+          "body"
+        ],
         "additionalProperties": false
       },
       "output_schema": {
         "type": "object",
-        "properties": { "card_id": { "type": "string" }, "replaced": { "type": "boolean" }, "expires_at": { "type": "integer" } },
-        "required": ["card_id"]
+        "properties": {
+          "card_id": {
+            "type": "string"
+          },
+          "replaced": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "card_id"
+        ]
       },
       "risk": "act",
       "background": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "news.publish_card",
+      "description": "Publish a stored story as a quiet Glance card with Research topic, Open News and native Chat.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "shareable": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "news.research",
+      "description": "Start bounded octos topic research for a stored story and publish status and cited results in Glance. Returns running; use research_result later. Never claim completion until ready or partial.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "zh"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "act",
+      "shareable": true,
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "news.research_result",
+      "description": "Read the status and entire validated summary, points and sources of a story research job.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "risk": "read",
+      "shareable": true,
       "implemented_by": "host-service"
     }
   ]

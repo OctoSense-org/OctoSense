@@ -378,7 +378,8 @@ fn a_turn_streams_and_interrupt_stops_it() {
     let (mut d, fake) = opened();
     d.command(Command::Send("  Plan my Tuesday  ".into()));
     let start = fake.sent("turn/start");
-    assert_eq!(start[0]["input"], json!([{"kind": "text", "text": "Plan my Tuesday"}]));
+    assert_eq!(start[0]["input"], json!([{"kind": "text", "text": format!("{}Plan my Tuesday", crate::private_preferences::system_note())}]));
+    assert_eq!(text_of(&d.model, Role::User), ["Plan my Tuesday"], "private host guidance is not a human chat bubble");
     let turn = start[0]["turn_id"].as_str().unwrap().to_string();
     assert_eq!(turn.len(), 36, "a UUID turn id");
     fake.notify("message/delta", json!({"turn_id": turn, "text": "Looking"}));
@@ -862,6 +863,28 @@ fn the_system_agents_calls_go_to_the_relay_and_are_answered_once_on_this_link() 
     assert_eq!(results.last().unwrap()["call_id"], "c4");
     assert_eq!(results.last().unwrap()["error"]["kind"], "turn_interrupted");
     assert!(!d.effects.iter().any(|e| matches!(e, Effect::ToolCall { call, .. } if call.call_id == "c4")));
+}
+
+#[test]
+fn private_memory_mutations_from_nonhuman_turns_never_enter_the_app_relay() {
+    let (mut d, fake) = opened();
+    fake.notify("peer/tool/call", json!({
+        "call_id":"memory-background", "tool_call_id":"memory-background", "turn_id":"background",
+        "name":"preferences.forget", "app":"system-preferences", "args":{"id":"all"},
+        "caller":{"kind":"system"}
+    }));
+    settle(&mut d);
+    assert!(!d.effects.iter().any(|e| matches!(e, Effect::ToolCall { .. })));
+    let results = fake.sent("peer/tool/result");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["error"]["kind"], "person_required");
+}
+
+#[test]
+fn private_memory_guidance_preserves_user_typed_kernel_commands() {
+    let (mut d, fake) = opened();
+    d.command(Command::Send("/new".into()));
+    assert_eq!(fake.sent("turn/start")[0]["input"][0]["text"], "/new");
 }
 
 #[test]

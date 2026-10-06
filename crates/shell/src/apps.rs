@@ -196,7 +196,7 @@ pub(crate) mod test_system_apps {
 pub fn register_mail_services() {
     // Admission is separate from the manifest request, relay grant and
     // owner's shareable declaration. Offer only Mail's reviewed dependencies.
-    octosense_appstore::system::set_agent_tool_offer("os.mail", &["calendar.events", "calendar.add_event", "calendar.notify"]);
+    register_agent_tool_offers();
     register_calendar_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -226,7 +226,19 @@ pub fn register_mail_services() {
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) fn register_agent_tool_offers() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        octosense_appstore::system::set_agent_tool_offer("os.mail", &["calendar.events", "calendar.add_event", "calendar.notify"]);
+        octosense_appstore::system::set_agent_tool_offer("os.news", &["youtube.search", "youtube.read", "youtube.recommend", "youtube.publish"]);
+        octosense_appstore::system::set_agent_tool_offer("os.photos", &["news.list", "news.read", "news.research", "news.research_result", "news.publish_card"]);
+        octosense_appstore::system::set_agent_tool_offer("os.youtube", &["photos.list", "photos.read", "photos.collections", "photos.publish_card"]);
+    });
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
 fn register_host_services() {
+    register_agent_tool_offers();
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -234,6 +246,8 @@ fn register_host_services() {
         // published the same way.
         register_calendar_services();
         register_news();
+        crate::photos::register();
+        crate::youtube::register();
         // After every service of the shell's own: the notice service never
         // stands in for one.
         let served = crate::glance_notice::serve_system_apps();
@@ -273,7 +287,9 @@ fn register_news() {
             );
         })
         // `news.notify` (News's agent's tool): the shell's notice card, as News.
-        .on_notify(crate::glance_notice::notify);
+        .on_notify(crate::glance_notice::notify)
+        .on_card(crate::news_cards::call)
+        .on_view(crate::news_cards::view);
     match octosense_app_hub_app::data_root_if_set() {
         Some(root) => {
             let host_dir = root.join(".host");
@@ -352,6 +368,7 @@ fn script_agent_apps() -> Vec<AgentApp> {
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn read_script_agent_apps(root: &Path) -> Vec<AgentApp> {
+    register_agent_tool_offers();
     let root = root.to_path_buf();
     let mut out = Vec::new();
     for app in octosense_app_hub_app::system_apps() {

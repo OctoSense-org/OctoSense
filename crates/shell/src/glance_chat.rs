@@ -183,6 +183,10 @@ impl Responder for AgentResponder {
                 Ok(text) => text,
                 Err(e) => return done(Reply::Notice(e)),
             };
+            // Host-verified human input only, with filesystem work off the UI
+            // thread. Capture consent/account before the agent's turn; only a
+            // successful answer can queue extraction. Canned demos skip this.
+            let preference_job = crate::private_preferences::capture(&request);
             let opened = match &request.binding {
                 Some(binding) => crate::agents::conversation_for_account(&app, INSTANCE, &binding.account),
                 None => crate::agents::conversation(&app, INSTANCE),
@@ -197,13 +201,16 @@ impl Responder for AgentResponder {
                 let context = context.clone();
                 let account = request.binding.as_ref().map(|b| b.account.clone());
                 let publisher = request.app.clone();
+                let preference_job = preference_job.clone();
                 move |reply: Reply| {
                     let reply = match account.as_deref().map(|a| bound_access(&publisher, a)) {
                         Some(Err(e)) => Reply::Notice(e),
                         _ => reply,
                     };
                     if let Some(done) = done.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                        let answered = matches!(&reply, Reply::Model(text) if !text.trim().is_empty());
                         done(reply);
+                        if answered { crate::private_preferences::completed(preference_job.clone()); }
                     }
                     context.close();
                 }

@@ -1,0 +1,48 @@
+# ledger photos.selection@0.1.0
+# level: L0
+# profile: ui/l0
+# Host-authored projection of selected sample photo IDs. Thumbnail URLs are
+# constructed by Photos' host service, never supplied by an agent or chat.
+source selection sys.dataset(fields: [title, subtitle, summary, coverage, url1, pick1_title, pick1_body, pick1_source, pick2_title, pick2_body, pick2_source, pick3_title, pick3_body, pick3_source])
+source destination sys.link(fields: [url])
+event open_photos { destination: set($value) }
+copy app { class: vocabulary, en: "Photos", zh: "照片" }
+copy open { class: vocabulary, en: "Open Photos", zh: "打开照片" }
+view root Surface(pad: .page) {
+  Col(gap: 10) {
+    Row(gap: 8, align: .center) {
+      Icon(name: .image, size: .row)
+      TextCaption(text: copy.app, width: .fill)
+      TextCaption(text: selection.coverage)
+    }
+    TextTitle(text: selection.title, width: .fill)
+    TextCaption(text: selection.subtitle, width: .fill)
+    Chip(text: copy.open, on_tap: open_photos, value: selection.url1, tone: .primary)
+    Row(gap: 10) {
+      Thumb(src: selection.pick1_source, shape: .wide)
+      Col(gap: 4) {
+        TextRow(text: selection.pick1_title, width: .fill)
+        TextCaption(text: selection.pick1_body, width: .fill)
+      }
+    }
+    when selection.pick2_title != "" {
+      Row(gap: 10) {
+        Thumb(src: selection.pick2_source, shape: .wide)
+        Col(gap: 4) {
+          TextRow(text: selection.pick2_title, width: .fill)
+          TextCaption(text: selection.pick2_body, width: .fill)
+        }
+      }
+    }
+    when selection.pick3_title != "" {
+      Row(gap: 10) {
+        Thumb(src: selection.pick3_source, shape: .wide)
+        Col(gap: 4) {
+          TextRow(text: selection.pick3_title, width: .fill)
+          TextCaption(text: selection.pick3_body, width: .fill)
+        }
+      }
+    }
+    TextBody(text: selection.summary, width: .fill)
+  }
+}

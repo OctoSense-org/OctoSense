@@ -3,8 +3,15 @@
   "id": "os.youtube",
   "version": "1.0.0",
   "name": "YouTube",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "net", "glance"],
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "storage",
+    "net",
+    "glance",
+    "youtube"
+  ],
   "network": {
     "hosts": [
       "www.youtube.com",
@@ -14,7 +21,18 @@
   },
   "agent": {
     "profile": "read-only",
-    "tools": ["ask_user_question"],
-    "model": { "needs": ["tool_calling"] }
+    "tools": [
+      "ask_user_question",
+      "photos.list",
+      "photos.read",
+      "photos.collections",
+      "photos.publish_card"
+    ],
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    },
+    "instructions": "AGENT.md"
   }
 }

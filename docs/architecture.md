@@ -284,7 +284,7 @@ The relay (`crates/shell/src/host_tools/`) takes every `peer/tool/call` from the
 4. **Confirm** a `confirm: app` call: acknowledge it to the kernel, then hand it to the owner's sheet ([section 5](#5-approvals)).
 5. **Answer once,** checked against `output_schema` (at most 256 KiB); nothing runs after a cancel. Each call is audited, with a digest of its arguments, in `logs/tool-calls.jsonl`.
 
-A script app's `implemented_by: "host-service"` tool runs on its namespace's host service, as the app, if the app was granted that family or owns it as a system app. The shell's `NoticeService` answers `<app>.notify` for Photos, Maps, YouTube and Camera. **Not yet:** `implemented_by: "app"` has no executor and store apps have no host service, so a store app's agent cannot act through tools of its own.
+A script app's `implemented_by: "host-service"` tool runs on its namespace's host service, as the app, if the app was granted that family or owns it as a system app. Dedicated Photos and YouTube host services provide their data and card tools and delegate notices to the common renderer; the shell's `NoticeService` directly answers `<app>.notify` for Maps and Camera. **Not yet:** `implemented_by: "app"` has no executor and store apps have no host service, so a store app's agent cannot act through tools of its own.
 
 ### The system agent's tool set
 

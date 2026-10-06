@@ -27,7 +27,7 @@ fn start_interval(seconds, callback){ timers.push(callback); timers.len() }
 fn stop_timer(id){ cancelled_timers.push(id) }
 let host = {request: fn(method, args, callback){ pending.push({method: method args: args callback: callback}); pending.len() }}
 let widget = {render: fn(){} set_text: fn(text){} set_visible: fn(visible){} text: fn(){ "" }}
-let ui = {title: widget subtitle: widget back: widget create: widget edit: widget searchbar: widget editor_bar: widget tabs: widget message: widget list: widget memory_controls: widget memory_status: widget viewer: widget main: widget viewer_title: widget viewer_meta: widget viewer_count: widget favorite: widget stage: widget playback: widget tile_grid: widget}
+let ui = {title: widget subtitle: widget back: widget create: widget edit: widget searchbar: widget editor_bar: widget tabs: widget message: widget list: widget memory_controls: widget memory_status: widget viewer: widget main: widget viewer_title: widget viewer_meta: widget viewer_status: widget viewer_count: widget favorite: widget stage: widget playback: widget tile_grid: widget}
 "#;
 
 fn run(body: &str) -> Value {
@@ -37,7 +37,7 @@ fn run(body: &str) -> Value {
     let logic = SCRIPT.split_once("\nstart_timeout(").expect("boot boundary").0;
     let value = vm.with_instruction_limit(4_000_000, |vm| vm.eval(ScriptMod {
         file: "photos_memories_test.splash".into(),
-        code: format!("{ENV}\n{logic}\n{body}\n;"),
+        code: format!("{ENV}\n{logic}\ncatalog = {}.parse_json().photos\n{body}\n;", serde_json::to_string(include_str!("../catalog.json")).unwrap()),
         ..Default::default()
     }));
     let errors = vm.take_errors();
@@ -267,4 +267,66 @@ fn partial_writes_preserve_the_last_saved_snapshot_across_restarts() {
         {{first: first second: saved_memories.len()}}.to_json()
     "#));
     assert_eq!(v, json!({"first": 1, "second": 2}));
+}
+
+#[test]
+fn photos_boot_fetches_one_canonical_catalog_before_rendering_and_reports_missing_service() {
+    let v = run(r#"
+        catalog = []
+        boot()
+        let method = pending[0].method
+        let before = catalog.len()
+        pending[0].callback({is_ok: false error: "Unavailable"})
+        {method: method before: before after: catalog.len() message: message}.to_json()
+    "#);
+    assert_eq!(v["method"], "photos.list");
+    assert_eq!(v["before"], 0);
+    assert_eq!(v["after"], 0);
+    assert!(v["message"]
+        .as_str()
+        .unwrap()
+        .contains("Sample library unavailable"));
+}
+
+#[test]
+fn photos_editor_does_not_consume_a_pending_card_route() {
+    let v = run(r#"
+        route = "editor"
+        check_focus()
+        {method: pending[0].method take_focus: pending[0].args.take_focus}.to_json()
+    "#);
+    assert_eq!(v["method"], "photos.view");
+    assert_eq!(v["take_focus"], false);
+}
+
+#[test]
+fn photos_publish_is_quiet_and_reports_a_bounded_selection_without_rewriting_ids() {
+    let v = run(r#"
+        let ids = catalog_ids()
+        show_in_glance(ids)
+        let args = pending[0].args
+        pending[0].callback({is_ok: true data: {card_id: "selection"}})
+        {method: pending[0].method ids: args.ids notify: args.notify message: message}.to_json()
+    "#);
+    assert_eq!(v["method"], "photos.publish_card");
+    assert_eq!(v["ids"].as_array().unwrap().len(), 12);
+    assert_eq!(v["ids"][0], "stock-aquarium-fish");
+    assert_eq!(v["notify"], false);
+    assert!(v["message"].as_str().unwrap().contains("first 12"));
+}
+
+#[test]
+fn photos_host_catalog_boot_populates_library_before_album_and_preview_state() {
+    let v = run(r#"
+        let rows = catalog
+        catalog = []
+        boot()
+        pending[0].callback({is_ok: true data: {items: rows}})
+        {photos: catalog.len() albums: store.albums.len() people: people.len() preview: tile_ids(1).len() next: pending[1].method}.to_json()
+    "#);
+    assert_eq!(v["photos"], 75);
+    assert_eq!(v["albums"], 2);
+    assert!(v["people"].as_u64().unwrap() > 0);
+    assert_eq!(v["preview"], 3);
+    assert_eq!(v["next"], "photos.view");
 }

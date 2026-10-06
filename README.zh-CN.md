@@ -112,10 +112,15 @@ flowchart LR
 | App Hub | 原生，在 Shell 内 | `apphub.search`、`apphub.installed`、`apphub.updates`，只读：安装和更新仍在 App Hub 自己的界面上进行 | 同样的只读工具 |
 | 邮件 | 脚本应用 | 绑定当前登录账号的 `mail.*` 工具：读取、卡片（`mail.publish_card`），以及它可以提议但永远不能发送的回复草稿 | – |
 | 日历 | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
-| 新闻 | 脚本应用 | `news.list`、`news.read`、`news.notify` | – |
-| 相册、地图、YouTube；手机上的相机 | 脚本应用 | `<app>.notify` | – |
+| 新闻 | 脚本应用 | `news.list/read`、`news.research/research_result`、`news.publish_card/notify` | – |
+| 相册 | 脚本应用 | `photos.list/read/collections/publish_card/notify` | – |
+| YouTube | 脚本应用 | `youtube.search/read/recommend/publish/preferences/notify` | – |
+| 地图；手机上的相机 | 脚本应用 | `<app>.notify` | – |
 
 AI providers 没有 Agent。
+
+[情境卡片与私有偏好](docs/contextual-app-cards.zh-CN.md)说明新闻研究、照片选择、
+分时音乐、跨应用授权及 Card/Chat。
 
 ### 系统 Agent 如何与应用 Agent 通信
 
@@ -252,7 +257,7 @@ Agent 能做什么，取决于应用交给它什么。脚本应用把这些都�
 
 - **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
-- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有宿主服务，而标为 `implemented_by: "app"` 的工具在 Card runner 中还没有执行器。所以目前商店应用的 Agent 能对话、能提问、能读取自己的文件夹，但还不能通过自己的工具做事。
+- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻、照片、YouTube）、Shell 的通知服务（地图和相机的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有宿主服务，而标为 `implemented_by: "app"` 的工具在 Card runner 中还没有执行器。所以目前商店应用的 Agent 能对话、能提问、能读取自己的文件夹，但还不能通过自己的工具做事。
 - **数据。** Agent 在它所属账号的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账号的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账号的文件夹。
 - **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账号一起清除。
 - **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。
