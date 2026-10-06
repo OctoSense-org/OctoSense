@@ -163,12 +163,13 @@ The shipped declarations provide these operations:
 | --- | --- |
 | News | `news.list`, `news.read` and `news.notify`; News's host service handles them and hands notices to the shell. |
 | Mail | accounts/folders/sync/list/peek are bound to the broker account; peek never marks mail read. notify/publish_card publish through the shell; skip_event records an explicit no-action decision. Sending and credentials remain unavailable to the agent. |
-| Calendar | `calendar.events`, `add_event`, `remove_event`, `notify`, `agenda`; its Rust service owns events and event/agenda card templates. |
+| Calendar | `calendar.events`, `add_event`, `update_event`, `remove_event`, `notify`, `agenda`; its Rust service owns events and event/agenda card templates. |
 | Photos, Maps, YouTube, Camera | `<namespace>.notify` only; the shell's `NoticeService` handles each application's namespace. Camera is packaged by Home. |
 
 AI providers configures the host and currently declares no app agent. Calendar's
-script window explains how to ask its agent; its events are available through
-the tools above while App Hub has no script `calendar` capability.
+contained month/day view and editor use the explicit `calendar` capability. Its
+UI and the agent tools above share one local event store. A saved event's Glance
+card opens that exact record in Calendar, and editing it refreshes its card.
 
 Follow [`glance_notice.rs`](../../crates/shell/src/glance_notice.rs) and
 [`resources/glance/notice.card`](../../crates/shell/resources/glance/notice.card)

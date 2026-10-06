@@ -249,6 +249,9 @@ fn register_calendar_services() {
     ONCE.call_once(|| {
         octosense_calendar_service::register();
         octosense_calendar_service::on_publish_card(Some(std::sync::Arc::new(|app: &str, args: serde_json::Value| crate::glance::publish_for(app, &args))));
+        octosense_calendar_service::on_withdraw_card(Some(std::sync::Arc::new(|app, id| {
+            crate::glance::withdraw_for(app, id)
+        })));
     });
 }
 

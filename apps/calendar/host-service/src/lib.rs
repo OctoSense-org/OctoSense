@@ -34,6 +34,12 @@ use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+mod ui;
+mod cards;
+pub use cards::{on_withdraw_card, publications, set_dismissed, Publication};
+pub use ui::focus_event;
+static EVENT_WRITES: Mutex<()> = Mutex::new(());
+
 /// The one app this service answers.
 pub const APP: &str = "os.calendar";
 
@@ -216,6 +222,16 @@ pub fn event_card_args(title: &str, day: &str, time: &str, location: &str, notes
     })
 }
 
+/// A card is a projection of a saved event, with a route to that exact item.
+pub fn saved_event_card_args(event: &Event, card_id: &str, priority: i64) -> Value {
+    let (day, time) = day_and_time(&event.start, event.end.as_deref());
+    let time = format!("{time}{}", event.zone_label());
+    let mut args = event_card_args(&event.title, &day, &time, &event.location, &event.notes, card_id, priority);
+    args["open"]["route"] = json!(format!("event/{}", event.id));
+    args["summary"] = json!(format!("{day} · {time}{}", if event.location.is_empty() {String::new()} else {format!(" · {}",event.location)}));
+    args
+}
+
 /// `calendar.agenda`'s `glance.publish` arguments: the next three of
 /// `events` (soonest first) on the agenda card.
 pub fn agenda_card_args(events: &[Event], days: i64, now: NaiveDateTime) -> Value {
@@ -252,11 +268,19 @@ pub fn handle(app: &str, method: &str, args: &Value, host_dir: &Path, now: Naive
     if app != APP {
         return Err("calendar is Calendar's own service".into());
     }
+    let _write = matches!(method, "add_event" | "update_event" | "remove_event").then(|| EVENT_WRITES.lock().unwrap_or_else(|e| e.into_inner()));
     let publish_card = |card: Value| match publish {
         Some(p) => p(app, card),
         None => Err("This device shows no glance cards.".into()),
     };
     match method {
+        "view" => ui::view(host_dir, args, now),
+        "update_event" => {
+            let mut result = ui::update(host_dir,args)?;
+            let event: Event = serde_json::from_value(result["event"].clone()).expect("saved event");
+            if let Err(error) = cards::refresh(host_dir,&event,publish) { result["card_warning"] = json!(error); }
+            Ok(result)
+        },
         "events" => {
             let from = match text(args, "from") {
                 "" => None,
@@ -309,7 +333,7 @@ pub fn handle(app: &str, method: &str, args: &Value, host_dir: &Path, now: Naive
                     if &same != existing {
                         return Err("This request_id already names a different saved event. Read calendar.events and resolve the change; do not create a duplicate.".into());
                     }
-                    return Ok(json!({"id":existing.id,"start":existing.start,"reused":true}));
+                    return Ok(json!({"id":existing.id,"start":existing.start,"reused":true,"card_warning":null}));
                 }
             }
             let id = if events.iter().any(|e| e.id == event.id) { format!("{}-{}", event.id, events.len()) } else { event.id.clone() };
@@ -319,21 +343,33 @@ pub fn handle(app: &str, method: &str, args: &Value, host_dir: &Path, now: Naive
                 events.remove(0);
             }
             save(host_dir, &events)?;
-            Ok(json!({"id": id, "start": start}))
+            Ok(json!({"id": id, "start": start,"card_warning":null}))
         }
         "remove_event" => {
             let id = text(args, "id");
             let mut events = load(host_dir);
+            if let Some(expected) = args.get("expected") {
+                let expected: Event = serde_json::from_value(expected.clone()).map_err(|_| "Read the event before deleting it.")?;
+                if !events.iter().any(|e| e.id == id && *e == expected) { return Err("This event changed elsewhere. Reload before deleting it.".into()); }
+            }
             let before = events.len();
             events.retain(|e| e.id != id);
             let removed = events.len() != before;
             if removed {
                 save(host_dir, &events)?;
             }
-            Ok(json!({"removed": removed}))
+            let mut result = json!({"removed": removed});
+            if removed { if let Err(error) = cards::remove(host_dir,id) { result["card_warning"] = json!(error); } }
+            Ok(result)
         }
         "notify" => {
             let priority = args["priority"].as_i64().unwrap_or(70);
+            if !text(args,"event").is_empty() {
+                let event = load(host_dir).into_iter().find(|e| e.id == text(args,"event")).ok_or("This event is no longer in Calendar.")?;
+                let card_id = if text(args,"card_id").is_empty() { &event.id } else { text(args,"card_id") };
+                let publisher = publish.ok_or("This device shows no glance cards.")?;
+                return cards::publish(host_dir,&event,card_id,priority,chrono::Utc::now().timestamp_millis().max(0) as u64,publisher);
+            }
             let (title, (day, time), location, notes, card_id) = match text(args, "event") {
                 "" => {
                     let title = bounded(text(args, "title"), TITLE_MAX, "A title")?;

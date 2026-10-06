@@ -3729,7 +3729,7 @@ impl App {
             glance_panel::ShellGlancePanelAction::Open { app, route } => {
                 log!("wm: glance card opens {} (route {:?})", app, route);
                 self.set_glance_open(cx, false);
-                self.launch_app(cx, &app);
+                self.launch_glance_app(cx, &app, route.as_deref());
             }
             // A card pressed in the panel: the card window, as its
             // notification opens it.
@@ -3818,9 +3818,25 @@ impl App {
         let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
         if !sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.accepts_pointer(event)) { return false; }
         sheet.handle_event(cx, event, &mut Scope::empty());
+        let open = sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().and_then(|mut s| s.take_open_request());
+        if let Some((app, route)) = open { self.launch_glance_app(cx, &app, route.as_deref()); }
         self.sync_glance_presentation(cx);
         if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) { self.redraw_all(cx); }
         true
+    }
+
+    fn launch_glance_app(&mut self, cx: &mut Cx, app: &str, route: Option<&str>) {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if app == "calendar" {
+            if let Some(id) = route.and_then(|route| route.strip_prefix("event/")) {
+                let root = octosense_app_hub_app::data_root(cx).join(".host");
+                if let Err(error) = octosense_calendar_service::focus_event(&root, id) {
+                    self.notify(cx, "Calendar", &error);
+                }
+            }
+        }
+        let _ = route;
+        self.launch_app(cx, app);
     }
 
     /// Back dismisses the IME, then review, then the workspace.

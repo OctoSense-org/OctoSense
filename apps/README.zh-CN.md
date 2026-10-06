@@ -66,7 +66,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
-| [Calendar](calendar/bundle) | `os.calendar` | 它的 Agent 保存用户的日程，并把日程卡片和议程卡片放到 glance 屏幕上；它自己的窗口还不能列出日程（需要 App Hub 提供 `calendar` 权限） | `storage`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
+| [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -351,17 +351,24 @@ Android 的密码文件由该安装包的 Keystore 密钥加密；从测试包�
 `octosense-calendar-service`（`apps/calendar/host-service/src/lib.rs`）以日历
 （`os.calendar`）身份执行。Mail 与系统 Agent 均显式获授可共享的
 `calendar.events`、`calendar.add_event`、`calendar.notify`；Shell 中转检查调用者，
-再交给日历执行器。脚本 UI 仍无直接 Calendar 能力，删除与议程工具不在这些跨应用授权中。
+再交给日历执行器。日历自身 UI 另行请求 `calendar` 能力，服务校验 `os.calendar`
+身份。删除、更新、UI 查看方法及议程工具不在这些跨应用授权中。
 
 | 方法 | 参数 | 返回 |
 | --- | --- | --- |
+| `calendar.view`（仅 UI） | `{month?, day?, direction?, take_focus?}` | 月历、日期标记、所选日期的日程以及待打开的日程 |
+| `calendar.update_event`（仅 Calendar UI/Agent） | `{id, expected, title, start, end?, timezone?, location?, notes?}` | 保存日程，拒绝过期快照覆盖，并静默刷新已有卡片 |
 | `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes, timezone?, request_id?}]}`，最近的在前 |
 | `calendar.add_event` | `{title, start, end?, location?, notes?, timezone?, request_id?}` | `{id, start, reused?}` |
 | `calendar.remove_event` | `{id}` | `{removed}` |
 | `calendar.notify` | `{event}` 或 `{title, when, location?, notes?}`，以及 `{card_id?, priority?}` | 日程卡片（`resources/event.card`）上了 glance 屏幕并发出通知后返回 `{card_id, replaced, expires_at}` |
 | `calendar.agenda` | `{days?}` | 同上，用于议程卡片（`resources/agenda.card`）：`days`（7）天内接下来的三个日程 |
 
-日程保存在 `<host_dir>/calendar/events.json`，位于所有应用沙箱之外。显式 IANA
+日程保存在 `<host_dir>/calendar/events.json`，位于所有应用沙箱之外。月历、按日列表
+与编辑器使用同一份存储。已保存日程卡片带 `event/<id>` 路由，**Open Calendar**
+在真实日历应用中打开同一条记录。`calendar/cards.json` 保存发布记录、原始有效期
+及用户隐藏状态；重启静默恢复未过期卡片，重复通知复用同一卡片，编辑刷新卡片数据。
+临时通知及议程卡片不属于此持久化日程卡片记录。显式 IANA
 `timezone` 保留日程所在地的时间，并在卡片显示时区；省略时区沿用设备本地时间。
 夏令时切换中不存在或有歧义的时间会被拒绝。精确的 `from`/`to` 过滤请带 RFC3339
 偏移量。稳定的 `request_id` 让完全相同的重试复用已保存日程；相同键但字段不同会

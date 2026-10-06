@@ -31,7 +31,7 @@
 | 进程应用（源码检出构建中的 Terminal 和 Task） | [clients.rs](../crates/shell/src/clients.rs)、[hub.rs](../crates/shell/src/hub.rs) | hub 只接纳出示了本次启动从 stdin 读到的密钥的子进程 socket；`sandbox_policy` 构建系统沙箱。 |
 | 脚本应用（日历、邮件、所有商店应用） | `apps.rs` 中的 `system_card_apps`，然后是 App Hub 的 `CARD_MODULE` | `card` 模块，也就是 Card runner，托管所有系统应用和已安装应用，每个实例一个隔离环境。 |
 
-`system_card_apps` 生成日历的启动器条目，并在第一次时注册 Shell 的宿主服务（`register_host_services`）。日历自己的窗口不列出任何日程，因为 App Hub 没有可以授予它的 `calendar` 能力；由日历持有的工具读取日程，也包括下文明确授权的跨应用调用。
+`system_card_apps` 生成日历的启动器条目，并在第一次时注册 Shell 的宿主服务（`register_host_services`）。日历的 `calendar` 能力让其隔离 UI 调用所属服务。月历、按日列表、编辑器及日历 Agent 工具共用 `.host/calendar/events.json`。Glance 日程卡片是同一记录的投影，`event/<id>` 路由在真实日历应用中打开该日程。跨应用 Agent 调用仍须下文的独立授权。
 
 运行方法见桌面端 README 的[构建与运行](../desktop/README.zh-CN.md#构建与运行)，其中用 `python3 tools/kernel-artifact.py --host --stage target/release` 准备锁定版本的内核。
 

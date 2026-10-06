@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "calendar.events",
-      "description": "List the person's calendar events, soonest first: id, title, start, end, location and notes. Times are local, like 2026-10-02T15:00. Filter with from and to (a time or a date); limit caps the list. Entries may include request_id for retry deduplication. These are OctoSense local events, not a Google Calendar account. A returned timezone belongs to that event; from/to filters use device local time unless RFC3339 offsets are supplied.",
+      "description": "List the person's calendar events, soonest first: id, title, start, end, location and notes. Times are local, like 2026-10-02T15:00. Filter with from and to (a time or a date); limit caps the list. Entries may include request_id for retry deduplication. These are OctoSense local events, not a Google Calendar account. A returned timezone belongs to that event; from/to filters use device local time unless RFC3339 offsets are supplied. This is the same store displayed by the Calendar app month/day views.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -108,6 +108,71 @@
       "shareable": true
     },
     {
+      "name": "calendar.update_event",
+      "description": "Edit one saved Calendar event, keeping its id and original request_id. First read calendar.events and pass that exact event as expected; a stale snapshot is refused. Supply the full replacement title, start, end (omit if unknown), timezone, location and notes. This updates the same Calendar UI record and quietly refreshes its existing event cards. It does not send invites or sync Google Calendar.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "start": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "end": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 600
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "expected": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "expected",
+          "title",
+          "start"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "risk": "act",
+      "background": true,
+      "implemented_by": "host-service"
+    },
+    {
       "name": "calendar.remove_event",
       "description": "Remove an event from the person's calendar by its id (from calendar.events). It is gone for good, so the person approves it.",
       "input_schema": {
@@ -142,7 +207,7 @@
     },
     {
       "name": "calendar.notify",
-      "description": "Show an event on the person's glance screen as an event card, with a notification: name one of the calendar's events by its id (event), or give a title and when (a local time like 2026-10-02T15:00, or words), with a location and notes if any. Calendar draws the card. The same card_id replaces an earlier card.",
+      "description": "Show an event on the person's glance screen as an event card, with a notification: name one of the calendar's events by its id (event), or give a title and when (a local time like 2026-10-02T15:00, or words), with a location and notes if any. Calendar draws the card. The same card_id replaces an earlier card. A saved event card opens that exact event in Calendar. An identical live saved-event publication is reused without another notification; edits in Calendar refresh its card.",
       "input_schema": {
         "type": "object",
         "properties": {

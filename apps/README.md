@@ -74,7 +74,7 @@ OctoScript-App-Design-Flow:
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
-| [Calendar](calendar/bundle) | `os.calendar` | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
+| [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -407,11 +407,14 @@ credential-reset workaround.
 as Calendar (`os.calendar`). Its executor owns the service call even when Mail
 or the system agent is the caller. Both have explicit grants for the shareable
 `calendar.events`, `calendar.add_event` and `calendar.notify` tools. The relay
-checks the caller before routing; there is no direct Calendar capability for
-a script UI. Removal and agenda are not included in these cross-app grants.
+checks the caller before routing. Calendar’s own UI separately requests the
+`calendar` capability; the service checks `os.calendar` identity. Removal, update, UI
+view and agenda are not included in these cross-app grants.
 
 | Method | Args | Answer |
 | --- | --- | --- |
+| `calendar.view` (UI only) | `{month?, day?, direction?, take_focus?}` | Month grid, marked days, selected day’s events, and pending saved-event navigation |
+| `calendar.update_event` (Calendar UI/agent only) | `{id, expected, title, start, end?, timezone?, location?, notes?}` | Saved event; stale expected snapshots are refused; existing event cards refresh quietly |
 | `calendar.events` | `{from?, to?, limit?}` | `{events: [{id, title, start, end, location, notes, timezone?, request_id?}]}`, soonest first |
 | `calendar.add_event` | `{title, start, end?, location?, notes?, timezone?, request_id?}` | `{id, start, reused?}` |
 | `calendar.remove_event` | `{id}` | `{removed}` |
@@ -419,6 +422,12 @@ a script UI. Removal and agenda are not included in these cross-app grants.
 | `calendar.agenda` | `{days?}` | the same, for the agenda card (`resources/agenda.card`): the next three events within `days` (7) |
 
 Events live in `<host_dir>/calendar/events.json`, outside every app's jail.
+The app’s month/day list and editor use this same store. A saved event’s card
+keeps its id in `open.route = "event/<id>"`; **Open Calendar** opens that event
+in the actual app. `calendar/cards.json` records saved-event publications, their
+original expiry and dismissals. Restart restores active cards without a new
+notification, identical live notify retries reuse the card, and edits refresh
+its data. Ad-hoc notices and agenda cards are not durable saved-event records.
 An explicit IANA `timezone` retains the event wall time and shows its zone on
 the card; omitted zones retain legacy device-local behavior. Ambiguous or
 missing daylight-saving times are refused. Use RFC3339 offsets for precise

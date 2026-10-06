@@ -1,15 +1,283 @@
-// Calendar: its assistant keeps the events (the `calendar` host service) and
-// puts event and agenda cards on the glance screen. This window says how to
-// reach it; listing the events here waits for App Hub's `calendar` capability.
-let ink = #x1c1c1e
-let secondary = #x8e8e93
+// Calendar owns one store. Both this UI and agents use calendar.*; the
+// Glance event card is a projection of the same saved event, never a copy.
+let month = ""
+let day = ""
+let today = ""
+let zone = ""
+let weeks = []
+let events = []
+let selected = nil
+let screen = "calendar"
+let busy = false
+let generation = 0
+let last_view = ""
+let delete_pending = false
+let weekdays = ["M" "T" "W" "T" "F" "S" "S"]
+
+fn status(message){ ui.status.set_text(message) }
+fn pane(name){
+    screen = name
+    ui.calendar.set_visible(name == "calendar")
+    ui.detail.set_visible(name == "detail")
+    ui.editor.set_visible(name == "editor")
+}
+fn render_detail(){
+    if selected == nil { return }
+    ui.event_title.set_text(selected.title)
+    let when = selected.start
+    if selected.when != nil { when = selected.when }
+    ui.event_when.set_text(when)
+    let tz = "Device local time"
+    if selected.timezone != nil && selected.timezone != "" { tz = selected.timezone }
+    ui.event_zone.set_text(tz)
+    let place = "No location added"
+    if selected.location != "" { place = selected.location }
+    ui.event_place.set_text(place)
+    let note = "No notes added"
+    if selected.notes != "" { note = selected.notes }
+    ui.event_notes.set_text(note)
+}
+fn open_event(event){
+    selected = event
+    ui.delete_button.set_text("Delete event")
+    delete_pending = false
+    render_detail()
+    ui.detail_status.set_text("")
+    pane("detail")
+}
+fn refresh(direction){
+    generation = generation + 1
+    let request_generation = generation
+    host.request("calendar.view", {month: month day: day direction: direction take_focus: screen != "editor"}, fn(r){
+        if request_generation != generation { return }
+        if !r.is_ok { status(r.error); return }
+        if last_view == r.data.fingerprint { return }
+        last_view = r.data.fingerprint
+        month = r.data.month
+        day = r.data.day
+        today = r.data.today
+        zone = r.data.timezone
+        weeks = r.data.weeks
+        events = r.data.events
+        ui.month_title.set_text(r.data.month_label)
+        ui.day_title.set_text(r.data.day_label)
+        ui.grid.render()
+        ui.events.render()
+        status("Local calendar · Times include each event's zone")
+        if r.data.focused != nil && screen != "editor" { open_event(r.data.focused) }
+        if screen == "detail" && selected != nil {
+            for event in events { if event.id == selected.id { selected = event; render_detail() } }
+        }
+    })
+}
+fn pick(date){ day = date; month = ""; refresh(0) }
+fn go_today(){ day = today; month = ""; refresh(0) }
+fn back(){ selected = nil; pane("calendar"); refresh(0) }
+fn edit_new(){
+    selected = nil
+    ui.edit_heading.set_text("New event")
+    ui.e_title.set_text("")
+    ui.e_date.set_text(day)
+    ui.e_start.set_text("09:00")
+    ui.e_end_date.set_text(day)
+    ui.e_end.set_text("")
+    ui.e_zone.set_text(zone)
+    ui.e_place.set_text("")
+    ui.e_notes.set_text("")
+    ui.edit_status.set_text("An empty end leaves the duration unspecified.")
+    pane("editor")
+}
+fn edit_existing(){
+    if selected == nil { return }
+    ui.edit_heading.set_text("Edit event")
+    ui.e_title.set_text(selected.title)
+    let start_parts = selected.start.split("T")
+    ui.e_date.set_text(start_parts[0])
+    ui.e_start.set_text(start_parts[1])
+    let end = ""
+    let end_date = start_parts[0]
+    if selected.end != nil { let parts = selected.end.split("T"); end_date = parts[0]; end = parts[1] }
+    ui.e_end_date.set_text(end_date)
+    ui.e_end.set_text(end)
+    let tz = ""
+    if selected.timezone != nil { tz = selected.timezone }
+    ui.e_zone.set_text(tz)
+    ui.e_place.set_text(selected.location)
+    ui.e_notes.set_text(selected.notes)
+    ui.edit_status.set_text("Changes update this event and its Glance card.")
+    pane("editor")
+}
+fn cancel_edit(){ if busy { return }; if selected != nil { pane("detail") } else { pane("calendar") }; refresh(0) }
+fn save(){
+    if busy { return }
+    busy = true
+    ui.edit_status.set_text("Saving…")
+    let end = ""
+    if ui.e_end.text() != "" { end = ui.e_end_date.text() + "T" + ui.e_end.text() }
+    let args = {title: ui.e_title.text() start: ui.e_date.text() + "T" + ui.e_start.text() end: end timezone: ui.e_zone.text() location: ui.e_place.text() notes: ui.e_notes.text()}
+    let method = "calendar.add_event"
+    if selected != nil { method = "calendar.update_event"; args.id = selected.id; args.expected = selected }
+    host.request(method, args, fn(r){
+        busy = false
+        if !r.is_ok { ui.edit_status.set_text(r.error); return }
+        if r.data.card_warning != nil { ui.edit_status.set_text("Event saved. " + r.data.card_warning); busy = false; return }
+        day = args.start.split("T")[0].split(" ")[0]
+        month = ""
+        selected = nil
+        pane("calendar")
+        refresh(0)
+    })
+}
+fn show_glance(){
+    if selected == nil || busy { return }
+    busy = true
+    host.request("calendar.notify", {event: selected.id}, fn(r){
+        busy = false
+        if r.is_ok { ui.detail_status.set_text("Event shown in Glance.") }
+        else { ui.detail_status.set_text(r.error) }
+    })
+}
+fn remove(){
+    if selected == nil || busy { return }
+    if !delete_pending { delete_pending = true; ui.delete_button.set_text("Confirm delete"); return }
+    busy = true
+    host.request("calendar.remove_event", {id: selected.id expected: selected}, fn(r){
+        busy = false
+        if r.is_ok { back() } else { ui.detail_status.set_text(r.error) }
+    })
+}
+fn poll(){
+    start_timeout(1.0, || {
+        if !busy && screen != "editor" { refresh(0) }
+        poll()
+    })
+}
+start_timeout(0.05, || { refresh(0); poll() })
+
+let ink = #x172033
+let muted = #x53627a
+let accent = #x285cd6
+let Bar = ButtonFlat{height: 44 padding: Inset{left: 12 right: 12}
+    draw_bg +: {color: #x00000000 color_hover: #xeaf0ff color_down: #xdbe6ff border_size: 0.0 border_radius: 10.0}
+    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 14}}
+}
+let Primary = Bar{draw_bg +: {color: accent color_hover: #x396de6 color_down: #x204bb5}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
+let Field = TextInput{width: Fill height: 46
+    draw_bg +: {color: #xf1f4fa color_hover: #xeaf0fa color_focus: #xeaf0ff color_empty: #xf1f4fa border_color: #xd9e0ec border_color_hover: #xb9cbea border_color_focus: accent border_color_empty: #xd9e0ec border_radius: 10.0}
+    draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: muted color_empty_hover: muted}}
+let Caption = Label{width: Fill draw_text.color: muted draw_text.text_style.font_size: 12}
+let Day = Bar{width: Fill height: 43 padding: 0 draw_text +: {color: ink color_hover: ink color_down: ink text_style +: {font_size: 14}}}
+let Marked = Day{draw_bg +: {color: #xeaf0ff color_hover: #xdbe6ff color_down: #xcddcff}}
+let Chosen = Day{draw_bg +: {color: accent color_hover: accent color_down: accent} draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
 
 SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
-    View{width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 12 padding: 32
-        Label{text: "Calendar" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 32}}
-        Label{width: Fill align: Align{x: 0.5} text: "Calendar's assistant keeps your events. Ask it to add one, to show an event on your glance screen, or to put your agenda there."
-            draw_text.color: secondary draw_text.text_style.font_size: 13}
-        Label{width: Fill align: Align{x: 0.5} text: "Ask Calendar from the bar while this window is in front, or ask the assistant (F8) to ask Calendar."
-            draw_text.color: secondary draw_text.text_style.font_size: 12}
+    calendar := View{width: Fill height: Fill flow: Down
+        View{width: Fill height: 62 flow: Right align: Align{y: 0.5} padding: Inset{left: 18 right: 14} spacing: 6
+            Label{width: Fill text: "Calendar" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 26}}
+            Bar{text: "Today" on_click: || go_today()}
+            Primary{text: "+ Event" on_click: || edit_new()}
+        }
+        status := Caption{padding: Inset{left: 18 right: 18 bottom: 8} text: "Loading calendar…"}
+        ScrollYView{width: Fill height: Fill flow: Down padding: Inset{left: 14 right: 14 bottom: 28} spacing: 12
+            View{width: Fill height: 46 flow: Right align: Align{y: 0.5}
+                Bar{width: 44 text: "‹" on_click: || refresh(-1)}
+                month_title := Label{width: Fill align: Align{x: 0.5} text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
+                Bar{width: 44 text: "›" on_click: || refresh(1)}
+            }
+            View{width: Fill height: 22 flow: Right
+                for name in weekdays { Label{width: Fill align: Align{x: 0.5} text: name draw_text.color: muted draw_text.text_style.font_size: 12} }
+            }
+            grid := View{width: Fill height: Fit flow: Down spacing: 3 on_render: || {
+                for week in weeks {
+                    View{width: Fill height: 43 flow: Right spacing: 3
+                        for date in week.days {
+                            let label = date.label
+                            if date.marked { label = label + " •" }
+                            if date.selected { Chosen{text: label on_click: || pick(date.date)} }
+                            else if date.marked { Marked{text: label on_click: || pick(date.date)} }
+                            else if !date.in_month { Day{text: label draw_text.color: #x929db0 on_click: || pick(date.date)} }
+                            else { Day{text: label on_click: || pick(date.date)} }
+                        }
+                    }
+                }
+            }}
+            day_title := Label{width: Fill margin: Inset{top: 10} text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 18}}
+            events := View{width: Fill height: Fit flow: Down spacing: 8 on_render: || {
+                if events.len() == 0 {
+                    View{width: Fill height: Fit padding: 16 flow: Down spacing: 8
+                        Label{width: Fill text: "No events on this day" draw_text.color: muted draw_text.text_style.font_size: 15}
+                        Bar{text: "Add an event" on_click: || edit_new()}
+                    }
+                }
+                for event in events {
+                    GestureView{width: Fill height: Fit flow: Down padding: 16 spacing: 6 show_bg: true draw_bg.color: #xf1f5fc on_tap: |x, y| open_event(event)
+                        Label{width: Fill text: event.time draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 15}}
+                        Label{width: Fill text: event.title draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 18}}
+                        if event.location != "" { Caption{text: event.location} }
+                    }
+                }
+            }}
+        }
+    }
+    detail := SolidView{visible: false width: Fill height: Fill flow: Down draw_bg.color: #xffffff
+        View{width: Fill height: 56 flow: Right padding: Inset{left: 8 right: 12} align: Align{y: 0.5}
+            Bar{text: "‹ Calendar" on_click: || back()}
+            View{width: Fill height: 1}
+            Primary{text: "Edit" on_click: || edit_existing()}
+        }
+        ScrollYView{width: Fill height: Fill flow: Down padding: 20 spacing: 18
+            event_title := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 28}}
+            SolidView{width: Fill height: Fit flow: Down padding: 18 spacing: 8 draw_bg.color: #xeaf0ff
+                Caption{text: "WHEN"}
+                event_when := Label{width: Fill text: "" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 21}}
+                event_zone := Caption{text: ""}
+            }
+            Caption{text: "LOCATION"}
+            event_place := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style.font_size: 16}
+            Caption{text: "NOTES"}
+            event_notes := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style.font_size: 16}
+            Primary{text: "Show in Glance" on_click: || show_glance()}
+            detail_status := Caption{text: ""}
+            delete_button := Bar{text: "Delete event" draw_text.color: #xb52c38 on_click: || remove()}
+        }
+    }
+    editor := SolidView{visible: false width: Fill height: Fill flow: Down draw_bg.color: #xffffff
+        View{width: Fill height: 58 flow: Right padding: Inset{left: 8 right: 12} align: Align{y: 0.5} spacing: 8
+            Bar{text: "Cancel" on_click: || cancel_edit()}
+            edit_heading := Label{width: Fill text: "New event" align: Align{x: 0.5} draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 17}}
+            Primary{text: "Save" on_click: || save()}
+        }
+        ScrollYView{width: Fill height: Fill flow: Down padding: 18 spacing: 10
+            Caption{text: "Title"}
+            e_title := Field{empty_text: "Event title"}
+            View{width: Fill height: Fit flow: Right spacing: 12
+                View{width: Fill height: Fit flow: Down spacing: 8
+                    Caption{text: "Date"}
+                    e_date := Field{empty_text: "2026-10-06"}
+                }
+                View{width: Fill height: Fit flow: Down spacing: 8
+                    Caption{text: "Start · 24-hour time"}
+                    e_start := Field{empty_text: "09:00"}
+                }
+            }
+            View{width: Fill height: Fit flow: Right spacing: 12
+                View{width: Fill height: Fit flow: Down spacing: 8
+                    Caption{text: "End date"}
+                    e_end_date := Field{empty_text: "2026-10-06"}
+                }
+                View{width: Fill height: Fit flow: Down spacing: 8
+                    Caption{text: "End time · Optional"}
+                    e_end := Field{empty_text: "Not specified"}
+                }
+            }
+            Caption{text: "Time zone"}
+            e_zone := Field{empty_text: "Device local if empty"}
+            Caption{text: "Location"}
+            e_place := Field{empty_text: "Add a location"}
+            Caption{text: "Notes"}
+            e_notes := Field{height: 150 empty_text: "Add notes"}
+            edit_status := Caption{text: ""}
+        }
     }
 }

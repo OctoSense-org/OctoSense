@@ -764,6 +764,8 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
                 // and can displace the publication we just admitted.
                 #[cfg(any(feature = "app-hub", native_mobile))]
                 crate::mail_background::dismiss(&old.key(), true)?;
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                calendar_dismissed(old, true)?;
             }
         }
         if let Some(binding) = &binding {
@@ -806,6 +808,8 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
 /// surface calls it every frame it draws the glance screen.
 pub fn expire_now() {
     crate::mail_card::restore_publications();
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    restore_calendar_publications();
     if with_store(|store| {
         let before = store.len();
         store.expire(now_ms());
@@ -859,6 +863,8 @@ pub fn dismiss_all(keys: &[String]) -> usize {
             Ok(true) => {
                 #[cfg(any(feature = "app-hub", native_mobile))]
                 if crate::mail_background::dismiss(key, true).is_err() { return None; }
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if calendar_dismissed(&card, true).is_err() { return None; }
                 store.take(key)
             },
             _ => None,
@@ -884,6 +890,8 @@ pub fn undo_dismiss() -> Vec<String> {
     }).collect();
     #[cfg(any(feature = "app-hub", native_mobile))]
     let cards: Vec<_> = cards.into_iter().filter(|c| crate::mail_background::dismiss(&c.key(), false).is_ok()).collect();
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    let cards: Vec<_> = cards.into_iter().filter(|c| calendar_dismissed(c, false).is_ok()).collect();
     let keys: Vec<String> = cards.iter().map(|c| c.key()).collect();
     let now = now_ms();
     let back = with_store(|store| {
@@ -942,6 +950,45 @@ pub fn register() {
 pub fn publish_for(app: &str, args: &Value) -> Result<Value, String> {
     let caller = Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
     request(&caller, "glance.publish", args)
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn withdraw_for(app: &str, id: &str) -> Result<(), String> {
+    let caller = Caller::Contained {app:app.into(),granted:crate::host_tools::script_apps::grants(app,"glance")};
+    request(&caller,"glance.withdraw",&json!({"card_id":id})).map(|_| ())
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn calendar_dismissed(card: &GlanceCard, dismissed: bool) -> Result<(), String> {
+    if card.app != "os.calendar" { return Ok(()); }
+    if let Some(host) = crate::app_storage::host() {
+        octosense_calendar_service::set_dismissed(&host.layout().apps_root().join(".host"),&card.card_id,dismissed)?;
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn restore_calendar_publications() {
+    static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RESTORED.load(Ordering::Acquire) { return; }
+    let Some(host) = crate::app_storage::host() else { return; };
+    if !crate::host_tools::script_apps::grants("os.calendar","glance") { return; }
+    let root = host.layout().apps_root().join(".host");
+    let now = now_ms();
+    let Ok(publications) = octosense_calendar_service::publications(&root,now) else { return; };
+    let events = octosense_calendar_service::load(&root);
+    for p in publications {
+        let Some(event) = events.iter().find(|e| e.id == p.event) else { continue; };
+        let mut args = octosense_calendar_service::saved_event_card_args(event,p.args["card_id"].as_str().unwrap_or(&event.id),p.args["priority"].as_i64().unwrap_or(70));
+        args["notify"] = json!(false);
+        args["expires"] = json!(EXPIRES_MAX_S);
+        let mut temporary = GlanceStore::default();
+        if temporary.publish(&Caller::granted("os.calendar"),&args,now).is_err() { continue; }
+        let Some(mut card) = temporary.cards.pop() else { continue; };
+        card.published_ms = p.published; card.expires_ms = p.expires;
+        if with_store(|store| store.restore_publication(card,now)) { changed(); }
+    }
+    RESTORED.store(true,Ordering::Release);
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]

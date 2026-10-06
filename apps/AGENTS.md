@@ -160,3 +160,10 @@ execution leases and account-scoped notification restoration. A Rust worker
 thread alone is not Android background execution. Test a cold process and a
 stopped job, distinguish forced from natural scheduling, and preserve physical
 send approval. See ADR 0008.
+
+Calendar UI acceptance uses the same `.host/calendar/events.json` as the tools.
+Exercise month/day markers, a saved-event card’s `event/<id>` navigation, direct
+editing with stale-snapshot refusal, quiet card refresh, restart restoration and
+dismissal. `calendar.view` is UI-only; `calendar.update_event` belongs to Calendar’s UI
+and own agent, not new Mail/system grants. Keep App Hub’s explicit `calendar` capability, permission
+wording and the consumer’s single contract source aligned.
