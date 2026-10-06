@@ -93,15 +93,15 @@ fn search_for(text){
     ui.results.render()
     show_results(true)
 }
-// A search's results stay until a place is picked or the map is tapped or
-// dragged, and the next search brings them back. They close by hiding: a
-// render that emits nothing keeps the rows it had. The catcher below the
-// panel is there only while results are: on a desktop it takes the mouse
-// press, so the map under it could not be dragged (the recents list is left
-// alone for that reason). Choosing a start or a stop keeps its list, whose
-// "‹ Back to route" is the way out.
+// On the search screen the list under the search box (recent places, or the
+// last search's results) is closed until the search box is tapped or a search
+// is made, and a tap or drag on the map closes it again. It closes by hiding:
+// a render that emits nothing keeps the rows it had. The catcher below the
+// panel is there only while the list is: on a desktop it takes the mouse
+// press, so the map under it could not be dragged. Choosing a start or a stop
+// keeps its list open, with "‹ Back to route" as the way out.
 fn show_results(open){
-    let closable = screen == "search" && q != ""
+    let closable = screen == "search" && (q != "" || recents.len() > 0)
     ui.results.set_visible(open || screen != "search")
     ui.map_tap.set_visible(open && closable)
 }
@@ -223,7 +223,7 @@ fn show(s){
         else { ui.search_hint.set_text("Where to?") }
         ui.results.render()
     }
-    show_results(true)
+    show_results(s != "search")
     tick()
 }
 fn set_mode(m){ mode = m; shown_route = ""; ui.modes.render(); tick() }
@@ -320,12 +320,19 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
     View{width: Fill height: Fill flow: Down padding: Inset{left: 10 right: 10 top: 10 bottom: 16}
         search_panel := Panel{
             search_hint := Label{text: "Where to?" draw_text.color: secondary draw_text.text_style.font_size: 13}
-            search := UiField{width: Fill height: 48 empty_text: "Search Maps"
-                on_return: |text| search_for(text)
-                draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
-                    border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
-                    border_radius: 20.0}
-                draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
+            // A TextInput tells the script nothing about a tap, so a GestureView
+            // with the field's size and margin sits under it: it still sees a
+            // tap the field took (one inside it, a smaller widget, it would
+            // leave alone).
+            View{width: Fill height: Fit flow: Overlay
+                GestureView{width: Fill height: 48 margin: 0 on_tap: |x, y| show_results(true)}
+                search := UiField{width: Fill height: 48 empty_text: "Search Maps"
+                    on_return: |text| search_for(text)
+                    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+                        border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
+                        border_radius: 20.0}
+                    draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
+                }
             }
             results := View{width: Fill height: Fit flow: Down on_render: || {
                 if screen == "origin" { Link{text: "◎  Your location" on_click: || use_my_location()} }
