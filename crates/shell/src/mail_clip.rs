@@ -180,7 +180,9 @@ impl MailClip {
         let light = ink.x + ink.y + ink.z < 1.5;
         let face = if light {crate::shell::rgb(243, 246, 250)} else {crate::shell::rgb(35, 39, 48)};
         let hint = crate::shell::alpha(ink, 0.55);
-        let selection = if light {crate::shell::rgb(214, 222, 233)} else {crate::shell::rgb(77, 89, 109)};
+        // Keep the band translucent: Android can composite this selection
+        // draw after the glyphs, so an opaque tint conceals selected letters.
+        let selection = if light {crate::shell::alpha(crate::shell::rgb(130, 154, 181), 0.25)} else {crate::shell::alpha(crate::shell::rgb(144, 166, 195), 0.28)};
         let cursor = crate::shell::rgb(54, 104, 232);
         for path in [ids!(recipient), ids!(subject), ids!(body)] {
             let mut input = self.view.widget(cx, path);
