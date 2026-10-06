@@ -173,6 +173,13 @@ its summary opens that card's workspace. Card/Chat uses that app's agent, while
 Mail's Email/Chat workspace uses its saved reply draft. Returning closes the
 workspace back to the shared feed. Mail does not need a separate Glance app.
 
+The feed scrolls all retained cards, ordered by priority and recency. Only
+visible summaries are painted; off-screen cards do not run their generated UI.
+There is no four-card publisher quota or six-card phone cutoff. Retained
+payload budgets and expiry bound storage independently of the scroll viewport.
+Under payload pressure, older cards can retire; saved Mail drafts remain in
+the Mail service.
+
 Separate Android test packages are separate copies of the shell, each with
 private accounts and cards. They do not contribute cards to the normal Home.
 Launcher acceptance must start from Android's actual Home role, swipe into

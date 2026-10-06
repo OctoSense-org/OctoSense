@@ -45,7 +45,7 @@ A private outbox holds at most 64 publications and 8 MiB. Each record binds the 
 ## Consequences and limits
 
 - Doze, standby buckets, quotas and lack of network can delay a job. Force-stop prevents execution until the app is opened again. There is no immediate-delivery promise and no ongoing status notification.
-- A job runs at most four minutes and may stop earlier. A large queue or slow model may require multiple periods. Mail retains its existing 128-event queue and four-live-card limits.
+- A job runs at most four minutes and may stop earlier. A large queue or slow model may require multiple periods. Mail retains its existing 128-event queue limit. Glance scrolls all retained cards; its payload-retention budgets do not impose a four-live-card publication quota.
 - Disabling the provision, signing out or revoking consent stops agent work; the next foreground reconciliation or job removes the scheduled job. Revoked/inactive/expired card targets do not open.
 - The job uses the configured provider and can consume model tokens. No separate per-app provider, general scheduler UI or kernel-native skill system is introduced.
 - This adds durable Android Mail publications, not generic persistence of every app's UI or unsent chat input. Other platforms keep their existing lifecycle behavior.

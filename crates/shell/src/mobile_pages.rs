@@ -83,7 +83,7 @@ impl GlanceItem {
 }
 
 /// The glance page's data: the cards apps published (`glance.publish`,
-/// glance.rs; by priority then recency, at most `glance::SHOWN_CARDS`),
+/// glance.rs; all retained cards by priority then recency),
 /// then other posted items (newest first), then what the shell itself
 /// knows (refreshed by `sync`). Ranking is the system agent's job later
 /// (ADR 0002 §8); until then this order holds.
@@ -135,7 +135,6 @@ impl GlanceFeed {
             _ => (i64::MIN, 0),
         };
         self.cards.sort_by(|a, b| rank(b).cmp(&rank(a)));
-        self.cards.truncate(crate::glance::SHOWN_CARDS);
     }
     /// The published cards shown, in glance order.
     pub fn cards(&self) -> impl Iterator<Item = &GlanceCard> {
@@ -644,11 +643,10 @@ impl PhoneSurface {
         let column = glance_column(screen, dx).clip((screen.pos, screen.pos + screen.size));
         let bottom = column.pos.y + column.size.y;
         let mut y = page.pos.y + GLANCE_HEADER - phone.pages.glance_scroll;
-        let items: Vec<GlanceItem> = phone.pages.feed.items().cloned().collect();
         // Painting and hit testing use the same viewport. Previously only
         // hits were clipped, so text painted behind the launcher controls.
         cx.begin_turtle(Walk::abs_rect(column), Layout::default());
-        for item in &items {
+        for item in phone.pages.feed.items() {
             let h = item.height();
             if y + h > column.pos.y && y < bottom {
                 self.draw_glance_card(cx, rect(left, y, width, h), column, item, style, dark, ink, opacity);
@@ -1067,12 +1065,12 @@ mod tests {
         feed.withdraw("os.news", "digest");
         assert!(feed.cards().all(|c| c.key() != "os.news/digest"));
         assert_eq!(feed.cards().count(), 3);
-        // At most SHOWN_CARDS, the least important dropped.
+        // Scrolling must reach older cards beyond the first six summaries.
         for i in 0..10 {
             feed.push(card("os.x", &format!("c{i}"), 60, 100 + i));
         }
-        assert_eq!(feed.cards().count(), crate::glance::SHOWN_CARDS);
-        assert!(feed.cards().all(|c| c.priority >= 60));
+        assert_eq!(feed.cards().count(), 13);
+        assert_eq!(feed.cards().last().unwrap().key(), "os.maps/digest");
         // Summary height is independent of the generated card body.
         assert_eq!(card("os.y", "new", 1, 1).height(), SUMMARY_HEIGHT);
     }
@@ -1098,12 +1096,12 @@ mod tests {
     fn glance_finger_drags_reach_the_end_and_never_turn_back_into_a_tap() {
         use makepad_platform::event::TouchState;
         let mut feed = GlanceFeed::default();
-        feed.seed((0..12).map(|n| GlanceItem::Note { title: n.to_string(), body: "Long conversation".into() }).collect());
+        for i in 0..40 { feed.push(card("os.mail", &format!("m{i}"), 50, i)); }
         let mut pages = PagesState { feed, index: -1.0, ..Default::default() };
         let screen = rect(0.0, 24.0, 380.0, 700.0);
         let mut g = gesture(dvec2(180.0, 600.0), None);
         assert!(!pages.drag_glance(&mut g, dvec2(181.0, 598.0), screen, false));
-        for y in [550.0, 400.0, 100.0, -800.0] {
+        for y in [550.0, 400.0, 100.0, -20_000.0] {
             let at = dvec2(180.0, y);
             assert!(pages.drag_glance(&mut g, at, screen, false));
             g.last = at;

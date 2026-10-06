@@ -117,6 +117,11 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 Mail 的 Email/Chat 则操作同一份已保存的回复草稿。退出工作区后回到共享信息流。
 Mail 不需要独立的 Glance 应用。
 
+信息流按优先级和时间排序，可以滚动浏览所有保留卡片。只绘制可见摘要；屏幕外
+卡片不会运行生成 UI。不再限制每应用四张卡片，也不再将手机信息流截断为六张。
+负载预算与到期规则独立控制存储，不取决于滚动视口。负载紧张时旧卡片可能被
+淘汰；已保存的 Mail 草稿继续保留在 Mail 服务中。
+
 独立 Android 测试包是 Shell 的另一份安装，各自拥有私有账号和卡片，不会向正常
 Home 贡献卡片。启动器验收必须从 Android 实际指定的 Home 开始，右滑进入 Glance，
 再打开不同应用发布的卡片；直接打开测试包不能证明这条路径已经接通。

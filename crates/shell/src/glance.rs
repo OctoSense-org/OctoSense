@@ -49,8 +49,10 @@
 //! ≤ 256. `priority` 0–100 (default 50). `expires` is seconds from now, 60 s
 //! to 7 days (default 24 h); an expired card is dropped. Each app may publish
 //! [`RATE_LIMIT`] times per [`RATE_WINDOW_MS`] (a replace counts, and so
-//! does a card the check refuses) and keep [`PER_APP_CARDS`] cards; the
-//! store keeps at most [`STORE_CARDS`], dropping the least important.
+//! does a card the check refuses). Retained payloads use byte budgets, not
+//! card-count limits: [`PER_APP_BYTES`] per publisher and [`STORE_BYTES`] total.
+//! Under memory pressure, the least important older cards retire; a new valid
+//! publication is retained. Drafts and source mail are owned by their services.
 //!
 //! **Notifications.** `notify: true` also posts a notification for the card
 //! (the phone's shade, the desktop's toast). Tapping it opens the glance
@@ -75,8 +77,8 @@
 //! decides who may publish; the limits above hold for every caller.
 //!
 //! **The feed.** The system agent will rank and trim; until then the shell
-//! shows cards by priority, then recency, at most [`SHOWN_CARDS`]
-//! ([`shown`]).
+//! scrolls all retained cards by priority, then recency ([`shown`]); only
+//! summaries in the viewport are painted.
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -97,10 +99,10 @@ pub const EXPIRES_MAX_S: u64 = 7 * 24 * 3600;
 /// Publishes per app per window.
 pub const RATE_LIMIT: usize = 6;
 pub const RATE_WINDOW_MS: u64 = 60_000;
-pub const PER_APP_CARDS: usize = 4;
-pub const STORE_CARDS: usize = 32;
-/// Cards the glance screen shows at once.
-pub const SHOWN_CARDS: usize = 6;
+/// Retained source/data/lowered-body budgets, independent of visible rows.
+/// These bound payload storage, not the allocator overhead of every clone.
+pub const PER_APP_BYTES: usize = 8 * 1024 * 1024;
+pub const STORE_BYTES: usize = 32 * 1024 * 1024;
 
 /// Who is calling: the host decides, never the arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -186,6 +188,16 @@ impl GlanceCard {
     }
     pub fn key(&self) -> String {
         format!("{}/{}", self.app, self.card_id)
+    }
+    fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>() + self.app.len() + self.card_id.len()
+            + self.account.as_ref().map_or(0, String::len)
+            + self.title.len() + self.summary.len() + self.open_app.len()
+            + self.route.as_ref().map_or(0, String::len) + self.body.len()
+            + self.digests.iter().map(String::len).sum::<usize>()
+            + self.l0.as_ref().map_or(0, |l0|
+                l0.source.len() + l0.data.to_string().len()
+                + l0.mail.as_ref().map_or(0, |binding| serde_json::to_vec(binding).map_or(0, |v| v.len())))
     }
 }
 
@@ -395,9 +407,6 @@ impl GlanceStore {
             }
             crate::mail_card::cancel_for(&previous.key());
         }
-        if replacing.is_none() && self.cards.iter().filter(|c| c.app == app).count() >= PER_APP_CARDS {
-            return Err(format!("{app} already has {PER_APP_CARDS} cards on the glance screen; withdraw or replace one"));
-        }
         // Charged before the costly part (check, realize, lower), so a
         // stream of refused cards is bounded too.
         self.charge(&app, now_ms)?;
@@ -438,21 +447,71 @@ impl GlanceStore {
             digests,
             l0: (kind == "source").then(|| Arc::new(L0Source { source: source.to_string(), data, mail })),
         };
+        if card.retained_bytes() > PER_APP_BYTES {
+            return Err("The rendered card exceeds the retained payload budget".into());
+        }
         let expires_at = card.expires_ms;
         if let Some(i) = replacing {
             self.cards.remove(i);
         }
+        let key = card.key();
         self.cards.push(card);
-        if self.cards.len() > STORE_CARDS {
-            // The store is full: the least important, oldest card goes.
-            if let Some(i) = (0..self.cards.len()).min_by_key(|&i| (self.cards[i].priority, self.cards[i].published_ms)) {
-                self.cards.remove(i);
-            }
-        }
+        // A scrolling feed admits new cards independently of its current row
+        // count. Retire older payloads only under actual storage pressure.
+        self.trim_payloads(Some(&key), PER_APP_BYTES, STORE_BYTES);
         if binds_digests {
             self.retain_digests(&app);
         }
         Ok(json!({"card_id": card_id, "replaced": replacing.is_some(), "expires_at": expires_at}))
+    }
+
+    /// Keep a bounded payload working set without turning the viewport into
+    /// a publication quota. Cold restore has no protected key, so reordering
+    /// persisted records cannot displace newer, higher-priority cards.
+    fn trim_payloads(&mut self, protected: Option<&str>, per_app: usize, total_budget: usize) {
+        use std::collections::{HashMap, HashSet};
+        let mut totals = HashMap::<String, usize>::new();
+        let mut total = 0;
+        let mut candidates = Vec::new();
+        for card in &self.cards {
+            let bytes = card.retained_bytes();
+            total += bytes;
+            *totals.entry(card.app.clone()).or_default() += bytes;
+            if protected != Some(card.key().as_str()) {
+                candidates.push((card.priority, card.published_ms, card.key(), card.app.clone(), bytes));
+            }
+        }
+        if total <= total_budget && totals.values().all(|bytes| *bytes <= per_app) {
+            return;
+        }
+        candidates.sort_by(|a, b| (&a.0, &a.1, &a.2).cmp(&(&b.0, &b.1, &b.2)));
+        let mut retired = HashSet::new();
+        for (_, _, key, app, bytes) in candidates {
+            if total > total_budget || totals[&app] > per_app {
+                total -= bytes;
+                *totals.get_mut(&app).unwrap() -= bytes;
+                retired.insert(key);
+            }
+        }
+        self.cards.retain(|card| !retired.contains(&card.key()));
+    }
+
+    /// Merge one revalidated durable publication. A skipped/oversized older
+    /// record cannot erase the current version or cause generation churn.
+    fn restore_publication(&mut self, card: GlanceCard, now_ms: u64) -> bool {
+        let expired = self.expire(now_ms);
+        if card.expires_ms <= now_ms || card.retained_bytes() > PER_APP_BYTES {
+            return expired;
+        }
+        let key = card.key();
+        if self.cards.iter().any(|old| old.key() == key && old.published_ms >= card.published_ms) {
+            return expired;
+        }
+        let before: Vec<_> = self.cards.iter().map(|card| (card.key(), card.published_ms)).collect();
+        self.cards.retain(|old| old.key() != key);
+        self.cards.push(card);
+        self.trim_payloads(None, PER_APP_BYTES, STORE_BYTES);
+        expired || before != self.cards.iter().map(|card| (card.key(), card.published_ms)).collect::<Vec<_>>()
     }
 
     /// Digest retention for `app` (glance_digest.rs): each template folder
@@ -525,15 +584,16 @@ impl GlanceStore {
     /// publish and expiry, unless it expired meanwhile or its app published
     /// the same card again since. How many came back.
     pub fn restore(&mut self, cards: Vec<GlanceCard>, now_ms: u64) -> usize {
-        let mut back = 0;
+        let mut restored = Vec::new();
         for card in cards {
             if card.expires_ms <= now_ms || self.cards.iter().any(|c| c.key() == card.key()) {
                 continue;
             }
+            restored.push(card.key());
             self.cards.push(card);
-            back += 1;
         }
-        back
+        self.trim_payloads(None, PER_APP_BYTES, STORE_BYTES);
+        restored.iter().filter(|key| self.cards.iter().any(|card| card.key() == **key)).count()
     }
 
     /// `glance.list`: the caller's own cards.
@@ -556,7 +616,7 @@ impl GlanceStore {
         self.cards.len() != before
     }
 
-    /// What the glance screen shows: by priority, then recency, capped.
+    /// Cards in priority/recency order; callers can request a bounded subset.
     pub fn shown(&self, now_ms: u64, max: usize) -> Vec<GlanceCard> {
         let mut cards: Vec<GlanceCard> = self.cards.iter().filter(|c| c.expires_ms > now_ms).cloned().collect();
         order(&mut cards);
@@ -699,6 +759,11 @@ fn request_bound(caller: &Caller, service: &str, args: &Value, mail: Option<crat
         for old in &before {
             if !after.iter().any(|card| card.key() == old.key()) {
                 crate::mail_card::set_publication_dismissed(&gate, old, true)?;
+                // A payload-budget retirement must also retire its native
+                // notification record, or the next outbox scan resurrects it
+                // and can displace the publication we just admitted.
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                crate::mail_background::dismiss(&old.key(), true)?;
             }
         }
         if let Some(binding) = &binding {
@@ -813,18 +878,17 @@ pub fn undo_dismiss() -> Vec<String> {
     back
 }
 
-/// What the glance screen shows now (priority, then recency, capped).
+/// The complete retained feed, ordered by priority then recency.
 pub fn shown() -> Vec<GlanceCard> {
     expire_now();
-    with_store(|store| store.shown(now_ms(), SHOWN_CARDS))
+    with_store(|store| store.shown(now_ms(), usize::MAX))
 }
 
-/// Every live card, in the glance order: the desktop's panel scrolls, so it
-/// lists them all (and Clear all takes them all); the phone's glance screen
-/// shows the first [`SHOWN_CARDS`] ([`shown`]).
+/// Both the desktop panel and the phone feed scroll the complete retained set.
+/// Clear all takes that same set.
 pub fn listed() -> Vec<GlanceCard> {
     expire_now();
-    with_store(|store| store.shown(now_ms(), STORE_CARDS))
+    with_store(|store| store.shown(now_ms(), usize::MAX))
 }
 
 /// The `glance` family for the Card runner (App Hub's host services).
@@ -940,17 +1004,7 @@ pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::
     let mut card = temporary.cards.pop().ok_or("Missing restored Mail card")?;
     card.published_ms = published;
     card.expires_ms = card.expires_ms.min(expires);
-    let inserted = with_store(|store| {
-        store.expire(now);
-        if let Some(index) = store.cards.iter().position(|old| old.key() == card.key()) {
-            if store.cards[index].published_ms >= card.published_ms { return false; }
-            store.cards.remove(index);
-        }
-        if store.cards.len() >= STORE_CARDS
-            || store.cards.iter().filter(|old| old.app == card.app).count() >= PER_APP_CARDS { return false; }
-        store.cards.push(card);
-        true
-    });
+    let inserted = with_store(|store| store.restore_publication(card, now));
     if inserted { changed(); }
     Ok(())
 }
@@ -982,17 +1036,7 @@ pub(crate) fn restore_mail_notification(args: &Value, account: &str, published: 
     card.account = Some(account.to_owned());
     card.published_ms = published;
     card.expires_ms = card.expires_ms.min(expires);
-    let inserted = with_store(|store| {
-        store.expire(now);
-        if let Some(index) = store.cards.iter().position(|old| old.key() == card.key()) {
-            if store.cards[index].published_ms >= card.published_ms { return false; }
-            store.cards.remove(index);
-        }
-        if store.cards.len() >= STORE_CARDS
-            || store.cards.iter().filter(|old| old.app == card.app).count() >= PER_APP_CARDS { return false; }
-        store.cards.push(card);
-        true
-    });
+    let inserted = with_store(|store| store.restore_publication(card, now));
     if inserted { changed(); }
     Ok(())
 }
@@ -1191,7 +1235,7 @@ mod tests {
         assert!(store.publish(&news(), &a, 1_000).unwrap_err().contains("opens the app that published it"));
         let ok = store.publish(&news(), &args("digest"), 1_000).unwrap();
         assert_eq!(ok["replaced"], false);
-        let shown = store.shown(1_000, SHOWN_CARDS);
+        let shown = store.shown(1_000, usize::MAX);
         assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.news", "news"));
         // Another app sees, replaces and withdraws only its own cards.
         let maps = Caller::granted("os.maps");
@@ -1213,7 +1257,7 @@ mod tests {
         let events = vec![cal::Event { id: "a".into(), title: "Standup".into(), start: "2026-10-02T09:30".into(), end: None, location: String::new(), notes: String::new() }];
         let agenda = cal::agenda_card_args(&events, 7, now);
         assert!(store.publish(&Caller::granted("os.calendar"), &agenda, 1_000).is_ok());
-        let shown = store.shown(1_000, SHOWN_CARDS);
+        let shown = store.shown(1_000, usize::MAX);
         assert!(shown.iter().all(|c| c.app == "os.calendar" && c.open_app == "calendar"));
     }
 
@@ -1226,7 +1270,7 @@ mod tests {
         let args = crate::glance_notice::publish_args("os.mail", &json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
         let ok = store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap();
         assert_eq!(ok["card_id"], "hello");
-        let shown = store.shown(1_000, SHOWN_CARDS);
+        let shown = store.shown(1_000, usize::MAX);
         assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.mail", "mail"));
         let ungranted = Caller::Contained { app: "os.mail".into(), granted: false };
         assert!(store.publish(&ungranted, &args, 1_000).is_err());
@@ -1243,7 +1287,7 @@ mod tests {
             let args = crate::glance_notice::publish_args(app, &json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
             let ok = store.publish(&Caller::granted(app), &args, 1_000);
             assert!(ok.is_ok(), "{app}: {ok:?}");
-            let shown = store.shown(1_000, SHOWN_CARDS);
+            let shown = store.shown(1_000, usize::MAX);
             assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), (app, app.strip_prefix("os.").unwrap()));
             assert!(store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap_err().contains("opens the app that published it"), "{app}");
         }
@@ -1265,7 +1309,7 @@ mod tests {
             // The publisher cannot supply the digest: its value is replaced.
             args["data"] = json!({"brief": {"summary": "Forged", "points": [], "sources": []}, "$status": {"brief": "ready"}});
             let ok = store.publish(&news(), &args, now()).unwrap();
-            let card = &store.shown(now(), SHOWN_CARDS)[0];
+            let card = &store.shown(now(), usize::MAX)[0];
             for want in ["Harbor City's council approved an order for 120 electric buses on Tuesday.", "Clearwater Courier", "city infrastructure", "SOURCES"] {
                 assert!(card.body.contains(want), "{want:?} not in {}", card.body);
             }
@@ -1312,26 +1356,26 @@ mod tests {
             let mut args = brief(&NEWS_BRIEF_CARD.replace("app: \"os.news\"", "app: \"os.maps\""));
             args["open"] = Value::Null;
             store.publish(&maps, &args, now()).unwrap();
-            let card = &store.shown(now(), SHOWN_CARDS)[0];
+            let card = &store.shown(now(), usize::MAX)[0];
             assert!(card.body.contains("No digest yet") && !card.body.contains("Harbor"), "{}", card.body);
             // The launcher id names the publisher too.
             let short = NEWS_BRIEF_CARD.replace("app: \"os.news\"", "app: \"news\"");
             store.publish(&news(), &brief(&short), now()).unwrap();
-            assert!(store.shown(now(), SHOWN_CARDS).iter().any(|c| c.app == "os.news" && c.body.contains("Harbor")));
+            assert!(store.shown(now(), usize::MAX).iter().any(|c| c.app == "os.news" && c.body.contains("Harbor")));
         }
 
         #[test]
         fn a_missing_or_expired_digest_renders_the_cards_own_absence() {
             let mut store = GlanceStore::default();
             store.publish(&news(), &brief(NEWS_BRIEF_CARD), now()).unwrap();
-            let card = &store.shown(now(), SHOWN_CARDS)[0];
+            let card = &store.shown(now(), usize::MAX)[0];
             assert!(card.body.contains("No digest yet"), "{}", card.body);
             assert_eq!(card.expires_ms, now() + EXPIRES_DEFAULT_S * 1000);
             let root = root_with("glance-expired", &[("os.news", "news-digest", news_digest_result())]);
             let mut store = GlanceStore::default().with_digest_root(Some(root));
             let late = now() + crate::glance_digest::MAX_AGE_MS;
             store.publish(&news(), &brief(NEWS_BRIEF_CARD), late).unwrap();
-            assert!(store.shown(late, SHOWN_CARDS)[0].body.contains("No digest yet"));
+            assert!(store.shown(late, usize::MAX)[0].body.contains("No digest yet"));
         }
 
         #[test]
@@ -1559,7 +1603,7 @@ mod tests {
     }
 
     #[test]
-    fn the_same_card_id_replaces_and_each_app_is_capped() {
+    fn the_same_card_id_replaces_without_a_four_card_quota() {
         let mut store = GlanceStore::default();
         store.publish(&news(), &args("digest"), 0).unwrap();
         let mut a = args("digest");
@@ -1567,12 +1611,76 @@ mod tests {
         assert_eq!(store.publish(&news(), &a, 10).unwrap()["replaced"], true);
         assert_eq!(store.len(), 1);
         assert_eq!(store.shown(10, 9)[0].title, "Evening digest");
-        for i in 1..PER_APP_CARDS {
+        for i in 1..40 {
             store.publish(&news(), &args(&format!("c{i}")), 100_000 * i as u64).unwrap();
         }
-        assert!(store.publish(&news(), &args("one-more"), 900_000).unwrap_err().contains("already has"));
-        // Replacing is still allowed at the cap.
-        assert!(store.publish(&news(), &args("digest"), 900_000).is_ok());
+        assert_eq!(store.len(), 40, "card count is not a publication quota");
+        assert!(store.publish(&news(), &args("one-more"), 4_000_000).is_ok());
+        assert!(store.publish(&news(), &args("digest"), 4_100_000).is_ok());
+        assert_eq!(store.len(), 41);
+        assert!(store.card("os.news/c1", 4_100_000).is_some(), "earlier cards remain scrollable");
+    }
+
+    #[test]
+    fn payload_pressure_retires_older_cards_without_rejecting_the_new_one() {
+        let mut store = GlanceStore::default();
+        store.publish(&news(), &args("older"), 1).unwrap();
+        let mut incoming = args("incoming");
+        incoming["priority"] = json!(0);
+        store.publish(&news(), &incoming, 2).unwrap();
+        let mut maps = args("commute");
+        maps["open"] = Value::Null;
+        store.publish(&Caller::granted("os.maps"), &maps, 3).unwrap();
+        let one_card = store.cards.iter().map(GlanceCard::retained_bytes).max().unwrap();
+        store.trim_payloads(Some("os.news/incoming"), one_card, usize::MAX);
+        assert!(store.card("os.news/older", 3).is_none());
+        assert!(store.card("os.news/incoming", 3).is_some(), "new lower-priority publication still arrives");
+        assert!(store.card("os.maps/commute", 3).is_some(), "publisher pressure does not retire another app");
+        store.trim_payloads(Some("os.news/incoming"), usize::MAX, one_card);
+        assert_eq!(store.len(), 1);
+        assert!(store.card("os.news/incoming", 3).is_some());
+    }
+
+    #[test]
+    fn durable_restore_does_not_reinstate_the_old_card_count_limits() {
+        let mut original = GlanceStore::default();
+        for i in 0..40 {
+            original.publish(&news(), &args(&format!("c{i}")), 100_000 * i).unwrap();
+        }
+        let mut restored = GlanceStore::default();
+        for card in original.cards.iter().rev() {
+            assert!(restored.restore_publication(card.clone(), 4_000_000));
+        }
+        assert_eq!(restored.len(), 40);
+        for card in &original.cards {
+            assert!(!restored.restore_publication(card.clone(), 4_000_000));
+        }
+        let mut oversized = original.cards[0].clone();
+        oversized.published_ms += 1;
+        oversized.body = "x".repeat(PER_APP_BYTES + 1).into();
+        assert!(!restored.restore_publication(oversized, 4_000_000));
+        assert_eq!(restored.card("os.news/c0", 4_000_000).unwrap().published_ms, 0);
+    }
+
+    #[test]
+    fn restore_keeps_more_than_six_cards_and_has_stable_budget_ordering() {
+        let mut original = GlanceStore::default();
+        for i in 0..12 {
+            original.publish(&news(), &args(&format!("c{i}")), 100_000 * i).unwrap();
+        }
+        let cards = original.cards.clone();
+        let mut restored = GlanceStore::default();
+        assert_eq!(restored.restore(cards.clone(), 1_200_000), 12);
+        assert_eq!(restored.shown(1_200_000, usize::MAX).len(), 12);
+        assert_eq!(restored.restore(cards, 1_200_000), 0, "no duplicates on a second restore");
+        let budget = restored.cards.iter().map(GlanceCard::retained_bytes).sum::<usize>() / 2;
+        let mut reordered = GlanceStore { cards: restored.cards.iter().rev().cloned().collect(), ..Default::default() };
+        restored.trim_payloads(None, usize::MAX, budget);
+        reordered.trim_payloads(None, usize::MAX, budget);
+        let keys = |store: &GlanceStore| store.shown(1_200_000, usize::MAX).iter().map(GlanceCard::key).collect::<Vec<_>>();
+        assert_eq!(keys(&restored), keys(&reordered), "restore order cannot churn the retained set");
+        assert!(restored.card("os.news/c11", 1_200_000).is_some());
+        assert!(restored.cards.iter().map(GlanceCard::retained_bytes).sum::<usize>() <= budget);
     }
 
     /// A card's notification gets its publisher's summary, else the card's
@@ -1644,7 +1752,7 @@ mod tests {
     }
 
     #[test]
-    fn the_feed_orders_by_priority_then_recency_and_caps() {
+    fn the_complete_feed_orders_by_priority_then_recency() {
         let mut store = GlanceStore::default();
         let apps = ["os.a", "os.b", "os.c", "os.d"];
         let mut t = 0;
@@ -1657,11 +1765,11 @@ mod tests {
                 store.publish(&Caller::granted(app), &a, t).unwrap();
             }
         }
-        let shown = store.shown(t, SHOWN_CARDS);
-        assert_eq!(shown.len(), SHOWN_CARDS);
+        let shown = store.shown(t, usize::MAX);
+        assert_eq!(shown.len(), 8);
         let keys: Vec<String> = shown.iter().map(GlanceCard::key).collect();
         assert_eq!(&keys[..4], ["os.d/c1", "os.c/c1", "os.b/c1", "os.a/c1"]);
-        assert_eq!(&keys[4..], ["os.d/c0", "os.c/c0"]);
+        assert_eq!(&keys[4..], ["os.d/c0", "os.c/c0", "os.b/c0", "os.a/c0"]);
     }
 
     /// Through App Hub's host-service dispatch, as the Card runner calls it:
