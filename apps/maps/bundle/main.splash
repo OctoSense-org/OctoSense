@@ -91,6 +91,19 @@ fn search_for(text){
     loaded_q = ""
     hits = []
     ui.results.render()
+    show_results(true)
+}
+// A search's results stay until a place is picked or the map is tapped or
+// dragged, and the next search brings them back. They close by hiding: a
+// render that emits nothing keeps the rows it had. The catcher below the
+// panel is there only while results are: on a desktop it takes the mouse
+// press, so the map under it could not be dragged (the recents list is left
+// alone for that reason). Choosing a start or a stop keeps its list, whose
+// "‹ Back to route" is the way out.
+fn show_results(open){
+    let closable = screen == "search" && q != ""
+    ui.results.set_visible(open || screen != "search")
+    ui.map_tap.set_visible(open && closable)
 }
 fn read_hits(){
     if q == "" || loaded_q == q { return }
@@ -210,6 +223,7 @@ fn show(s){
         else { ui.search_hint.set_text("Where to?") }
         ui.results.render()
     }
+    show_results(true)
     tick()
 }
 fn set_mode(m){ mode = m; shown_route = ""; ui.modes.render(); tick() }
@@ -325,7 +339,14 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                 }
             }}
         }
-        View{width: Fill height: Fill}
+        // Below the search panel only, so a tap on the panel never closes it.
+        // On a touch screen it reads the touch without taking it: the map
+        // under it still pans.
+        View{width: Fill height: Fill
+            map_tap := GestureView{visible: false width: Fill height: Fill
+                on_tap: |x, y| show_results(false)
+                on_pan: |dx, dy, phase| { if phase == 0 { show_results(false) } }}
+        }
         place_panel := Panel{visible: false
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
                 pname := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
