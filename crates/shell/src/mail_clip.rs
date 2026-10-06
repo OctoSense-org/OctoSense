@@ -71,6 +71,7 @@ pub struct MailClip {
     #[rust] save_timer: Timer,
     #[rust] ink: Option<Vec4f>,
     #[rust] keyboard: bool,
+    #[rust] short_viewport: bool,
     #[rust] focus_editor: bool,
     #[rust] review_requested: Option<Binding>,
 }
@@ -134,7 +135,7 @@ impl MailClip {
         let conflict = s.error.as_ref().is_some_and(|e| e.contains("revision_conflict"));
         let body_focus = cx.has_key_focus(self.view.text_input(cx, ids!(body)).area());
         for path in [ids!(recipient_row), ids!(subject_row)] { self.view.widget(cx, path).set_visible(cx, self.details && !self.original && !(self.keyboard && body_focus)); }
-        self.view.widget(cx, ids!(metadata)).set_visible(cx, !self.original && !self.details && !self.keyboard);
+        self.view.widget(cx, ids!(metadata)).set_visible(cx, !self.original && !self.details && !self.keyboard && !self.short_viewport);
         self.view.widget(cx, ids!(details)).set_visible(cx, !self.original);
         self.view.widget(cx, ids!(review)).set_visible(cx, !self.original);
         self.view.button(cx, ids!(original)).set_text(cx, if self.original { "Reply" } else { "Original" });
@@ -252,6 +253,11 @@ impl Widget for MailClip {
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let short_viewport = cx.peek_walk_turtle(walk).size.y < 320.0;
+        if self.short_viewport != short_viewport {
+            self.short_viewport = short_viewport;
+            self.render(cx, false);
+        }
         self.sync(cx);
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
             if let Some(mut list) = step.as_portal_list().borrow_mut() {
