@@ -264,7 +264,7 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
                 }
                 View{width: Fill height: Fit flow: Down spacing: 8
                     Caption{text: "Start · 24-hour time"}
-                    e_start := Field{empty_text: "All day if empty"}
+                    e_start := Field{empty_text: "00:00 if empty"}
                 }
             }
             View{width: Fill height: Fit flow: Right spacing: 12
