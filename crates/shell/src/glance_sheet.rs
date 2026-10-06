@@ -698,7 +698,6 @@ impl Widget for ShellGlanceSheet {
                     self.chat.draw_walk_all(cx, scope, Walk::abs_rect(rect(body_sheet.pos.x, card.pos.y, body_sheet.size.x, card.size.y)));
                 } else if open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
                     if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() {
-                        mail.set_summary(cx, &open.card.summary);
                         mail.set_keyboard(cx, self.keyboard_visible);
                     }
                     self.mail.draw_walk_all(cx, scope, Walk::abs_rect(rect(body_sheet.pos.x, card.pos.y, body_sheet.size.x, card.size.y)));
