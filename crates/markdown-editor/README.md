@@ -1,6 +1,6 @@
 # Markdown editor
 
-[简体中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
 `octosense-markdown-editor` makes Rinx's reusable article components available
 to contained OctoSense apps as `MarkdownEditor`. It has no filesystem, network,
@@ -11,9 +11,23 @@ The workspace pins `article-core` and `article-makepad` to the same Rinx v1.1.0
 revision already used by the native Rinx module. This reuses its document model,
 lossless Markdown import, edit history, native rich input/IME/clipboard,
 cross-block selection, presentation styles and complete Markdown renderer.
-Unsupported visual structures remain editable Markdown blocks instead of being
-discarded. Source, Write and Preview share one document. A document that cannot
-be parsed remains visible in Source; switching to Write is refused until fixed.
+The primary view follows Rinx's actual article writer: an icon header, Markdown
+source, desktop split preview, per-block paper preview, desktop formatting bar,
+and a phone bottom formatting bar. At widths below 960 points, source and preview
+alternate. Hover or long-press an icon for its purpose. The style inspector (desktop)
+or bottom sheet (phone preview) contains presentation themes and secondary Block
+editor, Undo and Redo controls. The native table-size picker is also reused.
+
+Source, split preview and the Rinx block editor share the same Markdown. Unsupported
+visual structures remain editable Markdown blocks. Unparseable source remains the
+authoritative draft; entering the block editor is refused until it is valid. Mode
+changes, theme previews and filename captions never rewrite file contents. Source
+formatting edits only the selected text or lines; undo retains exact source bytes.
+Themes are local presentation state, not metadata injected into a GitHub file.
+
+The SVGs and writer/table-picker adaptation are attributed in
+[resources/NOTICE.md](resources/NOTICE.md). The standalone `article-makepad` demo
+is not used as the visual reference: that demo has a different control layout.
 
 This is not Rinx's Matrix-specific article publication controller. Its image
 picker, binary asset upload, Matrix author/room fields and publication workflow
@@ -32,8 +46,17 @@ helpers lazily evaluate styles and must never read the outer host's heap.
 editor := MarkdownEditor {
     width: Fill height: Fill
     on_change: |markdown| save_local_draft(markdown)
+    on_repository: || choose_repository_and_file()
+    on_save: || request_host_review()
 }
 ```
+
+The editor owns its complete workspace; do not add a second title, save toolbar
+or mode-tab row around it. `ui.editor.set_destination(filename)` sets the read-only
+filename caption. `ui.editor.set_status(message)` shows short routine statuses
+in the saved label and wraps longer notices below the content. These setters have
+no file or provider effects. Back/repository and send/save icons only invoke the
+embedding app callbacks; the host still reviews and authorizes a remote write.
 
 After the UI exists, `ui.editor.load(markdown)` returns an empty string on
 success, or a validation error without replacing the current document.
@@ -63,3 +86,17 @@ The companion sample and acceptance record live in
 `OctoScript-App-Design-Flow/examples/connected-apps/github-notes`. Actual OAuth,
 host approval, installed-app grants and a GitHub commit require an integrated
 OctoSense host; the fixture cannot validate them.
+
+Instrument selectors use IDs rather than empty icon labels: `repository_button`,
+`save_button`, `source_mode`, `split_mode`, `preview_mode`, and `markdown`.
+`palette_button` opens desktop styles; on a narrow view, `style_fab` is available
+in Preview. Secondary controls are `rich_mode`/`undo_button`/`redo_button` on
+desktop and `mobile_rich_mode`/`mobile_undo_button`/`mobile_redo_button` on phone.
+The example accepts `--wide` for the 1200×820 desktop reference; its default is
+430×850. These desktop window sizes do not prove Android IME behavior.
+
+The provider-free native regression was run with:
+
+```sh
+python3 crates/markdown-editor/tests/native-writer.py --output target/markdown-writer-native-final
+```

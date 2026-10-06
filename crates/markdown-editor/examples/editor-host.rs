@@ -12,7 +12,7 @@ script_mod! {
     let app = startup() do #(App::script_component(vm)) {
         ui: Root {
             main_window := Window {
-                window.inner_size: vec2(430, 850)
+                window.inner_size: #(if std::env::args().any(|arg| arg == "--wide") {vec2(1200.0, 820.0)} else {vec2(430.0, 850.0)})
                 body +: {flow: Down
                     app := Splash {width: Fill height: Fill}
                 }

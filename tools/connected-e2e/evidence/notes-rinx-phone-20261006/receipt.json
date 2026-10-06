@@ -1,0 +1,43 @@
+{
+  "result": "pass",
+  "scope": "separate debug Android Notes package, signed private catalog, local draft and native IME",
+  "device": "OnePlus 6",
+  "android": "15",
+  "version_code": 2026100619,
+  "driver": "Codex via ADB; Android Makepad remote unavailable",
+  "apk_sha256": "dbc89da023ef491ad40e7324223660e9534cecc00e8c8891050e63eea9b9ff0e",
+  "source_sha256": {
+    "OctoSense/crates/markdown-editor/src/lib.rs": "4ed1f604a1c273a183629bba29bef195ebd6b7b638b9fc06c707680cda64480c",
+    "OctoSense/crates/markdown-editor/src/table_picker.rs": "86e831bfdbac5303463ce8d7e9ef4a7ca0fd0bd13e601f8943e67b99bda537b2",
+    "OctoSense/Cargo.lock": "032ae9064ab4d020f29af868c4d4678ad2d22f68928f25aa7f05d2cf6b758f88",
+    "OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle/main.splash": "0df7443c0beddc1b3145b80ef20772d695a9e045d162fcd4626abbb5cffa208a",
+    "OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle/manifest.json": "4e90645c8d2d77e77cf53d45e1be60d528907331d863abe48cdd1f3eb24ea0e2",
+    "OctoSense/crates/shell/src/mobile.rs": "12e9614d18d3f0ec3de9737480dee5b05d638f26b40e539a7a35ff076cc10067",
+    "OctoSense/crates/shell/src/mobile_app.rs": "f89e94e17eae8f94ac61c23c0002a7a2a78dd6073aefb195102b9fdd62e62e7f",
+    "OctoSense/crates/shell/src/mobile_navigation.rs": "14e759c945210ead41e348a485d2a4283dedfb1811c1a5bf7942ea4a4b7df9d8",
+    "OctoSense/crates/shell/src/mobile_surface.rs": "f8754872c50be3387e3dfa8d2dcfa791c9d346946350b17dac2d14873ff84d6e"
+  },
+  "bundle_digest": "8e36b59bb3ae2f6916aa3b8f0476db3926c915836e3f7d63a19f889dcf43a81a",
+  "checks": [
+    "Installed separate debug APK without replacing normal Home.",
+    "Preserved original local draft exactly while updating signed catalog.",
+    "Native keyboard shows with reachable formatting toolbar; floating navigation absent.",
+    "Actual soft Enter plus text input persisted the exact added newline and ASCII marker.",
+    "Removed temporary test text through native Backspace; original draft exact.",
+    "Android Back dismisses keyboard; collapsed floating navigation returns at original dock.",
+    "Cold restart ran a new process and restored exact original draft; preview opens."
+  ],
+  "provider_credentials_copied": false,
+  "live_github": false,
+  "real_repository_writes": 0,
+  "physical_input": false,
+  "visual_review": "Codex inspected original screenshots; fictional local test note only. No numeric UX score.",
+  "captures": {
+    "03-keyboard-edited.png": "f6a4b9366c0d0438fd3692b57a52466baec1f2ba85518bf664f9e76c542ae0ad",
+    "01-updated-source.png": "0d3ba20431d8fa67d716443e7cda61fc48682d96f856b2efafd52718462993c0",
+    "02-native-keyboard.png": "85c2bf727f07a4873b38bec76a539f2917305b2c0752c7beda4cdd2a5e6ba450",
+    "04-keyboard-dismissed.png": "85724c29e01f3b464e11a65d2405651e5df20ca7a7f8d667888853f7bc7758a6",
+    "06-preview.png": "4bbb717d6d0b3c94ff78ed20a68f42a05ea96ba2477f519e6c2ec0266d9f5bc6",
+    "05-cold-restart.png": "9a13adefae081552c5879846f49859912a75ff37179eb31d529c9bb37c10c3db"
+  }
+}

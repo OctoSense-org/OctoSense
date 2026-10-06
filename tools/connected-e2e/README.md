@@ -74,7 +74,7 @@ Android, Windows, Linux, public catalog publication or a human approval tap.
 | macOS OS credential adapter | [One explicit Keychain test passed](evidence/macos-vault.json): store/reopen/logical revocation and no plaintext credential in profile files. No live OAuth. |
 | Linux protocols and host adapter | [43 protocol tests and host compilation passed](evidence/linux-provider.json). The explicit vault test failed because the build host had no usable unlocked Secret Service. No GUI/display was available. |
 | Windows | [Cross-compile attempt blocked before the host crate](evidence/windows-unverified.json) by missing Windows SDK headers on macOS. Native execution remains unverified. |
-| OnePlus 6 | [Local Notes device checks passed after the Enter fix](evidence/notes-oneplus-20261006/README.md): soft/hardware input, preview and exact cold recovery. [Reproduction](android-notes.md) uses a separate signed test APK. Phone UI polish and live provider acceptance remain open; shared Google native authorization is not implemented. |
+| OnePlus 6 | [Local Notes device checks passed after the Enter fix](evidence/notes-oneplus-20261006/README.md): soft/hardware input, preview and exact cold recovery. [Reproduction](android-notes.md) uses a separate signed test APK. The [Rinx writer update](evidence/notes-rinx-phone-20261006/README.md) verifies icon controls and hides floating navigation while typing. Live provider acceptance remains open; shared Google native authorization is not implemented. |
 | Post-soak fixes | [954 shell tests and all desktop/Home build/graph checks passed](evidence/glance-modal-validation.json) for exclusive host-review rendering. The later Java-only Enter fix passed [96 ROM tests, 18 setup tests and source-stack validation](evidence/android-enter-validation.json), then the separate phone retest above. |
 
 For shell unit tests that instantiate optional native apps, set `RINX_DATA_DIR`
@@ -92,8 +92,9 @@ python3 tools/connected-e2e/notes_soak.py \
 ```
 
 The soak alternates short and long Unicode documents in an isolated signed
-installation. Each cycle checks exact persisted Markdown after switching Write,
-Markdown and Preview, scrolling/refocusing and returning from Repository. Every
+installation. The driver targets icon widget IDs: Source, Preview and the
+secondary Block editor in the style palette. Each cycle checks exact persisted
+Markdown after switching modes, scrolling/refocusing and returning from Repository. Every
 sixth cycle edits the native rich input, undoes that edit, opens the exact host
 review and cancels. Timed idle windows verify that callbacks do not change the
 draft; the final process restart must restore the same note and destination.
@@ -119,3 +120,21 @@ with actual DeepSeek turns. Do not combine their latency or memory figures into
 a single benchmark. The latest [three-bundle signed installation check](evidence/signed-install-after-soak.json)
 includes Inbox's corrected monitoring-status bundle; all three passed reopening
 and tamper refusal without changing the public catalog.
+
+## Rinx writer and rejected-draft recovery
+
+The [original native reference](evidence/rinx-writer-20261006/README.md) compares
+Rinx's real article writer with the reusable editor at matching wide/narrow sizes.
+The new editor removes the outer Notes button rows; the back/file and paper-plane
+icons call repository settings and exact host review. All provider gates remain.
+
+```sh
+python3 tools/connected-e2e/notes_recovery.py \
+  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
+```
+
+This native test seeds a fictional saved draft exceeding the Rinx parser limit,
+reopens it through signed installation, refuses an editable blank replacement,
+and checks that explicit valid-file replacement preserves the exact recovery
+copy. No provider write occurs. Normal Notes admission/provider and soak drivers
+remain the commands above.

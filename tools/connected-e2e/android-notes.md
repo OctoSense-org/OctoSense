@@ -33,7 +33,7 @@ Rerun APK packaging after runtime Java patches. From `phone/`:
 MAKEPAD_FORCE_DEBUGGABLE=1 CARGO_BUILD_JOBS=4 \
 MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=$NOTES_KERNEL" \
 "$NOTES_LAB/packager/release/cargo-makepad" makepad android \
-  --sdk-path="$ANDROID_HOME" --abi=aarch64 --version-code=2026100618 \
+  --sdk-path="$ANDROID_HOME" --abi=aarch64 --version-code=2026100620 \
   --package-name=dev.makepad.octosense.connectednotes \
   --app-label=OctoSenseNotesTest \
   build -p octosense-home --release --locked --features dev-mode
@@ -79,10 +79,19 @@ profile. The pinned Makepad remote implementation is a no-op on Android;
 uses ADB input and original device captures. The Mac soaks use Makepad
 instrument and have separate receipts.
 
-Check Write, Markdown, Preview, the actual soft keyboard and Repository/back.
+Use the pencil/eye icons for Markdown/Preview; the preview palette opens the
+secondary Block editor. Check the actual soft keyboard and the back/file icon
+for Repository/back. When updating an existing test catalog, preserve its
+`org.octosense.samples.githubnotes` draft directory. Replace its managed
+`.bundles/org.octosense.samples.githubnotes` directory completely (keep the old
+bundle separately for rollback); overlaying files can leave removed assets and
+correctly fail the signed digest check.
 Verify the exact latest `draft-a.json`/`draft-b.json` revision in the **test
 package**, then stop only that process, relaunch and check its restored visible
 content. Test hardware Enter separately from soft-keyboard Enter: the initial
 build lost the active composing word on hardware Enter, which has its own
 runtime patch and regression tests. Retain failed captures alongside the
 retest; do not infer phone acceptance from desktop checks.
+
+The [Rinx writer phone report](evidence/notes-rinx-phone-20261006/README.md)
+records the new icon UI and native keyboard overlay fix.

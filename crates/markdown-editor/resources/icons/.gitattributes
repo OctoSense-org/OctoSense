@@ -1,0 +1,2 @@
+# Preserve verbatim upstream SVG bytes and their recorded validation hashes.
+*.svg -whitespace

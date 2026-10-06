@@ -63,7 +63,7 @@ Android／Windows／Linux 原生界面、公开目录发布或真人批准。
 | macOS 系统凭据适配器 | [一次明确的 Keychain 测试通过](evidence/macos-vault.json)：保存／重开／逻辑撤销及配置文件无明文凭据。不代表真实 OAuth。 |
 | Linux 协议及主机适配器 | [43 项协议测试及主机编译通过](evidence/linux-provider.json)。明确运行的原生凭据库测试因主机没有可用、已解锁的 Secret Service 而失败。没有 GUI／显示环境。 |
 | Windows | [在 Mac 上交叉编译](evidence/windows-unverified.json)因缺少 Windows SDK 头文件，在到达主机 crate 前停止。原生运行未验证。 |
-| OnePlus 6 | [Enter 修复后通过本地 Notes 真机检查](evidence/notes-oneplus-20261006/README.zh-CN.md)：软键盘／硬件输入、预览和精确冷恢复。[复现](android-notes.zh-CN.md)使用独立签名测试 APK。手机界面优化及真实提供商验收仍待完成；共享 Google 原生授权尚未实现。 |
+| OnePlus 6 | [Enter 修复后通过本地 Notes 真机检查](evidence/notes-oneplus-20261006/README.zh-CN.md)：软键盘／硬件输入、预览和精确冷恢复。[复现](android-notes.zh-CN.md)使用独立签名测试 APK。[Rinx 编辑器更新](evidence/notes-rinx-phone-20261006/README.zh-CN.md)已验证图标控件及输入时隐藏悬浮导航；真实提供商验收仍待完成；共享 Google 原生授权尚未实现。 |
 | 浸泡后的修复 | 宿主审核独占绘制修复通过 [954 项 shell 测试及所有桌面／Home 构建和源码图检查](evidence/glance-modal-validation.json)。之后仅改 Java 的 Enter 修复通过 [96 项 ROM、18 项 setup 测试和补丁栈检查](evidence/android-enter-validation.json)，并完成上述独立手机重测。 |
 
 启动包含可选原生应用的 shell 单元测试前，应将 `RINX_DATA_DIR` 指向全新、私有、
@@ -78,8 +78,7 @@ python3 tools/connected-e2e/notes_soak.py \
   --cycles 36 --duration-seconds 600
 ```
 
-该测试使用隔离的签名安装，交替输入长短 Unicode 文档；每轮切换 Write、Markdown、
-Preview，滚动、重新聚焦并往返 Repository，然后核对持久化 Markdown 的精确内容。
+该测试使用隔离的签名安装，交替输入长短 Unicode 文档；测试按图标组件 ID 切换原文、预览与样式面板中的次级富文本块编辑器，滚动、重新聚焦并往返 Repository，然后核对持久化 Markdown 的精确内容。
 每六轮通过原生富文本控件编辑并撤销，打开精确宿主审核后取消。间隔空闲时间检查异步
 回调没有改动草稿；最后重启进程核对原文和目标。供应商日志必须没有任何写入尝试。
 
@@ -98,3 +97,18 @@ Calendar 和 Inbox 的独立驱动及证据位于 App Design Flow：
 两者主机不同：Calendar 使用提供商主机，Inbox 使用完整 Shell 并实际调用 DeepSeek，
 不能将耗时与内存数值合成同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)
 包含修正监控状态后的 Inbox 包，三者均通过重开和篡改拒绝，未修改公开目录。
+
+## Rinx 编辑器与无法加载的草稿
+
+[原生参考记录](evidence/rinx-writer-20261006/README.zh-CN.md)在相同宽窄窗口下对比
+Rinx 真实文章编辑器与复用组件。新增编辑器移除 Notes 外层按钮行；返回/文件图标
+进入仓库设置，纸飞机进入确切内容的宿主审核，提供商权限边界保持不变。
+
+```sh
+python3 tools/connected-e2e/notes_recovery.py \
+  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
+```
+
+该原生测试在签名安装内放入超出 Rinx 解析上限的虚构草稿，验证重新打开时不会
+出现可覆盖原文的空编辑器；明确选择有效文件后，原始恢复副本仍完整保留。
+测试不执行提供商写入；正常准入、提供商流程和浸泡测试继续使用上面的命令。

@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-from native import Native
+from notes_native import NotesNative as Native
 
 APP = 'org.octosense.samples.githubnotes'
 
@@ -32,13 +32,16 @@ def run():
     evidence = args.out / ('run-' + str(time.time_ns()))
     evidence.mkdir(parents=True)
     workspace = Path(__file__).resolve().parents[2]
-    sources = [Path(__file__).resolve(), Path(__file__).with_name('native.py'), workspace / 'Cargo.lock',
+    sources = [Path(__file__).resolve(), Path(__file__).with_name('native.py'), Path(__file__).with_name('notes_native.py'), workspace / 'Cargo.lock',
                workspace / 'crates/shell/examples/connected-app-host.rs',
                workspace / 'crates/shell/examples/connected_support/mod.rs',
                workspace / 'crates/oauth-service/src/acceptance_github.rs',
                workspace / 'crates/oauth-service/src/acceptance_fixtures.rs',
                workspace / 'crates/oauth-service/src/host_api.rs', workspace / 'crates/oauth-service/src/api.rs',
                workspace / 'crates/markdown-editor/src/lib.rs', args.bundle / 'main.splash', args.bundle / 'manifest.json']
+    sources += sorted((workspace/'crates/markdown-editor').glob('src/*.rs'))
+    sources += sorted((workspace/'crates/markdown-editor/resources').rglob('*.svg'))
+    sources = list(dict.fromkeys(sources))
     hashes = {str(p.relative_to(workspace.parent)): digest(p) for p in sources}
     receipt = {'result': 'running', 'scope': 'signed installed UI and actual host services with synthetic GitHub I/O',
                'live_provider': False, 'physical_approval': False, 'driver': 'Codex native Makepad instrument',
@@ -54,7 +57,7 @@ def run():
             instance = Native(args.host, ['--installed-app=' + APP, '--app-data=' + str(profile),
                                          '--provider-fixture=github'], evidence, name)
             sessions.append(instance)
-            instance.label('Local draft restored')
+            instance.label('Saved locally')
             assert 'CONNECTED_INSTALLED' in instance.log_path.read_text()
             assert 'CONNECTED_PROVIDER_FIXTURE' in instance.log_path.read_text()
             return instance
@@ -108,7 +111,7 @@ def run():
             assert 'Original appointment: Tuesday at 09:00.' in content()
             edited = '# Delivery notes\n\nUpdated appointment: Wednesday at 14:30.\n\nBring café and 谢谢。\n\n| Task | State |\n| --- | --- |\n| Review | Ready |\n'
             ui.field('markdown', edited)
-            ui.label('Draft kept on this device')
+            ui.label('Saved locally')
             ui.capture('02-before-save')
             ui.click('Save')
             ui.label('Save Markdown to GitHub')

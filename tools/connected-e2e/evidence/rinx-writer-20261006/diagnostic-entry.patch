@@ -1,0 +1,19 @@
+diff --git a/apps/article-editor/native/ui.rs b/apps/article-editor/native/ui.rs
+index 45d640ee..30e0e660 100644
+--- a/apps/article-editor/native/ui.rs
++++ b/apps/article-editor/native/ui.rs
+@@ -4322,3 +4322,14 @@ mod tests {
+         assert_eq!(image_insertion("![a](asset:a)\n\n", img, false), format!("{img}\n\n"));
+     }
+ }
++
++// Local diagnostic reference entry: no account, grant or backend is installed.
++impl ArticlePanelRef {
++    pub fn diagnostic_writer(&self, cx: &mut Cx) {
++        if let Some(mut panel) = self.borrow_mut() {
++            panel.active = true;
++            panel.doc = Document::from_markdown("A quieter morning", "# A quieter morning\n\nStart with **one small idea** and let it grow.\n\n## Today’s notes\n\n- Make time for a walk\n- Read something new\n- Share a useful thought\n\n> Good writing begins with attention.\n\n| Time | Plan |\n| --- | --- |\n| Morning | Write |\n| Afternoon | Review |\n").unwrap();
++            panel.show(cx, Page::Write);
++        }
++    }
++}

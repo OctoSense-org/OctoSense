@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
-from native import Native
+from notes_native import NotesNative as Native
 
 APP = 'org.octosense.samples.githubnotes'
 
@@ -51,10 +51,13 @@ def run():
     root = Path(__file__).resolve().parents[2]
     output = args.out / ('run-' + str(time.time_ns()))
     output.mkdir(parents=True)
-    sources = [Path(__file__).resolve(), Path(__file__).with_name('native.py'), root/'Cargo.lock',
+    sources = [Path(__file__).resolve(), Path(__file__).with_name('native.py'), Path(__file__).with_name('notes_native.py'), root/'Cargo.lock',
                root/'crates/markdown-editor/src/lib.rs', root/'crates/shell/examples/connected-app-host.rs',
                root/'crates/shell/examples/connected_support/mod.rs', root/'crates/oauth-service/src/host_api.rs',
                root/'crates/oauth-service/src/acceptance_github.rs', args.bundle/'main.splash', args.bundle/'manifest.json']
+    sources += sorted((root/'crates/markdown-editor').glob('src/*.rs'))
+    sources += sorted((root/'crates/markdown-editor/resources').rglob('*.svg'))
+    sources = list(dict.fromkeys(sources))
     hashes = {str(p.relative_to(root.parent)): sha(p) for p in sources}
     receipt = {'result': 'running', 'scope': 'hidden native macOS signed installed Notes UX soak',
                'driver': 'Codex through Makepad instrument native events', 'cycles_requested': args.cycles,
@@ -87,7 +90,7 @@ def run():
         def start(name):
             instance = Native(args.host, ['--installed-app='+APP, '--app-data='+str(profile), '--provider-fixture=github'], output, name)
             sessions.append(instance)
-            instance.label('Local draft restored')
+            instance.label('Saved locally')
             assert 'CONNECTED_INSTALLED' in instance.log_path.read_text()
             return instance
         def scroll(dy):

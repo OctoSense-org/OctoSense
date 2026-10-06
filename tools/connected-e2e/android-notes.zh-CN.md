@@ -29,7 +29,7 @@ cargo build --release \
 MAKEPAD_FORCE_DEBUGGABLE=1 CARGO_BUILD_JOBS=4 \
 MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=$NOTES_KERNEL" \
 "$NOTES_LAB/packager/release/cargo-makepad" makepad android \
-  --sdk-path="$ANDROID_HOME" --abi=aarch64 --version-code=2026100618 \
+  --sdk-path="$ANDROID_HOME" --abi=aarch64 --version-code=2026100620 \
   --package-name=dev.makepad.octosense.connectednotes \
   --app-label=OctoSenseNotesTest \
   build -p octosense-home --release --locked --features dev-mode
@@ -68,8 +68,15 @@ python3 tools/connected-e2e/android_notes.py \
 设置 `MAKEPAD_REMOTE` 或 ADB 端口转发不会启用它。手机使用 ADB 输入和原始设备截图；
 Mac 浸泡使用 Makepad instrument，分别记录证据。
 
-检查 Write、Markdown、Preview、真实软键盘及 Repository 往返。读取**测试包**内
+用铅笔/眼睛图标切换原文与预览，预览调色板可打开次级富文本块编辑器。
+检查真实软键盘及返回/文件图标进入 Repository 后的往返。更新测试目录时保留
+`org.octosense.samples.githubnotes` 草稿目录。完整替换受管理的
+`.bundles/org.octosense.samples.githubnotes` 目录，并将旧包单独保留以便回滚；
+仅覆盖文件可能残留已删除资源，导致签名摘要校验拒绝启动。读取**测试包**内
 最新的 `draft-a.json`／`draft-b.json` 版本，核对精确原文；只停止该进程后重启，
 再检查恢复后的可见内容。硬件 Enter 与软键盘 Enter 要分别测试：首个版本在硬件
 Enter 时丢失正在组合的末词，已有独立运行时补丁及回归测试。保留失败与重测证据，
 不能用桌面检查推断手机已通过。
+
+[Rinx 编辑器真机记录](evidence/notes-rinx-phone-20261006/README.zh-CN.md)
+记录新图标布局与键盘期间悬浮导航遮挡修复。

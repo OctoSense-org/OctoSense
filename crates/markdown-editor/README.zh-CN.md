@@ -1,6 +1,6 @@
 # Markdown 编辑器
 
-[English](README.md)
+[English](README.md) | 简体中文
 
 `octosense-markdown-editor` 将 Rinx 的通用文章组件作为 `MarkdownEditor`
 提供给 OctoSense 隔离应用。组件本身不能访问文件系统、网络、账号或发布服务。
@@ -27,3 +27,40 @@ Matrix 作者/房间字段和发布工作流。图片链接语法可以保留，
 默认拒绝所有服务操作；`--fixture-provider` 仅提供虚构仓库和文件供 UI 测试，
 仍然拒绝提交。它不能证明 App Hub 安装、OAuth、宿主授权或真实 GitHub 提交
 已经通过，这些需要在集成后的 OctoSense 中验证。
+
+## Rinx 写作界面
+
+主界面复用 Rinx 真正的文章写作布局：紧凑图标栏、Markdown 源码、桌面分栏预览、
+逐块渲染的纸张预览、桌面格式栏和手机底部格式栏。宽度小于 960 点时，源码与预览切换显示。
+悬停或长按图标可查看用途。桌面样式侧栏、手机预览中的样式底部面板提供主题，
+以及辅助的块编辑器、撤销和重做入口；插入表格使用 Rinx 原生尺寸选择器。
+源码、分栏预览和块编辑器使用同一份 Markdown。切换视图、预览主题和设置文件名不会改写文件。
+无法解析的源码仍是当前草稿，修正后才可进入块编辑器。主题仅为组件内的显示状态，
+不会向 GitHub 文件插入元数据。图标和代码来源见 [NOTICE](resources/NOTICE.md)。
+
+组件占满工作区，外层不要再叠加标题、保存栏或模式按钮行：
+
+```splash
+editor := MarkdownEditor {
+    width: Fill height: Fill
+    on_change: |markdown| save_local_draft(markdown)
+    on_repository: || choose_repository_and_file()
+    on_save: || request_host_review()
+}
+```
+
+`ui.editor.set_destination(filename)` 设置只读文件名；`set_status(message)` 显示简短保存状态，
+长通知在内容下方换行。两个方法都没有文件或网络副作用。返回/仓库、保存图标只调用应用回调，
+远程写入仍经过宿主审核。`load`、`text` 和 `on_change` 的原始 Markdown 合约不变。
+
+原生测试通过 ID 定位图标：`repository_button`、`save_button`、`source_mode`、
+`split_mode`、`preview_mode`、`markdown`。桌面样式按钮是 `palette_button`，手机预览是
+`style_fab`；辅助控件桌面为 `rich_mode`/`undo_button`/`redo_button`，手机为
+`mobile_rich_mode`/`mobile_undo_button`/`mobile_redo_button`。
+测试宿主 `--wide` 使用 1200×820，默认 430×850；桌面窗口证据不等于 Android 输入法验收。
+
+已执行的无真实服务原生回归命令：
+
+```sh
+python3 crates/markdown-editor/tests/native-writer.py --output target/markdown-writer-native-final
+```
