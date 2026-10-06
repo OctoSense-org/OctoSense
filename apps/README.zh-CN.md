@@ -365,8 +365,10 @@ Android 的密码文件由该安装包的 Keystore 密钥加密；从测试包�
 | `calendar.agenda` | `{days?}` | 同上，用于议程卡片（`resources/agenda.card`）：`days`（7）天内接下来的三个日程 |
 
 日程保存在 `<host_dir>/calendar/events.json`，位于所有应用沙箱之外。月历、按日列表
-与编辑器使用同一份存储。已保存日程卡片带 `event/<id>` 路由，**Open Calendar**
-在真实日历应用中打开同一条记录。`calendar/cards.json` 保存发布记录、原始有效期
+与编辑器使用同一份存储。已保存日程卡片带 `event/<id>` 路由；**Open Calendar**
+位于卡片内部、日期和时间下方，在真实日历应用中打开同一条记录。L0 `sys.link`
+动作使用 `app://calendar/event/<id>`，宿主只接受当前发布记录声明的所属应用目标；
+其他 URL 或路由不会启动应用。`calendar/cards.json` 保存发布记录、原始有效期
 及用户隐藏状态；重启静默恢复未过期卡片，重复通知复用同一卡片，编辑刷新卡片数据。
 临时通知及议程卡片不属于此持久化日程卡片记录。显式 IANA
 `timezone` 保留日程所在地的时间，并在卡片显示时区；省略时区沿用设备本地时间。

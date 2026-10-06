@@ -779,6 +779,9 @@ impl Widget for ShellGlancePanel {
             if self.live.dispatch(cx, &self.tiles, "glance panel") {
                 self.redraw(cx);
             }
+            if let Some((app, route)) = self.live.take_open_request() {
+                cx.widget_action(self.uid, ShellGlancePanelAction::Open { app, route });
+            }
         }
     }
 }

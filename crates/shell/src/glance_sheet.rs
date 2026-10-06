@@ -60,10 +60,6 @@ script_mod! {
             chat_tab := ButtonFlat {width: Fill height: Fill margin: 0 text: "Chat"}
         }
         chat: CardChat {}
-        open_app: ButtonFlat {width: Fill height: 44 margin: 0 text: "Open Calendar"
-            draw_bg +: {color: #eaf0ff color_hover: #dbe6ff color_down: #cddcff border_radius: 10 border_size: 0}
-            draw_text +: {color: #285cd6 color_hover: #285cd6 color_down: #285cd6}
-        }
         mail: MailClip {}
         compose: View {width: Fill height: 82 flow: Down spacing: 5 padding: Inset{left: 4 right: 4 top: 6 bottom: 4}
             action := ButtonFlat {width: Fill height: 44 margin: 0 text: "Compose reply"
@@ -153,8 +149,6 @@ pub struct ShellGlanceSheet {
     tokens: ShellTokens,
     #[find] #[live] tabs: WidgetRef,
     #[find] #[live] chat: WidgetRef,
-    #[find] #[live] open_app: WidgetRef,
-    #[rust] open_request: Option<(String, Option<String>)>,
     #[find] #[live] mail: WidgetRef,
     #[find] #[live] compose: WidgetRef,
     #[rust] fullscreen: bool,
@@ -212,14 +206,6 @@ impl ScriptHook for ShellGlanceSheet {
 }
 
 impl ShellGlanceSheet {
-    pub(crate) fn take_open_request(&mut self) -> Option<(String, Option<String>)> {
-        self.open_request.take()
-    }
-
-    fn can_open_calendar(&self) -> bool {
-        !self.chatting && self.open.as_ref().is_some_and(|open|
-            open.card.app == "os.calendar" && open.card.open_app == "calendar")
-    }
     fn style_tabs(&mut self, cx: &mut Cx, ink: Vec4f) {
         if self.tabs_style == Some((self.chatting, ink)) { return; }
         self.tabs_style = Some((self.chatting, ink));
@@ -624,6 +610,10 @@ impl ShellGlanceSheet {
             }
             self.redraw(cx);
         }
+        if let Some((app, route)) = self.live.take_open_request() {
+            self.hide_workspace(cx);
+            cx.widget_action(self.uid, crate::glance_panel::ShellGlancePanelAction::Open { app, route });
+        }
     }
 }
 
@@ -693,11 +683,7 @@ impl Widget for ShellGlanceSheet {
             #[cfg(not(any(feature = "app-hub", native_mobile)))]
             let heading = &open.card.title;
             if !focus_layout {
-                let open_width = if self.can_open_calendar() {112.0} else {0.0};
-                self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0 - open_width, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
-                if open_width > 0.0 {
-                    self.open_app.draw_walk_all(cx,scope,Walk::abs_rect(rect(close.pos.x - open_width, sheet.pos.y, open_width - 4.0, HEADER)));
-                }
+                self.d.label_elided(cx, rect(sheet.pos.x + PAD + 4.0, sheet.pos.y + 4.0, sheet.size.x - PAD * 2.0 - CLOSE - 8.0, HEADER - 4.0), true, 14.0, ink, HAlign::Left, heading);
                 self.d.icon_centered(cx, Ico::Close, close, 14.0, ink);
             }
             let mut card = card_rect(sheet);
@@ -866,16 +852,6 @@ impl Widget for ShellGlanceSheet {
                 self.select_chat(cx, false);
             }
             return;
-        }
-        if self.can_open_calendar() {
-            let actions = cx.capture_actions(|cx| self.open_app.handle_event(cx, event, scope));
-            if self.open_app.as_button().clicked(&actions) {
-                if let Some(card) = self.open.as_ref().and_then(|open| crate::glance::card(&open.key)) {
-                    self.open_request = Some((card.open_app, card.route));
-                    self.hide_workspace(cx);
-                }
-                return;
-            }
         }
         if self.mail_binding().is_some() {
             self.mail.handle_event(cx, event, scope);

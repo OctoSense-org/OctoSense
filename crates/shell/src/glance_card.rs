@@ -382,6 +382,9 @@ pub struct L0Session {
     /// Never changes the model-authored source or grants the agent new tools.
     workspace_chat: Option<WorkspaceChat>,
     opening_account: Option<String>,
+    /// Navigation is limited to this publication’s declared own-app target.
+    open_url: Option<String>,
+    open_requested: bool,
     local_changes: bool,
     /// The chat generation the card was last lowered at.
     chat_generation: u64,
@@ -389,6 +392,10 @@ pub struct L0Session {
     reads_chat: bool,
     /// The shell's mode the card was last lowered in.
     dark: bool,
+}
+
+fn publication_open_url(card: &crate::glance::GlanceCard) -> String {
+    format!("app://{}{}", card.open_app, card.route.as_ref().map(|r| format!("/{r}")).unwrap_or_default())
 }
 
 struct WorkspaceChat {
@@ -483,6 +490,7 @@ impl L0Session {
             source: String::new(), data: serde_json::json!({}), mail: None,
         }));
         session.opening_account = card.account.clone();
+        session.open_url = Some(publication_open_url(card));
         if session.mail.is_none() && !session.reads_chat && crate::agents::all().iter().any(|agent| agent.id == card.app) {
             if let Some(account) = card.account.clone() {
                 session.workspace_chat = Some(WorkspaceChat::new(card, account));
@@ -601,6 +609,8 @@ impl L0Session {
             mail: l0.mail.clone().map(crate::mail_card::Session::new),
             workspace_chat: None,
             opening_account: None,
+            open_url: None,
+            open_requested: false,
             local_changes: false,
             chat_generation: crate::glance_chat::generation(),
             reads_chat: crate::glance_chat::reads_chat(&l0.source),
@@ -707,12 +717,20 @@ impl L0Session {
         Ok(TapOutcome { event, applied: outcome.applied, relower: moved && !keystroke })
     }
 
-    /// A §5.12 write the card reported, performed by the host: a
-    /// `sys.chat` append (glance_chat.rs). The demo host performs no other.
+    /// Perform only supported, host-bound collection writes.
     fn perform(&mut self, write: &octoscript_ui_l0::CollectionWrite, origin: Option<octoscript_ui_l0::ValueOrigin>, data: &serde_json::Value, from_field: bool) {
         if matches!(write.helper.as_str(), "sys.mail_draft" | "sys.mail_review") {
             let result = self.mail.as_mut().ok_or_else(|| "Mail card has no host binding".to_string()).and_then(|mail| mail.perform(write, origin, from_field));
             if let Err(error) = result { log!("glance: Mail write refused: {error}"); }
+            return;
+        }
+        if write.helper == "sys.link" {
+            // A declared control may open only the destination bound at publication.
+            // Arbitrary URLs, app IDs, field edits and unbound sessions are inert.
+            if write.op == "set" && origin.is_some() && !from_field && self.account_valid()
+                && self.open_url.as_deref() == Some(write.value.as_str()) {
+                self.open_requested = true;
+            }
             return;
         }
         if write.helper == "sys.chat" {
@@ -760,6 +778,21 @@ impl LiveCards {
             key: card.key(), published: card.clone(), session: L0Session::for_card(card),
             body: card.body.clone(), lowered: false,
         });
+    }
+
+    /// Consume navigation once, and reject a removed/replaced publication.
+    pub(crate) fn take_open_request(&mut self) -> Option<(String, Option<String>)> {
+        self.take_open_request_with(crate::glance::card)
+    }
+
+    fn take_open_request_with(&mut self, current: impl Fn(&str) -> Option<crate::glance::GlanceCard>) -> Option<(String, Option<String>)> {
+        for live in self.cards.values_mut() {
+            if std::mem::take(&mut live.session.open_requested) && live.session.account_valid()
+                && current(&live.key).as_ref() == Some(&live.published) {
+                return Some((live.published.open_app.clone(), live.published.route.clone()));
+            }
+        }
+        None
     }
 
     pub(crate) fn has_local_changes(&self) -> bool {
@@ -1509,6 +1542,43 @@ mod tests {
         assert!(take_taps(A).is_empty(), "taken once");
         drop_taps(B);
         assert!(take_taps(B).is_empty(), "a swept tile's taps go with it");
+    }
+
+    #[test]
+    fn in_card_navigation_is_bound_to_the_current_publication() {
+        use crate::glance::{Caller, GlanceStore};
+        let source = r#"source destination sys.link(fields: [url])
+            source info sys.dataset(fields: [url1])
+            event open { destination: set($value) }
+            view root Surface { Chip(text: "Open Calendar", on_tap: open, value: info.url1) }"#;
+        let args = serde_json::json!({"card_id":"navigation", "title":"Appointment", "source":source,
+            "data":{"info":{"url1":"app://calendar/event/fixture"}}, "open":{"app":"calendar","route":"event/fixture"}});
+        let mut store = GlanceStore::default();
+        store.publish(&Caller::granted("os.calendar"), &args, 0).unwrap();
+        let card = store.card("os.calendar/navigation", 0).unwrap();
+        let mut live = LiveCards::default();
+        live.prepare_native("tile", &card);
+        let session = live.session_mut("tile").unwrap();
+        let target = target_for(&session.body().unwrap(), "open");
+        session.tap(&target, None).unwrap();
+        assert_eq!(live.take_open_request_with(|_| Some(card.clone())), Some(("calendar".into(), Some("event/fixture".into()))));
+        assert!(live.take_open_request_with(|_| Some(card.clone())).is_none(), "consumed once");
+        for url in ["app://mail", "app://calendar/event/other", "https://example.com"] {
+            let session = live.session_mut("tile").unwrap();
+            session.data["info"]["url1"] = serde_json::json!(url);
+            let target = target_for(&session.body().unwrap(), "open");
+            session.tap(&target, None).unwrap();
+            assert!(live.take_open_request_with(|_| Some(card.clone())).is_none(), "undeclared target: {url}");
+        }
+        live.clear(); live.prepare_native("tile", &card);
+        live.session_mut("tile").unwrap().tap(&target, None).unwrap();
+        assert!(live.take_open_request_with(|_| None).is_none(), "withdrawn card");
+        live.session_mut("tile").unwrap().tap(&target, None).unwrap();
+        let mut replacement = card.clone(); replacement.route = Some("event/replaced".into());
+        assert!(live.take_open_request_with(|_| Some(replacement.clone())).is_none(), "replaced card");
+        let mut unbound = L0Session::new(&card.app, card.l0.as_ref().unwrap());
+        unbound.tap(&target, None).unwrap();
+        assert!(!unbound.open_requested, "source alone confers no navigation binding");
     }
 
     /// The glance panel's tiles dispatch as the card window does (both keep

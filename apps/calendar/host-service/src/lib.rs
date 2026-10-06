@@ -216,7 +216,7 @@ pub fn event_card_args(title: &str, day: &str, time: &str, location: &str, notes
             "metric1_label": "Day", "metric1_value": day,
             "metric2_label": "Time", "metric2_value": if time.is_empty() { "\u{2014}" } else { time },
             "subtitle": if location.is_empty() { "No place given" } else { location },
-            "summary": notes,
+            "summary": notes, "url1": "app://calendar",
         }},
         "priority": priority.clamp(0, 100), "open": {"app": "calendar"}, "notify": true,
     })
@@ -228,6 +228,7 @@ pub fn saved_event_card_args(event: &Event, card_id: &str, priority: i64) -> Val
     let time = format!("{time}{}", event.zone_label());
     let mut args = event_card_args(&event.title, &day, &time, &event.location, &event.notes, card_id, priority);
     args["open"]["route"] = json!(format!("event/{}", event.id));
+    args["data"]["ev"]["url1"] = json!(format!("app://calendar/event/{}", event.id));
     args["summary"] = json!(format!("{day} · {time}{}", if event.location.is_empty() {String::new()} else {format!(" · {}",event.location)}));
     args
 }

@@ -423,8 +423,11 @@ view and agenda are not included in these cross-app grants.
 
 Events live in `<host_dir>/calendar/events.json`, outside every app's jail.
 The app’s month/day list and editor use this same store. A saved event’s card
-keeps its id in `open.route = "event/<id>"`; **Open Calendar** opens that event
-in the actual app. `calendar/cards.json` records saved-event publications, their
+keeps its id in `open.route = "event/<id>"`. **Open Calendar** sits inside the
+card, below its date/time, and opens that event in the actual app. Its L0
+`sys.link` action uses `app://calendar/event/<id>`; the host accepts only the
+current publication’s declared own-app destination. Other URLs or routes do
+not launch anything. `calendar/cards.json` records saved-event publications, their
 original expiry and dismissals. Restart restores active cards without a new
 notification, identical live notify retries reuse the card, and edits refresh
 its data. Ad-hoc notices and agenda cards are not durable saved-event records.

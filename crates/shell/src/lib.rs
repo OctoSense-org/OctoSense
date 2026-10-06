@@ -3818,8 +3818,6 @@ impl App {
         let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
         if !sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.accepts_pointer(event)) { return false; }
         sheet.handle_event(cx, event, &mut Scope::empty());
-        let open = sheet.borrow_mut::<glance_sheet::ShellGlanceSheet>().and_then(|mut s| s.take_open_request());
-        if let Some((app, route)) = open { self.launch_glance_app(cx, &app, route.as_deref()); }
         self.sync_glance_presentation(cx);
         if matches!(event, Event::MouseDown(_) | Event::MouseUp(_) | Event::TouchUpdate(_)) { self.redraw_all(cx); }
         true
