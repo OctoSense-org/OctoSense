@@ -80,6 +80,7 @@ advanced its next window; Android again reported the normal 15-minute period.
 
 ## Remaining checks and limits
 
+- The user's everyday Home → swipe right → Mail card flow has **not passed**. A follow-up device check found that `dev.makepad.octosense` build 2026100216 still held the Home role, while the configured Gmail account and three undismissed, unexpired Mail publications were in `dev.makepad.octosense.studio` build 2026100513. These packages do not share the Glance store. The earlier notification/card/Back test does not establish integration with the default Home. Selecting the configured package as Home or deploying and configuring Mail in the normal Home still requires its own device validation.
 - The shipping simulation reached the Inbox and is pending behind the existing queue. Its final card outcome is still under observation.
 - AgentMail accepted a separately labeled no-action control. Its arrival in the monitored Inbox has not yet been established; it must not be counted as an agent skip.
 - The exercised jobs were explicitly forced through Android's test command. A natural periodic/Doze/reboot cycle is **unverified** at this point; registration does not prove its delivery latency.

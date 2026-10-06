@@ -14,7 +14,7 @@
 | 根目录 `bash tools/check-shell-graph.sh -p octosense`；手机版本使用 `-p octosense-home` | 通过，仅一个固定 octos 修订版 |
 | `python3 tools/setup.py --check --cargo`；`python3 tools/native_apps.py --check` | 通过 |
 | `python3 -m unittest discover -s rom/tests -p test_no_local_paths.py` | 通过 |
-| 独立、可调试 Android APK，保留账户数据与内核哈希 | 构建并安装；最新测试版本 2026100513 |
+| 独立、可调试 Android APK，保留账户数据与内核哈希 | 已构建至 2026100515；设备验收到 2026100513 |
 
 最终检查使用隔离的 `OCTOSENSE_HOME` 与 `RINX_DATA_DIR`。两个忽略项分别需要真实 Gmail 凭据失败测试或 macOS 钥匙串。模拟上下文和传输测试验证调度、回执、取消与持久化边界，不代表真实模型表现；真实 DeepSeek 与设备证据单独列在下方。
 
@@ -39,6 +39,7 @@
 
 ## 待检查项与限制
 
+- 用户日常使用的 Home → 右滑 → Mail 卡片路径**尚未通过验收**。后续设备检查发现，Home 角色仍属于 `dev.makepad.octosense`（版本 2026100216）；已连接的 Gmail 账号及三张未关闭、未过期的 Mail 发布记录位于 `dev.makepad.octosense.studio`（版本 2026100513）。两个安装包不共享 Glance 数据。此前的通知/卡片/返回测试不能证明已接通默认 Home；将已配置的测试包设为 Home，或在正常 Home 中部署并配置 Mail，都仍需分别进行设备验证。
 - 物流模拟邮件已进入收件箱，仍排在已有队列后面；最终卡片结果正在观察。
 - AgentMail 已接受单独标注的无操作对照邮件，但尚未证明它到达被监控的收件箱，不能算作代理已跳过。
 - 当前运行的任务通过 Android 测试命令强制触发；自然周期、Doze 与重启周期目前均**未验证**。注册成功不代表延迟已经验证。

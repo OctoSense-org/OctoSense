@@ -76,6 +76,15 @@ Delivery is at least once: a failure between publishing and saving the receipt r
 
 ## Cards
 
+On Android, the swipe-right Home page and a notification's card workspace read
+the same Glance store **within one installed package**. Separate Home and test
+APKs have separate accounts, agent provisions, drafts and card storage. Connecting
+Gmail in a test APK does not populate the installed Home's Glance page. Verify
+which package holds the Home role before claiming the everyday launcher flow
+works; opening a card from the test APK's notification verifies only that APK.
+[`GlanceFeed::sync_published`](../crates/shell/src/mobile_pages.rs) reads the package's
+published cards, and expanding a summary opens its retained workspace.
+
 A card from `mail.publish_card` is L0 only, with no expressions or script. The shell checks that each `sys.dataset` source declares a nonempty `fields` list with a value in `data` for every field, and that sources form no cycle. The check catches missing bindings, not wrong facts. The shell then publishes the card as Mail and notifies; tapping the notification opens that exact card, which the phone shows as a full-screen workspace.
 
 With a `draft_id`, Mail's host service binds the card to the account, email, draft and chat thread, a binding the model can neither supply nor change. The card can then edit the reply (`sys.mail_draft`), chat about it (`sys.chat`) and open the host's review (`sys.mail_review`). [Composed Mail cards](mail-composable-cards.md#follow-one-reply-through-the-code) follows a reply from draft to SMTP.
