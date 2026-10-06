@@ -2,6 +2,8 @@
 
 English | [简体中文](mail-agent-events.zh-CN.md)
 
+For a complete setup and acceptance procedure, follow the [live Mail/Calendar demo](demos/mail-calendar/README.md).
+
 Mail's agent handles new mail without being asked. The shell syncs the Inbox independently of model turns, queues each new message as an event and starts a turn of Mail's agent, which reads the message and either posts a glance card, with a reply draft if the person's policy asks for one, or records why not. [Key concepts](../README.md#key-concepts) explains agents, lanes and cards.
 
 ## Turning it on
@@ -123,7 +125,7 @@ Other mail that needs action gets working `Chip` buttons that switch local views
 - Android keeps a bounded private outbox for Mail publications. Only cards published with `notify: true` produce native Android notifications, after the model applies the provisioned importance policy. Notification permission and channel settings still apply. Tapping a notification restores the original, validated card for its original active account; it cannot approve a reply. Draft-bound cards still read the authoritative saved draft. Other apps' cards remain in memory unless they have their own persistence.
 - Glance scrolls all retained cards; a fifth Mail card is admitted and cards beyond the first six remain reachable. Publication still has a six-per-minute rate limit. Payload-retention budgets (8 MiB per app, 32 MiB overall) and expiry bound the working set independently of the viewport; under pressure older cards retire while the new valid publication is kept. Mail drafts and source messages remain in the Mail service.
 - Events queue even while processing is off, and only the worker removes them. Once 128 are waiting, every Inbox sync that finds new mail fails without moving the cursor, the Mail window's included, until processing drains the queue.
-- Not yet: events for other apps, scheduled triggers, per-app model choice, kernel-native skills, the budget and Settings UI of [ADR 0002](adr/0002-event-driven-app-agents.md), and remote actions other than replying (the shell has no `sys.link` handler).
+- Not yet: events for other apps, scheduled triggers, per-app model choice, kernel-native skills, the budget and Settings UI of [ADR 0002](adr/0002-event-driven-app-agents.md), and arbitrary remote actions. Calendar booking is available through its granted tools after a human request or explicit scheduling policy; `sys.link` only opens the current publication’s declared own-app route.
 
 ## Reading the code
 
