@@ -84,10 +84,13 @@ cards or send mail. It demonstrates an unattended job occurrence, not a full
 Doze/reboot or latency guarantee. ADB was returned to non-root mode after the
 read-only snapshot. Message contents and identifiers are excluded here.
 
+The [scrolling follow-up](glance-scroll-2026-10-05.md) removes the small card-count
+quotas and records successful automatic publication after the phone update.
+
 This establishes a shared feed and two workspace paths, not a complete UX or
 performance score. This phone run used the light appearance; dark appearance was not separately
 exercised. Longer periodic/Doze/reboot delivery is still unverified.
-Mail's four-live-card cap currently constrains further publications; old cards
-were preserved. Generic News notices are in-memory publications: this check
+At the 2026100517 checkpoint, Mail's four-live-card cap constrained further
+publications; old cards were preserved. Generic News notices are in-memory publications: this check
 does not establish durable restoration for every app. Raw mail, drafts,
 screenshots, accounts and provider configuration remain private.

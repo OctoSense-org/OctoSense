@@ -78,13 +78,20 @@ context. The final APK is built; the last installed build in this record is
 2026100513. An explicitly forced job schedule was reset after test forcing had
 advanced its next window; Android again reported the normal 15-minute period.
 
-## Remaining checks and limits
+## Initial checkpoint and follow-ups
+
+The observations below describe the initial test-package checkpoint. The
+[scrolling follow-up](glance-scroll-2026-10-05.md) records normal Home 2026100518:
+the card-count caps are removed, both blocked delivery cards published through
+automatic DeepSeek turns, and the event queue drained. It also verifies scrolling
+and opening the seventh card in a shared Mail/News feed. Earlier failures below
+remain part of the test record.
 
 - The initial everyday Home → swipe right → Mail card check **failed**. A follow-up device check found that `dev.makepad.octosense` build 2026100216 still held the Home role, while the configured Gmail account and three undismissed, unexpired Mail publications were in `dev.makepad.octosense.studio` build 2026100513. These packages do not share the Glance store. The earlier notification/card/Back test does not establish integration with the default Home. The [follow-up](shared-glance-home-2026-10-05.md) records the corrected normal Home deployment and mixed Mail/News feed, including subsequent successful Gmail reauthentication and quiet skips; new important-mail delivery remains blocked by capacity.
 - The shipping simulation reached the Inbox and is pending behind the existing queue. Its final card outcome is still under observation.
 - AgentMail accepted a separately labeled no-action control. Its arrival in the monitored Inbox has not yet been established; it must not be counted as an agent skip.
 - The exercised jobs were explicitly forced through Android's test command. A natural periodic/Doze/reboot cycle is **unverified** at this point; registration does not prove its delivery latency.
 - Notification permission/channel denial, account removal during a job, and other Android versions are not all device-tested in this change. Existing consent/account tests and the new outbox scope/expiry tests cover host-side boundaries.
-- A large backlog, a slow model or Mail's four-live-card limit can delay later decisions. The queue remains bounded at 128. Model importance judgments are not guaranteed to match every human preference.
+- A large backlog or a slow model can delay later decisions. The four-live-card cap constrained this initial checkpoint and was removed in the scrolling follow-up. The queue remains bounded at 128. Model importance judgments are not guaranteed to match every human preference.
 
 Screenshots, model/audit correlation, sanitized count/time snapshots and build hashes are retained locally. Raw mail, drafts, account identifiers, provider configuration and private artifact paths are excluded from this public record.
