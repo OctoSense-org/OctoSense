@@ -8,6 +8,8 @@ publish = false
 [features]
 default = []
 host = ["dep:octosense-appstore", "dep:octosense-mail-service", "dep:keyring"]
+# Native acceptance executables only; no environment/config switch in releases.
+acceptance-fixtures = ["host"]
 
 [dependencies]
 serde = { workspace = true }

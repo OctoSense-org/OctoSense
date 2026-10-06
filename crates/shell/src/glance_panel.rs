@@ -501,7 +501,7 @@ impl Widget for ShellGlancePanel {
                 self.d.label(cx, rect(x + PAD, mid, PANEL_WIDTH - PAD * 2.0, 22.0), true, 15.0, ink, HAlign::Center, "You\u{2019}re all caught up");
                 self.d.label(cx, rect(x + PAD, mid + 24.0, PANEL_WIDTH - PAD * 2.0, 18.0), false, 12.0, dim, HAlign::Center, "Cards from your apps appear here.");
             } else {
-                let heights: Vec<f64> = cards.iter().map(|c| crate::glance_card::tile_height(&c.key())).collect();
+                let heights: Vec<f64> = cards.iter().map(|c| if c.l0.is_none() {crate::glance_card::TILE_DEFAULT_HEIGHT} else {crate::glance_card::tile_height(&c.key())}).collect();
                 if std::mem::take(&mut self.reveal_newest) {
                     if let Some(n) = cards.iter().enumerate().max_by_key(|(_, c)| c.published_ms).map(|(i, _)| i) {
                         self.first = first_to_reveal(&heights, n, bottom - list_top);
@@ -539,13 +539,27 @@ impl Widget for ShellGlancePanel {
                         drawn += 1;
                     }
                     let r = rect(x + PAD, y, PANEL_WIDTH - PAD * 2.0, h);
-                    let body = self.live.body(&key, card, "glance panel");
                     // A card taller than its tile scrolls inside it (one that
                     // peeks in shows its top), with a thumb at its edge, under
                     // the card's actions.
-                    let overflow = if cut { 0.0 } else { crate::glance_card::overflow(&key) };
+                    let overflow = if cut || card.l0.is_none() { 0.0 } else { crate::glance_card::overflow(&key) };
                     let scroll = if overflow > 0.0 { self.tall_scroll(&key, card, overflow) } else { 0.0 };
-                    self.tiles.draw_scrolled(cx, &key, &card.app, card.contained, &body, r, scroll);
+                    if card.l0.is_none() {
+                        // Match the phone's summary-first presentation. A full
+                        // script workspace cannot fit inside a feed tile, and
+                        // should not start its timers or requests while idle.
+                        self.d.card(cx, r, &tok.notifications.surface);
+                        cx.begin_turtle(Walk::abs_rect(r), Layout::default());
+                        self.d.label_elided(cx, rect(r.pos.x + 14.0, r.pos.y + 14.0, r.size.x - 70.0, 22.0), true, 14.0, ink, HAlign::Left, &card.title);
+                        let summary = if card.summary.is_empty() {"Open to view this card"} else {&card.summary};
+                        for (n, line) in self.d.wrap(cx, false, 13.0, summary, r.size.x - 28.0, 3).iter().enumerate() {
+                            self.d.label(cx, rect(r.pos.x + 14.0, r.pos.y + 48.0 + n as f64 * 20.0, r.size.x - 28.0, 20.0), false, 13.0, dim, HAlign::Left, line);
+                        }
+                        cx.end_turtle();
+                    } else {
+                        let body = self.live.body(&key, card, "glance panel");
+                        self.tiles.draw_scrolled(cx, &key, &card.app, card.contained, &body, r, scroll);
+                    }
                     if overflow > 0.0 {
                         let track = rect(r.pos.x + r.size.x - 6.0, r.pos.y + 40.0, 3.0, (r.size.y - 50.0).max(12.0));
                         let thumb = (track.size.y * r.size.y / (r.size.y + overflow)).clamp(12.0, track.size.y);
@@ -622,7 +636,7 @@ impl Widget for ShellGlancePanel {
             }
             self.tall_logged = places;
         }
-        let live: Vec<String> = if self.open { crate::glance::listed().iter().map(|c| c.key()).collect() } else { Vec::new() };
+        let live: Vec<String> = if self.open { crate::glance::listed().iter().filter(|c| c.l0.is_some()).map(|c| c.key()).collect() } else { Vec::new() };
         self.tiles.sweep(cx, &live);
         self.live.retain(&live);
         // A card that is not tall now (it fits, peeks in or is scrolled out

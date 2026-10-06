@@ -20,13 +20,15 @@
 //! at [`TILE_MAX_HEIGHT`] ([`overflow`] reports the excess), with scrolling
 //! inside the tile where offered ([`GlanceTiles::draw_scrolled`]). The
 //! expanded card scrolls its focused editor into view when resized, leaving
-//! room for the following action row. A script card should size its root `Fit`.
+//! room for the following action row. Legacy script cards size their root
+//! `Fit`; explicit viewport workspaces use a bounded `Fill` root and own their
+//! scroll regions. Script feed summaries display metadata without running UI.
 //!
 //! **Policy.** A tile's isolate runs under the publishing app's resolved
 //! policy, applied exactly as the Card runner applies it
 //! (`octosense_app_policy::splash_adapter::apply` with the app's
 //! `isolate_settings`: its jail and quota, capabilities, hosts, prompt right,
-//! budget and heap), so a card can do whatever the app's own UI can. A
+//! budget and heap), with prompt authority restricted by the surface below. A
 //! native module (no manifest) publishes tiles with no capabilities and no
 //! hosts, as does an app whose policy cannot be resolved (logged).
 //!
@@ -35,10 +37,14 @@
 //! reach the card's widgets and its handlers run. Its `host.request` calls
 //! leave through the Card runner's own path (`octosense_appstore::services::
 //! pump`: the isolate's capability gate, then the host services) as that
-//! app, the way the app's own UI calls go out. A service sheet a tile's call
-//! raises is not shown on the tile. The shell keeps one affordance of its
-//! own on each tile, the open button at its top-right corner
-//! ([`open_button`]), which opens the app.
+//! app, the way the app's own UI calls go out. Background tiles cannot raise
+//! service sheets. An explicitly opened viewport workspace may use only the
+//! prompt authority its admitted policy granted: the host mounts its sheet in
+//! a separate, host-owned isolate, and routes modal input there exclusively.
+//! Dismissal, suspension or account/publication retirement cancels unsubmitted
+//! reviews and stops the sheet isolate, while preserving the app's local draft.
+//! An already approved external write remains bound to its original request.
+//! The shell's tile affordance ([`open_button`]) opens the app.
 //!
 //! **L0 taps.** A lowered L0 card's taps and field edits call `NAV(t:
 //! "l0:{e,k,v}", v?)` (Octoscript-Makepad's general translation). Every
@@ -923,14 +929,26 @@ script_mod! {
         width: Fill height: Fill flow: Down
         card := Splash { width: Fill height: Fit }
     }
+    // Script workspaces own their scrolling regions (mail body, editor,
+    // transcript). A Fit ancestor gives their Fill roots no usable height.
+    mod.widgets.GlanceWorkspaceFrame = View {
+        width: Fill height: Fill flow: Overlay
+        card := Splash { width: Fill height: Fill }
+        // Host-owned isolate, outside the app's policy and script tree.
+        sheet := Splash { width: Fill height: Fill visible: false }
+    }
 }
 
 struct Tile {
     frame: WidgetRef,
+    card: SplashRef,
+    sheet: SplashRef,
     body: std::sync::Arc<str>,
     /// The publishing app, whose requests the tile's calls go out as.
     app: String,
     contained: bool,
+    workspace: bool,
+    admitted_prompts: bool,
     viewport: Option<Rect>,
     focused: Option<WidgetUid>,
 }
@@ -966,6 +984,8 @@ pub struct GlanceTiles {
     tiles: HashMap<String, Tile>,
     /// Cards scroll inside their rect instead of clipping (the card window).
     scroll: bool,
+    viewport_layout: bool,
+    foreground: bool,
 }
 
 impl GlanceTiles {
@@ -978,7 +998,42 @@ impl GlanceTiles {
 
     /// Tiles whose cards scroll inside their rect (the card window).
     pub fn scrolling() -> Self {
-        GlanceTiles { tiles: HashMap::new(), scroll: true }
+        GlanceTiles { tiles: HashMap::new(), scroll: true, viewport_layout: false, foreground: false }
+    }
+
+    /// Only the visible expanded workspace may request host-owned prompts.
+    /// Summary tiles keep their original background policy.
+    pub fn set_foreground(&mut self, cx: &mut Cx, foreground: bool) {
+        if self.foreground == foreground { return; }
+        self.foreground = foreground;
+        for tile in self.tiles.values() {
+            if !tile.workspace { continue; }
+            let card = tile.card.clone();
+            card.set_host_prompts(cx, foreground && tile.admitted_prompts);
+            if !foreground {
+                retire_host_sheet(cx, tile);
+            }
+        }
+    }
+
+    pub fn host_sheet_visible(&self, _cx: &mut Cx) -> bool {
+        self.tiles.values().any(|tile| tile.workspace && tile.sheet
+            .borrow().is_some_and(|s| s.view.visible))
+    }
+
+    pub fn dismiss_host_sheets(&mut self, cx: &mut Cx) {
+        for tile in self.tiles.values().filter(|tile| tile.workspace) {
+            retire_host_sheet(cx, tile);
+            tile.card.set_host_prompts(cx, self.foreground && tile.admitted_prompts);
+        }
+    }
+
+    /// An expanded script app gets a bounded viewport, just like its normal
+    /// app window. Its own scroll views and bottom composer share that space.
+    pub fn draw_workspace(&mut self, cx: &mut Cx2d, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>, rect: Rect) {
+        self.viewport_layout = true;
+        self.draw(cx, key, app, contained, body, rect);
+        self.viewport_layout = false;
     }
 
     /// Draw `card` (its `body`, published by `app`) at `rect`: the rect's
@@ -1040,17 +1095,25 @@ impl GlanceTiles {
 
     /// The tile for `key`, made and seated on first use, running `body`.
     pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
-        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), body: "".into(), app: app.to_string(), contained, viewport: None, focused: None });
+        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), card: SplashRef::default(), sheet: SplashRef::default(), body: "".into(), app: app.to_string(), contained, workspace: self.viewport_layout, admitted_prompts: false, viewport: None, focused: None });
         if tile.frame.is_empty() {
             let scroll = self.scroll;
+            let viewport = self.viewport_layout;
             tile.frame = cx.with_vm(|vm| {
-                let value = if scroll { script_eval!(vm, { use mod.widgets.* GlanceSheetFrame {} }) } else { script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} }) };
+                let value = if viewport { script_eval!(vm, { use mod.widgets.* GlanceWorkspaceFrame {} }) }
+                    else if scroll { script_eval!(vm, { use mod.widgets.* GlanceSheetFrame {} }) }
+                    else { script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} }) };
                 WidgetRef::script_from_value(vm, value)
             });
-            let splash = tile.frame.splash(cx, ids!(card));
-            seat(cx, &splash, app, contained);
+            // Capture direct host children before evaluating any app source.
+            // A nested app widget named `sheet` can never become host authority.
+            tile.card = tile.frame.splash(cx, ids!(card));
+            if tile.workspace { tile.sheet = tile.frame.splash(cx, ids!(sheet)); }
+            let splash = tile.card.clone();
+            tile.admitted_prompts = seat(cx, &splash, app, contained);
+            if tile.workspace { splash.set_host_prompts(cx, self.foreground && tile.admitted_prompts); }
         }
-        let splash = tile.frame.splash(cx, ids!(card));
+        let splash = tile.card.clone();
         if tile.body.as_ref() != body.as_ref() {
             splash.set_text(cx, body);
             tile.body = body.clone();
@@ -1061,7 +1124,7 @@ impl GlanceTiles {
     /// The heap key of the isolate `key`'s card runs in, once seated.
     pub fn heap_key(&self, cx: &mut Cx, key: &str) -> Option<usize> {
         let tile = self.tiles.get(key)?;
-        let splash = tile.frame.splash(cx, ids!(card));
+        let splash = tile.card.clone();
         let mut splash = splash.borrow_mut()?;
         splash.isolate_heap_key(cx)
     }
@@ -1073,8 +1136,17 @@ impl GlanceTiles {
     /// it has tiles; pointer events only while the tiles are on screen.
     pub fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         for tile in self.tiles.values() {
-            let splash = tile.frame.splash(cx, ids!(card));
-            match isolate_of(cx, &splash) {
+            let splash = tile.card.clone();
+            let sheet = tile.sheet.clone();
+            let modal = sheet.borrow().is_some_and(|s| s.view.visible);
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let sheet_input = octosense_appstore::services::is_sheet_input_event(event);
+            #[cfg(not(any(feature = "app-hub", native_mobile)))]
+            let sheet_input = false; // This build cannot mount host service sheets.
+            if modal && sheet_input {
+                // The foreground service sheet receives input exclusively.
+                sheet.handle_event(cx, event, &mut Scope::empty());
+            } else { match isolate_of(cx, &splash) {
                 Some(vm_id) => widget_async::with_isolate(cx, vm_id, |cx| {
                     if let Event::NetworkResponses(responses) = event {
                         // Splash's own pump looks the isolate up as not
@@ -1084,11 +1156,11 @@ impl GlanceTiles {
                     tile.frame.handle_event(cx, event, &mut Scope::empty());
                 }),
                 None => tile.frame.handle_event(cx, event, &mut Scope::empty()),
-            }
+            }}
             #[cfg(any(feature = "app-hub", native_mobile))]
             if tile.contained {
                 let host_dir = octosense_appstore::data_root(cx).join(".host");
-                octosense_appstore::services::pump(cx, &tile.app, &host_dir, &splash, &SplashRef::default());
+                octosense_appstore::services::pump(cx, &tile.app, &host_dir, &splash, &sheet);
             }
         }
     }
@@ -1100,7 +1172,8 @@ impl GlanceTiles {
         let gone: Vec<String> = self.tiles.keys().filter(|k| !live.contains(k)).cloned().collect();
         for key in gone {
             if let Some(tile) = self.tiles.remove(&key) {
-                let splash = tile.frame.splash(cx, ids!(card));
+                if tile.workspace { retire_host_sheet(cx, &tile); }
+                let splash = tile.card.clone();
                 // Its waiting host requests and taps end with it: a late
                 // answer goes nowhere, and neither reaches a tile that
                 // takes its place (it may get the same heap key).
@@ -1115,6 +1188,41 @@ impl GlanceTiles {
     }
 }
 
+/// Retiring the host isolate drops native ReviewRequest capabilities (which
+/// cancel unsubmitted Gmail tickets), timers and queued sheet requests. The app
+/// isolate stays resident so its durable draft and input survive dismissal.
+fn retire_host_sheet(cx: &mut Cx, tile: &Tile) {
+    let sheet = &tile.sheet;
+    if sheet.borrow().is_none() { return; }
+    tile.card.set_host_prompts(cx, false);
+    // Refuse calls queued while foreground before invoking any host cancellation
+    // hook. Callbacks run with prompts disabled and cannot replace this sheet.
+    let app_heap = tile.card.isolate_heap_key(cx);
+    if let Some(heap) = app_heap {
+        for request in splash_host::take_splash_host_requests_for(&[heap]) {
+            splash_host::splash_host_respond(cx, heap, request.req_id,
+                Err("The workspace was suspended; reopen it and try again"));
+        }
+    }
+    if let Some(heap) = sheet.isolate_heap_key(cx) {
+        let _ = splash_host::take_splash_host_requests_for(&[heap]);
+    }
+    sheet.handle_event(cx, &Event::Background, &mut Scope::empty());
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if sheet.call_script_fn(cx, id!(host_dismiss), &[]) {
+        let host_dir = octosense_appstore::data_root(cx).join(".host");
+        octosense_appstore::services::pump(cx, &tile.app, &host_dir, &tile.card, sheet);
+    }
+    if let Some(heap) = sheet.isolate_heap_key(cx) {
+        drop_taps(heap);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        octosense_appstore::services::cancel_heap(heap);
+        let _ = splash_host::take_splash_host_requests_for(&[heap]);
+    }
+    sheet.set_text(cx, "");
+    if let Some(mut s) = sheet.borrow_mut() { s.view.visible = false; }
+}
+
 /// The isolate a tile's card runs in, once its body has been evaluated.
 fn isolate_of(cx: &mut Cx, splash: &SplashRef) -> Option<widget_async::SplashVmId> {
     let splash = splash.borrow()?;
@@ -1123,20 +1231,24 @@ fn isolate_of(cx: &mut Cx, splash: &SplashRef) -> Option<widget_async::SplashVmI
 
 /// Seat a new tile's isolate before its body runs: the publishing app's
 /// policy for a contained app, none for a native module (module docs).
-fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) {
+fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
     #[cfg(any(feature = "app-hub", native_mobile))]
     if contained {
-        match app_isolate(cx, app) {
-            Ok(settings) => {
+        match admitted_app_isolate(cx, app) {
+            Ok(mut settings) => {
+                let admitted_prompts = settings.host_prompts;
+                settings.host_prompts = false;
                 let applied = octosense_app_policy::splash_adapter::apply(splash, cx, &settings);
                 log!("glance: {app}'s tile runs under its policy: {} capability(ies), {} host(s)", applied.capabilities, applied.hosts);
-                return;
+                return admitted_prompts;
             }
             Err(e) => log!("glance: {app}'s tile runs with no grants: {e}"),
         }
     }
     let _ = (app, contained);
     splash.set_policy(cx, Some(Vec::new()), Some(TILE_INSTRUCTION_BUDGET));
+    splash.set_host_prompts(cx, false);
+    false
 }
 
 /// The isolate settings of `app`'s policy, resolved as the Card runner
@@ -1145,6 +1257,13 @@ fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) {
 /// surface, so a service its card calls may not raise a sheet over it.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
+    let mut settings = admitted_app_isolate(cx, app)?;
+    settings.host_prompts = false;
+    Ok(settings)
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
     let root = octosense_appstore::data_root(cx);
     let policy = match octosense_appstore::system::system_app(app) {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.1,
@@ -1156,8 +1275,7 @@ pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSe
             store.may_run(app)?
         }
     };
-    let mut settings = policy.isolate_settings(&root);
-    settings.host_prompts = false;
+    let settings = policy.isolate_settings(&root);
     std::fs::create_dir_all(&settings.jail_root).map_err(|e| format!("the app's storage: {e}"))?;
     Ok(settings)
 }
@@ -1286,6 +1404,57 @@ mod tests {
         assert!(service_allowed(heap, "glance.list").is_err(), "a native module's tile has no grants");
     }
 
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn only_foreground_workspaces_prompt_and_host_sheet_is_modal_and_retired() {
+        register_test_app("os.glanceforeground");
+        crate::glance::register();
+        widget_async::register_splash_isolate_mod(|vm| {script_mod(vm);});
+        let mut cx = tile_cx();
+        let ask = |cx: &mut Cx, splash: &SplashRef| {
+            let vm = isolate_of(cx, splash).unwrap();
+            widget_async::with_isolate(cx, vm, |cx| cx.with_vm(|vm| {
+                script_eval!(vm, {mod.host.request("glance.list", {}, nil)});
+            }));
+            let heap = heap_of(cx, splash);
+            splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap()
+        };
+        let mut background = GlanceTiles::default();
+        let summary = background.open(&mut cx, "summary", "os.glanceforeground", true, &"View{}".into());
+        assert!(!ask(&mut cx, &summary).may_prompt);
+        let mut workspace = GlanceTiles::scrolling();
+        workspace.viewport_layout = true;
+        workspace.set_foreground(&mut cx, true);
+        let app = workspace.open(&mut cx, "workspace", "os.glanceforeground", true,
+            &r#"View{sheet := Label{text: "app-owned name"} probe := GlanceInputProbe{}}"#.into());
+        assert!(ask(&mut cx, &app).may_prompt);
+        let original_heap = heap_of(&mut cx, &app);
+        let sheet = workspace.tiles["workspace"].sheet.clone();
+        sheet.set_text(&mut cx, r#"SolidView{Label{text: "Host review"}}"#);
+        let host_heap = heap_of(&mut cx, &sheet);
+        assert_ne!(host_heap, original_heap, "host sheet has independent authority");
+        assert!(workspace.host_sheet_visible(&mut cx));
+        TYPED.with(|t| t.borrow_mut().clear());
+        workspace.handle_event(&mut cx, &Event::TextInput(TextInputEvent {input:"blocked".into(), ..Default::default()}));
+        assert!(TYPED.with(|t| t.borrow().is_empty()), "modal sheet blocks input to app");
+        workspace.set_foreground(&mut cx, false);
+        assert!(!workspace.host_sheet_visible(&mut cx));
+        assert!(sheet.isolate_heap_key(&mut cx).is_none(), "retirement revokes sheet VM");
+        assert_eq!(heap_of(&mut cx, &app), original_heap, "local app state stays resident");
+        assert!(!ask(&mut cx, &app).may_prompt);
+        workspace.set_foreground(&mut cx, true);
+        assert!(ask(&mut cx, &app).may_prompt);
+        assert!(!ask(&mut cx, &summary).may_prompt, "another surface stays background");
+        workspace.handle_event(&mut cx, &Event::TextInput(TextInputEvent {input:"restored".into(), ..Default::default()}));
+        assert_eq!(TYPED.with(|t| t.borrow().clone()), "restored");
+        workspace.set_foreground(&mut cx, false);
+        workspace.tiles.get_mut("workspace").unwrap().admitted_prompts = false;
+        workspace.set_foreground(&mut cx, true);
+        assert!(!ask(&mut cx, &app).may_prompt, "foreground never raises original admission authority");
+        workspace.sweep(&mut cx, &[]);
+        background.sweep(&mut cx, &[]);
+    }
+
     // A widget a card can hold that answers typed text the way a card's
     // handler would: by making a host request, from the card's isolate.
     script_mod! {
@@ -1375,7 +1544,7 @@ mod tests {
         let source = "view root Surface { TextBody(text: \"Authoritative source\") }";
         let card = crate::glance::GlanceCard {
             account: None,
-            app: "os.mail".into(), card_id: "lazy-layout".into(), title: "Reply".into(), summary: String::new(),
+            app: "os.mail".into(), card_id: "lazy-layout".into(), title: "Reply".into(), summary: String::new(), viewport: false,
             priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
             route: None, body: "old published layout".into(), contained: false, digests: vec![],
             l0: Some(std::sync::Arc::new(crate::glance::L0Source { source: source.into(), data: serde_json::json!({}), mail: None })),

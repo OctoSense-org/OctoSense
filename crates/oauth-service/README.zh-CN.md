@@ -10,13 +10,16 @@ OctoSense 为已安装应用保存服务商凭据。用户登录 GitHub 或 Goog
 
 Rust 授权协议、连接器、原生审批、账户生命周期和示例界面已实现。确定性的网络替身测试
 及 macOS 隐藏窗口测试不能证明真实服务商操作。真实 GitHub/Google 登录、仓库写入、
-Gmail 发信、Calendar 写入和模型回合均**未验证**。三个普通示例尚未在 OnePlus 6 上测试。
+Gmail 发信和 Calendar 写入均**未验证**。真实 DeepSeek peer 已通过已安装应用的准入工具
+处理合成新邮件，并通过 Chat 修改持久化回复。Calendar peer 也通过自身工具读取
+选中的合成日程，回答准确标题、时间和地点。这证明模型与工具集成，不代表 Google 投递。
+三个普通示例尚未在 OnePlus 6 上测试。
 
 | 平台 | 服务商授权 | 凭据保存 | Gmail 发信审批 |
 | --- | --- | --- | --- |
 | macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；远程点击被拒绝，真人点击未验证 |
 | Windows | 同样的桌面流程，平台运行未验证 | Windows Credential Manager；未在 Windows 验证 | 不支持，明确拒绝 |
-| Linux | 同样的桌面流程，平台运行未验证 | 需要解锁 Secret Service，不回退到明文 | 不支持，明确拒绝 |
+| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；原生测试被构建主机未解锁／不可用的凭据库拒绝 | 不支持，明确拒绝 |
 | Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有物理触摸来源校验；本示例未验证 |
 
 本变更不会删除或迁移内置 Mail、Calendar 应用。
@@ -81,6 +84,12 @@ Shell 从摘要校验后的包读取声明，通过 `HostServiceExecutor` 路由
 
 ## 新邮件与 Glance
 
+桌面脚本卡片先显示标题和摘要，打开模板卡片后提供有界应用视口，让编辑器及滚动
+区域获得实际高度。模板工作区自己提供 Email／Reply／Chat 导航，宿主不重复添加
+Chat 标签。原有未选择视口模式的脚本卡片继续按内容测量并由外层滚动。
+前台发布的卡片可以在未请求代理同意前恢复；撤销 Glance 权限、明确拒绝代理、
+退出账户和切换账户仍阻止恢复。
+
 `connected_events.rs` 发现声明 Gmail/auth、已获 Agent 同意、允许后台且声明
 `<应用短名>.new_message` 的已安装应用。采集器先建立只面向未来的 Gmail history 基线，
 允许运行时通常每五分钟轮询。登录并允许应用 Agent 后刷新，等 `gmail.events.status`
@@ -92,7 +101,8 @@ history 失效时使用有边界的恢复扫描。
 宿主注入当前连接并保留展开后的源码，模型无需重写 Reply/Chat 编辑器。
 
 只有回合成功，且存在持久化静默决定或经过校验的持久化卡片，事件才确认完成。
-失败保留重试。Chat 与手工编辑共用带版本的草稿；成功发信后撤下卡片。通知不等于发信
+失败保留重试并向调度器返回错误，等待 60 秒后重试，不会被误判为成功后每两秒继续
+处理的队列。Chat 与手工编辑共用带版本的草稿；成功发信后撤下卡片。通知不等于发信
 或创建日历事件的授权。
 
 Android 现有 JobScheduler 适配器也会在有时限的任务中驱动该采集器。新任务会强制轮询一次，
@@ -112,6 +122,17 @@ peer 是应用账户身份，不等于一个工作线程或 Tokio task。
 cargo test --locked -p octosense-oauth-service
 cargo check --locked -p octosense-oauth-service --features host
 ```
+
+另用独立临时配置和虚构凭据实际测试了 macOS 系统凭据适配器：写入、重新打开读取、
+逻辑撤销均通过；配置目录中没有出现明文访问或刷新凭据。下面的显式测试使用真实
+系统凭据库，可能需要已解锁的桌面会话，普通测试运行会跳过它：
+
+```sh
+cargo test --locked -p octosense-oauth-service --features host host_vault_acceptance::platform_vault_persists_across_reopen_without_plaintext_credentials -- --ignored --exact
+```
+
+这不验证服务商授权或实体发送审批，也不能证明旧 Mail 凭据适配器中无返回值的删除
+操作实际删掉了系统条目。测试不请求服务商，也不读取已有账户。
 
 测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、分页、410、ETag、
 DST、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见

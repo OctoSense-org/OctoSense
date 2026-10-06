@@ -90,7 +90,26 @@ fn deliver(event: IncomingEvent, completion: EventCompletion) -> Result<(), Stri
     context.close();
     // The host validates the durable publish/quiet receipt as well as this
     // terminal result; successful final prose alone cannot discard the event.
-    completion.complete(success)
+    settle_peer_turn(success, |success| completion.complete(success))
+}
+
+fn settle_peer_turn(
+    success: bool,
+    complete: impl FnOnce(bool) -> Result<(), String>,
+) -> Result<(), String> {
+    complete(success)?;
+    if !success {
+        return Err("Gmail app-peer turn failed or expired; its event remains pending".into());
+    }
+    Ok(())
+}
+
+fn retry_delay(outcome: &Result<host_inbox::BackgroundReport, String>) -> Duration {
+    match outcome {
+        Ok(report) if report.pending > 0 => Duration::from_secs(2),
+        Ok(_) => INTERVAL,
+        Err(_) => Duration::from_secs(60),
+    }
 }
 
 #[derive(Default)]
@@ -137,16 +156,14 @@ pub fn start() {
             .name("connected-inbox-events".into())
             .spawn(|| {
                 let mut due: HashMap<Scope, Instant> = HashMap::new();
-                let hook: host_inbox::EventHook = Arc::new(deliver);
                 loop {
                     std::thread::sleep(Duration::from_secs(1));
                     if !crate::mail_background::execution_allowed() {
                         continue;
                     }
-                    let Some(storage) = crate::app_storage::host() else {
+                    if crate::app_storage::host().is_none() {
                         continue;
-                    };
-                    let root = storage.layout().apps_root().join(".host");
+                    }
                     let present = scopes();
                     for key in &present {
                         if !allowed(&key.0, &key.1) {
@@ -173,7 +190,7 @@ pub fn start() {
                             s.pending = None;
                             s.lease = lease;
                         }
-                        let outcome = host_inbox::check_incoming(&root, &key.0, &key.1, &hook);
+                        let outcome = poll_once(&key.0, &key.1);
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
@@ -190,11 +207,7 @@ pub fn start() {
                         }
                         // Drain more than one batch within the same bounded job;
                         // errors retain durable events and use the short retry.
-                        let delay = match outcome {
-                            Ok(report) if report.pending > 0 => Duration::from_secs(2),
-                            Ok(_) => INTERVAL,
-                            Err(_) => Duration::from_secs(60),
-                        };
+                        let delay = retry_delay(&outcome);
                         due.insert(key.clone(), Instant::now() + delay);
                     }
                     due.retain(|key, _| present.contains(key));
@@ -205,6 +218,21 @@ pub fn start() {
                 }
             });
     });
+}
+
+/// One bounded check through the same authorization, admitted guidance, peer
+/// broker and durable completion route used by the periodic collector. Native
+/// callers run this on a worker; it never enables an agent or grants an account.
+pub fn poll_once(app: &str, connection: &str) -> Result<host_inbox::BackgroundReport, String> {
+    if !allowed(app, connection) {
+        return Err(
+            "Incoming account needs its active app-agent consent and background permission".into(),
+        );
+    }
+    let storage = crate::app_storage::host().ok_or("App storage is not initialized")?;
+    let root = storage.layout().apps_root().join(".host");
+    let hook: host_inbox::EventHook = Arc::new(deliver);
+    host_inbox::check_incoming(&root, app, connection, &hook)
 }
 
 fn status_for(
@@ -250,6 +278,64 @@ pub fn background_status() -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_peer_retains_durable_event_and_uses_error_backoff() {
+        use octosense_oauth_service::inbox_events::{EventStore, IncomingPage, IncomingSource};
+        struct Mail;
+        impl IncomingSource for Mail {
+            fn baseline(&mut self) -> Result<String, String> {
+                Ok("100".into())
+            }
+            fn changes(&mut self, _: &str, _: Option<&str>) -> Result<IncomingPage, String> {
+                Ok(IncomingPage {
+                    ids: vec!["clinic1".into()],
+                    next: None,
+                    history: "101".into(),
+                    expired: false,
+                })
+            }
+            fn recent(&mut self, _: u64, _: Option<&str>) -> Result<IncomingPage, String> {
+                unreachable!()
+            }
+        }
+        let root = std::env::temp_dir().join(format!(
+            "inbox-peer-retry-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut store = EventStore::open(&root, "sample.inbox", "synthetic-account").unwrap();
+        store.refresh(&mut Mail, 1000).unwrap();
+        store.refresh(&mut Mail, 1001).unwrap();
+        let lease = store.claim(1002, 1).unwrap().pop().unwrap();
+        let outcome = settle_peer_turn(false, |success| store.complete(lease, success, 1003));
+        assert!(
+            outcome.is_err(),
+            "a failed peer must not become a successful dispatch"
+        );
+        let mut reopened = EventStore::open(&root, "sample.inbox", "synthetic-account").unwrap();
+        assert_eq!(reopened.pending_count(), 1);
+        assert!(
+            reopened.claim(1004, 1).unwrap().is_empty(),
+            "do not spin on a failed provider"
+        );
+        assert_eq!(
+            reopened.claim(1063, 1).unwrap().len(),
+            1,
+            "the durable event becomes retryable"
+        );
+        let poll_outcome = outcome.map(|_| host_inbox::BackgroundReport {
+            initialized: false,
+            added: 0,
+            dispatched: 1,
+            pending: reopened.pending_count(),
+            recovered_history: false,
+        });
+        assert_eq!(retry_delay(&poll_outcome), Duration::from_secs(60));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn new_job_account_or_failure_cannot_reuse_an_old_empty_poll() {
         let one = ("sample.inbox".into(), "one".into());

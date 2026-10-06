@@ -32,6 +32,10 @@ required-features = ["app-hub"]
 name = "connected-install"
 required-features = ["app-hub"]
 
+[[example]]
+name = "connected-inbox-e2e"
+required-features = ["mobile-apps", "acceptance-fixtures"]
+
 [dependencies]
 # The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
 libc = "0.2"
@@ -120,6 +124,7 @@ octosense-ai-host = { workspace = true, features = ["llm"] }
 
 [features]
 default = []
+acceptance-fixtures = ["app-hub", "octosense-oauth-service/acceptance-fixtures"]
 # The standalone phone shell (cfg `mobile_only`, build.rs; Android and
 # OpenHarmony get it without the flag).
 mobile-only = []

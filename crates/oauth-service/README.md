@@ -11,15 +11,18 @@ shared-service part of [ADR 0010](../../docs/adr/0010-shared-oauth-and-connected
 
 The Rust protocol, connectors, native review, account lifecycle and sample UI
 are implemented. Deterministic transport tests and hidden macOS UI checks do
-not prove a real provider operation. Live GitHub/Google sign-in, repository
-writes, Gmail sends, Calendar writes and real model turns remain **unverified**.
-The ordinary samples have not been tested on the OnePlus 6.
+not prove a real provider operation. Live GitHub/Google sign-in, repository writes, Gmail sends and Calendar writes
+remain **unverified**. A real DeepSeek peer processed synthetic incoming mail
+through the installed app’s admitted tools and updated its saved reply through
+chat. A Calendar peer also read the selected synthetic event through its own
+tool and answered its title, time and location. This proves model/tool integration, not Google delivery. The ordinary
+samples have not been tested on the OnePlus 6.
 
 | Platform | Provider authorization | Credential storage | Gmail send approval |
 | --- | --- | --- | --- |
 | macOS | GitHub device flow; Google browser/PKCE loopback | Mail's platform Keychain adapter, separate OAuth namespace | Native pointer provenance; remote clicks refused; physical acceptance unverified |
 | Windows | Same desktop flows; platform execution unverified | Windows Credential Manager; unverified on Windows | Unsupported: fails closed |
-| Linux | Same desktop flows; platform execution unverified | Secret Service; unlocked service required, no plaintext fallback | Unsupported: fails closed |
+| Linux | Protocol tests and host compilation passed on Linux; browser login and GUI unverified | Secret Service; unlocked service required, no plaintext fallback; native vault test refused the locked/unavailable build-host store | Unsupported: fails closed |
 | Android | GitHub flow present but unverified; **Google connection refused until its native adapter is implemented** | Mail's Android platform vault, separate namespace | Existing physical-touch provenance; this sample unverified |
 
 This change does not remove or migrate the built-in Mail or Calendar apps.
@@ -120,10 +123,19 @@ with admitted `AGENT.md`/skill guidance and an explicit untrusted-email boundary
 The model reads the email and decides quiet or important. Important mail can
 publish the app's admitted `glance-workspace.splash` template with message data;
 the host supplies the active connection and preserves the resolved source.
-The model need not regenerate the Reply/Chat editor.
+The model need not regenerate the Reply/Chat editor. Desktop script-card tiles
+show the publication title and summary; opening one gives the script a bounded
+app viewport, so its editor and scrolling regions do not collapse under a
+content-sized ancestor. Template workspaces own their Email/Reply/Chat navigation;
+the shell adds no duplicate Chat tab. Legacy scripts retain content measurement
+and outer scrolling unless they opt into `viewport: true`. Foreground-published cards can restore before agent
+consent, while removed Glance grants, explicit agent refusal, sign-out and
+account changes still block restoration.
 
 The event is acknowledged only after a successful turn and a durable quiet
-decision or verified persisted card. Failed turns keep a retryable event.
+decision or verified persisted card. Failed turns keep a retryable event and return an error to the scheduler, which
+waits 60 seconds before retrying; a failed model turn cannot masquerade as a
+successful two-second queue drain.
 Chat edits and manual editing use the same revisioned draft. A successful send
 withdraws its card. Notifications do not imply approval to send or create events.
 
@@ -148,6 +160,20 @@ These commands have been run from the OctoSense root:
 cargo test --locked -p octosense-oauth-service
 cargo check --locked -p octosense-oauth-service --features host
 ```
+
+The real macOS credential adapter was also exercised with a unique disposable
+profile and fictional credentials. Store, reopen/read and logical revocation
+passed, and neither access nor refresh data appeared in the profile's files.
+This explicit opt-in test uses the actual OS vault and may require an unlocked
+desktop session; it is ignored during ordinary test runs:
+
+```sh
+cargo test --locked -p octosense-oauth-service --features host host_vault_acceptance::platform_vault_persists_across_reopen_without_plaintext_credentials -- --ignored --exact
+```
+
+This does not test provider authorization, physical-send approval or prove the
+legacy Mail vault's void-returning deletion operation removed an OS item.
+The test creates no provider request and reads no existing account.
 
 Tests use deterministic transports and synthetic accounts. They cover scope
 and app isolation, revocation, callback replay, refresh, GitHub conflicts,

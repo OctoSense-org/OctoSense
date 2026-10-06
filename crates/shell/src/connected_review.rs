@@ -41,7 +41,14 @@ script_mod! {
     mod.widgets.ConnectedReplyReviewBase = #(ConnectedReplyReview::register_widget(vm))
     mod.widgets.ConnectedReplyReview = set_type_default() do mod.widgets.ConnectedReplyReviewBase {
         width: Fill height: Fill flow: Down padding: 16 spacing: 12
-        show_bg: true draw_bg.color: #fff
+        // This native composite dereferences View, not SolidView. View's
+        // default DrawQuad shader is transparent even when color is set.
+        // The host review must cover the untrusted app beneath it.
+        show_bg: true
+        draw_bg +: {
+            color: instance(#fff)
+            pixel: fn() { return Pal.premul(self.color) }
+        }
         Label {width: Fill height: Fit text: "Review reply" draw_text.color: #x172336 draw_text.text_style.font_size: 22}
         ScrollYView {width: Fill height: Fill flow: Down spacing: 12
             account := Label {width: Fill height: Fit draw_text.color: #x526071 draw_text.wrap: Words}
@@ -154,9 +161,14 @@ impl Widget for ConnectedReplyReview {
         }
         if self.view.button(cx, ids!(cancel)).clicked(&actions) {
             if let Some(mut request) = self.request.take() {
-                let app = request.snapshot()["app"].as_str().unwrap_or("").to_owned();
                 let _ = request.cancel();
-                octosense_appstore::services::close_sheet_later(&app);
+            }
+            // Close only this originating host sheet. The same app can also
+            // be resident in its ordinary window or another Glance workspace.
+            if let Some(owner) = cx.script_ref_vm_id(&self.source) {
+                cx.with_script_vm_id(owner, |vm| {
+                    script_eval!(vm, {mod.host.request("gmail.sheet.close", {}, nil)});
+                });
             }
         }
         if approve.clicked(&actions) {

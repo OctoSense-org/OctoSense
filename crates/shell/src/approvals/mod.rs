@@ -276,7 +276,28 @@ pub fn module_gate(a: &mut Approvals, app: &str, label: &str, capabilities: &[&s
 /// #106's contained apps (`ai_host::contained`): the same gate, for a
 /// Card runner app asking the `octos` service.
 pub fn consent_for_contained(app: &str) -> bool {
-    consent_for_module(app, &sheet::app_label(app), &["octos.session.open", "octos.turn.start"])
+    if cfg!(test) { return true; }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    {
+        // Read the admitted bundle outside the approvals mutex. A script app
+        // must never inherit the native-module defaults (device file access)
+        // merely because it calls the same octos service.
+        let Ok(loaded) = crate::host_tools::script_apps::guidance(app) else { return false };
+        let octos: Vec<String> = loaded.families.iter().filter(|c| c.starts_with("octos.")).cloned().collect();
+        return with(|a| contained_gate(a, app, &loaded.manifest, &octos)).unwrap_or(false);
+    }
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    false
+}
+
+#[cfg(any(feature = "app-hub", native_mobile, test))]
+fn contained_gate(a: &mut Approvals, app: &str, manifest: &serde_json::Value, granted: &[String]) -> bool {
+    if manifest["id"].as_str() != Some(app) { return false; }
+    let Some(name) = manifest["name"].as_str().filter(|name| !name.trim().is_empty()) else { return false };
+    let all = a.router.hooks().grants_all(app);
+    if a.consent.granted(app, all) { return true; }
+    let summary = consent::AgentSummary::from_manifest(app, name, manifest, granted, "The model set in AI providers");
+    a.consent.ask(summary, all) == consent::State::Allowed
 }
 
 // ------------------------------------------------------------ the shell

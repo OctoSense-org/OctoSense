@@ -35,6 +35,9 @@
 //!   than the digest does. An L2 `source` is refused: it cannot be
 //!   lowered, and a card that needs handlers and host requests is a
 //!   `script`.
+//! - `viewport: true` opts a script into a bounded app workspace with its own
+//!   scroll regions and navigation. Template publications select it automatically.
+//!   Legacy scripts keep measured height and outer scrolling.
 //! - `script`: a Splash program, the same thing a script app's `main.splash`
 //!   is: its own state, handlers, `host.request` calls and storage. It runs
 //!   as it is, with no `data` (it carries its own values). This is the
@@ -149,6 +152,8 @@ pub struct GlanceCard {
     pub title: String,
     /// Bounded publication summary. Phone previews never execute the card.
     pub summary: String,
+    /// A script workspace owns its scrolling and fills a bounded app viewport.
+    pub viewport: bool,
     pub priority: i64,
     pub published_ms: u64,
     pub expires_ms: u64,
@@ -443,6 +448,7 @@ impl GlanceStore {
             open_app: caller.launch_id().to_string(),
             route,
             body,
+            viewport: kind == "script" && args.get("viewport").and_then(Value::as_bool).unwrap_or(false),
             contained: matches!(caller, Caller::Contained { .. }),
             digests,
             l0: (kind == "source").then(|| Arc::new(L0Source { source: source.to_string(), data, mail })),
@@ -762,6 +768,7 @@ fn template_args(args: &Value, body: &str, account: &str) -> Result<Value, Strin
     let object = resolved.as_object_mut().ok_or("Publication must be an object")?;
     object.remove("template"); object.remove("initial");
     object.insert("script".into(), json!(script));
+    object.insert("viewport".into(), json!(true));
     Ok(resolved)
 }
 
@@ -1336,6 +1343,7 @@ mod tests {
         let decoded:Value=serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded["connection"],"owned");assert_eq!(decoded["demo"],false);
         assert_eq!(decoded["message"]["body"],injected);
+        assert_eq!(resolved["viewport"], true);
         assert!(resolved.get("template").is_none());assert!(resolved.get("initial").is_none());
         let mut mixed=input.clone();mixed["script"]=json!("Button {}");
         assert!(template_args(&mixed,"Label {}","owned").is_err());
@@ -1657,6 +1665,11 @@ mod tests {
         store.publish(&news(), &a, 0).unwrap();
         let card = &store.shown(0, 9)[0];
         assert_eq!((card.body.as_ref(), card.contained), (script, true));
+        assert!(!card.viewport, "Legacy scripts retain measured height and host scrolling");
+        let mut workspace = a.clone();
+        workspace["viewport"] = json!(true);
+        store.publish(&news(), &workspace, 1).unwrap();
+        assert!(store.shown(1, 9)[0].viewport);
         let mut both = a.clone();
         both["source"] = json!(demo_digest().0);
         assert!(store.publish(&news(), &both, 0).unwrap_err().contains("either source"));

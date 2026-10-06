@@ -1,9 +1,8 @@
 //! Scoped provider operations and review of immutable remote-write snapshots.
 use crate::{
     api::{Api, CalendarEvent, GithubFile},
-    host::{clients, connections, unix_now, STORE_LOCK},
+    host::{clients, connections, provider_transport, unix_now, STORE_LOCK},
     providers::ClientRegistration,
-    transport::HttpsTransport,
 };
 use octosense_appstore::services::{self, HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::{json, Value};
@@ -417,10 +416,10 @@ fn with_api(
     let client = config.google.as_ref().map(|client| ClientRegistration {
         client_id: client.client_id.clone(),
     });
-    let transport = HttpsTransport::new()?;
+    let transport = provider_transport(root)?;
     run(&mut Api {
         connections: &mut store,
-        transport: &transport,
+        transport: transport.as_ref(),
         google_client: client.as_ref(),
         google_client_secret: config
             .google
@@ -484,6 +483,9 @@ fn review_sheet(family: &str, ticket: &str, review: &Review) -> String {
 let ticket = {ticket}
 let sending = false
 let attempted = false
+fn host_dismiss() {{
+    if !sending {{host.request({cancel}, {{ticket: ticket}}, fn(r) {{}})}}
+}}
 fn poll() {{
     if !sending {{ return }}
     host.request({status}, {{ticket: ticket}}, fn(r) {{
@@ -491,10 +493,12 @@ fn poll() {{
             if r.data.phase == "saved" {{ sending = false }}
             if r.data.phase == "error" {{
                 sending = false
+                ui.connector_review_back.set_visible(true)
                 ui.connector_review_status.set_text(r.data.message)
             }}
         }} else {{
             sending = false
+            ui.connector_review_back.set_visible(true)
             ui.connector_review_status.set_text(r.error)
         }}
         if sending {{ start_timeout(0.5, || poll()) }}
@@ -504,9 +508,15 @@ fn save() {{
     if sending || attempted {{ return }}
     attempted = true
     sending = true
+    ui.connector_review_save.set_visible(false)
+    ui.connector_review_back.set_visible(false)
     ui.connector_review_status.set_text("Saving the reviewed content…")
     host.request({save}, {{ticket: ticket}}, fn(r) {{
-        if r.is_ok {{ poll() }} else {{ sending = false ui.connector_review_status.set_text(r.error) }}
+        if r.is_ok {{ poll() }} else {{
+            sending = false
+            ui.connector_review_back.set_visible(true)
+            ui.connector_review_status.set_text(r.error)
+        }}
     }})
 }}
 SolidView {{width: Fill height: Fill flow: Down padding: 16 spacing: 12 draw_bg.color: #fff
@@ -517,8 +527,8 @@ SolidView {{width: Fill height: Fill flow: Down padding: 16 spacing: 12 draw_bg.
     }}
     connector_review_status := Label {{width: Fill text: "Review this exact version before saving." draw_text.color: #444}}
     View {{width: Fill height: Fit spacing: 12
-        ButtonFlat {{width: Fill height: 48 text: "Back to editing" on_click: || {{if !sending {{host.request({cancel}, {{ticket: ticket}}, fn(r) {{}})}}}}}}
-        Button {{width: Fill height: 48 text: "Approve & Save" on_click: || save()}}
+        connector_review_back := ButtonFlat {{width: Fill height: 48 text: "Back to editing" on_click: || host_dismiss()}}
+        connector_review_save := Button {{width: Fill height: 48 text: "Approve & Save" on_click: || save()}}
     }}
 }}
 "#

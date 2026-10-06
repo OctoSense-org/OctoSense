@@ -130,6 +130,10 @@ impl CredentialStore for Vault {
     }
 }
 pub(crate) fn connections(root: &Path) -> Result<Connections, String> {
+    #[cfg(feature = "acceptance-fixtures")]
+    if let Some(fixture) = crate::acceptance_fixtures::for_root(root) {
+        return Connections::open(&root.join("oauth"), fixture.vault);
+    }
     let root = root.join("oauth");
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
     if std::env::var("OCTOSENSE_MAIL_VAULT").is_ok_and(|v| v == "file") {
@@ -155,6 +159,17 @@ pub(crate) fn connections(root: &Path) -> Result<Connections, String> {
         place: octosense_mail_service::vault::Place::legacy(&root.join("credentials")),
     };
     Connections::open(&root, Arc::new(vault))
+}
+
+pub(crate) fn provider_transport(
+    root: &Path,
+) -> Result<Arc<dyn crate::transport::Transport>, String> {
+    #[cfg(feature = "acceptance-fixtures")]
+    if let Some(fixture) = crate::acceptance_fixtures::for_root(root) {
+        return Ok(fixture.transport);
+    }
+    let _ = root;
+    Ok(Arc::new(crate::transport::HttpsTransport::new()?))
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -638,6 +653,10 @@ fn consent_sheet(ticket: &str, p: &Pending) -> String {
 let ticket = {ticket}
 let watching = false
 let browser_url = ""
+fn host_dismiss() {{
+    watching = false
+    host.request("auth.sheet.cancel", {{ticket: ticket}}, fn(r) {{}})
+}}
 fn poll() {{
     if !watching {{ return }}
     host.request("auth.sheet.status", {{ticket: ticket}}, fn(r) {{
@@ -674,7 +693,7 @@ SolidView {{width: Fill height: Fill flow: Down padding: 20 spacing: 16 draw_bg.
     }}}}
     oauth_status := Label {{width: Fill text: "Continue to authorize this connection." draw_text.color: #444}}
     Button {{width: Fill height: 48 text: "Continue" on_click: || begin()}}
-    ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || {{watching = false host.request("auth.sheet.cancel", {{ticket: ticket}}, fn(r) {{}})}}}}
+    ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || host_dismiss()}}
 }}
 "#
     )

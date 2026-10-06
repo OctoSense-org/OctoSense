@@ -2,10 +2,9 @@
 //! the same host-owned store; no service method can approve or submit a reply.
 use crate::{
     api::Api,
-    host::{clients, connections, unix_now, STORE_LOCK},
+    host::{clients, connections, provider_transport, unix_now, STORE_LOCK},
     inbox::{DraftStore, ReviewTicket},
     providers::ClientRegistration,
-    transport::HttpsTransport,
 };
 use octosense_appstore::services::{self, HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::{json, Value};
@@ -187,6 +186,15 @@ impl HostService for InboxService {
         "gmail"
     }
     fn call(&mut self, call: ServiceCall, reply: Replier, host: &mut dyn ServiceHost) {
+        if call.method() == "sheet.close" {
+            if call.from_sheet {
+                host.close_sheet();
+                reply.send(Ok(Value::Null));
+            } else {
+                reply.send(Err("Only the current host review can close its sheet".into()));
+            }
+            return;
+        }
         if call.method() == "draft.review" {
             if !call.may_prompt {
                 reply.send(Err(
@@ -305,10 +313,10 @@ fn with_api<T>(
     let client = config.google.as_ref().map(|c| ClientRegistration {
         client_id: c.client_id.clone(),
     });
-    let transport = HttpsTransport::new()?;
+    let transport = provider_transport(root)?;
     run(&mut Api {
         connections: &mut store,
-        transport: &transport,
+        transport: transport.as_ref(),
         google_client: client.as_ref(),
         google_client_secret: config
             .google
@@ -540,4 +548,42 @@ pub fn check_incoming(
 pub fn pending_count(root: &Path, app: &str, connection: &str) -> Result<usize, String> {
     let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     Ok(crate::inbox_events::EventStore::open(root, app, connection)?.pending_count())
+}
+
+#[cfg(test)]
+mod sheet_tests {
+    use super::*;
+
+    #[test]
+    fn only_the_originating_host_sheet_can_close_gmail_review() {
+        const FAMILY: &str = "gmail_close_test";
+        const HEAP: usize = 981117;
+        struct TestService(InboxService);
+        impl HostService for TestService {
+            fn family(&self) -> &'static str { FAMILY }
+            fn call(&mut self, call: ServiceCall, reply: Replier, host: &mut dyn ServiceHost) {
+                self.0.call(call, reply, host)
+            }
+        }
+        #[derive(Default)]
+        struct Sheet(usize);
+        impl ServiceHost for Sheet {
+            fn open_sheet(&mut self, _: String) { panic!("close cannot open a sheet") }
+            fn close_sheet(&mut self) { self.0 += 1; }
+        }
+        services::register_host_service(Box::new(TestService(InboxService { review: None })));
+        let mut sheet = Sheet::default();
+        for (id, from_sheet) in [(1, false), (2, true)] {
+            services::dispatch(ServiceCall {
+                app_id: "org.octosense.samples.inbox".into(),
+                service: format!("{FAMILY}.sheet.close"),
+                args: json!({}), from_sheet, may_prompt: true,
+                host_dir: PathBuf::from("synthetic-unused-root"),
+            }, HEAP, id, &mut sheet);
+            let responses = services::take_replies_for(&[HEAP]);
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].2.is_ok(), from_sheet);
+            assert_eq!(sheet.0, usize::from(from_sheet));
+        }
+    }
 }

@@ -420,7 +420,7 @@ mod tests {
             account: Some(p.binding.account.clone()),
             app: "os.mail".into(),
             card_id: p.binding.card_id.clone(),
-            title: "Mail".into(), summary: String::new(),
+            title: "Mail".into(), summary: String::new(), viewport: false,
             priority: 50,
             published_ms: p.published,
             expires_ms: p.expires,

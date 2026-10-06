@@ -11,6 +11,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+mod connected_support;
 
 const IDS: [&str; 3] = [
     "org.octosense.samples.githubnotes",
@@ -309,6 +310,13 @@ fn run(inputs: Vec<PathBuf>) -> Result<(), String> {
 }
 fn main() {
     let inputs: Vec<_> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    if let Some(profile) = inputs.first().and_then(|arg| arg.to_str()).and_then(|arg| arg.strip_prefix("--keep-profile=")) {
+        match connected_support::install(&inputs[1..], Path::new(profile)) {
+            Ok(receipt) => println!("{}", serde_json::to_string_pretty(&receipt).unwrap()),
+            Err(error) => { eprintln!("connected-install: {error}"); std::process::exit(1); }
+        }
+        return;
+    }
     if let Err(error) = run(inputs) {
         eprintln!("connected-install: {error}");
         std::process::exit(1);

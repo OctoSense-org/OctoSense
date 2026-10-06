@@ -268,9 +268,11 @@ fn active() -> Vec<Entry> {
                 return false;
             }
             let account = accounts.entry(app.to_string()).or_insert_with(|| {
-                if crate::agents::access(app) != crate::agents::Access::Allowed
-                    || !crate::host_tools::script_apps::grants(app, "glance")
-                {
+                if !publication_access(
+                    app,
+                    crate::agents::access(app),
+                    crate::host_tools::script_apps::grants(app, "glance"),
+                ) {
                     return None;
                 }
                 let account = crate::ai_host::contained::account_of(app)?;
@@ -285,6 +287,18 @@ fn active() -> Vec<Entry> {
             e.visible(account.as_deref(), crate::glance::now_ms())
         })
         .collect()
+}
+fn publication_access(app: &str, agent: crate::agents::Access, granted: bool) -> bool {
+    // Foreground app UI can publish with its installed Glance grant before the
+    // person ever enables its agent. Restoring that existing card must not ask
+    // for, or imply, permission to run an agent. Explicit revocation remains
+    // authoritative; the legacy Mail background path still requires consent.
+    granted
+        && match agent {
+            crate::agents::Access::Allowed => true,
+            crate::agents::Access::NotAsked => !app.starts_with("os."),
+            crate::agents::Access::Off => false,
+        }
 }
 /// Revalidate model source/account on every cold restore. Restoring does not
 /// publish a second notification, extend expiry, or reconstruct a lost draft.
@@ -432,6 +446,20 @@ pub fn open(id: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn foreground_cards_restore_before_agent_consent_without_bypassing_revocation() {
+        use crate::agents::Access::{Allowed, NotAsked, Off};
+        let app = "org.octosense.samples.googlecalendar";
+        assert!(publication_access(app, NotAsked, true));
+        assert!(publication_access(app, Allowed, true));
+        assert!(!publication_access(app, Off, true));
+        for consent in [NotAsked, Allowed, Off] {
+            assert!(!publication_access(app, consent, false));
+        }
+        assert!(!publication_access("os.mail", NotAsked, true));
+        assert!(!publication_access("os.mail", Off, true));
+        assert!(publication_access("os.mail", Allowed, true));
+    }
     #[test]
     fn every_authorized_worker_must_settle_before_the_job_finishes() {
         let off = json!({"enabled":false});

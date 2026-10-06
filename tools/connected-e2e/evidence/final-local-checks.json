@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "date": "2026-10-06",
+  "scope": "local macOS unit/build/graph checks; no live provider operation",
+  "base_commit": "674b0df0dc934ff116afd884aff22f376109ae53",
+  "app_hub_pin": "5c7a13f92fa25d36ba1fe7fb99dc9fb1b235f8d3",
+  "checks": [
+    {
+      "check": "oauth",
+      "exit_code": 0,
+      "results": [
+        "test result: ok. 48 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.52s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "check": "os-vault",
+      "exit_code": 0,
+      "results": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.12s"
+      ]
+    },
+    {
+      "check": "shell",
+      "exit_code": 0,
+      "results": [
+        "test result: ok. 953 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.14s"
+      ]
+    },
+    {
+      "check": "desktop-default",
+      "exit_code": 0,
+      "results": []
+    },
+    {
+      "check": "desktop-mobile",
+      "exit_code": 0,
+      "results": []
+    },
+    {
+      "check": "home",
+      "exit_code": 0,
+      "results": []
+    },
+    {
+      "check": "desktop-graph",
+      "exit_code": 0,
+      "results": []
+    },
+    {
+      "check": "home-graph",
+      "exit_code": 0,
+      "results": []
+    }
+  ],
+  "runtime_source_lock_sha256": {
+    "native-runtime.lock.json": "124a663688d312ec3f8acab11dc68c569428cb0b60ae6c47a8171d1e5550d1c3",
+    "runtime-patches.lock.json": "dad5ebfc4259bbafc9297b3322029ccf4b877c661183322227f5d5bb15cef7a7"
+  },
+  "changed_inputs_sha256": {
+    "crates/oauth-service/src/acceptance_calendar.rs": "e3f03818b554cbfdd1f7d9bcf22272e8ec46c25bffc69fd4498c690c137446ac",
+    "crates/oauth-service/src/acceptance_fixtures.rs": "af8b2c8187a35015ea42b59aa7b2ca8e5c4e4834efa0144259ca691f00bcfdf0",
+    "crates/oauth-service/src/acceptance_github.rs": "520fd3681f4831c35cf671f0d4883af8c7d9e63e748ec41ede96d54fcaa77c7d",
+    "crates/oauth-service/src/acceptance_inbox.rs": "efc33661cbb2801037e6db9a1416a8b7b480a549e05dbe790ba2338dfb037162",
+    "crates/oauth-service/src/host_vault_acceptance.rs": "ff672463d37614b7f64f20a92c5e0e0a3de213dacb7b478d81d1bc894b6afe2a",
+    "crates/shell/examples/connected-inbox-e2e.rs": "fc167b00f1c713059bcf4a5675f5af30825ac144a8c9b69f1e91640c4bbefead",
+    "crates/shell/examples/connected_support/mod.rs": "dab9b2c3aa1c96d92fdb74e582da5f9b88b4e0499dcf312be47b1303d6a0218a",
+    "tools/connected-e2e/native.py": "688fa49751501d6b17580baac399fb227dc19971544e2f2ec8e657c81454265f",
+    "tools/connected-e2e/notes.py": "170f3ce15809249af6e07ffc24ece1b867b68a0c67e816ebad5cdaec6d542a4f",
+    "Cargo.lock": "032ae9064ab4d020f29af868c4d4678ad2d22f68928f25aa7f05d2cf6b758f88",
+    "Cargo.toml": "8cedad5364813de03122b55e4db9a17f73086b6cfe429af7daee8f7975323ef2",
+    "crates/oauth-service/Cargo.toml": "509485e44f440199c917a751f1dab89f9b6d7897cf462d588e189ba35bd7f58d",
+    "crates/oauth-service/src/api_tests.rs": "4cb218c6405e6558487f4fb66575cc08087b89261e1bc9cb1bfcd3824f038705",
+    "crates/oauth-service/src/host.rs": "6db459c85c3690db4e0c2f5727fcb8b4bf0fa8fddae25024bdeba1325f41eb4e",
+    "crates/oauth-service/src/host_api.rs": "2b691daf5f25739e7ba622f1d697ebe3a9e75d706033182b5636f91296b0cfae",
+    "crates/oauth-service/src/host_inbox.rs": "32299ce5c758163ad875e2c70e9b43fae675160903b9db82a27ebc9fea67d308",
+    "crates/oauth-service/src/lib.rs": "ca7d0eb504d9cfa5da3b0e26d9812d3b88899af4c2e2544b5e72cea8ca907f9f",
+    "crates/shell/Cargo.toml": "c1695a626cb927267818f78087d17e22878ae60b88bf85a5d6f6e5c389c1de00",
+    "crates/shell/examples/connected-app-host.rs": "59b29b5a8d240628d47a3047194efdb13dafd558c35db781b3f5e4527e3e7115",
+    "crates/shell/examples/connected-install.rs": "9df9062370e7a047a10b1c8b42a86a62e2cefcc130053f8988f4ede231a9f45b",
+    "crates/shell/src/approvals/mod.rs": "ba7989503418090f68e2fdafcf24dadd055cff9cdb3971fb019d88c219f884ba",
+    "crates/shell/src/approvals/tests.rs": "a57e80e516ec473221e4b5f510408d8b7d310309fba70068543c6e415fe164f2",
+    "crates/shell/src/connected_events.rs": "5c5670c299f55e02feea186e72fd3c5b1fc0e9f32bf3ddb8f4184745f9369c85",
+    "crates/shell/src/connected_review.rs": "e1298a93aba400ae85ce641b74b4e27d11efcfee1f3ed8a2346eda6efc75853f",
+    "crates/shell/src/glance.rs": "e0b33fc16dee2fb9438fd487044e0310f5bff346963cf0659c52a8fc32997a23",
+    "crates/shell/src/glance_card.rs": "7aa357416cd99b9987f052706734b5366a81e19ff8592e483a6bca629003e2d9",
+    "crates/shell/src/glance_panel.rs": "f75121cf6c0e1d86cd44aed74019dd9feb7ceb36f79ce779ac2f0b53d9a93ccd",
+    "crates/shell/src/glance_sheet.rs": "0eb12c832d57b7e83a8a25efa95d2580128721045a1dd1e867cfb1f94ce78c9a",
+    "crates/shell/src/mail_background.rs": "def97659c4db7dfa30ed0e7ecf2528d491f9687c98b5469e04e367d35f2ed630",
+    "crates/shell/src/mail_card/persistence.rs": "2ba01c0c9aff66d8eb43db5a39a732fc2ed52342e615453ca7233e12a82f3c20",
+    "crates/shell/src/mobile_pages.rs": "89bc5da84aa19dbef99a28a239c5ac5850fb886cae11a2b73ba591ad2bced738",
+    "native-apps.json": "36cfb55a88aceef26ed702c69a716aeb5ddb5d2504cad45d2a94974d0cad2462"
+  },
+  "rinx_profile": "fresh isolated private directory, not the developer account",
+  "live_provider": false,
+  "phone": false,
+  "post_validation_formatting": [
+    {
+      "path": "tools/connected-e2e/native.py",
+      "change": "Removed one blank line at EOF; driver behavior unchanged. Tested hashes above remain historical.",
+      "final_sha256": "3182c430d9b3797a823a67403543d056891598b404cf7fda577836f09e7ae7b6",
+      "python_syntax": "pass"
+    }
+  ]
+}
