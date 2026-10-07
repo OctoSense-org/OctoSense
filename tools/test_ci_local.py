@@ -73,6 +73,15 @@ class Drift(unittest.TestCase):
     def test_the_mapping_fits_the_workflows(self):
         self.assertEqual(ci.check_drift(), [])
 
+    def test_native_host_acceptance_is_not_claimed_on_linux(self):
+        job = ci.job_definition("desktop.yml:native-host-api")
+        runner = SimpleNamespace(which=lambda tool: tool)
+        with patch.object(ci.sys, "platform", "linux"):
+            reason = ci.Run.job_problem(runner, "desktop.yml", "native-host-api", job)
+        self.assertIn("requires a graphical macOS session", reason)
+        with patch.object(ci.sys, "platform", "darwin"):
+            self.assertIsNone(ci.Run.job_problem(runner, "desktop.yml", "native-host-api", job))
+
     def test_the_release_workflow_is_left_out_on_purpose(self):
         self.assertIn("release-desktop.yml", ci.NOT_LOCAL)
         self.assertNotIn("release-desktop.yml", ci.GROUPS["all"])
