@@ -41,7 +41,7 @@
     {
       "id": "sheets",
       "crate": "makepad-sheets",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/sheets" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/sheets" },
       "module": "makepad_sheets::SHEETS_MODULE",
       "bin": "sheets",
       "bin_features": ["standalone"],
@@ -58,7 +58,7 @@
     {
       "id": "terminal",
       "crate": "makepad-terminal",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/terminal" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/terminal" },
       "module": "makepad_terminal::TERMINAL_MODULE",
       "bin": "terminal",
       "default_features": true,
@@ -124,7 +124,7 @@
     {
       "id": "calculator",
       "crate": "makepad-calculator",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/calculator" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/calculator" },
       "module": "makepad_calculator::CALCULATOR_MODULE",
       "bin": "calculator",
       "bin_features": ["standalone"],
@@ -147,7 +147,7 @@
     {
       "id": "clock",
       "crate": "makepad-clock",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/clock" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/clock" },
       "module": "makepad_clock::CLOCK_MODULE",
       "bin": "clock",
       "bin_features": ["standalone"],
@@ -170,7 +170,7 @@
     {
       "id": "notes",
       "crate": "makepad-notes",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/notes" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/notes" },
       "module": "makepad_notes::NOTES_MODULE",
       "bin": "notes",
       "bin_features": ["standalone"],
@@ -194,7 +194,7 @@
     {
       "id": "reminders",
       "crate": "makepad-reminders",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/reminders" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/reminders" },
       "module": "makepad_reminders::REMINDERS_MODULE",
       "bin": "reminders",
       "bin_features": ["standalone"],
@@ -218,7 +218,7 @@
     {
       "id": "weather",
       "crate": "makepad-weather",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/weather" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/weather" },
       "module": "makepad_weather::WEATHER_MODULE",
       "bin": "weather",
       "bin_features": ["standalone"],
@@ -241,7 +241,7 @@
     {
       "id": "task",
       "crate": "makepad-task",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "c155f61d0e1600d2ec474209374444a38a09a470", "local": ".sources/makepad/apps/task" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "68d1f4ecc111daa90c50530e77df3245f05fc2cf", "local": ".sources/makepad/apps/task" },
       "module": null,
       "bin": "task",
       "default_features": true,

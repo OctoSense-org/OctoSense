@@ -221,15 +221,15 @@ flowchart LR
 
 ### 内核与客户端之间的 OUP
 
-OUP 是 JSON-RPC 2.0，`octos-ui/v1alpha1`（octos [`api/OCTOS_UI_PROTOCOL_V1_SPEC_2026-04-24.md`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/api/OCTOS_UI_PROTOCOL_V1_SPEC_2026-04-24.md)）。默认情况下，它在子进程的 stdin 和 stdout 上每行一帧，Shell 中所有使用方共用这条流。`crates/kernel/src/router.rs` 为每个请求分配内核内唯一的 id，把每个回复只交给发出请求的使用方，并把每条通知发给提到过该会话的使用方。
+OUP 是 JSON-RPC 2.0，`octos-ui/v1alpha1`（octos [`api/OCTOS_UI_PROTOCOL_V1_SPEC_2026-04-24.md`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/api/OCTOS_UI_PROTOCOL_V1_SPEC_2026-04-24.md)）。默认情况下，它在子进程的 stdin 和 stdout 上每行一帧，Shell 中所有使用方共用这条流。`crates/kernel/src/router.rs` 为每个请求分配内核内唯一的 id，把每个回复只交给发出请求的使用方，并把每条通知发给提到过该会话的使用方。
 
-**Talk to Octos**（[ADR 0003](adr/0003-shared-octos-client-access.md)，英文；octos [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/HOST_MANAGED_SERVE.md)）在桌面端和 Android 上把内核重启为 `serve --host 127.0.0.1 --host-managed`；在 Unix 上，Shell 把一个只绑定一次的监听套接字传给它。两个 token 都通过内核的 stdin 传入，从不放进环境变量。
+**Talk to Octos**（[ADR 0003](adr/0003-shared-octos-client-access.md)，英文；octos [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/HOST_MANAGED_SERVE.md)）在桌面端和 Android 上把内核重启为 `serve --host 127.0.0.1 --host-managed`；在 Unix 上，Shell 把一个只绑定一次的监听套接字传给它。两个 token 都通过内核的 stdin 传入，从不放进环境变量。
 
 宿主 token 留在 Shell 中，可以访问一切。外部 token 交给已配对的网页客户端（凭一次性配对码），或同一用户的终端客户端（`client-connection.json`，在 Unix 上仅所有者可读写）。它只能打开 `/api/ui-protocol/ws`，以 `_main` 身份访问系统对话和客户端自己的回合：没有 `peer/*` 方法，碰不到应用 peer，只有 octos 固定的 `EXTERNAL_TURN_TOOLS`。
 
 ### 内核中的系统 Agent 与应用 Agent
 
-octos 的 peer 工具（[`crates/octos-agent/src/tools/`](https://github.com/octos-org/octos/tree/056173e85b150e387805fc307fe231064ac1ed35/crates/octos-agent/src/tools)）只有一层：peer 不能创建、操纵或关闭另一个 peer。
+octos 的 peer 工具（[`crates/octos-agent/src/tools/`](https://github.com/octos-org/octos/tree/39e22d457c47df57d7c7c9fa64539979c9da93fd/crates/octos-agent/src/tools)）只有一层：peer 不能创建、操纵或关闭另一个 peer。
 
 - **发给应用 Agent：**`peer_send_input`，最多 64 KiB，只有 peer 的发起者能发。octos 把这一轮交给 Shell（见[下文](#shell-如何运行系统-agent-的输入)）。
 - **回传：**黑板，peer 之间唯一的通道。每个 peer 回合都会写入 `peers/<slug>/result.md`，并在 `turns.txt` 中加一行，系统 Agent 用 `peer_gather` 和 `peer_list` 读取。
@@ -495,8 +495,8 @@ sequenceDiagram
 
 | 内容 | 位置 |
 | --- | --- |
-| Makepad：`OctosPeer` 客户端；各原生应用的 Agent 代码 | [`libs/ai/services/src/peer.rs`](https://github.com/OctoSense-org/makepad/blob/c155f61d0e1600d2ec474209374444a38a09a470/libs/ai/services/src/peer.rs)、`apps/<app>/src/view.rs` |
-| Terminal 自己的 Agent 链接，本仓库应用到 Makepad 上的一个经审查补丁 | [`tools/runtime-patches/makepad-terminal-own-agent.patch`](../tools/runtime-patches/makepad-terminal-own-agent.patch) |
-| octos：两条通道的共享历史（20 条，16 KiB）；`peer_send_input`（64 KiB） | [`crates/octos-cli/src/peers/shared_history.rs`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/crates/octos-cli/src/peers/shared_history.rs)、[`crates/octos-agent/src/tools/peer_send_input.rs`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/crates/octos-agent/src/tools/peer_send_input.rs) |
-| octos：宿主管理的 serve、应用 peer、peer 宿主工具 | [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/HOST_MANAGED_SERVE.md)、[UPCR-2026-034](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_034_HOST_APP_PEERS.md)、[UPCR-2026-035](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_035_PEER_HOST_TOOLS.md)、[UPCR-2026-036](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_036_HOST_MANAGED_SERVE.md) |
+| Makepad：`OctosPeer` 客户端；各原生应用的 Agent 代码 | [`libs/ai/services/src/peer.rs`](https://github.com/OctoSense-org/makepad/blob/68d1f4ecc111daa90c50530e77df3245f05fc2cf/libs/ai/services/src/peer.rs)、`apps/<app>/src/view.rs` |
+| Terminal 自己的 Agent 链接（Makepad #100） | [`apps/terminal/src/module.rs`](https://github.com/OctoSense-org/makepad/blob/68d1f4ecc111daa90c50530e77df3245f05fc2cf/apps/terminal/src/module.rs) |
+| octos：两条通道的共享历史（20 条，16 KiB）；`peer_send_input`（64 KiB） | [`crates/octos-cli/src/peers/shared_history.rs`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/crates/octos-cli/src/peers/shared_history.rs)、[`crates/octos-agent/src/tools/peer_send_input.rs`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/crates/octos-agent/src/tools/peer_send_input.rs) |
+| octos：宿主管理的 serve、应用 peer、peer 宿主工具 | [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/HOST_MANAGED_SERVE.md)、[UPCR-2026-034](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_034_HOST_APP_PEERS.md)、[UPCR-2026-035](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_035_PEER_HOST_TOOLS.md)、[UPCR-2026-036](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_036_HOST_MANAGED_SERVE.md) |
 | App Hub：脚本应用可以保留的内核工具（`KERNEL_TOOLS`） | [`crates/app-policy/src/policy.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d5b47a2ae9eb98020feca26b7c895a3cf797dc1/crates/app-policy/src/policy.rs) |
