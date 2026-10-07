@@ -1,5 +1,7 @@
 # OctoSense
 
+<img src="desktop/packaging/icons/icon.svg" width="96" height="96" alt="OctoSense" />
+
 [English](README.md) | 简体中文
 
 OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看，它就是你熟悉的启动器和应用；在它们背后，一个 AI 内核运行着为用户做事的**系统 Agent**，以及每个应用各自的**应用 Agent**。Agent 要动用应用、有风险的操作要找用户，都只能经过 Shell。

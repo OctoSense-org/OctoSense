@@ -1,5 +1,6 @@
 """Validate the installed-app resource contracts, without an SDK or renderer."""
 import json
+import importlib.util
 from pathlib import Path
 import re
 import struct
@@ -18,6 +19,31 @@ def png_info(path):
 
 
 class AppIconTests(unittest.TestCase):
+    def test_brand_geometry_is_shared_with_android_and_shell(self):
+        ns = "{http://www.w3.org/2000/svg}"
+        source = ET.parse(ROOT / "desktop/packaging/icons/mark.svg").findall(".//" + ns + "path")
+        self.assertEqual(len(source), 8)
+        self.assertEqual(len({p.get("d") for p in source}), 1)
+        self.assertEqual([p.get("transform") for p in source],
+                         [f"rotate({45*k})" for k in range(8)])
+        arm = source[0].get("d")
+        shell = ET.parse(ROOT / "crates/shell/resources/icons/octopus.svg").findall(".//" + ns + "path")
+        self.assertEqual([p.get("d") for p in shell], [arm] * 8)
+        for package in ("desktop", "phone"):
+            vector = ET.parse(ROOT / package / "resources/android/res/drawable/ic_launcher_foreground.xml")
+            self.assertEqual([p.get(ANDROID + "pathData") for p in vector.findall(".//path")], [arm] * 8)
+
+    def test_overlapping_arms_stay_filled_and_centre_stays_open(self):
+        spec = importlib.util.spec_from_file_location("make_icons", ROOT / "desktop/packaging/make_icons.py")
+        renderer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(renderer)
+        coverage = renderer.mark_coverage(128)
+        self.assertEqual(coverage[64][64], 0)
+        # The two neighbouring arm roots overlap here. Treating the full
+        # mark as one even/odd contour cuts an unintended hole at this spot.
+        self.assertEqual(coverage[53][59], 16)
+        self.assertTrue(all(value <= 16 for row in coverage for value in row))
+
     def test_android_launcher_references_resolve_at_all_densities(self):
         for package in ("desktop", "phone"):
             base = ROOT / package / "resources/android"

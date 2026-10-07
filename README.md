@@ -1,5 +1,7 @@
 # OctoSense
 
+<img src="desktop/packaging/icons/icon.svg" width="96" height="96" alt="OctoSense" />
+
 English | [简体中文](README.zh-CN.md)
 
 OctoSense is an agent shell that runs on top of an ordinary operating system. On screen it is a launcher and apps that look like the ones you know. Behind them, one AI kernel runs a **system agent** that works for the person and an **app agent** for each app that has one. Agents reach apps, and risky actions reach the person, only through the shell.

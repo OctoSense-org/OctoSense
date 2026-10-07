@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""OctoSense's platform app icons, rendered from icons/icon.svg's geometry.
+"""OctoSense's platform app icons, rendered from icons/mark.svg's geometry.
 
-The mark is OctoSense's eight-petal flower on its green tile (the website's
+The mark is OctoSense's eight-arm flower on its green tile (the website's
 favicon). Desktop art has an inset rounded tile; mobile catalogs use an
 opaque square and let the OS mask its corners. Android also has separate
 adaptive layers and a monochrome layer for themed icons.
@@ -10,12 +10,14 @@ adaptive layers and a monochrome layer for themed icons.
     python3 desktop/packaging/make_icons.py --check  # compare without writing
 
 Stdlib only (Python 3.9+), deterministic: the output is committed, so a
-release build never renders anything. Edit TILE/PETAL/the geometry here and
-in icon.svg together.
+release build never renders anything. Edit the canonical cubic paths in icons/mark.svg; the desktop SVG,
+raster icons and Android vector layers are generated from that same source.
 """
 import argparse
 import json
 import math
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import struct
 import zlib
@@ -29,8 +31,88 @@ TILE = (0x24, 0x3F, 0x30)
 PETAL = (0xD4, 0xED, 0xB8)
 INSET, RADIUS = 100.0, 185.0          # the tile: 824 wide, macOS-like corners
 CENTER, SCALE = 512.0, 824.0 / 64.0   # the favicon's 64-unit flower, scaled to the tile
-PETAL_RX, PETAL_RY, PETAL_CY = 5.0 * SCALE, 10.0 * SCALE, -15.0 * SCALE
-ROTATIONS = [(math.cos(-math.radians(45.0 * k)), math.sin(-math.radians(45.0 * k))) for k in range(8)]
+MARK = ET.parse(Path(__file__).parent / "icons/mark.svg").getroot()
+ARM_PATH = MARK.find(".//{http://www.w3.org/2000/svg}path").get("d")
+
+
+def arm_polygon():
+    """Flatten the canonical M/C/Z path to subpixel-accurate line segments."""
+    tokens = re.findall(r"[MCZ]|-?\d+(?:\.\d+)?", ARM_PATH)
+    if tokens.pop(0) != "M":
+        raise ValueError("The mark must start with M")
+    point = (float(tokens.pop(0)), float(tokens.pop(0)))
+    points = [point]
+    while tokens:
+        command = tokens.pop(0)
+        if command == "Z":
+            break
+        if command != "C":
+            raise ValueError(f"Unsupported mark command: {command}")
+        coordinates = [float(tokens.pop(0)) for _ in range(6)]
+        p1, p2, p3 = [coordinates[i:i + 2] for i in (0, 2, 4)]
+        for step in range(1, 65):
+            t = step / 64.0
+            u = 1 - t
+            points.append(tuple(u**3 * point[k] + 3*u*u*t*p1[k]
+                                + 3*u*t*t*p2[k] + t**3*p3[k] for k in (0, 1)))
+        point = p3
+    return points
+
+
+def mark_edges():
+    edges = []
+    points = arm_polygon()
+    for k in range(8):
+        c, s = math.cos(math.radians(45*k)), math.sin(math.radians(45*k))
+        polygon = [(CENTER + SCALE*(x*c-y*s), CENTER + SCALE*(x*s+y*c)) for x, y in points]
+        for (x1, y1), (x2, y2) in zip(polygon, polygon[1:] + polygon[:1]):
+            if y1 != y2:
+                edges.append((min(y1, y2), max(y1, y2), x1, y1, (x2-x1)/(y2-y1), k))
+    return edges
+
+
+EDGES = mark_edges()
+
+
+def mark_coverage(size):
+    """Scan-convert all arms with 4x4 sampling and a half-open edge rule."""
+    samples = size * 4
+    unit = 1024.0 / samples
+    coverage = [bytearray(size) for _ in range(size)]
+    # Bucket edges by scanline to avoid checking every curve at every pixel.
+    starts = {}
+    for edge in EDGES:
+        first = max(0, math.ceil(edge[0] / unit - 0.5))
+        end = min(samples, math.ceil(edge[1] / unit - 0.5))
+        if first < end:
+            starts.setdefault(first, []).append((end, edge))
+    active = []
+    for row in range(samples):
+        active = [(end, edge) for end, edge in active if end > row]
+        active.extend(starts.get(row, []))
+        y = (row + 0.5) * unit
+        intersections = [[] for _ in range(8)]
+        for _, (_, _, x, y0, slope, arm) in active:
+            intersections[arm].append(x + (y-y0)*slope)
+        intervals = []
+        for crossings in intersections:
+            crossings.sort()
+            intervals.extend(zip(crossings[::2], crossings[1::2]))
+        # Union the arms: even/odd across all paths would punch holes where
+        # adjacent arms overlap, unlike eight filled SVG paths.
+        merged = []
+        for left, right in sorted(intervals):
+            if merged and left <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(right, merged[-1][1]))
+            else:
+                merged.append((left, right))
+        dest = coverage[row // 4]
+        for left, right in merged:
+            lo = max(0, math.ceil(left / unit - 0.5))
+            hi = min(samples, math.ceil(right / unit - 0.5))
+            for column in range(lo, hi):
+                dest[column // 4] += 1
+    return coverage
 
 
 def tile_distance(x, y):
@@ -44,51 +126,33 @@ def tile_distance(x, y):
     return max(dx, dy) - RADIUS if (dx or dy) else -inner
 
 
-def petal_distance(x, y):
-    """Approximate signed distance to the nearest of the eight petals."""
-    px, py = x - CENTER, y - CENTER
-    best = float("inf")
-    for cosine, sine in ROTATIONS:
-        rx = px * cosine - py * sine
-        ry = px * sine + py * cosine
-        f = math.hypot(rx / PETAL_RX, (ry - PETAL_CY) / PETAL_RY)
-        best = min(best, (f - 1.0) * PETAL_RX)
-    return best
-
-
 def render(size, style="desktop"):
-    """RGBA rows, 4x4 supersampled where an edge crosses the pixel."""
+    """RGBA rows from the SVG mark, with 4x4 supersampled edges."""
     unit = 1024.0 / size
+    coverage = mark_coverage(size)
     rows = []
     offsets = [(i + 0.5) / 4.0 for i in range(4)]
     for j in range(size):
         row = bytearray()
         for i in range(size):
-            cx, cy = (i + 0.5) * unit, (j + 0.5) * unit
-            near = 1.5 * unit
-            dt = tile_distance(cx, cy) if style == "desktop" else -1024.0
-            dp = petal_distance(cx, cy)
-            if abs(dt) > near and abs(dp) > near:
-                tile = 1.0 if dt < 0 else 0.0
-                petal = 1.0 if dp < 0 and tile else 0.0
-            else:
-                tile = petal = 0.0
-                for oy in offsets:
-                    for ox in offsets:
-                        sx, sy = (i + ox) * unit, (j + oy) * unit
-                        if style != "desktop" or tile_distance(sx, sy) < 0:
-                            tile += 1 / 16
-                            if petal_distance(sx, sy) < 0:
-                                petal += 1 / 16
+            petal = coverage[j][i] / 16.0
             if style == "foreground":
                 row += bytes([*PETAL, round(255 * petal)])
                 continue
+            tile = 1.0
+            if style == "desktop":
+                dt = tile_distance((i+0.5)*unit, (j+0.5)*unit)
+                if abs(dt) > 1.5 * unit:
+                    tile = float(dt < 0)
+                else:
+                    tile = sum(tile_distance((i+ox)*unit, (j+oy)*unit) < 0
+                               for oy in offsets for ox in offsets) / 16.0
             if tile == 0:
                 row += b"\0\0\0\0"
-                continue
-            mix = petal / tile
-            rgb = [round(t + (p - t) * mix) for t, p in zip(TILE, PETAL)]
-            row += bytes(rgb + [round(255 * tile)])
+            else:
+                mix = min(petal / tile, 1.0)
+                rgb = [round(t + (p-t)*mix) for t, p in zip(TILE, PETAL)]
+                row += bytes(rgb + [round(255*tile)])
         rows.append(bytes(row))
     return rows
 
@@ -132,13 +196,11 @@ def ios_slots():
 
 
 def android_xml():
-    """The same eight ellipses within the 66dp safe circle on a 108dp layer."""
+    """The same eight arms within the 66dp safe circle on a 108dp layer."""
     colour = "#" + "".join(f"{c:02x}" for c in PETAL)
     background = "#" + "".join(f"{c:02x}" for c in TILE)
     xmlns = 'xmlns:android="http://schemas.android.com/apk/res/android"'
-    # Ellipse rx=5, ry=10, cy=-15; rotated around the flower's centre.
-    path = ("M0,-25 C2.761424,-25 5,-20.522847 5,-15 C5,-9.477153 2.761424,-5 0,-5 "
-            "C-2.761424,-5 -5,-9.477153 -5,-15 C-5,-20.522847 -2.761424,-25 0,-25 Z")
+    path = ARM_PATH
     petals = "\n".join(f'    <group android:rotation="{45 * k}"><path android:fillColor="{colour}" '
                        f'android:pathData="{path}" /></group>' for k in range(8))
     foreground = (f'<vector {xmlns} android:width="108dp" android:height="108dp" '
@@ -158,7 +220,12 @@ def android_xml():
 
 def assets():
     """All generated paths relative to the repository; no build-time tooling."""
-    output = {}
+    arms = "".join(f'<path d="{ARM_PATH}" transform="rotate({45*k})"/>' for k in range(8))
+    desktop_svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">'
+                   '<rect x="100" y="100" width="824" height="824" rx="185" fill="#243f30"/>'
+                   '<g fill="#d4edb8" transform="translate(512 512) scale(12.875)">'
+                   + arms + '</g></svg>\n')
+    output = {"desktop/packaging/icons/icon.svg": desktop_svg.encode()}
     rendered = {size: png(size, render(size)) for size in sorted(set(SIZES) | set(ICO_SIZES) | {72, 96, 144, 192})}
     ico_data = ico([(s, rendered[s]) for s in ICO_SIZES])
     icns_data = icns(rendered)
