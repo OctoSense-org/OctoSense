@@ -7637,7 +7637,8 @@ dependencies = [
 [[package]]
 name = "octosense-app-contract"
 version = "1.5.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=d6a14133527d803a26032550d50427c17d126ca4#d6a14133527d803a26032550d50427c17d126ca4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7086f1db1ac3118693fe349a316a279e3498db304395bf027a71a66c7dfc42"
 dependencies = [
  "blake3",
  "serde",
@@ -7647,7 +7648,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=d6a14133527d803a26032550d50427c17d126ca4#d6a14133527d803a26032550d50427c17d126ca4"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=a52d928b0c14d2822c09f6ccd18f44bf7b885221#a52d928b0c14d2822c09f6ccd18f44bf7b885221"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7666,7 +7667,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=d6a14133527d803a26032550d50427c17d126ca4#d6a14133527d803a26032550d50427c17d126ca4"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=a52d928b0c14d2822c09f6ccd18f44bf7b885221#a52d928b0c14d2822c09f6ccd18f44bf7b885221"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7694,7 +7695,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=d6a14133527d803a26032550d50427c17d126ca4#d6a14133527d803a26032550d50427c17d126ca4"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=a52d928b0c14d2822c09f6ccd18f44bf7b885221#a52d928b0c14d2822c09f6ccd18f44bf7b885221"
 dependencies = [
  "makepad-widgets",
  "octosense-app-contract",
@@ -7716,7 +7717,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=d6a14133527d803a26032550d50427c17d126ca4#d6a14133527d803a26032550d50427c17d126ca4"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=a52d928b0c14d2822c09f6ccd18f44bf7b885221#a52d928b0c14d2822c09f6ccd18f44bf7b885221"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",

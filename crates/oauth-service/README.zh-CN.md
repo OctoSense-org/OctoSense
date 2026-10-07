@@ -198,7 +198,8 @@ GitHub 设备代码仅出现在宿主面板。Google 校验 state、来源、路
 Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`、`mail.read`、`mail.send`；
 后端登录使用 `app.session`。
 这些服务商权限与 App Hub capability 各自校验。句柄不是 token；选中一个 Google 账户也不会
-自动让其他应用读取它。调用示例见英文版，对真实授权的验证状态相同。
+自动让其他应用读取它。调用示例见英文版；专用测试账户的 Calendar 授权已验证，
+面向公众的 Google 生产审批仍未验证。
 
 GitHub 保存冻结仓库、分支、路径、内容及原 blob SHA。Calendar 保存冻结日历、事件和 ETag；
 过期 ETag 会报冲突，不会静默覆盖。Gmail 原生审核冻结持久化草稿版本、收件人及正文。

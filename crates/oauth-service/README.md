@@ -246,7 +246,7 @@ Provider-specific scopes remain
 separate from App Hub capabilities. Handles are private identifiers, not tokens.
 Selection does not grant another app access to the same Google account.
 
-Example Calendar request syntax (live Calendar authorization unverified):
+Example Calendar request syntax (production Google approval remains unverified):
 
 ```javascript
 host.request("auth.connect", {
