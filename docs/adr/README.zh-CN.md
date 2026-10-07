@@ -17,6 +17,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 | [0007](0007-composable-mail-action-cards.zh-CN.md) | 可组合的 Mail 卡片：编辑、聊天与经批准的操作 | 实现中；手机验收待完成 |
 | [0008](0008-quiet-android-mail-jobs.zh-CN.md) | Android 静默邮件后台任务与原生卡片通知 | 本次变更已实现；设备验收进行中 |
 | [0010](0010-shared-oauth-and-connected-apps.zh-CN.md) | 共享 OAuth 与独立安装的连接账户应用 | 实现中；真实账户登录已在 macOS 上通过；GitHub 写入、Gmail 发信和设备验收待完成 |
+| [0012](0012-app-host-api-discovery.zh-CN.md) | 可发现宿主 API、签名后端操作与活动脚本工具 | 实现中；兼容发布版本和手机验收待完成 |
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 
