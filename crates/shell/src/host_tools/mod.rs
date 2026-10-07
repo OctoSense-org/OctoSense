@@ -268,6 +268,14 @@ pub fn bus_result(call_id: &str, outcome: ToolOutcome) {
 pub struct ShellToolHost;
 
 impl ToolHost for ShellToolHost {
+    fn admit_turn(&self, app_id: &str, _account: &str) -> Result<(), String> {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        admission::check(app_of_peer(app_id))?;
+        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        let _ = app_id;
+        Ok(())
+    }
+
     fn declarations(&self, app_id: &str, account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
         #[cfg(any(feature = "app-hub", native_mobile))]

@@ -26,6 +26,8 @@ struct Script {
     /// The next this-many turn/starts are refused `turn_in_progress` (the
     /// kernel still runs a turn the host has not seen end).
     busy_starts: usize,
+    /// Change host policy exactly when a start is refused as busy.
+    after_busy: Option<Arc<dyn Fn() + Send + Sync>>,
     /// turn/interrupt ends the turn (a v2 `turn_terminal`, `interrupted`).
     interrupts_end: bool,
     /// Every turn/start is refused with this kind (a refusal other than
@@ -217,7 +219,13 @@ impl Connector for FakeConnector {
                             }
                             send(reply(result));
                         }
-                        "turn/start" if busy => send(refuse("turn_in_progress")),
+                        "turn/start" if busy => {
+                            let changed = script.lock().unwrap().after_busy.clone();
+                            if let Some(changed) = changed {
+                                changed();
+                            }
+                            send(refuse("turn_in_progress"));
+                        }
                         "turn/start" if refuse_start.is_some() => send(refuse(refuse_start.as_deref().unwrap())),
                         "turn/start" => {
                             let session = params["session_id"].clone();
@@ -596,11 +604,21 @@ struct RecordingHost {
     generic: Mutex<Option<Vec<String>>>,
     /// Refuse each `peer/input` with this.
     refuse_input: Mutex<Option<InputRefusal>>,
+    /// Current release admission, checked again for every actual start.
+    refuse_turn: Mutex<Option<String>>,
+    turn_admissions: Mutex<Vec<(String, String)>>,
     /// The app's conversation reads the account folder (`read_parent`).
     reads_account: Mutex<bool>,
 }
 
 impl ToolHost for RecordingHost {
+    fn admit_turn(&self, app: &str, account: &str) -> Result<(), String> {
+        self.turn_admissions.lock().unwrap().push((app.into(), account.into()));
+        match self.refuse_turn.lock().unwrap().clone() {
+            Some(reason) => Err(reason),
+            None => Ok(()),
+        }
+    }
     fn declarations(&self, _app: &str, _account: &str) -> Result<Vec<Value>, String> {
         Ok(self.declared.lock().unwrap().clone())
     }
@@ -905,6 +923,87 @@ fn the_system_agents_input_starts_the_peers_turn_once_and_queues_while_busy() {
     notify(&script, "peer/input", input("i3", "turn-3"));
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(calls_of(&script, "turn/start").len(), 2);
+}
+
+#[test]
+fn withdrawn_release_cannot_start_a_turn_in_a_cached_context_or_conversation() {
+    for conversation in [false, true] {
+        let host = Arc::new(RecordingHost::default());
+        let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+        broker.set_account(Some("@a:x"));
+        let spec = spec("@a:x", "already-open", &ALL);
+        let context = if conversation {
+            broker.open_conversation(spec).unwrap()
+        } else {
+            broker.open_context(spec).unwrap()
+        };
+        let (sink, rx) = collect();
+        context.call(ContextOp::Turn { text: "Before withdrawal".into() }, sink).unwrap();
+        complete(&rx).unwrap();
+        assert_eq!(calls_of(&script, "turn/start").len(), 1);
+        let bound = calls_of(&script, "peer/context/open").len();
+        *host.refuse_turn.lock().unwrap() = Some("Installed release was withdrawn".into());
+        let (sink, rx) = collect();
+        context.call(ContextOp::Turn { text: "Must not reach the model".into() }, sink).unwrap();
+        assert!(complete(&rx).unwrap_err().contains("withdrawn"));
+        assert_eq!(calls_of(&script, "turn/start").len(), 1);
+        assert_eq!(calls_of(&script, "peer/context/open").len(), bound, "the test must reuse the cached session");
+        assert_eq!(*host.turn_admissions.lock().unwrap(), vec![("rinx".into(), "@a:x".into()); 2]);
+        broker.release();
+    }
+}
+
+#[test]
+fn queued_inputs_are_refused_if_the_release_is_withdrawn_before_they_start() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    for n in 1..=3 {
+        notify(&script, "peer/input", json!({"peer":slug,"session_id":session,
+            "input_id":format!("input-{n}"),"turn_id":format!("turn-{n}"),"text":"Requested before withdrawal"}));
+    }
+    wait_for("one running turn and two queued inputs", || {
+        calls_of(&script, "turn/start").len() == 1 && broker.queued_inputs() == 2
+    });
+    assert_eq!(host.inputs.lock().unwrap().len(), 3, "the host initially admitted every input");
+    *host.refuse_turn.lock().unwrap() = Some("Installed release was withdrawn".into());
+    notify(&script, "turn/completed", json!({"session_id":session,"turn_id":"turn-1"}));
+    wait_for("both queued refusals", || calls_of(&script, "peer/input/reject").len() == 2);
+    assert_eq!(calls_of(&script, "turn/start").len(), 1, "neither queued input reaches the model");
+    let rejected = calls_of(&script, "peer/input/reject");
+    for (index, (_, refusal)) in rejected.iter().enumerate() {
+        assert_eq!(refusal["input_id"], format!("input-{}", index + 2));
+        assert_eq!(refusal["reason"], "other");
+        assert!(refusal["message"].as_str().unwrap().contains("withdrawn"));
+    }
+    wait_for("the refused queue to drain", || broker.queued_inputs() == 0 && broker.peer_active_turn().is_none());
+    broker.release();
+}
+
+#[test]
+fn withdrawal_during_a_busy_start_prevents_the_retry_from_reaching_the_kernel() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    {
+        let mut script = script.lock().unwrap();
+        script.busy_starts = 1;
+        let host = host.clone();
+        script.after_busy = Some(Arc::new(move || {
+            *host.refuse_turn.lock().unwrap() = Some("Installed release was withdrawn".into());
+        }));
+    }
+    broker.set_account(Some("@a:x"));
+    let context = broker.open_conversation(spec("@a:x", "busy-conversation", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    context.call(ContextOp::Turn { text: "Busy, then withdrawn".into() }, sink).unwrap();
+    assert!(complete(&rx).unwrap_err().contains("withdrawn"));
+    assert_eq!(calls_of(&script, "turn/start").len(), 1, "only the original busy refusal reaches the kernel");
+    assert_eq!(host.turn_admissions.lock().unwrap().len(), 2, "the retry must recheck the host");
+    broker.release();
 }
 
 #[test]

@@ -1451,6 +1451,19 @@ impl Inner {
 
     async fn request(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
         let link = self.ensure_link().await?;
+        if method == "turn/start" {
+            let account = {
+                let st = self.lock();
+                if st.released {
+                    return Err("The app was closed".into());
+                }
+                st.account.clone().ok_or("Sign in before using the assistant")?
+            };
+            // After connection setup and before enqueueing the actual frame:
+            // every path (including a cached context or retry) passes here.
+            // Never hold the broker's state lock while calling the host.
+            self.tool_host().admit_turn(&self.cfg.app_id, &account)?;
+        }
         let (tx, rx) = oneshot::channel();
         let id = {
             let mut st = self.lock();
