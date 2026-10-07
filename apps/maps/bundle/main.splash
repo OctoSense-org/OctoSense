@@ -66,6 +66,84 @@ fn moved(name, path){
     return name
 }
 fn data_path(name){ return moved(name, DATA + name) }
+fn cache_path(name){ return moved(name, "cache/" + name) }
+
+// ---- Places: pure functions (crates/shell/src/maps_model_tests.rs runs them) ----
+
+// A field that may be missing: reading a missing one can raise, not give nil.
+fn optional(o, key, fallback){
+    if o == nil { return fallback }
+    let v = try { o[key] } catch { nil }
+    if v == nil { return fallback }
+    v
+}
+fn text_of(o, key){
+    let v = optional(o, key, nil)
+    if v == nil { return "" }
+    ("" + v).trim()
+}
+// Every `a` in `s` replaced by `b` (a string's replace changes the first only).
+fn replace_all(s, a, b){
+    let out = ""
+    for i part in s.split(a) {
+        if i > 0 { out = out + b }
+        out = out + part
+    }
+    out
+}
+// The first letter a capital. `to_chars` gives code points, not one-letter
+// strings ("a"–"z" are 97–122), and the array turns back into text.
+fn cap(s){
+    let chars = s.to_chars()
+    if chars.len() == 0 { return s }
+    if chars[0] >= 97 && chars[0] <= 122 { chars[0] = chars[0] - 32 }
+    chars.to_string()
+}
+// OpenStreetMap's key and value as a category: a few renamed, the rest as
+// written ("ice_cream" reads "Ice cream"); "yes" says only what the key is.
+let CATEGORY = {fuel: "Gas station" atm: "ATM" doctors: "Doctor" townhall: "Town hall" house: "Address"}
+fn category(key, value){
+    let v = value
+    if v == "" || v == "yes" { v = key }
+    let named = optional(CATEGORY, v, nil)
+    if named != nil { return named }
+    cap(replace_all(v, "_", " "))
+}
+fn has_id(list, id){
+    for h in list { if h.id == id { return true } }
+    false
+}
+// Photon's GeoJSON as places {id name cat label lat lon}: nil when the answer
+// is not Photon's (an error page), [] when nothing matched. `id` is
+// OpenStreetMap's "N:123", "W:…" or "R:…", or "".
+fn photon_hits(body){
+    let feats = optional(body.parse_json(), "features", nil)
+    if feats == nil { return nil }
+    let out = []
+    for f in feats {
+        let p = optional(f, "properties", nil)
+        let c = optional(optional(f, "geometry", nil), "coordinates", nil)
+        if p == nil || c == nil || c.len() < 2 { continue }
+        let name = text_of(p, "name")
+        let street = text_of(p, "street")
+        if name == "" && street != "" { name = (text_of(p, "housenumber") + " " + street).trim() }
+        if name == "" { name = text_of(p, "city") }
+        if name == "" { name = "Unnamed place" }
+        let label = ""
+        for k in ["street" "city" "state" "country"] {
+            let v = text_of(p, k)
+            if v != "" && v != name && label.search(v) < 0 {
+                if label != "" { label = label + ", " }
+                label = label + v
+            }
+        }
+        let id = ""
+        if text_of(p, "osm_type") != "" && text_of(p, "osm_id") != "" { id = text_of(p, "osm_type") + ":" + text_of(p, "osm_id") }
+        if id != "" && has_id(out, id) { continue }
+        out.push({id: id name: name cat: category(text_of(p, "osm_key"), text_of(p, "osm_value")) label: label lat: c[1] lon: c[0]})
+    }
+    out
+}
 
 fn fix_origin(){
     if origin.picked { return }
