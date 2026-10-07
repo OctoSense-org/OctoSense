@@ -10,6 +10,7 @@ fn registration(origin: &str) -> BackendRegistration {
         me_url: format!("{origin}/me"),
         logout_url: format!("{origin}/logout"),
         scopes: BTreeSet::from([SESSION_SCOPE.into()]),
+        operations: Default::default(),
     }
 }
 fn caller() -> &'static str {
@@ -188,6 +189,72 @@ fn cancel_expiry_decline_and_registration_change_cannot_complete_authorization()
     );
 }
 
+#[test]
+fn business_registration_and_request_are_exact_and_bounded() {
+    let mut r = registration("https://backend.example.test");
+    let valid = BackendOperation {
+        method: "GET".into(),
+        path: "/api/notes".into(),
+        query_keys: BTreeSet::from(["tag".into()]),
+    };
+    for path in [
+        "//evil.test/api",
+        "/api/../token",
+        "/api/%2e%2e/token",
+        "/api/%252fsecret",
+        "/api\\token",
+        "/api/notes?x=1",
+        "/token",
+        "/api/./notes",
+    ] {
+        r.operations.insert(
+            "notes.list".into(),
+            BackendOperation {
+                path: path.into(),
+                ..valid.clone()
+            },
+        );
+        assert!(BackendClient::new(r.clone()).is_err(), "accepted {path}");
+    }
+    r.operations.insert("notes.list".into(), valid);
+    let client = BackendClient::new(r.clone()).unwrap();
+    let request = BackendRequest {
+        connection: "opaque-host-handle".into(),
+        operation: "notes.list".into(),
+        query: BTreeMap::from([("tag".into(), "a & next=/token".into())]),
+        body: None,
+    };
+    client.validate_request(&request).unwrap();
+    assert!(client
+        .validate_request(&BackendRequest {
+            operation: "not.declared".into(),
+            ..request.clone()
+        })
+        .is_err());
+    assert!(client
+        .validate_request(&BackendRequest {
+            query: BTreeMap::from([("url".into(), "https://evil.test".into())]),
+            ..request.clone()
+        })
+        .is_err());
+    assert!(client
+        .validate_request(&BackendRequest {
+            body: Some(serde_json::json!({"unexpected":true})),
+            ..request.clone()
+        })
+        .is_err());
+    r.operations.get_mut("notes.list").unwrap().method = "POST".into();
+    let changed = BackendClient::new(r).unwrap();
+    assert_ne!(client.binding(), changed.binding());
+    assert!(changed
+        .validate_request(&BackendRequest {
+            body: Some(serde_json::json!({"text":"x".repeat(65537)})),
+            ..request
+        })
+        .is_err());
+    assert!(serde_json::from_value::<BackendRequest>(serde_json::json!({"connection":"x", "operation":"notes.list", "headers":{"Authorization":"oops"}})).is_err());
+}
+
 #[cfg(feature = "acceptance-fixtures")]
 mod real_http {
     use super::*;
@@ -250,6 +317,9 @@ mod real_http {
         /// Exercises server-owned HTML/forms over real HTTP. This is protocol
         /// acceptance, not a claim that native browser pixels were tested.
         fn browser(&self, attempt: &BackendAttempt, register: bool) -> String {
+            self.browser_as(attempt, register, "fictional-acceptance-user")
+        }
+        fn browser_as(&self, attempt: &BackendAttempt, register: bool, username: &str) -> String {
             let http = reqwest::blocking::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
@@ -275,7 +345,7 @@ mod real_http {
                 .unwrap();
             let mut fields = vec![
                 ("flow", flow),
-                ("username", "fictional-acceptance-user"),
+                ("username", username),
                 ("password", "fictional-only-password"),
                 ("action", "register"),
             ];
@@ -370,6 +440,260 @@ mod real_http {
         }
         assert!(journal.contains("\"event\": \"register\""));
         assert!(journal.contains("\"event\": \"logout\""));
+    }
+
+    #[test]
+    fn real_business_http_keeps_accounts_separate_refuses_redirects_and_revokes_after_logout() {
+        let server = Server::start();
+        let client = &server.client;
+        let login = |username| {
+            let mut attempt = begin(client);
+            let callback = server.browser_as(&attempt, true, username);
+            let code = attempt
+                .consume_callback(caller(), &callback, Instant::now())
+                .unwrap();
+            client.finish(caller(), code, 1_800_000_000).unwrap()
+        };
+        let alice = login("fictional-alice");
+        let bob = login("fictional-bob");
+        let mut request = BackendRequest {
+            connection: "host-tested-separately".into(),
+            operation: "notes.create".into(),
+            query: BTreeMap::new(),
+            body: Some(serde_json::json!({"text":"Fictional delivery note"})),
+        };
+        assert!(client
+            .request("another.app", &alice.tokens, &request)
+            .is_err());
+        let saved = client.request(caller(), &alice.tokens, &request).unwrap();
+        assert_eq!(saved["text"], "Fictional delivery note");
+        request.operation = "notes.list".into();
+        request.body = None;
+        request.query.insert("tag".into(), "a & next=/token".into());
+        let listed = client.request(caller(), &alice.tokens, &request).unwrap();
+        assert_eq!(listed["notes"][0], saved);
+        assert_eq!(listed["query"]["tag"][0], "a & next=/token");
+        assert_eq!(
+            client.request(caller(), &bob.tokens, &request).unwrap()["notes"],
+            serde_json::json!([])
+        );
+        request.query.clear();
+        for operation in ["fixture.redirect", "fixture.large", "fixture.echo"] {
+            request.operation = operation.into();
+            assert!(
+                client.request(caller(), &alice.tokens, &request).is_err(),
+                "accepted {operation}"
+            );
+        }
+        request.operation = "notes.list".into();
+        client.logout(caller(), &alice.tokens).unwrap();
+        assert!(client.request(caller(), &alice.tokens, &request).is_err());
+        assert!(client.request(caller(), &bob.tokens, &request).is_ok());
+        client.logout(caller(), &bob.tokens).unwrap();
+        let journal = std::fs::read_to_string(server.directory.join("events.jsonl")).unwrap();
+        assert!(!journal.contains("redirect_followed"));
+        assert!(!journal.contains(&alice.tokens.access));
+        assert!(!journal.contains(&bob.tokens.access));
+    }
+
+    #[test]
+    fn host_business_requests_keep_handles_active_scoped_revocable_and_require_native_write_review()
+    {
+        use crate::{acceptance_fixtures, host, host_api, transport, CredentialStore};
+        use octosense_appstore::services::{self, ServiceCall, ServiceHost};
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc, Mutex,
+        };
+        #[derive(Default)]
+        struct Vault(Mutex<BTreeMap<String, String>>);
+        impl CredentialStore for Vault {
+            fn put(&self, key: &str, value: &str) -> Result<(), String> {
+                self.0.lock().unwrap().insert(key.into(), value.into());
+                Ok(())
+            }
+            fn get(&self, key: &str) -> Result<String, String> {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .get(key)
+                    .cloned()
+                    .ok_or("No synthetic credential".into())
+            }
+            fn remove(&self, key: &str) -> Result<(), String> {
+                self.0.lock().unwrap().remove(key);
+                Ok(())
+            }
+        }
+        struct NoProvider;
+        impl transport::Transport for NoProvider {
+            fn send(&self, _: transport::Request) -> Result<transport::Response, String> {
+                Err("Unexpected Google/GitHub request".into())
+            }
+        }
+        #[derive(Default)]
+        struct Sheet(usize);
+        impl ServiceHost for Sheet {
+            fn open_sheet(&mut self, _: String) {
+                self.0 += 1;
+            }
+            fn close_sheet(&mut self) {}
+        }
+        let server = Server::start();
+        let root = server.directory.join("profile/.host");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.parent().unwrap().join(".connected-e2e.json"),
+            r#"{"fixture":"connected-e2e","schema":1}"#,
+        )
+        .unwrap();
+        acceptance_fixtures::install(
+            &root,
+            acceptance_fixtures::Backend {
+                vault: Arc::new(Vault::default()),
+                transport: Arc::new(NoProvider),
+            },
+        )
+        .unwrap();
+        host::register_backend_fixture(
+            &root,
+            BackendClient::new_loopback_fixture(server.client.registration().clone()).unwrap(),
+        )
+        .unwrap();
+        let login = |username| {
+            let mut attempt = begin(&server.client);
+            let callback = server.browser_as(&attempt, true, username);
+            let code = attempt
+                .consume_callback(caller(), &callback, Instant::now())
+                .unwrap();
+            server.client.finish(caller(), code, 1_800_000_000).unwrap()
+        };
+        let alice = login("fictional-host-alice");
+        let bob = login("fictional-host-bob");
+        let mut store = host::connections(&root).unwrap();
+        let a = store
+            .connect_backend(
+                caller(),
+                &server.client.registration().id,
+                server.client.binding(),
+                &alice.identity.sub,
+                &alice.identity.label,
+                &alice.tokens,
+            )
+            .unwrap();
+        let allowed = Arc::new(AtomicBool::new(true));
+        let check = allowed.clone();
+        let scope: host::ScopeCheck = Arc::new(move |_, _, _| check.load(Ordering::SeqCst));
+        let call = |connection: &str, operation: &str, body: Option<serde_json::Value>| {
+            ServiceCall {
+                app_id: caller().into(),
+                service: "auth.backend.request".into(),
+                args: serde_json::json!({"connection":connection,"operation":operation,"body":body}),
+                from_sheet: false,
+                may_prompt: true,
+                host_dir: root.clone(),
+            }
+        };
+        let prepared = host::backend_host::prepare_request(
+            &call(
+                &a.handle,
+                "notes.create",
+                Some(serde_json::json!({"text":"Exact reviewed fictional note"})),
+            ),
+            scope.clone(),
+        )
+        .unwrap();
+        assert!(prepared.mutates());
+        // Direct native executor validation is synthetic approval evidence only.
+        assert_eq!(
+            prepared.execute().unwrap()["text"],
+            "Exact reviewed fictional note"
+        );
+        let read = host::backend_host::prepare_request(
+            &call(&a.handle, "notes.list", None),
+            scope.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            read.execute().unwrap()["notes"][0]["text"],
+            "Exact reviewed fictional note"
+        );
+        allowed.store(false, Ordering::SeqCst);
+        assert!(read.execute().is_err());
+        allowed.store(true, Ordering::SeqCst);
+        let mut foreign = call(&a.handle, "notes.list", None);
+        foreign.app_id = "another.app".into();
+        assert!(host::backend_host::prepare_request(&foreign, scope.clone()).is_err());
+        let b = store
+            .connect_backend(
+                caller(),
+                &server.client.registration().id,
+                server.client.binding(),
+                &bob.identity.sub,
+                &bob.identity.label,
+                &bob.tokens,
+            )
+            .unwrap();
+        assert!(
+            read.execute().is_err(),
+            "stale account must not issue a request"
+        );
+        let read_b = host::backend_host::prepare_request(
+            &call(&b.handle, "notes.list", None),
+            scope.clone(),
+        )
+        .unwrap();
+        assert_eq!(read_b.execute().unwrap()["notes"], serde_json::json!([]));
+        let capture = Arc::new(Mutex::new(None));
+        let sink = capture.clone();
+        host_api::register_with_review_hook(move |request| {
+            *sink.lock().unwrap() = Some(request);
+            Ok("SolidView {}".into())
+        });
+        host::register(scope.clone());
+        let heap = 994_815;
+        let mut sheet = Sheet::default();
+        let mut background = call(
+            &b.handle,
+            "notes.create",
+            Some(serde_json::json!({"text":"Must not send"})),
+        );
+        background.may_prompt = false;
+        services::dispatch(background, heap, 1, &mut sheet);
+        assert!(services::take_replies_for(&[heap])[0].2.is_err());
+        assert_eq!(sheet.0, 0);
+        services::dispatch(
+            call(
+                &b.handle,
+                "notes.create",
+                Some(serde_json::json!({"text":"Review only; cancelled"})),
+            ),
+            heap,
+            2,
+            &mut sheet,
+        );
+        assert_eq!(sheet.0, 1);
+        let mut review = capture.lock().unwrap().take().unwrap();
+        assert_eq!(review.snapshot()["account"], bob.identity.label);
+        assert!(review.snapshot()["body"]
+            .as_str()
+            .unwrap()
+            .contains("Review only; cancelled"));
+        assert_eq!(review.close_request().0, "auth.backend.sheet.cancel");
+        assert!(review.approve(false, false).is_err());
+        review.cancel().unwrap();
+        assert!(services::take_replies_for(&[heap])[0].2.is_err());
+        assert_eq!(read_b.execute().unwrap()["notes"], serde_json::json!([]));
+        host::invalidate_backend_registration(&root, caller()).unwrap();
+        assert!(read_b.execute().is_err());
+        assert!(host::connections(&root).unwrap().list(caller()).is_empty());
+        assert!(
+            host::backend_host::prepare_request(&call(&b.handle, "notes.list", None), scope)
+                .is_err()
+        );
+        services::cancel_heap(heap);
+        server.client.logout(caller(), &alice.tokens).unwrap();
+        server.client.logout(caller(), &bob.tokens).unwrap();
     }
 
     #[test]
