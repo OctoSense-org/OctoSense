@@ -926,6 +926,54 @@ fn the_system_agents_input_starts_the_peers_turn_once_and_queues_while_busy() {
 }
 
 #[test]
+fn trusted_host_turn_does_not_require_an_app_account() {
+    let host = Arc::new(RecordingHost::default());
+    *host.refuse_turn.lock().unwrap() = Some("Installed release was withdrawn".into());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.host_request("turn/start", json!({
+        "session_id": "_main:api:octosense#system", "turn_id": "host-without-account",
+        "input": [{"kind": "text", "text": "Check the available app routes"}],
+    })).expect("the trusted system lane does not depend on an app login");
+    let starts = calls_of(&script, "turn/start");
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].1["turn_id"], "host-without-account");
+    assert!(host.turn_admissions.lock().unwrap().is_empty());
+    assert!(calls_of(&script, "peer/prepare").is_empty(), "host dispatch must not create an app peer");
+}
+
+#[test]
+fn trusted_host_turn_survives_app_withdrawal_and_release_without_authorizing_app_turns() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@a:x"));
+    let context = broker.open_context(spec("@a:x", "already-open", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    context.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    *host.refuse_turn.lock().unwrap() = Some("Installed release was withdrawn".into());
+
+    let (sink, rx) = collect();
+    context.call(ContextOp::Turn { text: "Must remain refused".into() }, sink).unwrap();
+    assert!(complete(&rx).unwrap_err().contains("withdrawn"));
+    assert!(calls_of(&script, "turn/start").is_empty());
+
+    for (turn, release) in [("host-after-withdrawal", false), ("host-after-release", true)] {
+        if release {
+            broker.release();
+            assert!(!context.is_open());
+        }
+        broker.host_request("turn/start", json!({
+            "session_id": "_main:api:octosense#system", "turn_id": turn,
+            "input": [{"kind": "text", "text": "Check the app route"}],
+        })).expect("the trusted system lane remains available");
+    }
+    let turns: Vec<_> = calls_of(&script, "turn/start").into_iter()
+        .map(|(_, params)| params["turn_id"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(turns, vec!["host-after-withdrawal", "host-after-release"]);
+    assert_eq!(*host.turn_admissions.lock().unwrap(), vec![("rinx".into(), "@a:x".into())]);
+}
+
+#[test]
 fn withdrawn_release_cannot_start_a_turn_in_a_cached_context_or_conversation() {
     for conversation in [false, true] {
         let host = Arc::new(RecordingHost::default());

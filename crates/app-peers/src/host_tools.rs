@@ -981,12 +981,14 @@ pub trait ToolHost: Send + Sync {
         Ok(Vec::new())
     }
 
-    /// Recheck current authorization immediately before each `turn/start`
+    /// Recheck current authorization immediately before each app `turn/start`
     /// is sent, including cached conversations, queued inputs and retries.
     /// Registration and input-enqueue admission do not authorize later turns.
     /// Hosts may use this to reject a withdrawn installed release without
     /// removing the person's saved agent consent. The default preserves
     /// standalone hosts that have no catalog admission policy.
+    /// Trusted Broker::host_request system operations are a separate path;
+    /// they do not require this app's account or release admission.
     fn admit_turn(&self, _app_id: &str, _account: &str) -> Result<(), String> {
         Ok(())
     }
