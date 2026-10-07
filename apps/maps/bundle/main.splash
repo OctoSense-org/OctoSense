@@ -159,6 +159,72 @@ fn photon_hits(body){
     out
 }
 
+// True for one or more digits and nothing else ("1.5", "-3", "1e3" are not).
+// `to_f64` would take "1e3" and " 12", so the code points are checked.
+fn all_digits(s){
+    let chars = s.to_chars()
+    if chars.len() == 0 { return false }
+    for c in chars { if c < 48 || c > 57 { return false } }
+    true
+}
+// The Overpass query for one place's tags, or "" for an id that isn't
+// OpenStreetMap's. A way or relation also asks for its center.
+fn overpass_query(id){
+    let parts = id.split(":")
+    if parts.len() != 2 || !all_digits(parts[1]) { return "" }
+    let kind = ""
+    if parts[0] == "N" { kind = "node" } else if parts[0] == "W" { kind = "way" } else if parts[0] == "R" { kind = "rel" }
+    if kind == "" { return "" }
+    let out = "out tags center;"
+    if kind == "node" { out = "out tags;" }
+    "[out:json][timeout:10];" + kind + "(" + parts[1] + ");" + out
+}
+// The cache file for a place's details; "" for an id that isn't
+// OpenStreetMap's, so no other text from an answer reaches a file name.
+fn cache_name(id){
+    if overpass_query(id) == "" { return "" }
+    "place_" + replace_all(id, ":", "_") + ".json"
+}
+fn blank_detail(){ return {hours: "" phone: "" website: "" cuisine: ""} }
+// A website as the reader opens it: the first of several, over https. Any
+// other scheme (ftp://, javascript:, mailto:, a ":" before the first "/")
+// gives "", so only a web page ever opens.
+fn site_url(s){
+    let u = s.split(";")[0].trim()
+    let rest = u.strip_prefix("https://")
+    if rest == u { rest = u.strip_prefix("http://") }
+    if rest == u {
+        let colon = u.search(":")
+        let slash = u.search("/")
+        if colon >= 0 && (slash < 0 || colon < slash) { return "" }
+    }
+    if rest == "" { return "" }
+    "https://" + rest
+}
+// Overpass's answer for one place as the card's details {hours phone website
+// cuisine}, each "" when the place has none or the answer is not Overpass's.
+// `phone` and `website` win over their `contact:` forms; "pizza;italian_pizza"
+// reads "pizza, italian pizza".
+fn place_details(body){
+    let d = blank_detail()
+    let els = optional(body.parse_json(), "elements", nil)
+    if els == nil || !els.is_array() || els.len() == 0 { return d }
+    let tags = optional(els[0], "tags", nil)
+    if tags == nil { return d }
+    d.hours = text_of(tags, "opening_hours")
+    d.phone = text_of(tags, "phone")
+    if d.phone == "" { d.phone = text_of(tags, "contact:phone") }
+    d.website = site_url(text_of(tags, "website"))
+    if d.website == "" { d.website = site_url(text_of(tags, "contact:website")) }
+    for kind in text_of(tags, "cuisine").split(";") {
+        let k = replace_all(kind, "_", " ").trim()
+        if k == "" { continue }
+        if d.cuisine != "" { d.cuisine = d.cuisine + ", " }
+        d.cuisine = d.cuisine + k
+    }
+    d
+}
+
 fn fix_origin(){
     if origin.picked { return }
     if sys.gps("ok") >= 1 {

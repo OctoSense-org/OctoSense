@@ -122,3 +122,135 @@ fn maps_names_categories_like_a_person_would() {
         ])
     );
 }
+
+const OVERPASS: &str = r#"{"version":0.6,"elements":[{"type":"node","id":10735327671,"tags":{"amenity":"restaurant","name":"Pizza Place","opening_hours":"Mo-Su 11:00-22:00","contact:phone":"+1 408 555 0100","website":"http://pizza.example.com;https://other.example.com","cuisine":"pizza;italian_pizza"}}]}"#;
+
+#[test]
+fn maps_reads_a_places_hours_phone_website_and_cuisine() {
+    let d = maps_model(&format!("place_details('{OVERPASS}').to_json()"));
+    assert_eq!(
+        d,
+        serde_json::json!({"hours": "Mo-Su 11:00-22:00", "phone": "+1 408 555 0100",
+            "website": "https://pizza.example.com", "cuisine": "pizza, italian pizza"})
+    );
+    let none = maps_model(r#"[place_details('{"elements":[]}') place_details('<html/>')].to_json()"#);
+    let blank = serde_json::json!({"hours": "", "phone": "", "website": "", "cuisine": ""});
+    assert_eq!(none, serde_json::json!([blank, blank]));
+}
+
+/// Laid out as Overpass sends it: indented, with its header, and URLs whose
+/// `/` is not escaped. The tags are a real restaurant's, trimmed, with a
+/// `contact:phone` and `contact:website` added (`phone` and `website` win)
+/// and a second cuisine.
+const REAL_OVERPASS: &str = r#"{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.11 87bfad18",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-07T21:16:08Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 2109330888,
+  "tags": {
+    "addr:street": "Santana Row",
+    "amenity": "restaurant",
+    "contact:facebook": "zazilcocinamexicana",
+    "contact:phone": "+1 408-000-0000",
+    "contact:website": "https://contact.example.com/",
+    "cuisine": "mexican; latin_american",
+    "image": "http://www.santanarow.com/images/vendor/Zazil-1.jpg",
+    "name": "Zazil",
+    "opening_hours": "Mo-Th 11:30-22:00; Fr 11:30-23:30; Sa 10:30-23:30; Su 10:30-22:00",
+    "phone": "+1 408-564-4162",
+    "website": "https://zazilsantanarow.com/"
+  }
+}
+
+  ]
+}
+"#;
+
+#[test]
+fn maps_reads_odd_overpass_answers() {
+    let d = maps_model(&format!("place_details('{REAL_OVERPASS}').to_json()"));
+    assert_eq!(
+        d,
+        serde_json::json!({"hours": "Mo-Th 11:30-22:00; Fr 11:30-23:30; Sa 10:30-23:30; Su 10:30-22:00",
+            "phone": "+1 408-564-4162", "website": "https://zazilsantanarow.com/",
+            "cuisine": "mexican, latin american"})
+    );
+    // Only `contact:website`, a website that is not a web address, a place
+    // without tags (Overpass leaves `tags` out), tags that are not an object,
+    // and answers that are not Overpass's; `maps_model` also fails on any
+    // script error they raise.
+    let odd = maps_model(
+        r#"[place_details('{"elements":[{"tags":{"contact:website":"www.contact.example.com"}}]}')
+            place_details('{"elements":[{"tags":{"website":"javascript:alert(1)"}}]}')
+            place_details('{"elements":[{"type":"node","id":10735327671}]}')
+            place_details('{"elements":[{"tags":"x"}]}')
+            place_details('{"elements":["x"]}')
+            place_details('{"elements":"x"}')
+            place_details('{"elements":{"tags":{"phone":"1"}}}')
+            place_details('[1,2]')
+            place_details('')].to_json()"#,
+    );
+    let blank = serde_json::json!({"hours": "", "phone": "", "website": "", "cuisine": ""});
+    assert_eq!(
+        odd,
+        serde_json::json!([
+            {"hours": "", "phone": "", "website": "https://www.contact.example.com", "cuisine": ""},
+            blank, blank, blank, blank, blank, blank, blank, blank
+        ])
+    );
+}
+
+#[test]
+fn maps_asks_overpass_only_for_openstreetmap_ids() {
+    let q = maps_model(r#"[overpass_query("N:123") overpass_query("W:5") overpass_query("R:7") overpass_query("X:1") overpass_query("N:") overpass_query("N:1.5") overpass_query("") cache_name("W:5")].to_json()"#);
+    assert_eq!(
+        q,
+        serde_json::json!([
+            "[out:json][timeout:10];node(123);out tags;",
+            "[out:json][timeout:10];way(5);out tags center;",
+            "[out:json][timeout:10];rel(7);out tags center;",
+            "", "", "", "",
+            "place_W_5.json"
+        ])
+    );
+    // Only digits, as written: `to_f64` would take "1e3" and " 12".
+    let odd = maps_model(
+        r#"[overpass_query("N:-3") overpass_query("N:12a") overpass_query("N:1e3") overpass_query("N: 12")
+            overpass_query("N:1:2") overpass_query("n:5") overpass_query("N") overpass_query("N:10735327671")
+            cache_name("N:10735327671") cache_name("N/../../x:1") cache_name("")].to_json()"#,
+    );
+    assert_eq!(
+        odd,
+        serde_json::json!([
+            "", "", "", "", "", "", "",
+            "[out:json][timeout:10];node(10735327671);out tags;",
+            "place_N_10735327671.json", "", ""
+        ])
+    );
+}
+
+#[test]
+fn maps_opens_websites_over_https() {
+    let u = maps_model(r#"[site_url("www.example.com") site_url("http://a.example.com") site_url("https://b.example.com") site_url("ftp://c.example.com") site_url("")].to_json()"#);
+    assert_eq!(
+        u,
+        serde_json::json!(["https://www.example.com", "https://a.example.com", "https://b.example.com", "", ""])
+    );
+    // Nothing but a web page opens in the reader.
+    let odd = maps_model(
+        r#"[site_url("javascript:alert(1)") site_url("data:text/html,<b>x</b>") site_url("mailto:a@example.com")
+            site_url("tel:+14085550100") site_url("http://") site_url("https://") site_url(" www.a.example.com ; www.b.example.com")
+            site_url("example.com/a:b")].to_json()"#,
+    );
+    assert_eq!(
+        odd,
+        serde_json::json!(["", "", "", "", "", "", "https://www.a.example.com", "https://example.com/a:b"])
+    );
+}
