@@ -70,8 +70,10 @@ Wayland 会话中通常走这条路径；模块回退和覆盖配置见[桌面 R
 Shell 将帧归属到它启动的应用，检查 `agent.octos` 授权和用户同意，再把请求接到模块也使用的
 app-peer broker。模块的 `OctosPeer` 通道则通过 `module_connected` 和
 `on_module_frame` 接入同一路径。工具结果和取消沿该链路返回；进程死亡时，关闭它的上下文，
-让等待中的调用失败，同时保留持久 peer。**当前发布的进程应用没有申请 Agent**：
-Terminal 清单虽然暴露工具，但 `agent.octos` 列表为空。
+让等待中的调用失败，同时保留持久 peer。**Terminal 是唯一带 Agent 的进程应用**：它的
+`native-apps.json` 条目为 Agent 授予了全部四个 `octos.*` 服务；它自己的 Agent 只能调用两个只读工具
+`terminal.read_screen` 和 `terminal.read_scrollback`（`own_tools`）。`native-apps.json`
+中的另一个进程应用 Task 没有 Agent。
 
 ## 3. 运行并追踪脚本 bundle
 
@@ -83,7 +85,7 @@ Terminal 清单虽然暴露工具，但 `agent.octos` 列表为空。
 cargo run --locked --release -p octosense-card-host --bin card-host -- --bundle /path/to/OctoSense/apps/news/bundle --system
 ```
 
-`--system` 接纳内置 `os.*` bundle。Shell 的宿主服务和 Agent UI 需要完整 Shell。
+`--system` 准入内置 `os.*` bundle。Shell 的宿主服务和 Agent UI 需要完整 Shell。
 例如，在 OctoSense 根目录运行 Mail 的演示服务：
 
 ```sh
@@ -160,6 +162,11 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 `notify: true` 排入一条 toast 通知；用户关闭卡片时，宿主的 `glance::dismiss` 删除它。
 上述固定通知工具接受文本参数，script-card API 则用于更丰富的应用界面。
 用户在这些界面上的操作使用应用自己的 API 权限。
+
+在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`，限制更严：它可以指定应用已准入应用包中的模板
+并提供 `initial` 对象，或提交合法的 L0 源码，但不能提交 `script`（见
+[`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs) 中的 `check_agent_publication`）。
+`desktop-v0.1.0-beta.2` 仍接受 Agent 发布的 `script` 卡片。
 
 实现旁的测试直接展示这些约定：`script_apps.rs` 中的
 `a_host_service_tool_runs_as_the_apps_own_request`、`glance_notice.rs` 中的

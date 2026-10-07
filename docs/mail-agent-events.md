@@ -68,7 +68,7 @@ The turn carries the event's ids, sender and subject as untrusted JSON, with Mai
 | `mail.notify` | The fallback when no valid card can be made: a plain notice, same `card_id`. |
 | `mail.skip_event` | Records `no_action`, `duplicate` or `outside_policy`. |
 
-The shell binds every Mail tool call to the signed-in account; that binding and the tool grants, not the guidance, limit the agent. No agent tool sends mail: `mail.propose_send` only prepares a proposal, and only the host's review, approved by a physical touch on an Android phone, authorizes SMTP, even in developer mode or under a standing rule.
+The shell binds every Mail tool call to the signed-in account; that binding and the tool grants, not the guidance, limit the agent. No agent tool sends mail: `mail.propose_send` only prepares a proposal. Only a physical press on the host's review authorizes SMTP: a tap on Android or a click on macOS. Synthetic and remote input are refused, and neither developer mode nor a standing rule can skip the review. The macOS path is **unverified**: no real message has been sent from a Mac.
 
 ## When an event is done
 
@@ -122,10 +122,11 @@ Other mail that needs action gets working `Chip` buttons that switch local views
 ## Limits
 
 - On Android, an enabled, consented Mail account also registers a persisted, network-constrained JobScheduler job: a 15-minute period with a 5-minute flex window. Android may delay it for Doze, quotas or connectivity; this is periodic polling, not push. Force-stop prevents jobs until the person opens the app again. A job starts the same Rust host without an Activity, runs for at most four minutes, and can be stopped earlier by Android. No foreground-service status notification is used. See [ADR 0008](adr/0008-quiet-android-mail-jobs.md).
-- Android keeps a bounded private outbox for Mail publications. Only cards published with `notify: true` produce native Android notifications, after the model applies the provisioned importance policy. Notification permission and channel settings still apply. Tapping a notification restores the original, validated card for its original active account; it cannot approve a reply. Draft-bound cards still read the authoritative saved draft. Other apps' cards remain in memory unless they have their own persistence.
+- Android keeps a bounded private outbox for Mail publications. Only cards published with `notify: true` produce native Android notifications, after the model applies the provisioned importance policy. Notification permission and channel settings still apply. Tapping a notification restores the original, validated card for its original active account; it cannot approve a reply. Draft-bound cards still read the authoritative saved draft.
+- Installed apps' account-bound cards share this outbox and come back after a restart, on Android and on the desktop (`mail_background.rs`). Other system apps' cards stay in memory unless their app persists them.
 - Glance scrolls all retained cards; a fifth Mail card is admitted and cards beyond the first six remain reachable. Publication still has a six-per-minute rate limit. Payload-retention budgets (8 MiB per app, 32 MiB overall) and expiry bound the working set independently of the viewport; under pressure older cards retire while the new valid publication is kept. Mail drafts and source messages remain in the Mail service.
 - Events queue even while processing is off, and only the worker removes them. Once 128 are waiting, every Inbox sync that finds new mail fails without moving the cursor, the Mail window's included, until processing drains the queue.
-- Not yet: events for other apps, scheduled triggers, per-app model choice, kernel-native skills, the budget and Settings UI of [ADR 0002](adr/0002-event-driven-app-agents.md), and arbitrary remote actions. Calendar booking is available through its granted tools after a human request or explicit scheduling policy; `sys.link` only opens the current publication’s declared own-app route.
+- Not yet: events for apps other than Mail and installed Gmail apps ([connected-account service](../crates/oauth-service/README.md#new-mail-and-glance)), scheduled triggers, per-app model choice, kernel-native skills, the budget and Settings UI of [ADR 0002](adr/0002-event-driven-app-agents.md), and arbitrary remote actions. Calendar booking is available through its granted tools after a human request or explicit scheduling policy; `sys.link` only opens the current publication’s declared own-app route.
 
 ## Reading the code
 

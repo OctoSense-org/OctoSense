@@ -89,7 +89,7 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 
 | Feature | Default | Effect |
 | --- | --- | --- |
-| `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps) and the Mail, News, Calendar and AI providers host services. Without it the build has no App Hub and no system apps. |
+| `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps); the Mail, News, Calendar and AI providers host services; the connected-account services (`auth`, `github`, `gmail`, `gcalendar`); and the Markdown editor GitHub Notes uses (`octosense-markdown-editor`). Without it the build has no App Hub and no system apps. |
 | `octos-core` | on | The octos kernel service (`octosense-kernel`, from `../crates/kernel`) and the app-agent broker (`octosense-app-peers`): the one kernel AppCard, Rinx and other consumers share, configured by AI providers. Always on for Android and iOS. Leave it out with `--no-default-features --features app-hub` (and whatever else you want). |
 | `app-rinx` | on | Links [Rinx](https://github.com/hagency-org/Rinx), the Matrix client, as a module; implies `octos-core` (its assistant is the shell's). |
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |

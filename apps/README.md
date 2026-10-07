@@ -524,9 +524,11 @@ account-scoped read/sync, publication, event-decision and draft/proposal tools.
 `mail.peek` does not mark read; `mail.message` remains a UI API. The UI
 `mail.send` path now prepares a host review, not an unapproved SMTP call. No
 agent tool can approve or send. [Composed Mail cards](../docs/mail-composable-cards.md)
-trace durable editing, contextual chat and the Android-only physical approval
-boundary; integrated paired-model phone acceptance remains unverified. The peer's
-workspace does not mount Mail's host database or credential vault. Calendar
+traces durable editing, contextual chat and the approval boundary: only a
+physical press (a tap on Android or a click on macOS) sends, and synthetic
+or remote input is refused. The macOS path and integrated paired-model phone
+acceptance remain **unverified**. The peer's workspace does not mount Mail's
+host database or credential vault. Calendar
 is a working example of an agent reading/writing its app data through declared
 Rust tools; its script window currently only explains how to ask the agent.
 See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a-tool-into-app-data-and-glance).

@@ -1,4 +1,4 @@
-# 联网应用原生验收
+# 连接账户应用的原生验收
 
 [English](README.md) | 简体中文
 
@@ -45,15 +45,17 @@ Notes 验证选中账户、Unicode 编辑／预览、重启、分页及空仓库
 未保存修改保护、准确主机审核／取消、新旧文件提交、SHA 冲突、响应丢失后不自动重试，
 以及离线重启。四次明确的合成写入尝试与提供商记录逐项核对。响应丢失案例故意模拟
 远程提交已发生但回复丢失，应用必须保留未确认草稿，等待用户核对。
+这些写入检查早于 [#356](https://github.com/OctoSense-org/OctoSense/pull/356)。在 `main` 上，原生审阅界面只接受亲手点按的
+**Approve & Save**，所以驱动的合成点击在那里无法批准提交。这一结论来自代码，驱动尚未在 `main` 上运行。
 
 每次运行在 `target/connected-notes-e2e/run-*` 保留源码／二进制／PNG 摘要、控件快照、
 原生日志和回执，也保留失败。驱动只关闭自己创建的进程并清理临时配置。
 视觉验收还必须逐张检查原始 PNG。`native.py` 驱动 Makepad instrument；输入事件是
-合成事件，不是物理批准。
+合成事件，不是亲手点按的批准。
 
 小型主机不启动生产代理内核、新邮件收集器或 Glance。Inbox／Calendar 主机流程使用
 嵌入实际 Shell 的 `connected-inbox-e2e`。提供商替身不能证明真实 OAuth、真实投递、
-Android／Windows／Linux 原生界面、公开目录发布或真人批准。
+Android／Windows／Linux 原生界面、公开目录发布或亲手点按的批准。
 
 ## 平台证据（2026-10-06）
 
@@ -92,8 +94,8 @@ p50/p95/最大值。这里计量的是包含原生帧等待和状态轮询的 Ma
 36 轮及独立 120 轮密集测试，保留精确草稿、原生截图检查、耗时边界与内存增长记录。
 
 Calendar 和 Inbox 的独立驱动及证据位于 App Design Flow：
-[Calendar](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/google-calendar/ACCEPTANCE.md)
-及 [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/inbox/README.zh-CN.md)。
+[Calendar（英文）](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)
+及 [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/inbox/README.zh-CN.md)。
 两者主机不同：Calendar 使用提供商主机，Inbox 使用完整 Shell 并实际调用 DeepSeek，
 不能将耗时与内存数值合成同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)
 包含修正监控状态后的 Inbox 包，三者均通过重开和篡改拒绝，未修改公开目录。

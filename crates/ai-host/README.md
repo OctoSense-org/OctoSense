@@ -20,7 +20,11 @@ One entry point for what every OctoSense shell (desktop/, phone/) hosts:
 - **native apps' assistant access** (Rinx ADR 0007): a scoped
   `crates/app-peers` service offered to each granted native module instance
   at creation (`offer`), and a module's own peer link
-  (`module_peer::ModulePeerLink`, which no module uses yet).
+  (`module_peer::ModulePeerLink`). The shell's module host serves that link
+  to every module that opens Makepad's `OctosPeer`: App Hub, Calculator,
+  Clock, Notes, Reminders and Weather, and the Terminal when it runs
+  in-process. In a checkout build on macOS or Windows the Terminal runs as its
+  own process and reaches its agent over the hub instead.
 
 ```rust
 use octosense_ai_host as ai_host;
@@ -49,7 +53,9 @@ ai_host::shutdown();
 `octos-kernel` on a desktop,
 `Program(path)`, `None`; `KernelSource::platform()` picks); `qr_import:
 QrImport` (`platform()` or `paste_only()`); `policy: Policy`
-(`Policy::shipped()` grants Rinx the `octos.*` services).
+(`Policy::shipped()` grants each native app the `octos.*` services listed in
+its `native-apps.json` entry (`agent.octos`), through the generated
+`src/native_agents.rs`).
 
 Features: `octos-core` (the kernel, app-peers broker, llm restart; native
 mobile targets always have it — `cfg(kernel)`, set by build.rs), `llm`
@@ -111,7 +117,7 @@ only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
   scope in octos's `Scope` shape under the top-level `research` object, App
   Hub #26's shape) is, **temporarily**, granted only to system apps (`os.*`)
   until the host reads App Hub's verified grant. The shells' App Hub pin
-  (`d74b1f3f`) already includes #26; the code still keeps the `os.*` gate
+  (`d2ca3a30`) already includes #26; the code still keeps the `os.*` gate
   (`system_app_only`). No system app declares `research` or `crawl` yet.
 - `ToolboxExecutor`: the relay's executor for the `toolbox` owner. It checks
   the calling app's grant again (a forged `toolbox.deep_crawl` is

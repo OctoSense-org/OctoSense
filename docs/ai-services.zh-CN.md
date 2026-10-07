@@ -89,7 +89,7 @@ flowchart TB
 | **应用从不使用内核协议。** | 应用只能经由 app-peers 代理访问自己的 Agent，代理在每次调用上标注应用的身份。 |
 | **最小权限，按精确名称。** | 应用得到的 `octos.*` 服务，必须是它声明了、确实存在、并且宿主授予了的。`octos.` 或 `octos.admin` 不授予任何权限（`crates/app-peers/src/contract.rs`、`hosted.rs`）。 |
 | **审批属于用户。** | 应用的 peer 提出的每一次审批都交给 Shell 的审批路由；应用只收到 `approval/handled_by_host`。系统 Agent 不能批准。开发者模式只能由用户打开，它会批准所覆盖应用经路由的调用（[判定顺序](architecture.zh-CN.md#5-审批)）。 |
-| **邮件只有在用户确认确切内容后才会发出。** | 没有哪个 Agent 工具能发送邮件，`mail.send` 也会拒绝。只有在宿主的审阅界面（展示确切的发件人、收件人、主题和正文）上亲手触摸 Approve & Send，才能授权发送；开发者模式和常设规则都不能。目前只有 Android 触摸屏能这样确认（`mail_review.rs`，[可组合的邮件卡片](mail-composable-cards.zh-CN.md)）。 |
+| **邮件只有在用户确认确切内容后才会发出。** | 没有哪个 Agent 工具能发送邮件，`mail.send` 也会拒绝。宿主的审阅界面展示确切的发件人、收件人、主题和正文，只有亲手点按其中的 Approve & Send 才能授权发送：Android 上触摸屏幕，macOS 上用鼠标或触控板点击（在 macOS 上**未验证**，还没有实际发送过邮件）。合成输入和远程输入都会被拒绝，开发者模式和常设规则也不能批准（`mail_review.rs`，[可组合的邮件卡片](mail-composable-cards.zh-CN.md)）。 |
 | **每一轮都带着来源。** | Shell 把这一轮由谁发起标注在它的工具调用和审批上（[见下文](#调用)）。 |
 | **记忆和文件属于一个应用、一个账号。** | 每个 peer 有自己的记忆命名空间 `app/<app>/acct-<hash>`，最多只能访问自己账号的文件夹。 |
 
@@ -97,15 +97,15 @@ flowchart TB
 
 ## 各类应用目前能用什么
 
-有四类应用拥有 Agent：通过注入服务的 Rinx；通过 peer link 的其他带 Agent 的原生应用（Calculator、Clock、Notes、Reminders、Weather 和 Terminal，见 [architecture.zh-CN.md](architecture.zh-CN.md#应用与它自己的-agent)）；除 AI providers 以外的系统脚本应用；以及商店脚本应用。**部分可用**表示在所注明的限制内可用；**–** 表示不适用。
+有四类应用拥有 Agent：通过注入服务的 Rinx；通过 peer link 的其他带 Agent 的原生应用（App Hub、Calculator、Clock、Notes、Reminders、Weather 和 Terminal，见 [architecture.zh-CN.md](architecture.zh-CN.md#应用与它自己的-agent)）；除 AI providers 以外的系统脚本应用；以及商店脚本应用。**部分可用**表示在所注明的限制内可用；**–** 表示不适用。
 
 | | Rinx | 其他原生应用 | 系统脚本应用 | 商店脚本应用 |
 | --- | --- | --- | --- | --- |
 | 用户允许后拥有 Agent | 可用，在 Rinx 打开且已登录期间 | 可用，在应用打开期间 | 可用，获准后即准备，此后每次启动时也会准备 | 可用，前提是应用包声明了 Agent（`octos.*`、`agent` 块或 `tools.json`）；获准后即准备，此后每次启动时也会准备 |
 | 应用自己的界面与 Agent 对话 | 部分可用：`OctosAppService` 只用于小程序的私有上下文；用户在 “Ask Rinx” 面板中对话 | 可用：`OctosPeer`，但随附的应用只用它提供工具 | –（都没有声明 `octos.*`） | 可用：[`octos` 服务](#脚本应用与-octos-服务) |
-| Agent 使用应用自己的工具 | 尚未支持：它的工具只服务于 AI 面板 | 可用：只读工具，在已打开的窗口中运行 | 可用：在应用的宿主服务或 Shell 的通知服务上运行 | 尚未支持：没有宿主服务或应用执行器来运行它们 |
-| 每一轮都附带 `AGENT.md` 和技能 | – | – | 可用（只有邮件附带了它们） | 可用 |
-| 由事件启动 Agent | 尚未支持 | 尚未支持 | 部分可用：只有邮件的新邮件触发器 | 尚未支持 |
+| Agent 使用应用自己的工具 | 尚未支持：它的工具只服务于 AI 面板 | 可用：只读工具，在已打开的窗口中运行 | 可用：在应用的宿主服务或 Shell 的通知服务上运行 | 部分可用：只有用 `host_method` 映射到共享服务的工具能运行，并在该服务上执行（见 [architecture.zh-CN.md 第 4 节](architecture.zh-CN.md#中转)） |
+| 每一轮都附带 `AGENT.md` 和技能 | – | – | 可用（邮件两者都附带，日历只附带 `AGENT.md`） | 可用 |
+| 由事件启动 Agent | 尚未支持 | 尚未支持 | 部分可用：只有邮件的新邮件触发器 | 部分可用：新的 Gmail 邮件，前提是应用声明了 `auth` 和 `gmail`，它的 `agent` 块设置了 `background: true` 并列出 `<应用短名>.new_message`；应用短名是应用 id 的最后一段，所以 Inbox Assistant 列出的是 `inbox.new_message`（见[导读第 6 节](architecture-walkthrough.zh-CN.md#6-用户在哪里对话)） |
 | glance 屏幕上的卡片 | 尚未支持 | 尚未支持 | 可用，需 `glance` 权限；邮件的卡片可以带回复草稿 | 可用，需 `glance` 权限 |
 | 就自己的卡片与 Agent 对话 | 尚未支持 | 尚未支持 | 可用：Card / Chat（邮件回复为 Email / Chat） | 可用：Card / Chat |
 | 一次性模型调用 | – | – | 可用，需 `model` 权限（相册在用） | 可用，需 `model` 权限 |

@@ -89,7 +89,7 @@ Keys live where the kernel reads them (`vault.rs`): in the login keychain on mac
 | **Apps never speak the kernel protocol.** | Apps reach their agents only through the app-peers broker, which stamps the app's identity on every call. |
 | **Least privilege, by exact name.** | An app gets the `octos.*` services it declares, that exist and that the host grants. `octos.` or `octos.admin` grants nothing (`crates/app-peers/src/contract.rs`, `hosted.rs`). |
 | **Approvals belong to the person.** | Every approval an app's peer raises goes to the shell's router; the app hears only `approval/handled_by_host`. The system agent cannot approve. Developer mode, which only the person turns on, approves routed calls for the apps it covers ([the order](architecture.md#5-approvals)). |
-| **Mail leaves only when the person approves the exact message.** | No agent tool sends mail, and `mail.send` refuses. Only a physical touch on Approve & Send, in the host's review of the exact From, To, subject and body, authorizes sending; developer mode and standing rules cannot. That works on Android touchscreens only for now (`mail_review.rs`, [Composed Mail cards](mail-composable-cards.md)). |
+| **Mail leaves only when the person approves the exact message.** | No agent tool sends mail, and `mail.send` refuses. The host's review shows the exact From, To, subject and body, and only a physical press on its Approve & Send authorizes sending: a tap on Android or a click on macOS (**unverified** on macOS, where no real message has been sent). Synthetic and remote input are refused, and developer mode and standing rules cannot approve (`mail_review.rs`, [Composed Mail cards](mail-composable-cards.md)). |
 | **A turn carries its origin.** | The shell stamps who started a turn on its tool calls and approvals ([below](#the-calls)). |
 | **Memory and files belong to one app and account.** | Each peer has its own memory namespace, `app/<app>/acct-<hash>`, and at most its own account's folder. |
 
@@ -97,15 +97,15 @@ How tools are declared, granted and relayed is in [architecture.md §4](architec
 
 ## What each kind of app can use today
 
-Four kinds of app have agents: Rinx, through the injected service; the other native apps with an agent (Calculator, Clock, Notes, Reminders, Weather and the Terminal), through the peer link ([architecture.md](architecture.md#an-app-and-its-own-agent)); the system script apps, all but AI providers; and store script apps. **Partly** means within the limits named; **–** means it does not apply.
+Four kinds of app have agents: Rinx, through the injected service; the other native apps with an agent (App Hub, Calculator, Clock, Notes, Reminders, Weather and the Terminal), through the peer link ([architecture.md](architecture.md#an-app-and-its-own-agent)); the system script apps, all but AI providers; and store script apps. **Partly** means within the limits named; **–** means it does not apply.
 
 | | Rinx | Other native apps | System script apps | Store script apps |
 | --- | --- | --- | --- | --- |
 | An agent, once the person allows it | Works, while Rinx is open and signed in | Works, while the app is open | Works, prepared once allowed and at each startup | Works, if its bundle declares one (`octos.*`, an `agent` block or `tools.json`); prepared once allowed and at each startup |
 | Its own UI talks to its agent | Partly: `OctosAppService`, only for its mini apps' private contexts; the person uses the "Ask Rinx" panel | Works: `OctosPeer`, though the shipped apps only serve tools over it | – (none declares `octos.*`) | Works: [the `octos` service](#script-apps-and-the-octos-service) |
-| Tools of its own for its agent | Not yet: its tools serve only the AI pane | Works: read tools, run in the open window | Works: run on its host service or the shell's notice service | Not yet: no host service or app executor runs them |
-| `AGENT.md` and skills sent with every turn | – | – | Works (only Mail ships them) | Works |
-| Events that start its agent | Not yet | Not yet | Partly: Mail's new-mail trigger only | Not yet |
+| Tools of its own for its agent | Not yet: its tools serve only the AI pane | Works: read tools, run in the open window | Works: run on its host service or the shell's notice service | Partly: only tools mapped with `host_method` run, on the shared service they name ([architecture.md §4](architecture.md#the-relay)) |
+| `AGENT.md` and skills sent with every turn | – | – | Works (Mail ships both, Calendar only an `AGENT.md`) | Works |
+| Events that start its agent | Not yet | Not yet | Partly: Mail's new-mail trigger only | Partly: new Gmail messages, for an app that declares `auth` and `gmail` and whose `agent` block sets `background: true` and lists `<app namespace>.new_message`; the app namespace is the last segment of the app id, so Inbox Assistant lists `inbox.new_message` ([walkthrough §6](architecture-walkthrough.md#6-where-the-person-talks)) |
 | Cards on the glance screen | Not yet | Not yet | Works, with `glance`; Mail's can carry a reply draft | Works, with `glance` |
 | Chat about one of its cards | Not yet | Not yet | Works: Card / Chat (Email / Chat for a Mail reply) | Works: Card / Chat |
 | One-shot model calls | – | – | Works, with `model` (Photos) | Works, with `model` |

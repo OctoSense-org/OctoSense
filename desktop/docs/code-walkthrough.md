@@ -83,8 +83,11 @@ consent, and connects requests to the same app-peer broker used by modules.
 Module `OctosPeer` channels enter this link through `module_connected` and
 `on_module_frame`. Tool outcomes and cancellations travel back through the link;
 when a process dies, its contexts close and pending calls fail while the durable
-peer remains. **No shipped process app currently requests an agent:** Terminal's
-manifest exposes tools but has an empty `agent.octos` list.
+peer remains. **Terminal is the only process app with an agent:** its
+`native-apps.json` entry grants all four `octos.*` services, and its own agent
+may call only its read tools, `terminal.read_screen` and
+`terminal.read_scrollback` (`own_tools`). Task, the other process app in
+`native-apps.json`, has no agent.
 
 ## 3. Run and follow a script bundle
 
@@ -185,6 +188,12 @@ Both render under the publishing app's policy. `notify: true` queues a toast;
 the host's `glance::dismiss` removes a card closed by the person. The fixed notice
 tools above accept text arguments; the script-card API serves richer app-owned
 surfaces. A person's action on such a surface uses the app's API permissions.
+
+An agent's tool call that resolves to `glance.publish` is narrower on `main`. It
+may name a template from the app's admitted bundle with an `initial` object, or
+send valid L0 source, but never a `script` (`check_agent_publication` in
+[`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs)).
+`desktop-v0.1.0-beta.2` still accepts an agent's `script` card.
 
 The tests beside these implementations show the contracts directly:
 `a_host_service_tool_runs_as_the_apps_own_request` in `script_apps.rs`,

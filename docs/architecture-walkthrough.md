@@ -35,7 +35,7 @@ Where an app runs decides how it reaches its agent and where its tools execute. 
 
 To run the desktop, follow its README's [Build and run](../desktop/README.md#build-and-run), which stages the pinned kernel with `python3 tools/kernel-artifact.py --host --stage target/release`.
 
-Ordinary connected apps use the same Card runner. GitHub Notes, Inbox Assistant and Google Calendar declare `auth` plus a business service, and `storage.accounts: true`. The host binds their peer to the selected opaque connection. Follow the [OAuth/service walkthrough](../crates/oauth-service/README.md) for sign-in, explicit `host_method` tool mappings, durable Gmail events and admitted Glance templates. These apps use provider data rather than the built-in Calendar file; live provider/device acceptance is still pending.
+Ordinary connected apps use the same Card runner. GitHub Notes, Inbox Assistant and Google Calendar declare `auth`, the data family they use (`github`, `gmail` or `gcalendar`) and `storage.accounts: true`. The host binds each app's peer to its active connection, which the app sees only as an opaque handle. Follow the [OAuth guide](../crates/oauth-service/README.md) for sign-in, explicit `host_method` tool mappings, durable Gmail events and admitted Glance templates. Google Calendar reads the person's Google calendar, not the built-in Calendar's `events.json`. Live GitHub and Google sign-in has passed on macOS; GitHub writes, Gmail sends and device acceptance are still pending.
 
 ## 3. Find who owns the kernel
 
@@ -122,7 +122,15 @@ Every surface but the system chat opens the person's lane:
 
 Not yet: no shipped app opens the person's lane from its own UI; the shell's panel and cards are the way in.
 
-The trigger decides how far approvals trust a turn. Only the shell's own surfaces, the "Ask &lt;app&gt;" panel and the system chat, stamp `TurnTrigger::Person`; an in-process module could through the injected service, but none does. An app's `"trigger": "person"` becomes `AppSaysPerson` (`TurnTrigger::from_args`), which the relay hands the router as an app run (`trigger_of` in `host_tools/relay.rs`); a card's chat gets the same stamp. Rinx's mini apps send a bare `ContextOp::Turn`, which is `Unknown`; standing rules skip it. Mail's new-mail events ([agent_events.rs](../crates/shell/src/agent_events.rs)) run in this lane as `TurnTrigger::Incoming`; no other app has events yet.
+The trigger decides how far approvals trust a turn. Only the shell's own surfaces, the "Ask &lt;app&gt;" panel and the system chat, stamp `TurnTrigger::Person`; an in-process module could through the injected service, but none does. An app's `"trigger": "person"` becomes `AppSaysPerson` (`TurnTrigger::from_args`), which the relay hands the router as an app run (`trigger_of` in `host_tools/relay.rs`); a card's chat gets the same stamp. Rinx's mini apps send a bare `ContextOp::Turn`, which is `Unknown`; standing rules skip it. Mail's new-mail events ([agent_events.rs](../crates/shell/src/agent_events.rs)) run in this lane as `TurnTrigger::Incoming`, and so do an installed Gmail app's new-mail events ([connected_events.rs](../crates/shell/src/connected_events.rs)). The shell delivers an installed app's events only when all of these hold:
+
+- the person allowed the app's agent;
+- its installed release is still admitted in the current signed local catalog (see the withdrawal checks in [section 7](#7-trace-a-tool-to-rust-code));
+- its admitted `agent` block sets `background: true` and lists the trigger `<app namespace>.new_message`, where the app namespace is the last segment of the app id (Inbox Assistant's trigger is `inbox.new_message`);
+- it declares `auth` and `gmail`;
+- its active Google connection can read Gmail.
+
+No other app has events yet.
 
 For "Ask Calendar", the reply streams back through the context's `EventSink`, and the panel's follower (`OctosContext::subscribe`) hears both lanes. Not yet: a script app gets no pushed events; its `octos.turn.start` returns the finished reply.
 
@@ -137,7 +145,7 @@ Follow `calendar.events` from its declaration to the file it reads:
 3. **Registered** by `register_tools` in `broker.rs`, with what `ShellToolHost::declarations` ([host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)) returns.
 4. **Called.** octos sends `peer/tool/call` on the registering link. The broker stamps the account, context and caller into a `HostToolCall` ([app-peers/src/host_tools.rs](../crates/app-peers/src/host_tools.rs)), which `ShellToolHost::tool_call` queues for the host relay. The UI normally pumps it; Android Mail jobs can pump the same synchronized relay without a window.
 5. **Checked** by `Relay::handle` ([relay.rs](../crates/shell/src/host_tools/relay.rs)): the grant, consent, a signed-out account, the arguments' size and `input_schema`, then the caller's budget (by default 32 calls a turn and 1000 a day).
-6. **Run.** `HostServiceExecutor::execute` dispatches a `ServiceCall` to App Hub's service registry as `os.calendar`, with no sheet. `CalendarService::call` ([apps/calendar/host-service/src/lib.rs](../apps/calendar/host-service/src/lib.rs)) loads `<apps root>/.host/calendar/events.json` and filters it by `from`, `to` and `limit`.
+6. **Run.** `HostServiceExecutor::execute` dispatches a `ServiceCall` to App Hub's service registry as `os.calendar`, with no sheet. `CalendarService::call` ([apps/calendar/host-service/src/lib.rs](../apps/calendar/host-service/src/lib.rs)) loads `<apps root>/.host/calendar/events.json` (`<apps root>` is the `apps/` folder in the OctoSense home) and filters it by `from`, `to` and `limit`.
 7. **Answered.** `script_apps::poll` takes the reply from App Hub's queue, `checked_reply` (in `relay.rs`) checks it against `output_schema` and a size cap, and the `ToolReply` sends `peer/tool/result` once.
 
 `calendar.events` only reads, so nobody is asked. `calendar.remove_event` (`destructive`, `confirm: host`) is gated in octos first: the kernel raises a `host_tool` approval, which the broker hands to `ToolHost::host_tool_approval`, and only an approved call arrives.
@@ -150,7 +158,7 @@ The relay routes every call by the tool's owner:
 
 | Owner | Executor |
 | --- | --- |
-| Script app, `implemented_by: "host-service"` | `HostServiceExecutor`: the app's host service (`calendar`, `mail`, `news`), or the shell's notice service for `<app>.notify` |
+| Script app, `implemented_by: "host-service"` | `HostServiceExecutor`: the app's host service (`calendar`, `mail`, `news`), the shell's notice service for `<app>.notify`, or the shared service a store app's tool names in `host_method` (`github`, `gmail`, `gcalendar`, `glance`). For `github`, `gmail` and `gcalendar` it injects the app's active connection. |
 | Script app, `implemented_by: "app"` | None yet: the call is refused `app_tool_unavailable` |
 | Native app | Its open instance: `OctosPeer::serve_tools` on its peer link, else its AI bus service ("Open … first" when closed). An executor from `OctosAppService::set_tool_executor` comes first. |
 | `terminal.run` (system agent only) | The visible Terminal, over the AI bus, after a sheet with the exact command |
@@ -170,7 +178,7 @@ First-use consent, a tool grant and a per-call approval are separate checks. For
 
 Decisions are audited in `logs/approvals-audit.jsonl`, and the deadlines are `DEFAULT_PROMPT_DEADLINE` (10 minutes) and `EXPIRY_GRACE` (30 seconds) in `app-peers/src/host_tools.rs`. The system agent cannot approve: octos refuses its `peer_respond` for approvals. What each step means is in [architecture.md §5](architecture.md#5-approvals).
 
-Sending mail never reaches this router. `mail.propose_send` only prepares the exact message; the host's review in the card (`mail_review.rs`) calls `drafts::approve_and_send` only after a physical touch (`trusted_user_gesture`, Android only for now), and developer mode cannot stand in for it.
+Sending mail never reaches this router. `mail.propose_send` only prepares the exact message; the host's review in the card (`mail_review.rs`) calls `drafts::approve_and_send` only after a physical press (a tap on Android or a click on macOS) whose down and up events are both trusted (`trusted_user_gesture`). Synthetic and remote input are refused, and developer mode cannot stand in for that press. The macOS path is **unverified**: no real message has been sent from a Mac.
 
 ## 8. Where the data lives
 
@@ -179,9 +187,9 @@ An app's data lives in several stores, each with one owner:
 | Data | Where | How an agent reaches it |
 | --- | --- | --- |
 | The account folder | `apps/<app id>/accounts/<account hash>/`, or `accounts/device/` ([app_storage/mod.rs](../crates/shell/src/app_storage/mod.rs)) | It is the peer's workspace, fixed when the peer is created. The person's lane runs in its own `contexts/<id>/` and reads the folder through `read_parent` or the host's `files.*` tools ([files.rs](../crates/shell/src/host_tools/files.rs): Unix only; 128 KiB a read, 500 entries, 100 matches). |
-| A host service's data | App Hub's host directory, `<apps root>/.host/`: Calendar's events, Mail's messages and reply drafts (`drafts.rs`) | Only through that service's tools; no workspace includes it. |
+| A host service's data | App Hub's host directory, `<apps root>/.host/`: Calendar's events, Mail's messages and reply drafts (`drafts.rs`); under `oauth/`, the connected accounts' metadata (`connections.json`), Gmail drafts and event state, Google Calendar caches, and the operator's optional registration files: `clients.json`, which replaces the build's OAuth client registrations, and `backends.json`, which registers apps' own backends | Only through that service's tools (none exposes the registration files); no workspace includes it. |
 | Transcripts and memory | octos, under the namespace `app/<app>/acct-<tag>` | The agent's own. `<tag>` is an FNV-1a hash (`account_tag`); the folder name is a different, SHA-256 hash (`account_hash`). |
-| Secrets | App secrets: the keychain on macOS and iOS (indexed in `<home>/secrets/<app id>/`), elsewhere files there. Provider keys: the macOS keychain, elsewhere files under the kernel's core directory (owner-only, except on Windows) | Never. `app_storage::check` refuses a workspace that contains or links to them. |
+| Secrets | App secrets: the keychain on macOS and iOS (indexed in `<home>/secrets/<app id>/`), elsewhere files there. AI provider keys: the macOS keychain, elsewhere files under the kernel's core directory (owner-only, except on Windows). OAuth tokens: the keychain on macOS and iOS, files encrypted with an Android Keystore key on Android, the OS credential service on Windows and Linux (`oauth-service/src/host.rs`) | Never. `app_storage::check` refuses a workspace that contains or links to them. |
 
 `agent_workspace_in` ([host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)) gives the folder to every native app with `octos.*` services, even one that declares `storage.agent_workspace: "none"`, and to every script app that does not. Calendar's agent gets `apps/os.calendar/accounts/device/`, but its events are not there: `calendar.events` reads them from `.host/calendar/events.json` and hands the model JSON.
 
@@ -212,11 +220,12 @@ A peer is stored state and a turn is a group of Tokio tasks in octos; threads be
 | --- | --- | --- |
 | Shell UI | The Makepad UI thread: drawing, events, and `host_tools::pump` with the relay | `lib.rs`, `host_tools/mod.rs` |
 | Mail events | Two `std::thread`s: independent collection and serialized delivery with per-event retries. Android permits them while foregrounded or inside a bounded OS job. | `agent_events.rs`, `mail_background.rs` |
+| Connected Gmail events | One `std::thread`, `connected-inbox-events`, which Android permits only in the foreground or inside a bounded OS job. It polls each allowed (app, connection) every 300 seconds, every 2 seconds while events are pending, and 60 seconds after a failure. Each event's turn runs on the app's peer, which gets 180 seconds to finish it. | `connected_events.rs` |
 | Android Mail job | A Java JobService worker loads the same Rust host without an Activity and pumps its synchronized relay; one network-constrained periodic job, no second kernel or peer. | `phone/src/android_mail.rs`, `MailJobService.java`, `runtime_host.rs` |
 | System chat | One `std::thread`, polling the kernel with `link::poll_for` | `system_chat/mod.rs`, `link.rs` |
 | Kernel service | One Tokio runtime, built on first use: 2 workers, 8 MiB stacks; one supervisor task per generation | `kernel/src/lib.rs` `Inner::runtime`, `kernel.rs` `supervise` |
 | App broker | A runtime per `Broker::new`, with 1 worker: the link loop, requests, retries, deadlines | `app-peers/src/broker.rs` |
-| Host services | Called on the caller's thread by App Hub's `services::dispatch`: for a tool call, the relay pump caller (UI or Android Mail job), where Calendar answers. Mail (`work` threads, `mail-fetch`) and News (`news-fetch`) run network work on their own threads. | `script_apps.rs`, `apps/*/host-service/` |
+| Host services | Called on the caller's thread by App Hub's `services::dispatch`: for a tool call, the relay pump caller (UI or Android Mail job), where Calendar answers. Mail (`work` threads, `mail-fetch`) and News (`news-fetch`) run network work on their own threads. The connected-account services (`auth`, `github`, `gmail`, `gcalendar`) start a thread for each request's network work. | `script_apps.rs`, `apps/*/host-service/`, `crates/oauth-service/` |
 | octos, desktop and Android | Its own process, on Tokio's default runtime: one worker per CPU core (`ServeCommand::execute`) | octos `crates/octos-cli/src/commands/serve.rs` |
 | octos, OpenHarmony | `serve_io` on the kernel service's runtime, over `tokio::io::duplex` | `kernel.rs` `start` |
 | An octos turn | A spawned task behind a `oneshot` start barrier, then `run_standalone_turn` and its own tasks | octos `crates/octos-cli/src/api/ui_protocol_transport.rs` |
@@ -256,4 +265,4 @@ cargo test --locked -p octosense-kernel -p octosense-app-peers \
 
 The real-kernel tests (`crates/app-peers/tests/real_kernel.rs` and the scenario tests) print a note and pass when no kernel binary is set, so a green run is not integration evidence; the [app-peers README](../crates/app-peers/README.md#testing) shows how to give them one. Visible UI, real providers and devices need runs of their own.
 
-Walkthroughs of the other repositories, at fixed revisions: [Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/218b25d2460d64f843932f67d419467618464fb9/docs/CODE-WALKTHROUGH.md), [App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d5b47a2ae9eb98020feca26b7c895a3cf797dc1/docs/CODE-WALKTHROUGH.md), [Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/2cc5ef37d7d6a3d2992673389ce74488f7bb2d87/docs/architecture-walkthrough.md) and [octos](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/octosense-integration-walkthrough.md).
+Walkthroughs of the other repositories, at fixed revisions: [Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/218b25d2460d64f843932f67d419467618464fb9/docs/CODE-WALKTHROUGH.md), [App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/docs/CODE-WALKTHROUGH.md), [Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/2cc5ef37d7d6a3d2992673389ce74488f7bb2d87/docs/architecture-walkthrough.md) and [octos](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/octosense-integration-walkthrough.md).

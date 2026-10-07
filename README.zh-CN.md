@@ -42,7 +42,7 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 想按顺序读源码，请从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充了各个产品的运行方式。
 
-联网 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** 现有 beta.2 下载包未包含这些信息；运营者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md)构建。普通应用用户应拿到已配置的发行包。[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)已在收据记录的构建上通过，但不代表 Google 已完成公开验证。Android 上的 Google 登录还需要原生授权适配器。
+连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** 现有 beta.2 下载包未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
 
 ## 整体如何运作
 
@@ -169,7 +169,7 @@ sequenceDiagram
 
 `<app>.notify` 工具填充固定的卡片模板（[`notice.card`](crates/shell/resources/glance/notice.card)，或日历的[日程与议程卡片](apps/calendar/host-service/resources)），模型只负责文字。邮件另有 `mail.publish_card`，它接收模型编写的卡片，检查后再发布。无论哪种方式，Shell 都以应用的身份发布，并要求应用拥有 `glance` 权限。
 
-邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。内置路径详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。独立安装的 Gmail 应用也可通过联网服务声明绑定账户的 `<应用短名>.new_message` 触发器，见 [OAuth 指南](crates/oauth-service/README.zh-CN.md)。
+邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。内置路径详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。独立安装的 Gmail 应用也能通过已连接账户服务收到同类事件：它们声明绑定账户的触发器 `<应用短名>.new_message`，其中应用短名是应用 id 的最后一段（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md)）。
 
 ### 一个应用 Agent，两条通道
 
@@ -227,7 +227,7 @@ flowchart TB
 | 应用类型 | 接口 | 谁在用 |
 | --- | --- | --- |
 | 脚本应用 | `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")`，限于 manifest 声明的名称 | 商店应用。系统应用都没有声明：它们的 Agent 由 Shell 驱动。 |
-| 原生应用（在 Shell 内或作为进程） | Makepad 的 `OctosPeer` 客户端，经由 peer link：先打开链接，再用 `serve_tools` 应答 Agent 对应用自身工具的调用。同一份代码在两种托管方式下都能用。 | Calculator、Clock、Notes、Reminders、Weather、Terminal |
+| 原生应用（在 Shell 内或作为进程） | Makepad 的 `OctosPeer` 客户端，经由 peer link：先打开链接，再用 `serve_tools` 应答 Agent 对应用自身工具的调用。同一份代码在两种托管方式下都能用。 | App Hub、Calculator、Clock、Notes、Reminders、Weather、Terminal |
 | 使用注入服务的原生应用 | `OctosAppService`：`open_conversation` 打开用户的通道，`open_context` 打开私有上下文 | Rinx，目前只用 `open_context`，供它的小程序使用 |
 
 对脚本应用来说，最小可用的接入只需要在 manifest 中申请两个能力：
@@ -262,11 +262,11 @@ Agent 能做什么，取决于应用交给它什么。脚本应用把这些都�
 
 - **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
-- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有宿主服务，而标为 `implemented_by: "app"` 的工具在 Card runner 中还没有执行器。所以目前商店应用的 Agent 能对话、能提问、能读取自己的文件夹，但还不能通过自己的工具做事。
+- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。标为 `implemented_by: "app"` 的工具在 Card runner 中还没有执行器。
 - **数据。** Agent 在它所属账号的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账号的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账号的文件夹。
 - **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账号一起清除。
 - **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。
-- **事件**（目前只有邮件）。一个 `triggers.events` 条目让邮件的 Agent 不等人开口就能处理新邮件，并由它的 `AGENT.md` 和一项分拣技能指导。
+- **事件**（目前只有新邮件）。一个 `triggers.events` 条目让 Agent 不等人开口就能行动。邮件的 Agent 处理新邮件，由它的 `AGENT.md` 和一项分拣技能指导。已安装的应用可以从它的 Gmail 连接收到新邮件事件：应用必须声明 `auth` 和 `gmail`，并在 `agent` 块中设置 `background: true`、列出 `<应用短名>.new_message`，例如 `inbox.new_message`（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md#新邮件与-glance)）。
 
 新增一个工具的步骤（manifest、`tools.json`、授权、处理代码、审批路径）见 [AGENTS.md（英文）](AGENTS.md#architecture-documentation-and-code-walkthroughs)，设计见 [ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)。
 
@@ -310,7 +310,7 @@ sequenceDiagram
 </details>
 
 - **中转**（[`crates/shell/src/host_tools/`](crates/shell/src/host_tools/)）接收每一个 `peer/tool/call`。它先检查这个调用方能否使用这个工具，按工具的 schema 校验参数，并从调用方的预算中扣除（默认每轮 32 次、每天 1000 次工具调用）；之后才在拥有该工具的应用中运行它：原生应用已打开的窗口、脚本应用的宿主服务，或经 peer link 交给进程应用。结果同样要按 schema 检查。
-- **审批路由**（[`crates/shell/src/approvals/`](crates/shell/src/approvals/)）按固定顺序做决定。开发者模式只能由用户打开，它会批准所覆盖应用经路由的调用。`confirm: app` 的工具交给应用自己的面板。必须每次都问的调用（例如 Terminal 的命令）直接弹出面板。其余调用可以由用户的常设规则决定，否则由 Shell 面板展示确切参数，请用户确认。每个决定都会写入审计日志。完整顺序见 [architecture.zh-CN.md 第 5 节](docs/architecture.zh-CN.md#5-审批)。发送邮件不走这个顺序：总是由用户在宿主自己的审阅界面上确认确切的邮件内容，在手机上需要亲手触摸，开发者模式也不能跳过。
+- **审批路由**（[`crates/shell/src/approvals/`](crates/shell/src/approvals/)）按固定顺序做决定。开发者模式只能由用户打开，它会批准所覆盖应用经路由的调用。`confirm: app` 的工具交给应用自己的面板。必须每次都问的调用（例如 Terminal 的命令）直接弹出面板。其余调用可以由用户的常设规则决定，否则由 Shell 面板展示确切参数，请用户确认。每个决定都会写入审计日志。完整顺序见 [architecture.zh-CN.md 第 5 节](docs/architecture.zh-CN.md#5-审批)。发送邮件不走这个顺序。用户总要在宿主的审阅界面上亲手点按，确认确切的邮件内容：Android 上触摸屏幕，macOS 上用鼠标或触控板点击（在 macOS 上**未验证**，还没有实际发送过邮件）。合成输入和远程输入都会被拒绝，开发者模式也不能跳过审阅。
 - **时限。** 10 分钟内无人回答的审批或提问会被拒绝，绝不会被批准。如果 30 秒后这一轮仍在运行，Shell 会中断它，好让下一轮开始。
 
 ### 卡片与提问
@@ -322,7 +322,7 @@ sequenceDiagram
 卡片可以带着与其应用 Agent 的对话，Agent 在用户的通道里回答：
 
 - **打开的卡片**会成为一个工作区：手机上是全屏，桌面端是居中的窗口。如果发布卡片的应用有 Agent，工作区就有 **Card** 和 **Chat** 两个标签页，即使卡片没有声明对话也是如此。Shell 把卡片的数据和本地状态作为上下文交给 Agent，并绑定到发布卡片的账号；对话只使用应用已有的工具和已有的同意。
-- **邮件回复卡片**有 **Email** 和 **Chat** 两个标签页，共用一份保存的草稿。Agent 可以修改草稿并提议发送，但只有用户能发送：用户要在宿主自己的审阅界面上亲手触摸，确认确切的邮件内容。开发者模式不能跳过这一步，桌面端的确认还没有实现。详情和手机上的测试结果见[可组合的邮件卡片](docs/mail-composable-cards.zh-CN.md)。
+- **邮件回复卡片**有 **Email** 和 **Chat** 两个标签页，共用一份保存的草稿。Agent 可以修改草稿并提议发送，但只有用户能发送：用户要在宿主的审阅界面上亲手点按确认（见[一次带审批的工具调用](#一次带审批的工具调用)）。Windows 和 Linux 还不能确认发送。详情和手机上的测试结果见[可组合的邮件卡片](docs/mail-composable-cards.zh-CN.md)。
 - **声明了 `sys.chat(app, thread, fields)` 的卡片**保留它声明的对话线程。
 
 所有对话记录都归 Shell 所有，保存在应用的账号文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。

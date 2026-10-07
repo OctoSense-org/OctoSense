@@ -54,12 +54,16 @@ lost response with no automatic retry, and offline restart. Four explicit
 synthetic write attempts are checked against the provider journal. The final
 lost-response case deliberately models a provider commit whose response was
 lost; the app must keep the dirty draft until the user reconciles it.
+These write checks predate [#356](https://github.com/OctoSense-org/OctoSense/pull/356).
+On `main`, the native review accepts **Approve & Save** only from a physical
+press, so the driver's synthetic clicks cannot approve a commit there. This
+follows from the code; the driver has not been run on `main`.
 
 Each run records source/binary/PNG hashes, snapshots, native logs and a receipt
 under `target/connected-notes-e2e/run-*`, including failures. The driver closes
 only its owned native processes and removes its temporary profile. Original
 PNGs must be inspected separately before visual acceptance. `native.py` drives
-Makepad instrument; these are synthetic input events, not physical approval.
+Makepad instrument; these are synthetic input events, not a physical press.
 
 This small host does not boot the production agent kernel, event collector or
 Glance. Inbox/Calendar shell journeys use `connected-inbox-e2e`, which embeds the
@@ -113,8 +117,8 @@ passed 36 cycles over ten minutes and a separate 120-cycle burst. It records
 exact draft retention, native pixel review, timing boundaries and memory growth.
 
 Calendar and Inbox have their own reusable soaks and evidence in App Design
-Flow: [Calendar](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/google-calendar/ACCEPTANCE.md)
-and [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/inbox/README.md).
+Flow: [Calendar](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)
+and [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/inbox/README.md).
 They exercise different hosts: Calendar's provider host and Inbox's full Shell
 with actual DeepSeek turns. Do not combine their latency or memory figures into
 a single benchmark. The latest [three-bundle signed installation check](evidence/signed-install-after-soak.json)

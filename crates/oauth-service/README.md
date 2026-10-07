@@ -33,8 +33,11 @@ production-verified Google release remain unverified. The [sanitized receipt](..
 A real DeepSeek peer processed synthetic incoming mail
 through the installed app’s admitted tools and updated its saved reply through
 chat. A Calendar peer also read the selected synthetic event through its own
-tool and answered its title, time and location. This proves model/tool integration, not Google delivery. The ordinary
-samples have not been tested on the OnePlus 6.
+tool and answered its title, time and location. This proves model/tool integration, not Google delivery. Of the
+three samples, only GitHub Notes has been checked on the OnePlus 6: its local
+editing, in a standalone test APK that left the regular Home in place
+([OnePlus Notes check](../../tools/connected-e2e/evidence/notes-oneplus-20261006/README.md));
+Inbox Assistant and Google Calendar have not run there.
 
 | Platform | Provider authorization | Credential storage | Gmail send approval |
 | --- | --- | --- | --- |
@@ -43,7 +46,21 @@ samples have not been tested on the OnePlus 6.
 | Linux | Protocol tests and host compilation passed on Linux; browser login and GUI unverified | Secret Service; unlocked service required, no plaintext fallback; native vault test refused the locked/unavailable build-host store | Unsupported: fails closed |
 | Android | GitHub flow present but unverified; **Google connection refused until its native adapter is implemented** | Mail's Android platform vault, separate namespace | Existing physical-touch provenance; this sample unverified |
 
-This change does not remove or migrate the built-in Mail or Calendar apps.
+`desktop-v0.1.0-beta.2` is the first release with the connected-account
+services (`auth`, `github`, `gmail`, `gcalendar`); no Home (phone) release can
+install connected apps yet. In beta.2, `auth` has no backend sign-in, and
+provider registrations come only from `clients.json`
+([Advanced operator override](#advanced-operator-override)). Beta.2 also
+predates [#356](https://github.com/OctoSense-org/OctoSense/pull/356), which is
+on `main` but in no release yet. So in beta.2, only a Gmail send checks for a
+physical press, while GitHub and Calendar saves use a host sheet that does not;
+an agent's `glance.publish` still accepts a `script` card; and Calendar syncs
+the full event history with `gcalendar.sync` and sync tokens instead of the
+bounded window below. The earlier
+releases, `desktop-v0.1.0-beta.1` and `home-v0.1.0-beta.1`, use app contract
+1.1.0, which has no `auth` capability. Their stores list apps that declare
+`auth` but refuse to install them. These services do not replace or migrate
+the built-in Mail and Calendar apps.
 
 ## Sign in as a user
 
@@ -307,8 +324,8 @@ caller's grant; these three samples keep private reads non-shareable by default.
 ## New mail and Glance
 
 `connected_events.rs` discovers installed apps with Gmail/auth capabilities,
-agent consent, background permission and `<app namespace>.new_message`.
-The collector establishes a forward-only Gmail history baseline, then normally
+agent consent, background permission and `<app namespace>.new_message`, where
+the app namespace is the last segment of the app id. The collector establishes a forward-only Gmail history baseline, then normally
 polls every five minutes while execution is allowed. After connecting and
 allowing the app agent, refresh until `gmail.events.status` reports
 `baseline_ready: true` **before sending a test email**. Old mail is not flooded
@@ -369,7 +386,9 @@ cargo check --locked -p octosense-oauth-service --features host
 cargo test --offline --locked -p octosense-oauth-service --features host,acceptance-fixtures --lib
 ```
 
-The last command passed 75 tests with one explicit platform-vault test ignored.
+At [#353](https://github.com/OctoSense-org/OctoSense/pull/353), the last command
+passed 75 tests with one explicit platform-vault test ignored. #356 added tests;
+the count on `main` has not been recorded.
 The separate native backend acceptance used the actual vault, including a cold
 process restart. Live provider acceptance covered identity login, connection
 metadata restoration after restart and local disconnect, not provider refresh
@@ -397,7 +416,7 @@ and app isolation, revocation, callback replay, refresh, GitHub conflicts,
 Calendar bounded-window paging/rollover/recurrence/ETags/DST, cross-app availability and refresh-commit races, draft revisions, injected approval refusal,
 send ambiguity, event retries and durable decisions. Native sample evidence
 and authoring instructions live in Design Flow's
-[connected-apps examples](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/feat/connected-sample-apps/examples/connected-apps).
+[connected-apps examples](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/main/examples/connected-apps).
 
 Do not treat `card-host` admission as a running provider service: plain
 `card-host` has no OAuth, Gmail, Calendar or octos host. The separate

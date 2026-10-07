@@ -8,6 +8,20 @@ refresh with a dedicated test account. A separate OnePlus backend fixture passed
 login, Glance handoff and vault/logout checks, with visual limitations. Other
 provider writes and complete device UX acceptance remain pending; see the
 implementation guide for exact limits.
+*(2026-10-06: App Hub's signed catalog, sequence 7, now publishes the three
+samples below, each built from its own public repository; App Design Flow
+keeps their development copies. `desktop-v0.1.0-beta.2` is the first release
+that can install them, but its downloads have no provider registrations, so
+sign-in there works only after an operator adds `clients.json`.)*
+*(2026-10-07: catalog sequence 10 adds version 0.1.1 of each sample and keeps
+the 0.1.0 entries. GitHub Notes 0.1.1 declares its read-only agent, Inbox
+Assistant 0.1.1's notification tool accepts only its admitted card template,
+and Google Calendar 0.1.1 shows the loaded date range when the host reports
+one. On `main`, [#356](https://github.com/OctoSense-org/OctoSense/pull/356)
+makes a GitHub or Calendar save need a physical press on the native review, as
+a Gmail send already did, and bounds Calendar's cache to a date window. No
+release has #356 yet: `desktop-v0.1.0-beta.2` checks for a physical press only
+on a Gmail send.)*
 
 The [implementation guide](../../crates/oauth-service/README.md) records current
 platform support, configuration and validation limits.
@@ -87,6 +101,11 @@ listing, creation and editing, timezones/all-day events, paginated incremental
 sync, token expiry/full resync, and ETag conflict handling. The app exposes
 bounded tools to authorized peer agents and publishes cards that reopen the
 same saved Google event. Local fixture events are explicitly labelled.
+*(2026-10-07: on `main`, since [#356](https://github.com/OctoSense-org/OctoSense/pull/356),
+Calendar no longer syncs incrementally. Each refresh replaces one snapshot of
+the window from 30 days before today to 366 days after it, in UTC days, with
+recurring events expanded, and a call to `gcalendar.sync` is refused.
+`desktop-v0.1.0-beta.2` still syncs the full history with sync tokens.)*
 
 ## Delivery and acceptance
 

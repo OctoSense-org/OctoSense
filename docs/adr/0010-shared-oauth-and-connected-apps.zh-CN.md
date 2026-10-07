@@ -1,4 +1,4 @@
-# ADR 0010：共享 OAuth 与独立安装的联网应用
+# ADR 0010：共享 OAuth 与独立安装的连接账户应用
 
 [English](0010-shared-oauth-and-connected-apps.md) | 简体中文
 
@@ -6,6 +6,14 @@
 真实 Google Calendar 登录、保存日程及刷新。独立 OnePlus 后端测试应用通过了登录、
 Glance 交接和凭据库/退出检查，但存在视觉证据限制。其他提供方写操作和完整设备 UX
 验收仍待完成；准确边界见实现指南。
+*（2026-10-06：App Hub 签名目录第 7 版现已收录下列三个示例，每个都从自己的公开仓库构建；
+App Design Flow 保留它们的开发版本。`desktop-v0.1.0-beta.2` 是第一个能安装它们的发布版本，
+但它的下载包不含服务商注册，运维者添加 `clients.json` 之后才能登录。）*
+*（2026-10-07：签名目录第 10 版为每个示例加入 0.1.1 版本，0.1.0 条目保持不变。GitHub Notes 0.1.1
+声明了只读的应用 Agent；Inbox Assistant 0.1.1 的通知工具只接受已准入的卡片模板；宿主报告日期范围时，
+Google Calendar 0.1.1 会显示已加载的日期范围。在 `main` 上，[#356](https://github.com/OctoSense-org/OctoSense/pull/356)
+让 GitHub 或 Calendar 保存也必须在原生审阅界面上亲手点按（Gmail 发信本来就需要），并把 Calendar
+缓存限定在一个日期窗口内。目前还没有发布版本包含 #356：`desktop-v0.1.0-beta.2` 只在 Gmail 发信时检查是否亲手点按。）*
 
 [实现指南](../../crates/oauth-service/README.zh-CN.md)记录当前平台支持、配置方法和验证边界。
 
@@ -50,7 +58,7 @@ Inbox Assistant 和 Google Calendar。ID 不使用 `os.*`，安装不依赖打�
 本地撤销先于远程退出，远程失败单独报告。测试后端必须运行真实浏览器表单和代码
 交换，不能预置已登录账户；HTTP 回环例外仅存在于验收构建。
 
-### 联网 App Hub 示例
+### 连接账户的 App Hub 示例
 
 GitHub Notes 复用 Rinx 提取出的文章编辑组件，保留 Markdown 源码、富文本、选区/IME、
 预览和撤销。笔记写入用户选择的仓库路径及分支，保存 GitHub 提交回执。使用 blob SHA
@@ -62,6 +70,9 @@ Inbox Assistant 连接邮箱、过滤新邮件、发布重要事项，Chat、手
 Google Calendar 使用真实 Calendar API：选择日历、列举/创建/编辑事件、时区与全天事件、
 分页增量同步、token 失效后的全量恢复和 ETag 冲突处理。应用向获准 peer 提供有边界的工具，
 其卡片重新打开同一个已保存的 Google 事件。虚构的本地示例事件必须明确标注。
+*（2026-10-07：自 [#356](https://github.com/OctoSense-org/OctoSense/pull/356) 起，`main` 上的 Calendar 不再增量同步。
+每次刷新都整体替换一个窗口的快照：从今天之前 30 天到之后 366 天（按 UTC 日界），重复日程展开为实际实例；
+调用 `gcalendar.sync` 会被拒绝。`desktop-v0.1.0-beta.2` 仍用同步 token 同步全部历史。）*
 
 ## 交付与验收
 
