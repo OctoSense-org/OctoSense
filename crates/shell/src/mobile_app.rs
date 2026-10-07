@@ -1195,7 +1195,9 @@ impl App {
                             if let Some(PhoneHit::Card(client))=g.hit {self.request_close(cx,client);if !self.close_pending(client) {self.state_mut().phone.navigate(PhoneScreen::Recents);}}
                         }else if delta.length()<12.0 {
                             if let Some(hit)=g.hit.filter(|h|Some(h)==hit.as_ref()) {self.phone_action(cx,hit);}
-                        }else if !crate::mobile_navigation::ENABLED && g.screen==PhoneScreen::Home && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
+                        }else if !crate::mobile_navigation::ENABLED && g.screen==PhoneScreen::Home
+                            && !ctx.glance.is_some_and(|r|r.contains(g.start))
+                            && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
                     }
                 }
                 self.state_mut().phone.dismiss_y=0.0;
