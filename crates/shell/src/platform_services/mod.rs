@@ -191,19 +191,21 @@ impl HostService for DeviceService {
             let ticket = call.args["ticket"].as_str().unwrap_or("");
             let key = (call.app_id.clone(), call.host_dir.clone(), self.family);
             let mut state = state().lock().unwrap_or_else(|e| e.into_inner());
-            if !call.from_sheet
-                || state.current.get(&key).map(|(ticket, _)| ticket.as_str()) != Some(ticket)
-            {
+            if !call.from_sheet {
                 reply.send(Err(
-                    "invalid_review: This is not the current device permission sheet".into(),
+                    "invalid_review: Only the host's device permission sheet may close itself".into(),
                 ));
                 return;
             }
-            state.current.remove(&key);
-            if let Some(review) = state.reviews.remove(ticket) {
-                review
-                    .work
-                    .fail("cancelled", "Device consent was cancelled");
+            // The broker has already authenticated this exact live sheet heap.
+            // Expiry/replacement revokes approval, not the person's ability to
+            // dismiss its stale UI. Never cancel a newer review on another
+            // surface merely because this older sheet is closing.
+            if state.current.get(&key).map(|(ticket, _)| ticket.as_str()) == Some(ticket) {
+                state.current.remove(&key);
+                if let Some(review) = state.reviews.remove(ticket) {
+                    review.work.fail("cancelled", "Device consent was cancelled");
+                }
             }
             drop(state);
             host.close_sheet();
@@ -348,8 +350,8 @@ impl HostService for DeviceService {
                 );
                 drop(state);
                 host.open_sheet(format!(
-                    "DevicePermissionPrompt {{ width: Fill height: Fill ticket: {} }}",
-                    json!(ticket)
+                    "DevicePermissionPrompt {{ width: Fill height: Fill ticket: {} family: {} }}",
+                    json!(ticket), json!(self.family)
                 ));
                 return;
             }

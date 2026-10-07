@@ -36,7 +36,9 @@ pub struct DevicePermissionPrompt {
     view: View,
     #[live]
     ticket: String,
-    #[rust]
+    // Supplied by the trusted host declaration so an already-expired request
+    // can still close before its first draw. It grants no approval authority.
+    #[live]
     family: String,
     #[rust]
     initialized: bool,
@@ -172,6 +174,28 @@ impl Widget for DevicePermissionPrompt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_request_expired_before_first_draw_can_still_dismiss_its_native_sheet() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        register();
+        let mut sheet = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            script_mod(vm);
+            let value = vm.eval(script! {use mod.widgets.* Splash {}});
+            Splash::script_from_value(vm, value)
+        });
+        sheet.set_text(&mut cx,
+            r#"prompt := DevicePermissionPrompt {ticket: "already-expired" family: "camera"}"#);
+        let widget = sheet.view.children.iter().find(|(id, _)| *id == id!(prompt)).unwrap().1.clone();
+        let mut prompt = widget.borrow_mut::<DevicePermissionPrompt>().unwrap();
+        prompt.initialize(&mut cx);
+        assert!(prompt.approve(true, true).is_err());
+        prompt.close(&mut cx);
+        let calls = makepad_widgets::splash_host::take_splash_host_requests_for(&[prompt.source.heap_key()]);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].service, "camera.sheet.close");
+    }
+
     #[test]
     fn a_script_copy_cannot_approve_or_close_a_host_permission_sheet() {
         let mut cx = Cx::new(Box::new(|_, _| {}));

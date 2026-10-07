@@ -117,3 +117,39 @@ fn descriptors_do_not_claim_unimplemented_location_or_background_authorization()
         );
     }
 }
+
+#[test]
+fn expired_sheets_can_close_without_cancelling_a_newer_review() {
+    #[derive(Default)]
+    struct Host { closed: bool }
+    impl ServiceHost for Host {
+        fn open_sheet(&mut self, _: String) {}
+        fn close_sheet(&mut self) { self.closed = true; }
+    }
+    let root = Home::new();
+    let app = format!("org.example.expired-{}", uuid::Uuid::new_v4());
+    services::register_host_service(Box::new(DeviceService { family: "camera" }));
+    let key = (app.clone(), root.0.clone(), "camera");
+    let call = |from_sheet| ServiceCall {
+        app_id: app.clone(), service: "camera.sheet.close".into(),
+        args: json!({"ticket":"expired-ticket"}), from_sheet, may_prompt:true,
+        host_dir: root.0.clone(),
+    };
+    let mut host = Host::default();
+    // The service and broker must still refuse an app impersonating the sheet.
+    services::dispatch(call(false), 778401, 1, &mut host);
+    assert!(!host.closed);
+    assert!(services::take_replies_for(&[778401])[0].2.is_err());
+    // Its approval record has expired, while its native UI remains visible.
+    services::dispatch(call(true), 778401, 2, &mut host);
+    assert!(host.closed);
+    assert!(services::take_replies_for(&[778401])[0].2.is_ok());
+    // Another surface may now own a newer request for the same app/family.
+    state().lock().unwrap().current.insert(key.clone(), ("new-ticket".into(), Instant::now()));
+    host.closed = false;
+    services::dispatch(call(true), 778401, 3, &mut host);
+    assert!(host.closed);
+    assert!(services::take_replies_for(&[778401])[0].2.is_ok());
+    let current = state().lock().unwrap().current.remove(&key).unwrap();
+    assert_eq!(current.0, "new-ticket");
+}
