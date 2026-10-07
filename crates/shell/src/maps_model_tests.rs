@@ -133,9 +133,38 @@ fn maps_reads_a_places_hours_phone_website_and_cuisine() {
         serde_json::json!({"hours": "Mo-Su 11:00-22:00", "phone": "+1 408 555 0100",
             "website": "https://pizza.example.com", "cuisine": "pizza, italian pizza"})
     );
+    // Overpass found nothing: no details. Not Overpass's answer: nil, so the
+    // caller tries again and keeps nothing.
     let none = maps_model(r#"[place_details('{"elements":[]}') place_details('<html/>')].to_json()"#);
     let blank = serde_json::json!({"hours": "", "phone": "", "website": "", "cuisine": ""});
-    assert_eq!(none, serde_json::json!([blank, blank]));
+    assert_eq!(none, serde_json::json!([blank, null]));
+}
+
+/// Overpass's own runtime error: HTTP 200, no elements, and a `remark`.
+const OVERPASS_REMARK: &str = r#"{"version":0.6,"elements":[],"remark":"runtime error: Query timed out in \"query\" at line 1 after 10 seconds."}"#;
+
+#[test]
+fn maps_tells_an_overpass_error_from_no_details() {
+    // A Splash string turns `\"` into `"` (single-quoted too), which would cut
+    // the remark short, so the body goes in with its `\` doubled.
+    let remark = OVERPASS_REMARK.replace('\\', r"\\");
+    let out = maps_model(&format!(r#"['{remark}'.parse_json()["remark"] place_details('{remark}')].to_json()"#));
+    assert_eq!(
+        out,
+        serde_json::json!([r#"runtime error: Query timed out in "query" at line 1 after 10 seconds."#, null])
+    );
+    // An empty remark, a remark with an element (a partial answer still
+    // says something), and Overpass's busy page.
+    let out = maps_model(
+        r#"[place_details('{"elements":[],"remark":""}')
+            place_details('{"elements":[{"tags":{"opening_hours":"24/7"}}],"remark":"runtime error: out of memory"}')
+            place_details('<?xml version="1.0" encoding="UTF-8"?><html><head><title>OSM3S Response</title></head><body><p><strong style="color:#FF0000">Error</strong>: runtime error: open64: 0 Success /osm3s_osm_base Dispatcher_Client::request_read_and_idx::timeout. The server is probably too busy to handle your request. </p></body></html>')].to_json()"#,
+    );
+    let blank = serde_json::json!({"hours": "", "phone": "", "website": "", "cuisine": ""});
+    assert_eq!(
+        out,
+        serde_json::json!([blank, {"hours": "24/7", "phone": "", "website": "", "cuisine": ""}, null])
+    );
 }
 
 /// Laid out as Overpass sends it: indented, with its header, and URLs whose
@@ -182,12 +211,14 @@ fn maps_reads_odd_overpass_answers() {
             "phone": "+1 408-564-4162", "website": "https://zazilsantanarow.com/",
             "cuisine": "mexican, latin american"})
     );
-    // Only `contact:website`, a website that is not a web address, a place
-    // without tags (Overpass leaves `tags` out), tags that are not an object,
-    // and answers that are not Overpass's; `maps_model` also fails on any
-    // script error they raise.
+    // A way (Overpass adds its `center`) with two phones and an upper-case
+    // scheme, only `contact:website`, a website that is not a web address, a
+    // place without tags (Overpass leaves `tags` out), tags that are not an
+    // object, and answers that are not Overpass's; `maps_model` also fails on
+    // any script error they raise.
     let odd = maps_model(
-        r#"[place_details('{"elements":[{"tags":{"contact:website":"www.contact.example.com"}}]}')
+        r#"[place_details('{"version":0.6,"elements":[{"type":"way","id":25904339,"center":{"lat":37.3209796,"lon":-121.9486002},"tags":{"name":"Santana Row","opening_hours":"Mo-Sa 10:00-21:00","phone":"+1 408 555 0100; +1 408 555 0101;","website":"HTTPS://Santana.example.com/@row"}}]}')
+            place_details('{"elements":[{"tags":{"contact:website":"www.contact.example.com"}}]}')
             place_details('{"elements":[{"tags":{"website":"javascript:alert(1)"}}]}')
             place_details('{"elements":[{"type":"node","id":10735327671}]}')
             place_details('{"elements":[{"tags":"x"}]}')
@@ -201,8 +232,10 @@ fn maps_reads_odd_overpass_answers() {
     assert_eq!(
         odd,
         serde_json::json!([
+            {"hours": "Mo-Sa 10:00-21:00", "phone": "+1 408 555 0100, +1 408 555 0101",
+             "website": "https://Santana.example.com/@row", "cuisine": ""},
             {"hours": "", "phone": "", "website": "https://www.contact.example.com", "cuisine": ""},
-            blank, blank, blank, blank, blank, blank, blank, blank
+            blank, blank, blank, blank, null, null, null, null
         ])
     );
 }
@@ -252,5 +285,28 @@ fn maps_opens_websites_over_https() {
     assert_eq!(
         odd,
         serde_json::json!(["", "", "", "", "", "", "https://www.a.example.com", "https://example.com/a:b"])
+    );
+    // A scheme in any case (only the scheme is lowered), "//", an empty host,
+    // and characters parsers read differently: a newline, a space, a
+    // backslash, anything but ASCII in the host. `@` and non-ASCII in the
+    // path are kept; which hosts may open is the reader's to decide.
+    let more = maps_model(
+        r#"[site_url("Https://Example.com") site_url("HTTP://EXAMPLE.COM/Path") site_url("JavaScript:alert(1)")
+            site_url("//example.com") site_url("/x") site_url("https:///x") site_url("?q=1")
+            site_url("www.a\nexample.com") site_url("www.a example.com") site_url("192.168.1.1\\@x.example.com")
+            site_url("192.168.1。1") site_url("https://münchen.example")
+            site_url("https://medium.com/@user") site_url("https://example.com/café?q=1#é") site_url("example.com?q=1")
+            site_url("localhost")].to_json()"#,
+    );
+    assert_eq!(
+        more,
+        serde_json::json!([
+            "https://Example.com", "https://EXAMPLE.COM/Path", "",
+            "https://example.com", "", "", "",
+            "", "", "",
+            "", "",
+            "https://medium.com/@user", "https://example.com/café?q=1#é", "https://example.com?q=1",
+            "https://localhost"
+        ])
     );
 }

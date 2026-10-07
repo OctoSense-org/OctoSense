@@ -186,42 +186,78 @@ fn cache_name(id){
     "place_" + replace_all(id, ":", "_") + ".json"
 }
 fn blank_detail(){ return {hours: "" phone: "" website: "" cuisine: ""} }
-// A website as the reader opens it: the first of several, over https. Any
-// other scheme (ftp://, javascript:, mailto:, a ":" before the first "/")
-// gives "", so only a web page ever opens.
+// A `;` list as text: "pizza;italian pizza" reads "pizza, italian pizza".
+fn list_of(s){
+    let out = ""
+    for part in s.split(";") {
+        let p = part.trim()
+        if p == "" { continue }
+        if out != "" { out = out + ", " }
+        out = out + p
+    }
+    out
+}
+// The scheme in lower case ("HTTPS://" reads "https://"), the rest as written:
+// the leading letters, when a ":" follows them.
+fn lower_scheme(u){
+    let chars = u.to_chars()
+    let n = 0
+    for c in chars { if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) { n = n + 1 } else { break } }
+    if n == 0 || n == chars.len() || chars[n] != 58 { return u }
+    for i c in chars { if i < n && c >= 65 && c <= 90 { chars[i] = c + 32 } }
+    chars.to_string()
+}
+// A website as the reader is handed it: the first of several, over https
+// ("http://", "https://" in any case, or "//"), or "". This settles only the
+// scheme (ftp://, javascript:, mailto:, any ":" before the first "/" give "")
+// and refuses odd characters that parsers read differently: a space or
+// control character, a backslash, or anything but ASCII in the host. Which
+// hosts may open is the reader's policy: public https, with the `web` grant.
 fn site_url(s){
-    let u = s.split(";")[0].trim()
+    let u = lower_scheme(s.split(";")[0].trim())
     let rest = u.strip_prefix("https://")
     if rest == u { rest = u.strip_prefix("http://") }
+    if rest == u { rest = u.strip_prefix("//") }
     if rest == u {
         let colon = u.search(":")
         let slash = u.search("/")
         if colon >= 0 && (slash < 0 || colon < slash) { return "" }
     }
-    if rest == "" { return "" }
+    // The host runs to the first "/", "?" or "#", and must not be empty.
+    let host = 0
+    let in_host = true
+    for c in rest.to_chars() {
+        if c <= 32 || c == 127 || c == 92 { return "" }
+        if c == 47 || c == 63 || c == 35 { in_host = false }
+        if in_host {
+            if c > 127 { return "" }
+            host = host + 1
+        }
+    }
+    if host == 0 { return "" }
     "https://" + rest
 }
 // Overpass's answer for one place as the card's details {hours phone website
-// cuisine}, each "" when the place has none or the answer is not Overpass's.
-// `phone` and `website` win over their `contact:` forms; "pizza;italian_pizza"
-// reads "pizza, italian pizza".
+// cuisine}, each "" when the place has none. nil when there is nothing to
+// keep: a page that is not Overpass's (an error page), or Overpass's own
+// runtime error (a timeout, out of memory), which comes with no elements and
+// a `remark`; the caller then tries again. `phone` and `website` win over
+// their `contact:` forms; "pizza;italian_pizza" reads "pizza, italian pizza".
 fn place_details(body){
+    let o = body.parse_json()
+    let els = optional(o, "elements", nil)
+    if els == nil || !els.is_array() { return nil }
+    if els.len() == 0 && text_of(o, "remark") != "" { return nil }
     let d = blank_detail()
-    let els = optional(body.parse_json(), "elements", nil)
-    if els == nil || !els.is_array() || els.len() == 0 { return d }
+    if els.len() == 0 { return d }
     let tags = optional(els[0], "tags", nil)
     if tags == nil { return d }
     d.hours = text_of(tags, "opening_hours")
-    d.phone = text_of(tags, "phone")
-    if d.phone == "" { d.phone = text_of(tags, "contact:phone") }
+    d.phone = list_of(text_of(tags, "phone"))
+    if d.phone == "" { d.phone = list_of(text_of(tags, "contact:phone")) }
     d.website = site_url(text_of(tags, "website"))
     if d.website == "" { d.website = site_url(text_of(tags, "contact:website")) }
-    for kind in text_of(tags, "cuisine").split(";") {
-        let k = replace_all(kind, "_", " ").trim()
-        if k == "" { continue }
-        if d.cuisine != "" { d.cuisine = d.cuisine + ", " }
-        d.cuisine = d.cuisine + k
-    }
+    d.cuisine = list_of(replace_all(text_of(tags, "cuisine"), "_", " "))
     d
 }
 
