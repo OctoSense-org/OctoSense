@@ -11,6 +11,9 @@ use std::{
 #[cfg(test)]
 mod policy_tests;
 
+#[cfg(target_os = "windows")]
+mod windows_message_probe;
+
 app_main!(App);
 
 script_mod! {
@@ -37,6 +40,9 @@ struct App {
     timer: Option<Timer>,
     #[rust]
     last_command: u64,
+    #[cfg(target_os = "windows")]
+    #[rust]
+    message_probe: Option<windows_message_probe::WindowsMessageProbe>,
 }
 
 impl App {
@@ -79,6 +85,20 @@ impl App {
         let widget = self.ui.widget(cx, ids!(browser));
         let browser_id = self.browser_id(cx);
         match operation {
+            #[cfg(target_os = "windows")]
+            "calibrate_messages" => {
+                if self.message_probe.is_some() {
+                    accepted = false;
+                } else {
+                    match windows_message_probe::WindowsMessageProbe::start() {
+                        Ok(probe) => self.message_probe = Some(probe),
+                        Err(error) => {
+                            self.record(json!({"kind":"message_control","passed":false,"error":error}));
+                            accepted = false;
+                        }
+                    }
+                }
+            }
             "open" => {
                 if let Some(url) = command["url"].as_str().filter(|url| url.len() <= 16_384) {
                     if let Some(mut reader) =
@@ -166,6 +186,15 @@ impl AppMain for App {
             .is_some_and(|timer| timer.is_event(event).is_some())
         {
             self.commands(cx);
+            #[cfg(target_os = "windows")]
+            if let Some(outcome) = self.message_probe.as_mut().and_then(|probe| probe.poll()) {
+                self.record(json!({"kind":"message_control","passed":outcome.passed,
+                    "delivered_messages":outcome.delivered_messages,
+                    "web_message_enabled":outcome.web_message_enabled,
+                    "host_objects_allowed":outcome.host_objects_allowed,
+                    "cleanup_complete":outcome.cleanup_complete,"error":outcome.error}));
+                self.message_probe = None;
+            }
         }
         if let Event::Actions(actions) = event {
             let browser_id = self.browser_id(cx);

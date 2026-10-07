@@ -1058,10 +1058,10 @@ index c0404864b..19a5b124a 100644
      /// Earliest time the device-loss recovery may try again, and how many tries this outage
 diff --git a/platform/src/os/windows/windows_webview.rs b/platform/src/os/windows/windows_webview.rs
 new file mode 100644
-index 000000000..ad832d114
+index 000000000..bf1ca2e78
 --- /dev/null
 +++ b/platform/src/os/windows/windows_webview.rs
-@@ -0,0 +1,1064 @@
+@@ -0,0 +1,1091 @@
 +//! WebView2 lives inside a clipping child HWND of the Makepad window. COM
 +//! completions run on the existing STA message loop; no nested pump or worker
 +//! waits. A weak state reference prevents late creation callbacks resurrecting
@@ -1107,6 +1107,8 @@ index 000000000..ad832d114
 +    auth_finished: bool,
 +    closed: bool,
 +    creating: bool,
++    observed_web_messages: u64,
++    web_message_observer_active: bool,
 +    attached_window: Option<WindowId>,
 +    child: HWND,
 +    bounds: RECT,
@@ -1150,6 +1152,8 @@ index 000000000..ad832d114
 +            auth_finished: false,
 +            closed: false,
 +            creating: false,
++            observed_web_messages: 0,
++            web_message_observer_active: false,
 +            attached_window: None,
 +            child: HWND::default(),
 +            bounds: RECT::default(),
@@ -1454,6 +1458,10 @@ index 000000000..ad832d114
 +            let _ = std::fs::write(result_path, r#"{"error":"Browser policy inspection failed"}"#);
 +            return;
 +        };
++        let (web_message_observer_active, observed_web_messages) = {
++            let s = self.state.borrow();
++            (s.web_message_observer_active, s.observed_web_messages)
++        };
 +        let scroll = scroll_y
 +            .filter(|v| v.is_finite())
 +            .map(|v| format!("window.scrollTo(0,{v});"))
@@ -1464,7 +1472,8 @@ index 000000000..ad832d114
 +            scrollY:window.scrollY,scrollHeight:document.documentElement.scrollHeight,
 +            viewportHeight:window.innerHeight,viewportWidth:window.innerWidth,
 +            hostBridgePresent:typeof window.octos!=='undefined'||typeof window.octos_native!=='undefined',
-+            webMessageEnabled:{web_message_enabled},hostObjectsAllowed:{host_objects_allowed}
++            webMessageEnabled:{web_message_enabled},hostObjectsAllowed:{host_objects_allowed},
++            webMessageObserverActive:{web_message_observer_active},observedWebMessages:{observed_web_messages}
 +        }})"#
 +        ));
 +        let weak = Rc::downgrade(&self.state);
@@ -1683,6 +1692,24 @@ index 000000000..ad832d114
 +    let settings = webview.Settings()?;
 +    settings.SetAreHostObjectsAllowed(false)?;
 +    settings.SetIsWebMessageEnabled(false)?;
++    // Count delivery only for native acceptance diagnostics. Never read the
++    // payload, dispatch it to an app, or grant access to any host operation.
++    // Register before navigation so an initial document cannot evade observation.
++    let weak = Rc::downgrade(state);
++    let mut observer_token = 0;
++    webview.add_WebMessageReceived(
++        &WebMessageReceivedEventHandler::create(Box::new(move |_, _| {
++            if let Some(state) = weak.upgrade() {
++                let mut s = state.borrow_mut();
++                if !s.closed {
++                    s.observed_web_messages = s.observed_web_messages.saturating_add(1);
++                }
++            }
++            Ok(())
++        })),
++        &mut observer_token,
++    )?;
++    state.borrow_mut().web_message_observer_active = true;
 +    settings.SetAreDefaultContextMenusEnabled(false)?;
 +    settings.SetAreDevToolsEnabled(false)?;
 +    settings.SetAreDefaultScriptDialogsEnabled(false)?;

@@ -94,6 +94,8 @@ def main():
     sequence = 0
     failure = None
     security_failures = []
+    message_probe = None
+    message_control = None
 
     def events():
         path = root / 'events.jsonl'
@@ -136,22 +138,30 @@ def main():
             process = subprocess.Popen([str(binary), f'--control-root={root}', '--remote', *args.host_arg],
                                        env=env, stdout=log, stderr=subprocess.STDOUT)
             wait(lambda: any(e.get('kind') == 'started' for e in events()), 'native host startup')
+            if os.name == 'nt':
+                command('calibrate_messages')
+                wait(lambda: any(e.get('kind') == 'message_control' for e in events()), 'isolated messaging positive control', timeout=45)
+                message_control = next(e for e in events() if e.get('kind') == 'message_control')
+                assert message_control.get('passed') is True, message_control
+                assert type(message_control.get('delivered_messages')) is int and message_control['delivered_messages'] > 0
+                assert message_control.get('web_message_enabled') is True
+                assert message_control.get('host_objects_allowed') is False
+                assert message_control.get('cleanup_complete') is True
+                checks.append('isolated_native_message_observer_positive_control')
             command('open', url=page)
             wait(lambda: any(e.get('body', {}).get('kind') == 'loaded' for e in server_events()), 'real document JavaScript')
             loaded = next(e for e in server_events() if e.get('body', {}).get('kind') == 'loaded')
             assert loaded['body']['width'] > 100 and loaded['body']['height'] > 100, loaded['body']
             if loaded['body']['bridge']:
                 security_failures.append('Ordinary page received an OctoSense bridge')
-            if loaded['body']['webMessageProbe'] not in ('absent', 'denied'):
-                policy = {}
-                if os.name == 'nt' and args.require_snapshot:
-                    diagnostic = command('inspect')
-                    wait(lambda: (root / f'inspect-{diagnostic}.json').is_file(), 'native policy diagnostics')
-                    metadata = json.loads((root / f'inspect-{diagnostic}.json').read_text(encoding='utf-8'))
-                    policy = {key: metadata.get(key) for key in ('error', 'webMessageEnabled', 'hostObjectsAllowed')}
-                security_failures.append(f"Page-to-host probe={loaded['body']['webMessageProbe']}, exception={loaded['body']['webMessageErrorKind']}, native policy={policy}")
-            if os.name == 'nt' and loaded['body']['webMessageProbe'] == 'absent':
-                security_failures.append('WebView2 messaging denial was not exercised')
+            message_probe = {'return': loaded['body']['webMessageProbe'], 'exception_kind': loaded['body']['webMessageErrorKind']}
+            if os.name == 'nt':
+                assert message_probe['return'] in ('accepted', 'denied'), 'WebView2 message call was not validly exercised'
+                # Delivery is asynchronous and not ordered with DOM events.
+                # The return/exception alone does not prove native delivery.
+                time.sleep(.5)
+            elif message_probe['return'] not in ('absent', 'denied'):
+                security_failures.append(f'Unexpected page messaging API: {message_probe}')
             assert loaded['cookie_present'], 'Browser did not retain its own HttpOnly fixture cookie'
             if not security_failures:
                 checks.append('native_document_loaded_without_bridge')
@@ -180,6 +190,10 @@ def main():
                         security_failures.append('Native messaging remained enabled')
                     if meta.get('hostObjectsAllowed') is not False:
                         security_failures.append('Native host objects remained allowed')
+                    if meta.get('webMessageObserverActive') is not True:
+                        security_failures.append('Native message observer was not registered')
+                    if type(meta.get('observedWebMessages')) is not int or meta['observedWebMessages'] != 0:
+                        security_failures.append('Native observer received page messages or lacked a count')
                 snapshot = (root / f'snapshot-{capture}.png').read_bytes()
                 assert len(snapshot) > 100 and snapshot.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10]))
                 checks.append('native_engine_snapshot_saved')
@@ -204,6 +218,18 @@ def main():
             time.sleep(1.2)  # WebReader's existing visibility watchdog detaches hidden views.
             command('show')
             checks.append('detach_and_reattach_commands_accepted')
+            if os.name == 'nt':
+                time.sleep(.5)
+                last_capture = command('inspect')
+                wait(lambda: (root / f'inspect-{last_capture}.json').is_file(), 'final same-view delivery observation')
+                last_meta = json.loads((root / f'inspect-{last_capture}.json').read_text(encoding='utf-8'))
+                if (last_meta.get('error') or last_meta.get('webMessageObserverActive') is not True or
+                    type(last_meta.get('observedWebMessages')) is not int or last_meta['observedWebMessages'] != 0 or
+                    last_meta.get('webMessageEnabled') is not False or last_meta.get('hostObjectsAllowed') is not False or
+                    last_meta.get('hostBridgePresent') is not False):
+                    security_failures.append('Final native delivery/policy observation failed')
+                if not security_failures:
+                    checks.append('zero_native_message_deliveries_observed_during_test_window')
             command('close')
             time.sleep(.7)
             stopped = len(server_events())
@@ -262,7 +288,7 @@ def main():
         server.server_close()
         thread.join(timeout=2)
         receipt = {'schema': 1, 'platform': os.name, 'software_graphics': args.software_graphics, 'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
-                   'checks': checks, 'passed': failure is None, 'failure': failure, 'security_failures': security_failures,
+                   'checks': checks, 'passed': failure is None, 'failure': failure, 'security_failures': security_failures, 'web_message_probe': message_probe, 'message_control': message_control,
                    'scope': 'real native engine; DOM actions are automated, not physical typing or visual UX approval',
                    'owned_process_exited': process is None or process.poll() is not None}
         (root / 'requests.json').write_text(json.dumps(server_events(), indent=2) + '\n', encoding='utf-8')

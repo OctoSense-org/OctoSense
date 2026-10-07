@@ -86,11 +86,20 @@ dynamic titles, a blocked iframe preserving the interactive parent, navigation
 rejection before a forbidden HTTP request, accepted hide/show commands, stopped
 execution after close, fresh cookies after reopen, and native network errors.
 It never uses personal accounts or downloads engines.
-The Windows workflow also requires an engine-owned PNG snapshot, native settings
-readback proving messaging and host objects are disabled, and a page-side attempt
-to send a message that must throw an error. WebView2 keeps its `chrome.webview`
-namespace even when [messaging is disabled](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2settings.iswebmessageenabled);
-namespace presence alone does not grant communication.
+The Windows workflow requires an engine-owned PNG snapshot and native settings
+readback proving messaging and host objects are disabled. A separate disposable
+controller in the unpublished test host enables messaging for one fixed synthetic
+page, proves the observer receives a message, then closes and removes its profile.
+The production controller never enables messaging: its observer only counts
+native deliveries, never reads a payload or dispatches an operation. The driver
+requires zero deliveries after a bounded event-loop wait and again near the same
+view's close. This proves non-delivery during the observed test window.
+
+The receipt retains the JavaScript return or exception as a diagnostic. The
+[documented API](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2settings.iswebmessageenabled)
+says disabled messaging throws, but the tested runtime returned normally while
+both native policy flags were false. Neither namespace presence nor a normal
+JavaScript return establishes host delivery; native observation is required.
 On its GPU-less runner, `--software-graphics` explicitly selects the built-in
 [Windows WARP rasterizer](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/directx-warp)
 for Makepad using `MAKEPAD_D3D11_WARP=1`; the receipt records this mode. WebView2

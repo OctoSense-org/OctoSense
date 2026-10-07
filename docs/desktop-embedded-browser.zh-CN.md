@@ -68,10 +68,16 @@ Windows 适配器包含回调拦截，但完整宿主认证流程通过验收前
 `WebReader` 组件的测试宿主。检查真实页面 JavaScript、DOM 编辑、动态标题、拒绝
 子框架后父页面仍可交互、禁止导航是否在 HTTP 请求前被拦截、隐藏与恢复命令获接收、
 关闭后停止执行、重开后全新 Cookie，以及原生网络错误。不使用个人账户，
-也不下载引擎。Windows 工作流还要求浏览器引擎自行产生 PNG 快照，回读原生设置
-确认消息与宿主对象已禁用，并从页面尝试发送消息，要求该调用抛出错误。WebView2
-在[消息禁用](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2settings.iswebmessageenabled)
-时仍保留 `chrome.webview` 名称空间；名称空间存在本身不授予通信能力。无 GPU 的 runner
+也不下载引擎。Windows 工作流要求浏览器自行产生 PNG 快照，并回读原生设置，
+确认消息与宿主对象已禁用。不发布的测试宿主另建一次性控制器，为固定合成页面启用
+消息，证明观察器能收到消息，再关闭控制器并删除其配置目录。生产控制器始终禁用
+消息；观察器只统计原生交付次数，不读取消息内容，也不派发任何操作。驱动在有界
+事件循环等待后，以及同一视图关闭前，再次要求交付次数为零，证明观测窗口内无交付。
+
+回执保留 JavaScript 返回或异常作为诊断。[API 文档](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2settings.iswebmessageenabled)
+描述禁用消息时抛出异常，但实测运行时在两个原生策略标志均为 false 时正常返回。
+名称空间存在或调用正常返回都不代表消息到达宿主，必须检查原生交付。
+无 GPU 的 runner
 通过 `--software-graphics` 显式设置 `MAKEPAD_D3D11_WARP=1`，为 Makepad 使用
 [Windows 内置 WARP 软件光栅器](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/directx-warp)，
 回执记录该模式。WebView2 仍为真实原生浏览器，保留正常沙箱。这不证明硬件 GPU
