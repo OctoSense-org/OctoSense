@@ -40,9 +40,12 @@ or clipping only detaches the visible overlay and preserves the current page.
 The native child keeps its full document dimensions inside a clipping parent,
 so scrolling the host does not reflow the page to the clipped rectangle.
 
-These views provide no OctoSense tool bridge. Browser-originated permission
-requests, downloads and popups are denied. Ordinary pages cannot use a native
-browser prompt to acquire the app's camera, microphone or filesystem authority.
+These views provide no OctoSense tool bridge. Browser permission requests,
+downloads and popups are denied. Pages cannot use these browser requests to grant
+Splash camera, microphone or filesystem APIs. Linux also cancels file chooser and
+print signals. Windows does not intercept HTML file-selection or print UI; their
+native interaction remains unverified and must not be described as disabled.
+A file selected for a website is separate from an app's host-service grants.
 URL validation is not a DNS or network sandbox: a permitted public hostname can
 resolve to a private address. Do not treat a reader as an SSRF isolation boundary.
 
