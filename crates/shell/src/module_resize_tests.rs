@@ -513,3 +513,88 @@ fn card_runner_restyles_nested_script_without_replacing_draft() {
     assert_eq!(root.text_input(&mut cx, ids!(input)).text(), "Unsaved draft");
     host.teardown(&mut cx, 1);
 }
+
+#[test]
+fn card_runner_restyle_keeps_dynamic_labels_wrapped_and_explicit_no_wrap() {
+    use makepad_app_module::AppModule;
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    cx.with_vm(makepad_widgets::script_mod);
+    let mut host = crate::module_host::ModuleHost::default();
+    let sheet = |dark| desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
+    host.apply_style(&mut cx, &sheet(false));
+    let module = &octosense_appstore::cardapp::CARD_MODULE;
+    let open = module.open_schema().validate("{\"app\":\"os.calendar\"}", &[]).unwrap();
+    host.create(&mut cx, 1, module, open, dvec2(390.0, 700.0)).unwrap();
+    let root = host.get(1).unwrap().root.clone();
+    let owner = host.get(1).unwrap().vm_id;
+    let tile = cx.with_vm(|vm| {
+        script_eval!(vm, {mod.wm_theme = {background: #ffffff}});
+        crate::module_view::script_mod(vm);
+        let value = script_eval!(vm, {use mod.widgets.* MpModuleView{}});
+        WidgetRef::script_from_value(vm, value)
+    });
+    tile.borrow_mut::<MpModuleView>().unwrap().set_root(&mut cx, 1, owner, root.clone());
+    set_card_body(&mut cx, &root, owner, r#"
+fn populate(subject, message){
+    ui.subject.set_text(subject)
+    ui.message_body.set_text(message)
+    ui.workspace.set_visible(true)
+}
+SolidView{width:Fill height:Fill flow:Down padding:16 spacing:10
+workspace := View{width:Fill height:Fill flow:Down spacing:10 visible:false
+subject := Label{width:Fill text:"" draw_text.text_style:theme.font_bold{font_size:18}}
+message_view := View{width:Fill height:Fill flow:Down spacing:10
+ScrollYView{width:Fill height:Fill flow:Down
+message_body := Label{width:Fill text:"" draw_text.text_style.font_size:16}
+}}
+Button{text:"Compose reply"}
+explicit_line := Label{width:Fill flow:Flow.Right{wrap:false} text:"Explicitly single line content stays single line across every retained restyle"}
+input := TextInput{width:Fill text:"Draft"}
+}
+}
+}
+"#);
+    widget_tree::set_ui_root(&mut cx, &root);
+    draw_card(&mut cx, &tile, 390.0, 700.0);
+    let subject=root.label(&cx,ids!(subject));
+    let message=root.label(&cx,ids!(message_body));
+    let subject_text = "A longer appointment title requiring more than one line on a narrow phone display";
+    let message_text = "Hello,\n\nYour appointment is Tuesday, October 6 at 9:00 AM Pacific. Please confirm this time or suggest another appointment.\n\nCedar Clinic";
+    // Match an async app callback: initially blank labels live in a hidden
+    // workspace, then the app's own script populates and shows them.
+    assert!(root.splash(&cx, ids!(card)).call_script_fn_with_strings(
+        &mut cx, live_id!(populate), &[subject_text, message_text]
+    ));
+    // ui.* setters suspend script execution until the widget task pump runs,
+    // as they do after an actual host callback.
+    makepad_widgets::makepad_platform::makepad_script_std::handle_script_tasks(&mut cx);
+    let subject_uid = subject.widget_uid();
+    let message_uid = message.widget_uid();
+    let input = root.text_input(&cx, ids!(input));
+    let input_uid = input.widget_uid();
+    input.set_text(&mut cx, "Unsaved draft");
+    for restyle in [None,Some(true),Some(false)] {
+        if let Some(dark)=restyle {host.apply_style(&mut cx,&sheet(dark));}
+        for (width,height) in [(390.0,700.0),(390.0,320.0)] {
+            draw_card(&mut cx,&tile,width,height);
+            for (name,label) in [("subject",&subject),("message_body",&message)] {
+                let area=label.area().rect(&cx);
+                let text=label.borrow().unwrap().text_layout_rect;
+                assert!(text.size.x <= area.size.x, "{restyle:?} {name}: text overflows {text:?}, frame {area:?}");
+                assert!(area.size.x<=width-32.0 && area.size.x>0.0);
+                assert!(area.size.y>40.0,"expected wrapped text after blank-set_text/show/restyle");
+            }
+            let nowrap = root.label(&cx, ids!(explicit_line));
+            let nowrap = nowrap.borrow().unwrap();
+            assert!(nowrap.text_layout_rect.size.x > nowrap.area().rect(&cx).size.x, "explicit no-wrap must be respected");
+            assert!(nowrap.text_layout_rect.size.y < 40.0);
+            assert_eq!(subject.widget_uid(), subject_uid);
+            assert_eq!(message.widget_uid(), message_uid);
+            assert_eq!(subject.text(), subject_text);
+            assert_eq!(message.text(), message_text);
+            assert_eq!(root.text_input(&cx, ids!(input)).widget_uid(), input_uid);
+            assert_eq!(input.text(), "Unsaved draft");
+        }
+    }
+    host.teardown(&mut cx,1);
+}

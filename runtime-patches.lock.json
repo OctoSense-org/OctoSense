@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "a506c3880a865b5ad29512f11f8d2ec206f5f076",
+    "tree": "348c7f55980f045c18b23bd86473755ea6af10dd",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -21,7 +21,8 @@
       "Video uses its resolved drawable size for aspect-preserving fill, including Fill/Fit and resized layouts, so rotated Android camera previews are cropped instead of stretched.",
       "Android QR scanning selects a supported common preview/YUV buffer size before opening Camera2, fits the preview without stretching, and ignores callbacks from a previous scanner session.",
       "Android startup and resume never request location for the legacy GPS cache; it uses existing grants only. Explicit location actions retain the normal permission flow.",
-      "Android Maps requests its first location grant only from Your location through the app location capability and the existing foreground GPS listener/permission callback; GPS reads stay passive."
+      "Android Maps requests its first location grant only from Your location through the app location capability and the existing foreground GPS listener/permission callback; GPS reads stay passive.",
+      "Label keeps its native wrapping default across retained theme reapplication; named labels populated after mounting stay wrapped, while explicit app no-wrap flows remain unchanged."
     ],
     "stacked": [
       {
@@ -79,6 +80,10 @@
       {
         "patch": "tools/runtime-patches/makepad-location-request.patch",
         "sha256": "9cd0980e8d07a24bf0a650e5e4f8bddc736cfa4bf143ced72d772d5f3f6f1e06"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-label-restyle-wrap.patch",
+        "sha256": "caffe63992d32aa5295af426903d2e6ef028cdb5d831336fa43ea79710d34305"
       }
     ]
   }
