@@ -87,7 +87,11 @@ WKWebView 存储；Android 9+ 使用不可导出的独立进程 Activity 及唯�
 
 GitHub 和 Google 保留现有提供方授权流程。需要访问其他提供方来源的后端登录应
 选择桌面浏览器模式；嵌入模式不会悄悄打开外站。Windows/Linux 保留桌面浏览器登录，
-iOS 后端登录仍不可用。
+iOS 后端登录仍不可用。Linux/Windows 的普通 `WebReader.open` 也会明确拒绝，
+因为当前固定版本没有嵌入式 SystemBrowser 适配器。另一个可选 CEF Browser 控件
+不能直接替代认证适配器：它目前使用全局持久 profile，并关闭 Chromium 沙箱，
+不具备这里要求的每应用会话和导航边界。嵌入支持仍需隔离适配器及原生系统验收，
+外部浏览器不能计作嵌入支持。
 
 ## 开发者后端接口约定
 

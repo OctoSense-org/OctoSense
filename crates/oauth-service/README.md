@@ -117,6 +117,12 @@ GitHub and Google retain their existing provider authorization flows. A backend
 login that needs to visit another provider's origin must use the desktop browser
 option; the embedded mode does not silently open external sites. Windows/Linux
 keep desktop browser login, and iOS backend login remains unavailable.
+On Linux/Windows, ordinary `WebReader.open` also refuses explicitly because the
+pinned runtime has no embedded SystemBrowser adapter. The separate optional CEF
+Browser widget is not a drop-in authentication adapter: its current global
+persistent profile and disabled Chromium sandbox do not provide our per-app
+session and navigation boundaries. Shipping embedded support still requires an
+isolated adapter and native OS acceptance; an external browser does not count.
 
 ## Developer backend contract
 
