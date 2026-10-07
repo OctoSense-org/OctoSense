@@ -82,6 +82,7 @@ pub mod wm_reply;
 pub mod ext;
 pub mod glance;
 pub mod glance_card;
+mod glance_style;
 pub mod glance_chat;
 pub mod mail_card;
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -5926,6 +5927,7 @@ impl MatchEvent for App {
         let sheet = octosense::style::load_sheet(desktop::DesktopStyle::Omarchy, false);
         host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet.name));
         self.module_host.apply_style(cx, &sheet);
+        glance_style::select(cx, &sheet);
         let (material, roles) = Self::chrome_from_sheet(&sheet);
         self.stylesheet = Some(sheet);
         let source = theme::load_theme_source(&theme_name);

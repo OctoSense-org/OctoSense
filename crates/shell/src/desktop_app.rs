@@ -153,6 +153,7 @@ impl App {
             .or_else(|| (style == DesktopStyle::OctoSense).then(|| theme::scan_shell_palette(&sheet.theme)));
         self.apply_material_to_chrome(cx, material, palette);
         self.module_host.apply_style(cx, &sheet);
+        crate::glance_style::select(cx, &sheet);
         self.stylesheet = Some(sheet);
         let omarchy_source = if style == DesktopStyle::Omarchy {
             theme::load_theme_source(&self.state_mut().theme_name)

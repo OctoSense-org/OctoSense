@@ -24,6 +24,12 @@
 //! `Fit`; explicit viewport workspaces use a bounded `Fill` root and own their
 //! scroll regions. Script feed summaries display metadata without running UI.
 //!
+//! **Presentation.** `glance_style` receives the same host-selected stylesheet
+//! as normal app modules. A tile applies it once per revision to its resident
+//! Splash and host sheet; source, item, heap, local state and grants are retained.
+//! The shell's ambient chrome theme is not the app's theme. Explicit colors in
+//! published source remain app-owned; native fallback chat reads selected roles.
+//!
 //! **Policy.** A tile's isolate runs under the publishing app's resolved
 //! policy, applied exactly as the Card runner applies it
 //! (`octosense_app_policy::splash_adapter::apply` with the app's
@@ -950,6 +956,7 @@ struct Tile {
     contained: bool,
     workspace: bool,
     admitted_prompts: bool,
+    style_revision: u64,
     viewport: Option<Rect>,
     focused: Option<WidgetUid>,
 }
@@ -1147,7 +1154,7 @@ impl GlanceTiles {
 
     /// The tile for `key`, made and seated on first use, running `body`.
     pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
-        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), card: SplashRef::default(), sheet: SplashRef::default(), body: "".into(), app: app.to_string(), contained, workspace: self.viewport_layout, admitted_prompts: false, viewport: None, focused: None });
+        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), card: SplashRef::default(), sheet: SplashRef::default(), body: "".into(), app: app.to_string(), contained, workspace: self.viewport_layout, admitted_prompts: false, style_revision: 0, viewport: None, focused: None });
         if tile.frame.is_empty() {
             let scroll = self.scroll;
             let viewport = self.viewport_layout;
@@ -1164,6 +1171,14 @@ impl GlanceTiles {
             let splash = tile.card.clone();
             tile.admitted_prompts = seat(cx, &splash, app, contained);
             if tile.workspace { splash.set_host_prompts(cx, self.foreground && tile.admitted_prompts); }
+        }
+        let (revision, sheet) = crate::glance_style::current(cx);
+        if tile.style_revision != revision {
+            if let Some(sheet) = sheet {
+                if let Some(mut card) = tile.card.borrow_mut() { card.set_stylesheet(cx, (*sheet).clone()); }
+                if let Some(mut host_sheet) = tile.sheet.borrow_mut() { host_sheet.set_stylesheet(cx, (*sheet).clone()); }
+            }
+            tile.style_revision = revision;
         }
         let splash = tile.card.clone();
         if tile.body.as_ref() != body.as_ref() {
@@ -1443,6 +1458,71 @@ mod tests {
     #[cfg(feature = "app-hub")]
     fn heap_of(cx: &mut Cx, splash: &SplashRef) -> usize {
         splash.borrow_mut().unwrap().isolate_heap_key(cx).expect("the card runs in its own isolate")
+    }
+
+    #[test]
+    fn selected_glance_style_reaches_existing_cards_without_replacing_state() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        cx.with_vm(|vm| {
+            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
+        });
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        let body: std::sync::Arc<str> = r#"
+            mod.state = {item: "retained-calendar-event", edits: 0}
+            height: Fill flow: Down
+            title := Label {width: Fill height: Fit text: "A long event title that stays wrapped and readable in the selected phone style"}
+            owned := Label {text: "Explicit app color" draw_text.color: #ce2756}
+            draft := TextInput {width: Fill height: 80 text: "original"}
+        "#.into();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let mut draw = |cx: &mut Cx, tiles: &mut GlanceTiles| {
+            let size = dvec2(350.0, 500.0);
+            pass.set_size(cx, size);
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event); let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0)); list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw_workspace(&mut draw, "style-event", "test.style", false, &body, Rect{pos:dvec2(0.,0.),size});
+            draw.end_turtle(); list.end(&mut draw); draw.end_pass(&pass);
+        };
+        let mut identity = None;
+        for dark in [false, true, false] {
+            let sheet = desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
+            crate::glance_style::select(&mut cx, &sheet);
+            let card = tiles.open(&mut cx, "style-event", "test.style", false, &body);
+            draw(&mut cx, &mut tiles); draw(&mut cx, &mut tiles);
+            let vm_id = isolate_of(&mut cx, &card).unwrap();
+            let draft = card.text_input(&cx, ids!(draft));
+            let title = card.label(&cx, ids!(title));
+            let expected = if dark {0xe6e0e9ff} else {0x1d1b20ff};
+            assert_eq!(title.borrow().unwrap().draw_text.color.to_u32(), expected);
+            assert_eq!(card.label(&cx, ids!(owned)).borrow().unwrap().draw_text.color.to_u32(), 0xce2756ff,
+                "the host never overwrites app-owned colors");
+            let font = title.borrow().unwrap().draw_text.text_style.font_family.clone();
+            assert!(font.member_ids().any(|id| !id.to_lowercase().contains("mono")), "phone sans family");
+            if let Some((old_vm, old_widget)) = identity {
+                assert_eq!(vm_id, old_vm); assert_eq!(draft.widget_uid(), old_widget);
+                assert_eq!(draft.text(), "Edited time 09:30 — 保留");
+            } else {
+                identity = Some((vm_id, draft.widget_uid()));
+                draft.set_text(&mut cx, "Edited time 09:30 — 保留");
+                cx.with_script_vm_id(vm_id, |vm| {script_eval!(vm, {mod.state.edits = 7});});
+            }
+            cx.with_script_vm_id(vm_id, |vm| {
+                assert_eq!(desktop_style::current(vm).unwrap().name, sheet.name);
+                let value = script_eval!(vm, {mod.state.edits});
+                assert_eq!(value.as_number(), Some(7.0));
+                let value = script_eval!(vm, {mod.state.item == "retained-calendar-event"});
+                assert_eq!(value.as_bool(), Some(true));
+            });
+            assert!(title.area().rect(&cx).size.y > 25.0, "title stays wrapped after restyle");
+            assert_eq!(cx.with_vm(|vm| desktop_style::current(vm).unwrap().name), "omarchy",
+                "shell chrome does not inherit an app's stylesheet");
+        }
+        tiles.sweep(&mut cx, &[]);
     }
 
     /// A contained app's tile runs under that app's resolved policy, the one
