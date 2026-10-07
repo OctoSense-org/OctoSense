@@ -146,10 +146,8 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 /// lists, which is process-wide and never forgets an app, so a test of the
 /// build's own catalog saw them or not depending on which tests had run
 /// before it in the same process. A test registers its app here, and the
-/// catalog tests leave these out. So too the store apps a test installs in
-/// the shared apps root (app_chat's agent fixtures): App Hub's library,
-/// the one [`installed_card_apps`] lists, reads every bundle there, so a
-/// catalog read while such a test runs beside it lists that app.
+/// catalog tests leave these out. Store-agent conversation fixtures use
+/// isolated child processes with their own signed catalogs and app roots.
 #[cfg(test)]
 pub(crate) mod test_system_apps {
     use std::sync::Mutex;
@@ -164,15 +162,7 @@ pub(crate) mod test_system_apps {
         octosense_appstore::system::register_system_app(app);
     }
 
-    /// Note the store app `id` a test is about to install, before its
-    /// bundle is written, for the same reason.
-    #[cfg(any(feature = "app-hub", native_mobile))]
-    pub(crate) fn note_installed(id: &'static str) {
-        IDS.lock().unwrap_or_else(|e| e.into_inner()).push(id);
-    }
-
-    /// Whether a test registered the system app `id` (an `os.` id) or
-    /// installed the store app `id`.
+    /// Whether a test registered the system app `id` (an `os.` id).
     pub(crate) fn is_test_app(id: &str) -> bool {
         IDS.lock().unwrap_or_else(|e| e.into_inner()).contains(&id)
     }
