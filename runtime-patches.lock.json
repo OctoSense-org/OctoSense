@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "6988d7f459305b7d9f261be39c97bd6faf0a11a1",
+    "tree": "338810e8f7e649609c8af86d6cbed80e87379d9b",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -95,7 +95,7 @@
       },
       {
         "patch": "tools/runtime-patches/makepad-device-consent.patch",
-        "sha256": "105023363ac630c71b6d0d073a2ff5e74ab0d8a3bfb8ba4e1a650c28e17ec155"
+        "sha256": "8a09c8c07f15d899667db40500bf407393fc9ec262b8a01d01d4a7852c4c2693"
       },
       {
         "patch": "tools/runtime-patches/makepad-web-reader-availability.patch",

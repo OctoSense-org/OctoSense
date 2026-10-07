@@ -1,5 +1,5 @@
 diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
-index ce7ca3217..380dc36af 100644
+index ce7ca3217..21e6b1eae 100644
 --- a/widgets/src/camera_preview.rs
 +++ b/widgets/src/camera_preview.rs
 @@ -187,6 +187,14 @@ pub struct CameraPreview {
@@ -26,7 +26,7 @@ index ce7ca3217..380dc36af 100644
      last: String,
      #[rust]
      last_error: String,
-@@ -235,8 +245,18 @@ fn start(&mut self, cx: &mut Cx) -> bool {
+@@ -235,12 +245,26 @@ fn start(&mut self, cx: &mut Cx) -> bool {
          }
          if self.permission.is_none() && !self.permission_pending {
              self.permission_pending = true;
@@ -45,9 +45,18 @@ index ce7ca3217..380dc36af 100644
 +                cx.check_permission(Permission::Camera)
 +            });
          }
-         if self.cameras.is_empty() {
+-        if self.cameras.is_empty() {
++        if self.cameras.is_empty()
++            && (!crate::splash_policy::device_consent_required(self.heap_key())
++                || self.permission == Some(PermissionStatus::Granted)) {
              // The platform publishes its list once; a preview mounted later
-@@ -254,6 +274,8 @@ fn start(&mut self, cx: &mut Cx) -> bool {
+             // asks again. The frame callback opens the capture session.
++            // Apple capture initialization itself requests OS access, so an
++            // opted-in heap must not enumerate before its check succeeds.
+             cx.video_input(0, |_frame| {});
+             cx.refresh_video_inputs();
+         }
+@@ -254,6 +278,8 @@ fn start(&mut self, cx: &mut Cx) -> bool {
  
      fn stop(&mut self, cx: &mut Cx) {
          self.wanted = false;
@@ -56,7 +65,7 @@ index ce7ca3217..380dc36af 100644
          self.halt(cx);
          if let Some(timer) = self.timer.take() {
              cx.stop_timer(timer);
-@@ -263,6 +285,7 @@ fn stop(&mut self, cx: &mut Cx) {
+@@ -263,6 +289,7 @@ fn stop(&mut self, cx: &mut Cx) {
      /// Close the camera, keeping whether the app wants it: the watchdog
      /// reopens it when the preview draws again.
      fn halt(&mut self, cx: &mut Cx) {
@@ -64,7 +73,7 @@ index ce7ca3217..380dc36af 100644
          if matches!(self.state, State::Starting | State::Running) {
              if self.recording.take().is_some() {
                  if let Some(input) = self.input {
-@@ -276,6 +299,10 @@ fn halt(&mut self, cx: &mut Cx) {
+@@ -276,6 +303,10 @@ fn halt(&mut self, cx: &mut Cx) {
  
      /// One step towards what the app wants, driven by the platform's events.
      fn drive(&mut self, cx: &mut Cx) {
@@ -75,7 +84,7 @@ index ce7ca3217..380dc36af 100644
          let want_front = self.facing == "front";
          match self.state {
              State::Running if want_front != self.open_front || (self.aspect - self.open_aspect).abs() > 0.05 => {
-@@ -296,6 +323,7 @@ fn drive(&mut self, cx: &mut Cx) {
+@@ -296,6 +327,7 @@ fn drive(&mut self, cx: &mut Cx) {
                      // request, then the hidden-preview watchdog stops a player
                      // that has not been prepared yet. Wait for the real answer.
                      None if cfg!(target_os = "android")
@@ -83,7 +92,7 @@ index ce7ca3217..380dc36af 100644
                          || cx.seconds_since_app_start() - self.asked_at < PERMISSION_GRACE_SECONDS => return,
                      None => self.permission = Some(PermissionStatus::Granted),
                  }
-@@ -343,6 +371,7 @@ fn capture_path(&self, cx: &Cx, kind: &str, ext: &str) -> Option<(String, String
+@@ -343,6 +375,7 @@ fn capture_path(&self, cx: &Cx, kind: &str, ext: &str) -> Option<(String, String
      }
  
      fn capture(&mut self, cx: &mut Cx) -> bool {
@@ -91,7 +100,7 @@ index ce7ca3217..380dc36af 100644
          let (Some(input), State::Running) = (self.input, self.state) else {
              self.fail(cx, "the camera is not running".into());
              return false;
-@@ -358,21 +387,35 @@ fn capture(&mut self, cx: &mut Cx) -> bool {
+@@ -358,21 +391,35 @@ fn capture(&mut self, cx: &mut Cx) -> bool {
      }
  
      fn record_start(&mut self, cx: &mut Cx) -> bool {
@@ -133,7 +142,7 @@ index ce7ca3217..380dc36af 100644
          self.recording = Some(relative);
          let library = self.granted("library.write");
          cx.camera_capture(input, CameraCaptureRequest::StartVideo { path: real, audio, library });
-@@ -380,6 +423,7 @@ fn record_start(&mut self, cx: &mut Cx) -> bool {
+@@ -380,6 +427,7 @@ fn record_start(&mut self, cx: &mut Cx) -> bool {
      }
  
      fn record_stop(&mut self, cx: &mut Cx) {
@@ -141,7 +150,7 @@ index ce7ca3217..380dc36af 100644
          if let (Some(input), Some(_)) = (self.input, self.recording.as_ref()) {
              cx.camera_capture(input, CameraCaptureRequest::StopVideo);
          }
-@@ -541,6 +585,11 @@ fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue)
+@@ -541,6 +589,11 @@ fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue)
      }
  
      fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -153,7 +162,7 @@ index ce7ca3217..380dc36af 100644
          self.view.handle_event(cx, event, scope);
          if self.timer.is_some_and(|t| t.is_event(event).is_some()) {
              if self.drawn {
-@@ -558,8 +607,18 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -558,16 +611,44 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
              self.handle_gestures(cx, event);
          }
          match event {
@@ -173,7 +182,11 @@ index ce7ca3217..380dc36af 100644
                  self.permission = Some(result.status);
                  if result.status == PermissionStatus::Granted && self.cameras.is_empty() {
                      // Enumeration before the first permission grant can be
-@@ -568,6 +627,21 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                     // empty. Refresh it now that the device may be opened.
++                    if crate::splash_policy::device_consent_required(self.heap_key()) {
++                        cx.video_input(0, |_frame| {});
++                    }
+                     cx.refresh_video_inputs();
                  }
                  self.drive(cx);
              }
@@ -195,7 +208,7 @@ index ce7ca3217..380dc36af 100644
              Event::VideoInputs(VideoInputsEvent { descs }) => {
                  let count = descs.len();
                  self.cameras = descs
-@@ -660,6 +734,108 @@ fn failed_start_stops_retries_until_explicit_start_and_ignores_other_players() {
+@@ -660,6 +741,112 @@ fn failed_start_stops_retries_until_explicit_start_and_ignores_other_players() {
          crate::splash_policy::gc_policies(&[heap]);
      }
  
@@ -214,8 +227,6 @@ index ce7ca3217..380dc36af 100644
 +        crate::splash_policy::set_device_permission_gate(|app, _| app == "org.example.background-camera");
 +        crate::splash_host::set_tag_for_heap(heap, Some("org.example.background-camera".into()));
 +        crate::splash_host::set_prompts_for_heap(heap, false);
-+        preview.cameras = vec![CameraChoice { input_id: VideoInputId(LiveId(1)), front: false,
-+            formats: vec![format(640, 480, VideoPixelFormat::YUV420, 1)] }];
 +        assert!(crate::splash_policy::service_allowed(heap, "location.request").is_ok());
 +        let location = cx.with_vm(|vm| {
 +            crate::splash::register_agent_module(vm);
@@ -240,6 +251,12 @@ index ce7ca3217..380dc36af 100644
 +        crate::splash_host::set_prompts_for_heap(heap, false);
 +        assert!(preview.start(&mut cx));
 +        let granted_request = preview.permission_request.unwrap();
++        // Until OS approval, the empty list must not initialize native capture
++        // (which would itself request permission on macOS). Supply deterministic
++        // choices only for the positive completion; no hardware is opened here.
++        assert!(preview.cameras.is_empty());
++        preview.cameras = vec![CameraChoice { input_id: VideoInputId(LiveId(1)), front: false,
++            formats: vec![format(640, 480, VideoPixelFormat::YUV420, 1)] }];
 +        preview.handle_event(&mut cx, &result(Permission::Camera, granted_request, PermissionStatus::Granted), &mut Scope::empty());
 +        assert_eq!(preview.permission, Some(PermissionStatus::Granted));
 +        assert!(preview.wanted, "a background surface may use an existing OS grant");
