@@ -65,6 +65,37 @@ OctoScript-App-Design-Flow:
 
 ## The apps
 
+### Shared appearance
+
+News, Photos, Mail, Calendar, Maps, AI providers and YouTube share the interface
+in [`interface.splash`](interface.splash): theme-aware page/card/field surfaces,
+readable secondary text, 44-point actions and 48-point inputs. Desktop content
+has a maximum width; narrow windows keep the same actions. Camera and media
+viewers retain a dark viewing surface. App Hub uses the same spacing and action
+hierarchy in its native module. Expanded Glance cards and in-card chat use the
+shared shell on both desktop and phone.
+
+When a keyboard shrinks a focused hosted app, the shell reveals the active
+editor through the app’s own scrolling container and keeps fixed actions in
+place. Maps switches its tiles with the host appearance. Camera controls use
+a dark scrim to remain readable over a bright preview; Android waits for the
+first-use permission answer before preparing that preview. A permission dialog
+pauses only a playing video; it cannot turn an unprepared camera into a fake
+playing state when the app resumes. The preview uses its resolved on-screen
+size for aspect-preserving fill, including `Fill` layouts and resized windows;
+a rotated camera frame is cropped at the edges instead of stretched. AI providers’
+Android QR scanner chooses a preview/YUV size advertised by the camera before
+opening it; the preview keeps that aspect ratio, and callbacks from an earlier
+scanner session cannot close a newly opened one.
+
+After editing the interface, run `python3 tools/sync-app-interface.py` from the
+repository root. It embeds the exact prelude in each contained bundle;
+`python3 tools/sync-app-interface.py --check` detects drift in CI.
+The prelude resolves the current host theme on restyle, without replacing
+unsaved input. [Local native UX checks](../tools/app-ux/README.md) exercise
+editing, persistence, appearance switching, browsing and search in isolated
+profiles. Phone-sized desktop captures are not physical-device verification.
+
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
@@ -93,10 +124,16 @@ reaches only the hosts the manifest lists.
   runtime). Playback opens YouTube's mobile watch page, which autoplays muted
   and shows its own "Open App" prompt. Search reads YouTube's results page and
   depends on its layout.
-- **Camera**: on the OnePlus 6 test run (2026-09-25) Camera captured a photo
-  and released the camera in the background, but the live preview drew pure
-  black; unresolved. Desktop builds have no camera and the Android emulator
-  refuses one, so capture is untested elsewhere.
+- **Camera**: the Redmi Note 12 test package (2026-10-07) passed delayed
+  first-use permission, front/back switching, Photo/Video preview selection and
+  background resume. The stretched `Fill` preview is corrected; native GPU
+  circle measurements pass, while a clear-scene visual comparison on the phone
+  is still pending. The OnePlus 6 black preview reported on 2026-09-25 has not
+  been retested. Still capture was not exercised in this run; Android video
+  recording remains unimplemented.
+- **AI providers camera import**: the Redmi Note 12 scanner opens with supported
+  preview buffers and passed cancel, system Back, background interruption and
+  reopening. QR decoding and importing a provider were not exercised in this run.
 - **Photos Memories**: open **Memories → Create memories**, optionally entering
   a theme such as “summer with family.” The host's `model.complete` uses the
   provider configured in **Settings → AI providers** to curate up to three

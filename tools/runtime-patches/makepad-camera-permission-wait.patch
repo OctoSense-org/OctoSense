@@ -1,0 +1,65 @@
+diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+--- a/widgets/src/camera_preview.rs
++++ b/widgets/src/camera_preview.rs
+@@ -185,6 +185,8 @@
+     #[rust]
+     asked_at: f64,
+     #[rust]
++    permission_pending: bool,
++    #[rust]
+     timer: Option<Timer>,
+     #[rust]
+     drawn: bool,
+@@ -227,7 +229,8 @@
+             return false;
+         }
+         self.wanted = true;
+-        if self.permission.is_none() {
++        if self.permission.is_none() && !self.permission_pending {
++            self.permission_pending = true;
+             self.asked_at = cx.seconds_since_app_start();
+             cx.request_permission(Permission::Camera);
+         }
+@@ -284,7 +287,12 @@
+                         self.fail(cx, format!("camera permission {status:?}"));
+                         return;
+                     }
+-                    None if cx.seconds_since_app_start() - self.asked_at < PERMISSION_GRACE_SECONDS => return,
++                    // Android always answers its permission dialog. Opening on
++                    // a timeout while that dialog is still up creates a second
++                    // request, then the hidden-preview watchdog stops a player
++                    // that has not been prepared yet. Wait for the real answer.
++                    None if cfg!(target_os = "android")
++                        || cx.seconds_since_app_start() - self.asked_at < PERMISSION_GRACE_SECONDS => return,
+                     None => self.permission = Some(PermissionStatus::Granted),
+                 }
+                 let Some(choice) = self.cameras.iter().find(|c| c.front == want_front).or(self.cameras.first()).cloned() else {
+@@ -547,7 +555,13 @@
+         }
+         match event {
+             Event::PermissionResult(result) if result.permission == Permission::Camera => {
++                self.permission_pending = false;
+                 self.permission = Some(result.status);
++                if result.status == PermissionStatus::Granted && self.cameras.is_empty() {
++                    // Enumeration before the first permission grant can be
++                    // empty. Refresh it now that the device may be opened.
++                    cx.refresh_video_inputs();
++                }
+                 self.drive(cx);
+             }
+             Event::VideoInputs(VideoInputsEvent { descs }) => {
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+--- a/widgets/src/video.rs
++++ b/widgets/src/video.rs
+@@ -1670,7 +1670,10 @@
+     }
+ 
+     fn pause_playback(&mut self, cx: &mut Cx) {
+-        if self.playback_state != PlaybackState::Paused {
++        // A permission dialog can pause the app before a camera has a source.
++        // Turning Unprepared into Paused makes Resume invent a Playing state,
++        // so the later source assignment and first prepare are both ignored.
++        if self.playback_state == PlaybackState::Playing {
+             cx.pause_video_playback(self.id);
+             self.playback_state = PlaybackState::Paused;
+         }

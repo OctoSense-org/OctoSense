@@ -57,6 +57,30 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 
 ## 应用一览
 
+### 共用外观
+
+新闻、相册、邮件、日历、地图、AI providers 和 YouTube 共用
+[`interface.splash`](interface.splash)：页面、卡片和输入框跟随主题，
+辅助文字保持可读，操作按钮高 44 点，输入框高 48 点。桌面内容限制最大宽度，
+窄窗口保留相同操作。相机和媒体查看器保留深色观看背景。应用大厅的原生模块
+采用相同的间距和操作层级。展开的 Glance 卡片及卡片内聊天在桌面和手机端
+使用同一套 Shell。
+
+键盘缩小当前应用的可视区域时，Shell 通过应用自己的滚动区域显示当前输入框，
+固定操作栏保留原位。地图图块随宿主切换明暗外观。相机按钮使用深色底板，
+在明亮取景画面上仍可阅读；Android 等待首次权限弹窗的结果后才准备预览。
+权限弹窗只能暂停正在播放的视频，不能将尚未初始化的相机在返回后误标为正在播放。
+预览按布局完成后的实际显示尺寸等比填充，支持 `Fill` 和窗口缩放；
+旋转后的相机画面裁切边缘，不再拉伸。AI providers 的 Android 扫码器
+先选择相机声明支持的预览／YUV 输出尺寸，再打开相机；显示时保持比例，
+旧扫码会话的回调不会关闭新打开的扫码器。
+
+修改后在仓库根目录运行 `python3 tools/sync-app-interface.py`，将共用样式
+原样嵌入各个独立应用包；CI 通过 `python3 tools/sync-app-interface.py --check`
+检查是否同步。样式重载时读取当前宿主主题，同时保留未保存的输入。
+[本机原生 UX 检查](../tools/app-ux/README.zh-CN.md) 在独立配置中验证编辑、
+持久化、主题切换、浏览和搜索。手机尺寸的桌面截图不代表真机验证。
+
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
@@ -80,9 +104,12 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **YouTube**：在 OnePlus 6 上测试（2026-09-27），搜索、结果、播放和播放记录都正常；
   关闭播放器会结束页面（makepad#43，已在运行时中）。播放打开的是 YouTube 移动版观看页，
   它会静音自动播放，并显示自己的“Open App”提示。搜索读取 YouTube 的搜索结果页，依赖其布局。
-- **Camera**：在 OnePlus 6 测试中（2026-09-25），Camera 能拍照并在后台释放
-  相机，但实时预览是纯黑的，尚未解决。桌面构建没有相机，Android 模拟器拒绝
-  提供相机，因此其他环境下拍摄未经测试。
+- **Camera**：Redmi Note 12 独立测试包（2026-10-07）已通过延迟首次授权、
+  前后镜头切换、Photo／Video 预览模式切换和后台恢复。`Fill` 预览拉伸已修正，
+  原生 GPU 的圆形尺寸对比通过；手机明亮场景的外观对比仍待验证。
+  2026-09-25 报告的 OnePlus 6 黑屏尚未复测。本轮未测试拍照；Android 录像仍未实现。
+- **AI providers 相机导入**：Redmi Note 12 扫码器使用设备支持的预览尺寸，
+  已通过打开、取消、系统返回、后台中断和重新打开；本轮未测试二维码解码及服务商导入。
 - **Photos 回忆**：打开 **Memories → Create memories**，可选输入“summer with family”等主题。
   宿主的 `model.complete` 使用 **设置 → AI providers** 中配置的服务商，整理最多三个
   带标题、简短叙述和有序幻灯片的故事。只发送相片目录的元数据（日期、地点、姓名、

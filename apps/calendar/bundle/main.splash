@@ -1,3 +1,40 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
 // Calendar owns one store. Both this UI and agents use calendar.*; the
 // Glance event card is a projection of the same saved event, never a copy.
 let month = ""
@@ -63,7 +100,7 @@ fn refresh(direction){
         ui.day_title.set_text(r.data.day_label)
         ui.grid.render()
         ui.events.render()
-        status("Local calendar · Times include each event's zone")
+        status("Your schedule, all in one place")
         if r.data.focused != nil && screen != "editor" { open_event(r.data.focused) }
         if screen == "detail" && selected != nil {
             for event in events { if event.id == selected.id { selected = event; render_detail() } }
@@ -84,7 +121,7 @@ fn edit_new(){
     ui.e_zone.set_text(zone)
     ui.e_place.set_text("")
     ui.e_notes.set_text("")
-    ui.edit_status.set_text("An empty end leaves the duration unspecified.")
+    ui.edit_status.set_text("Title and date are required. End time is optional.")
     pane("editor")
 }
 fn edit_existing(){
@@ -151,33 +188,24 @@ fn remove(){
         if r.is_ok { back() } else { ui.detail_status.set_text(r.error) }
     })
 }
-fn poll(){
-    start_timeout(1.0, || {
-        if !busy && screen != "editor" { refresh(0) }
-        poll()
-    })
-}
-start_timeout(0.05, || { refresh(0); poll() })
+start_timeout(0.05, || refresh(0))
+// A top-level interval is replaced by the host on a theme reload. A recursive
+// timeout chain survives that reload and starts an extra poller every time.
+start_interval(1.0, || { if !busy && screen != "editor" { refresh(0) } })
 
-let ink = #x172033
-let muted = #x53627a
-let accent = #x285cd6
-let Bar = ButtonFlat{height: 44 padding: Inset{left: 12 right: 12}
-    draw_bg +: {color: #x00000000 color_hover: #xeaf0ff color_down: #xdbe6ff border_size: 0.0 border_radius: 10.0}
-    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 14}}
-}
-let Primary = Bar{draw_bg +: {color: accent color_hover: #x396de6 color_down: #x204bb5}
-    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
-let Field = TextInput{width: Fill height: 46
-    draw_bg +: {color: #xf1f4fa color_hover: #xeaf0fa color_focus: #xeaf0ff color_empty: #xf1f4fa border_color: #xd9e0ec border_color_hover: #xb9cbea border_color_focus: accent border_color_empty: #xd9e0ec border_radius: 10.0}
-    draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: muted color_empty_hover: muted}}
-let Caption = Label{width: Fill draw_text.color: muted draw_text.text_style.font_size: 12}
-let Day = Bar{width: Fill height: 43 padding: 0 draw_text +: {color: ink color_hover: ink color_down: ink text_style +: {font_size: 14}}}
-let Marked = Day{draw_bg +: {color: #xeaf0ff color_hover: #xdbe6ff color_down: #xcddcff}}
-let Chosen = Day{draw_bg +: {color: accent color_hover: accent color_down: accent} draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
+let ink = ui_ink
+let muted = ui_muted
+let accent = ui_link
+let Bar = UiButton{}
+let Primary = UiPrimary{}
+let Field = UiField{}
+let Caption = UiCaption{}
+let Day = Bar{draw_text.text_style: theme.font_regular{font_size: 14} width: Fill height: 44 padding: 0 draw_text +: {color: ink color_hover: ink color_down: ink text_style +: {font_size: 14}}}
+let Marked = Day{draw_bg +: {color: ui_field color_hover: ui_hover color_down: ui_hover}}
+let Chosen = Day{draw_bg +: {color: ui_primary color_hover: ui_primary color_down: ui_primary} draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
 
-SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
-    calendar := View{width: Fill height: Fill flow: Down
+SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.color: ui_page
+    calendar := View{width: Fill max_width: 840 height: Fill flow: Down
         View{width: Fill height: 62 flow: Right align: Align{y: 0.5} padding: Inset{left: 18 right: 14} spacing: 6
             Label{width: Fill text: "Calendar" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 26}}
             Bar{text: "Today" on_click: || go_today()}
@@ -185,47 +213,53 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
         }
         status := Caption{padding: Inset{left: 18 right: 18 bottom: 8} text: "Loading calendar…"}
         ScrollYView{width: Fill height: Fill flow: Down padding: Inset{left: 14 right: 14 bottom: 28} spacing: 12
+            UiCard{padding: 8 spacing: 8
             View{width: Fill height: 46 flow: Right align: Align{y: 0.5}
                 Bar{width: 44 text: "‹" on_click: || refresh(-1)}
                 month_title := Label{width: Fill align: Align{x: 0.5} text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
                 Bar{width: 44 text: "›" on_click: || refresh(1)}
             }
             View{width: Fill height: 22 flow: Right
-                for name in weekdays { Label{width: Fill align: Align{x: 0.5} text: name draw_text.color: muted draw_text.text_style.font_size: 12} }
+                for name in weekdays { Label{width: Fill align: Align{x: 0.5} text: name draw_text.color: muted draw_text.text_style.font_size: 13} }
             }
             grid := View{width: Fill height: Fit flow: Down spacing: 3 on_render: || {
                 for week in weeks {
-                    View{width: Fill height: 43 flow: Right spacing: 3
+                    View{width: Fill height: 44 flow: Right spacing: 3
                         for date in week.days {
                             let label = date.label
                             if date.marked { label = label + " •" }
                             if date.selected { Chosen{text: label on_click: || pick(date.date)} }
                             else if date.marked { Marked{text: label on_click: || pick(date.date)} }
-                            else if !date.in_month { Day{text: label draw_text.color: #x929db0 on_click: || pick(date.date)} }
+                            else if !date.in_month { Day{text: label draw_text.color: ui_muted on_click: || pick(date.date)} }
                             else { Day{text: label on_click: || pick(date.date)} }
                         }
                     }
                 }
             }}
+            }
             day_title := Label{width: Fill margin: Inset{top: 10} text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 18}}
             events := View{width: Fill height: Fit flow: Down spacing: 8 on_render: || {
                 if events.len() == 0 {
-                    View{width: Fill height: Fit padding: 16 flow: Down spacing: 8
+                    UiCard{padding: 20 spacing: 8
+                        Label{width: Fill text: "A little room in your day" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 17}}
                         Label{width: Fill text: "No events on this day" draw_text.color: muted draw_text.text_style.font_size: 15}
-                        Bar{text: "Add an event" on_click: || edit_new()}
+                        Bar{text: "+ Add an event" on_click: || edit_new()}
                     }
                 }
                 for event in events {
-                    GestureView{width: Fill height: Fit flow: Down padding: 16 spacing: 6 show_bg: true draw_bg.color: #xf1f5fc on_tap: |x, y| open_event(event)
-                        Label{width: Fill text: event.time draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 15}}
-                        Label{width: Fill text: event.title draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 18}}
-                        if event.location != "" { Caption{text: event.location} }
+                    GestureView{width: Fill height: Fit on_tap: |x, y| open_event(event)
+                        UiCard{padding: 16 spacing: 6
+                            Label{width: Fill text: event.time draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 15}}
+                            Label{width: Fill text: event.title draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 18}}
+                            if event.location != "" { Caption{text: event.location} }
+                            Bar{text: "View event  ›" on_click: || open_event(event)}
+                        }
                     }
                 }
             }}
         }
     }
-    detail := SolidView{visible: false width: Fill height: Fill flow: Down draw_bg.color: #xffffff
+    detail := SolidView{visible: false width: Fill max_width: 840 height: Fill flow: Down draw_bg.color: ui_surface
         View{width: Fill height: 56 flow: Right padding: Inset{left: 8 right: 12} align: Align{y: 0.5}
             Bar{text: "‹ Calendar" on_click: || back()}
             View{width: Fill height: 1}
@@ -233,7 +267,7 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
         }
         ScrollYView{width: Fill height: Fill flow: Down padding: 20 spacing: 18
             event_title := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 28}}
-            SolidView{width: Fill height: Fit flow: Down padding: 18 spacing: 8 draw_bg.color: #xeaf0ff
+            SolidView{width: Fill height: Fit flow: Down padding: 18 spacing: 8 draw_bg.color: ui_field
                 Caption{text: "WHEN"}
                 event_when := Label{width: Fill text: "" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 21}}
                 event_zone := Caption{text: ""}
@@ -244,17 +278,20 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
             event_notes := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style.font_size: 16}
             Primary{text: "Show in Glance" on_click: || show_glance()}
             detail_status := Caption{text: ""}
-            delete_button := Bar{text: "Delete event" draw_text.color: #xb52c38 on_click: || remove()}
+            delete_button := Bar{text: "Delete event" draw_text +: {color: ui_danger color_hover: ui_danger color_down: ui_danger color_focus: ui_danger} on_click: || remove()}
         }
     }
-    editor := SolidView{visible: false width: Fill height: Fill flow: Down draw_bg.color: #xffffff
+    editor := SolidView{visible: false width: Fill max_width: 840 height: Fill flow: Down draw_bg.color: ui_surface
         View{width: Fill height: 58 flow: Right padding: Inset{left: 8 right: 12} align: Align{y: 0.5} spacing: 8
             Bar{text: "Cancel" on_click: || cancel_edit()}
             edit_heading := Label{width: Fill text: "New event" align: Align{x: 0.5} draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 17}}
             Primary{text: "Save" on_click: || save()}
         }
-        edit_status := Caption{padding: Inset{left: 18 right: 18 bottom: 10} text: ""}
-        ScrollYView{width: Fill height: Fill flow: Down padding: 18 spacing: 10
+        View{width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 18 right: 18 bottom: 10}
+            edit_status := Caption{text: ""}
+        }
+        ScrollYView{width: Fill height: Fill flow: Down padding: 18 spacing: 10 new_batch: true
+            UiTitle{text: "Event details"}
             Caption{text: "Title"}
             e_title := Field{empty_text: "Event title"}
             View{width: Fill height: Fit flow: Right spacing: 12
@@ -282,7 +319,7 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
             Caption{text: "Location"}
             e_place := Field{empty_text: "Add a location"}
             Caption{text: "Notes"}
-            e_notes := Field{height: 150 empty_text: "Add notes"}
+            e_notes := Field{is_multiline: true height: 150 empty_text: "Add notes"}
         }
     }
 }

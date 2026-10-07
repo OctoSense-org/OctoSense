@@ -11,16 +11,16 @@ script_mod! {
             width: Fill height: Fill flow: Down drag_scrolling: true auto_tail: true
             Message := View {
                 width: Fill height: Fit flow: Down spacing: 6
-                padding: Inset{left: 20 right: 20 top: 10 bottom: 14}
+                padding: Inset{left: 24 right: 24 top: 14 bottom: 18}
                 speaker := Label {
                     width: Fill height: Fit
-                    draw_text.text_style: theme.font_bold{font_size: 10.0}
+                    draw_text.text_style: theme.font_bold{font_size: 12.0}
                     draw_text.color: theme.color_text_placeholder
                 }
                 body := Label {
                     width: Fill height: Fit
                     draw_text.wrap: Words
-                    draw_text.text_style: theme.font_regular{font_size: 13.0 line_spacing: 1.35}
+                    draw_text.text_style: theme.font_regular{font_size: 15.0 line_spacing: 1.35}
                     draw_text.color: theme.color_text
                 }
             }
@@ -29,8 +29,8 @@ script_mod! {
                 margin: Inset{left: 44 right: 18 top: 8 bottom: 14}
                 padding: 14
                 draw_bg +: {color: #3668e81c border_radius: 16}
-                speaker := Label {width: Fill height: Fit draw_text.text_style: theme.font_bold{font_size: 10}}
-                body := Label {width: Fill height: Fit draw_text.wrap: Words draw_text.text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}
+                speaker := Label {width: Fill height: Fit draw_text.text_style: theme.font_bold{font_size: 12}}
+                body := Label {width: Fill height: Fit draw_text.wrap: Words draw_text.text_style: theme.font_regular{font_size: 15 line_spacing: 1.4}}
             }
         }
         dock := View {
@@ -44,7 +44,7 @@ script_mod! {
             }
             status := Label {
                 width: Fill height: Fit
-                draw_text.text_style: theme.font_regular{font_size: 10.0}
+                draw_text.text_style: theme.font_regular{font_size: 12.0}
                 draw_text.color: theme.color_text_placeholder
                 text: "Ask about this card or request a change"
             }
@@ -59,7 +59,7 @@ script_mod! {
                     is_multiline: true
                     empty_text: "Message the app…"
                     draw_bg +: {pixel: fn() {return vec4(0.0)}}
-                    draw_text.text_style: theme.font_regular{font_size: 13.0 line_spacing: 1.25}
+                    draw_text.text_style: theme.font_regular{font_size: 15.0 line_spacing: 1.25}
                     draw_cursor.color: #3668e8
                     draw_selection.color: #3668e840
                 }
@@ -96,7 +96,7 @@ fn composer_height(text: &str, width: f64) -> f64 {
     // TextInput keeps its complete layout/selection and scrolls longer drafts.
     let line_width = (width - 16.0).max(120.0);
     let lines: f64 = text.split('\n').map(|line| {
-        let pixels: f64 = line.chars().map(|c| if c.is_ascii() {7.0} else {14.0}).sum();
+        let pixels: f64 = line.chars().map(|c| if c.is_ascii() {8.0} else {16.0}).sum();
         (pixels / line_width).ceil().max(1.0)
     }).sum();
     20.0 * lines.clamp(2.0, 5.0) + 22.0

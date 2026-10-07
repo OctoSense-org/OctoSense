@@ -116,16 +116,13 @@ fn boot(){
 }
 start_timeout(0.05, || boot())
 
-let Chip = ButtonFlat{height: 34 padding: Inset{left: 12 right: 12}
-    draw_bg +: {border_radius: 17.0 color: #x00000066 color_hover: #x00000088 color_down: #x000000aa border_size: 0.0}
-    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 13}}
+let Chip = ButtonFlat{height: 44 padding: Inset{left: 12 right: 12}
+    draw_bg +: {border_radius: 17.0 color: #x000000b3 color_hover: #x000000cc color_down: #x000000dd color_focus: #x000000cc border_size: 0.0}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff text_style +: {font_size: 13}}
 }
-let ChipOn = Chip{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a}}
-let ModeOff = ButtonFlat{height: 30 padding: Inset{left: 10 right: 10}
-    draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 border_size: 0.0}
-    draw_text +: {color: #xffffffaa color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 14}}
-}
-let ModeOn = ModeOff{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a}}
+let ChipOn = Chip{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a color_focus: #xffd60a}}
+let ModeOff = Chip{draw_text.text_style.font_size: 14}
+let ModeOn = ModeOff{draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a color_focus: #xffd60a}}
 
 SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #000000
     cam := CameraPreview{width: Fill height: Fill facing: "back"
@@ -142,7 +139,7 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #000000
                 rec := Label{text: "00:00" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 13}}
             }
         }
-        toast := Label{width: Fill align: Align{x: 0.5} padding: 8 text: "" draw_text.color: #xffd60a draw_text.text_style.font_size: 12}
+        toast := Label{width: Fill align: Align{x: 0.5} padding: 8 text: "" draw_text.color: #xffd60a draw_text.text_style.font_size: 14}
         View{width: Fill height: Fill}
         zooms := View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 0.5} padding: Inset{bottom: 12} on_render: || {
             for z in [1 2 5] {
@@ -175,14 +172,14 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #000000
                 }
             }}
             View{width: Fill height: 1}
-            ButtonFlat{width: 56 height: 56 text: "Flip" on_click: || ui.cam.switch()
-                draw_bg +: {border_radius: 28.0 color: #x00000066 color_hover: #x00000088 color_down: #x000000aa border_size: 0.0}
-                draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 14}}}
+            Chip{width: 56 height: 56 text: "Flip" on_click: || ui.cam.switch()
+                draw_bg.border_radius: 28.0
+                draw_text.text_style.font_size: 14}
         }
     }
     viewer := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #000000
         View{width: Fill height: Fit padding: Inset{left: 8 top: 8}
-            ButtonFlat{text: "‹ Camera" on_click: || close_viewer()
+            ButtonFlat{height: 44 text: "‹ Camera" on_click: || close_viewer()
                 draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 border_size: 0.0}
                 draw_text +: {color: #xffd60a color_hover: #xffd60a color_down: #xffd60a text_style +: {font_size: 15}}}
         }

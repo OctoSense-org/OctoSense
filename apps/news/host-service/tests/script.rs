@@ -105,9 +105,49 @@ fn a_failed_run_is_retried_with_a_growing_wait() {
 /// its first call at the top level, `start_timeout(…)`).
 #[test]
 fn the_scripts_functions_parse() {
-    let code = SCRIPT.split_once("\nstart_timeout(").expect("the boot call").0;
+    let code = SCRIPT.split_once("// END shared app interface\n").expect("shared interface").1
+        .split_once("\nstart_timeout(").expect("the boot call").0;
     let (_value, errors, _vm) = run(&format!("{code}\nnil"));
     assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[test]
+fn opening_during_the_hosts_fetch_follows_completion_without_forcing_a_second_fetch() {
+    let setup = r#"
+let clock = 100
+fn time_now(){ clock }
+let busy = false
+let use_service = true
+let service_relist = false
+let service_follow_until = 0
+let service_fetching = false
+let requested_due = false
+let reply = {is_ok: true data: {busy: true}}
+fn sync_status(){}
+fn list_service(){}
+let host = {request: |method, args, callback| {requested_due = args.due; callback(reply)}}
+"#;
+    for (reply, elapsed, following) in [
+        ("{is_ok: true data: {busy: true}}", 2, true),
+        ("{is_ok: true data: {total: 30}}", 2, false),
+        ("{is_ok: false}", 2, false),
+        ("{is_ok: true data: {busy: true}}", 61, false),
+    ] {
+        let code = format!(r#"{setup}
+{}
+{}
+refresh_service(false)
+let initially_following = service_fetching && service_follow_until == 160
+clock = 100 + {elapsed}
+reply = {reply}
+busy = false
+refresh_service(true)
+initially_following && requested_due && service_follow_until == 160 && service_fetching == {following}
+"#, function("optional"), function("refresh_service"));
+        let (value, errors, _vm) = run(&code);
+        assert!(errors.is_empty(), "{reply}: {errors:?}");
+        assert_eq!(value.as_bool(), Some(true), "{reply}, elapsed={elapsed}");
+    }
 }
 
 #[test]

@@ -7,6 +7,7 @@ const STORY: &str = r#"{title: "By the water" summary: "A few days by the coast.
 
 // Only the environment is substituted. All Photos functions below run in
 // the pinned production VM, including asynchronous reply handling and storage.
+// The host-owned theme/widget prelude is exercised by native UI tests.
 const ENV: &str = r#"
 use mod.std.assert
 let files = {}
@@ -34,7 +35,8 @@ fn run(body: &str) -> Value {
     let mut host = ScriptVmHost::new((), ());
     let mut vm = ScriptVm { host: &mut host, bx: Box::new(ScriptVmBase::new()) };
     vm.bx.captured_errors = Some(Vec::new());
-    let logic = SCRIPT.split_once("\nstart_timeout(").expect("boot boundary").0;
+    let logic = SCRIPT.split_once("// END shared app interface\n").expect("shared interface").1
+        .split_once("\nstart_timeout(").expect("boot boundary").0;
     let value = vm.with_instruction_limit(4_000_000, |vm| vm.eval(ScriptMod {
         file: "photos_memories_test.splash".into(),
         code: format!("{ENV}\n{logic}\n{body}\n;"),

@@ -1,3 +1,40 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
 // AI providers: the models the assistant answers with, primary first, then
 // its fallbacks. Every change goes through the `llm` host service; keys, PINs
 // and QR codes are typed and shown only on OctoSense's own sheets, never here.
@@ -34,6 +71,10 @@ fn load(){
         let i = 0
         for p in list { p.index = i; i = i + 1 }
         providers = list
+        ui.add.set_visible(list.len() > 0)
+        ui.talk.set_visible(list.len() > 0)
+        ui.saved_heading.set_visible(list.len() > 0)
+        ui.export_qr.set_visible(list.len() > 0)
         scanner = r.data.scanner
         store = r.data.store
         ui.scan.set_visible(scanner)
@@ -170,71 +211,63 @@ fn key_text(p){
 
 start_timeout(0.05, || load())
 
-let ink = #x1c1c1e
-let secondary = #x6e6e73
-let faint = #x8e8e93
-let accent = #x007aff
-let danger = #xff3b30
-let page = #xf2f2f7
-let Act = ButtonFlat{height: 30 padding: Inset{left: 10 right: 10}
-    draw_bg +: {border_radius: 8.0 color: #xf2f2f7 color_focus: #xf2f2f7 color_hover: #xe5e5ea color_down: #xd1d1d6 border_size: 0.0}
-    draw_text +: {color: accent color_focus: accent color_hover: accent color_down: accent text_style +: {font_size: 13}}
-}
+let ink = ui_ink
+let secondary = ui_muted
+let faint = ui_muted
+let accent = ui_link
+let danger = ui_danger
+let page = ui_page
+let Act = UiPill{}
 let ActDanger = Act{draw_text +: {color: danger color_focus: danger color_hover: danger color_down: danger}}
-let TestAct = Act{draw_bg +: {color: #xe3edff color_focus: #xe3edff color_hover: #xd6e5ff color_down: #xc7dbff} draw_text +: {text_style: theme.font_bold{font_size: 13}}}
-let Mark = Label{text: "" draw_text.text_style: theme.font_icons{font_size: 11}}
-let Big = ButtonFlat{width: Fill height: 44
-    draw_bg +: {border_radius: 12.0 color: #x007aff color_focus: #x007aff color_hover: #x0a84ff color_down: #x0062cc border_size: 0.0}
-    draw_text +: {color: #xffffff color_focus: #xffffff color_hover: #xffffff color_down: #xffffff text_style: theme.font_bold{font_size: 15}}
-}
-let Quiet = ButtonFlat{width: Fill height: 40
-    draw_bg +: {border_radius: 10.0 color: #xffffff color_focus: #xffffff color_hover: #xf7f7fa color_down: #xe5e5ea border_size: 0.0}
-    draw_text +: {color: accent color_focus: accent color_hover: accent color_down: accent text_style +: {font_size: 14}}
-}
-let Field = TextInput{width: Fill height: 38
-    draw_bg +: {color: #xffffff color_hover: #xffffff color_focus: #xffffff color_empty: #xffffff
-        border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x007aff border_color_empty: #x00000000 border_radius: 10.0}
-    draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: faint color_empty_hover: faint}
-}
-let Section = Label{text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 11}}
-let Card = RoundedView{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 12 right: 12 top: 12 bottom: 12}
-    show_bg: true draw_bg.color: #xffffff draw_bg.border_radius: 14.0}
-let Badge = RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 3 bottom: 3} show_bg: true draw_bg.color: #xe8f0fe draw_bg.border_radius: 7.0}
-let BadgeGrey = Badge{draw_bg.color: #xf2f2f7}
-let BadgeText = Label{text: "" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 11}}
-let BadgeGreyText = Label{text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 11}}
-let KeyOk = Label{text: "" draw_text.color: #x248a3d draw_text.text_style.font_size: 12}
-let KeyBad = Label{text: "" draw_text.color: danger draw_text.text_style.font_size: 12}
-let KeyNone = Label{text: "" draw_text.color: faint draw_text.text_style.font_size: 12}
+let TestAct = Act{draw_bg +: {color: ui_field color_focus: ui_field color_hover: ui_field color_down: ui_field} draw_text +: {text_style: theme.font_bold{font_size: 13}}}
+let Mark = Label{text: "" draw_text.text_style: theme.font_icons{font_size: 13}}
+let Big = UiPrimary{width: Fill}
+let Quiet = UiButton{width: Fill}
+let Field = UiField{}
+let Section = Label{padding: 0 text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 13}}
+let Card = RoundedView{width: Fill height: Fit flow: Down spacing: 14 padding: 20
+    show_bg: true draw_bg.color: ui_surface draw_bg.border_radius: 14.0}
+let Badge = RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 3 bottom: 3} show_bg: true draw_bg.color: ui_field draw_bg.border_radius: 7.0}
+let BadgeGrey = Badge{draw_bg.color: ui_field}
+let BadgeText = Label{text: "" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 13}}
+let BadgeGreyText = Label{text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 13}}
+let KeyOk = Label{text: "" draw_text.color: ui_success draw_text.text_style.font_size: 13}
+let KeyBad = Label{text: "" draw_text.color: danger draw_text.text_style.font_size: 13}
+let KeyNone = Label{text: "" draw_text.color: faint draw_text.text_style.font_size: 13}
 // The pull-down: the same look as the host's add sheet (and the colours the
 // end-to-end test finds it by).
 let Drop = RoundedView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10
-    padding: Inset{left: 12 right: 14 top: 8 bottom: 8} show_bg: true draw_bg.color: #xedf2fc draw_bg.border_radius: 10.0}
+    padding: Inset{left: 12 right: 14 top: 8 bottom: 8} show_bg: true draw_bg.color: ui_field draw_bg.border_radius: 10.0}
 let Opt = RoundedView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10
-    padding: Inset{left: 12 right: 14 top: 6 bottom: 6} show_bg: true draw_bg.color: #xf6f8fc draw_bg.border_radius: 8.0}
-let Glyph = Label{text: "" draw_text.color: faint draw_text.text_style: theme.font_icons{font_size: 10}}
-let Tick = Label{text: "" draw_text.color: accent draw_text.text_style: theme.font_icons{font_size: 11}}
-let Tag = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} show_bg: true draw_bg.color: #xe2f4e6 draw_bg.border_radius: 6.0}
-let TagText = Label{padding: 0 text: "" draw_text.color: #x1f7a3a draw_text.text_style: theme.font_bold{font_size: 10}}
+    padding: Inset{left: 12 right: 14 top: 6 bottom: 6} show_bg: true draw_bg.color: ui_field draw_bg.border_radius: 8.0}
+let Glyph = Label{text: "" draw_text.color: faint draw_text.text_style: theme.font_icons{font_size: 13}}
+let Tick = Label{text: "" draw_text.color: accent draw_text.text_style: theme.font_icons{font_size: 13}}
+let Tag = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} show_bg: true draw_bg.color: ui_field draw_bg.border_radius: 6.0}
+let TagText = Label{padding: 0 text: "" draw_text.color: ui_success draw_text.text_style: theme.font_bold{font_size: 13}}
 let OptTitle = Label{padding: 0 width: Fit text: "" draw_text.color: ink draw_text.text_style.font_size: 14}
 let OptTitleOn = Label{padding: 0 width: Fit text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
-let OptNote = Label{padding: 0 width: Fill text: "" draw_text.color: faint draw_text.text_style.font_size: 11}
+let OptNote = Label{padding: 0 width: Fill text: "" draw_text.color: faint draw_text.text_style.font_size: 13}
 
-SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
-    ScrollYView{width: Fill height: Fill flow: Down spacing: 10 padding: Inset{left: 16 right: 16 top: 16 bottom: 20}
-        View{width: Fill height: Fit flow: Down spacing: 4
-            Label{text: "AI providers" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 26}}
-            Label{width: Fill text: "The assistant answers with the primary model, and tries the fallbacks in order when it fails."
-                draw_text.color: secondary draw_text.text_style.font_size: 13}
+SolidView{width: Fill height: Fill flow: Down align: Align{x: 0.5} draw_bg.color: page
+    ScrollYView{width: Fill max_width: 840 height: Fill flow: Down spacing: 16 padding: Inset{left: 20 right: 20 top: 24 bottom: 24}
+        View{width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5}
+            RoundedView{width: 48 height: 48 align: Align{x: 0.5 y: 0.5}
+                show_bg: true draw_bg +: {color: ui_primary border_radius: 14.0}
+                Label{padding: 0 text: "AI" draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 18}}}
+            }
+            View{width: Fill height: Fit flow: Down spacing: 4
+                UiTitle{text: "AI providers" draw_text.text_style.font_size: 24}
+                UiCaption{text: "Models for your assistant"}
+            }
         }
-        Big{text: "Add model" on_click: || add_model()}
-        Quiet{text: "Talk to Octos" on_click: || {
+        add := Big{visible: false text: "Add model" on_click: || add_model()}
+        talk := Quiet{visible: false text: "Talk to Octos" on_click: || {
             host.request("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
         }}
-        View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 4}
+        saved_heading := View{visible: false width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 4}
             Section{text: "SAVED MODELS"}
             View{width: Fill height: 1}
-            count := Label{text: "" draw_text.color: faint draw_text.text_style.font_size: 12}
+            count := Label{text: "" draw_text.color: faint draw_text.text_style.font_size: 13}
         }
         filter_box := View{visible: false width: Fill height: Fit
             Field{empty_text: "Filter saved models" on_change: |text| set_query(text)}
@@ -243,10 +276,12 @@ SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
             // Always one child: a render that yields none keeps the last rows.
             View{width: Fill height: 1}
             if providers.len() == 0 {
-                Card{align: Align{x: 0.5} padding: Inset{left: 20 right: 20 top: 28 bottom: 28} spacing: 6
-                    Label{width: Fill align: Align{x: 0.5} text: "No models yet" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
-                    Label{width: Fill align: Align{x: 0.5} text: "Add a model so the assistant can answer, or import the ones saved on another device."
-                        draw_text.color: secondary draw_text.text_style.font_size: 13}
+                Card{spacing: 16
+                    View{width: Fill height: Fit flow: Down spacing: 8
+                        Label{padding: 0 width: Fill text: "Connect your first model" draw_text +: {color: ink text_style: theme.font_bold{font_size: 20}}}
+                        UiCaption{text: "Choose a provider and model to start using your assistant."}
+                    }
+                    Big{text: "Add model" on_click: || add_model()}
                 }
             }
             if providers.len() > 0 && shown.len() == 0 {
@@ -268,12 +303,12 @@ SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
                             if menu_for == p.id {
                                 View{width: Fill height: Fit flow: Down spacing: 2
                                     Label{width: Fill text: "Choose a model" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
-                                    Label{width: Fill text: p.label + "'s catalog · the route and key stay" draw_text.color: faint draw_text.text_style.font_size: 12}
+                                    Label{width: Fill text: p.label + "'s catalog · the route and key stay" draw_text.color: faint draw_text.text_style.font_size: 13}
                                 }
                             } else {
                                 View{width: Fill height: Fit flow: Down spacing: 2
                                     Label{width: Fill text: p.model_label draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
-                                    Label{width: Fill text: meta(p) draw_text.color: faint draw_text.text_style.font_size: 12}
+                                    Label{width: Fill text: meta(p) draw_text.color: faint draw_text.text_style.font_size: 13}
                                 }
                             }
                             if menu_for == p.id { Glyph{text: ""} } else { Glyph{text: ""} }
@@ -281,7 +316,7 @@ SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
                     }
                     if menu_for == p.id {
                         View{width: Fill height: Fit flow: Down spacing: 4
-                            if menu_models.len() == 0 { Label{text: "Loading models…" draw_text.color: faint draw_text.text_style.font_size: 12} }
+                            if menu_models.len() == 0 { Label{text: "Loading models…" draw_text.color: faint draw_text.text_style.font_size: 13} }
                             for m in menu_models {
                                 GestureView{width: Fill height: Fit on_tap: |x, y| pick_model(p, m)
                                     Opt{
@@ -296,23 +331,23 @@ SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
                                     }
                                 }
                             }
-                            Label{width: Fill text: "Another route, a custom model or a new key: Edit." draw_text.color: faint draw_text.text_style.font_size: 11}
+                            Label{width: Fill text: "Another route, a custom model or a new key: Edit." draw_text.color: faint draw_text.text_style.font_size: 13}
                         }
                     }
-                    if state_of(p.id) == "testing" { Label{width: Fill text: result_of(p.id) draw_text.color: faint draw_text.text_style.font_size: 12} }
+                    if state_of(p.id) == "testing" { Label{width: Fill text: result_of(p.id) draw_text.color: faint draw_text.text_style.font_size: 13} }
                     if state_of(p.id) == "ok" {
                         View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
-                            Mark{text: "" draw_text.color: #x248a3d}
-                            Label{width: Fill text: result_of(p.id) draw_text.color: #x248a3d draw_text.text_style: theme.font_bold{font_size: 12}}
+                            Mark{text: "" draw_text.color: ui_success}
+                            Label{width: Fill text: result_of(p.id) draw_text.color: ui_success draw_text.text_style: theme.font_bold{font_size: 13}}
                         }
                     }
                     if state_of(p.id) == "fail" {
                         View{width: Fill height: Fit flow: Down spacing: 2
                             View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
                                 Mark{text: "" draw_text.color: danger}
-                                Label{width: Fill text: result_of(p.id) draw_text.color: #xc4281c draw_text.text_style: theme.font_bold{font_size: 12}}
+                                Label{width: Fill text: result_of(p.id) draw_text.color: ui_danger draw_text.text_style: theme.font_bold{font_size: 13}}
                             }
-                            Label{width: Fill text: detail_of(p.id) draw_text.color: faint draw_text.text_style.font_size: 11}
+                            Label{width: Fill text: detail_of(p.id) draw_text.color: faint draw_text.text_style.font_size: 13}
                         }
                     }
                     View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6 padding: Inset{top: 2}
@@ -327,19 +362,21 @@ SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
                 }
             }
         }}
-        View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{top: 8}
-            Section{text: "ANOTHER DEVICE"}
-            // Stacked: side by side, a phone's width clips both labels.
-            Quiet{text: "Show QR for phone" on_click: || show_qr()}
+        Card{spacing: 12
+            View{width: Fill height: Fit flow: Down spacing: 6
+                Label{padding: 0 width: Fill text: "Already set up elsewhere?" draw_text +: {color: ink text_style: theme.font_bold{font_size: 16}}}
+                UiCaption{text: "Bring your saved models from another device."}
+            }
             scan := Quiet{visible: false text: "Scan QR from desktop" on_click: || import_code()}
             paste := Quiet{text: "Paste code" on_click: || import_code()}
-            where := Label{width: Fill text: "" draw_text.color: faint draw_text.text_style.font_size: 12}
+            export_qr := Quiet{visible: false text: "Show QR for phone" on_click: || show_qr()}
         }
+        where := UiCaption{text: ""}
     }
     banner := View{visible: false width: Fill height: Fit padding: Inset{left: 12 right: 12 top: 6 bottom: 10}
         RoundedView{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 14 right: 6 top: 4 bottom: 4} show_bg: true draw_bg.color: #x1c1c1e draw_bg.border_radius: 12.0
             status := Label{width: Fill text: "" draw_text.color: #xffffff draw_text.text_style.font_size: 13}
-            ButtonFlat{height: 34 padding: Inset{left: 10 right: 10} text: "OK" on_click: || status("")
+            ButtonFlat{height: 44 padding: Inset{left: 10 right: 10} text: "OK" on_click: || status("")
                 draw_bg +: {color: #x00000000 color_focus: #x00000000 color_hover: #xffffff22 color_down: #xffffff33 border_size: 0.0}
                 draw_text +: {color: #x64d2ff color_focus: #x64d2ff color_hover: #x64d2ff color_down: #x64d2ff text_style: theme.font_bold{font_size: 13}}}
         }

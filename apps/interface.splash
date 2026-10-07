@@ -1,0 +1,35 @@
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
