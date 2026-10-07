@@ -230,6 +230,7 @@ pub fn register_host_services() {
                 && crate::mail_background::has_publication(app,account,card_id,card.published_ms))
         });
         crate::connected_events::start();
+        crate::connected_backends::register();
         octosense_oauth_service::host::register(std::sync::Arc::new(|app, provider, scopes| {
             use octosense_oauth_service::Provider;
             let granted = |family| crate::host_tools::script_apps::grants(app, family);

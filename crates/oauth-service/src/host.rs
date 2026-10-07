@@ -25,7 +25,10 @@ use uuid::Uuid;
 pub(crate) mod backend_host;
 #[cfg(feature = "acceptance-fixtures")]
 pub use backend_host::register_fixture as register_backend_fixture;
-pub use backend_host::{invalidate_backend_registration, set_backend_resolver, BackendResolver};
+pub use backend_host::{
+    invalidate_backend_registration, revalidate_backend_registration, set_backend_resolver,
+    BackendResolver,
+};
 
 pub type ScopeCheck = Arc<dyn Fn(&str, Provider, &BTreeSet<String>) -> bool + Send + Sync>;
 pub type AccountChanged = Arc<dyn Fn(&str, Option<&str>, Option<&str>) + Send + Sync>;
@@ -409,7 +412,7 @@ impl HostService for AuthService {
                         let handle = call.args["connection"]
                             .as_str()
                             .ok_or("Choose a connected account")?;
-                        let mut store = connections(&call.host_dir)?;
+                        let store = connections(&call.host_dir)?;
                         let previous = store.active(&call.app_id);
                         let remote = backend_host::logout_material(
                             &call.host_dir,
@@ -417,7 +420,20 @@ impl HostService for AuthService {
                             handle,
                             &store,
                         );
-                        let revoked = store.disconnect(&call.app_id, handle);
+                        // Resolving logout may have revoked every backend handle
+                        // after a declaration change. Never persist an older
+                        // metadata snapshot over that durable revocation.
+                        let mut store = connections(&call.host_dir)?;
+                        let already_revoked = remote.is_some()
+                            && !store
+                                .list(&call.app_id)
+                                .iter()
+                                .any(|entry| entry.handle == handle);
+                        let revoked = if already_revoked {
+                            Ok(())
+                        } else {
+                            store.disconnect(&call.app_id, handle)
+                        };
                         invalidate_authorizations(&call.host_dir, &call.app_id);
                         let current = store.active(&call.app_id);
                         drop(guard);

@@ -17,6 +17,8 @@ pub mod authorize;
 pub mod backend;
 pub mod calendar_cache;
 #[cfg(feature = "host")]
+mod backend_registry;
+#[cfg(feature = "host")]
 mod host_catalog;
 #[cfg(feature = "host")]
 pub mod host;

@@ -75,7 +75,55 @@ pub fn register_fixture(root: &Path, client: BackendClient) -> Result<(), String
     Ok(())
 }
 
+/// Called while STORE_LOCK is held. Resolving an updated/withdrawn bundle
+/// durably revokes earlier handles before its credentials could be used.
 pub(super) fn client(root: &Path, app: &str) -> Result<Arc<BackendClient>, String> {
+    let result = resolve_client(root, app);
+    if RESOLVER.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+        crate::backend_registry::observe(
+            root,
+            app,
+            result.as_ref().ok().map(|client| client.binding()),
+            || {
+                invalidate_authorizations(root, app);
+                let mut store = connections(root)?;
+                let mut failure = None;
+                for entry in store
+                    .list(app)
+                    .into_iter()
+                    .filter(|entry| entry.provider == Provider::Backend)
+                {
+                    if let Err(error) = store.disconnect(app, &entry.handle) {
+                        failure.get_or_insert(error);
+                    }
+                }
+                failure.map_or(Ok(()), Err)
+            },
+        )?;
+    }
+    result
+}
+
+/// The shell calls this after an install/catalog change, outside the UI thread.
+/// Resolution repeats on every actual request, so this is eager cleanup only.
+pub fn revalidate_backend_registration(root: &Path, app: &str) -> Result<(), String> {
+    let operation = operation_lock(root, app);
+    let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let previous = connections(root)?.active(app);
+    let result = client(root, app).map(|_| ());
+    let selected = connections(root)?.active(app);
+    drop(guard);
+    drop(operation_guard);
+    account_changed(
+        app,
+        previous.as_ref().map(|entry| entry.handle.as_str()),
+        selected.as_ref().map(|entry| entry.handle.as_str()),
+    );
+    result
+}
+
+fn resolve_client(root: &Path, app: &str) -> Result<Arc<BackendClient>, String> {
     #[cfg(feature = "acceptance-fixtures")]
     if let Ok(canonical) = root.canonicalize() {
         if let Some(client) = fixtures()

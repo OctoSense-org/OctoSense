@@ -95,6 +95,8 @@ pub mod platform_services;
 pub mod glance_routes;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod connected_events;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod connected_backends;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_notice;
@@ -1660,6 +1662,7 @@ impl App {
     /// permissions: end its instances so the next open takes the new one.
     #[cfg(any(feature = "app-hub", native_mobile))]
     fn installed_app_changed(&mut self, cx: &mut Cx, id: &str) {
+        crate::connected_backends::installed_changed(id);
         // Its storage (ADR 0004 §11): an install records the manifest's
         // block and lays out the folders; a removal (the jail is gone)
         // deletes what the host keeps for it and keeps its agents suspended.

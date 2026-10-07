@@ -684,7 +684,20 @@ mod real_http {
         review.cancel().unwrap();
         assert!(services::take_replies_for(&[heap])[0].2.is_err());
         assert_eq!(read_b.execute().unwrap()["notes"], serde_json::json!([]));
-        host::invalidate_backend_registration(&root, caller()).unwrap();
+        crate::backend_registry::observe(&root, caller(), Some(server.client.binding()), || {
+            panic!("First observation does not revoke a previously valid backend session")
+        })
+        .unwrap();
+        crate::backend_registry::observe(&root, caller(), None, || {
+            host::invalidate_backend_registration(&root, caller())
+        })
+        .unwrap();
+        assert!(read_b.execute().is_err());
+        // Restoration of the same admitted declaration cannot resurrect handles.
+        crate::backend_registry::observe(&root, caller(), Some(server.client.binding()), || {
+            host::invalidate_backend_registration(&root, caller())
+        })
+        .unwrap();
         assert!(read_b.execute().is_err());
         assert!(host::connections(&root).unwrap().list(caller()).is_empty());
         assert!(

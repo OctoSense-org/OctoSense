@@ -70,7 +70,7 @@ Calendar 用 `gcalendar.sync` 和同步 token 同步全部日程历史，而不�
 | 在应用内识别 GitHub 用户 | 授予 `auth` 并请求 `read:user`。宿主验证 GitHub 数字用户 ID 和登录名，返回绑定该应用的句柄，以及 `app_id`、`provider`、`subject`、`label`、`scopes` 和可选 `expires_at`。不需要仓库访问权限；也不提供已验证的邮箱地址。 |
 | 在应用内识别 Google 用户 | `auth` 也允许仅用于身份的 `openid`、`email`、`profile` 权限，无需 Gmail 或 Calendar 能力。宿主验证提供方的 subject，并仅在 Google 确认邮箱已验证时将邮箱作为标签。同样受平台授权支持范围限制。 |
 | 访问提供方数据 | GitHub 仓库另外需要 `github` 能力及仓库权限。Google Gmail、Calendar 分别需要 `gmail` / `gcalendar` 能力和相应权限，与应用选择哪种登录身份无关。 |
-| 注册或登录应用自己的后端 | macOS/Android 使用宿主持有的登录 WebView、绑定应用的注册信息、PKCE 代码交换及受保护身份端点。桌面仍可选择外部浏览器；应用包自行注册尚未实现。 |
+| 注册或登录应用自己的后端 | macOS/Android 使用宿主持有的登录 WebView、已接纳应用包中绑定应用的注册信息、PKCE 代码交换及受保护身份端点。桌面仍可选择外部浏览器。 |
 
 后端流程由开发者的 HTTPS 登录页面提供自己的注册和登录。若桌面后端页面也提供
 GitHub 登录，应使用外部浏览器模式，以便访问提供方来源。
@@ -110,9 +110,12 @@ shell 通过 `host::set_backend_resolver` 提供经过摘要验证的 manifest `
 声明，每次使用凭据时重新检查；解析错误直接拒绝，不回退到运维配置。其 JSON 格式
 与下面注册对象相同，但不含 `app_id`（身份只能来自已接纳应用包）。manifest 需要
 `backend-api-v1`、`auth` 和 `storage.accounts: true`。没有应用包声明时仍支持原有
-运维注册。声明变更或移除时，安装/更新方须调用
-`host::invalidate_backend_registration`，持久撤销已有后端句柄，防止回退旧版本恢复
-会话。请求发送前及接收结果后还会检查注册绑定与授权代次。
+运维注册。shell 将解析器接入签名目录与摘要验证的应用包读取器。每次解析都在
+宿主私有元数据中记录绑定；声明变更、移除、撤回或失效会在返回前撤销后端句柄，
+持久记录防止恢复旧声明后会话复活。安装、更新及卸载通知还会撤销现有后端句柄，
+即使新版本保留相同声明，也需要重新连接。每五秒一次的轻量本地元数据观察器
+主动重新验证，不发出 provider HTTP 请求。`host::invalidate_backend_registration`
+仍可供显式生命周期撤销使用。请求发送前及接收结果后还检查注册绑定与授权代次。
 
 对于运维管理的集成，运维者在应用包和源码管理之外配置 `<apps root>/.host/oauth/backends.json`。
 以下仅为配置示例，示例域名不提供实际服务：

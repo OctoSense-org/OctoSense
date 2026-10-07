@@ -92,7 +92,7 @@ These are separate choices; none requires an OctoSense account.
 | Identify a GitHub user inside an app | Grant `auth` and request `read:user`. The host verifies GitHub's numeric user ID and login, then returns an app-bound handle plus `app_id`, `provider`, `subject`, `label`, `scopes` and optional `expires_at`. Repository access is not required. This does not provide a verified email address. |
 | Identify a Google user inside an app | `auth` also admits identity-only `openid`, `email` and `profile` scopes without Gmail or Calendar capabilities. The host verifies the provider subject and uses the email as its label only when Google reports it verified. The same platform authorization limitations apply. |
 | Access provider data | GitHub repositories additionally require the `github` capability and repository scopes. Google Gmail and Calendar require their own `gmail` / `gcalendar` capabilities and scopes, regardless of which identity an app uses for login. |
-| Register or log in to an app's own backend | A host-owned login WebView on macOS/Android uses an app-bound registration, PKCE code exchange and the backend's protected identity endpoint. An external-browser option remains available on desktop. Bundle-driven registration is not implemented. |
+| Register or log in to an app's own backend | A host-owned login WebView on macOS/Android uses the admitted bundle's app-bound registration, PKCE code exchange and the backend's protected identity endpoint. An external-browser option remains available on desktop. |
 
 The backend flow lets the developer's HTTPS login page offer its own
 registration and login. A desktop backend flow that also offers GitHub sign-in
@@ -146,10 +146,16 @@ The shell can supply a digest-verified manifest `backend` declaration through
 fails closed. Its JSON shape matches the registration below without `app_id`, which
 always comes from the admitted bundle. The manifest requires `backend-api-v1`,
 `auth`, and `storage.accounts: true`. Without a bundle declaration, the existing
-operator registration remains available. The install/update owner must call
-`host::invalidate_backend_registration` when a declaration changes or disappears;
-this durably revokes backend handles and prevents rollback from reviving a session.
-Each request also checks the registration binding and authorization epoch before
+operator registration remains available. The shell wires this resolver to its signed
+catalog and digest-checked bundle loader. Each resolution records the binding in
+host-private metadata; a changed, removed, withdrawn or invalid declaration revokes
+backend handles before returning. This durable observation prevents restoring an
+older declaration from reviving a session. Installation/update/removal notifications
+also revoke existing backend handles, requiring reconnect even when a new version
+keeps the same declaration. A quiet five-second local metadata watcher performs
+eager revalidation without provider HTTP.
+`host::invalidate_backend_registration` remains available for explicit lifecycle
+revocation. Each request also checks the registration binding and authorization epoch before
 network access and before accepting its response.
 
 For operator-managed integrations, an operator provisions `<apps root>/.host/oauth/backends.json`, outside app
