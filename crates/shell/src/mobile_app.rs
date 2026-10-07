@@ -83,7 +83,7 @@ impl App {
     fn full_viewport(&mut self) -> Vec2d {
         let screen = self.state_mut().phone.viewport;
         if screen.size.x < 1.0 { return dvec2(0.0, 0.0); }
-        app_rect(screen).size
+        self.state_mut().phone.app_content_rect(screen).size
     }
     /// Bind or launch a client per tile app, then send every tile client
     /// the face it should be showing. Cheap when nothing changed; called
@@ -491,11 +491,22 @@ impl App {
     }
     pub fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
+            PhoneHit::AppNavigation(hit)=>{
+                use crate::mobile_navigation::NavigationHit;
+                let phone = &self.state_mut().phone;
+                if phone.app_dock(phone.viewport).is_none() { return; }
+                match hit {
+                    NavigationHit::Home=>self.phone_action(cx,PhoneHit::Home),
+                    NavigationHit::Recents=>self.phone_action(cx,PhoneHit::Recents),
+                    _=>{},
+                }
+                return;
+            }
             PhoneHit::Floating(hit)=>{
                 use crate::mobile_navigation::NavigationHit;
                 // A cached accessibility or pointer target must not reopen
                 // controls after the keyboard has taken the editing area.
-                if !self.state_mut().phone.navigation.visible() { return; }
+                if !self.state_mut().phone.floating_navigation_visible() { return; }
                 match hit {
                     NavigationHit::Bubble=>{let nav=&mut self.state_mut().phone.navigation;nav.open=!nav.open;}
                     NavigationHit::Dismiss=>self.state_mut().phone.navigation.cancel(),
@@ -693,7 +704,7 @@ impl App {
     }
     pub(super) fn phone_search_event(&mut self,cx:&mut Cx,event:&Event)->bool {
         let Some(state)=self.state.as_ref() else{return false};
-        if crate::mobile_navigation::ENABLED {
+        if crate::mobile_navigation::ENABLED && state.phone.floating_navigation_visible() {
             let nav=&state.phone.navigation;
             let screen=state.phone.navigation_rect();
             let over=match event {
@@ -1040,7 +1051,7 @@ impl App {
             };
             crate::mobile_perf::trace_phone_input(name, p);
         }
-        if crate::mobile_navigation::ENABLED && primary {
+        if crate::mobile_navigation::ENABLED && primary && self.state_mut().phone.floating_navigation_visible() {
             use crate::mobile_navigation::{Phase,NavigationHit};
             let phase=match phase {
                 PhonePointerPhase::Down=>Phase::Down,PhonePointerPhase::Move=>Phase::Move,
@@ -1072,7 +1083,11 @@ impl App {
         let ctx=self.gesture_context(cx);
         let Some(state)=self.state.as_mut() else {return false};
         let phone=&mut state.phone;
-        let hit=hit.filter(|hit| !matches!(hit,PhoneHit::Floating(_)) || phone.navigation.visible());
+        let hit=hit.filter(|hit| match hit {
+            PhoneHit::Floating(_)=>phone.floating_navigation_visible(),
+            PhoneHit::AppNavigation(_)=>phone.app_dock(phone.viewport).is_some(),
+            _=>true,
+        });
         let screen=phone.viewport;
         if phone.drag.is_some() {
             match phase {
@@ -1100,7 +1115,7 @@ impl App {
                 // page body); an excluded edge is left to the app.
                 self.phone_gestures.feed(FingerPhase::Down,p,time,&ctx,&phone.exclusions);
                 // The letter index and shade own their complete drag streams.
-                if hit==Some(PhoneHit::Scrub) || matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
+                if hit==Some(PhoneHit::Scrub) || matches!(&hit,Some(PhoneHit::AppNavigation(_))) || matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) && hit.is_none() {return false;}
                 phone.search_touch(p.y,time);
@@ -1149,8 +1164,8 @@ impl App {
                     phone.search_drag(last.y,p.y,time,search_scroll_max);
                 }else if from==PhoneScreen::Recents && !shell {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
-                    else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
-                }else if divider {phone.groups.drag_divider(p,app_rect(screen));}
+                    else {let width=phone.card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
+                }else if divider {let app = phone.app_content_rect(screen);phone.groups.drag_divider(p,app);}
                 self.animate_phone(cx);true
             }
             PhonePointerPhase::Up=>{

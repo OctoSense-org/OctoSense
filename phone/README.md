@@ -215,6 +215,8 @@ does not establish that integration.
 | App tile | long press | Remove the tile (the home menu's "Show hidden tiles" brings them back) |
 | Empty home | long press | Widgets, Light/Dark appearance, Grid: 4 or 5 columns, Pull-downs (launcher shade or system-wide panel), System setup, Show hidden tiles |
 
+Android hosted apps reserve a 48-point bottom row for Home and Recents, outside the app's drawing and input viewport. The row disappears while the keyboard is shown, returning that space to the editor; Android's system Back remains available. Home and OpenHarmony retain their existing floating controls. Startup and resume no longer request location permission for the legacy GPS cache: it updates only when permission was already granted. Explicit location requests still use Android's permission consent. These follow-up changes require renewed device acceptance.
+
 On Android the top edge is the system's: it opens the system-wide OctoSense panel when that is on (the OctoSense ROM; Home's side pulls then open search), and Android's own panel otherwise. OpenHarmony has no shade.
 
 A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick. While a pull is in flight the page dims and a search field rises from the bottom with the finger; a committed gesture gives a short haptic tick. Until each hidden gesture has been used once, the home page shows a one-line hint for it (`crates/shell/src/mobile_hints.rs`; Android remembers what was seen). A second Home press on a settled home page returns to the primary page.

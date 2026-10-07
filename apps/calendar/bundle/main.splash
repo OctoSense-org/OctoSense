@@ -266,7 +266,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
             Primary{text: "Edit" on_click: || edit_existing()}
         }
         ScrollYView{width: Fill height: Fill flow: Down padding: 20 spacing: 18
-            event_title := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 28}}
+            event_title := UiTitle{text: ""}
             SolidView{width: Fill height: Fit flow: Down padding: 18 spacing: 8 draw_bg.color: ui_field
                 Caption{text: "WHEN"}
                 event_when := Label{width: Fill text: "" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 21}}

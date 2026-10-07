@@ -16,12 +16,15 @@ fn news_styles() -> String {
 /// Each colour in `expressions`, evaluated after News's styles in a VM
 /// themed as a hosted app is in `style` and appearance.
 fn news_colors(style: DesktopStyle, dark: bool, expressions: &[&str]) -> Vec<u32> {
+    script_colors(style, dark, &news_styles(), expressions)
+}
+
+fn script_colors(style: DesktopStyle, dark: bool, styles: &str, expressions: &[&str]) -> Vec<u32> {
     let mut cx = Cx::new(Box::new(|_, _| {}));
     cx.with_vm(|vm| {
         makepad_widgets::script_mod(vm);
         desktop_style::install(vm, load_sheet(style, dark));
         vm.with_reload(makepad_widgets::script_mod);
-        let styles = news_styles();
         expressions
             .iter()
             .map(|expression| {
@@ -37,6 +40,42 @@ fn news_colors(style: DesktopStyle, dark: bool, expressions: &[&str]) -> Vec<u32
             })
             .collect()
     })
+}
+
+#[test]
+fn youtube_search_text_and_placeholder_read_in_normal_hover_and_focus_states() {
+    let source = include_str!("../../../apps/youtube/bundle/main.splash");
+    let prelude = source.split_once("// END shared app interface").unwrap().0;
+    let field = source.split_once("search := ").unwrap().1;
+    let mut depth = 0;
+    let end = field.char_indices().find_map(|(index, ch)| {
+        if ch == '{' { depth += 1; }
+        if ch == '}' {
+            depth -= 1;
+            if depth == 0 { return Some(index + 1); }
+        }
+        None
+    }).unwrap();
+    // Use the actual shipped field and its actual shared prelude. Only
+    // its network callback is replaced; the local colour overrides are
+    // retained so a fixed dark background fails the light-theme checks.
+    let styles = format!("{prelude}\nlet ink = ui_ink\nlet secondary = ui_muted\nfn search_for(text) {{}}\nlet Search = {}", &field[..end]);
+    for style in DesktopStyle::ALL {
+        for dark in [false, true] {
+            if dark && !style.supports_dark() { continue; }
+            let colors = script_colors(style, dark, &styles, &[
+                "Search.draw_bg.color", "Search.draw_text.color",
+                "Search.draw_bg.color_hover", "Search.draw_text.color_hover",
+                "Search.draw_bg.color_focus", "Search.draw_text.color_focus",
+                "Search.draw_bg.color_empty", "Search.draw_text.color_empty",
+                "Search.draw_bg.color_hover", "Search.draw_text.color_empty_hover",
+                "Search.draw_bg.color_focus", "Search.draw_text.color_empty_focus",
+            ]);
+            for (state, pair) in colors.chunks_exact(2).enumerate() {
+                assert!(contrast(pair[0], pair[1]) >= 4.5, "{} dark={dark}, state={state}: {:08x} on {:08x}", style.id(), pair[1], pair[0]);
+            }
+        }
+    }
 }
 
 #[test]

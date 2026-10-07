@@ -8,6 +8,26 @@ const EDGE: f64 = 28.0;
 const VERTICAL: f64 = 40.0;
 const DRAG_SLOP: f64 = 10.0;
 
+/// Android hosted apps reserve this row outside their content. System Back
+/// remains Android-owned; these controls navigate inside OctoSense.
+pub const APP_DOCK_HEIGHT: f64 = 48.0;
+#[derive(Clone, Copy, Debug)]
+pub struct AppDock {
+    pub bar: Rect,
+    pub content: Rect,
+    pub home: Rect,
+    pub recents: Rect,
+}
+pub fn app_dock(screen: Rect) -> AppDock {
+    let height = APP_DOCK_HEIGHT.min(screen.size.y.max(0.0));
+    let bar = Rect { pos: screen.pos + dvec2(0.0, screen.size.y - height), size: dvec2(screen.size.x, height) };
+    let content = Rect { pos: screen.pos, size: dvec2(screen.size.x, screen.size.y - height) };
+    let width = 72.0_f64.min(screen.size.x * 0.5);
+    let home = Rect { pos: bar.pos + dvec2(screen.size.x * 0.5 - width, 0.0), size: dvec2(width, height) };
+    let recents = Rect { pos: bar.pos + dvec2(screen.size.x * 0.5, 0.0), size: dvec2(width, height) };
+    AppDock { bar, content, home, recents }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NavigationHit { Bubble, Home, Recents, Dismiss }
 
@@ -166,6 +186,77 @@ mod tests {
     fn tap(nav: &mut FloatingNavigation, point: Vec2d) -> (bool, Option<NavigationHit>) {
         assert!(nav.pointer(Phase::Down, point, screen()).0);
         nav.pointer(Phase::Up, point, screen())
+    }
+
+    #[test]
+    fn android_app_dock_partitions_the_native_viewport_without_covering_content() {
+        for screen in [screen(), Rect { pos: dvec2(12.0, 28.0), size: dvec2(780.0, 360.0) }] {
+            let dock = app_dock(screen);
+            assert_eq!(dock.content.pos, screen.pos);
+            assert_eq!(dock.content.size.x, screen.size.x);
+            assert_eq!(dock.content.pos.y + dock.content.size.y, dock.bar.pos.y);
+            assert_eq!(dock.bar.pos.y + dock.bar.size.y, screen.pos.y + screen.size.y);
+            assert_eq!(dock.bar.size.y, 48.0);
+            let recent = crate::mobile::card_rect_for_app(screen, dock.content, 0.0, 0.0);
+            assert!((recent.size.x / recent.size.y - dock.content.size.x / dock.content.size.y).abs() < 0.0001, "Recents must preserve the captured app's aspect ratio");
+            for control in [dock.home, dock.recents] {
+                assert!(control.size.x >= 44.0 && control.size.y >= 44.0);
+                assert!(dock.bar.contains(center(control)));
+                assert!(!dock.content.contains(center(control)));
+            }
+            assert!(dock.home.pos.x + dock.home.size.x <= dock.recents.pos.x);
+        }
+    }
+
+    #[test]
+    fn app_dock_is_android_foreground_only_and_returns_space_to_the_ime() {
+        use crate::mobile::{PhoneScreen, PhoneState};
+        let mut phone = PhoneState::default();
+        phone.viewport = screen();
+        assert!(phone.app_dock_for_platform(screen(), true).is_none());
+        phone.screen = PhoneScreen::App;
+        let before = phone.app_dock_for_platform(screen(), true).unwrap();
+        for page in [PhoneScreen::Home, PhoneScreen::Recents, PhoneScreen::App] {
+            phone.screen = page;
+            assert_eq!(phone.app_content_rect_for_platform(screen(), true), before.content, "app capture geometry stays stable across navigation");
+        }
+        assert!(phone.app_dock_for_platform(screen(), false).is_none(), "OpenHarmony keeps its existing floating navigation");
+        phone.native_keyboard_event(&VirtualKeyboardEvent::WillShow {
+            time: 0.0, height: 330.0, duration: 0.2, ease: Ease::OutCubic,
+        });
+        phone.viewport.size.y -= 330.0;
+        assert!(phone.app_dock_for_platform(phone.viewport, true).is_none(), "KeyboardView's remaining viewport must have no extra reserved row");
+        assert_eq!(phone.app_content_rect_for_platform(phone.viewport, true), phone.viewport);
+        phone.native_keyboard_event(&VirtualKeyboardEvent::WillHide {
+            time: 0.5, height: 0.0, duration: 0.2, ease: Ease::OutCubic,
+        });
+        assert!(phone.app_dock_for_platform(phone.viewport, true).is_none());
+        phone.native_keyboard_event(&VirtualKeyboardEvent::DidHide { time: 1.0 });
+        phone.viewport = screen();
+        assert_eq!(phone.app_dock_for_platform(screen(), true).unwrap().content, before.content);
+        phone.screen = PhoneScreen::Recents;
+        assert!(phone.app_dock_for_platform(screen(), true).is_none());
+    }
+
+    #[test]
+    fn hidden_app_dock_cancels_the_held_action_but_consumes_its_release() {
+        use crate::mobile::{PhoneGesture, PhoneHit, PhoneScreen, PhoneState};
+        let mut phone = PhoneState::default();
+        phone.screen = PhoneScreen::App;
+        phone.touch = Some(42);
+        phone.gesture = Some(PhoneGesture {
+            start: center(app_dock(screen()).home), last: center(app_dock(screen()).home),
+            time: 0.0, hit: Some(PhoneHit::AppNavigation(NavigationHit::Home)),
+            shell: false, glance_scroll: false, screen: PhoneScreen::App,
+        });
+        phone.native_keyboard_event(&VirtualKeyboardEvent::DidShow { time: 1.0, height: 330.0 });
+        assert_eq!(phone.touch, Some(42));
+        assert_eq!(phone.gesture.as_ref().unwrap().hit, Some(PhoneHit::AppNavigation(NavigationHit::Dismiss)));
+        assert!(!phone.gesture.as_ref().unwrap().shell);
+        phone.native_keyboard_event(&VirtualKeyboardEvent::DidHide { time: 2.0 });
+        assert_eq!(phone.gesture.as_ref().unwrap().hit, Some(PhoneHit::AppNavigation(NavigationHit::Dismiss)), "the old Home action must not return with the controls");
+        phone.cancel_navigation_input();
+        assert!(phone.gesture.is_none() && phone.touch.is_none(), "focus loss may never deliver the old release");
     }
 
     #[test]

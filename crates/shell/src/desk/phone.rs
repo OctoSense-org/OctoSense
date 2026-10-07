@@ -295,7 +295,8 @@ impl WmDesk {
         // split divider, the apps that own their edges, the keyboard).
         state.phone.exclusions.clear();
         if let Some(z)=state.phone.shade.exclusion(screen) {state.phone.exclusions.add(z,[true;4]);}
-        state.phone.groups.add_exclusions(state.phone.screen,crate::mobile::app_rect(screen),&mut state.phone.exclusions);
+        let app_content = state.phone.app_content_rect(screen);
+        state.phone.groups.add_exclusions(state.phone.screen,app_content,&mut state.phone.exclusions);
         let owns_edges:Vec<ClientId>=state.clients.iter().filter(|(_,s)|s.owns_edges).map(|(c,_)|*c).collect();
         crate::mobile_pages::sync(&mut state.phone,state.style.target,screen);
         self.phone_ui.sync_native_widgets(cx,state,full,screen);
@@ -322,7 +323,7 @@ impl WmDesk {
         state.phone.draw_active = false;
         let style=state.style.target;
         let dark=state.style.dark;
-        let app=mobile::app_rect(screen);
+        let app=phone.app_content_rect(screen);
         if self.phone_ui.set_theme(phone.theme.map(|choice| choice.palette(dark))) {
             // Recolor existing app/tile instances, including captures otherwise
             // keyed only by size and light/dark. Keep their navigation state.
@@ -523,7 +524,7 @@ impl WmDesk {
             if !foreground && phone.overview<0.001 {continue;}
             if foreground && phone.openness<0.001 {continue;}
             let index=phone.order.iter().position(|c|*c==client).unwrap_or(0);
-            let card=mobile::card_rect(screen,index as f64,phone.page);
+            let card=phone.card_rect(screen,index as f64,phone.page);
             let mut display=if foreground {
                 let icon=PhoneSurface::launch_origin(style,screen,phone.tiles.get(client).map(|t|t.app.as_str()));
                 mobile::mix_rect(mobile::mix_rect(icon,app,phone.openness),card,phone.overview)

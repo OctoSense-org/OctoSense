@@ -178,6 +178,30 @@ fn set_card_body(cx: &mut Cx, root: &WidgetRef, outer: SplashVmId, body: &str) {
 }
 
 #[test]
+fn calendar_saved_event_title_wraps_above_its_details_on_a_narrow_phone() {
+    let source = include_str!("../../../apps/calendar/bundle/main.splash");
+    let title_type = source.lines().find(|line| line.starts_with("let UiTitle = ")).unwrap();
+    let title_instance = source.lines().find(|line| line.trim_start().starts_with("event_title := ")).unwrap();
+    let (mut cx, tile, root, outer) = hosted_card();
+    set_card_body(&mut cx, &root, outer, &format!(
+        "let ui_ink = theme.color_text\n{title_type}\nView{{width: Fill height: Fill flow: Down padding: 20 spacing: 18\n{title_instance}\nwhen := Label{{text: \"WHEN\"}}\n}}"
+    ));
+    widget_tree::set_ui_root(&mut cx, &root);
+    let title = root.label(&cx, ids!(event_title));
+    title.set_text(&mut cx, "Short");
+    draw_card(&mut cx, &tile, 360.0, 600.0);
+    let one_line = title.area().rect(&cx);
+    title.set_text(&mut cx, "OnePlus acceptance event with a longer appointment title");
+    draw_card(&mut cx, &tile, 360.0, 600.0);
+    let wrapped = title.area().rect(&cx);
+    let details = root.label(&cx, ids!(when)).area().rect(&cx);
+    assert!(wrapped.size.y > one_line.size.y, "the saved title must grow instead of clipping: {wrapped:?}");
+    assert!(wrapped.pos.x >= 20.0 && wrapped.pos.x + wrapped.size.x <= 340.0);
+    assert!(details.pos.y >= wrapped.pos.y + wrapped.size.y, "event details must follow all title lines");
+    assert_eq!(title.text(), "OnePlus acceptance event with a longer appointment title");
+}
+
+#[test]
 fn permission_dialog_pause_and_resume_leave_a_new_video_ready_for_its_first_source() {
     let mut cx = Cx::new(Box::new(|_, _| {}));
     let root = cx.with_vm(|vm| {
@@ -382,18 +406,29 @@ fn card_runner_restyles_nested_script_without_replacing_draft() {
         WidgetRef::script_from_value(vm, value)
     });
     tile.borrow_mut::<MpModuleView>().unwrap().set_root(&mut cx, 1, owner, root.clone());
-    let probe = format!("{}\n{}", include_str!("../../../apps/interface.splash"),
-        r#"let ink = ui_ink
-        SolidView{draw_bg.color: ui_page label := UiTitle{text: "Theme" draw_text.color: ink} input := UiField{text: "Draft"}}"#);
-    set_card_body(&mut cx, &root, owner, &probe);
+    // Exercise the Card runner's nested-isolate restyle with only the two
+    // widgets whose identity/state matter here. Loading the complete shared
+    // interface made this boundary test spend its 64 ms startup budget on
+    // unrelated widget prototypes under concurrent CI load. Full interface
+    // colors are covered by system_app_theme_tests; keep the runtime budget.
+    let probe = r#"let theme = mod.theme
+        let ink = theme.color_text
+        SolidView{draw_bg.color: theme.color_bg_app
+            label := Label{text: "Theme" draw_text.color: ink}
+            input := TextInput{text: "Draft"}}
+    "#;
+    set_card_body(&mut cx, &root, owner, probe);
     draw_card(&mut cx, &tile, 400.0, 700.0);
     let label = root.label(&mut cx, ids!(label));
-    let light = label.borrow().unwrap().draw_text.color;
-    root.text_input(&mut cx, ids!(input)).set_text(&mut cx, "Unsaved draft");
+    let light = label.borrow().expect("the contained theme probe initialized").draw_text.color;
+    let input = root.text_input(&mut cx, ids!(input));
+    let input_id = input.widget_uid();
+    input.set_text(&mut cx, "Unsaved draft");
     host.apply_style(&mut cx, &sheet(true));
     draw_card(&mut cx, &tile, 400.0, 700.0);
     let dark = label.borrow().unwrap().draw_text.color;
     assert_ne!(light, dark, "the Card runner must restyle its hosted app, not only its outer view");
+    assert_eq!(root.text_input(&mut cx, ids!(input)).widget_uid(), input_id, "restyle must retain the live editor");
     assert_eq!(root.text_input(&mut cx, ids!(input)).text(), "Unsaved draft");
     host.teardown(&mut cx, 1);
 }
