@@ -184,6 +184,9 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Native browser acceptance fixture only; registry bindings match WebView2.
+webview2-com = "=0.39.1"
+webview2-windows = { package = "windows", version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10.4"

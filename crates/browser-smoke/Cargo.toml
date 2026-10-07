@@ -8,3 +8,7 @@ publish = false
 [dependencies]
 makepad-widgets.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com.workspace = true
+webview2-windows.workspace = true

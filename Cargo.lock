@@ -7738,6 +7738,8 @@ version = "0.1.0"
 dependencies = [
  "makepad-widgets",
  "serde_json",
+ "webview2-com",
+ "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
