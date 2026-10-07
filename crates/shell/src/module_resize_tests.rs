@@ -202,6 +202,87 @@ fn calendar_saved_event_title_wraps_above_its_details_on_a_narrow_phone() {
 }
 
 #[test]
+fn maps_location_request_checks_the_contained_app_capability() {
+    let (mut cx, _tile, root, outer) = hosted_card();
+    set_card_body(&mut cx, &root, outer, "View{}");
+    let source = root.splash(&cx, ids!(card)).borrow().unwrap().view.source.clone();
+    let owner = cx.script_ref_vm_id(&source).unwrap();
+    let heap = cx.with_script_vm_id_trusted(owner, |vm| vm.bx.heap.heap_key());
+    let request = |cx: &mut Cx| cx.with_script_vm_id_trusted(owner, |vm| {
+        splash::register_agent_module(vm);
+        vm.bx.captured_errors = Some(Vec::new());
+        let result = script_eval!(vm, {sys.request_location()});
+        let errors = vm.take_errors();
+        assert!(errors.is_empty(), "{errors:?}");
+        result.as_number().unwrap()
+    });
+    for capability in ["net", "location.get", ""] {
+        splash_policy::set_policy_for_heap(heap, vec![capability.into()], vec![], None);
+        assert_eq!(request(&mut cx), -1.0, "{capability} cannot start permission consent");
+    }
+    splash_policy::set_policy_for_heap(heap, vec!["location".into()], vec![], None);
+    assert_eq!(request(&mut cx), if cfg!(target_os = "android") {1.0} else {0.0}, "unsupported platforms must not claim a request started");
+    splash_policy::set_policy_for_heap(heap, vec![], vec![], None);
+    assert_eq!(request(&mut cx), -1.0, "revoking the grant takes effect on the next request");
+}
+
+#[test]
+fn maps_reads_are_passive_and_only_the_location_action_requests_permission() {
+    let source = include_str!("../../../apps/maps/bundle/main.splash");
+    let function = |name: &str| {
+        let start = source.find(&format!("fn {name}(" )).unwrap();
+        source[start..].split_once("\nfn ").unwrap().0
+    };
+    let functions = ["fix_origin", "location_note", "use_my_location"].map(function).join("\n");
+    let code = format!(r#"
+use mod.std.assert
+mod.requests = 0
+mod.result = 1
+mod.fixed = false
+mod.note = ""
+mod.note_visible = false
+mod.screen = "search"
+let origin = {{lat: 37.3350 lon: -121.8850 name: "San Jose (downtown)" picked: false}}
+let finding = "origin"
+let sys = {{
+    request_location: fn() {{mod.requests = mod.requests + 1; return mod.result}}
+    gps: fn(field) {{if !mod.fixed {{return 0}}; if field == "lat" {{return 37.7}}; if field == "lon" {{return -122.4}}; return 1}}
+}}
+let ui = {{location_status: {{
+    set_text: fn(text) {{mod.note = text}}
+    set_visible: fn(value) {{mod.note_visible = value}}
+}}}}
+fn show(name) {{mod.screen = name}}
+{functions}
+fix_origin()
+fix_origin()
+assert(mod.requests == 0)
+use_my_location()
+assert(mod.requests == 1)
+assert(origin.name == "San Jose (downtown)")
+assert(mod.note_visible && mod.note != "")
+assert(mod.screen == "route")
+mod.fixed = true
+fix_origin()
+assert(mod.requests == 1)
+assert(origin.name == "Your location" && origin.lat == 37.7 && origin.lon == -122.4)
+assert(mod.note == "" && !mod.note_visible)
+mod.fixed = false
+mod.result = -1
+use_my_location()
+assert(mod.note == "This app does not have location access. Choose an origin instead.")
+1
+"#);
+    let mut host = ScriptVmHost::new((), ());
+    let mut vm = ScriptVm { host: &mut host, bx: Box::new(ScriptVmBase::new()) };
+    vm.bx.captured_errors = Some(Vec::new());
+    let result = vm.eval(ScriptMod { file: "maps_location_test.splash".into(), code, ..Default::default() });
+    let errors = vm.take_errors();
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(result.as_number(), Some(1.0));
+}
+
+#[test]
 fn permission_dialog_pause_and_resume_leave_a_new_video_ready_for_its_first_source() {
     let mut cx = Cx::new(Box::new(|_, _| {}));
     let root = cx.with_vm(|vm| {
