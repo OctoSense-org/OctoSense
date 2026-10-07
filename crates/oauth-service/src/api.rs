@@ -56,10 +56,20 @@ impl Api<'_> {
                 self.transport,
                 self.now,
             )?;
-            self.connections.replace_tokens(caller, connection, token)?;
-            token = self
-                .connections
-                .tokens(caller, connection, provider, scope)?;
+            {
+                // Refresh HTTP runs under the app's operation lock, never the
+                // global metadata lock. Reload before committing so a concurrent
+                // connection update for another app cannot be overwritten.
+                #[cfg(feature = "host")]
+                let _metadata = crate::host::STORE_LOCK
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                self.connections.reload()?;
+                self.connections.replace_tokens(caller, connection, token)?;
+                token = self
+                    .connections
+                    .tokens(caller, connection, provider, scope)?;
+            }
         }
         self.transport.send(Request {
             method,
@@ -160,16 +170,33 @@ impl Api<'_> {
         let mut url = github_path(owner, repo, directory, true)?;
         nonempty(branch, 255, "branch")?;
         url.query_pairs_mut().append_pair("ref", branch);
-        let response = json_ok(self.request(caller, connection, Provider::Github, scope,
-            "GET", url, Body::Empty, None)?)?;
+        let response = json_ok(self.request(
+            caller,
+            connection,
+            Provider::Github,
+            scope,
+            "GET",
+            url,
+            Body::Empty,
+            None,
+        )?)?;
         let entries = response.as_array().ok_or("Choose a repository folder")?;
         // Do not expose download URLs (which can embed temporary credentials),
         // symlink targets, or unrelated provider account metadata to the app.
-        let files: Vec<_> = entries.iter().filter(|entry| {
-            entry["type"] == "dir" || (entry["type"] == "file" &&
-                entry["path"].as_str().is_some_and(|path| path.to_ascii_lowercase().ends_with(".md")))
-        }).map(|entry| json!({"name":entry["name"], "path":entry["path"],
-            "type":entry["type"], "sha":entry["sha"]})).collect();
+        let files: Vec<_> = entries
+            .iter()
+            .filter(|entry| {
+                entry["type"] == "dir"
+                    || (entry["type"] == "file"
+                        && entry["path"]
+                            .as_str()
+                            .is_some_and(|path| path.to_ascii_lowercase().ends_with(".md")))
+            })
+            .map(|entry| {
+                json!({"name":entry["name"], "path":entry["path"],
+            "type":entry["type"], "sha":entry["sha"]})
+            })
+            .collect();
         Ok(json!({"files":files,"path":directory,"branch":branch}))
     }
     /// The caller must pass the exact host-reviewed snapshot; never retry an
@@ -230,14 +257,14 @@ impl Api<'_> {
             None,
         )?)
     }
-    /// Follow pages with the same sync token. Commit nextSyncToken only after
-    /// the final page has been applied atomically to the local cache.
-    pub fn calendar_sync(
+    /// A bounded, server-expanded agenda. Repeat this exact window for every
+    /// page; never combine it with an incremental sync token.
+    pub fn calendar_window(
         &mut self,
         caller: &str,
         connection: &str,
         calendar: &str,
-        sync: Option<&str>,
+        window: &crate::calendar_cache::AgendaWindow,
         page: Option<&str>,
     ) -> Result<Value, String> {
         nonempty(calendar, 1024, "calendar")?;
@@ -245,12 +272,13 @@ impl Api<'_> {
             "https://www.googleapis.com",
             &["calendar", "v3", "calendars", calendar, "events"],
         )?;
-        url.query_pairs_mut()
-            .extend_pairs([("maxResults", "250"), ("showDeleted", "true")]);
-        if let Some(sync) = sync {
-            nonempty(sync, 4096, "sync token")?;
-            url.query_pairs_mut().append_pair("syncToken", sync);
-        }
+        url.query_pairs_mut().extend_pairs([
+            ("maxResults", "250"),
+            ("showDeleted", "false"),
+            ("singleEvents", "true"),
+            ("timeMin", window.time_min()),
+            ("timeMax", window.time_max()),
+        ]);
         if let Some(page) = page {
             nonempty(page, 4096, "page token")?;
             url.query_pairs_mut().append_pair("pageToken", page);
@@ -265,9 +293,6 @@ impl Api<'_> {
             Body::Empty,
             None,
         )?;
-        if response.status == 410 {
-            return Ok(json!({"reset_required":true}));
-        }
         json_ok(response)
     }
     pub fn calendar_get(
@@ -518,7 +543,10 @@ fn github_path(owner: &str, repo: &str, path: &str, root_allowed: bool) -> Resul
         }
     }
     if root_allowed && path.is_empty() {
-        return endpoint("https://api.github.com", &["repos", owner, repo, "contents"]);
+        return endpoint(
+            "https://api.github.com",
+            &["repos", owner, repo, "contents"],
+        );
     }
     nonempty(path, 1024, "repository path")?;
     if path.contains(['\\', '\0'])

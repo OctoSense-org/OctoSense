@@ -1,8 +1,7 @@
 //! Scoped provider operations and review of immutable remote-write snapshots.
 use crate::{
-    api::{Api, CalendarEvent, GithubFile},
-    host::{clients, connections, provider_transport, unix_now, STORE_LOCK},
-    providers::ClientRegistration,
+    api::{CalendarEvent, GithubFile},
+    host::{connections, operation_lock, with_provider_api},
 };
 use octosense_appstore::services::{self, HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::{json, Value};
@@ -106,37 +105,8 @@ impl ReviewRequest {
         if std::thread::Builder::new()
             .name("connector-reviewed-save".into())
             .spawn(move || {
-                let result = with_api(&review.root, |api| {
-                    if !api
-                        .connections
-                        .active(&review.app)
-                        .is_some_and(|c| c.handle == review.connection)
-                    {
-                        return Err(
-                            "The selected account changed; review again under the original account"
-                                .into(),
-                        );
-                    }
-                    match &review.change {
-                        Change::Github(file) => {
-                            api.github_save(&review.app, &review.connection, file)
-                        }
-                        Change::Calendar {
-                            calendar,
-                            event,
-                            existing,
-                            create_id,
-                        } => api.calendar_save(
-                            &review.app,
-                            &review.connection,
-                            calendar,
-                            event,
-                            existing
-                                .as_ref()
-                                .map(|(id, etag)| (id.as_str(), etag.as_str())),
-                            create_id,
-                        ),
-                    }
+                let result = with_provider_api(&review.root, &review.app, |api| {
+                    execute_review(&review, api)
                 });
                 *review.save.result.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(result.clone());
@@ -273,7 +243,8 @@ impl HostService for Connector {
                             create_id: Uuid::new_v4().simple().to_string(),
                         }
                     };
-                    let _guard = STORE_LOCK
+                    let operation = operation_lock(&call.host_dir, &call.app_id);
+                    let _guard = operation
                         .try_lock()
                         .map_err(|_| "Account storage is busy; try review again")?;
                     let store = connections(&call.host_dir)?;
@@ -435,99 +406,95 @@ impl HostService for Connector {
                 std::thread::spawn(move || {
                     let result = (|| {
                         let connection = field(&call.args, "connection")?;
-                        with_api(&call.host_dir, |api| match (family, call.method()) {
-                            ("github", "repositories") => api.github_repositories(
-                                &call.app_id,
-                                connection,
-                                call.args["page"].as_u64().unwrap_or(1).min(1000) as u32,
-                            ),
-                            ("github", "read") => api.github_read(
-                                &call.app_id,
-                                connection,
-                                field(&call.args, "owner")?,
-                                field(&call.args, "repo")?,
-                                field(&call.args, "branch")?,
-                                field(&call.args, "path")?,
-                            ),
-                            ("github", "files") => api.github_files(
-                                &call.app_id,
-                                connection,
-                                field(&call.args, "owner")?,
-                                field(&call.args, "repo")?,
-                                field(&call.args, "branch")?,
-                                call.args["path"].as_str().unwrap_or(""),
-                            ),
-                            ("gcalendar", "calendars") => api.calendars(
-                                &call.app_id,
-                                connection,
-                                call.args["page_token"].as_str(),
-                            ),
-                            ("gcalendar", "cached" | "refresh") => {
-                                api.connections.authorized(
+                        with_provider_api(&call.host_dir, &call.app_id, |api| {
+                            match (family, call.method()) {
+                                ("github", "repositories") => api.github_repositories(
                                     &call.app_id,
                                     connection,
-                                    crate::Provider::Google,
-                                    crate::api::CALENDAR_SCOPE,
-                                )?;
-                                let calendar = field(&call.args, "calendar")?;
-                                if call.method() == "cached" {
-                                    crate::calendar_cache::cached(
-                                        &call.host_dir,
+                                    call.args["page"].as_u64().unwrap_or(1).min(1000) as u32,
+                                ),
+                                ("github", "read") => api.github_read(
+                                    &call.app_id,
+                                    connection,
+                                    field(&call.args, "owner")?,
+                                    field(&call.args, "repo")?,
+                                    field(&call.args, "branch")?,
+                                    field(&call.args, "path")?,
+                                ),
+                                ("github", "files") => api.github_files(
+                                    &call.app_id,
+                                    connection,
+                                    field(&call.args, "owner")?,
+                                    field(&call.args, "repo")?,
+                                    field(&call.args, "branch")?,
+                                    call.args["path"].as_str().unwrap_or(""),
+                                ),
+                                ("gcalendar", "calendars") => api.calendars(
+                                    &call.app_id,
+                                    connection,
+                                    call.args["page_token"].as_str(),
+                                ),
+                                ("gcalendar", "cached" | "refresh") => {
+                                    api.connections.authorized(
                                         &call.app_id,
                                         connection,
-                                        calendar,
-                                    )
-                                } else {
-                                    let deadline = Instant::now() + Duration::from_secs(35);
-                                    crate::calendar_cache::refresh(
-                                        &call.host_dir,
-                                        &call.app_id,
-                                        connection,
-                                        calendar,
-                                        api.now,
-                                        |sync, page| {
-                                            if Instant::now() >= deadline {
-                                                return Err("Calendar refresh took too long; the previous snapshot is unchanged".into());
-                                            }
-                                            let result = api.calendar_sync(
-                                                &call.app_id,
-                                                connection,
-                                                calendar,
-                                                sync,
-                                                page,
-                                            )?;
-                                            if Instant::now() >= deadline {
-                                                return Err("Calendar refresh took too long; the previous snapshot is unchanged".into());
-                                            }
-                                            Ok(result)
-                                        },
-                                    )
+                                        crate::Provider::Google,
+                                        crate::api::CALENDAR_SCOPE,
+                                    )?;
+                                    let calendar = field(&call.args, "calendar")?;
+                                    if call.method() == "cached" {
+                                        crate::calendar_cache::cached(
+                                            &call.host_dir,
+                                            &call.app_id,
+                                            connection,
+                                            calendar,
+                                        )
+                                    } else {
+                                        let deadline = Instant::now() + Duration::from_secs(35);
+                                        crate::calendar_cache::refresh(
+                                            &call.host_dir,
+                                            &call.app_id,
+                                            connection,
+                                            calendar,
+                                            api.now,
+                                            |window, page| {
+                                                if Instant::now() >= deadline {
+                                                    return Err("Calendar refresh took too long; the previous snapshot is unchanged".into());
+                                                }
+                                                let result = api.calendar_window(
+                                                    &call.app_id,
+                                                    connection,
+                                                    calendar,
+                                                    window,
+                                                    page,
+                                                )?;
+                                                if Instant::now() >= deadline {
+                                                    return Err("Calendar refresh took too long; the previous snapshot is unchanged".into());
+                                                }
+                                                Ok(result)
+                                            },
+                                        )
+                                    }
                                 }
-                            }
-                            ("gcalendar", "sync") => api.calendar_sync(
-                                &call.app_id,
-                                connection,
-                                field(&call.args, "calendar")?,
-                                call.args["sync_token"].as_str(),
-                                call.args["page_token"].as_str(),
-                            ),
+                                ("gcalendar", "sync") => Err("Use gcalendar.refresh for the bounded agenda; raw history synchronization is not exposed".into()),
                             ("gcalendar", "get") => api.calendar_get(
-                                &call.app_id,
-                                connection,
-                                field(&call.args, "calendar")?,
-                                field(&call.args, "event_id")?,
-                            ),
-                            ("gmail", "messages") => api.gmail_messages(
-                                &call.app_id,
-                                connection,
-                                call.args["page_token"].as_str(),
-                            ),
-                            ("gmail", "message") => api.gmail_message(
-                                &call.app_id,
-                                connection,
-                                field(&call.args, "message_id")?,
-                            ),
-                            _ => Err("Unknown connector operation".into()),
+                                    &call.app_id,
+                                    connection,
+                                    field(&call.args, "calendar")?,
+                                    field(&call.args, "event_id")?,
+                                ),
+                                ("gmail", "messages") => api.gmail_messages(
+                                    &call.app_id,
+                                    connection,
+                                    call.args["page_token"].as_str(),
+                                ),
+                                ("gmail", "message") => api.gmail_message(
+                                    &call.app_id,
+                                    connection,
+                                    field(&call.args, "message_id")?,
+                                ),
+                                _ => Err("Unknown connector operation".into()),
+                            }
                         })
                     })();
                     reply.send(result);
@@ -537,28 +504,34 @@ impl HostService for Connector {
     }
 }
 
-fn with_api(
-    root: &std::path::Path,
-    run: impl FnOnce(&mut Api<'_>) -> Result<Value, String>,
-) -> Result<Value, String> {
-    let _guard = STORE_LOCK.lock().unwrap();
-    let mut store = connections(root)?;
-    let config = clients(root)?;
-    let client = config.google.as_ref().map(|client| ClientRegistration {
-        client_id: client.client_id.clone(),
-    });
-    let transport = provider_transport(root)?;
-    run(&mut Api {
-        connections: &mut store,
-        transport: transport.as_ref(),
-        google_client: client.as_ref(),
-        google_client_secret: config
-            .google
-            .as_ref()
-            .and_then(|c| c.client_secret.as_deref()),
-        now: unix_now(),
-    })
+fn execute_review(review: &Review, api: &mut crate::api::Api<'_>) -> Result<Value, String> {
+    if !api
+        .connections
+        .active(&review.app)
+        .is_some_and(|c| c.handle == review.connection)
+    {
+        return Err("The selected account changed; review again under the original account".into());
+    }
+    match &review.change {
+        Change::Github(file) => api.github_save(&review.app, &review.connection, file),
+        Change::Calendar {
+            calendar,
+            event,
+            existing,
+            create_id,
+        } => api.calendar_save(
+            &review.app,
+            &review.connection,
+            calendar,
+            event,
+            existing
+                .as_ref()
+                .map(|(id, etag)| (id.as_str(), etag.as_str())),
+            create_id,
+        ),
+    }
 }
+
 fn review_snapshot(review: &Review) -> Value {
     let (title, details, body) = match &review.change {
         Change::Github(file) => (
@@ -845,5 +818,91 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn account_switch_before_the_save_worker_causes_no_provider_request() {
+        use crate::{
+            oauth::Tokens,
+            transport::{Request, Response, Transport},
+            Connections, CredentialStore,
+        };
+        #[derive(Default)]
+        struct Vault(Mutex<HashMap<String, String>>);
+        impl CredentialStore for Vault {
+            fn put(&self, k: &str, v: &str) -> Result<(), String> {
+                self.0.lock().unwrap().insert(k.into(), v.into());
+                Ok(())
+            }
+            fn get(&self, k: &str) -> Result<String, String> {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .get(k)
+                    .cloned()
+                    .ok_or("missing".into())
+            }
+            fn remove(&self, k: &str) -> Result<(), String> {
+                self.0.lock().unwrap().remove(k);
+                Ok(())
+            }
+        }
+        struct NeverSend(AtomicUsize);
+        impl Transport for NeverSend {
+            fn send(&self, _: Request) -> Result<Response, String> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err("Unexpected provider call".into())
+            }
+        }
+        let root = std::env::temp_dir().join(format!("review-account-race-{}", Uuid::new_v4()));
+        let mut store = Connections::open(&root, Arc::new(Vault::default())).unwrap();
+        let tokens = || Tokens {
+            access: "synthetic".into(),
+            refresh: None,
+            expires_at: None,
+            scopes: ["public_repo".into()].into_iter().collect(),
+        };
+        let (mut request, heap) = fixture();
+        let first = store
+            .connect(
+                &request.review.app,
+                crate::Provider::Github,
+                "first",
+                "First",
+                tokens(),
+            )
+            .unwrap();
+        Arc::get_mut(&mut request.review).unwrap().connection = first.handle;
+        store
+            .connect(
+                &request.review.app,
+                crate::Provider::Github,
+                "second",
+                "Second",
+                tokens(),
+            )
+            .unwrap();
+        request.claim_approval(true, true).unwrap();
+        let review = request.review.clone();
+        let transport = Arc::new(NeverSend(AtomicUsize::new(0)));
+        let worker_transport = transport.clone();
+        let result = std::thread::spawn(move || {
+            execute_review(
+                &review,
+                &mut crate::api::Api {
+                    connections: &mut store,
+                    transport: worker_transport.as_ref(),
+                    google_client: None,
+                    google_client_secret: None,
+                    now: 1,
+                },
+            )
+        })
+        .join()
+        .unwrap();
+        assert!(result.unwrap_err().contains("selected account changed"));
+        assert_eq!(transport.0.load(Ordering::SeqCst), 0);
+        services::cancel_heap(heap);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

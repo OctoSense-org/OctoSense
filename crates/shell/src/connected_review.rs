@@ -365,4 +365,112 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn a_contained_copy_cannot_claim_a_real_pending_host_review_ticket() {
+        use octosense_appstore::services::{self, ServiceCall, ServiceHost};
+        let root =
+            std::env::temp_dir().join(format!("native-review-ticket-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("oauth")).unwrap();
+        let app = "org.example.native_review_test";
+        let handle = "45c5676e-821e-4a6b-9719-301f8790fc52";
+        // Metadata only: this test never creates, reads or writes a provider
+        // token, and never approves a write or calls a provider endpoint.
+        std::fs::write(root.join("oauth/connections.json"),serde_json::json!({
+            "entries":{handle:{"handle":handle,"app_id":app,"provider":"github","subject":"synthetic-review-user",
+                "label":"Fictional review account","scopes":["public_repo"],"expires_at":null}},
+            "active":{app:handle}
+        }).to_string()).unwrap();
+        struct Host(String);
+        impl ServiceHost for Host {
+            fn open_sheet(&mut self, source: String) {
+                self.0 = source;
+            }
+            fn close_sheet(&mut self) {}
+        }
+        host_api::register_with_review_hook(connector_sheet);
+        let mut host = Host(String::new());
+        const HEAP: usize = 993720;
+        services::dispatch(
+            ServiceCall {
+                app_id: app.into(),
+                service: "github.review_save".into(),
+                args: serde_json::json!({"connection":handle,"file":{"owner":"fictional","repo":"notes","branch":"main",
+                "path":"note.md","content":"Exact fictional draft","message":"Save note","sha":null}}),
+                from_sheet: false,
+                may_prompt: true,
+                host_dir: root.clone(),
+            },
+            HEAP,
+            1,
+            &mut host,
+        );
+        assert!(
+            !host.0.is_empty(),
+            "the real connector must create a pending native capability"
+        );
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        register();
+        let mut make = |contained| {
+            let mut splash = cx.with_vm(|vm| {
+                makepad_widgets::script_mod(vm);
+                script_mod(vm);
+                let value = vm.eval(script! {use mod.widgets.* Splash {}});
+                Splash::script_from_value(vm, value)
+            });
+            if contained {
+                splash.set_policy(&mut cx, Some(vec![]), None);
+            }
+            splash.set_text(&mut cx, &format!("review := {}", host.0));
+            splash
+        };
+        let untrusted = make(true);
+        let trusted = make(false);
+        let find = |splash: &Splash| {
+            splash
+                .view
+                .children
+                .iter()
+                .find(|(id, _)| *id == id!(review))
+                .unwrap()
+                .1
+                .clone()
+        };
+        let copy = find(&untrusted);
+        let owner = find(&trusted);
+        let ticket = copy
+            .borrow::<ConnectedReplyReview>()
+            .unwrap()
+            .ticket
+            .clone();
+        assert!(pending().lock().unwrap().contains_key(&ticket));
+        copy.borrow_mut::<ConnectedReplyReview>()
+            .unwrap()
+            .initialize(&mut cx);
+        assert!(copy
+            .borrow::<ConnectedReplyReview>()
+            .unwrap()
+            .request
+            .is_none());
+        assert!(
+            pending().lock().unwrap().contains_key(&ticket),
+            "the hostile copy cannot consume the ticket"
+        );
+        owner
+            .borrow_mut::<ConnectedReplyReview>()
+            .unwrap()
+            .initialize(&mut cx);
+        assert!(owner
+            .borrow::<ConnectedReplyReview>()
+            .unwrap()
+            .request
+            .is_some());
+        assert!(!pending().lock().unwrap().contains_key(&ticket));
+        drop(owner);
+        drop(copy);
+        drop(trusted);
+        drop(untrusted);
+        services::cancel_heap(HEAP);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

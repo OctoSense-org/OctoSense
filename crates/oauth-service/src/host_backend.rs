@@ -110,6 +110,8 @@ pub(super) fn authorize(p: &Pending) -> Result<crate::Connection, String> {
     }
     let authorized = backend.finish(&p.app, code, unix_now())?;
     let saved = (|| {
+        let operation = operation_lock(&p.root, &p.app);
+        let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
         let guard = STORE_LOCK.lock().unwrap();
         current(&p.root, &p.app, backend, p.epoch, &p.scope_check)?;
         if p.cancelled.load(Ordering::SeqCst) || Instant::now() >= p.deadline {
@@ -133,6 +135,7 @@ pub(super) fn authorize(p: &Pending) -> Result<crate::Connection, String> {
             return Err("Sign-in cancelled or expired".into());
         }
         drop(guard);
+        drop(operation_guard);
         account_changed(
             &p.app,
             previous.as_ref().map(|c| c.handle.as_str()),

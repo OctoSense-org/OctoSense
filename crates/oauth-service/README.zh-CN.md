@@ -191,7 +191,7 @@ GitHub 设备代码仅出现在宿主面板。Google 校验 state、来源、路
 | --- | --- |
 | `auth` | `connect`、`accounts`、`active`、`select`、`disconnect`、`backend.me` |
 | `github` | `repositories`、`files`、`read`、`review_save` |
-| `gcalendar` | `calendars`、`sync`、`cached`、`refresh`、`get`、`prepare`、`review_save` |
+| `gcalendar` | `calendars`、`cached`、`refresh`、`get`、`prepare`、`review_save` |
 | `gmail` | `labels`、`messages`、`message`、`draft.open/get/edit/review`、`events.status`、`event.status/decide` |
 
 `auth.connect` 接收 provider 和 scopes。GitHub scopes 为 `read:user`、`public_repo` 或 `repo`；
@@ -201,9 +201,26 @@ Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`�
 自动让其他应用读取它。调用示例见英文版，对真实授权的验证状态相同。
 
 GitHub 保存冻结仓库、分支、路径、内容及原 blob SHA。Calendar 保存冻结日历、事件和 ETag；
-过期 ETag 会报冲突，不会静默覆盖。Gmail 原生审核冻结持久化草稿版本、收件人及正文，
-必须通过真人激活原生控件发信；脚本、Agent、远程测试及 JSON 标记不能批准。
-结果不明的 Gmail 提交保持不明状态，不会盲目重试。
+过期 ETag 会报冲突，不会静默覆盖。Gmail 原生审核冻结持久化草稿版本、收件人及正文。
+这三种写入都必须由真人激活宿主原生审核控件；按下与释放时分别检查原生输入来源，
+然后才把一次性能力交给工作线程。脚本、Agent、远程测试及 JSON 标记不能批准保存或发送。
+关闭审核会取消尚未提交的请求；写入前再次检查当前账户。结果不明的 Gmail 提交保持
+不明状态，不会盲目重试。
+
+`gcalendar.refresh` 原子替换有限日期范围内的日程：从今天之前 30 天的 UTC 零点，
+到今天之后 366 天的 UTC 零点。Google 将重复系列展开为窗口内的真实实例，保留实例 ID、
+ETag 和例外，排除取消的实例。同一次刷新所有分页使用相同范围；以后刷新会移动窗口。
+失败或未完成的刷新保留上一次完整缓存及其 `window`。旧 schema-1 缓存仍可读取，
+直到一次成功的有限窗口刷新替换它。
+
+这个日程使用完整的**窗口快照**，不使用增量历史同步。Google 禁止将 `timeMin`/`timeMax`
+与 `syncToken` 一起使用，所以该路径不保存或复用 `nextSyncToken`。不再开放原始
+`gcalendar.sync`，请使用 `refresh` 和 `cached`。见 [Google events.list 契约](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)。
+
+提供方 HTTP 与本地草稿、缓存修改按宿主配置目录和应用分别串行执行；一个提供方响应
+缓慢不会阻塞其他应用。选中账户、断开连接、卸载和最终接纳连接共享同一应用锁；
+进程级元数据锁只覆盖短暂的读取、提交步骤。刷新令牌提交前重新读取最新元数据，
+不会覆盖其他应用的账户修改，也不会恢复已经撤销的连接。
 
 ## Agent 如何调用共享服务
 
@@ -283,8 +300,8 @@ cargo test --locked -p octosense-oauth-service --features host host_vault_accept
 这不验证服务商授权或实体发送审批，也不能证明旧 Mail 凭据适配器中无返回值的删除
 操作实际删掉了系统条目。测试不请求服务商，也不读取已有账户。
 
-测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、分页、410、ETag、
-DST、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见
+测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、有限窗口分页、窗口移动、重复实例、ETag、
+DST、跨应用可用性、刷新提交竞态、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见
 [Design Flow connected-apps](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/feat/connected-sample-apps/examples/connected-apps)。
 普通 `card-host` 不提供 OAuth、Gmail、Calendar 或 octos 宿主。`connected-app-host` 是独立的
 私有配置测试宿主；不启动 Agent 内核，也不能代替生产安装验证。

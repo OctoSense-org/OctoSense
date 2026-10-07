@@ -198,22 +198,15 @@ fn foreign_revoked_or_wrong_scope_connection_never_reaches_transport() {
     assert!(fixture.calls.lock().unwrap().is_empty());
 }
 #[test]
-fn calendar_expired_sync_and_etag_conflict_are_explicit() {
+fn calendar_window_query_is_bounded_and_provider_and_etag_errors_are_explicit() {
     let profile = Profile::new();
     let (mut store, handle) = profile.connect(Provider::Google, &[CALENDAR_SCOPE]);
     let fixture = Fixture::new(vec![(410, json!({})), (412, json!({}))]);
     let mut api = api(&mut store, &fixture);
-    assert_eq!(
-        api.calendar_sync(
-            "fixture.app",
-            &handle,
-            "primary",
-            Some("expired"),
-            Some("page2")
-        )
-        .unwrap(),
-        json!({"reset_required":true})
-    );
+    let window = crate::calendar_cache::AgendaWindow::around(calendar_now()).unwrap();
+    assert!(api
+        .calendar_window("fixture.app", &handle, "primary", &window, Some("page2"))
+        .is_err());
     let event:CalendarEvent=serde_json::from_value(json!({"summary":"Fixture","description":"","location":"","start":{"date":"2026-10-08"},"end":{"date":"2026-10-09"}})).unwrap();
     assert!(api
         .calendar_save(
@@ -228,6 +221,22 @@ fn calendar_expired_sync_and_etag_conflict_are_explicit() {
         .contains("remote content changed"));
     let calls = fixture.calls.lock().unwrap();
     assert_eq!(calls.len(), 2);
+    let query = calls[0]
+        .url
+        .query_pairs()
+        .into_owned()
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(query.get("singleEvents").map(String::as_str), Some("true"));
+    assert_eq!(
+        query.get("timeMin").map(String::as_str),
+        Some(window.time_min())
+    );
+    assert_eq!(
+        query.get("timeMax").map(String::as_str),
+        Some(window.time_max())
+    );
+    assert_eq!(query.get("pageToken").map(String::as_str), Some("page2"));
+    assert!(!query.contains_key("syncToken"));
     assert_eq!(calls[1].method, "PATCH");
     assert_eq!(calls[1].if_match.as_deref(), Some("\"revision1\""));
     assert!(calls[1]
@@ -386,8 +395,8 @@ fn calendar_provider_boundary_create_reopen_edit_conflict_and_restart() {
             APP,
             &connection.handle,
             CALENDAR,
-            1,
-            |sync, page| api.calendar_sync(APP, &connection.handle, CALENDAR, sync, page),
+            calendar_now(),
+            |window, page| api.calendar_window(APP, &connection.handle, CALENDAR, window, page),
         )
         .unwrap();
         (saved, snapshot)
@@ -433,8 +442,8 @@ fn calendar_provider_boundary_create_reopen_edit_conflict_and_restart() {
         APP,
         &connection.handle,
         CALENDAR,
-        2,
-        |sync, page| api.calendar_sync(APP, &connection.handle, CALENDAR, sync, page),
+        calendar_now() + 1,
+        |window, page| api.calendar_window(APP, &connection.handle, CALENDAR, window, page),
     )
     .unwrap();
     assert_eq!(
@@ -474,14 +483,14 @@ fn calendar_provider_boundary_create_reopen_edit_conflict_and_restart() {
         APP,
         &connection.handle,
         CALENDAR,
-        3,
-        |sync, page| api.calendar_sync(APP, &connection.handle, CALENDAR, sync, page)
+        calendar_now() + 2,
+        |window, page| api.calendar_window(APP, &connection.handle, CALENDAR, window, page)
     )
     .is_err());
     assert_eq!(
         calendar_cache::cached(&profile.0, APP, &connection.handle, CALENDAR).unwrap(),
         latest,
-        "offline refresh preserves the committed event and sync token"
+        "offline refresh preserves the committed event and agenda window"
     );
     assert!(
         calendar_cache::cached(&profile.0, "other.app", &connection.handle, CALENDAR).unwrap()
@@ -490,4 +499,135 @@ fn calendar_provider_boundary_create_reopen_edit_conflict_and_restart() {
             .unwrap()
             .is_empty()
     );
+}
+
+fn calendar_now() -> u64 {
+    chrono::DateTime::parse_from_rfc3339("2026-10-06T12:00:00Z")
+        .unwrap()
+        .timestamp() as u64
+}
+
+#[test]
+fn refresh_commit_preserves_another_apps_new_connection() {
+    let profile = Profile::new();
+    let vault = Arc::new(Vault::default());
+    let mut first = Connections::open(&profile.0, vault.clone()).unwrap();
+    let account = first
+        .connect(
+            "fixture.app",
+            Provider::Google,
+            "synthetic-a",
+            "A",
+            Tokens {
+                access: "synthetic-expired".into(),
+                refresh: Some("synthetic-refresh".into()),
+                expires_at: Some(0),
+                scopes: [CALENDAR_LIST_SCOPE.into()].into_iter().collect(),
+            },
+        )
+        .unwrap();
+    let mut other = Connections::open(&profile.0, vault.clone()).unwrap();
+    let second = other
+        .connect(
+            "other.app",
+            Provider::Github,
+            "synthetic-b",
+            "B",
+            Tokens {
+                access: "synthetic-other".into(),
+                refresh: None,
+                expires_at: None,
+                scopes: ["public_repo".into()].into_iter().collect(),
+            },
+        )
+        .unwrap();
+    let transport = Fixture::new(vec![
+        (
+            200,
+            json!({"access_token":"synthetic-refreshed","token_type":"Bearer","expires_in":3600,"scope":CALENDAR_LIST_SCOPE}),
+        ),
+        (200, json!({"items":[]})),
+    ]);
+    let client = crate::providers::ClientRegistration {
+        client_id: "synthetic-client".into(),
+    };
+    Api {
+        connections: &mut first,
+        transport: &transport,
+        google_client: Some(&client),
+        google_client_secret: None,
+        now: 100,
+    }
+    .calendars("fixture.app", &account.handle, None)
+    .unwrap();
+    let current = Connections::open(&profile.0, vault).unwrap();
+    assert_eq!(current.active("other.app").unwrap().handle, second.handle);
+    assert!(current.active("fixture.app").unwrap().expires_at.unwrap() > 100);
+}
+
+#[test]
+fn refresh_response_cannot_restore_a_revoked_connection() {
+    let profile = Profile::new();
+    let vault = Arc::new(Vault::default());
+    let mut store = Connections::open(&profile.0, vault.clone()).unwrap();
+    let account = store
+        .connect(
+            "fixture.app",
+            Provider::Google,
+            "synthetic-a",
+            "A",
+            Tokens {
+                access: "synthetic-expired".into(),
+                refresh: Some("synthetic-refresh".into()),
+                expires_at: Some(0),
+                scopes: [CALENDAR_LIST_SCOPE.into()].into_iter().collect(),
+            },
+        )
+        .unwrap();
+    struct RevokeDuringRefresh {
+        root: std::path::PathBuf,
+        vault: Arc<Vault>,
+        handle: String,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl Transport for RevokeDuringRefresh {
+        fn send(&self, _: Request) -> Result<Response, String> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut current = Connections::open(&self.root, self.vault.clone())?;
+            current.disconnect("fixture.app", &self.handle)?;
+            Ok(Response {
+                status: 200,
+                etag: None,
+                body: json!({"access_token":"must-not-be-saved","token_type":"Bearer","expires_in":3600,"scope":CALENDAR_LIST_SCOPE}),
+            })
+        }
+    }
+    let transport = RevokeDuringRefresh {
+        root: profile.0.clone(),
+        vault: vault.clone(),
+        handle: account.handle.clone(),
+        calls: Default::default(),
+    };
+    let client = crate::providers::ClientRegistration {
+        client_id: "synthetic-client".into(),
+    };
+    assert!(Api {
+        connections: &mut store,
+        transport: &transport,
+        google_client: Some(&client),
+        google_client_secret: None,
+        now: 100
+    }
+    .calendars("fixture.app", &account.handle, None)
+    .is_err());
+    assert_eq!(
+        transport.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "no resource call after revocation"
+    );
+    assert!(Connections::open(&profile.0, vault.clone())
+        .unwrap()
+        .list("fixture.app")
+        .is_empty());
+    assert!(vault.get(&account.handle).is_err());
 }
