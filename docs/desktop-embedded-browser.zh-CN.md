@@ -16,9 +16,9 @@
 | Windows | 需要已安装且提供 `ICoreWebView2_27` 的 Microsoft Edge WebView2 Runtime。引擎缺失或版本过旧会明确失败，宿主不会下载引擎。适配器使用 `webview2-com` 0.39.1。 |
 | macOS / Android | 本次桌面改动不改变已有原生阅读器适配器。 |
 
-Linux 打包维护者需要声明对应发行版的运行库依赖，通常为 `libwebkit2gtk-4.1-0`
-与 GTK 3。Windows 部署需要提供受支持的 WebView2 Runtime。本次源码改动不打包
-任何引擎。Windows 适配器要求用于阻止原生“另存为”和屏幕捕获的接口，
+由于 `dpkg-shlibdeps` 看不到动态加载的库，`.deb` 发布配置显式声明 GTK 3 和
+WebKitGTK 4.1 或 4.0 运行库依赖。AppImage 用户需要另行安装这些库。Windows
+部署需要提供受支持的 WebView2 Runtime。本次源码改动不打包任何引擎。Windows 适配器要求用于阻止原生“另存为”和屏幕捕获的接口，
 不会在旧引擎上悄悄跳过这些限制。
 
 ## 应用与宿主边界

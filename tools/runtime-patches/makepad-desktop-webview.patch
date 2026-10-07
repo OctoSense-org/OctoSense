@@ -2037,10 +2037,10 @@ index 000000000..34fa36c63
 +}
 diff --git a/platform/src/system_browser.rs b/platform/src/system_browser.rs
 new file mode 100644
-index 000000000..863e40441
+index 000000000..1fe6ef745
 --- /dev/null
 +++ b/platform/src/system_browser.rs
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,123 @@
 +//! Navigation boundaries shared by the desktop embedded-browser adapters.
 +//! The caller has already checked the app's initial URL grant. Native page
 +//! navigations must not turn that grant into file, device or external-app access.
@@ -2138,8 +2138,8 @@ index 000000000..863e40441
 +        Some(Host::Ipv6(ip)) => public_ip(ip.into()),
 +        Some(Host::Domain(host)) => {
 +            let host = host.trim_end_matches('.');
-+            host.contains('.') && ![".localhost", ".internal", ".local", ".lan", ".home.arpa"]
-+                .iter().any(|suffix| host.ends_with(suffix))
++            host.contains('.') && !["localhost", "internal", "local", "lan", "home.arpa"]
++                .iter().any(|name| host == *name || host.strip_suffix(name).is_some_and(|prefix| prefix.ends_with('.')))
 +        }
 +        None => false,
 +    }
@@ -2159,6 +2159,7 @@ index 000000000..863e40441
 +            let parts = ip.segments();
 +            !(ip.is_loopback() || ip.is_unspecified() || ip.is_multicast()
 +                || (parts[0] & 0xfe00) == 0xfc00 || (parts[0] & 0xffc0) == 0xfe80
++                || (parts[0] & 0xffc0) == 0xfec0
 +                || (parts[0] == 0x2001 && parts[1] == 0xdb8))
 +        }
 +    }

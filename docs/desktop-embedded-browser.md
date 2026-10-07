@@ -17,9 +17,10 @@ installing an app bundle alone cannot upgrade an older host.
 | Windows | An installed Microsoft Edge WebView2 Runtime exposing `ICoreWebView2_27`. Missing engines or older runtimes fail explicitly; the host does not download an engine. The adapter uses `webview2-com` 0.39.1. |
 | macOS / Android | Existing native reader adapters are unchanged by this desktop work. |
 
-A Linux package maintainer must include the appropriate distribution runtime
-dependency, usually `libwebkit2gtk-4.1-0` and GTK 3. Windows deployment should
-provide the supported WebView2 Runtime. This source change does not bundle either
+The `.deb` release configuration declares GTK 3 and WebKitGTK 4.1-or-4.0
+runtime dependencies because dynamic loading is invisible to `dpkg-shlibdeps`.
+AppImage users need these libraries installed separately. Windows deployment
+needs the supported WebView2 Runtime. This source change does not bundle either
 engine. The Windows adapter deliberately requires the interfaces used to deny
 native Save As and screen capture instead of silently omitting those gates.
 

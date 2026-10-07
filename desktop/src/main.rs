@@ -21,10 +21,13 @@ mod linux_entry {
 }
 
 #[cfg(target_os = "linux")]
-pub use linux_entry::app_main;
-
-#[cfg(target_os = "linux")]
-fn main() {
+pub fn app_main() {
     Cx::prefer_x11_for_embedded_browser();
     linux_entry::start();
+}
+
+// This source is also the desktop library entry; keep both entry functions public.
+#[cfg(target_os = "linux")]
+pub fn main() {
+    app_main();
 }

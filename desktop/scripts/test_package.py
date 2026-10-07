@@ -91,6 +91,8 @@ class ConfigTests(unittest.TestCase):
         base = json.loads((HERE.parent / "packaging/release.json").read_text())
         self.assertEqual(base["identifier"], "org.octosense.desktop")
         self.assertEqual(base["productName"], "OctoSense")
+        self.assertIn("libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37", base["deb"]["depends"])
+        self.assertIn("libgtk-3-0t64 | libgtk-3-0", base["deb"]["depends"])
         for icon in base["icons"]:
             self.assertTrue((HERE.parent / "packaging" / icon).is_file(), icon)
         config = package.packager_config(base, version="0.2.0", binaries_dir=Path("/t/release"), out_dir=Path("/t/dist"),
