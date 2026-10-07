@@ -124,8 +124,8 @@ pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone:
     /// Glance's feed owns vertical movement. Even a feed that fits on screen
     /// must not turn a thumb's initial vertical arc into Home search/shade.
     pub glance: Option<Rect>,
-    /// The host OS owns edge navigation. Only gestures in the content body
-    /// may be recognized; hosted apps retain their own edge touches.
+    /// The host OS owns edge navigation. Glance may page with side-edge
+    /// touches the OS delivers; hosted apps retain their own edge touches.
     pub system_edges: bool,
     /// The shell's own shade is in use. Off when the system-wide OctoSense
     /// panel owns every pull-down: the top band and the home page's side
@@ -286,11 +286,15 @@ impl GestureRecognizer {
         let i = ctx.insets;
         if p.x < left - i.left || p.x > right + i.right || p.y < top - i.top || p.y > bottom + i.bottom { return None; }
         let clear = |edge: Edge| !exclusions.excludes(p, edge);
+        let glance_body = ctx.body && ctx.phone == PhoneScreen::Home
+            && ctx.glance.is_some_and(|r| r.contains(p));
         if ctx.system_edges {
-            // Never turn an OS edge gesture into a Home/Back/Switcher action,
-            // or a body gesture after it crosses into the app.
-            if p.x <= left + m.edge_band || p.x >= right - m.edge_band
-                || p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
+            // Android decides which physical edge touches reach us. Do not
+            // add a dead strip to Glance when it delivers a content swipe.
+            // Top/bottom navigation and hosted apps keep their edge policy.
+            if p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
+            if p.x <= left + m.edge_band && (!glance_body || !clear(Edge::Left)) { return None; }
+            if p.x >= right - m.edge_band && (!glance_body || !clear(Edge::Right)) { return None; }
         } else {
             if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
             if p.y <= top + m.top_band {
@@ -302,7 +306,7 @@ impl GestureRecognizer {
             if p.x >= right - m.edge_band { return clear(Edge::Right).then_some(Origin::Side(Edge::Right)); }
         }
         if !ctx.body { return None; }
-        if ctx.phone == PhoneScreen::Home && ctx.glance.is_some_and(|r| r.contains(p)) {
+        if glance_body {
             return Some(Origin::Glance);
         }
         match ctx.phone {
@@ -440,14 +444,14 @@ mod tests {
     fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer), glance: None, system_edges: false, shade: true } }
 
     #[test]
-    fn glance_leaves_vertical_feed_input_to_the_feed_and_keeps_header_and_os_edges() {
+    fn glance_leaves_vertical_feed_input_to_the_feed_and_keeps_header_and_system_bars() {
         let context = GestureContext {
             system_edges: true,
             glance: Some(Rect { pos: dvec2(0.0, 112.0), size: dvec2(414.0, 750.0) }),
             ..ctx(PhoneScreen::Home)
         };
         let zones = ExclusionZones::default();
-        for x in [50.0, 207.0, 360.0] {
+        for x in [2.0, 12.0, 50.0, 207.0, 360.0, 400.0, 412.0] {
             let mut rec = GestureRecognizer::default();
             let out = drive(&mut rec, &context, &zones, &swipe((x, 180.0), (x, 450.0), 0.4, 6));
             assert!(out.iter().all(Option::is_none), "the feed must not open search or shade");
@@ -455,10 +459,35 @@ mod tests {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &context, &zones, &swipe((207.0, 60.0), (207.0, 160.0), 0.4, 6));
         assert!(out.contains(&Some(ShellGesture::Commit(GestureKind::HomeSearch))), "the header keeps its pull gesture");
-        for x in [2.0, 412.0] {
-            rec.feed(FingerPhase::Down, dvec2(x, 180.0), 1.0, &context, &zones);
-            assert!(!rec.active(), "Android still owns its navigation edges");
+        for at in [dvec2(2.0, 12.0), dvec2(400.0, 880.0)] {
+            rec.feed(FingerPhase::Down, at, 1.0, &context, &zones);
+            assert!(!rec.active(), "Android still owns its top and bottom bars");
         }
+    }
+
+    #[test]
+    fn glance_pages_from_delivered_side_touches_and_respects_exclusions_and_cancel() {
+        let context = GestureContext {
+            system_edges: true,
+            glance: Some(Rect { pos: dvec2(0.0, 112.0), size: dvec2(412.0, 750.0) }),
+            ..ctx(PhoneScreen::Home)
+        };
+        let zones = ExclusionZones::default();
+        for x in [360.0, 392.0, 400.0, 411.0] {
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &context, &zones, &swipe((x, 350.0), (180.0, 350.0), 0.5, 8));
+            assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Page(Dir::Left)), "start x={x}");
+        }
+        let mut rec = GestureRecognizer::default();
+        rec.feed(Down, dvec2(411.0, 350.0), 0.0, &context, &zones);
+        assert!(matches!(rec.feed(Move, dvec2(210.0, 350.0), 0.2, &context, &zones), Some(ShellGesture::PageSwipe { .. })));
+        assert_eq!(rec.cancel(), Some(ShellGesture::Cancel(GestureKind::Page(Dir::Left))));
+        assert_eq!(rec.feed(Up, dvec2(180.0, 350.0), 0.3, &context, &zones), None);
+
+        let mut excluded = ExclusionZones::default();
+        excluded.add(context.screen, [false, false, false, true]);
+        rec.feed(Down, dvec2(411.0, 350.0), 0.0, &context, &excluded);
+        assert!(!rec.active(), "an explicitly excluded control keeps its edge");
     }
     #[test]
     fn without_the_shell_shade_every_home_pull_is_the_library_and_the_top_band_is_nobodys() {
