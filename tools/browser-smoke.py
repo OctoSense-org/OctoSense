@@ -39,8 +39,11 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--host-arg', action='append', default=[])
     parser.add_argument('--require-snapshot', action='store_true')
+    parser.add_argument('--software-graphics', action='store_true', help='Use the built-in Windows WARP rasterizer (not a browser substitute)')
     parser.add_argument('--require-xembed', action='store_true', help='Probe geometry on an isolated, owned Linux X display only')
     args = parser.parse_args()
+    if args.software_graphics and os.name != 'nt':
+        parser.error('--software-graphics requires Windows')
     binary = args.binary.resolve(strict=True)
     root = args.out.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -81,6 +84,8 @@ def main():
     page = f'http://127.0.0.1:{server.server_port}/page'
     env = os.environ.copy()
     env['MAKEPAD_HIDE_WINDOWS'] = '1'
+    if args.software_graphics:
+        env['MAKEPAD_D3D11_WARP'] = '1'
     process = None
     sequence = 0
     failure = None
@@ -203,7 +208,7 @@ def main():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-        receipt = {'schema': 1, 'platform': os.name, 'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+        receipt = {'schema': 1, 'platform': os.name, 'software_graphics': args.software_graphics, 'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
                    'checks': checks, 'passed': failure is None, 'failure': failure,
                    'scope': 'real native engine; DOM actions are automated, not physical typing or visual UX approval',
                    'owned_process_exited': process is None or process.poll() is not None}

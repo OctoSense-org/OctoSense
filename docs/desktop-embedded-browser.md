@@ -82,6 +82,11 @@ JavaScript, DOM editing, navigation rejection before a forbidden HTTP request,
 view detach/reattach, stopped execution after close, fresh cookies after reopen,
 and native network errors. It never uses personal accounts or downloads engines.
 The Windows workflow also requires an engine-owned PNG snapshot and metadata.
+On its GPU-less runner, `--software-graphics` explicitly selects the built-in
+[Windows WARP rasterizer](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/directx-warp)
+for Makepad using `MAKEPAD_D3D11_WARP=1`; the receipt records this mode. WebView2
+remains the real native browser with its normal sandbox. This test does not prove
+hardware GPU performance, and production graphics selection stays unchanged.
 
 The shared URL-policy tests run with `cargo test --locked -p octosense-browser-smoke`
 and cover restricted documents, public HTTPS, malformed/private URLs and exact

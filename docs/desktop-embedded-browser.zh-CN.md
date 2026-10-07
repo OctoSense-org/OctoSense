@@ -65,7 +65,11 @@ Windows 适配器包含回调拦截，但完整宿主认证流程通过验收前
 `tools/browser-smoke.py` 在回环地址提供合成 HTML，通过私有控制目录驱动测试宿主。
 检查真实页面 JavaScript、DOM 编辑、禁止导航是否在 HTTP 请求前被拦截、视图隐藏与
 恢复、关闭后停止执行、重开后全新 Cookie，以及原生网络错误。不使用个人账户，
-也不下载引擎。Windows 工作流还要求浏览器引擎自行产生 PNG 快照和元数据。
+也不下载引擎。Windows 工作流还要求浏览器引擎自行产生 PNG 快照和元数据。无 GPU 的 runner
+通过 `--software-graphics` 显式设置 `MAKEPAD_D3D11_WARP=1`，为 Makepad 使用
+[Windows 内置 WARP 软件光栅器](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/directx-warp)，
+回执记录该模式。WebView2 仍为真实原生浏览器，保留正常沙箱。这不证明硬件 GPU
+性能，也不改变生产默认图形后端。
 
 共享 URL 策略测试使用 `cargo test --locked -p octosense-browser-smoke`，覆盖受限
 文档、公开 HTTPS、畸形/私有地址及精确主框架回调；它们本身不证明原生导航拦截。

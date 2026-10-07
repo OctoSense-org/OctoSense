@@ -52,6 +52,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: embedded-browser-windows
+          cache-on-failure: true
       - name: Build the native acceptance host
         run: cargo build --locked --release -p octosense-browser-smoke
       - name: Navigation and callback policy tests
@@ -59,7 +60,7 @@ jobs:
       - name: Real embedded WebView2 acceptance
         # The runner must already provide WebView2. No installer, fake engine
         # or external-browser fallback converts a missing runtime into a pass.
-        run: python tools/browser-smoke.py --binary target/release/octosense-browser-smoke.exe --out "$env:RUNNER_TEMP/browser-smoke" --require-snapshot
+        run: python tools/browser-smoke.py --binary target/release/octosense-browser-smoke.exe --out "$env:RUNNER_TEMP/browser-smoke" --require-snapshot --software-graphics
       - name: Native fixture diagnostics on failure
         if: failure()
         run: |
