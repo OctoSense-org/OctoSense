@@ -24,9 +24,13 @@ input,button{font:inherit;padding:12px}article{max-width:560px}p{line-height:1.6
 It contains no account, password or personal information.</p>
 <input id="message" aria-label="Message"><button id="submit">Save locally</button>
 <p id="result">Ready</p></article><script>
+let webMessageProbe='absent';
+if(window.chrome&&chrome.webview&&typeof chrome.webview.postMessage==='function'){
+try{chrome.webview.postMessage({kind:'synthetic-denied-probe'});webMessageProbe='accepted'}
+catch(error){webMessageProbe=error instanceof Error?'denied':'unexpected-exception'}}
 function report(kind,extra={}){fetch(location.href,{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({kind,width:innerWidth,height:innerHeight,
-bridge:typeof window.octos_native!=='undefined'||typeof window.octos!=='undefined'||!!(window.chrome&&chrome.webview),...extra})}).catch(()=>{})}
+bridge:typeof window.octos_native!=='undefined'||typeof window.octos!=='undefined',webMessageProbe,...extra})}).catch(()=>{})}
 document.querySelector('#submit').onclick=()=>{let value=document.querySelector('#message').value;
 document.querySelector('#result').textContent=value;document.title='Saved: '+value;report('edited',{value})};
 report('loaded');setInterval(()=>report('heartbeat'),250);
@@ -135,7 +139,10 @@ def main():
             wait(lambda: any(e.get('body', {}).get('kind') == 'loaded' for e in server_events()), 'real document JavaScript')
             loaded = next(e for e in server_events() if e.get('body', {}).get('kind') == 'loaded')
             assert loaded['body']['width'] > 100 and loaded['body']['height'] > 100, loaded['body']
-            assert not loaded['body']['bridge'], 'Ordinary page received a native bridge'
+            assert not loaded['body']['bridge'], 'Ordinary page received an OctoSense bridge'
+            assert loaded['body']['webMessageProbe'] in ('absent', 'denied'), 'Page-to-host messaging was accepted'
+            if os.name == 'nt':
+                assert loaded['body']['webMessageProbe'] == 'denied', 'WebView2 messaging denial was not exercised'
             assert loaded['cookie_present'], 'Browser did not retain its own HttpOnly fixture cookie'
             checks.append('native_document_loaded_without_bridge')
             if args.require_xembed:
@@ -156,7 +163,10 @@ def main():
                 assert not meta.get('error'), meta.get('error')
                 assert meta.get('title') == 'Saved: Reviewed locally'
                 assert meta.get('viewportWidth', 0) > 100 and meta.get('viewportHeight', 0) > 100
-                assert not meta.get('hostBridgePresent'), 'Inspection found a native bridge'
+                assert not meta.get('hostBridgePresent'), 'Inspection found an OctoSense bridge'
+                if os.name == 'nt':
+                    assert meta.get('webMessageEnabled') is False, 'Native messaging remained enabled'
+                    assert meta.get('hostObjectsAllowed') is False, 'Native host objects remained allowed'
                 snapshot = (root / f'snapshot-{capture}.png').read_bytes()
                 assert len(snapshot) > 100 and snapshot.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10]))
                 checks.append('native_engine_snapshot_saved')
@@ -194,6 +204,20 @@ def main():
             reopened = next(e for e in server_events()[before:] if e['method'] == 'GET' and e['path'] == '/page')
             assert not reopened['cookie_present'], 'Reopened view reused the previous profile'
             checks.append('reopen_uses_fresh_profile')
+
+            if args.require_xembed:
+                before = len(events())
+                command('eval', script="window.close()")
+                wait(lambda: any(e.get('kind') == 'page_error' and
+                                 e.get('description') == 'The embedded page closed'
+                                 for e in events()[before:]), 'page-requested close notification')
+                wait(lambda: inspect_embedding(allow_empty=True) is None,
+                     'page-requested close removes GtkPlug')
+                time.sleep(.7)
+                stopped = len(server_events())
+                time.sleep(1)
+                assert len(server_events()) == stopped, 'Page-requested close left JavaScript running'
+                checks.append('page_requested_close_removes_child_and_stops_execution')
 
             with socket.socket() as unused:
                 unused.bind(('127.0.0.1', 0))

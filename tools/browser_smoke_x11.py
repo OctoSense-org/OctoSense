@@ -3,7 +3,8 @@ import ctypes as c
 import os
 
 
-def inspect_embedding():
+def inspect_embedding(*, allow_empty=False):
+    """Return live child geometry, or None when explicitly allowing a closed view."""
     lib = c.CDLL('libX11.so.6')
     display_t = c.c_void_p
     window_t = c.c_ulong
@@ -40,6 +41,8 @@ def inspect_embedding():
             if status == 0 and fmt.value == 32 and items.value >= 2:
                 plugs.append(window)
             if data: lib.XFree(data)
+        if allow_empty and not plugs:
+            return None
         assert len(plugs) == 1, f'Expected one embedded GtkPlug, got {len(plugs)}'
         plug = plugs[0]
         socket = parents[plug]

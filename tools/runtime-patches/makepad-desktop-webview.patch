@@ -1058,10 +1058,10 @@ index c0404864b..19a5b124a 100644
      /// Earliest time the device-loss recovery may try again, and how many tries this outage
 diff --git a/platform/src/os/windows/windows_webview.rs b/platform/src/os/windows/windows_webview.rs
 new file mode 100644
-index 000000000..4d7a880df
+index 000000000..ad832d114
 --- /dev/null
 +++ b/platform/src/os/windows/windows_webview.rs
-@@ -0,0 +1,1047 @@
+@@ -0,0 +1,1064 @@
 +//! WebView2 lives inside a clipping child HWND of the Makepad window. COM
 +//! completions run on the existing STA message loop; no nested pump or worker
 +//! waits. A weak state reference prevents late creation callbacks resurrecting
@@ -1438,6 +1438,22 @@ index 000000000..4d7a880df
 +            let _ = std::fs::write(result_path, r#"{"error":"Browser is not ready"}"#);
 +            return;
 +        };
++        // Read the actual native policy. The chrome.webview namespace remains
++        // present when messaging is disabled; namespace presence is not a grant.
++        let settings = unsafe {
++            (|| -> Result<(bool, bool)> {
++                let settings = webview.Settings()?;
++                let mut messages = BOOL::default();
++                let mut objects = BOOL::default();
++                settings.IsWebMessageEnabled(&mut messages)?;
++                settings.AreHostObjectsAllowed(&mut objects)?;
++                Ok((messages.as_bool(), objects.as_bool()))
++            })()
++        };
++        let Ok((web_message_enabled, host_objects_allowed)) = settings else {
++            let _ = std::fs::write(result_path, r#"{"error":"Browser policy inspection failed"}"#);
++            return;
++        };
 +        let scroll = scroll_y
 +            .filter(|v| v.is_finite())
 +            .map(|v| format!("window.scrollTo(0,{v});"))
@@ -1447,7 +1463,8 @@ index 000000000..4d7a880df
 +            readyState:document.readyState,title:document.title.slice(0,512),
 +            scrollY:window.scrollY,scrollHeight:document.documentElement.scrollHeight,
 +            viewportHeight:window.innerHeight,viewportWidth:window.innerWidth,
-+            hostBridgePresent:typeof window.octos!=='undefined'
++            hostBridgePresent:typeof window.octos!=='undefined'||typeof window.octos_native!=='undefined',
++            webMessageEnabled:{web_message_enabled},hostObjectsAllowed:{host_objects_allowed}
 +        }})"#
 +        ));
 +        let weak = Rc::downgrade(&self.state);

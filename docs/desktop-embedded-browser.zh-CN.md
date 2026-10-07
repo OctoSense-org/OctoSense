@@ -57,15 +57,21 @@ Windows 适配器包含回调拦截，但完整宿主认证流程通过验收前
   事件。`windows_webview.rs` 把 WebView2 控制器嵌入裁剪用子 HWND，并在 UI STA
   接收异步回调。
 - `WebReader` 保留已有覆盖层生命周期，把原生加载、导航和失败事件转换为控件
-  状态。引擎缺失会进入错误状态，不会留下声称成功的不可见视图。
+  状态。策略拒绝导航不会变成致命错误，因此被拒绝的子框架不会隐藏获准的父页面。
+  动态标题会转发给组件；Linux 也转发 URI 更新，并在页面关闭请求的回调返回后
+  释放原生子窗口。引擎缺失会进入错误状态，不会留下声称成功的不可见视图。
 
 ## 验收
 
 `crates/browser-smoke` 是不发布的原生测试宿主，与生产 Shell 分开。
-`tools/browser-smoke.py` 在回环地址提供合成 HTML，通过私有控制目录驱动测试宿主。
-检查真实页面 JavaScript、DOM 编辑、禁止导航是否在 HTTP 请求前被拦截、视图隐藏与
-恢复、关闭后停止执行、重开后全新 Cookie，以及原生网络错误。不使用个人账户，
-也不下载引擎。Windows 工作流还要求浏览器引擎自行产生 PNG 快照和元数据。无 GPU 的 runner
+`tools/browser-smoke.py` 在回环地址提供合成 HTML，通过私有控制目录驱动挂载真实
+`WebReader` 组件的测试宿主。检查真实页面 JavaScript、DOM 编辑、动态标题、拒绝
+子框架后父页面仍可交互、禁止导航是否在 HTTP 请求前被拦截、隐藏与恢复命令获接收、
+关闭后停止执行、重开后全新 Cookie，以及原生网络错误。不使用个人账户，
+也不下载引擎。Windows 工作流还要求浏览器引擎自行产生 PNG 快照，回读原生设置
+确认消息与宿主对象已禁用，并从页面尝试发送消息，要求该调用抛出错误。WebView2
+在[消息禁用](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2settings.iswebmessageenabled)
+时仍保留 `chrome.webview` 名称空间；名称空间存在本身不授予通信能力。无 GPU 的 runner
 通过 `--software-graphics` 显式设置 `MAKEPAD_D3D11_WARP=1`，为 Makepad 使用
 [Windows 内置 WARP 软件光栅器](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/directx-warp)，
 回执记录该模式。WebView2 仍为真实原生浏览器，保留正常沙箱。这不证明硬件 GPU
@@ -76,10 +82,13 @@ Windows 适配器包含回调拦截，但完整宿主认证流程通过验收前
 原生驱动使用自动 DOM 输入，不代表物理键盘输入、无障碍、视觉质量、完整 Shell
 UX 或 OAuth 已验收。
 
-Linux 已使用 WebKitGTK 2.52.6 和 Xvfb 21.1.22 通过八项原生检查，引擎沙箱
-保持开启。XQueryTree 探针证明 GTK plug 位于 Makepad 窗口中的子 socket 内，
-且几何尺寸有效，没有捕获整个显示器。Windows 原生验收在 CI 回执通过前仍为
-**未验证**；详细回执记录在 PR 和 CI 工件中。`.github/workflows/embedded-browser.yml` 的 Windows 任务在
+Linux 已使用 WebKitGTK 2.52.6 和 Xvfb 21.1.22 通过十一项原生检查，引擎沙箱
+保持开启。XQueryTree 检查证明 GTK plug 位于 Makepad 窗口中的子 socket 内，
+且几何尺寸有效，没有捕获整个显示器。同一驱动还证明页面调用 `window.close()`
+后原生子窗口被移除，页面心跳停止。隐藏与恢复命令获接收不代表原生覆盖层可见性
+已验收；物理输入、HiDPI 和 Windows 控制器异步创建期间关闭仍未验证。
+Windows 的原生验收结果以 CI 回执为准，只有交叉编译通过不足以满足该门禁。
+详细回执记录在 PR 和 CI 工件中。`.github/workflows/embedded-browser.yml` 的 Windows 任务在
 引擎缺失或不兼容时失败，不把它算作跳过后通过。只上传合成回执与引擎自身的捕获。
 
 修改浏览器文件时，本地 CI 合并工具同样要求 Windows 原生工作流在精确的 PR

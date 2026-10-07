@@ -70,18 +70,27 @@ retain their existing provider flows. See the [connected-account guide](../crate
   work on the existing UI thread. `windows_webview.rs` embeds a WebView2 controller
   in a clipping child HWND and receives asynchronous callbacks on the UI STA.
 - `WebReader` retains its existing overlay lifecycle and converts native loading,
-  navigation and failure events into widget state. A missing engine reaches this
-  error path instead of leaving an invisible successful view.
+  navigation and failure events into widget state. Policy-blocked navigation is
+  nonfatal: a denied iframe cannot hide the allowed parent document. Dynamic
+  titles are forwarded; Linux also forwards URI changes and releases its native
+  child after a page-requested close callback returns. A missing engine reaches the
+  failure path instead of leaving an invisible successful view.
 
 ## Acceptance
 
 `crates/browser-smoke` is an unpublished native test host, separate from the
-production shell. `tools/browser-smoke.py` serves synthetic HTML on loopback and
-drives that host through a private control directory. It checks real page
-JavaScript, DOM editing, navigation rejection before a forbidden HTTP request,
-view detach/reattach, stopped execution after close, fresh cookies after reopen,
-and native network errors. It never uses personal accounts or downloads engines.
-The Windows workflow also requires an engine-owned PNG snapshot and metadata.
+production shell, that mounts the actual `WebReader` widget.
+`tools/browser-smoke.py` serves synthetic HTML on loopback and drives that host
+through a private control directory. It checks real page JavaScript, DOM editing,
+dynamic titles, a blocked iframe preserving the interactive parent, navigation
+rejection before a forbidden HTTP request, accepted hide/show commands, stopped
+execution after close, fresh cookies after reopen, and native network errors.
+It never uses personal accounts or downloads engines.
+The Windows workflow also requires an engine-owned PNG snapshot, native settings
+readback proving messaging and host objects are disabled, and a page-side attempt
+to send a message that must throw an error. WebView2 keeps its `chrome.webview`
+namespace even when [messaging is disabled](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2settings.iswebmessageenabled);
+namespace presence alone does not grant communication.
 On its GPU-less runner, `--software-graphics` explicitly selects the built-in
 [Windows WARP rasterizer](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/directx-warp)
 for Makepad using `MAKEPAD_D3D11_WARP=1`; the receipt records this mode. WebView2
@@ -94,11 +103,15 @@ main-frame callbacks. They do not prove native navigation interception by themse
 The native driver uses automated DOM input; it does not certify physical typing,
 accessibility, visual quality, full shell UX, or OAuth.
 
-Linux native acceptance passed eight checks using WebKitGTK 2.52.6 and Xvfb
-21.1.22 with the engine sandbox enabled. An XQueryTree probe additionally proved
-that the GTK plug is a child of the socket inside the Makepad window, with valid
-geometry; it did not capture the display. Windows native acceptance remains
-**unverified** until its CI receipt passes. Detailed receipts belong to the PR
+Linux native acceptance passed eleven checks using WebKitGTK 2.52.6 and Xvfb
+21.1.22 with the engine sandbox enabled. The XQueryTree check proved that the GTK
+plug is a child of the socket inside the Makepad window, with valid geometry; it
+did not capture the display. The same driver also proved that page-requested
+`window.close()` removes the native child and stops page heartbeats. Hide/show
+command acceptance does not prove native overlay visibility; physical input,
+HiDPI and closing during asynchronous Windows controller creation remain
+unverified. The Windows CI receipt records its native acceptance result; a
+cross-compile alone cannot satisfy that gate. Detailed receipts belong to the PR
 and CI artifacts. The `.github/workflows/embedded-browser.yml` Windows job fails
 when its installed engine is absent or incompatible; it never converts that into
 a skipped success. Only synthetic receipts and engine-owned captures are uploaded.
