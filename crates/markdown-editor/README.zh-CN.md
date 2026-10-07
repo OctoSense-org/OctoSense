@@ -3,7 +3,7 @@
 [English](README.md) | 简体中文
 
 `octosense-markdown-editor` 将 Rinx 的通用文章组件作为 `MarkdownEditor`
-提供给 OctoSense 隔离应用。组件本身不能访问文件系统、网络、账号或发布服务。
+提供给 OctoSense 隔离应用。组件本身不能访问文件系统、网络、账户或发布服务。
 草稿由应用保存，GitHub 提交通过独立的宿主审核流程完成。
 
 组件与原生 Rinx 模块共用工作区固定的 Rinx v1.1.0 版本，复用 `article-core`
@@ -23,7 +23,7 @@ Matrix 作者/房间字段和发布工作流。图片链接语法可以保留，
 `text()` 读取当前 Markdown，`on_change` 接收用户修改。程序加载不会伪装成
 用户编辑。
 
-构建与测试命令见英文说明。`editor-host` 是无真实账号的原生 UI 测试宿主，
+构建与测试命令见英文说明。`editor-host` 是无真实账户的原生 UI 测试宿主，
 默认拒绝所有服务操作；`--fixture-provider` 仅提供虚构仓库和文件供 UI 测试，
 仍然拒绝提交。它不能证明 App Hub 安装、OAuth、宿主授权或真实 GitHub 提交
 已经通过，这些需要在集成后的 OctoSense 中验证。
