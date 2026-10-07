@@ -55,7 +55,7 @@ jobs:
       - name: Build the native acceptance host
         run: cargo build --locked --release -p octosense-browser-smoke
       - name: Navigation and callback policy tests
-        run: cargo test --locked -p octosense-browser-smoke
+        run: cargo test --locked --release -p octosense-browser-smoke
       - name: Real embedded WebView2 acceptance
         # The runner must already provide WebView2. No installer, fake engine
         # or external-browser fallback converts a missing runtime into a pass.
