@@ -452,7 +452,7 @@ impl PhoneSurface {
             PhoneHit::Card(client)=>format!("{}, recent app",state.clients.get(client).map(|c|c.display_title().to_string()).unwrap_or_default()),
             PhoneHit::Home=>"Home".into(),
             PhoneHit::Recents=>"Recents".into(),
-            PhoneHit::Floating(hit)=>match hit {
+            PhoneHit::Floating(hit)|PhoneHit::AppNavigation(hit)=>match hit {
                 crate::mobile_navigation::NavigationHit::Bubble=>if phone.navigation.open {"Close quick actions"}else{"Floating button: tap for quick actions, drag to move"}.into(),
                 crate::mobile_navigation::NavigationHit::Home=>"Home".into(),
                 crate::mobile_navigation::NavigationHit::Recents=>"Recents".into(),
@@ -1072,11 +1072,28 @@ impl PhoneSurface {
         self.navigation_surface.draw_abs(cx,rect(r.pos.x-12.0,r.pos.y-12.0,r.size.x+24.0,r.size.y+24.0));
     }
 
-    /// A small app-local control, drawn over content without resizing it.
+    /// Android apps use reserved navigation; Home and other platforms retain
+    /// their movable app-local control.
     fn draw_app_navigation(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect) {
         use crate::mobile_navigation::NavigationHit;
         let nav=&state.phone.navigation;
-        if !nav.visible() { return; }
+        if let Some(dock) = state.phone.app_dock(screen) {
+            let face = self.theme_face(if state.style.dark {rgb(28,28,31)} else {rgb(248,248,252)});
+            let ink = self.theme_ink(if state.style.dark {rgb(238,238,242)} else {rgb(30,30,34)});
+            self.rounded(cx, dock.bar, 0.0, face);
+            self.hits.push((dock.bar, PhoneHit::AppNavigation(NavigationHit::Dismiss)));
+            for (button, hit) in [(dock.home, PhoneHit::AppNavigation(NavigationHit::Home)), (dock.recents, PhoneHit::AppNavigation(NavigationHit::Recents))] {
+                if self.pressed_hit() == Some(&hit) { self.rounded(cx, button, 8.0, alpha(ink, 0.12)); }
+                let icon = rect(button.pos.x + (button.size.x - 24.0) * 0.5, button.pos.y + (button.size.y - 24.0) * 0.5, 24.0, 24.0);
+                if hit == PhoneHit::AppNavigation(NavigationHit::Home) {
+                    self.navigation_home.color = ink;
+                    self.navigation_home.draw_walk(cx, Walk::abs_rect(icon));
+                } else { self.d.icon_centered(cx, Ico::WindowRestore, icon, 23.0, ink); }
+                self.hits.push((button, hit));
+            }
+            return;
+        }
+        if !state.phone.floating_navigation_visible() { return; }
         let layout=nav.layout(state.phone.navigation_rect());
         let dark=state.style.dark;
         let face=self.theme_face(if dark {rgb(39,37,47)} else {rgb(252,251,255)});
@@ -1159,7 +1176,7 @@ impl PhoneSurface {
         if phone.overview>0.01 {
             for (index,client) in phone.order.iter().enumerate() {
                 if let Some(slot)=state.clients.get(client) {
-                    let card=card_rect(screen,index as f64,phone.page);
+                    let card=phone.card_rect(screen,index as f64,phone.page);
                     if card.pos.x+card.size.x<screen.pos.x || card.pos.x>screen.pos.x+screen.size.x {continue;}
                     self.icons.draw(cx,&slot.app,state.style.target,rect(card.pos.x+2.0,card.pos.y-36.0,26.0,26.0),phone.overview as f32,ink);
                     self.d.label_elided(cx,rect(card.pos.x+36.0,card.pos.y-36.0,card.size.x-36.0,26.0),true,13.0,alpha(rgb(255,255,255),phone.overview as f32),HAlign::Left,slot.display_title());
@@ -1271,7 +1288,7 @@ impl PhoneSurface {
             return;
         }
         if phone.android.recent_apps.is_empty() {return;}
-        let card=card_rect(screen,0.0,phone.page);
+        let card=phone.card_rect(screen,0.0,phone.page);
         if phone.groups.pick.is_none() && (phone.order.is_empty() || card.pos.y+card.size.y<=y-24.0) {
             self.d.label(cx,rect(x0,y-24.0,width,20.0),false,12.0,alpha(white,0.75*a),HAlign::Left,"Recent Android apps");
         }

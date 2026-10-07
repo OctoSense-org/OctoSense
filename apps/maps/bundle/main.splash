@@ -71,6 +71,7 @@ fn fix_origin(){
     if origin.picked { return }
     if sys.gps("ok") >= 1 {
         origin = {lat: sys.gps("lat") lon: sys.gps("lon") name: "Your location" picked: false}
+        location_note("")
     }
 }
 fn load_recents(){
@@ -114,6 +115,7 @@ fn pick(p){
     }
     if finding == "origin" {
         origin = {lat: p.lat lon: p.lon name: p.name picked: true}
+        location_note("")
         finding = ""
         show("route")
         return
@@ -123,8 +125,17 @@ fn pick(p){
     remember(p)
     show("place")
 }
+fn location_note(message){
+    ui.location_status.set_text(message)
+    ui.location_status.set_visible(message != "")
+}
 fn use_my_location(){
-    origin = {lat: origin.lat lon: origin.lon name: "Your location" picked: false}
+    let request = sys.request_location()
+    // Keep the previous, honestly named origin until a real fix arrives.
+    origin = {lat: origin.lat lon: origin.lon name: origin.name picked: false}
+    if request < 0 { location_note("This app does not have location access. Choose an origin instead.") }
+    else if request == 0 { location_note("Location requests are unavailable here. Choose an origin instead.") }
+    else { location_note("Waiting for location. If access is denied, enable it in Android settings or choose an origin.") }
     fix_origin()
     finding = ""
     show("route")
@@ -340,6 +351,7 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                 rfrom := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
                 Link{text: "Change" on_click: || find_for("origin")}
             }
+            location_status := UiCaption{visible: false text: ""}
             stop_rows := View{width: Fill height: Fit flow: Down on_render: || {
                 for i st in stops {
                     View{width: Fill height: Fit flow: Right align: Align{y: 0.5}

@@ -61,6 +61,101 @@ const ARG_LINE_H: f64 = 17.0;
 /// Rows the argument area shows at once; more scroll.
 pub const MAX_ARG_ROWS: usize = 12;
 const INDICATOR_H: f64 = 30.0;
+const CONSENT_INTRO: &str = "The first time an app asks for its agent, you decide. You can change it in Settings.";
+
+/// First-use disclosures scroll independently of the fixed decision row.
+/// The drag is owned from its start in the body until release, so lifting
+/// a scrolling finger over Allow cannot answer the consent prompt.
+#[derive(Default)]
+struct ConsentScroll {
+    app: String,
+    area: Option<Rect>,
+    offset: f64,
+    max: f64,
+    touch: Option<(u64, Vec2d)>,
+}
+
+impl ConsentScroll {
+    fn layout(&mut self, app: &str, area: Rect, content_height: f64) {
+        if self.app != app {
+            *self = Self { app: app.to_string(), ..Self::default() };
+        }
+        self.area = Some(area);
+        self.max = (content_height - area.size.y).max(0.0);
+        self.offset = self.offset.clamp(0.0, self.max);
+    }
+
+    fn scroll(&mut self, delta: f64) {
+        self.offset = (self.offset + delta).clamp(0.0, self.max);
+    }
+
+    fn touch(&mut self, point: &makepad_platform::event::TouchPoint) -> bool {
+        use makepad_platform::event::TouchState;
+        match point.state {
+            TouchState::Start if self.touch.is_none() && self.area.is_some_and(|r| contains(r, point.abs)) => {
+                self.touch = Some((point.uid, point.abs));
+                true
+            }
+            TouchState::Move | TouchState::Stop if self.touch.is_some_and(|(uid, _)| uid == point.uid) => {
+                let (_, previous) = self.touch.unwrap();
+                self.scroll(previous.y - point.abs.y);
+                self.touch = if point.state == TouchState::Stop { None } else { Some((point.uid, point.abs)) };
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The natural height grows with wrapped text; overflow stays above the
+/// decision row even on a short phone viewport. Leave a scrollbar gutter.
+fn consent_rects(screen: Rect, content_height: f64) -> (Rect, Rect, Rect) {
+    let card = ShellApprovals::card_rect(screen, PAD * 2.0 + content_height + 12.0 + BUTTON_H);
+    let footer = rect(card.pos.x + PAD, card.pos.y + card.size.y - PAD - BUTTON_H, card.size.x - PAD * 2.0, BUTTON_H);
+    let body = rect(footer.pos.x, card.pos.y + PAD, footer.size.x - 10.0, (footer.pos.y - 12.0 - card.pos.y - PAD).max(0.0));
+    (card, body, footer)
+}
+
+struct ConsentRow {
+    text: String,
+    bold: bool,
+    px: f64,
+    opacity: f32,
+    line_height: f64,
+    height: f64,
+}
+
+fn consent_rows(
+    summary: &AgentSummary,
+    font: crate::shell::FontTokens,
+    scale: f64,
+    width: f64,
+    mut wrap: impl FnMut(bool, f64, &str, f64) -> Vec<String>,
+) -> Vec<ConsentRow> {
+    let mut rows = Vec::new();
+    let mut block = |text: &str, bold: bool, px: f64, opacity: f32, gap: f64| {
+        let line_height = (px * 1.4).max(20.0) * scale;
+        for text in wrap(bold, px * scale, text, width) {
+            rows.push(ConsentRow { text, bold, px, opacity, line_height, height: line_height });
+        }
+        if let Some(last) = rows.last_mut() {
+            last.height += gap;
+        }
+    };
+    block(&format!("Let {}'s agent start?", summary.name), true, font.heading, 1.0, 4.0);
+    block(CONSENT_INTRO, false, font.body_small, 0.85, 12.0);
+    block("It may read", true, font.body, 1.0, 0.0);
+    for read in &summary.reads {
+        block(&format!("\u{2022} {read}"), false, font.body, 0.85, 0.0);
+    }
+    block("It may use", true, font.body, 1.0, 0.0);
+    for usage in &summary.uses {
+        block(&format!("\u{2022} {usage}"), false, font.body, 0.85, 0.0);
+    }
+    block("Where the model runs", true, font.body, 1.0, 0.0);
+    block(&summary.model, false, font.body, 0.85, 0.0);
+    rows
+}
 
 /// What a press lands on.
 #[derive(Clone, Debug, PartialEq)]
@@ -220,6 +315,8 @@ pub struct ShellApprovals {
     /// Each open line's wrapped rows, and the width they were wrapped to.
     #[rust]
     wrapped: HashMap<RequestId, (f64, Vec<String>)>,
+    #[rust]
+    consent_scroll: ConsentScroll,
 }
 
 impl ShellApprovals {
@@ -244,7 +341,23 @@ impl ShellApprovals {
 
     /// The shell's pointer hook (`approvals::pointer`). True when taken.
     pub fn pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if let Event::TouchUpdate(update) = event {
+            let mut consumed = false;
+            for point in &update.touches {
+                consumed |= self.consent_scroll.touch(point);
+            }
+            if consumed {
+                self.down = None;
+                self.redraw(cx);
+                return true;
+            }
+        }
         if let Event::Scroll(e) = event {
+            if self.consent_scroll.area.is_some_and(|r| contains(r, e.abs)) {
+                self.consent_scroll.scroll(e.scroll.y);
+                self.redraw(cx);
+                return true;
+            }
             let over = self.arg_boxes.iter().find(|(r, ..)| contains(*r, e.abs)).map(|(_, id, ..)| id.clone());
             if let Some(id) = over {
                 let rows = (e.scroll.y / ARG_LINE_H).round() as isize;
@@ -298,8 +411,12 @@ impl ShellApprovals {
     fn draw_all(&mut self, cx: &mut Cx2d, screen: Rect) {
         self.hits.clear();
         self.shown.clear();
+        self.arg_boxes.clear();
         self.modal = false;
         let f = frame();
+        if f.consent.is_none() {
+            self.consent_scroll = ConsentScroll::default();
+        }
         let tok = self.d.tokens(self.tokens);
         self.draw_indicator(cx, screen, &f, tok);
         self.draw_expired(cx, screen, &f, tok);
@@ -586,45 +703,48 @@ impl ShellApprovals {
 
     fn draw_consent(&mut self, cx: &mut Cx2d, screen: Rect, s: &AgentSummary, tok: ShellTokens) {
         self.scrim(cx, screen);
-        let rows = 2 + s.reads.len() + 1 + s.uses.len() + 1 + 1;
-        let card = Self::card_rect(screen, PAD * 2.0 + 26.0 + 20.0 + 12.0 + rows as f64 * 20.0 + 12.0 + BUTTON_H);
+        let width = consent_rects(screen, 0.0).1.size.x;
+        let scale = self.d.text_scale();
+        let rows = consent_rows(s, tok.font, scale, width, |bold, px, text, width| {
+            self.d.wrap_lines(cx, bold, px, text, width, true)
+        });
+        let content_height = rows.iter().map(|r| r.height).sum::<f64>();
+        let (card, body, footer) = consent_rects(screen, content_height);
+        self.consent_scroll.layout(&s.app, body, content_height);
         self.d.card(cx, card, &tok.popups);
         self.hits.push((card, Hit::Card));
         let ink = tok.popups.text;
-        let dim = alpha(ink, 0.65);
-        let x = card.pos.x + PAD;
-        let w = card.size.x - PAD * 2.0;
-        let mut y = card.pos.y + PAD;
-        let title = format!("Let {}'s agent start?", s.name);
-        self.d.label_elided(cx, rect(x, y, w, 24.0), true, tok.font.heading, ink, HAlign::Left, &title);
-        y += 26.0;
-        self.d.label_elided(cx, rect(x, y, w, 18.0), false, tok.font.body_small, dim, HAlign::Left, "The first time an app asks for its agent, you decide. You can change it in Settings.");
-        y += 20.0 + 12.0;
-        let row = |d: &mut ShellDraw, cx: &mut Cx2d, y: &mut f64, bold: bool, text: &str| {
-            d.label_elided(cx, rect(x, *y, w, 18.0), bold, tok.font.body, if bold { ink } else { alpha(ink, 0.85) }, HAlign::Left, text);
-            *y += 20.0;
-        };
-        row(&mut self.d, cx, &mut y, true, "It may read");
-        for r in &s.reads {
-            row(&mut self.d, cx, &mut y, false, &format!("\u{2022} {r}"));
+        let mut y = body.pos.y - self.consent_scroll.offset;
+        cx.push_clip_rect(body);
+        for row in rows {
+            if y + row.height > body.pos.y && y < body.pos.y + body.size.y {
+                // Measured at the same scaled font size as label(): no
+                // elision, including long provider/account descriptions.
+                self.d.label(cx, rect(body.pos.x, y, body.size.x, row.line_height), row.bold, row.px, alpha(ink, row.opacity), HAlign::Left, &row.text);
+            }
+            y += row.height;
         }
-        row(&mut self.d, cx, &mut y, true, "It may use");
-        for u in &s.uses {
-            row(&mut self.d, cx, &mut y, false, &format!("\u{2022} {u}"));
+        cx.pop_clip_rect();
+        if self.consent_scroll.max > 0.0 {
+            let track = rect(body.pos.x + body.size.x + 5.0, body.pos.y, 3.0, body.size.y);
+            let thumb_h = (body.size.y * body.size.y / content_height).max(20.0).min(body.size.y);
+            let thumb_y = body.pos.y + (body.size.y - thumb_h) * self.consent_scroll.offset / self.consent_scroll.max;
+            self.d.solid(cx, track, alpha(ink, 0.10));
+            self.d.solid(cx, rect(track.pos.x, thumb_y, track.size.x, thumb_h), alpha(ink, 0.40));
         }
-        row(&mut self.d, cx, &mut y, true, "Where the model runs");
-        row(&mut self.d, cx, &mut y, false, &s.model);
-        y += 12.0;
         let mut buttons = Buttons { d: &mut self.d, tok, hover: self.hover };
-        let allow = buttons.draw(cx, x, y, w, "Allow", true);
-        let deny = buttons.draw(cx, x + allow.size.x + 8.0, y, w, "Don't allow", false);
+        let allow = buttons.draw(cx, footer.pos.x, footer.pos.y, (footer.size.x - 8.0) * 0.5, "Allow", true);
+        let deny_x = allow.pos.x + allow.size.x + 8.0;
+        let deny = buttons.draw(cx, deny_x, footer.pos.y, footer.pos.x + footer.size.x - deny_x, "Don't allow", false);
         self.hits.push((allow, Hit::Consent { app: s.app.clone(), allow: true }));
         self.hits.push((deny, Hit::Consent { app: s.app.clone(), allow: false }));
-        self.shown.push(title);
+        self.shown.push(format!("Let {}'s agent start?", s.name));
+        self.shown.push(CONSENT_INTRO.to_string());
         self.shown.extend(s.reads.iter().cloned());
         self.shown.extend(s.uses.iter().cloned());
         self.shown.push(s.model.clone());
     }
+
 }
 
 /// How many of a line's `total` rows the person has seen.
@@ -635,6 +755,69 @@ fn window_seen(windows: &HashMap<RequestId, ArgWindow>, id: &RequestId, total: u
 /// "Stop Rinx's agent".
 fn stop_label(app: &str) -> String {
     format!("Stop {}'s agent", app_label(app))
+}
+
+#[cfg(test)]
+mod consent_layout_tests {
+    use super::*;
+    use makepad_platform::event::{TouchPoint, TouchState};
+
+    fn point(uid: u64, state: TouchState, abs: Vec2d) -> TouchPoint {
+        TouchPoint { uid, state, abs, time: 0.0, rotation_angle: 0.0, force: 0.0, radius: dvec2(1.0, 1.0), handled: Default::default(), sweep_lock: Default::default() }
+    }
+
+    #[test]
+    fn consent_wraps_complete_disclosures_and_keeps_phone_decisions_below_content() {
+        let summary = AgentSummary {
+            app: "test.consent".into(), name: "A long connected application name".into(),
+            reads: vec!["Account-specific documents and saved drafts for this account only".into()],
+            uses: vec!["Tools from another application, subject to its grant and approval policy".into()],
+            model: "The provider configured by the person in AI providers; private tool results may be sent to that provider".into(),
+        };
+        for (width, height, scale) in [(320.0, 480.0, 1.0), (360.0, 640.0, 1.25), (640.0, 320.0, 1.25), (1000.0, 1000.0, 1.0)] {
+            let screen = rect(0.0, 0.0, width, height);
+            let body_width = consent_rects(screen, 0.0).1.size.x;
+            let rows = consent_rows(&summary, crate::shell::FontTokens::default(), scale, body_width, |_, px, text, width| {
+                crate::shell::ui::wrap_with(text, width, true, |s| s.chars().count() as f64 * px * 0.6)
+            });
+            let text = rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join(" ");
+            let normalized = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+            for disclosure in [CONSENT_INTRO, &summary.reads[0], &summary.uses[0], &summary.model] {
+                assert!(normalized(&text).contains(&normalized(disclosure)), "a disclosure was elided: {disclosure}");
+            }
+            let total: f64 = rows.iter().map(|r| r.height).sum();
+            let (card, body, footer) = consent_rects(screen, total);
+            assert!(body.size.y > 0.0);
+            assert!(body.pos.y + body.size.y + 12.0 <= footer.pos.y + 0.01);
+            assert!(footer.pos.y + footer.size.y <= card.pos.y + card.size.y - PAD + 0.01);
+            assert!(card.pos.y >= screen.pos.y && card.pos.y + card.size.y <= height);
+            let mut scroll = ConsentScroll::default();
+            scroll.layout(&summary.app, body, total);
+            scroll.scroll(total * 2.0);
+            assert!((scroll.offset - (total - body.size.y).max(0.0)).abs() < 0.01);
+            assert!(total - scroll.offset <= body.size.y + 0.01, "last disclosure must be reachable");
+            if height == 1000.0 { assert_eq!(scroll.max, 0.0, "fitting content grows the card without scrolling"); }
+            if height == 320.0 { assert!(scroll.max > 0.0, "short phone viewport must scroll"); }
+        }
+    }
+
+    #[test]
+    fn consent_scroll_owns_release_over_decisions_and_resets_for_another_app() {
+        let (_, body, footer) = consent_rects(rect(0.0, 0.0, 320.0, 480.0), 1200.0);
+        let mut scroll = ConsentScroll::default();
+        scroll.layout("one", body, 1200.0);
+        let at = body.pos + dvec2(12.0, 100.0);
+        assert!(scroll.touch(&point(7, TouchState::Start, at)));
+        assert!(!scroll.touch(&point(8, TouchState::Move, at - dvec2(0.0, 60.0))));
+        assert!(scroll.touch(&point(7, TouchState::Move, at - dvec2(0.0, 60.0))));
+        assert_eq!(scroll.offset, 60.0);
+        assert!(scroll.touch(&point(7, TouchState::Stop, footer.pos + dvec2(10.0, 10.0))), "a scrolling release must not fall through to Allow");
+        assert!(scroll.touch.is_none());
+        scroll.scroll(500.0);
+        scroll.layout("two", body, 1200.0);
+        assert_eq!(scroll.offset, 0.0);
+        assert!(!scroll.touch(&point(9, TouchState::Start, footer.pos + dvec2(10.0, 10.0))), "ordinary decision taps keep the existing consent path");
+    }
 }
 
 /// A press on one of the surface's buttons, exactly as

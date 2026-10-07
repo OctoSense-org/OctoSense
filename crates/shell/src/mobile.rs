@@ -11,6 +11,8 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 pub enum PhoneHit {
     App(String), TileApp(String), Card(ClientId), Home, Recents, Drawer, Search, Back,
     Floating(crate::mobile_navigation::NavigationHit),
+    /// Android app navigation lives outside the app viewport.
+    AppNavigation(crate::mobile_navigation::NavigationHit),
     /// The desk bar's phone strip (universal builds only): rotate the
     /// window, the style menu, Light/Dark, back to the desktop.
     #[cfg(not(mobile_only))] Rotate,
@@ -218,6 +220,34 @@ impl PhoneState {
     pub fn cancel_navigation_input(&mut self) {
         self.touch = None;
         self.navigation.cancel();
+        if self.gesture.as_ref().is_some_and(|g| matches!(g.hit, Some(PhoneHit::AppNavigation(_)))) {
+            self.gesture = None;
+        }
+    }
+    pub fn app_dock_for_platform(&self, screen: Rect, android: bool) -> Option<crate::mobile_navigation::AppDock> {
+        (android && self.screen == PhoneScreen::App && self.navigation.visible())
+            .then(|| crate::mobile_navigation::app_dock(screen))
+    }
+    pub fn app_dock(&self, screen: Rect) -> Option<crate::mobile_navigation::AppDock> {
+        self.app_dock_for_platform(screen, cfg!(target_os = "android"))
+    }
+    /// Shared by capture sizing, presentation and split/input geometry. The
+    /// backing app keeps this size in Home/Recents too, so navigation animates
+    /// its retained texture rather than resizing it as the dock disappears.
+    pub fn app_content_rect_for_platform(&self, screen: Rect, android: bool) -> Rect {
+        if android {
+            if self.navigation.visible() { crate::mobile_navigation::app_dock(screen).content }
+            else { screen }
+        } else { app_rect(screen) }
+    }
+    pub fn app_content_rect(&self, screen: Rect) -> Rect {
+        self.app_content_rect_for_platform(screen, cfg!(target_os = "android"))
+    }
+    pub fn card_rect(&self, screen: Rect, index: f64, page: f64) -> Rect {
+        card_rect_for_app(screen, self.app_content_rect(screen), index, page)
+    }
+    pub fn floating_navigation_visible(&self) -> bool {
+        self.navigation.visible() && !(cfg!(target_os = "android") && self.screen == PhoneScreen::App)
     }
     pub fn navigation_rect(&self) -> Rect {
         // The native KeyboardView already resizes this viewport above the
@@ -235,7 +265,15 @@ impl PhoneState {
     }
     pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
         match event {
-            VirtualKeyboardEvent::WillShow { .. } | VirtualKeyboardEvent::DidShow { .. } => self.navigation.set_ime_visible(true),
+            VirtualKeyboardEvent::WillShow { .. } | VirtualKeyboardEvent::DidShow { .. } => {
+                self.navigation.set_ime_visible(true);
+                // Consume the old owned finger through release, but never let
+                // its now-hidden navigation target fire after editing starts.
+                if let Some(g) = self.gesture.as_mut().filter(|g| matches!(g.hit, Some(PhoneHit::AppNavigation(_)))) {
+                    g.hit = Some(PhoneHit::AppNavigation(crate::mobile_navigation::NavigationHit::Dismiss));
+                    g.shell = false;
+                }
+            },
             VirtualKeyboardEvent::DidHide { .. } => self.navigation.set_ime_visible(false),
             // Keep the editing area clear throughout the hide animation.
             VirtualKeyboardEvent::WillHide { .. } => {}
@@ -485,7 +523,9 @@ pub fn app_rect(screen: Rect) -> Rect {
     Rect { pos: screen.pos + dvec2(0.0, top), size: dvec2(screen.size.x, (screen.size.y - top - 24.0).max(1.0)) }
 }
 pub fn card_rect(screen: Rect, index: f64, page: f64) -> Rect {
-    let app = app_rect(screen);
+    card_rect_for_app(screen, app_rect(screen), index, page)
+}
+pub fn card_rect_for_app(screen: Rect, app: Rect, index: f64, page: f64) -> Rect {
     let scale = if screen.size.x > screen.size.y { 0.74 } else { 0.76 };
     let size = app.size * scale;
     Rect { pos: app.pos + (app.size - size) * 0.5 + dvec2((index-page)*(size.x+22.0), -4.0), size }

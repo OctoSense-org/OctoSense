@@ -178,6 +178,111 @@ fn set_card_body(cx: &mut Cx, root: &WidgetRef, outer: SplashVmId, body: &str) {
 }
 
 #[test]
+fn calendar_saved_event_title_wraps_above_its_details_on_a_narrow_phone() {
+    let source = include_str!("../../../apps/calendar/bundle/main.splash");
+    let title_type = source.lines().find(|line| line.starts_with("let UiTitle = ")).unwrap();
+    let title_instance = source.lines().find(|line| line.trim_start().starts_with("event_title := ")).unwrap();
+    let (mut cx, tile, root, outer) = hosted_card();
+    set_card_body(&mut cx, &root, outer, &format!(
+        "let ui_ink = theme.color_text\n{title_type}\nView{{width: Fill height: Fill flow: Down padding: 20 spacing: 18\n{title_instance}\nwhen := Label{{text: \"WHEN\"}}\n}}"
+    ));
+    widget_tree::set_ui_root(&mut cx, &root);
+    let title = root.label(&cx, ids!(event_title));
+    title.set_text(&mut cx, "Short");
+    draw_card(&mut cx, &tile, 360.0, 600.0);
+    let one_line = title.area().rect(&cx);
+    title.set_text(&mut cx, "OnePlus acceptance event with a longer appointment title");
+    draw_card(&mut cx, &tile, 360.0, 600.0);
+    let wrapped = title.area().rect(&cx);
+    let details = root.label(&cx, ids!(when)).area().rect(&cx);
+    assert!(wrapped.size.y > one_line.size.y, "the saved title must grow instead of clipping: {wrapped:?}");
+    assert!(wrapped.pos.x >= 20.0 && wrapped.pos.x + wrapped.size.x <= 340.0);
+    assert!(details.pos.y >= wrapped.pos.y + wrapped.size.y, "event details must follow all title lines");
+    assert_eq!(title.text(), "OnePlus acceptance event with a longer appointment title");
+}
+
+#[test]
+fn maps_location_request_checks_the_contained_app_capability() {
+    let (mut cx, _tile, root, outer) = hosted_card();
+    set_card_body(&mut cx, &root, outer, "View{}");
+    let source = root.splash(&cx, ids!(card)).borrow().unwrap().view.source.clone();
+    let owner = cx.script_ref_vm_id(&source).unwrap();
+    let heap = cx.with_script_vm_id_trusted(owner, |vm| vm.bx.heap.heap_key());
+    let request = |cx: &mut Cx| cx.with_script_vm_id_trusted(owner, |vm| {
+        splash::register_agent_module(vm);
+        vm.bx.captured_errors = Some(Vec::new());
+        let result = script_eval!(vm, {sys.request_location()});
+        let errors = vm.take_errors();
+        assert!(errors.is_empty(), "{errors:?}");
+        result.as_number().unwrap()
+    });
+    for capability in ["net", "location.get", ""] {
+        splash_policy::set_policy_for_heap(heap, vec![capability.into()], vec![], None);
+        assert_eq!(request(&mut cx), -1.0, "{capability} cannot start permission consent");
+    }
+    splash_policy::set_policy_for_heap(heap, vec!["location".into()], vec![], None);
+    assert_eq!(request(&mut cx), if cfg!(target_os = "android") {1.0} else {0.0}, "unsupported platforms must not claim a request started");
+    splash_policy::set_policy_for_heap(heap, vec![], vec![], None);
+    assert_eq!(request(&mut cx), -1.0, "revoking the grant takes effect on the next request");
+}
+
+#[test]
+fn maps_reads_are_passive_and_only_the_location_action_requests_permission() {
+    let source = include_str!("../../../apps/maps/bundle/main.splash");
+    let function = |name: &str| {
+        let start = source.find(&format!("fn {name}(" )).unwrap();
+        source[start..].split_once("\nfn ").unwrap().0
+    };
+    let functions = ["fix_origin", "location_note", "use_my_location"].map(function).join("\n");
+    let code = format!(r#"
+use mod.std.assert
+mod.requests = 0
+mod.result = 1
+mod.fixed = false
+mod.note = ""
+mod.note_visible = false
+mod.screen = "search"
+let origin = {{lat: 37.3350 lon: -121.8850 name: "San Jose (downtown)" picked: false}}
+let finding = "origin"
+let sys = {{
+    request_location: fn() {{mod.requests = mod.requests + 1; return mod.result}}
+    gps: fn(field) {{if !mod.fixed {{return 0}}; if field == "lat" {{return 37.7}}; if field == "lon" {{return -122.4}}; return 1}}
+}}
+let ui = {{location_status: {{
+    set_text: fn(text) {{mod.note = text}}
+    set_visible: fn(value) {{mod.note_visible = value}}
+}}}}
+fn show(name) {{mod.screen = name}}
+{functions}
+fix_origin()
+fix_origin()
+assert(mod.requests == 0)
+use_my_location()
+assert(mod.requests == 1)
+assert(origin.name == "San Jose (downtown)")
+assert(mod.note_visible && mod.note != "")
+assert(mod.screen == "route")
+mod.fixed = true
+fix_origin()
+assert(mod.requests == 1)
+assert(origin.name == "Your location" && origin.lat == 37.7 && origin.lon == -122.4)
+assert(mod.note == "" && !mod.note_visible)
+mod.fixed = false
+mod.result = -1
+use_my_location()
+assert(mod.note == "This app does not have location access. Choose an origin instead.")
+1
+"#);
+    let mut host = ScriptVmHost::new((), ());
+    let mut vm = ScriptVm { host: &mut host, bx: Box::new(ScriptVmBase::new()) };
+    vm.bx.captured_errors = Some(Vec::new());
+    let result = vm.eval(ScriptMod { file: "maps_location_test.splash".into(), code, ..Default::default() });
+    let errors = vm.take_errors();
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(result.as_number(), Some(1.0));
+}
+
+#[test]
 fn permission_dialog_pause_and_resume_leave_a_new_video_ready_for_its_first_source() {
     let mut cx = Cx::new(Box::new(|_, _| {}));
     let root = cx.with_vm(|vm| {
@@ -382,18 +487,114 @@ fn card_runner_restyles_nested_script_without_replacing_draft() {
         WidgetRef::script_from_value(vm, value)
     });
     tile.borrow_mut::<MpModuleView>().unwrap().set_root(&mut cx, 1, owner, root.clone());
-    let probe = format!("{}\n{}", include_str!("../../../apps/interface.splash"),
-        r#"let ink = ui_ink
-        SolidView{draw_bg.color: ui_page label := UiTitle{text: "Theme" draw_text.color: ink} input := UiField{text: "Draft"}}"#);
-    set_card_body(&mut cx, &root, owner, &probe);
+    // Exercise the Card runner's nested-isolate restyle with only the two
+    // widgets whose identity/state matter here. Loading the complete shared
+    // interface made this boundary test spend its 64 ms startup budget on
+    // unrelated widget prototypes under concurrent CI load. Full interface
+    // colors are covered by system_app_theme_tests; keep the runtime budget.
+    let probe = r#"let theme = mod.theme
+        let ink = theme.color_text
+        SolidView{draw_bg.color: theme.color_bg_app
+            label := Label{text: "Theme" draw_text.color: ink}
+            input := TextInput{text: "Draft"}}
+    "#;
+    set_card_body(&mut cx, &root, owner, probe);
     draw_card(&mut cx, &tile, 400.0, 700.0);
     let label = root.label(&mut cx, ids!(label));
-    let light = label.borrow().unwrap().draw_text.color;
-    root.text_input(&mut cx, ids!(input)).set_text(&mut cx, "Unsaved draft");
+    let light = label.borrow().expect("the contained theme probe initialized").draw_text.color;
+    let input = root.text_input(&mut cx, ids!(input));
+    let input_id = input.widget_uid();
+    input.set_text(&mut cx, "Unsaved draft");
     host.apply_style(&mut cx, &sheet(true));
     draw_card(&mut cx, &tile, 400.0, 700.0);
     let dark = label.borrow().unwrap().draw_text.color;
     assert_ne!(light, dark, "the Card runner must restyle its hosted app, not only its outer view");
+    assert_eq!(root.text_input(&mut cx, ids!(input)).widget_uid(), input_id, "restyle must retain the live editor");
     assert_eq!(root.text_input(&mut cx, ids!(input)).text(), "Unsaved draft");
     host.teardown(&mut cx, 1);
+}
+
+#[test]
+fn card_runner_restyle_keeps_dynamic_labels_wrapped_and_explicit_no_wrap() {
+    use makepad_app_module::AppModule;
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    cx.with_vm(makepad_widgets::script_mod);
+    let mut host = crate::module_host::ModuleHost::default();
+    let sheet = |dark| desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
+    host.apply_style(&mut cx, &sheet(false));
+    let module = &octosense_appstore::cardapp::CARD_MODULE;
+    let open = module.open_schema().validate("{\"app\":\"os.calendar\"}", &[]).unwrap();
+    host.create(&mut cx, 1, module, open, dvec2(390.0, 700.0)).unwrap();
+    let root = host.get(1).unwrap().root.clone();
+    let owner = host.get(1).unwrap().vm_id;
+    let tile = cx.with_vm(|vm| {
+        script_eval!(vm, {mod.wm_theme = {background: #ffffff}});
+        crate::module_view::script_mod(vm);
+        let value = script_eval!(vm, {use mod.widgets.* MpModuleView{}});
+        WidgetRef::script_from_value(vm, value)
+    });
+    tile.borrow_mut::<MpModuleView>().unwrap().set_root(&mut cx, 1, owner, root.clone());
+    set_card_body(&mut cx, &root, owner, r#"
+fn populate(subject, message){
+    ui.subject.set_text(subject)
+    ui.message_body.set_text(message)
+    ui.workspace.set_visible(true)
+}
+SolidView{width:Fill height:Fill flow:Down padding:16 spacing:10
+workspace := View{width:Fill height:Fill flow:Down spacing:10 visible:false
+subject := Label{width:Fill text:"" draw_text.text_style:theme.font_bold{font_size:18}}
+message_view := View{width:Fill height:Fill flow:Down spacing:10
+ScrollYView{width:Fill height:Fill flow:Down
+message_body := Label{width:Fill text:"" draw_text.text_style.font_size:16}
+}}
+Button{text:"Compose reply"}
+explicit_line := Label{width:Fill flow:Flow.Right{wrap:false} text:"Explicitly single line content stays single line across every retained restyle"}
+input := TextInput{width:Fill text:"Draft"}
+}
+}
+}
+"#);
+    widget_tree::set_ui_root(&mut cx, &root);
+    draw_card(&mut cx, &tile, 390.0, 700.0);
+    let subject=root.label(&cx,ids!(subject));
+    let message=root.label(&cx,ids!(message_body));
+    let subject_text = "A longer appointment title requiring more than one line on a narrow phone display";
+    let message_text = "Hello,\n\nYour appointment is Tuesday, October 6 at 9:00 AM Pacific. Please confirm this time or suggest another appointment.\n\nCedar Clinic";
+    // Match an async app callback: initially blank labels live in a hidden
+    // workspace, then the app's own script populates and shows them.
+    assert!(root.splash(&cx, ids!(card)).call_script_fn_with_strings(
+        &mut cx, live_id!(populate), &[subject_text, message_text]
+    ));
+    // ui.* setters suspend script execution until the widget task pump runs,
+    // as they do after an actual host callback.
+    makepad_widgets::makepad_platform::makepad_script_std::handle_script_tasks(&mut cx);
+    let subject_uid = subject.widget_uid();
+    let message_uid = message.widget_uid();
+    let input = root.text_input(&cx, ids!(input));
+    let input_uid = input.widget_uid();
+    input.set_text(&mut cx, "Unsaved draft");
+    for restyle in [None,Some(true),Some(false)] {
+        if let Some(dark)=restyle {host.apply_style(&mut cx,&sheet(dark));}
+        for (width,height) in [(390.0,700.0),(390.0,320.0)] {
+            draw_card(&mut cx,&tile,width,height);
+            for (name,label) in [("subject",&subject),("message_body",&message)] {
+                let area=label.area().rect(&cx);
+                let text=label.borrow().unwrap().text_layout_rect;
+                assert!(text.size.x <= area.size.x, "{restyle:?} {name}: text overflows {text:?}, frame {area:?}");
+                assert!(area.size.x<=width-32.0 && area.size.x>0.0);
+                assert!(area.size.y>40.0,"expected wrapped text after blank-set_text/show/restyle");
+            }
+            let nowrap = root.label(&cx, ids!(explicit_line));
+            let nowrap = nowrap.borrow().unwrap();
+            assert!(nowrap.text_layout_rect.size.x > nowrap.area().rect(&cx).size.x, "explicit no-wrap must be respected");
+            assert!(nowrap.text_layout_rect.size.y < 40.0);
+            assert_eq!(subject.widget_uid(), subject_uid);
+            assert_eq!(message.widget_uid(), message_uid);
+            assert_eq!(subject.text(), subject_text);
+            assert_eq!(message.text(), message_text);
+            assert_eq!(root.text_input(&cx, ids!(input)).widget_uid(), input_uid);
+            assert_eq!(input.text(), "Unsaved draft");
+        }
+    }
+    host.teardown(&mut cx,1);
 }

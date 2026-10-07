@@ -388,7 +388,7 @@ impl PhoneSurface {
         let phone = &state.phone;
         let ink = self.theme_ink(if state.style.dark { rgb(238, 238, 242) } else { rgb(30, 30, 34) });
         if let Some(split) = phone.groups.split.filter(|_| phone.screen == PhoneScreen::App && phone.openness > 0.5 && phone.overview < 0.01) {
-            let app = mobile::app_rect(screen);
+            let app = phone.app_content_rect(screen);
             let band = split.divider(app);
             let vertical = Split::vertical(app);
             let pill = if vertical { rect(band.pos.x + band.size.x * 0.5 - 28.0, band.pos.y + band.size.y * 0.5 - 2.5, 56.0, 5.0) }
@@ -400,7 +400,7 @@ impl PhoneSurface {
         if phone.screen == PhoneScreen::Recents && phone.overview > 0.5 {
             let accent = self.theme_accent(if state.style.target == DesktopStyle::Ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) });
             for (index, client) in phone.order.iter().enumerate() {
-                let card = mobile::card_rect(screen, index as f64, phone.page);
+                let card = phone.card_rect(screen, index as f64, phone.page);
                 if card.pos.x + card.size.x < screen.pos.x || card.pos.x > screen.pos.x + screen.size.x { continue; }
                 let picked = phone.groups.pick == Some(*client);
                 let r = rect(card.pos.x + card.size.x - 84.0, card.pos.y - 38.0, 84.0, 30.0);
