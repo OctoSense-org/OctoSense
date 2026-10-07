@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "c8cf9450e3b00bde30fdf5f3d9b9a8351b803bc3",
+    "tree": "3c29781821cec13f67eced643b5782987d96679f",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -23,7 +23,8 @@
       "Android startup and resume never request location for the legacy GPS cache; it uses existing grants only. Explicit location actions retain the normal permission flow.",
       "Android Maps requests its first location grant only from Your location through the app location capability and the existing foreground GPS listener/permission callback; GPS reads stay passive.",
       "Label keeps its native wrapping default across retained theme reapplication; named labels populated after mounting stay wrapped, while explicit app no-wrap flows remain unchanged.",
-      "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status."
+      "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status.",
+      "Host API v1 apps opt into host-owned device consent before source evaluation. Cached host grants gate camera, microphone and location paths; camera revocation stops an active preview and cached GPS reads fail closed. Older bundles keep their existing capability behavior."
     ],
     "stacked": [
       {
@@ -89,6 +90,10 @@
       {
         "patch": "tools/runtime-patches/makepad-camera-checked-start.patch",
         "sha256": "f28349631a2f7b851c0d5289ebebfa387a020170a69793f65c4f2f985504ffc0"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-device-consent.patch",
+        "sha256": "163b3755e0116fcf964b5d93580907e1542aa4a6ca1bbfed33a1161c4b7c6caf"
       }
     ]
   }
