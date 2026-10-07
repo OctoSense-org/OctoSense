@@ -1,3 +1,4 @@
-# Unified-diff context lines contain a required single space when empty.
-tools/runtime-patches/*.patch whitespace=-blank-at-eol
+# Unified-diff context lines contain a required single space when empty,
+# including when the last context line is the end of the patch file.
+tools/runtime-patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
 tools/runtime-patches/*.patch text eol=lf

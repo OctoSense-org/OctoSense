@@ -184,6 +184,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10.4"
 url = "2"
+oauth2 = { version = "=5.0.0", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "multipart"] }
 keyring = "3"
 # Matches octos and the Matrix SDK: one libsqlite3-sys when AppCard shares a

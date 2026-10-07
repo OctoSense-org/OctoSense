@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "date_utc": "2026-10-07",
+  "platform": "macOS",
+  "app_id": "org.octosense.samples.googlecalendar",
+  "installed_version": "0.1.0",
+  "provider": "google",
+  "account_boundary": "dedicated test account; no personal account connected",
+  "binary_sha256": "451c59d36eab3f0e41f2edb2894f474852c1ccd5532b679574e493a9fd81cefb",
+  "source_base_commit": "2a5a4833b25d7d5d9f7ca9d3be76b6f77cbfec0d",
+  "source_state": "uncommitted WebView implementation; source hashes below",
+  "source_sha256": {
+    "crates/oauth-service/src/host.rs": "d57d762b63edf988f035883f1fbeb13243505edf5f481f4df2eb16b5e2eb7fca",
+    "crates/oauth-service/src/authorize.rs": "cfcea9157e678e53d9787a03d4a46a5f1b27804a5596ff11aa1000e9ea30af4b",
+    "crates/oauth-service/src/api.rs": "82e1d4d17f66f502d1de3cae59c70d8e344649afe39b930ab285693e10200fa8",
+    "crates/oauth-service/src/registration.rs": "33392b88f2444c9f88794add5b47cb30f9c731340dfba60dd3bec76385da2e62"
+  },
+  "scopes": [
+    "email",
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+    "openid"
+  ],
+  "checks": {
+    "local_registration_loaded": "observed host consent sheet, no unconfigured error",
+    "tester_list": "dedicated test account persisted in OAuth project tester list; publishing remains Testing",
+    "browser_consent": "real provider page reached; user completed consent",
+    "app_connection": "Google connection metadata exists for this installed app",
+    "calendar_list": "user confirmed the calendar list appeared",
+    "event_save_and_refresh": "user physically saved a test event in the app and confirmed it remained visible after Refresh",
+    "local_installation": "tested desktop build copied into the local Mac app bundle and ad-hoc signed; signature verified, existing running window preserved",
+    "local_bundle_startup": "installed executable opened one hidden native window using a fresh private profile and returned a GPU frame; only that process was quit"
+  },
+  "not_verified": [
+    "independent API readback, event editing or deletion",
+    "refresh-token expiry recovery for this connection",
+    "production provider verification",
+    "published desktop installer update"
+  ],
+  "privacy": "No client IDs, account labels, subjects, connection handles, tokens, project IDs, local paths or calendar contents included.",
+  "local_installed_binary_sha256": "7b4d78f10c44ed602a4d6de43398c8c735b5d899ffc0ba858a280bf67526fbb9",
+  "prior_startup_probes": [
+    "first harness used the wrong log prefix to discover the instrument port",
+    "second probe saw the instrument server before window initialization; excluded from UI acceptance"
+  ]
+}

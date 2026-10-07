@@ -1,0 +1,65 @@
+// Acceptance fixture only. Passwords are entered exclusively in the browser.
+let connection = ""
+fn notice(message) { ui.status.set_text(message) }
+fn connected(value) {
+    connection = value.handle
+    ui.account.set_text(value.label)
+    notice("Connected")
+}
+fn active() {
+    host.request("auth.active", {}, fn(r) {
+        if !r.is_ok { notice(r.error) return }
+        if r.data == nil { connection = "" ui.account.set_text("No account") notice("Disconnected") }
+        else { connected(r.data) }
+    })
+}
+fn connect(provider, scopes) {
+    host.request("auth.connect", {provider: provider, scopes: scopes, presentation: "browser"}, fn(r) {
+        if !r.is_ok { notice(r.error) return }
+        connected(r.data)
+    })
+}
+fn connect_webview() {
+    host.request("auth.connect", {provider: "backend", scopes: ["app.session"], presentation: "webview"}, fn(r) {
+        if !r.is_ok { notice(r.error) return }
+        connected(r.data)
+    })
+}
+fn identity() {
+    notice("Loading protected identity")
+    host.request("auth.backend.me", {connection: connection}, fn(r) {
+        if !r.is_ok { notice(r.error) return }
+        ui.identity.set_text(r.data.identity.label)
+        notice("Protected identity loaded")
+    })
+}
+fn disconnect() {
+    host.request("auth.disconnect", {connection: connection}, fn(r) {
+        if !r.is_ok { notice(r.error) return }
+        ui.identity.set_text("No protected data")
+        active()
+    })
+}
+fn probe() {
+    let other = fs.read("probe.json").parse_json()
+    host.request("auth.backend.me", {connection: other.connection}, fn(r) {
+        if r.is_ok { notice("ISOLATION FAILURE") }
+        else { notice("Other app denied: " + r.error) }
+    })
+}
+start_timeout(0.05, || active())
+SolidView {width: Fill height: Fill flow: Down padding: 24 spacing: 10 draw_bg.color: #f4f7fc
+    Label {width: Fill text: "Backend login acceptance" draw_text.color: #172033 draw_text.text_style.font_size: 24}
+    Label {width: Fill text: "Synthetic test account. Credentials stay in the browser and host vault." draw_text.color: #43536c}
+    account := Label {width: Fill text: "No account" draw_text.color: #172033}
+    identity := Label {width: Fill text: "No protected data" draw_text.color: #172033}
+    Button {width: Fill height: 44 text: "Connect backend" on_click: || connect("backend", ["app.session"])}
+    Button {width: Fill height: 44 text: "Connect in WebView" on_click: || connect_webview()}
+    Button {width: Fill height: 44 text: "Connect GitHub" on_click: || connect("github", ["read:user"])}
+    Button {width: Fill height: 44 text: "Connect Google" on_click: || connect("google", ["openid", "email", "profile"])}
+    Button {width: Fill height: 44 text: "Load active account" on_click: || active()}
+    Button {width: Fill height: 44 text: "Protected identity" on_click: || identity()}
+    Button {width: Fill height: 44 text: "Disconnect" on_click: || disconnect()}
+    Button {width: Fill height: 44 text: "Probe other app" on_click: || probe()}
+    status := Label {width: Fill text: "Ready" draw_text.color: #233854}
+}

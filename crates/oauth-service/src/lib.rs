@@ -14,6 +14,7 @@ pub mod acceptance_github;
 #[cfg(test)]
 mod api_tests;
 pub mod authorize;
+pub mod backend;
 pub mod calendar_cache;
 #[cfg(feature = "host")]
 pub mod host;
@@ -27,6 +28,9 @@ pub mod inbox;
 pub mod inbox_events;
 pub mod oauth;
 pub mod providers;
+mod protocol;
+#[cfg(any(feature = "host", test))]
+mod registration;
 pub mod store;
 pub mod transport;
 

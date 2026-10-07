@@ -987,9 +987,24 @@ pub struct GlanceTiles {
     scroll: bool,
     viewport_layout: bool,
     foreground: bool,
+    /// Only a sheet that handed control to a native login Activity may survive
+    /// Android's Pause. Its isolate identity prevents retaining a replacement.
+    suspended_auth: std::collections::HashSet<usize>,
 }
 
 impl GlanceTiles {
+    /// Event handling and drawing must apply the same foreground decision.
+    /// Android can draw once more after handing control to native sign-in;
+    /// that draw must preserve the already identified host sheet, just like
+    /// Pause does. Explicit workspace dismissal still uses set_foreground.
+    pub(crate) fn sync_foreground(&mut self, cx: &mut Cx, foreground: bool, native_auth_handoff: bool) {
+        if !foreground && native_auth_handoff {
+            self.suspend_for_auth_handoff(cx);
+        } else {
+            self.set_foreground(cx, foreground);
+        }
+    }
+
     pub(crate) fn focused_editor(&self, cx: &Cx) -> Option<(WidgetUid, Rect)> {
         let editor = cx.get_ime_area_rect();
         if editor.size.y <= 0.0 { return None; }
@@ -999,13 +1014,15 @@ impl GlanceTiles {
 
     /// Tiles whose cards scroll inside their rect (the card window).
     pub fn scrolling() -> Self {
-        GlanceTiles { tiles: HashMap::new(), scroll: true, viewport_layout: false, foreground: false }
+        GlanceTiles { scroll: true, ..Default::default() }
     }
 
     /// Only the visible expanded workspace may request host-owned prompts.
     /// Summary tiles keep their original background policy.
     pub fn set_foreground(&mut self, cx: &mut Cx, foreground: bool) {
-        if self.foreground == foreground { return; }
+        let had_handoff = !self.suspended_auth.is_empty();
+        self.suspended_auth.clear();
+        if self.foreground == foreground && !had_handoff { return; }
         self.foreground = foreground;
         for tile in self.tiles.values() {
             if !tile.workspace { continue; }
@@ -1015,6 +1032,28 @@ impl GlanceTiles {
                 retire_host_sheet(cx, tile);
             }
         }
+    }
+
+    /// A native Android login Activity pauses Home while remaining part of the
+    /// user's active sign-in. Disable new app prompts, but keep its exact host
+    /// isolate alive until Home resumes. Explicit dismissal uses set_foreground
+    /// and still retires it. Home/another Activity cancels in the native adapter.
+    pub(crate) fn suspend_for_auth_handoff(&mut self, cx: &mut Cx) {
+        let first = self.foreground;
+        self.foreground = false;
+        let mut retained = std::collections::HashSet::new();
+        for tile in self.tiles.values().filter(|tile| tile.workspace) {
+            tile.card.set_host_prompts(cx, false);
+            let heap = tile.sheet.isolate_heap_key(cx);
+            let handoff = heap.is_some_and(|heap| self.suspended_auth.contains(&heap))
+                || (first && has_native_auth(&tile.sheet));
+            if handoff {
+                if let Some(heap) = heap { retained.insert(heap); }
+            } else {
+                retire_host_sheet(cx, tile);
+            }
+        }
+        self.suspended_auth = retained;
     }
 
     pub fn host_sheet_visible(&self, _cx: &mut Cx) -> bool {
@@ -1199,6 +1238,14 @@ impl GlanceTiles {
             }
         }
     }
+}
+
+fn has_native_auth(widget: &WidgetRef) -> bool {
+    if widget.borrow::<makepad_widgets::web_reader::WebReader>()
+        .is_some_and(|reader| reader.auth_browser_id().is_some()) { return true; }
+    let mut found = false;
+    widget.children(&mut |_, child| { found |= has_native_auth(&child); });
+    found
 }
 
 /// Retiring the host isolate drops native ReviewRequest capabilities (which
@@ -1466,6 +1513,50 @@ mod tests {
         assert!(!ask(&mut cx, &app).may_prompt, "foreground never raises original admission authority");
         workspace.sweep(&mut cx, &[]);
         background.sweep(&mut cx, &[]);
+    }
+
+    #[cfg(all(feature = "app-hub", any(target_os = "macos", target_os = "android")))]
+    #[test]
+    fn native_auth_handoff_preserves_only_its_sheet_and_explicit_close_retires_it() {
+        register_test_app("os.glanceauthhandoff");
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        tiles.set_foreground(&mut cx, true);
+        tiles.open(&mut cx, "auth", "os.glanceauthhandoff", true, &"View{}".into());
+        tiles.open(&mut cx, "other", "os.glanceauthhandoff", true, &"View{}".into());
+        let sheet = tiles.tiles["auth"].sheet.clone();
+        let other = tiles.tiles["other"].sheet.clone();
+        sheet.set_text(&mut cx, "View{reader := WebReader{}}");
+        other.set_text(&mut cx, "Label{text: \"Unrelated approval\"}");
+        let heap = heap_of(&mut cx, &sheet);
+        let reader = sheet.widget(&cx, ids!(reader));
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ticket = "glance-auth-handoff-test";
+        assert!(makepad_widgets::web_reader::register_auth_lifetime(ticket, &cancelled));
+        assert!(reader.borrow_mut::<makepad_widgets::web_reader::WebReader>().unwrap()
+            .bind_auth_lifetime(&mut cx, ticket));
+        assert!(reader.borrow_mut::<makepad_widgets::web_reader::WebReader>().unwrap()
+            .open_auth(&mut cx, "https://example.invalid/authorize", "https://octosense.invalid/auth/callback"));
+        tiles.sync_foreground(&mut cx, false, true);
+        assert_eq!(sheet.isolate_heap_key(&mut cx), Some(heap));
+        assert!(other.isolate_heap_key(&mut cx).is_none());
+        // A final draw after Pause must use the same synchronization path.
+        // set_foreground(false) here used to retire the retained host isolate
+        // before the native login page could load.
+        tiles.sync_foreground(&mut cx, false, true);
+        assert_eq!(sheet.isolate_heap_key(&mut cx), Some(heap));
+        assert!(!cancelled.load(std::sync::atomic::Ordering::SeqCst));
+        // Completing the native view before Android resumes must not retire
+        // the host while its PKCE exchange is still pending.
+        reader.borrow_mut::<makepad_widgets::web_reader::WebReader>().unwrap().close(&mut cx);
+        tiles.sync_foreground(&mut cx, false, true);
+        assert_eq!(sheet.isolate_heap_key(&mut cx), Some(heap));
+        assert!(!cancelled.load(std::sync::atomic::Ordering::SeqCst));
+        tiles.set_foreground(&mut cx, false);
+        assert!(sheet.isolate_heap_key(&mut cx).is_none(), "explicit close ends the handoff");
+        assert!(cancelled.load(std::sync::atomic::Ordering::SeqCst));
+        tiles.sweep(&mut cx, &[]);
     }
 
     // A widget a card can hold that answers typed text the way a card's

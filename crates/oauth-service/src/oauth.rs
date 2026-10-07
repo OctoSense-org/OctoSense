@@ -1,7 +1,8 @@
 use crate::providers::{ClientRegistration, Provider};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::RngCore;
-use sha2::{Digest, Sha256};
+use oauth2::{
+    basic::BasicClient, AuthUrl, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier,
+    RedirectUrl, Scope,
+};
 use std::{
     collections::BTreeSet,
     time::{Duration, Instant},
@@ -94,14 +95,11 @@ impl GoogleAttempt {
         if owner.is_empty() || port == 0 {
             return Err("Missing OAuth caller or callback listener".into());
         }
-        let mut random = [0_u8; 32];
-        let mut state = [0_u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut random);
-        rand::rngs::OsRng.fill_bytes(&mut state);
+        let (_, verifier) = PkceCodeChallenge::new_random_sha256();
         Ok(Self {
             owner: owner.into(),
-            state: URL_SAFE_NO_PAD.encode(state),
-            verifier: URL_SAFE_NO_PAD.encode(random),
+            state: CsrfToken::new_random_len(32).secret().clone(),
+            verifier: verifier.secret().clone(),
             redirect: Url::parse(&format!("http://127.0.0.1:{port}/oauth/callback")).unwrap(),
             deadline: now + AUTH_LIFETIME,
             consumed: false,
@@ -110,25 +108,21 @@ impl GoogleAttempt {
         })
     }
     pub fn authorization_url(&self) -> Url {
-        let mut url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth").unwrap();
-        url.query_pairs_mut().extend_pairs([
-            ("client_id", self.client_id.as_str()),
-            ("redirect_uri", self.redirect.as_str()),
-            ("response_type", "code"),
-            (
-                "scope",
-                &self.scopes.iter().cloned().collect::<Vec<_>>().join(" "),
-            ),
-            ("state", self.state.as_str()),
-            ("code_challenge_method", "S256"),
-            (
-                "code_challenge",
-                &URL_SAFE_NO_PAD.encode(Sha256::digest(self.verifier.as_bytes())),
-            ),
-            ("access_type", "offline"),
-            ("prompt", "consent select_account"),
-        ]);
-        url
+        let client = BasicClient::new(ClientId::new(self.client_id.clone()))
+            .set_auth_uri(
+                AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".into()).unwrap(),
+            )
+            .set_redirect_uri(RedirectUrl::from_url(self.redirect.clone()));
+        client
+            .authorize_url(|| CsrfToken::new(self.state.clone()))
+            .add_scopes(self.scopes.iter().cloned().map(Scope::new))
+            .set_pkce_challenge(PkceCodeChallenge::from_code_verifier_sha256(
+                &PkceCodeVerifier::new(self.verifier.clone()),
+            ))
+            .add_extra_param("access_type", "offline")
+            .add_extra_param("prompt", "consent select_account")
+            .url()
+            .0
     }
     pub fn cancel(&mut self) {
         self.consumed = true;
@@ -186,19 +180,26 @@ pub enum DeviceStatus {
 }
 
 pub fn device_status(value: &serde_json::Value) -> Result<DeviceStatus, String> {
-    match value["error"].as_str() {
-        Some("authorization_pending") => Ok(DeviceStatus::Pending),
-        Some("slow_down") => Ok(DeviceStatus::SlowDown),
-        Some("access_denied") => Ok(DeviceStatus::Denied),
-        Some("expired_token") => Ok(DeviceStatus::Expired),
-        Some(_) => Err("GitHub authorization failed; check the host registration".into()),
-        None if value["access_token"]
-            .as_str()
-            .is_some_and(|s| !s.is_empty()) =>
-        {
-            Ok(DeviceStatus::Complete)
-        }
-        None => Err("Invalid GitHub authorization response".into()),
+    if value["error"].as_str().is_some() {
+        use oauth2::DeviceCodeErrorResponseType as Error;
+        let error: oauth2::DeviceCodeErrorResponse = serde_json::from_value(value.clone())
+            .map_err(|_| "Invalid GitHub authorization response")?;
+        return match error.error() {
+            Error::AuthorizationPending => Ok(DeviceStatus::Pending),
+            Error::SlowDown => Ok(DeviceStatus::SlowDown),
+            Error::AccessDenied => Ok(DeviceStatus::Denied),
+            Error::ExpiredToken => Ok(DeviceStatus::Expired),
+            // The library error's Display/Debug may contain provider details.
+            _ => Err("GitHub authorization failed; check the host registration".into()),
+        };
+    }
+    if value["access_token"]
+        .as_str()
+        .is_some_and(|s| !s.is_empty())
+    {
+        Ok(DeviceStatus::Complete)
+    } else {
+        Err("Invalid GitHub authorization response".into())
     }
 }
 
@@ -294,5 +295,28 @@ mod tests {
             0
         )
         .is_err());
+    }
+
+    #[test]
+    fn typed_device_errors_preserve_terminal_states_and_redact_provider_details() {
+        for (code, expected) in [
+            ("authorization_pending", DeviceStatus::Pending),
+            ("slow_down", DeviceStatus::SlowDown),
+            ("access_denied", DeviceStatus::Denied),
+            ("expired_token", DeviceStatus::Expired),
+        ] {
+            assert_eq!(
+                device_status(&serde_json::json!({"error":code,
+                "error_description":"fixture-private-diagnostic"}))
+                .unwrap(),
+                expected
+            );
+        }
+        assert_eq!(
+            device_status(&serde_json::json!({"error":"fixture-private-code",
+            "error_description":"fixture-private-diagnostic"}))
+            .unwrap_err(),
+            "GitHub authorization failed; check the host registration"
+        );
     }
 }

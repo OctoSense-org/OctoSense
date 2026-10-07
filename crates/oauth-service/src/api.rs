@@ -48,7 +48,7 @@ impl Api<'_> {
             }
             let client = self
                 .google_client
-                .ok_or("Google OAuth is not configured on this host")?;
+                .ok_or(Provider::Google.sign_in_unavailable())?;
             token = refresh_google(
                 client,
                 self.google_client_secret,

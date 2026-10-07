@@ -112,3 +112,5 @@ python3 tools/connected-e2e/notes_recovery.py \
 该原生测试在签名安装内放入超出 Rinx 解析上限的虚构草稿，验证重新打开时不会
 出现可覆盖原文的空编辑器；明确选择有效文件后，原始恢复副本仍完整保留。
 测试不执行提供商写入；正常准入、提供商流程和浸泡测试继续使用上面的命令。
+
+Android 开发者后端登录使用独立测试包和真实表单，参见 [Android 后端验收](ANDROID-BACKEND.zh-CN.md)。这不代表支持 Google 嵌入式登录。

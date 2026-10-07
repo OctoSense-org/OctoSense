@@ -99,6 +99,31 @@ fn api<'a>(connections: &'a mut Connections, transport: &'a Fixture) -> Api<'a> 
 }
 
 #[test]
+fn missing_google_registration_refuses_refresh_without_network_or_developer_instructions() {
+    let profile = Profile::new();
+    let (mut store, handle) = profile.connect(Provider::Google, &[CALENDAR_LIST_SCOPE]);
+    store
+        .replace_tokens(
+            "fixture.app",
+            &handle,
+            Tokens {
+                access: "fixture-expired-token".into(),
+                refresh: Some("fixture-refresh-token".into()),
+                expires_at: Some(0),
+                scopes: [CALENDAR_LIST_SCOPE.into()].into_iter().collect(),
+            },
+        )
+        .unwrap();
+    let transport = Fixture::new(vec![]);
+    let error = api(&mut store, &transport)
+        .calendars("fixture.app", &handle, None)
+        .unwrap_err();
+    assert_eq!(error, Provider::Google.sign_in_unavailable());
+    assert!(!error.contains("clients.json"));
+    assert!(transport.calls.lock().unwrap().is_empty());
+}
+
+#[test]
 fn github_writes_exact_sha_and_retains_conflict_without_retry() {
     let profile = Profile::new();
     let (mut store, handle) = profile.connect(Provider::Github, &["public_repo"]);
