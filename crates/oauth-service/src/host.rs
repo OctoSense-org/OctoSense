@@ -21,6 +21,11 @@ use std::{
 };
 use uuid::Uuid;
 
+#[path = "host_backend.rs"]
+mod backend_host;
+#[cfg(feature = "acceptance-fixtures")]
+pub use backend_host::register_fixture as register_backend_fixture;
+
 pub type ScopeCheck = Arc<dyn Fn(&str, Provider, &BTreeSet<String>) -> bool + Send + Sync>;
 pub type AccountChanged = Arc<dyn Fn(&str, Option<&str>, Option<&str>) + Send + Sync>;
 static ACCOUNT_CHANGED: Mutex<Option<AccountChanged>> = Mutex::new(None);
@@ -237,6 +242,7 @@ struct Pending {
     status: Mutex<Value>,
     epoch: u64,
     scope_check: ScopeCheck,
+    backend: Option<Arc<crate::backend::BackendClient>>,
 }
 struct AuthService {
     scope_check: ScopeCheck,
@@ -331,6 +337,12 @@ impl HostService for AuthService {
                             .ok_or("Choose a connected account")?;
                         let mut store = connections(&call.host_dir)?;
                         let previous = store.active(&call.app_id);
+                        let remote = backend_host::logout_material(
+                            &call.host_dir,
+                            &call.app_id,
+                            handle,
+                            &store,
+                        );
                         let revoked = store.disconnect(&call.app_id, handle);
                         invalidate_authorizations(&call.host_dir, &call.app_id);
                         let current = store.active(&call.app_id);
@@ -341,9 +353,19 @@ impl HostService for AuthService {
                             current.as_ref().map(|c| c.handle.as_str()),
                         );
                         revoked?;
-                        Ok(json!({"disconnected":true}))
+                        let mut result = json!({"disconnected":true});
+                        if let Some(remote) = remote {
+                            result["remote_logout"] = backend_host::logout(&call.app_id, remote);
+                        }
+                        Ok(result)
                     })();
                     reply.send(result);
+                });
+            }
+            "backend.me" => {
+                let scope_check = self.scope_check.clone();
+                std::thread::spawn(move || {
+                    reply.send(backend_host::me(&call, &scope_check));
                 });
             }
             "connect" => {
@@ -356,7 +378,7 @@ impl HostService for AuthService {
                         "Another account operation is busy; retry sign-in when it finishes"
                     })?;
                     let provider: Provider = serde_json::from_value(call.args["provider"].clone())
-                        .map_err(|_| "Choose GitHub or Google")?;
+                        .map_err(|_| "Choose GitHub, Google or this app's backend")?;
                     let requested: Vec<String> =
                         serde_json::from_value(call.args["scopes"].clone())
                             .map_err(|_| "Specify OAuth scopes")?;
@@ -368,13 +390,23 @@ impl HostService for AuthService {
                     if provider == Provider::Google {
                         return Err("Google authorization needs the Android host adapter; desktop login is not supported on this device".into());
                     }
+                    #[cfg(any(target_os = "android", target_os = "ios"))]
+                    if provider == Provider::Backend {
+                        return Err("Backend authorization needs a native mobile callback adapter; use a desktop build".into());
+                    }
+                    let backend = if provider == Provider::Backend {
+                        Some(backend_host::client(&call.host_dir, &call.app_id)?)
+                    } else {
+                        None
+                    };
                     Ok((
                         provider,
                         scopes,
                         authorization_epoch(&call.host_dir, &call.app_id),
+                        backend,
                     ))
                 })();
-                let (provider, scopes, epoch) = match parsed {
+                let (provider, scopes, epoch, backend) = match parsed {
                     Ok(v) => v,
                     Err(e) => {
                         reply.send(Err(e));
@@ -406,6 +438,7 @@ impl HostService for AuthService {
                     status: Mutex::new(json!({"phase":"ready"})),
                     epoch,
                     scope_check: self.scope_check.clone(),
+                    backend,
                 });
                 host.open_sheet(consent_sheet(&ticket, &pending));
                 self.pending.insert(ticket, pending);
@@ -466,10 +499,14 @@ impl HostService for AuthService {
 }
 
 fn authorize(p: &Pending) -> Result<crate::Connection, String> {
+    if p.provider == Provider::Backend {
+        return backend_host::authorize(p);
+    }
     let settings = clients(&p.root)?;
     let client = match p.provider {
         Provider::Github => settings.github,
         Provider::Google => settings.google,
+        Provider::Backend => return Err("Backend registration is unavailable".into()),
     }
     .ok_or(p.provider.sign_in_unavailable())?;
     let registration = ClientRegistration {
@@ -478,6 +515,7 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
     let transport = HttpsTransport::new()?;
     let scopes: Vec<String> = p.scopes.iter().cloned().collect();
     let tokens: Tokens = match p.provider {
+        Provider::Backend => return Err("Backend registration is unavailable".into()),
         Provider::Github => {
             let mut attempt = GithubDeviceAttempt::begin(
                 &p.app,
@@ -615,17 +653,29 @@ fn consent_sheet(ticket: &str, p: &Pending) -> String {
         match p.provider {
             Provider::Github => "GitHub",
             Provider::Google => "Google",
+            Provider::Backend => "app backend",
         }
     ))
     .to_string();
+    let backend_origin = p
+        .backend
+        .as_ref()
+        .map(|client| {
+            let origin = url::Url::parse(&client.registration().authorization_url)
+                .map(|url| url.origin().ascii_serialization())
+                .unwrap_or_default();
+            format!("\n\nBackend: {}\n{}", client.registration().id, origin)
+        })
+        .unwrap_or_default();
     let description = json!(format!(
-        "{} requests:\n{}\n\nCredentials stay with OctoSense.",
+        "{} requests:\n{}{}\n\nCredentials stay with OctoSense.",
         p.app,
         p.scopes
             .iter()
             .map(|scope| crate::providers::scope_words(scope))
             .collect::<Vec<_>>()
-            .join("\n")
+            .join("\n"),
+        backend_origin
     ))
     .to_string();
     format!(

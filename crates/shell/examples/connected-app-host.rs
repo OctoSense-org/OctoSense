@@ -37,6 +37,10 @@ struct App {
     card: SplashRef,
     #[rust]
     sheet: SplashRef,
+    #[rust]
+    browser_capture: Option<PathBuf>,
+    #[rust]
+    last_browser_url: String,
 }
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
@@ -110,6 +114,53 @@ impl MatchEvent for App {
             #[cfg(not(feature = "acceptance-fixtures"))]
             panic!("Provider fixture {fixture} is unavailable in this build");
         }
+        if let Some(registration) = arg("--backend-fixture=") {
+            assert!(
+                self.launch.is_some(),
+                "Backend fixtures require signed installed mode"
+            );
+            #[cfg(feature = "acceptance-fixtures")]
+            {
+                std::fs::create_dir_all(&self.root).expect("Create isolated host root");
+                let registration: octosense_oauth_service::backend::BackendRegistration =
+                    serde_json::from_slice(
+                        &std::fs::read(registration).expect("Read fixture registration"),
+                    )
+                    .expect("Parse fixture registration");
+                assert_eq!(
+                    registration.app_id, self.app,
+                    "Fixture belongs to installed app"
+                );
+                let client = octosense_oauth_service::backend::BackendClient::new_loopback_fixture(
+                    registration,
+                )
+                .expect("Validate local backend fixture");
+                octosense_oauth_service::host::register_backend_fixture(&self.root, client)
+                    .expect("Register real HTTP backend fixture");
+            }
+            #[cfg(not(feature = "acceptance-fixtures"))]
+            panic!("Backend fixture {registration} is unavailable in this build");
+        }
+        if let Some(path) = arg("--capture-browser-url=") {
+            #[cfg(feature = "acceptance-fixtures")]
+            {
+                // Example-only diagnostic handoff. The driver launches this exact
+                // host URL in its own browser profile instead of opening the user's
+                // default browser. No provider response or callback is synthesized.
+                let path = PathBuf::from(path);
+                assert!(
+                    path.is_absolute(),
+                    "Browser capture must use a private absolute path"
+                );
+                assert!(
+                    !path.exists(),
+                    "Browser capture must not replace an existing file"
+                );
+                self.browser_capture = Some(path);
+            }
+            #[cfg(not(feature = "acceptance-fixtures"))]
+            panic!("Browser capture {path} is unavailable in this build");
+        }
         let scopes = policy.capabilities.clone();
         let caller = self.app.clone();
         octosense_oauth_service::host::register(Arc::new(move |app, provider, requested| {
@@ -117,6 +168,7 @@ impl MatchEvent for App {
             app == caller
                 && scopes.contains("auth")
                 && requested.iter().all(|scope| match provider {
+                    Provider::Backend => requested.len() == 1 && scope == "app.session",
                     Provider::Github => scope == "read:user" || scopes.contains("github"),
                     Provider::Google => match scope.as_str() {
                         "openid" | "email" | "profile" => true,
@@ -174,5 +226,42 @@ impl AppMain for App {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
         octosense_appstore::services::pump(cx, &self.app, &self.root, &app, &sheet);
+        #[cfg(feature = "acceptance-fixtures")]
+        if let Some(path) = &self.browser_capture {
+            if sheet.borrow().is_some_and(|s| s.view.visible) {
+                let mut urls = Vec::new();
+                sheet.children(&mut |_, child| collect_browser_urls(&child, &mut urls));
+                if let Some(url) = urls
+                    .into_iter()
+                    .find(|url| !url.is_empty() && url != &self.last_browser_url)
+                {
+                    use std::io::Write;
+                    let mut options = std::fs::OpenOptions::new();
+                    options.write(true).create_new(true);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        options.mode(0o600);
+                    }
+                    // Each launch captures only one attempt. Refuse existing or
+                    // symlink destinations; callers restart with a new private path.
+                    let mut file = options.open(path).expect("Create private browser handoff");
+                    file.write_all(url.as_bytes())
+                        .expect("Write private browser handoff");
+                    self.last_browser_url = url;
+                    self.browser_capture = None;
+                }
+            }
+        }
     }
+}
+
+#[cfg(feature = "acceptance-fixtures")]
+fn collect_browser_urls(widget: &WidgetRef, urls: &mut Vec<String>) {
+    if let Some(link) = widget.borrow::<LinkLabel>() {
+        if !link.url.is_empty() {
+            urls.push(link.url.clone());
+        }
+    }
+    widget.children(&mut |_, child| collect_browser_urls(&child, urls));
 }

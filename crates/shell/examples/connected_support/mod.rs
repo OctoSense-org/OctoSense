@@ -13,7 +13,11 @@ use std::{
 };
 
 const PUBLISHER: &str = "connected-e2e-fixture";
-const IDS: [&str; 3] = [
+const IDS: &[&str] = &[
+    #[cfg(feature = "acceptance-fixtures")]
+    "org.octosense.samples.backend",
+    #[cfg(feature = "acceptance-fixtures")]
+    "org.octosense.samples.backendother",
     "org.octosense.samples.githubnotes",
     "org.octosense.samples.inbox",
     "org.octosense.samples.googlecalendar",

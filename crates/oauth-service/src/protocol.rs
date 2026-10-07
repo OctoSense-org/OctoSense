@@ -34,7 +34,9 @@ fn send(transport: &dyn Transport, request: HttpRequest) -> Result<HttpResponse,
     if request.method() != oauth2::http::Method::POST
         || ![
             "https://github.com/login/device/code",
-            Provider::Google.token_endpoint(),
+            Provider::Google
+                .token_endpoint()
+                .expect("fixed Google endpoint"),
         ]
         .contains(&endpoint.as_str())
         || request
@@ -85,7 +87,15 @@ fn redacted<E: ErrorResponse>(error: RequestTokenError<TransportError, E>) -> St
 fn token_client(client: &ClientRegistration, secret: Option<&str>) -> TokenClient {
     let mut client = BasicClient::new(ClientId::new(client.client_id.clone()))
         .set_auth_type(AuthType::RequestBody)
-        .set_token_uri(TokenUrl::new(Provider::Google.token_endpoint().into()).unwrap());
+        .set_token_uri(
+            TokenUrl::new(
+                Provider::Google
+                    .token_endpoint()
+                    .expect("fixed Google endpoint")
+                    .into(),
+            )
+            .unwrap(),
+        );
     if let Some(secret) = secret {
         client = client.set_client_secret(ClientSecret::new(secret.into()));
     }
@@ -95,6 +105,31 @@ fn token_client(client: &ClientRegistration, secret: Option<&str>) -> TokenClien
 fn response_value(value: impl serde::Serialize) -> Result<Value, String> {
     // Tokens::from_response remains the host's bounded token and scope gate.
     serde_json::to_value(value).map_err(|_| "Invalid OAuth response".into())
+}
+
+fn google_response_value(value: impl serde::Serialize) -> Result<Value, String> {
+    let mut value = response_value(value)?;
+    // Google may return these identity scopes as full Google API names even
+    // when the native authorization requested their OpenID Connect aliases.
+    // Normalize only the two documented equivalents, only on Google responses.
+    // Do not infer openid, API permissions, or a missing scope value.
+    // https://developers.google.com/identity/protocols/oauth2#basicsteps
+    // https://developers.google.com/identity/protocols/oauth2/scopes#openid-connect
+    if let Some(scope) = value.get("scope").and_then(Value::as_str) {
+        let canonical = scope
+            .split_whitespace()
+            .map(|scope| match scope {
+                "https://www.googleapis.com/auth/userinfo.email" => "email",
+                "https://www.googleapis.com/auth/userinfo.profile" => "profile",
+                other => other,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(" ");
+        value["scope"] = Value::String(canonical);
+    }
+    Ok(value)
 }
 
 pub(crate) fn github_device_authorization(
@@ -123,7 +158,7 @@ pub(crate) fn google_code(
 ) -> Result<Value, String> {
     let client = token_client(client, secret)
         .set_redirect_uri(RedirectUrl::new(code.redirect).map_err(|_| "Invalid OAuth callback")?);
-    response_value(
+    google_response_value(
         client
             .exchange_code(Code::new(code.code))
             .set_pkce_verifier(PkceCodeVerifier::new(code.verifier))
@@ -138,7 +173,7 @@ pub(crate) fn google_refresh(
     refresh: &str,
     transport: &dyn Transport,
 ) -> Result<Value, String> {
-    response_value(
+    google_response_value(
         token_client(client, secret)
             .exchange_refresh_token(&RefreshToken::new(refresh.into()))
             .request(&|request| send(transport, request))
@@ -181,6 +216,85 @@ mod tests {
         }
     }
 
+    fn google_responses(response: Value) -> [Value; 2] {
+        let fixture = fixture(response);
+        [
+            google_code(
+                &client(),
+                None,
+                AuthorizationCode {
+                    code: "fixture-code".into(),
+                    verifier: "fixture-verifier".into(),
+                    redirect: "http://127.0.0.1:32123/oauth/callback".into(),
+                },
+                &fixture,
+            )
+            .unwrap(),
+            google_refresh(&client(), None, "fixture-refresh", &fixture).unwrap(),
+        ]
+    }
+
+    #[test]
+    fn google_code_and_refresh_normalize_only_documented_identity_equivalents() {
+        use crate::oauth::Tokens;
+        let requested = BTreeSet::from([
+            "openid".into(),
+            "email".into(),
+            "profile".into(),
+            "https://www.googleapis.com/auth/calendar.events".into(),
+        ]);
+        let raw = json!({"access_token":"fixture-token","token_type":"Bearer",
+            "scope":"openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send"});
+        // The shared token parser must not acquire provider-specific aliases.
+        assert!(Tokens::from_response(&raw, &requested, 0).is_err());
+        for value in google_responses(raw) {
+            let token = Tokens::from_response(&value, &requested, 0).unwrap();
+            assert_eq!(token.scopes, requested);
+            assert!(!token
+                .scopes
+                .contains("https://www.googleapis.com/auth/gmail.send"));
+            let returned: BTreeSet<_> = value["scope"]
+                .as_str()
+                .unwrap()
+                .split_whitespace()
+                .collect();
+            assert!(returned.contains("email") && returned.contains("profile"));
+            assert!(returned.contains("https://www.googleapis.com/auth/calendar.events"));
+            assert!(!returned.contains("https://www.googleapis.com/auth/userinfo.email"));
+        }
+    }
+
+    #[test]
+    fn google_identity_aliases_do_not_hide_missing_grants_or_accept_lookalikes() {
+        use crate::oauth::Tokens;
+        let requested = BTreeSet::from(["openid".into(), "email".into(), "profile".into()]);
+        for scope in [
+            "openid https://www.googleapis.com/auth/userinfo.profile",
+            "openid https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+            "openid profile https://www.googleapis.com/auth/userinfo.email.evil",
+            "openid profile http://www.googleapis.com/auth/userinfo.email",
+        ] {
+            for value in google_responses(json!({"access_token":"fixture-token","token_type":"Bearer","scope":scope})) {
+                assert!(Tokens::from_response(&value, &requested, 0).is_err());
+            }
+        }
+        let mut needs_mail = requested.clone();
+        needs_mail.insert("https://www.googleapis.com/auth/gmail.readonly".into());
+        for value in google_responses(json!({"access_token":"fixture-token","token_type":"Bearer",
+            "scope":"openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"}))
+        {
+            assert!(Tokens::from_response(&value, &needs_mail, 0).is_err());
+        }
+        // An omitted scope keeps the existing OAuth rule; no guessed alias is
+        // inserted into the response. The generic parser handles this case.
+        for value in google_responses(json!({"access_token":"fixture-token","token_type":"Bearer"}))
+        {
+            assert!(value.get("scope").is_none());
+            assert!(Tokens::from_response(&value, &requested, 0).is_ok());
+        }
+    }
+
     #[test]
     fn library_code_exchange_keeps_pkce_redirect_and_secret_in_bounded_host_transport() {
         let fixture = fixture(json!({"access_token":"fixture-token","token_type":"Bearer"}));
@@ -198,7 +312,12 @@ mod tests {
         let calls = fixture.calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
         let request = &calls[0];
-        assert_eq!(request.url.as_str(), Provider::Google.token_endpoint());
+        assert_eq!(
+            request.url.as_str(),
+            Provider::Google
+                .token_endpoint()
+                .expect("fixed Google endpoint")
+        );
         assert!(request.bearer.is_none() && request.if_match.is_none());
         let Body::Form(fields) = &request.body else {
             panic!("Expected OAuth form")
@@ -273,7 +392,12 @@ mod tests {
         let fixture = fixture(json!({}));
         for (endpoint, authorization) in [
             ("https://attacker.invalid/token", false),
-            (Provider::Google.token_endpoint(), true),
+            (
+                Provider::Google
+                    .token_endpoint()
+                    .expect("fixed Google endpoint"),
+                true,
+            ),
         ] {
             let mut request = oauth2::http::Request::builder()
                 .method("POST")

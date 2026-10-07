@@ -8,9 +8,12 @@ OctoSense 为已安装应用保存服务商凭据。用户登录 GitHub 或 Goog
 
 ## 当前交付边界
 
-Rust 授权协议、连接器、原生审批、账户生命周期和示例界面已实现。确定性的网络替身测试
-及 macOS 隐藏窗口测试不能证明真实服务商操作。真实 GitHub/Google 登录、仓库写入、
-Gmail 发信和 Calendar 写入均**未验证**。真实 DeepSeek peer 已通过已安装应用的准入工具
+Rust 授权协议、连接器、原生审批、账户生命周期和示例界面已实现。macOS 原生宿主与
+提供方浏览器流程已通过真实的 GitHub 和 Google 身份登录。GitHub 仅请求 `read:user`；
+Google 使用专用测试账户，仅请求 `openid email profile`。合成后端使用真实平台凭据库，
+已通过浏览器注册/登录、受保护身份、刷新故障恢复、原生进程重启、退出及两个已安装
+应用之间的隔离。仓库写入、Gmail 发信和 Calendar 写入仍**未验证**；仅身份登录不会
+授予或证明这些业务操作。真实 DeepSeek peer 已通过已安装应用的准入工具
 处理合成新邮件，并通过 Chat 修改持久化回复。Calendar peer 也通过自身工具读取
 选中的合成日程，回答准确标题、时间和地点。这证明模型与工具集成，不代表 Google 投递。
 三个普通示例尚未在 OnePlus 6 上测试。
@@ -44,10 +47,10 @@ Gmail 发信和 Calendar 写入均**未验证**。真实 DeepSeek peer 已通过
 | 在应用内识别 GitHub 用户 | 授予 `auth` 并请求 `read:user`。宿主验证 GitHub 数字用户 ID 和登录名，返回绑定该应用的句柄，以及 `app_id`、`provider`、`subject`、`label`、`scopes` 和可选 `expires_at`。不需要仓库访问权限；也不提供已验证的邮箱地址。 |
 | 在应用内识别 Google 用户 | `auth` 也允许仅用于身份的 `openid`、`email`、`profile` 权限，无需 Gmail 或 Calendar 能力。宿主验证提供方的 subject，并仅在 Google 确认邮箱已验证时将邮箱作为标签。同样受平台授权支持范围限制。 |
 | 访问提供方数据 | GitHub 仓库另外需要 `github` 能力及仓库权限。Google Gmail、Calendar 分别需要 `gmail` / `gcalendar` 能力和相应权限，与应用选择哪种登录身份无关。 |
-| 注册或登录应用自己的后端 | 可复用的宿主管理后端登录／会话服务仍是**提议，尚未实现**。本地连接句柄或返回的资料不是后端可验证的 SSO 凭证。 |
+| 注册或登录应用自己的后端 | 桌面浏览器适配器使用绑定应用的宿主注册、PKCE 代码交换及后端受保护的身份端点；后端签发自身会话。应用包自行注册及移动端后端回调尚未实现。 |
 
-拟议的后端流程由开发者的 HTTPS 登录页面提供 GitHub 登录，或自己的注册和登录。
-后端负责验证身份并签发自身会话，宿主再为该应用保存独立的后端会话。共享连接器的
+后端流程由开发者的 HTTPS 登录页面提供 GitHub 登录，或自己的注册和登录。
+后端负责验证身份并签发自身会话，宿主为该应用保存独立的后端会话。共享连接器的
 GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通过自身 OAuth 流程，
 取得用户另行授权的 GitHub 令牌。现有网络访问能力不会让本地 GitHub 资料变成
 远程后端可信的身份证明。应用自身不得收集密码或提供方秘密凭据。
@@ -56,6 +59,52 @@ GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通�
 该适配器**尚未实现**：现有 Makepad 阅读器 WebView 缺少这里需要的回调拦截和
 会话隔离接口。Google 授权使用受支持的浏览器流程，后端页面上的 Google 登录
 按钮也须遵守这一要求。后端登录同样可以通过浏览器完成，不要求嵌入 WebView。
+
+## 开发者后端接口约定
+
+声明 `auth` 和 `storage.accounts: true`。调用 `auth.connect` 时传入
+`{"provider":"backend","scopes":["app.session"]}`，并复用普通的
+`auth.accounts`、`auth.active`、`auth.select`、`auth.disconnect` 生命周期。
+`auth.backend.me` 接收本应用当前选中的 `connection` 句柄，返回后端验证的
+`{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`，
+其中包含后端验证的身份。这是登录及受保护身份适配器，不是任意带认证的 HTTP 代理；
+更多后端业务 API 需要各自受限的连接器。
+
+运维者在应用包和源码管理之外配置 `<apps root>/.host/oauth/backends.json`。
+以下仅为配置示例，示例域名不提供实际服务：
+
+```json
+{
+  "schema": 1,
+  "apps": {
+    "com.example.notes": {
+      "id": "notes-backend",
+      "app_id": "com.example.notes",
+      "client_id": "registered-public-native-client",
+      "authorization_url": "https://login.example.test/authorize",
+      "token_url": "https://login.example.test/token",
+      "me_url": "https://login.example.test/me",
+      "logout_url": "https://login.example.test/logout",
+      "scopes": ["app.session"]
+    }
+  }
+}
+```
+
+后端实现公开客户端授权码流程：S256 PKCE、原样返回 state、单次代码以及宿主的
+桌面回环回调。令牌端点支持授权码交换及刷新，返回 OAuth bearer 令牌。
+`GET /me` 返回 `{sub,label}`；`POST /logout` 撤销会话并确认
+`{"logged_out":true}`。注册与密码输入均由后端浏览器页面处理，不进入受限应用。
+
+各端点须为相同来源、443 端口下互不相同的精确 HTTPS URL；拒绝查询参数、片段、
+URL 凭据及 HTTP 重定向。宿主把保存的连接绑定到规范化注册，修改注册后必须
+重新连接，不能把旧令牌发送到新端点。退出先撤销本地句柄，再尝试远程退出，
+并单独报告远程结果。Android/iOS 在原生回调适配器完成前拒绝后端登录；
+Windows/Linux 的运行尚未验证。
+
+合成后端使用真实浏览器表单、HTTP 代码交换及受保护请求。HTTP 回环仅在非默认
+验收构建中通过显式隔离注册开放，不是发行版本的配置开关。参阅
+[原生验收驱动](../../tools/connected-e2e/backend-login/README.zh-CN.md)。
 
 ## 配置发行版本（维护者）
 
@@ -90,7 +139,7 @@ Google Android 仍需要原生适配器。
 可选的 `<apps root>/.host/oauth/clients.json` 会替换整套构建注册信息。省略的
 提供方会被禁用；`{}` 禁用两者。文件格式错误、过大或无法读取时，登录失败，
 不会悄悄改用另一注册。仅在文件不存在时使用构建默认值。该运维文件须放在应用包
-和源码管理之外。以下为占位示例（真实注册仍**未验证**）：
+和源码管理之外。以下为占位示例，需替换为发行方已注册的原生客户端信息：
 
 ```json
 {
@@ -116,13 +165,14 @@ GitHub 设备代码仅出现在宿主面板。Google 校验 state、来源、路
 
 | 服务 | 方法 |
 | --- | --- |
-| `auth` | `connect`、`accounts`、`active`、`select`、`disconnect` |
+| `auth` | `connect`、`accounts`、`active`、`select`、`disconnect`、`backend.me` |
 | `github` | `repositories`、`files`、`read`、`review_save` |
 | `gcalendar` | `calendars`、`sync`、`cached`、`refresh`、`get`、`prepare`、`review_save` |
 | `gmail` | `labels`、`messages`、`message`、`draft.open/get/edit/review`、`events.status`、`event.status/decide` |
 
 `auth.connect` 接收 provider 和 scopes。GitHub scopes 为 `read:user`、`public_repo` 或 `repo`；
-Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`、`mail.read`、`mail.send`。
+Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`、`mail.read`、`mail.send`；
+后端登录使用 `app.session`。
 这些服务商权限与 App Hub capability 各自校验。句柄不是 token；选中一个 Google 账户也不会
 自动让其他应用读取它。调用示例见英文版，对真实授权的验证状态相同。
 
@@ -176,6 +226,9 @@ Android 现有 JobScheduler 适配器也会在有时限的任务中驱动该采�
 授权和令牌请求、解析协议响应。调用者身份、取消、回调校验、权限准入和凭据保存
 仍由宿主管理。GitHub 设备轮询每次只发一个请求，以便每次重新检查所属应用、
 有效期和取消状态；库内置的轮询循环不能替代这些生命周期检查。
+开发者后端的阅读顺序是 `backend.rs`（注册校验、PKCE 和有界 HTTP 请求）→
+`host_backend.rs`（同意面板、回调、刷新和退出）→ `store.rs`（应用归属与注册绑定）。
+Google 令牌响应仅对其文档规定的两种身份权限 URI 别名做规范化；缺少权限仍会拒绝授权。
 `api.rs` 处理服务商请求；`calendar_cache.rs` 原子提交分页快照；`inbox.rs` 持有草稿/审核/发送状态；
 `inbox_events.rs` 持有游标、租约和决定。Shell 管理获准 peer、原生审核和 Glance。
 peer 是应用账户身份，不等于一个工作线程或 Tokio task。
@@ -185,7 +238,15 @@ peer 是应用账户身份，不等于一个工作线程或 Tokio task。
 ```sh
 cargo test --locked -p octosense-oauth-service
 cargo check --locked -p octosense-oauth-service --features host
+cargo test --offline --locked -p octosense-oauth-service --features host,acceptance-fixtures --lib
 ```
+
+最后一条命令通过 75 项测试，跳过一项需要显式运行的平台凭据库测试。独立原生后端
+验收实际使用了平台凭据库，并覆盖进程冷重启。真实提供方验收覆盖身份登录、重启后
+连接元数据恢复及本地断开，不含提供方令牌刷新或远程撤销。注册信息、账户详情及
+原始证据均保留在仓库之外。
+这些 macOS 结果不代表 Windows、Linux 或手机登录已通过验证。
+[脱敏提供方验收记录](../../tools/connected-e2e/evidence/provider-login-20261007.json)记录了确切权限、原生二进制及验证限制。
 
 另用独立临时配置和虚构凭据实际测试了 macOS 系统凭据适配器：写入、重新打开读取、
 逻辑撤销均通过；配置目录中没有出现明文访问或刷新凭据。下面的显式测试使用真实

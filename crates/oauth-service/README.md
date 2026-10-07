@@ -10,9 +10,14 @@ shared-service part of [ADR 0010](../../docs/adr/0010-shared-oauth-and-connected
 ## Current delivery boundary
 
 The Rust protocol, connectors, native review, account lifecycle and sample UI
-are implemented. Deterministic transport tests and hidden macOS UI checks do
-not prove a real provider operation. Live GitHub/Google sign-in, repository writes, Gmail sends and Calendar writes
-remain **unverified**. A real DeepSeek peer processed synthetic incoming mail
+are implemented. Live identity-only GitHub and Google sign-in passed on macOS
+through the native host and provider browser flows. GitHub requested `read:user`;
+Google used a dedicated test account with `openid email profile`. The synthetic
+backend passed browser registration/login, protected identity, refresh recovery,
+native restart, logout and isolation between two installed apps using the real
+platform vault. Repository writes, Gmail sends and Calendar writes remain
+**unverified**; identity-only sign-in does not grant or prove those operations.
+A real DeepSeek peer processed synthetic incoming mail
 through the installed app’s admitted tools and updated its saved reply through
 chat. A Calendar peer also read the selected synthetic event through its own
 tool and answered its title, time and location. This proves model/tool integration, not Google delivery. The ordinary
@@ -50,11 +55,11 @@ These are separate choices; none requires an OctoSense account.
 | Identify a GitHub user inside an app | Grant `auth` and request `read:user`. The host verifies GitHub's numeric user ID and login, then returns an app-bound handle plus `app_id`, `provider`, `subject`, `label`, `scopes` and optional `expires_at`. Repository access is not required. This does not provide a verified email address. |
 | Identify a Google user inside an app | `auth` also admits identity-only `openid`, `email` and `profile` scopes without Gmail or Calendar capabilities. The host verifies the provider subject and uses the email as its label only when Google reports it verified. The same platform authorization limitations apply. |
 | Access provider data | GitHub repositories additionally require the `github` capability and repository scopes. Google Gmail and Calendar require their own `gmail` / `gcalendar` capabilities and scopes, regardless of which identity an app uses for login. |
-| Register or log in to an app's own backend | A reusable host-managed backend login/session service is **proposed, not implemented**. A local connection handle or returned profile is not a backend-verifiable SSO assertion. |
+| Register or log in to an app's own backend | The desktop browser adapter uses an app-bound host registration, PKCE code exchange and the backend's protected identity endpoint. The backend issues its own session. Bundle-driven registration and mobile backend callbacks are not implemented. |
 
-The proposed backend flow lets the developer's HTTPS login page offer GitHub
+The backend flow lets the developer's HTTPS login page offer GitHub
 sign-in or its own registration and login. The backend verifies identity and
-issues its own session; the host would store that separate session for the app.
+issues its own session; the host stores that separate session for the app.
 The shared connector's GitHub or Google tokens are not exported to app backends.
 A developer's backend may obtain its own separately consented GitHub token
 through its own OAuth flow. Existing network access does not turn local GitHub
@@ -67,6 +72,61 @@ the current Makepad reader WebView lacks the callback interception and isolated
 session contract needed here. Google authorization uses a supported browser
 flow, including when a backend offers a Google button. Browser-based backend
 login is also a valid design; it does not require an embedded WebView.
+
+## Developer backend contract
+
+Declare `auth` and `storage.accounts: true`. Connect with
+`auth.connect` arguments `{"provider":"backend","scopes":["app.session"]}`.
+Use the ordinary `auth.accounts`, `auth.active`, `auth.select` and
+`auth.disconnect` lifecycle. `auth.backend.me` takes this app's active
+`connection` handle and returns
+`{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`,
+containing the backend's verified identity.
+This is a login and protected-identity adapter, not an arbitrary authenticated
+HTTP proxy. Additional backend business APIs need their own bounded connector.
+
+An operator provisions `<apps root>/.host/oauth/backends.json`, outside app
+bundles and source control. Example configuration only; the example domain
+does not host a service:
+
+```json
+{
+  "schema": 1,
+  "apps": {
+    "com.example.notes": {
+      "id": "notes-backend",
+      "app_id": "com.example.notes",
+      "client_id": "registered-public-native-client",
+      "authorization_url": "https://login.example.test/authorize",
+      "token_url": "https://login.example.test/token",
+      "me_url": "https://login.example.test/me",
+      "logout_url": "https://login.example.test/logout",
+      "scopes": ["app.session"]
+    }
+  }
+}
+```
+
+The backend must implement a public-client authorization-code flow with S256
+PKCE, state echo, one-time codes, and the host's desktop loopback callback.
+The token endpoint accepts code and refresh grants and returns OAuth bearer
+tokens. `GET /me` returns `{sub,label}`; `POST /logout` revokes the session and
+acknowledges `{"logged_out":true}`. Registration and password entry belong to
+the backend's browser page, never the contained app.
+
+Each endpoint is a distinct exact HTTPS URL on the same origin and port 443;
+queries, fragments, URL credentials and HTTP redirects are refused. The host
+binds each saved connection to the normalized registration. Changing the
+registration requires reconnecting; it cannot redirect an existing token.
+Logout revokes the local handle before attempting remote logout and reports
+the remote result separately. Android/iOS backend login is refused until a
+supported native callback adapter exists. Windows/Linux execution remains
+unverified.
+
+The synthetic backend uses real browser forms, HTTP code exchange and protected
+requests. HTTP loopback is available only in the non-default acceptance build,
+with explicit isolated host registration; it is not a release configuration
+override. See the [native acceptance driver](../../tools/connected-e2e/backend-login/README.md).
 
 ## Configure a release (maintainers)
 
@@ -110,7 +170,7 @@ build registrations. Omitted providers are disabled; `{}` disables both. A
 malformed, oversized or unreadable override refuses sign-in rather than silently
 switching to another registration. Only an absent file uses build defaults.
 Keep this operator file outside app bundles and source control. Placeholder
-example (live registration is **unverified**):
+example; replace the values with the distributor's registered native clients:
 
 ```json
 {
@@ -140,18 +200,19 @@ peers and account folders follow the selected connection.
 
 | Service | Operations |
 | --- | --- |
-| `auth` | `connect`, `accounts`, `active`, `select`, `disconnect` |
+| `auth` | `connect`, `accounts`, `active`, `select`, `disconnect`, `backend.me` |
 | `github` | `repositories`, `files`, `read`, `review_save` |
 | `gcalendar` | `calendars`, `sync`, `cached`, `refresh`, `get`, `prepare`, `review_save` |
 | `gmail` | `labels`, `messages`, `message`, `draft.open/get/edit/review`, `events.status`, `event.status/decide` |
 
 `auth.connect` accepts a provider and named scopes. GitHub: `read:user`,
 `public_repo` or `repo`. Google: `openid`, `email`, `profile`, `calendar.list`,
-`calendar.events`, `mail.read`, `mail.send`. Provider-specific scopes remain
+`calendar.events`, `mail.read`, `mail.send`. Backend login uses `app.session`.
+Provider-specific scopes remain
 separate from App Hub capabilities. Handles are private identifiers, not tokens.
 Selection does not grant another app access to the same Google account.
 
-Example request syntax (live authorization unverified):
+Example Calendar request syntax (live Calendar authorization unverified):
 
 ```javascript
 host.request("auth.connect", {
@@ -230,6 +291,11 @@ responses. The host still owns caller identity, cancellation, callback
 validation, scope admission and credential storage. GitHub device polling stays
 one request at a time so each attempt rechecks its owner, expiry and cancellation;
 the library's built-in polling loop cannot replace those lifecycle checks.
+For developer backends, read `backend.rs` (registration validation, PKCE and
+bounded HTTP requests) → `host_backend.rs` (consent, callbacks, refresh and
+logout) → `store.rs` (app ownership and registration binding). Google token
+responses normalize only its two documented identity-scope URI aliases;
+missing permissions still fail authorization.
 `api.rs` implements provider requests; `calendar_cache.rs` makes paginated
 snapshots atomic; `inbox.rs` owns draft/review/send state; `inbox_events.rs`
 owns cursors, leases and decisions. The shell owns consented peer routing,
@@ -241,7 +307,17 @@ These commands have been run from the OctoSense root:
 ```sh
 cargo test --locked -p octosense-oauth-service
 cargo check --locked -p octosense-oauth-service --features host
+cargo test --offline --locked -p octosense-oauth-service --features host,acceptance-fixtures --lib
 ```
+
+The last command passed 75 tests with one explicit platform-vault test ignored.
+The separate native backend acceptance used the actual vault, including a cold
+process restart. Live provider acceptance covered identity login, connection
+metadata restoration after restart and local disconnect, not provider refresh
+or remote revocation. Registrations, account details and raw evidence
+remain outside the repository. Windows, Linux and phone login execution are not
+covered by these macOS results. The [sanitized provider receipt](../../tools/connected-e2e/evidence/provider-login-20261007.json)
+records the exact scopes, native binary and limits.
 
 The real macOS credential adapter was also exercised with a unique disposable
 profile and fictional credentials. Store, reopen/read and logical revocation

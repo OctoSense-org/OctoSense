@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 pub enum Provider {
     Github,
     Google,
+    Backend,
 }
 
 pub fn scope_words(scope: &str) -> &str {
@@ -16,7 +17,10 @@ pub fn scope_words(scope: &str) -> &str {
         "openid" => "Verify your Google account identity",
         "email" => "Read your verified account email address",
         "profile" => "Read your account profile",
-        "https://www.googleapis.com/auth/calendar.calendarlist.readonly" => "List your Google calendars",
+        "app.session" => "Sign in to this app's backend and read your account profile",
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly" => {
+            "List your Google calendars"
+        }
         "https://www.googleapis.com/auth/calendar.events" => "Read and edit Google Calendar events",
         "https://www.googleapis.com/auth/gmail.readonly" => "Read Gmail messages and folders",
         "https://www.googleapis.com/auth/gmail.send" => "Send email after native reply review",
@@ -29,29 +33,34 @@ impl Provider {
         match self {
             Self::Github => "GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.",
             Self::Google => "Google sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.",
+            Self::Backend => "This app's backend sign-in is unavailable. Contact the app's distributor.",
         }
     }
     pub fn name(self) -> &'static str {
         match self {
             Self::Github => "github",
             Self::Google => "google",
+            Self::Backend => "backend",
         }
     }
-    pub fn token_endpoint(self) -> &'static str {
+    pub fn token_endpoint(self) -> Option<&'static str> {
         match self {
-            Self::Github => "https://github.com/login/oauth/access_token",
-            Self::Google => "https://oauth2.googleapis.com/token",
+            Self::Github => Some("https://github.com/login/oauth/access_token"),
+            Self::Google => Some("https://oauth2.googleapis.com/token"),
+            Self::Backend => None,
         }
     }
-    pub fn api_origin(self) -> &'static str {
+    pub fn api_origin(self) -> Option<&'static str> {
         match self {
-            Self::Github => "https://api.github.com",
-            Self::Google => "https://www.googleapis.com",
+            Self::Github => Some("https://api.github.com"),
+            Self::Google => Some("https://www.googleapis.com"),
+            Self::Backend => None,
         }
     }
     pub fn validate_scopes(self, scopes: &[String]) -> Result<BTreeSet<String>, String> {
         let allowed: &[&str] = match self {
             Self::Github => &["read:user", "public_repo", "repo"],
+            Self::Backend => &["app.session"],
             Self::Google => &[
                 "openid",
                 "email",
@@ -64,13 +73,20 @@ impl Provider {
         };
         // App-facing aliases keep provider scope URI constants in the host.
         // A URI in an OAuth scope is not a grant of arbitrary network access.
-        let canonical: Vec<&str> = scopes.iter().map(|scope| match (self, scope.as_str()) {
-            (Provider::Google, "calendar.list") => "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-            (Provider::Google, "calendar.events") => "https://www.googleapis.com/auth/calendar.events",
-            (Provider::Google, "mail.read") => "https://www.googleapis.com/auth/gmail.readonly",
-            (Provider::Google, "mail.send") => "https://www.googleapis.com/auth/gmail.send",
-            (_, scope) => scope,
-        }).collect();
+        let canonical: Vec<&str> = scopes
+            .iter()
+            .map(|scope| match (self, scope.as_str()) {
+                (Provider::Google, "calendar.list") => {
+                    "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+                }
+                (Provider::Google, "calendar.events") => {
+                    "https://www.googleapis.com/auth/calendar.events"
+                }
+                (Provider::Google, "mail.read") => "https://www.googleapis.com/auth/gmail.readonly",
+                (Provider::Google, "mail.send") => "https://www.googleapis.com/auth/gmail.send",
+                (_, scope) => scope,
+            })
+            .collect();
         if scopes.is_empty()
             || scopes.len() > allowed.len()
             || canonical.iter().any(|s| !allowed.contains(s))

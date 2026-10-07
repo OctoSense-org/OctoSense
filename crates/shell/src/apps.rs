@@ -244,6 +244,7 @@ pub fn register_host_services() {
             let granted = |family| crate::host_tools::script_apps::grants(app, family);
             granted("auth") && scopes.iter().all(|scope| match provider {
                 Provider::Github => scope == "read:user" || granted("github"),
+                Provider::Backend => scope == "app.session",
                 Provider::Google => match scope.as_str() {
                     "openid" | "email" | "profile" => true,
                     s if s.starts_with("https://www.googleapis.com/auth/calendar.") => granted("gcalendar"),

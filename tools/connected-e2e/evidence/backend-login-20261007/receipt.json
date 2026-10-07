@@ -1,0 +1,319 @@
+{
+  "schema": 1,
+  "result": "PASS",
+  "started_utc": "2026-10-07T03:56:57.170374+00:00",
+  "finished_utc": "2026-10-07T03:57:30.656923+00:00",
+  "case": "Real native backend login with synthetic server and actual browser callbacks",
+  "provider": "synthetic HTTP loopback; not live GitHub or Google",
+  "vault": "normal platform credential vault; no preseeded accounts or tokens",
+  "browser_handoff": "host-only LinkLabel URL copied privately by test example; exact URL opened in fresh Chrome context; OS-default-browser click omitted",
+  "installation": "ephemeral fixture signing, actual Store install and prepared launch",
+  "input": "Makepad native instrument, default input acknowledgement, no input replay",
+  "binary_sha256": "7798c1fd23ae092a323177d1af7d3118d3f117941711140616617f3969fd37c7",
+  "installer_sha256": "8073859406fb05ac79af0984bd740abd86d12185af1149f2f5918561e16f6647",
+  "runtime_base_commit": "af443dabc91eaa07ebdd33991eee43555f8ea16e",
+  "source_sha256": {
+    "tools/connected-e2e/backend_login.py": "659768b90488ad542d4ee7c28c719b67155ed13b88b4c9a65e744209e892c7c6",
+    "tools/backend-login-fixture.py": "0777c7365a06588a0d3e59e8d6841398f84cfb751ef4e376a0f7481bb76e8ff0",
+    "tools/connected-e2e/native.py": "3182c430d9b3797a823a67403543d056891598b404cf7fda577836f09e7ae7b6",
+    "tools/connected-e2e/backend-login/main.splash": "1e3da611a1fe3ffd60daaf6eba843e7764fd0899ab385dc08ba2b5c338a090e3",
+    "crates/shell/examples/connected-app-host.rs": "4e49c5f844a344d2d12f83aff354140bbf33e52907e1c4635ef2fa2276674a2c",
+    "crates/shell/examples/connected_support/mod.rs": "c69d991c969a182f82fdf9e09009aa90e07602155b2d5c88723079521f0728c7",
+    "Cargo.lock": "2ec695adcab8f094d03431814df2f2b30ebe929c3fda13277c6d029ef669911f",
+    "crates/oauth-service/src/acceptance_calendar.rs": "e3f03818b554cbfdd1f7d9bcf22272e8ec46c25bffc69fd4498c690c137446ac",
+    "crates/oauth-service/src/acceptance_fixtures.rs": "af8b2c8187a35015ea42b59aa7b2ca8e5c4e4834efa0144259ca691f00bcfdf0",
+    "crates/oauth-service/src/acceptance_github.rs": "520fd3681f4831c35cf671f0d4883af8c7d9e63e748ec41ede96d54fcaa77c7d",
+    "crates/oauth-service/src/acceptance_inbox.rs": "efc33661cbb2801037e6db9a1416a8b7b480a549e05dbe790ba2338dfb037162",
+    "crates/oauth-service/src/api.rs": "82e1d4d17f66f502d1de3cae59c70d8e344649afe39b930ab285693e10200fa8",
+    "crates/oauth-service/src/api_tests.rs": "998d44dc40dc1751800096d2a4a282bfb4434748a9112acb45fd801855c8e985",
+    "crates/oauth-service/src/authorize.rs": "cfcea9157e678e53d9787a03d4a46a5f1b27804a5596ff11aa1000e9ea30af4b",
+    "crates/oauth-service/src/backend.rs": "92c6c3f56161a34e33024b52f2b1d67b9965dd74e8a9d68800b868af5a681ba8",
+    "crates/oauth-service/src/backend_tests.rs": "748b9fab296c08c0a5a18711ef0b347e88597751ad9548e4b5680200a8701b35",
+    "crates/oauth-service/src/calendar_cache.rs": "0418d1e975fb6e61c884e5460dc910377aace55428dc24a89edd74820a78beee",
+    "crates/oauth-service/src/host.rs": "71211fba4c4fcc24294104a361e027ded4447d856289ee83d77ff60e4f3c422e",
+    "crates/oauth-service/src/host_api.rs": "2b691daf5f25739e7ba622f1d697ebe3a9e75d706033182b5636f91296b0cfae",
+    "crates/oauth-service/src/host_backend.rs": "12c8e7da48462d6a6409aad712854435f3a75962b22251b2b8ec8bbe3cedf95b",
+    "crates/oauth-service/src/host_inbox.rs": "32299ce5c758163ad875e2c70e9b43fae675160903b9db82a27ebc9fea67d308",
+    "crates/oauth-service/src/host_vault_acceptance.rs": "ff672463d37614b7f64f20a92c5e0e0a3de213dacb7b478d81d1bc894b6afe2a",
+    "crates/oauth-service/src/inbox.rs": "ec34c7fe90e6c0d43c8d785a9e2443aec234fafb6356a4759b2b6992ff88437d",
+    "crates/oauth-service/src/inbox_events.rs": "a795b00448ff0b679b019bdaf5df1e8bdffe754bcd46c0a2cf55b30e4a906af9",
+    "crates/oauth-service/src/lib.rs": "d0d40e0debfe24bacb5d000f47c32b9c93858ed19f6c19c561070f8031f052b2",
+    "crates/oauth-service/src/oauth.rs": "b3a7edd30fcb0235db93befbea8653847c9899ed26d0681e070e48e6077d9318",
+    "crates/oauth-service/src/protocol.rs": "5495da22f0d50b8f89f8840bcfad1b8e2ec3227e9564f96e1552a4b7705917f0",
+    "crates/oauth-service/src/providers.rs": "538e383dc38c2812e8758509ddbb1a8111f5264f0ea39d6a3b2bc7cc101cf2f8",
+    "crates/oauth-service/src/registration.rs": "33392b88f2444c9f88794add5b47cb30f9c731340dfba60dd3bec76385da2e62",
+    "crates/oauth-service/src/store.rs": "1e2876d0fde8e1bc3d3769f036124281bd628637a48a7ffcdc4823213017ec05",
+    "crates/oauth-service/src/transport.rs": "1db7518fa5ed853412e2bdddb836d45266c21f9a793d82e3351e7eabaa5d5960"
+  },
+  "checks": [
+    "Short-lived token forces refresh; transient protected-data failure followed by another refresh recovers using durably stored rotated credential",
+    "Fresh browser registration, password sign-in, real PKCE callback and protected identity",
+    "Native process restart restores same app-bound connection from platform vault and reloads protected data",
+    "Logout durably removes connection and protected identity is denied",
+    "Existing fictional user signs in again through browser without registration; fresh connection issued",
+    "Second signed app cannot access first handle before or after its own genuine browser login",
+    "Both fictional handles durably revoked through real host service; platform-vault deletion requested (deletion not independently read back)"
+  ],
+  "browser_diagnostics": [
+    {
+      "type": "error",
+      "mentions_csp": false,
+      "mentions_form_action": false,
+      "http_404": false,
+      "favicon_request": true
+    },
+    {
+      "type": "error",
+      "mentions_csp": false,
+      "mentions_form_action": false,
+      "http_404": false,
+      "favicon_request": true
+    },
+    {
+      "type": "error",
+      "mentions_csp": false,
+      "mentions_form_action": false,
+      "http_404": false,
+      "favicon_request": true
+    }
+  ],
+  "server_events": [
+    {
+      "sequence": 1,
+      "event": "authorize",
+      "status": 200
+    },
+    {
+      "sequence": 2,
+      "event": "register",
+      "status": 201
+    },
+    {
+      "sequence": 3,
+      "event": "login",
+      "status": 303
+    },
+    {
+      "sequence": 4,
+      "event": "exchange",
+      "status": 200
+    },
+    {
+      "sequence": 5,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 6,
+      "event": "refresh",
+      "status": 200
+    },
+    {
+      "sequence": 7,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 8,
+      "event": "fault_me",
+      "status": 200
+    },
+    {
+      "sequence": 9,
+      "event": "refresh",
+      "status": 200
+    },
+    {
+      "sequence": 10,
+      "event": "me",
+      "status": 503
+    },
+    {
+      "sequence": 11,
+      "event": "refresh",
+      "status": 200
+    },
+    {
+      "sequence": 12,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 13,
+      "event": "refresh",
+      "status": 200
+    },
+    {
+      "sequence": 14,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 15,
+      "event": "logout",
+      "status": 200
+    },
+    {
+      "sequence": 16,
+      "event": "authorize",
+      "status": 200
+    },
+    {
+      "sequence": 17,
+      "event": "login",
+      "status": 303
+    },
+    {
+      "sequence": 18,
+      "event": "exchange",
+      "status": 200
+    },
+    {
+      "sequence": 19,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 20,
+      "event": "refresh",
+      "status": 200
+    },
+    {
+      "sequence": 21,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 22,
+      "event": "authorize",
+      "status": 200
+    },
+    {
+      "sequence": 23,
+      "event": "login",
+      "status": 303
+    },
+    {
+      "sequence": 24,
+      "event": "exchange",
+      "status": 200
+    },
+    {
+      "sequence": 25,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 26,
+      "event": "refresh",
+      "status": 200
+    },
+    {
+      "sequence": 27,
+      "event": "me",
+      "status": 200
+    },
+    {
+      "sequence": 28,
+      "event": "logout",
+      "status": 200
+    },
+    {
+      "sequence": 29,
+      "event": "logout",
+      "status": 200
+    }
+  ],
+  "local_connections_revoked": true,
+  "vault_cleanup": "Deletion requested through host disconnect; no independent vault readback",
+  "native_processes_stopped": true,
+  "synthetic_server_stopped": true,
+  "install_receipt": {
+    "anchor": "76ac44af15a66310501e2898f0971da1f214b20479938600f7c01b7427c80b90",
+    "apps": [
+      {
+        "bundle_digest": "3d6e26f39ac054cb459db85a408294d5bf210d8462c14b0867b8be03f310176b",
+        "id": "org.octosense.samples.backend",
+        "prepared_launch_verified": true,
+        "signed_install": true
+      },
+      {
+        "bundle_digest": "3d6e26f39ac054cb459db85a408294d5bf210d8462c14b0867b8be03f310176b",
+        "id": "org.octosense.samples.backendother",
+        "prepared_launch_verified": true,
+        "signed_install": true
+      }
+    ],
+    "fixture": "connected-e2e",
+    "private_keys": "ephemeral memory only",
+    "provider_credentials": "not created or copied",
+    "schema": 1
+  },
+  "native_input_replays": 0,
+  "native_read_only_retries": 0,
+  "original_private_receipt_sha256": "7ff136c6d8349d6409a7096124e24321a5592927dc00a1070f8e347c233a43c3",
+  "visual_review": {
+    "result": "PASS",
+    "method": "Each selected original PNG inspected individually; readable complete controls/status, opaque consent, no visible overlapping text; synthetic acceptance fixture only",
+    "reviewer": "Codex",
+    "production_ux_score": "not assigned"
+  },
+  "screenshots": {
+    "01-register-consent.png": {
+      "sha256": "2ed175c53d8f4c480eea51ecfe331e102e16acd636c17f76ca5f90ca06eb2f39",
+      "width": 860,
+      "height": 1700,
+      "original": true,
+      "visually_reviewed": true
+    },
+    "01-register-browser-registration.png": {
+      "sha256": "1def621deab79dee9ef596b6f206e7f93d49b6dbc470c2313f83a5a28f301bf3",
+      "width": 1000,
+      "height": 800,
+      "original": true,
+      "visually_reviewed": true
+    },
+    "02-refresh-identity-failure.png": {
+      "sha256": "99846960a47cc438e62369c84ab276188989aa614c4deed47502a13d68a4211e",
+      "width": 860,
+      "height": 1700,
+      "original": true,
+      "visually_reviewed": true
+    },
+    "02-refresh-recovered.png": {
+      "sha256": "2bd4dc5725aca540285a1bbd5634f99c6316c46968b54a7d2d43165cbfc0b7ae",
+      "width": 860,
+      "height": 1700,
+      "original": true,
+      "visually_reviewed": true
+    },
+    "03-cold-restored.png": {
+      "sha256": "80fe14c9924111cb6e6f511a5505b73fae41d0e2128e0af2d52ac5a0cb17f7ae",
+      "width": 860,
+      "height": 1700,
+      "original": true,
+      "visually_reviewed": true
+    },
+    "04-logout-denied.png": {
+      "sha256": "1123dd140da619f2b2df2fbd6bb45bee7fbdf6727358fcdc9da46c8955b06e1d",
+      "width": 860,
+      "height": 1700,
+      "original": true,
+      "visually_reviewed": true
+    },
+    "06-other-app-denied.png": {
+      "sha256": "025ecae069f1235aeb6c8f772f25246289aa83e4bdca99b90cb827fbe88acbb2",
+      "width": 860,
+      "height": 1700,
+      "original": true,
+      "visually_reviewed": true
+    },
+    "08-other-app-own-login-isolation.png": {
+      "sha256": "2ee6b4463451a36760760980a25231992091fb987637e7f0f5331ab7f9eee416",
+      "width": 860,
+      "height": 1700,
+      "original": true,
+      "visually_reviewed": true
+    }
+  }
+}

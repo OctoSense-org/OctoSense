@@ -105,17 +105,21 @@ impl GithubDeviceAttempt {
         // oauth2 5 exposes only a complete device-token polling loop, not a
         // single-poll builder. Keep this small wire request and host scheduler
         // so every poll retains caller, cancellation and deadline checks.
-        let value = json_ok(transport.send(form(
-            Provider::Github.token_endpoint(),
-            vec![
-                ("client_id", self.client_id.clone()),
-                ("device_code", self.device_code.clone()),
-                (
-                    "grant_type",
-                    "urn:ietf:params:oauth:grant-type:device_code".into(),
-                ),
-            ],
-        ))?)?;
+        let value = json_ok(
+            transport.send(form(
+                Provider::Github
+                    .token_endpoint()
+                    .expect("fixed Github endpoint"),
+                vec![
+                    ("client_id", self.client_id.clone()),
+                    ("device_code", self.device_code.clone()),
+                    (
+                        "grant_type",
+                        "urn:ietf:params:oauth:grant-type:device_code".into(),
+                    ),
+                ],
+            ))?,
+        )?;
         match device_status(&value)? {
             DeviceStatus::Pending => Ok(DevicePoll::Wait(self.interval)),
             DeviceStatus::SlowDown => {
@@ -183,6 +187,9 @@ pub fn identity(
     let endpoint = match provider {
         Provider::Github => "https://api.github.com/user",
         Provider::Google => "https://openidconnect.googleapis.com/v1/userinfo",
+        Provider::Backend => {
+            return Err("Backend identity requires its app-bound host registration".into())
+        }
     };
     let body = json_ok(transport.send(Request {
         method: "GET",
@@ -192,6 +199,9 @@ pub fn identity(
         body: Body::Empty,
     })?)?;
     match provider {
+        Provider::Backend => {
+            Err("Backend identity requires its app-bound host registration".into())
+        }
         Provider::Github => {
             let id = body["id"].as_u64().ok_or("GitHub identity was missing")?;
             let label = body["login"]
