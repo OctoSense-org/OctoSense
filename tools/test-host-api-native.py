@@ -132,7 +132,13 @@ def main():
                             process.wait(timeout=5)
                         except subprocess.TimeoutExpired:
                             process.terminate()
-                            process.wait(timeout=5)
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait(timeout=5)
+                            raise AssertionError(f"{phase} host required forced termination")
+                    require(process.returncode == 0, f"{phase} host exited with status {process.returncode}")
             text = log_path.read_text(errors="replace")
             require("on_render closure failed" not in text and "callback error" not in text, f"{phase} script callback failed")
 

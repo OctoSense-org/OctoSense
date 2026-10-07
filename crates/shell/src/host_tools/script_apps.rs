@@ -386,12 +386,19 @@ impl ToolExecutor for HostServiceExecutor {
 /// The relay already validated schemas, grants and approval. The runner
 /// validates against its own immutable admitted bundle again before dispatch.
 struct ScriptAppExecutor { host: HostServiceExecutor, tools: BTreeSet<String> }
-struct ScriptWaiting { token: Option<String>, reply: ToolReply, host_dir: PathBuf, account: String }
+struct ScriptWaiting { token: Option<String>, reply: ToolReply, host_dir: PathBuf, account: String, caller: Option<String> }
 type ScriptKey = (String, String);
 static SCRIPT_WAITING: Mutex<Option<HashMap<ScriptKey, ScriptWaiting>>> = Mutex::new(None);
 fn current_script_account(host_dir: &Path, app: &str) -> String {
     octosense_oauth_service::host::active_connection(host_dir, app)
         .map(|connection| connection.handle).unwrap_or_else(|| "device".into())
+}
+fn script_admission(app: &str, caller: Option<&str>) -> Result<(), String> {
+    super::admission::check(app)?;
+    if let Some(caller) = caller.filter(|caller| *caller != app) {
+        super::admission::check(caller)?;
+    }
+    Ok(())
 }
 fn script_outcome(result: Result<Value, String>) -> ToolOutcome {
     match result {
@@ -418,11 +425,13 @@ impl ToolExecutor for ScriptAppExecutor {
         }
         octosense_appstore::script_tools::set_account(&self.host.app, &account);
         let key = (self.host.app.clone(), call.call_id.clone());
+        let caller = (call.caller_kind == crate::ai_host::app_peers::host_tools::CallerKind::AppPeer)
+            .then(|| super::relay::app_of_peer(&call.calling_app).to_owned());
         {
             let mut map = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner());
             let map = map.get_or_insert_with(HashMap::new);
             if map.contains_key(&key) { reply.finish(ToolOutcome::error("duplicate_call", "This app tool call is already pending")); return; }
-            map.insert(key.clone(), ScriptWaiting { token: None, reply: reply.clone(), host_dir: self.host.host_dir.clone(), account: account.clone() });
+            map.insert(key.clone(), ScriptWaiting { token: None, reply: reply.clone(), host_dir: self.host.host_dir.clone(), account: account.clone(), caller });
         }
         let done_key = key.clone();
         let done = Box::new(move |result| complete_script_call(&done_key, result));
@@ -455,7 +464,7 @@ fn complete_script_call(key: &ScriptKey, result: Result<Value, String>) {
         // This final check closes the interval between UI polls and completion.
         let result = if current_script_account(&waiting.host_dir, &key.0) != waiting.account {
             Err("account_scope: the app account changed".into())
-        } else if let Err(error) = super::admission::check(&key.0) {
+        } else if let Err(error) = script_admission(&key.0, waiting.caller.as_deref()) {
             // The catalog or executable bundle can change while a tool awaits
             // an asynchronous callback. Never return data after withdrawal.
             Err(format!("app_unavailable: {error}"))
@@ -465,14 +474,14 @@ fn complete_script_call(key: &ScriptKey, result: Result<Value, String>) {
 }
 
 fn poll_script_accounts() {
-    let entries: Vec<_> = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_ref().map(|map| map.iter().map(|(key,w)| (key.clone(),w.host_dir.clone(),w.token.clone(),w.reply.is_open())).collect()).unwrap_or_default();
-    for (key, host_dir, token, open) in entries {
+    let entries: Vec<_> = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_ref().map(|map| map.iter().map(|(key,w)| (key.clone(),w.host_dir.clone(),w.token.clone(),w.reply.is_open(),w.caller.clone())).collect()).unwrap_or_default();
+    for (key, host_dir, token, open, caller) in entries {
         if !open {
             SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_mut().and_then(|map|map.remove(&key));
             if let Some(token) = token { octosense_appstore::script_tools::cancel(&token); }
             continue;
         }
-        if let Err(error) = super::admission::check(&key.0) {
+        if let Err(error) = script_admission(&key.0, caller.as_deref()) {
             complete_script_call(&key, Err(format!("app_unavailable: {error}")));
             if let Some(token) = token { octosense_appstore::script_tools::cancel(&token); }
             continue;
@@ -837,7 +846,7 @@ pub(crate) mod tests {
         let host_dir = std::env::temp_dir().join(format!("script-result-account-{}", uuid::Uuid::new_v4()));
         let (r,sent) = reply();
         SCRIPT_WAITING.lock().unwrap().get_or_insert_with(HashMap::new).insert(key.clone(), ScriptWaiting {
-            token:None,reply:r,host_dir:host_dir.clone(),account:"retired-account".into()
+            token:None,reply:r,host_dir:host_dir.clone(),account:"retired-account".into(),caller:None
         });
         // The disconnected app is now on its device account; no poll has run.
         complete_script_call(&key, Ok(json!({"private":"old account data"})));
@@ -856,12 +865,33 @@ pub(crate) mod tests {
             let host_dir = std::env::temp_dir().join(format!("expired-tool-{}", uuid::Uuid::new_v4()));
             let (r, sent) = reply();
             SCRIPT_WAITING.lock().unwrap().get_or_insert_with(HashMap::new).insert(key.clone(), ScriptWaiting {
-                token: None, reply: r, host_dir, account: "device".into(),
+                token: None, reply: r, host_dir, account: "device".into(), caller: None,
             });
             if poll_first { poll_script_accounts(); }
             complete_script_call(&key, Ok(json!({"private":"must not escape"})));
             let output = sent.lock().unwrap();
             assert_eq!(output.len(), 1, "a late callback cannot answer twice");
+            assert_eq!(output[0]["error"]["kind"], "app_unavailable");
+            assert!(output[0].get("data").is_none());
+        }
+    }
+
+    #[test]
+    fn withdrawn_cross_app_caller_cannot_receive_an_admitted_owners_pending_result() {
+        for poll_first in [false, true] {
+            // The host identity remains admitted; only the requesting app has
+            // disappeared. Isolate the late-result check from initial routing.
+            let key = (super::super::relay::SYSTEM.into(), format!("cross-app-{}", uuid::Uuid::new_v4()));
+            let host_dir = std::env::temp_dir().join(format!("cross-app-tool-{}", uuid::Uuid::new_v4()));
+            let (r, sent) = reply();
+            SCRIPT_WAITING.lock().unwrap().get_or_insert_with(HashMap::new).insert(key.clone(), ScriptWaiting {
+                token: None, reply: r, host_dir, account: "device".into(),
+                caller: Some(format!("org.example.withdrawn-{}", uuid::Uuid::new_v4())),
+            });
+            if poll_first { poll_script_accounts(); }
+            complete_script_call(&key, Ok(json!({"private":"owner data"})));
+            let output = sent.lock().unwrap();
+            assert_eq!(output.len(), 1);
             assert_eq!(output[0]["error"]["kind"], "app_unavailable");
             assert!(output[0].get("data").is_none());
         }

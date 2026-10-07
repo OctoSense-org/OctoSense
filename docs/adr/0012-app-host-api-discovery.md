@@ -116,11 +116,17 @@ Closed apps return `app_not_running`. Input/result schemas, 1 MiB payload limits
 16 pending calls per app, 128 per process, a maximum 60-second deadline and VM
 instruction/memory limits apply. Closing, account changes and cancellation
 invalidate replies. The shell also rechecks admission while a script call is
-pending and before forwarding its result; withdrawal or a modified bundle
-suppresses that result. This does not unload an already open app's local UI.
+pending and before forwarding its result for both owner and app caller;
+withdrawal or a modified bundle suppresses that result. This does not unload an already open app's local UI.
 Cancellation cannot undo an already-emitted host request.
 This ABI does not cold-start/background-start an app or provide script proof
 for `confirm: "app"`; use host confirmation.
+
+Background prompt restrictions follow detached timers, tasks, paused threads,
+queued widget calls and HTTP/WebSocket callbacks, including calls into native
+device helpers. A fresh foreground entry keeps its own authority. Scoped
+restrictions restore on return or unwind; completing a tool does not promote
+its outstanding continuations.
 
 ## Delivery boundary
 
@@ -144,7 +150,8 @@ On macOS, `python3 tools/setup.py --check --cargo` and the desktop packaging
 check (`cargo check --locked -p octosense --features mobile-apps`) passed.
 From `phone/`, both `cargo check --locked -p octosense-home --features mobile-apps`
 and `cargo test --locked --features mobile-apps -p octosense-shell --lib` passed
-(1,003 tests). Building Home on macOS is not an Android device test.
+(full shell suite; current counts are recorded in the PR). Building Home on
+macOS is not an Android device test.
 
 Real Splash VM tests cover declared handler invocation, shared UI/storage state,
 digest tampering, schema failures, ownership, cancellation, account changes,

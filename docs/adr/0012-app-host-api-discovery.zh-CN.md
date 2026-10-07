@@ -96,9 +96,13 @@ Android/macOS 提供摄像头、麦克风和位置权限的查询、申请与撤
 `app_not_running`。输入/结果 schema、各 1 MiB 载荷上限、每应用 16 个/进程
 128 个待处理调用、最多 60 秒期限，以及 VM 指令/内存限制同时生效。关闭、
 账号变化和取消会使回复失效；shell 还会在脚本调用待处理期间及返回结果前
-重新检查准入，撤回或篡改应用包后不再返回其结果。这不会卸载已经打开的
+重新检查工具所有者与应用调用方的准入，撤回或篡改应用包后不再返回其结果。这不会卸载已经打开的
 本地应用界面。取消不能撤销已经发出的宿主请求。此 ABI 不会
 冷启动/后台启动应用，也不提供 `confirm: "app"` 的脚本批准证明；请使用宿主确认。
+
+后台弹窗限制会随分离定时器、任务、暂停线程、排队的控件调用及 HTTP/WebSocket
+回调继续生效，包括调用原生设备辅助函数。新的前台调用保留自己的权限。
+作用域限制在返回或异常展开后恢复；工具完成不会提升其尚未结束的续体权限。
 
 ## 交付边界
 
@@ -118,7 +122,8 @@ Windows/Linux/iOS。不增加广泛系统访问、任意 Rust/原生动态库执
 与桌面打包检查 `cargo check --locked -p octosense --features mobile-apps` 均通过。
 在 `phone/` 下运行的 `cargo check --locked -p octosense-home --features mobile-apps`
 和 `cargo test --locked --features mobile-apps -p octosense-shell --lib` 均通过
-（1,003 项测试）。在 macOS 上构建 Home 不等于 Android 真机测试。
+（完整 shell 测试集，当前数量记录于 PR）。在 macOS 上构建 Home 不等于
+Android 真机测试。
 
 真实 Splash VM 测试覆盖声明处理函数调用、共享 UI/存储状态、摘要篡改、schema
 错误、所有权、取消、账号切换、禁止工具弹出权限页和指令限制。服务/协议测试

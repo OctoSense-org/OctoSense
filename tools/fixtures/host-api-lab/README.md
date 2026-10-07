@@ -69,8 +69,10 @@ but this fresh profile must still have `app_consent: false`.
 
 **Not covered:** actual model reasoning, physical permission approval, camera
 capture, Android execution, platform services on Linux/Windows, and publishing
-a compatible host binary. Timer/paused-continuation provenance needs its own
-runtime regression; this fixture tests chained host callbacks.
+a compatible host binary. Separate real-VM runtime regressions cover detached
+timers, paused tasks,
+HTTP/WebSocket callbacks and native device-helper gates. This fixture tests
+chained host callbacks.
 
 ## Reuse the pattern
 

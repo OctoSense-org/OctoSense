@@ -55,8 +55,9 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 但全新应用配置的 `app_consent` 必须为 `false`。
 
 **未覆盖：**真实模型推理、物理批准权限、相机采集、Android 执行、
-Linux/Windows 设备服务，以及兼容宿主安装包发布。定时器和暂停续体的
-权限来源需要单独的运行时回归测试；这里测试连续的宿主回调。
+Linux/Windows 设备服务，以及兼容宿主安装包发布。独立的真实 VM 运行时回归测试
+覆盖了分离定时器、暂停任务、HTTP/WebSocket 回调及原生设备辅助函数的权限
+检查；这里测试连续的宿主回调。
 
 ## 复用方式
 
