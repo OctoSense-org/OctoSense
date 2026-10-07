@@ -490,6 +490,9 @@ fn apply_protocol(state: &mut AppState, cursor: Option<UiCursor>, n: UiNotificat
             // the top-bar usage chip.
             state.context = Some(e.context_state);
         }
+        // Live context fullness mid-turn: octos sends it only to a client
+        // that asks for `context.state.v1`, which this one does not.
+        UiNotification::ContextStateReported(_) => {}
         // Voice sessions have no surface in octos-app yet (streamed TTS
         // audio included).
         UiNotification::VoiceExit(_) => {}

@@ -246,7 +246,7 @@ The wiring is in place behind `toolbox-peers` (`crates/ai-host/src/toolbox_peers
 
 ## Commands
 
-The pinned octos (`056173e8`) includes `octos-research`, so no override is needed any more. On 2 Oct 2026 `cargo test --locked -p octosense-toolbox` passed at the pin (83 tests). The others below were run on 28 Sep 2026 against octos's merge of #2585 (7bec0918) through a local override, before the pin moved; at the pin `apps.yml` runs the plain, `live` and `octos-engine` tests and both clippy lines, and the live and real-model runs are **unverified** at the pin.
+The pinned octos (`39e22d45`) includes `octos-research`, so no override is needed any more. On 6 Oct 2026 `cargo test --locked -p octosense-toolbox` passed at the pin (83 tests). The others below were run on 28 Sep 2026 against octos's merge of #2585 (7bec0918) through a local override, before the pin moved; at the pin `apps.yml` runs the plain, `live` and `octos-engine` tests and both clippy lines, and the live and real-model runs are **unverified** at the pin.
 
 ```sh
 cargo test --locked -p octosense-toolbox                     # 83 tests, fixtures only (the thin scope parser)
