@@ -455,16 +455,29 @@ fn complete_script_call(key: &ScriptKey, result: Result<Value, String>) {
         // This final check closes the interval between UI polls and completion.
         let result = if current_script_account(&waiting.host_dir, &key.0) != waiting.account {
             Err("account_scope: the app account changed".into())
+        } else if let Err(error) = super::admission::check(&key.0) {
+            // The catalog or executable bundle can change while a tool awaits
+            // an asynchronous callback. Never return data after withdrawal.
+            Err(format!("app_unavailable: {error}"))
         } else { result };
         waiting.reply.finish(script_outcome(result));
     }
 }
 
 fn poll_script_accounts() {
-    let entries: Vec<_> = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_ref().map(|map| map.iter().map(|((app,_),w)| (app.clone(),w.host_dir.clone(),w.token.clone(),w.reply.is_open())).collect()).unwrap_or_default();
-    for (app, host_dir, token, open) in entries {
-        if !open { if let Some(token) = token { octosense_appstore::script_tools::cancel(&token); } }
-        octosense_appstore::script_tools::set_account(&app,&current_script_account(&host_dir,&app));
+    let entries: Vec<_> = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_ref().map(|map| map.iter().map(|(key,w)| (key.clone(),w.host_dir.clone(),w.token.clone(),w.reply.is_open())).collect()).unwrap_or_default();
+    for (key, host_dir, token, open) in entries {
+        if !open {
+            SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_mut().and_then(|map|map.remove(&key));
+            if let Some(token) = token { octosense_appstore::script_tools::cancel(&token); }
+            continue;
+        }
+        if let Err(error) = super::admission::check(&key.0) {
+            complete_script_call(&key, Err(format!("app_unavailable: {error}")));
+            if let Some(token) = token { octosense_appstore::script_tools::cancel(&token); }
+            continue;
+        }
+        octosense_appstore::script_tools::set_account(&key.0,&current_script_account(&host_dir,&key.0));
     }
 }
 
@@ -834,6 +847,27 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn script_result_and_poll_refuse_an_owner_no_longer_admitted() {
+        // No catalog admits this identity. It models an admission that was
+        // valid when queued and is unavailable at the later completion/poll.
+        // The signed withdrawal/tamper cases themselves are tested by admission.
+        for poll_first in [false, true] {
+            let key = (format!("org.example.expired-{}", uuid::Uuid::new_v4()), "pending".into());
+            let host_dir = std::env::temp_dir().join(format!("expired-tool-{}", uuid::Uuid::new_v4()));
+            let (r, sent) = reply();
+            SCRIPT_WAITING.lock().unwrap().get_or_insert_with(HashMap::new).insert(key.clone(), ScriptWaiting {
+                token: None, reply: r, host_dir, account: "device".into(),
+            });
+            if poll_first { poll_script_accounts(); }
+            complete_script_call(&key, Ok(json!({"private":"must not escape"})));
+            let output = sent.lock().unwrap();
+            assert_eq!(output.len(), 1, "a late callback cannot answer twice");
+            assert_eq!(output[0]["error"]["kind"], "app_unavailable");
+            assert!(output[0].get("data").is_none());
+        }
+    }
+
+    #[test]
     fn admitted_alias_dispatches_with_owner_identity_and_checks_actual_family() {
         octosense_appstore::services::register_host_service(Box::new(Probe));
         let mut exec=HostServiceExecutor {app:"org.example.notes".into(),
@@ -937,13 +971,27 @@ pub(crate) mod tests {
 
     #[test]
     fn cancelling_one_app_does_not_cancel_another_apps_identical_call_id() {
-        octosense_appstore::services::register_host_service(Box::new(Probe));
-        let executor = |app: &str| HostServiceExecutor { app:app.into(), tools:["g3probe.echo".into()].into_iter().collect(), methods:Default::default(),families:["g3probe".into()].into_iter().collect(),host_dir:std::env::temp_dir() };
+        // Hold replies until cancellation: a parallel test may pump globally,
+        // so an immediate service reply could win before this test cancels it.
+        struct CancelProbe(Arc<Mutex<Vec<(String, Replier)>>>);
+        impl HostService for CancelProbe {
+            fn family(&self) -> &'static str { "g3cancelprobe" }
+            fn call(&mut self, call: ServiceCall, reply: Replier, _: &mut dyn ServiceHost) {
+                self.0.lock().unwrap().push((call.app_id, reply));
+            }
+        }
+        let held = Arc::new(Mutex::new(Vec::new()));
+        octosense_appstore::services::register_host_service(Box::new(CancelProbe(held.clone())));
+        let executor = |app: &str| HostServiceExecutor { app:app.into(), tools:["g3cancelprobe.echo".into()].into_iter().collect(), methods:Default::default(),families:["g3cancelprobe".into()].into_iter().collect(),host_dir:std::env::temp_dir() };
         let first=executor("org.example.cancel_first");let second=executor("org.example.cancel_second");
-        let mut one=call("g3probe.echo");one.call_id="same-id-two-apps".into();
+        let mut one=call("g3cancelprobe.echo");one.call_id="same-id-two-apps".into();
         let (reply_one,sent_one)=reply();let (reply_two,sent_two)=reply();
         first.execute(one.clone(),reply_one);second.execute(one,reply_two);
-        first.cancel("same-id-two-apps");poll();
+        first.cancel("same-id-two-apps");
+        for (app, reply) in std::mem::take(&mut *held.lock().unwrap()) {
+            reply.send(Ok(json!({"app":app})));
+        }
+        poll();
         assert!(sent_one.lock().unwrap().is_empty());
         assert_eq!(sent_two.lock().unwrap()[0]["data"]["app"],"org.example.cancel_second");
     }

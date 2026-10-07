@@ -90,3 +90,34 @@ jobs:
         run: python3 tools/setup.py --check --cargo
       - name: The native apps' generated places match native-apps.json
         run: python3 tools/native_apps.py --check
+
+  native-host-api:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare the pinned framework sources
+        run: python3 tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: native-host-api
+      - name: Build the native acceptance host and pinned Hub CLI
+        run: |
+          cargo build --locked --release -p octosense-shell --example host-api-lab --features acceptance-fixtures
+          cargo build --locked -p octosense-app-hub --bin hub
+      - name: Signed app tool calls a real OS permission API
+        run: python3 tools/test-host-api-native.py --hub target/debug/hub --output target/host-api-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-host-api-evidence
+          retention-days: 7
+          path: |
+            target/host-api-evidence/result.json
+            target/host-api-evidence/native-result.json
+            target/host-api-evidence/*.png
+            target/host-api-evidence/*-snapshot.json

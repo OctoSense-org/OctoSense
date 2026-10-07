@@ -1,0 +1,39 @@
+{
+  "agent": {
+    "background": false,
+    "instructions": "AGENT.md",
+    "model": {
+      "local_only": false,
+      "needs": [
+        "tool_calling"
+      ]
+    },
+    "profile": "read-only",
+    "tools": []
+  },
+  "capabilities": [
+    "runtime",
+    "camera"
+  ],
+  "host_api": {
+    "optional": {
+      "apilab.custom_rust": 1
+    },
+    "required": {
+      "app_tools.dispatch": 1,
+      "camera.permission.status": 1,
+      "runtime.describe": 1
+    }
+  },
+  "id": "org.octosense.samples.apilab",
+  "integrity": {
+    "bundle_blake3": "00678e08c5a3f4f3726184d379a10ce83760d98423364e711329a4f1706252ea"
+  },
+  "name": "Host API Lab",
+  "requires": [
+    "host-api-v1",
+    "script-tools-v1"
+  ],
+  "schema": 1,
+  "version": "0.1.0"
+}

@@ -115,7 +115,10 @@ Only one full-app owner registers; Glance does not create another owner.
 Closed apps return `app_not_running`. Input/result schemas, 1 MiB payload limits,
 16 pending calls per app, 128 per process, a maximum 60-second deadline and VM
 instruction/memory limits apply. Closing, account changes and cancellation
-invalidate replies. Cancellation cannot undo an already-emitted host request.
+invalidate replies. The shell also rechecks admission while a script call is
+pending and before forwarding its result; withdrawal or a modified bundle
+suppresses that result. This does not unload an already open app's local UI.
+Cancellation cannot undo an already-emitted host request.
 This ABI does not cold-start/background-start an app or provide script proof
 for `confirm: "app"`; use host confirmation.
 
@@ -149,6 +152,14 @@ prompt suppression and instruction limits. Service/protocol tests cover backend
 boundaries and device permission policy. These tests do not establish a physical
 permission approval, a live installed-app login/write, or a OnePlus 6 journey.
 Phone, real-model and per-platform release acceptance remain pending.
+
+The [native Host API Lab](../../tools/fixtures/host-api-lab/README.md) also passed
+on macOS: a signed Store-installed app invoked its own Splash tool, read real
+OS permission status through the Rust device service, updated its live UI and
+returned a bounded result. Native button input reused the same service. The
+fixture verified missing API fallback, capability/account/schema refusals,
+background callback prompt refusal and closed-app behavior. Its explicit test
+caller enters the tool queue directly, so this is not model/peer-consent evidence.
 
 Implementation owners: App Hub `app-contract/src/{host_api,backend}.rs` and
 `appstore/src/{host_api,script_tools}.rs`; OctoSense
