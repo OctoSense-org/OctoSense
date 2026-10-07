@@ -1,0 +1,317 @@
+{
+  "schema": 1,
+  "result": "PASS",
+  "started_utc": "2026-10-07T04:42:03.986182+00:00",
+  "finished_utc": "2026-10-07T04:42:14.944115+00:00",
+  "case": "Actual isolated native backend WebView form acceptance",
+  "provider": "Synthetic HTTP backend only; no real Google/GitHub accounts",
+  "vault": "Normal platform vault; no credential fixture override",
+  "input": "Makepad native host controls and feature-gated native DOM form input; no callback/cookie/token injection",
+  "binary_sha256": "c4e96f3c7850c15e79e5352ae4c35cc89cd761871e3144e6aa1f8ffc3aa0c435",
+  "installer_sha256": "e195d5531316eeb184fc907c5f8ae54ef7884a29be9f6f56c502d457a3492dc6",
+  "runtime_base_commit": "2a5a4833b25d7d5d9f7ca9d3be76b6f77cbfec0d",
+  "checks": [
+    "Host Cancel dismisses real WebView; no token exchange or account is created",
+    "Normal host process exit during pending WebView auth creates no account or exchange; a new process remains disconnected",
+    "Native host Back returns from actual same-origin WebView navigation to login form",
+    "Real transport failure shows host error; Retry creates a clean WebView and returns to the form",
+    "Actual native WebView registration, credential error, login, intercepted fixed callback, PKCE exchange and protected identity",
+    "New app WebView receives no prior HttpOnly browser cookie and cannot use the first app connection before or after own login",
+    "Server observes its real HttpOnly cookie on form submissions; no cookie was injected or read by driver",
+    "Native restart retains first connection, and host logout revokes both local handles and denies protected reads"
+  ],
+  "local_connections_revoked": true,
+  "vault_cleanup": "Deletion requested through host disconnect; no independent vault readback",
+  "native_processes_stopped": true,
+  "synthetic_server_stopped": true,
+  "elapsed_seconds": 10.958,
+  "source_sha256": {
+    "tools/connected-e2e/backend_webview.py": "5167b86d7bc68c6eb42d737f93fa007874fce139a3b59ae613d6edf5b4516408",
+    "tools/connected-e2e/backend_login.py": "659768b90488ad542d4ee7c28c719b67155ed13b88b4c9a65e744209e892c7c6",
+    "tools/connected-e2e/native.py": "3182c430d9b3797a823a67403543d056891598b404cf7fda577836f09e7ae7b6",
+    "tools/connected-e2e/backend-login/main.splash": "f2953891acde9ab08625c14e5a7d5dd73e809c1702777a9229276cbc5cee24ac",
+    "tools/backend-login-fixture.py": "76e90dd0ad14b275ba645af97c22d7f751b6b31bc9aa5dd0ee119a759ec69255",
+    "crates/shell/examples/connected-app-host.rs": "c79d5ffa59e0f6fb26655a0a32785935ee85ae5e28cffbadb4e89c469ca8a7af",
+    "crates/shell/examples/connected_support/mod.rs": "c69d991c969a182f82fdf9e09009aa90e07602155b2d5c88723079521f0728c7",
+    "Cargo.toml": "06f90e66476e686c64b3f3ee39c22c0e5d7dca5ffa16dc9ad04aa6ca21774cb9",
+    "Cargo.lock": "ad11823954869d6d20ccf7df5003a922d67250bddb8b37975b6b20301962ec5c",
+    "crates/oauth-service/Cargo.toml": "dd436cfe82d429eaa3e819876e6582162524f4b9f27b6ad1acd0b972934a3afb",
+    "native-runtime.lock.json": "522e5ef9ab7cd04fe82e324364c6677d6cb22f90716c7519d9562e0f0f5b9db5",
+    "runtime-patches.lock.json": "2c5a5b13e8d42ba04e659191ac6e04e811a4e305cf0a7e180953bb6761520a6f",
+    "crates/oauth-service/src/acceptance_calendar.rs": "e3f03818b554cbfdd1f7d9bcf22272e8ec46c25bffc69fd4498c690c137446ac",
+    "crates/oauth-service/src/acceptance_fixtures.rs": "af8b2c8187a35015ea42b59aa7b2ca8e5c4e4834efa0144259ca691f00bcfdf0",
+    "crates/oauth-service/src/acceptance_github.rs": "520fd3681f4831c35cf671f0d4883af8c7d9e63e748ec41ede96d54fcaa77c7d",
+    "crates/oauth-service/src/acceptance_inbox.rs": "efc33661cbb2801037e6db9a1416a8b7b480a549e05dbe790ba2338dfb037162",
+    "crates/oauth-service/src/api.rs": "82e1d4d17f66f502d1de3cae59c70d8e344649afe39b930ab285693e10200fa8",
+    "crates/oauth-service/src/api_tests.rs": "998d44dc40dc1751800096d2a4a282bfb4434748a9112acb45fd801855c8e985",
+    "crates/oauth-service/src/authorize.rs": "cfcea9157e678e53d9787a03d4a46a5f1b27804a5596ff11aa1000e9ea30af4b",
+    "crates/oauth-service/src/backend.rs": "6ef2ee8e5e735867c09518efdf81dee4aa9b4fe1ab8a8da7a14cd89448e42c39",
+    "crates/oauth-service/src/backend_tests.rs": "9383d940e9f8b7a682092796c138de81591e174b1e1754114be88182ed7af897",
+    "crates/oauth-service/src/calendar_cache.rs": "0418d1e975fb6e61c884e5460dc910377aace55428dc24a89edd74820a78beee",
+    "crates/oauth-service/src/host.rs": "d57d762b63edf988f035883f1fbeb13243505edf5f481f4df2eb16b5e2eb7fca",
+    "crates/oauth-service/src/host_api.rs": "2b691daf5f25739e7ba622f1d697ebe3a9e75d706033182b5636f91296b0cfae",
+    "crates/oauth-service/src/host_backend.rs": "7bd170a31d7d64b457c160f551b5d85f35e066dd907abe54bb4a6cf844d7262d",
+    "crates/oauth-service/src/host_inbox.rs": "32299ce5c758163ad875e2c70e9b43fae675160903b9db82a27ebc9fea67d308",
+    "crates/oauth-service/src/host_lifetime_tests.rs": "50904d91121ae3f16caf4c8c9008c66f9cd6b85e2af54558451be683079c662b",
+    "crates/oauth-service/src/host_vault_acceptance.rs": "ff672463d37614b7f64f20a92c5e0e0a3de213dacb7b478d81d1bc894b6afe2a",
+    "crates/oauth-service/src/inbox.rs": "ec34c7fe90e6c0d43c8d785a9e2443aec234fafb6356a4759b2b6992ff88437d",
+    "crates/oauth-service/src/inbox_events.rs": "a795b00448ff0b679b019bdaf5df1e8bdffe754bcd46c0a2cf55b30e4a906af9",
+    "crates/oauth-service/src/lib.rs": "d0d40e0debfe24bacb5d000f47c32b9c93858ed19f6c19c561070f8031f052b2",
+    "crates/oauth-service/src/oauth.rs": "b3a7edd30fcb0235db93befbea8653847c9899ed26d0681e070e48e6077d9318",
+    "crates/oauth-service/src/protocol.rs": "5495da22f0d50b8f89f8840bcfad1b8e2ec3227e9564f96e1552a4b7705917f0",
+    "crates/oauth-service/src/providers.rs": "538e383dc38c2812e8758509ddbb1a8111f5264f0ea39d6a3b2bc7cc101cf2f8",
+    "crates/oauth-service/src/registration.rs": "33392b88f2444c9f88794add5b47cb30f9c731340dfba60dd3bec76385da2e62",
+    "crates/oauth-service/src/store.rs": "1e2876d0fde8e1bc3d3769f036124281bd628637a48a7ffcdc4823213017ec05",
+    "crates/oauth-service/src/transport.rs": "1db7518fa5ed853412e2bdddb836d45266c21f9a793d82e3351e7eabaa5d5960",
+    "tools/runtime-patches/makepad-android-enter-composition.patch": "36e7a22c999cf4a85e9d85f7a2b94bdfe9e6f375b703274735ca3816953e3280",
+    "tools/runtime-patches/makepad-application-extension.patch": "133099ee598a9794ec5df61dfbef30bca25df7bc03a66deecdb66355a8b8e6bf",
+    "tools/runtime-patches/makepad-auth-webview.patch": "665472b27e6a0c3ba07765b6639e777c99c5ad25076b8e3860ef306cc1fef313",
+    "tools/runtime-patches/makepad-desktop-trusted-input.patch": "0bb2bbc7d776bb9c8b8064b2f44bcec6e9442c10e1fbf84acbdfd03f0b89be50",
+    "tools/runtime-patches/makepad-ime-inactive-no-restart.patch": "8ae6a6aceb93a013234c724ffdc6efc614cc8b9dddd7cae6ed8b1c569b94fdf1",
+    "tools/runtime-patches/makepad-settings.patch": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
+    "tools/runtime-patches/makepad-system-back.patch": "3268cb486bbd05db7bb6920c26007e437017b6234a4d9f045a99a7d1954b7427",
+    "tools/runtime-patches/makepad-trusted-user-input.patch": "48ac389a3b0fab5051092539700f63d4d58b7dd21cb60af43c30b0fda60a6b32",
+    "tools/runtime-patches/makepad-windows-frame-completion.patch": "8d58e16bc12aae5f4313fdc5c9d3f6944b96ee20e609fe5ff069fe2403954595",
+    "tools/runtime-patches/makepad-windows-remote-capture.patch": "2c0fabb6f5c0733d9d3356cde4cc7c8d40aabebf9a4752740c94f332b7e1317a",
+    ".sources/makepad/platform/src/cx_api.rs": "3ee6a0fc6d65aeefd918a90d75b08c2c104b8e073c29a1a6ea6a89d4692dfb05",
+    ".sources/makepad/platform/src/event/event.rs": "e1a379232171d26ef3519abc14e23dd6ef6f9265765a712c3a3cb72b0779d8e4",
+    ".sources/makepad/platform/src/os/apple/apple_webview.rs": "7062b2a4928db10472fd94f2bdda0fcd6054d87d0b53c4f0a42d01e668051ed1",
+    ".sources/makepad/platform/src/os/apple/macos/macos.rs": "b33d071ff799cd1c5a03d78b0dff7d9f519357ef1a286e7f0ccd6eaca2c2b28c",
+    ".sources/makepad/widgets/src/web_reader.rs": "b68010aaa3c174f1b351303aa0725f04dab7ffdb4704759eca2f0f26efbb3091"
+  },
+  "signed_install": [
+    {
+      "id": "org.octosense.samples.backend",
+      "bundle_digest": "72583dce45d01769c30e716b66ecf6b6ff19587d859855aafca62a2885758562",
+      "signed_install": true,
+      "prepared_launch_verified": true
+    },
+    {
+      "id": "org.octosense.samples.backendother",
+      "bundle_digest": "72583dce45d01769c30e716b66ecf6b6ff19587d859855aafca62a2885758562",
+      "signed_install": true,
+      "prepared_launch_verified": true
+    }
+  ],
+  "server_events": [
+    {
+      "event": "authorize_cookie",
+      "status": 204,
+      "sequence": 1
+    },
+    {
+      "event": "authorize",
+      "status": 200,
+      "sequence": 2
+    },
+    {
+      "event": "authorize_cookie",
+      "status": 204,
+      "sequence": 3
+    },
+    {
+      "event": "authorize",
+      "status": 200,
+      "sequence": 4
+    },
+    {
+      "event": "authorize_cookie",
+      "status": 204,
+      "sequence": 5
+    },
+    {
+      "event": "authorize",
+      "status": 200,
+      "sequence": 6
+    },
+    {
+      "event": "information",
+      "status": 200,
+      "sequence": 7
+    },
+    {
+      "event": "navigation_availability",
+      "status": 200,
+      "sequence": 8
+    },
+    {
+      "event": "navigation_error",
+      "status": 503,
+      "sequence": 9
+    },
+    {
+      "event": "navigation_error",
+      "status": 503,
+      "sequence": 10
+    },
+    {
+      "event": "navigation_error",
+      "status": 503,
+      "sequence": 11
+    },
+    {
+      "event": "navigation_error",
+      "status": 503,
+      "sequence": 12
+    },
+    {
+      "event": "navigation_availability",
+      "status": 200,
+      "sequence": 13
+    },
+    {
+      "event": "authorize_cookie",
+      "status": 204,
+      "sequence": 14
+    },
+    {
+      "event": "authorize",
+      "status": 200,
+      "sequence": 15
+    },
+    {
+      "event": "session_cookie",
+      "status": 200,
+      "sequence": 16
+    },
+    {
+      "event": "register",
+      "status": 201,
+      "sequence": 17
+    },
+    {
+      "event": "session_cookie",
+      "status": 200,
+      "sequence": 18
+    },
+    {
+      "event": "login",
+      "status": 401,
+      "sequence": 19
+    },
+    {
+      "event": "session_cookie",
+      "status": 200,
+      "sequence": 20
+    },
+    {
+      "event": "login",
+      "status": 303,
+      "sequence": 21
+    },
+    {
+      "event": "exchange",
+      "status": 200,
+      "sequence": 22
+    },
+    {
+      "event": "me",
+      "status": 200,
+      "sequence": 23
+    },
+    {
+      "event": "me",
+      "status": 200,
+      "sequence": 24
+    },
+    {
+      "event": "authorize_cookie",
+      "status": 204,
+      "sequence": 25
+    },
+    {
+      "event": "authorize",
+      "status": 200,
+      "sequence": 26
+    },
+    {
+      "event": "session_cookie",
+      "status": 200,
+      "sequence": 27
+    },
+    {
+      "event": "login",
+      "status": 303,
+      "sequence": 28
+    },
+    {
+      "event": "exchange",
+      "status": 200,
+      "sequence": 29
+    },
+    {
+      "event": "me",
+      "status": 200,
+      "sequence": 30
+    },
+    {
+      "event": "me",
+      "status": 200,
+      "sequence": 31
+    },
+    {
+      "event": "logout",
+      "status": 200,
+      "sequence": 32
+    },
+    {
+      "event": "me",
+      "status": 200,
+      "sequence": 33
+    },
+    {
+      "event": "logout",
+      "status": 200,
+      "sequence": 34
+    }
+  ],
+  "instrument": {
+    "native_actions": 19,
+    "read_only_retries": 0,
+    "input_replays": 0
+  },
+  "makepad_base_commit": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
+  "makepad_expected_tree": "d1f6a4e302e1726b573e40bc90132b04e0e3b2c4",
+  "source_changes_during_run": [],
+  "binary_unchanged_during_run": true,
+  "native_auth_material_log_markers_absent": true,
+  "visual_review": {
+    "result": "PASS for the listed original captures",
+    "method": "Each listed original PNG was inspected individually; no edits, composites or generated images. WK snapshots and Makepad render-target screenshots are distinct surfaces.",
+    "captures": {
+      "02-pending-process-reopened.png": {
+        "sha256": "4b6a94bed8507e20f01d403d1939158b4efd159d8a65f4138483343a33c38ffa",
+        "surface": "Makepad native render target"
+      },
+      "04-registration-webview.png": {
+        "sha256": "ad24a68c60ca41ecb0c50a8334837fbeb1a2ac7dd529c7ac0743d2a58823b2bb",
+        "surface": "Native WKWebView"
+      },
+      "04-retried-webview.png": {
+        "sha256": "40b254cdce14aa82279515d0d88bd855306b9b2b4aa7d1f1f1752a50771c2cd5",
+        "surface": "Native WKWebView"
+      },
+      "05-invalid-password-webview.png": {
+        "sha256": "52fbf3bef23b3ac22961d5b649495f7c37234f95b6c6e918187a74c2dcb887b1",
+        "surface": "Native WKWebView"
+      },
+      "06-connected.png": {
+        "sha256": "192b5374ef8c241cacce35ce83c82e5933b057040cf487768180388e179227b8",
+        "surface": "Makepad native render target"
+      },
+      "08-cross-app-denied.png": {
+        "sha256": "69e4be1980d3dab2e98a1c1cd05e42a8dab07c1e8dd7ba9394b7441d9fb63ac5",
+        "surface": "Makepad native render target"
+      },
+      "09-cold-restored.png": {
+        "sha256": "1c3e9fd9cc23f22ae25eff9cad93f5ccd3080cbf59c31ed3dd13e7bc07719b98",
+        "surface": "Makepad native render target"
+      },
+      "10-logout-denied.png": {
+        "sha256": "9f02a8d940d9f1d40861fed3ed91d7aca56112ee5103a662efe07cd796b34a42",
+        "surface": "Makepad native render target"
+      }
+    }
+  },
+  "not_published": "Auth host-chrome images with ephemeral loopback origin, private paths, native logs, control files, widget snapshots, account metadata, and all authorization material are omitted."
+}

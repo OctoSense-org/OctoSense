@@ -18,6 +18,9 @@ use std::{
 use url::Url;
 
 pub const SESSION_SCOPE: &str = "app.session";
+/// Host-owned interception target, never fetched by the embedded login view.
+/// A contained app or backend registration cannot choose this destination.
+pub const WEBVIEW_CALLBACK_URL: &str = "https://octosense.invalid/auth/callback";
 const RESPONSE_LIMIT: usize = 64 * 1024;
 
 /// Trusted host metadata; never deserialize this from a contained app request.
@@ -205,6 +208,24 @@ impl BackendClient {
         {
             return Err("Invalid host backend callback listener".into());
         }
+        self.begin_with_redirect(caller, redirect, now)
+    }
+
+    /// Begin an embedded backend login. The platform must intercept this exact
+    /// callback before navigation; the authorization code stays in host Rust.
+    /// Browser login remains a separate loopback-only entry point.
+    pub fn begin_webview(&self, caller: &str, now: Instant) -> Result<BackendAttempt, String> {
+        self.caller(caller)?;
+        let redirect = Url::parse(WEBVIEW_CALLBACK_URL).expect("Fixed host WebView callback");
+        self.begin_with_redirect(caller, redirect, now)
+    }
+
+    fn begin_with_redirect(
+        &self,
+        caller: &str,
+        redirect: Url,
+        now: Instant,
+    ) -> Result<BackendAttempt, String> {
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
         let client = BasicClient::new(ClientId::new(self.registration.client_id.clone()))
             .set_auth_uri(
@@ -398,6 +419,15 @@ impl BackendAttempt {
         }
         if callback.len() > 32_768 {
             return Err("Backend callback exceeds limit".into());
+        }
+        // Keep the embedded callback byte-exact. URL parsing otherwise accepts
+        // equivalent-looking ports, host casing or dot-segment path aliases.
+        if self.redirect.as_str() == WEBVIEW_CALLBACK_URL
+            && !callback
+                .strip_prefix(WEBVIEW_CALLBACK_URL)
+                .is_some_and(|suffix| suffix.starts_with('?'))
+        {
+            return Err("Backend callback destination mismatch".into());
         }
         let callback = Url::parse(callback).map_err(|_| "Invalid backend callback")?;
         if callback.origin() != self.redirect.origin()

@@ -7,7 +7,7 @@ publish = false
 
 [features]
 default = []
-host = ["dep:octosense-appstore", "dep:octosense-mail-service", "dep:keyring"]
+host = ["dep:octosense-appstore", "dep:octosense-mail-service", "dep:keyring", "dep:makepad-widgets"]
 # Native acceptance executables only; no environment/config switch in releases.
 acceptance-fixtures = ["host"]
 
@@ -22,6 +22,7 @@ base64 = "0.22"
 sha2 = "0.10"
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+makepad-widgets = { workspace = true, optional = true }
 octosense-appstore = { workspace = true, optional = true }
 octosense-mail-service = { workspace = true, optional = true }
 

@@ -5328,6 +5328,16 @@ impl App {
         while i < args.len() {
             if args[i] == "--test-action" {
                 if let Some(name) = args.get(i + 1) {
+                    #[cfg(all(feature = "dev-mode", feature = "acceptance-fixtures", target_os = "android"))]
+                    if name == "backend-auth-fixture" {
+                        if crate::apps::register_android_backend_fixture().is_ok() {
+                            log!("backend fixture: local endpoints registered; no account injected");
+                        } else {
+                            error!("backend fixture: registration rejected");
+                        }
+                        i += 2;
+                        continue;
+                    }
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
                     if self.groups_test_action(cx, name) { i += 2; continue; }

@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "5f0a18be85da5c3ded9dcf2793341a13d6d76fd7",
+    "tree": "50371b7e54adf63fa8aa8c0b1acc53226dcff9ba",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -15,7 +15,8 @@
       "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
       "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Compromised OS/root impersonation is outside this app-level boundary; the subsequent desktop patch adds macOS pointer provenance.",
       "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; Windows/Linux physical approval is unsupported.",
-      "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics."
+      "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics.",
+      "Host-owned backend authentication reuses native WebViews with isolated sessions, exact callback interception, same-origin navigation and no page tool bridge; Android uses an ephemeral private process and profile."
     ],
     "stacked": [
       {
@@ -49,6 +50,10 @@
       {
         "patch": "tools/runtime-patches/makepad-android-enter-composition.patch",
         "sha256": "36e7a22c999cf4a85e9d85f7a2b94bdfe9e6f375b703274735ca3816953e3280"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-auth-webview.patch",
+        "sha256": "61d5e247627bd7a3a883dab6689d6c82b7df7cbc031e3731b82b31f388555131"
       }
     ]
   }

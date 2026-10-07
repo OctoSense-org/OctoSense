@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "date": "2026-10-07",
+  "scope": "Actual OnePlus 6 Android 15 developer-backend authentication; synthetic server, native form input, real host protocol and Android vault",
+  "result": "Functional protocol/lifecycle cases passed with explicit visual-capture and unrun-case limitations; not a clean UX or performance pass",
+  "source_base": "2a5a4833b25d7d5d9f7ca9d3be76b6f77cbfec0d",
+  "source_binding": "Base commit plus exact file hashes below; candidate includes uncommitted auth and Glance fixes at test time",
+  "runtime_tree": "50371b7e54adf63fa8aa8c0b1acc53226dcff9ba",
+  "runtime_overlay_sha256": "61d5e247627bd7a3a883dab6689d6c82b7df7cbc031e3731b82b31f388555131",
+  "apk_sha256": "5a1593223754260fbbf5657870fbe41145951a0c3f342e6a2c535efa930b9056",
+  "input_apk_sha256": "6795971efc26df1f129792d8fa281af971144c75f9bb6844eddac87dd8943fe6",
+  "package": "dev.makepad.octosense.backendlogin",
+  "features": [
+    "dev-mode",
+    "app-hub",
+    "octosense-shell/acceptance-fixtures"
+  ],
+  "default_features": false,
+  "signed_apps": [
+    {
+      "id": "org.octosense.samples.backend",
+      "bundle_digest": "e99593d40df550d027362cb7e9aa1eed65dff2e8eb23b4d9d1d3c013261bde8c",
+      "signed_install": true,
+      "prepared_launch_verified": true
+    },
+    {
+      "id": "org.octosense.samples.backendother",
+      "bundle_digest": "e99593d40df550d027362cb7e9aa1eed65dff2e8eb23b4d9d1d3c013261bde8c",
+      "signed_install": true,
+      "prepared_launch_verified": true
+    }
+  ],
+  "source_sha256": {
+    "crates/shell/src/glance_card.rs": "8c06037757e8c494d07ae3e752dfddabcc3a1fb07ee466b1a2e36d5fbf8e6dc4",
+    "crates/shell/src/glance_sheet.rs": "e57f0830f44035fd7df35ca48fc1b8cb65e100beb9477fafac93e37d9a61c867",
+    "crates/shell/src/apps.rs": "2451e4da8a36bb015d6e7983a41b2e293b91d86ab6ab748681c7f4c4721d20a6",
+    "crates/shell/src/lib.rs": "d955a74147364f50d98e0b02af44d418fe24578129bc3e37a4b6a85d037730a6",
+    "crates/oauth-service/src/host.rs": "d57d762b63edf988f035883f1fbeb13243505edf5f481f4df2eb16b5e2eb7fca",
+    "crates/oauth-service/src/host_backend.rs": "7bd170a31d7d64b457c160f551b5d85f35e066dd907abe54bb4a6cf844d7262d",
+    "tools/connected-e2e/android_backend.py": "3e63c0afefe5ca5f88ce4923d013a2e60c0a38aac4a8040238376b2ab85f011b",
+    "tools/connected-e2e/android_backend_lab.py": "07bf09e4b5c567efbdc52ffbc6f888ede0168a19e259dbb0f476bed945b8a42b",
+    "tools/connected-e2e/backend-login/main.splash": "f2953891acde9ab08625c14e5a7d5dd73e809c1702777a9229276cbc5cee24ac",
+    "tools/connected-e2e/backend-login/glance.splash": "352ea37365046da2843f0069aa2b850fbad4eb5167a2215255eeed7c577b12ef",
+    ".sources/makepad/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthActivity.java": "6e4d1560da229920f97bfbed029ace60056a18ce08ec24568783301e2661dc27",
+    ".sources/makepad/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadAuthBrowser.java": "f3614ea24aae6ab0f448e3e487a9821a2d6961d6ab8cc359e969d935e3d8c310",
+    ".sources/makepad/platform/src/os/linux/android/android.rs": "4f1e23ba00e5888e2ecfca73974d5f6714df161747f8faddae9f915c4ec8bb14",
+    ".sources/makepad/platform/src/os/linux/android/android_jni.rs": "ed22988f6895cb7d4ab1a8e2e0a6d3cffa0102e8bf7250293a97c5389aaf91e3",
+    "tools/backend-login-fixture.py": "76e90dd0ad14b275ba645af97c22d7f751b6b31bc9aa5dd0ee119a759ec69255",
+    "phone/resources/android/AndroidManifest.xml.template": "3e7efa285e61f93c9e9749604601a1b658e360cfade599d415de053385fdf7b1"
+  },
+  "auth_transport": "Isolated Android WebView process/profile; HTTP loopback synthetic endpoint admitted only through explicit acceptance feature and exact marked profile",
+  "credentials_injected": false,
+  "personal_accounts_used": false,
+  "provider_accounts_created": false,
+  "model_calls": 0,
+  "business_api_writes": 0,
+  "protocol_evidence": [
+    {
+      "event": "authorize",
+      "status": 200,
+      "count": 7
+    },
+    {
+      "event": "authorize_cookie",
+      "status": 204,
+      "count": 7
+    },
+    {
+      "event": "exchange",
+      "status": 200,
+      "count": 3
+    },
+    {
+      "event": "login",
+      "status": 303,
+      "count": 3
+    },
+    {
+      "event": "logout",
+      "status": 200,
+      "count": 1
+    },
+    {
+      "event": "me",
+      "status": 200,
+      "count": 5
+    },
+    {
+      "event": "register",
+      "status": 201,
+      "count": 1
+    },
+    {
+      "event": "session_cookie",
+      "status": 200,
+      "count": 4
+    }
+  ],
+  "final_apk_passed": [
+    "Expanded Glance host consent opened the isolated native auth Activity and reached authorize200.",
+    "Native Cancel returned to the same expanded card with Sign-in cancelled; no token exchange for that attempt.",
+    "Actual existing fictional-account form login from Glance completed login303, one-time PKCE exchange200 and me200.",
+    "Main Activity resumed visibly; changing the active connection invalidated the old account-bound card, returning to the ordinary Glance page.",
+    "Cold restart restored the newly connected account from the Android vault; Protected identity reached me200.",
+    "Disconnect reached logout200, cleared the active connection and displayed No account; zero ephemeral auth profiles remained."
+  ],
+  "earlier_same_lab_cases": [
+    "Actual HTML registration201 and ordinary-app login303/exchange200/me200; no account or token injection.",
+    "Android15 system/IME insets corrected; native toolbar and form controls had positive reachable hierarchy bounds.",
+    "Each of seven authorization attempts started without a prior browser-session cookie (authorize_cookie204); in-attempt form requests retained their session cookie.",
+    "A controlled 45-second no-input Cancel observation showed no auth Activity, no extra authorize event and zero auth profiles across nine samples.",
+    "Second signed app showed No account; an opaque primary-app handle probe caused no additional protected endpoint request and no script error. Exact refusal text was outside the fixture viewport."
+  ],
+  "retained_failures": [
+    "Initial package preparation needed an explicit existing JAVA_HOME; no tool downloads.",
+    "Initial ADB archive transfer waited on stdin closure; corrected to shell -T. Environment-only startup config was replaced with the required one-shot Intent extra.",
+    "One unrelated app foreground interruption was left untouched. One earlier unexplained later auth reopening was not reproduced during the controlled 45-second cancellation observation.",
+    "Android15 toolbar overlapped system insets before the bounded WindowInsets fix; hierarchy rechecked after correction.",
+    "Glance auth was retired during Android handoff before the unified draw/event retention fix; final APK passed both Cancel and complete callback.",
+    "Two earlier keyboard-bearing ordinary-app login returns produced black ADB captures while paired Makepad GPU captures rendered the connected app. Physical-screen visibility was not independently observed; no speculative renderer fix applied."
+  ],
+  "not_verified": [
+    "Original auth WebView pixels: FLAG_SECURE intentionally prevents capture; evidence is native DOM hierarchy/input and protocol results.",
+    "Physical display visibility during the earlier ADB black-return cases.",
+    "Android wrong-password, native Back, informational navigation, dropped-network Retry and iframe/cross-origin negative cases; separate Mac/source tests are not phone evidence.",
+    "Real Google or GitHub login on Android; Google Android SDK adapter remains unsupported.",
+    "Production HTTPS developer backend, production release packaging, complete phone fixture UX, latency/FPS or sustained soak."
+  ],
+  "cleanup": {
+    "active_account_cleared": true,
+    "historical_connections_remaining": 2,
+    "auth_profiles_remaining": 0,
+    "owned_package_stopped": true,
+    "owned_reverse_removed": true,
+    "owned_server_stopped": true
+  },
+  "artifact_sha256": {
+    "glance-cancel.png": "18d7bc43dac0e2e23ed3a6670ac8ba7ffb59427a222feeeeb4428d5e3b415365",
+    "glance-after-login.png": "ad92b2bf83444f629e144ded8a32cc514b6f3ab5aee82787ffc245100be76fcd",
+    "logged-out.png": "0f6a49c7b96e4329edd89899032311372ffc490e2a6915f52e25ad83370f85e9"
+  },
+  "privacy": "Export contains allowlisted event names/status/counts and source/APK hashes only. Raw profiles, hierarchy, credentials, callback/state, device IDs, machine paths, temporary ports and logs stay outside Git."
+}

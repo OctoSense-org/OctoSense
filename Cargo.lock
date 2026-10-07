@@ -7873,6 +7873,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "keyring",
+ "makepad-widgets",
  "oauth2",
  "octosense-appstore",
  "octosense-mail-service",

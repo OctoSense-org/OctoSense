@@ -1,0 +1,12 @@
+fn login() {
+ host.request("auth.connect", {provider: "backend", scopes: ["app.session"], presentation: "webview"}, fn(r) {
+  if r.is_ok { ui.status.set_text("Connected in Glance: " + r.data.label) }
+  else { ui.status.set_text("Sign-in result: " + r.error) }
+ })
+}
+SolidView {width: Fill height: Fill flow: Down padding: 20 spacing: 16 draw_bg.color: #f4f7fc
+ Label {width: Fill text: "Backend login in Glance" draw_text.color: #172033 draw_text.text_style.font_size: 24}
+ Label {width: Fill text: "Private synthetic test. Native host owns sign-in." draw_text.color: #43536c}
+ Button {width: Fill height: 52 text: "Sign in from Glance" on_click: || login()}
+ status := Label {width: Fill text: "Ready for native sign-in" draw_text.color: #233854}
+}

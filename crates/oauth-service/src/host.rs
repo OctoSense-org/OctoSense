@@ -236,13 +236,17 @@ struct Pending {
     provider: Provider,
     scopes: BTreeSet<String>,
     original: Replier,
-    cancelled: AtomicBool,
+    cancelled: Arc<AtomicBool>,
     started: AtomicBool,
     deadline: Instant,
     status: Mutex<Value>,
     epoch: u64,
     scope_check: ScopeCheck,
     backend: Option<Arc<crate::backend::BackendClient>>,
+    embedded: bool,
+    callback_claimed: AtomicBool,
+    callback_tx: std::sync::mpsc::SyncSender<String>,
+    callback_rx: Mutex<std::sync::mpsc::Receiver<String>>,
 }
 struct AuthService {
     scope_check: ScopeCheck,
@@ -390,9 +394,13 @@ impl HostService for AuthService {
                     if provider == Provider::Google {
                         return Err("Google authorization needs the Android host adapter; desktop login is not supported on this device".into());
                     }
+                    let embedded = presentation(provider, call.args.get("presentation"))?;
                     #[cfg(any(target_os = "android", target_os = "ios"))]
-                    if provider == Provider::Backend {
-                        return Err("Backend authorization needs a native mobile callback adapter; use a desktop build".into());
+                    if provider == Provider::Backend && !embedded {
+                        return Err(
+                            "Backend browser authorization needs a native mobile callback adapter"
+                                .into(),
+                        );
                     }
                     let backend = if provider == Provider::Backend {
                         Some(backend_host::client(&call.host_dir, &call.app_id)?)
@@ -404,9 +412,10 @@ impl HostService for AuthService {
                         scopes,
                         authorization_epoch(&call.host_dir, &call.app_id),
                         backend,
+                        embedded,
                     ))
                 })();
-                let (provider, scopes, epoch, backend) = match parsed {
+                let (provider, scopes, epoch, backend, embedded) = match parsed {
                     Ok(v) => v,
                     Err(e) => {
                         reply.send(Err(e));
@@ -425,52 +434,87 @@ impl HostService for AuthService {
                         .send(Err("A new sign-in replaced this request".into()));
                 }
                 self.cleanup();
+                // Bound worker lifetimes independently of consumed UI tickets.
+                if self.pending.len() >= 32 {
+                    reply.send(Err(
+                        "Too many sign-in requests are open; close one and retry".into(),
+                    ));
+                    return;
+                }
                 let ticket = Uuid::new_v4().to_string();
+                let (callback_tx, callback_rx) = std::sync::mpsc::sync_channel(1);
                 let pending = Arc::new(Pending {
                     app: call.app_id,
                     root: call.host_dir,
                     provider,
                     scopes,
                     original: reply,
-                    cancelled: AtomicBool::new(false),
+                    cancelled: Arc::new(AtomicBool::new(false)),
                     started: AtomicBool::new(false),
                     deadline: Instant::now() + AUTH_LIFETIME,
                     status: Mutex::new(json!({"phase":"ready"})),
                     epoch,
                     scope_check: self.scope_check.clone(),
                     backend,
+                    embedded,
+                    callback_claimed: AtomicBool::new(false),
+                    callback_tx,
+                    callback_rx: Mutex::new(callback_rx),
                 });
+                if !makepad_widgets::web_reader::register_auth_lifetime(&ticket, &pending.cancelled)
+                {
+                    pending
+                        .original
+                        .clone()
+                        .send(Err("Cannot open another sign-in right now".into()));
+                    return;
+                }
+                let worker = pending.clone();
+                if std::thread::Builder::new()
+                    .name("oauth-sign-in".into())
+                    .spawn(move || complete_pending(worker))
+                    .is_err()
+                {
+                    pending.cancelled.store(true, Ordering::SeqCst);
+                    pending
+                        .original
+                        .clone()
+                        .send(Err("Cannot start sign-in right now".into()));
+                    return;
+                }
                 host.open_sheet(consent_sheet(&ticket, &pending));
                 self.pending.insert(ticket, pending);
             }
             "sheet.start" => match self.pending(&call) {
                 Err(e) => reply.send(Err(e)),
                 Ok(pending) => {
-                    if !pending.started.swap(true, Ordering::SeqCst) {
+                    if !pending.started.load(Ordering::SeqCst) {
                         *pending.status.lock().unwrap() = json!({"phase":"starting"});
-                        std::thread::spawn(move || {
-                            let result = authorize(&pending);
-                            if pending.cancelled.load(Ordering::SeqCst) {
-                                return;
-                            }
-                            match result {
-                                Ok(connection) => {
-                                    *pending.status.lock().unwrap() = json!({"phase":"connected"});
-                                    pending.original.clone().send(Ok(json!(connection)));
-                                }
-                                Err(error) => {
-                                    *pending.status.lock().unwrap() =
-                                        json!({"phase":"error","message":error});
-                                    // Settle the app request even if the user leaves the
-                                    // error sheet visible. A second reply is discarded.
-                                    pending.original.clone().send(Err(error));
-                                }
-                            }
-                        });
+                        pending.started.store(true, Ordering::SeqCst);
                     }
                     reply.send(Ok(json!({"started":true})));
                 }
             },
+            "sheet.callback" => {
+                let result = (|| {
+                    let p = self.pending(&call)?;
+                    if !p.embedded || !p.started.load(Ordering::SeqCst) {
+                        return Err("No embedded sign-in is waiting".into());
+                    }
+                    let url = call.args["url"]
+                        .as_str()
+                        .filter(|s| s.len() <= 8192)
+                        .ok_or("Invalid authentication callback")?;
+                    if p.callback_claimed.swap(true, Ordering::SeqCst) {
+                        return Err("Authentication callback already received".into());
+                    }
+                    p.callback_tx
+                        .try_send(url.to_owned())
+                        .map_err(|_| "Authentication callback is unavailable")?;
+                    Ok(json!({"received":true}))
+                })();
+                reply.send(result);
+            }
             "sheet.status" => match self.pending(&call) {
                 Ok(p) => {
                     let status = p.status.lock().unwrap().clone();
@@ -494,6 +538,44 @@ impl HostService for AuthService {
                 self.cleanup();
             }
             _ => reply.send(Err("Unknown authentication operation".into())),
+        }
+    }
+}
+
+/// A worker exists before Continue so an abandoned sheet settles the original
+/// request as well. The UI only flips atomics; it never waits for this worker.
+fn wait_for_consent(
+    started: &AtomicBool,
+    cancelled: &AtomicBool,
+    deadline: Instant,
+) -> Result<(), String> {
+    loop {
+        if cancelled.load(Ordering::SeqCst) || Instant::now() >= deadline {
+            return Err("Sign-in cancelled or expired".into());
+        }
+        if started.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn complete_pending(pending: Arc<Pending>) {
+    let result = wait_for_consent(&pending.started, &pending.cancelled, pending.deadline)
+        .and_then(|()| authorize(&pending));
+    // authorize checks cancellation around the store commit and rolls back a
+    // cancelled write. Once it returns Ok the connection is committed; a later
+    // sheet close must not relabel that durable success as a failed sign-in.
+    match result {
+        Ok(connection) => {
+            *pending.status.lock().unwrap() = json!({"phase":"connected"});
+            pending.original.clone().send(Ok(json!(connection)));
+        }
+        Err(error) => {
+            *pending.status.lock().unwrap() = json!({"phase":"error","message":error});
+            // Replier discards duplicates/stale isolates. A live replaced app
+            // must still receive cancellation even if no native event arrives.
+            pending.original.clone().send(Err(error));
         }
     }
 }
@@ -645,7 +727,27 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
     Ok(connection)
 }
 
+fn presentation(provider: Provider, value: Option<&Value>) -> Result<bool, String> {
+    let supported = cfg!(any(target_os = "macos", target_os = "android"));
+    match value.and_then(Value::as_str) {
+        None if value.is_some() => Err("Invalid sign-in presentation".into()),
+        None => Ok(provider == Provider::Backend && supported),
+        Some("browser") => Ok(false),
+        Some("webview") if provider != Provider::Backend => {
+            Err("Provider sign-in uses its supported browser flow".into())
+        }
+        Some("webview") if !supported => {
+            Err("Embedded backend sign-in is unavailable on this platform".into())
+        }
+        Some("webview") => Ok(true),
+        _ => Err("Choose browser or webview sign-in".into()),
+    }
+}
+
 fn consent_sheet(ticket: &str, p: &Pending) -> String {
+    if p.embedded {
+        return embedded_sheet(ticket, p);
+    }
     // All variable text enters as a JSON string literal, never executable Splash.
     let ticket = json!(ticket).to_string();
     let title = json!(format!(
@@ -704,17 +806,20 @@ fn poll() {{
         if watching {{ start_timeout(0.5, || poll()) }}
     }})
 }}
+fn bind_lifetime() {{ return ui.oauth_lifetime.bind_auth_lifetime(ticket) }}
 fn begin() {{
+    if !bind_lifetime() {{ host_dismiss() return }}
     ui.oauth_status.set_text("Preparing secure sign-in…")
     host.request("auth.sheet.start", {{ticket: ticket}}, fn(r) {{
         if r.is_ok {{ watching = true poll() }} else {{ ui.oauth_status.set_text(r.error) }}
     }})
 }}
-SolidView {{width: Fill height: Fill flow: Down padding: 20 spacing: 16 draw_bg.color: #fff
+let content = SolidView {{width: Fill height: Fill flow: Down padding: 20 spacing: 16 draw_bg.color: #fff
     Label {{width: Fill text: {title} draw_text.color: #222 draw_text.text_style.font_size: 22}}
     ScrollYView {{width: Fill height: Fill
         Label {{width: Fill text: {description} draw_text.color: #444 draw_text.text_style.font_size: 13}}
     }}
+    oauth_lifetime := WebReader {{width: 0 height: 0 visible: false}}
     oauth_code := Label {{width: Fill draw_text.color: #222 draw_text.text_style.font_size: 22}}
     oauth_browser := View {{width: Fill height: Fit on_render: || {{
         if browser_url != "" {{
@@ -725,6 +830,8 @@ SolidView {{width: Fill height: Fill flow: Down padding: 20 spacing: 16 draw_bg.
     Button {{width: Fill height: 48 text: "Continue" on_click: || begin()}}
     ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || host_dismiss()}}
 }}
+start_timeout(0.0, || bind_lifetime())
+content
 "#
     )
 }
@@ -754,3 +861,102 @@ mod lifecycle_tests {
         );
     }
 }
+
+/// The contained app never receives this sheet's authorization URL or callback.
+fn embedded_sheet(ticket: &str, p: &Pending) -> String {
+    let ticket = json!(ticket).to_string();
+    let backend = p
+        .backend
+        .as_ref()
+        .expect("Backend presentation is validated");
+    let origin = url::Url::parse(&backend.registration().authorization_url)
+        .map(|u| u.origin().ascii_serialization())
+        .unwrap_or_default();
+    let app = json!(&p.app).to_string();
+    let origin = json!(origin).to_string();
+    format!(
+        r#"
+let ticket = {ticket}
+let watching = false
+let opened_url = ""
+fn host_dismiss() {{
+    watching = false
+    ui.oauth_webview.close()
+    host.request("auth.sheet.cancel", {{ticket: ticket}}, fn(r) {{}})
+}}
+fn changed() {{
+    let state = ui.oauth_webview.auth_status()
+    if state == "loading" {{ ui.oauth_status.set_text("Loading sign-in…") }}
+    if state == "loaded" {{ ui.oauth_status.set_text("Sign in or create an account on this app’s website.") }}
+    if state == "error" {{ ui.oauth_status.set_text("Could not load sign-in. Check your connection and retry.") }}
+    if state == "blocked" {{ ui.oauth_status.set_text("This page tried to leave the app’s login website. Use the browser login option for another provider.") }}
+    if state == "cancelled" {{ host_dismiss() }}
+    if state == "callback" {{
+        let callback = ui.oauth_webview.auth_callback()
+        if callback == "" {{ return }}
+        ui.oauth_status.set_text("Completing sign-in…")
+        host.request("auth.sheet.callback", {{ticket: ticket, url: callback}}, fn(r) {{
+            if !r.is_ok {{ ui.oauth_status.set_text(r.error) }}
+        }})
+    }}
+}}
+fn poll() {{
+    if !watching {{ return }}
+    host.request("auth.sheet.status", {{ticket: ticket}}, fn(r) {{
+        if r.is_ok {{
+            if r.data.phase == "webview" && opened_url != r.data.url {{
+                opened_url = r.data.url
+                ui.oauth_intro.set_visible(false)
+                ui.oauth_continue.set_visible(false)
+                ui.oauth_toolbar.set_visible(true)
+                ui.oauth_webview.set_visible(true)
+                if !ui.oauth_webview.open_auth(r.data.url, r.data.callback) {{
+                    ui.oauth_status.set_text("Embedded sign-in is unavailable on this platform.")
+                    host_dismiss()
+                }}
+            }}
+            if r.data.phase == "error" {{
+                ui.oauth_webview.close()
+                ui.oauth_status.set_text(r.data.message)
+                watching = false
+            }}
+        }} else {{
+            ui.oauth_webview.close()
+            watching = false
+        }}
+        if watching {{ start_timeout(0.25, || poll()) }}
+    }})
+}}
+fn bind_lifetime() {{ return ui.oauth_webview.bind_auth_lifetime(ticket) }}
+fn begin() {{
+    if !bind_lifetime() {{ host_dismiss() return }}
+    ui.oauth_status.set_text("Preparing sign-in…")
+    host.request("auth.sheet.start", {{ticket: ticket}}, fn(r) {{
+        if r.is_ok {{ watching = true poll() }} else {{ ui.oauth_status.set_text(r.error) }}
+    }})
+}}
+let content = SolidView {{width: Fill height: Fill flow: Down padding: 16 spacing: 10 draw_bg.color: #f8fafc
+    Label {{width: Fill text: "Sign in to this app" draw_text.color: #172033 draw_text.text_style.font_size: 22}}
+    Label {{width: Fill text: {app} draw_text.color: #43536c draw_text.text_style.font_size: 12}}
+    Label {{width: Fill text: {origin} draw_text.color: #172033 draw_text.text_style.font_size: 13}}
+    oauth_intro := View {{width: Fill height: Fill flow: Down spacing: 12
+        Label {{width: Fill text: "Continue to this app’s website to sign in or create an account. OctoSense keeps the resulting session in its secure credential store." draw_text.color: #43536c}}
+    }}
+    oauth_webview := WebReader {{width: Fill height: Fill visible: false on_auth: || changed()}}
+    oauth_status := Label {{width: Fill text: "Continue to authorize this connection." draw_text.color: #43536c draw_text.text_style.font_size: 12}}
+    oauth_toolbar := View {{width: Fill height: Fit flow: Right spacing: 8 visible: false
+        Button {{width: Fill height: 44 text: "Back" on_click: || ui.oauth_webview.auth_back()}}
+        Button {{width: Fill height: 44 text: "Retry" on_click: || ui.oauth_webview.auth_retry()}}
+    }}
+    oauth_continue := Button {{width: Fill height: 48 text: "Continue" on_click: || begin()}}
+    ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || host_dismiss()}}
+}}
+start_timeout(0.0, || bind_lifetime())
+content
+"#
+    )
+}
+
+#[cfg(test)]
+#[path = "host_lifetime_tests.rs"]
+mod host_lifetime_tests;

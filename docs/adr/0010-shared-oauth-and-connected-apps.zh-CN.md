@@ -2,7 +2,10 @@
 
 [English](0010-shared-oauth-and-connected-apps.md) | 简体中文
 
-状态：实现中；macOS 身份登录及合成后端验收已通过。真实提供方业务操作和设备验收仍待完成。
+状态：实现中；macOS 身份登录及合成后端验收已通过。用户使用专用测试账户验证了
+真实 Google Calendar 登录、保存日程及刷新。独立 OnePlus 后端测试应用通过了登录、
+Glance 交接和凭据库/退出检查，但存在视觉证据限制。其他提供方写操作和完整设备 UX
+验收仍待完成；准确边界见实现指南。
 
 [实现指南](../../crates/oauth-service/README.zh-CN.md)记录当前平台支持、配置方法和验证边界。
 
@@ -32,13 +35,18 @@ Inbox Assistant 和 Google Calendar。ID 不使用 `os.*`，安装不依赖打�
 ### 开发者自己的后端登录
 
 应用可使用自己的后端账户。宿主按应用配置精确、同源的 HTTPS 授权、令牌、身份与
-退出端点，在浏览器打开后端注册／登录页面，交换 PKCE 绑定的单次代码，并将会话
+退出端点，在 macOS/Android 的宿主 WebView 或桌面外部浏览器打开后端注册／登录页面，
+交换 PKCE 绑定的单次代码，并将会话
 保存在同一套绑定应用的凭据库中。应用不获得 bearer 凭据，也不能在登录请求中
 提供端点。保存的注册摘要防止配置变更把旧令牌发送到新端点。
 
-首版桌面适配器提供 provider 为 `backend`、scope 为 `app.session` 的
+适配器提供 provider 为 `backend`、scope 为 `app.session` 的
 `auth.connect`，复用账户生命周期，并用 `auth.backend.me` 读取受保护身份。
-后端业务 API、应用包自行注册、嵌入式认证 WebView 和移动回调需要另行实现。
+后端业务 API 和应用包自行注册需要另行实现。macOS 嵌入会话使用非持久化 WKWebView
+存储；Android 9+ 使用每次登录独立的 WebView 进程及数据目录。宿主拦截
+`https://octosense.invalid/auth/callback`，限定登录来源，提供返回、取消与重试，
+不向受限应用开放页面桥。提供方授权保留浏览器／设备流程；Windows/Linux 保留
+浏览器适配器，iOS 后端登录不可用。
 本地撤销先于远程退出，远程失败单独报告。测试后端必须运行真实浏览器表单和代码
 交换，不能预置已登录账户；HTTP 回环例外仅存在于验收构建。
 

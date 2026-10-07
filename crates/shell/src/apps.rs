@@ -265,6 +265,37 @@ pub fn register_host_services() {
     });
 }
 
+/// Registers only local HTTP endpoints for the explicitly marked Android backend lab.
+/// No account, credential, callback, transport or vault is injected. Production builds
+/// cannot compile this startup action, and ordinary provider registrations stay HTTPS.
+#[cfg(all(feature = "dev-mode", feature = "acceptance-fixtures", target_os = "android"))]
+pub(crate) fn register_android_backend_fixture() -> Result<(), String> {
+    use octosense_oauth_service::backend::{BackendClient, BackendRegistration};
+    let apps = octosense_app_hub_app::data_root_if_set().ok_or("Missing isolated app root")?;
+    let host = apps.join(".host");
+    octosense_oauth_service::acceptance_fixtures::validate_root(&host)?;
+    let path = host.join("fixtures/backend-registrations.json");
+    let metadata = std::fs::symlink_metadata(&path).map_err(|_| "Missing backend fixture registration")?;
+    if !metadata.is_file() || metadata.len() > 65_536 {
+        return Err("Invalid backend fixture registration".into());
+    }
+    let registrations: Vec<BackendRegistration> = serde_json::from_slice(
+        &std::fs::read(path).map_err(|_| "Cannot read backend fixture registration")?
+    ).map_err(|_| "Invalid backend fixture registration")?;
+    let expected = ["org.octosense.samples.backend", "org.octosense.samples.backendother"];
+    if registrations.len() != expected.len() || !expected.iter().all(|id|
+        registrations.iter().filter(|registration| registration.app_id == *id).count() == 1
+    ) {
+        return Err("Backend fixture requires exactly its two isolated sample apps".into());
+    }
+    let clients: Vec<_> = registrations.into_iter()
+        .map(BackendClient::new_loopback_fixture).collect::<Result<_, _>>()?;
+    for client in clients {
+        octosense_oauth_service::host::register_backend_fixture(&host, client)?;
+    }
+    Ok(())
+}
+
 /// Calendar is a granted dependency of Mail even in a headless background job.
 /// Register its service without creating a Calendar peer or opening an app.
 #[cfg(any(feature = "app-hub", native_mobile))]

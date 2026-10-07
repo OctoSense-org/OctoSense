@@ -41,6 +41,12 @@ struct App {
     browser_capture: Option<PathBuf>,
     #[rust]
     last_browser_url: String,
+    #[rust]
+    webview_control: Option<PathBuf>,
+    #[rust]
+    last_webview_command: u64,
+    #[rust]
+    webview_timer: Option<Timer>,
 }
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
@@ -161,6 +167,24 @@ impl MatchEvent for App {
             #[cfg(not(feature = "acceptance-fixtures"))]
             panic!("Browser capture {path} is unavailable in this build");
         }
+        if let Some(path) = arg("--webview-control=") {
+            #[cfg(all(feature = "acceptance-fixtures", target_os = "macos"))]
+            {
+                assert!(
+                    arg("--backend-fixture=").is_some(),
+                    "WebView inspection requires the fictional backend fixture"
+                );
+                let path = PathBuf::from(path);
+                assert!(
+                    path.is_absolute() && !path.exists(),
+                    "Pass a new private command file"
+                );
+                self.webview_control = Some(path);
+                self.webview_timer = Some(cx.start_interval(0.1));
+            }
+            #[cfg(not(all(feature = "acceptance-fixtures", target_os = "macos")))]
+            panic!("WebView fixture control {path} is unavailable in this build");
+        }
         let scopes = policy.capabilities.clone();
         let caller = self.app.clone();
         octosense_oauth_service::host::register(Arc::new(move |app, provider, requested| {
@@ -226,6 +250,58 @@ impl AppMain for App {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
         octosense_appstore::services::pump(cx, &self.app, &self.root, &app, &sheet);
+        #[cfg(all(feature = "acceptance-fixtures", target_os = "macos"))]
+        if let Some(path) = &self.webview_control {
+            // Only this explicit fictional fixture may inspect native auth DOM.
+            // No command path exists in production shells or app script APIs.
+            let mut browser = None;
+            sheet.children(&mut |_, child| auth_fixture_reader(&child, &mut browser));
+            if let Some(browser) = browser {
+                use std::io::Read;
+                let command = std::fs::File::open(path).ok().and_then(|file| {
+                    let mut bytes = Vec::new();
+                    file.take(65_537).read_to_end(&mut bytes).ok()?;
+                    (bytes.len() <= 65_536)
+                        .then(|| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                        .flatten()
+                });
+                if let Some(command) = command {
+                    if let Some(id) = command["id"]
+                        .as_u64()
+                        .filter(|id| *id > self.last_webview_command)
+                    {
+                        if let Some(result) = command["result_path"]
+                            .as_str()
+                            .filter(|p| PathBuf::from(p).is_absolute())
+                        {
+                            self.last_webview_command = id;
+                            match command["op"].as_str() {
+                                Some("eval") => {
+                                    if let Some(script) =
+                                        command["script"].as_str().filter(|s| s.len() <= 32_768)
+                                    {
+                                        cx.system_browser(browser)
+                                            .evaluate_auth(script.to_owned(), result.to_owned());
+                                    }
+                                }
+                                Some("inspect") => {
+                                    let image = command["snapshot_path"]
+                                        .as_str()
+                                        .filter(|p| PathBuf::from(p).is_absolute())
+                                        .map(str::to_owned);
+                                    cx.system_browser(browser).inspect(
+                                        result.to_owned(),
+                                        image,
+                                        None,
+                                    );
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
+                }
+            }
+        }
         #[cfg(feature = "acceptance-fixtures")]
         if let Some(path) = &self.browser_capture {
             if sheet.borrow().is_some_and(|s| s.view.visible) {
@@ -264,4 +340,15 @@ fn collect_browser_urls(widget: &WidgetRef, urls: &mut Vec<String>) {
         }
     }
     widget.children(&mut |_, child| collect_browser_urls(&child, urls));
+}
+
+#[cfg(all(feature = "acceptance-fixtures", target_os = "macos"))]
+fn auth_fixture_reader(widget: &WidgetRef, browser: &mut Option<SystemBrowserId>) {
+    if let Some(mut reader) = widget.borrow_mut::<makepad_widgets::web_reader::WebReader>() {
+        reader.enable_auth_inspection();
+        if let Some(id) = reader.auth_browser_id() {
+            *browser = Some(id);
+        }
+    }
+    widget.children(&mut |_, child| auth_fixture_reader(&child, browser));
 }

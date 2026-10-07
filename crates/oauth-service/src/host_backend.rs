@@ -96,70 +96,10 @@ pub(super) fn authorize(p: &Pending) -> Result<crate::Connection, String> {
         let _guard = STORE_LOCK.lock().unwrap();
         current(&p.root, &p.app, backend, p.epoch, &p.scope_check)?;
     }
-    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .map_err(|_| "Cannot start backend callback listener")?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|_| "Cannot configure backend callback listener")?;
-    let port = listener
-        .local_addr()
-        .map_err(|_| "Cannot read callback address")?
-        .port();
-    let redirect = url::Url::parse(&format!("http://127.0.0.1:{port}/oauth/callback")).unwrap();
-    let mut attempt = backend.begin(&p.app, redirect, Instant::now())?;
-    *p.status.lock().unwrap() =
-        json!({"phase":"browser","url":attempt.authorization_url().as_str(),"code":""});
-    let code = loop {
-        if p.cancelled.load(Ordering::SeqCst) || Instant::now() >= p.deadline {
-            attempt.cancel();
-            return Err("Sign-in cancelled or expired".into());
-        }
-        match listener.accept() {
-            Ok((mut stream, peer)) => {
-                if !peer.ip().is_loopback() {
-                    continue;
-                }
-                stream.set_read_timeout(Some(Duration::from_secs(1))).ok();
-                let mut bytes = [0; 8192];
-                let count = match stream.read(&mut bytes) {
-                    Ok(count) => count,
-                    Err(_) => continue,
-                };
-                let request = String::from_utf8_lossy(&bytes[..count]);
-                let mut words = request.lines().next().unwrap_or("").split_whitespace();
-                if words.next() != Some("GET") {
-                    continue;
-                }
-                let path = words.next().unwrap_or("");
-                if !path.starts_with("/oauth/callback?") {
-                    let _ = stream.write_all(
-                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                    );
-                    continue;
-                }
-                match attempt.consume_callback(
-                    &p.app,
-                    &format!("http://127.0.0.1:{port}{path}"),
-                    Instant::now(),
-                ) {
-                    Ok(code) => {
-                        let body = "Authorization received. Return to OctoSense.";
-                        let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
-                        break code;
-                    }
-                    Err(error) => {
-                        let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-                        if attempt.is_finished() {
-                            return Err(error);
-                        }
-                    }
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(100))
-            }
-            Err(_) => return Err("Backend callback listener stopped".into()),
-        }
+    let code = if p.embedded {
+        embedded_code(p, backend)?
+    } else {
+        browser_code(p, backend)?
     };
     {
         let _guard = STORE_LOCK.lock().unwrap();
@@ -204,6 +144,104 @@ pub(super) fn authorize(p: &Pending) -> Result<crate::Connection, String> {
         let _ = backend.logout(&p.app, &authorized.tokens);
     }
     saved
+}
+
+fn embedded_code(
+    p: &Pending,
+    backend: &BackendClient,
+) -> Result<crate::backend::BackendCode, String> {
+    let mut attempt = backend.begin_webview(&p.app, Instant::now())?;
+    *p.status.lock().unwrap() = json!({
+        "phase":"webview", "url":attempt.authorization_url().as_str(),
+        "callback":crate::backend::WEBVIEW_CALLBACK_URL,
+    });
+    // Only the worker owns this receiver. The UI uses a bounded try_send.
+    let receiver = p
+        .callback_rx
+        .lock()
+        .map_err(|_| "Authentication receiver stopped")?;
+    loop {
+        if p.cancelled.load(Ordering::SeqCst) || Instant::now() >= p.deadline {
+            attempt.cancel();
+            return Err("Sign-in cancelled or expired".into());
+        }
+        match receiver.recv_timeout(Duration::from_millis(100)) {
+            Ok(url) => return attempt.consume_callback(&p.app, &url, Instant::now()),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => (),
+            Err(_) => return Err("Authentication view closed".into()),
+        }
+    }
+}
+
+fn browser_code(
+    p: &Pending,
+    backend: &BackendClient,
+) -> Result<crate::backend::BackendCode, String> {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .map_err(|_| "Cannot start backend callback listener")?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|_| "Cannot configure backend callback listener")?;
+    let port = listener
+        .local_addr()
+        .map_err(|_| "Cannot read callback address")?
+        .port();
+    let redirect = url::Url::parse(&format!("http://127.0.0.1:{port}/oauth/callback")).unwrap();
+    let mut attempt = backend.begin(&p.app, redirect, Instant::now())?;
+    *p.status.lock().unwrap() =
+        json!({"phase":"browser","url":attempt.authorization_url().as_str(),"code":""});
+    loop {
+        if p.cancelled.load(Ordering::SeqCst) || Instant::now() >= p.deadline {
+            attempt.cancel();
+            return Err("Sign-in cancelled or expired".into());
+        }
+        match listener.accept() {
+            Ok((mut stream, peer)) => {
+                if !peer.ip().is_loopback() {
+                    continue;
+                }
+                stream.set_read_timeout(Some(Duration::from_secs(1))).ok();
+                let mut bytes = [0; 8192];
+                let count = match stream.read(&mut bytes) {
+                    Ok(count) => count,
+                    Err(_) => continue,
+                };
+                let request = String::from_utf8_lossy(&bytes[..count]);
+                let mut words = request.lines().next().unwrap_or("").split_whitespace();
+                if words.next() != Some("GET") {
+                    continue;
+                }
+                let path = words.next().unwrap_or("");
+                if !path.starts_with("/oauth/callback?") {
+                    let _ = stream.write_all(
+                        b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    );
+                    continue;
+                }
+                match attempt.consume_callback(
+                    &p.app,
+                    &format!("http://127.0.0.1:{port}{path}"),
+                    Instant::now(),
+                ) {
+                    Ok(code) => {
+                        let body = "Authorization received. Return to OctoSense.";
+                        let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+                        return Ok(code);
+                    }
+                    Err(error) => {
+                        let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                        if attempt.is_finished() {
+                            return Err(error);
+                        }
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100))
+            }
+            Err(_) => return Err("Backend callback listener stopped".into()),
+        }
+    }
 }
 
 // A rotating refresh token must have exactly one in-flight profile/refresh

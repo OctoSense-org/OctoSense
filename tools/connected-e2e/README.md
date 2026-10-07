@@ -138,3 +138,5 @@ reopens it through signed installation, refuses an editable blank replacement,
 and checks that explicit valid-file replacement preserves the exact recovery
 copy. No provider write occurs. Normal Notes admission/provider and soak drivers
 remain the commands above.
+
+Android developer-backend login has its own isolated package and real-form procedure: [Android backend acceptance](ANDROID-BACKEND.md). It does not authorize Google embedded login.

@@ -750,8 +750,9 @@ impl Widget for ShellGlanceSheet {
                 } else { card };
                 let body = self.live.body(&key, &open.card, "glance sheet");
                 if open.card.viewport {
-                    self.tiles.set_foreground(cx, !self.app_suspended
-                        && self.presentation.phase != crate::card_presentation::Phase::Closing);
+                    let closing = self.presentation.phase == crate::card_presentation::Phase::Closing;
+                    self.tiles.sync_foreground(cx, !self.app_suspended && !closing,
+                        cfg!(target_os = "android") && self.app_suspended && !closing);
                     self.tiles.draw_workspace(cx, &key, &open.card.app, open.card.contained, &body, card);
                 } else {
                     self.tiles.draw(cx, &key, &open.card.app, open.card.contained, &body, card);
@@ -783,7 +784,6 @@ impl Widget for ShellGlanceSheet {
         self.refresh_publication(cx);
         if matches!(event, Event::Pause | Event::Background) {
             self.close_touch = None; self.app_suspended = true;
-            self.tiles.set_foreground(cx, false);
         } else if matches!(event, Event::Resume | Event::Foreground) { self.app_suspended = false; }
         if let Some(frame) = self.frame.is_event(event) {
             let dt = frame.time - self.frame_time;
@@ -794,8 +794,9 @@ impl Widget for ShellGlanceSheet {
             self.redraw(cx);
         }
         if !self.is_open() { return; }
-        self.tiles.set_foreground(cx, !self.app_suspended
-            && self.presentation.phase != crate::card_presentation::Phase::Closing);
+        let closing = self.presentation.phase == crate::card_presentation::Phase::Closing;
+        self.tiles.sync_foreground(cx, !self.app_suspended && !closing,
+            cfg!(target_os = "android") && self.app_suspended && !closing);
         self.poll_compose(cx);
         #[cfg(any(feature = "app-hub", native_mobile))]
         self.poll_review(cx);

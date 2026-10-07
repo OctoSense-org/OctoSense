@@ -12,8 +12,17 @@ Rust 授权协议、连接器、原生审批、账户生命周期和示例界面
 提供方浏览器流程已通过真实的 GitHub 和 Google 身份登录。GitHub 仅请求 `read:user`；
 Google 使用专用测试账户，仅请求 `openid email profile`。合成后端使用真实平台凭据库，
 已通过浏览器注册/登录、受保护身份、刷新故障恢复、原生进程重启、退出及两个已安装
-应用之间的隔离。仓库写入、Gmail 发信和 Calendar 写入仍**未验证**；仅身份登录不会
-授予或证明这些业务操作。真实 DeepSeek peer 已通过已安装应用的准入工具
+应用之间的隔离。原生后端 WebView 在 macOS 上另通过八项验收，包括真实表单输入、
+取消、重试、应用/会话隔离及进程重启；同一最终二进制的桌面浏览器回归通过七项检查。
+另一个独立 OnePlus 6 后端测试应用完成真实表单登录、Glance 交接/取消、受保护身份、
+原生凭据库冷启动恢复及退出。[Android 记录](../../tools/connected-e2e/evidence/backend-android-20261007/README.zh-CN.md)
+明确列出视觉证据限制和未执行项目，不代表完整手机 UX 验收。
+仓库写入和 Gmail 发信仍**未验证**；仅身份登录不会
+授予或证明这些业务操作。后续 Mac 会话中，将专用测试账户加入 OAuth 项目的测试用户
+名单后，已安装的签名 Calendar 应用完成了真实 Google 授权。用户确认日历列表已显示，
+通过应用的审阅流程保存了测试日程，并在 Refresh 后再次看到它。这是用户手工验证，
+没有独立 API 回读；编辑/删除及 Google 生产审核仍未验证。[脱敏记录](../../tools/connected-e2e/evidence/calendar-login-20261007.json)区分了这些观察。
+真实 DeepSeek peer 已通过已安装应用的准入工具
 处理合成新邮件，并通过 Chat 修改持久化回复。Calendar peer 也通过自身工具读取
 选中的合成日程，回答准确标题、时间和地点。这证明模型与工具集成，不代表 Google 投递。
 三个普通示例尚未在 OnePlus 6 上测试。
@@ -38,6 +47,12 @@ Google 使用专用测试账户，仅请求 `openid email profile`。合成后�
 发行方或更新版本。新增解析器不会自动向提供方注册 OctoSense；维护者提供注册
 信息并完成验证后，发行版本才具备登录条件。现有 beta.2 下载包不含注册默认值。
 
+如果 Google 显示 **403: access_denied**，并说明仅允许开发者批准的测试用户访问，
+则说明已找到提供方注册信息，但当前账户未列入该 OAuth 项目的测试用户名单。
+维护者在 **Google Auth Platform → Audience → Test users** 中加入专用测试账户，
+再重新发起登录。这只能解除测试限制，不代表应用已通过公开分发审核。
+隔离验收不使用个人账户。
+
 ## 身份、提供方数据与应用自己的后端
 
 三者是独立选择，均不要求用户拥有 OctoSense 账户。
@@ -47,24 +62,32 @@ Google 使用专用测试账户，仅请求 `openid email profile`。合成后�
 | 在应用内识别 GitHub 用户 | 授予 `auth` 并请求 `read:user`。宿主验证 GitHub 数字用户 ID 和登录名，返回绑定该应用的句柄，以及 `app_id`、`provider`、`subject`、`label`、`scopes` 和可选 `expires_at`。不需要仓库访问权限；也不提供已验证的邮箱地址。 |
 | 在应用内识别 Google 用户 | `auth` 也允许仅用于身份的 `openid`、`email`、`profile` 权限，无需 Gmail 或 Calendar 能力。宿主验证提供方的 subject，并仅在 Google 确认邮箱已验证时将邮箱作为标签。同样受平台授权支持范围限制。 |
 | 访问提供方数据 | GitHub 仓库另外需要 `github` 能力及仓库权限。Google Gmail、Calendar 分别需要 `gmail` / `gcalendar` 能力和相应权限，与应用选择哪种登录身份无关。 |
-| 注册或登录应用自己的后端 | 桌面浏览器适配器使用绑定应用的宿主注册、PKCE 代码交换及后端受保护的身份端点；后端签发自身会话。应用包自行注册及移动端后端回调尚未实现。 |
+| 注册或登录应用自己的后端 | macOS/Android 使用宿主持有的登录 WebView、绑定应用的注册信息、PKCE 代码交换及受保护身份端点。桌面仍可选择外部浏览器；应用包自行注册尚未实现。 |
 
-后端流程由开发者的 HTTPS 登录页面提供 GitHub 登录，或自己的注册和登录。
+后端流程由开发者的 HTTPS 登录页面提供自己的注册和登录。若桌面后端页面也提供
+GitHub 登录，应使用外部浏览器模式，以便访问提供方来源。
 后端负责验证身份并签发自身会话，宿主为该应用保存独立的后端会话。共享连接器的
 GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通过自身 OAuth 流程，
 取得用户另行授权的 GitHub 令牌。现有网络访问能力不会让本地 GitHub 资料变成
 远程后端可信的身份证明。应用自身不得收集密码或提供方秘密凭据。
 
-如果身份提供方允许嵌入，后端自己的登录页面可以使用专用的宿主认证 WebView。
-该适配器**尚未实现**：现有 Makepad 阅读器 WebView 缺少这里需要的回调拦截和
-会话隔离接口。Google 授权使用受支持的浏览器流程，后端页面上的 Google 登录
-按钮也须遵守这一要求。后端登录同样可以通过浏览器完成，不要求嵌入 WebView。
+后端登录复用原生 WebView 引擎的专用认证模式。macOS 每次登录使用独立、非持久化
+WKWebView 存储；Android 9+ 使用不可导出的独立进程 Activity 及唯一 WebView 数据
+目录，进程退出后删除该目录，不影响阅读器现有 Cookie。导航限制在已注册登录来源，
+加载前拦截精确回调，页面没有调用应用工具的 JavaScript 桥。返回、取消、加载与
+重试控件由宿主管理；受限应用不能直接打开认证模式或检查其页面。
+
+GitHub 和 Google 保留现有提供方授权流程。需要访问其他提供方来源的后端登录应
+选择桌面浏览器模式；嵌入模式不会悄悄打开外站。Windows/Linux 保留桌面浏览器登录，
+iOS 后端登录仍不可用。
 
 ## 开发者后端接口约定
 
 声明 `auth` 和 `storage.accounts: true`。调用 `auth.connect` 时传入
 `{"provider":"backend","scopes":["app.session"]}`，并复用普通的
 `auth.accounts`、`auth.active`、`auth.select`、`auth.disconnect` 生命周期。
+macOS/Android 默认使用嵌入页面。传入 `"presentation":"webview"` 可要求该模式，
+`"presentation":"browser"` 选择桌面外部浏览器；不支持的组合会明确拒绝。
 `auth.backend.me` 接收本应用当前选中的 `connection` 句柄，返回后端验证的
 `{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`，
 其中包含后端验证的身份。这是登录及受保护身份适配器，不是任意带认证的 HTTP 代理；
@@ -91,20 +114,21 @@ GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通�
 }
 ```
 
-后端实现公开客户端授权码流程：S256 PKCE、原样返回 state、单次代码以及宿主的
-桌面回环回调。令牌端点支持授权码交换及刷新，返回 OAuth bearer 令牌。
+后端实现公开客户端授权码流程：S256 PKCE、原样返回 state 及单次代码。嵌入登录
+只允许精确回调 `https://octosense.invalid/auth/callback`，由宿主拦截，不访问网络。
+桌面外部浏览器模式使用宿主的临时回环回调。令牌端点支持授权码交换及刷新，返回 OAuth bearer 令牌。
 `GET /me` 返回 `{sub,label}`；`POST /logout` 撤销会话并确认
-`{"logged_out":true}`。注册与密码输入均由后端浏览器页面处理，不进入受限应用。
+`{"logged_out":true}`。注册与密码输入均由宿主展示的后端网页处理，不进入受限应用。
 
 各端点须为相同来源、443 端口下互不相同的精确 HTTPS URL；拒绝查询参数、片段、
 URL 凭据及 HTTP 重定向。宿主把保存的连接绑定到规范化注册，修改注册后必须
 重新连接，不能把旧令牌发送到新端点。退出先撤销本地句柄，再尝试远程退出，
-并单独报告远程结果。Android/iOS 在原生回调适配器完成前拒绝后端登录；
-Windows/Linux 的运行尚未验证。
+并单独报告远程结果。嵌入回调仍检查调用者、state、有效期及单次使用。
+Android 9 以下与 iOS 拒绝嵌入后端登录；Windows/Linux 的运行尚未验证。
 
 合成后端使用真实浏览器表单、HTTP 代码交换及受保护请求。HTTP 回环仅在非默认
 验收构建中通过显式隔离注册开放，不是发行版本的配置开关。参阅
-[原生验收驱动](../../tools/connected-e2e/backend-login/README.zh-CN.md)。
+[浏览器验收驱动](../../tools/connected-e2e/backend-login/README.zh-CN.md)和[原生 WebView 验收](../../tools/connected-e2e/backend-webview.zh-CN.md)。
 
 ## 配置发行版本（维护者）
 

@@ -15,8 +15,21 @@ through the native host and provider browser flows. GitHub requested `read:user`
 Google used a dedicated test account with `openid email profile`. The synthetic
 backend passed browser registration/login, protected identity, refresh recovery,
 native restart, logout and isolation between two installed apps using the real
-platform vault. Repository writes, Gmail sends and Calendar writes remain
+platform vault. Native backend WebView acceptance also passed eight macOS
+checks, including real form input, cancellation, retry, app/session isolation and
+process restart; the desktop browser regression passed seven checks on that
+same final binary. A separate OnePlus 6 backend fixture completed actual form
+login, Glance handoff/cancellation, protected identity, native-vault cold restore
+and logout. Its [Android receipt](../../tools/connected-e2e/evidence/backend-android-20261007/README.md)
+records limited visual evidence and unrun cases; it is not full phone UX acceptance.
+Repository writes and Gmail sends remain
 **unverified**; identity-only sign-in does not grant or prove those operations.
+In a later Mac session, the installed signed Calendar app completed real Google
+authorization after the dedicated test account was added to the OAuth project's
+tester list. The user confirmed the calendar list appeared, saved a test event
+through the app's review flow, and saw it after Refresh. This was manual
+verification, without independent API readback; editing/deletion and a
+production-verified Google release remain unverified. The [sanitized receipt](../../tools/connected-e2e/evidence/calendar-login-20261007.json) separates these observations.
 A real DeepSeek peer processed synthetic incoming mail
 through the installed app’s admitted tools and updated its saved reply through
 chat. A Calendar peer also read the selected synthetic event through its own
@@ -46,6 +59,13 @@ Adding this resolver does not register OctoSense with either provider: a release
 is ready for sign-in only after its maintainer supplies and validates the
 registration. Existing beta.2 downloads contain no registration defaults.
 
+If Google displays **403: access_denied** and says only developer-approved
+testers may access the app, the provider registration was found, but the account
+is not on that OAuth project's test-user list. The maintainer adds the dedicated
+test account under **Google Auth Platform → Audience → Test users**, then starts
+a fresh sign-in. This unblocks testing; it does not verify the app for public
+distribution. Keep personal accounts out of isolated acceptance runs.
+
 ## Identity, provider access and an app's own backend
 
 These are separate choices; none requires an OctoSense account.
@@ -55,10 +75,11 @@ These are separate choices; none requires an OctoSense account.
 | Identify a GitHub user inside an app | Grant `auth` and request `read:user`. The host verifies GitHub's numeric user ID and login, then returns an app-bound handle plus `app_id`, `provider`, `subject`, `label`, `scopes` and optional `expires_at`. Repository access is not required. This does not provide a verified email address. |
 | Identify a Google user inside an app | `auth` also admits identity-only `openid`, `email` and `profile` scopes without Gmail or Calendar capabilities. The host verifies the provider subject and uses the email as its label only when Google reports it verified. The same platform authorization limitations apply. |
 | Access provider data | GitHub repositories additionally require the `github` capability and repository scopes. Google Gmail and Calendar require their own `gmail` / `gcalendar` capabilities and scopes, regardless of which identity an app uses for login. |
-| Register or log in to an app's own backend | The desktop browser adapter uses an app-bound host registration, PKCE code exchange and the backend's protected identity endpoint. The backend issues its own session. Bundle-driven registration and mobile backend callbacks are not implemented. |
+| Register or log in to an app's own backend | A host-owned login WebView on macOS/Android uses an app-bound registration, PKCE code exchange and the backend's protected identity endpoint. An external-browser option remains available on desktop. Bundle-driven registration is not implemented. |
 
-The backend flow lets the developer's HTTPS login page offer GitHub
-sign-in or its own registration and login. The backend verifies identity and
+The backend flow lets the developer's HTTPS login page offer its own
+registration and login. A desktop backend flow that also offers GitHub sign-in
+uses the external-browser presentation so it can visit the provider's origin. The backend verifies identity and
 issues its own session; the host stores that separate session for the app.
 The shared connector's GitHub or Google tokens are not exported to app backends.
 A developer's backend may obtain its own separately consented GitHub token
@@ -66,17 +87,27 @@ through its own OAuth flow. Existing network access does not turn local GitHub
 metadata into proof that a remote backend can trust. Apps must not collect
 passwords or provider secrets themselves.
 
-A backend-owned login page could use a dedicated host authentication WebView,
-if its identity provider permits embedding. That adapter is **not implemented**:
-the current Makepad reader WebView lacks the callback interception and isolated
-session contract needed here. Google authorization uses a supported browser
-flow, including when a backend offers a Google button. Browser-based backend
-login is also a valid design; it does not require an embedded WebView.
+Backend login reuses the native WebView engine in a dedicated authentication
+mode. On macOS each attempt has a nonpersistent WKWebView store. Android 9+
+uses a non-exported Activity in a separate process and a unique WebView data
+directory, removed after the process exits. The reader's existing cookies are
+untouched. Navigation stays on the registered login origin; the exact callback
+is intercepted before loading, and login pages have no app-tool JavaScript bridge.
+Back, Cancel, loading and retry controls belong to the host. Contained apps
+cannot open this authentication mode directly or inspect its page.
+
+GitHub and Google retain their existing provider authorization flows. A backend
+login that needs to visit another provider's origin must use the desktop browser
+option; the embedded mode does not silently open external sites. Windows/Linux
+keep desktop browser login, and iOS backend login remains unavailable.
 
 ## Developer backend contract
 
 Declare `auth` and `storage.accounts: true`. Connect with
 `auth.connect` arguments `{"provider":"backend","scopes":["app.session"]}`.
+On macOS/Android this defaults to the embedded login page. Set
+`"presentation":"webview"` to require that mode, or `"presentation":"browser"`
+for the desktop external-browser flow. Unsupported combinations fail explicitly.
 Use the ordinary `auth.accounts`, `auth.active`, `auth.select` and
 `auth.disconnect` lifecycle. `auth.backend.me` takes this app's active
 `connection` handle and returns
@@ -108,25 +139,28 @@ does not host a service:
 ```
 
 The backend must implement a public-client authorization-code flow with S256
-PKCE, state echo, one-time codes, and the host's desktop loopback callback.
+PKCE, state echo and one-time codes. For embedded login, allow exactly
+`https://octosense.invalid/auth/callback`: this is a host-intercepted return
+address, never a network service. The external-browser desktop flow uses the
+host's ephemeral loopback callback instead.
 The token endpoint accepts code and refresh grants and returns OAuth bearer
 tokens. `GET /me` returns `{sub,label}`; `POST /logout` revokes the session and
 acknowledges `{"logged_out":true}`. Registration and password entry belong to
-the backend's browser page, never the contained app.
+the backend's host-presented web page, never the contained app.
 
 Each endpoint is a distinct exact HTTPS URL on the same origin and port 443;
 queries, fragments, URL credentials and HTTP redirects are refused. The host
 binds each saved connection to the normalized registration. Changing the
 registration requires reconnecting; it cannot redirect an existing token.
 Logout revokes the local handle before attempting remote logout and reports
-the remote result separately. Android/iOS backend login is refused until a
-supported native callback adapter exists. Windows/Linux execution remains
-unverified.
+the remote result separately. Embedded callbacks retain caller, state, expiry
+and single-use checks. Android versions below 9 and iOS refuse embedded backend
+login. Windows/Linux execution remains unverified.
 
 The synthetic backend uses real browser forms, HTTP code exchange and protected
 requests. HTTP loopback is available only in the non-default acceptance build,
 with explicit isolated host registration; it is not a release configuration
-override. See the [native acceptance driver](../../tools/connected-e2e/backend-login/README.md).
+override. See the [browser acceptance driver](../../tools/connected-e2e/backend-login/README.md) and [native WebView acceptance](../../tools/connected-e2e/backend-webview.md).
 
 ## Configure a release (maintainers)
 

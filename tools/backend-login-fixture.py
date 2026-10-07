@@ -14,10 +14,31 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, urlencode, urlsplit
+
+
+WEBVIEW_CALLBACK_URL = "https://octosense.invalid/auth/callback"
+
+
+def callback_origin(value):
+    """Only the existing host loopback or the byte-exact embedded callback."""
+    if value == WEBVIEW_CALLBACK_URL:
+        return "https://octosense.invalid"
+    try:
+        redirect = urlsplit(value)
+        if (redirect.scheme == "http" and redirect.hostname == "127.0.0.1"
+            and redirect.port and redirect.path == "/oauth/callback"
+            and not redirect.username and not redirect.password
+            and not redirect.query and not redirect.fragment):
+            return f"http://127.0.0.1:{redirect.port}"
+    except ValueError:
+        pass
+    return None
 
 
 class State:
@@ -25,9 +46,11 @@ class State:
         self.directory, self.app_id = directory, app_id
         self.token_ttl_seconds = token_ttl_seconds
         self.fail_me = 0
+        self.navigation_available = True
         self.lock = threading.Lock()
         self.users, self.flows, self.codes, self.access, self.refresh = {}, {}, {}, {}, {}
         self.sequence = 0
+        self.web_sessions = set()
 
     def event(self, event, status):
         # Never record query strings, forms, passwords, codes or bearer tokens.
@@ -69,10 +92,21 @@ def handler(state):
             self.end_headers()
             self.wfile.write(raw)
 
+        def has_browser_cookie(self):
+            cookies = SimpleCookie()
+            try:
+                cookies.load(self.headers.get("Cookie", ""))
+                marker = cookies.get("fixture_browser")
+                return marker is not None and marker.value in state.web_sessions
+            except Exception:
+                return False
+
         def form(self, flow_id, notice=""):
             return """<!doctype html><html lang="en"><meta charset="utf-8"><title>OctoSense synthetic backend</title>
 <style>body{font:18px system-ui;max-width:540px;margin:60px auto;padding:24px;color:#172033;background:#f6f8fc}main{padding:28px;background:white;border-radius:16px}label{display:block;margin-top:18px}input{display:block;width:94%;padding:12px;font:inherit}button{margin:24px 10px 0 0;padding:12px;font:inherit}p{line-height:1.5}</style>
 <main><h1>Backend account</h1><p>Fictional acceptance server. Use a new fictional username and password. Never use a real account.</p>
+<p><a id="information" href="/information">About this fictional backend</a></p>
+<p><a id="connection_check" href="/navigation-check">Check fictional connection</a></p>
 <p id="notice" role="status">""" + html.escape(notice) + """</p><form method="post" action="/session">
 <input type="hidden" name="flow" value=""" + '"' + html.escape(flow_id, quote=True) + '"' + """>
 <label for="username">Fictional username</label><input id="username" name="username" autocomplete="off" required maxlength="64">
@@ -84,6 +118,18 @@ def handler(state):
                 path = urlsplit(self.path)
                 if path.path == "/health":
                     return self.respond(200, {"fixture": True})
+                if path.path == "/navigation-check":
+                    if not state.navigation_available:
+                        state.event("navigation_error", 503)
+                        self.close_connection = True
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                        self.connection.close()
+                        return
+                    state.event("navigation_recovered", 200)
+                    return self.respond(200, '<!doctype html><html><title>Connection restored</title><h1 id="connection-restored">Connection restored</h1><p>Use the host Back control to return.</p></html>', "text/html")
+                if path.path == "/information":
+                    state.event("information", 200)
+                    return self.respond(200, '<!doctype html><html><title>Fictional backend information</title><h1 id="information-title">Fictional backend information</h1><p>Use the host Back control to return to the login form.</p></html>', "text/html")
                 if path.path == "/me":
                     if state.fail_me:
                         state.fail_me -= 1
@@ -104,19 +150,21 @@ def handler(state):
                 if any(len(q.get(k, [])) != 1 for k in required):
                     return self.respond(400, {"error": "invalid_request"})
                 q = {k: v[0] for k, v in q.items()}
-                redirect = urlsplit(q["redirect_uri"])
+                origin = callback_origin(q["redirect_uri"])
                 if (q["client_id"] != "octosense-fixture" or q["response_type"] != "code"
                     or q["code_challenge_method"] != "S256" or q["scope"] != "app.session"
                     or not 20 <= len(q["state"]) <= 256 or len(q["code_challenge"]) != 43
-                    or redirect.scheme != "http" or redirect.hostname != "127.0.0.1"
-                    or not redirect.port or redirect.path != "/oauth/callback"
-                    or redirect.username or redirect.password or redirect.query or redirect.fragment):
+                    or origin is None):
                     return self.respond(400, {"error": "invalid_request"})
                 flow = secrets.token_urlsafe(32)
-                self.callback_origin = f"http://127.0.0.1:{redirect.port}"
+                self.callback_origin = origin
                 state.flows[flow] = dict(q, expires=time.monotonic() + 600)
+                state.event("authorize_cookie", 200 if self.has_browser_cookie() else 204)
+                marker = secrets.token_urlsafe(24)
+                state.web_sessions.add(marker)
                 state.event("authorize", 200)
-                self.respond(200, self.form(flow), "text/html")
+                self.respond(200, self.form(flow), "text/html", {
+                    "Set-Cookie": f"fixture_browser={marker}; Path=/; HttpOnly; SameSite=Lax"})
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length", "0"))
@@ -127,6 +175,16 @@ def handler(state):
             with state.lock:
                 # Fault control belongs only to this disposable acceptance
                 # server. It changes availability, never identity or tokens.
+                if path == "/fixture/navigation-availability":
+                    try:
+                        available = json.loads(body)["available"]
+                        if type(available) is not bool:
+                            raise ValueError()
+                    except (ValueError, KeyError, TypeError):
+                        return self.respond(400, {"error": "invalid_fault_control"})
+                    state.navigation_available = available
+                    state.event("navigation_availability", 200)
+                    return self.respond(200, {"available": available})
                 if path == "/fixture/fail-next-me":
                     try:
                         count = json.loads(body)["count"]
@@ -156,7 +214,8 @@ def handler(state):
                     flow = state.flows.get(q.get("flow"))
                     if not flow or flow["expires"] < time.monotonic():
                         return self.respond(400, {"error": "expired_flow"})
-                    self.callback_origin = f"http://127.0.0.1:{urlsplit(flow['redirect_uri']).port}"
+                    self.callback_origin = callback_origin(flow["redirect_uri"])
+                    state.event("session_cookie", 200 if self.has_browser_cookie() else 204)
                     username, password = q.get("username", ""), q.get("password", "")
                     if not 1 <= len(username) <= 64 or not 8 <= len(password) <= 128:
                         return self.respond(400, self.form(q["flow"], "Use a fictional username and a password of at least 8 characters."), "text/html")

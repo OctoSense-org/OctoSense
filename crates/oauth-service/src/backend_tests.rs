@@ -101,6 +101,58 @@ fn authorization_is_caller_callback_state_pkce_bound_and_single_use() {
 }
 
 #[test]
+fn webview_uses_only_fixed_callback_and_preserves_pkce_owner_state_and_single_use() {
+    let client = BackendClient::new(registration("https://backend.example.test")).unwrap();
+    assert!(client.begin_webview("another.app", Instant::now()).is_err());
+    assert!(client
+        .begin(
+            caller(),
+            Url::parse(WEBVIEW_CALLBACK_URL).unwrap(),
+            Instant::now()
+        )
+        .is_err());
+    let mut attempt = client.begin_webview(caller(), Instant::now()).unwrap();
+    let query: std::collections::BTreeMap<_, _> =
+        attempt.authorization_url().query_pairs().collect();
+    assert_eq!(query["redirect_uri"], WEBVIEW_CALLBACK_URL);
+    assert_eq!(query["code_challenge_method"], "S256");
+    assert_eq!(query["scope"], SESSION_SCOPE);
+    assert!(!query.contains_key("code_verifier"));
+    let valid = callback(&attempt);
+    for invalid in [
+        valid.replace("octosense.invalid", "other.invalid"),
+        valid.replace("octosense.invalid", "octosense.invalid:443"),
+        valid.replace("octosense.invalid", "OCTOSENSE.INVALID"),
+        valid.replace("/auth/callback", "/auth/../auth/callback"),
+        valid.replace("/auth/callback", "/auth/callback/"),
+        valid.replace(&attempt.state, "wrong-state"),
+        format!("{valid}#fragment"),
+        format!("{valid}&state=duplicate"),
+    ] {
+        assert!(attempt
+            .consume_callback(caller(), &invalid, Instant::now())
+            .is_err());
+        assert!(!attempt.is_finished());
+    }
+    assert!(attempt
+        .consume_callback("another.app", &valid, Instant::now())
+        .is_err());
+    let code = attempt
+        .consume_callback(caller(), &valid, Instant::now())
+        .unwrap();
+    assert_eq!(code.redirect.as_str(), WEBVIEW_CALLBACK_URL);
+    assert!(attempt
+        .consume_callback(caller(), &valid, Instant::now())
+        .is_err());
+    let mut cancelled = client.begin_webview(caller(), Instant::now()).unwrap();
+    let valid = callback(&cancelled);
+    cancelled.cancel();
+    assert!(cancelled
+        .consume_callback(caller(), &valid, Instant::now())
+        .is_err());
+}
+
+#[test]
 fn cancel_expiry_decline_and_registration_change_cannot_complete_authorization() {
     let client = BackendClient::new(registration("https://backend.example.test")).unwrap();
     let mut cancelled = begin(&client);
@@ -318,6 +370,24 @@ mod real_http {
         }
         assert!(journal.contains("\"event\": \"register\""));
         assert!(journal.contains("\"event\": \"logout\""));
+    }
+
+    #[test]
+    fn fixed_webview_redirect_uses_same_real_server_exchange_and_pkce() {
+        let server = Server::start();
+        let client = &server.client;
+        let mut attempt = client.begin_webview(caller(), Instant::now()).unwrap();
+        // Protocol-only test: native form input/interception is validated by
+        // the separate WebView acceptance driver, never inferred from this.
+        let callback = server.browser(&attempt, true);
+        assert!(callback.starts_with("https://octosense.invalid/auth/callback?"));
+        let code = attempt
+            .consume_callback(caller(), &callback, Instant::now())
+            .unwrap();
+        let authorized = client.finish(caller(), code, 1_800_000_000).unwrap();
+        assert_eq!(authorized.identity.label, "fictional-acceptance-user");
+        client.logout(caller(), &authorized.tokens).unwrap();
+        assert!(client.me(caller(), &authorized.tokens).is_err());
     }
 
     #[test]
