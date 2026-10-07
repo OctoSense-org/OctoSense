@@ -236,7 +236,7 @@ peers and account folders follow the selected connection.
 | --- | --- |
 | `auth` | `connect`, `accounts`, `active`, `select`, `disconnect`, `backend.me` |
 | `github` | `repositories`, `files`, `read`, `review_save` |
-| `gcalendar` | `calendars`, `sync`, `cached`, `refresh`, `get`, `prepare`, `review_save` |
+| `gcalendar` | `calendars`, `cached`, `refresh`, `get`, `prepare`, `review_save` |
 | `gmail` | `labels`, `messages`, `message`, `draft.open/get/edit/review`, `events.status`, `event.status/decide` |
 
 `auth.connect` accepts a provider and named scopes. GitHub: `read:user`,
@@ -246,7 +246,7 @@ Provider-specific scopes remain
 separate from App Hub capabilities. Handles are private identifiers, not tokens.
 Selection does not grant another app access to the same Google account.
 
-Example Calendar request syntax (live Calendar authorization unverified):
+Example Calendar request syntax (production Google approval remains unverified):
 
 ```javascript
 host.request("auth.connect", {
@@ -260,9 +260,34 @@ host.request("auth.connect", {
 `github.review_save` freezes repository/branch/path/content/base SHA.
 `gcalendar.review_save` freezes calendar/event/ETag; a stale ETag is a conflict,
 not permission to overwrite. `gmail.draft.review` freezes the durable draft
-revision, recipient and body. The native review requires a physical human
-activation; scripts, agents, remote instrumentation and JSON flags cannot send.
-Unknown Gmail submission outcomes stay unknown and are not retried blindly.
+revision, recipient and body. All three writes require a physical activation
+of the native host review control, with native provenance checked on press and
+release before the one-use capability crosses into the worker. Scripts,
+agents, remote instrumentation and JSON flags cannot approve a save or send.
+Dismissal cancels an unsubmitted review; a selected-account change is checked
+again before writing. Unknown Gmail submission outcomes stay unknown and are
+not retried blindly.
+
+`gcalendar.refresh` atomically replaces a finite agenda: from UTC midnight
+30 days before today to UTC midnight 366 days after today. Google expands
+recurring series into actual occurrences inside that window; instance IDs,
+ETags and exceptions are preserved, and cancelled occurrences are excluded.
+Every page uses the same bounds. A later refresh moves the window; a failed or
+incomplete refresh preserves the last complete cache, including its recorded
+`window`. Cached older schema-1 snapshots remain readable until a successful
+bounded refresh replaces them.
+
+This agenda uses full **window snapshots**, not incremental history sync.
+Google forbids `timeMin`/`timeMax` with `syncToken`, so this path never stores
+or reuses `nextSyncToken`. Raw `gcalendar.sync` is no longer exposed; use
+`refresh` and `cached`. See the [Google events.list contract](https://developers.google.com/workspace/calendar/api/v3/reference/events/list).
+
+Provider HTTP and app-local draft/cache changes serialize per host profile and
+app. An unrelated app can operate while a provider is slow. Account selection,
+disconnect, uninstall and final connection admission share the same app lock;
+the process-wide metadata lock covers only short load/commit sections. Token
+refresh reloads current metadata before committing, so it cannot overwrite
+another app's account changes or restore a revoked connection.
 
 ## From an app peer to a shared service
 
@@ -369,7 +394,7 @@ The test creates no provider request and reads no existing account.
 
 Tests use deterministic transports and synthetic accounts. They cover scope
 and app isolation, revocation, callback replay, refresh, GitHub conflicts,
-Calendar paging/410/ETags/DST, draft revisions, injected approval refusal,
+Calendar bounded-window paging/rollover/recurrence/ETags/DST, cross-app availability and refresh-commit races, draft revisions, injected approval refusal,
 send ambiguity, event retries and durable decisions. Native sample evidence
 and authoring instructions live in Design Flow's
 [connected-apps examples](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/feat/connected-sample-apps/examples/connected-apps).

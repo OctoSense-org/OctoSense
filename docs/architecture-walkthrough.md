@@ -142,6 +142,10 @@ Follow `calendar.events` from its declaration to the file it reads:
 
 `calendar.events` only reads, so nobody is asked. `calendar.remove_event` (`destructive`, `confirm: host`) is gated in octos first: the kernel raises a `host_tool` approval, which the broker hands to `ToolHost::host_tool_approval`, and only an approved call arrives.
 
+For agent calls resolving to `glance.publish`, including aliases such as `inbox.notify`, the executor refuses raw `script`, mixed template/source payloads and executable or L1 source. An agent can select a reviewed bundle template with an `initial` data object, or supply valid declaration-only L0. Glance still checks the template's admitted bundle and the app's capabilities before rendering. This restriction applies to model-authored publications; an admitted foreground app retains its own reviewed Splash implementation.
+
+An installed app's agent also depends on its exact release remaining admitted. Guidance, tool offers and system-agent input read the current signed local catalog. The broker also checks `ToolHost::admit_turn` immediately before every actual `turn/start`, including cached conversations, queued input and retries; the relay checks both tool owner and calling app again before execution, including after a pending approval. A withdrawal takes effect after the next catalog fetch, even for cached peers. The Gmail dispatcher then releases the unavailable peer and retains its unfinished event for a later authorized retry. Saved user consent is unchanged; an unavailable app is not treated as a user denial.
+
 The relay routes every call by the tool's owner:
 
 | Owner | Executor |

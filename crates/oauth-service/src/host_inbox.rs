@@ -1,10 +1,8 @@
 //! Gmail service for ordinary contained apps. Drafts and native send review use
 //! the same host-owned store; no service method can approve or submit a reply.
 use crate::{
-    api::Api,
-    host::{clients, connections, provider_transport, unix_now, STORE_LOCK},
+    host::{connections, operation_lock, unix_now, with_provider_api, STORE_LOCK},
     inbox::{DraftStore, ReviewTicket},
-    providers::ClientRegistration,
 };
 use octosense_appstore::services::{self, HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::{json, Value};
@@ -93,7 +91,7 @@ impl ReviewRequest {
                 else {
                     return;
                 };
-                let result = with_api(&root, |api| {
+                let result = with_provider_api(&root, &app, |api| {
                     let mut drafts = DraftStore::open(&root, &app, &connection)?;
                     let draft = drafts.submit(ticket, down_is_trusted, up_is_trusted, api)?;
                     serde_json::to_value(draft).map_err(|_| "Cannot serialize send receipt".into())
@@ -140,7 +138,8 @@ impl ReviewRequest {
                     return;
                 };
                 let cancelled = {
-                    let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                    let operation = operation_lock(&root, &app);
+                    let _guard = operation.lock().unwrap_or_else(|e| e.into_inner());
                     DraftStore::open(&root, &app, &connection)
                         .and_then(|mut store| store.cancel(ticket))
                         .map(|draft| json!({"cancelled":true,"draft":draft}))
@@ -191,7 +190,9 @@ impl HostService for InboxService {
                 host.close_sheet();
                 reply.send(Ok(Value::Null));
             } else {
-                reply.send(Err("Only the current host review can close its sheet".into()));
+                reply.send(Err(
+                    "Only the current host review can close its sheet".into()
+                ));
             }
             return;
         }
@@ -208,7 +209,8 @@ impl HostService for InboxService {
             };
             let pending = (|| {
                 let connection = field(&call.args, "connection")?.to_string();
-                let _guard = STORE_LOCK.try_lock().map_err(|_| {
+                let operation = operation_lock(&call.host_dir, &call.app_id);
+                let _guard = operation.try_lock().map_err(|_| {
                     "Another account operation is busy; retry review when it finishes"
                 })?;
                 let store = connections(&call.host_dir)?;
@@ -242,7 +244,7 @@ impl HostService for InboxService {
         std::thread::spawn(move || {
             let result = (|| {
                 let connection = field(&call.args, "connection")?;
-                with_api(&call.host_dir, |api| {
+                with_provider_api(&call.host_dir, &call.app_id, |api| {
                     // Authorization is checked even for local cached draft data.
                     api.connections.authorized(
                         &call.app_id,
@@ -303,29 +305,6 @@ fn event_message(args: &Value) -> Result<&str, String> {
         })
         .ok_or_else(|| "Invalid Gmail event identity".into())
 }
-fn with_api<T>(
-    root: &Path,
-    run: impl FnOnce(&mut Api<'_>) -> Result<T, String>,
-) -> Result<T, String> {
-    let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut store = connections(root)?;
-    let config = clients(root)?;
-    let client = config.google.as_ref().map(|c| ClientRegistration {
-        client_id: c.client_id.clone(),
-    });
-    let transport = provider_transport(root)?;
-    run(&mut Api {
-        connections: &mut store,
-        transport: transport.as_ref(),
-        google_client: client.as_ref(),
-        google_client_secret: config
-            .google
-            .as_ref()
-            .and_then(|c| c.client_secret.as_deref()),
-        now: unix_now(),
-    })
-}
-
 /// A host-created binding plus untrusted message content for the app's peer.
 /// The shell must authenticate this app/account and inject the connection into
 /// its Gmail tool calls; message text does not supply identity or authority.
@@ -355,7 +334,8 @@ impl EventCompletion {
         let Some(lease) = self.lease.take() else {
             return Ok(());
         };
-        let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let operation = operation_lock(&self.root, &self.app);
+        let _guard = operation.lock().unwrap_or_else(|e| e.into_inner());
         let mut store =
             crate::inbox_events::EventStore::open(&self.root, &self.app, &self.connection)?;
         if success {
@@ -379,7 +359,8 @@ impl EventCompletion {
         std::thread::Builder::new()
             .name("gmail-event-completion".into())
             .spawn(move || {
-                let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                let operation = operation_lock(&root, &app);
+                let _guard = operation.lock().unwrap_or_else(|e| e.into_inner());
                 // Failure to persist an acknowledgement leaves a leased event,
                 // which expires and retries with its original stable message ID.
                 let _ = crate::inbox_events::EventStore::open(&root, &app, &connection)
@@ -430,7 +411,7 @@ pub fn check_incoming(
     hook: &EventHook,
 ) -> Result<BackgroundReport, String> {
     use crate::inbox_events::{EventStore, GmailEvents};
-    let poll = with_api(root, |api| {
+    let poll = with_provider_api(root, app, |api| {
         api.connections.authorized(
             app,
             connection,
@@ -463,7 +444,8 @@ pub fn check_incoming(
     // strand later messages behind a ten-minute lease they never used.
     for _ in 0..4 {
         let lease = {
-            let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let operation = operation_lock(root, app);
+            let _guard = operation.lock().unwrap_or_else(|e| e.into_inner());
             if !connections(root)?
                 .active(app)
                 .is_some_and(|c| c.handle == connection)
@@ -484,7 +466,7 @@ pub fn check_incoming(
             connection: connection.into(),
             lease: Some(lease),
         };
-        let message = with_api(root, |api| {
+        let message = with_provider_api(root, app, |api| {
             api.inbox_message_if_present(app, connection, &id)
         });
         match message {
@@ -493,7 +475,8 @@ pub fn check_incoming(
                 // interrupt them with a stale card. Mark this event processed.
                 if !message.labels.iter().any(|label| label == "INBOX") {
                     {
-                        let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                        let operation = operation_lock(root, app);
+                        let _guard = operation.lock().unwrap_or_else(|e| e.into_inner());
                         EventStore::open(root, app, connection)?.decide(
                             &id,
                             "quiet",
@@ -518,7 +501,8 @@ pub fn check_incoming(
             }
             Ok(None) => {
                 {
-                    let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                    let operation = operation_lock(root, app);
+                    let _guard = operation.lock().unwrap_or_else(|e| e.into_inner());
                     EventStore::open(root, app, connection)?.decide(
                         &id,
                         "quiet",
@@ -546,7 +530,8 @@ pub fn check_incoming(
 
 /// Exact durable queue length for native scheduler status; no provider request.
 pub fn pending_count(root: &Path, app: &str, connection: &str) -> Result<usize, String> {
-    let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let operation = operation_lock(root, app);
+    let _guard = operation.lock().unwrap_or_else(|e| e.into_inner());
     Ok(crate::inbox_events::EventStore::open(root, app, connection)?.pending_count())
 }
 
@@ -560,7 +545,9 @@ mod sheet_tests {
         const HEAP: usize = 981117;
         struct TestService(InboxService);
         impl HostService for TestService {
-            fn family(&self) -> &'static str { FAMILY }
+            fn family(&self) -> &'static str {
+                FAMILY
+            }
             fn call(&mut self, call: ServiceCall, reply: Replier, host: &mut dyn ServiceHost) {
                 self.0.call(call, reply, host)
             }
@@ -568,18 +555,29 @@ mod sheet_tests {
         #[derive(Default)]
         struct Sheet(usize);
         impl ServiceHost for Sheet {
-            fn open_sheet(&mut self, _: String) { panic!("close cannot open a sheet") }
-            fn close_sheet(&mut self) { self.0 += 1; }
+            fn open_sheet(&mut self, _: String) {
+                panic!("close cannot open a sheet")
+            }
+            fn close_sheet(&mut self) {
+                self.0 += 1;
+            }
         }
         services::register_host_service(Box::new(TestService(InboxService { review: None })));
         let mut sheet = Sheet::default();
         for (id, from_sheet) in [(1, false), (2, true)] {
-            services::dispatch(ServiceCall {
-                app_id: "org.octosense.samples.inbox".into(),
-                service: format!("{FAMILY}.sheet.close"),
-                args: json!({}), from_sheet, may_prompt: true,
-                host_dir: PathBuf::from("synthetic-unused-root"),
-            }, HEAP, id, &mut sheet);
+            services::dispatch(
+                ServiceCall {
+                    app_id: "org.octosense.samples.inbox".into(),
+                    service: format!("{FAMILY}.sheet.close"),
+                    args: json!({}),
+                    from_sheet,
+                    may_prompt: true,
+                    host_dir: PathBuf::from("synthetic-unused-root"),
+                },
+                HEAP,
+                id,
+                &mut sheet,
+            );
             let responses = services::take_replies_for(&[HEAP]);
             assert_eq!(responses.len(), 1);
             assert_eq!(responses[0].2.is_ok(), from_sheet);

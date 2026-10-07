@@ -456,30 +456,70 @@ fn wait(what: &str, done: impl Fn() -> bool) {
     }
 }
 
-/// These tests replace the peer transport, not bundle admission. Give each
-/// fake app real, digest-checked instruction text before opening its agent.
+/// Replace only the peer transport. Each child gets a real signed catalog,
+/// installed bundle and trust anchor without mutating the parallel suite's
+/// process-wide app registry, data root or environment.
 #[cfg(any(feature = "app-hub", native_mobile))]
 struct AgentFixture(std::path::PathBuf);
 #[cfg(any(feature = "app-hub", native_mobile))]
 impl AgentFixture {
+    fn run_isolated(apps: &[&str], test: &str) -> bool {
+        if std::env::var("OCTOSENSE_CHAT_FIXTURE_CHILD").as_deref() == Ok(test) {
+            return false;
+        }
+        use octosense_app_hub::{Catalog, Entry, HubKey, Source, Status};
+        let root = std::env::temp_dir().join(format!("octosense-chat-bundles-{}", uuid::Uuid::new_v4()));
+        let publisher = HubKey::generate();
+        let mut entries = Vec::new();
+        for app in apps {
+            let bundle = octosense_app_hub::installed_bundle_dir(&root, app);
+            std::fs::create_dir_all(&bundle).unwrap();
+            std::fs::write(bundle.join("main.splash"), "Label {text: \"Conversation fixture\"}").unwrap();
+            std::fs::write(bundle.join("AGENT.md"), "Answer questions about this fixture app.").unwrap();
+            let mut manifest = octosense_app_contract::AppManifest::parse(&json!({
+                "schema":1, "id":app, "name":"Conversation fixture", "version":"1.0.0",
+                "capabilities":["storage"], "agent":{"profile":"read-only", "instructions":"AGENT.md"},
+                "integrity":{"bundle_blake3":octosense_app_contract::digest_dir(&bundle).unwrap()}
+            }).to_string()).unwrap();
+            octosense_app_hub::sign_manifest(&publisher, &mut manifest, "fixture").unwrap();
+            std::fs::write(bundle.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+            entries.push(Entry {
+                manifest, listing: None, tools: vec![], artifact: "fixture".into(),
+                publisher: "fixture".into(), publisher_key: publisher.public_hex(),
+                source: Source { repository: String::new(), commit: String::new() },
+                status: Status::Offered, admitted: "2026-10-07".into(),
+            });
+        }
+        let anchor = HubKey::generate();
+        let working = HubKey::generate();
+        let certificate = anchor.certify(&working.public_hex()).unwrap();
+        let mut catalog = Catalog::new(1, "2026-10-07", entries);
+        working.sign_catalog(&mut catalog, &certificate).unwrap();
+        std::fs::write(root.join("catalog.json"), serde_json::to_vec(&catalog).unwrap()).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture"])
+            .env("OCTOSENSE_CHAT_FIXTURE_CHILD", test)
+            .env("OCTOSENSE_CHAT_FIXTURE_ROOT", &root)
+            .env("OCTOSENSE_HUB_ANCHOR", anchor.public_hex())
+            .output();
+        let _ = std::fs::remove_dir_all(&root);
+        let output = output.expect("start isolated app-chat test");
+        assert!(output.status.success(), "{}\n{}",
+            String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "the exact child test must run");
+        true
+    }
+
     fn new(app: &'static str) -> Self {
-        crate::apps::test_system_apps::note_installed(app);
-        let root = octosense_appstore::data_root_if_set().unwrap_or_else(|| {
-            let root = std::env::temp_dir().join(format!("octosense-chat-bundles-{}", std::process::id()));
+        let root = std::env::var_os("OCTOSENSE_CHAT_FIXTURE_ROOT")
+            .map(std::path::PathBuf::from).expect("isolated signed app fixture");
+        if let Some(current) = octosense_appstore::data_root_if_set() {
+            assert_eq!(current, root);
+        } else {
             octosense_appstore::set_data_root(root.clone());
-            root
-        });
-        let bundle = root.join(".bundles").join(app).join("bundle");
-        std::fs::create_dir_all(&bundle).unwrap();
-        std::fs::write(bundle.join("AGENT.md"), "Answer questions about this fixture app.").unwrap();
-        let mut manifest = json!({
-            "schema":1, "id":app, "name":"Conversation fixture", "version":"1.0.0",
-            "capabilities":["storage"], "agent":{"profile":"read-only", "instructions":"AGENT.md"},
-            "integrity":{"bundle_blake3":""}
-        });
-        std::fs::write(bundle.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
-        manifest["integrity"]["bundle_blake3"] = json!(octosense_app_contract::digest_dir(&bundle).unwrap());
-        std::fs::write(bundle.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        }
+        let bundle = octosense_app_hub::installed_bundle_dir(&root, app);
         let loaded = crate::host_tools::script_apps::guidance(app).expect("fixture must pass real bundle admission");
         assert_eq!(loaded.agent_md.as_deref(), Some("Answer questions about this fixture app."));
         Self(bundle)
@@ -501,6 +541,9 @@ impl Drop for AgentFixture {
 #[test]
 fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
     const APP: &str = "org.example.asktest";
+    const OTHER: &str = "org.example.asktest2";
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if AgentFixture::run_isolated(&[APP, OTHER], "app_chat::tests::the_panel_opens_a_sharing_context_and_sends_person_turns_there") { return; }
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     #[cfg(any(feature = "app-hub", native_mobile))]
     let _fixture = AgentFixture::new(APP);
@@ -576,7 +619,6 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
         other => panic!("{other:?}"),
     }
     assert_eq!(peers.0.lock().unwrap().len(), 1, "one peer per app");
-    const OTHER: &str = "org.example.asktest2";
     #[cfg(any(feature = "app-hub", native_mobile))]
     let _other_fixture = AgentFixture::new(OTHER);
     let other = AgentApp { id: OTHER.into(), name: "Other".into(), ..app.clone() };
@@ -616,6 +658,8 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
 #[test]
 fn reopening_the_panel_keeps_the_persons_rows_and_the_live_follower() {
     const APP: &str = "org.example.askreopen";
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if AgentFixture::run_isolated(&[APP], "app_chat::tests::reopening_the_panel_keeps_the_persons_rows_and_the_live_follower") { return; }
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     #[cfg(any(feature = "app-hub", native_mobile))]
     let _fixture = AgentFixture::new(APP);

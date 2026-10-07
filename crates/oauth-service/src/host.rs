@@ -80,6 +80,8 @@ pub fn active_connection(root: &Path, app: &str) -> Option<crate::Connection> {
 /// Uninstall revokes every connection before a reinstalled bundle can discover
 /// it. A vault deletion failure cannot restore an already revoked handle.
 pub fn forget_app(root: &Path, app: &str) -> Result<(), String> {
+    let operation = operation_lock(root, app);
+    let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
     let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     invalidate_authorizations(root, app);
     let mut store = connections(root)?;
@@ -105,6 +107,7 @@ pub fn forget_app(root: &Path, app: &str) -> Result<(), String> {
     }
     let current = store.active(app);
     drop(guard);
+    drop(operation_guard);
     account_changed(
         app,
         previous.as_ref().map(|c| c.handle.as_str()),
@@ -221,6 +224,57 @@ impl CredentialStore for DesktopVault {
 }
 pub(crate) static STORE_LOCK: Mutex<()> = Mutex::new(());
 
+/// Serialize one app's provider work and local cache/draft edits, without
+/// holding the process-wide metadata lock while a provider is slow. Account
+/// mutations take this lock before STORE_LOCK, in that order everywhere.
+pub(crate) fn operation_lock(root: &Path, app: &str) -> Arc<Mutex<()>> {
+    type Locks = HashMap<(PathBuf, String), std::sync::Weak<Mutex<()>>>;
+    static LOCKS: std::sync::OnceLock<Mutex<Locks>> = std::sync::OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    let key = (
+        root.canonicalize().unwrap_or_else(|_| root.into()),
+        app.to_owned(),
+    );
+    if let Some(lock) = locks.get(&key).and_then(std::sync::Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(key, Arc::downgrade(&lock));
+    lock
+}
+
+pub(crate) fn with_provider_api<T>(
+    root: &Path,
+    app: &str,
+    run: impl FnOnce(&mut crate::api::Api<'_>) -> Result<T, String>,
+) -> Result<T, String> {
+    let operation = operation_lock(root, app);
+    let _operation = operation.lock().unwrap_or_else(|e| e.into_inner());
+    let mut store = {
+        let _metadata = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        connections(root)?
+    };
+    let config = clients(root)?;
+    let client = config.google.as_ref().map(|c| ClientRegistration {
+        client_id: c.client_id.clone(),
+    });
+    let transport = provider_transport(root)?;
+    run(&mut crate::api::Api {
+        connections: &mut store,
+        transport: transport.as_ref(),
+        google_client: client.as_ref(),
+        google_client_secret: config
+            .google
+            .as_ref()
+            .and_then(|c| c.client_secret.as_deref()),
+        now: unix_now(),
+    })
+}
+
 // Authorization and both connector refresh paths resolve the same identity.
 pub(crate) use crate::registration::clients;
 pub(crate) fn unix_now() -> u64 {
@@ -305,6 +359,8 @@ impl HostService for AuthService {
             "select" => {
                 std::thread::spawn(move || {
                     let result = (|| {
+                        let operation = operation_lock(&call.host_dir, &call.app_id);
+                        let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
                         let guard = STORE_LOCK.lock().unwrap();
                         let mut store = connections(&call.host_dir)?;
                         let previous = store.active(&call.app_id);
@@ -314,6 +370,7 @@ impl HostService for AuthService {
                         let selected = store.select(&call.app_id, handle)?;
                         invalidate_authorizations(&call.host_dir, &call.app_id);
                         drop(guard);
+                        drop(operation_guard);
                         account_changed(
                             &call.app_id,
                             previous.as_ref().map(|c| c.handle.as_str()),
@@ -334,6 +391,8 @@ impl HostService for AuthService {
             }
             "disconnect" => {
                 std::thread::spawn(move || {
+                    let operation = operation_lock(&call.host_dir, &call.app_id);
+                    let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
                     let guard = STORE_LOCK.lock().unwrap();
                     let result = (|| {
                         let handle = call.args["connection"]
@@ -351,6 +410,7 @@ impl HostService for AuthService {
                         invalidate_authorizations(&call.host_dir, &call.app_id);
                         let current = store.active(&call.app_id);
                         drop(guard);
+                        drop(operation_guard);
                         account_changed(
                             &call.app_id,
                             previous.as_ref().map(|c| c.handle.as_str()),
@@ -700,6 +760,8 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
         }
     };
     let (subject, label) = identity(p.provider, &tokens, &transport)?;
+    let operation = operation_lock(&p.root, &p.app);
+    let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
     let _guard = STORE_LOCK.lock().unwrap();
     if p.cancelled.load(Ordering::SeqCst)
         || Instant::now() >= p.deadline
@@ -719,6 +781,7 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
         return Err("Authorization cancelled".into());
     }
     drop(_guard);
+    drop(operation_guard);
     account_changed(
         &p.app,
         previous.as_ref().map(|c| c.handle.as_str()),
@@ -960,3 +1023,7 @@ content
 #[cfg(test)]
 #[path = "host_lifetime_tests.rs"]
 mod host_lifetime_tests;
+
+#[cfg(test)]
+#[path = "host_operation_tests.rs"]
+mod host_operation_tests;

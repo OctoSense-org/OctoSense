@@ -38,6 +38,8 @@ pub mod dev_run;
 pub mod files;
 pub mod relay;
 pub mod schema;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub(crate) mod admission;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox;
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -266,8 +268,18 @@ pub fn bus_result(call_id: &str, outcome: ToolOutcome) {
 pub struct ShellToolHost;
 
 impl ToolHost for ShellToolHost {
+    fn admit_turn(&self, app_id: &str, _account: &str) -> Result<(), String> {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        admission::check(app_of_peer(app_id))?;
+        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        let _ = app_id;
+        Ok(())
+    }
+
     fn declarations(&self, app_id: &str, account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        admission::check(&app)?;
         ensure_loaded(app_id);
         let dev = crate::dev_mode::grants_all(&app);
         // The toolbox's tools only once the person allowed this app's agent
@@ -316,6 +328,8 @@ impl ToolHost for ShellToolHost {
 
     fn admit_input(&self, app_id: &str, account: &str, input: &PeerInput) -> Result<(), InputRefusal> {
         let app = app_of_peer(app_id);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        admission::check(app).map_err(InputRefusal::Other)?;
         if suspended(app_id, Some(account)) {
             return Err(InputRefusal::SignedOut);
         }
@@ -611,6 +625,12 @@ pub fn suspended(app_id: &str, account: Option<&str>) -> bool {
 struct ShellEnv;
 
 impl relay::Env for ShellEnv {
+    fn admitted(&self, app: &str) -> Result<(), String> {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        { admission::check(app) }
+        #[cfg(not(any(feature = "app-hub", native_mobile)))]
+        { let _ = app; Ok(()) }
+    }
     fn consent(&self, app: &str) -> bool {
         approvals::consent_granted(app) || crate::dev_mode::grants_all(app)
     }

@@ -72,9 +72,36 @@ fn write_profile(core_dir: &Path, port: u16) {
     std::fs::write(dir.join("_main.json"), serde_json::to_vec_pretty(&profile).unwrap()).unwrap();
 }
 
+/// Real-kernel journeys own process-wide services, app roots and consent.
+/// Run each in a child so parallel unit tests cannot supply or replace the
+/// admission state this journey is supposed to prove.
+fn run_isolated(test: &str) -> bool {
+    if std::env::var("OCTOSENSE_SHELL_KERNEL_CHILD").as_deref() == Ok(test) {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test, "--nocapture"])
+        .env("OCTOSENSE_SHELL_KERNEL_CHILD", test)
+        .output().expect("start isolated real-kernel journey");
+    assert!(output.status.success(), "{}\n{}",
+        String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+        "the exact real-kernel child test must run");
+    true
+}
+
+fn prepare_news(apps_root: &Path) -> PathBuf {
+    octosense_appstore::set_data_root(apps_root.to_owned());
+    let system = octosense_app_hub_app::system_apps().into_iter()
+        .find(|app| app.id == "os.news").expect("News ships in the system catalog");
+    octosense_appstore::system::prepare(apps_root, &system)
+        .expect("News's system bundle is admitted").0
+}
+
 #[test]
 fn real_kernel_an_app_agents_turn_calls_news_list_through_the_shells_relay() {
     let Some(program) = kernel() else { return };
+    if run_isolated("host_tools::real_kernel_tests::real_kernel_an_app_agents_turn_calls_news_list_through_the_shells_relay") { return; }
     let dir = std::env::temp_dir().join(format!("octosense-shell-real-kernel-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -97,7 +124,7 @@ fn real_kernel_an_app_agents_turn_calls_news_list_through_the_shells_relay() {
     std::fs::create_dir_all(&host_dir).unwrap();
     octosense_news_service::register_with(octosense_news_service::Options::default().host_dir(&host_dir).timer(false));
     // News's tools, from its bundle as App Hub admits it.
-    let bundle = super::script_apps::tests::stamped_bundle("news", "real-kernel", |_, _| {});
+    let bundle = prepare_news(&dir.join("apps"));
     let loaded = super::script_apps::from_bundle(&bundle).expect("News's bundle is admitted");
     super::script_apps::install("os.news", loaded, host_dir.clone());
 
@@ -176,6 +203,7 @@ impl crate::ai_host::contained::PeerFactory for TestPeers {
 #[test]
 fn real_kernel_an_allowed_apps_agent_is_prepared_listed_and_shares_its_conversation() {
     let Some(program) = kernel() else { return };
+    if run_isolated("host_tools::real_kernel_tests::real_kernel_an_allowed_apps_agent_is_prepared_listed_and_shares_its_conversation") { return; }
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("octosense-shell-agents-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -198,9 +226,7 @@ fn real_kernel_an_allowed_apps_agent_is_prepared_listed_and_shares_its_conversat
     // the same App Hub root/registry the running shell owns, rather than only
     // injecting tools from an otherwise unregistered temporary bundle.
     let apps_root = dir.join("apps");
-    octosense_appstore::set_data_root(apps_root.clone());
-    let system = octosense_app_hub_app::system_apps().into_iter().find(|app| app.id == "os.news").expect("News ships in the system catalog");
-    let bundle = octosense_appstore::system::prepare(&apps_root, &system).expect("News's system bundle is admitted").0;
+    let bundle = prepare_news(&apps_root);
     let news = crate::apps::script_agent_app(&bundle.join("manifest.json"), "os.news", "News").expect("News has an agent");
     super::script_apps::load("os.news").expect("News's tools and guidance load from the host root");
     let peers = Arc::new(TestPeers { core: core.clone(), state: dir.join("host-state"), made: Mutex::default() });
@@ -368,6 +394,7 @@ impl crate::peer_link::PeerHost for ProcessHost {
 #[test]
 fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
     let Some(program) = kernel() else { return };
+    if run_isolated("host_tools::real_kernel_tests::real_kernel_a_process_app_hears_the_system_agents_lane_live") { return; }
     let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("octosense-shell-peer-link-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -390,7 +417,7 @@ fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
     let host_dir = dir.join("apps/.host");
     std::fs::create_dir_all(&host_dir).unwrap();
     octosense_news_service::register_with(octosense_news_service::Options::default().host_dir(&host_dir).timer(false));
-    let bundle = super::script_apps::tests::stamped_bundle("news", "peer-link", |_, _| {});
+    let bundle = prepare_news(&dir.join("apps"));
     guard.dirs.push(bundle.clone());
     super::script_apps::install("os.news", super::script_apps::from_bundle(&bundle).unwrap(), host_dir.clone());
     let services = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();

@@ -46,6 +46,12 @@ struct Metadata {
 }
 
 impl Connections {
+    /// Refresh a local snapshot before a metadata mutation. Host callers hold
+    /// STORE_LOCK here so another app's simultaneous changes remain intact.
+    pub(crate) fn reload(&mut self) -> Result<(), String> {
+        *self = Self::open(&self.root, self.vault.clone())?;
+        Ok(())
+    }
     /// The shell supplies a private host directory, outside all app jails.
     pub fn open(root: &Path, vault: Arc<dyn CredentialStore>) -> Result<Self, String> {
         let path = root.join("connections.json");

@@ -187,6 +187,8 @@ What a package contains and how it is found at run time:
 
 ### Cutting a desktop release
 
+Connected-app sign-in needs a separate distributor setup: the current release workflow supplies no Google or GitHub client registration. A package built without one will show that provider as unavailable. Supply the [compile-time registrations](../crates/oauth-service/README.md#configure-a-release-maintainers) when building, or provision `<apps root>/.host/oauth/clients.json` privately on an operator-managed installation. Signing the executable does not configure OAuth. Do not ask ordinary app users to create provider developer projects; do not advertise public Google sign-in until its verification/audience requirements are met.
+
 `.github/workflows/release-desktop.yml` (not part of `tools/ci-local.sh`):
 
 1. Dry-run it on `main`: **Actions → Release desktop → Run workflow** on `main`, or `gh workflow run release-desktop.yml --ref main`. It builds, scans and (from `main`) signs all three platforms and keeps the packages as workflow artifacts for 14 days.

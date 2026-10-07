@@ -206,7 +206,9 @@ impl MatchEvent for App {
                     },
                 })
         }));
-        octosense_oauth_service::host_api::register();
+        octosense_oauth_service::host_api::register_with_review_hook(
+            octosense_shell::connected_review::connector_sheet,
+        );
         octosense_oauth_service::host_inbox::register_with_review_hook(
             octosense_shell::connected_review::sheet,
         );

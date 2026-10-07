@@ -974,7 +974,7 @@ impl Broker {
         let method = method.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
         self.0.rt().spawn(async move {
-            let _ = tx.send(inner.request(&method, params).await);
+            let _ = tx.send(inner.host_request(&method, params).await);
         });
         rx.recv_timeout(Duration::from_secs(60))
             .map_err(|_| "host request timed out".to_owned())?
@@ -1451,6 +1451,36 @@ impl Inner {
 
     async fn request(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
         let link = self.ensure_link().await?;
+        if method == "turn/start" {
+            let account = {
+                let st = self.lock();
+                if st.released {
+                    return Err("The app was closed".into());
+                }
+                st.account.clone().ok_or("Sign in before using the assistant")?
+            };
+            // After connection setup and before enqueueing the actual frame:
+            // every app path (including a cached context or retry) passes here.
+            // Never hold the broker's state lock while calling the host.
+            self.tool_host().admit_turn(&self.cfg.app_id, &account)?;
+        }
+        self.request_on_link(link, method, params).await
+    }
+
+    /// Trusted host operations are independent of this app's account and
+    /// release admission. Only Broker::host_request enters here; app handles
+    /// always use request above, regardless of their session's spelling.
+    async fn host_request(self: &Arc<Self>, method: &str, params: Value) -> Result<Value, String> {
+        let link = self.ensure_link().await?;
+        self.request_on_link(link, method, params).await
+    }
+
+    async fn request_on_link(
+        self: &Arc<Self>,
+        link: mpsc::UnboundedSender<String>,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, String> {
         let (tx, rx) = oneshot::channel();
         let id = {
             let mut st = self.lock();
