@@ -253,7 +253,9 @@ pub fn register_host_services() {
                 },
             })
         }));
-        octosense_oauth_service::host_api::register();
+        octosense_oauth_service::host_api::register_with_review_hook(
+            crate::connected_review::connector_sheet,
+        );
         // Calendar's events and cards (its agent's `calendar.*` tools),
         // published the same way.
         register_calendar_services();

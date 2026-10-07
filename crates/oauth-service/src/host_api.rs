@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicU8, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -34,20 +34,26 @@ struct Review {
     reply: Replier,
     deadline: Instant,
     save: Arc<SaveState>,
+    account: String,
 }
 #[derive(Default)]
 struct SaveState {
-    started: AtomicBool,
+    phase: AtomicU8, // 0 pending, 1 submitted, 2 cancelled
     result: Mutex<Option<Result<Value, String>>>,
 }
 impl SaveState {
     fn start(&self) -> bool {
-        self.started
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        self.phase
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
     fn started(&self) -> bool {
-        self.started.load(Ordering::Acquire)
+        self.phase.load(Ordering::Acquire) == 1
+    }
+    fn cancel(&self) -> bool {
+        self.phase
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
     }
     fn result(&self) -> Option<Result<Value, String>> {
         self.result
@@ -56,8 +62,120 @@ impl SaveState {
             .clone()
     }
 }
+
+/// A native-only, single-use capability for an immutable reviewed write.
+/// No service method or serializable field can construct or approve it.
+pub struct ReviewRequest {
+    family: &'static str,
+    ticket: String,
+    review: Arc<Review>,
+}
+impl ReviewRequest {
+    pub fn snapshot(&self) -> Value {
+        review_snapshot(&self.review)
+    }
+    pub fn close_request(&self) -> (String, String) {
+        (format!("{}.sheet.cancel", self.family), self.ticket.clone())
+    }
+    pub fn result(&self) -> Option<Result<Value, String>> {
+        self.review.save.result()
+    }
+    fn claim_approval(&self, down: bool, up: bool) -> Result<(), String> {
+        if !down || !up {
+            return Err(
+                "Saving requires a physical activation of the native Approve & Save control".into(),
+            );
+        }
+        if Instant::now() >= self.review.deadline {
+            self.cancel()?;
+            return Err("Review expired; check the current draft again".into());
+        }
+        if !self.review.save.start() {
+            return Err(
+                "This review was already submitted or cancelled; review the draft again".into(),
+            );
+        }
+        Ok(())
+    }
+    /// Capture native down/up provenance synchronously before crossing into
+    /// the worker. Rejected automation does not consume the pending review.
+    pub fn approve(&mut self, down: bool, up: bool) -> Result<(), String> {
+        self.claim_approval(down, up)?;
+        let review = self.review.clone();
+        let fallback = review.clone();
+        if std::thread::Builder::new()
+            .name("connector-reviewed-save".into())
+            .spawn(move || {
+                let result = with_api(&review.root, |api| {
+                    if !api
+                        .connections
+                        .active(&review.app)
+                        .is_some_and(|c| c.handle == review.connection)
+                    {
+                        return Err(
+                            "The selected account changed; review again under the original account"
+                                .into(),
+                        );
+                    }
+                    match &review.change {
+                        Change::Github(file) => {
+                            api.github_save(&review.app, &review.connection, file)
+                        }
+                        Change::Calendar {
+                            calendar,
+                            event,
+                            existing,
+                            create_id,
+                        } => api.calendar_save(
+                            &review.app,
+                            &review.connection,
+                            calendar,
+                            event,
+                            existing
+                                .as_ref()
+                                .map(|(id, etag)| (id.as_str(), etag.as_str())),
+                            create_id,
+                        ),
+                    }
+                });
+                *review.save.result.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some(result.clone());
+                review.reply.clone().send(result);
+            })
+            .is_err()
+        {
+            let error =
+                "Could not start the save worker; nothing was submitted. Review again.".to_owned();
+            *fallback
+                .save
+                .result
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(Err(error.clone()));
+            fallback.reply.clone().send(Err(error.clone()));
+            return Err(error);
+        }
+        Ok(())
+    }
+    pub fn cancel(&self) -> Result<(), String> {
+        if self.review.save.cancel() {
+            self.review
+                .reply
+                .clone()
+                .send(Err("Save cancelled; your local draft is unchanged".into()));
+        } else if self.review.save.started() && self.review.save.result().is_none() {
+            return Err("The approved save is still in progress".into());
+        }
+        Ok(())
+    }
+}
+impl Drop for ReviewRequest {
+    fn drop(&mut self) {
+        let _ = self.cancel();
+    }
+}
 struct Connector {
     family: &'static str,
+    review_hook: Option<ReviewHook>,
     reviews: HashMap<String, Arc<Review>>,
     // This small owner record outlives an expired private snapshot so its
     // host sheet retains a scoped Back action without retaining the draft.
@@ -65,9 +183,19 @@ struct Connector {
 }
 
 pub fn register() {
+    register_review(None);
+}
+pub type ReviewHook = Arc<dyn Fn(ReviewRequest) -> Result<String, String> + Send + Sync>;
+pub fn register_with_review_hook(
+    hook: impl Fn(ReviewRequest) -> Result<String, String> + Send + Sync + 'static,
+) {
+    register_review(Some(Arc::new(hook)));
+}
+fn register_review(review_hook: Option<ReviewHook>) {
     for family in ["github", "gcalendar"] {
         services::register_host_service(Box::new(Connector {
             family,
+            review_hook: review_hook.clone(),
             reviews: HashMap::new(),
             current: HashMap::new(),
         }));
@@ -93,7 +221,7 @@ impl HostService for Connector {
                 && review.app == call.app_id
                 && review.root == call.host_dir;
             if Instant::now() >= review.deadline && !current {
-                if !review.save.started() {
+                if review.save.cancel() {
                     review
                         .reply
                         .clone()
@@ -113,6 +241,10 @@ impl HostService for Connector {
                     reply.send(Err("Open the app to review this change".into()));
                     return;
                 }
+                let Some(hook) = self.review_hook.clone() else {
+                    reply.send(Err("Native trusted save review is unavailable on this host; your local draft is unchanged".into()));
+                    return;
+                };
                 let parsed = (|| {
                     let connection = field(&call.args, "connection")?.to_string();
                     let change = if self.family == "github" {
@@ -141,9 +273,32 @@ impl HostService for Connector {
                             create_id: Uuid::new_v4().simple().to_string(),
                         }
                     };
-                    Ok((connection, change))
+                    let _guard = STORE_LOCK
+                        .try_lock()
+                        .map_err(|_| "Account storage is busy; try review again")?;
+                    let store = connections(&call.host_dir)?;
+                    let account = store
+                        .active(&call.app_id)
+                        .filter(|account| account.handle == connection)
+                        .ok_or(
+                            "The selected account changed; choose the account before reviewing",
+                        )?;
+                    let (provider, scope) = if self.family == "github" {
+                        (
+                            crate::Provider::Github,
+                            if account.scopes.contains("repo") {
+                                "repo"
+                            } else {
+                                "public_repo"
+                            },
+                        )
+                    } else {
+                        (crate::Provider::Google, crate::api::CALENDAR_SCOPE)
+                    };
+                    store.authorized(&call.app_id, &connection, provider, scope)?;
+                    Ok((connection, change, account.label))
                 })();
-                let (connection, change) = match parsed {
+                let (connection, change, account) = match parsed {
                     Ok(v) => v,
                     Err(e) => {
                         reply.send(Err(e));
@@ -159,12 +314,18 @@ impl HostService for Connector {
                     .collect();
                 for id in previous {
                     if let Some(old) = self.reviews.remove(&id) {
-                        if !old.save.started() {
+                        if old.save.cancel() {
                             old.reply
                                 .clone()
                                 .send(Err("A newer draft replaced this review".into()));
                         }
                     }
+                }
+                if self.reviews.len() >= 32 {
+                    reply.send(Err(
+                        "Too many pending reviews; close an earlier review".into()
+                    ));
+                    return;
                 }
                 let ticket = Uuid::new_v4().to_string();
                 let review = Arc::new(Review {
@@ -175,13 +336,29 @@ impl HostService for Connector {
                     reply,
                     deadline: Instant::now() + Duration::from_secs(600),
                     save: Arc::new(SaveState::default()),
+                    account,
                 });
-                host.open_sheet(review_sheet(self.family, &ticket, &review));
+                let request = ReviewRequest {
+                    family: self.family,
+                    ticket: ticket.clone(),
+                    review: review.clone(),
+                };
+                let source = match hook(request) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        review.reply.clone().send(Err(error));
+                        return;
+                    }
+                };
+                host.open_sheet(source);
                 self.current
                     .insert((review.app.clone(), review.root.clone()), ticket.clone());
                 self.reviews.insert(ticket, review);
             }
-            "sheet.save" | "sheet.cancel" | "sheet.status" => {
+            "sheet.save" => {
+                reply.send(Err("Saving requires a physical activation of the native host review. Script and agent requests cannot approve it.".into()));
+            }
+            "sheet.cancel" | "sheet.status" => {
                 if !call.from_sheet {
                     reply.send(Err("Approval belongs to the host review screen".into()));
                     return;
@@ -242,7 +419,7 @@ impl HostService for Connector {
                     }
                     self.reviews.remove(ticket);
                     self.current.remove(&owner);
-                    if !review.save.started() {
+                    if review.save.cancel() {
                         review
                             .reply
                             .clone()
@@ -252,52 +429,6 @@ impl HostService for Connector {
                     reply.send(Ok(json!({"cancelled":true})));
                     return;
                 }
-                if Instant::now() >= review.deadline {
-                    let message = "Review expired; check the current draft again";
-                    review.reply.clone().send(Err(message.into()));
-                    reply.send(Err(message.into()));
-                    return;
-                }
-                if !review.save.start() {
-                    reply.send(Err(
-                        "This review was already submitted; return to editing for a new review"
-                            .into(),
-                    ));
-                    return;
-                }
-                reply.send(Ok(json!({"started":true})));
-                std::thread::spawn(move || {
-                    let result = with_api(&review.root, |api| {
-                        if !api
-                            .connections
-                            .active(&review.app)
-                            .is_some_and(|c| c.handle == review.connection)
-                        {
-                            return Err("The selected account changed; review again under the original account".into());
-                        }
-                        match &review.change {
-                            Change::Github(file) => {
-                                api.github_save(&review.app, &review.connection, file)
-                            }
-                            Change::Calendar {
-                                calendar,
-                                event,
-                                existing,
-                                create_id,
-                            } => api.calendar_save(
-                                &review.app,
-                                &review.connection,
-                                calendar,
-                                event,
-                                existing.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
-                                create_id,
-                            ),
-                        }
-                    });
-                    *review.save.result.lock().unwrap_or_else(|e| e.into_inner()) =
-                        Some(result.clone());
-                    review.reply.clone().send(result);
-                });
             }
             _ => {
                 let family = self.family;
@@ -428,7 +559,7 @@ fn with_api(
         now: unix_now(),
     })
 }
-fn review_sheet(family: &str, ticket: &str, review: &Review) -> String {
+fn review_snapshot(review: &Review) -> Value {
     let (title, details, body) = match &review.change {
         Change::Github(file) => (
             "Save Markdown to GitHub",
@@ -450,7 +581,7 @@ fn review_sheet(family: &str, ticket: &str, review: &Review) -> String {
                 "Create Google Calendar event"
             },
             format!(
-                "{}\n{}\n{} → {}",
+                "Calendar: {}\n{}\nStart: {} ({})\nEnd: {} ({})",
                 calendar,
                 event.summary,
                 event
@@ -460,318 +591,259 @@ fn review_sheet(family: &str, ticket: &str, review: &Review) -> String {
                     .or(event.start.date.as_ref())
                     .map(String::as_str)
                     .unwrap_or(""),
+                event.start.time_zone.as_deref().unwrap_or("all-day date"),
                 event
                     .end
                     .date_time
                     .as_ref()
                     .or(event.end.date.as_ref())
                     .map(String::as_str)
-                    .unwrap_or("")
+                    .unwrap_or(""),
+                event.end.time_zone.as_deref().unwrap_or("all-day date")
             ),
             format!("{}\n{}", event.location, event.description),
         ),
     };
-    let title = json!(title);
-    let details = json!(details);
-    let body = json!(body);
-    let ticket = json!(ticket);
-    let save = json!(format!("{family}.sheet.save"));
-    let cancel = json!(format!("{family}.sheet.cancel"));
-    let status = json!(format!("{family}.sheet.status"));
-    format!(
-        r#"
-let ticket = {ticket}
-let sending = false
-let attempted = false
-fn host_dismiss() {{
-    if !sending {{host.request({cancel}, {{ticket: ticket}}, fn(r) {{}})}}
-}}
-fn poll() {{
-    if !sending {{ return }}
-    host.request({status}, {{ticket: ticket}}, fn(r) {{
-        if r.is_ok {{
-            if r.data.phase == "saved" {{ sending = false }}
-            if r.data.phase == "error" {{
-                sending = false
-                ui.connector_review_back.set_visible(true)
-                ui.connector_review_status.set_text(r.data.message)
-            }}
-        }} else {{
-            sending = false
-            ui.connector_review_back.set_visible(true)
-            ui.connector_review_status.set_text(r.error)
-        }}
-        if sending {{ start_timeout(0.5, || poll()) }}
-    }})
-}}
-fn save() {{
-    if sending || attempted {{ return }}
-    attempted = true
-    sending = true
-    ui.connector_review_save.set_visible(false)
-    ui.connector_review_back.set_visible(false)
-    ui.connector_review_status.set_text("Saving the reviewed content…")
-    host.request({save}, {{ticket: ticket}}, fn(r) {{
-        if r.is_ok {{ poll() }} else {{
-            sending = false
-            ui.connector_review_back.set_visible(true)
-            ui.connector_review_status.set_text(r.error)
-        }}
-    }})
-}}
-SolidView {{width: Fill height: Fill flow: Down padding: 16 spacing: 12 draw_bg.color: #fff
-    Label {{width: Fill text: {title} draw_text.color: #222 draw_text.text_style.font_size: 20}}
-    ScrollYView {{width: Fill height: Fill flow: Down spacing: 12
-        Label {{width: Fill text: {details} draw_text.color: #444}}
-        Label {{width: Fill text: {body} draw_text.color: #222}}
-    }}
-    connector_review_status := Label {{width: Fill text: "Review this exact version before saving." draw_text.color: #444}}
-    View {{width: Fill height: Fit spacing: 12
-        connector_review_back := ButtonFlat {{width: Fill height: 48 text: "Back to editing" on_click: || host_dismiss()}}
-        connector_review_save := Button {{width: Fill height: 48 text: "Approve & Save" on_click: || save()}}
-    }}
-}}
-"#
-    )
+    json!({"app":review.app,"connection":review.connection,"account":review.account,"title":title,"details":details,"body":body})
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
-    #[test]
-    fn an_approval_starts_once_even_after_a_failed_save() {
-        let state = Arc::new(SaveState::default());
-        let workers: Vec<_> = (0..8)
-            .map(|_| {
-                let state = state.clone();
-                std::thread::spawn(move || state.start())
-            })
-            .collect();
-        let winners = workers
-            .into_iter()
-            .filter_map(|worker| worker.join().ok())
-            .filter(|won| *won)
-            .count();
-        assert_eq!(winners, 1);
-        *state.result.lock().unwrap() = Some(Err("Synthetic conflict".into()));
-        assert!(!state.start(), "retry requires a new reviewed snapshot");
+    #[derive(Default)]
+    struct Sheet {
+        closed: usize,
+    }
+    impl ServiceHost for Sheet {
+        fn open_sheet(&mut self, _: String) {}
+        fn close_sheet(&mut self) {
+            self.closed += 1;
+        }
+    }
+    fn fixture() -> (ReviewRequest, usize) {
+        static NEXT: AtomicUsize = AtomicUsize::new(992000);
+        let heap = NEXT.fetch_add(1, Ordering::SeqCst);
+        let family: &'static str = Box::leak(format!("connector_capture_{heap}").into_boxed_str());
+        struct Capture {
+            family: &'static str,
+            reply: Arc<Mutex<Option<Replier>>>,
+        }
+        impl HostService for Capture {
+            fn family(&self) -> &'static str {
+                self.family
+            }
+            fn call(&mut self, _: ServiceCall, reply: Replier, _: &mut dyn ServiceHost) {
+                *self.reply.lock().unwrap() = Some(reply);
+            }
+        }
+        let captured = Arc::new(Mutex::new(None));
+        services::register_host_service(Box::new(Capture {
+            family,
+            reply: captured.clone(),
+        }));
+        services::dispatch(
+            ServiceCall {
+                app_id: "org.example.notes".into(),
+                service: format!("{family}.hold"),
+                args: Value::Null,
+                from_sheet: false,
+                may_prompt: true,
+                host_dir: "synthetic-root".into(),
+            },
+            heap,
+            1,
+            &mut Sheet::default(),
+        );
+        let reply = captured.lock().unwrap().take().unwrap();
+        let review = Arc::new(Review {
+            app: "org.example.notes".into(),
+            root: "synthetic-root".into(),
+            connection: "synthetic-connection".into(),
+            account: "Fictional account".into(),
+            change: Change::Github(GithubFile {
+                owner: "fictional".into(),
+                repo: "notes".into(),
+                branch: "main".into(),
+                path: "note.md".into(),
+                content: "Exact reviewed UTF-8 — 保留\n".into(),
+                message: "Save note".into(),
+                sha: Some("old-sha".into()),
+            }),
+            reply,
+            deadline: Instant::now() + Duration::from_secs(60),
+            save: Arc::new(SaveState::default()),
+        });
+        (
+            ReviewRequest {
+                family: "github",
+                ticket: Uuid::new_v4().to_string(),
+                review,
+            },
+            heap,
+        )
     }
 
     #[test]
-    fn only_current_scoped_review_status_closes_and_errors_remain_visible() {
-        const FAMILY: &str = "connector_review_test";
-        const HEAP: usize = 981004;
-        struct Shared(Arc<Mutex<Connector>>);
+    fn native_provenance_is_required_on_both_edges_and_approval_is_one_use() {
+        let (mut request, heap) = fixture();
+        for (down, up) in [(false, false), (true, false), (false, true)] {
+            assert!(request.approve(down, up).is_err());
+            assert!(
+                !request.review.save.started(),
+                "automation must not consume physical approval"
+            );
+        }
+        assert_eq!(request.snapshot()["body"], "Exact reviewed UTF-8 — 保留\n");
+        assert!(request.claim_approval(true, true).is_ok());
+        assert!(request.claim_approval(true, true).is_err());
+        *request.review.save.result.lock().unwrap() = Some(Err("Synthetic conflict".into()));
+        assert!(
+            request.claim_approval(true, true).is_err(),
+            "failed writes require a new review"
+        );
+        services::cancel_heap(heap);
+    }
+
+    #[test]
+    fn dropped_expired_or_cancelled_native_review_cannot_start_a_write() {
+        let (request, heap) = fixture();
+        let state = request.review.save.clone();
+        drop(request);
+        assert!(!state.start());
+        assert!(
+            services::take_replies_for(&[heap])[0].2.is_err(),
+            "drop settles the original app promise"
+        );
+        let (mut expired, heap) = fixture();
+        Arc::get_mut(&mut expired.review).unwrap().deadline =
+            Instant::now() - Duration::from_secs(1);
+        assert!(expired.claim_approval(true, true).is_err());
+        assert!(!expired.review.save.start());
+        services::cancel_heap(heap);
+    }
+
+    #[test]
+    fn script_save_never_approves_and_only_the_scoped_current_sheet_can_close() {
+        let (request, original_heap) = fixture();
+        let family: &'static str =
+            Box::leak(format!("connector_review_{original_heap}").into_boxed_str());
+        let connector = Arc::new(Mutex::new(Connector {
+            family,
+            review_hook: None,
+            reviews: HashMap::from([(request.ticket.clone(), request.review.clone())]),
+            current: HashMap::from([(
+                (request.review.app.clone(), request.review.root.clone()),
+                request.ticket.clone(),
+            )]),
+        }));
+        struct Shared {
+            family: &'static str,
+            connector: Arc<Mutex<Connector>>,
+        }
         impl HostService for Shared {
             fn family(&self) -> &'static str {
-                FAMILY
+                self.family
             }
             fn call(&mut self, call: ServiceCall, reply: Replier, host: &mut dyn ServiceHost) {
-                self.0.lock().unwrap().call(call, reply, host)
+                self.connector.lock().unwrap().call(call, reply, host)
             }
         }
-        #[derive(Default)]
-        struct Sheet {
-            opened: usize,
-            closed: usize,
-        }
-        impl ServiceHost for Sheet {
-            fn open_sheet(&mut self, _: String) {
-                self.opened += 1;
-            }
-            fn close_sheet(&mut self) {
-                self.closed += 1;
-            }
-        }
-        let connector = Arc::new(Mutex::new(Connector {
-            family: FAMILY,
-            reviews: HashMap::new(),
-            current: HashMap::new(),
+        services::register_host_service(Box::new(Shared {
+            family,
+            connector: connector.clone(),
         }));
-        services::register_host_service(Box::new(Shared(connector.clone())));
         let mut sheet = Sheet::default();
-        let mut id = 0;
-        let mut call = |method: &str, args: Value, app: &str, root: &str, sheet: &mut Sheet| {
-            id += 1;
-            services::dispatch(
-                ServiceCall {
-                    app_id: app.into(),
-                    service: format!("{FAMILY}.{method}"),
-                    args,
-                    from_sheet: method.starts_with("sheet."),
-                    may_prompt: true,
-                    host_dir: PathBuf::from(root),
-                },
-                HEAP,
-                id,
-                sheet,
-            );
-            services::take_replies_for(&[HEAP])
-        };
-        let draft = json!({"connection":"synthetic", "calendar":"primary", "event": {
-            "summary":"Synthetic review", "description":"", "location":"",
-            "start":{"date":"2026-10-06"}, "end":{"date":"2026-10-07"}
-        }});
-        call(
-            "review_save",
-            draft.clone(),
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        let (old_ticket, old) = connector
-            .lock()
-            .unwrap()
-            .reviews
-            .iter()
-            .map(|(id, review)| (id.clone(), review.clone()))
-            .next()
-            .unwrap();
-        assert!(old.save.start());
-        call(
-            "review_save",
-            draft.clone(),
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        let (ticket, review) = connector
-            .lock()
-            .unwrap()
-            .reviews
-            .iter()
-            .map(|(id, review)| (id.clone(), review.clone()))
-            .next()
-            .unwrap();
-        *old.save.result.lock().unwrap() = Some(Ok(json!({"saved":true})));
-        old.reply.clone().send(Ok(json!({"saved":true})));
-        assert_eq!(
-            sheet.closed, 0,
-            "an old worker cannot close the replacement"
-        );
-        let replies = call(
-            "sheet.status",
-            json!({"ticket":old_ticket}),
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        assert!(replies.iter().any(|(_, _, result)| result.is_err()));
-        for (app, root) in [
-            ("org.other.calendar", "test-root"),
-            ("org.example.calendar", "other-root"),
-        ] {
-            let replies = call(
-                "sheet.status",
-                json!({"ticket":ticket}),
-                app,
-                root,
+        let mut id = 10;
+        let heap = original_heap + 100_000;
+        let mut dispatch =
+            |method: &str, from_sheet: bool, app: &str, ticket: &str, sheet: &mut Sheet| {
+                id += 1;
+                services::dispatch(
+                    ServiceCall {
+                        app_id: app.into(),
+                        service: format!("{family}.{method}"),
+                        args: json!({"ticket":ticket}),
+                        from_sheet,
+                        may_prompt: true,
+                        host_dir: "synthetic-root".into(),
+                    },
+                    heap,
+                    id,
+                    sheet,
+                );
+                services::take_replies_for(&[heap])
+            };
+        for from_sheet in [false, true] {
+            let replies = dispatch(
+                "sheet.save",
+                from_sheet,
+                &request.review.app,
+                &request.ticket,
                 &mut sheet,
             );
             assert!(replies[0].2.is_err());
+            assert!(!request.review.save.started());
         }
-        assert!(review.save.start());
-        *review.save.result.lock().unwrap() = Some(Err("Synthetic conflict; review again".into()));
-        review
-            .reply
-            .clone()
-            .send(Err("Synthetic conflict; review again".into()));
-        let replies = call(
+        for (from_sheet, app, ticket) in [
+            (false, request.review.app.as_str(), request.ticket.as_str()),
+            (true, "org.other.app", request.ticket.as_str()),
+            (true, request.review.app.as_str(), "stale-ticket"),
+        ] {
+            let replies = dispatch("sheet.cancel", from_sheet, app, ticket, &mut sheet);
+            assert!(replies[0].2.is_err());
+            assert_eq!(sheet.closed, 0);
+        }
+        assert!(request.claim_approval(true, true).is_ok());
+        *request.review.save.result.lock().unwrap() = Some(Err("Synthetic conflict".into()));
+        let replies = dispatch(
             "sheet.status",
-            json!({"ticket":ticket}),
-            "org.example.calendar",
-            "test-root",
+            true,
+            &request.review.app,
+            &request.ticket,
             &mut sheet,
         );
-        assert!(replies.iter().any(|(_, _, result)| result
+        assert!(replies[0]
+            .2
             .as_ref()
-            .is_ok_and(|v| v.contains("\"phase\":\"error\""))));
-        assert_eq!(sheet.closed, 0, "failure remains visible");
-        call(
+            .unwrap()
+            .contains("\"phase\":\"error\""));
+        assert_eq!(sheet.closed, 0, "failed save remains visible");
+        dispatch(
             "sheet.cancel",
-            json!({"ticket":ticket}),
-            "org.example.calendar",
-            "test-root",
+            true,
+            &request.review.app,
+            &request.ticket,
             &mut sheet,
         );
         assert_eq!(sheet.closed, 1);
-        call(
-            "review_save",
-            draft.clone(),
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        let ticket = connector
-            .lock()
-            .unwrap()
-            .reviews
-            .keys()
-            .next()
-            .unwrap()
-            .clone();
-        {
-            let mut connector = connector.lock().unwrap();
-            Arc::get_mut(connector.reviews.get_mut(&ticket).unwrap())
-                .unwrap()
-                .deadline = Instant::now() - Duration::from_secs(1);
-        }
-        // A different app prunes the private snapshot before the person
-        // returns. Only the original sheet can still dismiss its owner record.
-        call(
-            "sheet.status",
-            json!({"ticket":"unknown"}),
-            "org.other.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        let replies = call(
-            "sheet.save",
-            json!({"ticket":ticket}),
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        assert!(replies.iter().all(|(_, _, result)| result.is_err()));
-        call(
-            "sheet.cancel",
-            json!({"ticket":ticket}),
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
+        services::cancel_heap(heap);
+        services::cancel_heap(original_heap);
+    }
+
+    #[test]
+    fn approval_and_cancellation_race_has_exactly_one_winner() {
+        let state = Arc::new(SaveState::default());
+        let tasks: Vec<_> = (0..16)
+            .map(|i| {
+                let state = state.clone();
+                std::thread::spawn(move || {
+                    if i % 2 == 0 {
+                        state.start()
+                    } else {
+                        state.cancel()
+                    }
+                })
+            })
+            .collect();
         assert_eq!(
-            sheet.closed, 2,
-            "expired review still has a working Back action"
+            tasks
+                .into_iter()
+                .filter_map(|t| t.join().ok())
+                .filter(|won| *won)
+                .count(),
+            1
         );
-        call(
-            "review_save",
-            draft,
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        let (ticket, review) = connector
-            .lock()
-            .unwrap()
-            .reviews
-            .iter()
-            .map(|(id, review)| (id.clone(), review.clone()))
-            .next()
-            .unwrap();
-        assert!(review.save.start());
-        *review.save.result.lock().unwrap() = Some(Ok(json!({"saved":true})));
-        review.reply.clone().send(Ok(json!({"saved":true})));
-        call(
-            "sheet.status",
-            json!({"ticket":ticket}),
-            "org.example.calendar",
-            "test-root",
-            &mut sheet,
-        );
-        assert_eq!(sheet.closed, 3);
-        assert!(connector.lock().unwrap().reviews.is_empty());
-        services::cancel_heap(HEAP);
     }
 }
