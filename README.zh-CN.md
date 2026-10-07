@@ -325,7 +325,7 @@ sequenceDiagram
 - **邮件回复卡片**有 **Email** 和 **Chat** 两个标签页，共用一份保存的草稿。Agent 可以修改草稿并提议发送，但只有用户能发送：用户要在宿主的审阅界面上亲手点按确认（见[一次带审批的工具调用](#一次带审批的工具调用)）。Windows 和 Linux 还不能确认发送。详情和手机上的测试结果见[可组合的邮件卡片](docs/mail-composable-cards.zh-CN.md)。
 - **声明了 `sys.chat(app, thread, fields)` 的卡片**保留它声明的对话线程。
 
-所有对话记录都归 Shell 所有，保存在应用的账户文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
+所有对话记录都归 Shell 所有，保存在应用的账户文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。详见 [`crates/l0-chat`](crates/l0-chat/README.zh-CN.md)。
 
 #### 提问
 
@@ -353,7 +353,7 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 | [`crates/ai-host/`](crates/ai-host/README.md) | Shell 的 AI 服务，统一入口，package `octosense-ai-host`：内核服务、`llm` 与 `model` 服务，以及为每个脚本应用提供 Agent（`card.<应用 id>`）的 `octos` 宿主服务。 |
 | [`crates/kernel/`](crates/kernel/README.zh-CN.md) | 作为 Shell 服务的 octos 内核，package `octosense-kernel`：每个进程一个，由 AI providers 配置，供所有使用方共享；以及系统 Agent 的精确工具列表。 |
 | [`crates/app-peers/`](crates/app-peers/README.md) | 应用 Agent 的代理，package `octosense-app-peers`：每个（应用，账户）一个 peer，它的两条通道、工具、`peer/input`、时限和清除。 |
-| [`crates/l0-chat/`](crates/l0-chat/README.md) | L0 卡片卡内对话（`sys.chat`）的宿主一侧，package `octosense-l0-chat`。 |
+| [`crates/l0-chat/`](crates/l0-chat/README.zh-CN.md) | L0 卡片卡内对话（`sys.chat`）的宿主一侧，package `octosense-l0-chat`。 |
 | [`crates/toolbox/`](crates/toolbox/README.md) | 系统工具箱，package `octosense-toolbox`：工作流模板和 `mod.research`，在 `toolbox-peers` 特性下提供给应用 Agent。 |
 | [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、日历、AI providers、YouTube），均为脚本应用；它们的宿主服务（`mail`、`calendar`、`news`、`llm`）；`apps/reference`；以及需显式启用的 AppCard 助手。 |
 | [`native-apps.json`](native-apps.json) | 所有原生应用：代码来自哪里、在各平台上如何托管，以及它的 Agent。`tools/native_apps.py` 据此生成 Shell 的代码和 Cargo 条目。 |

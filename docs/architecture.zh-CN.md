@@ -305,7 +305,7 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 
 glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在宿主记录的账户下发布每张卡片，而且只在应用有 `glance` 授权时才发布。一个应用每分钟最多发布 6 次。手机和桌面都能滚动浏览所有保留卡片，不再限制每应用四张卡片或信息流六行。保留负载的预算为每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，但保留新的有效发布；所属服务继续保存草稿和原邮件。`mail.publish_card` 还能把卡片绑定到邮件已保存的某份草稿上；绑定后的卡片不能再换到别的账户、邮件或草稿。
 
-在 `main` 上，Agent 发布的卡片受到更严格的限制。Agent 的工具调用若最终映射到 `glance.publish`（例如 Inbox Assistant 的 `inbox.notify`），必须指定应用已准入应用包中的模板并提供 `initial` 对象，或者提交合法的 L0 源码。可执行的 Splash（`script`）、L1 源码以及混合的参数都会被拒绝（`host_tools/script_apps.rs` 中的 `check_agent_publication`）。应用自己的界面仍可发布它经过审核的 Splash。`desktop-v0.1.0-beta.2` 没有这项检查，会接受 Agent 发布的 `script` 卡片。
+在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`（例如 Inbox Assistant 的 `inbox.notify`），必须指定应用已准入应用包中的模板并提供 `initial` 对象，或者提交合法的 L0 源码。可执行的 Splash（`script`）、L1 源码以及混合的参数都会被拒绝（`host_tools/script_apps.rs` 中的 `check_agent_publication`）。应用自己的界面仍可发布它经过审核的 Splash。`desktop-v0.1.0-beta.2` 没有这项检查，会接受 Agent 发布的 `script` 卡片。
 
 在手机上，glance 列表只绘制紧凑的摘要，不运行任何生成的界面（`mobile_pages.rs`）。点按摘要会把它展开成常驻的全屏工作区（`glance_sheet.rs`），通知则直接打开它对应卡片的工作区；在桌面端，工作区居中打开。有 Agent 的发布者即使卡片没有声明 `sys.chat`，也会得到 Card / Chat 两个标签（`glance_card.rs` 中的 `WorkspaceChat`）；邮件的回复卡片则在同一份已保存的草稿上提供 Email / Chat。细节见[组合式邮件卡片](mail-composable-cards.zh-CN.md#所有发布者共用的卡片工作区)。卡片模板见 README 的[系统 Agent 如何与应用 Agent 通信](../README.zh-CN.md#系统-agent-如何与应用-agent-通信)，卡片自己的策略和卡内对话见[卡片与提问](../README.zh-CN.md#卡片与提问)。
 
@@ -520,7 +520,7 @@ sequenceDiagram
 | 审批、同意、联系人、审计 | [`crates/shell/src/approvals/`](../crates/shell/src/approvals/mod.rs) |
 | 开发者模式 | [`crates/shell/src/dev_mode.rs`](../crates/shell/src/dev_mode.rs) |
 | 应用存储、机密、启动检查、账户 | [`crates/shell/src/app_storage/`](../crates/shell/src/app_storage/mod.rs) |
-| glance 卡片和卡内对话 | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)、[`glance_notice.rs`](../crates/shell/src/glance_notice.rs)、[`glance_card.rs`](../crates/shell/src/glance_card.rs)、[`crates/l0-chat`](../crates/l0-chat/README.md) |
+| glance 卡片和卡内对话 | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)、[`glance_notice.rs`](../crates/shell/src/glance_notice.rs)、[`glance_card.rs`](../crates/shell/src/glance_card.rs)、[`crates/l0-chat`](../crates/l0-chat/README.zh-CN.md) |
 | 系统应用及其工具和宿主服务 | [`desktop/system-apps.json`](../desktop/system-apps.json)、[`phone/system-apps.json`](../phone/system-apps.json)、`apps/<app>/bundle/tools.json`、`apps/<app>/host-service/` |
 
 本仓库之外的代码，按 `Cargo.toml` 锁定的版本：

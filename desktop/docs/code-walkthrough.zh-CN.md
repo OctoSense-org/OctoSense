@@ -163,8 +163,8 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 上述固定通知工具接受文本参数，script-card API 则用于更丰富的应用界面。
 用户在这些界面上的操作使用应用自己的 API 权限。
 
-在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`，限制更严：它可以指定应用已准入应用包中的模板
-并提供 `initial` 对象，或提交合法的 L0 源码，但不能提交 `script`（见
+在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`，只能指定应用已准入应用包中的模板
+并提供 `initial` 对象，或提交合法的 L0 源码，不能提交 `script`（见
 [`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs) 中的 `check_agent_publication`）。
 `desktop-v0.1.0-beta.2` 仍接受 Agent 发布的 `script` 卡片。
 

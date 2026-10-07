@@ -38,7 +38,7 @@ Inbox Assistant 和 Google Calendar 尚未在该设备上运行。
 
 `desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本；
 Home（手机）还没有能安装连接账户应用的发布版本。beta.2 的 `auth` 没有后端登录，服务商注册也只来自 `clients.json`
-（见[高级运维覆盖配置](#高级运维覆盖配置)）。beta.2 也早于 [#356](https://github.com/OctoSense-org/OctoSense/pull/356)，#356 已合入 `main`，但还没有进入任何发布版本。
+（见[高级运维覆盖配置](#高级运维覆盖配置)）。beta.2 也早于 [#356](https://github.com/OctoSense-org/OctoSense/pull/356)：它已合入 `main`，但还没有进入任何发布版本。
 所以在 beta.2 上，只有 Gmail 发信检查是否亲手点按，GitHub 和 Calendar 保存使用的宿主面板不做这项检查；Agent 的 `glance.publish` 仍接受 `script` 卡片；
 Calendar 用 `gcalendar.sync` 和同步 token 同步全部日程历史，而不是下文的有限日期窗口。更早的 `desktop-v0.1.0-beta.1` 和 `home-v0.1.0-beta.1`
 使用应用契约 1.1.0，这一版没有 `auth` 能力：它们的商店会列出声明了 `auth` 的应用，但拒绝安装。

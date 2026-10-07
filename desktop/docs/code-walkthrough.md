@@ -189,9 +189,9 @@ the host's `glance::dismiss` removes a card closed by the person. The fixed noti
 tools above accept text arguments; the script-card API serves richer app-owned
 surfaces. A person's action on such a surface uses the app's API permissions.
 
-An agent's tool call that resolves to `glance.publish` is narrower on `main`. It
-may name a template from the app's admitted bundle with an `initial` object, or
-send valid L0 source, but never a `script` (`check_agent_publication` in
+On `main`, an agent's tool call that resolves to `glance.publish` may name a
+template from the app's admitted bundle with an `initial` object, or send valid
+L0 source, but never a `script` (`check_agent_publication` in
 [`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs)).
 `desktop-v0.1.0-beta.2` still accepts an agent's `script` card.
 
