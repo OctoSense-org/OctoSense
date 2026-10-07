@@ -7,6 +7,87 @@ use makepad_widgets::{desktop_style, *};
 
 const NEWS: &str = include_str!("../../../apps/news/bundle/main.splash");
 
+#[test]
+fn camera_recording_failure_settles_controls_without_stopping_a_healthy_recording() {
+    let source = include_str!("../../../apps/camera/bundle/main.splash");
+    let logic = source.split_once("\nstart_timeout(").expect("Camera boot boundary").0;
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    cx.with_vm(|vm| {
+        makepad_widgets::script_mod(vm);
+        vm.bx.captured_errors = Some(Vec::new());
+        // Execute the shipped app's callbacks in the native VM. Camera,
+        // timers and rendering endpoints are test doubles: this verifies app
+        // state and endpoint calls, not pixels or successful hardware capture.
+        let value = vm.eval(ScriptMod {
+            file: "camera_recording_failure_test.splash".into(),
+            code: format!(r#"
+use mod.std.assert
+let fs = {{}}
+let native_recording = false
+let native_error = ""
+let timer_visible = false
+let retry_visible = false
+let toast = ""
+let timers = []
+let stopped = []
+let stop_requests = 0
+fn time_now() {{ 123 }}
+fn start_interval(seconds, callback) {{ timers.push(callback); timers.len() }}
+fn stop_timer(timer) {{ stopped.push(timer) }}
+let widget = {{render: fn(){{}} set_text: fn(text){{}}}}
+let ui = {{
+    cam: {{
+        record_start: fn(){{ native_recording = true; true }}
+        record_stop: fn(){{ stop_requests += 1; native_recording = false }}
+        is_recording: fn(){{ native_recording }}
+        error: fn(){{ native_error }}
+        set_aspect: fn(aspect){{}}
+    }}
+    rec: widget
+    rec_box: {{set_visible: fn(value){{ timer_visible = value }}}}
+    shutter_face: widget modes: widget
+    toast: {{set_text: fn(value){{ toast = value }}}}
+    retry_camera: {{set_visible: fn(value){{ retry_visible = value }}}}
+}}
+{logic}
+set_mode("video")
+start_recording()
+assert(recording && timer_visible && rec_timer == 1)
+// Android queues a request, then reports that recording is unsupported.
+native_recording = false
+native_error = "video failed: recording is not implemented on Android yet"
+failed()
+assert(!recording && !timer_visible && rec_timer == nil)
+assert(stopped.len() == 1 && stopped[0] == 1)
+assert(stop_requests == 0 && retry_visible)
+assert(toast == native_error)
+set_mode("photo")
+assert(mode == "photo")
+failed()
+assert(stopped.len() == 1)
+// An unrelated error while the native recorder remains active must not
+// discard the UI state or permit a mode change during that recording.
+set_mode("video")
+start_recording()
+native_error = "photo failed: synthetic still failure"
+failed()
+assert(recording && timer_visible && rec_timer == 2)
+assert(stopped.len() == 1 && stop_requests == 0)
+set_mode("photo")
+assert(mode == "video")
+stop_recording()
+assert(!recording && !timer_visible && rec_timer == nil)
+assert(stopped.len() == 2 && stopped[1] == 2 && stop_requests == 1)
+true
+;"#),
+            ..Default::default()
+        });
+        let errors = vm.take_errors();
+        assert!(errors.is_empty(), "Camera app errors: {errors:?}");
+        assert!(!value.is_err(), "Camera callbacks returned {value:?}");
+    });
+}
+
 /// News's styles: its `let`s, without the boot before them or the view after.
 fn news_styles() -> String {
     let after_boot = NEWS.split_once("\nlet ink = ").unwrap().1;

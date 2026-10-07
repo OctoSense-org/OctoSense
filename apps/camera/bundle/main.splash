@@ -70,6 +70,9 @@ fn start_recording(){
 }
 fn stop_recording(){
     ui.cam.record_stop()
+    settle_recording()
+}
+fn settle_recording(){
     recording = false
     if rec_timer != nil { stop_timer(rec_timer); rec_timer = nil }
     ui.rec_box.set_visible(false)
@@ -105,7 +108,13 @@ fn open_viewer(){
     ui.viewer.set_visible(true)
 }
 fn close_viewer(){ ui.viewer.set_visible(false) }
-fn failed(){ ui.toast.set_text(ui.cam.error()) ui.retry_camera.set_visible(true) }
+fn failed(){
+    // Recording starts asynchronously. A failed native request clears the
+    // camera's recording state; stop its UI timer without issuing another
+    // recording request. An unrelated error must not stop a healthy recording.
+    if recording && !ui.cam.is_recording() { settle_recording() }
+    ui.toast.set_text(ui.cam.error()) ui.retry_camera.set_visible(true)
+}
 fn retry_camera(){
     ui.toast.set_text("") ui.retry_camera.set_visible(false)
     ui.cam.start()
