@@ -323,6 +323,9 @@ impl BackendReviews {
 }
 
 impl HostService for Connector {
+    fn api_methods(&self) -> Vec<services::HostApiMethod> {
+        crate::host_catalog::connector(self.family, self.review_hook.is_some())
+    }
     fn family(&self) -> &'static str {
         self.family
     }

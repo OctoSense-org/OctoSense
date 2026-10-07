@@ -348,6 +348,9 @@ impl AuthService {
     }
 }
 impl HostService for AuthService {
+    fn api_methods(&self) -> Vec<services::HostApiMethod> {
+        crate::host_catalog::auth()
+    }
     fn family(&self) -> &'static str {
         "auth"
     }
