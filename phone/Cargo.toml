@@ -98,5 +98,8 @@ app-weather = ["octosense-shell/app-weather"]
 # END native-apps: features
 app-aichat = ["dep:makepad-aichat", "octosense-shell/app-aichat"]
 dev-mode = ["octosense-shell/dev-mode"]
+# Experiment: Terminal in the OpenHarmony desktop build (native-apps.json
+# keeps it off the phone shell).
+app-terminal = ["octosense-shell/app-terminal"]
 # The system toolbox offered to app agents (off by default; ADR 0002 §6).
 toolbox-peers = ["octosense-shell/toolbox-peers"]

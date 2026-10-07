@@ -229,9 +229,20 @@ draggable floating ball over hosted content. Tapping it opens a compact panel
 with **返回首页** and **最近应用**. Dragging docks it inside the nearest side;
 tapping outside dismisses the panel without activating the content underneath.
 The ball stays in the app window and reserves no content height.
-The generated ArkTS bridge also receives `phone/ohos/keyboard.patch` to coalesce
-per-frame keyboard requests and serialize attach/show/hide while leaving the
-pinned framework checkout intact. OpenHarmony uses only its native keyboard.
+With a framework whose ArkTS bridge still drives the input method, the bridge
+also receives `phone/ohos/keyboard.patch` to coalesce per-frame keyboard
+requests and serialize attach/show/hide while leaving the pinned framework
+checkout intact; a framework with the NDK input method (makepad's
+`oh_ime.rs`) serializes them natively and gets no patch. OpenHarmony uses only
+its native keyboard.
+On a HarmonyOS 2-in-1, `--desktop` builds the OctoSense desktop instead of
+the phone shell (`OCTOSENSE_OHOS_DESKTOP=1`, read by `crates/shell/build.rs`
+and `phone/build.rs`; every native app is an in-process module there), declares
+the module for `2in1` and `tablet`, and the window opens maximized. Terminal
+is the opt-in `app-terminal` feature of `phone/Cargo.toml`, which this script
+does not pass yet. The desktop build was run on a MateBook
+Pro (HarmonyOS 7.0) from an equivalent Linux build; this script's `--desktop`
+path itself is **unverified**.
 OpenHarmony does not recognize shell edge swipes or draw a second navigation
 pill; those gestures remain available to the host OS. Home paging and the
 central pull for the app library still work inside the content area.

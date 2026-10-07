@@ -45,6 +45,8 @@ def main():
     p.add_argument('--compatible-sdk', default='6.0.1(21)')
     p.add_argument('--remote-port', type=int, help='Validation only: app-owned loopback inspection')
     p.add_argument('--offline', action='store_true')
+    p.add_argument('--desktop', action='store_true',
+                   help='The OctoSense desktop for a 2-in-1 (OCTOSENSE_OHOS_DESKTOP=1), also declared for 2in1 and tablet')
     args = p.parse_args()
     for name in ('deveco_home', 'signing_config', 'packager'):
         setattr(args, name, getattr(args, name).expanduser().resolve())
@@ -83,6 +85,8 @@ def main():
     env.pop('MAKEPAD_REMOTE', None)
     if args.remote_port:
         env['MAKEPAD_REMOTE'] = str(args.remote_port)
+    if args.desktop:
+        env['OCTOSENSE_OHOS_DESKTOP'] = '1'
     cargo_args = ['-p', 'octosense-home', '--release', '--locked']
     if args.offline:
         cargo_args.append('--offline')
@@ -98,8 +102,21 @@ def main():
     # keep the floating controls inside its safe area.
     shutil.copy2(home / 'ohos/EntryAbility.ets',
                  project / 'entry/src/main/ets/entryability/EntryAbility.ets')
-    subprocess.run(['patch', '--batch', '--forward', '-p1', '-i',
-                    str(home / 'ohos/keyboard.patch')], cwd=project, check=True)
+    # A framework whose ArkTS bridge still drives the input method gets the
+    # patch that serializes it; one with the native (NDK) input method has
+    # no ArkTS keyboard code left to patch.
+    bridge = project / 'entry/src/main/ets/makepad/makepad.ets'
+    if 'inputMethod' in bridge.read_text():
+        subprocess.run(['patch', '--batch', '--forward', '-p1', '-i',
+                        str(home / 'ohos/keyboard.patch')], cwd=project, check=True)
+    if args.desktop:
+        # A phone-only module runs in a phone-sized compatibility window on a
+        # 2-in-1; the desktop shell is declared for it (and tablets).
+        module_path = project / 'entry/src/main/module.json5'
+        module = read_json5(module_path)
+        types = module['module'].setdefault('deviceTypes', [])
+        types.extend(t for t in ('2in1', 'tablet') if t not in types)
+        module_path.write_text(json.dumps(module, ensure_ascii=False, indent=2) + '\n')
     app_path = project / 'AppScope/app.json5'
     app = read_json5(app_path)
     app['app']['bundleName'] = args.bundle_id
