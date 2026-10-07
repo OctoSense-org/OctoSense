@@ -118,8 +118,9 @@ octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub"
 # and App Hub and Rinx no longer need the same App Hub commit.
 octosense-app-contract = "1"
 # --- octos: ONE source for every octos crate (reviewed octos#2715 at
-# bf0b6d6d: bounded ledger session-directory names and provider transport
-# diagnostics that omit credentials, request bodies and URL queries.
+# b0759a57: bounded ledger session-directory names, serialized peer purge
+# against session writes, and provider transport diagnostics that omit
+# credentials, request bodies and URL queries.
 # Based on 39e22d45, after #2709 and #2704, a deleted sub-account's or profile's
 # keychain items released; #2697 and #2695, peer/purge residue kept on its
 # tombstone; #2692, a stdio turn's terminal after its queued envelopes;
@@ -142,12 +143,12 @@ octosense-app-contract = "1"
 # keeps its peer/input, and #2645, Bing News's Chinese results).
 # Move octos-core, octos-cli and octos-research together; the Android kernel
 # artifact (liboctos.so) is built from this same revision.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "bf0b6d6d28d2ca02db48d65d7c93efbdc46db033" }
-octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "bf0b6d6d28d2ca02db48d65d7c93efbdc46db033", default-features = false }
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "b0759a57719fd35b3a2da1c5d969bc67538ed516" }
+octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "b0759a57719fd35b3a2da1c5d969bc67538ed516", default-features = false }
 # The research engine (the metasearch, the SSRF-safe polite reader and the
 # toolbox scope) for the toolbox's `octos-engine` feature. Same source and
 # revision as above.
-octos-research = { git = "https://github.com/octos-org/octos.git", rev = "bf0b6d6d28d2ca02db48d65d7c93efbdc46db033", default-features = false }
+octos-research = { git = "https://github.com/octos-org/octos.git", rev = "b0759a57719fd35b3a2da1c5d969bc67538ed516", default-features = false }
 # --- AppCard's inline renderers.
 streaming-markdown-kit = { git = "https://github.com/Project-Robius-China/streaming-markdown-kit.git", branch = "main" }
 makepad-diagram-kit = { git = "https://github.com/Project-Robius-China/makepad-diagram-kit.git", branch = "main" }
