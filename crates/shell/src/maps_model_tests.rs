@@ -111,10 +111,14 @@ fn maps_reads_odd_photon_answers() {
 fn maps_names_categories_like_a_person_would() {
     let out = maps_model(
         r#"[category("amenity", "fuel") category("building", "yes") category("shop", "ice_cream") category("amenity", "")
-            category("amenity", "place_of_worship") category("building", "house") category("highway", "residential")].to_json()"#,
+            category("amenity", "place_of_worship") category("building", "house") category("highway", "residential")
+            category("highway", "bus_stop") category("highway", "primary_link")].to_json()"#,
     );
     assert_eq!(
         out,
-        serde_json::json!(["Gas station", "Building", "Ice cream", "Amenity", "Place of worship", "Address", "Street"])
+        serde_json::json!([
+            "Gas station", "Building", "Ice cream", "Amenity", "Place of worship", "Address", "Street",
+            "Bus stop", "Street"
+        ])
     );
 }

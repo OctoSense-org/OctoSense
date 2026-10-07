@@ -100,13 +100,16 @@ fn cap(s){
     if chars[0] >= 97 && chars[0] <= 122 { chars[0] = chars[0] - 32 }
     chars.to_string()
 }
-// OpenStreetMap's key and value as a category: Photon's streets come as
-// `highway` hits (primary, residential, …) and read "Street"; a few values
+// OpenStreetMap's key and value as a category: a road (a `highway` hit such
+// as primary, residential or a primary_link) reads "Street", while other
+// `highway` values (bus_stop, traffic_signals) read as written; a few values
 // are renamed, the rest read as written ("ice_cream" reads "Ice cream");
 // "yes" says only what the key is.
+let ROADS = {motorway: true trunk: true primary: true secondary: true tertiary: true unclassified: true
+    residential: true service: true living_street: true pedestrian: true road: true}
 let CATEGORY = {fuel: "Gas station" atm: "ATM" doctors: "Doctor" townhall: "Town hall" house: "Address"}
 fn category(key, value){
-    if key == "highway" { return "Street" }
+    if key == "highway" && optional(ROADS, value.strip_suffix("_link"), nil) != nil { return "Street" }
     let v = value
     if v == "" || v == "yes" { v = key }
     let named = optional(CATEGORY, v, nil)
