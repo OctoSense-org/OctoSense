@@ -8,6 +8,10 @@ OctoSense is an agent shell that runs on top of an ordinary operating system. On
 
 This repository holds the shell, its services, the system apps, and the three products built from them. Most native apps come from other repositories: the OctoSense fork of Makepad, App Hub and Rinx ([What it depends on](#what-it-depends-on)).
 
+The script apps share [responsive, theme-aware interface styles](apps/README.md#shared-appearance)
+across desktop and phone. [Local native UX checks](tools/app-ux/README.md) cover
+saved state and actual interaction; phone-size previews remain separate from device acceptance.
+
 | Product | What it is | Where |
 | --- | --- | --- |
 | **OctoSense desktop** | The shell as one Makepad window on macOS (Windows and Linux untested) | [`desktop/`](desktop/README.md) |

@@ -57,6 +57,26 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 
 ## 应用一览
 
+### 共用外观
+
+新闻、相册、邮件、日历、地图、AI providers 和 YouTube 共用
+[`interface.splash`](interface.splash)：页面、卡片和输入框跟随主题，
+辅助文字保持可读，操作按钮高 44 点，输入框高 48 点。桌面内容限制最大宽度，
+窄窗口保留相同操作。相机和媒体查看器保留深色观看背景。应用大厅的原生模块
+采用相同的间距和操作层级。展开的 Glance 卡片及卡片内聊天在桌面和手机端
+使用同一套 Shell。
+
+键盘缩小当前应用的可视区域时，Shell 通过应用自己的滚动区域显示当前输入框，
+固定操作栏保留原位。地图图块随宿主切换明暗外观。相机按钮使用深色底板，
+在明亮取景画面上仍可阅读；Android 等待首次权限弹窗的结果后才准备预览。
+权限弹窗只能暂停正在播放的视频，不能将尚未初始化的相机在返回后误标为正在播放。
+
+修改后在仓库根目录运行 `python3 tools/sync-app-interface.py`，将共用样式
+原样嵌入各个独立应用包；CI 通过 `python3 tools/sync-app-interface.py --check`
+检查是否同步。样式重载时读取当前宿主主题，同时保留未保存的输入。
+[本机原生 UX 检查](../tools/app-ux/README.zh-CN.md) 在独立配置中验证编辑、
+持久化、主题切换、浏览和搜索。手机尺寸的桌面截图不代表真机验证。
+
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |

@@ -22,14 +22,14 @@ struct MailReview;
 #[derive(Default)]
 struct MailToolbar;
 
-pub const SHEET_WIDTH: f64 = 380.0;
+pub const SHEET_WIDTH: f64 = 520.0;
 /// The window's least height, and its card's height before it is measured.
 pub const SHEET_MIN_HEIGHT: f64 = 160.0;
 const UNMEASURED_CARD: f64 = 320.0;
 /// What the window keeps clear of the screen's edges.
 const MARGIN: f64 = 16.0;
-const HEADER: f64 = 44.0;
-const PAD: f64 = 12.0;
+const HEADER: f64 = 52.0;
+const PAD: f64 = 16.0;
 const CLOSE: f64 = 44.0;
 const TABS: f64 = 52.0;
 
@@ -66,7 +66,7 @@ script_mod! {
                 draw_bg +: {color: #3668e8 color_hover: #2854c4 color_down: #2148ad border_size: 0 border_radius: 14}
                 draw_text +: {color: #ffffff color_hover: #ffffff color_down: #ffffff}
             }
-            hint := Label {width: Fill height: Fit flow: Right {wrap: true} max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 10}}
+            hint := Label {width: Fill height: Fit flow: Right {wrap: true} max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 12}}
         }
     }
 }
@@ -1016,7 +1016,7 @@ mod tests {
     fn the_window_is_centred_and_sized_to_its_card() {
         let screen = rect(0.0, 0.0, 1280.0, 800.0);
         let sheet = sheet_rect(screen, 300.0);
-        assert_eq!((sheet.pos.x, sheet.size.x, sheet.size.y), (450.0, SHEET_WIDTH, HEADER + 300.0 + PAD));
+        assert_eq!((sheet.pos.x, sheet.size.x, sheet.size.y), ((1280.0 - SHEET_WIDTH) * 0.5, SHEET_WIDTH, HEADER + 300.0 + PAD));
         assert_eq!(sheet.pos.y, (800.0 - sheet.size.y) * 0.5);
         let card = card_rect(sheet);
         assert_eq!(card.size.y, 300.0, "the card fills the window: no empty area below it");

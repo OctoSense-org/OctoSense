@@ -127,6 +127,10 @@ pub struct MpModuleView {
     wake_frame: Option<NextFrame>,
     #[rust]
     script_viewport: Option<(WidgetUid, Vec2d)>,
+    /// Previous hosted bounds, used to reveal a focused editor when the IME
+    /// shrinks the app. Resize the app, then scroll its own nearest container.
+    #[rust]
+    last_viewport_size: Option<Vec2d>,
 }
 
 impl MpModuleView {
@@ -155,6 +159,7 @@ impl MpModuleView {
         self.client = Some(client);
         self.vm_id = vm_id;
         self.script_viewport = None;
+        self.last_viewport_size = None;
         self.drawn = false;
         self.stopped = None;
         self.draw_bg.redraw(cx);
@@ -626,6 +631,21 @@ impl Widget for MpModuleView {
             if drawn.is_none() {
                 self.stop(cx);
             }
+            if drawn.is_some() && self.focused && self.takes_key_focus
+                && self.last_viewport_size.is_some_and(|size| rect.size.y < size.y - 0.5)
+            {
+                if let Some(list) = cx.get_current_draw_list_id() {
+                    if let Some((area, stack)) = CxDraw::iterate_nav_stops(cx, list, |cx, stop| {
+                        cx.has_key_focus(stop.area).then_some(stop.area)
+                    }) {
+                        let focused = area.rect(cx);
+                        if focused.pos.y + focused.size.y > rect.pos.y + rect.size.y - 5.0 {
+                            NavControl::send_trigger_to_scroll_stack(cx, stack);
+                        }
+                    }
+                }
+            }
+            self.last_viewport_size = Some(rect.size);
             self.drawn = true;
         }
         if self.stopped.is_some() {

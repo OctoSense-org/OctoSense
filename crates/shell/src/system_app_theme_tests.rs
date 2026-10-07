@@ -10,7 +10,7 @@ const NEWS: &str = include_str!("../../../apps/news/bundle/main.splash");
 /// News's styles: its `let`s, without the boot before them or the view after.
 fn news_styles() -> String {
     let after_boot = NEWS.split_once("\nlet ink = ").unwrap().1;
-    format!("let ink = {}", after_boot.split_once("\nHostedView{").unwrap().0)
+    format!("{}\nlet ink = {}", include_str!("../../../apps/interface.splash"), after_boot.split_once("\nHostedView{").unwrap().0)
 }
 
 /// Each colour in `expressions`, evaluated after News's styles in a VM
@@ -33,10 +33,29 @@ fn news_colors(style: DesktopStyle, dark: bool, expressions: &[&str]) -> Vec<u32
                 });
                 let errors = vm.take_errors();
                 assert!(errors.is_empty(), "{expression}: {errors:?}");
-                value.as_color().unwrap_or_else(|| panic!("{expression} is not a colour"))
+                Vec4f::script_from_value(vm, value).to_u32()
             })
             .collect()
     })
+}
+
+#[test]
+fn system_app_interface_keeps_text_and_controls_readable_in_every_appearance() {
+    for style in DesktopStyle::ALL {
+        for dark in [false, true] {
+            if dark && !style.supports_dark() { continue; }
+            let colors = news_colors(style, dark, &[
+                "ui_page", "ui_surface", "ui_field", "ui_ink", "ui_muted", "ui_link", "ui_success", "ui_danger", "ui_primary",
+            ]);
+            let at = format!("{} dark={dark}", style.id());
+            for surface in &colors[..3] {
+                for ink in &colors[3..8] {
+                    assert!(contrast(*ink, *surface) >= 4.5, "{at}: {ink:08x} on {surface:08x}: {}", contrast(*ink, *surface));
+                }
+            }
+            assert!(contrast(0xffffffff, colors[8]) >= 4.5, "{at}: primary action");
+        }
+    }
 }
 
 /// WCAG contrast ratio of two opaque `0xRRGGBBAA` colours.

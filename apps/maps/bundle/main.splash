@@ -1,3 +1,40 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
 let origin = {lat: 37.3350 lon: -121.8850 name: "San Jose (downtown)" picked: false}
 let q = ""
 let loaded_q = ""
@@ -221,55 +258,46 @@ fn boot(){
 start_timeout(0.05, || boot())
 start_interval(0.5, || tick())
 
-let ink = #x1c1c1e
-let secondary = #x8e8e93
-let accent = #x1a73e8
+let ink = ui_ink
+let secondary = ui_muted
+let accent = ui_link
 
-let Pill = ButtonFlat{height: 34 padding: Inset{left: 14 right: 14}
-    draw_bg +: {border_radius: 17.0 color: #xf1f3f4 color_hover: #xe8eaed color_down: #xdadce0 border_size: 0.0}
-    draw_text +: {color: ink color_hover: ink color_down: ink text_style +: {font_size: 13}}
-}
+let Pill = UiPill{}
 let PillOn = Pill{
-    draw_bg +: {color: accent color_hover: accent color_down: #x1557b0}
+    draw_bg +: {color: ui_primary color_hover: ui_primary color_down: #x204cb8}
     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}
 }
-let Primary = ButtonFlat{height: 44 width: Fill align: Align{x: 0.5 y: 0.5}
-    draw_bg +: {border_radius: 22.0 color: accent color_hover: #x1765cc color_down: #x1557b0 border_size: 0.0}
-    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff text_style: theme.font_bold{font_size: 15}}
+let Primary = UiPrimary{width: Fill}
+let Link = UiButton{}
+let Panel = RoundedView{width: Fill max_width: 480 height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 14 bottom: 18} spacing: 8
+    new_batch: true show_bg: true draw_bg.color: ui_surface draw_bg.border_radius: 18.0
 }
-let Link = ButtonFlat{height: 32 padding: Inset{left: 8 right: 8}
-    draw_bg +: {color: #x00000000 color_hover: #x0000000a color_down: #x00000014 border_size: 0.0}
-    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 14}}
-}
-let Panel = RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 14 bottom: 18} spacing: 8
-    new_batch: true show_bg: true draw_bg.color: #xffffff draw_bg.border_radius: 18.0
-}
-let HitRow = GestureView{width: Fill height: Fit flow: Down padding: Inset{top: 8 bottom: 8} spacing: 2
+let HitRow = GestureView{width: Fill height: Fit flow: Down padding: Inset{top: 12 bottom: 12} spacing: 6
     name := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
-    label := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 12}
+    label := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 13}
 }
 
 View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eaed
     plan_box := View{width: Fill height: Fill
-        plan_map := MapView{width: Fill height: Fill nav_mode: "plan" nav_route_width: 36.0 zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
+        plan_map := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "plan" nav_route_width: 36.0 zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
             center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false}
     }
     drive_box := View{visible: false width: Fill height: Fill flow: Overlay
         drive_3d := View{width: Fill height: Fill
-            drive_map := MapView{width: Fill height: Fill nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0
+            drive_map := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0
                 center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
         }
         drive_2d := View{visible: false width: Fill height: Fill
-            drive_map_2d := MapView{width: Fill height: Fill nav_mode: "2d" nav_period: 100 nav_route_width: 11.0 zoom: 16.0 min_zoom: 3.0 max_zoom: 19.0
+            drive_map_2d := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "2d" nav_period: 100 nav_route_width: 11.0 zoom: 16.0 min_zoom: 3.0 max_zoom: 19.0
                 center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
         }
     }
     View{width: Fill height: Fill flow: Down padding: Inset{left: 10 right: 10 top: 10 bottom: 16}
         search_panel := Panel{
-            search_hint := Label{text: "Where to?" draw_text.color: secondary draw_text.text_style.font_size: 12}
-            search := TextInput{width: Fill height: 40 empty_text: "Search Maps"
+            search_hint := Label{text: "Where to?" draw_text.color: secondary draw_text.text_style.font_size: 13}
+            search := UiField{width: Fill height: 48 empty_text: "Search Maps"
                 on_return: |text| search_for(text)
-                draw_bg +: {color: #xf1f3f4 color_hover: #xf1f3f4 color_focus: #xf1f3f4 color_empty: #xf1f3f4
+                draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
                     border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
                     border_radius: 20.0}
                 draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
@@ -277,11 +305,11 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             results := View{width: Fill height: Fit flow: Down on_render: || {
                 if screen == "origin" { Link{text: "◎  Your location" on_click: || use_my_location()} }
                 if screen == "origin" || screen == "stop" { Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }} }
-                if q != "" && loaded_q != q { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 12} }
-                else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 12} }
+                if q != "" && loaded_q != q { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 13} }
+                else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 13} }
                 for h in hits { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label} }
                 if q == "" && recents.len() > 0 {
-                    Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 11}
+                    Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 13}
                     for r in recents { HitRow{on_tap: |x, y| pick(r) name.text: r.name label.text: r.label} }
                 }
             }}
@@ -292,8 +320,8 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                 pname := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
                 Link{text: "Close" on_click: || show("search")}
             }
-            pcat := Label{width: Fill text: "" draw_text.color: #xe37400 draw_text.text_style.font_size: 12}
-            paddr := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            pcat := Label{width: Fill text: "" draw_text.color: #xe37400 draw_text.text_style.font_size: 13}
+            paddr := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
             peta := Label{width: Fill text: "" draw_text.color: #x188038 draw_text.text_style.font_size: 13}
             Primary{text: "Directions" on_click: || show("route")}
         }
@@ -308,14 +336,14 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                 rdist := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
             }
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
-                Label{text: "From  " draw_text.color: secondary draw_text.text_style.font_size: 12}
+                Label{text: "From  " draw_text.color: secondary draw_text.text_style.font_size: 13}
                 rfrom := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
                 Link{text: "Change" on_click: || find_for("origin")}
             }
             stop_rows := View{width: Fill height: Fit flow: Down on_render: || {
                 for i st in stops {
                     View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
-                        Label{text: "Stop  " draw_text.color: secondary draw_text.text_style.font_size: 12}
+                        Label{text: "Stop  " draw_text.color: secondary draw_text.text_style.font_size: 13}
                         Label{width: Fill text: st.name max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
                         Link{text: "Remove" on_click: || remove_stop(i)}
                     }
@@ -323,7 +351,7 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                 if stops.len() < 2 { Link{text: "+ Add stop" on_click: || add_stop()} }
             }}
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
-                Label{text: "To  " draw_text.color: secondary draw_text.text_style.font_size: 12}
+                Label{text: "To  " draw_text.color: secondary draw_text.text_style.font_size: 13}
                 rto := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
             }
             View{width: Fill height: Fit flow: Right spacing: 8

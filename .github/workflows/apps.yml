@@ -15,6 +15,7 @@ on:
       - 'native-runtime.lock.json'
       - 'runtime-patches.lock.json'
       - 'tools/setup.py'
+      - 'tools/sync-app-interface.py'
       - '.github/workflows/apps.yml'
   pull_request:
     paths:
@@ -26,6 +27,7 @@ on:
       - 'native-runtime.lock.json'
       - 'runtime-patches.lock.json'
       - 'tools/setup.py'
+      - 'tools/sync-app-interface.py'
       - '.github/workflows/apps.yml'
   workflow_dispatch:
 
@@ -61,6 +63,8 @@ jobs:
       # though most protocol crates do not build Makepad. The OAuth host
       # adapter also checks App Hub's Makepad-linked service integration.
       - run: python3 tools/setup.py
+      - name: Shared system app interface
+        run: python3 tools/sync-app-interface.py --check
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: services

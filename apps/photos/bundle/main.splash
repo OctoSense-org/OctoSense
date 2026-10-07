@@ -1,3 +1,40 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
 let catalog = [
     {id: "stock-aquarium-fish" file: "stock-aquarium-fish.jpg" title: "An underwater world" date: "2026-09-17" location: "Aquarium" people: [] tags: ["animals" "fish" "aquarium" "underwater"] moment: "September snapshots"}
     {id: "family" file: "family.png" title: "All together" date: "2026-09-15" location: "At home" people: ["Alex" "Sofia" "James" "Rose" "Noah" "Lily"] tags: ["family" "together"] moment: "The people we love"}
@@ -692,26 +729,24 @@ start_timeout(0.05, || boot())
 // Text on the page uses theme.color_text: the page shows the host's light or
 // dark background. ink is only for text on the light surfaces this script
 // paints itself (the tab bar and the text fields).
-let ink = #x1c1c1e
-let secondary = #x8e8e93
-let accent = #x007aff
-let ground = #xffffff
+let ink = ui_ink
+let secondary = ui_muted
+let accent = ui_link
+let ground = ui_page
 
-let Flat = ButtonFlat{height: 36 padding: Inset{left: 10 right: 10}
-    draw_bg +: {color: #x00000000 color_hover: #x0000000a color_down: #x00000014 border_size: 0.0}
-    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 15}}
+let Flat = UiButton{}
+let MediaButton = UiButton{
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+    draw_bg +: {color_hover: #xffffff22 color_down: #xffffff33 color_focus: #xffffff22}
 }
-let Segment = ButtonFlat{height: 36 width: 108 padding: Inset{left: 8 right: 8} align: Align{x: 0.5 y: 0.5}
-    draw_bg +: {border_radius: 17.0 color: #x00000000 color_hover: #x0000000a color_down: #x00000014 border_size: 0.0}
-    draw_text +: {color: ink color_hover: ink color_down: ink text_style +: {font_size: 14}}
-}
+let Segment = UiPill{width: Fill padding: 6 draw_bg +: {color: #x00000000 color_hover: ui_hover color_down: ui_hover color_focus: ui_hover}}
 let SegmentOn = Segment{
-    draw_bg +: {color: #xffffff color_hover: #xffffff color_down: #xf2f2f7}
+    draw_bg +: {color: ui_surface color_hover: ui_surface color_down: ui_hover}
     draw_text +: {color: accent color_hover: accent color_down: accent}
 }
-let Heading = View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 18 bottom: 8 left: 4 right: 4}
-    name := Label{width: Fill text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
-    detail := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+let Heading = View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 20 bottom: 8}
+    name := Label{width: Fill padding: 0 text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
+    detail := Label{padding: 0 text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
 }
 let Cell = GestureView{width: Fill height: Fit
     pic := Image{width: Fill height: 132 fit: ImageFit.CropToFill}
@@ -723,47 +758,48 @@ let SelectCell = GestureView{width: Fill height: Fit flow: Overlay
 let AlbumCard = GestureView{width: Fill height: Fit flow: Down spacing: 6
     cover := Image{width: Fill height: 164 fit: ImageFit.CropToFill}
     name := Label{text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 14}}
-    count := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+    count := Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
 }
 let PersonChip = GestureView{width: 84 height: Fit flow: Down spacing: 6 align: Align{x: 0.5}
     face := Image{width: 72 height: 72 fit: ImageFit.CropToFill}
-    name := Label{text: "" draw_text.color: theme.color_text draw_text.text_style.font_size: 12}
+    name := Label{text: "" draw_text.color: theme.color_text draw_text.text_style.font_size: 13}
 }
 let MemoryCard = GestureView{width: Fill height: 240 flow: Overlay
     cover := Image{width: Fill height: 240 fit: ImageFit.CropToFill}
-    caption := View{width: Fill height: Fill flow: Down align: Align{y: 1.0} padding: 16 spacing: 4 show_bg: true draw_bg.color: #x00000066
-        kicker := Label{text: "MEMORY" draw_text.color: #xffffffcc draw_text.text_style.font_size: 11}
+    caption := SolidView{width: Fill height: Fill flow: Down align: Align{y: 1.0} padding: 20 spacing: 6
+        draw_bg +: {pixel: fn(){ return vec4(0.0, 0.0, 0.0, 0.22 + 0.66 * self.pos.y) }}
+        kicker := Label{text: "MEMORY" draw_text.color: #xffffffcc draw_text.text_style.font_size: 13}
         name := Label{width: Fill text: "" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 24}}
-        detail := Label{text: "" draw_text.color: #xffffffdd draw_text.text_style.font_size: 12}
+        detail := Label{text: "" draw_text.color: #xffffffdd draw_text.text_style.font_size: 13}
     }
 }
 
 HostedView{width: Fill height: Fill
-    full: View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: ground
-        main := View{width: Fill height: Fill flow: Down
-            View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 8 right: 8 top: 10}
+    full: View{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} show_bg: true draw_bg.color: ground
+        main := View{width: Fill max_width: 960 height: Fill flow: Down
+            View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 16 right: 16 top: 8}
                 back := View{width: Fit height: Fit Flat{text: "‹ Back" on_click: || go_back_fn()}}
                 View{width: Fill height: 1}
                 create := View{width: Fit height: Fit Flat{text: "+ Album" on_click: || new_album()}}
                 edit := View{width: Fit height: Fit Flat{text: "Edit" on_click: || edit_album()}}
             }
-            View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 bottom: 6} spacing: 2
-                title := Label{width: Fill text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 30}}
-                subtitle := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
-                message := Label{width: Fill text: "" draw_text.color: #xff3b30 draw_text.text_style.font_size: 12}
+            View{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 16} spacing: 8
+                title := Label{width: Fill padding: 0 text: "" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 30}}
+                subtitle := Label{width: Fill padding: 0 text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
+                message := Label{width: Fill text: "" draw_text.color: #xff3b30 draw_text.text_style.font_size: 13}
             }
-            searchbar := View{width: Fill height: Fit padding: Inset{left: 16 right: 16 bottom: 6}
-                TextInput{width: Fill height: 36 empty_text: "Search photos, people, places"
+            searchbar := View{width: Fill height: Fit padding: Inset{left: 20 right: 20 bottom: 12}
+                TextInput{width: Fill height: 48 empty_text: "Search photos, people, places"
                     on_change: |text| set_query(text)
-                    draw_bg +: {color: #xefeff4 color_hover: #xefeff4 color_focus: #xefeff4 color_empty: #xefeff4
+                    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
                         border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
                         border_radius: 10.0}
                     draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
                 }
             }
-            editor_bar := View{width: Fill height: Fit flow: Right spacing: 8 padding: Inset{left: 16 right: 12 bottom: 6} align: Align{y: 0.5}
-                album_name := TextInput{width: Fill height: 36 empty_text: "Album name"
-                    draw_bg +: {color: #xefeff4 color_hover: #xefeff4 color_focus: #xefeff4 color_empty: #xefeff4
+            editor_bar := View{width: Fill height: Fit flow: Right spacing: 8 padding: Inset{left: 20 right: 20 bottom: 12} align: Align{y: 0.5}
+                album_name := UiField{width: Fill height: 48 empty_text: "Album name"
+                    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
                         border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
                         border_radius: 10.0}
                     draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
@@ -772,12 +808,12 @@ HostedView{width: Fill height: Fill
                 Flat{text: "Delete" on_click: || delete_album()}
             }
             zoom := GestureView{width: Fill height: Fill on_pinch: |scale, x, y, phase| pinch_grid(scale, phase)
-                list := ScrollYView{width: Fill height: Fill flow: Down spacing: 4 padding: Inset{left: 8 right: 8 bottom: 90}
+                list := ScrollYView{width: Fill height: Fill flow: Down spacing: 8 padding: Inset{left: 20 right: 20 bottom: 24}
                     on_render: || {
                         if route == "collections" {
                             if memories.len() > 0 {
-                                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{top: 12 left: 4}
-                                    Label{width: Fill text: "Memories" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
+                                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{top: 8 bottom: 4}
+                                    Label{width: Fill padding: 0 text: "Memories" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
                                     Flat{text: "See all" on_click: || go_to("memories", "")}
                                 }
                                 let m = memories[0]
@@ -815,12 +851,12 @@ HostedView{width: Fill height: Fill
                             }
                         }
                         else if route == "memories" {
-                            View{width: Fill height: Fit flow: Down padding: Inset{left: 8 right: 8 top: 8 bottom: 12} spacing: 8
+                            View{width: Fill height: Fit flow: Down padding: Inset{top: 8 bottom: 12} spacing: 8
                                 Label{width: Fill text: "Create a memory" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 20}}
                                 Label{width: Fill text: "Choose a theme, or let AI find a story." draw_text.color: secondary draw_text.text_style.font_size: 13}
-                                TextInput{width: Fill height: 40 text: memory_prompt empty_text: "Summer with family (optional)"
+                                TextInput{width: Fill height: 48 text: memory_prompt empty_text: "Summer with family (optional)"
                                     on_change: |text| { memory_prompt = "" + text }
-                                    draw_bg +: {color: #xefeff4 color_hover: #xefeff4 color_focus: #xefeff4 color_empty: #xefeff4 border_radius: 10.0
+                                    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field border_radius: 10.0
                                         border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000}
                                     draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
                                 }
@@ -830,7 +866,7 @@ HostedView{width: Fill height: Fill
                                         Flat{text: "Stop waiting" on_click: || cancel_memories()}
                                     } else { Flat{text: "Create memories" on_click: || generate_memories()} }
                                 }
-                                Label{width: Fill text: "Uses photo details with your configured AI provider." draw_text.color: secondary draw_text.text_style.font_size: 11}
+                                Label{width: Fill text: "Uses photo details with your configured AI provider." draw_text.color: secondary draw_text.text_style.font_size: 13}
                                 if memory_status != "" { Label{width: Fill text: memory_status draw_text.color: theme.color_text draw_text.text_style.font_size: 13} }
                             }
                             for index m in memories {
@@ -844,7 +880,7 @@ HostedView{width: Fill height: Fill
                         }
                         else {
                             if route == "memory" {
-                                View{width: Fill height: Fit flow: Down spacing: 10 padding: Inset{left: 8 right: 8 top: 8 bottom: 14}
+                                View{width: Fill height: Fit flow: Down spacing: 10 padding: Inset{top: 8 bottom: 16}
                                     Label{width: Fill text: route_arg.summary draw_text.color: theme.color_text draw_text.text_style.font_size: 15}
                                     Flat{text: "Play memory" on_click: || play_story(route_arg)}
                                 }
@@ -875,10 +911,10 @@ HostedView{width: Fill height: Fill
                     }
                 }
             }
-            tabs := View{width: Fill height: Fit align: Align{x: 0.5} padding: Inset{bottom: 14 top: 6}
+            tabs := View{width: Fill height: Fit align: Align{x: 0.5} padding: Inset{left: 12 right: 12 bottom: 14 top: 6}
                 on_render: || {
-                    RoundedView{width: Fit height: Fit flow: Right padding: 3 spacing: 2 new_batch: true show_bg: true
-                        draw_bg.color: #xe5e5ea draw_bg.border_radius: 20.0
+                    RoundedView{width: Fill max_width: 420 height: Fit flow: Right padding: 3 spacing: 2 new_batch: true show_bg: true
+                        draw_bg.color: ui_field draw_bg.border_radius: 20.0
                         if route == "library" { SegmentOn{text: "Library"} } else { Segment{text: "Library" on_click: || go_to("library", "")} }
                         if route == "collections" { SegmentOn{text: "Collections"} } else { Segment{text: "Collections" on_click: || go_to("collections", "")} }
                         if route == "memories" { SegmentOn{text: "Memories"} } else { Segment{text: "Memories" on_click: || go_to("memories", "")} }
@@ -888,9 +924,9 @@ HostedView{width: Fill height: Fill
         }
         viewer := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #000000
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 4 right: 8 top: 8}
-                Flat{text: "‹ Done" on_click: || close_viewer()}
+                MediaButton{text: "‹ Done" on_click: || close_viewer()}
                 viewer_count := Label{width: Fill text: "" align: Align{x: 0.5} draw_text.color: #xffffffaa draw_text.text_style.font_size: 13}
-                favorite := Flat{text: "♡" draw_text +: {text_style +: {font_size: 22}} on_click: || toggle_favorite()}
+                favorite := MediaButton{text: "♡" draw_text +: {text_style +: {font_size: 22}} on_click: || toggle_favorite()}
             }
             GestureView{width: Fill height: Fill
                 on_swipe: |dx, dy| { if dx < 0 { stop_slides(); step_photo(1) } else if dx > 0 { stop_slides(); step_photo(-1) } else if dy > 0 { close_viewer() } }
@@ -905,17 +941,17 @@ HostedView{width: Fill height: Fill
                 }}
             }
             View{width: Fill height: Fit flow: Down padding: Inset{left: 18 right: 18 bottom: 24 top: 8} spacing: 3
-                viewer_title := Label{width: Fill text: "" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 17}}
-                viewer_meta := Label{width: Fill text: "" draw_text.color: #xffffffaa draw_text.text_style.font_size: 12}
+                viewer_title := Label{width: Fill padding: 0 text: "" draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 17}}
+                viewer_meta := Label{width: Fill text: "" draw_text.color: #xffffffaa draw_text.text_style.font_size: 13}
                 View{width: Fill height: Fit flow: Right align: Align{x: 0.5} spacing: 16
-                    Flat{text: "Previous" on_click: || { stop_slides(); step_photo(-1) }}
-                    playback := Flat{text: "Play" on_click: || toggle_slides()}
-                    Flat{text: "Next" on_click: || { stop_slides(); step_photo(1) }}
+                    MediaButton{text: "Previous" on_click: || { stop_slides(); step_photo(-1) }}
+                    playback := MediaButton{text: "Play" on_click: || toggle_slides()}
+                    MediaButton{text: "Next" on_click: || { stop_slides(); step_photo(1) }}
                 }
             }
         }
     }
-    tile: View{width: Fill height: Fill flow: Overlay new_batch: true show_bg: true draw_bg.color: #xffffff
+    tile: View{width: Fill height: Fill flow: Overlay new_batch: true show_bg: true draw_bg.color: ui_surface
         tile_grid := View{width: Fill height: Fill flow: Down spacing: 3 on_render: || {
             for row in grid_rows_of(tile_ids(tile_rows), 3) {
                 View{width: Fill height: Fill flow: Right spacing: 3
