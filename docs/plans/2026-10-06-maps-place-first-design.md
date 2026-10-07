@@ -52,7 +52,7 @@ Alternatives considered:
   Its actions:
   - **Directions**;
   - **Save/Saved**;
-  - **Website**, which opens in the app's `WebReader`.
+  - **Website**, which opens in the app's `WebReader`. A place's site is on no host list, so Maps adds the `web` grant (News and YouTube already hold it).
 
   There is no **Call** action: the runtime can't hand a `tel:` link to the phone, so the phone number is shown as text.
 
@@ -135,7 +135,7 @@ Each pull request is opened only with the product owner's approval.
 1. **makepad:** the calls and events above, with their tests.
 2. **OctoSense:**
    - `tools/runtime-patches/makepad-map-script-api.patch`, stacked in `runtime-patches.lock.json` (sha256 and resulting tree) until a runtime repin includes it;
-   - the Maps redesign;
+   - the Maps redesign, with the `web` grant in its manifest;
    - the Maps row in `apps/README.md` and `apps/README.zh-CN.md`.
 
    They go together because the redesign needs the patch.
