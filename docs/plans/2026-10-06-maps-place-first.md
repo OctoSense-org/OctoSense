@@ -27,12 +27,14 @@ MP=$MAKEPAD-map-script-api                     # a new worktree for the makepad 
 ```
 
 Facts checked on 2026-10-06:
-- The runtime lock is makepad `c155f61d` plus eight stacked patches (`runtime-patches.lock.json`). makepad `origin/main` (`68d1f4ec`) has three more merged pull requests, none touching `widgets/src/map/`: `git diff --stat c155f61 origin/main -- widgets/src/map` is empty. No runtime patch touches `widgets/src/map/` either. So a diff made on `origin/main` applies to the locked runtime.
+- The runtime lock (`runtime-patches.lock.json`, on main `90d5bef9`, 2026-10-07) is makepad `68d1f4ec` plus sixteen stacked patches. makepad `origin/main` (`dfd800e9`) adds four merged pull requests (camera, QR, video), none touching `widgets/src/map/`, and no runtime patch touches `widgets/src/map/` (one touches `widgets/src/widget_async.rs`; Task 7 checks that the stack still applies). So a diff made on `origin/main` applies to the locked runtime.
 - `MapView` (`widgets/src/map/view.rs`) already emits `MapViewAction::{Tapped, LongPressed, MarkerClicked, ViewportChanged}` and has `fly_to(cx, lon, lat, zoom)`. Marker ids are 1-based positions in the parsed `route_markers` (`nav_update`).
 - GestureView hands callbacks to scripts with `#[live] on_tap: ScriptFnRef` and `cx.widget_to_script_call(uid, NIL, source, fn, &args)` (`widgets/src/gesture_view.rs`).
 - Splash strings: `split replace search strip_prefix url_encode to_chars to_f64 trim`; `replace` changes the first match only; there is no `to_upper` or `starts_with`. Strings may be single-quoted. Reading a missing field may raise, so the code reads with `try { o[k] } catch { nil }`. Math: `round floor sin cos asin sqrt radians`.
 - `WebReader` opens any public https page only with the `web` grant (`widgets/src/web_reader.rs`). Maps doesn't hold `web` today, so **Website needs `web` added to Maps' manifest** (Task 14). News and YouTube already hold it.
 - The shell's storage test (`crates/shell/src/app_storage/tests.rs`) requires every `fs.*` call outside `moved` in `apps/maps/bundle/main.splash` to take `data_path(` or `cache_path(` directly.
+- Every system app's `main.splash` starts with a generated shared interface, between `// BEGIN shared app interface` and `// END shared app interface` (written by `tools/sync-app-interface.py`; never edit it by hand). It defines the theme's colours (`ui_ink`, `ui_page`, `ui_surface`, `ui_field`, `ui_muted`, `ui_link`, `ui_primary`, `ui_light`, …) and widgets (`UiButton`, `UiPrimary`, `UiPill`, `UiField` (48 high, margin 0), `UiCard`, `UiCaption`, `UiTitle`). Maps' `ink`, `secondary` and `accent` follow the theme, its `Panel` is `ui_surface`, its maps set `dark_theme: !ui_light`, and its small text is 13.
+- Location is passive: `sys.gps(…)` only reads; only a person's action may call `sys.request_location()` (1: asked; 0: not available here; -1: no `location` grant). `crates/shell/src/module_resize_tests.rs`'s `maps_reads_are_passive_and_only_the_location_action_requests_permission` cuts `fix_origin`, `location_note` and `use_my_location` out of `main.splash` (each from `fn name(` to the next `\nfn `) and runs them with stubs. Keep those three functions as they are, and put only functions and comments right after each of them.
 
 ---
 
@@ -715,7 +717,7 @@ git commit -m "Stack makepad's MapView script calls and callbacks on the runtime
 
 ## Part C: Maps (`apps/maps/bundle/`)
 
-The app's place logic is pure functions defined before `start_timeout(` in `main.splash`. A shell unit test evaluates that part of the file in a script VM, as `crates/shell/src/module_resize_tests.rs` does for Photos.
+The app's place logic is pure functions defined between the shared interface and `start_timeout(` in `main.splash`. A shell unit test evaluates that part of the file in a script VM, as `photo_model` in `crates/shell/src/module_resize_tests.rs` does for Photos.
 
 ### Task 8: The model test harness and Photon results
 
@@ -739,14 +741,16 @@ mod maps_model_tests;
 
 ```rust
 //! Maps' place logic: the pure functions in `apps/maps/bundle/main.splash`
-//! (everything before `start_timeout(`), run in a script VM.
+//! (everything between the shared interface and `start_timeout(`), run in a
+//! script VM.
 use makepad_widgets::*;
 
 const MAPS: &str = include_str!("../../../apps/maps/bundle/main.splash");
 
 /// Evaluate `expression` after Maps' functions; it must end in `.to_json()`.
 fn maps_model(expression: &str) -> serde_json::Value {
-    let source = MAPS.split_once("\nstart_timeout(").unwrap().0;
+    let source = MAPS.split_once("// END shared app interface\n").unwrap().1
+        .split_once("\nstart_timeout(").unwrap().0;
     let mut host = ScriptVmHost::new((), ());
     let mut vm = ScriptVm {
         host: &mut host,
@@ -1194,7 +1198,7 @@ On a desktop a double click is the map's long press.
 **Files:**
 - Modify: `apps/maps/bundle/main.splash`
 
-**Step 1: State.** Replace the `let` block at the top of the file (lines 1–12) with:
+**Step 1: State.** Replace the `let` block right after the shared interface (`let origin = …` through `let view3d = …`) with:
 
 ```splash
 let origin = {lat: 37.3350 lon: -121.8850 name: "San Jose (downtown)" picked: false}
@@ -1225,7 +1229,7 @@ let CACHE_DAYS = 7
 
 ```splash
     browse_box := View{width: Fill height: Fill
-        browse_map := MapView{width: Fill height: Fill zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
+        browse_map := MapView{width: Fill height: Fill dark_theme: !ui_light zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
             center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false
             on_tap: |lat, lon| map_tapped(lat, lon)
             on_long_press: |lat, lon| map_long_pressed(lat, lon)
@@ -1246,8 +1250,8 @@ No `nav_mode`: this is a plain map, so it can always be dragged.
               // tap the field took (one inside it, a smaller widget, it would
               // leave alone).
               View{width: Fill height: Fit flow: Overlay
-                  GestureView{width: Fill height: 40 margin: theme.mspace_v_1 on_tap: |x, y| show_results(true)}
-                  search := TextInput{width: Fill height: 40 empty_text: "Search Maps"
+                  GestureView{width: Fill height: 48 margin: 0 on_tap: |x, y| show_results(true)}
+                  search := UiField{width: Fill height: 48 empty_text: "Search Maps"
                       on_return: |text| search_for(text)
                       on_change: |text| { if ("" + text).trim() == "" && q != "" { search_for("") } }
                       draw_bg +: {…unchanged…}
@@ -1256,7 +1260,7 @@ No `nav_mode`: this is a plain map, so it can always be dragged.
               }
   ```
 
-  A fixed 40-high wrapper clips the field on a phone; keep `height: Fit` on the wrapper.
+  The `GestureView` matches `UiField`'s size and margin (48, 0). A fixed-height wrapper clips the field on a phone; keep `height: Fit` on the wrapper.
 - Replace the spacer under the search panel (`View{width: Fill height: Fill}`, or #348's `map_tap := GestureView` inside it) with:
 
   ```splash
@@ -1289,20 +1293,30 @@ fn viewport_moved(lat, lon, zoom){
     centered = true
     if screen == "search" { show_results(false) }
 }
+// ◎ flies to the fix, or asks for one: asking is the person's act, so it
+// happens only here and in use_my_location; every other read is passive.
 fn locate(){
-    if sys.gps("ok") < 1 { ui.search_hint.set_text("No location yet"); return }
-    centered = true
-    ui.browse_map.fly_to(sys.gps("lat"), sys.gps("lon"), 15)
+    if sys.gps("ok") >= 1 {
+        centered = true
+        ui.browse_map.fly_to(sys.gps("lat"), sys.gps("lon"), 15)
+        return
+    }
+    centered = false   // center_on_fix flies there once the fix comes
+    let request = sys.request_location()
+    if request < 0 { ui.search_hint.set_text("Maps has no location access") }
+    else if request == 0 { ui.search_hint.set_text("No location here") }
+    else { ui.search_hint.set_text("Waiting for location…") }
 }
 // Maps opens at the GPS fix when one comes before the person moves the map.
 fn center_on_fix(){
     if centered || screen != "search" || sys.gps("ok") < 1 { return }
     centered = true
+    if finding == "" { ui.search_hint.set_text("Where to?") }
     ui.browse_map.fly_to(sys.gps("lat"), sys.gps("lon"), 14)
 }
 ```
 
-(`map_long_pressed` and `marker_tapped` come in Tasks 14–15; until then add `fn map_long_pressed(lat, lon){}` and `fn marker_tapped(i){}` so the file loads.)
+(`map_long_pressed` and `marker_tapped` come in Tasks 14–15; until then add `fn map_long_pressed(lat, lon){}` and `fn marker_tapped(i){}` so the file loads. Only functions and comments may follow `use_my_location`: main's location test cuts it out up to the next `\nfn `. A map reports its viewport only after a gesture, a zoom, `set_center` or a flight, never at start-up, so `centered` stays false until the person or ◎ moves it.)
 
 **Step 5: `show` and `tick`.** In `show(s)`:
 - `ui.plan_box.set_visible(…)` becomes `ui.browse_box.set_visible(s != "drive")`;
@@ -1321,7 +1335,8 @@ In `tick()`, call `center_on_fix()` after `fix_origin()`. Replace both `draw_rou
   printf '%s' '[{"name":"Santana Row","cat":"Retail","label":"San Jose, California, United States","lat":37.3209796,"lon":-121.9486002}]' \
     > "$SCRATCH/apps/os.maps/accounts/device/recents.json"
   ```
-- `/snap` shows no `locate_box` (the desktop has no `location` grant to report). On a device, Task 18 checks ◎.
+- `/snap` shows `locate_box` only if the desktop reports the `location` grant; a click on ◎ there shows "No location here" (`sys.request_location()` is 0 off Android). On a device, Task 18 checks ◎.
+- `cargo test --locked --features mobile-apps -p octosense-shell maps` (from `phone/`) still passes: main's location tests read `fix_origin`, `location_note` and `use_my_location` from the file.
 
 **Step 7: Commit**
 
@@ -1393,16 +1408,16 @@ Call `load_saved()` in `boot()` after `load_recents()`.
             results := View{width: Fill height: Fit flow: Down on_render: || {
                 if screen == "origin" { Link{text: "◎  Your location" on_click: || use_my_location()} }
                 if screen == "origin" || screen == "stop" { Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }} }
-                if search_state == "loading" { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 12} }
-                else if search_state == "failed" { Label{text: "Search isn't available right now." draw_text.color: secondary draw_text.text_style.font_size: 12} }
-                else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 12} }
+                if search_state == "loading" { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 13} }
+                else if search_state == "failed" { Label{text: "Search isn't available right now." draw_text.color: secondary draw_text.text_style.font_size: 13} }
+                else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 13} }
                 for i h in hits { if i < 6 { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label} } }
                 if q == "" && saved.len() > 0 {
-                    Label{text: "Saved" draw_text.color: secondary draw_text.text_style.font_size: 11}
+                    Label{text: "Saved" draw_text.color: secondary draw_text.text_style.font_size: 13}
                     for s in saved { HitRow{on_tap: |x, y| pick(s) name.text: s.name label.text: s.label} }
                 }
                 if q == "" && recents.len() > 0 {
-                    Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 11}
+                    Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 13}
                     for r in recents { HitRow{on_tap: |x, y| pick(r) name.text: r.name label.text: r.label} }
                 }
             }}
@@ -1550,12 +1565,12 @@ fn close_site(){
 and, as the last child of the root `View{… flow: Overlay …}` (so it covers everything):
 
 ```splash
-    site_pane := View{visible: false width: Fill height: Fill flow: Down new_batch: true show_bg: true draw_bg.color: #xffffff
+    site_pane := View{visible: false width: Fill height: Fill flow: Down new_batch: true show_bg: true draw_bg.color: ui_page
         View{width: Fill height: 52 flow: Right align: Align{y: 0.5} padding: Inset{left: 4 right: 8} spacing: 4
             Link{text: "‹ Maps" on_click: || close_site()}
             site_title := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
         }
-        site_fail := Label{width: Fill padding: Inset{left: 18 right: 18} text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+        site_fail := Label{width: Fill padding: Inset{left: 18 right: 18} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
         site := WebReader{width: Fill height: Fill on_error: || ui.site_fail.set_text(ui.site.error())}
     }
 ```
@@ -1568,13 +1583,13 @@ and, as the last child of the root `View{… flow: Overlay …}` (so it covers e
                 pname := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
                 Link{text: "Close" on_click: || close_place()}
             }
-            pcat := Label{width: Fill text: "" draw_text.color: #xe37400 draw_text.text_style.font_size: 12}
-            paddr := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+            pcat := Label{width: Fill text: "" draw_text.color: #xe37400 draw_text.text_style.font_size: 13}
+            paddr := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
             pdist := Label{width: Fill text: "" draw_text.color: #x188038 draw_text.text_style.font_size: 13}
             details := View{visible: false width: Fill height: Fit flow: Down spacing: 2 on_render: || {
-                if detail.hours != "" { Label{width: Fill text: "Hours  " + detail.hours draw_text.color: ink draw_text.text_style.font_size: 12} }
-                if detail.phone != "" { Label{width: Fill text: "Phone  " + detail.phone draw_text.color: ink draw_text.text_style.font_size: 12} }
-                if detail.cuisine != "" { Label{width: Fill text: "Cuisine  " + detail.cuisine draw_text.color: ink draw_text.text_style.font_size: 12} }
+                if detail.hours != "" { Label{width: Fill text: "Hours  " + detail.hours draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.phone != "" { Label{width: Fill text: "Phone  " + detail.phone draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.cuisine != "" { Label{width: Fill text: "Cuisine  " + detail.cuisine draw_text.color: ink draw_text.text_style.font_size: 13} }
                 if detail.website != "" { Link{text: "Website" on_click: || open_site(detail.website)} }
             }}
             View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
@@ -1584,7 +1599,7 @@ and, as the last child of the root `View{… flow: Overlay …}` (so it covers e
         }
 ```
 
-The panel is white, so its text stays `ink` (apps/AGENTS.md: dark text on a surface the app paints).
+The panel is `ui_surface`, and `ink` and `secondary` follow the theme, so the card reads in dark mode too; the orange category and green distance are the colours main already uses for `pcat` and `peta`.
 
 **Step 7: `show` and `tick`.** In `show(s)`: replace the `if s == "place" { … }` block with `if s == "place" { fill_place() }`, and call `show_pins()` just before `tick()`. In `tick()`, replace the `screen == "place"` block (ETA and route) with:
 
@@ -1692,6 +1707,8 @@ git commit -m "Maps: directions on the browse map, framed once and draggable"
 
 **Files:**
 - Modify: `apps/README.md` (Maps row in the apps table), `apps/README.zh-CN.md` (same row)
+
+Main changed both READMEs on 2026-10-07: read the current Maps rows first and keep every cell this task doesn't name.
 
 **Step 1: English row** (replace the description and capabilities cells; hosts and notice unchanged):
 
