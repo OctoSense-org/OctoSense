@@ -52,6 +52,11 @@ GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通�
 取得用户另行授权的 GitHub 令牌。现有网络访问能力不会让本地 GitHub 资料变成
 远程后端可信的身份证明。应用自身不得收集密码或提供方秘密凭据。
 
+如果身份提供方允许嵌入，后端自己的登录页面可以使用专用的宿主认证 WebView。
+该适配器**尚未实现**：现有 Makepad 阅读器 WebView 缺少这里需要的回调拦截和
+会话隔离接口。Google 授权使用受支持的浏览器流程，后端页面上的 Google 登录
+按钮也须遵守这一要求。后端登录同样可以通过浏览器完成，不要求嵌入 WebView。
+
 ## 配置发行版本（维护者）
 
 由发行方以自己的身份注册一次 OctoSense：创建并启用设备授权的 GitHub OAuth
@@ -166,7 +171,11 @@ Android 现有 JobScheduler 适配器也会在有时限的任务中驱动该采�
 
 ## 源码与验证
 
-阅读顺序：`providers.rs` → `oauth.rs`/`authorize.rs` → `store.rs` → `host.rs`。
+阅读顺序：`providers.rs` → `oauth.rs`/`authorize.rs` → `protocol.rs` → `store.rs` → `host.rs`。
+`protocol.rs` 将 `oauth2` 5 接入宿主限制大小、固定来源的网络传输；库负责构造
+授权和令牌请求、解析协议响应。调用者身份、取消、回调校验、权限准入和凭据保存
+仍由宿主管理。GitHub 设备轮询每次只发一个请求，以便每次重新检查所属应用、
+有效期和取消状态；库内置的轮询循环不能替代这些生命周期检查。
 `api.rs` 处理服务商请求；`calendar_cache.rs` 原子提交分页快照；`inbox.rs` 持有草稿/审核/发送状态；
 `inbox_events.rs` 持有游标、租约和决定。Shell 管理获准 peer、原生审核和 Glance。
 peer 是应用账户身份，不等于一个工作线程或 Tokio task。

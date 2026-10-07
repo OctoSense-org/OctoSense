@@ -43,16 +43,7 @@ impl GithubDeviceAttempt {
             return Err("Missing OAuth caller".into());
         }
         let scopes = Provider::Github.validate_scopes(scopes)?;
-        let value = json_ok(transport.send(form(
-            "https://github.com/login/device/code",
-            vec![
-                ("client_id", client.client_id.clone()),
-                (
-                    "scope",
-                    scopes.iter().cloned().collect::<Vec<_>>().join(" "),
-                ),
-            ],
-        ))?)?;
+        let value = crate::protocol::github_device_authorization(client, &scopes, transport)?;
         let device_code = value["device_code"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 4096)
@@ -111,6 +102,9 @@ impl GithubDeviceAttempt {
             return Ok(DevicePoll::Wait(self.next_poll - now));
         }
         self.next_poll = now + self.interval;
+        // oauth2 5 exposes only a complete device-token polling loop, not a
+        // single-poll builder. Keep this small wire request and host scheduler
+        // so every poll retains caller, cancellation and deadline checks.
         let value = json_ok(transport.send(form(
             Provider::Github.token_endpoint(),
             vec![
@@ -157,17 +151,7 @@ pub fn exchange_google(
     transport: &dyn Transport,
     now: u64,
 ) -> Result<Tokens, String> {
-    let mut fields = vec![
-        ("client_id", client.client_id.clone()),
-        ("code", code.code),
-        ("code_verifier", code.verifier),
-        ("redirect_uri", code.redirect),
-        ("grant_type", "authorization_code".into()),
-    ];
-    if let Some(secret) = client_secret {
-        fields.push(("client_secret", secret.into()));
-    }
-    let response = json_ok(transport.send(form(Provider::Google.token_endpoint(), fields))?)?;
+    let response = crate::protocol::google_code(client, client_secret, code, transport)?;
     Tokens::from_response(&response, scopes, now)
 }
 
@@ -182,15 +166,7 @@ pub(crate) fn refresh_google(
         .refresh
         .as_deref()
         .ok_or("Sign in again: no refresh credential")?;
-    let mut fields = vec![
-        ("client_id", client.client_id.clone()),
-        ("refresh_token", refresh.into()),
-        ("grant_type", "refresh_token".into()),
-    ];
-    if let Some(secret) = client_secret {
-        fields.push(("client_secret", secret.into()));
-    }
-    let response = json_ok(transport.send(form(Provider::Google.token_endpoint(), fields))?)?;
+    let response = crate::protocol::google_refresh(client, client_secret, refresh, transport)?;
     let mut token = Tokens::from_response(&response, &old.scopes, now)?;
     if token.refresh.is_none() {
         token.refresh = old.refresh;
@@ -323,5 +299,63 @@ mod tests {
         .unwrap();
         assert_eq!(fresh.refresh.as_deref(), Some("refresh-fixture"));
         assert_eq!(fresh.expires_at, Some(3610));
+    }
+
+    #[test]
+    fn cancelled_or_expired_device_attempt_never_polls_transport() {
+        let now = Instant::now();
+        for cancel in [false, true] {
+            let transport = Fixture(Mutex::new(vec![json!({"device_code":"fixture-code",
+                "user_code":"ABCD-EFGH","verification_uri":"https://github.com/login/device",
+                "expires_in":10})]));
+            let mut attempt = GithubDeviceAttempt::begin(
+                "notes",
+                &ClientRegistration {
+                    client_id: "fixture-client".into(),
+                },
+                &["read:user".into()],
+                &transport,
+                now,
+            )
+            .unwrap();
+            if cancel {
+                attempt.cancel();
+            }
+            let poll_at = now + Duration::from_secs(if cancel { 5 } else { 10 });
+            assert!(matches!(
+                attempt.poll("notes", &transport, poll_at, 10).unwrap(),
+                DevicePoll::Expired
+            ));
+            // Fixture has no response left: any additional send would panic.
+            assert!(transport.0.lock().unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn library_token_exchange_still_caps_scopes_and_rejects_oversized_credentials() {
+        let scopes = BTreeSet::from(["openid".into()]);
+        for access in ["fixture-token".to_owned(), "x".repeat(16_385)] {
+            let transport = Fixture(Mutex::new(vec![json!({"access_token":access,
+                "token_type":"Bearer","scope":"openid email"})]));
+            let result = exchange_google(
+                &ClientRegistration {
+                    client_id: "fixture-client".into(),
+                },
+                None,
+                AuthorizationCode {
+                    code: "fixture-code".into(),
+                    verifier: "fixture-verifier".into(),
+                    redirect: "http://127.0.0.1:32123/oauth/callback".into(),
+                },
+                &scopes,
+                &transport,
+                0,
+            );
+            if access.len() > 16_384 {
+                assert!(result.is_err());
+            } else {
+                assert_eq!(result.unwrap().scopes, scopes);
+            }
+        }
     }
 }

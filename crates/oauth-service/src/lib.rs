@@ -27,6 +27,7 @@ pub mod inbox;
 pub mod inbox_events;
 pub mod oauth;
 pub mod providers;
+mod protocol;
 #[cfg(any(feature = "host", test))]
 mod registration;
 pub mod store;

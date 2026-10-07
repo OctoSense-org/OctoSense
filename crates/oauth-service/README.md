@@ -61,6 +61,13 @@ through its own OAuth flow. Existing network access does not turn local GitHub
 metadata into proof that a remote backend can trust. Apps must not collect
 passwords or provider secrets themselves.
 
+A backend-owned login page could use a dedicated host authentication WebView,
+if its identity provider permits embedding. That adapter is **not implemented**:
+the current Makepad reader WebView lacks the callback interception and isolated
+session contract needed here. Google authorization uses a supported browser
+flow, including when a backend offers a Google button. Browser-based backend
+login is also a valid design; it does not require an embedded WebView.
+
 ## Configure a release (maintainers)
 
 Register OctoSense once under the distributor's identity. Create a GitHub OAuth
@@ -216,7 +223,13 @@ scheduling/cold-start notification delivery for these samples is **unverified**.
 
 ## Code and validation
 
-Read `providers.rs` → `oauth.rs`/`authorize.rs` → `store.rs` → `host.rs`.
+Read `providers.rs` → `oauth.rs`/`authorize.rs` → `protocol.rs` → `store.rs` → `host.rs`.
+`protocol.rs` adapts `oauth2` 5 to the host's bounded, fixed-origin transport;
+the library constructs authorization/token requests and parses protocol
+responses. The host still owns caller identity, cancellation, callback
+validation, scope admission and credential storage. GitHub device polling stays
+one request at a time so each attempt rechecks its owner, expiry and cancellation;
+the library's built-in polling loop cannot replace those lifecycle checks.
 `api.rs` implements provider requests; `calendar_cache.rs` makes paginated
 snapshots atomic; `inbox.rs` owns draft/review/send state; `inbox_events.rs`
 owns cursors, leases and decisions. The shell owns consented peer routing,
