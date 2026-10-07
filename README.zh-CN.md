@@ -36,7 +36,7 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 想按顺序读源码，请从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充了各个产品的运行方式。
 
-联网 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。真实服务商验收仍待完成，Android 上的 Google 登录还需要原生授权适配器。
+联网 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** 现有 beta.2 下载包未包含这些信息；运营者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md)构建。普通应用用户应拿到已配置的发行包。[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)已在收据记录的构建上通过，但不代表 Google 已完成公开验证。Android 上的 Google 登录还需要原生授权适配器。
 
 ## 整体如何运作
 

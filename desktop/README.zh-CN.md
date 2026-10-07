@@ -184,6 +184,8 @@ python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private
 
 ### 发布桌面版本
 
+联网应用登录还需要发行方单独配置：当前发布工作流没有提供 Google 或 GitHub 客户端注册信息。缺少配置的包会显示该服务商不可用。构建时提供[编译期注册信息](../crates/oauth-service/README.zh-CN.md)，或在运营者管理的安装中私下配置 `<apps root>/.host/oauth/clients.json`。对可执行文件签名并不会配置 OAuth。普通应用用户不应被要求创建服务商开发者项目；满足 Google 验证与用户范围要求前，不应宣称支持公开 Google 登录。
+
 `.github/workflows/release-desktop.yml`（不属于 `tools/ci-local.sh`）：
 
 1. 先在 `main` 上试运行：在 `main` 上 **Actions → Release desktop → Run workflow**，或 `gh workflow run release-desktop.yml --ref main`。它会构建、扫描并（从 `main` 运行时）签名三个平台，包作为工作流产物保留 14 天。

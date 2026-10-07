@@ -36,7 +36,7 @@ This repository holds the shell, its services, the system apps, and the three pr
 
 To read the code in order, start with [From an app window to an agent turn](docs/architecture-walkthrough.md). The [product walkthrough](desktop/docs/code-walkthrough.md) adds how to run each product.
 
-Connected App Hub samples now share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. Live provider acceptance is pending, and Google sign-in on Android still needs its native adapter.
+Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** Existing beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Ordinary app users should receive a configured build. A [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. Google sign-in on Android still needs its native adapter.
 
 ## How it fits together
 
