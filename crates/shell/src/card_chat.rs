@@ -55,7 +55,9 @@ script_mod! {
                 draw_bg.color: theme.color_bg_container
                 draw_bg.border_radius: 18.0
                 input := TextInputFlat {
-                    width: Fill height: 62 margin: 0 padding: 8
+                    // Size the viewport from the selected font's real line layout,
+                    // while longer drafts retain their full scrollable content.
+                    width: Fill height: Fit min_height: 62 max_height: 122 margin: 0 padding: 8
                     is_multiline: true
                     empty_text: "Message the app…"
                     draw_bg +: {pixel: fn() {return vec4(0.0)}}
@@ -89,17 +91,6 @@ fn message_rows(snapshot: &serde_json::Value) -> Vec<MessageRow> {
         }
     }
     rows
-}
-
-fn composer_height(text: &str, width: f64) -> f64 {
-    // Include soft wraps as well as explicit newlines. Height is bounded;
-    // TextInput keeps its complete layout/selection and scrolls longer drafts.
-    let line_width = (width - 16.0).max(120.0);
-    let lines: f64 = text.split('\n').map(|line| {
-        let pixels: f64 = line.chars().map(|c| if c.is_ascii() {8.0} else {16.0}).sum();
-        (pixels / line_width).ceil().max(1.0)
-    }).sum();
-    20.0 * lines.clamp(2.0, 5.0) + 22.0
 }
 
 /// One presentation-only patch, shared by application and contrast checks.
@@ -286,7 +277,6 @@ impl CardChat {
         match result {
             Ok(()) => {
                 self.view.text_input(cx, ids!(input)).set_text(cx, "");
-                self.view.text_input(cx, ids!(input)).set_height(cx, Size::Fixed(62.0));
                 self.view.portal_list(cx, ids!(transcript)).scroll_to_end(cx);
                 self.generation = None;
             }
@@ -308,9 +298,8 @@ impl Widget for CardChat {
         }
         if self.view.button(cx, ids!(reply)).clicked(&actions) { self.reply_requested = true; }
         let input = self.view.text_input(cx, ids!(input));
-        if let Some(text) = input.changed(&actions) {
+        if input.changed(&actions).is_some() {
             // Local editing only. No host storage, model calls, or L0 parsing.
-            input.set_height(cx, Size::Fixed(composer_height(&text, input.area().rect(cx).size.x)));
             self.update_send(cx);
         }
         let clicked = self.view.button(cx, ids!(send)).clicked(&actions);
@@ -436,11 +425,90 @@ mod tests {
     }
 
     #[test]
-    fn composer_grows_for_wrapped_text_and_stops_before_covering_history() {
-        assert_eq!(composer_height("short", 280.0), 62.0);
-        assert!(composer_height(&"words ".repeat(18), 250.0) > 62.0);
-        assert!(composer_height(&"更改时间".repeat(12), 250.0) > 62.0);
-        assert_eq!(composer_height(&"long ".repeat(1000), 250.0), 122.0);
+    fn styled_composer_keeps_both_short_rows_visible_and_long_drafts_scrollable() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        use makepad_draw::text::selection::Cursor;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let widget = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            desktop_style::install(vm, desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+            vm.with_reload(makepad_widgets::script_mod);
+            super::script_mod(vm);
+            let value = script_eval!(vm, {use mod.widgets.* CardChat{}});
+            WidgetRef::script_from_value(vm, value)
+        });
+        let input = widget.text_input(&cx, ids!(input));
+        let identity = input.widget_uid();
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let mut draw = |cx: &mut Cx, height| {
+            let size = dvec2(360.0, height);
+            pass.set_size(cx, size);
+            for _ in 0..2 {
+                let event = DrawEvent::default();
+                let mut draw = CxDraw::new(cx, &event);
+                let mut draw = Cx2d::new(&mut draw);
+                draw.begin_pass(&pass, Some(1.0));
+                list.begin_always(&mut draw);
+                draw.begin_root_turtle(size, Layout::default());
+                widget.draw_walk_all(&mut draw, &mut Scope::empty(), Walk::fixed(size.x, size.y));
+                draw.end_turtle(); list.end(&mut draw); draw.end_pass(&pass);
+            }
+        };
+        for dark in [false, true, false] {
+            let sheet = desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
+            crate::glance_style::select(&mut cx, &sheet);
+            widget.borrow_mut::<CardChat>().unwrap().set_ink(&mut cx, crate::shell::rgb(0, 0, 0));
+            // Use the exact presentation object applied to the native editor,
+            // so the measurement shares its selected font and line spacing.
+            let measured = crate::glance_style::with_native_theme(&mut cx, |vm| {
+                let patch = input_style_patch(vm).as_object().unwrap();
+                let text = vm.bx.heap.value(patch, id!(draw_text).into(), NoTrap);
+                DrawText::script_from_value(vm, text)
+            }).unwrap();
+            for height in [740.0, 330.0, 740.0] {
+                input.set_text(&mut cx, "");
+                draw(&mut cx, height);
+                input.take_key_focus(&mut cx);
+                cx.send_trigger(input.area(), Trigger {id:id!(composer_test_focus), from:Area::Empty});
+                cx.handle_triggers();
+                let short = "Keep this calendar question\nunsent.";
+                widget.handle_event(&mut cx, &Event::TextInput(TextInputEvent {input:short.into(), ..Default::default()}), &mut Scope::empty());
+                draw(&mut cx, height);
+                assert_eq!(input.text(), short, "native input must reach the actual composer");
+                let area = input.area().rect(&cx);
+                let layout = measured.layout(&mut cx, 0.0, 0.0, Some((area.size.x - 16.0) as f32), true, Align::default(), short);
+                assert_eq!(layout.rows.len(), 2);
+                let caret = input.cursor_rect_in_absolute(&cx).unwrap();
+                let first = &layout.rows[0];
+                let last = layout.rows.last().unwrap();
+                let row_delta = ((last.origin_in_lpxs.y - last.ascender_in_lpxs) - (first.origin_in_lpxs.y - first.ascender_in_lpxs)) as f64;
+                let first_top = caret.pos.y - row_delta;
+                eprintln!("composer dark={dark} viewport={height} field={} content={} first_top={} clip_top={} last_bottom={} clip_bottom={}", area.size.y, layout.size_in_lpxs.height, first_top, area.pos.y+8.0, caret.pos.y+caret.size.y, area.pos.y+area.size.y-8.0);
+                assert!((caret.size.y - (last.ascender_in_lpxs - last.descender_in_lpxs) as f64).abs() < 0.1, "measurement and actual editor line metrics agree");
+                assert!(first_top >= area.pos.y + 8.0 - 0.1, "first line is clipped after typing at its end: {area:?}, {caret:?}");
+                assert!(caret.pos.y + caret.size.y <= area.pos.y + area.size.y - 8.0 + 0.1);
+                assert!(area.size.y <= 122.0 && area.pos.y + area.size.y <= height);
+                assert_eq!(input.widget_uid(), identity);
+                assert!(cx.has_key_focus(input.area()));
+
+                let long = "A complete long draft must stay editable.\n".repeat(24);
+                input.set_text(&mut cx, "");
+                widget.handle_event(&mut cx, &Event::TextInput(TextInputEvent {input:long.clone(), ..Default::default()}), &mut Scope::empty());
+                draw(&mut cx, height);
+                assert_eq!(input.text(), long);
+                let area = input.area().rect(&cx);
+                assert!((area.size.y - 122.0).abs() < 0.1, "long editor stays bounded");
+                let caret = input.cursor_rect_in_absolute(&cx).unwrap();
+                assert!(caret.pos.y >= area.pos.y + 8.0 - 0.1 && caret.pos.y + caret.size.y <= area.pos.y + area.size.y - 8.0 + 0.1, "last row remains reachable");
+                input.set_cursor(&mut cx, Cursor {index:0, prefer_next_row:false}, false);
+                draw(&mut cx, height);
+                let caret = input.cursor_rect_in_absolute(&cx).unwrap();
+                assert!(caret.pos.y >= area.pos.y + 8.0 - 0.1 && caret.pos.y + caret.size.y <= area.pos.y + area.size.y - 8.0 + 0.1, "first row remains reachable");
+                assert_eq!(input.text(), long);
+                assert!(widget.button(&cx, ids!(send)).area().rect(&cx).pos.y + 44.0 <= height);
+            }
+        }
     }
 
     #[test]
