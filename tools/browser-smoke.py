@@ -93,6 +93,7 @@ def main():
     process = None
     sequence = 0
     failure = None
+    security_failures = []
 
     def events():
         path = root / 'events.jsonl'
@@ -139,7 +140,8 @@ def main():
             wait(lambda: any(e.get('body', {}).get('kind') == 'loaded' for e in server_events()), 'real document JavaScript')
             loaded = next(e for e in server_events() if e.get('body', {}).get('kind') == 'loaded')
             assert loaded['body']['width'] > 100 and loaded['body']['height'] > 100, loaded['body']
-            assert not loaded['body']['bridge'], 'Ordinary page received an OctoSense bridge'
+            if loaded['body']['bridge']:
+                security_failures.append('Ordinary page received an OctoSense bridge')
             if loaded['body']['webMessageProbe'] not in ('absent', 'denied'):
                 policy = {}
                 if os.name == 'nt' and args.require_snapshot:
@@ -147,11 +149,12 @@ def main():
                     wait(lambda: (root / f'inspect-{diagnostic}.json').is_file(), 'native policy diagnostics')
                     metadata = json.loads((root / f'inspect-{diagnostic}.json').read_text(encoding='utf-8'))
                     policy = {key: metadata.get(key) for key in ('error', 'webMessageEnabled', 'hostObjectsAllowed')}
-                raise AssertionError(f"Page-to-host probe={loaded['body']['webMessageProbe']}, exception={loaded['body']['webMessageErrorKind']}, native policy={policy}")
-            if os.name == 'nt':
-                assert loaded['body']['webMessageProbe'] == 'denied', 'WebView2 messaging denial was not exercised'
+                security_failures.append(f"Page-to-host probe={loaded['body']['webMessageProbe']}, exception={loaded['body']['webMessageErrorKind']}, native policy={policy}")
+            if os.name == 'nt' and loaded['body']['webMessageProbe'] == 'absent':
+                security_failures.append('WebView2 messaging denial was not exercised')
             assert loaded['cookie_present'], 'Browser did not retain its own HttpOnly fixture cookie'
-            checks.append('native_document_loaded_without_bridge')
+            if not security_failures:
+                checks.append('native_document_loaded_without_bridge')
             if args.require_xembed:
                 from browser_smoke_x11 import inspect_embedding
                 (root / 'embedding.json').write_text(json.dumps(inspect_embedding(), indent=2) + '\n', encoding='utf-8')
@@ -170,10 +173,13 @@ def main():
                 assert not meta.get('error'), meta.get('error')
                 assert meta.get('title') == 'Saved: Reviewed locally'
                 assert meta.get('viewportWidth', 0) > 100 and meta.get('viewportHeight', 0) > 100
-                assert not meta.get('hostBridgePresent'), 'Inspection found an OctoSense bridge'
+                if meta.get('hostBridgePresent'):
+                    security_failures.append('Inspection found an OctoSense bridge')
                 if os.name == 'nt':
-                    assert meta.get('webMessageEnabled') is False, 'Native messaging remained enabled'
-                    assert meta.get('hostObjectsAllowed') is False, 'Native host objects remained allowed'
+                    if meta.get('webMessageEnabled') is not False:
+                        security_failures.append('Native messaging remained enabled')
+                    if meta.get('hostObjectsAllowed') is not False:
+                        security_failures.append('Native host objects remained allowed')
                 snapshot = (root / f'snapshot-{capture}.png').read_bytes()
                 assert len(snapshot) > 100 and snapshot.startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10]))
                 checks.append('native_engine_snapshot_saved')
@@ -236,6 +242,8 @@ def main():
             command('quit')
             process.wait(timeout=10)
             assert process.returncode == 0
+            if security_failures:
+                raise AssertionError('; '.join(security_failures))
     except Exception as error:
         failure = str(error)
     finally:
@@ -254,7 +262,7 @@ def main():
         server.server_close()
         thread.join(timeout=2)
         receipt = {'schema': 1, 'platform': os.name, 'software_graphics': args.software_graphics, 'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
-                   'checks': checks, 'passed': failure is None, 'failure': failure,
+                   'checks': checks, 'passed': failure is None, 'failure': failure, 'security_failures': security_failures,
                    'scope': 'real native engine; DOM actions are automated, not physical typing or visual UX approval',
                    'owned_process_exited': process is None or process.poll() is not None}
         (root / 'requests.json').write_text(json.dumps(server_events(), indent=2) + '\n', encoding='utf-8')
