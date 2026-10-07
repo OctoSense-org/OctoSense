@@ -435,8 +435,12 @@ impl PagesState {
 
     /// Scroll the glance column by `dy` points on a screen `height` tall.
     pub fn scroll_glance(&mut self, dy: f64, height: f64) {
-        let max = (self.glance_height(height) + GLANCE_HEADER - (height - GLANCE_BOTTOM)).max(0.0);
+        let max = self.glance_scroll_max(height);
         self.glance_scroll = (self.glance_scroll + dy).clamp(0.0, max);
+    }
+
+    fn glance_scroll_max(&self, height: f64) -> f64 {
+        (self.glance_height(height) + GLANCE_HEADER - (height - GLANCE_BOTTOM)).max(0.0)
     }
 
     /// Lock a vertical body drag to the feed, then follow the finger in
@@ -448,6 +452,10 @@ impl PagesState {
         let dy = if gesture.glance_scroll {
             gesture.last.y - at.y
         } else {
+            // There is no scroll gesture to own when the feed fits. Keeping
+            // the page recognizer alive lets a curved thumb swipe turn left
+            // after its first sample was mostly vertical.
+            if self.glance_scroll_max(screen.size.y) == 0.0 { return false; }
             if claimed || gesture.hit.is_some() || !glance_column(screen, 0.0).contains(gesture.start)
                 || delta.length() <= crate::mobile_gestures::SLOP || delta.y.abs() <= delta.x.abs() * 1.2 { return false; }
             gesture.glance_scroll = true;
@@ -480,7 +488,7 @@ pub const GLANCE_HEADER: f64 = 112.0;
 const GLANCE_BOTTOM: f64 = 32.0;
 const GLANCE_GAP: f64 = 12.0;
 
-fn glance_column(screen: Rect, dx: f64) -> Rect {
+pub(crate) fn glance_column(screen: Rect, dx: f64) -> Rect {
     rect(screen.pos.x + dx, screen.pos.y + GLANCE_HEADER, screen.size.x,
         (screen.size.y - GLANCE_HEADER - GLANCE_BOTTOM).max(0.0))
 }
@@ -882,7 +890,7 @@ mod tests {
                 pages.sync(&ids(40), 8, 12);
                 pages.jump(1);
                 settle(&mut pages);
-                let context = GestureContext { screen: rect(0.0, 0.0, width, 900.0), insets: SafeInsets::default(), phone: crate::mobile::PhoneScreen::Home, body: true, system_edges: true, shade: false };
+                let context = GestureContext { screen: rect(0.0, 0.0, width, 900.0), insets: SafeInsets::default(), phone: crate::mobile::PhoneScreen::Home, body: true, glance: None, system_edges: true, shade: false };
                 let mut recognizer = GestureRecognizer::default();
                 let zones = ExclusionZones::default();
                 let start = dvec2(if sign < 0.0 {width * 0.9} else {width * 0.1}, 400.0);
@@ -1093,6 +1101,39 @@ mod tests {
     }
 
     #[test]
+    fn a_short_glance_feed_keeps_curved_left_swipes_available_at_every_height() {
+        use crate::mobile_gestures::{FingerPhase, GestureContext, GestureRecognizer, ExclusionZones, SafeInsets};
+        let screen = rect(0.0, 24.0, 384.0, 760.0);
+        let ctx = GestureContext { screen, insets: SafeInsets::default(), phone: PhoneScreen::Home, body: true, glance: Some(glance_column(screen, 0.0)), system_edges: true, shade: true };
+        for y in [170.0, 300.0, 500.0, 680.0] {
+            for vertical in [-1.0, 1.0] {
+                let mut feed = GlanceFeed::default();
+                feed.push(GlanceItem::Note { title: "At a glance".into(), body: "No events yet".into() });
+                let mut pages = PagesState { index: -1.0, feed, ..Default::default() };
+                let mut g = gesture(dvec2(300.0, y), None);
+                let mut recognizer = GestureRecognizer::default();
+                let exclusions = ExclusionZones::default();
+                recognizer.feed(FingerPhase::Down, g.start, 0.0, &ctx, &exclusions);
+                // A thumb starts on a short vertical arc, then travels left.
+                // A feed that cannot scroll must not permanently take it.
+                for (i, dx) in [-4.0, -24.0, -80.0, -160.0, -210.0].into_iter().enumerate() {
+                    let at = g.start + dvec2(dx, vertical * 14.0);
+                    if pages.drag_glance(&mut g, at, screen, recognizer.current().is_some()) {
+                        recognizer.cancel();
+                    } else {
+                        recognizer.feed(FingerPhase::Move, at, 0.04 * (i + 1) as f64, &ctx, &exclusions);
+                    }
+                    g.last = at;
+                }
+                assert_eq!(recognizer.feed(FingerPhase::Up, g.last, 0.25, &ctx, &exclusions),
+                    Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))), "start y={y}, arc={vertical}");
+                assert_eq!(pages.glance_scroll, 0.0);
+                assert!(!g.glance_scroll);
+            }
+        }
+    }
+
+    #[test]
     fn glance_finger_drags_reach_the_end_and_never_turn_back_into_a_tap() {
         use makepad_platform::event::TouchState;
         let mut feed = GlanceFeed::default();
@@ -1116,7 +1157,9 @@ mod tests {
 
     #[test]
     fn glance_drag_leaves_headers_controls_and_horizontal_paging_alone() {
-        let mut pages = PagesState { index: -1.0, ..Default::default() };
+        let mut feed = GlanceFeed::default();
+        for i in 0..10 { feed.push(card("os.mail", &format!("m{i}"), 50, i)); }
+        let mut pages = PagesState { feed, index: -1.0, ..Default::default() };
         let screen = rect(0.0, 0.0, 380.0, 700.0);
         for (start, delta, hit, claimed) in [
             (dvec2(180.0, 60.0), dvec2(0.0, 100.0), None, false),
@@ -1137,10 +1180,12 @@ mod tests {
     fn slow_glance_drags_claim_before_home_search_or_shade() {
         use crate::mobile_gestures::{FingerPhase, GestureContext, GestureRecognizer, ExclusionZones, SafeInsets};
         let screen = rect(0.0, 0.0, 380.0, 700.0);
-        let ctx = GestureContext { screen, insets: SafeInsets::default(), phone: PhoneScreen::Home, body: true, system_edges: true, shade: true };
+        let ctx = GestureContext { screen, insets: SafeInsets::default(), phone: PhoneScreen::Home, body: true, glance: Some(glance_column(screen, 0.0)), system_edges: true, shade: true };
         for x in [50.0, 190.0, 330.0] {
             for direction in [-1.0, 1.0] {
-                let mut pages = PagesState { index: -1.0, ..Default::default() };
+                let mut feed = GlanceFeed::default();
+                for i in 0..10 { feed.push(card("os.mail", &format!("m{i}"), 50, i)); }
+                let mut pages = PagesState { feed, index: -1.0, ..Default::default() };
                 let mut g = gesture(dvec2(x, 400.0), None);
                 let mut recognizer = GestureRecognizer::default();
                 let exclusions = ExclusionZones::default();

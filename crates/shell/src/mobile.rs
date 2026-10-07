@@ -533,7 +533,7 @@ mod tests {
     /// scrolls; a committed Back from the library goes Home (commit_gesture).
     fn drawer_finger(phone: &mut PhoneState, points: &[(f64, f64)], secs: f64) {
         use crate::mobile_gestures::*;
-        let ctx = GestureContext { screen: phone.viewport, insets: SafeInsets::default(), phone: phone.screen, body: true, system_edges: true, shade: false };
+        let ctx = GestureContext { screen: phone.viewport, insets: SafeInsets::default(), phone: phone.screen, body: true, glance: None, system_edges: true, shade: false };
         let zones = ExclusionZones::default();
         let mut rec = GestureRecognizer::default();
         let (start, t0) = (dvec2(points[0].0, points[0].1), 10.0);

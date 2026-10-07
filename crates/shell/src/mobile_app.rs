@@ -868,6 +868,8 @@ impl App {
             // A rightward library swipe returns Home, including from search
             // results. Its vertical drags stay with the scrolling grid.
             body: matches!(phone.screen, PhoneScreen::Home | PhoneScreen::Drawer),
+            glance: (phone.pages.on_glance() && !phone.shade.is_open())
+                .then(|| crate::mobile_pages::glance_column(phone.viewport, 0.0)),
             // Home's own shade, unless the system-wide OctoSense panel owns
             // the pull-downs (or nothing feeds it): `ShadeReach`.
             shade: crate::mobile_shade::ShadeReach::of(phone.android.system_panel).shell_shade(),
