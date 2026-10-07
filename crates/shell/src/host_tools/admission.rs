@@ -24,7 +24,12 @@ pub(crate) fn installed_bundle(root: &Path, app: &str) -> Result<PathBuf, String
 }
 
 fn installed_bundle_with_anchor(root: &Path, app: &str, anchor: &str) -> Result<PathBuf, String> {
-    let mut store = octosense_app_hub::Store::new(anchor, root, octosense_app_contract::HostLimits::default());
+    let mut store = octosense_app_hub::Store::new(
+        anchor,
+        root,
+        octosense_app_contract::HostLimits::default(),
+    )
+    .with_host_api_versions(octosense_appstore::host_api::available_versions());
     let catalog = std::fs::read_to_string(root.join("catalog.json"))
         .map_err(|_| "No verified App Hub catalog is available on this device".to_string())?;
     store.accept_catalog(&catalog).map_err(|e| format!("App Hub catalog refused: {e}"))?;

@@ -3,7 +3,7 @@
 English | [简体中文](0012-app-host-api-discovery.zh-CN.md)
 
 - Date: 2026-10-07
-- Status: Implementation in progress; compatible published host/contract releases and phone acceptance pending.
+- Status: Implemented in source; contract 1.6.0 published. Compatible host release and phone acceptance pending.
 - Builds on: [ADR 0004](0004-native-apps-hosting-and-peers.md), [ADR 0005](0005-app-contract.md), [ADR 0010](0010-shared-oauth-and-connected-apps.md).
 
 ## Context
@@ -134,6 +134,14 @@ adapter does not advertise Windows/Linux/iOS support. No broad OS access,
 arbitrary Rust/native library execution, or Wasm loading is added.
 
 ## Evidence and remaining acceptance
+
+The public dependency graph uses crates.io contract 1.6.0 and the checked-in
+App Hub, renderer and runtime pins; no private Cargo overrides are required.
+On macOS, `python3 tools/setup.py --check --cargo` and the desktop packaging
+check (`cargo check --locked -p octosense --features mobile-apps`) passed.
+From `phone/`, both `cargo check --locked -p octosense-home --features mobile-apps`
+and `cargo test --locked --features mobile-apps -p octosense-shell --lib` passed
+(1,003 tests). Building Home on macOS is not an Android device test.
 
 Real Splash VM tests cover declared handler invocation, shared UI/storage state,
 digest tampering, schema failures, ownership, cancellation, account changes,

@@ -3,7 +3,7 @@
 [English](0012-app-host-api-discovery.md) | 简体中文
 
 - 日期：2026-10-07
-- 状态：实现中；兼容的宿主/契约发布版本及手机验收待完成。
+- 状态：源码已实现；契约 1.6.0 已发布。兼容宿主发布和手机验收待完成。
 - 基于：[ADR 0004](0004-native-apps-hosting-and-peers.md)、[ADR 0005](0005-app-contract.md)、[ADR 0010](0010-shared-oauth-and-connected-apps.zh-CN.md)。
 
 ## 背景
@@ -110,6 +110,13 @@ macOS/Android 实现嵌入式后端登录；Windows/Linux 保留独立的外部�
 Windows/Linux/iOS。不增加广泛系统访问、任意 Rust/原生动态库执行或 Wasm 加载。
 
 ## 证据与待完成验收
+
+公开依赖图使用 crates.io 契约 1.6.0，以及仓库固定的 App Hub、渲染器和运行时
+版本，不需要私有 Cargo 覆盖。在 macOS 上，`python3 tools/setup.py --check --cargo`
+与桌面打包检查 `cargo check --locked -p octosense --features mobile-apps` 均通过。
+在 `phone/` 下运行的 `cargo check --locked -p octosense-home --features mobile-apps`
+和 `cargo test --locked --features mobile-apps -p octosense-shell --lib` 均通过
+（1,003 项测试）。在 macOS 上构建 Home 不等于 Android 真机测试。
 
 真实 Splash VM 测试覆盖声明处理函数调用、共享 UI/存储状态、摘要篡改、schema
 错误、所有权、取消、账号切换、禁止工具弹出权限页和指令限制。服务/协议测试
