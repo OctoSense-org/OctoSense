@@ -124,6 +124,74 @@ fn script_colors(style: DesktopStyle, dark: bool, styles: &str, expressions: &[&
 }
 
 #[test]
+fn youtube_committed_query_restores_field_without_overwriting_unsent_typing() {
+    let source = include_str!("../../../apps/youtube/bundle/main.splash");
+    let logic = source.split_once("// END shared app interface\n").unwrap().1
+        .split_once("\nstart_timeout(").unwrap().0;
+    for (stored, expected) in [("\"NASA\"", "NASA"), ("nil", "lofi hip hop radio")] {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            // Run the shipped callbacks with local storage/network/UI spies.
+            // No provider request or actual persisted user file is involved.
+            let value = vm.eval(ScriptMod {
+                file: "youtube_query_restore_test.splash".into(),
+                code: format!(r#"
+use mod.std.assert
+let stored_query = {stored}
+let writes = []
+let field_text = ""
+let field_sets = 0
+let status_text = ""
+let video_count = "—"
+let fs = {{
+    exists: fn(path){{ path == "accounts/device/query.json" && stored_query != nil }}
+    read: fn(path){{ assert(path == "accounts/device/query.json"); {{q: stored_query}}.to_json() }}
+    write: fn(path, data){{ writes.push({{path: path data: data}}) }}
+    remove: fn(path){{ assert(false) }}
+}}
+let sys = {{video: fn(query, index, field){{ if field == "count" {{ return video_count }}; "" }}}}
+let widget = {{render: fn(){{}} set_visible: fn(value){{}}}}
+let ui = {{
+    search: {{set_text: fn(value){{ field_text = value; field_sets += 1 }}}}
+    status: {{set_text: fn(value){{ status_text = value }}}}
+    main: widget player_pane: widget tabs: widget list: widget
+}}
+{logic}
+boot()
+assert(q == "{expected}" && field_text == q)
+assert(status_text == "Searching YouTube for “{expected}”…")
+assert(writes.len() == 0 && field_sets == 1)
+// A committed chip/search replaces the field and persists its trimmed query.
+search_for("  NASA science  ")
+assert(q == "NASA science" && field_text == q)
+assert(writes.len() == 1 && writes[0].path == "accounts/device/query.json")
+assert(writes[0].data.parse_json().q == q && field_sets == 2)
+// Result polling and tab changes must not discard a draft still being typed.
+field_text = "Unsubmitted next query"
+video_count = "0"
+read_hits()
+sync_status()
+show("history")
+show("search")
+assert(loaded_q == q && field_text == "Unsubmitted next query")
+assert(field_sets == 2 && writes.len() == 1)
+search_for("   ")
+assert(q == "NASA science" && field_text == "Unsubmitted next query")
+assert(field_sets == 2 && writes.len() == 1)
+true
+;"#),
+                ..Default::default()
+            });
+            let errors = vm.take_errors();
+            assert!(errors.is_empty(), "YouTube stored={stored}: {errors:?}");
+            assert!(!value.is_err(), "YouTube callbacks returned {value:?}");
+        });
+    }
+}
+
+#[test]
 fn youtube_search_text_and_placeholder_read_in_normal_hover_and_focus_states() {
     let source = include_str!("../../../apps/youtube/bundle/main.splash");
     let prelude = source.split_once("// END shared app interface").unwrap().0;

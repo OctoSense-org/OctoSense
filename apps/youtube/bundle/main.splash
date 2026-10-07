@@ -106,6 +106,7 @@ fn search_for(text){
     let t = ("" + text).trim()
     if t == "" { return }
     q = t
+    ui.search.set_text(q)
     loaded_q = ""
     failed = false
     hits = []
@@ -182,6 +183,7 @@ fn clear_history(){
 
 fn boot(){
     load_state()
+    ui.search.set_text(q)
     ui.tabs.render()
     sync_status()
     ui.list.render()
