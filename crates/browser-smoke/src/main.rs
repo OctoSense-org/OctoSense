@@ -21,7 +21,7 @@ script_mod! {
             window.inner_size: vec2(800, 620)
             body +: { flow: Down padding: 16 spacing: 12
                 Label {text: "OctoSense embedded browser acceptance"}
-                browser := View {width: Fill height: Fill}
+                browser := WebReader {width: Fill height: Fill}
             }
         }}
     }
@@ -37,17 +37,13 @@ struct App {
     timer: Option<Timer>,
     #[rust]
     last_command: u64,
-    #[rust]
-    open: bool,
-    #[rust]
-    visible: bool,
-}
-
-fn browser_id() -> SystemBrowserId {
-    SystemBrowserId(live_id!(octosense_browser_smoke))
 }
 
 impl App {
+    fn browser_id(&self, cx: &mut Cx) -> SystemBrowserId {
+        SystemBrowserId(LiveId(self.ui.widget(cx, ids!(browser)).widget_uid().0))
+    }
+
     fn record(&self, event: Value) {
         if self.root.as_os_str().is_empty() {
             return;
@@ -80,19 +76,20 @@ impl App {
         self.last_command = id;
         let operation = command["op"].as_str().unwrap_or("");
         let mut accepted = true;
+        let widget = self.ui.widget(cx, ids!(browser));
+        let browser_id = self.browser_id(cx);
         match operation {
             "open" => {
                 if let Some(url) = command["url"].as_str().filter(|url| url.len() <= 16_384) {
-                    if self.open {
-                        cx.system_browser(browser_id()).close();
-                    }
-                    if command["navigable"].as_bool().unwrap_or(false) {
-                        cx.system_browser(browser_id()).spawn_navigable(url);
+                    if let Some(mut reader) =
+                        widget.borrow_mut::<makepad_widgets::web_reader::WebReader>()
+                    {
+                        reader.close(cx);
+                        accepted = reader.open(cx, url);
                     } else {
-                        cx.system_browser(browser_id()).spawn(url);
+                        accepted = false;
                     }
-                    self.open = true;
-                    self.visible = true;
+                    widget.set_visible(cx, true);
                 } else {
                     accepted = false;
                 }
@@ -102,24 +99,23 @@ impl App {
                     .as_str()
                     .filter(|script| script.len() <= 32_768)
                 {
-                    cx.system_browser(browser_id()).eval_js(script);
+                    cx.system_browser(browser_id).eval_js(script);
                 } else {
                     accepted = false;
                 }
             }
-            "hide" => {
-                self.visible = false;
-                cx.system_browser(browser_id()).detach();
-            }
-            "show" => self.visible = true,
+            "hide" => widget.set_visible(cx, false),
+            "show" => widget.set_visible(cx, true),
             "close" => {
-                cx.system_browser(browser_id()).detach();
-                cx.system_browser(browser_id()).close();
-                self.open = false;
+                if let Some(mut reader) =
+                    widget.borrow_mut::<makepad_widgets::web_reader::WebReader>()
+                {
+                    reader.close(cx);
+                }
             }
             "inspect" => {
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
-                cx.system_browser(browser_id()).inspect(
+                cx.system_browser(browser_id).inspect(
                     self.root
                         .join(format!("inspect-{id}.json"))
                         .to_string_lossy()
@@ -138,7 +134,7 @@ impl App {
                 }
             }
             "quit" => {
-                cx.system_browser(browser_id()).close();
+                cx.system_browser(browser_id).close();
                 cx.quit();
             }
             _ => accepted = false,
@@ -172,27 +168,33 @@ impl AppMain for App {
             self.commands(cx);
         }
         if let Event::Actions(actions) = event {
+            let browser_id = self.browser_id(cx);
             for action in actions {
                 if let Some(nav) =
                     action.downcast_ref::<makepad_platform::event::NativeSystemBrowserNavigation>()
                 {
-                    if nav.browser_id == browser_id().0 .0 {
+                    if nav.browser_id == browser_id.0 .0 {
                         self.record(json!({"kind":"navigation", "loading":nav.loading,"title":nav.title,"url":nav.url}));
+                    }
+                }
+                if let Some(blocked) = action
+                    .downcast_ref::<makepad_platform::event::NativeSystemBrowserPolicyBlocked>(
+                ) {
+                    if blocked.browser_id == browser_id.0 .0 {
+                        self.record(
+                            json!({"kind":"policy_blocked","description":blocked.description}),
+                        );
                     }
                 }
                 if let Some(error) =
                     action.downcast_ref::<makepad_platform::event::NativeSystemBrowserPageError>()
                 {
-                    if error.browser_id == browser_id().0 .0 {
+                    if error.browser_id == browser_id.0 .0 {
                         self.record(json!({"kind":"page_error", "code":error.code,"description":error.description}));
                     }
                 }
             }
         }
         self.ui.handle_event(cx, event, &mut Scope::empty());
-        if self.open && matches!(event, Event::Draw(_)) {
-            let area = self.ui.widget(cx, ids!(browser)).area();
-            cx.system_browser(browser_id()).update(area, self.visible);
-        }
     }
 }

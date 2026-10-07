@@ -146,6 +146,8 @@ def main():
             command('eval', script="document.querySelector('#message').value='Reviewed locally';document.querySelector('#submit').click()")
             wait(lambda: any(e.get('body', {}).get('value') == 'Reviewed locally' for e in server_events()), 'real DOM edit and form action')
             checks.append('real_dom_edit_and_action')
+            wait(lambda: any(e.get('kind') == 'navigation' and e.get('title') == 'Saved: Reviewed locally' for e in events()), 'dynamic page title notification')
+            checks.append('dynamic_title_notification')
 
             if args.require_snapshot:
                 capture = command('inspect')
@@ -160,11 +162,23 @@ def main():
                 checks.append('native_engine_snapshot_saved')
 
             before = len(events())
+            command('eval', script="let frame=document.createElement('iframe');frame.src='/forbidden-frame';document.body.appendChild(frame)")
+            wait(lambda: any(e.get('kind') == 'policy_blocked' for e in events()[before:]), 'blocked iframe policy event')
+            assert not any(e.get('kind') == 'page_error' for e in events()[before:]), 'Blocked iframe failed the parent WebReader'
+            assert not any(e['path'] == '/forbidden-frame' for e in server_events()), 'Forbidden iframe reached server'
+            command('eval', script="document.querySelector('#message').value='Still interactive';document.querySelector('#submit').click()")
+            wait(lambda: any(e.get('body', {}).get('value') == 'Still interactive' for e in server_events()), 'parent reader after denied iframe')
+            time.sleep(.3)
+            assert not any(e.get('kind') == 'page_error' for e in events()[before:]), 'Denied iframe later failed its parent reader'
+            checks.append('blocked_iframe_preserves_parent_reader')
+
+            before = len(events())
             command('eval', script="location.href='/forbidden'")
-            wait(lambda: any(e.get('kind') == 'page_error' for e in events()[before:]), 'restricted navigation rejection')
+            wait(lambda: any(e.get('kind') == 'policy_blocked' for e in events()[before:]), 'restricted navigation rejection')
             assert not any(e['path'] == '/forbidden' for e in server_events()), 'Forbidden navigation reached server'
             checks.append('restricted_navigation_blocked_before_request')
             command('hide')
+            time.sleep(1.2)  # WebReader's existing visibility watchdog detaches hidden views.
             command('show')
             checks.append('detach_and_reattach_commands_accepted')
             command('close')

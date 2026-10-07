@@ -62,6 +62,25 @@ index 96085e29b..8c8072dc9 100644
              Self::InspectSystemBrowser { .. } => write!(f, "InspectSystemBrowser"),
              Self::SetSystemBrowserHtml { .. } => write!(f, "SetSystemBrowserHtml"),
              Self::EvalSystemBrowserJs { .. } => write!(f, "EvalSystemBrowserJs"),
+diff --git a/platform/src/event/event.rs b/platform/src/event/event.rs
+index db8830e66..ac73ebfba 100644
+--- a/platform/src/event/event.rs
++++ b/platform/src/event/event.rs
+@@ -591,6 +591,14 @@ pub struct NativeSystemBrowserPageError {
+     pub url: String,
+ }
+ 
++/// A navigation or browser operation was refused without failing the loaded page.
++/// In particular, a blocked subframe must not hide its permitted parent reader.
++#[derive(Clone, Debug, Default)]
++pub struct NativeSystemBrowserPolicyBlocked {
++    pub browser_id: u64,
++    pub description: String,
++}
++
+ /// Result of a native file-picker dialog, carrying the `call_id` its
+ /// `CxOsOp::OpenFileDialog` was issued with.
+ #[derive(Clone, Debug, Default)]
 diff --git a/platform/src/lib.rs b/platform/src/lib.rs
 index 6e041dd51..ce292b230 100644
 --- a/platform/src/lib.rs
@@ -76,10 +95,10 @@ index 6e041dd51..ce292b230 100644
  
 diff --git a/platform/src/os/linux/linux_webkit.rs b/platform/src/os/linux/linux_webkit.rs
 new file mode 100644
-index 000000000..d079a6d60
+index 000000000..3a2190f6a
 --- /dev/null
 +++ b/platform/src/os/linux/linux_webkit.rs
-@@ -0,0 +1,507 @@
+@@ -0,0 +1,524 @@
 +//! Optional WebKitGTK browser, embedded by XEmbed in an existing X11 window.
 +//!
 +//! Only system libraries are loaded; ordinary Makepad builds require no GTK or
@@ -88,7 +107,7 @@ index 000000000..d079a6d60
 +use super::{module_loader::ModuleLoader, x11::x11_sys as x};
 +use crate::{
 +    cx::Cx,
-+    event::{NativeAuthBrowserEvent, NativeSystemBrowserNavigation, NativeSystemBrowserPageError},
++    event::{NativeAuthBrowserEvent, NativeSystemBrowserNavigation, NativeSystemBrowserPageError, NativeSystemBrowserPolicyBlocked},
 +    makepad_math::Rect,
 +    system_browser::{BrowserPolicy, NavigationDecision},
 +    window::WindowId,
@@ -162,6 +181,8 @@ index 000000000..d079a6d60
 +    gtk_widget_get_scale_factor: unsafe extern "C" fn(Object) -> c_int,
 +    gtk_widget_grab_focus: unsafe extern "C" fn(Object),
 +    webkit_web_context_new_ephemeral: unsafe extern "C" fn() -> Object,
++    webkit_network_error_quark: unsafe extern "C" fn() -> u32,
++    webkit_policy_error_quark: unsafe extern "C" fn() -> u32,
 +    webkit_web_context_set_tls_errors_policy: unsafe extern "C" fn(Object, c_int),
 +    webkit_web_view_new_with_context: unsafe extern "C" fn(Object) -> Object,
 +    webkit_web_view_get_settings: unsafe extern "C" fn(Object) -> Object,
@@ -226,7 +247,12 @@ index 000000000..d079a6d60
 +}
 +impl State {
 +    fn blocked(&self) {
-+        self.error("The embedded browser blocked a disallowed navigation or operation");
++        if !self.finished.get() {
++            Cx::post_action(NativeSystemBrowserPolicyBlocked {
++                browser_id: self.id,
++                description: "The embedded browser blocked a disallowed navigation or operation".into(),
++            });
++        }
 +    }
 +    fn error(&self, description: &str) {
 +        if !self.finished.get() { unavailable(self.id, false, description); }
@@ -271,10 +297,13 @@ index 000000000..d079a6d60
 +    1
 +}
 +unsafe extern "C" fn load_changed(view: Object, _event: c_int, data: Object) { state(data).navigation(view); }
++unsafe extern "C" fn property_changed(view: Object, _property: Object, data: Object) { state(data).navigation(view); }
 +unsafe extern "C" fn load_failed(_view: Object, _event: c_int, _uri: *const c_char, error: *const GError, data: Object) -> c_int {
-+    // WEBKIT_NETWORK_ERROR_CANCELLED is an intentional stop/policy rejection.
-+    if !error.is_null() && (*error).code == 302 { return 1; }
-+    state(data).error("The embedded browser could not load the page");
++    let s = state(data);
++    // Intentional stops and policy cancellations do not fail a retained page.
++    if !error.is_null() && (((*error).domain == (s.api.webkit_network_error_quark)() && (*error).code == 302)
++        || ((*error).domain == (s.api.webkit_policy_error_quark)() && (*error).code == 102)) { return 1; }
++    s.error("The embedded browser could not load the page");
 +    1 // Never display an engine-generated error page carrying a sensitive URL.
 +}
 +#[repr(C)]
@@ -309,7 +338,11 @@ index 000000000..d079a6d60
 +unsafe extern "C" fn deny_print(_view: Object, _operation: Object, _data: Object) -> c_int { 1 }
 +unsafe extern "C" fn closed(_view: Object, data: Object) {
 +    let s = state(data);
-+    s.finished.set(true);
++    if !s.finished.replace(true) {
++        unavailable(s.id, false, "The embedded page closed");
++    }
++    // The X11 owner removes this view after GLib returns, never while its
++    // callback still borrows State.
 +}
 +
 +enum Document { Url(String, bool), Html(String, String) }
@@ -373,6 +406,8 @@ index 000000000..d079a6d60
 +            }}; }
 +            signal!(view, "decide-policy", decide);
 +            signal!(view, "load-changed", load_changed);
++            signal!(view, "notify::title", property_changed);
++            signal!(view, "notify::uri", property_changed);
 +            signal!(view, "load-failed", load_failed);
 +            signal!(view, "load-failed-with-tls-errors", tls_failed);
 +            signal!(view, "web-process-terminated", process_terminated);
@@ -456,6 +491,7 @@ index 000000000..d079a6d60
 +        }
 +    }
 +    pub(crate) fn window(&self) -> Option<WindowId> { self.attached }
++    pub(crate) fn is_finished(&self) -> bool { self.state.finished.get() }
 +    pub(crate) fn hide(&mut self) {
 +        if self.visible {
 +            self.focus(false);
@@ -682,7 +718,7 @@ index 499c6dc3c..f7e8af444 100644
                      println!("Reason: DISPLAY environment variable is set");
                  } else {
 diff --git a/platform/src/os/linux/x11/linux_x11.rs b/platform/src/os/linux/x11/linux_x11.rs
-index b5c58e27e..02943f128 100644
+index b5c58e27e..c445ec3b0 100644
 --- a/platform/src/os/linux/x11/linux_x11.rs
 +++ b/platform/src/os/linux/x11/linux_x11.rs
 @@ -1,6 +1,7 @@
@@ -759,15 +795,18 @@ index b5c58e27e..02943f128 100644
                  let mut cx = self.cx.borrow_mut();
                  cx.dpi_override_scale(&mut e.abs, e.window_id);
                  cx.fingers.process_tap_count(e.abs, e.time);
-@@ -308,6 +324,7 @@ fn xlib_event_callback(
+@@ -308,6 +324,10 @@ fn xlib_event_callback(
                  cx.call_event_handler(&Event::TextCut(e))
              }
              XlibEvent::Timer(e) => {
-+                if e.timer_id == 0 { linux_webkit::pump(); }
++                if e.timer_id == 0 {
++                    linux_webkit::pump();
++                    self.browsers.retain(|_, browser| !browser.is_finished());
++                }
                  let mut cx = self.cx.borrow_mut();
                  if e.timer_id == 0 {
                      if SignalToUI::check_and_clear_ui_signal() {
-@@ -567,6 +584,7 @@ fn handle_platform_ops(
+@@ -567,6 +587,7 @@ fn handle_platform_ops(
                      opengl_windows.push(opengl_window);
                  }
                  CxOsOp::CloseWindow(window_id) => {
@@ -775,7 +814,7 @@ index b5c58e27e..02943f128 100644
                      drop(cx);
                      self.close_popup_children(opengl_windows, xlib_app, window_id);
                      cx = self.cx.borrow_mut();
-@@ -596,7 +614,7 @@ fn handle_platform_ops(
+@@ -596,7 +617,7 @@ fn handle_platform_ops(
                          }
                      }
                  }
@@ -784,7 +823,7 @@ index b5c58e27e..02943f128 100644
                  CxOsOp::MinimizeWindow(window_id) => {
                      if let Some(window) =
                          opengl_windows.iter_mut().find(|w| w.window_id == window_id)
-@@ -912,6 +930,53 @@ fn handle_platform_ops(
+@@ -912,6 +933,53 @@ fn handle_platform_ops(
                          let _ = player.select_audio_track(index);
                      }
                  }
@@ -1019,17 +1058,17 @@ index c0404864b..19a5b124a 100644
      /// Earliest time the device-loss recovery may try again, and how many tries this outage
 diff --git a/platform/src/os/windows/windows_webview.rs b/platform/src/os/windows/windows_webview.rs
 new file mode 100644
-index 000000000..34fa36c63
+index 000000000..4d7a880df
 --- /dev/null
 +++ b/platform/src/os/windows/windows_webview.rs
-@@ -0,0 +1,1049 @@
+@@ -0,0 +1,1047 @@
 +//! WebView2 lives inside a clipping child HWND of the Makepad window. COM
 +//! completions run on the existing STA message loop; no nested pump or worker
 +//! waits. A weak state reference prevents late creation callbacks resurrecting
 +//! closed views. Pages never receive host objects or an IPC bridge.
 +use crate::{
 +    cx::Cx,
-+    event::{NativeAuthBrowserEvent, NativeSystemBrowserNavigation, NativeSystemBrowserPageError},
++    event::{NativeAuthBrowserEvent, NativeSystemBrowserNavigation, NativeSystemBrowserPageError, NativeSystemBrowserPolicyBlocked},
 +    makepad_live_id::LiveId,
 +    makepad_math::Rect,
 +    system_browser::{BrowserPolicy, NavigationDecision},
@@ -2034,12 +2073,10 @@ index 000000000..34fa36c63
 +        drop(s);
 +        auth_event(state, "blocked", String::new());
 +    } else {
-+        drop(s);
-+        report_error(
-+            state,
-+            "Navigation is not permitted in this embedded browser",
-+            -1,
-+        );
++        Cx::post_action(NativeSystemBrowserPolicyBlocked {
++            browser_id: s.id.0,
++            description: "Navigation is not permitted in this embedded browser".into(),
++        });
 +    }
 +}
 +fn report_error(state: &Shared, description: &str, code: i32) {
@@ -2202,7 +2239,7 @@ index 000000000..1fe6ef745
 +    }
 +}
 diff --git a/widgets/src/web_reader.rs b/widgets/src/web_reader.rs
-index 44240521e..a4fcad174 100644
+index 44240521e..97589c92a 100644
 --- a/widgets/src/web_reader.rs
 +++ b/widgets/src/web_reader.rs
 @@ -1,7 +1,7 @@
@@ -2225,7 +2262,20 @@ index 44240521e..a4fcad174 100644
              self.report(cx, "Embedded web pages are unavailable on this platform; this host has no native WebReader adapter".into());
              return false;
          }
-@@ -466,7 +466,7 @@ fn unsupported_platform_never_starts_browser_lifecycle() {
+@@ -421,6 +421,12 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                         self.auth_changed(cx);
+                     }
+                 }
++                if let Some(blocked) = action.downcast_ref::<crate::makepad_draw::makepad_platform::event::NativeSystemBrowserPolicyBlocked>() {
++                    if blocked.browser_id == self.browser_id().0.get_value() && self.open && !self.auth_mode {
++                        // A denied iframe, popup or permission leaves the permitted page usable.
++                        self.report(cx, blocked.description.clone());
++                    }
++                }
+                 if let Some(err) = action.downcast_ref::<crate::makepad_draw::makepad_platform::event::NativeSystemBrowserPageError>() {
+                     if err.browser_id == self.browser_id().0.get_value() && self.open {
+                         if self.auth_mode {
+@@ -466,7 +472,7 @@ fn unsupported_platform_never_starts_browser_lifecycle() {
              let value = vm.eval(script! { use mod.widgets.* WebReader {} });
              WebReader::script_from_value(vm, value)
          });
