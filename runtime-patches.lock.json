@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "96ea6f774be9edc7c26c895883daa4b81b333d33",
+    "tree": "408d6742481ec063b4c152bd8cd381b32faef3f8",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -25,10 +25,10 @@
       "Label keeps its native wrapping default across retained theme reapplication; named labels populated after mounting stay wrapped, while explicit app no-wrap flows remain unchanged.",
       "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status.",
       "Host API v1 apps opt into host-owned device consent before source evaluation. Cached host grants gate camera, microphone and location paths; camera revocation stops an active preview and cached GPS reads fail closed. Older bundles keep their existing capability behavior.",
-      "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
       "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority.",
       "Host request JSON and pre-drain queues are bounded before native allocation; delayed host callbacks retain their nonprompting origin after an agent tool completes or is cancelled.",
-      "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind."
+      "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind.",
+      "Ordinary WebReader embeds sandboxed WebKitGTK in X11/XWayland and private WebView2 controllers on Windows, with bounded UI integration, URL policy, no app bridge and explicit engine errors. Native Wayland and Linux/Windows production embedded authentication remain unsupported."
     ],
     "stacked": [
       {
@@ -110,6 +110,10 @@
       {
         "patch": "tools/runtime-patches/makepad-async-prompt-provenance.patch",
         "sha256": "46bb7620ccb4f6a76a08d0333c0249d2619123da2a2649f55294fd4d35f0d905"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-desktop-webview.patch",
+        "sha256": "f477e4e955a343ae37843db463cf5a3c897f27a62da7a6568939658dc915038b"
       }
     ]
   }

@@ -128,6 +128,10 @@ App Hub's modules have no process form and always open in-process.
 | `OCTOSENSE_REDUCE_MOTION=1` | Keep the glance panel and its toasts still instead of sliding them in and out ([The glance panel](#the-glance-panel)). |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
 
+Embedded pages on Linux X11/XWayland and Windows use native WebKitGTK/WebView2
+child views. See [runtime requirements and acceptance](../docs/desktop-embedded-browser.md);
+missing engines and native Wayland report an explicit error.
+
 ## Application icons
 
 Both `octosense` and `octosense-home` use OctoSense's green eight-petal mark.

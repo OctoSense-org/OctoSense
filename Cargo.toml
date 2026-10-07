@@ -30,6 +30,7 @@ members = [
     "crates/l0-chat",
     "crates/oauth-service",
     "crates/markdown-editor",
+    "crates/browser-smoke",
     "apps/reference",
     "apps/news/host-service",
     "apps/mail/host-service",

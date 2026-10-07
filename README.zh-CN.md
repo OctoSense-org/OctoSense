@@ -363,6 +363,9 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 
 Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md)）：桌面端与手机端以目标平台和 feature 区分，而不是各持一份源码副本。若某个 Shell 源文件同时出现在两个 crate 中，CI 会失败。
 
+桌面源码构建新增 Linux X11/XWayland 和 Windows 的[嵌入式网页阅读器](docs/desktop-embedded-browser.zh-CN.md)，
+引擎运行条件与原生验收独立说明；不改变提供方登录和原生审批支持范围。
+
 ## 依赖
 
 只在根目录 `Cargo.toml` 和运行时锁文件中锁定一次：

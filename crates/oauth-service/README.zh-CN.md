@@ -87,11 +87,10 @@ WKWebView 存储；Android 9+ 使用不可导出的独立进程 Activity 及唯�
 
 GitHub 和 Google 保留现有提供方授权流程。需要访问其他提供方来源的后端登录应
 选择桌面浏览器模式；嵌入模式不会悄悄打开外站。Windows/Linux 保留桌面浏览器登录，
-iOS 后端登录仍不可用。Linux/Windows 的普通 `WebReader.open` 也会明确拒绝，
-因为当前固定版本没有嵌入式 SystemBrowser 适配器。另一个可选 CEF Browser 控件
-不能直接替代认证适配器：它目前使用全局持久 profile，并关闭 Chromium 沙箱，
-不具备这里要求的每应用会话和导航边界。嵌入支持仍需隔离适配器及原生系统验收，
-外部浏览器不能计作嵌入支持。
+iOS 后端登录仍不可用。兼容源码宿主为普通 `WebReader` 新增 Linux X11/XWayland
+（WebKitGTK）和 Windows（WebView2）适配器，运行条件及原生验收范围见
+[桌面浏览器指南](../../docs/desktop-embedded-browser.zh-CN.md)。这不会启用两平台的
+嵌入式后端认证；该宿主入口仍关闭。原生 Wayland 仍明确报不支持。
 
 ## 开发者后端接口约定
 
