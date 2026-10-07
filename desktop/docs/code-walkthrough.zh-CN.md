@@ -16,7 +16,7 @@
 | 原生应用 | 实现 Makepad `AppModule` 的 Rust 模块，或通过窗口管理协议托管的可执行程序。 |
 | 隔离脚本应用 | App Hub 的 Card runner 校验 `manifest.json`，在受限 Makepad Script/Splash VM 中运行 `main.splash`。 |
 | 宿主服务 | Rust 按明确的应用身份执行操作并返回数据。 |
-| 应用 Agent | 按应用/账号限定的 octos peer，拥有会话、工作目录及获授予的工具。 |
+| 应用 Agent | 按应用/账户限定的 octos peer，拥有会话、工作目录及获授予的工具。 |
 | 系统 Agent | Shell 的助手会话，拥有发现、委派和选定系统操作的工具。 |
 | ROM 特权 agent | Android 的 Java/Binder 平台服务 `AgentPlatformService`。 |
 
@@ -92,7 +92,7 @@ cargo run --locked --release -p octosense-card-host --bin card-host -- --bundle 
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosense
 ```
 
-演示账号密码为 `demo`，发送留在演示环境。新商店应用在 OctoScript-App-Design-Flow 中开发，
+演示账户密码为 `demo`，发送留在演示环境。新商店应用在 OctoScript-App-Design-Flow 中开发，
 使用 App Hub 的准入/发布流程。[本地目录配方](../README.zh-CN.md#发布前试用自己的应用)
 用于发布前验证安装到 Shell 的路径。
 
@@ -178,7 +178,7 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 | 边界 | 访问路径 |
 | --- | --- |
 | 脚本存储 | 在应用能力和隔离目录限制下使用运行时 storage API。 |
-| Agent 工作目录 | 通过获授权的文件工具和 Shell 策略访问 peer 的应用/账号目录。 |
+| Agent 工作目录 | 通过获授权的文件工具和 Shell 策略访问 peer 的应用/账户目录。 |
 | 宿主服务数据库 | 经明确的 Rust 方法/工具访问 Calendar 日程、Mail 缓存和 News 数据。凭据保留在宿主确认面板和保险库中。 |
 
 跨应用调用由请求方在 `agent.tools` 中列出带点号的工具名，所有者必须声明可共享，

@@ -4,7 +4,7 @@
 
 **初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
-> **在整个系统中的位置。**系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent。Shell 为每个启用的应用/账号提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
+> **在整个系统中的位置。**系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent。Shell 为每个启用的应用/账户提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
 
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
@@ -218,7 +218,7 @@ appcard/                     原生 AppCard 助手
 ../crates/shell/             octosense-shell：两种打包形态共同链接的唯一 Shell
 ../crates/ai-host/           octosense-ai-host：Shell 的 AI 服务（内核、`llm`、app peers），统一入口
 ../crates/kernel/            octosense-kernel：Shell 的 octos 内核（每进程一个，共享）
-../crates/app-peers/         octosense-app-peers：应用 Agent 的代理，每个（应用，账号）一个 peer
+../crates/app-peers/         octosense-app-peers：应用 Agent 的代理，每个（应用，账户）一个 peer
 ../crates/l0-chat/           octosense-l0-chat：卡片卡内对话（sys.chat）的宿主一侧
 ../.github/workflows/apps.yml   宿主服务、AppCard 和 Shell 服务的 CI
 ```
@@ -368,10 +368,10 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 账户元数据（不含密码）和已拉取的邮件存放在宿主自己的目录（`<host_dir>/mail`），
 位于所有应用沙箱之外。每个账户只授权给添加它的应用。服务会先测试账户可用，再保存。
 
-Mail 收件箱的 **Reconnect account（重新连接账号）**会打开同一个宿主登录面板。
+Mail 收件箱的 **Reconnect account（重新连接账户）**会打开同一个宿主登录面板。
 输入相同邮箱地址、用户名与收件服务器设置，即可更新凭据，同时保留邮件缓存和已保存草稿。
 Android 的密码文件由该安装包的 Keystore 密钥加密；从测试包复制到 Home 并不能
-恢复登录。请在目标包内重新连接，不要用 Remove account 删除账号来重置凭据。
+恢复登录。请在目标包内重新连接，不要用 Remove account 删除账户来重置凭据。
 
 ### `calendar` 服务
 
@@ -426,7 +426,7 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 
 ## 应用 Agent
 
-应用 Agent 是应用自己的 octos peer，归系统 Agent 所有：有自己的工作区（应用的账号文件夹
+应用 Agent 是应用自己的 octos peer，归系统 Agent 所有：有自己的工作区（应用的账户文件夹
 `apps/<id>/accounts/<account>/`）、记忆、模型通道和工具。哪些系统应用有 Agent，以及如何声明
 （[`../crates/shell/src/apps.rs`](../crates/shell/src/apps.rs) 的 `agent_apps`、
 [`../crates/shell/src/host_tools/script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs)）：

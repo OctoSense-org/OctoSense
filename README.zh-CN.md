@@ -30,7 +30,7 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 | **OUP** | octos UI 协议：octos 与其客户端之间的 JSON-RPC 2.0 消息（`octos-ui/v1alpha1`），通常经由内核的 stdin 和 stdout 传递。 |
 | **Shell** | 设备上唯一的 OctoSense 进程。它绘制全部界面、托管应用，并持有与 octos 之间唯一的完整连接。桌面端和手机端构建的是同一个 crate：`crates/shell`。 |
 | **系统 Agent** | 用户的助手：一个 octos 会话，拥有并监督所有应用 Agent。 |
-| **应用 Agent** | 对应某个应用、某个账号的一个 octos peer，所以登录了两个账号的邮件应用有两个 Agent。每个 Agent 有自己的记忆、对话记录、模型和工具列表，通常还有一个工作用的文件夹。 |
+| **应用 Agent** | 对应某个应用、某个账户的一个 octos peer，所以登录了两个账户的邮件应用有两个 Agent。每个 Agent 有自己的记忆、对话记录、模型和工具列表，通常还有一个工作用的文件夹。 |
 | **通道** | 应用 Agent 并行进行的两段对话之一：系统 Agent 的通道，以及用户的通道；应用自己发起的回合也走用户的通道。 |
 | **原生应用** | 用 Makepad 构建、登记在 [`native-apps.json`](native-apps.json) 中的 Rust 应用。它作为模块运行在 Shell 内，或作为独立的沙箱进程运行（桌面端的 Terminal）。 |
 | **脚本应用** | 一个 OctoScript 应用包：manifest、用 Splash（Makepad 的界面脚本语言）编写的界面，以及可选的、写在 `tools.json` 里的 Agent 工具。它只能通过 `host.request` 访问 Shell。系统应用（邮件、日历、新闻等）和所有商店应用都是脚本应用。 |
@@ -68,7 +68,7 @@ flowchart LR
   term["Terminal<br/>在系统沙箱中的进程应用"]
   subgraph kern["octos 内核：子进程，OpenHarmony 上在进程内"]
     sys["系统 Agent<br/>系统会话"]
-    peers["应用 Agent<br/>每个应用、每个账号一个 peer"]
+    peers["应用 Agent<br/>每个应用、每个账户一个 peer"]
   end
   person --> ui
   ui --- mods
@@ -110,7 +110,7 @@ flowchart LR
 - **脚本应用**的 Agent 在获准时立即准备好，此后每次启动时也会准备，并注册应用的工具，所以即使应用没有打开，系统 Agent 的 `peer_list` 也能看到它。
 - **原生应用**的 Agent 属于应用已打开的窗口，只在应用打开期间运行；它的记忆和对话记录在两次打开之间会保留。它的工具也在那个窗口里运行：Notes 没打开时，调用会回答 “Open Notes first”。
 
-退出登录会保留 Agent；删除账号或卸载应用会清除它的对话记录和记忆。
+退出登录会保留 Agent；删除账户或卸载应用会清除它的对话记录和记忆。
 
 以下应用有 Agent：
 
@@ -120,7 +120,7 @@ flowchart LR
 | Terminal（桌面端） | 原生；源码检出构建中为独立进程，发布包中在 Shell 内 | `terminal.read_screen`、`terminal.read_scrollback` | `terminal.run`，只在它作为独立的沙箱进程运行时提供，受 Setup 开关控制，每条命令都要批准 |
 | Calculator、Clock、Notes、Reminders、Weather | 原生，在 Shell 内 | 各自的只读工具 | 同样的只读工具 |
 | App Hub | 原生，在 Shell 内 | `apphub.search`、`apphub.installed`、`apphub.updates`，只读：安装和更新仍在 App Hub 自己的界面上进行 | 同样的只读工具 |
-| 邮件 | 脚本应用 | 绑定当前登录账号的 `mail.*` 工具：读取、卡片（`mail.publish_card`），以及它可以提议但永远不能发送的回复草稿 | – |
+| 邮件 | 脚本应用 | 绑定当前登录账户的 `mail.*` 工具：读取、卡片（`mail.publish_card`），以及它可以提议但永远不能发送的回复草稿 | – |
 | 日历 | 脚本应用 | `calendar.events`、`calendar.add_event`、`calendar.remove_event`（先问用户）、`calendar.notify`、`calendar.agenda` | – |
 | 新闻 | 脚本应用 | `news.list`、`news.read`、`news.notify` | – |
 | 相册、地图、YouTube；手机上的相机 | 脚本应用 | `<app>.notify` | – |
@@ -133,7 +133,7 @@ AI providers 没有 Agent。
 
 1. 系统 Agent 调用 `peer_send_input`，用普通的话写下请求。
 2. octos 不自己运行这一轮，而是把它作为 `peer/input` 事件交给 Shell。
-3. Shell 在应用 Agent 的会话上启动这一轮，带着应用的工具、记忆和审批规则。如果用户没有允许这个 Agent，或者账号已退出登录，Shell 会拒绝这次输入。
+3. Shell 在应用 Agent 的会话上启动这一轮，带着应用的工具、记忆和审批规则。如果用户没有允许这个 Agent，或者账户已退出登录，Shell 会拒绝这次输入。
 4. 结果写到 peer 共享的**黑板**上，系统 Agent 用 `peer_gather` 读取。
 
 下图中，用户请系统 Agent 在 glance 屏幕上提醒自己，邮件的 Agent 随后发出一张卡片：
@@ -169,7 +169,7 @@ sequenceDiagram
 
 `<app>.notify` 工具填充固定的卡片模板（[`notice.card`](crates/shell/resources/glance/notice.card)，或日历的[日程与议程卡片](apps/calendar/host-service/resources)），模型只负责文字。邮件另有 `mail.publish_card`，它接收模型编写的卡片，检查后再发布。无论哪种方式，Shell 都以应用的身份发布，并要求应用拥有 `glance` 权限。
 
-邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。内置路径详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。独立安装的 Gmail 应用也能通过已连接账户服务收到同类事件：它们声明绑定账户的触发器 `<应用短名>.new_message`，其中应用短名是应用 id 的最后一段（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md)）。
+邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账户的工具读取邮件，自己判断要不要发卡片。内置路径详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。独立安装的 Gmail 应用也能通过已连接账户服务收到同类事件：它们声明绑定账户的触发器 `<应用短名>.new_message`，其中应用短名是应用 id 的最后一段（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md)）。
 
 ### 一个应用 Agent，两条通道
 
@@ -184,7 +184,7 @@ flowchart TB
   sys["系统 Agent"]
   person(["用户"])
   mini["Rinx 小程序"]
-  subgraph peer["应用 Agent：每个应用、每个账号一个 peer"]
+  subgraph peer["应用 Agent：每个应用、每个账户一个 peer"]
     direction TB
     lane1["系统 Agent 的通道<br/>peer 会话 #peer-app"]
     lane2["用户的通道<br/>请求上下文 #peerctx-app.id<br/>以 share_history 打开"]
@@ -263,8 +263,8 @@ Agent 能做什么，取决于应用交给它什么。脚本应用把这些都�
 - **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
 - **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。标为 `implemented_by: "app"` 的工具在 Card runner 中还没有执行器。
-- **数据。** Agent 在它所属账号的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账号的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账号的文件夹。
-- **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账号一起清除。
+- **数据。** Agent 在它所属账户的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账户的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账户的文件夹。
+- **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账户一起清除。
 - **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。
 - **事件**（目前只有新邮件）。一个 `triggers.events` 条目让 Agent 不等人开口就能行动。邮件的 Agent 处理新邮件，由它的 `AGENT.md` 和一项分拣技能指导。已安装的应用可以从它的 Gmail 连接收到新邮件事件：应用必须声明 `auth` 和 `gmail`，并在 `agent` 块中设置 `background: true`、列出 `<应用短名>.new_message`，例如 `inbox.new_message`（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md#新邮件与-glance)）。
 
@@ -321,11 +321,11 @@ sequenceDiagram
 
 卡片可以带着与其应用 Agent 的对话，Agent 在用户的通道里回答：
 
-- **打开的卡片**会成为一个工作区：手机上是全屏，桌面端是居中的窗口。如果发布卡片的应用有 Agent，工作区就有 **Card** 和 **Chat** 两个标签页，即使卡片没有声明对话也是如此。Shell 把卡片的数据和本地状态作为上下文交给 Agent，并绑定到发布卡片的账号；对话只使用应用已有的工具和已有的同意。
+- **打开的卡片**会成为一个工作区：手机上是全屏，桌面端是居中的窗口。如果发布卡片的应用有 Agent，工作区就有 **Card** 和 **Chat** 两个标签页，即使卡片没有声明对话也是如此。Shell 把卡片的数据和本地状态作为上下文交给 Agent，并绑定到发布卡片的账户；对话只使用应用已有的工具和已有的同意。
 - **邮件回复卡片**有 **Email** 和 **Chat** 两个标签页，共用一份保存的草稿。Agent 可以修改草稿并提议发送，但只有用户能发送：用户要在宿主的审阅界面上亲手点按确认（见[一次带审批的工具调用](#一次带审批的工具调用)）。Windows 和 Linux 还不能确认发送。详情和手机上的测试结果见[可组合的邮件卡片](docs/mail-composable-cards.zh-CN.md)。
 - **声明了 `sys.chat(app, thread, fields)` 的卡片**保留它声明的对话线程。
 
-所有对话记录都归 Shell 所有，保存在应用的账号文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
+所有对话记录都归 Shell 所有，保存在应用的账户文件夹中；只有用户亲手输入的内容才记为用户的话。模型写的文字会标为 AI 撰写，且从不作为操作执行。详见 [`crates/l0-chat`](crates/l0-chat/README.md)。
 
 #### 提问
 
@@ -352,7 +352,7 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 | `crates/shell/` | Shell，package `octosense-shell`：窗口管理器、应用托管、系统对话和 “Ask &lt;app&gt;” 面板、宿主工具中转和审批路由、手机层，以及主题、壁纸和图标。 |
 | [`crates/ai-host/`](crates/ai-host/README.md) | Shell 的 AI 服务，统一入口，package `octosense-ai-host`：内核服务、`llm` 与 `model` 服务，以及为每个脚本应用提供 Agent（`card.<应用 id>`）的 `octos` 宿主服务。 |
 | [`crates/kernel/`](crates/kernel/README.zh-CN.md) | 作为 Shell 服务的 octos 内核，package `octosense-kernel`：每个进程一个，由 AI providers 配置，供所有使用方共享；以及系统 Agent 的精确工具列表。 |
-| [`crates/app-peers/`](crates/app-peers/README.md) | 应用 Agent 的代理，package `octosense-app-peers`：每个（应用，账号）一个 peer，它的两条通道、工具、`peer/input`、时限和清除。 |
+| [`crates/app-peers/`](crates/app-peers/README.md) | 应用 Agent 的代理，package `octosense-app-peers`：每个（应用，账户）一个 peer，它的两条通道、工具、`peer/input`、时限和清除。 |
 | [`crates/l0-chat/`](crates/l0-chat/README.md) | L0 卡片卡内对话（`sys.chat`）的宿主一侧，package `octosense-l0-chat`。 |
 | [`crates/toolbox/`](crates/toolbox/README.md) | 系统工具箱，package `octosense-toolbox`：工作流模板和 `mod.research`，在 `toolbox-peers` 特性下提供给应用 Agent。 |
 | [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、日历、AI providers、YouTube），均为脚本应用；它们的宿主服务（`mail`、`calendar`、`news`、`llm`）；`apps/reference`；以及需显式启用的 AppCard 助手。 |
