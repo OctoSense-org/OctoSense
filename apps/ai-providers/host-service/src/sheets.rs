@@ -26,7 +26,7 @@ let Field = TextInput{width: Fill height: 40
         border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x007aff border_color_empty: #x00000000 border_radius: 10.0}
     draw_text +: {color: #x1c1c1e color_hover: #x1c1c1e color_focus: #x1c1c1e color_empty: #x8e8e93 color_empty_hover: #x8e8e93}
 }
-let Caption = Label{text: "" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 11}
+let Caption = Label{width: Fill height: Fit flow: Right{wrap: true} text: "" draw_text.color: #x8e8e93 draw_text.text_style.font_size: 11}
 let Note = Label{width: Fill text: "" draw_text.color: #x3a3a3c draw_text.text_style.font_size: 12}
 let Choice = ButtonFlat{height: 32 width: Fill
     draw_bg +: {border_radius: 8.0 color: #xf2f2f7 color_focus: #xf2f2f7 color_hover: #xe5e5ea color_down: #xd1d1d6 border_size: 0.0}
