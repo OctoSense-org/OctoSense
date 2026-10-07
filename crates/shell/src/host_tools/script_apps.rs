@@ -194,7 +194,7 @@ fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
     let root = octosense_appstore::data_root_if_set().ok_or("App Hub has no apps root yet")?;
     let bundle = match octosense_appstore::system::system_app(app) {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.0,
-        None => crate::apps::installed_bundle(&root, app),
+        None => super::admission::installed_bundle(&root, app)?,
     };
     Ok((root, bundle))
 }
@@ -270,6 +270,36 @@ fn connected_args(app: &str, call: &HostToolCall, connection: &str, mut args: Va
     Ok(args)
 }
 
+/// Agent-authored cards may select reviewed bundle code or declare an L0 UI,
+/// but cannot introduce executable Splash. Check the resolved service method:
+/// a bundle's alias (for example `inbox.notify`) has the same boundary.
+fn check_agent_publication(method: &str, args: &Value) -> Result<(), String> {
+    if method != "glance.publish" { return Ok(()); }
+    let args = args.as_object().ok_or("Card publication arguments must be an object")?;
+    if args.contains_key("script") {
+        return Err("Agents cannot publish executable Splash; choose an admitted template with initial data, or L0 source".into());
+    }
+    if let Some(template) = args.get("template") {
+        if !template.as_str().is_some_and(|name| !name.is_empty())
+            || !args.get("initial").is_some_and(Value::is_object)
+            || args.contains_key("source") || args.contains_key("data") {
+            return Err("Template cards require a template name and initial object, without source or data".into());
+        }
+        // Glance resolves this name inside the owner's digest-checked bundle;
+        // initial values are JSON data, never interpolated executable code.
+        return Ok(());
+    }
+    if args.contains_key("initial") {
+        return Err("Initial data requires an admitted template".into());
+    }
+    let source = args.get("source").and_then(Value::as_str).ok_or("An agent card requires an admitted template or L0 source")?;
+    let report = octoscript_ui_l0::check_ui_l0(source);
+    if !report.valid || report.level != octoscript_ui_l0::Level::L0 {
+        return Err("Agent-authored card source must use valid L0 declarations; executable code and L1 expressions are not allowed".into());
+    }
+    Ok(())
+}
+
 impl ToolExecutor for HostServiceExecutor {
     fn execute(&self, call: HostToolCall, reply: ToolReply) {
         if !reply.is_open() {
@@ -280,6 +310,10 @@ impl ToolExecutor for HostServiceExecutor {
             return;
         }
         let method = self.methods.get(&call.name).map(String::as_str).unwrap_or(&call.name);
+        if let Err(message) = check_agent_publication(method, &call.args) {
+            reply.finish(ToolOutcome::error("unsafe_card_source", message));
+            return;
+        }
         let family = method.split('.').next().unwrap_or("");
         // A system app's own namespace is its own host service: both ship
         // with the shell (Calendar's `calendar`, which App Hub's closed
@@ -657,6 +691,47 @@ pub(crate) mod tests {
         let sent: Arc<Mutex<Vec<Value>>> = Arc::default();
         let s = sent.clone();
         (ToolReply::new("c", move |v| s.lock().unwrap().push(v)), sent)
+    }
+
+    #[test]
+    fn agent_publication_aliases_refuse_executable_or_mixed_sources_before_dispatch() {
+        for name in ["inbox.notify", "glance.publish"] {
+            let exec = HostServiceExecutor {
+                app: "org.example.inbox".into(),
+                tools: [name.to_string()].into_iter().collect(),
+                methods: HashMap::from([(name.into(), "glance.publish".into())]),
+                families: ["glance".to_string()].into_iter().collect(),
+                host_dir: std::env::temp_dir(),
+            };
+            for args in [
+                json!({"script":"host.request(\"gmail.send\", {})"}),
+                json!({"template":"glance-workspace.splash","initial":{},"script":null}),
+                json!({"template":"glance-workspace.splash","initial":{},"source":"ignored"}),
+                json!({"template":"glance-workspace.splash","initial":{},"data":{}}),
+                json!({"source":"ui.label(\"x\").set_text(\"y\")"}),
+                json!({"source":"# level: L1\nsource quote sys.quote(ticker: state.sym, fields: [last])\nstate sym { shape: text, initial: \"NVDA\" }\nstate shares { shape: number, initial: 10 }\nview root Surface { TextHero(value: shares * quote.last) }\n"}),
+            ] {
+                let mut request = call(name);
+                request.args = args;
+                let (r, sent) = reply();
+                exec.execute(request, r);
+                assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "unsafe_card_source", "{name}");
+                assert!(!is_waiting(&format!("c-{name}")), "unsafe code must never enter the service queue");
+            }
+        }
+    }
+
+    #[test]
+    fn agent_publication_allows_reviewed_templates_and_declaration_only_l0() {
+        let initial = json!({"message":{"body":"\"; host.request(\"gmail.send\", {}) //"}});
+        assert!(check_agent_publication("glance.publish", &json!({"template":"glance-workspace.splash","initial":initial})).is_ok());
+        let source = "source note sys.dataset(fields: [title])\nview root Surface { TextTitle(text: note.title) }";
+        assert!(check_agent_publication("glance.publish", &json!({"source":source,"data":{"note":{"title":"Delivery"}}})).is_ok());
+        // Other services have their own schemas; this policy must not change them.
+        assert!(check_agent_publication("github.read", &json!({"source":"README.md"})).is_ok());
+        for args in [json!({}), json!([]), json!({"template":"x.splash"}), json!({"source":source,"initial":{}})] {
+            assert!(check_agent_publication("glance.publish", &args).is_err());
+        }
     }
 
     struct Holds(Arc<Mutex<Option<Replier>>>);

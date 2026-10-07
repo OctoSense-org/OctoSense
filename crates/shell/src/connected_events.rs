@@ -13,6 +13,21 @@ fn trigger(app: &str) -> String {
     format!("{}.new_message", app.rsplit('.').next().unwrap_or(app))
 }
 
+fn background_guidance(app: &str) -> bool {
+    match crate::host_tools::script_apps::guidance(app) {
+        Ok(loaded) => loaded.background
+            && loaded.triggers.iter().any(|t| t == &trigger(app))
+            && loaded.families.contains("gmail")
+            && loaded.families.contains("auth"),
+        Err(_) => {
+            // A withdrawn/tampered release cannot keep its cached peer alive.
+            // Release its contexts without changing the person's saved consent.
+            crate::ai_host::contained::revoke(app);
+            false
+        }
+    }
+}
+
 fn allowed(app: &str, connection: &str) -> bool {
     if !crate::mail_background::execution_allowed()
         || crate::agents::access(app) != crate::agents::Access::Allowed
@@ -28,12 +43,7 @@ fn allowed(app: &str, connection: &str) -> bool {
     {
         return false;
     }
-    crate::host_tools::script_apps::guidance(app).is_ok_and(|loaded| {
-        loaded.background
-            && loaded.triggers.iter().any(|t| t == &trigger(app))
-            && loaded.families.contains("gmail")
-            && loaded.families.contains("auth")
-    })
+    background_guidance(app)
 }
 
 fn deliver(event: IncomingEvent, completion: EventCompletion) -> Result<(), String> {
@@ -136,12 +146,7 @@ fn scopes() -> Vec<Scope> {
                 && c.scopes
                     .contains(octosense_oauth_service::api::GMAIL_READ_SCOPE)
                 && crate::agents::access(&app.id) == crate::agents::Access::Allowed
-                && crate::host_tools::script_apps::guidance(&app.id).is_ok_and(|g| {
-                    g.background
-                        && g.triggers.iter().any(|t| t == &trigger(&app.id))
-                        && g.families.contains("gmail")
-                        && g.families.contains("auth")
-                })
+                && background_guidance(&app.id)
                 && !storage.is_signed_out(&app.id, Some(&c.handle))
                 && storage.refused(&app.id, Some(&c.handle)).is_none())
             .then_some((app.id, c.handle))

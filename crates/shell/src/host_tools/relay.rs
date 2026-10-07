@@ -120,6 +120,9 @@ pub enum Event {
 
 /// Everything the relay does to the rest of the shell.
 pub trait Env {
+    /// The owner's/caller's installed release is still admitted now. Separate
+    /// from user consent: withdrawal must not be bypassed by developer mode.
+    fn admitted(&self, _app: &str) -> Result<(), String> { Ok(()) }
     /// The person allowed `app`'s agent (or developer mode did).
     fn consent(&self, app: &str) -> bool;
     /// Developer mode covers `app` (every grant).
@@ -705,6 +708,9 @@ impl Relay {
             env.log(format!("host tools: {} refused {tool} for {} (not granted)", owner, caller.as_audit()));
             return refuse(&reply, "not_granted", format!("{tool} is not granted to {}", crate::approvals::sheet::caller_label(&owner, &caller)));
         }
+        if let Err(why) = Self::check_admission(&call, env) {
+            return refuse(&reply, "app_unavailable", why);
+        }
         if call.caller_kind == CallerKind::AppPeer {
             if !env.consent(&calling) {
                 return refuse(&reply, "consent_pending", "the person has not allowed this app's agent".into());
@@ -825,6 +831,12 @@ impl Relay {
         if !reply.is_open() {
             return;
         }
+        // A catalog refresh can withdraw either side while a human approval
+        // is pending. An earlier admission or approval is not a running lease.
+        if let Err(why) = Self::check_admission(&call, env) {
+            reply.finish(ToolOutcome::error("app_unavailable", why));
+            return;
+        }
         let call_id = call.call_id.clone();
         match target {
             Target::Executor(owner) => {
@@ -844,6 +856,15 @@ impl Relay {
                 env.bus_call(&bus_id, &app, &short, args);
             }
         }
+    }
+
+    fn check_admission(call: &HostToolCall, env: &dyn Env) -> Result<(), String> {
+        env.admitted(&call.app)?;
+        if call.caller_kind == CallerKind::AppPeer {
+            let caller = app_of_peer(&call.calling_app);
+            if caller != call.app { env.admitted(caller)?; }
+        }
+        Ok(())
     }
 
     fn cancel(&mut self, call_id: &str, reason: &str, env: &mut dyn Env) {

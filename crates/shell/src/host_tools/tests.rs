@@ -22,6 +22,7 @@ struct World {
     consent: bool,
     dev_all: bool,
     suspended: bool,
+    unavailable: BTreeSet<String>,
     system: BTreeSet<String>,
     links: Vec<String>,
     link_calls: Vec<(String, KernelToolCall)>,
@@ -43,6 +44,7 @@ impl World {
             consent: true,
             dev_all: false,
             suspended: false,
+            unavailable: BTreeSet::new(),
             system: BTreeSet::new(),
             links: Vec::new(),
             link_calls: Vec::new(),
@@ -60,6 +62,9 @@ impl World {
 }
 
 impl Env for World {
+    fn admitted(&self, app: &str) -> Result<(), String> {
+        if self.unavailable.contains(app) { Err(format!("{app} was withdrawn")) } else { Ok(()) }
+    }
     fn consent(&self, _app: &str) -> bool {
         self.consent
     }
@@ -164,6 +169,27 @@ fn an_apps_own_agent_calls_its_declared_tools_with_the_stamped_identity() {
     relay.handle(Event::Call { call: call("c2", "rinx.admin.wipe", "rinx"), reply: r }, &mut w);
     assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
     assert_eq!(exec.0.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn withdrawn_owner_or_caller_cannot_use_cached_tools_even_in_developer_mode() {
+    for unavailable in ["rinx", "other-app"] {
+        let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.room.list", true, "host")]);
+        relay.catalog.grant("other-app", "rinx", "rinx.room.list");
+        let mut world = World::new(FixedDevMode::off());
+        world.dev_all = true;
+        let mut request = call("before-withdrawal", "rinx.room.list", "other-app");
+        request.app = "rinx".into();
+        let (r, _) = reply("before-withdrawal");
+        relay.handle(Event::Call {call:request.clone(),reply:r}, &mut world);
+        assert_eq!(exec.0.lock().unwrap().len(), 1);
+        world.unavailable.insert(unavailable.into());
+        request.call_id = "after-withdrawal".into();
+        let (r, sent) = reply("after-withdrawal");
+        relay.handle(Event::Call {call:request,reply:r}, &mut world);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "app_unavailable");
+        assert_eq!(exec.0.lock().unwrap().len(), 1, "cached executor must not run again");
+    }
 }
 
 fn reply_pair(id: &str) -> (ToolReply, Sent) {
@@ -389,6 +415,27 @@ fn developer_mode_overrides_the_apps_sheet() {
         relay.handle(event, &mut w);
     }
     assert_eq!(exec.0.lock().unwrap().len(), 1, "no sheet in developer mode (ADR 0004 §13)");
+}
+
+#[test]
+fn withdrawal_while_review_is_open_wins_over_later_approval() {
+    for withdrawn in ["rinx", "calendar"] {
+        let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.message.send", true, "app")]);
+        relay.catalog.grant("calendar", "rinx", "rinx.message.send");
+        let mut world = World::new(FixedDevMode::off());
+        let sheet = Arc::new(SendSheet::default());
+        world.router.register_app_confirm("rinx", Box::new(super::SheetBridge {app:"rinx".into(),sheet}));
+        let mut request = call("withdraw-during-review", "rinx.message.send", "calendar");
+        request.confirm_required = true;
+        let (r, sent) = reply("withdraw-during-review");
+        relay.handle(Event::Call {call:request,reply:r}, &mut world);
+        assert!(exec.0.lock().unwrap().is_empty());
+        world.unavailable.insert(withdrawn.into());
+        world.router.app_confirm_answered(&RequestId(format!("{CONFIRM_PREFIX}withdraw-during-review")),true,"approved",2).unwrap();
+        for event in world.decided() { relay.handle(event, &mut world); }
+        assert!(exec.0.lock().unwrap().is_empty());
+        assert_eq!(sent.lock().unwrap().last().unwrap()["error"]["kind"], "app_unavailable");
+    }
 }
 
 #[test]
