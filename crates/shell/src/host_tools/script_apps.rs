@@ -345,7 +345,8 @@ impl ToolExecutor for HostServiceExecutor {
                 return;
             }
         };
-        if matches!(family, "gmail" | "gcalendar" | "github") {
+        if matches!(family, "gmail" | "gcalendar" | "github")
+            || matches!(method, "auth.backend.me" | "auth.backend.request") {
             let Some(connection) = octosense_oauth_service::host::active_connection(&self.host_dir, &self.app) else {
                 reply.finish(ToolOutcome::error("account_scope", "Connect this app account first"));
                 return;
@@ -385,7 +386,7 @@ impl ToolExecutor for HostServiceExecutor {
 /// The relay already validated schemas, grants and approval. The runner
 /// validates against its own immutable admitted bundle again before dispatch.
 struct ScriptAppExecutor { host: HostServiceExecutor, tools: BTreeSet<String> }
-struct ScriptWaiting { token: Option<String>, reply: ToolReply, host_dir: PathBuf }
+struct ScriptWaiting { token: Option<String>, reply: ToolReply, host_dir: PathBuf, account: String }
 type ScriptKey = (String, String);
 static SCRIPT_WAITING: Mutex<Option<HashMap<ScriptKey, ScriptWaiting>>> = Mutex::new(None);
 fn current_script_account(host_dir: &Path, app: &str) -> String {
@@ -421,13 +422,10 @@ impl ToolExecutor for ScriptAppExecutor {
             let mut map = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner());
             let map = map.get_or_insert_with(HashMap::new);
             if map.contains_key(&key) { reply.finish(ToolOutcome::error("duplicate_call", "This app tool call is already pending")); return; }
-            map.insert(key.clone(), ScriptWaiting { token: None, reply: reply.clone(), host_dir: self.host.host_dir.clone() });
+            map.insert(key.clone(), ScriptWaiting { token: None, reply: reply.clone(), host_dir: self.host.host_dir.clone(), account: account.clone() });
         }
         let done_key = key.clone();
-        let done = Box::new(move |result| {
-            let waiting = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_mut().and_then(|map|map.remove(&done_key));
-            if let Some(waiting) = waiting { waiting.reply.finish(script_outcome(result)); }
-        });
+        let done = Box::new(move |result| complete_script_call(&done_key, result));
         match octosense_appstore::script_tools::submit(&self.host.app, &call.name, call.args,
             &account, &call.calling_app, std::time::Duration::from_millis(call.timeout_ms.max(1)), done) {
             Ok(token) => {
@@ -450,6 +448,18 @@ impl ToolExecutor for ScriptAppExecutor {
         self.host.cancel(call_id);
     }
 }
+fn complete_script_call(key: &ScriptKey, result: Result<Value, String>) {
+    let waiting = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_mut().and_then(|map|map.remove(key));
+    if let Some(waiting) = waiting {
+        // A system/cross-app caller also loses the old account's result.
+        // This final check closes the interval between UI polls and completion.
+        let result = if current_script_account(&waiting.host_dir, &key.0) != waiting.account {
+            Err("account_scope: the app account changed".into())
+        } else { result };
+        waiting.reply.finish(script_outcome(result));
+    }
+}
+
 fn poll_script_accounts() {
     let entries: Vec<_> = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_ref().map(|map| map.iter().map(|((app,_),w)| (app.clone(),w.host_dir.clone(),w.token.clone(),w.reply.is_open())).collect()).unwrap_or_default();
     for (app, host_dir, token, open) in entries {
@@ -775,6 +785,52 @@ pub(crate) mod tests {
         request.account=Some("caller-account".into());
         assert_eq!(connected_args("org.example.inbox",&request,"current",json!({})).unwrap()["connection"],"current");
         assert!(connected_args("org.example.inbox",&request,"current",json!({"connection":"caller-account"})).is_err());
+    }
+
+    #[test]
+    fn backend_data_aliases_cannot_reuse_a_stale_peer_with_the_current_handle() {
+        let app = "org.example.backend-scope";
+        let current = "a0b1c2d3-1111-4222-8333-444455556666";
+        let host_dir = std::env::temp_dir().join(format!("backend-tool-scope-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(host_dir.join("oauth")).unwrap();
+        // Synthetic metadata only. No credential is created or read: the
+        // account broker must refuse before the service or vault is reached.
+        std::fs::write(host_dir.join("oauth/connections.json"), json!({
+            "entries": {current: {"handle":current,"app_id":app,"provider":"github","subject":"synthetic-scope-test","label":"Synthetic","scopes":[],"expires_at":null}},
+            "active": {app:current}
+        }).to_string()).unwrap();
+        assert_eq!(octosense_oauth_service::host::active_connection(&host_dir,app).unwrap().handle,current);
+        for method in ["auth.backend.me", "auth.backend.request"] {
+            let alias = "backend.lookup";
+            let exec = HostServiceExecutor {app:app.into(), tools:[alias.into()].into_iter().collect(),
+                methods:HashMap::from([(alias.into(),method.into())]),families:["auth".into()].into_iter().collect(),host_dir:host_dir.clone()};
+            let mut request = call(alias);
+            request.calling_app = format!("card.{app}");
+            request.account = Some("retired-connection".into());
+            request.args = json!({"connection":current,"operation":"notes.list"});
+            let (r,sent) = reply();exec.execute(request,r);
+            let output = sent.lock().unwrap();
+            assert_eq!(output[0]["error"]["kind"],"account_scope", "{method}");
+            assert!(output[0]["error"]["message"].as_str().unwrap().contains("account changed"),"{}",output[0]);
+            assert!(!is_waiting(&format!("c-{alias}")),"stale peer must not reach a backend service");
+        }
+        std::fs::remove_dir_all(host_dir).unwrap();
+    }
+
+    #[test]
+    fn account_change_before_script_completion_drops_the_old_result_without_a_poll() {
+        let app = "org.example.pending-account";
+        let key = (app.into(),"pending-switch".into());
+        let host_dir = std::env::temp_dir().join(format!("script-result-account-{}", uuid::Uuid::new_v4()));
+        let (r,sent) = reply();
+        SCRIPT_WAITING.lock().unwrap().get_or_insert_with(HashMap::new).insert(key.clone(), ScriptWaiting {
+            token:None,reply:r,host_dir:host_dir.clone(),account:"retired-account".into()
+        });
+        // The disconnected app is now on its device account; no poll has run.
+        complete_script_call(&key, Ok(json!({"private":"old account data"})));
+        let output=sent.lock().unwrap();
+        assert_eq!(output[0]["error"]["kind"],"account_scope");
+        assert!(output[0].get("data").is_none(),"old data must not be forwarded");
     }
 
     #[test]
