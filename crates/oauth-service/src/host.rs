@@ -7,7 +7,6 @@ use crate::{
     Connections, CredentialStore,
 };
 use octosense_appstore::services::{self, HostService, Replier, ServiceCall, ServiceHost};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeSet, HashMap},
@@ -217,27 +216,8 @@ impl CredentialStore for DesktopVault {
 }
 pub(crate) static STORE_LOCK: Mutex<()> = Mutex::new(());
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Client {
-    pub client_id: String,
-    pub client_secret: Option<String>,
-}
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Clients {
-    pub github: Option<Client>,
-    pub google: Option<Client>,
-}
-pub(crate) fn clients(root: &Path) -> Result<Clients, String> {
-    let bytes = std::fs::read(root.join("oauth/clients.json")).map_err(|_| {
-        "OAuth is not configured. Add provider registrations in the host's oauth/clients.json"
-    })?;
-    if bytes.len() > 16384 {
-        return Err("OAuth host configuration exceeds its limit".into());
-    }
-    serde_json::from_slice(&bytes).map_err(|_| "Invalid OAuth host configuration".into())
-}
+// Authorization and both connector refresh paths resolve the same identity.
+pub(crate) use crate::registration::clients;
 pub(crate) fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -491,7 +471,7 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
         Provider::Github => settings.github,
         Provider::Google => settings.google,
     }
-    .ok_or("This provider is not configured in OctoSense")?;
+    .ok_or(p.provider.sign_in_unavailable())?;
     let registration = ClientRegistration {
         client_id: client.client_id,
     };

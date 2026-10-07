@@ -123,6 +123,11 @@ def main():
     with tempfile.TemporaryDirectory(prefix='connected-oauth-check-') as directory:
         root = Path(directory)
         shutil.copytree(args.bundle, root / 'bundle')
+        # Complete operator override disables release registrations for this
+        # credential-free regression, even in a distributor-configured build.
+        registration_path = root / 'profile/.host/oauth/clients.json'
+        registration_path.parent.mkdir(parents=True)
+        registration_path.write_text('{}\n')
         with (root / 'native.log').open('w+') as log:
             child = subprocess.Popen([str(args.binary), '--bundle=' + str(root / 'bundle'),
                                       '--app-data=' + str(root / 'profile'), '--remote'],
@@ -170,6 +175,24 @@ def main():
                 call('/click', x=x + width / 2, y=y + height / 2, wait=1)
                 result['steps'].append('click ' + text)
 
+            def wait_widget(widget_id, kind):
+                until = time.monotonic() + 12
+                while time.monotonic() < until:
+                    matches = [row for row in rows() if row.get('i') == widget_id
+                               and row.get('ty') == kind]
+                    if len(matches) == 1:
+                        return matches[0]
+                    if len(matches) > 1:
+                        raise AssertionError('Ambiguous visible widget: ' + widget_id)
+                    time.sleep(.1)
+                raise AssertionError('Missing visible widget: ' + widget_id)
+
+            def click_widget(widget_id):
+                row = wait_widget(widget_id, 'Button')
+                x, y, width, height = row['r']
+                call('/click', x=x + width / 2, y=y + height / 2, wait=1)
+                result['steps'].append('click widget ' + widget_id)
+
             def capture(name):
                 source = Path(call('/g')['png'])
                 shutil.copyfile(source, run / (name + '.png'))
@@ -190,15 +213,30 @@ def main():
                     time.sleep(.1)
                 if not endpoint:
                     raise RuntimeError('Native instrument did not start')
-                wait_for('Local draft restored')
-                click('Markdown')
-                field = next(row for row in rows() if row.get('i') == 'markdown' and row.get('ty') == 'TextInput')
+                # The native editor uses icon actions, not the older text tabs.
+                wait_widget('markdown', 'TextInput')
+                # The sample boots its saved draft on a 50 ms startup timer.
+                # Visible native widgets alone do not mean that boot has run.
+                time.sleep(.25)
+                click_widget('source_mode')
+                field = wait_widget('markdown', 'TextInput')
                 x, y, width, height = field['r']
                 call('/click', x=x + width / 2, y=y + min(height / 2, 20), wait=1)
                 note = '# Consent regression\n\nKeep this draft: café, 谢谢。\n'
                 call('/t', t=note, wait=1)
                 assert next(row for row in rows() if row.get('i') == 'markdown')['t'] == note
-                click('Repository')
+                app_id = json.loads((args.bundle / 'manifest.json').read_text())['id']
+                deadline = time.monotonic() + 5
+                while True:
+                    drafts = [json.loads(path.read_text()) for path in
+                              (root / 'profile' / app_id).glob('draft-*.json')]
+                    if drafts and max(drafts, key=lambda item: item['revision'])['draft']['content'] == note:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise AssertionError('Exact local draft did not persist before OAuth')
+                    time.sleep(.1)
+                capture('00-saved-draft')
+                click_widget('repository_button')
                 click('Connect public repositories')
                 wait_for('Connect GitHub')
                 wait_for('Read and update your public repositories')
@@ -210,7 +248,7 @@ def main():
                 # The snapshot contains geometrically visible app widgets below
                 # the opaque host sheet. An arbitrary status-label match could
                 # therefore accept an error shown only behind the sheet.
-                wait_for('OAuth is not configured', widget_id='oauth_status')
+                wait_for('GitHub sign-in is unavailable in this build', widget_id='oauth_status')
                 capture('02-missing-registration')
                 before = png_rgb(run / '01-host-consent.png')
                 after = png_rgb(run / '02-missing-registration.png')
@@ -227,10 +265,10 @@ def main():
                 click('Cancel')
                 wait_for('Back to note', button=True)
                 click('Back to note')
-                wait_for('Local note')
+                wait_widget('markdown', 'TextInput')
                 assert next(row for row in rows() if row.get('i') == 'markdown')['t'] == note
                 capture('03-return-to-draft')
-                click('Repository')
+                click_widget('repository_button')
                 click('Connect public repositories')
                 wait_for('Connect GitHub')
                 click('Cancel')
@@ -240,7 +278,6 @@ def main():
                 capture('04-cancel-before-continue')
                 # Account selection uses the real host store/service, with
                 # metadata-only fixtures: no scopes, tokens or provider calls.
-                app_id = json.loads((args.bundle / 'manifest.json').read_text())['id']
                 first = '00000000-0000-4000-8000-000000000001'
                 second = '00000000-0000-4000-8000-000000000002'
                 metadata = {'entries': {}, 'active': {app_id: first}}
@@ -250,11 +287,11 @@ def main():
                 metadata_path = root / 'profile/.host/oauth/connections.json'
                 metadata_path.parent.mkdir(parents=True, exist_ok=True)
                 metadata_path.write_text(json.dumps(metadata))
-                click('Repository')
+                click_widget('repository_button')
                 wait_for('Selected · Fixture account A', button=True)
                 click('Fixture account B')
                 wait_for('Selected · Fixture account B', button=True)
-                wait_for('OAuth is not configured')
+                wait_for('This operation needs additional authorization')
                 assert json.loads(metadata_path.read_text())['active'][app_id] == second
                 capture('05-selected-host-account')
                 click('Back to note')
@@ -263,7 +300,7 @@ def main():
                 saved = max(drafts, key=lambda item: item['revision'])['draft']
                 assert saved['connection'] == '' and saved['content'] == note, 'Account switch rebound the local draft'
                 result['account_selection'] = 'pass: host active A loaded, B selected and persisted; unbound local draft unchanged'
-                result['account_fixture'] = 'Synthetic metadata only, no scopes or credentials; provider reads stop at missing host registration'
+                result['account_fixture'] = 'Synthetic metadata only, no scopes or credentials; provider reads stop at missing authorization'
                 capture('06-account-selection-retains-draft')
                 errors = [line for line in call('/log', n=100)['l']
                           if any(word in line for word in ('ScriptError', '[ERROR]', 'panicked'))]

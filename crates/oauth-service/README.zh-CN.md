@@ -24,26 +24,81 @@ Gmail 发信和 Calendar 写入均**未验证**。真实 DeepSeek peer 已通过
 
 本变更不会删除或迁移内置 Mail、Calendar 应用。
 
-## 宿主配置
+## 用户登录
 
-宿主读取 `<apps root>/.host/oauth/clients.json`，该文件必须位于应用包和源码管理之外。
-以下仅为占位符：
+由发行方配置好的版本会自带 OctoSense 的提供方注册信息。在应用中选择
+**Connect GitHub** 或 **Connect Google**，审阅访问权限，再到浏览器完成登录。
+用户不需要开发者账户、Google Cloud 项目或 JSON 配置文件。个人令牌仍保存在
+宿主的平台凭据库中，并绑定到发起请求的应用。
+
+如果当前构建没有相应注册信息，登录面板会说明该版本暂不支持登录，并建议联系
+发行方或更新版本。新增解析器不会自动向提供方注册 OctoSense；维护者提供注册
+信息并完成验证后，发行版本才具备登录条件。现有 beta.2 下载包不含注册默认值。
+
+## 身份、提供方数据与应用自己的后端
+
+三者是独立选择，均不要求用户拥有 OctoSense 账户。
+
+| 用途 | 当前接口约定 |
+| --- | --- |
+| 在应用内识别 GitHub 用户 | 授予 `auth` 并请求 `read:user`。宿主验证 GitHub 数字用户 ID 和登录名，返回绑定该应用的句柄，以及 `app_id`、`provider`、`subject`、`label`、`scopes` 和可选 `expires_at`。不需要仓库访问权限；也不提供已验证的邮箱地址。 |
+| 在应用内识别 Google 用户 | `auth` 也允许仅用于身份的 `openid`、`email`、`profile` 权限，无需 Gmail 或 Calendar 能力。宿主验证提供方的 subject，并仅在 Google 确认邮箱已验证时将邮箱作为标签。同样受平台授权支持范围限制。 |
+| 访问提供方数据 | GitHub 仓库另外需要 `github` 能力及仓库权限。Google Gmail、Calendar 分别需要 `gmail` / `gcalendar` 能力和相应权限，与应用选择哪种登录身份无关。 |
+| 注册或登录应用自己的后端 | 可复用的宿主管理后端登录／会话服务仍是**提议，尚未实现**。本地连接句柄或返回的资料不是后端可验证的 SSO 凭证。 |
+
+拟议的后端流程由开发者的 HTTPS 登录页面提供 GitHub 登录，或自己的注册和登录。
+后端负责验证身份并签发自身会话，宿主再为该应用保存独立的后端会话。共享连接器的
+GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通过自身 OAuth 流程，
+取得用户另行授权的 GitHub 令牌。现有网络访问能力不会让本地 GitHub 资料变成
+远程后端可信的身份证明。应用自身不得收集密码或提供方秘密凭据。
+
+## 配置发行版本（维护者）
+
+由发行方以自己的身份注册一次 OctoSense：创建并启用设备授权的 GitHub OAuth
+应用；为 Google 桌面创建 Desktop 应用，启用示例使用的 Gmail/Calendar API，
+并配置同意页面。面向公众使用敏感或受限权限时，需要完成相应 Google 验证；
+测试用户可授权处于测试阶段的注册。终端用户不需要重复这些步骤。参阅
+[GitHub 官方说明](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)
+和 [Google 原生应用说明](https://developers.google.com/identity/protocols/oauth2/native-app)。
+
+在 Cargo 编译宿主时提供下列环境变量，包括桌面打包工具调用 Cargo 的情况。
+这些变量不是运行时覆盖项；打包工具的跳过构建选项不能把它们加入已有二进制。
+
+| 构建变量 | 原生应用注册值 |
+| --- | --- |
+| `OCTOSENSE_GITHUB_CLIENT_ID` | OctoSense 的 GitHub OAuth 客户端 ID；不使用 GitHub 客户端密钥 |
+| `OCTOSENSE_GOOGLE_DESKTOP_CLIENT_ID` | OctoSense 的 Google Desktop 客户端 ID |
+| `OCTOSENSE_GOOGLE_DESKTOP_REGISTRATION_VALUE` | 可选 Desktop 注册值；该原生客户端需要时作为 Google 的 `client_secret` 发送 |
+
+这些值会随宿主可执行文件分发，无法在其中保密。它们用于标识发行方的原生应用，
+不是用户密码、访问或刷新令牌、签名私钥，也不是机密 Web 客户端密钥。不要把
+这些私人凭据放进构建变量或应用包。真实注册值保留在源码提交之外，只使用
+发行方自己拥有的注册；不要将 TV/设备或 Web 客户端用于 Google 桌面授权。
+
+同一解析器为授权和连接器的令牌刷新提供注册信息。测试使用虚构注册，不证明
+真实登录成功。分发前须用真实账户验证同意、刷新、取消和撤销流程。Google 登录
+通过系统浏览器、PKCE 和回环回调完成，嵌入式 WebView 不能替代受支持的授权。
+Google Android 仍需要原生适配器。
+
+## 高级运维覆盖配置
+
+可选的 `<apps root>/.host/oauth/clients.json` 会替换整套构建注册信息。省略的
+提供方会被禁用；`{}` 禁用两者。文件格式错误、过大或无法读取时，登录失败，
+不会悄悄改用另一注册。仅在文件不存在时使用构建默认值。该运维文件须放在应用包
+和源码管理之外。以下为占位示例（真实注册仍**未验证**）：
 
 ```json
 {
   "github": { "client_id": "REGISTERED_GITHUB_CLIENT_ID" },
   "google": {
     "client_id": "REGISTERED_GOOGLE_DESKTOP_CLIENT_ID",
-    "client_secret": "GOOGLE_DESKTOP_REGISTRATION_VALUE_IF_REQUIRED"
+    "client_secret": "NATIVE_DESKTOP_REGISTRATION_VALUE_IF_REQUIRED"
   }
 }
 ```
 
-注册启用设备授权的 GitHub OAuth 应用。Google 桌面需注册 Desktop 应用，启用示例所需的
-Gmail/Calendar API，并配置授权同意页和测试用户。注册及真实登录**未在替身测试中执行**。
-参考 [GitHub 官方说明](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)
-和 [Google 原生应用说明](https://developers.google.com/identity/protocols/oauth2/native-app)。
-安装式应用的 client secret 不能替代 PKCE 和应用身份隔离。
+改变客户端注册不会迁移已有提供方令牌；受影响的账户需要使用预期注册重新连接。
+安装型应用的注册值不能替代 PKCE 或应用所有权。
 
 宿主先展示申请应用和权限，再进入服务商授权。应用不能指定端点、回调地址或 client secret。
 GitHub 设备代码仅出现在宿主面板。Google 校验 state、来源、路径、有效期和单次使用。

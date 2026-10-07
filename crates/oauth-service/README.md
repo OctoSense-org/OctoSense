@@ -27,28 +27,97 @@ samples have not been tested on the OnePlus 6.
 
 This change does not remove or migrate the built-in Mail or Calendar apps.
 
-## Register providers in the host
+## Sign in as a user
 
-The host reads `<apps root>/.host/oauth/clients.json`. Keep this file outside
-all bundles and source control. Example shape, with placeholders only:
+A distributor-configured build supplies OctoSense's provider registration.
+Choose **Connect GitHub** or **Connect Google** in the app, review the requested
+access, and complete sign-in in your browser. You do not need a developer
+account, a Google Cloud project, or a JSON configuration file. Your own tokens
+remain in the host's platform credential store, bound to the requesting app.
+
+If this build has no registration for the provider, its sign-in sheet explains
+that sign-in is unavailable and directs you to the distributor or an update.
+Adding this resolver does not register OctoSense with either provider: a release
+is ready for sign-in only after its maintainer supplies and validates the
+registration. Existing beta.2 downloads contain no registration defaults.
+
+## Identity, provider access and an app's own backend
+
+These are separate choices; none requires an OctoSense account.
+
+| Purpose | Current contract |
+| --- | --- |
+| Identify a GitHub user inside an app | Grant `auth` and request `read:user`. The host verifies GitHub's numeric user ID and login, then returns an app-bound handle plus `app_id`, `provider`, `subject`, `label`, `scopes` and optional `expires_at`. Repository access is not required. This does not provide a verified email address. |
+| Identify a Google user inside an app | `auth` also admits identity-only `openid`, `email` and `profile` scopes without Gmail or Calendar capabilities. The host verifies the provider subject and uses the email as its label only when Google reports it verified. The same platform authorization limitations apply. |
+| Access provider data | GitHub repositories additionally require the `github` capability and repository scopes. Google Gmail and Calendar require their own `gmail` / `gcalendar` capabilities and scopes, regardless of which identity an app uses for login. |
+| Register or log in to an app's own backend | A reusable host-managed backend login/session service is **proposed, not implemented**. A local connection handle or returned profile is not a backend-verifiable SSO assertion. |
+
+The proposed backend flow lets the developer's HTTPS login page offer GitHub
+sign-in or its own registration and login. The backend verifies identity and
+issues its own session; the host would store that separate session for the app.
+The shared connector's GitHub or Google tokens are not exported to app backends.
+A developer's backend may obtain its own separately consented GitHub token
+through its own OAuth flow. Existing network access does not turn local GitHub
+metadata into proof that a remote backend can trust. Apps must not collect
+passwords or provider secrets themselves.
+
+## Configure a release (maintainers)
+
+Register OctoSense once under the distributor's identity. Create a GitHub OAuth
+app with device flow enabled. For Google desktop, create a Desktop app, enable
+the Gmail/Calendar APIs used by the samples, and configure the consent screen.
+Public access to sensitive/restricted scopes requires the applicable Google
+verification; test users can authorize a testing registration. End users do
+not repeat these setup steps. Follow
+[GitHub's authorization instructions](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)
+and [Google's native-app instructions](https://developers.google.com/identity/protocols/oauth2/native-app).
+
+Supply these environment variables when Cargo compiles the host, including when
+Cargo is invoked by the desktop packager. They are not runtime environment
+overrides. A packager's skip-build option cannot add them to an existing binary.
+
+| Build variable | Native registration value |
+| --- | --- |
+| `OCTOSENSE_GITHUB_CLIENT_ID` | OctoSense's GitHub OAuth client ID; no GitHub client secret is used |
+| `OCTOSENSE_GOOGLE_DESKTOP_CLIENT_ID` | OctoSense's Google Desktop client ID |
+| `OCTOSENSE_GOOGLE_DESKTOP_REGISTRATION_VALUE` | Optional Desktop registration value sent as Google's `client_secret`, if required for that native client |
+
+These values ship in the host executable and cannot be kept confidential there.
+They identify the distributor's native application; they are not user passwords,
+access/refresh tokens, signing keys, or confidential web-client secrets. Never
+put those private credentials in build variables or app bundles. Keep real
+registration values outside committed source and use only registrations owned
+by the distributor. Do not reuse a TV/device or web client for Google desktop.
+
+The same resolver supplies authorization and connector token refresh. Tests use
+fictional registrations and do not establish live provider sign-in. Before
+distribution, validate a real account's consent, refresh, cancellation and
+revocation. Google sign-in uses the system browser with PKCE and a loopback
+callback; an embedded WebView is not a substitute for supported authorization.
+Google Android still requires its native adapter.
+
+## Advanced operator override
+
+An optional `<apps root>/.host/oauth/clients.json` replaces the complete set of
+build registrations. Omitted providers are disabled; `{}` disables both. A
+malformed, oversized or unreadable override refuses sign-in rather than silently
+switching to another registration. Only an absent file uses build defaults.
+Keep this operator file outside app bundles and source control. Placeholder
+example (live registration is **unverified**):
 
 ```json
 {
   "github": { "client_id": "REGISTERED_GITHUB_CLIENT_ID" },
   "google": {
     "client_id": "REGISTERED_GOOGLE_DESKTOP_CLIENT_ID",
-    "client_secret": "GOOGLE_DESKTOP_REGISTRATION_VALUE_IF_REQUIRED"
+    "client_secret": "NATIVE_DESKTOP_REGISTRATION_VALUE_IF_REQUIRED"
   }
 }
 ```
 
-Register a GitHub OAuth app with device flow enabled. For Google desktop,
-register a Desktop app and enable the Gmail/Calendar APIs needed by the samples;
-configure consent/test users for that registration. Registration and live login
-are **not executed by the fixture tests**. Follow
-[GitHub's authorization instructions](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)
-and [Google's native-app instructions](https://developers.google.com/identity/protocols/oauth2/native-app).
-An installed-app client secret is not a substitute for PKCE or app ownership.
+Changing the client registration does not migrate existing provider tokens.
+Reconnect affected accounts using the intended registration. An installed-app
+registration value is not a substitute for PKCE or app ownership.
 
 The host presents app identity and scope descriptions before opening provider
 authorization. Apps cannot supply endpoints, redirect URLs or client secrets.

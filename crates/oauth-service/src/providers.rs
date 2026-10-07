@@ -25,6 +25,12 @@ pub fn scope_words(scope: &str) -> &str {
 }
 
 impl Provider {
+    pub(crate) fn sign_in_unavailable(self) -> &'static str {
+        match self {
+            Self::Github => "GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.",
+            Self::Google => "Google sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.",
+        }
+    }
     pub fn name(self) -> &'static str {
         match self {
             Self::Github => "github",
