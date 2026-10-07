@@ -24,13 +24,13 @@ input,button{font:inherit;padding:12px}article{max-width:560px}p{line-height:1.6
 It contains no account, password or personal information.</p>
 <input id="message" aria-label="Message"><button id="submit">Save locally</button>
 <p id="result">Ready</p></article><script>
-let webMessageProbe='absent';
+let webMessageProbe='absent',webMessageErrorKind='';
 if(window.chrome&&chrome.webview&&typeof chrome.webview.postMessage==='function'){
 try{chrome.webview.postMessage({kind:'synthetic-denied-probe'});webMessageProbe='accepted'}
-catch(error){webMessageProbe=error instanceof Error?'denied':'unexpected-exception'}}
+catch(error){webMessageProbe=error instanceof Error?'denied':'unexpected-exception';webMessageErrorKind=Object.prototype.toString.call(error)}}
 function report(kind,extra={}){fetch(location.href,{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({kind,width:innerWidth,height:innerHeight,
-bridge:typeof window.octos_native!=='undefined'||typeof window.octos!=='undefined',webMessageProbe,...extra})}).catch(()=>{})}
+bridge:typeof window.octos_native!=='undefined'||typeof window.octos!=='undefined',webMessageProbe,webMessageErrorKind,...extra})}).catch(()=>{})}
 document.querySelector('#submit').onclick=()=>{let value=document.querySelector('#message').value;
 document.querySelector('#result').textContent=value;document.title='Saved: '+value;report('edited',{value})};
 report('loaded');setInterval(()=>report('heartbeat'),250);
@@ -140,7 +140,14 @@ def main():
             loaded = next(e for e in server_events() if e.get('body', {}).get('kind') == 'loaded')
             assert loaded['body']['width'] > 100 and loaded['body']['height'] > 100, loaded['body']
             assert not loaded['body']['bridge'], 'Ordinary page received an OctoSense bridge'
-            assert loaded['body']['webMessageProbe'] in ('absent', 'denied'), 'Page-to-host messaging was accepted'
+            if loaded['body']['webMessageProbe'] not in ('absent', 'denied'):
+                policy = {}
+                if os.name == 'nt' and args.require_snapshot:
+                    diagnostic = command('inspect')
+                    wait(lambda: (root / f'inspect-{diagnostic}.json').is_file(), 'native policy diagnostics')
+                    metadata = json.loads((root / f'inspect-{diagnostic}.json').read_text(encoding='utf-8'))
+                    policy = {key: metadata.get(key) for key in ('error', 'webMessageEnabled', 'hostObjectsAllowed')}
+                raise AssertionError(f"Page-to-host probe={loaded['body']['webMessageProbe']}, exception={loaded['body']['webMessageErrorKind']}, native policy={policy}")
             if os.name == 'nt':
                 assert loaded['body']['webMessageProbe'] == 'denied', 'WebView2 messaging denial was not exercised'
             assert loaded['cookie_present'], 'Browser did not retain its own HttpOnly fixture cookie'
