@@ -70,7 +70,8 @@ fn cache_path(name){ return moved(name, "cache/" + name) }
 
 // ---- Places: pure functions (crates/shell/src/maps_model_tests.rs runs them) ----
 
-// A field that may be missing: reading a missing one can raise, not give nil.
+// A field that may be missing. A missing key on an object reads nil, but
+// indexing what is not an object (a string, a number) raises.
 fn optional(o, key, fallback){
     if o == nil { return fallback }
     let v = try { o[key] } catch { nil }
@@ -99,10 +100,13 @@ fn cap(s){
     if chars[0] >= 97 && chars[0] <= 122 { chars[0] = chars[0] - 32 }
     chars.to_string()
 }
-// OpenStreetMap's key and value as a category: a few renamed, the rest as
-// written ("ice_cream" reads "Ice cream"); "yes" says only what the key is.
+// OpenStreetMap's key and value as a category: Photon's streets come as
+// `highway` hits (primary, residential, …) and read "Street"; a few values
+// are renamed, the rest read as written ("ice_cream" reads "Ice cream");
+// "yes" says only what the key is.
 let CATEGORY = {fuel: "Gas station" atm: "ATM" doctors: "Doctor" townhall: "Town hall" house: "Address"}
 fn category(key, value){
+    if key == "highway" { return "Street" }
     let v = value
     if v == "" || v == "yes" { v = key }
     let named = optional(CATEGORY, v, nil)
@@ -114,25 +118,32 @@ fn has_id(list, id){
     false
 }
 // Photon's GeoJSON as places {id name cat label lat lon}: nil when the answer
-// is not Photon's (an error page), [] when nothing matched. `id` is
-// OpenStreetMap's "N:123", "W:…" or "R:…", or "".
+// is not Photon's (an error page, an error message), [] when nothing matched.
+// `id` is OpenStreetMap's "N:123", "W:…" or "R:…", or "". The label is the
+// address parts the name does not already say, each once.
 fn photon_hits(body){
     let feats = optional(body.parse_json(), "features", nil)
-    if feats == nil { return nil }
+    if feats == nil || !feats.is_array() { return nil }
     let out = []
     for f in feats {
         let p = optional(f, "properties", nil)
         let c = optional(optional(f, "geometry", nil), "coordinates", nil)
-        if p == nil || c == nil || c.len() < 2 { continue }
+        if p == nil || c == nil || !c.is_array() || c.len() < 2 { continue }
         let name = text_of(p, "name")
         let street = text_of(p, "street")
-        if name == "" && street != "" { name = (text_of(p, "housenumber") + " " + street).trim() }
+        let address = false
+        if name == "" && street != "" {
+            name = (text_of(p, "housenumber") + " " + street).trim()
+            address = true
+        }
         if name == "" { name = text_of(p, "city") }
         if name == "" { name = "Unnamed place" }
         let label = ""
         for k in ["street" "city" "state" "country"] {
             let v = text_of(p, k)
-            if v != "" && v != name && label.search(v) < 0 {
+            if address && k == "street" { v = "" }
+            // Whole parts: "Kansas" is not already said by "Kansas City".
+            if v != "" && v != name && (", " + label + ", ").search(", " + v + ", ") < 0 {
                 if label != "" { label = label + ", " }
                 label = label + v
             }
