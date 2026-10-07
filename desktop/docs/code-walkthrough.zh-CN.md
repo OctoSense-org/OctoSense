@@ -16,7 +16,7 @@
 | 原生应用 | 实现 Makepad `AppModule` 的 Rust 模块，或通过窗口管理协议托管的可执行程序。 |
 | 隔离脚本应用 | App Hub 的 Card runner 校验 `manifest.json`，在受限 Makepad Script/Splash VM 中运行 `main.splash`。 |
 | 宿主服务 | Rust 按明确的应用身份执行操作并返回数据。 |
-| 应用 Agent | 按应用/账号限定的 octos peer，拥有会话、工作目录及获授予的工具。 |
+| 应用 Agent | 按应用/账户限定的 octos peer，拥有会话、工作目录及获授予的工具。 |
 | 系统 Agent | Shell 的助手会话，拥有发现、委派和选定系统操作的工具。 |
 | ROM 特权 agent | Android 的 Java/Binder 平台服务 `AgentPlatformService`。 |
 
@@ -70,8 +70,10 @@ Wayland 会话中通常走这条路径；模块回退和覆盖配置见[桌面 R
 Shell 将帧归属到它启动的应用，检查 `agent.octos` 授权和用户同意，再把请求接到模块也使用的
 app-peer broker。模块的 `OctosPeer` 通道则通过 `module_connected` 和
 `on_module_frame` 接入同一路径。工具结果和取消沿该链路返回；进程死亡时，关闭它的上下文，
-让等待中的调用失败，同时保留持久 peer。**当前发布的进程应用没有申请 Agent**：
-Terminal 清单虽然暴露工具，但 `agent.octos` 列表为空。
+让等待中的调用失败，同时保留持久 peer。**Terminal 是唯一带 Agent 的进程应用**：它的
+`native-apps.json` 条目为 Agent 授予了全部四个 `octos.*` 服务；它自己的 Agent 只能调用两个只读工具
+`terminal.read_screen` 和 `terminal.read_scrollback`（`own_tools`）。`native-apps.json`
+中的另一个进程应用 Task 没有 Agent。
 
 ## 3. 运行并追踪脚本 bundle
 
@@ -83,14 +85,14 @@ Terminal 清单虽然暴露工具，但 `agent.octos` 列表为空。
 cargo run --locked --release -p octosense-card-host --bin card-host -- --bundle /path/to/OctoSense/apps/news/bundle --system
 ```
 
-`--system` 接纳内置 `os.*` bundle。Shell 的宿主服务和 Agent UI 需要完整 Shell。
+`--system` 准入内置 `os.*` bundle。Shell 的宿主服务和 Agent UI 需要完整 Shell。
 例如，在 OctoSense 根目录运行 Mail 的演示服务：
 
 ```sh
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosense
 ```
 
-演示账号密码为 `demo`，发送留在演示环境。新商店应用在 OctoScript-App-Design-Flow 中开发，
+演示账户密码为 `demo`，发送留在演示环境。新商店应用在 OctoScript-App-Design-Flow 中开发，
 使用 App Hub 的准入/发布流程。[本地目录配方](../README.zh-CN.md#发布前试用自己的应用)
 用于发布前验证安装到 Shell 的路径。
 
@@ -161,6 +163,11 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 上述固定通知工具接受文本参数，script-card API 则用于更丰富的应用界面。
 用户在这些界面上的操作使用应用自己的 API 权限。
 
+在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`，只能指定应用已准入应用包中的模板
+并提供 `initial` 对象，或提交合法的 L0 源码，不能提交 `script`（见
+[`script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs) 中的 `check_agent_publication`）。
+`desktop-v0.1.0-beta.2` 仍接受 Agent 发布的 `script` 卡片。
+
 实现旁的测试直接展示这些约定：`script_apps.rs` 中的
 `a_host_service_tool_runs_as_the_apps_own_request`、`glance_notice.rs` 中的
 `system_apps_without_a_service_of_their_own_get_the_notice_service`，以及 `glance.rs` 中的
@@ -171,7 +178,7 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 | 边界 | 访问路径 |
 | --- | --- |
 | 脚本存储 | 在应用能力和隔离目录限制下使用运行时 storage API。 |
-| Agent 工作目录 | 通过获授权的文件工具和 Shell 策略访问 peer 的应用/账号目录。 |
+| Agent 工作目录 | 通过获授权的文件工具和 Shell 策略访问 peer 的应用/账户目录。 |
 | 宿主服务数据库 | 经明确的 Rust 方法/工具访问 Calendar 日程、Mail 缓存和 News 数据。凭据保留在宿主确认面板和保险库中。 |
 
 跨应用调用由请求方在 `agent.tools` 中列出带点号的工具名，所有者必须声明可共享，

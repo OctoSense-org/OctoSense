@@ -1,4 +1,4 @@
-# 联网应用原生验收
+# 连接账户应用的原生验收
 
 [English](README.md) | 简体中文
 
@@ -38,33 +38,35 @@ MAKEPAD_HIDE_WINDOWS=1 target/release/examples/connected-app-host \
 `acceptance-fixtures` 默认关闭。普通二进制不能用 `--provider-fixture` 打开此能力。
 原生替身注册要求隔离、明确标记的配置、空提供商注册和合成账户元数据，拒绝普通配置；
 它只对该准确根目录生效，不改变服务权限、账户归属、应用身份或审核检查。
-不得将用户的 GitHub／Google 提供商凭据复制到这些配置中。真实模型流程使用
+不得将用户的 GitHub/Google 提供商凭据复制到这些配置中。真实模型流程使用
 另行配置的私有内核配置，绝不把它作为公开证据导出。
 
-Notes 验证选中账户、Unicode 编辑／预览、重启、分页及空仓库、目录和第二文件选择、
-未保存修改保护、准确主机审核／取消、新旧文件提交、SHA 冲突、响应丢失后不自动重试，
+Notes 验证选中账户、Unicode 编辑/预览、重启、分页及空仓库、目录和第二文件选择、
+未保存修改保护、准确主机审核/取消、新旧文件提交、SHA 冲突、响应丢失后不自动重试，
 以及离线重启。四次明确的合成写入尝试与提供商记录逐项核对。响应丢失案例故意模拟
 远程提交已发生但回复丢失，应用必须保留未确认草稿，等待用户核对。
+这些写入检查早于 [#356](https://github.com/OctoSense-org/OctoSense/pull/356)。在 `main` 上，原生审阅界面只接受亲手点按的
+**Approve & Save**，所以驱动的合成点击在那里无法批准提交。这一结论来自代码，驱动尚未在 `main` 上运行。
 
-每次运行在 `target/connected-notes-e2e/run-*` 保留源码／二进制／PNG 摘要、控件快照、
+每次运行在 `target/connected-notes-e2e/run-*` 保留源码/二进制/PNG 摘要、控件快照、
 原生日志和回执，也保留失败。驱动只关闭自己创建的进程并清理临时配置。
 视觉验收还必须逐张检查原始 PNG。`native.py` 驱动 Makepad instrument；输入事件是
-合成事件，不是物理批准。
+合成事件，不是亲手点按的批准。
 
-小型主机不启动生产代理内核、新邮件收集器或 Glance。Inbox／Calendar 主机流程使用
+小型主机不启动生产代理内核、新邮件收集器或 Glance。Inbox/Calendar 主机流程使用
 嵌入实际 Shell 的 `connected-inbox-e2e`。提供商替身不能证明真实 OAuth、真实投递、
-Android／Windows／Linux 原生界面、公开目录发布或真人批准。
+Android/Windows/Linux 原生界面、公开目录发布或亲手点按的批准。
 
 ## 平台证据（2026-10-06）
 
 | 检查 | 结果及边界 |
 | --- | --- |
-| 最终 macOS 单元／构建检查 | [48 项 OAuth、953 项 shell 测试、桌面／Home 构建和两套源码图检查通过](evidence/final-local-checks.json)。通常忽略的系统凭据库测试也单独明确执行并通过。 |
-| macOS 系统凭据适配器 | [一次明确的 Keychain 测试通过](evidence/macos-vault.json)：保存／重开／逻辑撤销及配置文件无明文凭据。不代表真实 OAuth。 |
-| Linux 协议及主机适配器 | [43 项协议测试及主机编译通过](evidence/linux-provider.json)。明确运行的原生凭据库测试因主机没有可用、已解锁的 Secret Service 而失败。没有 GUI／显示环境。 |
+| 最终 macOS 单元/构建检查 | [48 项 OAuth、953 项 shell 测试、桌面/Home 构建和两套源码图检查通过](evidence/final-local-checks.json)。通常忽略的系统凭据库测试也单独明确执行并通过。 |
+| macOS 系统凭据适配器 | [一次明确的 Keychain 测试通过](evidence/macos-vault.json)：保存/重开/逻辑撤销及配置文件无明文凭据。不代表真实 OAuth。 |
+| Linux 协议及主机适配器 | [43 项协议测试及主机编译通过](evidence/linux-provider.json)。明确运行的原生凭据库测试因主机没有可用、已解锁的 Secret Service 而失败。没有 GUI/显示环境。 |
 | Windows | [在 Mac 上交叉编译](evidence/windows-unverified.json)因缺少 Windows SDK 头文件，在到达主机 crate 前停止。原生运行未验证。 |
-| OnePlus 6 | [Enter 修复后通过本地 Notes 真机检查](evidence/notes-oneplus-20261006/README.zh-CN.md)：软键盘／硬件输入、预览和精确冷恢复。[复现](android-notes.zh-CN.md)使用独立签名测试 APK。[Rinx 编辑器更新](evidence/notes-rinx-phone-20261006/README.zh-CN.md)已验证图标控件及输入时隐藏悬浮导航；真实提供商验收仍待完成；共享 Google 原生授权尚未实现。 |
-| 浸泡后的修复 | 宿主审核独占绘制修复通过 [954 项 shell 测试及所有桌面／Home 构建和源码图检查](evidence/glance-modal-validation.json)。之后仅改 Java 的 Enter 修复通过 [96 项 ROM、18 项 setup 测试和补丁栈检查](evidence/android-enter-validation.json)，并完成上述独立手机重测。 |
+| OnePlus 6 | [Enter 修复后通过本地 Notes 真机检查](evidence/notes-oneplus-20261006/README.zh-CN.md)：软键盘/硬件输入、预览和精确冷恢复。[复现](android-notes.zh-CN.md)使用独立签名测试 APK。[Rinx 编辑器更新](evidence/notes-rinx-phone-20261006/README.zh-CN.md)已验证图标控件及输入时隐藏悬浮导航；真实提供商验收仍待完成；共享 Google 原生授权尚未实现。 |
+| 浸泡后的修复 | 宿主审核独占绘制修复通过 [954 项 shell 测试及所有桌面/Home 构建和源码图检查](evidence/glance-modal-validation.json)。之后仅改 Java 的 Enter 修复通过 [96 项 ROM、18 项 setup 测试和补丁栈检查](evidence/android-enter-validation.json)，并完成上述独立手机重测。 |
 
 启动包含可选原生应用的 shell 单元测试前，应将 `RINX_DATA_DIR` 指向全新、私有、
 绝对路径目录。Rinx 首次访问时缓存根目录，运行中修改不能隔离已有进程。
@@ -92,8 +94,8 @@ p50/p95/最大值。这里计量的是包含原生帧等待和状态轮询的 Ma
 36 轮及独立 120 轮密集测试，保留精确草稿、原生截图检查、耗时边界与内存增长记录。
 
 Calendar 和 Inbox 的独立驱动及证据位于 App Design Flow：
-[Calendar](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/google-calendar/ACCEPTANCE.md)
-及 [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/feat/connected-sample-apps/examples/connected-apps/inbox/README.zh-CN.md)。
+[Calendar（英文）](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)
+及 [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/inbox/README.zh-CN.md)。
 两者主机不同：Calendar 使用提供商主机，Inbox 使用完整 Shell 并实际调用 DeepSeek，
 不能将耗时与内存数值合成同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)
 包含修正监控状态后的 Inbox 包，三者均通过重开和篡改拒绝，未修改公开目录。

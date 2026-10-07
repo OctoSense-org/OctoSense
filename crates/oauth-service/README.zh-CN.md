@@ -1,4 +1,4 @@
-# 联网账户与 App Hub 示例
+# 已连接账户与 App Hub 示例
 
 [English](README.md) | 简体中文
 
@@ -25,16 +25,24 @@ Google 使用专用测试账户，仅请求 `openid email profile`。合成后�
 真实 DeepSeek peer 已通过已安装应用的准入工具
 处理合成新邮件，并通过 Chat 修改持久化回复。Calendar peer 也通过自身工具读取
 选中的合成日程，回答准确标题、时间和地点。这证明模型与工具集成，不代表 Google 投递。
-三个普通示例尚未在 OnePlus 6 上测试。
+三个示例中，只有 GitHub Notes 在 OnePlus 6 上检查过：在一个独立的测试 APK 中检查了它的本地编辑，常用的 Home 保持不变
+（[OnePlus Notes 检查记录](../../tools/connected-e2e/evidence/notes-oneplus-20261006/README.zh-CN.md)）；
+Inbox Assistant 和 Google Calendar 尚未在该设备上运行。
 
 | 平台 | 服务商授权 | 凭据保存 | Gmail 发信审批 |
 | --- | --- | --- | --- |
-| macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；远程点击被拒绝，真人点击未验证 |
+| macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；远程点击被拒绝，亲手点按未验证 |
 | Windows | 同样的桌面流程，平台运行未验证 | Windows Credential Manager；未在 Windows 验证 | 不支持，明确拒绝 |
-| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；原生测试被构建主机未解锁／不可用的凭据库拒绝 | 不支持，明确拒绝 |
-| Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有物理触摸来源校验；本示例未验证 |
+| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；原生测试被构建主机未解锁/不可用的凭据库拒绝 | 不支持，明确拒绝 |
+| Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有的亲手点按来源校验；本示例未验证 |
 
-本变更不会删除或迁移内置 Mail、Calendar 应用。
+`desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本；
+Home（手机）还没有能安装连接账户应用的发布版本。beta.2 的 `auth` 没有后端登录，服务商注册也只来自 `clients.json`
+（见[高级运维覆盖配置](#高级运维覆盖配置)）。beta.2 也早于 [#356](https://github.com/OctoSense-org/OctoSense/pull/356)：它已合入 `main`，但还没有进入任何发布版本。
+所以在 beta.2 上，只有 Gmail 发信检查是否亲手点按，GitHub 和 Calendar 保存使用的宿主面板不做这项检查；Agent 的 `glance.publish` 仍接受 `script` 卡片；
+Calendar 用 `gcalendar.sync` 和同步 token 同步全部日程历史，而不是下文的有限日期窗口。更早的 `desktop-v0.1.0-beta.1` 和 `home-v0.1.0-beta.1`
+使用应用契约 1.1.0，这一版没有 `auth` 能力：它们的商店会列出声明了 `auth` 的应用，但拒绝安装。
+这些服务不取代也不迁移内置 Mail、Calendar 应用。
 
 ## 用户登录
 
@@ -202,10 +210,10 @@ Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`�
 面向公众的 Google 生产审批仍未验证。
 
 GitHub 保存冻结仓库、分支、路径、内容及原 blob SHA。Calendar 保存冻结日历、事件和 ETag；
-过期 ETag 会报冲突，不会静默覆盖。Gmail 原生审核冻结持久化草稿版本、收件人及正文。
-这三种写入都必须由真人激活宿主原生审核控件；按下与释放时分别检查原生输入来源，
+过期 ETag 会报冲突，不会静默覆盖。Gmail 原生审阅界面冻结持久化草稿版本、收件人及正文。
+这三种写入都必须由用户亲手点按宿主原生审阅界面上的控件；按下与释放时分别检查原生输入来源，
 然后才把一次性能力交给工作线程。脚本、Agent、远程测试及 JSON 标记不能批准保存或发送。
-关闭审核会取消尚未提交的请求；写入前再次检查当前账户。结果不明的 Gmail 提交保持
+关闭审阅界面会取消尚未提交的请求；写入前再次检查当前账户。结果不明的 Gmail 提交保持
 不明状态，不会盲目重试。
 
 `gcalendar.refresh` 原子替换有限日期范围内的日程：从今天之前 30 天的 UTC 零点，
@@ -226,7 +234,7 @@ ETag 和例外，排除取消的实例。同一次刷新所有分页使用相同
 ## Agent 如何调用共享服务
 
 普通应用声明自己的工具名，例如 `inbox.message`，并在 `tools.json` 显式映射
-`host_method: "gmail.message"`。App Hub 只接纳经过审查的方法，并校验最低风险等级、
+`host_method: "gmail.message"`。App Hub 只准入经过审查的方法，并校验最低风险等级、
 私有数据标记和服务能力。凭据管理、审批和远程写入不开放为工具别名。
 
 Shell 从摘要校验后的包读取声明，通过 `HostServiceExecutor` 路由；检查目标服务，注入
@@ -237,18 +245,18 @@ Shell 从摘要校验后的包读取声明，通过 `HostServiceExecutor` 路由
 ## 新邮件与 Glance
 
 桌面脚本卡片先显示标题和摘要，打开模板卡片后提供有界应用视口，让编辑器及滚动
-区域获得实际高度。模板工作区自己提供 Email／Reply／Chat 导航，宿主不重复添加
+区域获得实际高度。模板工作区自己提供 Email/Reply/Chat 导航，宿主不重复添加
 Chat 标签。原有未选择视口模式的脚本卡片继续按内容测量并由外层滚动。
 前台发布的卡片可以在未请求代理同意前恢复；撤销 Glance 权限、明确拒绝代理、
 退出账户和切换账户仍阻止恢复。
 
 `connected_events.rs` 发现声明 Gmail/auth、已获 Agent 同意、允许后台且声明
-`<应用短名>.new_message` 的已安装应用。采集器先建立只面向未来的 Gmail history 基线，
+`<应用短名>.new_message`（应用短名即应用 id 的最后一段）的已安装应用。采集器先建立只面向未来的 Gmail history 基线，
 允许运行时通常每五分钟轮询。登录并允许应用 Agent 后刷新，等 `gmail.events.status`
 显示 `baseline_ready: true` **再发测试邮件**。历史收件箱不会一次性变成通知。
 history 失效时使用有边界的恢复扫描。
 
-新事件进入该账户的 peer，携带接纳的 AGENT.md/技能及“不可信邮件数据”边界。模型读取邮件，
+新事件进入该账户的 peer，携带已准入的 AGENT.md/技能及“不可信邮件数据”边界。模型读取邮件，
 决定静默或重要。重要邮件可选用包内的 `glance-workspace.splash` 模板并提供消息数据；
 宿主注入当前连接并保留展开后的源码，模型无需重写 Reply/Chat 编辑器。
 
@@ -271,8 +279,8 @@ Android 现有 JobScheduler 适配器也会在有时限的任务中驱动该采�
 开发者后端的阅读顺序是 `backend.rs`（注册校验、PKCE 和有界 HTTP 请求）→
 `host_backend.rs`（同意面板、回调、刷新和退出）→ `store.rs`（应用归属与注册绑定）。
 Google 令牌响应仅对其文档规定的两种身份权限 URI 别名做规范化；缺少权限仍会拒绝授权。
-`api.rs` 处理服务商请求；`calendar_cache.rs` 原子提交分页快照；`inbox.rs` 持有草稿/审核/发送状态；
-`inbox_events.rs` 持有游标、租约和决定。Shell 管理获准 peer、原生审核和 Glance。
+`api.rs` 处理服务商请求；`calendar_cache.rs` 原子提交分页快照；`inbox.rs` 持有草稿/审阅/发送状态；
+`inbox_events.rs` 持有游标、租约和决定。Shell 管理获准 peer、原生审阅界面和 Glance。
 peer 是应用账户身份，不等于一个工作线程或 Tokio task。
 
 以下命令已从 OctoSense 根目录运行：
@@ -283,7 +291,8 @@ cargo check --locked -p octosense-oauth-service --features host
 cargo test --offline --locked -p octosense-oauth-service --features host,acceptance-fixtures --lib
 ```
 
-最后一条命令通过 75 项测试，跳过一项需要显式运行的平台凭据库测试。独立原生后端
+在 [#353](https://github.com/OctoSense-org/OctoSense/pull/353) 时，最后一条命令通过 75 项测试，跳过一项需要显式运行的平台凭据库测试。
+#356 新增了测试，`main` 上的测试数量尚未记录。独立原生后端
 验收实际使用了平台凭据库，并覆盖进程冷重启。真实提供方验收覆盖身份登录、重启后
 连接元数据恢复及本地断开，不含提供方令牌刷新或远程撤销。注册信息、账户详情及
 原始证据均保留在仓库之外。
@@ -298,11 +307,11 @@ cargo test --offline --locked -p octosense-oauth-service --features host,accepta
 cargo test --locked -p octosense-oauth-service --features host host_vault_acceptance::platform_vault_persists_across_reopen_without_plaintext_credentials -- --ignored --exact
 ```
 
-这不验证服务商授权或实体发送审批，也不能证明旧 Mail 凭据适配器中无返回值的删除
+这不验证服务商授权或亲手点按的发送审批，也不能证明旧 Mail 凭据适配器中无返回值的删除
 操作实际删掉了系统条目。测试不请求服务商，也不读取已有账户。
 
 测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、有限窗口分页、窗口移动、重复实例、ETag、
 DST、跨应用可用性、刷新提交竞态、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见
-[Design Flow connected-apps](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/feat/connected-sample-apps/examples/connected-apps)。
+[Design Flow connected-apps](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/main/examples/connected-apps)。
 普通 `card-host` 不提供 OAuth、Gmail、Calendar 或 octos 宿主。`connected-app-host` 是独立的
 私有配置测试宿主；不启动 Agent 内核，也不能代替生产安装验证。

@@ -4,7 +4,16 @@
 
 本文完整说明 OctoSense 是怎样构建的，并给出每个部分背后的代码。阅读前请先了解 README 的[关键概念](../README.zh-CN.md#关键概念)和[整体如何运作](../README.zh-CN.md#整体如何运作)。各类应用能调用什么、如何在本地运行 AI 服务，见 [ai-services.zh-CN.md](ai-services.zh-CN.md)；想按顺序读源码，请看[代码导读](architecture-walkthrough.zh-CN.md)。
 
-背后的决策是 [ADR 0001](adr/0001-one-octosense-repository.md)（英文，一个仓库）、[ADR 0002](adr/0002-event-driven-app-agents.md)（英文，事件驱动的应用 Agent；Proposed，部分已实现）、[ADR 0003](adr/0003-shared-octos-client-access.md)（英文，Talk to Octos）、[ADR 0004](adr/0004-native-apps-hosting-and-peers.md)（英文，原生应用、应用 Agent、跨应用协作与审批）和 [ADR 0007](adr/0007-composable-mail-action-cards.zh-CN.md)（带草稿、对话和宿主审批发送的邮件卡片；进行中）。正文描述代码的现状；尚未实现的部分标为**尚未实现**或**规划中**。
+背后的决策是以下 ADR：
+
+- [ADR 0001](adr/0001-one-octosense-repository.md)（英文）：一个仓库
+- [ADR 0002](adr/0002-event-driven-app-agents.md)（英文）：事件驱动的应用 Agent（Proposed，部分已实现）
+- [ADR 0003](adr/0003-shared-octos-client-access.md)（英文）：Talk to Octos
+- [ADR 0004](adr/0004-native-apps-hosting-and-peers.md)（英文）：原生应用、应用 Agent、跨应用协作与审批
+- [ADR 0007](adr/0007-composable-mail-action-cards.zh-CN.md)：带草稿、对话和宿主审批发送的邮件卡片（进行中）
+- [ADR 0010](adr/0010-shared-oauth-and-connected-apps.zh-CN.md)：共享 OAuth 与连接账户的应用（进行中；真实账户登录已在 macOS 上通过；GitHub 写入、Gmail 发信和设备验收待完成）
+
+正文描述代码的现状；尚未实现的部分标为**尚未实现**或**规划中**。
 
 ## 目录
 
@@ -44,7 +53,7 @@ flowchart LR
   term["进程应用（桌面端）<br/>Terminal、Task"]
   subgraph kern["octos 内核（每个 Shell 一个）"]
     sys["系统 Agent 会话<br/>（profile _main）"]
-    peers["应用 peer<br/>每个（应用，账号）一个"]
+    peers["应用 peer<br/>每个（应用，账户）一个"]
   end
   ext["Talk to Octos 客户端<br/>网页、终端（需手动开启）"]
   person --> wm
@@ -100,7 +109,7 @@ flowchart LR
 
 | 应用 | macOS、Windows | Linux | 手机 | 桌面端 / 手机构建（`shells`） | Agent |
 | --- | --- | --- | --- | --- | --- |
-| App Hub（商店、Card runner） | 模块 | 模块 | 模块 | default / default | – |
+| App Hub（商店、Card runner） | 模块 | 模块 | 模块 | default / default | peer link |
 | Rinx | 模块 | 模块 | 模块 | default / default | 注入的服务 |
 | Terminal | **进程** | 有 Vulkan 和 Wayland 时为**进程**，否则为模块 | 模块 | default / off | peer link；`terminal.run` 归系统 Agent |
 | Calculator、Clock、Notes、Reminders、Weather | 模块 | 模块 | 模块 | default / default | peer link |
@@ -163,13 +172,13 @@ octos 只列出已准备好的 peer，所以其余情况由 Shell 告诉系统 A
 
 ### 应用 Agent
 
-应用 Agent 是宿主拥有的 octos peer，对应一个（应用，账号），归系统 Agent 的会话所有（octos UPCR-2026-034），由一个代理驱动（`crates/app-peers/src/broker.rs`）。它的记忆命名空间是 `app/<app>/acct-<tag>`，内核若不确认这个命名空间，代理就拒绝该内核。它的工作区是账号文件夹（见[第 6 节](#6-存储与机密)），宿主 token 保存在 `<core dir>/../app-peers` 下的一条记录中，在 Unix 上仅所有者可读写。每次 `peer/prepare` 和重新连接之后，代理都会注册它的工具；注册失败的 peer 不运行任何回合。
+应用 Agent 是宿主拥有的 octos peer，对应一个（应用，账户），归系统 Agent 的会话所有（octos UPCR-2026-034），由一个代理驱动（`crates/app-peers/src/broker.rs`）。它的记忆命名空间是 `app/<app>/acct-<tag>`，内核若不确认这个命名空间，代理就拒绝该内核。它的工作区是账户文件夹（见[第 6 节](#6-存储与机密)），宿主 token 保存在 `<core dir>/../app-peers` 下的一条记录中，在 Unix 上仅所有者可读写。每次 `peer/prepare` 和重新连接之后，代理都会注册它的工具；注册失败的 peer 不运行任何回合。
 
-脚本应用的 peer 名为 `card.<app id>`（`crates/ai-host/src/contained.rs`）。不区分账号的应用以 `device` 身份行事；邮件以最近登录的账号行事。哪些应用有 Agent 由 `apps::agent_apps` 决定；没有任何授权的应用得不到代理。
+脚本应用的 peer 名为 `card.<app id>`（`crates/ai-host/src/contained.rs`）。不区分账户的应用以 `device` 身份行事；邮件以最近登录的账户行事，连接账户的应用以它当前的连接行事（见[已连接账户](#已连接账户)）。哪些应用有 Agent 由 `apps::agent_apps` 决定；没有任何授权的应用得不到代理。
 
 - 脚本应用的 peer 在 Agent 获准时准备好，此后每次启动时（`agents::start`）也会准备，所以即使应用关着，`peer_list` 也能看到它。
 - 原生应用的 peer 属于它已打开的实例。同时打开多个实例时，最早的那个驱动 peer，它关闭后由下一个接管（`driver_of`、`take_over`）。
-- 退出登录会挂起该账号：它的上下文关闭，工具调用得到 `signed_out`，也不会启动 `peer/input` 回合。重新登录会恢复同一个 peer。
+- 退出登录会挂起该账户：它的上下文关闭，工具调用得到 `signed_out`，也不会启动 `peer/input` 回合。重新登录会恢复同一个 peer。
 
 ### 两条通道
 
@@ -239,7 +248,7 @@ octos 的 peer 工具（[`crates/octos-agent/src/tools/`](https://github.com/oct
 
 octos 把系统 Agent 的输入以 `peer/input {peer, session_id, input_id, turn_id, text}` 的形式送到驱动该 peer 的连接上。代理用内核给出的回合 id 自己启动这一轮，所以这一轮带着应用的工具、记忆和审批（见[系统 Agent 如何与应用 Agent 通信](../README.zh-CN.md#系统-agent-如何与应用-agent-通信)）。
 
-如果 Agent 未获准、账号已退出登录、工作区被拒绝，或这一轮启动失败，代理会回复 `peer/input/reject` 并说明原因（`ShellToolHost::admit_input`）。内核每个会话同时只运行一轮，也不排队，所以代理为每个 peer 维护一个系统 Agent 输入队列，逐个启动。已有 8 个在等待时，新的输入会以 `busy` 被拒绝。用户的通道从不在这个队列里等待。
+如果 Agent 未获准、账户已退出登录、工作区被拒绝，或这一轮启动失败，代理会回复 `peer/input/reject` 并说明原因（`ShellToolHost::admit_input`）。内核每个会话同时只运行一轮，也不排队，所以代理为每个 peer 维护一个系统 Agent 输入队列，逐个启动。已有 8 个在等待时，新的输入会以 `busy` 被拒绝。用户的通道从不在这个队列里等待。
 
 ### 应用与它自己的 Agent
 
@@ -247,17 +256,17 @@ octos 把系统 Agent 的输入以 `peer/input {peer, session_id, input_id, turn
 
 | 路径 | 使用者 | 工作方式 |
 | --- | --- | --- |
-| Peer link（`crates/shell/src/peer_link/`） | Calculator、Clock、Notes、Reminders、Weather、Terminal | Makepad 的 `OctosPeer` 客户端。进程应用的链接走它的 hub 连接。模块的 `OctosPeer::open` 先暂存一条内存中的通道，`module_host` 把它认领给打开它的实例，Shell 再以同样的帧提供服务（`peer_link::module_connected`）。`serve_tools` 应答 Agent 的工具调用。 |
+| Peer link（`crates/shell/src/peer_link/`） | App Hub、Calculator、Clock、Notes、Reminders、Weather、Terminal | Makepad 的 `OctosPeer` 客户端。进程应用的链接走它的 hub 连接。模块的 `OctosPeer::open` 先暂存一条内存中的通道，`module_host` 把它认领给打开它的实例，Shell 再以同样的帧提供服务（`peer_link::module_connected`）。`serve_tools` 应答 Agent 的工具调用。 |
 | 注入的服务 | Rinx | 在模块 `create` 之前调用 `ai_host::offer`，在 `create` 中调用 `injection::claim`，实例由此得到一个限定范围的 `OctosAppService`（`open_conversation`、`open_context`）。 |
 | `host.request("octos.*")` | 商店应用 | Card runner 的 `octos` 宿主服务（`crates/ai-host/src/contained.rs`）：只限 manifest 声明的服务，并需首次使用同意。 |
 
-在 peer link 上，身份就是那个套接字或模块实例；一次调用的账号、上下文和客户端，来自 Shell 对该应用所开上下文的记录。进程退出时，它未完成的调用失败（除只读调用外均为 `outcome_unknown`），peer 保留。
+在 peer link 上，身份就是那个套接字或模块实例；一次调用的账户、上下文和客户端，来自 Shell 对该应用所开上下文的记录。进程退出时，它未完成的调用失败（除只读调用外均为 `outcome_unknown`），peer 保留。
 
 Rinx 在其锁定的版本中，只把注入的服务用于小程序的上下文。用户通过 “Ask Rinx” 面板与它的 Agent 对话；Rinx 自己的助手工具在 AI 服务总线上，它的 Agent 不声明任何工具。脚本应用收不到推送事件：`octos.turn.start` 返回汇总后的回复，`octos.session.history` 返回按时间合并的两条通道（**尚未实现：**流式事件）。没有系统应用声明 `octos.*`；它们的 Agent 由 Shell 驱动。
 
 ### AI 服务总线
 
-总线是 Makepad 的另一种 AI 模型：一个中心对话，即桌面端的 AI 面板（`aichat`），调用应用按风险级别注册的类型化工具。Shell 这一半（`crates/shell/src/ai_bus.rs`）给每个应用的帧标上它的端点，把注册转发给面板，路由面板的调用，自己应答 `os` 服务，并把 `confirm: host` 的调用留给审批路由决定。OctoSense 用它承载 AI 面板和 Rinx 的助手工具；当原生应用既没有执行器也没有 peer link 时，中转也经它调用该应用的工具；`terminal.run` 始终走总线。应用 Agent 不用总线：它不携带账号、上下文或调用方。
+总线是 Makepad 的另一种 AI 模型：一个中心对话，即桌面端的 AI 面板（`aichat`），调用应用按风险级别注册的类型化工具。Shell 这一半（`crates/shell/src/ai_bus.rs`）给每个应用的帧标上它的端点，把注册转发给面板，路由面板的调用，自己应答 `os` 服务，并把 `confirm: host` 的调用留给审批路由决定。OctoSense 用它承载 AI 面板和 Rinx 的助手工具；当原生应用既没有执行器也没有 peer link 时，中转也经它调用该应用的工具；`terminal.run` 始终走总线。应用 Agent 不用总线：它不携带账户、上下文或调用方。
 
 ## 4. 工具与授权
 
@@ -265,9 +274,9 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 
 | 来源 | 声明于 | 运行在 | 现状 |
 | --- | --- | --- | --- |
-| 应用自己的工具，`<app>.<tool>` | `tools.json`；`agent.tools` | 应用的宿主服务、通知服务或应用的窗口 | `own_tools` 把 Terminal 的工具限定为两个只读工具；邮件的 Agent 能起草和提议回复，但没有能发送的工具 |
+| 应用自己的工具，`<app>.<tool>` | `tools.json`；`agent.tools` | 应用的宿主服务、通知服务、`host_method` 指定的共享服务，或应用的窗口 | `own_tools` 把 Terminal 的工具限定为两个只读工具；邮件的 Agent 能起草和提议回复，但没有能发送的工具 |
 | octos 的内核工具 | `agent.tools` 中不带点的名称；`agent.generic_tools` | octos | 脚本应用只有 `ask_user_question`；Rinx 有文件、记忆和网页工具；其他原生 Agent 没有 |
-| `files.list`、`files.read`、`files.search` | Shell，注册在已获同意、有工作区的 peer 上（Unix） | Shell，作用于调用方的账号文件夹 | 每次读取最多 128 KiB，每次列出最多 500 项，每次搜索最多 100 个匹配 |
+| `files.list`、`files.read`、`files.search` | Shell，注册在已获同意、有工作区的 peer 上（Unix） | Shell，作用于调用方的账户文件夹 | 每次读取最多 128 KiB，每次列出最多 500 项，每次搜索最多 100 个匹配 |
 | 其他应用可共享的工具 | `agent.tools` 中带点的名称；`agent.grants` | 所属应用，经中转 | 新闻共享 `news.list` 和 `news.read`；还没有应用申请 |
 | 工具箱（`toolbox.*`、`workflow.*`） | `research` 和 `crawl` 能力 | Shell（[`crates/toolbox`](../crates/toolbox/README.md)），需 `toolbox-peers` feature，手机上默认开启 | 还没有应用声明 |
 | `dev.run` | 开发者模式 | Shell（`host_tools/dev_run.rs`） | 仅限所覆盖的应用 |
@@ -278,13 +287,15 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 
 中转（`crates/shell/src/host_tools/`）在 UI 线程上处理代理和系统对话送来的每一个 `peer/tool/call`：
 
-1. **授权**，按（所属应用，工具）和调用方：应用自己的 Agent 可以调用自己的工具，其他应用的 Agent 只能调用授予它的工具（`Catalog::may_call`），系统 Agent 只能调用它的宿主工具。未获同意或账号已挂起时，调用会被拒绝。
+1. **授权**，按（所属应用，工具）和调用方：应用自己的 Agent 可以调用自己的工具，其他应用的 Agent 只能调用授予它的工具（`Catalog::may_call`），系统 Agent 只能调用它的宿主工具。未获同意或账户已挂起时，调用会被拒绝。
 2. **检查**参数（最多 64 KiB）是否符合 `input_schema`，并从调用方的预算中扣除：除非 `agent.budget` 另有规定，每轮 32 次、每天 1000 次。
 3. **路由**到所属应用的执行器（`HostServiceExecutor`，或模块的 `set_tool_executor`）；没有执行器就走它的 peer link，再没有就走它的 AI 总线服务。应用同时在总线上提供的 `confirm: host` 工具不走 peer link。
 4. **确认** `confirm: app` 调用：先向内核确认收到，再交给所属应用的面板（见[第 5 节](#5-审批)）。
 5. **只回答一次**，结果要符合 `output_schema`（最多 256 KiB）；取消之后什么都不再运行。每次调用都会连同参数摘要记录到 `logs/tool-calls.jsonl`。
 
-脚本应用中 `implemented_by: "host-service"` 的工具，以该应用的身份在其命名空间对应的宿主服务上运行，前提是应用获授了该服务族，或该服务族就是这个系统应用自己的。Shell 的 `NoticeService` 为相册、地图、YouTube 和相机应答 `<app>.notify`。**尚未实现：**`implemented_by: "app"` 没有执行器，商店应用也没有宿主服务，所以商店应用的 Agent 还不能通过自己的工具做事。
+脚本应用中 `implemented_by: "host-service"` 的工具，以该应用的身份在其命名空间对应的宿主服务上运行，前提是应用获授了该服务族，或该服务族就是这个系统应用自己的。Shell 的 `NoticeService` 为相册、地图、YouTube 和相机应答 `<app>.notify`。**尚未实现：**`implemented_by: "app"` 没有执行器，调用这类工具会得到 `app_tool_unavailable`。
+
+商店应用的工具也可以用 `host_method` 映射到共享服务，例如 Inbox Assistant 的 `inbox.message` 映射到 `gmail.message`。App Hub 只准入经审查的列表 `SHARED_HOST_METHODS` 中的方法：GitHub、Gmail 和 Google Calendar 的读取，Gmail 草稿编辑和新邮件事件处理，以及 `glance.*`。每个方法都要求声明对应服务族的能力和 `private_data: true`，风险等级也不能低于列表规定的等级。执行器只在应用获授该服务族时运行这个方法；对 `github`、`gmail` 和 `gcalendar`，它还会注入应用当前的连接（`host_tools/script_apps.rs`）。列表中没有任何方法会打开宿主面板，所以任何工具都不能登录、提交、保存日程或发送（见[已连接账户](#已连接账户)）。
 
 ### 系统 Agent 的工具集
 
@@ -292,9 +303,23 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 
 ### Agent 往 glance 屏幕上放什么
 
-glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在宿主记录的账号下发布每张卡片，而且只在应用有 `glance` 授权时才发布。一个应用每分钟最多发布 6 次。手机和桌面都能滚动浏览所有保留卡片，不再限制每应用四张卡片或信息流六行。保留负载的预算为每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，但保留新的有效发布；所属服务继续保存草稿和原邮件。`mail.publish_card` 还能把卡片绑定到邮件已保存的某份草稿上；绑定后的卡片不能再换到别的账号、邮件或草稿。
+glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在宿主记录的账户下发布每张卡片，而且只在应用有 `glance` 授权时才发布。一个应用每分钟最多发布 6 次。手机和桌面都能滚动浏览所有保留卡片，不再限制每应用四张卡片或信息流六行。保留负载的预算为每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，但保留新的有效发布；所属服务继续保存草稿和原邮件。`mail.publish_card` 还能把卡片绑定到邮件已保存的某份草稿上；绑定后的卡片不能再换到别的账户、邮件或草稿。
+
+在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`（例如 Inbox Assistant 的 `inbox.notify`），必须指定应用已准入应用包中的模板并提供 `initial` 对象，或者提交合法的 L0 源码。可执行的 Splash（`script`）、L1 源码以及混合的参数都会被拒绝（`host_tools/script_apps.rs` 中的 `check_agent_publication`）。应用自己的界面仍可发布它经过审核的 Splash。`desktop-v0.1.0-beta.2` 没有这项检查，会接受 Agent 发布的 `script` 卡片。
 
 在手机上，glance 列表只绘制紧凑的摘要，不运行任何生成的界面（`mobile_pages.rs`）。点按摘要会把它展开成常驻的全屏工作区（`glance_sheet.rs`），通知则直接打开它对应卡片的工作区；在桌面端，工作区居中打开。有 Agent 的发布者即使卡片没有声明 `sys.chat`，也会得到 Card / Chat 两个标签（`glance_card.rs` 中的 `WorkspaceChat`）；邮件的回复卡片则在同一份已保存的草稿上提供 Email / Chat。细节见[组合式邮件卡片](mail-composable-cards.zh-CN.md#所有发布者共用的卡片工作区)。卡片模板见 README 的[系统 Agent 如何与应用 Agent 通信](../README.zh-CN.md#系统-agent-如何与应用-agent-通信)，卡片自己的策略和卡内对话见[卡片与提问](../README.zh-CN.md#卡片与提问)。
+
+### 已连接账户
+
+商店应用不需要 OctoSense 账户，就能使用用户的 GitHub 或 Google 账户，或让用户登录应用自己的后端（[ADR 0010](adr/0010-shared-oauth-and-connected-apps.zh-CN.md)）。[`crates/oauth-service`](../crates/oauth-service/README.zh-CN.md) 实现了 OAuth 协议、GitHub、Google 和后端的适配器以及连接存储。`register_host_services`（`crates/shell/src/apps.rs`）注册它的四个宿主服务：`auth` 负责登录和应用的连接，`github`、`gmail`、`gcalendar` 提供 GitHub 和 Google 的数据。各服务的方法见该 crate 的 README。
+
+- **声明。**应用声明 `auth`、它用到的每个数据服务族（`github`、`gmail`、`gcalendar`），以及 `storage.accounts: true`。只声明 `auth` 时，应用仍能让用户仅为确认身份而登录（GitHub 的 `read:user`；Google 的 `openid`、`email` 和 `profile`），但拿不到任何 GitHub 或 Google 数据：其他 scope 所属的服务族若未获授，宿主一律拒绝（`register_host_services`）。
+- **身份。**应用只看到不透明的连接句柄。它的 peer 以它当前的连接行事（`app_storage/lifecycle.rs`），所以每个已连接账户都有自己的 Agent。
+- **配置。**OAuth 客户端注册归宿主所有，从不由应用提供。发行方在构建时通过构建变量（例如 `OCTOSENSE_GITHUB_CLIENT_ID`）把注册编译进宿主（`crates/oauth-service/src/registration.rs`）；`desktop-v0.1.0-beta.2` 的下载包不含任何注册。运维者可以用 App Hub 宿主目录中的 `clients.json`（`<apps root>/.host/oauth/clients.json`，其中 `<apps root>` 即 `<octosense home>/apps`，见[第 6 节](#6-存储与机密)）替换整套注册；文件中没有列出的服务商随之停用。缺少某个服务商的注册时，登录会失败并提示“GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.”（Google 的提示相同，只是换成 Google）。在 beta.2 上，缺少 `clients.json` 时提示的则是“OAuth is not configured”。
+- **应用自己的后端。**`auth.connect` 带上 `{"provider":"backend","scopes":["app.session"]}`，就能让用户登录应用自己的服务器；`auth.backend.me` 返回该服务器验证过的身份（`crates/oauth-service/src/host_backend.rs`）。后端只能由运维者在 `<apps root>/.host/oauth/backends.json` 中注册，应用包无法注册。在 macOS 和 Android 9 及以上版本上，服务器的登录页面显示在宿主拥有的 WebView 中；在 Windows 和 Linux 上，或在 macOS 上指定 `"presentation":"browser"` 时，改在浏览器中打开（见 `host.rs` 中的 `presentation`）。iOS 不支持后端登录。
+- **事件。**新邮件到达时，`connected_events.rs` 启动已安装 Gmail 应用的 Agent（见[代码导读第 6 节](architecture-walkthrough.zh-CN.md#6-用户在哪里对话)）。
+
+写入和发送都要经过宿主面板或审阅界面（见[第 5 节](#5-审批)），OAuth token 保存在平台的凭据库中（见[第 6 节](#6-存储与机密)）。
 
 ## 5. 审批
 
@@ -336,7 +361,11 @@ flowchart TB
 4. **常设规则**，按（所属应用，工具）匹配，不论调用方是谁。由收到的内容或未知来源触发的运行会跳过规则，除非某条规则明确纳入。
 5. 否则由 **Shell 绘制的面板**列出所属应用、工具、确切参数和调用方应用（如有）。系统 Agent 为同一请求发起的审批可以合并到一个面板中。
 
-**发送邮件**从不经过审批路由。邮件自己的写信界面（`mail.review_send`）和它的回复卡片，最终都进入同一个由宿主拥有的确切邮件审阅界面，由 Shell 绘制在卡片内（`crates/shell/src/mail_review.rs`）；邮件的 Agent 只能提议发送（`mail.propose_send`）。只有对审阅界面上 Approve & Send 控件的一次可信按下和松开才会发送。目前这意味着 Android 上的物理触摸，由一个经审查的 Makepad 补丁提供（`tools/runtime-patches/makepad-trusted-user-input.patch`）；桌面端和无障碍方式的批准推迟实现。开发者模式和常设规则都不能授权发送，`mail.send` 只会回答 `approval_required`。流程见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
+**发送邮件**从不经过审批路由。邮件自己的写信界面（`mail.review_send`）和它的回复卡片，最终都进入同一个由宿主拥有的确切邮件审阅界面，由 Shell 绘制在卡片内（`crates/shell/src/mail_review.rs`）；邮件的 Agent 只能提议发送（`mail.propose_send`）。只有对审阅界面上 Approve & Send 控件的一次可信按下和释放才会发送，而且只有亲手点按才可信：Android 上触摸屏幕，macOS 上用鼠标或触控板点击。开发者模式和常设规则都不能授权发送，`mail.send` 只会回答 `approval_required`。流程见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
+
+这种信任来自两个经审查的 Makepad 补丁（`tools/runtime-patches/`）：`makepad-trusted-user-input.patch` 针对 Android 触摸屏，`makepad-desktop-trusted-input.patch` 针对来自 HID 源、且不是由其他进程投递（post）的 macOS 指针事件。合成输入和远程输入都会被拒绝，在其分发过程中运行的原生回调也不例外。Windows 和 Linux 上的任何输入以及无障碍输入，都不能批准发送。macOS 路径**未验证**：还没有在 macOS 上实际发送过邮件。
+
+**已连接账户的写入和发送**也不经过审批路由。GitHub 提交（`github.review_save`）或 Google Calendar 写入（`gcalendar.review_save`）会打开宿主对确切改动的审阅界面，只有其中的 Approve & Save 控件才能保存。Gmail 发信（`gmail.draft.review`）会打开宿主对确切回复的审阅界面，只有其中的 Approve & Send 控件才能发送。在 `main` 上，这三种审阅界面都是原生的（`crates/shell/src/connected_review.rs`），只接受可信的亲手点按（按下和释放都必须可信），每次批准只能用一次（`crates/oauth-service/src/host_api.rs`、`host_inbox.rs`）。`desktop-v0.1.0-beta.2` 只在 Gmail 发信时检查是否亲手点按；它的 GitHub 和 Calendar 保存使用宿主面板，不检查 Approve & Save 是怎样按下的。Agent 打不开其中任何一个界面：它的工具调用以 `may_prompt: false` 到达服务（`host_tools/script_apps.rs`）。哪些平台支持亲手点按、哪些已经验证，见 [OAuth 服务 README](../crates/oauth-service/README.zh-CN.md#当前交付边界) 中的平台表。
 
 **常设规则**（`approvals/rules.rs`）可以要求收件人在联系人中或在本线程中、没有附件、由用户触发，或限定次数和金额；读不到所需事实的条件视为不满足。从面板创建的规则默认每天最多使用 20 次，“该应用的一切请求”这条最宽的规则最多持续 60 分钟，一次点按即可关闭所有规则。只有用户能创建规则。“收件人在联系人中”只有在用户允许后才使用邮件的数据（`approvals/contacts.rs`）。
 
@@ -358,20 +387,21 @@ flowchart TB
 
 ```
 <octosense home>/apps/<app id>/            应用的 jail（App Hub 的 jail 根目录；原生应用的沙箱根目录）
-    accounts/<account hash>/               每个账号一个（应用不区分账号时为 "device"）：
-                                            该账号的数据 = 该账号 Agent 的工作区
-    common/                                不属于任何账号的应用数据
+    accounts/<account hash>/               每个账户一个（应用不区分账户时为 "device"）：
+                                            该账户的数据 = 该账户 Agent 的工作区
+    common/                                不属于任何账户的应用数据
     cache/                                 可清除，不备份
 <octosense home>/secrets/<app id>/         宿主拥有：token、密钥、密码、加密存储
 ```
 
 - **OctoSense 主目录**在手机上是平台提供的应用数据目录，其他情况下是 `~/.octosense`（`crates/shell/src/octosense/paths.rs`）。路径中出现符号链接会被拒绝；在 Unix 上，这些目录的权限是 0700。
-- **账号哈希**是对规范化后的账号 id 做带域分隔的 SHA-256，取其 128 位（`account_hash`）。每个账号文件夹都以它命名，所以修改它需要迁移。
+- **账户哈希**是对规范化后的账户 id 做带域分隔的 SHA-256，取其 128 位（`account_hash`）。每个账户文件夹都以它命名，所以修改它需要迁移。
 - **`storage` 块**（`accounts`、`agent_workspace`、`max_bytes`、`cache_max_bytes`；原生应用另有 `external`）在启动时从 `native-apps.json` 读取，脚本应用则在安装和每次启动时从其 manifest 读取（`app_storage/lifecycle.rs`）。邮件声明了 `accounts: true`。
 - **机密**从不放在 `apps/` 下（`app_storage/secrets.rs`）。macOS 和 iOS 把它们存入钥匙串；其他平台每个密钥一个文件，放在 `secrets/<app id>/` 中，在 Unix 上仅所有者可读写（0600）。脚本应用只能通过宿主服务和宿主面板接触自己的机密。
+- **已连接账户的 OAuth token** 从不交给应用。macOS 和 iOS 上存入钥匙串，Android 上存成用 Android Keystore 密钥加密的文件，Windows 和 Linux 上存入系统凭据服务，没有明文回退（`crates/oauth-service/src/host.rs`）。连接元数据，以及运维者可选提供的 `clients.json` 和 `backends.json`，都位于 `<apps root>/.host/oauth/`。
 - **启动检查**（`app_storage/check.rs`）拒绝本身是符号链接、或链接到机密、或包含机密的工作区，直到之后某次启动发现它已干净。不会删除任何东西。
 
-Rinx（通过 `OctosAppService::set_account`）和邮件的宿主服务会报告账号变化。删除账号会删除它的文件夹；卸载会删除应用的 jail、机密和钥匙串条目。然后 Shell 请 octos 对每个记录在案的 peer 执行 `peer/purge`（`crates/app-peers/src/purge.rs`），清除它的对话记录、记忆和黑板。该账号保持挂起（`secrets/.host/suspended.json`），直到再次添加，届时会得到一个新的 Agent。
+Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth` 服务会报告账户变化。删除账户会删除它的文件夹；卸载会删除应用的 jail、机密和钥匙串条目。然后 Shell 请 octos 对每个记录在案的 peer 执行 `peer/purge`（`crates/app-peers/src/purge.rs`），清除它的对话记录、记忆和黑板。该账户保持挂起（`secrets/.host/suspended.json`），直到再次添加，届时会得到一个新的 Agent。
 
 内核的 core 目录在桌面端是 `~/.octosense/octos-home/.octos`，在手机上是 `<app data dir>/octos-home/.octos`（`crates/kernel/src/dirs.rs`），存放内核的 profile、会话、黑板和记忆。提供方密钥归 `llm` 宿主服务管理（见 [ai-services.zh-CN.md](ai-services.zh-CN.md#ai-providers-与-llm-宿主服务)）。**规划中：**Rinx 目前还不认领这套存储，之后会把数据移到 `apps/rinx/` 下（ADR 0004 §11）。
 
@@ -405,16 +435,17 @@ Rinx（通过 `OctosAppService::set_account`）和邮件的宿主服务会报告
 | 应用 ↔ 内核 | 没有应用直接使用 OUP，也没有应用看得到宿主 token |
 | peer ↔ peer | octos 为每个 peer 提供独立的工作区（拒绝重叠）、记忆命名空间和对话记录 |
 | Agent ↔ 机密 | 机密在所有 jail 和工作区之外；启动检查 |
-| Agent ↔ 邮件投递 | 没有任何 Agent 工具或生成的卡片能发送：只有宿主对确切邮件的审阅，经可信的物理触摸批准后才发送 |
+| Agent ↔ 邮件投递 | 没有任何 Agent 工具或生成的卡片能发送：只有用户在宿主的审阅界面上亲手点按批准确切的邮件后才发送；合成输入和远程输入都会被拒绝 |
+| Agent ↔ 已连接账户 | 应用和它的 Agent 只持有连接句柄。没有任何工具能登录、提交、保存日程或发送：这些都需要宿主面板或审阅界面。在 `main` 上，批准其中任何一项都需要可信的亲手点按；在 `desktop-v0.1.0-beta.2` 上，只有 Gmail 发信需要 |
 | 外部客户端 ↔ 内核 | 外部 token、方法与工具允许列表、`Host` 和 `Origin` 检查 |
 
 **进程沙箱**（`crates/shell/src/sandbox/`）根据条目的 `sandbox` 和 `storage` 块构建。它封闭用户的主目录和各个卷，只开放应用的 jail、它的机密文件夹和经审查的 `external` 授权（例如 Terminal 的 `home:rw`），并让下一次构建要读取或运行的一切保持只读。`network: none` 只留下 hub 的端口，`processes: false` 禁止 fork 和 exec；应用只继承 Shell 环境变量中允许列表内的那些，从不包括密钥或 token。
 
-**Shell 检查什么：**每次工具调用的检查就是中转的那份清单（见[第 4 节](#中转)）；脚本应用自己的 `octos.*` 调用则限定为确切的服务名、32 KiB 的文字和 2 MiB 的回复。**谁都无法检查的**，是原生应用在自己的工具里做了什么，或者它为什么发起一轮；对此靠审查，对进程应用还有沙箱。
+**Shell 检查什么：**每次工具调用的检查就是中转的那份列表（见[第 4 节](#中转)）；脚本应用自己的 `octos.*` 调用则限定为确切的服务名、32 KiB 的文字和 2 MiB 的回复。**谁都无法检查的**，是原生应用在自己的工具里做了什么，或者它为什么发起一轮；对此靠审查，对进程应用还有沙箱。
 
 ## 8. 完整示例：用邮件发送会议邀请
 
-这是 ADR 0004 对跨应用协作的最初设想：先调用日历已有的 `calendar.add_event`，再跨应用调用 `mail.send`。邮件这一半**尚未实现**，而且 ADR 0007 已经改变了它的批准方式：任何常设规则或开发者模式都不能批准发送邮件，每封邮件都需要宿主的审阅和一次物理触摸（见[第 5 节](#5-审批)）。下图保留这个设想中的中转路径，并标出被 ADR 0007 取代的部分。邮件现在如何发送，见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
+这是 ADR 0004 对跨应用协作的最初设想：先调用日历已有的 `calendar.add_event`，再跨应用调用 `mail.send`。邮件这一半**尚未实现**，而且 ADR 0007 已经改变了它的批准方式：任何常设规则或开发者模式都不能批准发送邮件，每封邮件都需要用户在宿主的审阅界面上亲手点按（见[第 5 节](#5-审批)）。下图保留这个设想中的中转路径，并标出被 ADR 0007 取代的部分。邮件现在如何发送，见[组合式邮件卡片](mail-composable-cards.zh-CN.md)。
 
 ```mermaid
 sequenceDiagram
@@ -427,7 +458,7 @@ sequenceDiagram
   P->>S: "邀请 Ana、Bo 和 Edward 周二下午 3 点开会"
   S->>C: peer_send_input（任务说明）
   Note over S,SH: octos 把 peer/input 送到 Shell
-  SH->>C: turn/start（日历的工具、记忆、账号）
+  SH->>C: turn/start（日历的工具、记忆、账户）
   C->>SH: peer/tool/call calendar.add_event
   SH-->>C: 结果
   C->>SH: peer/tool/call mail.send x3（尚未实现，调用方：日历）
@@ -435,7 +466,7 @@ sequenceDiagram
   SH->>R: 审批（邮件、mail.send、确切参数、调用方日历）
   Note over R,P: ADR 0004 允许常设规则或面板批准这一步。<br/>ADR 0007 取代了它：任何规则或开发者模式都不能批准发送邮件。
   R->>P: 宿主对每封确切邮件的审阅
-  P-->>R: 逐封批准，用物理触摸
+  P-->>R: 逐封亲手点按批准
   SH->>M: 发送 x3（尚未实现）
   M-->>SH: 结果
   SH-->>C: peer/tool/result
@@ -448,7 +479,7 @@ sequenceDiagram
 - `calendar.add_event` 是 `act`，所以无需面板即可运行。桌面端和手机都附带日历。
 - 授权会沿用现有机制：`mail.send` 作为日历 `agent.tools` 中一个带点的名称，在安装时授予。邮件并没有声明这个工具。
 - ADR 0004 让审批路由决定每次发送，所以像“收件人都在我的联系人中”这样的常设规则可以批准它，否则每封邀请各有一个面板。ADR 0007 为邮件取代了这一做法：不论谁提议发送，最终都进入宿主对确切邮件的审阅（见[第 5 节](#5-审批)）。邮件的 Agent 只能提议发送（`mail.propose_send`）。
-- 邮件的宿主服务用用户登录的账号发送；密码永远不会到达 Agent。它的 `mail.send` 方法现在只会回答 `approval_required`。
+- 邮件的宿主服务用用户登录的账户发送；密码永远不会到达 Agent。它的 `mail.send` 方法现在只会回答 `approval_required`。
 - 结果未知的发送绝不会自动重发；重试需要重新审阅并批准。
 - **尚未实现：**日历的窗口还不能列出日程；`calendar.notify` 可以把日程放到 glance 屏幕上。
 
@@ -456,16 +487,16 @@ sequenceDiagram
 
 下面每一项都是一个 ADR 决定，而 HEAD 上的代码没有照做。
 
-1. **声明了 `agent_workspace: "none"` 的原生 Agent 仍有工作区。**ADR 0004 §11 说这样的 Agent 不读取任何文件。但 `host_tools::agent_workspace_in` 会给每个拥有 `octos.*` 服务的原生应用分配账号文件夹作为 peer 的工作区，不管 `agent_workspace` 声明了什么；而 Shell 会在每个有工作区的 peer 上注册 `files.*`（Unix）。所以 Calculator、Clock、Notes、Reminders、Weather 和 Terminal 都有一个文件夹和 `files.*`。这项声明只在两处起作用：脚本应用，以及用户的通道能否只读地查看该文件夹（`context_reads_account`）。
-2. **旧 peer 与两种哈希。**ADR 0004 §11 让账号文件夹成为每个 peer 的工作区。记录中没有工作区的 peer，若 octos 接受，就以账号文件夹恢复，否则以内核当初分配的工作区恢复。文件夹名（SHA-256）和记忆标签（FNV-1a，`account_tag`）仍是对同一个规范化账号的两种哈希。
-3. **平台密钥库中的机密。**ADR 0004 §11 要求在有系统钥匙串的平台上使用它。只有 macOS 和 iOS 用了钥匙串。Windows、Linux、Android 和 OpenHarmony 把每个密钥存成普通文件，除 Windows 外都仅所有者可读写（0600）。
+1. **声明了 `agent_workspace: "none"` 的原生 Agent 仍有工作区。**ADR 0004 §11 说这样的 Agent 不读取任何文件。但 `host_tools::agent_workspace_in` 会给每个拥有 `octos.*` 服务的原生应用分配账户文件夹作为 peer 的工作区，不管 `agent_workspace` 声明了什么；而 Shell 会在每个有工作区的 peer 上注册 `files.*`（Unix）。所以 App Hub、Calculator、Clock、Notes、Reminders、Weather 和 Terminal 都有一个文件夹和 `files.*`。这项声明只在两处起作用：脚本应用，以及用户的通道能否只读地查看该文件夹（`context_reads_account`）。
+2. **旧 peer 与两种哈希。**ADR 0004 §11 让账户文件夹成为每个 peer 的工作区。记录中没有工作区的 peer，若 octos 接受，就以账户文件夹恢复，否则以内核当初分配的工作区恢复。文件夹名（SHA-256）和记忆标签（FNV-1a，`account_tag`）仍是对同一个规范化账户的两种哈希。
+3. **平台密钥库中的应用机密。**ADR 0004 §11 要求在有系统钥匙串的平台上使用它。只有 macOS 和 iOS 用了钥匙串。Windows、Linux、Android 和 OpenHarmony 把每个密钥存成普通文件，除 Windows 外都仅所有者可读写（0600）。
 4. **频率限制与后台策略。**ADR 0004 §3 把两者列为中转的检查项；中转只执行预算。
 5. **事后控制。**ADR 0004 §8 承诺提供带撤销窗口的发送队列，并在审计中记录自动批准的参数。目前既没有队列也没有撤销，审计只保存参数摘要。
 6. **按客户端的文件授权。**ADR 0004 §11 按应用的按客户端授权来收窄宿主读取工具；目前还没有 manifest 字段能声明这类授权。
 7. **Rinx。**ADR 0004 §9 让 Rinx 的发送工具在它自己的 `confirm: app` 面板上确认，§11 把它的数据移到 `apps/rinx/` 下，§13 让开发者模式覆盖每个应用的面板。在其锁定的版本中，Rinx 不声明任何 Agent 工具，不向审批路由注册面板，仍使用自己的数据文件夹，而且在开发者模式下它的发送面板仍会询问。
 8. **Windows 沙箱。**ADR 0004 §3 为 Windows 上的进程应用提供 AppContainer。它还没有实现，所以这些应用以用户的权限运行。系统 Agent 在 Windows 上拿不到 `terminal.run`，但其他调用方仍能向 Terminal 输入命令（第 11 条）。
 9. **发布包中的进程应用。**ADR 0004 §2 要求附带它们的二进制；发布包只附带 `octosense` 和内核（`desktop/packaging/release.json`）。
-10. **发送邮件。**ADR 0004 §8 允许常设规则回答 `mail.send` 这类对外调用，§13 允许开发者模式覆盖所有审批。代码遵循的是 ADR 0007：不论常设规则或开发者模式怎么说，发送邮件都需要宿主的审阅和一次物理触摸；ADR 0004 没有提到这个例外。
+10. **发送邮件。**ADR 0004 §8 允许常设规则回答 `mail.send` 这类对外调用，§13 允许开发者模式覆盖所有审批。代码遵循的是 ADR 0007：不论常设规则或开发者模式怎么说，发送邮件都需要用户在宿主的审阅界面上亲手点按；ADR 0004 没有提到这个例外。
 11. **只有系统 Agent 的 `terminal.run` 检查沙箱。**ADR 0004 §10 只允许 Terminal 的 AI 在 Terminal 作为独立的沙箱进程运行时输入命令。系统 Agent 的 `terminal.run` 会检查这一点（`sandbox::launch_sandboxed`），其他路径都不检查。进程形式的 Terminal 无论沙箱是否生效，都会把自己的 `run` 提供给桌面端的 AI 面板；在开发者模式下，宿主工具中转还会把 `terminal.run` 授予所覆盖的每个应用 Agent。所以在还没有沙箱的 Windows 上，AI 面板能经审批路由向没有沙箱的 Terminal 输入命令，开发者模式下这些 Agent 也能。发布包里没有 AI 面板。进程内的 Terminal 符合 ADR，因为 Shell 公布的是它模块自带的只读 manifest。`crates/shell/src/module_host.rs` 中的 `host_executor` 换上了一个也能执行 `run` 的执行器，但没有调用会把 `run` 发给它：AI 面板只调用 manifest 声明过的工具，Shell 自己的调用（`AiBus::shell_call`）也按同一份 manifest 检查。
 
 ## 源码位置
@@ -480,6 +511,7 @@ sequenceDiagram
 | Shell 的 AI 入口；脚本应用的 `octos` 服务；模块的 peer link | [`crates/ai-host/src/`](../crates/ai-host/README.md)（`lib.rs`、`contained.rs`、`module_peer.rs`） |
 | 应用 peer：契约、代理、启动、注入、指导、清除 | [`crates/app-peers/src/`](../crates/app-peers/README.md) |
 | 系统 Agent 的宿主工具；邮件的事件 | [`crates/shell/src/agents.rs`](../crates/shell/src/agents.rs)、[`agent_events.rs`](../crates/shell/src/agent_events.rs)、[`system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs) |
+| 已连接账户：OAuth 以及 `auth`、`github`、`gmail`、`gcalendar` 服务；已安装应用的 Gmail 事件，以及保存和发信的原生审阅界面 | [`crates/oauth-service/`](../crates/oauth-service/README.zh-CN.md)、[`crates/shell/src/connected_events.rs`](../crates/shell/src/connected_events.rs)、[`connected_review.rs`](../crates/shell/src/connected_review.rs) |
 | 系统对话和 “Ask &lt;app&gt;” 面板 | [`crates/shell/src/system_chat/`](../crates/shell/src/system_chat/mod.rs)、[`app_chat/`](../crates/shell/src/app_chat/mod.rs) |
 | peer link | [`crates/shell/src/peer_link/`](../crates/shell/src/peer_link/mod.rs) |
 | 宿主工具中转、执行器、宿主读取工具、`dev.run`、工具箱 | [`crates/shell/src/host_tools/`](../crates/shell/src/host_tools/mod.rs)、[`crates/toolbox`](../crates/toolbox/README.md) |
@@ -487,8 +519,8 @@ sequenceDiagram
 | Agent 的提问 | [`crates/shell/src/questions/`](../crates/shell/src/questions/mod.rs) |
 | 审批、同意、联系人、审计 | [`crates/shell/src/approvals/`](../crates/shell/src/approvals/mod.rs) |
 | 开发者模式 | [`crates/shell/src/dev_mode.rs`](../crates/shell/src/dev_mode.rs) |
-| 应用存储、机密、启动检查、账号 | [`crates/shell/src/app_storage/`](../crates/shell/src/app_storage/mod.rs) |
-| glance 卡片和卡内对话 | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)、[`glance_notice.rs`](../crates/shell/src/glance_notice.rs)、[`glance_card.rs`](../crates/shell/src/glance_card.rs)、[`crates/l0-chat`](../crates/l0-chat/README.md) |
+| 应用存储、机密、启动检查、账户 | [`crates/shell/src/app_storage/`](../crates/shell/src/app_storage/mod.rs) |
+| glance 卡片和卡内对话 | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)、[`glance_notice.rs`](../crates/shell/src/glance_notice.rs)、[`glance_card.rs`](../crates/shell/src/glance_card.rs)、[`crates/l0-chat`](../crates/l0-chat/README.zh-CN.md) |
 | 系统应用及其工具和宿主服务 | [`desktop/system-apps.json`](../desktop/system-apps.json)、[`phone/system-apps.json`](../phone/system-apps.json)、`apps/<app>/bundle/tools.json`、`apps/<app>/host-service/` |
 
 本仓库之外的代码，按 `Cargo.toml` 锁定的版本：
@@ -499,4 +531,6 @@ sequenceDiagram
 | Terminal 自己的 Agent 链接（Makepad #100） | [`apps/terminal/src/module.rs`](https://github.com/OctoSense-org/makepad/blob/68d1f4ecc111daa90c50530e77df3245f05fc2cf/apps/terminal/src/module.rs) |
 | octos：两条通道的共享历史（20 条，16 KiB）；`peer_send_input`（64 KiB） | [`crates/octos-cli/src/peers/shared_history.rs`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/crates/octos-cli/src/peers/shared_history.rs)、[`crates/octos-agent/src/tools/peer_send_input.rs`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/crates/octos-agent/src/tools/peer_send_input.rs) |
 | octos：宿主管理的 serve、应用 peer、peer 宿主工具 | [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/HOST_MANAGED_SERVE.md)、[UPCR-2026-034](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_034_HOST_APP_PEERS.md)、[UPCR-2026-035](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_035_PEER_HOST_TOOLS.md)、[UPCR-2026-036](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_036_HOST_MANAGED_SERVE.md) |
-| App Hub：脚本应用可以保留的内核工具（`KERNEL_TOOLS`） | [`crates/app-policy/src/policy.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d5b47a2ae9eb98020feca26b7c895a3cf797dc1/crates/app-policy/src/policy.rs) |
+| App Hub：脚本应用可以保留的内核工具（`KERNEL_TOOLS`） | [`crates/app-policy/src/policy.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/crates/app-policy/src/policy.rs) |
+| App Hub：工具可以映射到的共享服务方法（`SHARED_HOST_METHODS`） | [`crates/app-policy/src/agent.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/crates/app-policy/src/agent.rs) |
+| App Hub：自身 Agent 的只读工具 | [`crates/app-hub-app/src/ai.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/crates/app-hub-app/src/ai.rs) |

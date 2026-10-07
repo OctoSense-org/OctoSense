@@ -4,7 +4,16 @@ English | [简体中文](architecture.zh-CN.md)
 
 This is the full picture of how OctoSense is built, with the code behind each part. It assumes the README's [Key concepts](../README.md#key-concepts) and [How it fits together](../README.md#how-it-fits-together). [ai-services.md](ai-services.md) covers what each kind of app can call and how to run the AI services locally, and the [code walkthrough](architecture-walkthrough.md) reads the code in order.
 
-The decisions behind it are [ADR 0001](adr/0001-one-octosense-repository.md) (one repository), [ADR 0002](adr/0002-event-driven-app-agents.md) (event-driven app agents; Proposed, partly built), [ADR 0003](adr/0003-shared-octos-client-access.md) (Talk to Octos) [ADR 0004](adr/0004-native-apps-hosting-and-peers.md) (native apps, app agents, cross-app work and approvals) and [ADR 0007](adr/0007-composable-mail-action-cards.md) (Mail cards with drafts, chat and host-approved sending; in progress). The text describes the code as it is; what is not built yet is marked **Not yet** or **Planned**.
+The decisions behind it are these ADRs:
+
+- [ADR 0001](adr/0001-one-octosense-repository.md): one repository
+- [ADR 0002](adr/0002-event-driven-app-agents.md): event-driven app agents (Proposed, partly built)
+- [ADR 0003](adr/0003-shared-octos-client-access.md): Talk to Octos
+- [ADR 0004](adr/0004-native-apps-hosting-and-peers.md): native apps, app agents, cross-app work and approvals
+- [ADR 0007](adr/0007-composable-mail-action-cards.md): Mail cards with drafts, chat and host-approved sending (in progress)
+- [ADR 0010](adr/0010-shared-oauth-and-connected-apps.md): shared OAuth and connected apps (in progress; live sign-in passed on macOS; GitHub writes, Gmail sends and device acceptance pending)
+
+The text describes the code as it is; what is not built yet is marked **Not yet** or **Planned**.
 
 ## Contents
 
@@ -100,7 +109,7 @@ Native apps are reviewed, first-party Rust crates declared only in [`native-apps
 
 | App | macOS, Windows | Linux | Phones | Desktop / phone build (`shells`) | Agent |
 | --- | --- | --- | --- | --- | --- |
-| App Hub (store, Card runner) | module | module | module | default / default | – |
+| App Hub (store, Card runner) | module | module | module | default / default | peer link |
 | Rinx | module | module | module | default / default | injected service |
 | Terminal | **process** | **process** with Vulkan and Wayland, else module | module | default / off | peer link; `terminal.run` is the system agent's |
 | Calculator, Clock, Notes, Reminders, Weather | module | module | module | default / default | peer link |
@@ -165,7 +174,7 @@ octos lists only prepared peers, so the shell tells the system agent the rest: a
 
 An app agent is a host-owned octos peer for one (app, account), owned by the system agent's session (octos UPCR-2026-034) and driven by a broker (`crates/app-peers/src/broker.rs`). Its memory namespace is `app/<app>/acct-<tag>`, and the broker refuses a kernel that does not confirm it. Its workspace is the account's folder ([section 6](#6-storage-and-secrets)), and its host token sits in a record under `<core dir>/../app-peers`, owner-only on Unix. The broker registers its tools after every `peer/prepare` and reconnect; a peer whose registration fails runs no turn.
 
-A script app's peer is `card.<app id>` (`crates/ai-host/src/contained.rs`). Apps without accounts act for `device`; Mail acts for the account signed in last. `apps::agent_apps` decides which apps have an agent, and an app granted nothing gets no broker.
+A script app's peer is `card.<app id>` (`crates/ai-host/src/contained.rs`). Apps without accounts act for `device`; Mail acts for the account signed in last, and a connected app for its active connection ([Connected accounts](#connected-accounts)). `apps::agent_apps` decides which apps have an agent, and an app granted nothing gets no broker.
 
 - A script app's peer is prepared once the agent is allowed and at each startup (`agents::start`), so `peer_list` shows it while the app is closed.
 - A native app's peer belongs to its open instance. With several instances, the oldest drives it and the next takes over (`driver_of`, `take_over`).
@@ -247,7 +256,7 @@ An app never speaks OUP and never sees the host token, and the shell stamps the 
 
 | Path | Used by | How it works |
 | --- | --- | --- |
-| Peer link (`crates/shell/src/peer_link/`) | Calculator, Clock, Notes, Reminders, Weather, Terminal | Makepad's `OctosPeer` client. A process app's link rides its hub socket. A module's `OctosPeer::open` parks an in-memory channel, which `module_host` claims for that instance and the shell serves as the same frames (`peer_link::module_connected`). `serve_tools` answers the agent's tool calls. |
+| Peer link (`crates/shell/src/peer_link/`) | App Hub, Calculator, Clock, Notes, Reminders, Weather, Terminal | Makepad's `OctosPeer` client. A process app's link rides its hub socket. A module's `OctosPeer::open` parks an in-memory channel, which `module_host` claims for that instance and the shell serves as the same frames (`peer_link::module_connected`). `serve_tools` answers the agent's tool calls. |
 | Injected service | Rinx | `ai_host::offer` before the module's `create`, and `injection::claim` inside it, give the instance a scoped `OctosAppService` (`open_conversation`, `open_context`). |
 | `host.request("octos.*")` | store apps | The Card runner's `octos` host service (`crates/ai-host/src/contained.rs`): only the services the manifest declares, after first-use consent. |
 
@@ -265,7 +274,7 @@ The manifest declares, the person grants at install, and the shell enforces on e
 
 | Source | Declared in | Runs on | Today |
 | --- | --- | --- | --- |
-| The app's own tools, `<app>.<tool>` | `tools.json`; `agent.tools` | the app's host service, the notice service, or the app's window | `own_tools` narrows the Terminal's to its two read tools; Mail's agent drafts and proposes replies but has no tool that sends |
+| The app's own tools, `<app>.<tool>` | `tools.json`; `agent.tools` | the app's host service, the notice service, a shared service its `host_method` names, or the app's window | `own_tools` narrows the Terminal's to its two read tools; Mail's agent drafts and proposes replies but has no tool that sends |
 | octos's kernel tools | plain names in `agent.tools`; `agent.generic_tools` | octos | script apps only `ask_user_question`; Rinx files, memory and web; other native agents none |
 | `files.list`, `files.read`, `files.search` | the shell, on consented peers with a workspace (Unix) | the shell, over the caller's account folder | at most 128 KiB a read, 500 entries a listing, 100 matches a search |
 | Other apps' shareable tools | dotted names in `agent.tools`; `agent.grants` | the owning app, through the relay | News shares `news.list` and `news.read`; no app asks for one yet |
@@ -284,7 +293,9 @@ The relay (`crates/shell/src/host_tools/`) takes every `peer/tool/call` from the
 4. **Confirm** a `confirm: app` call: acknowledge it to the kernel, then hand it to the owner's sheet ([section 5](#5-approvals)).
 5. **Answer once,** checked against `output_schema` (at most 256 KiB); nothing runs after a cancel. Each call is audited, with a digest of its arguments, in `logs/tool-calls.jsonl`.
 
-A script app's `implemented_by: "host-service"` tool runs on its namespace's host service, as the app, if the app was granted that family or owns it as a system app. The shell's `NoticeService` answers `<app>.notify` for Photos, Maps, YouTube and Camera. **Not yet:** `implemented_by: "app"` has no executor and store apps have no host service, so a store app's agent cannot act through tools of its own.
+A script app's `implemented_by: "host-service"` tool runs on its namespace's host service, as the app, if the app was granted that family or owns it as a system app. The shell's `NoticeService` answers `<app>.notify` for Photos, Maps, YouTube and Camera. **Not yet:** `implemented_by: "app"` has no executor; a call to such a tool is refused `app_tool_unavailable`.
+
+A store app's tool can instead map to a shared service with `host_method`, as Inbox Assistant's `inbox.message` maps to `gmail.message`. App Hub admits only the methods on its reviewed list, `SHARED_HOST_METHODS`: GitHub, Gmail and Google Calendar reads, Gmail draft edits and new-mail event decisions, and `glance.*`. Each needs its family's capability, `private_data: true` and at least its listed risk. The executor runs the method only if the app was granted its family, and for `github`, `gmail` and `gcalendar` it injects the app's active connection (`host_tools/script_apps.rs`). No method on the list opens a host sheet, so no tool can sign in, commit, save an event or send ([Connected accounts](#connected-accounts)).
 
 ### The system agent's tool set
 
@@ -294,7 +305,21 @@ Before every kernel start, `enforce` (`crates/kernel/src/system_tools.rs`) write
 
 The glance service (`crates/shell/src/glance.rs`) publishes every card as the calling app, under the account the host records, and only with the app's `glance` grant. An app may publish at most 6 times a minute. Both phone and desktop scroll all retained cards; neither a four-card publisher quota nor a six-row feed cutoff applies. Retained payloads have an 8 MiB per-app and 32 MiB overall budget. Under pressure, lower-priority older cards retire while the new valid publication remains available; the owning services retain their drafts and source mail. `mail.publish_card` can also bind a card to one of Mail's saved drafts, and a bound card cannot move to another account, email or draft.
 
+On `main`, an agent's tool call that resolves to `glance.publish`, such as Inbox Assistant's `inbox.notify`, must name a template from the app's admitted bundle with an `initial` object, or send valid L0 source. Executable Splash (`script`), L1 source and mixed payloads are refused (`check_agent_publication` in `host_tools/script_apps.rs`). The app's own UI can still publish its reviewed Splash. `desktop-v0.1.0-beta.2` has no such check and accepts an agent's `script` card.
+
 On a phone, the glance feed draws compact summaries and runs no generated UI (`mobile_pages.rs`). Tapping a summary expands it into a resident full-screen workspace (`glance_sheet.rs`), and a notification opens its card's workspace directly; on the desktop the workspace opens centred. A publisher with an agent gets Card / Chat tabs even when its card declares no `sys.chat` (`WorkspaceChat` in `glance_card.rs`), and a Mail reply card gets Email / Chat over one saved draft. [Composed Mail cards](mail-composable-cards.md#shared-workspaces-for-all-card-publishers) has the details. The README describes the card templates under [How the system agent and an app agent talk](../README.md#how-the-system-agent-and-an-app-agent-talk), and the cards' own policy and in-card chat under [Cards and questions](../README.md#cards-and-questions).
+
+### Connected accounts
+
+A store app can use the person's GitHub or Google account, or sign the person in to its own backend, without an OctoSense account ([ADR 0010](adr/0010-shared-oauth-and-connected-apps.md)). [`crates/oauth-service`](../crates/oauth-service/README.md) implements the OAuth flows, the GitHub, Google and backend adapters and the connection store. `register_host_services` (`crates/shell/src/apps.rs`) registers its four host services: `auth` for sign-in and the app's connections, and `github`, `gmail` and `gcalendar` for GitHub and Google data. The crate's README lists their methods.
+
+- **Declaration.** The app declares `auth`, each data family it uses (`github`, `gmail`, `gcalendar`) and `storage.accounts: true`. With `auth` alone, the app can still sign the person in for identity only (GitHub's `read:user`; Google's `openid`, `email` and `profile`), but it gets no GitHub or Google data: the host refuses any other scope whose family the app was not granted (`register_host_services`).
+- **Identity.** The app sees only an opaque connection handle. Its peer acts for its active connection (`app_storage/lifecycle.rs`), so each connected account has its own agent.
+- **Configuration.** The OAuth client registrations belong to the host, never to an app. A distributor compiles them into its build from build variables such as `OCTOSENSE_GITHUB_CLIENT_ID` (`crates/oauth-service/src/registration.rs`); `desktop-v0.1.0-beta.2` downloads have none. An operator can replace the whole set with `clients.json` in App Hub's host directory, `<apps root>/.host/oauth/clients.json`, where `<apps root>` is `<octosense home>/apps` ([section 6](#6-storage-and-secrets)); a provider the file leaves out is turned off. Without a registration for the provider, sign-in fails with "GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor." (or the same message naming Google). On beta.2, a missing `clients.json` gives "OAuth is not configured" instead.
+- **The app's own backend.** `auth.connect` with `{"provider":"backend","scopes":["app.session"]}` signs the person in to the app's own server, and `auth.backend.me` returns the identity that server verified (`crates/oauth-service/src/host_backend.rs`). Only the operator registers a backend, in `<apps root>/.host/oauth/backends.json`; a bundle cannot. The server's login page opens in a host-owned WebView on macOS and on Android 9 or later. On Windows and Linux, and on macOS with `"presentation":"browser"`, it opens in the browser instead (`presentation` in `host.rs`). iOS has no backend sign-in.
+- **Events.** `connected_events.rs` starts an installed Gmail app's agent on new mail ([walkthrough §6](architecture-walkthrough.md#6-where-the-person-talks)).
+
+Writes and sends need a host sheet or review ([section 5](#5-approvals)), and the OAuth tokens stay in the platform's credential store ([section 6](#6-storage-and-secrets)).
 
 ## 5. Approvals
 
@@ -336,7 +361,11 @@ flowchart TB
 4. **Standing rules** on (owning app, tool), whoever calls. Runs started by incoming content or an unknown trigger skip them unless a rule opts in.
 5. **A shell-drawn sheet** with the owning app, tool, exact arguments and any calling app. The system agent's approvals for one request can share one sheet.
 
-**Mail sending** never goes through the router. Mail's own composer (`mail.review_send`) and its reply cards end in one host-owned review of the exact message, drawn by the shell inside the card (`crates/shell/src/mail_review.rs`); Mail's agent can only propose a send (`mail.propose_send`). Only a trusted press and release of the review's Approve & Send control sends. Today that means physical touch on Android, through a reviewed Makepad patch (`tools/runtime-patches/makepad-trusted-user-input.patch`); desktop and accessibility approval are deferred. Developer mode and standing rules cannot authorize a send, and `mail.send` answers only `approval_required`. [Composed Mail cards](mail-composable-cards.md) describes the flow.
+**Mail sending** never goes through the router. Mail's own composer (`mail.review_send`) and its reply cards end in one host-owned review of the exact message, drawn by the shell inside the card (`crates/shell/src/mail_review.rs`); Mail's agent can only propose a send (`mail.propose_send`). Only a trusted press and release of the review's Approve & Send control sends, and only a physical press is trusted: a tap on Android or a click on macOS. Developer mode and standing rules cannot authorize a send, and `mail.send` answers only `approval_required`. [Composed Mail cards](mail-composable-cards.md) describes the flow.
+
+Two reviewed Makepad patches establish that trust (`tools/runtime-patches/`): `makepad-trusted-user-input.patch` for Android touchscreens, and `makepad-desktop-trusted-input.patch` for macOS pointer events that come from the HID source and that no other process posted. Synthetic and remote input are refused, and so is a native callback that runs inside their dispatch. Input on Windows or Linux, and accessibility input, cannot approve a send. The macOS path is **unverified**: no real message has been sent from a Mac.
+
+**Connected-account writes and sends** do not go through the router either. A GitHub commit (`github.review_save`) or a Google Calendar write (`gcalendar.review_save`) opens a host review of the exact change, and only its Approve & Save control saves it. A Gmail send (`gmail.draft.review`) opens the host's review of the exact reply, and only its Approve & Send control sends. On `main`, all three reviews are native (`crates/shell/src/connected_review.rs`) and accept only a trusted physical press and release, and each approval works once (`crates/oauth-service/src/host_api.rs`, `host_inbox.rs`). `desktop-v0.1.0-beta.2` checks for a physical press only on the Gmail send; its GitHub and Calendar saves use a host sheet that does not check how Approve & Save was pressed. An agent cannot open any of these screens: its tool calls reach the services with `may_prompt: false` (`host_tools/script_apps.rs`). The platform table in the [OAuth service README](../crates/oauth-service/README.md#current-delivery-boundary) shows where the physical press is supported and what is verified.
 
 **Standing rules** (`approvals/rules.rs`) can require recipients in contacts or in the thread, no attachments, a person's trigger, or count and amount limits; a fact that cannot be read fails the condition. A rule made from a sheet is capped at 20 uses a day by default, the everything-for-one-app rule lasts at most 60 minutes, and one tap turns all rules off. Only the person creates rules. "Recipients in contacts" uses Mail's data only after the person allows it (`approvals/contacts.rs`).
 
@@ -369,9 +398,10 @@ Every app gets one host-owned layout, declared in its manifest's `storage` block
 - **The account hash** is 128 bits of a domain-separated SHA-256 of the normalized account id (`account_hash`). It names every account folder, so changing it needs a migration.
 - **The `storage` block** (`accounts`, `agent_workspace`, `max_bytes`, `cache_max_bytes`; `external` for native apps) is read from `native-apps.json` at startup and from a script app's manifest at install and launch (`app_storage/lifecycle.rs`). Mail declares `accounts: true`.
 - **Secrets** are never under `apps/` (`app_storage/secrets.rs`). macOS and iOS keep them in the keychain; elsewhere each key is a file in `secrets/<app id>/`, owner-only (0600) on Unix. Script apps reach theirs only through host services and host sheets.
+- **Connected accounts' OAuth tokens** never reach an app. macOS and iOS keep them in the keychain, Android in files encrypted with an Android Keystore key, and Windows and Linux in the OS credential service, with no plaintext fallback (`crates/oauth-service/src/host.rs`). The connection metadata and the operator's optional `clients.json` and `backends.json` are in `<apps root>/.host/oauth/`.
 - **The startup check** (`app_storage/check.rs`) refuses a workspace that is a symlink, or that links into or contains the secrets, until a later start finds it clean. Nothing is deleted.
 
-Rinx (through `OctosAppService::set_account`) and Mail's host service report accounts. Removing an account deletes its folder; uninstalling deletes the app's jail, secrets and keychain items. Then the shell asks octos to `peer/purge` each recorded peer (`crates/app-peers/src/purge.rs`), which erases its transcripts, memory and blackboard. The account stays suspended (`secrets/.host/suspended.json`) until it is added again, with a new agent.
+Rinx (through `OctosAppService::set_account`), Mail's host service and the `auth` service report accounts. Removing an account deletes its folder; uninstalling deletes the app's jail, secrets and keychain items. Then the shell asks octos to `peer/purge` each recorded peer (`crates/app-peers/src/purge.rs`), which erases its transcripts, memory and blackboard. The account stays suspended (`secrets/.host/suspended.json`) until it is added again, with a new agent.
 
 The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app data dir>/octos-home/.octos` on a phone (`crates/kernel/src/dirs.rs`), holds its profile, sessions, blackboards and memory. Provider keys belong to the `llm` host service ([ai-services.md](ai-services.md#ai-providers-and-the-llm-host-service)). **Planned:** Rinx, which does not claim this storage yet, moves its data under `apps/rinx/` (ADR 0004 §11).
 
@@ -405,7 +435,8 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
 | App ↔ kernel | No app speaks OUP or sees the host token |
 | Peer ↔ peer | octos gives each peer its own workspace (overlaps refused), memory namespace and transcript |
 | Agent ↔ secrets | Secrets outside every jail and workspace; the startup check |
-| Agent ↔ Mail delivery | No agent tool or generated card sends: only the host's review of the exact message, approved by trusted physical touch |
+| Agent ↔ Mail delivery | No agent tool or generated card sends: only the host's review of the exact message, approved by a physical press; synthetic and remote input are refused |
+| Agent ↔ connected accounts | The app and its agent hold only a connection handle. No tool signs in, commits, saves an event or sends: each needs a host sheet or review. On `main`, approving any of them takes a trusted physical press; on `desktop-v0.1.0-beta.2`, only a Gmail send does |
 | External client ↔ kernel | The external token, method and tool allowlists, `Host` and `Origin` checks |
 
 **The process sandbox** (`crates/shell/src/sandbox/`) is built from the entry's `sandbox` and `storage` blocks. It closes the person's home and volumes except the app's jail, its secrets folder and its reviewed `external` grants (the Terminal's `home:rw`), and keeps everything the next build reads or runs read-only. `network: none` leaves only the hub's port, `processes: false` forbids fork and exec, and the app inherits only an allow-list of the shell's environment, never a key or token.
@@ -414,7 +445,7 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
 
 ## 8. Worked example: emailing a meeting invite
 
-This is ADR 0004's original sketch of cross-app work: Calendar's real `calendar.add_event`, then a cross-app `mail.send`. The Mail half is **not built**, and ADR 0007 has replaced how it would be approved: no standing rule or developer mode may approve a Mail send, and each message needs the host's review and a physical touch ([section 5](#5-approvals)). The diagram keeps the sketch's relay path and marks what ADR 0007 replaced. [Composed Mail cards](mail-composable-cards.md) describes how Mail sends today.
+This is ADR 0004's original sketch of cross-app work: Calendar's real `calendar.add_event`, then a cross-app `mail.send`. The Mail half is **not built**, and ADR 0007 has replaced how it would be approved: no standing rule or developer mode may approve a Mail send, and each message needs the host's review and a physical press ([section 5](#5-approvals)). The diagram keeps the sketch's relay path and marks what ADR 0007 replaced. [Composed Mail cards](mail-composable-cards.md) describes how Mail sends today.
 
 ```mermaid
 sequenceDiagram
@@ -435,7 +466,7 @@ sequenceDiagram
   SH->>R: approval (Mail, mail.send, exact args, caller Calendar)
   Note over R,P: ADR 0004 let a standing rule or a sheet approve this.<br/>ADR 0007 replaced that: no rule or developer mode may approve a Mail send.
   R->>P: the host's review of each exact message
-  P-->>R: approves each, by physical touch
+  P-->>R: approves each with a physical press
   SH->>M: send x3 (not built)
   M-->>SH: results
   SH-->>C: peer/tool/result
@@ -456,16 +487,16 @@ sequenceDiagram
 
 Each item is an ADR decision that the code at HEAD does not follow.
 
-1. **Native agents with `agent_workspace: "none"` still get a workspace.** ADR 0004 §11 says such an agent reads no files. But `host_tools::agent_workspace_in` gives every native app with `octos.*` services its account folder as the peer's workspace, whatever `agent_workspace` declares, and the shell registers `files.*` on every peer with a workspace (Unix). So Calculator, Clock, Notes, Reminders, Weather and the Terminal get a folder and `files.*`. The declaration applies only to script apps and to the person's lane's read-only view of the folder (`context_reads_account`).
+1. **Native agents with `agent_workspace: "none"` still get a workspace.** ADR 0004 §11 says such an agent reads no files. But `host_tools::agent_workspace_in` gives every native app with `octos.*` services its account folder as the peer's workspace, whatever `agent_workspace` declares, and the shell registers `files.*` on every peer with a workspace (Unix). So App Hub, Calculator, Clock, Notes, Reminders, Weather and the Terminal get a folder and `files.*`. The declaration applies only to script apps and to the person's lane's read-only view of the folder (`context_reads_account`).
 2. **Older peers and two hashes.** ADR 0004 §11 makes the account folder every peer's workspace. A peer recorded without one resumes with the account folder if octos accepts it, else with its kernel-provisioned workspace. The folder name (SHA-256) and the memory tag (FNV-1a, `account_tag`) are still two hashes of one normalized account.
-3. **Secrets in a platform vault.** ADR 0004 §11 asks for the OS keychain where there is one. Only macOS and iOS use it. Windows, Linux, Android and OpenHarmony keep each key in a plain file, owner-only (0600) on all but Windows.
+3. **App secrets in a platform vault.** ADR 0004 §11 asks for the OS keychain where there is one. Only macOS and iOS use it. Windows, Linux, Android and OpenHarmony keep each key in a plain file, owner-only (0600) on all but Windows.
 4. **Rate limits and background policy.** ADR 0004 §3 lists both among the relay's checks; the relay enforces budgets only.
 5. **After the fact.** ADR 0004 §8 promises a send queue with an undo window, and auto-approvals audited with their arguments. There is no queue or undo, and the audit keeps a digest.
 6. **Per-client file grants.** ADR 0004 §11 narrows the host read tools by per-client grants; no manifest field declares them yet.
 7. **Rinx.** ADR 0004 §9 confirms Rinx's send tool on its own `confirm: app` sheet, §11 moves its data under `apps/rinx/`, and §13 lets developer mode override every app's sheet. At its pinned tag Rinx declares no agent tools, registers no sheet with the router, keeps its own data folder, and its send sheet still asks in developer mode.
 8. **The Windows sandbox.** ADR 0004 §3 gives Windows process apps an AppContainer. It is not built, so they run with the person's rights. The system agent gets no `terminal.run` there, but other callers can still type into the Terminal (item 11).
 9. **Process apps in release packages.** ADR 0004 §2 ships their binaries; release packages ship only `octosense` and the kernel (`desktop/packaging/release.json`).
-10. **Mail sending.** ADR 0004 §8 lets a standing rule answer an outward call such as `mail.send`, and §13 lets developer mode override every approval. The code follows ADR 0007 instead: a Mail send needs the host's review and a physical touch whatever the rules or developer mode say, and ADR 0004 does not mention the exception.
+10. **Mail sending.** ADR 0004 §8 lets a standing rule answer an outward call such as `mail.send`, and §13 lets developer mode override every approval. The code follows ADR 0007 instead: a Mail send needs the host's review and a physical press whatever the rules or developer mode say, and ADR 0004 does not mention the exception.
 11. **Only the system agent's `terminal.run` checks the sandbox.** ADR 0004 §10 lets the Terminal's AI type commands only while the Terminal runs as its own sandboxed process. The system agent's `terminal.run` checks that (`sandbox::launch_sandboxed`); nothing else does. A process Terminal offers the desktop's AI pane its own `run` either way, and in developer mode the host-tool relay grants `terminal.run` to every covered app agent. So on Windows, which has no sandbox yet, the pane can type into an unsandboxed Terminal behind the approval router, and in developer mode so can those agents. Release packages have no AI pane. The in-process Terminal does follow the ADR, because the shell announces its module's read-only manifest. `host_executor` in `crates/shell/src/module_host.rs` swaps in an executor that would also answer `run`, but nothing sends it `run`: the pane calls only the tools a manifest declares, and the shell's own calls (`AiBus::shell_call`) check the same manifest.
 
 ## Source map
@@ -480,6 +511,7 @@ Each item is an ADR decision that the code at HEAD does not follow.
 | Shell AI entry point; script apps' `octos` service; the module peer link | [`crates/ai-host/src/`](../crates/ai-host/README.md) (`lib.rs`, `contained.rs`, `module_peer.rs`) |
 | App peers: contract, broker, launch, injection, guidance, purge | [`crates/app-peers/src/`](../crates/app-peers/README.md) |
 | The system agent's host tools; Mail's events | [`crates/shell/src/agents.rs`](../crates/shell/src/agents.rs), [`agent_events.rs`](../crates/shell/src/agent_events.rs), [`system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs) |
+| Connected accounts: OAuth and the `auth`, `github`, `gmail` and `gcalendar` services; installed apps' Gmail events and the native review of their saves and sends | [`crates/oauth-service/`](../crates/oauth-service/README.md), [`crates/shell/src/connected_events.rs`](../crates/shell/src/connected_events.rs), [`connected_review.rs`](../crates/shell/src/connected_review.rs) |
 | The system chat and the "Ask &lt;app&gt;" panel | [`crates/shell/src/system_chat/`](../crates/shell/src/system_chat/mod.rs), [`app_chat/`](../crates/shell/src/app_chat/mod.rs) |
 | The peer link | [`crates/shell/src/peer_link/`](../crates/shell/src/peer_link/mod.rs) |
 | Host-tool relay, executors, host read tools, `dev.run`, toolbox | [`crates/shell/src/host_tools/`](../crates/shell/src/host_tools/mod.rs), [`crates/toolbox`](../crates/toolbox/README.md) |
@@ -499,4 +531,6 @@ Code outside this repository, at the revisions `Cargo.toml` pins:
 | The Terminal's own-agent link (Makepad #100) | [`apps/terminal/src/module.rs`](https://github.com/OctoSense-org/makepad/blob/68d1f4ecc111daa90c50530e77df3245f05fc2cf/apps/terminal/src/module.rs) |
 | octos: the lanes' shared history (20 rows, 16 KiB); `peer_send_input` (64 KiB) | [`crates/octos-cli/src/peers/shared_history.rs`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/crates/octos-cli/src/peers/shared_history.rs), [`crates/octos-agent/src/tools/peer_send_input.rs`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/crates/octos-agent/src/tools/peer_send_input.rs) |
 | octos: host-managed serve, app peers, peer host tools | [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/HOST_MANAGED_SERVE.md), [UPCR-2026-034](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_034_HOST_APP_PEERS.md), [UPCR-2026-035](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_035_PEER_HOST_TOOLS.md), [UPCR-2026-036](https://github.com/octos-org/octos/blob/39e22d457c47df57d7c7c9fa64539979c9da93fd/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_036_HOST_MANAGED_SERVE.md) |
-| App Hub: the kernel tools a script app may keep (`KERNEL_TOOLS`) | [`crates/app-policy/src/policy.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d5b47a2ae9eb98020feca26b7c895a3cf797dc1/crates/app-policy/src/policy.rs) |
+| App Hub: the kernel tools a script app may keep (`KERNEL_TOOLS`) | [`crates/app-policy/src/policy.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/crates/app-policy/src/policy.rs) |
+| App Hub: the shared-service methods a tool may map to (`SHARED_HOST_METHODS`) | [`crates/app-policy/src/agent.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/crates/app-policy/src/agent.rs) |
+| App Hub: its own agent's read tools | [`crates/app-hub-app/src/ai.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/crates/app-hub-app/src/ai.rs) |

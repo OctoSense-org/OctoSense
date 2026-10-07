@@ -4,7 +4,7 @@
 
 **初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
-> **在整个系统中的位置。**系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent。Shell 为每个启用的应用/账号提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
+> **在整个系统中的位置。**系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent。Shell 为每个启用的应用/账户提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
 
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
@@ -72,7 +72,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 权限弹窗只能暂停正在播放的视频，不能将尚未初始化的相机在返回后误标为正在播放。
 预览按布局完成后的实际显示尺寸等比填充，支持 `Fill` 和窗口缩放；
 旋转后的相机画面裁切边缘，不再拉伸。AI providers 的 Android 扫码器
-先选择相机声明支持的预览／YUV 输出尺寸，再打开相机；显示时保持比例，
+先选择相机声明支持的预览/YUV 输出尺寸，再打开相机；显示时保持比例，
 旧扫码会话的回调不会关闭新打开的扫码器。
 
 修改后在仓库根目录运行 `python3 tools/sync-app-interface.py`，将共用样式
@@ -105,7 +105,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
   关闭播放器会结束页面（makepad#43，已在运行时中）。播放打开的是 YouTube 移动版观看页，
   它会静音自动播放，并显示自己的“Open App”提示。搜索读取 YouTube 的搜索结果页，依赖其布局。
 - **Camera**：Redmi Note 12 独立测试包（2026-10-07）已通过延迟首次授权、
-  前后镜头切换、Photo／Video 预览模式切换和后台恢复。`Fill` 预览拉伸已修正，
+  前后镜头切换、Photo/Video 预览模式切换和后台恢复。`Fill` 预览拉伸已修正，
   原生 GPU 的圆形尺寸对比通过；手机明亮场景的外观对比仍待验证。
   2026-09-25 报告的 OnePlus 6 黑屏尚未复测。本轮未测试拍照；Android 录像仍未实现。
 - **AI providers 相机导入**：Redmi Note 12 扫码器使用设备支持的预览尺寸，
@@ -218,7 +218,7 @@ appcard/                     原生 AppCard 助手
 ../crates/shell/             octosense-shell：两种打包形态共同链接的唯一 Shell
 ../crates/ai-host/           octosense-ai-host：Shell 的 AI 服务（内核、`llm`、app peers），统一入口
 ../crates/kernel/            octosense-kernel：Shell 的 octos 内核（每进程一个，共享）
-../crates/app-peers/         octosense-app-peers：应用 Agent 的代理，每个（应用，账号）一个 peer
+../crates/app-peers/         octosense-app-peers：应用 Agent 的代理，每个（应用，账户）一个 peer
 ../crates/l0-chat/           octosense-l0-chat：卡片卡内对话（sys.chat）的宿主一侧
 ../.github/workflows/apps.yml   宿主服务、AppCard 和 Shell 服务的 CI
 ```
@@ -368,10 +368,10 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 账户元数据（不含密码）和已拉取的邮件存放在宿主自己的目录（`<host_dir>/mail`），
 位于所有应用沙箱之外。每个账户只授权给添加它的应用。服务会先测试账户可用，再保存。
 
-Mail 收件箱的 **Reconnect account（重新连接账号）**会打开同一个宿主登录面板。
+Mail 收件箱的 **Reconnect account（重新连接账户）**会打开同一个宿主登录面板。
 输入相同邮箱地址、用户名与收件服务器设置，即可更新凭据，同时保留邮件缓存和已保存草稿。
 Android 的密码文件由该安装包的 Keystore 密钥加密；从测试包复制到 Home 并不能
-恢复登录。请在目标包内重新连接，不要用 Remove account 删除账号来重置凭据。
+恢复登录。请在目标包内重新连接，不要用 Remove account 删除账户来重置凭据。
 
 ### `calendar` 服务
 
@@ -426,7 +426,7 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 
 ## 应用 Agent
 
-应用 Agent 是应用自己的 octos peer，归系统 Agent 所有：有自己的工作区（应用的账号文件夹
+应用 Agent 是应用自己的 octos peer，归系统 Agent 所有：有自己的工作区（应用的账户文件夹
 `apps/<id>/accounts/<account>/`）、记忆、模型通道和工具。哪些系统应用有 Agent，以及如何声明
 （[`../crates/shell/src/apps.rs`](../crates/shell/src/apps.rs) 的 `agent_apps`、
 [`../crates/shell/src/host_tools/script_apps.rs`](../crates/shell/src/host_tools/script_apps.rs)）：
@@ -439,10 +439,10 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 | 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
-**邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审核。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
+**邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审阅界面。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
 
 **宿主服务 API 不会自动成为 Agent 工具。** Mail 显式声明了账户绑定的读取/同步、
-发布、事件决策和草稿／提议工具。`mail.peek` 不标记已读；`mail.message` 仍是 UI API。UI 的 `mail.send` 路径现已改为准备宿主审核，而非未经批准调用 SMTP。Agent 工具不能批准或发送。[组合 Mail 卡片](../docs/mail-composable-cards.zh-CN.md)追踪持久编辑、上下文聊天及仅限 Android 实体输入的审批边界；双模型手机集成验收仍未验证。
+发布、事件决策和草稿/提议工具。`mail.peek` 不标记已读；`mail.message` 仍是 UI API。UI 的 `mail.send` 路径现已改为打开宿主的审阅界面，而非未经批准调用 SMTP。Agent 工具不能批准或发送。[组合 Mail 卡片](../docs/mail-composable-cards.zh-CN.md)介绍了持久编辑、上下文聊天和审批边界：只有亲手点按（Android 上触摸屏幕，macOS 上用鼠标或触控板点击）才能发送，合成输入和远程输入都会被拒绝。macOS 路径和双模型手机集成验收仍**未验证**。
 Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
 展示了通过显式声明的 Rust 工具读写应用数据的路径；它的脚本窗口目前只是 Agent
 使用说明。见[数据访问源码导读](../desktop/docs/code-walkthrough.zh-CN.md)。
@@ -451,7 +451,7 @@ Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Cal
   其中带点的名称表示申请另一个应用的可共享工具），`bundle/tools.json` 声明应用自己的工具：
   `<app>.<tool>`、`input_schema`、`output_schema`、`risk`（`read`、`act`、`destructive`）、
   `background`、`confirm`（`host` 或 `app`）、`shareable` 和 `implemented_by: "host-service"`。
-  App Hub 接纳并固定这两个文件。`agent` 块中的 `profile` 和 `model` 会被接纳，但 Shell 还没有使用。
+  App Hub 准入并固定这两个文件。`agent` 块中的 `profile` 和 `model` 会被准入，但 Shell 还没有使用。
 - **运行。** 在用户于首次使用面板上允许之前什么都不会运行（用户用顶栏的 “Ask <app>”、
   Shift+F8 或菜单项 “Ask this app's agent” 打开 Shell 的 “Ask <app>” 面板时，或系统
   Agent 用 `agents.ask` 询问时，弹出这个面板）。之后 Shell 准备好 peer，系统 Agent

@@ -5,11 +5,15 @@ English | [简体中文](mail-composable-cards.zh-CN.md)
 The native **Email / Chat** workspace shares one saved draft. In isolated OnePlus 6
 phone tests, both actual `deepseek-v4-flash` and `MiniMax-M3.1-Flash-Preview`
 changed an appointment time through chat, and the Reply pane and final review
-showed that exact saved change. The earlier controlled shipping demo also
-completed physical human approval and a verified threaded SMTP reply. These
-are separate checkpoints: the new workspace tests did not send real email.
-Only physical Android touchscreen input can approve sending in this iteration;
-desktop/accessibility approval and the complete phone UI matrix remain deferred.
+showed that exact saved change. In the earlier controlled shipping demo, a
+person approved the send with a physical press, and the threaded SMTP reply was
+verified. These are separate checkpoints: the new workspace tests did not send
+real email.
+
+Sending needs a physical press on the host's review, either a tap on Android or
+a click on macOS; synthetic and remote input are refused. The macOS path is
+**unverified**: no real message has been sent from a Mac. Windows, Linux and
+accessibility approval, and the complete phone UI matrix, remain deferred.
 
 After a saved transport receipt confirms SMTP acceptance, the bound reply card
 and notification leave Glance. The draft and send receipt remain stored, and an
@@ -36,7 +40,7 @@ revision-bound host capability; successful prose alone cannot update the UI.
 | Model finishes | “Reply updated · saved” appears after a saved model edit | Uses authoritative draft state, never inferred success from assistant text |
 | Read or edit | Body is directly editable; Details expands recipient/subject fields | Keystrokes stage locally; idle saves are coalesced; switching to Chat flushes edits |
 | Compare with the email | View original email inside Email | Reads the bound original email without replacing the reply |
-| Review and send | A separate final review shows From, To, subject and exact body | Only physical Approve & Send authorizes that immutable payload |
+| Review and send | A separate final review shows From, To, subject and exact body | Only a physical press on Approve & Send authorizes that immutable payload |
 | Save conflict | Unsaved text remains visible, with Use my edit / Use saved reply | Never silently overwrites newer data; blocks chat/review until resolved |
 | Sending or uncertain outcome | Explicit sending, accepted, failed or unknown state | Keeps receipts and requires a fresh review/approval for an explicit retry |
 
@@ -96,7 +100,7 @@ between top mode tabs and bottom edit/review controls. The successful model and
 storage tests remain valid; they do not establish a UX pass. No replacement
 numeric score is claimed.
 
-The current revision replaces the feed-sized expansion with a resident full-screen workspace. The summary supplies an animation origin; active layout uses the shell's safe viewport and never the feed header, margins or height cap. The feed stays compact and cannot receive input while covered. **Email / Chat** share one row. Email contains the original-message toggle and directly editable draft; Chat pins its composer and links to the actual saved update. Review occupies the workspace and preserves exact-message physical approval. Back dismisses keyboard, review and workspace in that order. Collapse retains the session, unsent chat and widget state; three inactive clean workspaces are cached, and dirty human input is excluded from clean eviction. This retention is within the current process. Account invalidation and publication withdrawal retire the relevant view; pending review authority is never retained. Reduced Motion or a missing source rectangle uses an immediate transition. Notification entry opens above the current phone screen without first navigating through Glance. Native first-open/session costs remain separate from presentation animation and must be measured.
+The current revision replaces the feed-sized expansion with a resident full-screen workspace. The summary supplies an animation origin; active layout uses the shell's safe viewport and never the feed header, margins or height cap. The feed stays compact and cannot receive input while covered. **Email / Chat** share one row. Email contains the original-message toggle and directly editable draft; Chat pins its composer and links to the actual saved update. Review occupies the workspace and still requires a physical press to approve the exact message. Back dismisses keyboard, review and workspace in that order. Collapse retains the session, unsent chat and widget state; three inactive clean workspaces are cached, and dirty human input is excluded from clean eviction. This retention is within the current process. Account invalidation and publication withdrawal retire the relevant view; pending review authority is never retained. Reduced Motion or a missing source rectangle uses an immediate transition. Notification entry opens above the current phone screen without first navigating through Glance. Native first-open/session costs remain separate from presentation animation and must be measured.
 
 **Full-screen workspace checkpoint (Lab 0454/0456/0458, user test build 0459):**
 The OnePlus 6 now draws the workspace at the root safe viewport (`384 × 758`
@@ -322,13 +326,19 @@ is recorded above, separately from those historical runs.
 The [Makepad overlay](../tools/runtime-patches/makepad-trusted-user-input.patch)
 keeps `trusted_user_input()` false by default. Android JNI checks a positive,
 nonvirtual device, touchscreen source, unobscured flags and noncancelled input;
-null objects or Java exceptions enqueue no trusted input. A scoped guard applies
-only during the native TouchUpdate handler. Remote/nested synthetic dispatch,
-deferred actions and script tasks do not inherit it. Host review requires a
-matching trusted press and release. `with_untrusted_input` can only remove trust.
-Keyboard/IME, long press, desktop and accessibility input currently cannot
-approve a send. A compromised OS/root process impersonating hardware lies
-outside this application-level boundary; this is not hardware attestation.
+null objects or Java exceptions enqueue no trusted input. A
+[second overlay](../tools/runtime-patches/makepad-desktop-trusted-input.patch)
+trusts a macOS pointer press or release only when AppKit supplies a CGEvent
+from the HID source with no posting process.
+
+A scoped guard applies only while the native handler of a trusted touch
+(`TouchUpdate`) or click runs. Remote and synthetic dispatch (with any native
+callback nested inside it), deferred actions and script tasks do not inherit the
+guard. Host review requires a matching trusted press and release.
+`with_untrusted_input` can only remove trust. Keyboard/IME, long press,
+accessibility input and any input on Windows or Linux cannot approve a send. A
+compromised OS/root process impersonating hardware lies outside this
+application-level boundary; this is not hardware attestation.
 
 <a id="verification-checkpoint"></a>
 
@@ -360,8 +370,8 @@ acceptance results; installing the later build does not rerun the earlier flows.
 | MiniMax card | Phone editing, live contextual chat, explicit suggestion acceptance, injected-approval rejection, cancel and restart restoration exercised; scoped hidden-native checks also passed. |
 | Remaining phone UI matrix | Full IME composition, cursor/selection, Unicode, themes, touch-target sizing, conflicts, account switching, expiry and retry coverage remains incomplete. Relevant local tests are not a substitute. |
 | Notification-toast touch route | Four new regressions passed. On 0415, a visible notification followed by an injected Android tap opened the exact bound card and retained revision 44. This proves navigation, not send authorization. |
-| Physical approval and real threaded reply | No real SMTP send performed. Physical human approval, provider acceptance and matching card/sheet receipts remain unverified. |
-| Desktop/accessibility approval | Deferred; the current provenance boundary denies these routes. |
+| Physical-press approval and real threaded reply | No real SMTP send performed. Approval with a physical press, provider acceptance and matching card/sheet receipts remain unverified. |
+| Desktop/accessibility approval | Deferred at this checkpoint; the provenance boundary denied these routes. Later builds accept a click on macOS as a physical press (**unverified**); input on Windows or Linux, and accessibility input, still cannot approve. See [Runtime contracts and input provenance](#runtime-contracts-and-input-provenance). |
 
 ### Per-provider engineering review
 
@@ -527,6 +537,6 @@ performance measurements.
 
 The provisioned grammar guidance improved between providers, including chat
 input guidance. This is engineering validation, not a controlled performance
-benchmark or model ranking. Simulated UI input remains distinct from trusted
-physical approval. No real SMTP submission, provider acceptance or recipient
+benchmark or model ranking. Synthetic UI input remains distinct from a trusted
+physical press. No real SMTP submission, provider acceptance or recipient
 delivery is claimed; those gates remain open.

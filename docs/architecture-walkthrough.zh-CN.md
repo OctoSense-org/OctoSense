@@ -35,7 +35,7 @@
 
 运行方法见桌面端 README 的[构建与运行](../desktop/README.zh-CN.md#构建与运行)，其中用 `python3 tools/kernel-artifact.py --host --stage target/release` 准备锁定版本的内核。
 
-普通联网应用也使用同一个 Card runner。GitHub Notes、Inbox Assistant、Google Calendar 声明 `auth`、所需业务服务及 `storage.accounts: true`；宿主将 peer 绑定到当前选中的不透明连接。登录、显式 `host_method` 工具映射、持久化 Gmail 事件与接纳的 Glance 模板见 [OAuth/服务导读](../crates/oauth-service/README.zh-CN.md)。这些应用使用服务商数据；真实服务商和设备验收仍待完成。
+连接账户的普通应用也使用同一个 Card runner。GitHub Notes、Inbox Assistant、Google Calendar 声明 `auth`、所用的数据服务族（`github`、`gmail` 或 `gcalendar`）及 `storage.accounts: true`；宿主把每个应用的 peer 绑定到它当前的连接，应用只看到不透明的连接句柄。登录、显式 `host_method` 工具映射、持久化 Gmail 事件与已准入的 Glance 模板见 [OAuth 指南](../crates/oauth-service/README.zh-CN.md)。Google Calendar 读取用户的 Google 日历，而不是内置日历的 `events.json`。真实 GitHub 和 Google 账户的登录已在 macOS 上通过；GitHub 写入、Gmail 发信和设备验收仍待完成。
 
 ## 3. 找到内核的所有者
 
@@ -68,16 +68,16 @@
 
 - `OctosAppService`：一个应用实例的作用域服务。`open_conversation` 打开用户的通道，`open_context` 打开私有上下文（Rinx 的小程序）。
 - `OctosContext::call(ContextOp, EventSink)`：一次操作，它的事件以且仅以一个 `Complete` 结束。
-- `ContextSpec`（账号和已授权的服务）与 `TurnTrigger`（是什么启动了这一回合），都由宿主标注（[第 6 节](#6-用户在哪里对话)）。
+- `ContextSpec`（账户和已授权的服务）与 `TurnTrigger`（是什么启动了这一回合），都由宿主标注（[第 6 节](#6-用户在哪里对话)）。
 
-**日历的 peer。** 脚本应用的 peer 属于 [ai-host/src/contained.rs](../crates/ai-host/src/contained.rs) 中的 `octos` 宿主服务。`contained::prepare`（由 `agents::prepare` 调用）和 `contained::conversation`（由 “Ask Calendar” 面板调用）共用同一个代理 `card.os.calendar`，它由 `hosted::launch`（[hosted.rs](../crates/app-peers/src/hosted.rs)）构建。日历不区分账号，所以代理代表 `device` 行事。接着，`Broker::ensure_peer`：
+**日历的 peer。** 脚本应用的 peer 属于 [ai-host/src/contained.rs](../crates/ai-host/src/contained.rs) 中的 `octos` 宿主服务。`contained::prepare`（由 `agents::prepare` 调用）和 `contained::conversation`（由 “Ask Calendar” 面板调用）共用同一个代理 `card.os.calendar`，它由 `hosted::launch`（[hosted.rs](../crates/app-peers/src/hosted.rs)）构建。日历不区分账户，所以代理代表 `device` 行事。接着，`Broker::ensure_peer`：
 
-1. 发送 `peer/prepare`，带上记忆命名空间 `app/card.os.calendar/acct-<tag>` 和 `resume: true`，对新 peer 还把账号文件夹设为它的工作区（`ToolHost::agent_workspace`）；
+1. 发送 `peer/prepare`，带上记忆命名空间 `app/card.os.calendar/acct-<tag>` 和 `resume: true`，对新 peer 还把账户文件夹设为它的工作区（`ToolHost::agent_workspace`）；
 2. 如果内核没有采用这个命名空间，就拒绝它；
 3. 把 peer 的宿主 token 保存在 `PeerRecord` 中，并打开 peer 会话 `…#peer-<slug>`，也就是系统 Agent 的通道；
 4. 注册应用的工具（`register_tools`，[第 7 节](#7-把工具追到-rust-代码)）。注册失败的 peer 不运行任何回合。
 
-原生应用开着两个窗口时，只有最早实例的代理驱动 peer（`Broker::drives`；它关闭时由 `take_over` 接替）。日历只有一个代理，总是由它注册工具、接收系统 Agent 的输入。它的 `on_peer_input` 检查账号和同意（`ToolHost::admit_input`），需要拒绝时回复 `peer/input/reject`，否则在 peer 会话上启动这一回合，一次一个。
+原生应用开着两个窗口时，只有最早实例的代理驱动 peer（`Broker::drives`；它关闭时由 `take_over` 接替）。日历只有一个代理，总是由它注册工具、接收系统 Agent 的输入。它的 `on_peer_input` 检查账户和同意（`ToolHost::admit_input`），需要拒绝时回复 `peer/input/reject`，否则在 peer 会话上启动这一回合，一次一个。
 
 **用户的通道。** 每个对话句柄都得到一个新的请求上下文，以 `share_history` 打开（`open_handle`）；如果应用声明了 `storage.agent_workspace: "account"`，还会加上 `read_parent`（`context_reads_account`）。
 
@@ -91,7 +91,7 @@ sequenceDiagram
     participant L2 as 用户的通道
     S->>K: peer_send_input(slug, 问题)
     K->>B: peer/input
-    B->>B: 检查账号和同意，输入排队
+    B->>B: 检查账户和同意，输入排队
     B->>K: 在 peer 会话上 turn/start
     K->>L1: 运行系统 Agent 的回合
     P->>B: Ask Calendar，TurnFrom 带 TurnTrigger::Person
@@ -118,11 +118,19 @@ sequenceDiagram
 | 脚本应用自己的对话 | `host.request("octos.turn.start")`，由 `contained.rs` 应答，限于 manifest 声明的名称 |
 | 卡片的 Chat 标签页，或声明了 `sys.chat` 的卡片 | [glance_chat.rs](../crates/shell/src/glance_chat.rs) 和 [l0-chat](../crates/l0-chat/src/lib.rs) |
 
-**卡片工作区**（[卡内对话](../README.zh-CN.md#卡内对话)）。[glance_sheet.rs](../crates/shell/src/glance_sheet.rs) 显示打开的卡片：手机上全屏，桌面端居中。如果发布者有 Agent，而卡片没有声明对话，`L0Session::for_card`（[glance_card.rs](../crates/shell/src/glance_card.rs)）会在 Card / Chat 标签页后面加上宿主拥有的 `WorkspaceChat`。`chat_submit` 把每一轮经由 `glance_chat::perform_bound` 发往发布这张卡片的账号（`agents::conversation_for_account`），卡片的数据和本地状态只作为上下文（`ContextKind::Card`），从不作为工具。邮件回复卡片则用 Email / Chat 共用一份保存的草稿；Chat 的每一轮都带着一个一次性令牌（`drafts::issue_chat_edit`），让 `mail.suggest_reply` 能保存这次修改（[可组合的邮件卡片](mail-composable-cards.zh-CN.md)）。
+**卡片工作区**（[卡内对话](../README.zh-CN.md#卡内对话)）。[glance_sheet.rs](../crates/shell/src/glance_sheet.rs) 显示打开的卡片：手机上全屏，桌面端居中。如果发布者有 Agent，而卡片没有声明对话，`L0Session::for_card`（[glance_card.rs](../crates/shell/src/glance_card.rs)）会在 Card / Chat 标签页后面加上宿主拥有的 `WorkspaceChat`。`chat_submit` 把每一轮经由 `glance_chat::perform_bound` 发往发布这张卡片的账户（`agents::conversation_for_account`），卡片的数据和本地状态只作为上下文（`ContextKind::Card`），从不作为工具。邮件回复卡片则用 Email / Chat 共用一份保存的草稿；Chat 的每一轮都带着一个一次性令牌（`drafts::issue_chat_edit`），让 `mail.suggest_reply` 能保存这次修改（[可组合的邮件卡片](mail-composable-cards.zh-CN.md)）。
 
 尚未实现：还没有随附的应用从自己的界面打开用户的通道；入口是 Shell 的面板和卡片。
 
-触发方式决定了审批在多大程度上信任一个回合。只有 Shell 自己的界面（“Ask &lt;app&gt;” 面板和系统对话）才会标注 `TurnTrigger::Person`；进程内模块本可以经注入的服务这样做，但目前都没有。应用说 `"trigger": "person"` 时，会被记为 `AppSaysPerson`（`TurnTrigger::from_args`），中转把它作为应用发起的运行交给审批路由（`host_tools/relay.rs` 中的 `trigger_of`）；卡内对话也得到同样的标注。不带触发方式的 `ContextOp::Turn`（Rinx 的小程序就这样发送）是 `Unknown`，常设规则会跳过它。邮件的新邮件事件（[agent_events.rs](../crates/shell/src/agent_events.rs)）以 `TurnTrigger::Incoming` 在这条通道里运行；其他应用还没有事件。
+触发方式决定了审批在多大程度上信任一个回合。只有 Shell 自己的界面（“Ask &lt;app&gt;” 面板和系统对话）才会标注 `TurnTrigger::Person`；进程内模块本可以经注入的服务这样做，但目前都没有。应用说 `"trigger": "person"` 时，会被记为 `AppSaysPerson`（`TurnTrigger::from_args`），中转把它作为应用发起的运行交给审批路由（`host_tools/relay.rs` 中的 `trigger_of`）；卡内对话也得到同样的标注。不带触发方式的 `ContextOp::Turn`（Rinx 的小程序就这样发送）是 `Unknown`，常设规则会跳过它。邮件的新邮件事件（[agent_events.rs](../crates/shell/src/agent_events.rs)）以 `TurnTrigger::Incoming` 在这条通道里运行，已安装 Gmail 应用的新邮件事件（[connected_events.rs](../crates/shell/src/connected_events.rs)）也一样。已安装应用的这类事件，Shell 只在以下条件同时满足时才交付：
+
+- 用户已允许它的 Agent；
+- 它安装的这个版本在当前的本地签名目录中仍是已准入状态（见[第 7 节](#7-把工具追到-rust-代码)中的撤回检查）；
+- 它已准入的 `agent` 块设置了 `background: true`，并列出触发器 `<应用短名>.new_message`，其中应用短名是应用 id 的最后一段（Inbox Assistant 的触发器是 `inbox.new_message`）；
+- 它声明了 `auth` 和 `gmail`；
+- 它当前的 Google 连接可以读取 Gmail。
+
+其他应用还没有事件。
 
 对于 “Ask Calendar”，回复经由上下文的 `EventSink` 流回，面板的跟随者（`OctosContext::subscribe`）能收到两条通道的事件。尚未实现：脚本应用收不到推送的事件，它的 `octos.turn.start` 返回的是完整的回复。
 
@@ -135,9 +143,9 @@ sequenceDiagram
 1. **声明**于 [apps/calendar/bundle/tools.json](../apps/calendar/bundle/tools.json)：它的 schema、`risk: "read"`、`implemented_by: "host-service"`，标为 `shareable: true`（调用者仍须显式授权）。
 2. **加载**：[host_tools/script_apps.rs](../crates/shell/src/host_tools/script_apps.rs) 中的 `from_bundle` 通过 App Hub 会核对摘要的加载器读取它。`install` 把工具加入中转的目录，并为 `os.calendar` 安装一个 `HostServiceExecutor`。
 3. **注册**：`broker.rs` 中的 `register_tools` 用 `ShellToolHost::declarations`（[host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)）返回的声明进行注册。
-4. **调用**：octos 在注册它的那条链路上发送 `peer/tool/call`。代理把账号、上下文和调用方标注进一个 `HostToolCall`（[app-peers/src/host_tools.rs](../crates/app-peers/src/host_tools.rs)），由 `ShellToolHost::tool_call` 排队交给 UI 线程。
-5. **检查**：`Relay::handle`（[relay.rs](../crates/shell/src/host_tools/relay.rs)）检查授权、同意、账号是否已退出登录、参数大小和 `input_schema`，然后是调用方的预算（默认每轮 32 次、每天 1000 次）。
-6. **运行**：`HostServiceExecutor::execute` 以 `os.calendar` 的身份，把一个 `ServiceCall` 分派到 App Hub 的服务注册表，不弹出任何面板。`CalendarService::call`（[apps/calendar/host-service/src/lib.rs](../apps/calendar/host-service/src/lib.rs)）读取 `<apps root>/.host/calendar/events.json`，按 `from`、`to` 和 `limit` 过滤。
+4. **调用**：octos 在注册它的那条链路上发送 `peer/tool/call`。代理把账户、上下文和调用方标注进一个 `HostToolCall`（[app-peers/src/host_tools.rs](../crates/app-peers/src/host_tools.rs)），由 `ShellToolHost::tool_call` 排队交给宿主中转。通常由 UI 驱动中转；Android 邮件后台任务也能在没有窗口时驱动同一个同步的中转。
+5. **检查**：`Relay::handle`（[relay.rs](../crates/shell/src/host_tools/relay.rs)）检查授权、同意、账户是否已退出登录、参数大小和 `input_schema`，然后是调用方的预算（默认每轮 32 次、每天 1000 次）。
+6. **运行**：`HostServiceExecutor::execute` 以 `os.calendar` 的身份，把一个 `ServiceCall` 分派到 App Hub 的服务注册表，不弹出任何面板。`CalendarService::call`（[apps/calendar/host-service/src/lib.rs](../apps/calendar/host-service/src/lib.rs)）读取 `<apps root>/.host/calendar/events.json`（`<apps root>` 指 OctoSense 主目录下的 `apps/` 文件夹），按 `from`、`to` 和 `limit` 过滤。
 7. **应答**：`script_apps::poll` 从 App Hub 的队列取回回复，`checked_reply`（在 `relay.rs` 中）按 `output_schema` 和大小上限检查它，`ToolReply` 只发送一次 `peer/tool/result`。
 
 `calendar.events` 只读，所以不会询问任何人。`calendar.remove_event`（`destructive`、`confirm: host`）则先由 octos 把关：内核发起一个 `host_tool` 审批，代理把它交给 `ToolHost::host_tool_approval`，只有获批的调用才会到达。
@@ -150,7 +158,7 @@ Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别�
 
 | 所有者 | 执行器 |
 | --- | --- |
-| 脚本应用，`implemented_by: "host-service"` | `HostServiceExecutor`：应用的宿主服务（`calendar`、`mail`、`news`），或者为 `<app>.notify` 服务的 Shell 通知服务 |
+| 脚本应用，`implemented_by: "host-service"` | `HostServiceExecutor`：应用的宿主服务（`calendar`、`mail`、`news`）、应答 `<app>.notify` 的 Shell 通知服务，或商店应用的工具在 `host_method` 中指定的共享服务（`github`、`gmail`、`gcalendar`、`glance`）。对 `github`、`gmail` 和 `gcalendar`，它还会注入该应用当前的连接。 |
 | 脚本应用，`implemented_by: "app"` | 尚无：调用以 `app_tool_unavailable` 被拒绝 |
 | 原生应用 | 它已打开的实例：经由 peer link 上的 `OctosPeer::serve_tools`，否则经由它的 AI bus 服务（应用没打开时回答 “Open … first”）。用 `OctosAppService::set_tool_executor` 安装的执行器优先。 |
 | `terminal.run`（仅系统 Agent） | 先由面板展示确切的命令，再经 AI bus 输入到可见的 Terminal |
@@ -170,7 +178,7 @@ Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别�
 
 决定会写入 `logs/approvals-audit.jsonl` 审计日志；时限就是 `app-peers/src/host_tools.rs` 中的 `DEFAULT_PROMPT_DEADLINE`（10 分钟）和 `EXPIRY_GRACE`（30 秒）。系统 Agent 不能批准：octos 拒绝它用 `peer_respond` 回答审批。每一步的含义见 [architecture.zh-CN.md 第 5 节](architecture.zh-CN.md#5-审批)。
 
-发送邮件从不经过这个审批路由。`mail.propose_send` 只准备确切的邮件内容；卡片里宿主自己的审阅界面（`mail_review.rs`）只有在用户亲手触摸之后（`trusted_user_gesture`，目前只在 Android 上）才调用 `drafts::approve_and_send`，开发者模式不能代替这一步。
+发送邮件从不经过这个审批路由。`mail.propose_send` 只准备确切的邮件内容；卡片里宿主自己的审阅界面（`mail_review.rs`）只有在用户亲手点按之后才调用 `drafts::approve_and_send`。亲手点按指 Android 上触摸屏幕，或 macOS 上用鼠标或触控板点击，按下和释放都必须可信（`trusted_user_gesture`）。合成输入和远程输入都会被拒绝，开发者模式也不能代替这一步。macOS 路径**未验证**：还没有在 macOS 上实际发送过邮件。
 
 ## 8. 数据存放在哪里
 
@@ -178,14 +186,14 @@ Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别�
 
 | 数据 | 位置 | Agent 如何访问 |
 | --- | --- | --- |
-| 账号文件夹 | `apps/<app id>/accounts/<account hash>/`，或 `accounts/device/`（[app_storage/mod.rs](../crates/shell/src/app_storage/mod.rs)） | 它是 peer 的工作区，在 peer 创建时固定。用户的通道运行在自己的 `contexts/<id>/` 中，通过 `read_parent` 或宿主的 `files.*` 工具读取账号文件夹（[files.rs](../crates/shell/src/host_tools/files.rs)：仅限 Unix；每次读取最多 128 KiB，列目录最多 500 项，搜索最多 100 条匹配）。 |
-| 宿主服务的数据 | App Hub 的宿主目录 `<apps root>/.host/`：日历的日程，邮件的邮件和回复草稿（`drafts.rs`） | 只能通过该服务的工具访问；任何工作区都不包含它。 |
+| 账户文件夹 | `apps/<app id>/accounts/<account hash>/`，或 `accounts/device/`（[app_storage/mod.rs](../crates/shell/src/app_storage/mod.rs)） | 它是 peer 的工作区，在 peer 创建时固定。用户的通道运行在自己的 `contexts/<id>/` 中，通过 `read_parent` 或宿主的 `files.*` 工具读取账户文件夹（[files.rs](../crates/shell/src/host_tools/files.rs)：仅限 Unix；每次读取最多 128 KiB，列目录最多 500 项，搜索最多 100 条匹配）。 |
+| 宿主服务的数据 | App Hub 的宿主目录 `<apps root>/.host/`：日历的日程，邮件的邮件和回复草稿（`drafts.rs`）；`oauth/` 下是已连接账户的元数据（`connections.json`）、Gmail 草稿与事件状态、Google Calendar 缓存，以及运维者可选提供的注册文件：替换构建内 OAuth 客户端注册的 `clients.json`，和登记应用自有后端的 `backends.json` | 只能通过该服务的工具访问（没有工具开放这些注册文件）；任何工作区都不包含它。 |
 | 对话记录和记忆 | octos 中，命名空间 `app/<app>/acct-<tag>` | 归 Agent 自己。`<tag>` 是 FNV-1a 哈希（`account_tag`）；文件夹名则是另一种哈希，SHA-256（`account_hash`）。 |
-| 机密 | 应用机密：macOS 和 iOS 上存入钥匙串（索引在 `<home>/secrets/<app id>/`），其他平台是该文件夹中的文件。提供方密钥：macOS 上存入钥匙串，其他平台存入内核核心目录下的文件（除 Windows 外仅所有者可读） | 永远不能访问。`app_storage::check` 会拒绝任何包含或链接到机密的工作区。 |
+| 机密 | 应用机密：macOS 和 iOS 上存入钥匙串（索引在 `<home>/secrets/<app id>/`），其他平台是该文件夹中的文件。AI 提供方密钥：macOS 上存入钥匙串，其他平台存入内核核心目录下的文件（除 Windows 外仅所有者可读）。OAuth token：macOS 和 iOS 上存入钥匙串，Android 上存成用 Android Keystore 密钥加密的文件，Windows 和 Linux 上存入系统凭据服务（`oauth-service/src/host.rs`） | 永远不能访问。`app_storage::check` 会拒绝任何包含或链接到机密的工作区。 |
 
-`agent_workspace_in`（[host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)）把账号文件夹交给每个拥有 `octos.*` 服务的原生应用，即使它声明了 `storage.agent_workspace: "none"`；也交给每个没有这样声明的脚本应用。日历的 Agent 得到 `apps/os.calendar/accounts/device/`，但日程不在那里：`calendar.events` 从 `.host/calendar/events.json` 读取日程，再把 JSON 交给模型。
+`agent_workspace_in`（[host_tools/mod.rs](../crates/shell/src/host_tools/mod.rs)）把账户文件夹交给每个拥有 `octos.*` 服务的原生应用，即使它声明了 `storage.agent_workspace: "none"`；也交给每个没有这样声明的脚本应用。日历的 Agent 得到 `apps/os.calendar/accounts/device/`，但日程不在那里：`calendar.events` 从 `.host/calendar/events.json` 读取日程，再把 JSON 交给模型。
 
-退出登录会挂起 peer，之后它的调用都会得到 `signed_out`。删除账号或卸载应用会用 `peer/purge`（[purge.rs](../crates/app-peers/src/purge.rs)）清除它。
+退出登录会挂起 peer，之后它的调用都会得到 `signed_out`。删除账户或卸载应用会用 `peer/purge`（[purge.rs](../crates/app-peers/src/purge.rs)）清除它。
 
 ## 9. 跨应用协作与求助
 
@@ -200,7 +208,7 @@ Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别�
 3. 对脚本应用包，App Hub 的准入提供了这个名称（`HostLimits.offered_tools`）。
 4. `Catalog::owner_of` 能从命名空间找到所有者：工具箱、同名的原生应用，否则是系统应用 `os.<namespace>`。
 
-日历共享 `calendar.events`、`calendar.add_event`、`calendar.notify`；Mail 的 manifest 恰好申请这三项，系统 Agent 则有单独的显式授权。加载 Mail 时也加载经接纳的日历目录和执行器，无需启动日历 peer 或窗口。Mail 读取已确认的邮件、解析日期与时区、先查日历，再用稳定重试键添加，验证保存结果并发布归属日历的卡片。安排日程须有用户请求或明确配置的策略。具名时区不受设备时区差异影响；这写入本地日历，并非 Google Calendar。新闻共享 `news.list` 和 `news.read`。尚未实现：`owner_of` 从不解析到商店应用，所以商店应用还不能共享工具。
+日历共享 `calendar.events`、`calendar.add_event`、`calendar.notify`；Mail 的 manifest 恰好申请这三项，系统 Agent 则有单独的显式授权。加载 Mail 时也加载已准入的日历目录和执行器，无需启动日历 peer 或窗口。Mail 读取已确认的邮件、解析日期与时区、先查日历，再用稳定重试键添加，验证保存结果并发布归属日历的卡片。安排日程须有用户请求或明确配置的策略。具名时区不受设备时区差异影响；这写入本地日历，并非 Google Calendar。新闻共享 `news.list` 和 `news.read`。尚未实现：`owner_of` 从不解析到商店应用，所以商店应用还不能共享工具。
 
 **求助。** [questions/mod.rs](../crates/shell/src/questions/mod.rs) 按回合的来源路由 Agent 的 `ask_user_question`：`peer/input` 回合的问题进系统对话，其余的进应用的对话。只有用户能回答，而且只能在 Shell 界面上回答。系统设施只以获授权的工具的形式提供给应用的 Agent，例如[工具箱](../crates/toolbox/README.md)的工作流。尚未实现：应用不能与系统 Agent 发起对话，`OctosAppService` 没有这样的调用。
 
@@ -212,11 +220,12 @@ peer 是存储的状态，回合是 octos 中的一组 Tokio 任务；线程属�
 | --- | --- | --- |
 | Shell 界面 | Makepad 的 UI 线程：绘制、事件，以及运行中转的 `host_tools::pump` | `lib.rs`、`host_tools/mod.rs` |
 | Mail 事件 | 两个 `std::thread`：独立收取与串行投递，各事件独立退避。Android 仅在前台或有时限的系统任务内允许执行。 | `agent_events.rs`、`mail_background.rs` |
+| 已连接账户的 Gmail 事件 | 一个 `std::thread`，名为 `connected-inbox-events`，在 Android 上只在前台或有时限的系统任务内运行。它每 300 秒轮询一次每个获准的（应用，连接）；仍有事件待处理时每 2 秒一次，失败后等 60 秒。每个事件的回合在该应用的 peer 上运行，限时 180 秒。 | `connected_events.rs` |
 | Android Mail 后台任务 | Java JobService 工作线程无需 Activity 即可加载同一个 Rust 宿主，驱动同步的工具中继；一个要求联网的周期任务，不创建第二个内核或对等代理。 | `phone/src/android_mail.rs`、`MailJobService.java`、`runtime_host.rs` |
 | 系统对话 | 一个 `std::thread`，用 `link::poll_for` 轮询内核 | `system_chat/mod.rs`、`link.rs` |
 | 内核服务 | 一个首次使用时才创建的 Tokio 运行时：2 个工作线程，8 MiB 栈；每个代际一个 supervisor 任务 | `kernel/src/lib.rs` 的 `Inner::runtime`、`kernel.rs` 的 `supervise` |
 | 应用代理 | 每次 `Broker::new` 创建一个运行时，1 个工作线程：链路循环、请求、重试、时限 | `app-peers/src/broker.rs` |
-| 宿主服务 | 由 App Hub 的 `services::dispatch` 在调用方的线程上调用：工具调用时就是中转泵调用线程（UI 或 Android Mail 任务），日历在那里应答。邮件（`work` 线程、`mail-fetch`）和新闻（`news-fetch`）把网络工作放到自己的线程上。 | `script_apps.rs`、`apps/*/host-service/` |
+| 宿主服务 | 由 App Hub 的 `services::dispatch` 在调用方的线程上调用：工具调用时就是中转泵调用线程（UI 或 Android Mail 任务），日历在那里应答。邮件（`work` 线程、`mail-fetch`）和新闻（`news-fetch`）把网络工作放到自己的线程上。已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）为每个请求的网络工作单独开一个线程。 | `script_apps.rs`、`apps/*/host-service/`、`crates/oauth-service/` |
 | 桌面端和 Android 上的 octos | 独立进程，使用 Tokio 的默认运行时：每个 CPU 核心一个工作线程（`ServeCommand::execute`） | octos 的 `crates/octos-cli/src/commands/serve.rs` |
 | OpenHarmony 上的 octos | `serve_io` 运行在内核服务的运行时上，经由 `tokio::io::duplex` 通信 | `kernel.rs` 的 `start` |
 | 一个 octos 回合 | 一个 spawn 出来的任务，先在 `oneshot` 启动屏障处等待，然后运行 `run_standalone_turn` 及其自己的任务 | octos 的 `crates/octos-cli/src/api/ui_protocol_transport.rs` |
@@ -239,7 +248,7 @@ flowchart LR
 
 对于 “Ask Calendar”，octos 的 `handle_turn_start_with_accept` spawn 出用户的回合任务；它的 `calendar.events` future 一直等待，直到调用在 UI 线程走完一个来回。
 
-三种 channel 反复出现：`oneshot` 传递一个回答（请求的回复、回合的启动），`mpsc` 是邮箱（supervisor 的 `Ctl` 消息），`watch` 保存最新状态（代际是否就绪）。代理的链路循环和 supervisor 都是 `tokio::select!` 循环；账号代际和 `link_epoch` 检查会丢弃发给旧账号或旧连接的回复。
+三种 channel 反复出现：`oneshot` 传递一个回答（请求的回复、回合的启动），`mpsc` 是邮箱（supervisor 的 `Ctl` 消息），`watch` 保存最新状态（代际是否就绪）。代理的链路循环和 supervisor 都是 `tokio::select!` 循环；账户代际和 `link_epoch` 检查会丢弃发给旧账户或旧连接的回复。
 
 `Broker::bind`、`Broker::host_request` 和 `OctosAppService::prepare` 会阻塞调用方最多一分钟，所以不要在 UI 线程上调用它们。
 
@@ -256,4 +265,4 @@ cargo test --locked -p octosense-kernel -p octosense-app-peers \
 
 真实内核测试（`crates/app-peers/tests/real_kernel.rs` 和场景测试）在没有设置内核二进制时会打印一条说明并直接通过，所以测试全部通过不能当作集成证据；[app-peers README（英文）](../crates/app-peers/README.md#testing)说明了如何给它们提供内核。可见界面、真实提供方和设备上的行为需要另外运行。
 
-其他仓库的导读（固定版本）：[Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/218b25d2460d64f843932f67d419467618464fb9/docs/CODE-WALKTHROUGH.md)、[App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d5b47a2ae9eb98020feca26b7c895a3cf797dc1/docs/CODE-WALKTHROUGH.md)、[Octoscript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/2cc5ef37d7d6a3d2992673389ce74488f7bb2d87/docs/architecture-walkthrough.md) 和 [octos](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/octosense-integration-walkthrough.md)。
+其他仓库的导读（固定版本）：[Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/218b25d2460d64f843932f67d419467618464fb9/docs/CODE-WALKTHROUGH.md)、[App Hub](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/d2ca3a30ce06b0b1390cff305520962731baa1f8/docs/CODE-WALKTHROUGH.md)、[OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad/blob/2cc5ef37d7d6a3d2992673389ce74488f7bb2d87/docs/architecture-walkthrough.md) 和 [octos](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/octosense-integration-walkthrough.md)。

@@ -89,7 +89,7 @@ cargo run --release -p octosense
 
 | Feature | 默认 | 作用 |
 | --- | --- | --- |
-| `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及 Mail、News、Calendar 和 AI providers 宿主服务。没有它，构建中既没有 App Hub 也没有系统应用。 |
+| `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）；Mail、News、Calendar 和 AI providers 宿主服务；已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）；以及 GitHub Notes 使用的 Markdown 编辑器（`octosense-markdown-editor`）。没有它，构建中既没有 App Hub 也没有系统应用。 |
 | `octos-core` | 开 | octos 内核服务（`octosense-kernel`，来自 `../crates/kernel`）和应用与 Agent 之间的代理（`octosense-app-peers`）：AppCard、Rinx 等使用方共享的唯一内核，由 AI 提供商配置。Android 和 iOS 上始终开启。用 `--no-default-features --features app-hub`（再加上需要的其他 feature）可以去掉它。 |
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
@@ -184,7 +184,7 @@ python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private
 
 ### 发布桌面版本
 
-联网应用登录还需要发行方单独配置：当前发布工作流没有提供 Google 或 GitHub 客户端注册信息。缺少配置的包会显示该服务商不可用。构建时提供[编译期注册信息](../crates/oauth-service/README.zh-CN.md)，或在运营者管理的安装中私下配置 `<apps root>/.host/oauth/clients.json`。对可执行文件签名并不会配置 OAuth。普通应用用户不应被要求创建服务商开发者项目；满足 Google 验证与用户范围要求前，不应宣称支持公开 Google 登录。
+连接账户的应用登录还需要发行方单独配置：当前发布工作流没有提供 Google 或 GitHub 客户端注册信息。缺少配置的包会显示该服务商不可用。构建时提供[编译期注册信息](../crates/oauth-service/README.zh-CN.md#配置发行版本维护者)，或在运维者管理的安装中私下配置 `<apps root>/.host/oauth/clients.json`。对可执行文件签名并不会配置 OAuth。普通应用用户不应被要求创建服务商开发者项目；满足 Google 验证与用户范围要求前，不应宣称支持公开 Google 登录。
 
 `.github/workflows/release-desktop.yml`（不属于 `tools/ci-local.sh`）：
 
