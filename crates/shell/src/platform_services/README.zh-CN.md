@@ -37,6 +37,8 @@ host.request("camera.permission.request", {}, fn(r) {
 
 对于声明 `host-api-v1` 的应用，运行时还会保护已有 `CameraPreview`、`sys.request_location`、`sys.gps` 和地图 GPS 读取路径。身份来自宿主，不来自脚本；每次检查读取内存授权缓存。重启后缓存默认拒绝，应用调用权限方法后加载此前保存的授权。旧应用保留原来的清单策略；未声明 `host-api-v1` 的应用不能调用新设备服务。
 
+Agent 和后台卡片不能通过这些旧接口弹出系统权限窗口。相机预览和录像先检查系统授权；只有在前台发起、返回时仍在前台的请求才可弹窗。已有系统授权仍可使用，声明新协议的相机不会在超时后假定已经获准。`sys.request_location` 可能弹窗，因此需要前台界面；后台代码可在授权后读取 `sys.gps` 或 `location.get`。
+
 授权文件位于应用存储之外的 `.host/device-api-consent.json`，只包含应用 ID、能力名称与授权版本，不记录设备读数或第三方凭据。Unix 文件使用 0600 权限，采用原子更新。
 
 验证证据随实现提交记录。已在 macOS 运行原生 Makepad 策略和摄像头回归测试；新的服务在 OnePlus 6 上的真实权限弹窗、拍摄与位置流程仍为**未验证**，需要安装集成宿主后由用户实际操作。此适配器尚不宣称支持 Windows、Linux 或 iOS。

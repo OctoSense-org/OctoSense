@@ -37,6 +37,8 @@ The service queues native operations onto the shell's UI event loop, matches per
 
 The runtime's `host-api-v1` gate also covers legacy `CameraPreview`, `sys.request_location`, `sys.gps` and map GPS reads for opted-in bundles. It uses host-assigned app identity and a cached consent lookup. On startup the cache is closed until the app calls a permission method to load its retained consent. Older bundles retain their previous manifest-only policy; they cannot call the new device service until they declare `host-api-v1`.
 
+An agent or background card cannot use those legacy paths to raise an OS dialog. Camera preview and recording check the OS grant first, and only a request that began in the foreground and remains there may prompt. Existing OS grants remain usable; opted-in cameras never assume approval after a timeout. `sys.request_location` can prompt and therefore requires the foreground; background code can use passive `sys.gps` or `location.get` after authorization.
+
 The private consent file is `.host/device-api-consent.json`, outside app storage. It contains app IDs, capability names and consent revisions, with no device readings or provider credentials. Unix files use mode 0600 and updates are atomic.
 
 Validation is recorded with the implementation commit. Native Makepad policy and camera regression tests were run on macOS. Live permission dialogs, camera capture and this new service's location flow on OnePlus 6 remain **unverified** until the integrated host is installed and physically exercised. Windows/Linux/iOS support is not advertised by this adapter.
