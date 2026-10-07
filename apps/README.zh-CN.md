@@ -72,7 +72,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 权限弹窗只能暂停正在播放的视频，不能将尚未初始化的相机在返回后误标为正在播放。
 预览按布局完成后的实际显示尺寸等比填充，支持 `Fill` 和窗口缩放；
 旋转后的相机画面裁切边缘，不再拉伸。AI providers 的 Android 扫码器
-先选择相机声明支持的预览／YUV 输出尺寸，再打开相机；显示时保持比例，
+先选择相机声明支持的预览/YUV 输出尺寸，再打开相机；显示时保持比例，
 旧扫码会话的回调不会关闭新打开的扫码器。
 
 修改后在仓库根目录运行 `python3 tools/sync-app-interface.py`，将共用样式
@@ -105,7 +105,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
   关闭播放器会结束页面（makepad#43，已在运行时中）。播放打开的是 YouTube 移动版观看页，
   它会静音自动播放，并显示自己的“Open App”提示。搜索读取 YouTube 的搜索结果页，依赖其布局。
 - **Camera**：Redmi Note 12 独立测试包（2026-10-07）已通过延迟首次授权、
-  前后镜头切换、Photo／Video 预览模式切换和后台恢复。`Fill` 预览拉伸已修正，
+  前后镜头切换、Photo/Video 预览模式切换和后台恢复。`Fill` 预览拉伸已修正，
   原生 GPU 的圆形尺寸对比通过；手机明亮场景的外观对比仍待验证。
   2026-09-25 报告的 OnePlus 6 黑屏尚未复测。本轮未测试拍照；Android 录像仍未实现。
 - **AI providers 相机导入**：Redmi Note 12 扫码器使用设备支持的预览尺寸，
@@ -442,7 +442,7 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 **邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审阅界面。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
 
 **宿主服务 API 不会自动成为 Agent 工具。** Mail 显式声明了账户绑定的读取/同步、
-发布、事件决策和草稿／提议工具。`mail.peek` 不标记已读；`mail.message` 仍是 UI API。UI 的 `mail.send` 路径现已改为打开宿主的审阅界面，而非未经批准调用 SMTP。Agent 工具不能批准或发送。[组合 Mail 卡片](../docs/mail-composable-cards.zh-CN.md)介绍了持久编辑、上下文聊天和审批边界：只有亲手点按（Android 上触摸屏幕，macOS 上用鼠标或触控板点击）才能发送，合成输入和远程输入都会被拒绝。macOS 路径和双模型手机集成验收仍**未验证**。
+发布、事件决策和草稿/提议工具。`mail.peek` 不标记已读；`mail.message` 仍是 UI API。UI 的 `mail.send` 路径现已改为打开宿主的审阅界面，而非未经批准调用 SMTP。Agent 工具不能批准或发送。[组合 Mail 卡片](../docs/mail-composable-cards.zh-CN.md)介绍了持久编辑、上下文聊天和审批边界：只有亲手点按（Android 上触摸屏幕，macOS 上用鼠标或触控板点击）才能发送，合成输入和远程输入都会被拒绝。macOS 路径和双模型手机集成验收仍**未验证**。
 Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Calendar
 展示了通过显式声明的 Rust 工具读写应用数据的路径；它的脚本窗口目前只是 Agent
 使用说明。见[数据访问源码导读](../desktop/docs/code-walkthrough.zh-CN.md)。

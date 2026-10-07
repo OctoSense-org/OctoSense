@@ -33,7 +33,7 @@ Inbox Assistant 和 Google Calendar 尚未在该设备上运行。
 | --- | --- | --- | --- |
 | macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；远程点击被拒绝，亲手点按未验证 |
 | Windows | 同样的桌面流程，平台运行未验证 | Windows Credential Manager；未在 Windows 验证 | 不支持，明确拒绝 |
-| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；原生测试被构建主机未解锁／不可用的凭据库拒绝 | 不支持，明确拒绝 |
+| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；原生测试被构建主机未解锁/不可用的凭据库拒绝 | 不支持，明确拒绝 |
 | Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有的亲手点按来源校验；本示例未验证 |
 
 `desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本；
@@ -245,7 +245,7 @@ Shell 从摘要校验后的包读取声明，通过 `HostServiceExecutor` 路由
 ## 新邮件与 Glance
 
 桌面脚本卡片先显示标题和摘要，打开模板卡片后提供有界应用视口，让编辑器及滚动
-区域获得实际高度。模板工作区自己提供 Email／Reply／Chat 导航，宿主不重复添加
+区域获得实际高度。模板工作区自己提供 Email/Reply/Chat 导航，宿主不重复添加
 Chat 标签。原有未选择视口模式的脚本卡片继续按内容测量并由外层滚动。
 前台发布的卡片可以在未请求代理同意前恢复；撤销 Glance 权限、明确拒绝代理、
 退出账户和切换账户仍阻止恢复。
