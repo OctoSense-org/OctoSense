@@ -81,7 +81,12 @@ place. Maps switches its tiles with the host appearance. Camera controls use
 a dark scrim to remain readable over a bright preview; Android waits for the
 first-use permission answer before preparing that preview. A permission dialog
 pauses only a playing video; it cannot turn an unprepared camera into a fake
-playing state when the app resumes.
+playing state when the app resumes. The preview uses its resolved on-screen
+size for aspect-preserving fill, including `Fill` layouts and resized windows;
+a rotated camera frame is cropped at the edges instead of stretched. AI providers’
+Android QR scanner chooses a preview/YUV size advertised by the camera before
+opening it; the preview keeps that aspect ratio, and callbacks from an earlier
+scanner session cannot close a newly opened one.
 
 After editing the interface, run `python3 tools/sync-app-interface.py` from the
 repository root. It embeds the exact prelude in each contained bundle;
@@ -119,10 +124,16 @@ reaches only the hosts the manifest lists.
   runtime). Playback opens YouTube's mobile watch page, which autoplays muted
   and shows its own "Open App" prompt. Search reads YouTube's results page and
   depends on its layout.
-- **Camera**: on the OnePlus 6 test run (2026-09-25) Camera captured a photo
-  and released the camera in the background, but the live preview drew pure
-  black; unresolved. Desktop builds have no camera and the Android emulator
-  refuses one, so capture is untested elsewhere.
+- **Camera**: the Redmi Note 12 test package (2026-10-07) passed delayed
+  first-use permission, front/back switching, Photo/Video preview selection and
+  background resume. The stretched `Fill` preview is corrected; native GPU
+  circle measurements pass, while a clear-scene visual comparison on the phone
+  is still pending. The OnePlus 6 black preview reported on 2026-09-25 has not
+  been retested. Still capture was not exercised in this run; Android video
+  recording remains unimplemented.
+- **AI providers camera import**: the Redmi Note 12 scanner opens with supported
+  preview buffers and passed cancel, system Back, background interruption and
+  reopening. QR decoding and importing a provider were not exercised in this run.
 - **Photos Memories**: open **Memories → Create memories**, optionally entering
   a theme such as “summer with family.” The host's `model.complete` uses the
   provider configured in **Settings → AI providers** to curate up to three

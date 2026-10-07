@@ -1,0 +1,47 @@
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index 55574072b..67f028061 100644
+--- a/widgets/src/video.rs
++++ b/widgets/src/video.rs
+@@ -65,7 +65,6 @@
+             image_pan: instance(vec2(0.5, 0.5))
+ 
+             source_size: uniform(vec2(1.0, 1.0))
+-            target_size: uniform(vec2(-1.0, -1.0))
+ 
+             // Apply SurfaceTexture ST matrix, then sample OES (see oes_st_c* comment).
+             sample_oes: fn(coord: vec2) -> vec4 {
+@@ -162,9 +161,10 @@
+             }
+ 
+             get_color_scale_pan: fn() {
+-                // Early return for default scaling and panning,
+-                // used when walk size is not specified or non-fixed.
+-                if self.target_size.x <= 0.0 || self.target_size.y <= 0.0 {
++                // Use the resolved drawable, including Fill/Fit and resized
++                // layouts. A declared walk has no pixel size until layout;
++                // treating it as zero stretches the source across the view.
++                if self.rect_size.x <= 0.0 || self.rect_size.y <= 0.0 {
+                     if self.show_thumbnail > 0.0 {
+                         return self.thumbnail_texture.sample_as_bgra(self.pos).xyzw
+                     } else if self.yuv_enabled > 0.5 {
+@@ -183,7 +183,7 @@
+                 let rotated_odd = step(0.5, turns) * step(turns, 1.5) + step(2.5, turns)
+                 let shown_size = mix(self.source_size, vec2(self.source_size.y, self.source_size.x), rotated_odd)
+                 let source_aspect_ratio = shown_size.x / shown_size.y
+-                let target_aspect_ratio = self.target_size.x / self.target_size.y
++                let target_aspect_ratio = self.rect_size.x / self.rect_size.y
+ 
+                 // Adjust scale based on aspect ratio difference
+                 if source_aspect_ratio != target_aspect_ratio {
+@@ -1322,11 +1322,6 @@ fn apply_thumbnail_settings(&mut self, cx: &mut Cx) {
+         // with a fresh GPU texture containing the decoded image. Allocating a
+         // throwaway Texture::new(cx) first was just churning GPU resources.
+ 
+-        let target_w = self.walk.width.to_fixed().unwrap_or(0.0);
+-        let target_h = self.walk.height.to_fixed().unwrap_or(0.0);
+-        self.draw_bg
+-            .set_uniform(cx, id!(target_size), &[target_w as f32, target_h as f32]);
+-
+         if self.show_idle_thumbnail {
+             let loaded = self.load_thumbnail_image(cx);
+             // Only enable the thumbnail shader path if a thumbnail was actually loaded;

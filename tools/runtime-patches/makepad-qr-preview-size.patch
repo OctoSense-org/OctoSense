@@ -1,0 +1,276 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index a7dd7524d..7b9f9e55e 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -1269,6 +1269,7 @@ public class MakepadActivity
+     private HandlerThread mQrBgThread;
+     private Handler mQrBgHandler;
+     private volatile boolean mQrScanning = false;
++    private volatile int mQrGeneration = 0;
+     // A CAMERA request for the scanner is in flight (dedupes repeat requests).
+     private boolean mQrPermPending = false;
+     private long mQrLastFrameMs = 0;
+@@ -3387,6 +3388,8 @@ public class MakepadActivity
+     private void startQrScanner() {
+         if (mQrScanning) return;
+         mQrScanning = true;
++        final int generation = ++mQrGeneration;
++        mQrLastFrameMs = 0;
+         final float d = getResources().getDisplayMetrics().density;
+         final SurfaceView sv = new SurfaceView(this);
+         mQrScanOverlay = new FrameLayout(this);
+@@ -3416,11 +3419,54 @@ public class MakepadActivity
+         mQrBgHandler = new Handler(mQrBgThread.getLooper());
+ 
+         sv.getHolder().addCallback(new SurfaceHolder.Callback() {
++            private String cameraId;
++            private Size streamSize;
++            private boolean opening;
++
+             @Override public void surfaceCreated(SurfaceHolder holder) {
+-                openQrCamera2(holder.getSurface());
++                if (!mQrScanning || generation != mQrGeneration) return;
++                try {
++                    CameraManager mgr = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
++                    String[] ids = mgr.getCameraIdList();
++                    for (String id : ids) {
++                        Integer facing = mgr.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING);
++                        if (facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) {
++                            cameraId = id;
++                            break;
++                        }
++                    }
++                    if (cameraId == null && ids.length > 0) cameraId = ids[0];
++                    if (cameraId == null) throw new IllegalStateException("No camera available");
++                    CameraCharacteristics characteristics = mgr.getCameraCharacteristics(cameraId);
++                    streamSize = qrStreamSize(characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP));
++                    if (streamSize == null) throw new IllegalStateException("No supported QR preview size");
++                    Integer sensor = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
++                    final int sensorOrientation = sensor == null ? 0 : sensor;
++                    final Size size = streamSize;
++                    mQrScanOverlay.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
++                        @Override public void onLayoutChange(View view, int l, int t, int r, int b,
++                                int oldL, int oldT, int oldR, int oldB) {
++                            fitQrPreview(sv, size, sensorOrientation, r - l, b - t);
++                        }
++                    });
++                    fitQrPreview(sv, size, sensorOrientation, mQrScanOverlay.getWidth(), mQrScanOverlay.getHeight());
++                    // Camera2 requires a supported buffer size, not the phone's
++                    // screen dimensions. Wait for surfaceChanged to confirm it.
++                    holder.setFixedSize(size.getWidth(), size.getHeight());
++                } catch (Exception e) {
++                    android.util.Log.e("Makepad", "QR preview configuration failed", e);
++                    closeQrScanner(generation, "camera_error");
++                }
++            }
++            @Override public void surfaceChanged(SurfaceHolder holder, int fmt, int w, int h) {
++                if (!mQrScanning || generation != mQrGeneration || opening || streamSize == null
++                        || w != streamSize.getWidth() || h != streamSize.getHeight()) return;
++                opening = true;
++                openQrCamera2(holder.getSurface(), cameraId, streamSize, generation);
++            }
++            @Override public void surfaceDestroyed(SurfaceHolder holder) {
++                closeQrScanner(generation, "interrupted");
+             }
+-            @Override public void surfaceChanged(SurfaceHolder holder, int fmt, int w, int h) {}
+-            @Override public void surfaceDestroyed(SurfaceHolder holder) {}
+         });
+     }
+ 
+@@ -3428,41 +3474,60 @@ public class MakepadActivity
+     // whose Y plane (luma) is streamed to Rust for a pure-Rust QR decode. Camera2
+     // attributes via the app Context, unlike the deprecated `Camera` API (which is
+     // frame-blocked on some OEMs).
+-    private void openQrCamera2(final Surface previewSurface) {
+-        try {
+-            final CameraManager mgr = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+-            String backId = null;
+-            for (String id : mgr.getCameraIdList()) {
+-                Integer f = mgr.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING);
+-                if (f != null && f == CameraCharacteristics.LENS_FACING_BACK) { backId = id; break; }
+-            }
+-            if (backId == null) {
+-                String[] ids = mgr.getCameraIdList();
+-                if (ids.length == 0) { closeQrScanner("camera_error"); return; }
+-                backId = ids[0];
+-            }
+-            StreamConfigurationMap map = mgr.getCameraCharacteristics(backId)
+-                .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+-            Size chosen = new Size(640, 480);
+-            if (map != null) {
+-                Size[] sizes = map.getOutputSizes(ImageFormat.YUV_420_888);
+-                if (sizes != null) {
+-                    for (Size s : sizes) {
+-                        if (s.getWidth() <= 1280 && s.getWidth() * s.getHeight()
+-                                > chosen.getWidth() * chosen.getHeight()) {
+-                            chosen = s;
+-                        }
+-                    }
++    // Both outputs use a size actually advertised for their formats. Keep
++    // the pair within PREVIEW bounds, including on LIMITED camera devices.
++    private static Size qrStreamSize(StreamConfigurationMap map) {
++        if (map == null) return null;
++        Size[] yuv = map.getOutputSizes(ImageFormat.YUV_420_888);
++        Size[] preview = map.getOutputSizes(SurfaceHolder.class);
++        if (yuv == null || preview == null) return null;
++        Size best = null;
++        for (Size size : yuv) {
++            if (size.getWidth() > 1280 || size.getHeight() > 720) continue;
++            for (Size output : preview) {
++                if (size.equals(output) && (best == null
++                        || (long) size.getWidth() * size.getHeight() > (long) best.getWidth() * best.getHeight())) {
++                    best = size;
+                 }
+             }
+-            mQrImageReader = ImageReader.newInstance(
++        }
++        return best;
++    }
++
++    private void fitQrPreview(SurfaceView preview, Size buffer, int sensorOrientation, int width, int height) {
++        if (width <= 0 || height <= 0) return;
++        Display display = preview.getDisplay();
++        int displayRotation = (display == null ? Surface.ROTATION_0 : display.getRotation()) * 90;
++        boolean swapped = ((sensorOrientation - displayRotation + 360) % 180) != 0;
++        int shownWidth = swapped ? buffer.getHeight() : buffer.getWidth();
++        int shownHeight = swapped ? buffer.getWidth() : buffer.getHeight();
++        float scale = Math.min((float) width / shownWidth, (float) height / shownHeight);
++        int fittedWidth = Math.round(shownWidth * scale);
++        int fittedHeight = Math.round(shownHeight * scale);
++        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) preview.getLayoutParams();
++        if (lp.width != fittedWidth || lp.height != fittedHeight || lp.gravity != Gravity.CENTER) {
++            preview.setLayoutParams(new FrameLayout.LayoutParams(fittedWidth, fittedHeight, Gravity.CENTER));
++        }
++    }
++
++    private void openQrCamera2(final Surface previewSurface, final String cameraId,
++            final Size chosen, final int generation) {
++        if (!mQrScanning || generation != mQrGeneration) return;
++        try {
++            final CameraManager mgr = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
++            android.util.Log.i("Makepad", "QR preview buffer: " + chosen.getWidth() + "x" + chosen.getHeight());
++            final Handler handler = mQrBgHandler;
++            final ImageReader imageReader = ImageReader.newInstance(
+                 chosen.getWidth(), chosen.getHeight(), ImageFormat.YUV_420_888, 2);
+-            mQrImageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
++            mQrImageReader = imageReader;
++            imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
++                private boolean completed;
++
+                 @Override public void onImageAvailable(ImageReader reader) {
+                     Image img = null;
+                     try {
+                         img = reader.acquireLatestImage();
+-                        if (img == null || !mQrScanning) return;
++                        if (img == null || completed || !mQrScanning || generation != mQrGeneration) return;
+                         long now = System.currentTimeMillis();
+                         if (now - mQrLastFrameMs < 200) return; // ~5 fps
+                         mQrLastFrameMs = now;
+@@ -3481,8 +3546,8 @@ public class MakepadActivity
+                         }
+                         if (MakepadNative.onQrCameraFrame(luma, w, h)) {
+                             // Rust already posted NativeQrScanned: close silently.
+-                            mQrScanning = false;
+-                            closeQrScanner(null);
++                            completed = true;
++                            closeQrScanner(generation, null);
+                         }
+                     } catch (Exception e) {
+                         // transient frame errors are fine; keep scanning
+@@ -3490,51 +3555,52 @@ public class MakepadActivity
+                         if (img != null) img.close();
+                     }
+                 }
+-            }, mQrBgHandler);
++            }, handler);
+ 
+-            mgr.openCamera(backId, new CameraDevice.StateCallback() {
++            mgr.openCamera(cameraId, new CameraDevice.StateCallback() {
+                 @Override public void onOpened(CameraDevice device) {
++                    if (!mQrScanning || generation != mQrGeneration) { device.close(); return; }
+                     mQrCameraDevice = device;
+                     try {
+                         final CaptureRequest.Builder rb =
+                             device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                         rb.addTarget(previewSurface);
+-                        rb.addTarget(mQrImageReader.getSurface());
++                        rb.addTarget(imageReader.getSurface());
+                         rb.set(CaptureRequest.CONTROL_AF_MODE,
+                             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                         device.createCaptureSession(
+-                            Arrays.asList(previewSurface, mQrImageReader.getSurface()),
++                            Arrays.asList(previewSurface, imageReader.getSurface()),
+                             new CameraCaptureSession.StateCallback() {
+                                 @Override public void onConfigured(CameraCaptureSession session) {
+-                                    if (mQrCameraDevice == null) return;
++                                    if (!mQrScanning || generation != mQrGeneration || mQrCameraDevice != device) { session.close(); return; }
+                                     mQrCaptureSession = session;
+-                                    try { session.setRepeatingRequest(rb.build(), null, mQrBgHandler); }
+-                                    catch (Exception e) { closeQrScanner("camera_error"); }
++                                    try { session.setRepeatingRequest(rb.build(), null, handler); }
++                                    catch (Exception e) { closeQrScanner(generation, "camera_error"); }
+                                 }
+                                 @Override public void onConfigureFailed(CameraCaptureSession s) {
+-                                    closeQrScanner("camera_error");
++                                    closeQrScanner(generation, "camera_error");
+                                 }
+-                            }, mQrBgHandler);
++                            }, handler);
+                     } catch (Exception e) {
+                         android.util.Log.e("Makepad", "QR camera2 session failed: " + e);
+-                        closeQrScanner("camera_error");
++                        closeQrScanner(generation, "camera_error");
+                     }
+                 }
+                 @Override public void onDisconnected(CameraDevice device) {
+                     // Another client took the camera (or it went away): the
+                     // overlay would be a dead black screen, so close it.
+                     device.close();
+-                    closeQrScanner("camera_error");
++                    closeQrScanner(generation, "camera_error");
+                 }
+                 @Override public void onError(CameraDevice device, int error) {
+                     android.util.Log.e("Makepad", "QR camera2 error: " + error);
+                     device.close();
+-                    closeQrScanner("camera_error");
++                    closeQrScanner(generation, "camera_error");
+                 }
+-            }, mQrBgHandler);
++            }, handler);
+         } catch (Exception e) {
+             android.util.Log.e("Makepad", "QR camera2 open failed: " + e);
+-            closeQrScanner("camera_error");
++            closeQrScanner(generation, "camera_error");
+         }
+     }
+ 
+@@ -3548,7 +3614,15 @@ public class MakepadActivity
+     // A non-null `reason` is reported once via onQrCancelled if the scanner was
+     // still open; null closes silently (after a successful decode).
+     private void closeQrScanner(final String reason) {
++        closeQrScanner(mQrGeneration, reason);
++    }
++
++    private void closeQrScanner(final int generation, final String reason) {
+         runOnUiThread(new Runnable() { public void run() {
++            if (generation != mQrGeneration) return;
++            // Removing the SurfaceView synchronously calls surfaceDestroyed.
++            // Retire this session first so teardown cannot re-enter removal.
++            ++mQrGeneration;
+             boolean wasScanning = mQrScanning;
+             mQrScanning = false;
+             if (wasScanning && reason != null) {
+@@ -3565,9 +3639,10 @@ public class MakepadActivity
+                 mQrBgThread = null;
+                 mQrBgHandler = null;
+             }
+-            if (mQrScanOverlay != null && mRootLayout != null) {
+-                mRootLayout.removeView(mQrScanOverlay);
+-                mQrScanOverlay = null;
++            FrameLayout overlay = mQrScanOverlay;
++            mQrScanOverlay = null;
++            if (overlay != null && mRootLayout != null) {
++                mRootLayout.removeView(overlay);
+             }
+         }});
+     }

@@ -70,6 +70,10 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 固定操作栏保留原位。地图图块随宿主切换明暗外观。相机按钮使用深色底板，
 在明亮取景画面上仍可阅读；Android 等待首次权限弹窗的结果后才准备预览。
 权限弹窗只能暂停正在播放的视频，不能将尚未初始化的相机在返回后误标为正在播放。
+预览按布局完成后的实际显示尺寸等比填充，支持 `Fill` 和窗口缩放；
+旋转后的相机画面裁切边缘，不再拉伸。AI providers 的 Android 扫码器
+先选择相机声明支持的预览／YUV 输出尺寸，再打开相机；显示时保持比例，
+旧扫码会话的回调不会关闭新打开的扫码器。
 
 修改后在仓库根目录运行 `python3 tools/sync-app-interface.py`，将共用样式
 原样嵌入各个独立应用包；CI 通过 `python3 tools/sync-app-interface.py --check`
@@ -100,9 +104,12 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **YouTube**：在 OnePlus 6 上测试（2026-09-27），搜索、结果、播放和播放记录都正常；
   关闭播放器会结束页面（makepad#43，已在运行时中）。播放打开的是 YouTube 移动版观看页，
   它会静音自动播放，并显示自己的“Open App”提示。搜索读取 YouTube 的搜索结果页，依赖其布局。
-- **Camera**：在 OnePlus 6 测试中（2026-09-25），Camera 能拍照并在后台释放
-  相机，但实时预览是纯黑的，尚未解决。桌面构建没有相机，Android 模拟器拒绝
-  提供相机，因此其他环境下拍摄未经测试。
+- **Camera**：Redmi Note 12 独立测试包（2026-10-07）已通过延迟首次授权、
+  前后镜头切换、Photo／Video 预览模式切换和后台恢复。`Fill` 预览拉伸已修正，
+  原生 GPU 的圆形尺寸对比通过；手机明亮场景的外观对比仍待验证。
+  2026-09-25 报告的 OnePlus 6 黑屏尚未复测。本轮未测试拍照；Android 录像仍未实现。
+- **AI providers 相机导入**：Redmi Note 12 扫码器使用设备支持的预览尺寸，
+  已通过打开、取消、系统返回、后台中断和重新打开；本轮未测试二维码解码及服务商导入。
 - **Photos 回忆**：打开 **Memories → Create memories**，可选输入“summer with family”等主题。
   宿主的 `model.complete` 使用 **设置 → AI providers** 中配置的服务商，整理最多三个
   带标题、简短叙述和有序幻灯片的故事。只发送相片目录的元数据（日期、地点、姓名、
