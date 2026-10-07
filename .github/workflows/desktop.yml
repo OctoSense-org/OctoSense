@@ -110,14 +110,19 @@ jobs:
           cargo build --locked --release -p octosense-shell --example host-api-lab --features acceptance-fixtures
           cargo build --locked -p octosense-app-hub --bin hub
       - name: Signed app tool calls a real OS permission API
-        run: python3 tools/test-host-api-native.py --hub target/debug/hub --output target/host-api-evidence
+        id: native
+        run: |
+          # Evidence must be fresh and outside the restored Cargo target cache.
+          evidence="$(mktemp -d "${RUNNER_TEMP}/host-api-check.XXXXXX")/evidence"
+          echo "directory=$evidence" >> "$GITHUB_OUTPUT"
+          python3 tools/test-host-api-native.py --hub target/debug/hub --output "$evidence"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: native-host-api-evidence
           retention-days: 7
           path: |
-            target/host-api-evidence/result.json
-            target/host-api-evidence/native-result.json
-            target/host-api-evidence/*.png
-            target/host-api-evidence/*-snapshot.json
+            ${{ steps.native.outputs.directory }}/result.json
+            ${{ steps.native.outputs.directory }}/native-result.json
+            ${{ steps.native.outputs.directory }}/*.png
+            ${{ steps.native.outputs.directory }}/*-snapshot.json
