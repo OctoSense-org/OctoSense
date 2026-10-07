@@ -279,6 +279,7 @@ fn walk_inner(vm: &mut ScriptVm, value: ScriptValue, depth: usize, remaining: &m
         pady: f32_prop(vm, value, id!(pady)),
         padtop: f32_prop(vm, value, id!(padtop)),
         padleft: f32_prop(vm, value, id!(padleft)),
+        padright: f32_prop(vm, value, id!(padright)),
         padbottom: f32_prop(vm, value, id!(padbottom)),
         spacing: f32_prop(vm, value, id!(spacing)),
         margin: f32_prop(vm, value, id!(margin)),

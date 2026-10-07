@@ -495,8 +495,8 @@ sequenceDiagram
 
 | 内容 | 位置 |
 | --- | --- |
-| Makepad：`OctosPeer` 客户端；各原生应用的 Agent 代码 | [`libs/ai/services/src/peer.rs`](https://github.com/OctoSense-org/makepad/blob/c155f61d0e1600d2ec474209374444a38a09a470/libs/ai/services/src/peer.rs)、`apps/<app>/src/view.rs` |
-| Terminal 自己的 Agent 链接，本仓库应用到 Makepad 上的一个经审查补丁 | [`tools/runtime-patches/makepad-terminal-own-agent.patch`](../tools/runtime-patches/makepad-terminal-own-agent.patch) |
+| Makepad：`OctosPeer` 客户端；各原生应用的 Agent 代码 | [`libs/ai/services/src/peer.rs`](https://github.com/OctoSense-org/makepad/blob/68d1f4ecc111daa90c50530e77df3245f05fc2cf/libs/ai/services/src/peer.rs)、`apps/<app>/src/view.rs` |
+| Terminal 自己的 Agent 链接（Makepad #100） | [`apps/terminal/src/module.rs`](https://github.com/OctoSense-org/makepad/blob/68d1f4ecc111daa90c50530e77df3245f05fc2cf/apps/terminal/src/module.rs) |
 | octos：两条通道的共享历史（20 条，16 KiB）；`peer_send_input`（64 KiB） | [`crates/octos-cli/src/peers/shared_history.rs`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/crates/octos-cli/src/peers/shared_history.rs)、[`crates/octos-agent/src/tools/peer_send_input.rs`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/crates/octos-agent/src/tools/peer_send_input.rs) |
 | octos：宿主管理的 serve、应用 peer、peer 宿主工具 | [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/HOST_MANAGED_SERVE.md)、[UPCR-2026-034](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_034_HOST_APP_PEERS.md)、[UPCR-2026-035](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_035_PEER_HOST_TOOLS.md)、[UPCR-2026-036](https://github.com/octos-org/octos/blob/056173e85b150e387805fc307fe231064ac1ed35/docs/OCTOS_UI_PROTOCOL_CHANGE_REQUEST_UPCR_2026_036_HOST_MANAGED_SERVE.md) |
 | App Hub：脚本应用可以保留的内核工具（`KERNEL_TOOLS`） | [`crates/app-policy/src/policy.rs`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d5b47a2ae9eb98020feca26b7c895a3cf797dc1/crates/app-policy/src/policy.rs) |
