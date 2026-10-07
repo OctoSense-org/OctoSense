@@ -22,8 +22,9 @@
 //! or the family is a system app's own namespace (`os.calendar` and its
 //! `calendar` service, which ship with the shell; `os.photos`'s
 //! `photos.notify` and the shell's notice service, `glance_notice`).
-//! A tool the app's own script implements (`implemented_by: "app"`) needs
-//! the app open, and is refused visibly until the Card runner can take it.
+//! A tool the app's own script implements (`implemented_by: "app"`) runs on
+//! its admitted full-app runner's live UI isolate through App Hub's script
+//! tool queue. Closed apps fail visibly; Glance never becomes a second owner.
 //! Answers arrive on App Hub's reply queue; [`poll`] (from
 //! `host_tools::pump`) hands each back to its call.
 
@@ -49,6 +50,7 @@ pub struct Loaded {
     pub asks: Vec<String>,
     /// Its tools that run on host services, and the families it was granted.
     pub host_service_tools: BTreeSet<String>,
+    pub script_tools: BTreeSet<String>,
     pub host_methods: HashMap<String, String>,
     pub families: BTreeSet<String>,
     /// The admitted manifest (the toolbox reads its grant from it).
@@ -99,6 +101,8 @@ pub fn from_bundle(bundle: &Path) -> Result<Loaded, String> {
         if tool.implemented_by == ImplementedBy::HostService {
             loaded.host_service_tools.insert(tool.name.clone());
             loaded.host_methods.insert(tool.name.clone(), tool.service_method().to_owned());
+        } else {
+            loaded.script_tools.insert(tool.name.clone());
         }
     }
     // Dotted names are other apps' tools. Of the kernel's own, App Hub
@@ -165,7 +169,7 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
     #[cfg(feature = "toolbox-peers")]
     super::toolbox::grant_manifest(app, &loaded.manifest);
     let executor = HostServiceExecutor { app: app.to_string(), tools: loaded.host_service_tools, methods: loaded.host_methods, families: loaded.families, host_dir };
-    super::set_executor(app, Some(Arc::new(executor)));
+    super::set_executor(app, Some(Arc::new(ScriptAppExecutor { host: executor, tools: loaded.script_tools })));
 }
 
 /// Load `app`'s agent block from App Hub: a system app's packed bundle, or
@@ -224,6 +228,7 @@ pub struct HostServiceExecutor {
 /// Where a call's answer goes: App Hub's reply queue, keyed by a heap key no
 /// isolate uses.
 struct Waiting {
+    app: String,
     call_id: String,
     reply: ToolReply,
 }
@@ -310,6 +315,16 @@ impl ToolExecutor for HostServiceExecutor {
             return;
         }
         let method = self.methods.get(&call.name).map(String::as_str).unwrap_or(&call.name);
+        if let Some(descriptor) = octosense_appstore::host_api::methods().into_iter().find(|api| api.name == method) {
+            if descriptor.agent_access != octosense_appstore::services::AgentAccess::Allowed {
+                reply.finish(ToolOutcome::error("agent_access_denied", format!("{method} requires direct foreground app interaction")));
+                return;
+            }
+            if !descriptor.supports(octosense_appstore::host_api::platform()) {
+                reply.finish(ToolOutcome::error("api_unavailable", format!("{method} is not supported on this platform")));
+                return;
+            }
+        }
         if let Err(message) = check_agent_publication(method, &call.args) {
             reply.finish(ToolOutcome::error("unsafe_card_source", message));
             return;
@@ -341,7 +356,7 @@ impl ToolExecutor for HostServiceExecutor {
             };
         }
         let key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { call_id: call.call_id.clone(), reply });
+        WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { app: self.app.clone(), call_id: call.call_id.clone(), reply });
         let service_call = ServiceCall { app_id: self.app.clone(), service: method.to_owned(), args, from_sheet: false,
             // A tool call has no surface for a sheet: the person is not in the app.
             may_prompt: false, host_dir: self.host_dir.clone() };
@@ -355,7 +370,7 @@ impl ToolExecutor for HostServiceExecutor {
         let keys: Vec<usize> = {
             let mut waiting = WAITING.lock().unwrap_or_else(|e| e.into_inner());
             let Some(waiting) = waiting.as_mut() else { return };
-            let keys: Vec<usize> = waiting.iter().filter(|(_, w)| w.call_id == call_id).map(|(key, _)| *key).collect();
+            let keys: Vec<usize> = waiting.iter().filter(|(_, w)| w.app == self.app && w.call_id == call_id).map(|(key, _)| *key).collect();
             for key in &keys {
                 waiting.remove(key);
             }
@@ -367,8 +382,85 @@ impl ToolExecutor for HostServiceExecutor {
     }
 }
 
+/// The relay already validated schemas, grants and approval. The runner
+/// validates against its own immutable admitted bundle again before dispatch.
+struct ScriptAppExecutor { host: HostServiceExecutor, tools: BTreeSet<String> }
+struct ScriptWaiting { token: Option<String>, reply: ToolReply, host_dir: PathBuf }
+type ScriptKey = (String, String);
+static SCRIPT_WAITING: Mutex<Option<HashMap<ScriptKey, ScriptWaiting>>> = Mutex::new(None);
+fn current_script_account(host_dir: &Path, app: &str) -> String {
+    octosense_oauth_service::host::active_connection(host_dir, app)
+        .map(|connection| connection.handle).unwrap_or_else(|| "device".into())
+}
+fn script_outcome(result: Result<Value, String>) -> ToolOutcome {
+    match result {
+        Ok(value) => ToolOutcome::Ok(value),
+        Err(error) => {
+            let (kind, message) = error.split_once(": ").unwrap_or(("app_error", &error));
+            ToolOutcome::error(kind, message)
+        }
+    }
+}
+impl ToolExecutor for ScriptAppExecutor {
+    fn execute(&self, call: HostToolCall, reply: ToolReply) {
+        if !self.tools.contains(&call.name) { self.host.execute(call, reply); return; }
+        if !reply.is_open() { return; }
+        // This ABI does not turn a script button into native proof of human
+        // confirmation. Apps needing approval use the host approval path.
+        if call.confirm_required {
+            reply.finish(ToolOutcome::error("app_confirmation_unavailable", "Script tools require host confirmation; confirm: app is not supported by this ABI"));
+            return;
+        }
+        let account = current_script_account(&self.host.host_dir, &self.host.app);
+        if super::relay::app_of_peer(&call.calling_app) == self.host.app && call.account.as_deref() != Some(&account) {
+            reply.finish(ToolOutcome::error("account_scope", "The app account changed; reopen its conversation")); return;
+        }
+        octosense_appstore::script_tools::set_account(&self.host.app, &account);
+        let key = (self.host.app.clone(), call.call_id.clone());
+        {
+            let mut map = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner());
+            let map = map.get_or_insert_with(HashMap::new);
+            if map.contains_key(&key) { reply.finish(ToolOutcome::error("duplicate_call", "This app tool call is already pending")); return; }
+            map.insert(key.clone(), ScriptWaiting { token: None, reply: reply.clone(), host_dir: self.host.host_dir.clone() });
+        }
+        let done_key = key.clone();
+        let done = Box::new(move |result| {
+            let waiting = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_mut().and_then(|map|map.remove(&done_key));
+            if let Some(waiting) = waiting { waiting.reply.finish(script_outcome(result)); }
+        });
+        match octosense_appstore::script_tools::submit(&self.host.app, &call.name, call.args,
+            &account, &call.calling_app, std::time::Duration::from_millis(call.timeout_ms.max(1)), done) {
+            Ok(token) => {
+                let registered = {
+                    let mut map = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner());
+                    if let Some(waiting) = map.as_mut().and_then(|map|map.get_mut(&key)) { waiting.token = Some(token.clone()); true } else { false }
+                };
+                if !registered { octosense_appstore::script_tools::cancel(&token); }
+            }
+            Err(error) => {
+                SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_mut().and_then(|map|map.remove(&key));
+                reply.finish(script_outcome(Err(error)));
+            }
+        }
+    }
+    fn cancel(&self, call_id: &str) {
+        let key = (self.host.app.clone(),call_id.to_owned());
+        let waiting = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_mut().and_then(|map|map.remove(&key));
+        if let Some(waiting) = waiting { if let Some(token) = waiting.token { octosense_appstore::script_tools::cancel(&token); } }
+        self.host.cancel(call_id);
+    }
+}
+fn poll_script_accounts() {
+    let entries: Vec<_> = SCRIPT_WAITING.lock().unwrap_or_else(|e|e.into_inner()).as_ref().map(|map| map.iter().map(|((app,_),w)| (app.clone(),w.host_dir.clone(),w.token.clone(),w.reply.is_open())).collect()).unwrap_or_default();
+    for (app, host_dir, token, open) in entries {
+        if !open { if let Some(token) = token { octosense_appstore::script_tools::cancel(&token); } }
+        octosense_appstore::script_tools::set_account(&app,&current_script_account(&host_dir,&app));
+    }
+}
+
 /// Deliver the host services' answers to the calls waiting on them.
 pub fn poll() {
+    poll_script_accounts();
     let keys: Vec<usize> = match WAITING.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         Some(w) if !w.is_empty() => w.keys().copied().collect(),
         _ => return,
@@ -631,6 +723,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn declared_script_tools_report_closed_app_and_stale_account_without_starting_a_vm() {
+        let exec = ScriptAppExecutor {
+            host: HostServiceExecutor { app: "org.example.scriptfixture".into(), tools: Default::default(), methods: Default::default(), families: Default::default(), host_dir: std::env::temp_dir().join("script-tools-no-accounts") },
+            tools: ["scriptfixture.read".into()].into_iter().collect(),
+        };
+        let (r,sent) = reply(); exec.execute(call("scriptfixture.read"),r);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"app_not_running");
+        let mut stale = call("scriptfixture.read"); stale.calling_app = "card.org.example.scriptfixture".into(); stale.account = Some("retired".into());
+        let (r,sent) = reply(); exec.execute(stale,r);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"account_scope");
+        let mut confirmation = call("scriptfixture.read"); confirmation.confirm_required = true;
+        let (r,sent) = reply(); exec.execute(confirmation,r);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"app_confirmation_unavailable");
+    }
+
+    #[test]
     fn mail_agent_arguments_are_bound_to_the_authenticated_account() {
         let mut request = call("mail.peek");
         request.args = json!({"message":"42"});
@@ -694,6 +802,29 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn described_host_methods_enforce_agent_access_before_dispatch() {
+        use octosense_appstore::services::{AgentAccess, HostApiMethod};
+        struct GateProbe;
+        impl HostService for GateProbe {
+            fn family(&self) -> &'static str { "script_agent_gate" }
+            fn api_methods(&self) -> Vec<HostApiMethod> {
+                [("deny", AgentAccess::Denied), ("foreground", AgentAccess::ForegroundOnly), ("allow", AgentAccess::Allowed)]
+                    .into_iter().map(|(method, access)| HostApiMethod::new(format!("script_agent_gate.{method}"), 1, "storage", "Fixture", json!({"type":"object"}), json!({"type":"object"}))
+                    .with_platforms(&[octosense_appstore::host_api::platform()]).with_agent_access(access)).collect()
+            }
+            fn call(&mut self, call: ServiceCall, reply: Replier, _: &mut dyn ServiceHost) { reply.send(Ok(json!({"method":call.method()}))); }
+        }
+        octosense_appstore::services::register_host_service(Box::new(GateProbe));
+        let exec = HostServiceExecutor { app:"org.example.gate".into(), tools:["gate.denied".into(),"gate.foreground".into()].into_iter().collect(),
+            methods: HashMap::from([("gate.denied".into(),"script_agent_gate.deny".into()),("gate.foreground".into(),"script_agent_gate.foreground".into())]),
+            families:["script_agent_gate".into()].into_iter().collect(),host_dir:std::env::temp_dir() };
+        for tool in ["gate.denied","gate.foreground"] {
+            let (reply,received)=reply();exec.execute(call(tool),reply);
+            assert_eq!(received.lock().unwrap()[0]["error"]["kind"],"agent_access_denied");
+        }
+    }
+
+    #[test]
     fn agent_publication_aliases_refuse_executable_or_mixed_sources_before_dispatch() {
         for name in ["inbox.notify", "glance.publish"] {
             let exec = HostServiceExecutor {
@@ -746,6 +877,19 @@ pub(crate) mod tests {
 
     fn is_waiting(call_id: &str) -> bool {
         WAITING.lock().unwrap().as_ref().is_some_and(|w| w.values().any(|waiting| waiting.call_id == call_id))
+    }
+
+    #[test]
+    fn cancelling_one_app_does_not_cancel_another_apps_identical_call_id() {
+        octosense_appstore::services::register_host_service(Box::new(Probe));
+        let executor = |app: &str| HostServiceExecutor { app:app.into(), tools:["g3probe.echo".into()].into_iter().collect(), methods:Default::default(),families:["g3probe".into()].into_iter().collect(),host_dir:std::env::temp_dir() };
+        let first=executor("org.example.cancel_first");let second=executor("org.example.cancel_second");
+        let mut one=call("g3probe.echo");one.call_id="same-id-two-apps".into();
+        let (reply_one,sent_one)=reply();let (reply_two,sent_two)=reply();
+        first.execute(one.clone(),reply_one);second.execute(one,reply_two);
+        first.cancel("same-id-two-apps");poll();
+        assert!(sent_one.lock().unwrap().is_empty());
+        assert_eq!(sent_two.lock().unwrap()[0]["data"]["app"],"org.example.cancel_second");
     }
 
     /// A cancelled tool call stops waiting at once, and its service's late
