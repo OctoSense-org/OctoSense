@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "338810e8f7e649609c8af86d6cbed80e87379d9b",
+    "tree": "1e220434f4ce51c382b6557655be1f2bfda29632",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -26,7 +26,8 @@
       "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status.",
       "Host API v1 apps opt into host-owned device consent before source evaluation. Cached host grants gate camera, microphone and location paths; camera revocation stops an active preview and cached GPS reads fail closed. Older bundles keep their existing capability behavior.",
       "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
-      "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority."
+      "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority.",
+      "Host request JSON and pre-drain queues are bounded before native allocation; delayed host callbacks retain their nonprompting origin after an agent tool completes or is cancelled."
     ],
     "stacked": [
       {
@@ -100,6 +101,10 @@
       {
         "patch": "tools/runtime-patches/makepad-web-reader-availability.patch",
         "sha256": "5db088e4fa0b15a59861e52e65a2194e80bb8c351eafc2dd57e59c0d7161c71e"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-json-boundary.patch",
+        "sha256": "7235aea8fa614e19e7ca9133712967d49ec908bf5a0319fcdda4cea7134cbe69"
       }
     ]
   }
