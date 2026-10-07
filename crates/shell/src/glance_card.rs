@@ -1311,6 +1311,13 @@ fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
     if contained {
         match admitted_app_isolate(cx, app) {
             Ok(mut settings) => {
+                // Glance is a separate isolate: apply the same opt-in device
+                // consent gate as the full app before evaluating its source.
+                let requires_consent = crate::host_tools::script_apps::guidance(app)
+                    .map(|loaded| loaded.manifest["requires"].as_array().is_some_and(|features|
+                        features.iter().any(|feature| feature.as_str() == Some("host-api-v1"))))
+                    .unwrap_or(true);
+                splash.set_device_consent(cx, requires_consent);
                 let admitted_prompts = settings.host_prompts;
                 settings.host_prompts = false;
                 let applied = octosense_app_policy::splash_adapter::apply(splash, cx, &settings);
@@ -1344,7 +1351,8 @@ fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::Isol
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.1,
         None => {
             let anchor = std::env::var("OCTOSENSE_HUB_ANCHOR").unwrap_or_else(|_| octosense_appstore::DEFAULT_ANCHOR.to_string());
-            let mut store = octosense_app_hub::Store::new(&anchor, &root, octosense_app_contract::HostLimits::default());
+            let mut store = octosense_app_hub::Store::new(&anchor, &root, octosense_app_contract::HostLimits::default())
+                .with_host_api_versions(octosense_appstore::host_api::available_versions());
             let catalog = std::fs::read_to_string(root.join("catalog.json")).unwrap_or_default();
             store.accept_catalog(&catalog).map_err(|e| format!("no verified catalog on this device ({e})"))?;
             store.may_run(app)?
