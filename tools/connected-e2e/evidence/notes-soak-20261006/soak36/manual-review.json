@@ -1,0 +1,30 @@
+{
+  "result": "pass within recorded desktop scope",
+  "reviewer": "Codex",
+  "scope": "430x850 logical points /860x1700 original app-owned Metal PNGs",
+  "checks": [
+    "Unicode source and preview remain readable after repeated mode switches",
+    "Write and Preview scroll to paragraph48, final marker, table and code block",
+    "Exact destination/content visible at review top; final paragraph and Back to editing reachable at review bottom",
+    "Cancelled local draft and target retained on process restart"
+  ],
+  "not_verified": [
+    "Physical input or input-to-present latency",
+    "Phone keyboard/layout",
+    "Live GitHub OAuth or commits",
+    "Absence of long-term memory leaks"
+  ],
+  "captures": {
+    "cycle-12-preview-top.png": "31e4044e929587ba0b7c005dacc23adef0e079891be71db679afff012d9d0feb",
+    "long-write-scrolled-bottom.png": "b83c7eb09b839168e6738314492abcd889c1bc934c8eb226e76557d6b215d94b",
+    "final-source-before-reopen.png": "690b94feae13a4c57ef9983a1abb3f80b380ac9804c56cfb4b4c2b8f78b27f3d",
+    "cycle-36-preview-top.png": "541f0d0d791a9eede9f5f408c6e7bdbbb0c8b03df5058247ab6a518f162533c3",
+    "final-reopen-retained-source.png": "d990ec4ad0e4a3da8adda24664a9de6a8ef5574a578eda88c793fd0da60b6fe1",
+    "long-preview-scrolled-bottom.png": "5198bf906b838e5342a2a130dc5280f380b06ddf521fbc29ec233eec766ba989",
+    "cycle-06-exact-review.png": "b2a200d8e15579f2dc0b7def06651992d13b360577772ee8a5ad21b3c56bb57d",
+    "final-review-scrolled-bottom.png": "eaf38abaabd8d832d566371900be0828ec1132aac8be46a4d86ca1c7e67cd115",
+    "cycle-36-exact-review.png": "d9b8200ee528083c1d8feb141fcc95678dfae3a1191d34f648c522f0acdeed6b",
+    "cycle-01-preview-top.png": "74783cfec0a126a5c84c8667d2cf98d947e0b9061c1400d16044d62d98475449"
+  },
+  "inspection": "All ten original PNGs opened individually."
+}

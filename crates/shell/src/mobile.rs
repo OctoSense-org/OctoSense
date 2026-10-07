@@ -212,6 +212,13 @@ const SEARCH_VELOCITY_WINDOW: f64 = 0.1;
 const SEARCH_FRICTION: f64 = 4.0;
 
 impl PhoneState {
+    /// Focus loss can interrupt the owned touch after IME suppression has
+    /// already cleared Navigation's held control. No release is guaranteed
+    /// after that, so do not keep waiting for its old native touch id.
+    pub fn cancel_navigation_input(&mut self) {
+        self.touch = None;
+        self.navigation.cancel();
+    }
     pub fn navigation_rect(&self) -> Rect {
         // The native KeyboardView already resizes this viewport above the
         // IME. Only the shell's simulated keyboard overlays the viewport,
@@ -227,6 +234,12 @@ impl PhoneState {
         Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x, height) }
     }
     pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
+        match event {
+            VirtualKeyboardEvent::WillShow { .. } | VirtualKeyboardEvent::DidShow { .. } => self.navigation.set_ime_visible(true),
+            VirtualKeyboardEvent::DidHide { .. } => self.navigation.set_ime_visible(false),
+            // Keep the editing area clear throughout the hide animation.
+            VirtualKeyboardEvent::WillHide { .. } => {}
+        }
         self.native_keyboard=match event {
             VirtualKeyboardEvent::WillShow{height,..}|VirtualKeyboardEvent::DidShow{height,..}=>height.max(0.0),
             VirtualKeyboardEvent::WillHide{..}|VirtualKeyboardEvent::DidHide{..}=>0.0,

@@ -1,0 +1,32 @@
+{
+  "result": "pass",
+  "version_code": 2026100620,
+  "apk_sha256": "c7b2162182984552cde4ace204eb565f1cfa592e3c49db82ee19cf3e688949fd",
+  "bundle_digest": "a00115ba96985140dc4382323d936c1c5e09539d24e0c772e2ddd608ea5e1c7d",
+  "source_sha256": {
+    "OctoSense/crates/markdown-editor/src/lib.rs": "4ed1f604a1c273a183629bba29bef195ebd6b7b638b9fc06c707680cda64480c",
+    "OctoSense/crates/markdown-editor/src/table_picker.rs": "86e831bfdbac5303463ce8d7e9ef4a7ca0fd0bd13e601f8943e67b99bda537b2",
+    "OctoSense/Cargo.lock": "032ae9064ab4d020f29af868c4d4678ad2d22f68928f25aa7f05d2cf6b758f88",
+    "OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle/main.splash": "733f68da86ba76b51766386e99d51d2e12b67feb9496fc32d6d8c8ba6acf85c6",
+    "OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle/manifest.json": "f36c461bd813c04a7b8436127e8057b13cf9a3bad40ad25933bcd2dc050218a4",
+    "OctoSense/crates/shell/src/mobile.rs": "12e9614d18d3f0ec3de9737480dee5b05d638f26b40e539a7a35ff076cc10067",
+    "OctoSense/crates/shell/src/mobile_app.rs": "f89e94e17eae8f94ac61c23c0002a7a2a78dd6073aefb195102b9fdd62e62e7f",
+    "OctoSense/crates/shell/src/mobile_navigation.rs": "14e759c945210ead41e348a485d2a4283dedfb1811c1a5bf7942ea4a4b7df9d8",
+    "OctoSense/crates/shell/src/mobile_surface.rs": "f8754872c50be3387e3dfa8d2dcfa791c9d346946350b17dac2d14873ff84d6e"
+  },
+  "checks": [
+    "Final guarded bundle admitted and opened in separate test APK.",
+    "Original draft bytes unchanged after update.",
+    "Native keyboard opens with clear toolbar and hidden floating navigation; Android Back dismisses it.",
+    "Preview opens after keyboard dismissal."
+  ],
+  "visual_review": "Codex inspected both original PNGs.",
+  "captures": {
+    "07-final-update-source.png": "765a30db96ca7d3e65d3a6f7cf263dca889f4a5d2bb7cf581749aa7a829c1665",
+    "08-final-update-keyboard.png": "a52df889ba768abd022501e90ca8d74a61fb326058fbccd727eed43e2ef5560c"
+  },
+  "deployment_repair": "First catalog overlay retained a removed screenshot and app did not open. Replaced only the signed .bundles app directory, retaining the old bundle for rollback and leaving draft storage intact; subsequent launch and checks passed.",
+  "live_github": false,
+  "provider_credentials_copied": false,
+  "capture_timing": "Excluded the initial mid-animation keyboard frame; captured and visually reviewed the original PNG after the keyboard settled."
+}

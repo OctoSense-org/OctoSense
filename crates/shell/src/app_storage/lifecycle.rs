@@ -226,6 +226,9 @@ pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
     }
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
+        if crate::host_tools::script_apps::grants(app, "auth") {
+            return octosense_oauth_service::host::active_connection(&storage.layout().apps_root().join(".host"),app).map(|connection| connection.handle);
+        }
         octosense_mail_service::active_account(&storage.layout().apps_root().join(".host"), app)
     }
     #[cfg(not(any(feature = "app-hub", native_mobile)))]
@@ -280,6 +283,14 @@ pub fn app_uninstalled(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -
     }
     if let Err(e) = storage.uninstall(manifest_id) {
         makepad_widgets::log!("app storage: {manifest_id}: uninstall left something behind: {e}");
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if let Err(error)=octosense_oauth_service::host::forget_app(&root.join(".host"),manifest_id) {
+        makepad_widgets::log!("app storage: OAuth uninstall could not finish: {error}");
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if let Err(error)=crate::mail_background::forget_app(manifest_id) {
+        makepad_widgets::log!("app storage: Glance uninstall could not finish: {error}");
     }
     erase_agents(storage, manifest_id, None);
     true
@@ -391,6 +402,11 @@ pub fn install(storage: &'static Arc<Storage>) {
         octosense_mail_service::on_account_event(Some(Arc::new(move |event| {
             mail_account(storage, &event);
         })));
+        octosense_oauth_service::host::on_account_changed(Arc::new(move |app, previous, current| {
+            if !storage.has_spec(app) {record_manifest_spec(storage, storage.layout().apps_root(), app);}
+            account_changed(storage, app, previous, current);
+            crate::ai_host::contained::account_changed(app);
+        }));
         mail_secrets_at_startup(storage);
     }
 }

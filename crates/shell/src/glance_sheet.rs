@@ -87,6 +87,14 @@ pub fn sheet_rect(screen: Rect, card_h: f64) -> Rect {
     rect(screen.pos.x + (screen.size.x - w) * 0.5, screen.pos.y + (screen.size.y - h) * 0.5, w, h)
 }
 
+/// Script workspaces contain editors and their own scroll regions. Keep a
+/// stable app-sized viewport instead of sizing the window from its last draw.
+fn script_workspace_rect(screen: Rect) -> Rect {
+    let w = 640.0_f64.min((screen.size.x - MARGIN * 2.0).max(200.0));
+    let h = 760.0_f64.min((screen.size.y - MARGIN * 2.0).max(120.0));
+    rect(screen.pos.x + (screen.size.x - w) * 0.5, screen.pos.y + (screen.size.y - h) * 0.5, w, h)
+}
+
 /// The ✕ in a window at `sheet`.
 pub fn close_rect(sheet: Rect) -> Rect {
     rect(sheet.pos.x + sheet.size.x - PAD - CLOSE + 4.0, sheet.pos.y + (HEADER - CLOSE) * 0.5 + 2.0, CLOSE, CLOSE)
@@ -172,6 +180,8 @@ pub struct ShellGlanceSheet {
     sheet: Rect,
     #[rust]
     tiles: GlanceTiles,
+    #[rust]
+    app_suspended: bool,
     /// An L0 card's live state (a script card keeps its own).
     #[rust]
     live: LiveCards,
@@ -250,6 +260,7 @@ impl ShellGlanceSheet {
         if let Some(open) = &self.open { crate::mail_card::cancel_for(&open.key); }
     }
     pub fn dismiss(&mut self, cx: &mut Cx) {
+        self.tiles.set_foreground(cx, false);
         if self.mail_binding().is_some() {
             if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { let _ = mail.flush(cx); }
         }
@@ -270,6 +281,9 @@ impl ShellGlanceSheet {
         self.dismiss(cx);
     }
     pub fn back(&mut self, cx: &mut Cx) {
+        if self.tiles.host_sheet_visible(cx) {
+            self.tiles.dismiss_host_sheets(cx); self.redraw(cx); return;
+        }
         if self.keyboard_visible {
             cx.set_key_focus(Area::Empty); cx.hide_text_ime(); self.redraw(cx); return;
         }
@@ -365,7 +379,7 @@ impl ShellGlanceSheet {
                     // not generated card source or authority-bearing JSON.
                     self.open = Some(Open { key: key.into(), compose: Default::default(), card: GlanceCard {
                         account: None,
-                        app: "os.mail".into(), card_id: "host-review".into(), title: "Mail reply".into(), summary: String::new(),
+                        app: "os.mail".into(), card_id: "host-review".into(), title: "Mail reply".into(), summary: String::new(), viewport: false,
                         priority: 0, published_ms: 0, expires_ms: u64::MAX, open_app: "mail".into(),
                         route: None, body: "".into(), contained: false, digests: Vec::new(), l0: None,
                     }});
@@ -397,7 +411,7 @@ impl ShellGlanceSheet {
         if card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
             self.live.prepare_native(&Self::tile_key(key), &card);
         } else { self.live.body(&Self::tile_key(key), &card, "glance sheet"); }
-        self.chat_available = self.live.session_mut(&Self::tile_key(key)).is_some_and(|s| s.has_chat());
+        self.chat_available = !card.viewport && self.live.session_mut(&Self::tile_key(key)).is_some_and(|s| s.has_chat());
         self.open = Some(Open { key: key.to_string(), card, compose: Default::default() });
         if let Some(binding) = self.mail_binding() {
             if let Some(mut mail) = self.mail.borrow_mut::<crate::mail_clip::MailClip>() { mail.open(cx, binding); }
@@ -410,6 +424,7 @@ impl ShellGlanceSheet {
     }
 
     fn retain_current(&mut self, cx: &mut Cx) {
+        self.tiles.set_foreground(cx, false);
         self.revoke_review();
         let Some(open) = self.open.take() else { return; };
         if open.card.card_id == "host-review" && open.card.l0.is_none() { self.close(cx); return; }
@@ -504,7 +519,7 @@ impl ShellGlanceSheet {
         if open.card == card { return; }
         let same_layout = match (&open.card.l0, &card.l0) {
             (Some(old), Some(new)) => old.source == new.source && old.mail == new.mail,
-            (None, None) => open.card.body == card.body,
+            (None, None) => open.card.body == card.body && open.card.viewport == card.viewport,
             _ => false,
         };
         // A background layout replacement must not destroy local edits or
@@ -555,7 +570,7 @@ impl ShellGlanceSheet {
         if same_mail || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {
             self.live.prepare_native(&key, &open.card);
         } else { self.live.body(&key, &open.card, "glance sheet"); }
-        self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat());
+        self.chat_available = !open.card.viewport && self.live.session_mut(&key).is_some_and(|s| s.has_chat());
         if let Some(store) = previous { self.live.restore_store(&key, store); }
         if !same_layout { self.resume_store = None; }
         self.redraw(cx);
@@ -621,7 +636,8 @@ impl Widget for ShellGlanceSheet {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let screen = cx.turtle().rect();
-        self.refresh_publication(cx);
+        // Publication teardown can cancel a host sheet and answer its app.
+        // It runs in handle_event, never inside the drawing pass.
         #[cfg(any(feature = "app-hub", native_mobile))]
         if self.is_open() { self.poll_review(cx); }
         // Every frame, open or closed: the kit keeps its overlay in tree order.
@@ -655,7 +671,8 @@ impl Widget for ShellGlanceSheet {
                 // KeyboardView already subtracts IME height from this viewport.
                 if self.keyboard_visible { insets.bottom = 0.0; }
                 insets.inset(screen)
-            } else { sheet_rect(screen, if self.chatting || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {600.0} else {card_h + if self.chat_available {TABS} else {0.0}}) };
+            } else if open.card.viewport { script_workspace_rect(screen) }
+            else { sheet_rect(screen, if self.chatting || open.card.l0.as_ref().is_some_and(|l| l.mail.is_some()) {600.0} else {card_h + if self.chat_available {TABS} else {0.0}}) };
             let sheet = self.presentation.rect(destination);
             self.sheet = sheet;
             #[cfg(any(feature = "app-hub", native_mobile))]
@@ -697,7 +714,7 @@ impl Widget for ShellGlanceSheet {
                 if !self.chatting && open.card.l0.as_ref().is_none_or(|l| l.mail.is_none()) {
                     let new_session = self.live.session_mut(&key).is_none();
                     self.live.body(&key, &open.card, "glance sheet");
-                    if new_session { self.chat_available = self.live.session_mut(&key).is_some_and(|s| s.has_chat()); }
+                    if new_session { self.chat_available = !open.card.viewport && self.live.session_mut(&key).is_some_and(|s| s.has_chat()); }
                 }
                 // Layout at the final size throughout the reveal. The surface
                 // translates and clips; text is never squeezed/reflowed each frame.
@@ -732,7 +749,13 @@ impl Widget for ShellGlanceSheet {
                     rect(card.pos.x, card.pos.y, card.size.x, (card.size.y - MailToolbar::HEIGHT).max(20.))
                 } else { card };
                 let body = self.live.body(&key, &open.card, "glance sheet");
-                self.tiles.draw(cx, &key, &open.card.app, open.card.contained, &body, card);
+                if open.card.viewport {
+                    self.tiles.set_foreground(cx, !self.app_suspended
+                        && self.presentation.phase != crate::card_presentation::Phase::Closing);
+                    self.tiles.draw_workspace(cx, &key, &open.card.app, open.card.contained, &body, card);
+                } else {
+                    self.tiles.draw(cx, &key, &open.card.app, open.card.contained, &body, card);
+                }
                 }
             }
             cx.end_turtle();
@@ -758,7 +781,10 @@ impl Widget for ShellGlanceSheet {
             self.redraw(cx);
         }
         self.refresh_publication(cx);
-        if matches!(event, Event::Pause | Event::Background) { self.close_touch = None; }
+        if matches!(event, Event::Pause | Event::Background) {
+            self.close_touch = None; self.app_suspended = true;
+            self.tiles.set_foreground(cx, false);
+        } else if matches!(event, Event::Resume | Event::Foreground) { self.app_suspended = false; }
         if let Some(frame) = self.frame.is_event(event) {
             let dt = frame.time - self.frame_time;
             self.frame_time = frame.time;
@@ -768,6 +794,8 @@ impl Widget for ShellGlanceSheet {
             self.redraw(cx);
         }
         if !self.is_open() { return; }
+        self.tiles.set_foreground(cx, !self.app_suspended
+            && self.presentation.phase != crate::card_presentation::Phase::Closing);
         self.poll_compose(cx);
         #[cfg(any(feature = "app-hub", native_mobile))]
         self.poll_review(cx);
@@ -1010,7 +1038,7 @@ mod tests {
         sheet.publication_generation = crate::glance::generation();
         sheet.open = Some(Open { key: "test/card".into(), compose: Default::default(), card: GlanceCard {
             account: None,
-            app: "test".into(), card_id: "card".into(), title: "Card".into(), summary: String::new(), priority: 0,
+            app: "test".into(), card_id: "card".into(), title: "Card".into(), summary: String::new(), viewport: false, priority: 0,
             published_ms: 0, expires_ms: u64::MAX, open_app: "test".into(), route: None,
             body: "".into(), contained: false, digests: Vec::new(), l0: None,
         }});

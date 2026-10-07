@@ -15,8 +15,8 @@
 //!    of these itself (Cmd+Alt+Space is Finder search, Cmd+Alt+D the dock),
 //!    which is what the second way is for.
 //! 2. **SUPER+A as a one-shot prefix**: press it and the *next* key is read
-//!    on the SUPER+ALT layer. SUPER+A is unbound in every Omarchy binding
-//!    file, so nothing is lost.
+//!    on the SUPER+ALT layer. On macOS use **Ctrl+Alt+A** for this helper:
+//!    Command+A belongs to the focused app's Select All action.
 //!
 //! The cheat sheet (SUPER+K) renders the real combos for the current OS.
 
@@ -212,7 +212,10 @@ pub fn keymap() -> Vec<Bind> {
         Bind { layer: SuperCtrl, key: Space, action: WmAction::BackgroundNext, help: "Background switcher" },
         Bind { layer: SuperShiftCtrl, key: Space, action: WmAction::ThemeMenu, help: "Theme menu" },
         // ---- nested-mode helper (see the module note).
-        Bind { layer: Super, key: KeyA, action: WmAction::ArmAltLayer, help: "Arm the SUPER+ALT layer for one key" },
+        // The Logo spelling is Command on macOS. This optional WM helper
+        // must not consume the focused app's Select All shortcut. Keep its
+        // explicit Ctrl+Alt spelling and the other platforms' Super binding.
+        Bind { layer: if cfg!(target_os = "macos") { CtrlAlt } else { Super }, key: KeyA, action: WmAction::ArmAltLayer, help: "Arm the SUPER+ALT layer for one key" },
     ];
     // SUPER+1..0 workspaces; +SHIFT moves the window along, +SHIFT+ALT
     // moves it silently. SUPER+ALT+1..5 selects the nth group member.
@@ -435,6 +438,42 @@ mod tests {
 
     fn fallback_sup() -> KeyModifiers {
         mods(false, true, true, false)
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_select_all_falls_through_to_the_focused_app() {
+        // App::handle_event consumes any matched WM action before forwarding
+        // the key to its child. This used to arm the alternate layer, leaving
+        // App Hub's existing search text unselected before replacement input.
+        let command = mods(false, false, false, true);
+        for armed in [false, true] {
+            assert_eq!(match_bind_armed(KeyCode::KeyA, &command, armed), None);
+        }
+        // Do not disable Command as a WM modifier generally.
+        assert_eq!(match_bind(KeyCode::KeyW, &command), Some(WmAction::CloseWindow));
+        assert_eq!(match_bind(KeyCode::Space, &command), Some(WmAction::Menu));
+    }
+
+    #[test]
+    fn explicit_alt_prefix_still_arms_and_routes_the_next_fallback_chord() {
+        let fallback = fallback_sup();
+        assert_eq!(match_bind(KeyCode::KeyA, &fallback), Some(WmAction::ArmAltLayer));
+        assert_eq!(match_bind_armed(KeyCode::KeyS, &fallback, true), Some(WmAction::MoveToScratchpad));
+        assert_eq!(match_bind_armed(KeyCode::KeyS, &fallback, false), Some(WmAction::ToggleScratchpad));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_cheat_sheet_advertises_only_the_valid_alt_prefix() {
+        let prefix = keymap().into_iter().find(|bind| bind.action == WmAction::ArmAltLayer).unwrap();
+        assert_eq!(combo_text(&prefix), "Ctrl+Alt+A");
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn other_platforms_keep_the_logo_alt_prefix() {
+        assert_eq!(match_bind(KeyCode::KeyA, &mods(false, false, false, true)), Some(WmAction::ArmAltLayer));
     }
 
     #[test]

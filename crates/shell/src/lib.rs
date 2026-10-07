@@ -86,6 +86,12 @@ pub mod glance_chat;
 pub mod mail_card;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod mail_review;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod connected_review;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod glance_routes;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod connected_events;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_notice;
@@ -3824,6 +3830,17 @@ impl App {
     }
 
     fn launch_glance_app(&mut self, cx: &mut Cx, app: &str, route: Option<&str>) {
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        {
+            // Glance stores the publisher's manifest ID, whereas installed
+            // apps have a separate hub: launcher identity (ADR 0004).
+            let installed = apps::installed_launch_id(app);
+            if crate::clients::find_app(&installed).is_some() {
+                if let Some(route) = route { crate::glance_routes::queue(app, route); }
+                self.launch_app(cx, &installed);
+                return;
+            }
+        }
         #[cfg(any(feature = "app-hub", native_mobile))]
         if app == "calendar" {
             if let Some(id) = route.and_then(|route| route.strip_prefix("event/")) {

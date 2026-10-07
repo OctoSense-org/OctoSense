@@ -305,7 +305,7 @@ impl Scenario {
         assert_eq!(loaded.generic, ["ask_user_question"]);
         assert_eq!(super::with_relay(|r| r.catalog.generic(APP, false)), ["ask_user_question"]);
         let executed: Arc<Mutex<Vec<HostToolCall>>> = Arc::default();
-        let inner = super::script_apps::HostServiceExecutor { app: APP.into(), tools: loaded.host_service_tools, families: loaded.families, host_dir: root.join(".host") };
+        let inner = super::script_apps::HostServiceExecutor { app: APP.into(), tools: loaded.host_service_tools, methods: loaded.host_methods, families: loaded.families, host_dir: root.join(".host") };
         super::set_executor(APP, Some(Arc::new(Counting { inner: Arc::new(inner), ran: executed.clone() })));
 
         // News's peer, with the shell as its tool host.

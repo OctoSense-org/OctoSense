@@ -9,6 +9,9 @@ second spelling, **Ctrl+Alt**, for the few chords macOS keeps for itself
 (⌘Tab, ⌘⇧3/4/5). If you still have Spotlight on ⌘Space, unbind it in System
 Settings → Keyboard → Shortcuts, or use Ctrl+Alt+Space.
 
+On macOS, **⌘A** reaches the focused app for Select All. Use **Ctrl+Alt+A**
+for the window manager's alternate-layer prefix; it does not take over ⌘A.
+
 | Omarchy layer      | Press on macOS        | Fallback spelling        |
 |--------------------|-----------------------|--------------------------|
 | SUPER              | **⌘**                 | Ctrl+Alt                 |

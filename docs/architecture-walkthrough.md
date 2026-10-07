@@ -35,6 +35,8 @@ Where an app runs decides how it reaches its agent and where its tools execute. 
 
 To run the desktop, follow its README's [Build and run](../desktop/README.md#build-and-run), which stages the pinned kernel with `python3 tools/kernel-artifact.py --host --stage target/release`.
 
+Ordinary connected apps use the same Card runner. GitHub Notes, Inbox Assistant and Google Calendar declare `auth` plus a business service, and `storage.accounts: true`. The host binds their peer to the selected opaque connection. Follow the [OAuth/service walkthrough](../crates/oauth-service/README.md) for sign-in, explicit `host_method` tool mappings, durable Gmail events and admitted Glance templates. These apps use provider data rather than the built-in Calendar file; live provider/device acceptance is still pending.
+
 ## 3. Find who owns the kernel
 
 One service owns the kernel, and every consumer connects to it. Read these in order:

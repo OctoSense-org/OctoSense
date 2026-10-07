@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "result": "pass",
+  "scope": "Reusable MarkdownEditor hidden native macOS UI; provider-free fixture, not App Hub admission or Android device acceptance",
+  "driver": "Makepad native event injection and original GPU captures",
+  "binary_sha256": "edbe9198ffe7e5300aec3c282ddc7009af3a7c6b1a5721cb71224945e7ceb14a",
+  "source_sha256": {
+    "crates/markdown-editor/src/table_picker.rs": "86e831bfdbac5303463ce8d7e9ef4a7ca0fd0bd13e601f8943e67b99bda537b2",
+    "crates/markdown-editor/src/lib.rs": "4ed1f604a1c273a183629bba29bef195ebd6b7b638b9fc06c707680cda64480c",
+    "crates/markdown-editor/resources/LICENSE-RINX": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "crates/markdown-editor/resources/NOTICE.md": "7c94ac990657804f8d9a06ce0f46f402e7e9eaf76bab77d7c2744e8ebc4e0f91",
+    "crates/markdown-editor/resources/icons/article_rule.svg": "8536337fe83d30afb86b21858fef8901908834e201053a57042be1809f478896",
+    "crates/markdown-editor/resources/icons/checkmark.svg": "93264d1a3ed9170d4924bc37461e83384cbd5b65f4ec666037d67b301f0434d0",
+    "crates/markdown-editor/resources/icons/add_photo.svg": "840cda756e68ccad22bccba2d725bb8d24bede399a07b5192ffb0e6e20d8a4cd",
+    "crates/markdown-editor/resources/icons/article_quote.svg": "d3594d8cb334482e873c93a81eacbe65b364bfbc537014088bef7d7cff72a86f",
+    "crates/markdown-editor/resources/icons/article_heading.svg": "5c909bc2a8bc7ae595d0c381a8a653932e1fa5f3e87873925622881bc99b6a43",
+    "crates/markdown-editor/resources/icons/article_numbered.svg": "fc59a88878ac35b021177dc4ef6df0e4c96b7797ebe9e6a10e0c605100f31769",
+    "crates/markdown-editor/resources/icons/article_bold.svg": "3a2260a678f6e00b99632c8afc92aa7bad8ff3327dc2f3ce6c2ef1824be43b9d",
+    "crates/markdown-editor/resources/icons/link.svg": "3447a24710cc402dba6833ba4ea2c88885484a3984445fcbac7e002dafaf1545",
+    "crates/markdown-editor/resources/icons/article_table.svg": "0fd7487803e8a0257aa650cfd7784209596685a44568eae10bd1b4c76a54abd5",
+    "crates/markdown-editor/resources/icons/article_split.svg": "3dee35d447f871e93e163bfb6dc27486172d2ade44af3e51679a2f3141be50e0",
+    "crates/markdown-editor/resources/icons/article_italic.svg": "ed23967446c80685d8dd3bd815e439a7846f009d2b0a584102c55bda10bc4ac8",
+    "crates/markdown-editor/resources/icons/chevron_left.svg": "9042df9a92f23a1f02d0833f2e44eef672836ae10459804a2e711a5267f56872",
+    "crates/markdown-editor/resources/icons/article_palette.svg": "605d0ee2b1a39c7d380c7b80b88caa18ee30800e6c0a075ba9fa22c44a7e52d3",
+    "crates/markdown-editor/resources/icons/close.svg": "2ada6acbddfb1ab4505168ca2abb20ad4a457f3f621a2dd7ed576c738ea23bd3",
+    "crates/markdown-editor/resources/icons/eye_open.svg": "6e0565d97692cbae6222b9c56d4dcfe40057761bcc76abf7852bb4035f1802eb",
+    "crates/markdown-editor/resources/icons/send.svg": "ca62c5d227ecb4c1ad02c48319c38345067f7bed0bd74aaa6dbe4a757af62279",
+    "crates/markdown-editor/resources/icons/article_undo.svg": "dc9ae00ad7484f4b3f3cf4ba1696c1357be2fdeb5b05134e0b37d70d08b1c4bb",
+    "crates/markdown-editor/resources/icons/edit.svg": "200a997c49de5e0d75f9ea0e2c7c03df1bdf0f83d32c690cfc2bba83cad27d76",
+    "crates/markdown-editor/resources/icons/article_bullet.svg": "c351146d425cb58122ee697c6dfa5f010e5647b2599ba96b865b401c2fde1faf",
+    "crates/markdown-editor/resources/icons/article_redo.svg": "090d9803a66f69ddd0813427a5709d746e6c82b8b77dc354553d15bfb69d9b67",
+    "crates/markdown-editor/resources/icons/view_source.svg": "f68c681a24d253c6c346f9e313bd99617cb54a67b0890d97cc52034badf37ac1",
+    "crates/markdown-editor/examples/editor-host.rs": "ecbde6bbb603025339949b02b5410ad7678fa04cd9494173fe80d837f3fb1f55",
+    "crates/markdown-editor/Cargo.toml": "a9e95c96272255874ab2ce17608e0c61350b82a43e1369dc2c9c4e9a0322dd1a",
+    "Cargo.lock": "032ae9064ab4d020f29af868c4d4678ad2d22f68928f25aa7f05d2cf6b758f88",
+    "runtime-patches.lock.json": "069121ea545a317756775536ac908611457a652026d102e2f5d2e77707e5372c",
+    "native-runtime.lock.json": "124a663688d312ec3f8acab11dc68c569428cb0b60ae6c47a8171d1e5550d1c3",
+    "crates/markdown-editor/tests/native-writer.py": "18ad61e3c3abb9754119cd7082243689212df441ee7e16730ad780653b0f413d",
+    "crates/markdown-editor/tests/fixtures/reference.splash": "165d1f15d5880c984e09ce98c8697a73f9532e1d7018c2954fc7476b90b02988",
+    "tools/connected-e2e/native.py": "3182c430d9b3797a823a67403543d056891598b404cf7fda577836f09e7ae7b6"
+  },
+  "fixture_sha256": "165d1f15d5880c984e09ce98c8697a73f9532e1d7018c2954fc7476b90b02988",
+  "cases": [
+    {
+      "name": "wide",
+      "passed": true,
+      "checks": [
+        "Unicode exact readback",
+        "source/preview retention",
+        "selection Bold source bytes",
+        "undo/redo exact source",
+        "secondary rich-mode retention",
+        "native table-size picker insertion"
+      ]
+    },
+    {
+      "name": "narrow",
+      "passed": true,
+      "checks": [
+        "Unicode exact readback",
+        "source/preview retention",
+        "selection Bold source bytes",
+        "undo/redo exact source",
+        "secondary rich-mode retention",
+        "native table-size picker insertion"
+      ]
+    }
+  ],
+  "unit_tests": {
+    "command": "cargo test --locked -p octosense-markdown-editor --lib",
+    "passed": 3,
+    "failed": 0
+  },
+  "captures": [
+    {
+      "file": "notes-desktop.png",
+      "sha256": "37bcecccf3e1e769af74412718461e92f7cca4e53d4e8d3da2e165cdc98a778c"
+    },
+    {
+      "file": "notes-phone.png",
+      "sha256": "88070923b382ca748e1260484ea6530ce513cfbc78f250b7883e2b24c6537c47"
+    },
+    {
+      "file": "notes-wide-preview.png",
+      "sha256": "2f35fac11b97e8c9cfb77c5537bbf955e1dfd039963f1dbe0ab99ad063f3f130"
+    },
+    {
+      "file": "notes-narrow-styles.png",
+      "sha256": "85324376265199c44533abf767b34c08d5d900f25a66b8416181bb5a5c16531c"
+    },
+    {
+      "file": "notes-narrow-table.png",
+      "sha256": "57696b94f639803ea8f32b99aa131468c7ff416c75df1a43b48aea7837c66d4e"
+    },
+    {
+      "file": "notes-narrow-rich.png",
+      "sha256": "19ec06c4ffb40d23542c4086b512f0e588d1656110cb30a8678fb37e6658f3c4"
+    }
+  ],
+  "visual_review": "Original single captures reviewed: readable text, matching source/split hierarchy, phone bottom tools and reachable style/table sheets. Filename replaces the Rinx article-title editor; GitHub host callback replaces Matrix publication. Style swatches use named color tiles and secondary block/history controls. No score claims pixel identity.",
+  "unverified": [
+    "Android soft keyboard on this new writer",
+    "Integrated GitHub review after callback layout change",
+    "Theme presentation persistence across process restart"
+  ],
+  "live_credentials": false,
+  "remote_writes": 0,
+  "owned_native_processes_stopped": true,
+  "native_test_command": "python3 crates/markdown-editor/tests/native-writer.py --output target/markdown-writer-native-final"
+}

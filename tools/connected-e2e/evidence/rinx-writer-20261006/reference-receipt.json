@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "scope": "Original Rinx writer native visual reference, diagnostic entry with fictional text; not a signed-in account or publication test",
+  "rinx_revision": "241f7c2863c751edf414c7c45b246a069c27da38",
+  "original_ui_sha256": "0708a9005f05863821325deebdbd525f9447e0d25ae983c05768a8856e1726f6",
+  "diagnostic_ui_sha256": "0d0572eb8a90dd2bd1913d9190876488351c5e4920ac3d8f1950068b86e96ba1",
+  "diagnostic_patch_sha256": "80d58ac313efaeb4bb39a59729f027d62a9a2f42e057c5a11fff236782507103",
+  "harness_sha256": "a4aba899c885acc09c2e4dfa3fe302e68494b1946c80d13af67d20dbdd84dab4",
+  "binary_sha256": "0239e6a51553ec8ed7f40f2f38adbc9b0707c5d5372862f332334d7d05c35276",
+  "capture_api": "Makepad native GPU /g; original pixels, no image editing",
+  "live_credentials": false,
+  "kernel_or_matrix_session_started": false,
+  "captures": [
+    {
+      "file": "rinx-desktop.png",
+      "sha256": "ed324a3d4653291f1ac247777dcbdb45f31e476bac05e0d378b9d65ab414e4ed",
+      "logical_size": [
+        1200,
+        820
+      ],
+      "pixel_size": [
+        2400,
+        1640
+      ]
+    },
+    {
+      "file": "rinx-phone.png",
+      "sha256": "529460112cfcd9c39d2b7b6eaea726817ac6f44a06083ad7d7640080156ed7b8",
+      "logical_size": [
+        430,
+        850
+      ],
+      "pixel_size": [
+        860,
+        1700
+      ]
+    }
+  ],
+  "cleanup": true
+}

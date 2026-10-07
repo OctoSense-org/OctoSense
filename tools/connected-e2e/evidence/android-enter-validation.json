@@ -1,0 +1,69 @@
+{
+  "recorded_at": "2026-10-06T22:48:36.066427+00:00",
+  "scope": "Android multiline key-event Enter retains active composing text before inserting one newline. Ordinary IME commit replacement semantics are unchanged.",
+  "base_revision": "c155f61d0e1600d2ec474209374444a38a09a470",
+  "runtime_overlay_tree": "f09a9d268e2112bdd46f8d6c9a2b38e16397f20f",
+  "files_sha256": {
+    "runtime-patches.lock.json": "069121ea545a317756775536ac908611457a652026d102e2f5d2e77707e5372c",
+    "tools/runtime-patches/makepad-android-enter-composition.patch": "36e7a22c999cf4a85e9d85f7a2b94bdfe9e6f375b703274735ca3816953e3280",
+    "rom/tests/test_android_ime_handoff.py": "30e7b7107bdedd5ad2b3e67f3c78f57eeae019d2ee8a5e1427054039ad1fdfd8",
+    "rom/tests/java/AndroidImeHandoffTest.java": "80decbbc9a2943ce5e5be2553869b86ec41c5108714fe2e920065a03af0c14e6",
+    "rom/tests/rust/AndroidEditorOperationsTest.rs": "cee951af3c53e6d7568216a6d6ce43eea5d8c889f3bcfdd2a74b88191818a086"
+  },
+  "runtime_java_sha256": "451e174ce3382778758d3f08ae15f636e95bf4be97ef06edf054a7dde82b41c1",
+  "patch_stack_replay_from_base": "passed with separate temporary Git index; resulting tree equals lock",
+  "baseline_regression": {
+    "outcome": "failed as expected before patch",
+    "input": "# OnePlus Notes test",
+    "composing_utf16_range": [
+      16,
+      20
+    ],
+    "action": "Enter DOWN then UP through real extracted Java routing methods",
+    "expected": "# OnePlus Notes test\n",
+    "observed": "# OnePlus Notes \n",
+    "assertion": "hardware Enter retains the composing word and inserts once"
+  },
+  "corrected_coverage": [
+    "Surface and InputConnection key-event routes",
+    "Immediate and queued Java mirror updates",
+    "Finish-composition operation precedes newline commit",
+    "Key release inserts no second newline",
+    "Ordinary soft IME commit still replaces active composing range",
+    "Ordered finish/newline through actual native canonical editor methods"
+  ],
+  "checks": [
+    {
+      "command": "python3 -m unittest discover -s rom/tests -p test_android_ime_handoff.py",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python3 -m unittest discover -s tests",
+      "working_directory": "rom",
+      "passed": 96,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python3 -m unittest discover -s tools -p test_setup.py",
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python3 tools/setup.py --check --cargo",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 tools/native_apps.py --check",
+      "exit_code": 0
+    }
+  ],
+  "java_toolchain": "existing JDK17.0.2; no software installed",
+  "test_boundary": "Java tests inject actual runtime methods into existing Android transport doubles; Rust tests execute actual canonical editor operations. These are regression checks, not on-device IME acceptance.",
+  "phone_validation": "Parent-owned rebuilt APK and OnePlus6 validation are recorded separately; not asserted by this receipt.",
+  "mac_validation": "See glance-modal-validation.json; those checks preceded this Java-only patch.",
+  "cargo_dependency_pins_changed": false
+}

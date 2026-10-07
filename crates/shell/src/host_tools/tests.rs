@@ -224,7 +224,7 @@ fn admitted_mail_calendar_grants_route_to_the_real_calendar_store() {
     relay.catalog.declare("os.calendar", calendar.tools);
     relay.catalog.declare("os.mail", mail.tools);
     relay.set_executor("os.calendar", Some(Arc::new(HostServiceExecutor {
-        app: "os.calendar".into(), tools: calendar.host_service_tools,
+        app: "os.calendar".into(), tools: calendar.host_service_tools, methods: calendar.host_methods,
         families: calendar.families, host_dir: root.clone(),
     })));
     let mut world = World::new(FixedDevMode::off());

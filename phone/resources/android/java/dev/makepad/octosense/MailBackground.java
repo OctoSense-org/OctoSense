@@ -28,6 +28,7 @@ public final class MailBackground {
     static final String OPEN = "dev.makepad.octosense.MAIL_CARD";
     static final String TOKEN = "mail_card_token";
     private static final String CHANNEL = "important_mail";
+    private static final String GLANCE_CHANNEL = "app_cards";
     private static final String TAG = "OctoMail.";
     private static final ScheduledExecutorService monitor = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "mail-notification-monitor"); t.setDaemon(true); return t;
@@ -59,7 +60,9 @@ public final class MailBackground {
                 boolean enabled = state.optBoolean("enabled");
                 schedule(context, enabled);
                 post(context, state);
-                if (enabled && Build.VERSION.SDK_INT >= 33 && !permissionAsked
+                boolean hasNotices = state.optJSONArray("notifications") != null
+                    && state.optJSONArray("notifications").length() > 0;
+                if ((enabled || hasNotices) && Build.VERSION.SDK_INT >= 33 && !permissionAsked
                     && !context.getSharedPreferences("mail-background", Context.MODE_PRIVATE).getBoolean("notification-permission-asked", false)
                     && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     permissionAsked = true;
@@ -94,22 +97,31 @@ public final class MailBackground {
     static synchronized void post(Context context, JSONObject state) throws Exception {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         if (manager == null) return;
+        boolean chinese = context.getResources().getConfiguration().getLocales().get(0).getLanguage().equals("zh");
         NotificationChannel channel = new NotificationChannel(CHANNEL,
-            context.getResources().getConfiguration().getLocales().get(0).getLanguage().equals("zh") ? "重要邮件" : "Important mail", NotificationManager.IMPORTANCE_DEFAULT);
+            chinese ? "重要邮件" : "Important mail", NotificationManager.IMPORTANCE_DEFAULT);
         channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         manager.createNotificationChannel(channel);
+        NotificationChannel cards = new NotificationChannel(GLANCE_CHANNEL,
+            chinese ? "应用卡片" : "App cards", NotificationManager.IMPORTANCE_DEFAULT);
+        cards.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+        manager.createNotificationChannel(cards);
         HashSet<String> active = new HashSet<>();
         JSONArray current = state.optJSONArray("active");
         if (current != null) for (int i=0; i<current.length(); i++) active.add(TAG + current.getString(i));
         for (StatusBarNotification old : manager.getActiveNotifications())
             if (old.getTag() != null && old.getTag().startsWith(TAG) && !active.contains(old.getTag()))
                 manager.cancel(old.getTag(), 1);
-        if (!manager.areNotificationsEnabled()
-            || manager.getNotificationChannel(CHANNEL).getImportance() == NotificationManager.IMPORTANCE_NONE) return;
+        if (!manager.areNotificationsEnabled()) return;
         JSONArray notices = state.optJSONArray("notifications");
         if (notices == null) return;
         for (int i=0; i<notices.length(); i++) {
             JSONObject notice = notices.getJSONObject(i);
+            boolean mail = "mail".equals(notice.optString("kind", "mail"));
+            String channelId = mail ? CHANNEL : GLANCE_CHANNEL;
+            if (manager.getNotificationChannel(channelId).getImportance() == NotificationManager.IMPORTANCE_NONE) continue;
+            String label = mail ? "OctoSense Mail" : "OctoSense";
+            int icon = mail ? android.R.drawable.ic_dialog_email : android.R.drawable.ic_dialog_info;
             String token = notice.getString("token");
             if (!token.matches("[0-9a-f]{64}")) continue;
             Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
@@ -119,16 +131,16 @@ public final class MailBackground {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             PendingIntent tap = PendingIntent.getActivity(context, 0, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            Notification publicVersion = new Notification.Builder(context, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_email).setContentTitle("OctoSense Mail").build();
-            Notification notification = new Notification.Builder(context, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setContentTitle(notice.optString("title", "OctoSense Mail"))
+            Notification publicVersion = new Notification.Builder(context, channelId)
+                .setSmallIcon(icon).setContentTitle(label).build();
+            Notification notification = new Notification.Builder(context, channelId)
+                .setSmallIcon(icon)
+                .setContentTitle(notice.optString("title", label))
                 .setContentText(notice.optString("summary"))
                 .setStyle(new Notification.BigTextStyle().bigText(notice.optString("summary")))
                 .setContentIntent(tap).setAutoCancel(true).setOnlyAlertOnce(true)
                 .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(publicVersion)
-                .setCategory(Notification.CATEGORY_EMAIL)
+                .setCategory(mail ? Notification.CATEGORY_EMAIL : Notification.CATEGORY_STATUS)
                 .setTimeoutAfter(Math.max(1, notice.getLong("expires") - System.currentTimeMillis())).build();
             manager.notify(TAG + token, 1, notification);
             nativeDelivered(token, notice.getLong("published"));

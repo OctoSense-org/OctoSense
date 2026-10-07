@@ -35,6 +35,8 @@
 
 运行方法见桌面端 README 的[构建与运行](../desktop/README.zh-CN.md#构建与运行)，其中用 `python3 tools/kernel-artifact.py --host --stage target/release` 准备锁定版本的内核。
 
+普通联网应用也使用同一个 Card runner。GitHub Notes、Inbox Assistant、Google Calendar 声明 `auth`、所需业务服务及 `storage.accounts: true`；宿主将 peer 绑定到当前选中的不透明连接。登录、显式 `host_method` 工具映射、持久化 Gmail 事件与接纳的 Glance 模板见 [OAuth/服务导读](../crates/oauth-service/README.zh-CN.md)。这些应用使用服务商数据；真实服务商和设备验收仍待完成。
+
 ## 3. 找到内核的所有者
 
 只有一个服务拥有内核，所有使用方都连接到它。按以下顺序阅读：

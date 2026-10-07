@@ -36,6 +36,8 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 想按顺序读源码，请从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充了各个产品的运行方式。
 
+联网 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。真实服务商验收仍待完成，Android 上的 Google 登录还需要原生授权适配器。
+
 ## 整体如何运作
 
 每台设备一个 Shell 进程，每个 Shell 一个 octos 内核，每个 Agent 都是这个内核中的一个会话。Shell 是内核唯一的完整客户端：它启动 octos 并持有宿主 token，启动每个应用 Agent 的回合，转交每一次对应用工具的调用，并掌管所有审批。应用从不直接与内核通信。
@@ -161,7 +163,7 @@ sequenceDiagram
 
 `<app>.notify` 工具填充固定的卡片模板（[`notice.card`](crates/shell/resources/glance/notice.card)，或日历的[日程与议程卡片](apps/calendar/host-service/resources)），模型只负责文字。邮件另有 `mail.publish_card`，它接收模型编写的卡片，检查后再发布。无论哪种方式，Shell 都以应用的身份发布，并要求应用拥有 `glance` 权限。
 
-邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。其他应用还没有事件；详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。
+邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账号的工具读取邮件，自己判断要不要发卡片。内置路径详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。独立安装的 Gmail 应用也可通过联网服务声明绑定账户的 `<应用短名>.new_message` 触发器，见 [OAuth 指南](crates/oauth-service/README.zh-CN.md)。
 
 ### 一个应用 Agent，两条通道
 

@@ -1,0 +1,189 @@
+{
+  "scope": "macOS native Notes UX repeated testing",
+  "result": "functional pass; finite memory-growth caveat",
+  "binary_sha256": "ef8b5e4c7fcb01b52b6c71fbec2980b87d0b69e7b1a106e8658159fb06e6ff9d",
+  "same_binary_and_sources": true,
+  "measurement_context": "Shared development Mac: simultaneous Inbox and Calendar native soaks plus Android cross-compilation with four build jobs; not an idle-machine benchmark.",
+  "cycles": 156,
+  "review_cancel_and_rich_undo_rounds": 26,
+  "installed_restarts": 2,
+  "provider_write_attempts": 0,
+  "cleanup": "four owned processes exited0; disposable profile absence verified",
+  "runs": {
+    "soak36": {
+      "elapsed_s": 601.465,
+      "cycles": 36,
+      "rss_trend": {
+        "first_kib": 330960,
+        "last_kib": 370800,
+        "max_kib": 370800,
+        "last5_median_kib": 369392,
+        "first5_median_kib": 328592,
+        "after5_warmup_slope_kib_per_cycle": 848.25,
+        "interpretation": "Measured finite-run trend only; history and renderer allocations are not a proven leak or leak-free guarantee."
+      },
+      "metrics": {
+        "source_edit_and_persist": {
+          "count": 36,
+          "p50_ms": 426.34,
+          "p95_ms": 434.4,
+          "max_ms": 445.96
+        },
+        "source_scroll_and_refocus": {
+          "count": 36,
+          "p50_ms": 4.0,
+          "p95_ms": 5.38,
+          "max_ms": 6.81
+        },
+        "write_mode": {
+          "count": 36,
+          "p50_ms": 2.55,
+          "p95_ms": 3.56,
+          "max_ms": 4.54
+        },
+        "write_scroll": {
+          "count": 36,
+          "p50_ms": 3.52,
+          "p95_ms": 5.3,
+          "max_ms": 6.8
+        },
+        "preview_mode": {
+          "count": 36,
+          "p50_ms": 3.98,
+          "p95_ms": 7.79,
+          "max_ms": 13.26
+        },
+        "preview_scroll": {
+          "count": 36,
+          "p50_ms": 1.95,
+          "p95_ms": 3.55,
+          "max_ms": 4.5
+        },
+        "return_source": {
+          "count": 36,
+          "p50_ms": 2.2,
+          "p95_ms": 3.64,
+          "max_ms": 4.54
+        },
+        "repository_and_back": {
+          "count": 36,
+          "p50_ms": 20.61,
+          "p95_ms": 29.86,
+          "max_ms": 49.2
+        },
+        "exact_review_open": {
+          "count": 6,
+          "p50_ms": 109.56,
+          "p95_ms": 122.44,
+          "max_ms": 124.49
+        },
+        "review_scroll_to_end": {
+          "count": 6,
+          "p50_ms": 1.38,
+          "p95_ms": 1.94,
+          "max_ms": 2.05
+        },
+        "review_cancel": {
+          "count": 6,
+          "p50_ms": 5.16,
+          "p95_ms": 9.59,
+          "max_ms": 9.82
+        },
+        "installed_reopen": {
+          "count": 1,
+          "p50_ms": 423.78,
+          "p95_ms": 423.78,
+          "max_ms": 423.78
+        }
+      }
+    },
+    "burst120": {
+      "elapsed_s": 80.966,
+      "cycles": 120,
+      "rss_trend": {
+        "first_kib": 325056,
+        "last_kib": 388352,
+        "max_kib": 388352,
+        "last5_median_kib": 380352,
+        "first5_median_kib": 323232,
+        "after5_warmup_slope_kib_per_cycle": 313.55,
+        "interpretation": "Measured finite-run trend only; history and renderer allocations are not a proven leak or leak-free guarantee."
+      },
+      "metrics": {
+        "source_edit_and_persist": {
+          "count": 120,
+          "p50_ms": 427.2,
+          "p95_ms": 433.54,
+          "max_ms": 461.06
+        },
+        "source_scroll_and_refocus": {
+          "count": 120,
+          "p50_ms": 4.92,
+          "p95_ms": 7.16,
+          "max_ms": 13.97
+        },
+        "write_mode": {
+          "count": 120,
+          "p50_ms": 3.24,
+          "p95_ms": 4.31,
+          "max_ms": 6.75
+        },
+        "write_scroll": {
+          "count": 120,
+          "p50_ms": 4.32,
+          "p95_ms": 6.39,
+          "max_ms": 9.28
+        },
+        "preview_mode": {
+          "count": 120,
+          "p50_ms": 4.87,
+          "p95_ms": 8.12,
+          "max_ms": 16.95
+        },
+        "preview_scroll": {
+          "count": 120,
+          "p50_ms": 2.58,
+          "p95_ms": 3.94,
+          "max_ms": 4.55
+        },
+        "return_source": {
+          "count": 120,
+          "p50_ms": 2.94,
+          "p95_ms": 4.26,
+          "max_ms": 5.4
+        },
+        "repository_and_back": {
+          "count": 120,
+          "p50_ms": 22.37,
+          "p95_ms": 27.85,
+          "max_ms": 48.74
+        },
+        "exact_review_open": {
+          "count": 20,
+          "p50_ms": 111.18,
+          "p95_ms": 144.2,
+          "max_ms": 145.36
+        },
+        "review_scroll_to_end": {
+          "count": 20,
+          "p50_ms": 1.61,
+          "p95_ms": 1.97,
+          "max_ms": 2.21
+        },
+        "review_cancel": {
+          "count": 20,
+          "p50_ms": 5.32,
+          "p95_ms": 6.27,
+          "max_ms": 9.47
+        },
+        "installed_reopen": {
+          "count": 1,
+          "p50_ms": 428.98,
+          "p95_ms": 428.98,
+          "max_ms": 428.98
+        }
+      }
+    }
+  },
+  "first_harness_failure": "Initial pilot assumed instrument root was JSON. It returns text; corrected driver. No app edit occurred before that failure. Failed receipt and PNG remain in ignored target/connected-notes-soak/run-1791324416524690000."
+}

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "date": "2026-10-06",
+  "platform": "Windows",
+  "result": "unverified",
+  "attempt": "cross-compile host feature on macOS using installed x86_64-pc-windows-msvc target",
+  "blocker": "ring C build could not find Windows SDK assert.h; OAuth host crate not reached",
+  "native_execution": false,
+  "installed_sdk": false
+}

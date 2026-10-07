@@ -1,0 +1,10 @@
+{
+  "change": "Preserve upstream mixed icon attribution after native validation; no Rust, fixture or SVG changes.",
+  "prior_notice_sha256": "7c94ac990657804f8d9a06ce0f46f402e7e9eaf76bab77d7c2744e8ebc4e0f91",
+  "current_documentation_sha256": {
+    "crates/markdown-editor/resources/NOTICE.md": "96c727a2671dede281d72a5b1631c34bcd9f8f5d141c3b2eed157839782f2c34",
+    "crates/markdown-editor/resources/NOTICE-RINX": "f6914c103bae7fcf5bf6bfef9cb54654e6a744b8f9128fae8ef3a273f04513bf",
+    "crates/markdown-editor/resources/LICENSE-RINX-MIT": "7c370204a7507a3c33398d6377aa69691991b0582a3d92ace8d27d8819b223f7",
+    "crates/markdown-editor/resources/ATTRIBUTIONS-RINX.md": "43a07d67582558c4f96e706b569905a28675b4659248da6a21bc907f3af10348"
+  }
+}

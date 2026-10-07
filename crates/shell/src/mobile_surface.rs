@@ -1076,6 +1076,7 @@ impl PhoneSurface {
     fn draw_app_navigation(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect) {
         use crate::mobile_navigation::NavigationHit;
         let nav=&state.phone.navigation;
+        if !nav.visible() { return; }
         let layout=nav.layout(state.phone.navigation_rect());
         let dark=state.style.dark;
         let face=self.theme_face(if dark {rgb(39,37,47)} else {rgb(252,251,255)});

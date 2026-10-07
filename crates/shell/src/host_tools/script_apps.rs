@@ -49,6 +49,7 @@ pub struct Loaded {
     pub asks: Vec<String>,
     /// Its tools that run on host services, and the families it was granted.
     pub host_service_tools: BTreeSet<String>,
+    pub host_methods: HashMap<String, String>,
     pub families: BTreeSet<String>,
     /// The admitted manifest (the toolbox reads its grant from it).
     pub manifest: Value,
@@ -97,6 +98,7 @@ pub fn from_bundle(bundle: &Path) -> Result<Loaded, String> {
         loaded.tools.push(declaration(tool));
         if tool.implemented_by == ImplementedBy::HostService {
             loaded.host_service_tools.insert(tool.name.clone());
+            loaded.host_methods.insert(tool.name.clone(), tool.service_method().to_owned());
         }
     }
     // Dotted names are other apps' tools. Of the kernel's own, App Hub
@@ -115,6 +117,24 @@ pub fn from_bundle(bundle: &Path) -> Result<Loaded, String> {
 pub fn guidance(app: &str) -> Result<Loaded, String> {
     let (_, bundle) = admitted_bundle(app)?;
     from_bundle(&bundle)
+}
+
+/// A foreground app or its peer can select a reviewed UI asset from its own
+/// installed bundle. The bundle digest is checked again before reading it;
+/// model arguments cannot become an arbitrary host filesystem path.
+pub(crate) fn glance_template(app: &str, name: &str) -> Result<String, String> {
+    if !name.ends_with(".splash") || name.len() > 96 || name.starts_with('.')
+        || !name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) {
+        return Err("Choose a Splash template basename from this app's admitted bundle".into());
+    }
+    let (_, bundle) = admitted_bundle(app)?;
+    let loaded = from_bundle(&bundle)?;
+    if !loaded.families.contains("glance") {return Err("This app has no Glance grant".into());}
+    let path = bundle.join(name);
+    if !std::fs::symlink_metadata(&path).is_ok_and(|m|m.is_file() && m.len() <= 256 * 1024) {
+        return Err("The admitted Glance template is missing or too large".into());
+    }
+    std::fs::read_to_string(path).map_err(|_|"Cannot read admitted Glance template".into())
 }
 
 /// The owning app of a tool another app asks for, by its namespace
@@ -144,7 +164,7 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
     // Its toolbox grant, from the same manifest (ADR 0002 §6, #151).
     #[cfg(feature = "toolbox-peers")]
     super::toolbox::grant_manifest(app, &loaded.manifest);
-    let executor = HostServiceExecutor { app: app.to_string(), tools: loaded.host_service_tools, families: loaded.families, host_dir };
+    let executor = HostServiceExecutor { app: app.to_string(), tools: loaded.host_service_tools, methods: loaded.host_methods, families: loaded.families, host_dir };
     super::set_executor(app, Some(Arc::new(executor)));
 }
 
@@ -194,6 +214,7 @@ pub struct HostServiceExecutor {
     pub app: String,
     /// The tools that run on a host service.
     pub tools: BTreeSet<String>,
+    pub methods: HashMap<String, String>,
     /// The capability families the app's manifest was granted.
     pub families: BTreeSet<String>,
     /// The directory App Hub hands every host service (`<apps root>/.host`).
@@ -237,6 +258,18 @@ fn scoped_args(app: &str, call: &HostToolCall) -> Result<Value, String> {
     Ok(Value::Object(args))
 }
 
+fn connected_args(app: &str, call: &HostToolCall, connection: &str, mut args: Value) -> Result<Value, String> {
+    if super::relay::app_of_peer(&call.calling_app) == app && call.account.as_deref() != Some(connection) {
+        return Err("The app account changed; reopen its conversation".into());
+    }
+    let object = args.as_object_mut().ok_or("Tool arguments must be an object")?;
+    if object.get("connection").is_some_and(|v|v.as_str()!=Some(connection)) {
+        return Err("Tools cannot select a different connection".into());
+    }
+    object.insert("connection".into(), json!(connection));
+    Ok(args)
+}
+
 impl ToolExecutor for HostServiceExecutor {
     fn execute(&self, call: HostToolCall, reply: ToolReply) {
         if !reply.is_open() {
@@ -246,7 +279,8 @@ impl ToolExecutor for HostServiceExecutor {
             reply.finish(ToolOutcome::error("app_tool_unavailable", format!("{} declares a script implementation, but this host does not support script tool dispatch", call.name)));
             return;
         }
-        let family = call.name.split('.').next().unwrap_or("");
+        let method = self.methods.get(&call.name).map(String::as_str).unwrap_or(&call.name);
+        let family = method.split('.').next().unwrap_or("");
         // A system app's own namespace is its own host service: both ship
         // with the shell (Calendar's `calendar`, which App Hub's closed
         // capability list does not name). Any other family needs the grant.
@@ -255,16 +289,26 @@ impl ToolExecutor for HostServiceExecutor {
             reply.finish(ToolOutcome::error("not_granted", format!("{} was not granted the {family} service", self.app)));
             return;
         }
-        let args = match scoped_args(&self.app, &call) {
+        let mut args = match scoped_args(&self.app, &call) {
             Ok(args) => args,
             Err(message) => {
                 reply.finish(ToolOutcome::error("account_scope", message));
                 return;
             }
         };
+        if matches!(family, "gmail" | "gcalendar" | "github") {
+            let Some(connection) = octosense_oauth_service::host::active_connection(&self.host_dir, &self.app) else {
+                reply.finish(ToolOutcome::error("account_scope", "Connect this app account first"));
+                return;
+            };
+            args = match connected_args(&self.app,&call,&connection.handle,args) {
+                Ok(args)=>args,
+                Err(error)=>{reply.finish(ToolOutcome::error("account_scope",error));return;}
+            };
+        }
         let key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { call_id: call.call_id.clone(), reply });
-        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args, from_sheet: false,
+        let service_call = ServiceCall { app_id: self.app.clone(), service: method.to_owned(), args, from_sheet: false,
             // A tool call has no surface for a sheet: the person is not in the app.
             may_prompt: false, host_dir: self.host_dir.clone() };
         octosense_appstore::services::dispatch(service_call, key, 0, &mut NoSheet);
@@ -574,6 +618,41 @@ pub(crate) mod tests {
         assert!(scoped_args("os.mail", &request).is_err());
     }
 
+    #[test]
+    fn connected_tools_refuse_stale_peers_and_model_selected_accounts() {
+        let mut request=call("inbox.message");
+        request.calling_app="card.org.example.inbox".into();
+        request.account=Some("old".into());
+        assert!(connected_args("org.example.inbox",&request,"current",json!({})).is_err());
+        request.account=Some("current".into());
+        assert_eq!(connected_args("org.example.inbox",&request,"current",json!({"message_id":"123"})).unwrap(),json!({"message_id":"123","connection":"current"}));
+        assert!(connected_args("org.example.inbox",&request,"current",json!({"connection":"other"})).is_err());
+        // Cross-app permission is checked by the relay before this executor.
+        // Even an authorized caller can only use the owner's active account.
+        request.calling_app="card.org.example.calendar".into();
+        request.account=Some("caller-account".into());
+        assert_eq!(connected_args("org.example.inbox",&request,"current",json!({})).unwrap()["connection"],"current");
+        assert!(connected_args("org.example.inbox",&request,"current",json!({"connection":"caller-account"})).is_err());
+    }
+
+    #[test]
+    fn admitted_alias_dispatches_with_owner_identity_and_checks_actual_family() {
+        octosense_appstore::services::register_host_service(Box::new(Probe));
+        let mut exec=HostServiceExecutor {app:"org.example.notes".into(),
+            tools:["notes.lookup".to_owned()].into_iter().collect(),
+            methods:HashMap::from([("notes.lookup".into(),"g3probe.echo".into())]),
+            families:["notes".to_owned()].into_iter().collect(),host_dir:std::env::temp_dir()};
+        let (r,sent)=reply();exec.execute(call("notes.lookup"),r);
+        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"not_granted");
+        exec.families.insert("g3probe".into());
+        let (r,sent)=reply();exec.execute(call("notes.lookup"),r);
+        for _ in 0..50 {poll();if !sent.lock().unwrap().is_empty(){break;} std::thread::sleep(std::time::Duration::from_millis(10));}
+        let answer=sent.lock().unwrap();
+        assert_eq!(answer[0]["data"]["app"],"org.example.notes");
+        assert_eq!(answer[0]["data"]["service"],"g3probe.echo");
+        assert_eq!(answer[0]["data"]["from_sheet"],false);
+    }
+
     fn reply() -> (ToolReply, Arc<Mutex<Vec<Value>>>) {
         let sent: Arc<Mutex<Vec<Value>>> = Arc::default();
         let s = sent.clone();
@@ -603,6 +682,7 @@ pub(crate) mod tests {
         let exec = HostServiceExecutor {
             app: "os.g3hold".into(),
             tools: ["g3hold.wait".to_string()].into_iter().collect(),
+            methods: Default::default(),
             families: ["g3hold".to_string()].into_iter().collect(),
             host_dir: std::env::temp_dir(),
         };
@@ -625,6 +705,7 @@ pub(crate) mod tests {
         let exec = HostServiceExecutor {
             app: "os.g3probe".into(),
             tools: ["g3probe.echo".to_string(), "other.x".to_string()].into_iter().collect(),
+            methods: Default::default(),
             families: ["g3probe".to_string()].into_iter().collect(),
             host_dir: std::env::temp_dir(),
         };
@@ -655,7 +736,7 @@ pub(crate) mod tests {
     fn a_system_apps_own_namespace_needs_no_grant() {
         octosense_appstore::services::register_host_service(Box::new(Probe));
         let run = |app: &str| {
-            let exec = HostServiceExecutor { app: app.into(), tools: ["g3probe.echo".to_string()].into_iter().collect(), families: Default::default(), host_dir: std::env::temp_dir() };
+            let exec = HostServiceExecutor { app: app.into(), tools: ["g3probe.echo".to_string()].into_iter().collect(), methods: Default::default(), families: Default::default(), host_dir: std::env::temp_dir() };
             let (r, sent) = reply();
             exec.execute(call("g3probe.echo"), r);
             for _ in 0..50 {

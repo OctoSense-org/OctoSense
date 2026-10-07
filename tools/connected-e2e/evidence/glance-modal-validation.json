@@ -1,0 +1,117 @@
+{
+  "scope": "Glance foreground host review draws exclusively in its own isolate; app VM/draft retained",
+  "source_sha256": {
+    "crates/shell/src/glance_card.rs": "791757d29403011e48542139d70f9b2e285238c9a2de4db5527babfbf7a1297c"
+  },
+  "binary_sha256": "8a146802c38aef3a5f7d4dee3fbbadb74dabf3a40456bdc0d339a8e2148c8f69",
+  "checks": [
+    {
+      "check": "full-shell-suite",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "octosense-shell",
+        "--features",
+        "mobile-apps,acceptance-fixtures"
+      ],
+      "directory": ".",
+      "exit_code": 0,
+      "seconds": 129.2
+    },
+    {
+      "check": "desktop-default",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "-p",
+        "octosense"
+      ],
+      "directory": ".",
+      "exit_code": 0,
+      "seconds": 16.81
+    },
+    {
+      "check": "desktop-mobile",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "-p",
+        "octosense",
+        "--features",
+        "mobile-apps"
+      ],
+      "directory": ".",
+      "exit_code": 0,
+      "seconds": 8.16
+    },
+    {
+      "check": "home-mobile",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "-p",
+        "octosense-home",
+        "--features",
+        "mobile-apps"
+      ],
+      "directory": "phone",
+      "exit_code": 0,
+      "seconds": 14.74
+    },
+    {
+      "check": "desktop-graph",
+      "command": [
+        "bash",
+        "tools/check-shell-graph.sh",
+        "-p",
+        "octosense"
+      ],
+      "directory": ".",
+      "exit_code": 0,
+      "seconds": 41.01
+    },
+    {
+      "check": "home-graph",
+      "command": [
+        "bash",
+        "../tools/check-shell-graph.sh",
+        "-p",
+        "octosense-home"
+      ],
+      "directory": "phone",
+      "exit_code": 0,
+      "seconds": 40.88
+    }
+  ],
+  "full_shell_tests": {
+    "passed": 954,
+    "failed": 0
+  },
+  "focused_glance_card_tests": {
+    "passed": 28,
+    "failed": 0
+  },
+  "native_first_review": {
+    "original_png": "cycle-01-review.png",
+    "sha256": "fe2a32e4cefc83e85e0d6dfc0d9b9f154e0d4df6509d2efca2a475126b0b7481",
+    "review": "Host-only heading/body,10:30 request, medication sentence, Unicode marker and both controls visible; no underlying tabs/editor overlap",
+    "sustained_run": "owned by Inbox agent; frame acknowledgement failure retained separately"
+  },
+  "isolation": {
+    "RINX_DATA_DIR": "fresh temporary directory",
+    "OCTOSENSE_APP_DATA": "fresh temporary directory",
+    "OCTOSENSE_HOME": "fresh temporary directory",
+    "HOME": "unchanged"
+  },
+  "release_examples_rebuilt_during_broad_checks": false,
+  "android_compile_or_runtime_acceptance": false,
+  "recorded_at": "2026-10-06T22:48:36.065568+00:00",
+  "runtime_overlay_tree_at_build": "4d551700429705f326a9f86f2562c1320a5077ea",
+  "validation_order": "Mac checks and native candidate ran before the Java-only Android Enter overlay. That overlay does not change macOS Rust code; this receipt retains the actual tested runtime tree.",
+  "sustained_run_limit": "First fixed review inspected independently; Inbox agent owns later sustained acceptance. Frame acknowledgement failures are separate and are not a clean responsiveness pass."
+}

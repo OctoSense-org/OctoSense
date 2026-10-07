@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "07accf83864ac912d5b9ef04f785634ad43caa9e",
+    "tree": "5f0a18be85da5c3ded9dcf2793341a13d6d76fd7",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -13,7 +13,9 @@
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
       "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
       "Android application extensions honor the manifest's explicit class name, keeping Back and platform integration active under custom test package ids.",
-      "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Other platforms remain untrusted; compromised OS/root impersonation is outside this app-level boundary."
+      "Android physical touchscreen input has scoped host approval provenance; default and nested synthetic input are untrusted. Compromised OS/root impersonation is outside this app-level boundary; the subsequent desktop patch adds macOS pointer provenance.",
+      "macOS AppKit pointer metadata enables native approval for HID events without a posting process. Synthetic and remote dispatch remain untrusted, including nested callbacks; Windows/Linux physical approval is unsupported.",
+      "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics."
     ],
     "stacked": [
       {
@@ -39,6 +41,14 @@
       {
         "patch": "tools/runtime-patches/makepad-trusted-user-input.patch",
         "sha256": "48ac389a3b0fab5051092539700f63d4d58b7dd21cb60af43c30b0fda60a6b32"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-desktop-trusted-input.patch",
+        "sha256": "0bb2bbc7d776bb9c8b8064b2f44bcec6e9442c10e1fbf84acbdfd03f0b89be50"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-android-enter-composition.patch",
+        "sha256": "36e7a22c999cf4a85e9d85f7a2b94bdfe9e6f375b703274735ca3816953e3280"
       }
     ]
   }

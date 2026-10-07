@@ -493,6 +493,9 @@ impl App {
         match hit {
             PhoneHit::Floating(hit)=>{
                 use crate::mobile_navigation::NavigationHit;
+                // A cached accessibility or pointer target must not reopen
+                // controls after the keyboard has taken the editing area.
+                if !self.state_mut().phone.navigation.visible() { return; }
                 match hit {
                     NavigationHit::Bubble=>{let nav=&mut self.state_mut().phone.navigation;nav.open=!nav.open;}
                     NavigationHit::Dismiss=>self.state_mut().phone.navigation.cancel(),
@@ -725,9 +728,7 @@ impl App {
             }
         }
         if crate::mobile_navigation::ENABLED && matches!(event,Event::Pause|Event::WindowLostFocus(_)) {
-            let phone=&mut self.state_mut().phone;
-            if phone.navigation.tracking() {phone.touch=None;}
-            phone.navigation.cancel();
+            self.state_mut().phone.cancel_navigation_input();
             self.animate_phone(cx);
         }
         if let Event::LongPress(press) = event {
@@ -1069,6 +1070,7 @@ impl App {
         let ctx=self.gesture_context(cx);
         let Some(state)=self.state.as_mut() else {return false};
         let phone=&mut state.phone;
+        let hit=hit.filter(|hit| !matches!(hit,PhoneHit::Floating(_)) || phone.navigation.visible());
         let screen=phone.viewport;
         if phone.drag.is_some() {
             match phase {

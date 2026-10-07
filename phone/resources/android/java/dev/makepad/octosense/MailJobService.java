@@ -20,7 +20,6 @@ public final class MailJobService extends JobService {
         Run run = new Run(); current = run;
         new Thread(() -> {
             long started = SystemClock.elapsedRealtime();
-            long collectedAfter = System.currentTimeMillis()/1000;
             android.util.Log.i("OctoMail", "Background mail job started");
             try {
                 if (!MailBackground.init(getApplicationContext())) return;
@@ -38,8 +37,9 @@ public final class MailJobService extends JobService {
                             MailBackground.schedule(getApplicationContext(), false);
                             break;
                         }
-                        if (!state.isNull("pending") && state.optInt("pending", -1) == 0
-                            && state.optLong("last_poll_at") >= collectedAfter) break;
+                        // Rust accounts for every enabled worker and the exact
+                        // lease start; an empty legacy Mail queue is insufficient.
+                        if (state.optBoolean("job_complete")) break;
                     }
                     Thread.sleep(100);
                 }
