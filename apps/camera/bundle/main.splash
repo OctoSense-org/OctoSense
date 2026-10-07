@@ -105,7 +105,11 @@ fn open_viewer(){
     ui.viewer.set_visible(true)
 }
 fn close_viewer(){ ui.viewer.set_visible(false) }
-fn failed(){ ui.toast.set_text(ui.cam.error()) }
+fn failed(){ ui.toast.set_text(ui.cam.error()) ui.retry_camera.set_visible(true) }
+fn retry_camera(){
+    ui.toast.set_text("") ui.retry_camera.set_visible(false)
+    ui.cam.start()
+}
 fn boot(){
     load_shots()
     show_thumb()
@@ -140,6 +144,7 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #000000
             }
         }
         toast := Label{width: Fill align: Align{x: 0.5} padding: 8 text: "" draw_text.color: #xffd60a draw_text.text_style.font_size: 14}
+        retry_camera := Chip{visible: false text: "Retry camera" on_click: || retry_camera()}
         View{width: Fill height: Fill}
         zooms := View{width: Fill height: Fit flow: Right spacing: 8 align: Align{x: 0.5} padding: Inset{bottom: 12} on_render: || {
             for z in [1 2 5] {
