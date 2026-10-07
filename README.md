@@ -4,6 +4,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+Run the [live Mail → card → Calendar demo](docs/demos/mail-calendar/README.md) with your own mailbox: pinned source, selective policy, fictional test inputs, human draft edits and Calendar navigation.
+
 OctoSense is an agent shell that runs on top of an ordinary operating system. On screen it is a launcher and apps that look like the ones you know. Behind them, one AI kernel runs a **system agent** that works for the person and an **app agent** for each app that has one. Agents reach apps, and risky actions reach the person, only through the shell.
 
 This repository holds the shell, its services, the system apps, and the three products built from them. Most native apps come from other repositories: the OctoSense fork of Makepad, App Hub and Rinx ([What it depends on](#what-it-depends-on)).

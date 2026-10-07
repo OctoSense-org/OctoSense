@@ -4,6 +4,8 @@
 
 [English](README.md) | 简体中文
 
+用自己的邮箱[复现真实邮件 → 卡片 → Calendar 演示](docs/demos/mail-calendar/README.zh-CN.md)：固定源码版本、重要邮件策略、虚构测试输入、人工修改草稿和日历跳转。
+
 OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看，它就是你熟悉的启动器和应用；在它们背后，一个 AI 内核运行着为用户做事的**系统 Agent**，以及每个应用各自的**应用 Agent**。Agent 要动用应用、有风险的操作要找用户，都只能经过 Shell。
 
 本仓库存放 Shell、Shell 服务、系统应用，以及由它们构建的三个产品。大多数原生应用来自其他仓库：OctoSense 的 Makepad fork、App Hub 和 Rinx（见[依赖](#依赖)）。
