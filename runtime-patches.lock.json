@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "4fb9744e3d9525c725dedcb1100c14451d2bb118",
+    "tree": "0fc8e29e2411fd7eb94d845ba16a261d2ebc9dfc",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -26,7 +26,8 @@
       "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
       "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority.",
       "Host request JSON and pre-drain queues are bounded before native allocation; delayed host callbacks retain their nonprompting origin after an agent tool completes or is cancelled.",
-      "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind."
+      "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind.",
+      "Native host-response envelope keys are interned when created, so contained apps can forward raw success, error and capability-refusal replies as bounded JSON without first naming each field in script source."
     ],
     "stacked": [
       {
@@ -100,6 +101,10 @@
       {
         "patch": "tools/runtime-patches/makepad-async-prompt-provenance.patch",
         "sha256": "46bb7620ccb4f6a76a08d0333c0249d2619123da2a2649f55294fd4d35f0d905"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-response-json.patch",
+        "sha256": "a95cd969b2d034ca30d38bfdb6ca6a890aaef4f24c7034076ddf72eb4c3d829a"
       }
     ]
   }
