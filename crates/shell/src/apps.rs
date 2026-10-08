@@ -269,9 +269,22 @@ pub fn register_host_services() {
         // desktop only until its binary cost is weighed for the phone.
         #[cfg(feature = "app-hub")]
         octosense_sheets_service::register();
+        // The native Sheets app's agent tools (`sheets.*`) run on that
+        // service in this process; without the executor the relay would
+        // route them to a bus the Sheets module does not serve.
+        #[cfg(feature = "app-hub")]
+        crate::host_tools::set_executor("sheets", Some(std::sync::Arc::new(crate::host_tools::engines::EngineExecutor::sheets())));
         // The photo engine service (ADR 0013): photocraft behind `photo.*`.
         #[cfg(feature = "app-hub")]
         octosense_photo_service::register();
+        // Photos' own namespace service, as Mail's and News's: its agent's
+        // `photos.info` on the engine, `photos.notify` on the shell's
+        // notice card (so the notice service never stands in for Photos).
+        #[cfg(feature = "app-hub")]
+        {
+            octosense_photo_service::register_photos();
+            octosense_photo_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));
+        }
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();

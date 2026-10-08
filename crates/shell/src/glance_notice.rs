@@ -19,12 +19,14 @@
 //! **Who answers.** A tool runs on the host service of its namespace
 //! (`host_tools::script_apps`). An app whose namespace has a service of its
 //! own answers `notify` there and hands it here: Mail (`octosense_mail_
-//! service::on_notify`) and News (`octosense_news_service::Options::
-//! on_notify`). Every other system app gets [`NoticeService`]: registered
+//! service::on_notify`), News (`octosense_news_service::Options::
+//! on_notify`) and Photos (`octosense_photo_service::on_notify`, whose
+//! `photos` service also answers `photos.info` on the photo engine, ADR
+//! 0013). Every other system app gets [`NoticeService`]: registered
 //! once, after the shell's own services ([`serve_system_apps`]), for each
 //! system app no service answers, it serves that app alone, and only
 //! `notify`. Its agent reaches it when the app's `tools.json` declares
-//! `<namespace>.notify` (Photos, Maps, YouTube, Camera).
+//! `<namespace>.notify` (Maps, YouTube, Camera).
 use serde_json::{json, Value};
 
 /// The notice card (L0), with slots for the app's icon and name ([`card`]).
@@ -241,6 +243,14 @@ mod tests {
         }
         assert!(ask("os.maps", "photos.notify", json!({"title": "x", "body": "y"})).unwrap_err().contains("serves os.photos only"));
         assert!(ask("os.photos", "photos.list", json!({})).unwrap_err().contains("no method"));
+        // Photos' namespace is its own service now (ADR 0013): `photos.info`
+        // reaches the photo engine, which answers for the named file, not
+        // a notice service's "no method".
+        #[cfg(feature = "app-hub")]
+        {
+            let missing = ask("os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
+            assert!(missing.contains("photo.info"), "{missing}");
+        }
         // Its own app reaches the notice (a blank title is refused there,
         // before anything is published).
         for (app, service) in [("os.photos", "photos.notify"), ("os.ai-providers", "ai-providers.notify")] {

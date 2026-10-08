@@ -1,12 +1,15 @@
-//! `octosense-photo-service` — the `photo` host service (ADR 0013).
+//! `octosense-photo-service` — the `photo` host service (ADR 0013), and
+//! the Photos system app's own `photos` service.
 //!
 //! photocraft's engine through its own headless automation layer. Every
 //! call is a fresh, stateless session whose file access is bound to the
-//! caller's host directory by photocraft's capability-rooted
-//! [`AuthorizedWorkspace`] — paths are relative, and separators, `..`,
-//! prefixes and escapes are refused by the engine before any I/O.
+//! service's own area under the caller's host directory, `<host dir>/photo`
+//! ([`area`]), by photocraft's capability-rooted [`AuthorizedWorkspace`] —
+//! paths are relative, and separators, `..`, prefixes and escapes are
+//! refused by the engine before any I/O, so the shared host directory's
+//! other services (Mail's vaults, Calendar's events) stay out of reach.
 //!
-//! Methods (all under the `photo` family; paths relative to the host dir):
+//! Methods (all under the `photo` family; paths relative to the area):
 //! - `info {path}` → the document inspected as JSON
 //! - `convert {path, out, format?}` → `{out, warnings}`
 //! - `run {path, cmds: [{id, params?}], out?, format?}` → command results,
@@ -17,8 +20,15 @@
 //!
 //! The service serves system apps only until ADR 0013's store capability
 //! is designed.
+//!
+//! **The `photos` service** ([`register_photos`]) is the Photos system
+//! app's own namespace, as `mail` is Mail's: its agent's tools run here
+//! (`host_tools::script_apps`). It answers `photos.info` on the same
+//! engine and area, and `photos.notify` through the shell's notice hook
+//! ([`on_notify`]), so the notice service never stands in for Photos.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
 use photocraft_automation::headless::Headless;
@@ -32,6 +42,14 @@ const MAX_RENDER_SIDE: u32 = 4096;
 /// Which apps may call the service: system apps, as News and Sheets.
 fn may_call(app_id: &str) -> bool {
     app_id.starts_with("os.")
+}
+
+/// The engine's own area under the shared host directory. Every path a
+/// caller names is contained here, never in the host directory itself.
+fn area(host_dir: &Path) -> Result<PathBuf, String> {
+    let area = host_dir.join("photo");
+    std::fs::create_dir_all(&area).map_err(|e| format!("photo: service area: {e}"))?;
+    Ok(area)
 }
 
 pub struct PhotoService;
@@ -53,8 +71,55 @@ impl HostService for PhotoService {
         }
         let method = call.method().to_string();
         let args = call.args.clone();
-        let host_dir = call.host_dir.clone();
-        reply.send(dispatch(&method, &args, &host_dir));
+        reply.send(area(&call.host_dir).and_then(|area| dispatch(&method, &args, &area)));
+    }
+}
+
+/// The shell's notice hook: `photos.notify`, as Photos, to the glance
+/// screen (`glance_notice::notify`).
+pub type Notifier = Arc<dyn Fn(&str, &Json) -> Result<Json, String> + Send + Sync>;
+
+static NOTIFIER: OnceLock<Mutex<Option<Notifier>>> = OnceLock::new();
+
+fn notifier() -> &'static Mutex<Option<Notifier>> {
+    NOTIFIER.get_or_init(|| Mutex::new(None))
+}
+
+/// The shell's notifier for `photos.notify` (None removes it).
+pub fn on_notify(notify: Option<Notifier>) {
+    *notifier().lock().unwrap_or_else(|e| e.into_inner()) = notify;
+}
+
+/// The Photos system app's own service: `photos.info` on the engine,
+/// `photos.notify` through the shell's notice hook. Registered by the
+/// shell beside [`register`], before the notice service would stand in.
+pub fn register_photos() {
+    register_host_service(Box::new(PhotosAppService));
+}
+
+struct PhotosAppService;
+
+impl HostService for PhotosAppService {
+    fn family(&self) -> &'static str {
+        "photos"
+    }
+
+    fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
+        if call.app_id != "os.photos" {
+            reply.send(Err("The photos service serves os.photos only.".into()));
+            return;
+        }
+        match call.method() {
+            "info" => reply.send(area(&call.host_dir).and_then(|area| info(&call.args, &area))),
+            "notify" => {
+                let notify = notifier().lock().unwrap_or_else(|e| e.into_inner()).clone();
+                reply.send(match notify {
+                    Some(notify) => notify(&call.app_id, &call.args),
+                    None => Err("Photos' notices need the shell".into()),
+                });
+            }
+            other => reply.send(Err(format!("photos.{other}: the photos service has no method of that name"))),
+        }
     }
 }
 
@@ -198,5 +263,35 @@ mod tests {
     fn only_system_apps_may_call() {
         assert!(may_call("os.photos"));
         assert!(!may_call("org.example.app"));
+    }
+
+    /// The engine works in its own area under the shared host directory,
+    /// so a written path can never land in another service's data.
+    #[test]
+    fn the_service_area_is_a_subdirectory_of_the_host_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path();
+        let a = area(host).unwrap();
+        assert_eq!(a, host.join("photo"));
+        assert!(a.is_dir());
+        let input = fixture(&a);
+        dispatch("convert", &json!({"path": input, "out": "out.png"}), &a).unwrap();
+        assert!(host.join("photo/out.png").is_file());
+        assert!(!host.join("out.png").exists());
+    }
+
+    /// `photos.notify` without the shell's hook refuses rather than
+    /// pretending a notice went out; the hook's answer passes through.
+    #[test]
+    fn the_notify_hook_is_the_shells() {
+        on_notify(None);
+        let hookless = notifier().lock().unwrap().clone();
+        assert!(hookless.is_none());
+        on_notify(Some(Arc::new(|app: &str, args: &Json| Ok(json!({"card_id": "n1", "app": app, "title": args["title"]})))));
+        let hook = notifier().lock().unwrap().clone().unwrap();
+        let out = hook("os.photos", &json!({"title": "Hi", "body": "There"})).unwrap();
+        assert_eq!(out["card_id"], json!("n1"));
+        assert_eq!(out["app"], json!("os.photos"));
+        on_notify(None);
     }
 }

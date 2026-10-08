@@ -55,6 +55,44 @@
       "risk": "act",
       "background": true,
       "implemented_by": "host-service"
+    },
+    {
+      "name": "photos.info",
+      "description": "Inspect an image or document in the photo engine's workspace: width, height, layers, colour mode and format warnings, as JSON. Reads only. The path is relative to that workspace and cannot leave it; name a file that is there (a conversion's input or output), not a gallery photo.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
     }
   ]
 }

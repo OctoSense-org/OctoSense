@@ -632,7 +632,11 @@ fn the_terminals_read_tools_are_granted_then_read_on_the_bus() {
 #[test]
 fn a_native_apps_read_tool_runs_on_its_bus_service() {
     assert!(super::relay::serves_on_bus("terminal") && super::relay::serves_on_bus("calculator") && super::relay::serves_on_bus("notes"));
-    assert!(!super::relay::serves_on_bus("sheets"), "an app that declares no tools has none to serve");
+    assert!(!super::relay::serves_on_bus("reference"), "an app that declares no tools has none to serve");
+    // Sheets declares tools but never serves them itself: the shell routes
+    // them to the sheet engine's executor (host_tools::engines), which the
+    // relay prefers over the bus.
+    assert!(super::relay::serves_on_bus("sheets"));
     assert!(!super::relay::serves_on_bus("os.mail") && !super::relay::serves_on_bus("nowhere"));
     let mut relay = Relay::default();
     let mut w = World::new(FixedDevMode::off());

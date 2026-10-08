@@ -20,8 +20,9 @@
 //! `host.request("news.list", …)` would: with the app's identity, never
 //! from a sheet, and only when the app's manifest was granted that family,
 //! or the family is a system app's own namespace (`os.calendar` and its
-//! `calendar` service, which ship with the shell; `os.photos`'s
-//! `photos.notify` and the shell's notice service, `glance_notice`).
+//! `calendar` service, which ship with the shell; `os.photos`'s `photos`
+//! service, which answers `photos.info` on the photo engine and
+//! `photos.notify` through the shell's notice hook, `glance_notice`).
 //! A tool the app's own script implements (`implemented_by: "app"`) runs on
 //! its admitted full-app runner's live UI isolate through App Hub's script
 //! tool queue. Closed apps fail visibly; Glance never becomes a second owner.
@@ -631,14 +632,13 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Photos, Maps, YouTube and Camera each give their agent one tool,
+    /// Maps, YouTube and Camera each give their agent one tool,
     /// `<namespace>.notify`, on their own namespace: no service of their
     /// own answers it, so the shell's notice service does
-    /// (glance_notice.rs). Each is granted `glance`, and nothing else new
-    /// (Photos' `model` is for its Memories, not for the agent).
+    /// (glance_notice.rs). Each is granted `glance`, and nothing else new.
     #[test]
-    fn photos_maps_youtube_and_camera_offer_notify_from_their_bundles() {
-        for (app, kept) in [("photos", &["storage", "model"][..]), ("maps", &["storage", "net", "location"]), ("youtube", &["storage", "net"]), ("camera", &["storage", "camera", "microphone", "library"])] {
+    fn maps_youtube_and_camera_offer_notify_from_their_bundles() {
+        for (app, kept) in [("maps", &["storage", "net", "location"][..]), ("youtube", &["storage", "net"]), ("camera", &["storage", "camera", "microphone", "library"])] {
             let dir = stamped_bundle(app, "notify", |_, _| {});
             let loaded = from_bundle(&dir).unwrap();
             let _ = std::fs::remove_dir_all(dir);
@@ -653,6 +653,28 @@ pub(crate) mod tests {
             assert_eq!(loaded.families, granted.iter().map(|f| f.to_string()).collect::<BTreeSet<String>>(), "{app}");
             assert_eq!(loaded.generic, ["ask_user_question"], "{app}");
         }
+    }
+
+    /// Photos' agent keeps `photos.notify` and gains `photos.info` (the
+    /// photo engine, ADR 0013), both on its own `photos` service — and
+    /// nothing else new: the same families (`model` is for its Memories,
+    /// not for the agent), no new capability, `info` its only read tool,
+    /// shared with no one.
+    #[test]
+    fn photos_offers_notify_and_info_from_its_bundle() {
+        let dir = stamped_bundle("photos", "notify", |_, _| {});
+        let loaded = from_bundle(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+        let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert_eq!(names, ["photos.notify", "photos.info"]);
+        assert_eq!(loaded.host_service_tools.len(), 2);
+        assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"), "octos takes object schemas only");
+        let notify = &loaded.tools[0];
+        assert_eq!((notify["risk"].as_str(), notify["shareable"].as_bool(), notify["background"].as_bool()), (Some("act"), Some(false), Some(true)));
+        let info = &loaded.tools[1];
+        assert_eq!((info["risk"].as_str(), info["shareable"].as_bool(), info["background"].as_bool()), (Some("read"), Some(false), Some(false)));
+        assert_eq!(loaded.families, ["storage", "model", "glance"].iter().map(|f| f.to_string()).collect::<BTreeSet<String>>());
+        assert_eq!(loaded.generic, ["ask_user_question"]);
     }
 
     /// AI providers (`os.ai-providers`) cannot declare tools yet: App Hub
