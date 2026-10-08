@@ -99,7 +99,7 @@ flowchart LR
 生命周期（`crates/kernel/src/lib.rs`、`kernel.rs`）：
 
 - **按需启动。** 第一次 `connect()` 启动内核，之后的使用方加入同一代内核。新一代内核要等旧内核释放数据目录后才启动。
-- **重启。** 提供方变化后，`llm` 宿主服务调用 `restart()`。所有连接以 `CloseReason::Restarted` 结束，使用方重新连接。
+- **重启。** 提供商变化后，`llm` 宿主服务调用 `restart()`。所有连接以 `CloseReason::Restarted` 结束，使用方重新连接。
 - **空闲停止。** Talk to Octos 关闭时，最后一个连接关闭，内核就停止。每个存活的代理都持有一个连接，所以只要有应用 Agent 已准备好，内核就一直运行。
 - **退出与崩溃。** Shell 退出或崩溃时，内核会在 stdin 上读到 EOF。内核崩溃会以 `CloseReason::Exited` 结束所有连接，下一次 `connect()` 启动新的内核（见[内核崩溃意味着什么](#内核崩溃意味着什么)）。
 
@@ -316,7 +316,7 @@ glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在
 
 - **声明。**应用声明 `auth`、它用到的每个数据服务族（`github`、`gmail`、`gcalendar`），以及 `storage.accounts: true`。只声明 `auth` 时，应用仍能让用户仅为确认身份而登录（GitHub 的 `read:user`；Google 的 `openid`、`email` 和 `profile`），但拿不到任何 GitHub 或 Google 数据：其他 scope 所属的服务族若未获授，宿主一律拒绝（`register_host_services`）。
 - **身份。**应用只看到不透明的连接句柄。它的 peer 以它当前的连接行事（`app_storage/lifecycle.rs`），所以每个已连接账户都有自己的 Agent。
-- **配置。**OAuth 客户端注册归宿主所有，从不由应用提供。发行方在构建时通过构建变量（例如 `OCTOSENSE_GITHUB_CLIENT_ID`）把注册编译进宿主（`crates/oauth-service/src/registration.rs`）；`desktop-v0.1.0-beta.2` 的下载包不含任何注册。运维者可以用 App Hub 宿主目录中的 `clients.json`（`<apps root>/.host/oauth/clients.json`，其中 `<apps root>` 即 `<octosense home>/apps`，见[第 6 节](#6-存储与机密)）替换整套注册；文件中没有列出的服务商随之停用。缺少某个服务商的注册时，登录会失败并提示“GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.”（Google 的提示相同，只是换成 Google）。在 beta.2 上，缺少 `clients.json` 时提示的则是“OAuth is not configured”。
+- **配置。**OAuth 客户端注册归宿主所有，从不由应用提供。发行方在构建时通过构建变量（例如 `OCTOSENSE_GITHUB_CLIENT_ID`）把注册编译进宿主（`crates/oauth-service/src/registration.rs`）；`desktop-v0.1.0-beta.2` 的下载包不含任何注册。运维人员可以用 App Hub 宿主目录中的 `clients.json`（`<apps root>/.host/oauth/clients.json`，其中 `<apps root>` 即 `<octosense home>/apps`，见[第 6 节](#6-存储与机密)）替换整套注册；文件中没有列出的提供商随之停用。缺少某个提供商的注册时，登录会失败并提示“GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.”（Google 的提示相同，只是换成 Google）。在 beta.2 上，缺少 `clients.json` 时提示的则是“OAuth is not configured”。
 - **应用自己的后端。**`auth.connect` 带上 `{"provider":"backend","scopes":["app.session"]}`，就能让用户登录应用自己的服务器；`auth.backend.me` 返回该服务器验证过的身份（`crates/oauth-service/src/host_backend.rs`）。在 `main` 上（尚未进入任何发布版本），应用的签名应用包可以声明自己的后端和命名操作，应用用 `auth.backend.request` 调用这些操作（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）；没有这项声明的应用使用运维人员在 `<apps root>/.host/oauth/backends.json` 中的注册。`desktop-v0.1.0-beta.2` 没有后端登录。在 macOS 和 Android 9 及以上版本上，服务器的登录页面显示在宿主拥有的 WebView 中；在 Windows 和 Linux 上，或在 macOS 上指定 `"presentation":"browser"` 时，改在浏览器中打开（见 `host.rs` 中的 `presentation`）。iOS 不支持后端登录。
 - **事件。**新邮件到达时，`connected_events.rs` 启动已安装 Gmail 应用的 Agent（见[代码导读第 6 节](architecture-walkthrough.zh-CN.md#6-用户在哪里对话)）。
 
@@ -399,12 +399,12 @@ flowchart TB
 - **账户哈希**是对规范化后的账户 id 做带域分隔的 SHA-256，取其 128 位（`account_hash`）。每个账户文件夹都以它命名，所以修改它需要迁移。
 - **`storage` 块**（`accounts`、`agent_workspace`、`max_bytes`、`cache_max_bytes`；原生应用另有 `external`）在启动时从 `native-apps.json` 读取，脚本应用则在安装和每次启动时从其 manifest 读取（`app_storage/lifecycle.rs`）。邮件声明了 `accounts: true`。
 - **机密**从不放在 `apps/` 下（`app_storage/secrets.rs`）。macOS 和 iOS 把它们存入钥匙串；其他平台每个密钥一个文件，放在 `secrets/<app id>/` 中，在 Unix 上仅所有者可读写（0600）。脚本应用只能通过宿主服务和宿主面板接触自己的机密。
-- **已连接账户的 OAuth token** 从不交给应用。macOS 和 iOS 上存入钥匙串，Android 上存成用 Android Keystore 密钥加密的文件，Windows 和 Linux 上存入系统凭据服务，没有明文回退（`crates/oauth-service/src/host.rs`）。连接元数据，以及运维者可选提供的 `clients.json` 和 `backends.json`，都位于 `<apps root>/.host/oauth/`。
+- **已连接账户的 OAuth token** 从不交给应用。macOS 和 iOS 上存入钥匙串，Android 上存成用 Android Keystore 密钥加密的文件，Windows 和 Linux 上存入系统凭据服务，没有明文回退（`crates/oauth-service/src/host.rs`）。连接元数据，以及运维人员可选提供的 `clients.json` 和 `backends.json`，都位于 `<apps root>/.host/oauth/`。
 - **启动检查**（`app_storage/check.rs`）拒绝本身是符号链接、或链接到机密、或包含机密的工作区，直到之后某次启动发现它已干净。不会删除任何东西。
 
 Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth` 服务会报告账户变化。删除账户会删除它的文件夹；卸载会删除应用的 jail、机密和钥匙串条目。然后 Shell 请 octos 对每个记录在案的 peer 执行 `peer/purge`（`crates/app-peers/src/purge.rs`），清除它的对话记录、记忆和黑板。该账户保持挂起（`secrets/.host/suspended.json`），直到再次添加，届时会得到一个新的 Agent。
 
-内核的 core 目录在桌面端是 `~/.octosense/octos-home/.octos`，在手机上是 `<app data dir>/octos-home/.octos`（`crates/kernel/src/dirs.rs`），存放内核的 profile、会话、黑板和记忆。提供方密钥归 `llm` 宿主服务管理（见 [ai-services.zh-CN.md](ai-services.zh-CN.md#ai-providers-与-llm-宿主服务)）。**规划中：**Rinx 目前还不认领这套存储，之后会把数据移到 `apps/rinx/` 下（ADR 0004 §11）。
+内核的 core 目录在桌面端是 `~/.octosense/octos-home/.octos`，在手机上是 `<app data dir>/octos-home/.octos`（`crates/kernel/src/dirs.rs`），存放内核的 profile、会话、黑板和记忆。提供商密钥归 `llm` 宿主服务管理（见 [ai-services.zh-CN.md](ai-services.zh-CN.md#ai-providers-与-llm-宿主服务)）。**规划中：**Rinx 目前还不认领这套存储，之后会把数据移到 `apps/rinx/` 下（ADR 0004 §11）。
 
 ## 7. 信任边界与隔离
 
@@ -412,7 +412,7 @@ Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth
  用户 ── 宿主面板（密钥、PIN、审批）──┐
                                       v
  +------------------------ Shell 进程（可信） ------------------------------+
- |  持有：宿主 token、peer 宿主 token、提供方密钥（经 llm）、机密           |
+ |  持有：宿主 token、peer 宿主 token、提供商密钥（经 llm）、机密           |
  |  每次调用都检查：授权、同意、审批、预算、审计                            |
  |   +------------------+   +------------------------------------------+    |
  |   | 原生模块         |   | Card runner：脚本应用各在隔离环境中      |    |

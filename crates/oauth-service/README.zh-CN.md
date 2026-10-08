@@ -6,16 +6,16 @@ OctoSense 为已安装应用保存提供商凭据。用户登录 GitHub 或 Goog
 
 ## 当前交付边界
 
-Rust 授权协议、连接器、原生审批、账户生命周期和示例界面已实现。macOS 原生宿主与提供商浏览器流程已通过真实的 GitHub 和 Google 身份登录。GitHub 仅请求 `read:user`；Google 使用专用测试账户，仅请求 `openid email profile`。合成后端使用真实平台凭据库，已通过浏览器注册/登录、受保护身份、刷新故障恢复、原生进程重启、退出及两个已安装应用之间的隔离。原生后端 WebView 在 macOS 上另通过八项验收，包括真实表单输入、取消、重试、应用/会话隔离及进程重启；同一最终二进制的桌面浏览器回归通过七项检查。另一个独立 OnePlus 6 后端测试应用完成真实表单登录、Glance 交接/取消、受保护身份、原生凭据库冷启动恢复及退出。[Android 记录](../../tools/connected-e2e/evidence/backend-android-20261007/README.zh-CN.md)明确列出视觉证据限制和未执行项目，不代表完整手机 UX 验收。仓库写入和 Gmail 发信仍**未验证**；仅身份登录不会授予或证明这些业务操作。后续 Mac 会话中，将专用测试账户加入 OAuth 项目的测试用户名单后，已安装的签名 Calendar 应用完成了真实 Google 授权。用户确认日历列表已显示，通过应用的审阅流程保存了测试日程，并在 Refresh 后再次看到它。这是用户手工验证，没有独立 API 回读；编辑/删除及 Google 生产审核仍未验证。[脱敏记录](../../tools/connected-e2e/evidence/calendar-login-20261007.json)区分了这些观察。真实 DeepSeek peer 已通过已安装应用的准入工具处理合成新邮件，并通过 Chat 修改持久化回复。Calendar peer 也通过自身工具读取选中的合成日程，回答准确标题、时间和地点。这证明模型与工具集成，不代表 Google 投递。三个示例中，只有 GitHub Notes 在 OnePlus 6 上检查过：在一个独立的测试 APK 中检查了它的本地编辑，常用的 Home 保持不变（[OnePlus Notes 检查记录](../../tools/connected-e2e/evidence/notes-oneplus-20261006/README.zh-CN.md)）；Inbox Assistant 和 Google Calendar 尚未在该设备上运行。
+Rust 授权协议、连接器、原生审阅、账户生命周期和示例界面已实现。macOS 原生宿主与提供商浏览器流程已通过真实的 GitHub 和 Google 身份登录。GitHub 仅请求 `read:user`；Google 使用专用测试账户，仅请求 `openid email profile`。合成后端使用真实平台凭据库，已通过浏览器注册/登录、受保护身份、刷新故障恢复、原生进程重启、退出及两个已安装应用之间的隔离。原生后端 WebView 在 macOS 上另通过八项验收，包括真实表单输入、取消、重试、应用/会话隔离及进程重启；同一最终二进制的桌面浏览器回归通过七项检查。另一个独立 OnePlus 6 后端测试应用完成真实表单登录、速览卡片交接/取消、受保护身份、原生凭据库冷启动恢复及退出。[Android 记录](../../tools/connected-e2e/evidence/backend-android-20261007/README.zh-CN.md)明确列出视觉证据限制和未执行项目，不代表完整手机 UX 验收。仓库写入和 Gmail 发信仍**未验证**；仅身份登录不会授予或证明这些业务操作。后续 Mac 会话中，将专用测试账户加入 OAuth 项目的测试用户名单后，已安装的签名 Calendar 应用完成了真实 Google 授权。用户确认日历列表已显示，通过应用的审阅流程保存了测试日程，并在 Refresh 后再次看到它。这是用户手工验证，没有独立 API 回读；编辑/删除仍未验证，也还没有通过 Google 生产验证的发布版本。[脱敏记录](../../tools/connected-e2e/evidence/calendar-login-20261007.json)区分了这些观察。真实 DeepSeek peer 已通过已安装应用的准入工具处理合成新邮件，并通过 Chat 修改持久化回复。Calendar peer 也通过自身工具读取选中的合成日程，回答准确标题、时间和地点。这证明模型与工具集成，不代表 Google 投递。三个示例中，只有 GitHub Notes 在 OnePlus 6 上检查过：在一个独立的测试 APK 中检查了它的本地编辑，常用的 Home 保持不变（[OnePlus Notes 检查记录](../../tools/connected-e2e/evidence/notes-oneplus-20261006/README.zh-CN.md)）；Inbox Assistant 和 Google Calendar 尚未在该设备上运行。
 
 | 平台 | 提供商授权 | 凭据保存 | Gmail 发信审批 |
 | --- | --- | --- | --- |
-| macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；远程点击被拒绝，亲手点按未验证 |
+| macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；宿主拒绝远程点击，亲手点按未验证 |
 | Windows | 同样的桌面流程，平台运行未验证 | Windows Credential Manager；未在 Windows 验证 | 不支持，明确拒绝 |
-| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；原生测试被构建主机未解锁/不可用的凭据库拒绝 | 不支持，明确拒绝 |
+| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；构建主机的凭据库未解锁或不可用，原生测试遭到拒绝 | 不支持，明确拒绝 |
 | Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有的亲手点按来源校验；本示例未验证 |
 
-`desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本；Home（手机）还没有能安装连接账户应用的发布版本。beta.2 的 `auth` 没有后端登录，提供商注册也只来自 `clients.json`（见[高级运维覆盖配置](#高级运维覆盖配置)）。beta.2 也早于 [#356](https://github.com/OctoSense-org/OctoSense/pull/356)：它已合入 `main`，但还没有进入任何发布版本。所以在 beta.2 上，只有 Gmail 发信检查是否亲手点按，GitHub 和 Calendar 保存使用的宿主面板不做这项检查；Agent 的 `glance.publish` 仍接受 `script` 卡片；Calendar 用 `gcalendar.sync` 和同步 token 同步全部日程历史，而不是下文的有限日期窗口。更早的 `desktop-v0.1.0-beta.1` 和 `home-v0.1.0-beta.1` 使用应用契约 1.1.0，这一版没有 `auth` 能力：它们的商店会列出声明了 `auth` 的应用，但拒绝安装。这些服务不取代也不迁移内置 Mail、Calendar 应用。
+`desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本；Home（手机）还没有能安装连接账户应用的发布版本。beta.2 的 `auth` 没有后端登录，提供商注册也只来自 `clients.json`（见[高级运维覆盖配置](#高级运维覆盖配置)）。beta.2 也早于此后合入 OctoSense `main` 的改动，这些改动还没有进入任何发布版本。所以在 beta.2 上，只有 Gmail 发信检查是否亲手点按，GitHub 和 Calendar 保存使用的宿主面板不做这项检查；Agent 的 `glance.publish` 仍接受 `script` 卡片；Calendar 用 `gcalendar.sync` 和同步 token 同步全部日程历史，而不是下文的有限日期窗口。更早的 `desktop-v0.1.0-beta.1` 和 `home-v0.1.0-beta.1` 使用应用契约 1.1.0，这一版没有 `auth` 能力：它们的商店会列出声明了 `auth` 的应用，但拒绝安装。这些服务不取代也不迁移内置 Mail、Calendar 应用。
 
 ## 用户登录
 
@@ -23,7 +23,7 @@ Rust 授权协议、连接器、原生审批、账户生命周期和示例界面
 
 如果当前构建没有相应注册信息，登录面板会说明该版本暂不支持登录，并建议联系发行方或更新版本。新增解析器不会自动向提供商注册 OctoSense；维护者提供注册信息并完成验证后，发行版本才具备登录条件。现有 beta.2 下载包不含注册默认值。
 
-如果 Google 显示 **403: access_denied**，并说明仅允许开发者批准的测试用户访问，则说明已找到提供商注册信息，但当前账户未列入该 OAuth 项目的测试用户名单。维护者在 **Google Auth Platform → Audience → Test users** 中加入专用测试账户，再重新发起登录。这只能解除测试限制，不代表应用已通过公开分发审核。隔离验收不使用个人账户。
+如果 Google 显示 **403: access_denied**，并说明仅允许开发者批准的测试用户访问，则说明已找到提供商注册信息，但当前账户未列入该 OAuth 项目的测试用户名单。维护者在 **Google Auth Platform → Audience → Test users** 中加入专用测试账户，再重新发起登录。这只能解除测试限制，不代表应用已通过 Google 面向公开分发的验证。隔离验收不使用个人账户。
 
 ## 身份、提供商数据与应用自己的后端
 
@@ -34,7 +34,7 @@ Rust 授权协议、连接器、原生审批、账户生命周期和示例界面
 | 在应用内识别 GitHub 用户 | 授予 `auth` 并请求 `read:user`。宿主验证 GitHub 数字用户 ID 和登录名，返回绑定该应用的句柄，以及 `app_id`、`provider`、`subject`、`label`、`scopes` 和可选 `expires_at`。不需要仓库访问权限；也不提供已验证的邮箱地址。 |
 | 在应用内识别 Google 用户 | `auth` 也允许仅用于身份的 `openid`、`email`、`profile` 权限，无需 Gmail 或 Calendar 能力。宿主验证提供商的 subject，并仅在 Google 确认邮箱已验证时将邮箱作为标签。同样受平台授权支持范围限制。 |
 | 访问提供商数据 | GitHub 仓库另外需要 `github` 能力及仓库权限。Google Gmail、Calendar 分别需要 `gmail` / `gcalendar` 能力和相应权限，与应用选择哪种登录身份无关。 |
-| 注册或登录应用自己的后端 | 在 macOS 和 Android 上，宿主持有的登录 WebView 使用应用的后端注册信息、PKCE 代码交换及后端的受保护身份端点。在桌面上，仍可选择外部浏览器。注册信息来自应用的签名应用包；应用包没有声明时，来自运维人员的配置（见[开发者后端接口约定](#开发者后端接口约定)）。 |
+| 注册或登录应用自己的后端 | 在 macOS 和 Android 9 及以上版本上，宿主持有的登录 WebView 使用应用的后端注册信息、PKCE 代码交换及后端的受保护身份端点。在桌面上，仍可选择外部浏览器。注册信息来自应用签名清单中的 `backend` 块；清单中没有这个块时，来自运维人员的配置（见[开发者后端接口约定](#开发者后端接口约定)）。 |
 
 后端流程由开发者的 HTTPS 登录页面提供自己的注册和登录。若桌面后端页面也提供 GitHub 登录，应使用外部浏览器模式，以便访问提供商来源。后端负责验证身份并签发自身会话，宿主为该应用保存独立的后端会话。共享连接器的 GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通过自身 OAuth 流程，取得用户另行授权的 GitHub 令牌。现有网络访问能力不会让本地 GitHub 资料变成远程后端可信的身份证明。应用自身不得收集密码或提供商秘密凭据。
 
@@ -42,19 +42,26 @@ Rust 授权协议、连接器、原生审批、账户生命周期和示例界面
 
 GitHub 和 Google 保留现有提供商授权流程。需要访问其他提供商来源的后端登录应选择桌面浏览器模式；嵌入模式不会悄悄打开外站。Windows/Linux 保留桌面浏览器登录，iOS 后端登录仍不可用。
 
-在 Linux 和 Windows 上，`WebReader.open` 同样会拒绝：固定版本的运行时没有适用于这两个平台的嵌入式浏览器适配器，因此 `open` 返回 `false`，并报告 `Embedded web pages are unavailable on this platform; this host has no native WebReader adapter`。可选的 CEF Browser 控件是另一个组件，不能代替登录视图：它为整个程序保留同一个持久化配置目录，并在关闭 Chromium 沙箱的情况下运行，因此缺少登录所需的每应用会话和导航限制。要在这两个平台上支持嵌入式登录，仍需要一个隔离的适配器，并在各个操作系统上通过原生验收；外部浏览器不算嵌入式支持。
+在 Linux 和 Windows 上，`WebReader.open` 同样会拒绝：固定版本的运行时没有适用于这两个平台的嵌入式浏览器适配器，因此 `open` 返回 `false`，并报告 `Embedded web pages are unavailable on this platform; this host has no native WebReader adapter`。可选的 CEF Browser 控件是另一个组件，不能代替登录视图：它为整个程序保留同一个持久化配置目录，并在关闭 Chromium 沙箱的情况下运行，因此缺少登录所需的按应用隔离的会话和导航限制。要在这两个平台上支持嵌入式后端登录，仍需要一个隔离的适配器，并在各个操作系统上通过原生验收；外部浏览器不算嵌入式支持。
 
 ## 开发者后端接口约定
 
-声明 `auth` 和 `storage.accounts: true`。调用 `auth.connect` 时传入 `{"provider":"backend","scopes":["app.session"]}`，并复用普通的 `auth.accounts`、`auth.active`、`auth.select`、`auth.disconnect` 生命周期。macOS/Android 默认使用嵌入页面。传入 `"presentation":"webview"` 可要求该模式，`"presentation":"browser"` 选择桌面外部浏览器；不支持的组合会明确拒绝。`auth.backend.me` 接收本应用当前选中的 `connection` 句柄，返回后端验证的 `{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`，其中包含后端验证的身份。`auth.backend.request` 调用注册信息中声明的操作（见[调用声明的操作](#调用声明的操作)）。
+声明 `auth` 和 `storage.accounts: true`。调用 `auth.connect` 时传入 `{"provider":"backend","scopes":["app.session"]}`，并复用普通的 `auth.accounts`、`auth.active`、`auth.select`、`auth.disconnect` 生命周期。macOS/Android 默认使用嵌入页面。传入 `"presentation":"webview"` 可要求该模式，`"presentation":"browser"` 选择桌面外部浏览器；不支持的组合会明确拒绝。`auth.backend.me` 接收本应用当前选中的 `connection` 句柄，返回 `{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`，其中包含后端验证过的身份。`auth.backend.request` 调用注册信息中声明的操作（见[调用声明的操作](#调用声明的操作)）。
 
 ### 注册信息从哪里来
 
-在 OctoSense `main`（尚未进入任何发布版本）上，应用在签名清单的 `backend` 块中声明自己的后端。清单还必须要求 `backend-api-v1`、申请 `auth`，并设置 `storage.accounts: true`。`backend` 块的 JSON 格式与下文运维人员的注册对象相同，只是不含 `app_id`：应用身份始终来自已准入的应用包。各字段的规则见 App Hub 的[登录自己的后端](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.zh-CN.md#登录自己的后端)。只有实现了 `auth.backend.request@1` 的宿主才会安装这类应用；在 `main` 上，就是 macOS 和 Android。
+在 OctoSense `main`（尚未进入任何发布版本）上，应用在签名清单的 `backend` 块中声明自己的后端。清单还必须要求 `backend-api-v1`、申请 `auth`，并设置 `storage.accounts: true`。`backend` 块的 JSON 格式与下文运维人员的注册对象相同，只是不含 `app_id`：应用身份始终来自已准入的应用包。各字段的规则见 App Hub 的[登录自己的后端](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.zh-CN.md#登录自己的后端)。只有实现了 `auth.backend.request@1` 的宿主才会安装这类应用；在 `main` 上即 macOS 和 Android。
 
-Shell 通过 `host::set_backend_resolver` 把声明交给本 crate，声明由 Shell 的签名目录和经过摘要校验的应用包读取器读出（`crates/shell/src/connected_backends.rs`）。宿主每次使用凭据时都会重新解析声明。如果无法解析应用包，例如应用已撤回或摘要不再匹配，调用就会失败，绝不会退回运维人员的配置文件。没有 `backend` 块的应用继续使用运维人员的注册。
+Shell 通过自己的签名目录和经过摘要校验的应用包读取器读取声明（`crates/shell/src/connected_backends.rs`），再通过 `host::set_backend_resolver` 交给本 crate。宿主每次使用凭据时都会重新解析声明。如果无法解析应用包，例如应用已撤回或摘要不再匹配，调用就会失败，绝不会退回运维人员的配置文件。没有 `backend` 块的应用继续使用运维人员的注册。
 
-宿主在私有元数据中记录每个应用最近使用的注册信息。声明发生变化、消失、遭到撤回或失效时，宿主先撤销该应用的后端连接再作答，因此恢复旧声明也无法让旧会话复活。安装、更新或卸载应用同样会撤销这些连接：即使新版本保留相同的声明，用户也要重新连接。本地观察器每五秒检查一次签名目录和连接元数据，提前撤销过期的连接；它从不联系后端。`host::invalidate_backend_registration` 仍可用于显式撤销。每个请求在发出之前、以及宿主接受回复之前，都会再次检查注册绑定和授权代次。
+在以下情况下，宿主会撤销应用的后端连接，用户需要重新连接：
+
+- 声明发生变化、消失、遭到撤回或失效。宿主先撤销再作答，并在私有元数据中记录每个应用最近使用的注册信息，因此恢复旧声明也无法让旧会话复活。
+- 安装、更新或卸载应用，即使新版本保留相同的声明。
+- 本地观察器发现过期的连接。它每五秒检查一次签名目录和连接元数据，从不联系后端。
+- Shell 调用 `host::invalidate_backend_registration`。
+
+每个请求在发出之前、以及宿主接受回复之前，都会再次检查注册绑定和授权代次。
 
 运维人员也可以在应用包和源码管理之外的 `<apps root>/.host/oauth/backends.json` 中为应用注册后端。以下示例只展示格式，示例域名不提供任何服务：
 
@@ -82,7 +89,7 @@ Shell 通过 `host::set_backend_resolver` 把声明交给本 crate，声明由 S
 
 ### 调用声明的操作
 
-把下面任一对象作为参数传给 `auth.backend.request`，并带上应用当前连接的句柄：
+把类似下面的对象作为参数传给 `auth.backend.request`，其中 `connection` 是应用当前连接的句柄：
 
 ```json
 {"connection":"opaque-host-handle","operation":"notes.list","query":{"tag":"work"}}
@@ -92,9 +99,9 @@ Shell 通过 `host::set_backend_resolver` 把声明交给本 crate，声明由 S
 {"connection":"opaque-host-handle","operation":"notes.create","body":{"text":"A fictional note"}}
 ```
 
-宿主附上会话的 bearer 令牌，调用声明的方法和路径，只把该操作的 JSON 结果返回给应用。它不会替应用任意转发 HTTP 请求：调用方不能选择 URL、请求方法或请求头，也不能访问已准入声明以外的路径。
+宿主附上会话的 bearer 令牌，调用声明的方法和路径，只把该操作的 JSON 结果返回给应用。`auth.backend.request` 不会替应用任意转发 HTTP 请求：调用方不能选择 URL、请求方法或请求头，也不能访问已准入声明以外的路径。
 
-`GET` 立即在工作线程上执行，Agent 或后台卡片发起的也一样。`POST`、`PUT`、`PATCH` 或 `DELETE` 会打开原生审阅界面，展示确切且不可变的请求，GitHub 和 Calendar 的保存也使用这个界面；只有亲手点按批准后才会执行。脚本和 Agent 不能通过 `auth.backend.sheet.save` 批准。从后台发起的写操作会以 `Open the app to review this backend change` 失败。在批准之前取消审阅或任其过期，不会发送任何请求。已批准的请求一旦开始，取消也无法撤销服务器已经做的事，请求失败后宿主也不会重试。
+`GET` 立即在工作线程上执行，即使由 Agent 或后台卡片调用也是如此。`POST`、`PUT`、`PATCH` 或 `DELETE` 会打开 GitHub 和 Calendar 保存时使用的同一个原生审阅界面。界面展示确切的请求，请求内容不可更改，只有亲手点按批准后才会执行。脚本和 Agent 不能通过 `auth.backend.sheet.save` 批准。从后台发起的写操作会以 `Open the app to review this backend change` 失败。在批准之前取消审阅或任其过期，不会发送任何请求。已批准的请求一旦开始，取消也无法撤销服务器已经做的事，请求失败后宿主也不会重试。
 
 - 每个注册最多声明 64 个操作。每个操作都有登录来源下的精确 ASCII 路径，最多声明 32 个查询键。不支持路径模板，操作也不能复用认证端点。
 - 宿主只接受已声明的查询键，并自行对查询值做 URL 编码。
@@ -148,7 +155,7 @@ Shell 通过 `host::set_backend_resolver` 把声明交给本 crate，声明由 S
 
 ## 应用接口
 
-在 manifest 中只声明所需服务。`auth` 本身不授予 Gmail/GitHub/Calendar 数据权限。必须设置 `storage.accounts: true`，使应用 peer 和账户目录跟随选中的连接。
+在清单中只声明所需服务。`auth` 本身不授予 Gmail/GitHub/Calendar 数据权限。必须设置 `storage.accounts: true`，使应用 peer 和账户目录跟随选中的连接。
 
 | 服务 | 方法 |
 | --- | --- |
@@ -157,7 +164,18 @@ Shell 通过 `host::set_backend_resolver` 把声明交给本 crate，声明由 S
 | `gcalendar` | `calendars`、`cached`、`refresh`、`get`、`prepare`、`review_save` |
 | `gmail` | `labels`、`messages`、`message`、`draft.open/get/edit/review`、`events.status`、`event.status/decide` |
 
-`auth.connect` 接收 provider 和 scopes。GitHub scopes 为 `read:user`、`public_repo` 或 `repo`；Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`、`mail.read`、`mail.send`；后端登录使用 `app.session`。这些提供商权限与 App Hub capability 各自校验。句柄不是 token；选中一个 Google 账户也不会自动让其他应用读取它。调用示例见英文版；专用测试账户的 Calendar 授权已验证，面向公众的 Google 生产审批仍未验证。
+`auth.connect` 接收 provider 和 scopes。GitHub scopes 为 `read:user`、`public_repo` 或 `repo`；Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`、`mail.read`、`mail.send`；后端登录使用 `app.session`。这些提供商权限与 App Hub 能力分别校验。句柄不是 token；选中一个 Google 账户也不会自动让其他应用读取它。
+
+Calendar 请求的写法如下（专用测试账户的 Calendar 授权已验证，面向公众的 Google 生产审批仍未验证）：
+
+```javascript
+host.request("auth.connect", {
+    provider: "google"
+    scopes: ["openid" "email" "calendar.list" "calendar.events"]
+}, fn(result) {
+    // result.data.handle 是本应用的连接；凭据留在原生侧。
+})
+```
 
 GitHub 保存冻结仓库、分支、路径、内容及原 blob SHA。Calendar 保存冻结日历、事件和 ETag；过期 ETag 会报冲突，不会静默覆盖。Gmail 原生审阅界面冻结持久化草稿版本、收件人及正文。这三种写入都必须由用户亲手点按宿主原生审阅界面上的控件；按下与释放时分别检查原生输入来源，然后才把一次性能力交给工作线程。脚本、Agent、远程测试及 JSON 标记不能批准保存或发送。关闭审阅界面会取消尚未提交的请求；写入前再次检查当前账户。结果不明的 Gmail 提交保持不明状态，不会盲目重试。
 
@@ -165,7 +183,7 @@ GitHub 保存冻结仓库、分支、路径、内容及原 blob SHA。Calendar �
 
 这个日程使用完整的**窗口快照**，不使用增量历史同步。Google 禁止将 `timeMin`/`timeMax` 与 `syncToken` 一起使用，所以该路径不保存或复用 `nextSyncToken`。不再开放原始 `gcalendar.sync`，请使用 `refresh` 和 `cached`。见 [Google events.list 契约](https://developers.google.com/workspace/calendar/api/v3/reference/events/list)。
 
-提供商 HTTP 与本地草稿、缓存修改按宿主配置目录和应用分别串行执行；一个提供商响应缓慢不会阻塞其他应用。选中账户、断开连接、卸载和最终接纳连接共享同一应用锁；进程级元数据锁只覆盖短暂的读取、提交步骤。刷新令牌提交前重新读取最新元数据，不会覆盖其他应用的账户修改，也不会恢复已经撤销的连接。
+提供商 HTTP 与本地草稿、缓存修改按宿主配置目录和应用分别串行执行；一个提供商响应缓慢不会阻塞其他应用。选中账户、断开连接、卸载和连接的最终准入共享同一应用锁；进程级元数据锁只覆盖短暂的读取、提交步骤。刷新令牌提交前重新读取最新元数据，不会覆盖其他应用的账户修改，也不会恢复已经撤销的连接。
 
 ## Agent 如何调用共享服务
 
@@ -175,7 +193,7 @@ Shell 从摘要校验后的包读取声明，通过 `HostServiceExecutor` 路由
 
 ## 新邮件与 Glance
 
-桌面脚本卡片先显示标题和摘要，打开模板卡片后提供有界应用视口，让编辑器及滚动区域获得实际高度。模板工作区自己提供 Email/Reply/Chat 导航，宿主不重复添加 Chat 标签。原有未选择视口模式的脚本卡片继续按内容测量并由外层滚动。前台发布的卡片可以在用户同意 Agent 之前恢复；撤销 `glance` 授权、明确拒绝 Agent、退出账户和切换账户仍会阻止恢复。
+桌面脚本卡片先显示标题和概要，打开模板卡片后提供有界应用视口，让编辑器及滚动区域获得实际高度。模板工作区自己提供 Email/Reply/Chat 导航，宿主不重复添加 Chat 标签。原有未选择视口模式的脚本卡片继续按内容测量并由外层滚动。前台发布的卡片可以在用户同意 Agent 之前恢复；撤销 `glance` 授权、明确拒绝 Agent、退出账户和切换账户仍会阻止恢复。
 
 `connected_events.rs` 发现声明 Gmail/auth、已获 Agent 同意、允许后台且声明 `<应用短名>.new_message`（应用短名即应用 id 的最后一段）的已安装应用。采集器先建立只面向未来的 Gmail history 基线，允许运行时通常每五分钟轮询。登录并允许应用 Agent 后刷新，等 `gmail.events.status` 显示 `baseline_ready: true` **再发测试邮件**。历史收件箱不会一次性变成通知。history 失效时使用有边界的恢复扫描。
 
@@ -187,7 +205,7 @@ Android 现有 JobScheduler 适配器也会在有时限的任务中驱动该采�
 
 ## 源码与验证
 
-阅读顺序：`providers.rs` → `oauth.rs`/`authorize.rs` → `protocol.rs` → `store.rs` → `host.rs`。`protocol.rs` 将 `oauth2` 5 接入宿主限制大小、固定来源的网络传输；库负责构造授权和令牌请求、解析协议响应。调用者身份、取消、回调校验、权限准入和凭据保存仍由宿主管理。GitHub 设备轮询每次只发一个请求，以便每次重新检查所属应用、有效期和取消状态；库内置的轮询循环不能替代这些生命周期检查。开发者后端的阅读顺序是 `backend.rs`（注册校验、PKCE 和有界 HTTP 请求）→ `host_backend.rs`（同意面板、回调、刷新和退出）→ `store.rs`（应用归属与注册绑定）。Google 令牌响应仅对其文档规定的两种身份权限 URI 别名做规范化；缺少权限仍会拒绝授权。`api.rs` 处理提供商请求；`calendar_cache.rs` 原子提交分页快照；`inbox.rs` 持有草稿/审阅/发送状态；`inbox_events.rs` 持有游标、租约和决定。Shell 管理获准 peer、原生审阅界面和 Glance。peer 是应用账户身份，不等于一个工作线程或 Tokio task。
+阅读顺序：`providers.rs` → `oauth.rs`/`authorize.rs` → `protocol.rs` → `store.rs` → `host.rs`。`protocol.rs` 将 `oauth2` 5 接入宿主限制大小、固定来源的网络传输；库负责构造授权和令牌请求、解析协议响应。调用者身份、取消、回调校验、权限准入和凭据保存仍由宿主管理。GitHub 设备轮询每次只发一个请求，以便每次重新检查所属应用、有效期和取消状态；库内置的轮询循环不能替代这些生命周期检查。开发者后端的阅读顺序是 `backend.rs`（注册校验、PKCE 和有界 HTTP 请求）→ `host_backend.rs`（同意面板、回调、刷新和退出）→ `store.rs`（应用归属与注册绑定）。Google 令牌响应仅对其文档规定的两种身份权限 URI 别名做规范化；缺少权限仍会拒绝授权。`api.rs` 处理提供商请求；`calendar_cache.rs` 原子提交分页快照；`inbox.rs` 持有草稿/审阅/发送状态；`inbox_events.rs` 持有游标、租约和决定。Shell 管理获准 peer、原生审阅界面和速览卡片发布。peer 是应用账户身份，不等于一个工作线程或 Tokio task。
 
 以下命令已从 OctoSense 根目录运行：
 
@@ -197,7 +215,7 @@ cargo check --locked -p octosense-oauth-service --features host
 cargo test --offline --locked -p octosense-oauth-service --features host,acceptance-fixtures --lib
 ```
 
-在 [#353](https://github.com/OctoSense-org/OctoSense/pull/353) 时，最后一条命令通过 75 项测试，跳过一项需要显式运行的平台凭据库测试。#356 新增了测试，`main` 上的测试数量尚未记录。独立原生后端验收实际使用了平台凭据库，并覆盖进程冷重启。真实提供商验收覆盖身份登录、重启后连接元数据恢复及本地断开，不含提供商令牌刷新或远程撤销。注册信息、账户详情及原始证据均保留在仓库之外。这些 macOS 结果不代表 Windows、Linux 或手机登录已通过验证。[脱敏提供商验收记录](../../tools/connected-e2e/evidence/provider-login-20261007.json)记录了确切权限、原生二进制及验证限制。
+最后一条命令较早的一次运行通过了 75 项测试，跳过一项需要显式运行的平台凭据库测试。此后又新增了测试，`main` 上的测试数量尚未记录。独立原生后端验收实际使用了平台凭据库，并覆盖进程冷重启。真实提供商验收覆盖身份登录、重启后连接元数据恢复及本地断开，不含提供商令牌刷新或远程撤销。注册信息、账户详情及原始证据均保留在仓库之外。这些 macOS 结果不代表 Windows、Linux 或手机登录已通过验证。[脱敏提供商验收记录](../../tools/connected-e2e/evidence/provider-login-20261007.json)记录了确切权限、原生二进制及验证限制。
 
 另用独立临时配置和虚构凭据实际测试了 macOS 系统凭据适配器：写入、重新打开读取、逻辑撤销均通过；配置目录中没有出现明文访问或刷新凭据。下面的显式测试使用真实系统凭据库，可能需要已解锁的桌面会话，普通测试运行会跳过它：
 
@@ -207,7 +225,7 @@ cargo test --locked -p octosense-oauth-service --features host host_vault_accept
 
 这不验证提供商授权或亲手点按的发送审批，也不能证明旧 Mail 凭据适配器中无返回值的删除操作实际删掉了系统条目。测试不请求提供商，也不读取已有账户。
 
-测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、有限窗口分页、窗口移动、重复实例、ETag、DST、跨应用可用性、刷新提交竞态、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见 [Design Flow connected-apps](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/main/examples/connected-apps)。普通 `card-host` 不提供 OAuth、Gmail、Calendar 或 octos 宿主。`connected-app-host` 是独立的私有配置测试宿主；不启动 Agent 内核，也不能代替生产安装验证。
+测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、有限窗口分页、窗口移动、重复实例、ETag、DST、跨应用可用性、刷新提交竞态、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见 [Design Flow connected-apps](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/main/examples/connected-apps)。不要把 `card-host` 准入当作正在运行的提供商服务：普通 `card-host` 不提供 OAuth、Gmail、Calendar 或 octos 宿主。`connected-app-host` 是独立的私有配置测试宿主；不启动 Agent 内核，也不能代替生产安装验证。
 
 ### 后端业务请求验证
 
