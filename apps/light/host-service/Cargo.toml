@@ -1,0 +1,28 @@
+# octosense-light-service — the `light` host service (ADR 0013).
+#
+# lightcraft's RAW develop and catalog engine behind typed `light.*`
+# methods: EXIF/XMP metadata of an original, the develop-control catalog,
+# parametric develop of one photo and batch develop of several — the
+# Lightroom-class ground photocraft's `photo.*` (raster document editing)
+# does not cover. Stateless: every call opens a fresh in-memory session,
+# acts and closes; every path stays in the family's own `light/` area of
+# the caller's host directory.
+[package]
+name = "octosense-light-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/lightcraft revision (ADR 0013).
+lightcraft-engine = { workspace = true }
+
+[dev-dependencies]
+# Test-only: the engine's own synthetic-DNG generator — a real RAW fixture
+# rendered procedurally, so the suite checks in no media files.
+lightcraft-merge = { workspace = true }
+tempfile = "3"

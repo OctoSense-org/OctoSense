@@ -41,6 +41,7 @@ members = [
     "apps/word/host-service",
     "apps/deck/host-service",
     "apps/cad/host-service",
+    "apps/light/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -200,6 +201,7 @@ photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af
 octosense-word-service = { path = "apps/word/host-service" }
 octosense-deck-service = { path = "apps/deck/host-service" }
 octosense-cad-service = { path = "apps/cad/host-service" }
+octosense-light-service = { path = "apps/light/host-service" }
 # The wordcraft document engine (ADR 0013): the pinned ymote fork, one revision.
 wordcraft-engine = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
 wordcraft-doc = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
@@ -211,6 +213,10 @@ deckcraft-model = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57
 # The cadcraft drafting engine (ADR 0013): the pinned ymote fork, one revision.
 cadcraft-engine = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
 cadcraft-io = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
+# The lightcraft RAW develop/catalog engine (ADR 0013): the pinned ymote
+# fork, one revision (lightcraft-merge is test-only: synthetic DNG fixtures).
+lightcraft-engine = { git = "https://github.com/ymote/lightcraft.git", rev = "2472021091a28eb93a05947cfc9b941d3911543a" }
+lightcraft-merge = { git = "https://github.com/ymote/lightcraft.git", rev = "2472021091a28eb93a05947cfc9b941d3911543a" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
