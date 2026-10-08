@@ -46,12 +46,7 @@ Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使
 
 连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC1 和较早的 beta.2 下载包均未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
 
-桌面版 RC1 和此源码构建中的 App Hub 默认使用带 GitHub 证明的目录，并通过应用契约 1.8.0 支持
-`publisher-github-v1` 发布包。开发者通过[提交 App Hub issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)
-申请发布；GitHub 发布证明取代单独的开发者签名密钥，仍须由 Hub 管理员批准准入。
-首次获取目录需要网络连接，旧的离线目录不会被转换成 GitHub 证明。自定义本地测试
-目录可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2
-缓存的应用库会拒绝这种降级。beta.2 不支持此发布模式；请用桌面版 RC1 安装这类应用发布包。
+桌面版 RC1 和此源码构建中的 App Hub 默认使用带 GitHub 证明的签名目录，并通过应用契约 1.8.0 支持 `publisher-github-v1` 应用版本。开发者通过[提交 App Hub issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 申请发布。GitHub 来源证明取代了单独的开发者签名密钥：应用的公开仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。准入仍须由 Hub 管理员批准。首次获取签名目录需要网络连接，旧的离线签名目录不会转换成 GitHub 证明。使用自定义的本地测试签名目录时，可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2 缓存的应用库会拒绝这种降级。beta.2 不支持这种发布方式，这类应用版本请用桌面版 RC1 安装。
 
 ## 整体如何运作
 

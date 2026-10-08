@@ -258,7 +258,7 @@ App Hub 默认开启。从启动器打开 **App Hub**，浏览签名目录并安
 
 #### 发布前试用自己的应用
 
-正式分发时，先创建 [App Hub 投稿 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)，准备好后再补充 GitHub 发布证据。常规 [GitHub 发布流程](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md)不要求开发者单独管理发布者密钥；创建标签或 Release 不等于获得 Hub 批准。
+正式分发时，先创建 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)，准备好后再补充 GitHub Release 证据。常规的 [GitHub 发布流程](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md)不要求开发者另外管理发布者密钥，因为应用的 GitHub 仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。仅有标签或 Release 不等于获得 Hub 批准。
 
 下文是**可选的本地旧版目录演练**。App Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)说明其兼容包与一次性目录密钥（`hub keygen`/`certify`/`publish`）；它们不是常规 GitHub 发布的前置要求。不要为这个旧流程重新写入已附加 GitHub 证明的发布包摘要。
 

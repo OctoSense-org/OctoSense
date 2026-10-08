@@ -261,7 +261,7 @@ App Hub is on by default. Open **App Hub** from the launcher to browse the signe
 
 #### Try your own app before it is published
 
-For public distribution, open an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml), then add the GitHub release evidence when ready. The normal [GitHub publishing flow](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.md) requires no separate developer publisher key; a tag or Release alone is not Hub approval.
+For public distribution, open an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml), then add the GitHub release evidence when ready. The normal [GitHub publishing flow](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.md) requires no separate developer publisher key, because the app's GitHub repository is its publisher identity ([App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.md)). A tag or Release alone is not Hub approval.
 
 The following is an **optional local legacy-catalog rehearsal**. App Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) describes its compatibility bundle and throwaway catalog keys (`hub keygen`/`certify`/`publish`); these are not prerequisites for normal GitHub publishing. Never restamp a GitHub-attested release for this older recipe.
 
