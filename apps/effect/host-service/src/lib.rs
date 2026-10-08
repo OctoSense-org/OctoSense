@@ -307,6 +307,18 @@ fn render(args: &Json, area: &Path) -> Result<Json, String> {
     }))
 }
 
+/// Engine command ids `run` refuses. Plug-in loading changes a
+/// process-wide registry from caller-named input and runs WebAssembly
+/// under the engine's own budgets, outside the shell's `wasm` service
+/// (ADR 0011) — the same boundary `photo.run` draws against photocraft's
+/// `plugin.*`. Listing installed plug-ins stays readable.
+fn callable(id: &str) -> Result<(), String> {
+    if id.starts_with("effect.plugins.") && id != "effect.plugins.list" {
+        return Err(format!("effect.run: `{id}` is not available through the effect service"));
+    }
+    Ok(())
+}
+
 fn run(args: &Json, area: &Path) -> Result<Json, String> {
     let cmds = args["cmds"].as_array().ok_or("effect.run: `cmds` is a list of {id, params?}")?;
     if cmds.len() > MAX_CMDS {
@@ -320,6 +332,7 @@ fn run(args: &Json, area: &Path) -> Result<Json, String> {
     let mut results = Vec::new();
     for c in cmds {
         let id = c["id"].as_str().ok_or("effect.run: each command has an `id`")?;
+        callable(id)?;
         let params = if c["params"].is_null() { json!({}) } else { c["params"].clone() };
         let r = b.exec(id, params).map_err(|e| format!("effect.run {id}: {e}"))?;
         results.push(json!({"id": id, "result": r}));
@@ -401,6 +414,22 @@ mod tests {
     }
 
     #[test]
+    /// Plug-in loading mutates a process-wide registry with WebAssembly:
+    /// `run` refuses every `effect.plugins.*` mutator before the engine
+    /// sees it; only the read-only list stays.
+    #[test]
+    fn run_refuses_plugin_mutators() {
+        let dir = tempfile::tempdir().unwrap();
+        let area = dir.path();
+        for id in ["effect.plugins.load", "effect.plugins.unload", "effect.plugins.reload"] {
+            let r = run(&json!({"cmds": [{"id": id, "params": {"path": "x.wasm"}}]}), area);
+            let e = r.unwrap_err();
+            assert!(e.contains("not available"), "{id}: {e}");
+        }
+        assert!(callable("effect.plugins.list").is_ok());
+        assert!(callable("comp.new").is_ok());
+    }
+
     fn run_builds_a_project_with_engine_commands() {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
