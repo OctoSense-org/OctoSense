@@ -1,4 +1,4 @@
-//! The `wasm` service (ADR 0011, feature `wasm-lab`): an app's own
+//! The `wasm` service (ADR 0011, feature `wasm-functions`): an app's own
 //! functions, written in Rust and shipped in its bundle as `fns/*.wasm`,
 //! run for that app by `octosense-wasm-host` (Wasmtime, compiled by
 //! Cranelift, with a deadline and a memory cap). They are for light

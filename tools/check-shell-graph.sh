@@ -18,6 +18,9 @@
 # - AppCard's UI (octosense-appcard) is NOT linked without `app-appcard`;
 # - hosted Rinx is the library module only (feature "octosense-module"),
 #   never its standalone entry or a kernel of its own (Rinx ADR 0007);
+# - the wasm service's runtime (octosense-wasm-host, ADR 0011) is linked
+#   exactly where the service runs: macOS, Linux and Android, and never for
+#   Windows, iOS or OpenHarmony;
 # - one makepad, one App Hub, one octos: a single makepad-widgets /
 #   makepad-platform, a single octosense-appstore and octosense-app-hub-app,
 #   and every octos-* crate from one octos-org/octos revision.
@@ -44,11 +47,22 @@ done
 
 fail() { echo "::error::$*"; exit 1; }
 
+# The targets the `wasm` service runs on (crates/shell/Cargo.toml, build.rs).
+wasm_runs_on() {
+  case $1 in
+    *-apple-darwin | *-linux-android* | *-unknown-linux-gnu* | *-unknown-linux-musl*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+host_triple=$(rustc -vV | sed -n 's/^host: //p')
+
 # Whether package $1 is in the graph (0), absent (1).
 linked() {
   local pkg=$1; shift
   local out
   if out=$(cargo tree "$@" -i "$pkg" --depth 0 2>&1); then
+    # A workspace crate the graph leaves out on this target.
+    grep -q "nothing to print" <<<"$out" && return 1
     return 0
   fi
   grep -q "did not match any packages" <<<"$out" && return 1
@@ -90,6 +104,11 @@ for features in "${feature_sets[@]}"; do
         linked "$pkg" "${args[@]}" || fail "$pkg is missing with App Hub ($where)"
       done
     fi
+    if wasm_runs_on "${target:-$host_triple}"; then
+      linked octosense-wasm-host "${args[@]}" || fail "the wasm service's runtime (octosense-wasm-host) is missing ($where)"
+    elif linked octosense-wasm-host "${args[@]}"; then
+      fail "octosense-wasm-host is linked where the wasm service does not run ($where)"
+    fi
     if [[ ",$features," != *",app-appcard,"* ]] && linked octosense-appcard "${args[@]}"; then
       fail "octosense-appcard is linked without app-appcard ($where)"
     fi
@@ -106,6 +125,14 @@ for features in "${feature_sets[@]}"; do
     echo "ok: $where (kernel: $kernel_pkg)"
   done
 done
+
+# Where the wasm service does not run, its runtime is not even built.
+for target in aarch64-apple-ios aarch64-unknown-linux-ohos x86_64-pc-windows-msvc; do
+  if linked octosense-wasm-host --locked ${manifest[@]+"${manifest[@]}"} ${package[@]+"${package[@]}"} --target "$target"; then
+    fail "octosense-wasm-host is linked for $target, where the wasm service does not run"
+  fi
+done
+echo "ok: no wasm runtime for iOS, OpenHarmony or Windows"
 
 # One octos: every octos-* crate in the lock from one octos-org/octos rev
 # (the `nix` patch taken from the octos repo is not an octos crate).

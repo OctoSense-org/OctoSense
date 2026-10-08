@@ -312,7 +312,7 @@ pub fn register_host_services() {
         #[cfg(feature = "app-hub")]
         octosense_effect_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
-        #[cfg(feature = "wasm-lab")]
+        #[cfg(wasm_functions)]
         crate::wasm_service::register();
         // After every service of the shell's own: the notice service never
         // stands in for one.
