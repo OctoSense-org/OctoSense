@@ -1837,10 +1837,12 @@ Where the build differs from the tasks above. Each task was reviewed, and the re
 - Directions frames once on entering, on a new mode and on a new start, and frames a failed route's pins. A start that follows the GPS fix isn't re-framed on every tick. The old line is cleared when the pins change.
 - A long press keeps the pressed point and doesn't move the map. A Save before Photon's answer keeps one saved entry, under the answer's name.
 - `web` added to Maps' manifest for the Website reader. Only News held it before; the design said YouTube too.
+- A card's flight puts the place 160 points above the map's centre (`card_centre`). On the Pixel 7 Pro a card with details reached past the middle, and the place's pin was hidden under it.
 
 **Known limitations.**
 - A route that arrives after the person has panned is still framed once.
 - A ◎ or card flight asked for during a drag doesn't happen.
+- Maps can't read the map's turn: on a map the person has turned, a card's place lands 160 points off the centre along that turn.
 - On a desktop, a wheel over a card or Directions still zooms the map, and a long press is a double click whose first click is also a tap.
 - The Website reader checks only the first URL; links and redirects are followed (as in News).
 - No Call action: the phone number is text.
