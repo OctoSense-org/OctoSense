@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Real native host + isolated Chrome + synthetic HTTP backend acceptance.
+"""Real native host + isolated browser + synthetic HTTP backend acceptance.
 
-Run with a Python environment containing Playwright, and an existing Chrome.
+Use Playwright with an existing Chromium browser, or a loopback W3C WebDriver.
 No real provider sign-in is automated. All account creation occurs in the
 browser, and all token exchanges, vault persistence and revocation in the host.
 The private run directory is never an artifact to publish wholesale.
@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -71,7 +72,7 @@ def bundle(path, app, hub):
     listing = {'schema': 1, 'subtitle': 'Internal browser login acceptance',
                'description': 'Private test fixture; not a published app. Placeholder listing artwork is not UX evidence.',
                'category': 'productivity', 'screenshots': ['fixture.svg'], 'icon': 'fixture.svg',
-               'platforms': ['macos'], 'publisher': {'name': 'Acceptance fixture',
+               'platforms': [{'darwin': 'macos', 'win32': 'windows'}.get(sys.platform, 'linux')], 'publisher': {'name': 'Acceptance fixture',
                'support': 'https://example.test/support', 'privacy_policy_url': 'https://example.test/privacy'},
                'age_rating': 'all', 'license': 'Apache-2.0'}
     (path / 'listing.json').write_text(json.dumps(listing, indent=2))
@@ -83,25 +84,36 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--installer', type=Path, required=True)
     parser.add_argument('--hub', type=Path, required=True)
-    parser.add_argument('--chrome', type=Path, required=True)
+    browser = parser.add_mutually_exclusive_group(required=True)
+    browser.add_argument('--chrome', type=Path)
+    browser.add_argument('--webdriver', help='Existing isolated W3C WebDriver endpoint for MiniBrowser or Edge')
+    parser.add_argument('--webdriver-browser', default='MiniBrowser', choices=['MiniBrowser', 'MicrosoftEdge'])
     parser.add_argument('--out', type=Path, required=True, help='NEW private run directory')
     args = parser.parse_args()
-    from playwright.sync_api import sync_playwright
+    if args.webdriver:
+        from webdriver_browser import automation
+        sync_playwright = lambda: automation(args.webdriver, args.webdriver_browser)
+    else:
+        from playwright.sync_api import sync_playwright
     os.umask(0o077)
     run = args.out.resolve()
     run.mkdir(mode=0o700, parents=True, exist_ok=False)
     os.environ['RINX_DATA_DIR'] = str(run / 'rinx')
     pixels = run / 'evidence'
     pixels.mkdir()
+    revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
+                              text=True, capture_output=True)
     receipt = {'schema': 1, 'result': 'running', 'started_utc': datetime.now(timezone.utc).isoformat(),
                'case': 'Real native backend login with synthetic server and actual browser callbacks',
                'provider': 'synthetic HTTP loopback; not live GitHub or Google',
                'vault': 'normal platform credential vault; no preseeded accounts or tokens',
-               'browser_handoff': 'host-only LinkLabel URL copied privately by test example; exact URL opened in fresh Chrome context; OS-default-browser click omitted',
+               'browser_handoff': 'host-only LinkLabel URL copied privately by test example; exact URL opened in a fresh browser context; OS-default-browser click omitted',
+               'browser_engine': args.webdriver_browser if args.webdriver else args.chrome.name,
                'installation': 'ephemeral fixture signing, actual Store install and prepared launch',
                'input': 'Makepad native instrument, default input acknowledgement, no input replay',
                'binary_sha256': sha(args.binary), 'installer_sha256': sha(args.installer),
-               'runtime_base_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+               'runtime_base_commit': revision.stdout.strip() if revision.returncode == 0 else None,
+               'source_identity': 'Git revision plus file hashes' if revision.returncode == 0 else 'Archived source: file hashes below are authoritative',
                'visual_review': 'pending', 'checks': [], 'instrument_events': []}
     source_files = [Path(__file__).resolve(), ROOT / 'tools/backend-login-fixture.py',
                     ROOT / 'tools/connected-e2e/native.py',
@@ -109,6 +121,8 @@ def main():
                     ROOT / 'crates/shell/examples/connected-app-host.rs',
                     ROOT / 'crates/shell/examples/connected_support/mod.rs', ROOT / 'Cargo.lock']
     source_files += sorted((ROOT / 'crates/oauth-service/src').rglob('*.rs'))
+    if args.webdriver:
+        source_files.append(ROOT / 'tools/connected-e2e/webdriver_browser.py')
     receipt['source_sha256'] = {str(p.relative_to(ROOT)): sha(p) for p in source_files}
     server_log = (run / 'server.log').open('w')
     server = subprocess.Popen(['python3', str(ROOT / 'tools/backend-login-fixture.py'),
@@ -287,7 +301,7 @@ def main():
                 native.capture('FAILURE')
             except Exception:
                 pass
-        raise
+        raise SystemExit('Backend acceptance failed; inspect the private error file') from None
     finally:
         if native:
             receipt['instrument_events'] += native.actions

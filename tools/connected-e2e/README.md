@@ -144,3 +144,40 @@ copy. No provider write occurs. Normal Notes admission/provider and soak drivers
 remain the commands above.
 
 Android developer-backend login has its own isolated package and real-form procedure: [Android backend acceptance](ANDROID-BACKEND.md). It does not authorize Google embedded login.
+
+## Native backend browser acceptance (2026-10-08)
+
+`backend_login.py` uses a real host, browser and operating-system credential
+vault. Only the backend HTTP server and its fictional users are synthetic; no
+account or token is injected into the host. Linux and Windows use the supported
+external-browser route with an ephemeral loopback callback. Embedded WebReader
+acceptance is a separate test and does not establish backend sign-in.
+
+The [Linux receipt](evidence/linux-backend-native.json) records seven successful
+behaviors: browser registration/sign-in and PKCE callback, protected identity,
+rotated refresh recovery, native restart, logout, repeat login and isolation
+between two signed apps. MiniBrowser/WebKitGTK 2.52.6 and native Secret Service
+ran in an isolated display/session; all owned processes and fictional
+connections were cleaned up. The receipt binds the actual binary and source
+hashes. Its archived Cargo lock predates the later Wasm integration; the 35
+other fixture/OAuth source files match this acceptance change. This is not an
+exact-head whole-shell build claim.
+
+Build the host/installer as above and the pinned Hub CLI with
+`cargo build --locked --release -p octosense-app-hub --bin hub`. With an existing
+isolated WebKitWebDriver, invoke `backend_login.py` with `--binary`, `--installer`,
+`--hub`, `--webdriver http://127.0.0.1:PORT` and a new private `--out` directory.
+The Linux run used that interface with the real engine and normal host vault.
+`--chrome PATH` instead uses an existing Chromium browser through Playwright.
+The `Platform accounts` workflow exercises the Windows native vault and this
+same browser/callback journey using the runner's existing Edge installation.
+The vault job passed; the added Windows browser journey is pending execution.
+
+The acceptance host copies its own consent-sheet link into a private test
+file, and the harness opens that exact URL in a fresh browser. **The OS default
+browser link click is not tested.** Synthetic Makepad clicks cannot approve a
+business write; these tests do not prove a physical press or OS-authenticated
+approval. The disposable fictional account is not Google/GitHub provider
+acceptance. Keep the entire run directory private: raw callback URLs and
+fictional tokens are not suitable for public artifacts. Publish only reviewed
+receipts.
