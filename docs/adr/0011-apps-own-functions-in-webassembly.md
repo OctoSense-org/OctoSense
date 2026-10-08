@@ -2,10 +2,14 @@
 
 English | [简体中文](0011-apps-own-functions-in-webassembly.zh-CN.md)
 
-Status: Proposed. Implemented behind the shell's `wasm-lab` feature (off by
-default), with the contract side in App Hub #140 (app-contract 1.7.0).
-Validated on macOS in a hidden desktop shell and on an Android
-phone (Redmi Note 12) in a separately packaged Home; iOS and OpenHarmony not
+Status: Accepted (8 Oct 2026), with limited support. The shell's
+`wasm-functions` feature (formerly `wasm-lab`) is on in every standard desktop
+and Home build, and the service runs on macOS, Linux and Android. Windows (not
+yet checked), iOS (no code generation for apps) and OpenHarmony (policy
+unknown) leave the runtime out. The contract side is App Hub #140
+(app-contract 1.7.0). Validated on macOS in a hidden desktop shell, on Linux
+in a headless desktop, and on Android phones: a Redmi Note 12 in a separately
+packaged Home and a OnePlus 6 in the phone acceptance. iOS and OpenHarmony not
 tried. How it works on `main`, with its limits and checks:
 [WebAssembly in OctoSense](../wasm.md).
 
@@ -43,7 +47,8 @@ outside their own input and output.
    a deadline ends the call with an error, never the process, and spends the instance: the next call gets a
    fresh one, because a Rust guest's stack pointer and allocator may be
    half-updated.
-3. **The `wasm` host service** (shell feature `wasm-lab`). `wasm.<function>`
+3. **The `wasm` host service** (shell feature `wasm-functions`, formerly
+   `wasm-lab`). `wasm.<function>`
    calls one of the calling app's functions; `wasm.functions` lists them, how
    they loaded and how they have run. A string argument goes in as its text,
    anything else as JSON; JSON output comes back as data, anything else as
@@ -160,6 +165,9 @@ Two platform findings:
 
 - Third-party Rust runs in OctoSense apps at 1.4–2.2× native speed for these
   workloads, with no new trust and no change to the default build.
+  *8 Oct 2026: accepted with limited support. Standard builds on macOS,
+  Linux and Android now include the service and its runtime, about 7.5 MiB
+  of code.*
 - The Android APK grows by 3.5 MiB (209.1 to 212.8 MB, with Wasm Lab's own
   bundle); the runtime is about 7.5 MiB of code.
 - Compiling costs about 0.4 s per module on a mid-range phone (0.67 s while

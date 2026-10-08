@@ -204,6 +204,13 @@ octos Agent 内核是 Home 的一项服务，不依附于任何应用：`octosen
 
 **Talk to Octos**（默认关闭）：在 **AI providers → Talk to Octos** 中打开后，本机会启动一个仅监听回环地址的服务，让 Web 客户端或终端界面与本设备的助手对话。开启期间内核以 `octos serve --host-managed` 代替 `--stdio` 运行，原生应用继续通过其 WebSocket 工作；外部客户端使用单独的令牌，只能打开 UI Protocol 套接字。Web 客户端通过一次性配对码或其链接的二维码配对；本用户的终端客户端读取私有连接文件。原生应用关闭后服务仍保持运行，直到关闭该功能或 Shell 退出。见 [ADR 0003（英文）](../docs/adr/0003-shared-octos-client-access.md) 和[内核指南](../crates/kernel/README.zh-CN.md)。
 
+### 应用自带的 WebAssembly 函数
+
+Home 的默认构建在 Android 上运行 `wasm` 宿主服务，即应用自带的 WebAssembly 函数（ADR 0011，
+[OctoSense 中的 WebAssembly](../docs/wasm.zh-CN.md)）：特性 `wasm-functions`，由 Cranelift 编译。
+iOS 和 OpenHarmony 构建不包含这个运行时，在那里调用会得到
+`no service answers "wasm" on this device`。
+
 ### AI 提供商
 
 AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（[`apps/ai-providers/host-service`](../apps/ai-providers/host-service)）编辑 octos 内核的 LLM 提供商，Home 在启动时通过 [`crates/ai-host`](../crates/ai-host/README.md) 注册该服务：

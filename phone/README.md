@@ -304,6 +304,14 @@ stops when the last one leaves and on Home's shutdown. To build without it
 
 **Talk to Octos** (off by default): **AI providers → Talk to Octos** turns on a loopback server so a web client or a terminal UI can talk to this device's assistant. While it is on, the kernel runs as `octos serve --host-managed` instead of `--stdio` and native apps keep working over its WebSocket; external clients get a separate token that opens the UI Protocol socket and nothing else. A web client pairs with a one-time code or the QR of its link; a terminal client of this user reads the private connection file. The server stays up when native apps close, until it is turned off or the shell exits. See [ADR 0003](../docs/adr/0003-shared-octos-client-access.md) and the [kernel guide](../crates/kernel/README.md).
 
+### Apps' WebAssembly functions
+
+Home's default build runs the `wasm` host service on Android: apps' own
+WebAssembly functions (ADR 0011, [WebAssembly in OctoSense](../docs/wasm.md)),
+feature `wasm-functions`, compiled by Cranelift. iOS and OpenHarmony builds
+leave the runtime out, so a call there answers
+`no service answers "wasm" on this device`.
+
 ### AI providers
 
 AI providers (`os.ai-providers`) edits the octos kernel's LLM providers
