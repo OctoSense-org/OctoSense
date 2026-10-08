@@ -260,19 +260,6 @@ fn cancelled() -> Refusal {
     )
 }
 
-pub(super) fn handles(method: &str) -> bool {
-    matches!(
-        method,
-        "image"
-            | "audio"
-            | "embeddings"
-            | "video"
-            | "video.status"
-            | "video.cancel"
-            | "capabilities"
-    )
-}
-
 struct Permit {
     host: Arc<ModelHost>,
     key: (PathBuf, String),
@@ -297,11 +284,14 @@ struct Context {
 }
 impl Context {
     fn check(&self) -> Result<(), Refusal> {
-        if self.reply.is_pending()
-            && (self.grants)(&self.call.app_id, &self.call.host_dir)
-            && (self.host.scope)(&self.call.app_id, &self.call.host_dir).as_deref()
-                == Some(self.scope.as_str())
-        {
+        let active = || {
+            self.reply.is_pending()
+                && (self.host.scope)(&self.call.app_id, &self.call.host_dir).as_deref()
+                    == Some(self.scope.as_str())
+        };
+        // Admission can read and hash bundle files. Recheck the cheap scope and
+        // cancellation snapshot afterward as either can change while it runs.
+        if active() && (self.grants)(&self.call.app_id, &self.call.host_dir) && active() {
             Ok(())
         } else {
             Err(cancelled())
@@ -396,10 +386,6 @@ impl Context {
 }
 
 pub(super) fn dispatch(host: Arc<ModelHost>, grants: Grants, call: ServiceCall, reply: Replier) {
-    let request = match wire::Request::parse(call.method(), &call.args) {
-        Ok(r) => r,
-        Err(e) => return reply.send(Err(e.to_string())),
-    };
     let Some(scope) = (host.scope)(&call.app_id, &call.host_dir) else {
         return reply.send(Err(cancelled().to_string()));
     };
@@ -411,7 +397,7 @@ pub(super) fn dispatch(host: Arc<ModelHost>, grants: Grants, call: ServiceCall, 
         {
             return reply.send(Err(Refusal::new(
                 Code::Rate,
-                "Media workers are busy; retry later.",
+                "Model workers are busy; retry later.",
             )
             .to_string()));
         }
@@ -430,18 +416,47 @@ pub(super) fn dispatch(host: Arc<ModelHost>, grants: Grants, call: ServiceCall, 
         scope,
     };
     if std::thread::Builder::new()
-        .name("model-media".into())
+        .name("model-service".into())
         .spawn(move || {
             let _permit = permit;
-            let answer = run(&context, request);
+            let answer = run_call(&context);
             let answer = context.check().and(answer);
             context.reply.send(answer.map_err(|e| e.to_string()));
         })
         .is_err()
     {
         failed_reply.send(Err(
-            "provider: The host could not start a media worker.".into()
+            "provider: The host could not start a model worker.".into()
         ));
+    }
+}
+
+// Called only inside the bounded worker. Neither admission nor quota I/O may
+// execute in HostService::call, which is invoked by the UI event loop.
+fn run_call(context: &Context) -> Result<Value, Refusal> {
+    context.check()?;
+    context.host.attach(&context.call.host_dir);
+    match context.call.method() {
+        "complete" => {
+            let request = super::Request::from_args(&context.call.args)?;
+            context
+                .host
+                .complete_while(&context.call.app_id, request, || context.check().is_ok())
+                .map(|completion| completion.to_reply())
+        }
+        "budget" => {
+            let mut budget = context.host.budget(&context.call.app_id).to_json();
+            budget["media"] = context.host.media.budget(
+                &context.call.host_dir,
+                &context.call.app_id,
+                (context.host.clock)(),
+            );
+            Ok(budget)
+        }
+        _ => run(
+            context,
+            wire::Request::parse(context.call.method(), &context.call.args)?,
+        ),
     }
 }
 
@@ -564,7 +579,17 @@ fn video_start(
     let mut data = context.host.media.data.lock().unwrap();
     match result {
         Ok(provider_id) => {
-            let job = data.jobs.get_mut(&id).unwrap();
+            // Another submitting worker can prune this entry after a forward
+            // clock jump. Never panic, recreate it, or return an unbound job.
+            let expired = data
+                .jobs
+                .get(&id)
+                .is_none_or(|job| (context.host.clock)().saturating_sub(job.created) >= JOB_TTL_MS);
+            if expired {
+                data.jobs.remove(&id);
+                return Err(cancelled());
+            }
+            let job = data.jobs.get_mut(&id).ok_or_else(cancelled)?;
             job.provider_id = provider_id;
             job.status = "queued".into();
             job.busy = false;

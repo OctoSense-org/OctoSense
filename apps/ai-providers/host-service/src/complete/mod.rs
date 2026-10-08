@@ -395,6 +395,7 @@ impl Transport for Http {
 /// directory).
 pub type Grants = Arc<dyn Fn(&str, &Path) -> bool + Send + Sync>;
 /// Host-derived active account scope, never taken from script arguments.
+/// Called on the UI dispatch path: this must be a cheap in-memory snapshot.
 pub type Scope = Arc<dyn Fn(&str, &Path) -> Option<String> + Send + Sync>;
 
 /// Milliseconds since the Unix epoch.
@@ -718,44 +719,10 @@ impl HostService for ModelService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !(self.grants)(&call.app_id, &call.host_dir) {
-            return reply.send(Err(Refusal::new(Code::Capability, "This app was not granted the model capability.").to_string()));
-        }
-        self.host.attach(&call.host_dir);
-        if media::handles(call.method()) {
-            return media::dispatch(self.host.clone(), self.grants.clone(), call, reply);
-        }
-        match call.method() {
-            "budget" => {
-                let mut budget = self.host.budget(&call.app_id).to_json();
-                budget["media"] = self.host.media.budget(&call.host_dir, &call.app_id, (self.host.clock)());
-                reply.send(Ok(budget));
-            }
-            "complete" => {
-                let request = match Request::from_args(&call.args) {
-                    Ok(r) => r,
-                    Err(refusal) => return reply.send(Err(refusal.to_string())),
-                };
-                let host = self.host.clone();
-                let grants = self.grants.clone();
-                let scope = (host.scope)(&call.app_id, &call.host_dir);
-                if scope.is_none() { return reply.send(Err("capability: No active model caller scope.".into())); }
-                std::thread::spawn(move || {
-                    let active = || reply.is_pending()
-                        && grants(&call.app_id, &call.host_dir)
-                        && (host.scope)(&call.app_id, &call.host_dir) == scope;
-                    let answer = host.complete_while(&call.app_id, request, active);
-                    let answer = if active() { answer } else {
-                        Err(Refusal::new(Code::Capability, "The request ended or this app no longer has model access."))
-                    };
-                    if let Err(Refusal { detail: Some(detail), code, .. }) = &answer {
-                        eprintln!("model: {} refused ({}): {detail}", call.app_id, code.as_str());
-                    }
-                    reply.send(answer.map(|c| c.to_reply()).map_err(|r| r.to_string()));
-                });
-            }
-            other => reply.send(Err(Refusal::new(Code::BadRequest, format!("there is no model.{other}")).to_string())),
-        }
+        // The shell's grant callback verifies signed bundle files. Keep that
+        // work, ledger I/O and providers off the UI thread, under one bounded
+        // worker limit for complete, budget and media alike.
+        media::dispatch(self.host.clone(), self.grants.clone(), call, reply);
     }
 }
 

@@ -112,7 +112,10 @@ app storage, and are not refunded after an uncertain provider failure or
 cancellation. An unreadable quota ledger refuses new submissions. Text token
 accounting is not fabricated for images, audio, or video.
 
-There are at most four media workers globally and two per app/profile. Provider
+All `model` host methods, including `complete` and `budget`, share at most four
+workers globally and two per app/profile. Signed-bundle admission and quota
+file I/O run on those workers, with cancellation and account checks before
+provider dispatch and delivery. Provider
 HTTP requests time out after 120 seconds; responses are capped at 4 MiB,
 decoded image/audio assets at 2 MiB. No worker queue grows without a bound.
 The service rechecks signed app admission, active account scope, provider

@@ -691,3 +691,88 @@ fn an_anthropic_only_route_does_not_reuse_its_key_for_media() {
         .starts_with("no_provider:"));
     assert_eq!(rig.fake.count(), 0);
 }
+
+#[test]
+fn admission_and_ledger_work_are_off_ui_and_bounded_for_every_model_method() {
+    let rig = Rig::new("openai");
+    let gate = Arc::new(Gate::default());
+    let admission_gate = gate.clone();
+    let entered = Arc::new(AtomicUsize::new(0));
+    let checked = entered.clone();
+    let ui_thread = std::thread::current().id();
+    let account = rig.scope.clone();
+    let mut options = complete::Options::default()
+        .providers(rig.config.clone())
+        .transport(rig.fake.clone())
+        .grants(move |_, _| {
+            assert_ne!(
+                std::thread::current().id(),
+                ui_thread,
+                "signed-bundle admission must never block the dispatch/UI thread"
+            );
+            checked.fetch_add(1, Ordering::SeqCst);
+            admission_gate.wait();
+            true
+        });
+    options.media_transport = Some(rig.fake.clone());
+    options.scope = Some(Arc::new(move |_, _| {
+        Some(format!("account-{}", account.load(Ordering::SeqCst)))
+    }));
+    complete::register_with(options);
+    let mut heaps = Vec::new();
+    for (index, method) in ["complete", "budget", "capabilities", "embeddings"]
+        .iter()
+        .enumerate()
+    {
+        heaps.push(rig.submit(&format!("org.example.worker{index}"), method, json!({})));
+    }
+    let until = Instant::now() + Duration::from_secs(5);
+    while entered.load(Ordering::SeqCst) < 4 {
+        assert!(Instant::now() < until, "admission workers did not start");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // Four admission reads are blocked, yet dispatch can refuse overload at
+    // once, and no caller's ledger has been opened or created before admission.
+    assert!(rig
+        .call("budget", json!({}))
+        .unwrap_err()
+        .starts_with("rate:"));
+    assert!(!rig.root.join(".host/model").exists());
+    services::cancel_heap(heaps[0]);
+    rig.scope.store(2, Ordering::SeqCst);
+    gate.release();
+    for heap in heaps.into_iter().skip(1) {
+        assert!(rig.answer(heap).unwrap_err().starts_with("capability:"));
+    }
+    assert_eq!(rig.fake.count(), 0);
+    assert!(!rig.root.join(".host/model").exists());
+}
+
+#[test]
+fn video_submission_expiring_during_provider_request_fails_without_poisoning_jobs() {
+    let rig = Rig::new("minimax");
+    let gate = Arc::new(Gate::default());
+    *rig.fake.gate.lock().unwrap() = Some(gate.clone());
+    rig.fake.json(200, json!({"task_id":"task_fixture"}));
+    rig.fake.json(200, json!({"task_id":"task_fixture"}));
+    let first = rig.submit(APP, "video", json!({"prompt":"Synthetic first kite"}));
+    rig.fake.wait_calls(1);
+    rig.now.fetch_add(86_400_000, Ordering::SeqCst);
+    // The second submission prunes the first job while its POST is in flight.
+    let second = rig.submit(APP, "video", json!({"prompt":"Synthetic second kite"}));
+    rig.fake.wait_calls(2);
+    gate.release();
+    assert!(rig.answer(first).unwrap_err().starts_with("capability:"));
+    let current = rig.answer(second).unwrap();
+    assert_eq!(current["status"], "queued");
+    assert_eq!(rig.fake.count(), 2);
+    rig.fake
+        .json(200, json!({"task":{"id":"task_fixture","status":"queued"}}));
+    // A panic in the first worker would poison the shared job table, making
+    // this later operation fail instead of returning the surviving job.
+    assert_eq!(
+        rig.call("video.status", json!({"job":current["job"]}))
+            .unwrap()["status"],
+        "queued"
+    );
+}
