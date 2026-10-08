@@ -103,6 +103,14 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("signingIdentity", config["macos"], "the build is always unsigned")
         self.assertNotIn("windows", config)
         self.assertNotIn("version", base, "the base config is not modified")
+        policy=HERE.parent / "resources/org.octosense.policy"
+        self.assertEqual(config["deb"]["files"][str(policy)],"usr/share/polkit-1/actions/org.octosense.policy")
+        self.assertIn("polkitd | policykit-1",config["deb"]["depends"])
+        import xml.etree.ElementTree as ET
+        action=ET.parse(policy).getroot().find('action')
+        self.assertEqual(action.attrib['id'],'org.octosense.approve-business-action')
+        self.assertEqual({node.tag:node.text for node in action.find('defaults')},
+                         {'allow_any':'no','allow_inactive':'no','allow_active':'auth_self'})
         none = package.packager_config(base, version="0.2.0", binaries_dir=Path("/t"), out_dir=Path("/t"),
                                        resources=Path("/t"), kernel=None)
         self.assertNotIn("externalBinaries", none, "--no-kernel ships none")

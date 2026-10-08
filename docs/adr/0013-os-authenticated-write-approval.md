@@ -2,7 +2,7 @@
 
 English | [简体中文](0013-os-authenticated-write-approval.zh-CN.md)
 
-Status: proposed implementation; native acceptance pending. Linux/Windows physical-pointer provenance remains unsupported. Browser and vault tests do not establish write approval.
+Status: implementation under review; OS-authenticated user acceptance pending. Linux/Windows physical-pointer provenance remains unsupported. Browser and vault tests do not establish write approval.
 
 ## Problem and decision
 
@@ -41,3 +41,6 @@ Use `UserConsentVerifier.CheckAvailabilityAsync` and desktop `IUserConsentVerifi
 5. Test changed account/digest/window, replay, late results, cancellation and expiry. Actual native negative tests must reject missing policy/Hello. Then use disposable accounts to verify OS-authenticated writes and rejection of synthetic-only attempts on each supported platform.
 
 Keep distinct receipts for login, native vault, ordinary embedded browser, OS-authenticated approval and the resulting remote write. Compile, unit, Xvfb and credential-storage passes do not prove user approval. A physical-positive claim needs an actual person/device. Approval and business-write acceptance remain unverified until those native interactions complete.
+
+The implemented boundary, package prerequisites and unverified native positives
+are recorded in [desktop write approval](../os-authenticated-approval.md).

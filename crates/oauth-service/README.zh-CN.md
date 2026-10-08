@@ -6,6 +6,10 @@ OctoSense 为已安装应用保存服务商凭据。用户登录 GitHub 或 Goog
 应用得到绑定自身身份的连接句柄。无需 OctoSense 账户或中心登录后台。
 本服务实现 [ADR 0010](../../docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md) 的共享服务部分。
 
+Linux/Windows 独立的 OS 认证写入审批实现及剩余原生验收要求，见
+[桌面写入审批](../../docs/os-authenticated-approval.zh-CN.md)。它不会将合成输入
+升级为可信的物理输入。
+
 ## 当前交付边界
 
 Rust 授权协议、连接器、原生审批、账户生命周期和示例界面已实现。macOS 原生宿主与

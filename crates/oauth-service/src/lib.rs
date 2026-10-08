@@ -23,6 +23,8 @@ mod host_catalog;
 #[cfg(feature = "host")]
 pub mod host;
 #[cfg(feature = "host")]
+pub mod approval;
+#[cfg(feature = "host")]
 pub mod host_api;
 #[cfg(feature = "host")]
 pub mod host_inbox;

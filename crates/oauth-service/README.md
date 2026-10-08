@@ -7,6 +7,11 @@ to GitHub or Google, approves that app's scopes, and gets an app-bound connectio
 There is no OctoSense account or central login backend. This implements the
 shared-service part of [ADR 0010](../../docs/adr/0010-shared-oauth-and-connected-apps.md).
 
+The separate Linux/Windows OS-authenticated write approval implementation and
+its remaining native acceptance requirements are described in
+[desktop write approval](../../docs/os-authenticated-approval.md). It does not
+upgrade synthetic input to trusted physical input.
+
 ## Current delivery boundary
 
 The Rust protocol, connectors, native review, account lifecycle and sample UI

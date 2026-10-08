@@ -53,6 +53,7 @@ pub struct ReviewRequest {
     snapshot: Value,
     reply: Option<Replier>,
     result: Arc<Mutex<Option<Result<Value, String>>>>,
+    os_binding: Result<crate::approval::Binding, String>,
 }
 impl ReviewRequest {
     /// {app, connection, draft, revision, operation, reply:{from,to,subject,body,
@@ -73,6 +74,59 @@ impl ReviewRequest {
                     .into(),
             );
         }
+        self.execute(down_is_trusted, up_is_trusted, None)
+    }
+    pub fn begin_os_approval(
+        &self,
+        cx: &makepad_widgets::Cx,
+        window: makepad_widgets::WindowId,
+        owner: &str,
+    ) -> Result<crate::approval::PendingApproval, String> {
+        self.os_pending_check()?;
+        let binding = self.os_binding.clone()?;
+        binding.revalidate()?;
+        crate::approval::PendingApproval::begin(
+            cx,
+            window,
+            owner,
+            binding,
+            "Approve the exact email reply displayed by OctoSense",
+        )
+    }
+    pub fn poll_os_approval(
+        &mut self,
+        cx: &makepad_widgets::Cx,
+        window: makepad_widgets::WindowId,
+        owner: &str,
+        pending: &mut crate::approval::PendingApproval,
+    ) -> Result<bool, String> {
+        self.os_pending_check()?;
+        let binding = self.os_binding.clone()?;
+        binding.revalidate()?;
+        let Some(evidence) = pending.poll(cx, window, owner, &binding)? else {
+            return Ok(false);
+        };
+        let approved = evidence.consume(&binding)?;
+        self.execute(false, false, Some(approved))?;
+        Ok(true)
+    }
+    fn os_pending_check(&self) -> Result<(), String> {
+        let ticket = self
+            .ticket
+            .as_ref()
+            .ok_or("This reply review is no longer pending")?;
+        if !self.reply.as_ref().is_some_and(Replier::is_pending) {
+            return Err("The app is no longer waiting for this review".into());
+        }
+        DraftStore::open(&self.root, &self.app, &self.connection)?.validate(ticket)?;
+        Ok(())
+    }
+    fn execute(
+        &mut self,
+        down_is_trusted: bool,
+        up_is_trusted: bool,
+        authenticated: Option<crate::approval::ApprovedOperation>,
+    ) -> Result<(), String> {
         let ticket = self
             .ticket
             .take()
@@ -93,7 +147,10 @@ impl ReviewRequest {
                 };
                 let result = with_provider_api(&root, &app, |api| {
                     let mut drafts = DraftStore::open(&root, &app, &connection)?;
-                    let draft = drafts.submit(ticket, down_is_trusted, up_is_trusted, api)?;
+                    let draft = match authenticated {
+                        Some(approval) => drafts.submit_authenticated(ticket, approval, api)?,
+                        None => drafts.submit(ticket, down_is_trusted, up_is_trusted, api)?,
+                    };
                     serde_json::to_value(draft).map_err(|_| "Cannot serialize send receipt".into())
                 });
                 *output.lock().unwrap_or_else(|e| e.into_inner()) = Some(result.clone());
@@ -225,14 +282,24 @@ impl HostService for InboxService {
                 )?;
                 let ticket = DraftStore::open(&call.host_dir, &call.app_id, &connection)?
                     .review(field(&call.args, "draft")?, revision(&call.args)?)?;
+                let snapshot = ticket.snapshot();
+                let os_binding = crate::approval::Binding::capture(
+                    &call.host_dir,
+                    &call.app_id,
+                    "gmail",
+                    &connection,
+                    snapshot["operation"].as_str().unwrap_or(""),
+                    &snapshot,
+                );
                 Ok(ReviewRequest {
                     root: call.host_dir,
                     app: call.app_id,
                     connection,
-                    snapshot: ticket.snapshot(),
+                    snapshot,
                     ticket: Some(ticket),
                     reply: Some(reply.clone()),
                     result: Arc::new(Mutex::new(None)),
+                    os_binding,
                 })
             })();
             match pending {

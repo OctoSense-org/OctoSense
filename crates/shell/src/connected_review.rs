@@ -7,6 +7,29 @@ enum ReviewRequest {
     Save(host_api::ReviewRequest),
 }
 impl ReviewRequest {
+    fn begin_os_approval(
+        &self,
+        cx: &Cx,
+        window: WindowId,
+        owner: &str,
+    ) -> Result<octosense_oauth_service::approval::PendingApproval, String> {
+        match self {
+            Self::Mail(r) => r.begin_os_approval(cx, window, owner),
+            Self::Save(r) => r.begin_os_approval(cx, window, owner),
+        }
+    }
+    fn poll_os_approval(
+        &mut self,
+        cx: &Cx,
+        window: WindowId,
+        owner: &str,
+        pending: &mut octosense_oauth_service::approval::PendingApproval,
+    ) -> Result<bool, String> {
+        match self {
+            Self::Mail(r) => r.poll_os_approval(cx, window, owner, pending),
+            Self::Save(r) => r.poll_os_approval(cx, window, owner, pending),
+        }
+    }
     fn approve(&mut self, down: bool, up: bool) -> Result<(), String> {
         match self {
             Self::Mail(r) => r.approve(down, up),
@@ -45,6 +68,27 @@ fn pending() -> &'static Mutex<Pending> {
 }
 
 pub fn register() {
+    octosense_oauth_service::approval::register_admission(|root, app, family| {
+        let expected =
+            octosense_appstore::data_root_if_set().ok_or("App Hub has no active profile")?;
+        if root != expected.join(".host") {
+            return Err("Review belongs to another host profile".into());
+        }
+        let family = if family == "auth.backend" {
+            "auth"
+        } else {
+            family
+        };
+        let loaded = crate::host_tools::script_apps::guidance(app)?;
+        if !loaded.families.contains("auth") || !loaded.families.contains(family) {
+            return Err("The app no longer has this account-operation grant".into());
+        }
+        loaded.manifest["integrity"]["bundle_blake3"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| "The admitted bundle identity is unavailable".into())
+    });
     widget_async::register_splash_isolate_mod(|vm| {
         script_mod(vm);
         script_eval!(vm, {mod.prelude.widgets.ConnectedReplyReview = mod.widgets.ConnectedReplyReview});
@@ -125,9 +169,52 @@ pub struct ConnectedReplyReview {
     close_service: String,
     #[live]
     close_ticket: String,
+    #[rust]
+    os_pending: Option<octosense_oauth_service::approval::PendingApproval>,
+    #[rust]
+    os_timer: Option<Timer>,
 }
 
 impl ConnectedReplyReview {
+    fn review_window(&self, cx: &Cx) -> Result<WindowId, String> {
+        let area = self.view.area();
+        if !area.is_valid(cx) {
+            return Err("The native review is no longer visible".into());
+        }
+        let visible = area.clipped_rect(cx);
+        if visible.size.x <= 0.0 || visible.size.y <= 0.0 {
+            return Err("The native review is no longer visible".into());
+        }
+        let draw = area
+            .draw_list_id()
+            .ok_or("The native review has no display owner")?;
+        let pass = cx.draw_lists[draw]
+            .draw_pass_id
+            .ok_or("The native review has no display pass")?;
+        cx.get_pass_window_id(pass)
+            .ok_or_else(|| "The native review has no window".into())
+    }
+    fn approval_owner(&self) -> String {
+        format!("{}:{}", self.ticket, self.source.heap_key())
+    }
+    fn stop_authentication(&mut self, cx: &mut Cx) {
+        self.os_pending.take();
+        if let Some(timer) = self.os_timer.take() {
+            cx.stop_timer(timer);
+        }
+    }
+    fn submitting(&self, cx: &mut Cx) {
+        self.view.label(cx, ids!(status)).set_text(
+            cx,
+            if self.is_save {
+                "Saving this exact reviewed version…"
+            } else {
+                "Sending this exact reviewed reply…"
+            },
+        );
+        self.view.button(cx, ids!(approve)).set_enabled(cx, false);
+        self.view.button(cx, ids!(cancel)).set_enabled(cx, false);
+    }
     fn close_sheet(&self, cx: &mut Cx) {
         if makepad_widgets::splash_policy::is_enforced(self.source.heap_key()) {
             return;
@@ -136,7 +223,10 @@ impl ConnectedReplyReview {
         // be resident in its ordinary window or another Glance workspace.
         if !matches!(
             self.close_service.as_str(),
-            "gmail.sheet.close" | "github.sheet.cancel" | "gcalendar.sheet.cancel"
+            "gmail.sheet.close"
+                | "github.sheet.cancel"
+                | "gcalendar.sheet.cancel"
+                | "auth.backend.sheet.cancel"
         ) {
             return;
         }
@@ -219,6 +309,15 @@ impl ConnectedReplyReview {
                 .label(cx, ids!(subject))
                 .set_visible(cx, !subject.is_empty());
             self.view.label(cx, ids!(message)).set_text(cx, &body);
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            self.view.button(cx, ids!(approve)).set_text(
+                cx,
+                if self.is_save {
+                    "Authenticate & Save"
+                } else {
+                    "Authenticate & Send"
+                },
+            );
         } else {
             self.view.label(cx, ids!(status)).set_text(
                 cx,
@@ -236,11 +335,46 @@ impl Widget for ConnectedReplyReview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.initialize(cx);
         if matches!(event, Event::Pause | Event::Background) {
+            self.stop_authentication(cx);
             self.trusted_down = false;
             if let Some(mut request) = self.request.take() {
                 let _ = request.cancel();
             }
             return;
+        }
+        if self.os_pending.is_some()
+            && (matches!(event, Event::Signal)
+                || self
+                    .os_timer
+                    .is_some_and(|timer| timer.is_event(event).is_some()))
+        {
+            if self
+                .os_timer
+                .is_some_and(|timer| timer.is_event(event).is_some())
+            {
+                // One-shot polling avoids an orphan repeating timer when the
+                // owning widget is dropped while the OS dialog is open.
+                self.os_timer = Some(cx.start_timeout(0.2));
+            }
+            let owner = self.approval_owner();
+            let result = self.review_window(cx).and_then(|window| {
+                self.request
+                    .as_mut()
+                    .ok_or("The native review is no longer pending".to_owned())?
+                    .poll_os_approval(cx, window, &owner, self.os_pending.as_mut().unwrap())
+            });
+            match result {
+                Ok(false) => {}
+                Ok(true) => {
+                    self.stop_authentication(cx);
+                    self.submitting(cx);
+                }
+                Err(error) => {
+                    self.stop_authentication(cx);
+                    self.view.label(cx, ids!(status)).set_text(cx, &error);
+                    self.view.button(cx, ids!(approve)).set_enabled(cx, true);
+                }
+            }
         }
         if !self.finished {
             if let Some(result) = self.request.as_ref().and_then(ReviewRequest::result) {
@@ -278,6 +412,7 @@ impl Widget for ConnectedReplyReview {
             self.trusted_down = makepad_platform::trusted_user_input();
         }
         if self.view.button(cx, ids!(cancel)).clicked(&actions) {
+            self.stop_authentication(cx);
             if let Some(mut request) = self.request.take() {
                 let _ = request.cancel();
             }
@@ -285,6 +420,27 @@ impl Widget for ConnectedReplyReview {
         }
         if approve.clicked(&actions) {
             let down = std::mem::take(&mut self.trusted_down);
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            {
+                let _ = down;
+                let owner = self.approval_owner();
+                let result = self.review_window(cx).and_then(|window| {
+                    self.request
+                        .as_ref()
+                        .ok_or("The native review is no longer pending".to_owned())?
+                        .begin_os_approval(cx, window, &owner)
+                });
+                match result {
+                    Ok(pending) => {
+                        self.os_pending = Some(pending);
+                        self.os_timer = Some(cx.start_timeout(0.2));
+                        self.view.label(cx,ids!(status)).set_text(cx,"Complete the operating system authentication prompt. The reviewed content cannot change.");
+                        approve.set_enabled(cx, false);
+                    }
+                    Err(error) => self.view.label(cx, ids!(status)).set_text(cx, &error),
+                }
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
             if let Some(request) = &mut self.request {
                 match request.approve(down, makepad_platform::trusted_user_input()) {
                     Ok(()) => {

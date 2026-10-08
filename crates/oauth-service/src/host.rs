@@ -49,7 +49,7 @@ static AUTHORIZATION_EPOCHS: std::sync::OnceLock<Mutex<AuthorizationEpochs>> =
 fn authorization_epochs() -> &'static Mutex<AuthorizationEpochs> {
     AUTHORIZATION_EPOCHS.get_or_init(|| Mutex::new(AuthorizationEpochs::default()))
 }
-fn authorization_epoch(root: &Path, app: &str) -> u64 {
+pub(crate) fn authorization_epoch(root: &Path, app: &str) -> u64 {
     authorization_epochs()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -256,8 +256,20 @@ pub(crate) fn with_provider_api<T>(
     app: &str,
     run: impl FnOnce(&mut crate::api::Api<'_>) -> Result<T, String>,
 ) -> Result<T, String> {
+    with_provider_api_checked(root, app, || Ok(()), run)
+}
+
+pub(crate) fn with_provider_api_checked<T>(
+    root: &Path,
+    app: &str,
+    check: impl FnOnce() -> Result<(), String>,
+    run: impl FnOnce(&mut crate::api::Api<'_>) -> Result<T, String>,
+) -> Result<T, String> {
     let operation = operation_lock(root, app);
     let _operation = operation.lock().unwrap_or_else(|e| e.into_inner());
+    // Approval cannot be checked before this lock: a queued worker may wait
+    // while logout, account selection or admission revocation invalidates it.
+    check()?;
     let mut store = {
         let _metadata = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         connections(root)?
@@ -929,6 +941,58 @@ content
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+    #[test]
+    fn queued_os_approved_save_rechecks_revocation_after_operation_lock() {
+        let root = std::env::temp_dir().join(format!("approval-queued-{}", Uuid::new_v4()));
+        let app = "org.example.queued";
+        let epoch = authorization_epoch(&root, app);
+        let lock = operation_lock(&root, app);
+        let held = lock.lock().unwrap();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (checked_tx, checked_rx) = std::sync::mpsc::channel();
+        let worker_root = root.clone();
+        let worker = std::thread::spawn(move || {
+            entered_tx.send(()).unwrap();
+            with_provider_api_checked(
+                &worker_root,
+                app,
+                || {
+                    checked_tx.send(()).unwrap();
+                    if authorization_epoch(&worker_root, app) != epoch {
+                        Err("Approval revoked while queued".into())
+                    } else {
+                        Ok(())
+                    }
+                },
+                |_| -> Result<(), String> {
+                    panic!("A revoked approval must never reach the provider")
+                },
+            )
+        });
+        entered_rx.recv().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Arc::strong_count(&lock) < 2 {
+            assert!(
+                Instant::now() < deadline,
+                "Worker did not reach the operation lock"
+            );
+            std::thread::yield_now();
+        }
+        assert!(
+            matches!(
+                checked_rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ),
+            "Approval was checked before acquiring its execution lock"
+        );
+        invalidate_authorizations(&root, app);
+        drop(held);
+        assert_eq!(
+            worker.join().unwrap().unwrap_err(),
+            "Approval revoked while queued"
+        );
+        checked_rx.recv().unwrap();
+    }
     #[test]
     fn removing_or_selecting_an_account_invalidates_only_its_authorization_scope() {
         let mut epochs = AuthorizationEpochs::default();

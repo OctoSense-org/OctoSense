@@ -8129,6 +8129,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "chrono-tz",
+ "dbus",
  "keyring",
  "makepad-widgets",
  "oauth2",
@@ -8140,6 +8141,8 @@ dependencies = [
  "sha2 0.10.9",
  "url",
  "uuid",
+ "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-future 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
