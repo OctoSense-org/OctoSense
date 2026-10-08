@@ -728,8 +728,11 @@ fn viewport_moved(lat, lon, zoom){
 // A press that isn't a place (zoomed far out, MapView can report a
 // longitude past 180) does nothing. An answer for an older press or a card
 // that has since closed is dropped; without one the card stays "Dropped
-// pin" with the coordinates.
+// pin" with the coordinates. A Save pressed before the answer saved the
+// dropped pin: the named place takes its entry, so one pin stays and the
+// card stays "Saved".
 fn map_long_pressed(lat, lon){
+    app_target = nil   // a press on the map ends Maps' flight
     if screen != "search" && screen != "place" { return }
     if !is_a_place({lat: lat lon: lon}) { return }
     place = {id: "" name: "Dropped pin" cat: "" label: coords_text(lat, lon) lat: lat lon: lon}
@@ -740,8 +743,13 @@ fn map_long_pressed(lat, lon){
     let found = photon_hits(body)
     if found == nil || found.len() == 0 { return }
     let h = found[0]
+    let pressed = place
     place = {id: h.id name: h.name cat: h.cat label: h.label lat: lat lon: lon}
-    fill_place()
+    if is_saved(saved, pressed) {
+        saved = with_saved(without_saved(saved, pressed), place)
+        fs.write(data_path("saved.json"), saved.to_json())
+    }
+    fill_place()   // its sync_save reads `saved` as just updated
     // Directions may already be open: its "To" names the place too.
     if screen == "route" { ui.rto.set_text(place.name) }
     show_pins()

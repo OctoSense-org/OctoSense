@@ -1373,6 +1373,75 @@ log.to_json()"#
     );
 }
 
+#[test]
+fn maps_keeps_a_place_saved_when_save_came_before_the_long_press_answer() {
+    // Save pressed while Photon is still answering saves "Dropped pin"; the
+    // answer's place takes its entry, at the pressed point: one saved place,
+    // named, its card still "Saved", and one pin.
+    let code = r#"let cafe = {status_code: 200 body: 'CAFE'}
+fn file(){ return list_in(optional(mod.files, "accounts/device/saved.json", "")) }
+let log = []
+show("search")
+mod.answers = [cafe]
+mod.during = fn() {
+    toggle_save()
+    log.push([mod.texts["save"] file()])
+}
+map_long_pressed(37.3349, -121.8851)
+log.push([mod.texts["pname"] mod.texts["save"] saved file() mod.markers[mod.markers.len() - 1]])
+close_place()
+log.push(mod.markers[mod.markers.len() - 1])
+log.to_json()"#
+        .replace("CAFE", CAFE_HERE);
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let dropped = serde_json::json!({"id": "", "name": "Dropped pin", "cat": "", "label": "37.3349, -121.8851",
+        "lat": 37.3349, "lon": -121.8851});
+    let cafe = serde_json::json!({"id": "N:21", "name": "Corner Cafe", "cat": "Cafe",
+        "label": "Market Street, San Jose, California", "lat": 37.3349, "lon": -121.8851});
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["Saved", [dropped]],
+            ["Corner Cafe", "Saved", [cafe], [cafe], "37.3349,-121.8851,2"],
+            "37.3349,-121.8851,1"
+        ])
+    );
+}
+
+#[test]
+fn maps_gives_a_saved_places_pin_to_the_long_pressed_card_and_the_press_ends_maps_flight() {
+    // A long press ends Maps' own flight, as a tap does, wherever it lands:
+    // the map's next report is the person's. When Photon names a saved
+    // place, that place's pin gives way to the open card's, at the pressed
+    // point, and comes back when the card closes.
+    let code = r#"let cafe = {status_code: 200 body: 'CAFE'}
+saved = [{id: "N:21" name: "Corner Cafe" cat: "Cafe" label: "Market Street" lat: 37.33478 lon: -121.88512}]
+let log = []
+show("search")
+fly(37.5, -121.5, 14)
+map_long_pressed(95, 1)
+log.push(app_target)
+fly(37.5, -121.5, 14)
+mod.answers = [cafe]
+mod.during = fn() { log.push(mod.markers[mod.markers.len() - 1]) }
+map_long_pressed(37.3349, -121.8851)
+log.push([app_target place.name mod.texts["save"] mod.markers[mod.markers.len() - 1] shown_pins.len()])
+close_place()
+log.push(mod.markers[mod.markers.len() - 1])
+log.to_json()"#
+        .replace("CAFE", CAFE_HERE);
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            null,
+            "37.33478,-121.88512,1;37.3349,-121.8851,2",
+            [null, "Corner Cafe", "Saved", "37.3349,-121.8851,2", 1],
+            "37.33478,-121.88512,1"
+        ])
+    );
+}
+
 /// What a step drew on the browse map and on the drive's maps, in order
 /// (CARD_STUBS' `mod.browse` and `mod.drive`), for the route tests.
 const ROUTE_STEPS: &str = r#"let pizza = {id: "" name: "Pizza" cat: "" label: "" lat: 37.1 lon: -121.1}
