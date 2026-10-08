@@ -37,6 +37,30 @@ report('loaded');setInterval(()=>report('heartbeat'),250);
 </script>'''
 
 
+def replace_command(staged, destination, process):
+    """Keep atomic publication, allowing brief Windows file-sharing collisions."""
+    deadline = time.monotonic() + 2.0
+    last_error = None
+    while True:
+        if process is not None:
+            status = process.poll()
+            if status is not None:
+                raise AssertionError(
+                    f'Native host exited while publishing a command (status {status})'
+                ) from last_error
+        try:
+            staged.replace(destination)
+            return
+        except OSError as error:
+            if os.name != 'nt' or getattr(error, 'winerror', None) not in (5, 32, 33):
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise  # Preserve the terminal filesystem error on expiry.
+            last_error = error
+            time.sleep(min(.025, remaining))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, required=True)
@@ -124,7 +148,7 @@ def main():
         sequence += 1
         staged = root / 'command.next'
         staged.write_text(json.dumps({'id': sequence, 'op': operation, **fields}), encoding='utf-8')
-        staged.replace(root / 'command.json')
+        replace_command(staged, root / 'command.json', process)
         wait(lambda: any(e.get('kind') == 'command' and e.get('id') == sequence for e in events()), operation)
         assert any(e.get('id') == sequence and e.get('accepted') for e in events()), operation
         return sequence
