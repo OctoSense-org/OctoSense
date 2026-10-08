@@ -165,6 +165,20 @@ fn convert(args: &Json, host_dir: &Path) -> Result<Json, String> {
     Ok(json!({"out": out, "warnings": [opened["warnings"], saved["warnings"]]}))
 }
 
+/// Engine commands `run` refuses. photocraft's plug-in registry is
+/// process-wide and takes WebAssembly from in-band `data`, which the
+/// engine's workspace policy does not cover: an installed plug-in would
+/// outlive the call, serve every later caller of any app, and run under
+/// photocraft's own budgets (60 s, 512 MiB), far above the shell's `wasm`
+/// service (ADR 0011). Agents install WebAssembly only through that
+/// service; nothing they need lives under `plugin.*`.
+fn callable(id: &str) -> Result<(), String> {
+    if id == "plugin" || id.starts_with("plugin.") {
+        return Err(format!("photo.run: `{id}` is not available through the photo service"));
+    }
+    Ok(())
+}
+
 fn run(args: &Json, host_dir: &Path) -> Result<Json, String> {
     let path = arg_path(args, "path")?;
     let cmds = args["cmds"].as_array().ok_or("photo.run: `cmds` is a list of {id, params?}")?;
@@ -176,6 +190,7 @@ fn run(args: &Json, host_dir: &Path) -> Result<Json, String> {
     let mut results = Vec::new();
     for c in cmds {
         let id = c["id"].as_str().ok_or("photo.run: each command has an `id`")?;
+        callable(id)?;
         let params = if c["params"].is_null() { json!({}) } else { c["params"].clone() };
         let r = h.command_run(id, params).map_err(|e| format!("photo.run {id}: {e}"))?;
         results.push(json!({"id": id, "result": r}));
@@ -191,8 +206,22 @@ fn run(args: &Json, host_dir: &Path) -> Result<Json, String> {
     Ok(json!({"results": results, "out": saved}))
 }
 
+/// The catalog `run` accepts: the engine's own, minus the refused
+/// `plugin.*` ids ([`callable`]), so the offer matches the gate.
 fn commands() -> Result<Json, String> {
-    Ok(Headless::new().command_list())
+    let keep = |items: Vec<Json>| -> Vec<Json> {
+        items.into_iter().filter(|c| c["id"].as_str().map_or(true, |id| callable(id).is_ok())).collect()
+    };
+    Ok(match Headless::new().command_list() {
+        Json::Array(items) => Json::Array(keep(items)),
+        Json::Object(mut map) => {
+            if let Some(Json::Array(items)) = map.remove("commands") {
+                map.insert("commands".into(), Json::Array(keep(items)));
+            }
+            Json::Object(map)
+        }
+        other => other,
+    })
 }
 
 fn render(args: &Json, host_dir: &Path) -> Result<Json, String> {
@@ -263,6 +292,28 @@ mod tests {
     fn only_system_apps_may_call() {
         assert!(may_call("os.photos"));
         assert!(!may_call("org.example.app"));
+    }
+
+    /// The plug-in registry is process-wide and installs WebAssembly from
+    /// in-band data: `run` refuses every `plugin.*` id before the engine
+    /// sees it, and the catalog offer matches the gate.
+    #[test]
+    fn run_refuses_plugin_commands_and_the_catalog_omits_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path();
+        let input = fixture(host);
+        for id in ["plugin.install", "plugin.run", "plugin.list", "plugin.remove", "plugin.reload"] {
+            let r = dispatch("run", &json!({"path": input, "cmds": [{"id": id, "params": {"data": "AGFzbQEAAAA="}}]}), host);
+            let e = r.unwrap_err();
+            assert!(e.contains("not available"), "{id}: {e}");
+        }
+        // A refused id refuses the whole call, even behind an allowed one.
+        let r = dispatch("run", &json!({"path": input, "cmds": [{"id": "filter.blur.gaussianBlur", "params": {"radius": 1.0}}, {"id": "plugin.install", "params": {"data": "AGFzbQEAAAA="}}]}), host);
+        assert!(r.unwrap_err().contains("not available"));
+        let cat = commands().unwrap();
+        let items = cat.as_array().cloned().or_else(|| cat["commands"].as_array().cloned()).unwrap();
+        assert!(items.iter().all(|c| c["id"].as_str().map_or(true, |id| !id.starts_with("plugin"))), "no plugin ids offered");
+        assert!(items.len() > 500, "a real catalog remains");
     }
 
     /// The engine works in its own area under the shared host directory,
