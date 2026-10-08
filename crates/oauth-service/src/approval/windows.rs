@@ -245,10 +245,7 @@ pub(super) fn pump(challenge_id: &str) {
             return;
         }
     }
-    let available = availability
-        .GetResults()
-        .map_err(|_| "Windows Hello availability returned no valid result".to_owned())
-        .and_then(availability_result);
+    let available = availability_query_result(availability.GetResults());
     if let Err(error) = available {
         request.completion.finish(Err(error));
         return;
@@ -279,6 +276,14 @@ fn availability_result(result: UserConsentVerifierAvailability) -> Result<(), St
         }
         _ => Err("Windows Hello availability is unknown".into()),
     }
+}
+
+fn availability_query_result(
+    result: webview2_windows::core::Result<UserConsentVerifierAvailability>,
+) -> Result<(), String> {
+    result
+        .map_err(|_| "Windows Hello availability returned no valid result".to_owned())
+        .and_then(availability_result)
 }
 
 fn request_verification(
@@ -417,6 +422,74 @@ mod tests {
         }
         assert!(availability_result(UserConsentVerifierAvailability(-1)).is_err());
         assert!(availability_result(UserConsentVerifierAvailability(99)).is_err());
+    }
+
+    /// Opt in on a real Windows runner. This checks native availability only;
+    /// it never calls RequestVerificationForWindowAsync or authenticates anyone.
+    #[test]
+    #[ignore = "requires native Windows WinRT; availability only, no Hello prompt"]
+    fn native_windows_hello_availability_without_prompt() {
+        use std::time::{Duration, Instant};
+        use webview2_windows::Win32::UI::WindowsAndMessaging::{
+            DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+        };
+        ensure_winrt().expect("Initialize the availability probe STA");
+        let operation = match UserConsentVerifier::CheckAvailabilityAsync() {
+            Ok(operation) => operation,
+            Err(error) => {
+                let code = error.code().0;
+                assert!(availability_query_result(Err(error)).is_err());
+                println!(
+                    "WINDOWS_HELLO_AVAILABILITY query_error={code} authentication_attempted=false"
+                );
+                return;
+            }
+        };
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            match operation.Status() {
+                Ok(AsyncStatus::Started) => {}
+                Ok(AsyncStatus::Completed) => {
+                    let result = operation.GetResults();
+                    let available = result
+                        .as_ref()
+                        .is_ok_and(|value| *value == UserConsentVerifierAvailability::Available);
+                    let code = result.as_ref().map(|value| value.0).unwrap_or(-1);
+                    assert_eq!(availability_query_result(result).is_ok(), available);
+                    println!("WINDOWS_HELLO_AVAILABILITY result={code} available={available} authentication_attempted=false");
+                    return;
+                }
+                Ok(status) => {
+                    assert_ne!(status, AsyncStatus::Completed);
+                    println!("WINDOWS_HELLO_AVAILABILITY terminal_status={} authentication_attempted=false", status.0);
+                    return;
+                }
+                Err(error) => {
+                    let code = error.code().0;
+                    assert!(availability_query_result(Err(error)).is_err());
+                    println!("WINDOWS_HELLO_AVAILABILITY status_error={code} authentication_attempted=false");
+                    let _ = operation.Cancel();
+                    return;
+                }
+            }
+            if Instant::now() >= deadline {
+                let _ = operation.Cancel();
+                panic!("Native Windows Hello availability did not finish within 15 seconds");
+            }
+            // The bounded STA pump allows native completion messages through
+            // without creating a test window or showing any verification UI.
+            let mut message = MSG::default();
+            for _ in 0..64 {
+                if !unsafe { PeekMessageW(&mut message, None, 0, 0, PM_REMOVE) }.as_bool() {
+                    break;
+                }
+                unsafe {
+                    let _ = TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]
