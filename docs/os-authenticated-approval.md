@@ -66,7 +66,7 @@ revocation while queued behind another account operation. Linux native tests als
 verify that the real adapter refuses to start when the required system policy is
 absent. No system policy is installed for that test.
 
-The opt-in Windows availability test calls the actual OS API without requesting
+The [native refusal receipt](../tools/connected-e2e/evidence/os-approval-native.json) records 97 passing Windows tests and the real OS result: Windows Hello was unavailable and no authentication was attempted. The opt-in availability test calls the actual OS API without requesting
 verification. It records an availability result or API refusal; an `Available`
 result is **not** authenticated approval. The Windows workflow runs this test and
 the adapter's refusal/cancellation tests.

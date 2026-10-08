@@ -48,7 +48,7 @@ OctoSense 先检查可用性，再将提示绑定到准确的宿主 HWND；只�
 等待账户操作锁期间超时或撤销的审批。Linux 原生测试还验证实际适配器在缺少系统策略时
 不能启动审批；测试不安装系统策略。
 
-可选 Windows 可用性测试调用真实 OS API，但不请求身份验证，只记录可用性或 API 拒绝；
+[原生拒绝记录](../tools/connected-e2e/evidence/os-approval-native.json) 包含 97 项通过的 Windows 测试和真实 OS 结果：Windows Hello 不可用，未尝试身份验证。可选 Windows 可用性测试调用真实 OS API，但不请求身份验证，只记录可用性或 API 拒绝；
 `Available` **不代表**认证审批通过。Windows 工作流执行该测试及适配器拒绝/取消测试。
 
 仍**未经验证**：用户完成 polkit 或 Windows Hello 对话框、成功执行准确审阅的合成业务写入、
