@@ -67,6 +67,8 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `cargo test --locked -p octosense-film-service`.
   The effect engine's (effectcraft behind `effect.*`, same ADR, no bundle yet):
   `apps/effect/host-service` and `cargo test --locked -p octosense-effect-service`.
+  The vector engine's (vectorcraft behind `vector.*`, same ADR, no bundle yet):
+  `apps/vector/host-service` and `cargo test --locked -p octosense-vector-service`.
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.

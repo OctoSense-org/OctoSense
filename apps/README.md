@@ -55,6 +55,12 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   project info, comp frames rendered to PNG, the engine's command catalog
   and Lottie import/export, every file under the caller's `effect/` area;
   no bundle yet.
+- **The vector engine service** (`vector/host-service`,
+  `octosense-vector-service`) runs the pinned vectorcraft engine headless
+  behind `vector.*` (ADR 0013): inspect, convert, draw by engine commands and
+  render vector documents (SVG, PDF, EPS, DXF, raster) inside its own
+  `vector/` area of the caller's host directory; system apps only, no bundle
+  yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
