@@ -33,7 +33,7 @@ index 3f1c917b0..31ef7b1fd 100644
      fn set_route_coords(&mut self, coords0: Vec<(f64, f64)>) {
          self.pts.clear();
 diff --git a/widgets/src/map/view.rs b/widgets/src/map/view.rs
-index 566940e86..1eb0c1a38 100644
+index 566940e86..04d1cc4e1 100644
 --- a/widgets/src/map/view.rs
 +++ b/widgets/src/map/view.rs
 @@ -1,5 +1,6 @@
@@ -166,7 +166,18 @@ index 566940e86..1eb0c1a38 100644
                      }
                  } else if self.gesture_panned {
                      self.gesture_panned = false;
-@@ -5351,9 +5419,14 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -5337,7 +5405,9 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+             Hit::FingerHoverIn(_) => {
+                 cx.set_cursor(MouseCursor::Grab);
+             }
+-            Hit::FingerScroll(fs) => {
++            // A wheel a scroll view over the map already took (a list in a
++            // panel) is not the map's: a wheel's hits ignore claims.
++            Hit::FingerScroll(fs) if !scroll_taken(event) => {
+                 let scroll = if fs.scroll.y.abs() > f64::EPSILON {
+                     fs.scroll.y
+                 } else {
+@@ -5351,9 +5421,14 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
          }
      }
  
@@ -184,7 +195,7 @@ index 566940e86..1eb0c1a38 100644
      fn script_call(
          &mut self,
          vm: &mut ScriptVm,
-@@ -5369,6 +5442,13 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
+@@ -5369,6 +5444,13 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
              }
              vm.bx.heap.cast_to_owned_string(value, "nav method argument")
          }
@@ -198,7 +209,7 @@ index 566940e86..1eb0c1a38 100644
          if method == live_id!(set_nav_polyline) {
              if let Some(s) = first_string_arg(vm, args) {
                  if !s.trim().is_empty() && s.as_str() != self.nav_polyline.as_ref() {
-@@ -5427,6 +5507,35 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
+@@ -5427,6 +5509,35 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
              }
              return ScriptAsyncResult::Return(NIL);
          }
@@ -234,7 +245,7 @@ index 566940e86..1eb0c1a38 100644
          ScriptAsyncResult::MethodNotFound
      }
  
-@@ -8579,6 +8688,15 @@ fn touch_world_rel(&self, abs: Vec2d) -> Vec2d {
+@@ -8579,6 +8690,15 @@ fn touch_world_rel(&self, abs: Vec2d) -> Vec2d {
          }
      }
  
@@ -250,7 +261,7 @@ index 566940e86..1eb0c1a38 100644
      fn begin_two_finger_gesture(&mut self, pair: TouchPair) {
          self.fly = None;
          self.drag_start_abs = None;
-@@ -8655,10 +8773,10 @@ fn handle_touch_tap(&mut self, cx: &mut Cx, abs: Vec2d, tap_count: u32) {
+@@ -8655,10 +8775,10 @@ fn handle_touch_tap(&mut self, cx: &mut Cx, abs: Vec2d, tap_count: u32) {
          } else if let Some((lon, lat, info)) = self.pin_at(abs) {
              cx.widget_action(self.uid, MapViewAction::PinTapped { lon, lat, info });
          } else if let Some(id) = self.overlay.marker_at(&self.overlay_camera(), abs) {
@@ -263,7 +274,7 @@ index 566940e86..1eb0c1a38 100644
          }
      }
  
-@@ -11184,14 +11302,32 @@ fn sync_camera_fields(&mut self) {
+@@ -11184,14 +11304,32 @@ fn sync_camera_fields(&mut self) {
      }
  
      fn emit_viewport_changed(&mut self, cx: &mut Cx) {
@@ -304,7 +315,7 @@ index 566940e86..1eb0c1a38 100644
      }
  
      /// Screen point → map coordinate: the exact inverse of the camera that
-@@ -12003,8 +12139,10 @@ pub fn set_map_zoom(&mut self, cx: &mut Cx, zoom: f64) {
+@@ -12003,8 +12141,10 @@ pub fn set_map_zoom(&mut self, cx: &mut Cx, zoom: f64) {
  
      /// Animated camera flight; far targets get a zoom-out-then-in arc so
      /// tiles stay loadable mid-flight and the motion reads like every
@@ -316,7 +327,7 @@ index 566940e86..1eb0c1a38 100644
          let min_zoom = self.min_zoom.max(0.0);
          let max_zoom = self.max_zoom.max(min_zoom);
          let to_zoom = zoom.clamp(min_zoom, max_zoom);
-@@ -12090,8 +12228,17 @@ pub fn set_route(&mut self, cx: &mut Cx, points: &[(f64, f64)]) {
+@@ -12090,8 +12230,17 @@ pub fn set_route(&mut self, cx: &mut Cx, points: &[(f64, f64)]) {
          self.redraw(cx);
      }
  
@@ -334,7 +345,7 @@ index 566940e86..1eb0c1a38 100644
          self.redraw(cx);
      }
  
-@@ -12112,6 +12259,25 @@ pub fn set_puck(&mut self, cx: &mut Cx, puck: Option<MapPuck>) {
+@@ -12112,6 +12261,25 @@ pub fn set_puck(&mut self, cx: &mut Cx, puck: Option<MapPuck>) {
          self.nav.owns_puck = false;
          self.redraw(cx);
      }
@@ -360,7 +371,20 @@ index 566940e86..1eb0c1a38 100644
  }
  
  impl MapViewRef {
-@@ -13601,6 +13767,318 @@ fn http_archive_waiting_for_dispatch_has_no_enqueue_watchdog() {
+@@ -12416,6 +12584,12 @@ fn label_class_color(color_class: u8, default_color: Vec4f, dark_theme: bool) ->
+     }
+ }
+ 
++/// Whether a scroll view the event reached first (one drawn over the map)
++/// already used this wheel.
++fn scroll_taken(event: &Event) -> bool {
++    matches!(event, Event::Scroll(e) if e.handled_x.get() || e.handled_y.get())
++}
++
+ #[cfg(test)]
+ // Native map tests use wall-clock values only to make temporary paths unique.
+ #[allow(clippy::disallowed_types, clippy::disallowed_methods)]
+@@ -13601,6 +13775,339 @@ fn http_archive_waiting_for_dispatch_has_no_enqueue_watchdog() {
          assert!(map.local_requested_tiles.contains_key(&key));
          assert!(map.archive_pending_tiles.contains_key(&key));
      }
@@ -620,6 +644,27 @@ index 566940e86..1eb0c1a38 100644
 +    }
 +
 +    #[test]
++    fn a_wheel_a_list_over_the_map_took_does_not_zoom_it() {
++        use crate::makepad_platform::event::{ScrollEvent, ScrollPhase};
++        use std::cell::Cell;
++        let wheel = |handled_y: bool| {
++            Event::Scroll(ScrollEvent {
++                window_id: WindowId(1, 1),
++                scroll: dvec2(0.0, 40.0),
++                abs: dvec2(100.0, 100.0),
++                modifiers: KeyModifiers::default(),
++                handled_x: Cell::new(false),
++                handled_y: Cell::new(handled_y),
++                is_mouse: true,
++                time: 0.0,
++                phase: ScrollPhase::None,
++            })
++        };
++        assert!(!scroll_taken(&wheel(false)), "a free wheel is the map's");
++        assert!(scroll_taken(&wheel(true)), "a wheel a list scrolled is not");
++    }
++
++    #[test]
 +    fn map_actions_reach_a_script_lat_first() {
 +        let tap = MapViewAction::Tapped { lon: -121.9, lat: 37.3, abs: dvec2(5.0, 6.0) };
 +        assert_eq!(map_script_event(&tap).map(|e| e.args()), Some(vec![37.3, -121.9]));
@@ -679,7 +724,7 @@ index 566940e86..1eb0c1a38 100644
  }
  
  
-@@ -13627,13 +14105,37 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
+@@ -13627,13 +14134,37 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
                  .map(|(i, &(lat, lon, k))| MapMarker::new(i as u64 + 1, lon, lat, marker_color(k)))
                  .collect();
          }
@@ -718,7 +763,7 @@ index 566940e86..1eb0c1a38 100644
          if self.nav.home_zoom <= 0.0 {
              self.nav.home_zoom = self.zoom;
          }
-@@ -13713,32 +14215,47 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
+@@ -13713,32 +14244,47 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
      /// PLAN route-preview camera: static, north-up, fit to the WHOLE route,
      /// framed into the top band above the card's summary sheet.
      fn nav_plan_camera(&mut self, rect: Rect) {
