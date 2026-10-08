@@ -83,7 +83,8 @@ fn cache_path(name){ return moved(name, "cache/" + name) }
 // A GET that names Maps, as the free OpenStreetMap services ask: a promise
 // of the response, or of nil when the request failed. A request the runtime
 // refuses outright (a host off the manifest's list) raises instead of
-// calling on_error; uncaught, it would leave the caller waiting for good.
+// calling on_error; uncaught, the raise would end `search_for` before its
+// await, and "Searching…" would stay on screen for good.
 fn fetch(url){
     let p = promise()
     let sent = try {
@@ -163,7 +164,8 @@ fn has_id(list, id){
 // Photon's GeoJSON as places {id name cat label lat lon}: nil when the answer
 // is not Photon's (an error page, an error message), [] when nothing matched.
 // `id` is OpenStreetMap's "N:123", "W:…" or "R:…", or "". The label is the
-// address parts the name does not already say, each once.
+// address parts the name does not already say, each once. A feature whose
+// coordinates are not a place (`is_a_place`) is left out.
 fn photon_hits(body){
     let feats = optional(body.parse_json(), "features", nil)
     if feats == nil || !feats.is_array() { return nil }
@@ -171,7 +173,12 @@ fn photon_hits(body){
     for f in feats {
         let p = optional(f, "properties", nil)
         let c = optional(optional(f, "geometry", nil), "coordinates", nil)
-        if p == nil || c == nil || !c.is_array() || c.len() < 2 { continue }
+        if p == nil || c == nil || !c.is_array() { continue }
+        // GeoJSON's [lon, lat], each read safely: text, null or a bare `NaN`
+        // or `inf` reads nil, and a bare word read as it is would raise.
+        let lat = number_of(c, 1)
+        let lon = number_of(c, 0)
+        if !is_a_place({lat: lat lon: lon}) { continue }
         let name = text_of(p, "name")
         let street = text_of(p, "street")
         let address = false
@@ -194,7 +201,7 @@ fn photon_hits(body){
         let id = ""
         if text_of(p, "osm_type") != "" && text_of(p, "osm_id") != "" { id = text_of(p, "osm_type") + ":" + text_of(p, "osm_id") }
         if id != "" && has_id(out, id) { continue }
-        out.push({id: id name: name cat: category(text_of(p, "osm_key"), text_of(p, "osm_value")) label: label lat: c[1] lon: c[0]})
+        out.push({id: id name: name cat: category(text_of(p, "osm_key"), text_of(p, "osm_value")) label: label lat: lat lon: lon})
     }
     out
 }
@@ -502,16 +509,17 @@ fn search_for(text){
 // The list under the search box. On the search screen it is closed until the
 // box is tapped or a search is made, and a tap or drag on the map closes it.
 // It closes by hiding: a render that emits nothing keeps the rows it had,
-// so with the box empty it opens only when Saved or Recent has a row to
-// show. Choosing a start or a stop keeps its list open, with "‹ Back to
-// route".
+// so with the box empty it shows only when Saved or Recent has a row to
+// show. Choosing a start or a stop keeps its list open, under the way back
+// ("‹ Back to route").
 fn show_results(open){
     list_open = open
     let any = q != "" || listed(saved).len() > 0 || listed(recents).len() > 0
-    ui.results.set_visible((open && any) || screen != "search")
+    ui.results.set_visible((open || screen != "search") && any)
 }
-// A row's place: a search hit, or a Saved or Recent entry (`listed`, so its
-// name and coordinates are there), copied with every field of a place.
+// A row's place: a search hit (`photon_hits`) or a Saved or Recent entry
+// (`listed`), so its name and coordinates are there; copied with every
+// field of a place, which an entry from an older build may lack.
 fn pick(row){
     let p = as_place(row)
     if finding == "stop" {
@@ -679,6 +687,8 @@ fn show(s){
         if s == "origin" { ui.search_hint.set_text("Choose a start") }
         else if s == "stop" { ui.search_hint.set_text("Add a stop") }
         else { ui.search_hint.set_text("Where to?") }
+        ui.finding_links.set_visible(s != "search")
+        ui.your_location.set_visible(s == "origin")
         ui.results.render()
     }
     show_results(s != "search")
@@ -807,25 +817,32 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                     draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
                 }
             }
-            results := View{width: Fill height: Fit flow: Down on_render: || {
-                if screen == "origin" { Link{text: "◎  Your location" on_click: || use_my_location()} }
-                if screen == "origin" || screen == "stop" { Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }} }
+            // Choosing a start or a stop: the way back, above the list so it
+            // never scrolls out of sight (the list keeps its place).
+            finding_links := View{visible: false width: Fill height: Fit flow: Down
+                your_location := Link{text: "◎  Your location" on_click: || use_my_location()}
+                Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }}
+            }
+            // A long list scrolls (Saved has no cap and sits above Recent): at
+            // most half the app's height, so the panel still fits with the way
+            // back above it. A drag on a row scrolls; a tap picks.
+            results := ScrollYView{width: Fill height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.5}} flow: Down on_render: || {
                 if search_state == "loading" { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 13} }
                 else if search_state == "failed" { Label{text: "Search isn't available right now." draw_text.color: secondary draw_text.text_style.font_size: 13} }
                 else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 13} }
-                for i h in hits { if i < 6 { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label} } }
+                for i h in hits { if i < 6 { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label label.visible: h.label != ""} } }
                 // With the box empty: Saved above Recent, each only with a
                 // row to show. An entry that isn't a named place has none.
                 if q == "" {
                     let saved_rows = listed(saved)
                     if saved_rows.len() > 0 {
                         Label{text: "Saved" draw_text.color: secondary draw_text.text_style.font_size: 13}
-                        for s in saved_rows { HitRow{on_tap: |x, y| pick(s) name.text: text_of(s, "name") label.text: text_of(s, "label")} }
+                        for s in saved_rows { HitRow{on_tap: |x, y| pick(s) name.text: text_of(s, "name") label.text: text_of(s, "label") label.visible: text_of(s, "label") != ""} }
                     }
                     let recent_rows = listed(recents)
                     if recent_rows.len() > 0 {
                         Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 13}
-                        for r in recent_rows { HitRow{on_tap: |x, y| pick(r) name.text: text_of(r, "name") label.text: text_of(r, "label")} }
+                        for r in recent_rows { HitRow{on_tap: |x, y| pick(r) name.text: text_of(r, "name") label.text: text_of(r, "label") label.visible: text_of(r, "label") != ""} }
                     }
                 }
             }}

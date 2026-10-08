@@ -65,6 +65,9 @@ fn maps_tells_no_places_from_a_bad_answer() {
 
 /// Address parts that contain one another, names the label must not repeat,
 /// a street, and hits missing a name, a street, a city or an OpenStreetMap id.
+/// Then features whose coordinates aren't a place: text (numbers as text
+/// too), null, 0,0, a latitude of 95 or a longitude of 181, bare `NaN` and
+/// `inf`, and a single number.
 const ODD_PHOTON: &str = concat!(
     r#"{"type":"FeatureCollection","features":["#,
     r#"{"geometry":{"coordinates":[-94.58,39.1]},"properties":{"osm_type":"R","osm_id":1,"osm_key":"place","osm_value":"city","name":"Kansas City","city":"Kansas City","state":"Kansas","country":"United States"}},"#,
@@ -73,7 +76,16 @@ const ODD_PHOTON: &str = concat!(
     r#"{"geometry":{"coordinates":[13.32,52.46]},"properties":{"osm_type":"N","osm_id":4,"osm_key":"amenity","osm_value":"townhall","name":"Rathaus","street":"Berliner Straße","city":"Berlin","country":"Deutschland"}},"#,
     r#"{"geometry":{"coordinates":[-121.89,37.33]},"properties":{"osm_type":"W","osm_id":5,"osm_key":"highway","osm_value":"residential","name":"Market Street","city":"San Jose"}},"#,
     r#"{"geometry":{"coordinates":[-119.79,36.74]},"properties":{"osm_type":"N","osm_key":"place","osm_value":"town","city":"Fresno","state":"California","country":"United States"}},"#,
-    r#"{"geometry":{"coordinates":[-117.1,38.5]},"properties":{"osm_key":"natural","osm_value":"peak","state":"Nevada"}}"#,
+    r#"{"geometry":{"coordinates":[-117.1,38.5]},"properties":{"osm_key":"natural","osm_value":"peak","state":"Nevada"}},"#,
+    r#"{"geometry":{"coordinates":["a","b"]},"properties":{"osm_type":"N","osm_id":6,"name":"Text"}},"#,
+    r#"{"geometry":{"coordinates":["-121.9","37.3"]},"properties":{"osm_type":"N","osm_id":7,"name":"Number text"}},"#,
+    r#"{"geometry":{"coordinates":[null,null]},"properties":{"osm_type":"N","osm_id":8,"name":"Null"}},"#,
+    r#"{"geometry":{"coordinates":[0,0]},"properties":{"osm_type":"N","osm_id":9,"name":"Zero"}},"#,
+    r#"{"geometry":{"coordinates":[1,95]},"properties":{"osm_type":"N","osm_id":10,"name":"North"}},"#,
+    r#"{"geometry":{"coordinates":[181,1]},"properties":{"osm_type":"N","osm_id":11,"name":"East"}},"#,
+    r#"{"geometry":{"coordinates":[NaN,inf]},"properties":{"osm_type":"N","osm_id":12,"name":"Bare words"}},"#,
+    r#"{"geometry":{"coordinates":[1,NaN]},"properties":{"osm_type":"N","osm_id":13,"name":"Half NaN"}},"#,
+    r#"{"geometry":{"coordinates":[1]},"properties":{"osm_type":"N","osm_id":14,"name":"One"}}"#,
     r#"]}"#
 );
 
@@ -97,6 +109,8 @@ fn maps_reads_odd_photon_answers() {
              "label": "California, United States", "lat": 36.74, "lon": -119.79},
             {"id": "", "name": "Unnamed place", "cat": "Peak",
              "label": "Nevada", "lat": 38.5, "lon": -117.1}
+            // Nothing from the features that aren't places, and no raise
+            // (`maps_model` fails on any): one would leave "Searching…" up.
         ])
     );
     // Photon's own error message and a malformed answer are not "no places";
@@ -481,6 +495,11 @@ let log = []
 // With the box empty and nothing in Saved or Recent, there is no list to open.
 show_results(true)
 log.push(mod.visible)
+// Nor when their files hold only entries that show no row.
+saved = list_in('[3,{"lat":37.1,"lon":-121.1}]')
+recents = list_in('[inf,{"name":"X"}]')
+show_results(true)
+log.push(mod.visible)
 // A recent place the list can show (a nameless or unplaced entry has no row).
 recents = [{name: "A" lat: 37.1 lon: -121.1}]
 // Opened while Maps flies to the fix: its landing leaves the list open and
@@ -510,6 +529,13 @@ mod.visible = "untouched"
 map_tapped(1, 2)
 viewport_moved(3, 4, 15)
 log.push(mod.visible)
+// Choosing a start with nothing in Saved or Recent: no list under the way
+// back, which sits above it (a render of nothing would keep old rows).
+screen = "origin"
+saved = []
+recents = []
+show_results(true)
+log.push(mod.visible)
 // MapView would ignore a flight to a point that isn't a place.
 fly(0, 0, 14)
 [log mod.flights seen].to_json()"#,
@@ -517,7 +543,7 @@ fly(0, 0, 14)
     assert_eq!(
         out,
         serde_json::json!([
-            [false, [true, false], [false, true], false, null, false, "untouched"],
+            [false, false, [true, false], [false, true], false, null, false, "untouched", false],
             [[37.7749, -122.4194, 14], [40.7128, -74.006, 15]],
             {"lat": 3, "lon": 4}
         ])
@@ -596,6 +622,63 @@ for s in listed(disk) {
 }
 
 #[test]
+fn maps_opens_a_recent_place_from_an_older_build_with_every_field() {
+    // A recent place from before ids has no `id`, `cat` or `label`. Its tap
+    // opens the card, which reads each field (`place.cat` raises on a missing
+    // one), and remembers it whole. `ui`, `host`, `sys` and `fs` stubbed.
+    let out = maps_model(
+        r#"mod.texts = {}
+mod.writes = []
+fn text_field(id){ return {set_text: fn(t) { mod.texts[id] = t }} }
+let widget = {set_visible: fn(v) {} set_text: fn(t) {} render: fn() {}}
+let ui = {results: widget search_panel: widget place_panel: widget route_panel: widget browse_box: widget
+    locate_box: widget drive_box: widget drive_bar: widget browse_map: widget
+    pname: text_field("pname") pcat: text_field("pcat") paddr: text_field("paddr") peta: widget}
+let host = {has: fn(capability) { false }}
+let sys = {gps: fn(field) { 0 } navroute: fn(a, b, c, d, field, v) { "—" }}
+let fs = {exists: fn(path) { true } write: fn(path, data) { mod.writes.push([path data]) }}
+recents = list_in('[{"name":"Old Recent","lat":37.335,"lon":-121.885}]')
+for r in listed(recents) { pick(r) }
+[screen place mod.texts mod.writes.len() mod.writes[0][0] mod.writes[0][1].parse_json()].to_json()"#,
+    );
+    let old = serde_json::json!({"id": "", "name": "Old Recent", "cat": "", "label": "", "lat": 37.335, "lon": -121.885});
+    assert_eq!(
+        out,
+        serde_json::json!([
+            "place", old, {"pname": "Old Recent", "pcat": "", "paddr": ""},
+            1, "accounts/device/recents.json", [old]
+        ])
+    );
+}
+
+#[test]
+fn maps_keeps_the_way_back_above_the_list_while_choosing_a_start_or_a_stop() {
+    // The list scrolls, and keeps its place when the screen changes: "◎ Your
+    // location" and "‹ Back to route" sit above it, so they never scroll
+    // out of sight. `ui`, `host` and `sys` stubbed.
+    let out = maps_model(
+        r#"mod.shown = {}
+fn shown(id){ return {set_visible: fn(v) { mod.shown[id] = v }} }
+let widget = {set_visible: fn(v) {} set_text: fn(t) {} render: fn() {}}
+let ui = {results: widget search: widget search_hint: widget search_panel: widget place_panel: widget
+    route_panel: widget browse_box: widget locate_box: widget drive_box: widget drive_bar: widget
+    finding_links: shown("finding_links") your_location: shown("your_location")}
+let host = {has: fn(capability) { false }}
+let sys = {gps: fn(field) { 0 }}
+let log = []
+for s in ["origin" "stop" "search"] {
+    show(s)
+    log.push([s mod.shown["finding_links"] mod.shown["your_location"]])
+}
+log.to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([["origin", true, true], ["stop", true, false], ["search", false, false]])
+    );
+}
+
+#[test]
 fn maps_remembers_a_place_once_and_the_last_eight() {
     // Recent places: the newest last, once by name, at most 8. Entries from
     // a broken file (a bare `inf` first, a place without a name, text, null,
@@ -641,7 +724,8 @@ mod.during = nil
 let widget = {set_visible: fn(v) {} set_text: fn(text) {} render: fn() {}}
 let ui = {results: {set_visible: fn(v) {mod.visible = v} render: fn() {}}
     search: widget search_hint: widget search_panel: widget place_panel: widget route_panel: widget
-    browse_box: widget locate_box: widget drive_box: widget drive_bar: widget}
+    browse_box: widget locate_box: widget drive_box: widget drive_bar: widget
+    finding_links: widget your_location: widget}
 let host = {has: fn(capability) { false }}
 let sys = {gps: fn(field) { 0 }}
 let net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
@@ -674,6 +758,7 @@ fn maps_shows_only_the_newest_searchs_answer_and_leaves_the_list_as_the_person_l
 let places = {status_code: 200 body: 'PHOTON_BODY'}
 let none = {status_code: 200 body: '{"features":[]}'}
 let busy = {status_code: 503 body: 'PHOTON_BODY'}
+let missing = {status_code: 404 body: 'PHOTON_BODY'}
 let bodiless = {status_code: 200 body: nil}
 let page = {status_code: 200 body: '<html>busy</html>'}
 let log = []
@@ -706,10 +791,13 @@ log.push(state())
 log.push(screen)
 screen = "search"
 finding = ""
-// No answer, an HTTP error, no body, not Photon's, or a request the runtime
-// refused: search isn't available. Photon with no places: none found.
-mod.answers = [nil busy bodiless page "refused" none]
+// No answer, an HTTP error (503, or a 404 whose page reads like Photon's),
+// no body, not Photon's, or a request the runtime refused: search isn't
+// available. Photon with no places: none found.
+mod.answers = [nil busy missing bodiless page "refused" none]
 let outcomes = []
+search_for("Pizza")
+outcomes.push(search_state)
 search_for("Pizza")
 outcomes.push(search_state)
 search_for("Pizza")
@@ -736,12 +824,12 @@ log.push(outcomes)
                 ["Pizza", "done", 2, false, false],
                 ["", "", 0, true, true],
                 "origin",
-                ["failed", "failed", "failed", "failed", "failed", ["done", 0]]
+                ["failed", "failed", "failed", "failed", "failed", "failed", ["done", 0]]
             ],
             "https://photon.komoot.io/api/?q=Pizza&limit=8&lang=en&lat=40.7128&lon=-74.006",
             "OctoSense-Maps/1.0",
             // An emptied box asks for nothing.
-            12
+            13
         ])
     );
 }
