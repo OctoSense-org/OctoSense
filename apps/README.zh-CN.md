@@ -33,6 +33,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在宿主目录自己的 `deck/` 子目录内；尚无 bundle。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`

@@ -38,6 +38,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   speech, embedding and asynchronous video requests. Apps declare `model` and
   exact host API versions; provider entitlement is checked when used. See the
   [media contract and validation limits](ai-providers/host-service/MEDIA.md).
+- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the host directory's own `deck/` corner; no bundle yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link

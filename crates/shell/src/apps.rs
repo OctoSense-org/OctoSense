@@ -288,6 +288,9 @@ pub fn register_host_services() {
         // The word engine service (ADR 0013): wordcraft behind `word.*`.
         #[cfg(feature = "app-hub")]
         octosense_word_service::register();
+        // The deck engine service (ADR 0013): deckcraft behind `deck.*`.
+        #[cfg(feature = "app-hub")]
+        octosense_deck_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();
