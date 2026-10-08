@@ -4,6 +4,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+**Desktop download:** [OctoSense 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) supports the current App Hub catalog, GitHub-attested app releases and shared host APIs. Choose the asset for your operating system and architecture; the release notes record prerequisites, signing status and platform validation. This desktop release does not update Android Home.
+
 Run the [live Mail → card → Calendar demo](docs/demos/mail-calendar/README.md) with your own mailbox: pinned source, selective policy, fictional test inputs, human draft edits and Calendar navigation.
 
 OctoSense is an agent shell that runs on top of an ordinary operating system. On screen it is a launcher and apps that look like the ones you know. Behind them, one AI kernel runs a **system agent** that works for the person and an **app agent** for each app that has one. Agents reach apps, and risky actions reach the person, only through the shell.
@@ -16,7 +18,7 @@ saved state and actual interaction; phone-size previews remain separate from dev
 
 | Product | What it is | Where |
 | --- | --- | --- |
-| **OctoSense desktop** | The shell as one Makepad window on macOS (Windows and Linux untested) | [`desktop/`](desktop/README.md) |
+| **OctoSense desktop** | The shell as one Makepad window on macOS, Windows or Linux; platform requirements and validation are recorded in the release notes | [`desktop/`](desktop/README.md) |
 | **OctoSense Home** | The phone shell, an ordinary Home app for any Android phone (also OpenHarmony and the iOS simulator) | [`phone/`](phone/README.md) |
 | **OctoSense ROM** | LineageOS 22.2 for the OnePlus 6 with Home, the privileged system bridge, Quickstep and SystemUI preinstalled | [`rom/`](rom/README.md) |
 
@@ -44,9 +46,9 @@ Android Home supports page swipes from either side edge; apps and opened cards r
 
 To read the code in order, start with [From an app window to an agent turn](docs/architecture-walkthrough.md). The [product walkthrough](desktop/docs/code-walkthrough.md) adds how to run each product.
 
-Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** Existing beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
+Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** The RC1 and older beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
 
-App Hub in this source build defaults to the GitHub-attested catalog and supports
+App Hub in desktop RC1 and this source build defaults to the GitHub-attested catalog and supports
 `publisher-github-v1` releases through app-contract 1.8.0. Developers request
 publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml);
 GitHub release proofs replace separate developer signing keys, while a Hub admin
@@ -54,7 +56,7 @@ still approves admission. The first catalog fetch needs a network connection;
 an old offline catalog is not converted into a GitHub proof. Custom local test
 catalogs can explicitly select `OCTOSENSE_HUB_CATALOG=legacy` with a fresh app-data
 directory; a library with a v2 cache refuses that downgrade. Beta.2 does not
-support this publishing mode; a compatible packaged release is pending.
+support this publishing mode; use desktop RC1 for these app releases.
 
 ## How it fits together
 
@@ -274,7 +276,7 @@ An agent can only work with what its app hands it. A script app declares all of 
 
 - **A declaration.** The manifest's `agent` block names the kernel tools the agent may use (the system apps ask only for `ask_user_question`), the model features it needs (`tool_calling`) and, optionally, an `AGENT.md` with instructions and skills, which the shell sends with every turn. A native app's entry also says which of its tools its own agent may call (`own_tools`) and which the system agent may call (`system_tools`).
 - **Tools.** `tools.json` describes each tool, named `<app>.<tool>`: its input schema, its `risk` (`read`, `act` or `destructive`), who confirms it (`confirm: host` for a shell sheet, `app` for the app's own sheet) and whether other apps' agents may use it (`shareable`).
-- **Something to run the tools.** A declared tool needs an executor: the app's host service (Mail, Calendar, News), the shell's notice service (`<app>.notify` for the other system apps) or a native app's open window. A store app has no host service of its own, but `host_method` can map one of its tools to a reviewed method of a shared service (`inbox.message` → `gmail.message`); the tool then runs on that service as the app ([architecture.md §4](docs/architecture.md#the-relay)). A tool marked `implemented_by: "app"` runs in the app's own Splash code, and only while the app is open. That is on `main` but in no release yet: `desktop-v0.1.0-beta.2` refuses such a call with `app_tool_unavailable`.
+- **Something to run the tools.** A declared tool needs an executor: the app's host service (Mail, Calendar, News), the shell's notice service (`<app>.notify` for the other system apps) or a native app's open window. A store app has no host service of its own, but `host_method` can map one of its tools to a reviewed method of a shared service (`inbox.message` → `gmail.message`); the tool then runs on that service as the app ([architecture.md §4](docs/architecture.md#the-relay)). In desktop RC1, a tool marked `implemented_by: "app"` runs in the app's own Splash code while the app is open, with `requires: ["script-tools-v1"]`; a closed app returns `app_not_running`. The older `desktop-v0.1.0-beta.2` refuses such a call with `app_tool_unavailable`.
 - **Data.** The agent works in its account's folder, `apps/<app id>/accounts/<account hash>/` (a single `device` folder for an app without accounts), and reads it with the host's read-only `files.list`, `files.read` and `files.search` (on Unix). A script app can declare `storage.agent_workspace: "none"` to give its agent no folder, so it sees only what its tools return; a native app's agent gets its folder either way. No agent sees another account's folder.
 - **Memory.** Each agent has its own memory namespace, `app/<app>/acct-<hash>`, erased with the account.
 - **A way to reach the person.** With the `glance` permission, its tools can publish cards.

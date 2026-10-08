@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+**Download:** [desktop 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) is the compatible release for the current App Hub catalog and GitHub-attested app bundles. Choose the package for your operating system and architecture; check its release notes and checksums. Embedded pages also need the [platform browser prerequisites](../docs/desktop-embedded-browser.md#runtime-requirements).
+
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
 > **Where this fits.** The desktop is one shell process with the octos kernel as its child (the packaged `octos-kernel`, or `OCTOS_APP_CORE_BIN`). App Hub, the Card runner with the script apps, and Rinx run in process; the Terminal runs as its own process, in an OS sandbox on macOS and Linux (not yet on Windows), attached over the shell's hub. On macOS that sandbox keeps `~/.cargo`, `~/.rustup` and the OctoSense checkout read-only, so run `cargo install`, `rustup update` and builds of OctoSense itself in another terminal. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
@@ -76,8 +78,8 @@ Developer programs from `config/apps.json` build on first launch (progress shows
 
 | Platform | Status |
 | --- | --- |
-| macOS | Supported and validated (source builds, process hosting, App Hub, system apps). |
-| Windows, Linux | Code paths are retained from upstream but not validated here. |
+| macOS | Source and packaged-app builds, process hosting, App Hub and system apps have native validation. RC1 public sample install/update/restart checks are recorded in its release evidence. |
+| Windows, Linux | CI package builds and payload privacy scans pass. [Embedded-browser checks](../docs/desktop-embedded-browser.md) and [synthetic backend/browser/vault checks](../tools/connected-e2e/README.md#native-backend-browser-acceptance-2026-10-08) passed at their recorded source revisions. Windows/Linux installer GUI acceptance remains unverified. |
 | Android | `cargo makepad android run -p octosense --release`; see [Phones](#phones). |
 | iOS | Startup policy is tested, but a full build currently fails in the pinned Makepad Metal backend ([validation](docs/validation.md)). |
 
@@ -460,12 +462,14 @@ Results for each change are recorded in [docs/validation.md](docs/validation.md)
 
 ## Known gaps
 
-- Only macOS is validated. Windows and Linux are untested; the iOS build fails in the pinned Metal backend.
-- Source builds (`cargo run`) read fonts and resources from the `.sources/makepad` checkout, so keep it in place; [release builds](#release-builds) carry their own. Release packages are unsigned until the `release` environment has the signing secrets, and the Windows and Linux packages are built in CI but not run by us.
+- Windows/Linux package builds and focused native tests do not establish installer GUI acceptance or a complete desktop UX soak. The iOS build still fails in the pinned Metal backend.
+- Ordinary embedded pages need GTK 3 and WebKitGTK 4.1 (or compatible 4.0) on Linux X11/XWayland, or a supported WebView2 Runtime on Windows. Neither engine is bundled; see [runtime requirements](../docs/desktop-embedded-browser.md#runtime-requirements). Native Wayland embedding and Windows/Linux embedded backend authentication remain unsupported; backend login there uses the external browser.
+- Protected connected-account writes still fail closed on Windows/Linux because trusted native approval is unavailable. The packages do not include Google/GitHub OAuth client registrations; an operator must configure the host before users can sign in ([account service](../crates/oauth-service/README.md#current-delivery-boundary)).
+- Source builds (`cargo run`) read fonts and resources from the `.sources/makepad` checkout, so keep it in place; [release builds](#release-builds) carry their own. RC1 packages have no Apple Developer ID signature/notarization or Windows publisher signature; the release notes distinguish local macOS builds from tagged CI packages.
 - Photos on desktop has thumbnails only unless you mount a photo directory.
 - The hosted AppCard assistant does not yet wire notifications, share or the WebView overlay.
 - Mobile Sheets needs grid-label and toolbar fixes ([BACKLOG.md](BACKLOG.md)).
-- No `makepad_test` UI suite; CI compiles but does not test.
+- Native host-API and embedded-browser fixtures provide focused CI checks; they are not a complete `makepad_test` suite or UI soak of every app.
 
 ## Contributing
 

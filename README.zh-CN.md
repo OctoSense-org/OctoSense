@@ -4,6 +4,8 @@
 
 [English](README.md) | 简体中文
 
+**桌面版下载：**[OctoSense 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) 支持当前 App Hub 目录、带 GitHub 证明的应用发布包及共享宿主 API。请选择与操作系统和架构对应的文件；运行前置条件、签名状态和各平台验收范围见发布说明。此桌面版本不会更新 Android Home。
+
 用自己的邮箱[复现真实邮件 → 卡片 → Calendar 演示](docs/demos/mail-calendar/README.zh-CN.md)：固定源码版本、重要邮件策略、虚构测试输入、人工修改草稿和日历跳转。
 
 OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看，它就是你熟悉的启动器和应用；在它们背后，一个 AI 内核运行着为用户做事的**系统 Agent**，以及每个应用各自的**应用 Agent**。Agent 要动用应用、有风险的操作要找用户，都只能经过 Shell。
@@ -14,7 +16,7 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 | 产品 | 是什么 | 位置 |
 | --- | --- | --- |
-| **OctoSense 桌面端** | 在 macOS 上作为一个 Makepad 窗口运行的 Shell（Windows 和 Linux 未经测试） | [`desktop/`](desktop/README.zh-CN.md) |
+| **OctoSense 桌面端** | 在 macOS、Windows 或 Linux 上作为一个 Makepad 窗口运行的 Shell；各平台要求和验收范围见发布说明 | [`desktop/`](desktop/README.zh-CN.md) |
 | **OctoSense Home** | 手机 Shell，可作为普通 Home 应用安装在任意 Android 手机上（也支持 OpenHarmony 和 iOS 模拟器） | [`phone/`](phone/README.zh-CN.md) |
 | **OctoSense ROM** | 面向 OnePlus 6 的 LineageOS 22.2，预装 Home、具有系统权限的系统桥、Quickstep 和 SystemUI | [`rom/`](rom/README.zh-CN.md) |
 
@@ -42,14 +44,14 @@ Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使
 
 想按顺序读源码，请从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充了各个产品的运行方式。
 
-连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** 现有 beta.2 下载包未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
+连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC1 和较早的 beta.2 下载包均未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
 
-此源码构建中的 App Hub 默认使用带 GitHub 证明的目录，并通过应用契约 1.8.0 支持
+桌面版 RC1 和此源码构建中的 App Hub 默认使用带 GitHub 证明的目录，并通过应用契约 1.8.0 支持
 `publisher-github-v1` 发布包。开发者通过[提交 App Hub issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)
 申请发布；GitHub 发布证明取代单独的开发者签名密钥，仍须由 Hub 管理员批准准入。
 首次获取目录需要网络连接，旧的离线目录不会被转换成 GitHub 证明。自定义本地测试
 目录可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2
-缓存的应用库会拒绝这种降级。beta.2 不支持此发布模式，兼容的发行包尚待发布。
+缓存的应用库会拒绝这种降级。beta.2 不支持此发布模式；请用桌面版 RC1 安装这类应用发布包。
 
 ## 整体如何运作
 
@@ -269,7 +271,7 @@ Agent 能做什么，取决于应用交给它什么。脚本应用把这些都�
 
 - **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
-- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。标为 `implemented_by: "app"` 的工具由应用自己的 Splash 代码执行，并且只在应用打开时可用。这项能力已在 `main` 上，但尚未进入任何发布版本：`desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝这类调用。
+- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。在桌面版 RC1 中，声明了 `requires: ["script-tools-v1"]` 的应用打开期间，标为 `implemented_by: "app"` 的工具由应用自己的 Splash 代码执行；应用关闭时返回 `app_not_running`。较早的 `desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝这类调用。
 - **数据。** Agent 在它所属账户的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账户的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账户的文件夹。
 - **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账户一起清除。
 - **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。

@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+**下载：**[桌面版 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) 支持当前 App Hub 目录和带 GitHub 证明的应用包。请选择与操作系统和架构对应的文件，并核对发布说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
+
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
 [OctoSense](https://github.com/OctoSense-org)（运行在操作系统之上的 Agent 交互 Shell）的桌面端 Shell，也是 OctoSense 仓库中的桌面端打包（原为 OctoSense-Desktop 仓库）。它是一个 Makepad 窗口，这个窗口本身就是桌面：launcher、dock 和平铺窗格（tile）。系统应用和 App Hub 商店应用以隔离的脚本程序运行，受信任的原生模块在进程内运行，Makepad 开发者程序作为子进程运行。它获取应用的方式与手机 Shell [Home](../phone/README.zh-CN.md) 完全相同。环境准备、仓库结构和 CI 见[根目录 README](../README.zh-CN.md)。
@@ -76,8 +78,8 @@ cargo run --release -p octosense
 
 | 平台 | 状态 |
 | --- | --- |
-| macOS | 已支持并验证（源码构建、进程托管、App Hub、系统应用）。 |
-| Windows、Linux | 保留了上游的代码路径，但未在此验证。 |
+| macOS | 源码及应用包构建、进程托管、App Hub 和系统应用均有原生验收。RC1 公开示例的安装、更新和重启检查见发布证据。 |
+| Windows、Linux | CI 打包及包内内容隐私扫描已通过。[内嵌浏览器检查](../docs/desktop-embedded-browser.zh-CN.md)和[合成后端、浏览器、凭据库检查](../tools/connected-e2e/README.md#native-backend-browser-acceptance-2026-10-08)在各自记录的源码版本上通过；Windows/Linux 安装器 GUI 验收仍未进行。 |
 | Android | `cargo makepad android run -p octosense --release`；见[手机](#手机)。 |
 | iOS | 启动策略已测试，但完整构建目前在固定版本 Makepad 的 Metal 后端中失败（[验证记录](docs/validation.md)）。 |
 
@@ -457,12 +459,14 @@ python3 desktop/scripts/smoke.py --cargo-run --default-catalog
 
 ## 已知不足
 
-- 只在 macOS 上验证过。Windows 和 Linux 未测试；iOS 构建在固定版本的 Metal 后端中失败。
-- 源码构建（`cargo run`）从 `.sources/makepad` 检出中读取字体和资源，所以请保留该检出；[发布构建](#发布构建)自带资源。在 `release` 环境配置签名密钥之前，发布包都是未签名的；Windows 和 Linux 包在 CI 中构建，但我们没有实际运行过。
+- Windows/Linux 打包及有限范围的原生测试不代表安装器 GUI 验收，也不代表完整桌面 UX 长时间测试。iOS 构建仍在固定版本的 Metal 后端中失败。
+- 普通内嵌网页在 Linux X11/XWayland 上需要 GTK 3 和 WebKitGTK 4.1（或兼容的 4.0），在 Windows 上需要受支持的 WebView2 Runtime。发行包不附带这些引擎，见[运行条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。原生 Wayland 内嵌浏览器及 Windows/Linux 内嵌后端登录仍不支持；后两者的后端登录使用外部浏览器。
+- Windows/Linux 尚无受信任的原生审批，因此受保护的已连接账户写操作仍会被拒绝。发行包不含 Google/GitHub OAuth 客户端注册信息，运营方须先配置宿主，用户才能登录（[账户服务](../crates/oauth-service/README.zh-CN.md#当前交付边界)）。
+- 源码构建（`cargo run`）从 `.sources/makepad` 检出中读取字体和资源，所以请保留该检出；[发布构建](#发布构建)自带资源。RC1 发行包没有 Apple Developer ID 签名、公证或 Windows 发布者签名；发布说明会区分本机 macOS 构建与标签 CI 构建。
 - 桌面端的相册只有缩略图，除非挂载照片目录。
 - 托管的 AppCard 助手尚未接通通知、分享和 WebView 覆盖层。
 - 手机上的 Sheets 需要修复网格标签和工具栏（[BACKLOG.md](BACKLOG.md)）。
-- 没有 `makepad_test` UI 测试套件；CI 只编译不测试。
+- 原生宿主 API 和内嵌浏览器 fixture 提供有限范围的 CI 检查，并非完整的 `makepad_test` 套件或每个应用的 UI 长时间测试。
 
 ## 参与贡献
 
