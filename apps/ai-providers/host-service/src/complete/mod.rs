@@ -67,6 +67,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub mod ledger;
+pub mod media;
 pub mod schema;
 pub mod wire;
 
@@ -393,6 +394,9 @@ impl Transport for Http {
 /// Whether an app was granted `model` (`app id`, the Card runner's host
 /// directory).
 pub type Grants = Arc<dyn Fn(&str, &Path) -> bool + Send + Sync>;
+/// Host-derived active account scope, never taken from script arguments.
+/// Called on the UI dispatch path: this must be a cheap in-memory snapshot.
+pub type Scope = Arc<dyn Fn(&str, &Path) -> Option<String> + Send + Sync>;
 
 /// Milliseconds since the Unix epoch.
 pub type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
@@ -437,6 +441,10 @@ pub struct Options {
     /// Where the ledger lives before the first call names the host dir.
     pub ledger_path: Option<PathBuf>,
     pub clock: Option<Clock>,
+    /// Media HTTP transport, separate from the legacy chat-only POST transport.
+    pub media_transport: Option<Arc<dyn media::Transport>>,
+    pub media_limits: Option<media::Limits>,
+    pub scope: Option<Scope>,
 }
 
 impl Options {
@@ -473,6 +481,8 @@ pub struct ModelHost {
     transport: Arc<dyn Transport>,
     ledger: Mutex<Ledger>,
     clock: Clock,
+    media: media::State,
+    scope: Scope,
 }
 
 /// Why one attempt's reply was refused.
@@ -492,6 +502,8 @@ impl ModelHost {
             transport: options.transport.clone().unwrap_or_else(|| Arc::new(Http)),
             ledger: Mutex::new(ledger),
             clock: options.clock.clone().unwrap_or_else(|| Arc::new(system_clock)),
+            media: media::State::new(options),
+            scope: options.scope.clone().unwrap_or_else(|| Arc::new(|_, _| Some("device".into()))),
         }
     }
 
@@ -518,6 +530,12 @@ impl ModelHost {
     /// One call for `app`, blocking (run it off the UI thread). The caller
     /// has checked that `app` may call at all.
     pub fn complete(&self, app: &str, request: Request) -> Result<Completion, Refusal> {
+        self.complete_while(app, request, || true)
+    }
+
+    fn complete_while(&self, app: &str, request: Request, active: impl Fn() -> bool) -> Result<Completion, Refusal> {
+        let check = || if active() { Ok(()) } else { Err(Refusal::new(Code::Capability, "The request ended or this app no longer has model access.")) };
+        check()?;
         let schema = request.check()?;
         let candidates = match &self.providers {
             Some(p) => p.candidates().map_err(|e| Refusal { detail: Some(e), ..Refusal::new(Code::NoProvider, "The AI providers could not be read.") })?,
@@ -552,6 +570,7 @@ impl ModelHost {
         for candidate in &ordered {
             let mut note: Option<String> = None;
             for attempt in 1..=ATTEMPTS {
+                check()?;
                 let user = match &note {
                     None => user.clone(),
                     Some(why) => format!(
@@ -565,10 +584,12 @@ impl ModelHost {
                         text
                     }
                     Err(why) => {
+                        check()?;
                         failures.push(why);
                         break; // the next provider
                     }
                 };
+                check()?;
                 match accept(&text, &schema, request.allow_urls) {
                     Ok(output) => {
                         let class = effective_model(&candidate.provider)
@@ -683,6 +704,9 @@ struct ModelService {
 }
 
 impl HostService for ModelService {
+    fn api_methods(&self) -> Vec<octosense_appstore::services::HostApiMethod> {
+        media::catalog()
+    }
     fn family(&self) -> &'static str {
         FAMILY
     }
@@ -695,28 +719,10 @@ impl HostService for ModelService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !(self.grants)(&call.app_id, &call.host_dir) {
-            return reply.send(Err(Refusal::new(Code::Capability, "This app was not granted the model capability.").to_string()));
-        }
-        self.host.attach(&call.host_dir);
-        match call.method() {
-            "budget" => reply.send(Ok(self.host.budget(&call.app_id).to_json())),
-            "complete" => {
-                let request = match Request::from_args(&call.args) {
-                    Ok(r) => r,
-                    Err(refusal) => return reply.send(Err(refusal.to_string())),
-                };
-                let host = self.host.clone();
-                std::thread::spawn(move || {
-                    let answer = host.complete(&call.app_id, request);
-                    if let Err(Refusal { detail: Some(detail), code, .. }) = &answer {
-                        eprintln!("model: {} refused ({}): {detail}", call.app_id, code.as_str());
-                    }
-                    reply.send(answer.map(|c| c.to_reply()).map_err(|r| r.to_string()));
-                });
-            }
-            other => reply.send(Err(Refusal::new(Code::BadRequest, format!("there is no model.{other}")).to_string())),
-        }
+        // The shell's grant callback verifies signed bundle files. Keep that
+        // work, ledger I/O and providers off the UI thread, under one bounded
+        // worker limit for complete, budget and media alike.
+        media::dispatch(self.host.clone(), self.grants.clone(), call, reply);
     }
 }
 

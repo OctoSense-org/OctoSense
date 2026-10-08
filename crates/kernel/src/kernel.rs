@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 use tokio::sync::{mpsc, watch};
 
 use crate::launch::Launch;
-use crate::router::{ConnId, Router};
+use crate::router::{ConnId, Routed, Router, Scope};
 use crate::network::Network;
 use crate::{ClientAccess, CloseReason, LogSink};
 use std::path::PathBuf;
@@ -25,7 +25,8 @@ pub(crate) enum Inbound {
 
 /// Messages to a generation's supervisor.
 pub(crate) enum Ctl {
-    Attach(ConnId, mpsc::UnboundedSender<Inbound>),
+    /// A consumer, held to its scope when it has one (an app's kernel port).
+    Attach(ConnId, mpsc::UnboundedSender<Inbound>, Option<Arc<dyn Scope>>),
     Frame(ConnId, String),
     Detach(ConnId),
     /// Set the system agent's exact kernel tool list again (a grant changed).
@@ -338,7 +339,7 @@ pub(crate) async fn supervise(
                     tokio::select! {
                         biased;
                         msg = ctl.recv() => match msg {
-                            Some(Ctl::Attach(id, tx)) => { router.attach(id); consumers.insert(id, tx); }
+                            Some(Ctl::Attach(id, tx, scope)) => { attach(&mut router, id, scope); consumers.insert(id, tx); }
                             Some(Ctl::Detach(id)) => { router.detach(id); consumers.remove(&id); }
                             Some(Ctl::Stop(reason)) => break Err(reason),
                             Some(frame) => queued.push_back(frame),
@@ -366,17 +367,24 @@ pub(crate) async fn supervise(
                 tokio::select! {
                     biased;
                     msg = async { if queued.is_empty() { ctl.recv().await } else { queued.pop_front() } } => match msg {
-                        Some(Ctl::Attach(id, tx)) => {
-                            router.attach(id);
+                        Some(Ctl::Attach(id, tx, scope)) => {
+                            attach(&mut router, id, scope);
                             consumers.insert(id, tx);
                         }
-                        Some(Ctl::Frame(id, text)) => {
-                            if let Some(frame) = router.consumer_frame(id, &text) {
+                        Some(Ctl::Frame(id, text)) => match router.consumer_frame(id, &text) {
+                            Routed::Kernel(frame) => {
                                 if let Err(e) = write_line(&mut io, &frame).await {
                                     break CloseReason::Exited(format!("writing to the kernel failed: {e}"));
                                 }
                             }
-                        }
+                            Routed::Answer(frame) => {
+                                (log)(&format!("octos-core: kernel {generation}: consumer {id}: {}", crate::router::refusal_note(&frame)));
+                                if let Some(tx) = consumers.get(&id) {
+                                    let _ = tx.send(Inbound::Frame(frame));
+                                }
+                            }
+                            Routed::Drop | Routed::Held => {}
+                        },
                         Some(Ctl::SystemToolList) => {
                             let frame = set_tool_list(&mut tool_lists);
                             if let Err(e) = write_line(&mut io, &frame).await {
@@ -399,10 +407,22 @@ pub(crate) async fn supervise(
                                 (log)(&format!("octos-core: kernel {generation}: the system agent's tool list {outcome}"));
                                 continue;
                             }
-                            for (id, frame) in router.kernel_frame(&text) {
+                            let delivery = router.kernel_frame(&text);
+                            for (id, frame) in delivery.consumers {
                                 if let Some(tx) = consumers.get(&id) {
                                     let _ = tx.send(Inbound::Frame(frame));
                                 }
+                            }
+                            // Frames a session's preparation held, now released.
+                            let mut failed = None;
+                            for frame in delivery.kernel {
+                                if let Err(e) = write_line(&mut io, &frame).await {
+                                    failed = Some(CloseReason::Exited(format!("writing to the kernel failed: {e}")));
+                                    break;
+                                }
+                            }
+                            if let Some(reason) = failed {
+                                break reason;
                             }
                         }
                         Ok(None) => break CloseReason::Exited("the kernel closed its output".into()),
@@ -436,7 +456,7 @@ pub(crate) async fn supervise(
     // whose Attach is still queued.
     ctl.close();
     while let Ok(msg) = ctl.try_recv() {
-        if let Ctl::Attach(id, tx) = msg {
+        if let Ctl::Attach(id, tx, _) = msg {
             consumers.insert(id, tx);
         }
     }
@@ -445,6 +465,13 @@ pub(crate) async fn supervise(
     }
     ended();
     let _ = done.send(true);
+}
+
+fn attach(router: &mut Router, id: ConnId, scope: Option<Arc<dyn Scope>>) {
+    match scope {
+        Some(scope) => router.attach_scoped(id, scope),
+        None => router.attach(id),
+    }
 }
 
 async fn write_line(io: &mut Io, frame: &str) -> std::io::Result<()> {

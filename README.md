@@ -380,6 +380,7 @@ Pinned exactly once, in the root `Cargo.toml` and the runtime locks:
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store, and the Card runner that contains every script app. |
 | [octos](https://github.com/octos-org/octos) | The agent kernel. Android bundles it in the APK as `liboctos.so`; the desktop runs the packaged `octos-kernel` beside the shell, checked against this revision (`tools/kernel-artifact.py --host --stage` builds it). |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, hosted as a native module. |
+| [OctosCode](https://github.com/octos-org/octoscode-app) | The coding client of the person's assistant, hosted as a native module that reaches the kernel through its port in the coding scope (ADR 0003, item 9). |
 
 Related, not build inputs: [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
 

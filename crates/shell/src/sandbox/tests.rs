@@ -54,6 +54,7 @@ fn jail_only(root: &Path, hub_port: u16) -> Policy {
         own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: crate::native_apps::KernelPort::None,
     };
     // The scratch root stands in for the person's home: closed but for the
     // jail. The probe's tools are its program.

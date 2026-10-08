@@ -82,6 +82,7 @@ makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-reminders = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-weather = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
+octoscode-module = { git = "https://github.com/octos-org/octoscode-app.git", rev = "5d0c2a0962218aa94497201ce1a39b7429f09e36", default-features = false, features = ["octosense-module"] }
 makepad-task = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 # END native-apps: pins
 # --- Makepad (OctoSense-org/makepad), the revision Octoscript-Makepad's
@@ -302,6 +303,8 @@ octoscript-schema = { path = ".sources/octoscript/crates/octoscript-schema" }
 octoscript-makepad = { path = ".sources/octoscript-makepad/crates/octoscript-makepad" }
 octoscript-widgets = { path = ".sources/octoscript-makepad/crates/octoscript-widgets" }
 octoscript-node = { path = ".sources/octoscript-makepad/crates/octoscript-node" }
+# OctosCode's cards register their globals through it (octos-org/octoscode-app).
+octoscript-render = { path = ".sources/octoscript-makepad/crates/octoscript-render" }
 
 # Rinx takes the app-peers contract from this repository by git. Redirect
 # it to the same local workspace crates, so the host and module share one

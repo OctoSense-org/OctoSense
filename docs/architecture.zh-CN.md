@@ -113,6 +113,7 @@ flowchart LR
 | Rinx | 模块 | 模块 | 模块 | default / default | 注入的服务 |
 | Terminal | **进程** | 有 Vulkan 和 Wayland 时为**进程**，否则为模块 | 模块 | default / off | peer link；`terminal.run` 归系统 Agent |
 | Calculator、Clock、Notes、Reminders、Weather | 模块 | 模块 | 模块 | default / default | peer link |
+| OctosCode（用户助手的编码客户端） | 模块 | 模块 | 模块 | default / default | 没有自己的 Agent：编码范围内的内核端口（ADR 0003 第 9 条） |
 | Sheets、Reference | 模块 | 模块 | 模块 | opt-in / `mobile-apps` | – |
 | Task（没有模块） | **进程** | **进程** | – | off / off；由桌面端应用目录启动 | – |
 | AppCard | 模块 | 模块 | 模块 | opt-in / opt-in | 自己的内核连接 |
@@ -252,7 +253,7 @@ octos 把系统 Agent 的输入以 `peer/input {peer, session_id, input_id, turn
 
 ### 应用与它自己的 Agent
 
-应用从不直接使用 OUP，也看不到宿主 token；Shell 会在每次调用上标注应用的身份（见[应用如何使用自己的 Agent](../README.zh-CN.md#应用如何使用自己的-agent)）。共有三条路径：
+应用看不到宿主 token；Shell 会在每次调用上标注应用的身份（见[应用如何使用自己的 Agent](../README.zh-CN.md#应用如何使用自己的-agent)）。应用不直接使用 OUP，只有本身就是 octos 客户端的应用（OctosCode）例外：它得到一个内核端口，由 Shell 的路由器按编码范围约束，只能使用它自己的会话和它自己的文件夹，不开监听，也没有 token（[ADR 0003](adr/0003-shared-octos-client-access.md) 第 9 条）。共有三条路径：
 
 | 路径 | 使用者 | 工作方式 |
 | --- | --- | --- |
@@ -432,7 +433,7 @@ Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth
 | 脚本应用 ↔ Shell | Card runner 的隔离环境、jail 和配额；`host.request` 只能访问已授权的服务族 |
 | 原生模块 ↔ Shell | 内存上没有隔离：靠对第一方代码的审查，以及模块边界的 panic 捕获 |
 | 进程应用 ↔ Shell | 独立的地址空间和系统沙箱：macOS 上是 Seatbelt，Linux 上是 Landlock 和 seccomp。**尚未实现：**Windows。 |
-| 应用 ↔ 内核 | 没有应用直接使用 OUP，也没有应用看得到宿主 token |
+| 应用 ↔ 内核 | 没有应用看得到宿主 token。只有 octos 客户端的内核端口使用 OUP，由路由器按编码范围约束（ADR 0003 第 9 条） |
 | peer ↔ peer | octos 为每个 peer 提供独立的工作区（拒绝重叠）、记忆命名空间和对话记录 |
 | Agent ↔ 机密 | 机密在所有 jail 和工作区之外；启动检查 |
 | Agent ↔ 邮件投递 | 没有任何 Agent 工具或生成的卡片能发送：只有用户在宿主的审阅界面上亲手点按批准确切的邮件后才发送；合成输入和远程输入都会被拒绝 |

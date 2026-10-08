@@ -43,7 +43,10 @@ mod kernel;
 mod network;
 pub use network::{connection_file, pairing_link, ClientAccess, Pairing, CONNECTION_FILE, SYSTEM_SESSION};
 pub mod launch;
+mod port;
+pub use port::{Deliver, PortEvent, PortHandle};
 mod router;
+pub use router::{Scope, SCOPE_DENIED};
 pub mod system_tools;
 
 pub use dirs::{kernel_home, profile_path, resolve_core_dir};
@@ -302,13 +305,24 @@ impl Core {
     /// kernel can exist here; a kernel that then fails to start closes the
     /// connection with [`CloseReason::Failed`].
     pub fn connect(&self) -> Result<Connection, Unavailable> {
+        self.connect_with(None)
+    }
+
+    /// [`Core::connect`] for a consumer held to `scope` (an app's kernel
+    /// port): the router checks each of its requests and filters what the
+    /// kernel sends it.
+    pub fn connect_scoped(&self, scope: Arc<dyn Scope>) -> Result<Connection, Unavailable> {
+        self.connect_with(Some(scope))
+    }
+
+    fn connect_with(&self, scope: Option<Arc<dyn Scope>>) -> Result<Connection, Unavailable> {
         let mut st = self.0.state.lock().unwrap();
         let conn = st.next_conn;
         st.next_conn += 1;
         let (tx, rx) = mpsc::unbounded_channel();
         // Join the running generation if it still takes consumers.
         if let Some(current) = st.current.as_mut() {
-            if current.ctl.send(Ctl::Attach(conn, tx.clone())).is_ok() {
+            if current.ctl.send(Ctl::Attach(conn, tx.clone(), scope.clone())).is_ok() {
                 current.connections += 1;
                 return Ok(Connection {
                     core: self.clone(),
@@ -330,7 +344,7 @@ impl Core {
         let (ctl, ctl_rx) = mpsc::unbounded_channel();
         let (done_tx, done_rx) = watch::channel(false);
         let previous = st.last_done.replace(done_rx);
-        ctl.send(Ctl::Attach(conn, tx)).expect("fresh channel");
+        ctl.send(Ctl::Attach(conn, tx, scope)).expect("fresh channel");
         let shared = matches!(launch, Launch::WebSocket { .. });
         let (ready_tx, ready) = watch::channel(None);
         st.current = Some(Generation { id, ctl: ctl.clone(), connections: 1, shared, ready: ready.clone() });
@@ -691,6 +705,16 @@ pub fn is_available() -> bool {
 /// Connect to the process's kernel, starting it if needed.
 pub fn connect() -> Result<Connection, Unavailable> {
     global().connect()
+}
+
+/// [`connect`] held to `scope` ([`Core::connect_scoped`]).
+pub fn connect_scoped(scope: Arc<dyn Scope>) -> Result<Connection, Unavailable> {
+    global().connect_scoped(scope)
+}
+
+/// Serve an app's kernel port on the kernel's runtime ([`Core::serve_scoped`]).
+pub fn serve_scoped(label: &str, scope: Arc<dyn Scope>, up: std::sync::mpsc::Receiver<String>, deliver: Deliver) -> PortHandle {
+    global().serve_scoped(label, scope, up, deliver)
 }
 
 /// The external clients' connection while Talk to Octos is on (host worker

@@ -29,6 +29,9 @@ OctoSense-System-Apps 仓库（已归档）。
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
   密钥只在宿主自己的面板上输入，二维码也只在那里显示；应用只能看到打码后的状态。
+- **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
+  视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
+  [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`

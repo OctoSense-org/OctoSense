@@ -33,7 +33,7 @@ class TheRepository(unittest.TestCase):
         apps = native_apps.load(ROOT)
         self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub",
                                                        "calculator", "clock", "notes", "reminders", "weather",
-                                                       "task"])
+                                                       "octoscode", "task"])
         hosting = {app["id"]: app["hosting"] for app in apps}
         # Terminal is the only app that runs both linked and as a process
         # (ADR 0004 §2); Task has no module and runs only as one.
@@ -228,6 +228,20 @@ class Validation(Fixture):
         self.assertRefused(r"agent\.own_tools names a tool twice")
         terminal["own_tools"] = "terminal.read_screen"
         self.assertRefused(r"agent\.own_tools must be a list of its own tool names")
+
+    def test_only_an_entry_that_names_the_coding_scope_gets_a_kernel_port(self):
+        """`kernel`: an app that is itself an octos client gets the coding
+        scope only when its entry says so (OctosCode's does); any other value
+        is refused."""
+        apps = native_apps.validate(self.data)
+        self.assertEqual([a["id"] for a in apps if "kernel" in a], ["octoscode"], "OctosCode alone asks for a port")
+        rust = native_apps.render_rust(apps)
+        self.assertEqual(rust.count("kernel: KernelPort::Coding,"), 1)
+        self.assertEqual(rust.count("kernel: KernelPort::None,"), len(apps) - 1, "every other entry has none")
+        self.app("calculator")["kernel"] = "coding"
+        self.assertEqual(native_apps.render_rust(native_apps.validate(self.data)).count("kernel: KernelPort::Coding,"), 2)
+        self.app("calculator")["kernel"] = "host"
+        self.assertRefused(r"calculator: kernel must be one of coding")
 
     def test_the_system_agent_gets_only_an_apps_own_shareable_read_tools(self):
         """`agent.system_tools`: what the system agent may call of an app's

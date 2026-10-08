@@ -19,6 +19,10 @@ publish = false
 octosense-appstore = { workspace = true }
 octosense-llm-config = { workspace = true }
 serde_json = "1"
+base64 = "0.22"
+url = { workspace = true }
+uuid = { workspace = true }
+sha2 = "0.10"
 # The provider test: one small HTTPS request on a worker thread.
 ureq = { version = "2", default-features = false, features = ["tls"] }
 # A provider QR read out of a picked or dropped image (src/image_qr.rs): PNG
