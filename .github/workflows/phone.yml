@@ -109,6 +109,11 @@ jobs:
         env:
           # Runs the shell's real-kernel relay test instead of skipping it.
           OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+          # A Splash entry's 64 ms budget is wall-clock time. With ~1,000
+          # tests in one process, an entry waits on shared locks and page
+          # faults, and the budget counts that against the script. These
+          # tests check behaviour, not time (makepad#109).
+          MAKEPAD_SPLASH_BUDGET_MS: "10000"
         run: |
           # octosense-app-hub-app is App Hub's shared shell crate, a git
           # dependency with dev-dependencies: cargo cannot test it from here;
