@@ -1,0 +1,16 @@
+[package]
+name = "wasmlab-functions"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+octosense-guest = { path = "../octosense-guest" }
+serde = { version = "1", features = ["derive"] }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+similar = "2"
+strsim = "0.11"

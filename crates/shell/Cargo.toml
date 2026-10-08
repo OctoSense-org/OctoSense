@@ -72,6 +72,8 @@ octosense-ai-host = { workspace = true }
 octosense-mail-service = { workspace = true, optional = true }
 octosense-oauth-service = { workspace = true, optional = true, features = ["host"] }
 octosense-markdown-editor = { workspace = true, optional = true }
+# Apps' own WebAssembly functions (the `wasm` service, ADR 0011).
+octosense-wasm-host = { workspace = true, optional = true }
 octosense-calendar-service = { workspace = true, optional = true }
 octosense-news-service = { workspace = true, optional = true }
 # App Hub's host-service registry: the `glance` service registers into it.
@@ -159,6 +161,9 @@ app-aichat = ["dep:makepad-aichat"]
 # development builds without it (build.rs); a release build without it
 # honours only the `--dev-grant-all` launch flag.
 dev-mode = []
+# The `wasm` host service (ADR 0011), which runs an app's own
+# WebAssembly functions (crates/wasm-host). Off by default.
+wasm-lab = ["app-hub", "dep:octosense-wasm-host"]
 # The system toolbox offered to app agents as host-routed tools (ADR 0002
 # §6, ADR 0004 §12; src/host_tools/toolbox.rs): the `toolbox` owner in the
 # host-tool relay. Off by default.
