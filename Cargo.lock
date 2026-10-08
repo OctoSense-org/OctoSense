@@ -8206,6 +8206,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-octobuddy"
+version = "0.2.2"
+source = "git+https://github.com/tyreseluo/OctoBuddy.git?rev=9d6f0d82cf0aad3afbe1f9caac075dd22f685186#9d6f0d82cf0aad3afbe1f9caac075dd22f685186"
+dependencies = [
+ "base64 0.22.1",
+ "makepad-app-module",
+ "makepad-terminal",
+ "makepad-widgets",
+ "octosense-app-peers",
+ "octosense-app-policy",
+ "octosense-llm-config",
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "octosense-process-apps"
 version = "0.1.0"
 dependencies = [
@@ -8267,6 +8283,7 @@ dependencies = [
  "octosense-markdown-editor",
  "octosense-news-service",
  "octosense-oauth-service",
+ "octosense-octobuddy",
  "octosense-reference",
  "octosense-wasm-host",
  "rinx",
