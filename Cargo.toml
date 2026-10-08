@@ -89,6 +89,8 @@ makepad-task = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32
 # --- Makepad (OctoSense-org/makepad), the revision Octoscript-Makepad's
 # runtime.json pins (native-runtime.lock.json); resolved to .sources/makepad.
 makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
+# The Splash compute kernel JIT (ADR 0013: sheet.fill lowers formulas onto it).
+makepad-script-compute = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 # The script VM alone: system apps' script tests (News's main.splash).
 makepad-script = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-code-editor = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
@@ -267,6 +269,7 @@ panic = "unwind"
 # tools/setup.py prepares in .sources/ (with the reviewed runtime patch).
 [patch."https://github.com/OctoSense-org/makepad.git"]
 makepad-script = { path = ".sources/makepad/platform/script" }
+makepad-script-compute = { path = ".sources/makepad/platform/script/compute" }
 makepad-widgets = { path = ".sources/makepad/widgets" }
 makepad-code-editor = { path = ".sources/makepad/code_editor" }
 makepad-ai = { path = ".sources/makepad/libs/makepad_ai" }
