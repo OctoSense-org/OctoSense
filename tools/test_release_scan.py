@@ -6,6 +6,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,67 @@ def findings(data, extra=()):
 
 
 class PatternTests(unittest.TestCase):
+    def test_only_proven_octoscode_placeholder_seams_are_ignored(self):
+        themes = b"/home/user/src/octoscode-app/home/user/src/octosSystemSolarizedSlateClaudeCodexLight"
+        folder = b"/home/user/codeUse this folderb1_br_use"
+        for known in (themes, folder):
+            self.assertEqual(findings(known), [])
+            for leak in (known + b"\x00/home/user/private", b"/home/user/private\x00" + known,
+                         known.replace(b"/home/user/", b"/home/someone/", 1),
+                         known[:-1] + b"!"):
+                self.assertTrue(findings(leak), leak)
+            self.assertTrue(findings(known, extra=[r"/home/user/"]))
+        for standalone in (b"/home/user/src/octoscode-app", b"/home/user/src/octos", b"/home/user/code"):
+            self.assertTrue(findings(standalone), standalone)
+
+    def test_exact_public_design_assets_are_not_private_build_data(self):
+        fixture = ROOT / "tools/fixtures/release-scan"
+        for name in ("workspace.card", "browser.json", "pairing.json"):
+            data = (fixture / name).read_bytes()
+            self.assertEqual(findings(data), [], name)
+            self.assertEqual(findings(b"binary prefix\x00" + data + b"\x00binary suffix"), [], name)
+
+    def test_public_asset_exceptions_are_whole_asset_and_match_scoped(self):
+        fixture = ROOT / "tools/fixtures/release-scan"
+        for name in ("workspace.card", "browser.json", "pairing.json"):
+            data = (fixture / name).read_bytes()
+            matches = [m.group(0) for label, regex in scan.compile_patterns(identity=False)
+                       for m in regex.finditer(data)
+                       if label in ("Linux home directory", "private IPv4 address")]
+            self.assertTrue(matches, name)
+            for literal in matches:
+                # An identical private-looking value outside the verified asset
+                # remains a finding, regardless of which occurrence comes first.
+                for combined in (literal + b"private\x00" + data,
+                                 data + b"\x00" + literal + b"private"):
+                    self.assertTrue(findings(combined), name)
+                self.assertTrue(findings(literal + b"private"), name)
+                self.assertTrue(findings(literal), "a standalone identical literal must fail: " + name)
+            self.assertTrue(findings(b"!" + data[1:]), "one altered byte must invalidate " + name)
+            self.assertTrue(findings(data[:-1]), "truncation must invalidate " + name)
+            self.assertTrue(findings(data, extra=[scan.re.escape(matches[0].decode())]), name)
+            identity = [("the scanning account's name", scan.re.compile(scan.re.escape(matches[0])))]
+            out = []
+            scan.scan_bytes(data, "public", identity, out)
+            self.assertTrue(out, "public assets must never suppress identity checks")
+
+    def test_missing_or_malformed_public_asset_metadata_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "release-scan.py"
+            metadata = script.with_name("release-scan-public-assets.json")
+            with mock.patch.object(scan, "__file__", str(script)):
+                try:
+                    scan.public_asset_matches.cache_clear()
+                    with self.assertRaises(FileNotFoundError):
+                        findings(b"/home/user/private")
+                    for invalid in ("{", '{"assets":[{"size":1,"sha256":"invalid","matches":[]}]}'):
+                        metadata.write_text(invalid)
+                        scan.public_asset_matches.cache_clear()
+                        with self.assertRaises(ValueError):
+                            findings(b"/home/user/private")
+                finally:
+                    scan.public_asset_matches.cache_clear()
+
     def test_private_paths_and_hosts_are_found(self):
         for leak in (b"/Users/someone/src/app.rs", b"C:\\Users\\someone\\.cargo", b"c:/Users/someone/x",
                      "C:\\Users\\".encode("utf-16-le"), b"/home/someone/.cargo/registry", b"built on studio.local", b"my-mac.local", b"http://studio.local/api", 

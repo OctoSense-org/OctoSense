@@ -41,6 +41,9 @@ on:
       - 'desktop/packaging/**'
       - 'desktop/scripts/package.py'
       - 'tools/release-scan.py'
+      - 'tools/release-scan-public-assets.json'
+      - 'tools/test_release_scan.py'
+      - 'tools/fixtures/release-scan/**'
       - 'tools/kernel-artifact.py'
       - '.github/workflows/release-desktop.yml'
   workflow_dispatch:

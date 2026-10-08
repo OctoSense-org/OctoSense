@@ -39,11 +39,14 @@ clean. Findings are about the build, not the code: fix them with neutral
 build paths (see desktop/scripts/package.py). The only exceptions are known
 `.local` constants, exact names: the product's own (PRODUCT_LOCAL_NAMES) and
 its dependencies' (DEPENDENCY_LOCAL_NAMES), plus the independently verified
-public-source seams in RINX_SOURCE_SEAM and MAIL_LITERAL_SEAM below.
+public-source seams below and individual synthetic design-example spans
+inside complete assets whose SHA-256 matches release-scan-public-assets.json.
 """
 import argparse
 import getpass
+import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -54,6 +57,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from functools import lru_cache
 
 GENERIC_ACCOUNTS = {"runner", "runneradmin", "root", "admin", "administrator", "user", "builder", "build",
                     "vagrant", "ubuntu", "ec2-user", "github", "ci", "localhost"}
@@ -94,6 +98,18 @@ RINX_SOURCE_SEAM = re.compile(
 # hostname standing alone, or another hostname after the sentence, fails.
 MAIL_LITERAL_SEAM = re.compile(
     rb"Mail service is not (?P<host>registeredattemptssendoctosense\.local)"
+)
+
+# Public OctosCode 5d0c2a0 UI examples pooled by the macOS linker. chrome.rs
+# seed_board2() supplies the two demo workspace paths (2936/2939), next to
+# its theme names (2568-2577). screens/browser.rs supplies the path field
+# placeholder (733/780), button text and ID (736-738). Only the /home/user/
+# match spans inside these complete proven sequences qualify, never those
+# paths standing alone or a different field's private value.
+OCTOSCODE_PLACEHOLDER_SEAMS = (
+    re.compile(rb"(?P<first>/home/user/)src/octoscode-app"
+               rb"(?P<second>/home/user/)src/octosSystemSolarizedSlateClaudeCodexLight"),
+    re.compile(rb"(?P<first>/home/user/)codeUse this folderb1_br_use"),
 )
 
 BASE_PATTERNS = [
@@ -144,7 +160,49 @@ def mask(match):
     return text if len(text) <= 4 else text[:3] + "*" * min(len(text) - 3, 12) + f" ({len(text)} chars)"
 
 
+@lru_cache(maxsize=1)
+def public_asset_matches():
+    """Reviewed public examples, indexed by rule and matched bytes' digest.
+
+    This is deliberately not a path/address allowlist. The whole containing
+    asset must match, and only the recorded offsets for a base rule qualify.
+    Identity and --extra rules never consult this table. Missing or malformed
+    metadata is an error, not permission to skip scanning.
+    """
+    manifest = json.loads(Path(__file__).with_name("release-scan-public-assets.json").read_text())
+    index = {}
+    for asset in manifest["assets"]:
+        size, digest = asset["size"], asset["sha256"]
+        if not isinstance(size, int) or not 0 < size <= 1_000_000 or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("invalid reviewed public asset")
+        for offset, label, match_digest in asset["matches"]:
+            if (not isinstance(offset, int) or not 0 <= offset < size
+                    or label not in ("Linux home directory", "private IPv4 address")
+                    or not re.fullmatch(r"[0-9a-f]{64}", match_digest)):
+                raise ValueError("invalid reviewed public asset match")
+            index.setdefault((label, match_digest), []).append((offset, size, digest))
+    return index
+
+
+def is_public_asset_match(data, label, match, verified):
+    if label not in ("Linux home directory", "private IPv4 address"):
+        return False
+    key = (label, hashlib.sha256(match.group(0)).hexdigest())
+    for offset, size, digest in public_asset_matches().get(key, ()):
+        start = match.start() - offset
+        end = start + size
+        if start < 0 or end > len(data) or match.end() > end:
+            continue
+        candidate = (start, end, digest)
+        if candidate not in verified:
+            verified[candidate] = hashlib.sha256(memoryview(data)[start:end]).hexdigest() == digest
+        if verified[candidate]:
+            return True
+    return False
+
+
 def scan_bytes(data, where, patterns, findings):
+    verified_assets = {}
     for label, regex in patterns:
         source_seams = set()
         if label == "Linux home directory":
@@ -152,11 +210,19 @@ def scan_bytes(data, where, patterns, findings):
                 (seam.start("next") - len(b"/home/main_desktop_ui.rs"), seam.start("next") + 1)
                 for seam in RINX_SOURCE_SEAM.finditer(data)
             }
+            source_seams.update(
+                seam.span(group)
+                for pattern in OCTOSCODE_PLACEHOLDER_SEAMS
+                for seam in pattern.finditer(data)
+                for group in seam.groupdict()
+            )
         elif label == "mDNS .local host name":
             source_seams = {seam.span("host") for seam in MAIL_LITERAL_SEAM.finditer(data)}
         seen = set()
         for m in regex.finditer(data):
             if (m.start(), m.end()) in source_seams:
+                continue
+            if is_public_asset_match(data, label, m, verified_assets):
                 continue
             if m.group(0) in seen:
                 continue
