@@ -116,7 +116,10 @@ fn a_function_gets_its_input_and_returns_its_output() {
 fn a_guest_error_comes_back_as_its_text_and_the_instance_goes_on() {
     let runtime = Runtime::new(limits(), None).unwrap();
     let mut guest = instance(&runtime);
-    assert_eq!(guest.call("fail", b""), Err(CallError::Guest("nope".into())));
+    assert_eq!(
+        guest.call("fail", b""),
+        Err(CallError::Guest("nope".into()))
+    );
     assert!(!guest.spent());
     assert_eq!(guest.call("upper", b"still here").unwrap(), b"STILL HERE");
 }
@@ -252,4 +255,141 @@ fn compiled_code_is_cached_by_digest() {
         b"CACHED"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn table_initial_size_and_growth_have_an_element_cap() {
+    let runtime = Runtime::new(
+        Limits {
+            table_elements: 8,
+            ..limits()
+        },
+        None,
+    )
+    .unwrap();
+    let guest = |initial: usize| {
+        wat::parse_str(format!(
+            r#"(module
+        (memory (export "memory") 1) (table {initial} funcref)
+        (func (export "octo_alloc") (param i32) (result i32) (i32.const 0))
+        (func (export "octo_free") (param i32 i32))
+        (func (export "grow") (param i32 i32) (result i64)
+            (drop (table.grow (ref.null func) (i32.const 9))) (i64.const 1)))"#
+        ))
+        .unwrap()
+    };
+    let program = runtime.load(&guest(9)).unwrap();
+    assert!(
+        runtime.instantiate(&program).is_err(),
+        "initial table must respect the cap"
+    );
+    let program = runtime.load(&guest(1)).unwrap();
+    let error = runtime
+        .instantiate(&program)
+        .unwrap()
+        .call("grow", b"")
+        .unwrap_err();
+    assert!(matches!(error, CallError::Trap(_)), "{error}");
+}
+
+#[test]
+fn guarded_invocations_observe_cancellation_and_the_absolute_deadline() {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    let runtime = Runtime::new(
+        Limits {
+            deadline: Duration::from_secs(2),
+            ..limits()
+        },
+        None,
+    )
+    .unwrap();
+    let program = runtime.load(&wat::parse_str(GUEST).unwrap()).unwrap();
+    assert!(runtime
+        .instantiate_guarded(&program, Instant::now(), || true)
+        .is_err());
+    assert!(runtime
+        .instantiate_guarded(&program, Instant::now() + Duration::from_secs(2), || false)
+        .is_err());
+    let pending = Arc::new(AtomicBool::new(true));
+    let check = pending.clone();
+    let mut instance = runtime
+        .instantiate_guarded(
+            &program,
+            Instant::now() + Duration::from_secs(2),
+            move || check.load(Ordering::Acquire),
+        )
+        .unwrap();
+    let cancel = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(40));
+        pending.store(false, Ordering::Release);
+    });
+    let started = Instant::now();
+    assert_eq!(instance.call("spin", b""), Err(CallError::Deadline));
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "cancellation interrupts active guest code"
+    );
+    cancel.join().unwrap();
+    let mut instance = runtime
+        .instantiate_guarded(&program, Instant::now() + Duration::from_millis(30), || {
+            true
+        })
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(40));
+    assert_eq!(
+        instance.call("spin", b""),
+        Err(CallError::Deadline),
+        "call does not restart an expired budget"
+    );
+}
+
+#[test]
+fn concurrent_compilation_publishes_only_complete_cache_entries() {
+    use std::sync::{Arc, Barrier};
+    let dir =
+        std::env::temp_dir().join(format!("octosense-wasm-cache-race-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let runtime = Arc::new(Runtime::new(limits(), Some(dir.clone())).unwrap());
+    let bytes = Arc::new(wat::parse_str(GUEST).unwrap());
+    let start = Arc::new(Barrier::new(4));
+    let workers: Vec<_> = (0..4)
+        .map(|_| {
+            let (runtime, bytes, start) = (runtime.clone(), bytes.clone(), start.clone());
+            std::thread::spawn(move || {
+                start.wait();
+                let program = runtime.load(&bytes).unwrap();
+                assert_eq!(
+                    runtime
+                        .instantiate(&program)
+                        .unwrap()
+                        .call("upper", b"parallel")
+                        .unwrap(),
+                    b"PARALLEL"
+                );
+            })
+        })
+        .collect();
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    let program = runtime.load(&bytes).unwrap();
+    assert!(program.from_cache());
+    assert_eq!(
+        runtime
+            .instantiate(&program)
+            .unwrap()
+            .call("upper", b"cached")
+            .unwrap(),
+        b"CACHED"
+    );
+    assert!(std::fs::read_dir(&dir).unwrap().all(|entry| entry
+        .unwrap()
+        .path()
+        .extension()
+        .unwrap()
+        == "cwasm"));
+    let _ = std::fs::remove_dir_all(dir);
 }
