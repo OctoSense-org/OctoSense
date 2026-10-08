@@ -1,0 +1,25 @@
+# octosense-word-service — the `word` host service (ADR 0013).
+#
+# wordcraft's document engine behind typed `word.*` methods: inspect a
+# document's statistics and structure, extract plain text, convert between
+# the engine's formats (docx, md, html, rtf, odt, txt, json, pdf, png) and
+# write a minimal new document. Stateless: every call opens, acts and
+# closes. All file access stays inside the caller's `<host dir>/word/`
+# area; the shared `.host` directory holds other services' data.
+[package]
+name = "octosense-word-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/wordcraft revision (ADR 0013).
+wordcraft-engine = { workspace = true }
+wordcraft-doc = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

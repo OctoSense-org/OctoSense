@@ -285,6 +285,9 @@ pub fn register_host_services() {
             octosense_photo_service::register_photos();
             octosense_photo_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));
         }
+        // The word engine service (ADR 0013): wordcraft behind `word.*`.
+        #[cfg(feature = "app-hub")]
+        octosense_word_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();

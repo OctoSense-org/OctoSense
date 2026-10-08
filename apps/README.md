@@ -27,6 +27,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
   and `news.notify` (the shell draws the notice).
+- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's `word/` host area. No bundle yet.
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
