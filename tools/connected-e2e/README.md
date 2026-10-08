@@ -159,9 +159,12 @@ rotated refresh recovery, native restart, logout, repeat login and isolation
 between two signed apps. MiniBrowser/WebKitGTK 2.52.6 and native Secret Service
 ran in an isolated display/session; all owned processes and fictional
 connections were cleaned up. The receipt binds the actual binary and source
-hashes. Its archived Cargo lock predates the later Wasm integration; the 35
-other fixture/OAuth source files match this acceptance change. This is not an
-exact-head whole-shell build claim.
+hashes. The native examples were rebuilt from `e9765575` with its current locked
+dependencies; all 36 recorded host/OAuth/fixture/lockfile hashes match the
+reviewed source. The final run includes the responsive fixture and bounded
+failure diagnostics; those two test files changed after the native build, with
+no Rust source changes. This validates the installed-app fixture, not the entire
+shell or OS-authenticated business writes.
 
 Build the host/installer as above and the pinned Hub CLI with
 `cargo build --locked --release -p octosense-app-hub --bin hub`. With an existing

@@ -61,6 +61,30 @@ class BrowserNative(Native):
                 time.sleep(.2)
 
 
+def failure_geometry(native):
+    """Bounded structural diagnostics; no widget text, URLs or log contents."""
+    snapshot = native.call('snap').get('s', [])
+    windows = native.call('s').get('w', [])
+    allowed_ids = {'status', 'oauth_status', 'account', 'identity', 'app', 'sheet'}
+    def dimensions(value, length):
+        return value if isinstance(value, list) and len(value) == length and all(
+            type(n) in (int, float) and -1e9 <= n <= 1e9 for n in value) else None
+    rows = []
+    for row in snapshot[:80]:
+        kind = row.get('ty', '')
+        rows.append({
+            'kind': kind if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', kind) else 'other',
+            'id': row.get('i') if row.get('i') in allowed_ids else None,
+            'rect': dimensions(row.get('r'), 4),
+        })
+    log = native.log_path.read_text(errors='replace')
+    return {'child_running': native.child.poll() is None,
+            'window_sizes': [dimensions(window.get('sz'), 2) for window in windows[:4]],
+            'snapshot_row_count': len(snapshot), 'rows': rows,
+            'log_markers': {marker: log.count(marker) for marker in
+                            ('ScriptError', 'callback error', 'on_render closure failed', 'panicked')}}
+
+
 def bundle(path, app, hub):
     path.mkdir()
     shutil.copyfile(ROOT / 'tools/connected-e2e/backend-login/main.splash', path / 'main.splash')
@@ -300,6 +324,7 @@ def main():
         receipt['error_type'] = type(error).__name__
         if native:
             try:
+                receipt['failure_geometry'] = failure_geometry(native)
                 statuses = []
                 for row in native.rows():
                     if row.get('i') not in ('status', 'oauth_status'):

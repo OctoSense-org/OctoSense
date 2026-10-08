@@ -8,8 +8,8 @@
   "browser_engine": "MiniBrowser",
   "installation": "ephemeral fixture signing, actual Store install and prepared launch",
   "input": "Makepad native instrument, default input acknowledgement, no input replay",
-  "binary_sha256": "d9695098fb0d79f2300d9d504e54ea3e32fc9514c5c70a64ff2ff4eef8e65a05",
-  "installer_sha256": "59b284d24c2c12c5fd63a220c78dd338cbee01beeccbfca5297a2c39dfc21d35",
+  "binary_sha256": "389e797556f346dadb04e878f7a7efbc3be8b590d7d69079140a150231906ab4",
+  "installer_sha256": "fc094084e7f39f2e86c6bb68f2f0a1bdc01414957033e5b7528f723373bd0dfe",
   "source_identity": "Archived source: file hashes below are authoritative",
   "checks": [
     "Short-lived token forces refresh; transient protected-data failure followed by another refresh recovers using durably stored rotated credential",
@@ -21,13 +21,13 @@
     "Both fictional handles durably revoked through real host service; platform-vault deletion requested (deletion not independently read back)"
   ],
   "source_sha256": {
-    "tools/connected-e2e/backend_login.py": "bacda9960c4f8b25735ffab76d61fb518cc99efeb5af63b8aa019df281ffc79a",
+    "tools/connected-e2e/backend_login.py": "032d20c3c259ea9b62f5fa510d04eac410912e33baff26b090ba94f318e4d355",
     "tools/backend-login-fixture.py": "5c2695ad6da5d82b0c41782cefd77392130cc8c362ecf1170b87ea4512000424",
     "tools/connected-e2e/native.py": "3182c430d9b3797a823a67403543d056891598b404cf7fda577836f09e7ae7b6",
-    "tools/connected-e2e/backend-login/main.splash": "f2953891acde9ab08625c14e5a7d5dd73e809c1702777a9229276cbc5cee24ac",
+    "tools/connected-e2e/backend-login/main.splash": "817ace3dd8b87bfcecdbd9fffe4b8f13fb7721ed1240e0c849f267c0853c42e8",
     "crates/shell/examples/connected-app-host.rs": "5e960ac06a96c5302f5f89e72ee6fd45bcfbf4c0a033f94ee67e1cb7a8bb6d92",
     "crates/shell/examples/connected_support/mod.rs": "5e6a567808dfe34b21d9348afe9345a52ec9165f747504c623bdc9af6898ab2d",
-    "Cargo.lock": "e23635cea386bb4dab2f922fe3e0210fdfa09103447f2a503c162d3f48696daa",
+    "Cargo.lock": "05993722b356ca50434220d705affac333c73878e50a1e03f5e1419daa5c656b",
     "crates/oauth-service/src/acceptance_calendar.rs": "e3f03818b554cbfdd1f7d9bcf22272e8ec46c25bffc69fd4498c690c137446ac",
     "crates/oauth-service/src/acceptance_fixtures.rs": "af8b2c8187a35015ea42b59aa7b2ca8e5c4e4834efa0144259ca691f00bcfdf0",
     "crates/oauth-service/src/acceptance_github.rs": "520fd3681f4831c35cf671f0d4883af8c7d9e63e748ec41ede96d54fcaa77c7d",
@@ -42,7 +42,7 @@
     "crates/oauth-service/src/host.rs": "401a3810d2f76ec8cbaf62b344f060ed9b073c751500fc8143eb7398bf8fd069",
     "crates/oauth-service/src/host_api.rs": "a38e2fd7b0b24eda2d8c0f974b4032551e1286a905273eb6772d0475836da418",
     "crates/oauth-service/src/host_backend.rs": "1839063da9a9f7534e79839fc807abe3b64143efab998678599a699604a8d066",
-    "crates/oauth-service/src/host_catalog.rs": "fb7cc2a019b56dc230009d4aa36168734b3bf71c3cd378584f2f47b4a016774e",
+    "crates/oauth-service/src/host_catalog.rs": "e8cb3e4b02cb95703e3650e1fe6db9ccda49e2ad4c84e2ebc19dcf5d37740760",
     "crates/oauth-service/src/host_inbox.rs": "aa69422fd3fbe504035eb60fe4203222ebb9f1877884f0dbe77143f864c48ad8",
     "crates/oauth-service/src/host_lifetime_tests.rs": "50904d91121ae3f16caf4c8c9008c66f9cd6b85e2af54558451be683079c662b",
     "crates/oauth-service/src/host_operation_tests.rs": "ba0dc9cbbbcc592b1268be23d2e45e0cd8faa3e1ff7f202090cc7d1df3f45526",
@@ -60,7 +60,7 @@
   },
   "local_connections_revoked": true,
   "vault_cleanup": "Deletion requested through host disconnect; no independent vault readback",
-  "finished_utc": "2026-10-08T04:11:21.895397+00:00",
+  "finished_utc": "2026-10-08T05:03:32.191324+00:00",
   "native_processes_stopped": true,
   "synthetic_server_stopped": true,
   "visual_review": "pending",
@@ -82,10 +82,10 @@
     "physical or OS-authenticated business write approval"
   ],
   "source_comparison": {
-    "matching_current_files": 35,
-    "different_files": [
-      "Cargo.lock"
-    ],
-    "reason": "Tested archived lock predates later Wasm integration; actual tested hash retained, not whole-shell exact-head evidence"
-  }
+    "matching_current_files": 36,
+    "different_files": [],
+    "reason": "All recorded host, OAuth, fixture and lockfile hashes match the reviewed source; native binary built from e9765575, then only the driver and responsive fixture changed."
+  },
+  "native_build_source_revision": "e9765575fcb102ccf2ca7354daab5eb005ce3526",
+  "runtime_patches_lock_sha256": "b0679f53d756dee9dc8ee6b0aa3e560fd407b75006b1d1d35a70436467ada43c"
 }
