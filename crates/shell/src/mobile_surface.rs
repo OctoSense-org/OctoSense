@@ -557,10 +557,9 @@ impl PhoneSurface {
         let insets=vec![(screen.pos.x-full.pos.x)/full.size.x,(screen.pos.y-full.pos.y)/full.size.y,
             (full.pos.x+full.size.x-screen.pos.x-screen.size.x)/full.size.x,
             (full.pos.y+full.size.y-screen.pos.y-screen.size.y)/full.size.y];
-        let covered=crate::system_chat::is_open() || crate::app_chat::is_open()
-            || crate::approvals::with(|a|a.settings_open || a.router.front_sheet().is_some() || a.consent.prompt().is_some()).unwrap_or(false);
         let mut pager_edges=Vec::new();
-        if phone.owns_launcher_edges() && !covered {
+        if phone.owns_launcher_edges() && !crate::system_chat::is_open() && !crate::app_chat::is_open()
+            && !crate::approvals::with(|a|a.settings_open || a.router.front_sheet().is_some() || a.consent.prompt().is_some()).unwrap_or(false) {
             let m=crate::mobile_gestures::GestureMetrics::default();
             let dpi=cx.current_dpi_factor();
             let left=screen.pos.x-full.pos.x;

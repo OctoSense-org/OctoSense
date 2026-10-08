@@ -140,7 +140,7 @@ pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone:
 /// controls on the right — without reaching for the top edge. The App
 /// Library accepts a rightward swipe back; vertical drags scroll its grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide), Glance, Library }
+enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide), HorizontalPage, Library }
 
 #[derive(Clone, Debug)]
 struct Track {
@@ -193,7 +193,7 @@ impl GestureRecognizer {
     pub fn current(&self) -> Option<ShellGesture> { self.track.as_ref().and_then(|t| t.live) }
     /// The finger that is down started in a shell band (bottom, top or a
     /// side) rather than in the home page body.
-    pub fn from_band(&self) -> bool { self.track.as_ref().is_some_and(|t| !matches!(t.origin, Origin::Body | Origin::Glance | Origin::Library)) }
+    pub fn from_band(&self) -> bool { self.track.as_ref().is_some_and(|t| !matches!(t.origin, Origin::Body | Origin::HorizontalPage | Origin::Library)) }
 
     /// Feed one finger event. `Down` decides whether the shell claims the
     /// finger (`active()` afterwards); an excluded edge, a body touch off
@@ -296,6 +296,9 @@ impl GestureRecognizer {
             if p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
             if p.x <= left + m.edge_band && (!launcher_body || !clear(Edge::Left)) { return None; }
             if p.x >= right - m.edge_band && (!launcher_body || !clear(Edge::Right)) { return None; }
+            if ctx.phone == PhoneScreen::Home && (p.x <= left + m.edge_band || p.x >= right - m.edge_band) {
+                return Some(Origin::HorizontalPage);
+            }
         } else {
             if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
             if p.y <= top + m.top_band {
@@ -308,7 +311,7 @@ impl GestureRecognizer {
         }
         if !ctx.body { return None; }
         if glance_body {
-            return Some(Origin::Glance);
+            return Some(Origin::HorizontalPage);
         }
         match ctx.phone {
             PhoneScreen::Home => {
@@ -347,7 +350,7 @@ impl GestureRecognizer {
                 else if d.y > 0.0 && ay > ax * 1.2 { Some(GestureKind::Shade(side)) }
                 else { None }
             }
-            Origin::Glance => (ax > ay * 1.2).then_some(GestureKind::Page(dir)),
+            Origin::HorizontalPage => (ax > ay * 1.2).then_some(GestureKind::Page(dir)),
             // Twice as far right as up or down: a swipe back, not a scroll.
             Origin::Library => (d.x > ay * 2.0).then_some(GestureKind::Back),
 
@@ -637,8 +640,8 @@ mod tests {
     }
     #[test]
     fn with_native_edges_the_home_sides_still_pull_the_shell_shade() {
-        // Android without the system-wide panel: the OS keeps every edge,
-        // and the shade opens from a pull down at either side of the page.
+        // Android without the system-wide panel: the shade opens from a
+        // pull down in either side column, inside the paging edge strip.
         let ctx = GestureContext { system_edges: true, shade: true, ..ctx(PhoneScreen::Home) };
         let zones = ExclusionZones::default();
         let mut rec = GestureRecognizer::default();
@@ -650,7 +653,8 @@ mod tests {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx, &zones, &swipe((206.0, 300.0), (210.0, 500.0), 0.3, 5));
         assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch), "the middle is still search: {out:?}");
-        // The edge band and the top band stay Android's.
+        // Side-edge paging must not turn a vertical drag into a shade;
+        // the top band still belongs to Android.
         for start in [(404.0, 300.0), (370.0, 10.0)] {
             let mut rec = GestureRecognizer::default();
             let out = drive(&mut rec, &ctx, &zones, &swipe(start, (start.0 - 2.0, 500.0), 0.3, 5));
