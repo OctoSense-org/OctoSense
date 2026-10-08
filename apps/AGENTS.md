@@ -59,6 +59,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   The sound engine's (soundcraft behind `sound.*`, same ADR, offline only,
   no bundle yet): `apps/sound/host-service` and
   `cargo test --locked -p octosense-sound-service`.
+  The design engine's (designcraft behind `design.*`, same ADR, no bundle
+  yet): `apps/design/host-service` and
+  `cargo test --locked -p octosense-design-service`.
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.

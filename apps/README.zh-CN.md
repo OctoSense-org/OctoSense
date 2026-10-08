@@ -40,6 +40,7 @@ OctoSense-System-Apps 仓库（已归档）。
   批量参数化显影；仅服务系统应用，且只在调用方宿主目录的 `light/` 区域内读写。
   暂无 bundle。
 - **`sound` 宿主服务**（`sound/host-service`）：soundcraft 音频引擎置于 `sound.*` 之后（ADR 0013），只做离线文件处理——info、convert、trim、mix 和波形峰值，数据都在宿主目录的 `sound/` 区域内；它从不打开音频或 MIDI 设备，暂时也没有应用包。
+- **`design` 宿主服务**（`design/host-service`）把 designcraft 排版引擎（ADR 0013）放在 `design.*` 后面：文档信息、页面渲染为 PNG、导出 PDF/IDML/EPUB，所有路径都限制在宿主目录自己的 `design/` 区域内；暂无应用包。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`

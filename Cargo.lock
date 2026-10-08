@@ -192,6 +192,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "aliasable"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "250f629c0161ad8107cf89319e990051fae62832fd343083bea452d93e2205fd"
+
+[[package]]
 name = "aligned"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1308,7 +1314,7 @@ dependencies = [
  "cadcraft-doc",
  "cadcraft-fonts",
  "cadcraft-geom",
- "tiny-skia",
+ "tiny-skia 0.11.4",
 ]
 
 [[package]]
@@ -1517,7 +1523,7 @@ checksum = "c602dea92337bc4d824668d78c5b79c3b4ddb29b40dd7218282bbe8fd3fc2091"
 dependencies = [
  "chromiumoxide_types",
  "either",
- "heck",
+ "heck 0.5.0",
  "once_cell 1.21.4",
  "proc-macro2",
  "quote",
@@ -1627,7 +1633,7 @@ version = "4.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d012d2b9d65aca7f18f4d9878a045bc17899bba951561ba5ec3c2ba1eed9a061"
 dependencies = [
- "heck",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 3.0.5",
@@ -2027,7 +2033,7 @@ dependencies = [
  "cranelift-assembler-x64-meta",
  "cranelift-codegen-shared",
  "cranelift-srcgen",
- "heck",
+ "heck 0.5.0",
  "pulley-interpreter",
 ]
 
@@ -2682,8 +2688,8 @@ dependencies = [
  "image",
  "kurbo",
  "log",
- "vello_common",
- "vello_cpu",
+ "vello_common 0.2.0",
+ "vello_cpu 0.2.0",
 ]
 
 [[package]]
@@ -2867,6 +2873,204 @@ dependencies = [
  "rustc_version",
  "syn 2.0.119",
  "unicode-xid",
+]
+
+[[package]]
+name = "designcraft-color"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "kurbo",
+ "moxcms 0.8.1",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "designcraft-compose"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-doc",
+ "designcraft-fonts",
+ "designcraft-geom",
+ "log",
+ "miniz_oxide 0.8.9",
+ "regex",
+ "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-bidi-mirroring 0.4.0",
+]
+
+[[package]]
+name = "designcraft-doc"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-geom",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "designcraft-engine"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-compose",
+ "designcraft-doc",
+ "designcraft-epub",
+ "designcraft-fonts",
+ "designcraft-format",
+ "designcraft-geom",
+ "designcraft-idml",
+ "designcraft-images",
+ "designcraft-pdf",
+ "designcraft-render",
+ "designcraft-textimport",
+ "designcraft-tools",
+ "log",
+ "quick-xml 0.38.4",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "designcraft-epub"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-doc",
+ "zip 3.0.0",
+]
+
+[[package]]
+name = "designcraft-fonts"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "harfrust 0.13.3",
+ "kurbo",
+ "log",
+ "skrifa 0.47.0",
+ "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-script 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "designcraft-format"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-doc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "zip 3.0.0",
+]
+
+[[package]]
+name = "designcraft-geom"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "flo_curves",
+ "kurbo",
+ "qrcodegen",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "designcraft-idml"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-doc",
+ "designcraft-geom",
+ "quick-xml 0.38.4",
+ "thiserror 2.0.20",
+ "zip 3.0.0",
+]
+
+[[package]]
+name = "designcraft-images"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-fonts",
+ "image",
+ "resvg 0.47.0",
+ "tiff",
+]
+
+[[package]]
+name = "designcraft-pdf"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-compose",
+ "designcraft-doc",
+ "designcraft-fonts",
+ "designcraft-geom",
+ "designcraft-images",
+ "hayro-syntax",
+ "image",
+ "krilla",
+ "krilla-svg",
+ "log",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "designcraft-render"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-compose",
+ "designcraft-doc",
+ "designcraft-fonts",
+ "designcraft-geom",
+ "designcraft-images",
+ "hayro",
+ "image",
+ "log",
+ "serde",
+ "vello_common 0.2.0",
+ "vello_cpu 0.2.0",
+]
+
+[[package]]
+name = "designcraft-textimport"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-doc",
+ "quick-xml 0.38.4",
+ "zip 3.0.0",
+]
+
+[[package]]
+name = "designcraft-tools"
+version = "0.4.0"
+source = "git+https://github.com/ymote/designcraft.git?rev=14e677b24216396e398823ff034d9882322362d1#14e677b24216396e398823ff034d9882322362d1"
+dependencies = [
+ "designcraft-color",
+ "designcraft-compose",
+ "designcraft-doc",
+ "designcraft-geom",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3145,7 +3349,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1e6a265c649f3f5979b601d26f1d05ada116434c87741c9493cb56218f76cbc"
 dependencies = [
- "heck",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -3512,6 +3716,18 @@ dependencies = [
  "crc32fast",
  "miniz_oxide 0.9.1",
  "zlib-rs",
+]
+
+[[package]]
+name = "flo_curves"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5937462c05a3c43fecd2b0402b995b92888a35cc7dd6ca39306094c9b60a32fd"
+dependencies = [
+ "itertools 0.14.0",
+ "ouroboros",
+ "roots",
+ "smallvec 1.16.1",
 ]
 
 [[package]]
@@ -4660,6 +4876,23 @@ checksum = "43503cc176394dd30a6525f5f36e838339b8b5619be33ed9a7783841580a97b6"
 
 [[package]]
 name = "glifo"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d99fc21d493812643aae86d53b7bbd02f376434a90317e8a790bc209fdd6605e"
+dependencies = [
+ "bytemuck 1.25.2",
+ "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.17.1",
+ "log",
+ "peniko",
+ "png 0.18.1",
+ "skrifa 0.42.1",
+ "smallvec 1.16.1",
+ "vello_common 0.0.9",
+]
+
+[[package]]
+name = "glifo"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282a26c1e23de04bdab3e34a21b6f877a479b96737792516b9b8b8f69b6661be"
@@ -4672,7 +4905,7 @@ dependencies = [
  "png 0.18.1",
  "skrifa 0.44.0",
  "smallvec 1.16.1",
- "vello_common",
+ "vello_common 0.2.0",
 ]
 
 [[package]]
@@ -4977,10 +5210,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "hayro"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4caa128ab87fd48ffb7490617cf93f77f606820dffbc9fd9ef6ab0ed077f56d"
+dependencies = [
+ "bytemuck 1.25.2",
+ "hayro-interpret",
+ "image",
+ "kurbo",
+ "pic-scale",
+ "vello_cpu 0.0.8",
+]
+
+[[package]]
+name = "hayro-ccitt"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f4d0e94ddd48749f06bbe4e5389fb9799a0c45bcaf00495042076ef05e3241a"
+
+[[package]]
 name = "hayro-ccitt"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2866f0d976e76497480b853d5e258dab6e4b89ecfe991124e08f15dfa8fd03ad"
+
+[[package]]
+name = "hayro-cmap"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24d285dc30731c8485de5fa732fbdf2b3affdf01e4da7c2135022ca6fa664bf6"
+dependencies = [
+ "brotli",
+ "hayro-postscript",
+]
+
+[[package]]
+name = "hayro-interpret"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2613d0406898995042d0794c4245b2f2fba1246490c8ac593769bba6551129d"
+dependencies = [
+ "bitflags 2.13.2",
+ "hayro-cmap",
+ "hayro-syntax",
+ "kurbo",
+ "moxcms 0.8.1",
+ "phf 0.13.1",
+ "rustc-hash 2.1.3",
+ "siphasher",
+ "skrifa 0.42.1",
+ "smallvec 1.16.1",
+ "yoke",
+]
 
 [[package]]
 name = "hayro-jbig2"
@@ -4989,7 +5271,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "000e025850f4592ddcaee85640db70704151f2bafd43b6f431aa5b6a2c6a35a9"
 dependencies = [
  "fearless_simd 1.1.0",
- "hayro-ccitt",
+ "hayro-ccitt 0.4.0",
 ]
 
 [[package]]
@@ -5002,12 +5284,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hayro-postscript"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "885c5ef0654933139a9b9546fc2c69e18d37f38aa2520f079092b1be18f1fcaa"
+
+[[package]]
 name = "hayro-syntax"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0edeafd70aa2db743de8ede8637d07ec87db05efe69cde371d03f1b185fcef27"
 dependencies = [
  "flate2",
+ "hayro-ccitt 0.3.0",
  "hayro-jbig2",
  "hayro-jpeg2000",
  "memchr 2.8.3",
@@ -5036,6 +5325,12 @@ dependencies = [
  "hash32",
  "stable_deref_trait",
 ]
+
+[[package]]
+name = "heck"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "heck"
@@ -6305,6 +6600,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "krilla-svg"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1237d7c37b16ca9fbc2e72dde13a10d321f9a44aceee35c062bc0a43bfc7ce16"
+dependencies = [
+ "flate2",
+ "fontdb",
+ "krilla",
+ "resvg 0.47.0",
+ "skrifa 0.42.1",
+ "smallvec 1.16.1",
+ "tiny-skia 0.12.0",
+ "usvg 0.47.0",
+]
+
+[[package]]
 name = "kstring"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7299,10 +7610,10 @@ dependencies = [
  "makepad-markdown",
  "makepad-widgets",
  "mermaid-rs-renderer",
- "resvg",
+ "resvg 0.46.0",
  "roxmltree 0.21.1",
  "syntect",
- "tiny-skia",
+ "tiny-skia 0.11.4",
  "ttf-parser 0.24.1",
  "unicode-segmentation 1.12.0",
 ]
@@ -9754,6 +10065,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-design-service"
+version = "0.1.0"
+dependencies = [
+ "designcraft-engine",
+ "designcraft-render",
+ "octosense-appstore",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "octosense-guest"
 version = "0.1.0"
 dependencies = [
@@ -10020,6 +10342,7 @@ dependencies = [
  "octosense-cad-service",
  "octosense-calendar-service",
  "octosense-deck-service",
+ "octosense-design-service",
  "octosense-l0-chat",
  "octosense-light-service",
  "octosense-mail-service",
@@ -10233,6 +10556,30 @@ checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
 dependencies = [
  "futures-core",
  "pin-project-lite",
+]
+
+[[package]]
+name = "ouroboros"
+version = "0.18.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e0f050db9c44b97a94723127e6be766ac5c340c48f2c4bb3ffa11713744be59"
+dependencies = [
+ "aliasable",
+ "ouroboros_macro",
+ "static_assertions",
+]
+
+[[package]]
+name = "ouroboros_macro"
+version = "0.18.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c7028bdd3d43083f6d8d4d5187680d0d3560d54df4cc9d752005268b41e64d0"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro2",
+ "proc-macro2-diagnostics",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -10814,6 +11161,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pic-scale"
+version = "0.7.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6edb0ff645d35accaec252de081d55984a0d6c952cb1e5dc2b9afa7c78f07288"
+dependencies = [
+ "num-traits 0.2.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pxfm",
+]
+
+[[package]]
 name = "pico-args"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11059,6 +11416,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro2-diagnostics"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af066a9c399a26e020ada66a034357a868728e72cd426f3adcd35f80d88d88c8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "version_check",
+ "yansi",
+]
+
+[[package]]
 name = "process-wrap"
 version = "9.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11217,6 +11587,12 @@ name = "qrcode"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
+name = "qrcodegen"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4339fc7a1021c9c1621d87f5e3505f2805c8c105420ba2f2a4df86814590c142"
 
 [[package]]
 name = "quanta"
@@ -11842,8 +12218,25 @@ dependencies = [
  "pico-args",
  "rgb",
  "svgtypes",
- "tiny-skia",
- "usvg",
+ "tiny-skia 0.11.4",
+ "usvg 0.46.0",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "resvg"
+version = "0.47.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9be183ad6a216aa96f33e4c8033b0988b8b3ea6fd2359d19af5bac4643fd8e81"
+dependencies = [
+ "gif",
+ "image-webp",
+ "log",
+ "pico-args",
+ "rgb",
+ "svgtypes",
+ "tiny-skia 0.12.0",
+ "usvg 0.47.0",
  "zune-jpeg",
 ]
 
@@ -12237,6 +12630,12 @@ dependencies = [
  "objc2-foundation",
  "objc2-ui-kit",
 ]
+
+[[package]]
+name = "roots"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "082f11ffa03bbef6c2c6ea6bea1acafaade2fd9050ae0234ab44a2153742b058"
 
 [[package]]
 name = "roxmltree"
@@ -13769,9 +14168,9 @@ version = "0.1.0"
 source = "git+https://github.com/Project-Robius-China/streaming-markdown-kit.git?branch=main#68b8cdf91ea7579f4bd607b09f005cecfa8aca6f"
 dependencies = [
  "anyhow",
- "resvg",
+ "resvg 0.46.0",
  "rusty-mermaid",
- "usvg",
+ "usvg 0.46.0",
 ]
 
 [[package]]
@@ -13881,7 +14280,7 @@ version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
 dependencies = [
- "heck",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -14393,6 +14792,21 @@ dependencies = [
  "log",
  "png 0.17.16",
  "tiny-skia-path 0.11.4",
+]
+
+[[package]]
+name = "tiny-skia"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47ffee5eaaf5527f630fb0e356b90ebdec84d5d18d937c5e440350f88c5a91ea"
+dependencies = [
+ "arrayref",
+ "arrayvec 0.7.8",
+ "bytemuck 1.25.2",
+ "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
+ "png 0.18.1",
+ "tiny-skia-path 0.12.0",
 ]
 
 [[package]]
@@ -15292,6 +15706,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "usvg"
+version = "0.47.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d46cf96c5f498d36b7a9693bc6a7075c0bb9303189d61b2249b0dc3d309c07de"
+dependencies = [
+ "base64 0.22.1",
+ "data-url",
+ "flate2",
+ "fontdb",
+ "imagesize",
+ "kurbo",
+ "log",
+ "pico-args",
+ "roxmltree 0.21.1",
+ "rustybuzz 0.20.1",
+ "simplecss",
+ "siphasher",
+ "strict-num",
+ "svgtypes",
+ "tiny-skia-path 0.12.0",
+ "ttf-parser 0.25.1",
+ "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-script 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-vo",
+ "xmlwriter",
+]
+
+[[package]]
 name = "utf-8"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15352,6 +15794,40 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vello_common"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3361bff7f7d82c0c496b92048db83846691f0e844cc28dee92b1c824291b55ee"
+dependencies = [
+ "bytemuck 1.25.2",
+ "fearless_simd 0.4.1",
+ "guillotiere",
+ "hashbrown 0.17.1",
+ "log",
+ "peniko",
+ "png 0.18.1",
+ "smallvec 1.16.1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vello_common"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19d672facaa2d697285a786cd9d44d614cd2ce54cdc022504bf339f8fff3b750"
+dependencies = [
+ "bytemuck 1.25.2",
+ "fearless_simd 0.4.1",
+ "guillotiere",
+ "hashbrown 0.17.1",
+ "log",
+ "peniko",
+ "png 0.18.1",
+ "smallvec 1.16.1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vello_common"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbb2141a2bca6e6d598e471fd4d1d7eed8e020aad6a28187edda07f091a325dd"
@@ -15368,19 +15844,32 @@ dependencies = [
 
 [[package]]
 name = "vello_cpu"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d8ded630e8316bb94a55881256506d1f3b9947b5f66db8a7d32ca7ba02decd0"
+dependencies = [
+ "bytemuck 1.25.2",
+ "glifo 0.1.1",
+ "hashbrown 0.17.1",
+ "png 0.18.1",
+ "vello_common 0.0.8",
+]
+
+[[package]]
+name = "vello_cpu"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ace506ca414548966fcf3c283be94eb1cad8254de488791ee698bf438b0890a9"
 dependencies = [
  "bytemuck 1.25.2",
  "crossbeam-channel",
- "glifo",
+ "glifo 0.3.0",
  "hashbrown 0.17.1",
  "ordered-channel",
  "png 0.18.1",
  "rayon",
  "thread_local",
- "vello_common",
+ "vello_common 0.2.0",
 ]
 
 [[package]]
@@ -17069,7 +17558,7 @@ source = "git+https://github.com/ymote/wordcraft.git?rev=7584b9b2930ffddfe7db96b
 dependencies = [
  "image",
  "log",
- "vello_cpu",
+ "vello_cpu 0.2.0",
  "wordcraft-doc",
  "wordcraft-fonts",
  "wordcraft-geom",
@@ -17210,6 +17699,12 @@ name = "y4m"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5a4b21e1a62b67a2970e6831bc091d7b87e119e7f9791aef9702e3bef04448"
+
+[[package]]
+name = "yansi"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yoke"

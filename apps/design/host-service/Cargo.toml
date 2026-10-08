@@ -1,0 +1,26 @@
+# octosense-design-service — the `design` host service (ADR 0013).
+#
+# designcraft's page-layout engine (an InDesign-class, clean-room Rust
+# reimplementation: spreads, threaded stories, a Knuth–Plass composer,
+# IDML) behind typed `design.*` methods: inspect a document, render a
+# page to PNG and export PDF/IDML/EPUB/native, every call a fresh,
+# stateless session. designcraft has no workspace capability like
+# photocraft's, so the service resolves every path itself and keeps them
+# all inside the `design/` area of the caller's host directory.
+[package]
+name = "octosense-design-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/designcraft revision (ADR 0013).
+designcraft-engine = { workspace = true }
+designcraft-render = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
