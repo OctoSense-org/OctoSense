@@ -58,6 +58,28 @@ python3 -m venv --without-pip ~/octosense-ci/venv
 
 The first run clones the source hubs into `~/octosense-ci/cache/hub/`. Building the shell for the sandbox tests needs Makepad's [Linux build dependencies](https://github.com/OctoSense-org/makepad#linux-dependencies), which the host's administrator installs. Steps that need a JDK, the Android SDK or node are SKIPPED there too.
 
+## Offload the macOS jobs to the Linux host
+
+`--offload`, with `--linux-host`, also sends the macOS jobs' portable steps to the Linux host. The Mac keeps only the steps that check macOS itself, so a run spends a few minutes here instead of most of an hour, on a host with many more cores and its own slots:
+
+```sh
+tools/ci-local.sh --only all --linux-host --offload
+tools/ci-local.sh --only all --linux-host --offload --list   # what runs where
+```
+
+`JOBS` in `tools/ci_local.py` says which steps stay here (`mac_steps`):
+
+| Job (GitHub: macos-14) | Stays on the Mac | Goes to the Linux host |
+| --- | --- | --- |
+| desktop / `desktop` | Compile the desktop; desktop tools and scripts | The shell-source, single-graph and native-apps checks |
+| desktop / `native-host-api` | All of it (a real macOS host) | Nothing |
+| phone / `home` | Apple icons and asset catalogs; compile Home; Home's and App Hub's tests (three fail on Linux, see `JOBS`) | The graph checks, the octos kernel, the two-lane scenario |
+| apps / `apps` | Nothing | All of it |
+
+Each part prepares the sources itself (the job's `python3 tools/setup.py`). The host's part runs as `<job>@linux`; its steps join the table under the job, marked `(linux)`. `--check-drift` fails when a name in `mac_steps` stops matching a step.
+
+**What an offloaded pass means.** GitHub runs these jobs on macOS, so an offloaded run tests their Linux build: code under `#[cfg(target_os = "macos")]` is checked by the compile steps that stay here, but not tested, and code under `#[cfg(target_os = "linux")]` is tested in its place. `last.json` records `"offload": true`, and the merge comment says which steps ran where. GitHub CI still runs the macOS jobs on the merge commit on `main`.
+
 ## Merge on a local pass
 
 ```sh

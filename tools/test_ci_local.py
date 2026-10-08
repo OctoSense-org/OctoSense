@@ -252,6 +252,39 @@ class LinuxHostPlan(unittest.TestCase):
         self.assertIn("octosense-shell", job["steps"][-1]["run"])
         self.assertEqual(ci.job_definition("apps.yml:services")["runs-on"], "ubuntu-latest")
 
+    def test_offload_splits_the_macos_jobs_between_here_and_the_host(self):
+        plan = [(w, j, [ci.step_label(s, i) for i, s in enumerate(job["steps"]) if "run" in s], where)
+                for w, j, job, where in ci.plan_jobs(ci.GROUPS["all"], True, offload=True)]
+        where = {(w, j): place for w, j, _, place in plan}
+        self.assertEqual(where[("apps.yml", "apps@linux")], "linux")
+        self.assertNotIn(("apps.yml", "apps"), where, "apps has no macOS steps: it all moves")
+        self.assertEqual(where[("desktop.yml", "native-host-api")], "local", "native acceptance stays on macOS")
+        self.assertEqual((where[("phone.yml", "home")], where[("phone.yml", "home@linux")]), ("local", "linux"))
+        steps = {(w, j): labels for w, j, labels, _ in plan}
+        here, there = steps[("phone.yml", "home")], steps[("phone.yml", "home@linux")]
+        mac = ci.JOBS["phone.yml:home"]["mac_steps"]
+        self.assertEqual([s for s in here if s in mac], mac)
+        self.assertFalse(set(mac) & set(there), "a macOS step never runs on the host")
+        self.assertIn("Two-lane scenario (real kernel, scripted model)", there)
+        setup = "Prepare pinned sources and the reviewed runtime patch"
+        self.assertTrue(setup in here and setup in there, "both parts prepare the sources")
+        whole = [ci.step_label(s, i) for i, s in enumerate(ci.job_definition("phone.yml:home")["steps"]) if "run" in s]
+        self.assertEqual(sorted(set(here) | set(there)), sorted(whole), "every step runs on one side")
+        home = dict(ci.jobs_of("phone.yml"))["home"]
+        self.assertEqual(ci.job_definition("phone.yml:home@linux"), ci.split_offloaded("phone.yml", "home", home)[1],
+                         "the host rebuilds the same Linux part from the key")
+        with self.assertRaises(KeyError):
+            ci.job_definition("rom.yml:product@linux")
+        self.assertEqual(self.where(ci.GROUPS["all"], True), {(w, j): p for w, j, _, p in
+                                                              ci.plan_jobs(ci.GROUPS["all"], True)},
+                         "without --offload the plan is unchanged")
+
+    def test_a_mac_step_that_no_longer_exists_is_drift(self):
+        jobs = dict(ci.JOBS)
+        jobs["phone.yml:home"] = {"mac_steps": ["A step that was renamed"]}
+        with patch.object(ci, "JOBS", jobs):
+            self.assertTrue(any("A step that was renamed" in p for p in ci.check_drift()))
+
     def test_a_linux_host_job_whose_source_moved_is_drift(self):
         moved = {"sandbox": dict(ci.LINUX_HOST_JOBS["sandbox"], source="crates/shell/src/gone.rs")}
         with patch.object(ci, "LINUX_HOST_JOBS", moved):
@@ -322,6 +355,14 @@ class LinuxHostResults(unittest.TestCase):
             self.assertEqual([(s["status"], s["expected_skip"]) for s in run.steps],
                              [("FAIL", None), ("SKIPPED", False), ("FAIL", None)])
 
+    def test_an_offloaded_part_reports_under_its_job(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = remote_run(temp)
+            self.addCleanup(run.close)
+            ci.merge_remote_result(run, {"sha": self.sha, "busy": True}, self.sha, ["phone.yml:home@linux"])
+            ci.merge_remote_result(run, {"sha": self.sha, "error": "x"}, self.sha, ["apps.yml:apps@linux"])
+            self.assertEqual([(s["job"], s["host"]) for s in run.steps], [("home", "linux"), ("apps", "linux")])
+
     def test_the_host_address_and_key_never_reach_the_log(self):
         with tempfile.TemporaryDirectory() as temp:
             run = remote_run(temp)
@@ -353,6 +394,17 @@ class MergeLinuxHost(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertIn("--linux-host", merge.comment_body(last, ["apps.yml"]))
         self.assertIn("| apps.yml / services (linux) | Kernel service | PASS |", merge.comment_body(last, ["apps.yml"]))
+
+    def test_an_offloaded_run_is_evidence_and_says_so(self):
+        steps = [dict(self.remote(self.head, "phone.yml", "home"), host="local", sha=None, name="Compile Home"),
+                 self.remote(self.head, "phone.yml", "home")]
+        last = result(steps=steps, linux_host={"system": "Linux", "machine": "x86_64"}, offload=True)
+        problems, _ = merge.evidence_problems(last, self.head, ["crates/shell/src/lib.rs"])
+        self.assertEqual(problems, [])
+        body = merge.comment_body(last, ["phone.yml"])
+        self.assertIn("--linux-host --offload", body)
+        self.assertIn("the macOS jobs' portable steps", body)
+        self.assertIn("| phone.yml / home (linux) | Kernel service | PASS |", body)
 
     def test_a_stale_remote_result_is_refused_even_when_the_run_is_on_the_head(self):
         problems, _ = merge.evidence_problems(result(steps=[self.remote("c" * 40)]), self.head, ["crates/kernel/src/lib.rs"])
