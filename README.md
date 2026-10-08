@@ -379,9 +379,7 @@ A phone runs the shell, the kernel, up to a dozen app agents and their apps at t
 
 The shell exists once, in `crates/shell` ([ADR 0001](docs/adr/0001-one-octosense-repository.md)): desktop and phone differ by target and features, not by copies of the source. CI fails if a shell source file appears in two crates.
 
-Desktop source builds also include [embedded web readers](docs/desktop-embedded-browser.md)
-for Linux X11/XWayland and Windows, with separate engine requirements and native
-acceptance gates. This does not change provider sign-in or native approval support.
+Since desktop 0.1.0-rc.1, the desktop shell also shows web pages inside apps on Linux (under X11 or XWayland) and on Windows, using the system's WebKitGTK or WebView2 engine. [Desktop embedded browser](docs/desktop-embedded-browser.md) lists what each platform needs. This does not change sign-in or approval support on these platforms.
 
 ## What it depends on
 

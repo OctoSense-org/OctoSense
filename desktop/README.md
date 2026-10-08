@@ -130,9 +130,7 @@ App Hub's modules have no process form and always open in-process.
 | `OCTOSENSE_REDUCE_MOTION=1` | Keep the glance panel and its toasts still instead of sliding them in and out ([The glance panel](#the-glance-panel)). |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
 
-Embedded pages on Linux X11/XWayland and Windows use native WebKitGTK/WebView2
-child views. See [runtime requirements and acceptance](../docs/desktop-embedded-browser.md);
-missing engines and native Wayland report an explicit error.
+Since desktop 0.1.0-rc.1, apps can show web pages on Linux under X11 or XWayland and on Windows. The shell embeds the system's WebKitGTK or WebView2 engine; when the engine is missing, or the session is native Wayland, `WebReader` reports an error. [Desktop embedded browser](../docs/desktop-embedded-browser.md) lists what each platform needs.
 
 ## Application icons
 

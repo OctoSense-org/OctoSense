@@ -130,26 +130,15 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `OCTOSENSE_REDUCE_MOTION=1` | 一览面板及其 toast 不再滑入滑出，保持静止（见[一览面板](#一览面板)）。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
-Linux X11/XWayland 和 Windows 的嵌入页面使用原生 WebKitGTK/WebView2 子视图。
-见[运行条件与验收](../docs/desktop-embedded-browser.zh-CN.md)；引擎缺失或原生 Wayland
-会明确报错。
+从桌面版 0.1.0-rc.1 起，应用可以在 X11 或 XWayland 下的 Linux 以及 Windows 上显示网页。Shell 嵌入系统的 WebKitGTK 或 WebView2 引擎；缺少引擎或处于原生 Wayland 会话时，`WebReader` 会报错。各平台的运行条件见[桌面嵌入式浏览器](../docs/desktop-embedded-browser.zh-CN.md)。
 
 ## 应用图标
 
-`octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。
-工作区的 Cargo 环境配置会为普通 `cargo run`/`cargo build` 嵌入桌面图标。
-两个包也都提供锁定版本 `cargo-makepad desktop` 自动发现的 PNG、ICO 和
-ICNS 文件，用于 macOS 应用包、Windows 可执行文件资源和 Linux 桌面入口。
-发布包继续使用 `packaging/icons/`。
+`octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。工作区的 Cargo 环境配置会为普通 `cargo run`/`cargo build` 嵌入桌面图标。两个包还都提供 PNG、ICO 和 ICNS 文件，供锁定版本的 `cargo-makepad desktop` 自动发现，用于 macOS 应用包、Windows 可执行文件资源和 Linux 桌面入口。发行包继续使用 `packaging/icons/`。
 
-两个包的 Android 构建都包含各密度的传统图标、自适应图标和 Android 13
-主题图标，并提供不透明、尺寸正确的 iPhone/iPad 图标资源目录。
-Home 的 OpenHarmony 构建脚本还会替换框架的应用、分层启动器和启动窗口图标。
-这些资源不会改变各应用目标当前能否成功构建。
+两个包的 Android 构建都包含各密度的传统图标、自适应图标和 Android 13 主题图标。两个包都提供不透明、尺寸正确的 iPhone/iPad 图标资源目录；Home 的 OpenHarmony 构建脚本还会替换框架的应用、分层启动器和启动窗口图标。各应用目标目前能否构建成功，不受这些资源影响。
 
-源几何形状及颜色位于 `packaging/make_icons.py` 和
-`packaging/icons/icon.svg`。生成文件已提交，构建应用不需要图像渲染工具。
-在仓库根目录运行：
+源几何形状及颜色位于 `packaging/make_icons.py` 和 `packaging/icons/icon.svg`。生成的文件已 commit 到仓库，构建应用不需要图像渲染工具。在仓库根目录运行：
 
 ```sh
 python3 desktop/packaging/make_icons.py
@@ -157,10 +146,7 @@ python3 desktop/packaging/make_icons.py --check
 python3 -m unittest discover -s tools -p test_app_icons.py
 ```
 
-已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。
-Home 已在 Pixel 7 Pro / Android 17 上全新安装，应用信息页显示品牌图标，
-应用也能正常启动。其他平台安装后的外观、Android 主题图标模式及
-Windows/Linux 桌面集成仍**未经验证**。
+已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。Home 已在 Pixel 7 Pro / Android 17 上全新安装，应用信息页显示品牌图标，应用也能正常启动。其他平台安装后的外观、Android 主题图标模式及 Windows/Linux 桌面集成仍**未经验证**。
 
 ## 发布构建
 
