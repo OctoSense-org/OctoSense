@@ -1469,6 +1469,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "app-hub")]
     fn selected_glance_style_reaches_existing_cards_without_replacing_state() {
         use makepad_widgets::makepad_draw::cx_draw::CxDraw;
         let mut cx = tile_cx();
