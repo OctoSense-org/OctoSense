@@ -431,6 +431,7 @@ Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth
 | 边界 | 由什么保证 |
 | --- | --- |
 | 脚本应用 ↔ Shell | Card runner 的隔离环境、jail 和配额；`host.request` 只能访问已授权的服务族 |
+| 应用自带的 WebAssembly 函数 ↔ Shell | 每次调用一个全新的 Wasmtime 实例，只能接触自己的内存和 `octo.log`，有截止时间以及内存、栈和大小上限；只在启用 `wasm-lab` 的构建中存在（[OctoSense 中的 WebAssembly](wasm.zh-CN.md)） |
 | 原生模块 ↔ Shell | 内存上没有隔离：靠对第一方代码的审查，以及模块边界的 panic 捕获 |
 | 进程应用 ↔ Shell | 独立的地址空间和系统沙箱：macOS 上是 Seatbelt，Linux 上是 Landlock 和 seccomp。**尚未实现**：Windows。 |
 | 应用 ↔ 内核 | 没有应用看得到宿主 token。只有 octos 客户端的内核端口使用 OUP，由路由器按编码范围约束（ADR 0003 第 9 条） |

@@ -6,7 +6,8 @@ Status: Proposed. Implemented behind the shell's `wasm-lab` feature (off by
 default), with the contract side in App Hub #140 (app-contract 1.7.0).
 Validated on macOS in a hidden desktop shell and on an Android
 phone (Redmi Note 12) in a separately packaged Home; iOS and OpenHarmony not
-tried.
+tried. How it works on `main`, with its limits and checks:
+[WebAssembly in OctoSense](../wasm.md).
 
 ## Context
 
@@ -180,6 +181,8 @@ Two platform findings:
 - Runtime and shell service regression tests cover actual Wasm state retention,
   table growth, cancellation, input/queue bounds, revision/grant changes and
   signed withdrawal. This hardening has not been revalidated on a phone yet.
+  *8 Oct 2026: the [phone acceptance](../../tools/fixtures/wasm-phone-lab/README.md)
+  has since covered it on a OnePlus 6 (22 of 22 checks).*
 
 ## Open questions
 

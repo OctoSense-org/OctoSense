@@ -5,6 +5,7 @@
 状态：提议中。在外壳的 `wasm-lab` 特性（默认关闭）之后实现，契约部分在 App Hub #140
 （app-contract 1.7.0）。已在 macOS 的隐藏桌面外壳中，以及一部
 Android 手机（Redmi Note 12）上单独打包的 Home 中验证；iOS 和 OpenHarmony 尚未尝试。
+`main` 上的实现方式、限制和检查见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
 
 ## 背景
 
@@ -137,6 +138,8 @@ Cranelift 与 LLVM 的代码生成，而不是向量化。Wasmtime 和 Cranelift
   的有界淘汰策略仍待实现。编译后的 Program 也会占用线性内存上限以外的宿主内存。
 - 运行时和外壳服务回归测试覆盖真实 Wasm 状态残留、表扩容、取消、输入/队列上限、
   版本/权限变化及签名目录撤回。本次加固尚未在手机上重新验证。
+  *2026-10-08：此后[手机验收](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md)已在一部 OnePlus 6 上
+  覆盖这项加固（22 项检查全部通过）。*
 
 ## 未决问题
 
