@@ -236,6 +236,15 @@ const SEARCH_VELOCITY_WINDOW: f64 = 0.1;
 const SEARCH_FRICTION: f64 = 4.0;
 
 impl PhoneState {
+    /// Keep the side edges assigned to the launcher throughout a drag and
+    /// its settling animation. Open workspaces, apps and the IME keep Back.
+    pub fn owns_launcher_edges(&self) -> bool {
+        matches!(self.screen, PhoneScreen::Home | PhoneScreen::Drawer)
+            && self.openness < 0.001 && self.overview < 0.001
+            && !self.card_open && !self.groups.window_visible() && !self.shade.is_open()
+            && !self.navigation.open && self.navigation.visible()
+            && self.keyboard < 0.001 && self.keyboard_target < 0.001 && self.native_keyboard < 0.001
+    }
     /// Focus loss can interrupt the owned touch after IME suppression has
     /// already cleared Navigation's held control. No release is guaranteed
     /// after that, so do not keep waiting for its old native touch id.
@@ -567,6 +576,35 @@ pub fn mix_rect(a: Rect, b: Rect, t: f64) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn launcher_edges_stay_owned_during_paging_but_release_for_back_targets() {
+        let mut phone=PhoneState::default();
+        phone.pages.sync(&["a".into(),"b".into(),"c".into()],1,1);
+        for page in [-1,0,1,2] {
+            phone.pages.jump(page);
+            assert!(phone.owns_launcher_edges(),"page {page}");
+        }
+        phone.pages.step(0.016,Some(crate::mobile_gestures::ShellGesture::PageSwipe {
+            dir:crate::mobile_gestures::Dir::Right,progress:0.25,
+        }));
+        assert!(phone.owns_launcher_edges(),"a moving page must retain edge ownership");
+        phone.screen=PhoneScreen::Drawer;
+        assert!(phone.owns_launcher_edges());
+        for screen in [PhoneScreen::App,PhoneScreen::Recents] {
+            phone.screen=screen;
+            assert!(!phone.owns_launcher_edges());
+        }
+        phone.screen=PhoneScreen::Home;
+        phone.card_open=true;assert!(!phone.owns_launcher_edges());phone.card_open=false;
+        phone.keyboard_target=300.0;assert!(!phone.owns_launcher_edges());phone.keyboard_target=0.0;
+        phone.native_keyboard=300.0;assert!(!phone.owns_launcher_edges());phone.native_keyboard=0.0;
+        phone.navigation.open=true;assert!(!phone.owns_launcher_edges());phone.navigation.open=false;
+        phone.overview=0.5;assert!(!phone.owns_launcher_edges());phone.overview=0.0;
+        phone.openness=0.5;assert!(!phone.owns_launcher_edges());phone.openness=0.0;
+        phone.shade.open=0.5;assert!(!phone.owns_launcher_edges());phone.shade.open=0.0;
+        assert!(phone.owns_launcher_edges());
+    }
 
     #[test]
     fn reduced_motion_settles_transitions_but_preserves_touch_and_scroll_physics() {

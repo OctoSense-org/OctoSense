@@ -630,7 +630,14 @@ impl App {
     /// opened from while that still runs, else Home.
     fn phone_back(&mut self,cx:&mut Cx) {
         if self.state_mut().phone.screen != PhoneScreen::App {
-            self.state_mut().phone.navigate(PhoneScreen::Home);
+            let phone = &mut self.state_mut().phone;
+            // A system-owned edge swipe arrives as Back instead of touches.
+            // Glance already has screen=Home, so navigate(Home) alone leaves
+            // its pager on -1 and makes that swipe appear to do nothing.
+            if phone.screen == PhoneScreen::Home && phone.pages.on_glance() {
+                phone.pages.jump(0);
+            }
+            phone.navigate(PhoneScreen::Home);
             return;
         }
         let Some(client)=self.state_mut().phone.client else{return};

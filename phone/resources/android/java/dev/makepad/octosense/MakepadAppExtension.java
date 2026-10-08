@@ -67,6 +67,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private final UserManager users;
     private volatile NativeWidgets widgets;
     private final HomeGeometryClient homeGeometry;
+    private final HomeGestureEdges homeGestureEdges;
     private final NativeReplyComposer replyComposer;
     private final NotificationAppIdentity notificationIdentity;
     private Bundle lastBridgeSnapshot;
@@ -149,6 +150,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         launcher=activity.getSystemService(LauncherApps.class);
         users=activity.getSystemService(UserManager.class);
         homeGeometry=new HomeGeometryClient(activity,this::offer,this::emit);
+        homeGestureEdges=new HomeGestureEdges(activity);
         replyComposer=new NativeReplyComposer(activity,(token,handle,text) -> offer(() ->
                 emit("notification.reply.submit",json("token",token,"handle",handle,"reply",text))),
                 visible -> {replyVisible=visible;updateNativeCoverage();});
@@ -216,6 +218,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         settingsFocusListener=focused -> {
             windowFocused=focused;
             if(destroyed)return;
+            homeGestureEdges.focus(focused);
             // Retire virtual actions immediately on the UI thread. Preserve
             // this edge in the worker packet even if focus changes again.
             settingsAccessibility.setWindowFocused(focused);
@@ -443,7 +446,10 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         return value;
     }
     private void result(long id,int status,String reason) { emit("launcher.result",json("id",id,"status",status,"reason",reason)); }
-    private void updateNativeCoverage() {homeGeometry.setCovered(widgetsVisible||replyVisible);}
+    private void updateNativeCoverage() {
+        homeGeometry.setCovered(widgetsVisible||replyVisible);
+        homeGestureEdges.cover(widgetsVisible||replyVisible);
+    }
     private android.view.Window validationWindow() {
         android.view.Window pin=ShortcutPinActivity.validationWindow();
         if(pin!=null) return pin;
@@ -493,7 +499,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         // Local view geometry has no worker/Binder/shell round trip. The
         // renderer coalesces unchanged layouts; native state is cached already.
         if("widgets.layout".equals(channel)) {widgets.layout(payload);return;}
-        if("home.layout".equals(channel)) {homeGeometry.layout(payload);return;}
+        if("home.layout".equals(channel)) {homeGeometry.layout(payload);homeGestureEdges.layout(payload);return;}
         if("a11y.layout".equals(channel)) {accessibility.layout(payload);return;}
         if("settings.a11y.layout".equals(channel)) {
             if(resumed&&!destroyed)settingsAccessibility.layout(payload);else settingsAccessibility.clear();
@@ -1542,6 +1548,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
     }
     @Override public void onResume() {
+        homeGestureEdges.resume();
         MailBackground.resume(activity);
         windowFocused=activity.hasWindowFocus();
         settingsAccessibility.setWindowFocused(windowFocused);
@@ -1550,6 +1557,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         offer(() -> {emitUiMode();emitHints();publishRecentApps();flushEvents();});
     }
     @Override public void onPause() {
+        homeGestureEdges.pause();
         MailBackground.pause();
         if(captionCustomSettings!=null)captionCustomSettings.retireInBackground();
         resumed=false;windowFocused=false;settingsAccessibility.onPause();if(soundsSettings!=null)agent.stopSoundInBackground();closePlacementMenu();replyComposer.close(); homeGeometry.onPause(); widgets.onPause();
@@ -1620,6 +1628,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(intent!=null && intent.hasCategory(Intent.CATEGORY_HOME)) {replyComposer.close();widgets.hide();homeGeometry.invalidate();}
     }
     @Override public void onDestroy() {
+        homeGestureEdges.close();
         if(unregisterSystemBack!=null) {unregisterSystemBack.run();unregisterSystemBack=null;}
         QrImagePickActivity.setListener(null);
         offer(()->{if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();});
