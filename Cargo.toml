@@ -36,6 +36,7 @@ members = [
     "crates/wasm-host",
     "apps/reference",
     "apps/news/host-service",
+    "apps/sheets/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -176,6 +177,16 @@ article-core = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0"
 article-makepad = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
+octosense-sheets-service = { path = "apps/sheets/host-service" }
+# The gridcraft spreadsheet engine (ADR 0013): a pinned read-only fork of
+# storytold/gridcraft under ymote; fixes go upstream first, adoption moves
+# the rev. One revision for the whole family.
+gridcraft-core = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
+gridcraft-formula = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
+gridcraft-functions = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
+gridcraft-calc = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
+gridcraft-model = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
+gridcraft-xlsx = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
