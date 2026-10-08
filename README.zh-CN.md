@@ -117,6 +117,7 @@ flowchart LR
 | 应用 | 类型 | 它的 Agent 自己的工具 | 系统 Agent 可以调用 |
 | --- | --- | --- | --- |
 | Rinx（Matrix 聊天） | 原生，在 Shell 内 | octos 的文件、记忆和网页工具 | – |
+| OctoBuddy（桌面；[授权说明](docs/native-apps/octobuddy.zh-CN.md)） | 原生，在 Shell 内 | 它双环自己驱动的 agent（Claude Code、Codex、pi、octos），由宿主检查验收，另有 `terminal.run` | `octobuddy.status`（只读）；`octobuddy.send`、`octobuddy.report` 与 `octobuddy.request`，每次都经人确认 |
 | Terminal（桌面端） | 原生；源码检出构建中为独立进程，发布包中在 Shell 内 | `terminal.read_screen`、`terminal.read_scrollback` | `terminal.run`，只在它作为独立的沙箱进程运行时提供，受 Setup 开关控制，每条命令都要批准 |
 | Calculator、Clock、Notes、Reminders、Weather | 原生，在 Shell 内 | 各自的只读工具 | 同样的只读工具 |
 | App Hub | 原生，在 Shell 内 | `apphub.search`、`apphub.installed`、`apphub.updates`，只读：安装和更新仍在 App Hub 自己的界面上进行 | 同样的只读工具 |
@@ -374,6 +375,7 @@ Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/000
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店，以及隔离运行每个脚本应用的 Card runner。 |
 | [octos](https://github.com/octos-org/octos) | Agent 内核。Android 上 APK 以 `liboctos.so` 形式内置它；桌面端运行 Shell 旁随附的 `octos-kernel`，并核对其版本与此处固定的一致（由 `tools/kernel-artifact.py --host --stage` 构建）。 |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，作为原生模块托管。 |
+| [OctoBuddy](https://github.com/tyreseluo/OctoBuddy) | 编码应用：外环把工作拆成切片，inner 并行实现，宿主检查验收。桌面端作为原生模块托管。 |
 | [OctosCode](https://github.com/octos-org/octoscode-app) | 用户助手的编码客户端，作为原生模块托管，经由编码范围内的内核端口访问内核（ADR 0003 第 9 条）。 |
 
 相关但不参与构建：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（如何构建和发布应用）、[OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) 和 [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH)（其他渲染后端）、[OctoSense 网站](https://github.com/OctoSense-org/octosense-org.github.io)。

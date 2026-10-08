@@ -1155,3 +1155,11 @@ fn settings_lists_every_app_that_declares_an_agent_before_it_asks() {
     assert!(listed.contains(&("org.example.trip".to_string(), State::Undecided)), "listed before it ever asked: {listed:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_native_apps_declared_name_is_what_its_sheets_say() {
+    use super::sheet::app_label;
+    assert_eq!(app_label("octobuddy"), "OctoBuddy", "native-apps.json's name");
+    assert_eq!(app_label("rinx"), "Rinx", "no name: the id with a capital");
+    assert_eq!(app_label("os.mail"), "Mail");
+}

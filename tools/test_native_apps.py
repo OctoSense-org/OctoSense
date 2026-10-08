@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -31,7 +32,7 @@ class TheRepository(unittest.TestCase):
 
     def test_the_manifest_declares_todays_native_apps(self):
         apps = native_apps.load(ROOT)
-        self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "sheets", "terminal", "appcard", "apphub",
+        self.assertEqual([app["id"] for app in apps], ["rinx", "reference", "octobuddy", "sheets", "terminal", "appcard", "apphub",
                                                        "calculator", "clock", "notes", "reminders", "weather",
                                                        "octoscode", "task"])
         hosting = {app["id"]: app["hosting"] for app in apps}
@@ -42,7 +43,7 @@ class TheRepository(unittest.TestCase):
         self.assertEqual(hosting["terminal"]["macos"], "process")
         self.assertEqual(hosting["terminal"]["windows"], "process")
         self.assertEqual(hosting["terminal"]["linux"], "process-if-vulkan")
-        for ident in ("apphub", "rinx", "sheets", "reference", "appcard"):
+        for ident in ("apphub", "rinx", "sheets", "reference", "octobuddy", "appcard"):
             self.assertEqual(set(hosting[ident].values()), {"module"}, ident)
         # Non-Vulkan Linux is in-process for every app with a module (a
         # process-only app is not there).
@@ -290,8 +291,33 @@ class Validation(Fixture):
         self.app("reference")["hosted"] = "yes"
         self.assertRefused(r"reference: unknown hosted")
 
+    def test_the_display_name_is_checked_and_generated(self):
+        rust = native_apps.render_rust(native_apps.validate(self.data))
+        self.assertIn('id: "octobuddy",\n        name: Some("OctoBuddy"),', rust)
+        self.assertIn('id: "rinx",\n        name: None,', rust)
+        for bad in ("", " OctoBuddy", "x" * 41, 7):
+            self.app("octobuddy")["name"] = bad
+            self.assertRefused(r"octobuddy: name must be a non-empty string")
+
 
 class Generation(Fixture):
+    def test_the_generated_rust_parses(self):
+        """Every generated Rust file is valid syntax: a field without its
+        comma once reached a pull request (`name: Option<&'static str>`)."""
+        apps = native_apps.validate(self.data)
+        for label, rust in (("native_apps.rs", native_apps.render_rust(apps)),
+                            ("native_agents.rs", native_apps.render_agents(apps))):
+            for line in rust.splitlines():
+                if re.fullmatch(r"    pub \w+: .*", line):
+                    self.assertTrue(line.endswith(","), f"{label}: {line.strip()}")
+            rustfmt = shutil.which("rustfmt")
+            if rustfmt is None:
+                continue
+            run = subprocess.run([rustfmt, "--edition", "2021", "--emit", "stdout"], input=rust,
+                                 capture_output=True, text=True)
+            self.assertNotIn("error", run.stderr, f"{label}: {run.stderr}")
+            self.assertEqual(run.returncode, 0, f"{label}: {run.stderr}")
+
     def test_a_manifest_change_is_drift_until_regenerated(self):
         self.app("terminal")["hosting"]["macos"] = "module"
         self.save()

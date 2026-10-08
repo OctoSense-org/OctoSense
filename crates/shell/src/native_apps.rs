@@ -64,6 +64,8 @@ pub enum KernelPort {
 #[derive(Debug)]
 pub struct NativeApp {
     pub id: &'static str,
+    /// What the person sees (`name`); none: the id with a capital.
+    pub name: Option<&'static str>,
     /// The shell's Cargo feature that links it.
     pub feature: &'static str,
     /// The binary a process-hosted instance runs.
@@ -116,6 +118,7 @@ pub struct NativeApp {
 pub const APPS: &[NativeApp] = &[
     NativeApp {
         id: "rinx",
+        name: None,
         feature: "app-rinx",
         bin: None,
         macos: Hosting::Module,
@@ -143,6 +146,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "reference",
+        name: None,
         feature: "app-reference",
         bin: Some("octosense-reference"),
         macos: Hosting::Module,
@@ -169,7 +173,36 @@ pub const APPS: &[NativeApp] = &[
         kernel: KernelPort::None,
     },
     NativeApp {
+        id: "octobuddy",
+        name: Some("OctoBuddy"),
+        feature: "app-octobuddy",
+        bin: None,
+        macos: Hosting::Module,
+        windows: Hosting::Module,
+        linux: Hosting::Module,
+        android: Hosting::Module,
+        ios: Hosting::Module,
+        ohos: Hosting::Module,
+        wasm: Hosting::Module,
+        octos: &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
+        tools: &[],
+        network: Network::Any,
+        processes: true,
+        accounts: false,
+        external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "account", "external": []}"#,
+        tools_json: r##"[{"name":"octobuddy.status","description":"What OctoBuddy is doing now: its projects and sessions, each session's outer loop (what it does, its cost, what waits for it) and its inner loops (role, status, estimate and steps used, cost, the outer loop's verdict). Its published apps as its Live page has them (live.apps: each app's published version, whether it is watched and its health, an open incident with what is wrong and what was done, the last report). Optionally only one project, by name.","input_schema":{"type":"object","properties":{"project":{"type":"string","maxLength":200}},"additionalProperties":false},"risk":"read","shareable":true},{"name":"octobuddy.send","description":"Send a message to the outer loop of one OctoBuddy session, as the person would from its composer; it waits in the session's queue while the outer loop is busy. The session is named by its id or by words of its title.","input_schema":{"type":"object","properties":{"session":{"type":"string","maxLength":200},"message":{"type":"string","minLength":1,"maxLength":8000}},"required":["session","message"],"additionalProperties":false},"risk":"act","confirm":"host","shareable":true},{"name":"octobuddy.report","description":"Report a problem with an app OctoBuddy built and published (the person says it is broken, or another app saw it fail). Call it first, before checking anything yourself: OctoBuddy runs the published version on this device at once (no need to fetch its API or run anything) and keeps watching it; the reply says whether that run found the problem and what was on screen, and the app's OctoBuddy session hears it. Repairing it stays the person's choice in OctoBuddy (its Live page). The app is named by its name or id.","input_schema":{"type":"object","properties":{"app":{"type":"string","minLength":1,"maxLength":200},"problem":{"type":"string","minLength":1,"maxLength":2000},"from":{"type":"string","maxLength":200}},"required":["app","problem"],"additionalProperties":false},"risk":"act","confirm":"host","shareable":true},{"name":"octobuddy.request","description":"Ask OctoBuddy for a new OctoSense app (the person wants one, or another app needs one). It waits for the person: OctoBuddy shows it on its Apps page and builds it only if they press Build (an outer loop plans it, inner loops make it, its check runs); they publish it to the local App Hub from there. The reply is at once, with the request's id; octobuddy.status shows its status under requests. Say what it is for, what it shows and does, and when it is done; name its data (an https JSON API) if it has one.","input_schema":{"type":"object","properties":{"what":{"type":"string","minLength":1,"maxLength":4000},"for":{"type":"string","maxLength":200},"acceptance":{"type":"string","maxLength":2000},"data":{"type":"string","maxLength":500},"name":{"type":"string","maxLength":60}},"required":["what"],"additionalProperties":false},"risk":"act","confirm":"host","shareable":true}]"##,
+        generic_tools: &["read_file", "write_file", "edit_file", "glob", "grep", "list_dir", "web_search", "web_fetch", "view_image", "ask_user_question", "memory_search", "save_memory"],
+        grants: &[("terminal", "terminal.run")],
+        system_tools: &[],
+        own_tools: &["octobuddy.status", "octobuddy.send", "octobuddy.report", "octobuddy.request"],
+        calls_per_turn: None,
+        calls_per_day: None,
+        kernel: KernelPort::None,
+    },
+    NativeApp {
         id: "sheets",
+        name: None,
         feature: "app-sheets",
         bin: Some("sheets"),
         macos: Hosting::Module,
@@ -197,6 +230,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "terminal",
+        name: None,
         feature: "app-terminal",
         bin: Some("terminal"),
         macos: Hosting::Process,
@@ -226,6 +260,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "appcard",
+        name: None,
         feature: "app-appcard",
         bin: None,
         macos: Hosting::Module,
@@ -253,6 +288,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "apphub",
+        name: None,
         feature: "app-hub",
         bin: None,
         macos: Hosting::Module,
@@ -280,6 +316,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "calculator",
+        name: None,
         feature: "app-calculator",
         bin: Some("calculator"),
         macos: Hosting::Module,
@@ -307,6 +344,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "clock",
+        name: None,
         feature: "app-clock",
         bin: Some("clock"),
         macos: Hosting::Module,
@@ -334,6 +372,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "notes",
+        name: None,
         feature: "app-notes",
         bin: Some("notes"),
         macos: Hosting::Module,
@@ -361,6 +400,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "reminders",
+        name: None,
         feature: "app-reminders",
         bin: Some("reminders"),
         macos: Hosting::Module,
@@ -388,6 +428,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "weather",
+        name: None,
         feature: "app-weather",
         bin: Some("weather"),
         macos: Hosting::Module,
@@ -415,6 +456,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "octoscode",
+        name: None,
         feature: "app-octoscode",
         bin: None,
         macos: Hosting::Module,
@@ -442,6 +484,7 @@ pub const APPS: &[NativeApp] = &[
     },
     NativeApp {
         id: "task",
+        name: None,
         feature: "app-task",
         bin: Some("task"),
         macos: Hosting::Process,
@@ -527,6 +570,8 @@ pub fn link(out: &mut Vec<&'static dyn AppModule>) {
     out.push(&rinx::module::RINX_MODULE);
     #[cfg(any(feature = "app-reference", native_mobile))]
     out.push(&octosense_reference::REFERENCE_MODULE);
+    #[cfg(feature = "app-octobuddy")]
+    out.push(&octosense_octobuddy::OCTOBUDDY_MODULE);
     #[cfg(any(feature = "app-sheets", native_mobile))]
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(feature = "app-terminal")]

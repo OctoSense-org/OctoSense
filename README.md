@@ -119,6 +119,7 @@ These apps have an agent:
 | App | Kind | Its agent's own tools | What the system agent may call |
 | --- | --- | --- | --- |
 | Rinx (Matrix chat) | native, in the shell | octos's file, memory and web tools | – |
+| OctoBuddy (desktop; [its grants](docs/native-apps/octobuddy.md)) | native, in the shell | its loops' own agents (Claude Code, Codex, pi, octos), checked by the host, and `terminal.run` | `octobuddy.status` (read); `octobuddy.send`, `octobuddy.report` and `octobuddy.request`, each confirmed by the person |
 | Terminal (desktop) | native; its own process in a checkout build, inside the shell in a release package | `terminal.read_screen`, `terminal.read_scrollback` | `terminal.run`, only while it runs as its own sandboxed process, behind Setup's switch, approved per command |
 | Calculator, Clock, Notes, Reminders, Weather | native, in the shell | each app's read tools | the same read tools |
 | App Hub | native, in the shell | `apphub.search`, `apphub.installed`, `apphub.updates`, read only: installs and updates stay on App Hub's own screens | the same read tools |
@@ -376,6 +377,7 @@ Pinned exactly once, in the root `Cargo.toml` and the runtime locks:
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store, and the Card runner that contains every script app. |
 | [octos](https://github.com/octos-org/octos) | The agent kernel. Android bundles it in the APK as `liboctos.so`; the desktop runs the packaged `octos-kernel` beside the shell, checked against this revision (`tools/kernel-artifact.py --host --stage` builds it). |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, hosted as a native module. |
+| [OctoBuddy](https://github.com/tyreseluo/OctoBuddy) | The coding app: an outer loop plans the work into slices, inner loops build them in parallel, and the host checks and reviews what lands. Hosted as a native module on the desktop. |
 | [OctosCode](https://github.com/octos-org/octoscode-app) | The coding client of the person's assistant, hosted as a native module that reaches the kernel through its port in the coding scope (ADR 0003, item 9). |
 
 Related, not build inputs: [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
