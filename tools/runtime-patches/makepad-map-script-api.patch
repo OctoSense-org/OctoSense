@@ -33,7 +33,7 @@ index 3f1c917b0..31ef7b1fd 100644
      fn set_route_coords(&mut self, coords0: Vec<(f64, f64)>) {
          self.pts.clear();
 diff --git a/widgets/src/map/view.rs b/widgets/src/map/view.rs
-index 566940e86..9582768fc 100644
+index 566940e86..1eb0c1a38 100644
 --- a/widgets/src/map/view.rs
 +++ b/widgets/src/map/view.rs
 @@ -1,5 +1,6 @@
@@ -166,7 +166,7 @@ index 566940e86..9582768fc 100644
                      }
                  } else if self.gesture_panned {
                      self.gesture_panned = false;
-@@ -5351,9 +5419,13 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+@@ -5351,9 +5419,14 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
          }
      }
  
@@ -177,13 +177,14 @@ index 566940e86..9582768fc 100644
 +    /// `set_route_markers(s)` (nav cards and plain maps), and for nav cards
 +    /// `set_nav_recenter(_)`, `nav_zoom_by(delta)`, `nav_center_origin()` —
 +    /// see map/nav.rs. A plain map (no `nav_mode`): `fly_to(lat, lon, zoom)`
-+    /// (zoom optional; 0,0 and out-of-range points are ignored),
-+    /// `fit_route()`, `clear_route()`. On a map with a `nav_mode`, `fly_to`
-+    /// and `fit_route` do nothing: the nav camera owns the view.
++    /// (zoom optional; 0,0 and out-of-range points are ignored, and so is a
++    /// call while the person is moving the map), `fit_route()`,
++    /// `clear_route()`. On a map with a `nav_mode`, `fly_to` and `fit_route`
++    /// do nothing: the nav camera owns the view.
      fn script_call(
          &mut self,
          vm: &mut ScriptVm,
-@@ -5369,6 +5441,13 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
+@@ -5369,6 +5442,13 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
              }
              vm.bx.heap.cast_to_owned_string(value, "nav method argument")
          }
@@ -197,13 +198,15 @@ index 566940e86..9582768fc 100644
          if method == live_id!(set_nav_polyline) {
              if let Some(s) = first_string_arg(vm, args) {
                  if !s.trim().is_empty() && s.as_str() != self.nav_polyline.as_ref() {
-@@ -5427,6 +5506,33 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
+@@ -5427,6 +5507,35 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
              }
              return ScriptAsyncResult::Return(NIL);
          }
 +        if method == live_id!(fly_to) {
-+            // The nav camera owns a nav-mode map's view (as in fit_route).
-+            if nav_kind(self.nav_mode.as_ref().trim()) != NavKind::Off {
++            // The nav camera owns a nav-mode map's view (as in fit_route), and
++            // the person a map they are moving: a flight started mid-drag
++            // would land after the release and undo it.
++            if nav_kind(self.nav_mode.as_ref().trim()) != NavKind::Off || self.gesturing() {
 +                return ScriptAsyncResult::Return(NIL);
 +            }
 +            // Latitude first, as scripts read places; zoom optional. Without
@@ -231,7 +234,7 @@ index 566940e86..9582768fc 100644
          ScriptAsyncResult::MethodNotFound
      }
  
-@@ -8579,6 +8685,15 @@ fn touch_world_rel(&self, abs: Vec2d) -> Vec2d {
+@@ -8579,6 +8688,15 @@ fn touch_world_rel(&self, abs: Vec2d) -> Vec2d {
          }
      }
  
@@ -247,7 +250,7 @@ index 566940e86..9582768fc 100644
      fn begin_two_finger_gesture(&mut self, pair: TouchPair) {
          self.fly = None;
          self.drag_start_abs = None;
-@@ -8655,10 +8770,10 @@ fn handle_touch_tap(&mut self, cx: &mut Cx, abs: Vec2d, tap_count: u32) {
+@@ -8655,10 +8773,10 @@ fn handle_touch_tap(&mut self, cx: &mut Cx, abs: Vec2d, tap_count: u32) {
          } else if let Some((lon, lat, info)) = self.pin_at(abs) {
              cx.widget_action(self.uid, MapViewAction::PinTapped { lon, lat, info });
          } else if let Some(id) = self.overlay.marker_at(&self.overlay_camera(), abs) {
@@ -260,7 +263,7 @@ index 566940e86..9582768fc 100644
          }
      }
  
-@@ -11184,14 +11299,32 @@ fn sync_camera_fields(&mut self) {
+@@ -11184,14 +11302,32 @@ fn sync_camera_fields(&mut self) {
      }
  
      fn emit_viewport_changed(&mut self, cx: &mut Cx) {
@@ -301,7 +304,7 @@ index 566940e86..9582768fc 100644
      }
  
      /// Screen point → map coordinate: the exact inverse of the camera that
-@@ -12003,8 +12136,10 @@ pub fn set_map_zoom(&mut self, cx: &mut Cx, zoom: f64) {
+@@ -12003,8 +12139,10 @@ pub fn set_map_zoom(&mut self, cx: &mut Cx, zoom: f64) {
  
      /// Animated camera flight; far targets get a zoom-out-then-in arc so
      /// tiles stay loadable mid-flight and the motion reads like every
@@ -313,7 +316,7 @@ index 566940e86..9582768fc 100644
          let min_zoom = self.min_zoom.max(0.0);
          let max_zoom = self.max_zoom.max(min_zoom);
          let to_zoom = zoom.clamp(min_zoom, max_zoom);
-@@ -12090,8 +12225,17 @@ pub fn set_route(&mut self, cx: &mut Cx, points: &[(f64, f64)]) {
+@@ -12090,8 +12228,17 @@ pub fn set_route(&mut self, cx: &mut Cx, points: &[(f64, f64)]) {
          self.redraw(cx);
      }
  
@@ -331,7 +334,7 @@ index 566940e86..9582768fc 100644
          self.redraw(cx);
      }
  
-@@ -12112,6 +12256,25 @@ pub fn set_puck(&mut self, cx: &mut Cx, puck: Option<MapPuck>) {
+@@ -12112,6 +12259,25 @@ pub fn set_puck(&mut self, cx: &mut Cx, puck: Option<MapPuck>) {
          self.nav.owns_puck = false;
          self.redraw(cx);
      }
@@ -357,7 +360,7 @@ index 566940e86..9582768fc 100644
  }
  
  impl MapViewRef {
-@@ -13601,6 +13764,312 @@ fn http_archive_waiting_for_dispatch_has_no_enqueue_watchdog() {
+@@ -13601,6 +13767,318 @@ fn http_archive_waiting_for_dispatch_has_no_enqueue_watchdog() {
          assert!(map.local_requested_tiles.contains_key(&key));
          assert!(map.archive_pending_tiles.contains_key(&key));
      }
@@ -600,6 +603,12 @@ index 566940e86..9582768fc 100644
 +        call(&mut cx, &mut map, &[n(37.33), n(-121.88), n(15.0)]);
 +        assert!(map.fly.is_none(), "fly_to on a nav-mode map");
 +        map.nav_mode.set("");
++        // While the person moves the map, the camera is theirs: a flight
++        // would carry on after the release and undo the drag.
++        map.drag_start_abs = Some(dvec2(200.0, 400.0));
++        call(&mut cx, &mut map, &[n(37.33), n(-121.88), n(15.0)]);
++        assert!(map.fly.is_none(), "fly_to during a drag");
++        map.drag_start_abs = None;
 +        // A later fly_to drops a fit still pending: the fit doesn't override
 +        // it.
 +        let rect = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 800.0) };
@@ -670,7 +679,7 @@ index 566940e86..9582768fc 100644
  }
  
  
-@@ -13627,13 +14096,37 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
+@@ -13627,13 +14105,37 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
                  .map(|(i, &(lat, lon, k))| MapMarker::new(i as u64 + 1, lon, lat, marker_color(k)))
                  .collect();
          }
@@ -709,7 +718,7 @@ index 566940e86..9582768fc 100644
          if self.nav.home_zoom <= 0.0 {
              self.nav.home_zoom = self.zoom;
          }
-@@ -13713,32 +14206,47 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
+@@ -13713,32 +14215,47 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
      /// PLAN route-preview camera: static, north-up, fit to the WHOLE route,
      /// framed into the top band above the card's summary sheet.
      fn nav_plan_camera(&mut self, rect: Rect) {
