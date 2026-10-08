@@ -49,6 +49,17 @@ pub enum Network {
     Any,
 }
 
+/// The port to the shell's octos kernel an app that is itself an octos
+/// client gets (`kernel`; ADR 0003).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KernelPort {
+    /// None: a port the app opens is closed.
+    None,
+    /// The coding scope the kernel router enforces: the app's own
+    /// sessions, in workspaces the person picked.
+    Coding,
+}
+
 /// One `native-apps.json` entry, as far as the shell reads it.
 #[derive(Debug)]
 pub struct NativeApp {
@@ -98,6 +109,8 @@ pub struct NativeApp {
     /// (`None`: the shell's defaults).
     pub calls_per_turn: Option<u32>,
     pub calls_per_day: Option<u32>,
+    /// `kernel`: its port to the shell's kernel.
+    pub kernel: KernelPort,
 }
 
 pub const APPS: &[NativeApp] = &[
@@ -126,6 +139,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "reference",
@@ -152,6 +166,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "sheets",
@@ -178,6 +193,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "terminal",
@@ -206,6 +222,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &["terminal.read_screen", "terminal.read_scrollback"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "appcard",
@@ -232,6 +249,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "apphub",
@@ -258,6 +276,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &["apphub.search", "apphub.installed", "apphub.updates"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "calculator",
@@ -284,6 +303,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &["calculator.eval"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "clock",
@@ -310,6 +330,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &["clock.now"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "notes",
@@ -336,6 +357,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &["notes.search", "notes.read"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "reminders",
@@ -362,6 +384,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &["reminders.due", "reminders.list"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
     NativeApp {
         id: "weather",
@@ -388,6 +411,34 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &["weather.current"],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
+    },
+    NativeApp {
+        id: "octoscode",
+        feature: "app-octoscode",
+        bin: None,
+        macos: Hosting::Module,
+        windows: Hosting::Module,
+        linux: Hosting::Module,
+        android: Hosting::Module,
+        ios: Hosting::Module,
+        ohos: Hosting::Module,
+        wasm: Hosting::Module,
+        octos: &[],
+        tools: &[],
+        network: Network::None,
+        processes: false,
+        accounts: false,
+        external: &["home:rw"],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": ["home:rw"]}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        system_tools: &[],
+        own_tools: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
+        kernel: KernelPort::Coding,
     },
     NativeApp {
         id: "task",
@@ -414,6 +465,7 @@ pub const APPS: &[NativeApp] = &[
         own_tools: &[],
         calls_per_turn: None,
         calls_per_day: None,
+        kernel: KernelPort::None,
     },
 ];
 
@@ -496,4 +548,6 @@ pub fn link(out: &mut Vec<&'static dyn AppModule>) {
     out.push(&makepad_reminders::REMINDERS_MODULE);
     #[cfg(feature = "app-weather")]
     out.push(&makepad_weather::WEATHER_MODULE);
+    #[cfg(feature = "app-octoscode")]
+    out.push(&octoscode_module::OCTOSCODE_MODULE);
 }

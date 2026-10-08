@@ -139,6 +139,56 @@ separate kernel would be a different assistant with different memory.
    web client's scoped session agree.
 8. **Upstream, not an overlay.** `--host-managed` is octos code (octos#2591);
    OctoSense carries no patch to octos.
+9. **An app that is an octos client gets a kernel port in the coding scope**
+   *(2026-10-05; the person chose this over host authority and over a new
+   octos token class).* OctosCode (octos-org/octoscode-app) speaks the UI
+   protocol itself: standalone, it pairs with a server and holds its admin
+   token. The external token blocks most of what it does (a working folder,
+   the session list, skills, agents), and the shell's own authority is no
+   app's. So, inside OctoSense:
+
+   - **A port, not a socket or a token.** The module opens Makepad's
+     `OctosUiPort`; the module host takes it for the instance that opened it
+     (as a peer link) and connects it to the kernel as one more consumer of
+     the private pipe, held to a scope (`octosense_kernel::serve_scoped`).
+     Nothing listens and no token exists. A kernel restart is a `Reset` on
+     the same port; the app opens its sessions again. Only an entry whose
+     `native-apps.json` block names `"kernel": "coding"` gets a port; any
+     other port is closed with the reason.
+   - **The router is the whole boundary.** Over the pipe octos applies none
+     of its external checks, so the router checks each of the app's frames
+     against the scope (`crates/shell/src/coding_scope.rs`) and answers a
+     refused one itself (`scope_denied`), default deny:
+     - its own sessions only: every string under a key naming a session, at
+       any depth, is `_main:api:code-<id>` with no topic (a `#peer-…` topic
+       would take an app agent's queued input); the profile is `_main`; no
+       topic, sandbox, origin, tool context or host token is set. The id is
+       octos's durable key, so the shell keeps no record;
+     - its own folders: a working folder is the app's jail, or on a desktop
+       a folder under a root its entry grants read-write (`storage.external`,
+       the home for OctosCode), never OctoSense's or the kernel's data, a
+       hidden folder at the top of the home, nor a folder holding any of
+       them (octos fences a session's file tools to its folder). It is
+       resolved by the shell and sent resolved;
+     - the methods of a coding client: sessions, turns, approvals and
+       questions on its sessions, diffs, snapshots, tasks, agents, goals and
+       loops on its sessions, the skill list, memory reads. Never provider,
+       key or model settings (the AI providers app owns them), permission
+       profiles, skill installs, peers, monitors that start a command,
+       `client_hello` (it renegotiates the shared pipe) or `server/shutdown`.
+   - **A coding agent's tools.** Before the app's first frame about a
+     session, the router sets that session's exact tool list
+     (`session/tool_list/set`) and holds the session's frames until the
+     kernel confirms; a failure refuses them. The list is octos's own for an
+     external client's turn: files in the session's folder, search, the web,
+     questions to the person and memory. No command runs: octos's own shell
+     asks only about a few patterns, so commands wait for a shell-run tool
+     approved per command, behind Setup's Command execution switch.
+   - **What it hears.** Frames about its own sessions only; the host's
+     (`peer/…`, a host tool's call) go to the shell's relay instead; session
+     lists answer its sessions; the methods it is told the kernel supports,
+     in an answer or in the `session/open` notification octos sends after an
+     open, are the ones it may call.
 
 ## Consequences
 
@@ -157,12 +207,18 @@ separate kernel would be a different assistant with different memory.
   (upstream octos issue 2167).
 - This is not an Android foreground service: when Android kills the shell,
   the kernel stops with it.
+- An app's kernel port adds no listener and no credential. Its sessions are
+  the person's assistant's (`_main`): the same memory, models and providers.
 
 ## Limits
 
 OpenHarmony (embedded core) and iOS (no kernel) have no Talk to Octos. There
 is no bundled web client. Android packaging and device behaviour, and a
 terminal UI reading the connection file, are **unverified**.
+
+An app's kernel port (item 9) runs no command yet, and has no uploads (they
+go over REST, which the port does not carry). On a phone the app works only
+in its own folder.
 
 ## Acceptance
 
@@ -180,6 +236,14 @@ Real-kernel tests (a scripted local model, no external calls) check that:
 - a restart keeps the port and token, and rotation retires the old token;
 - native and web clients share the system conversation;
 - a shell killed with SIGKILL takes its kernel with it, in both modes.
+
+For item 9, the router's tests check that a scoped consumer's refused
+request never reaches the kernel and is answered with its own id, that it
+hears only its own sessions, that a host-only frame about its session goes
+to the shell, that it answers only the kernel requests it was sent, and that
+a session's frames wait for its tool list (and are refused when setting it
+failed); the coding scope's tests check its sessions, folders, methods and
+filters.
 
 The six app-peer real-kernel tests pass with Talk to Octos off. CI runs
 these real-kernel tests (`apps.yml`, job `kernel-security`) against octos

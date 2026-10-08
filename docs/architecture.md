@@ -113,6 +113,7 @@ Native apps are reviewed, first-party Rust crates declared only in [`native-apps
 | Rinx | module | module | module | default / default | injected service |
 | Terminal | **process** | **process** with Vulkan and Wayland, else module | module | default / off | peer link; `terminal.run` is the system agent's |
 | Calculator, Clock, Notes, Reminders, Weather | module | module | module | default / default | peer link |
+| OctosCode (a coding client of the person's assistant) | module | module | module | default / default | none of its own: a kernel port in the coding scope (ADR 0003, item 9) |
 | Sheets, Reference | module | module | module | opt-in / `mobile-apps` | – |
 | Task (no module) | **process** | **process** | – | off / off; the desktop catalog starts it | – |
 | AppCard | module | module | module | opt-in / opt-in | its own kernel connection |
@@ -252,7 +253,7 @@ The broker answers `peer/input/reject`, with a reason, when the agent is not all
 
 ### An app and its own agent
 
-An app never speaks OUP and never sees the host token, and the shell stamps the app's identity on every call ([How an app uses its agent](../README.md#how-an-app-uses-its-agent)). There are three paths:
+An app never sees the host token, and the shell stamps the app's identity on every call ([How an app uses its agent](../README.md#how-an-app-uses-its-agent)). No app speaks OUP, except an app that is itself an octos client (OctosCode): it gets a kernel port that the shell's router holds to the coding scope, its own sessions in its own folders, with no listener and no token ([ADR 0003](adr/0003-shared-octos-client-access.md), item 9). There are three paths:
 
 | Path | Used by | How it works |
 | --- | --- | --- |
@@ -432,7 +433,7 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
 | Script app ↔ shell | The Card runner's isolate, jail and quota; `host.request` only for granted families |
 | Native module ↔ shell | Nothing in memory: review of first-party code, and panic containment |
 | Process app ↔ shell | Its own address space and an OS sandbox: Seatbelt on macOS, Landlock and seccomp on Linux. **Not yet:** Windows. |
-| App ↔ kernel | No app speaks OUP or sees the host token |
+| App ↔ kernel | No app sees the host token. Only an octos client's kernel port speaks OUP, held by the router to the coding scope (ADR 0003, item 9) |
 | Peer ↔ peer | octos gives each peer its own workspace (overlaps refused), memory namespace and transcript |
 | Agent ↔ secrets | Secrets outside every jail and workspace; the startup check |
 | Agent ↔ Mail delivery | No agent tool or generated card sends: only the host's review of the exact message, approved by a physical press; synthetic and remote input are refused |

@@ -51,6 +51,9 @@ pub mod dock_warp;
 pub mod host;
 pub mod host_tools;
 pub mod hub;
+#[cfg(kernel)]
+pub mod coding_scope;
+pub mod kernel_port;
 pub mod layout;
 pub mod octosense;
 pub mod module_host;
@@ -62,6 +65,8 @@ mod module_input_tests;
 mod module_panic_tests;
 #[cfg(test)]
 mod module_peer_tests;
+#[cfg(test)]
+mod module_port_tests;
 #[cfg(test)]
 mod module_resize_tests;
 #[cfg(test)]
