@@ -163,6 +163,8 @@ The default remains legacy until official v2 acceptance; the operator can select
 `OCTOSENSE_HUB_CATALOG=github-v2`. Both cache names and their `.lock` counterparts
 are host-owned names, not app storage IDs. A new channel or changed cache causes
 the backend watcher to recheck connected apps; per-call admission still applies.
+If a newer verified catalog cannot be saved, agents and Glance also honor the
+process's highest verified sequence and refuse the older cache until it is saved.
 
 The relay routes every call by the tool's owner:
 

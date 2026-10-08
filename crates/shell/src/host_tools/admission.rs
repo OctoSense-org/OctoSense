@@ -34,6 +34,9 @@ fn installed_bundle_with_anchor(root: &Path, app: &str, anchor: &str) -> Result<
     let catalog = channel.read_cache(root)
         .map_err(|_| "No verified App Hub catalog is available on this device".to_string())?;
     store.accept_catalog(&catalog).map_err(|e| format!("App Hub catalog refused: {e}"))?;
+    octosense_app_hub_app::catalog::check_verified_catalog_floor(
+        root, anchor, store.catalog().map(|catalog| catalog.sequence),
+    )?;
     store.may_run(app).map_err(|e| format!("App agent is unavailable: {e}"))?;
     Ok(store.install_dir(app))
 }

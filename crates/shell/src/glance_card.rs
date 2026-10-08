@@ -1356,6 +1356,9 @@ fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::Isol
                 .with_host_api_versions(octosense_appstore::host_api::available_versions()));
             let catalog = channel.read_cache(&root).map_err(|e| format!("no verified catalog on this device ({e})"))?;
             store.accept_catalog(&catalog).map_err(|e| format!("no verified catalog on this device ({e})"))?;
+            octosense_app_hub_app::catalog::check_verified_catalog_floor(
+                &root, &anchor, store.catalog().map(|catalog| catalog.sequence),
+            )?;
             store.may_run(app)?
         }
     };
