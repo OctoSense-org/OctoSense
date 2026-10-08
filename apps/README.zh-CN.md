@@ -44,6 +44,10 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`film` 宿主服务**（`film/host-service`）是锁定版本的 filmcraft 视频引擎
   （ADR 0013），以 `film.*` 提供探测、抽帧为 PNG 和有上限的导出，全部使用其
   纯 Rust 编解码器——无界面、离线，暂无应用包。
+- **`effect` 宿主服务**（`effect/host-service`）是 effectcraft 动态图形引擎
+  （ADR 0013），通过 `effect.*` 方法服务系统应用：工程信息、把合成帧渲染为
+  PNG、引擎命令目录以及 Lottie 导入/导出，所有文件都在调用方的 `effect/`
+  区域内；尚无应用包。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`
