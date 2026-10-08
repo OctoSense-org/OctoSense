@@ -57,8 +57,8 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   in the manifest; it runs only while the app is open
   ([ADR 0012](../docs/adr/0012-app-host-api-discovery.md)).
 - For a notification tool, follow `../crates/shell/src/glance_notice.rs`.
-  Mail/News install `on_notify` callbacks; the shell's `NoticeService` serves
-  Photos, Maps, YouTube and Camera. The fixed notice template lives in
+  Mail/News/Photos install `on_notify` callbacks; the shell's `NoticeService`
+  serves Maps, YouTube and Camera. The fixed notice template lives in
   `../crates/shell/resources/glance/notice.card`; Calendar keeps its own event
   and agenda templates. Grant `glance` in the manifest and publish as the app.
 - For richer app-owned cards, use `glance.publish` with either L0 `source` and
@@ -138,8 +138,11 @@ Trace each tool from `bundle/tools.json` through
 caller identity, approval behavior and results at that boundary. Keep UI API
 methods separate from the tools actually declared for the agent: Mail exposes
 account-scoped accounts/folders/sync/list/peek and notify/publish_card; its
-credentials, send and mark-read APIs remain host/UI-only. News exposes list/read/notify; Photos, Maps, YouTube
-and Camera expose notify only. AI providers declares no app agent.
+credentials, send and mark-read APIs remain host/UI-only. News exposes list/read/notify; Photos notify and
+info (its `photos` service: `photos.info` on the photo engine, ADR 0013); Maps, YouTube
+and Camera expose notify only. AI providers declares no app agent. The native
+Sheets app declares `sheets.*`, which the shell's engine executor
+(`../crates/shell/src/host_tools/engines.rs`) runs on the sheet engine.
 
 Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,

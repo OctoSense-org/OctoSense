@@ -272,7 +272,7 @@ class Validation(Fixture):
         self.assertIn('tools_json: r##"[{"name":"terminal.run",', rust)
         agents = native_apps.render_agents(apps)
         self.assertIn('("rinx", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),', agents)
-        self.assertNotIn('"sheets"', agents, "an app granted no octos.* services has no line")
+        self.assertNotIn('"reference"', agents, "an app granted no octos.* services has no line")
         self.assertIn('("terminal", &["octos.session.open",', agents, "the Terminal's own agent (read tools only, agent.own_tools)")
 
     def test_the_shipped_agent_blocks(self):
@@ -309,7 +309,8 @@ class Generation(Fixture):
     def test_a_new_app_reaches_every_place(self):
         extra = copy.deepcopy(self.app("sheets"))
         extra.update({"id": "image", "crate": "makepad-image", "module": "makepad_image::IMAGE_MODULE", "bin": "image",
-                      "shells": {"desktop": "default", "phone": "off"}, "native_mobile": "feature"})
+                      "shells": {"desktop": "default", "phone": "off"}, "native_mobile": "feature",
+                      "agent": {"octos": [], "tools": None}})
         extra["source"]["local"] = ".sources/makepad/apps/image"
         self.data["apps"].append(extra)
         self.save()

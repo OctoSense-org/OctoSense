@@ -9,18 +9,22 @@
 //!
 //! Methods (all under the `sheet` family):
 //! - `new {}` → `{book, sheets}`
-//! - `open {path}` → `{book, sheets}` — `path` relative to the host dir
+//! - `open {path}` → `{book, sheets}` — `path` relative to the service area
 //! - `set {book, sheet?, cells: [{at, value? | formula?}]}` → `{set}`
 //! - `get {book, sheet?, range}` → `{values}` (row-major; `A1:C3` or `A1`)
-//! - `eval {book, sheet?, at?, formula}` → `{value}` — ad hoc, not stored
+//! - `eval {book?, sheet?, at?, formula}` → `{value}` — ad hoc, not stored;
+//!   without `book`, against an empty transient workbook
 //! - `recalc {book}` → `{}` — full recalculation, formulas cache results
-//! - `export {book, path}` → `{path}` — xlsx under the host dir
+//! - `export {book, path}` → `{path}` — xlsx under the service area
 //! - `close {book}` → `{}`
 //!
-//! Paths never leave the host directory: `..`, absolute paths and symlink
-//! escapes are refused, the same stance the files host tools take. The
-//! service serves system apps only until ADR 0013's store capability is
-//! designed.
+//! Paths never leave the service's own area, `<host dir>/sheet` ([`area`]):
+//! `..`, absolute paths and symlink escapes are refused, the same stance
+//! the files host tools take, and the shared host directory's other
+//! services (Mail's vaults, Calendar's events) stay out of reach. The
+//! service serves system apps, and the native Sheets app, whose agent's
+//! `sheets.*` tools the shell routes here
+//! (`crates/shell/src/host_tools/engines.rs`).
 
 use std::collections::HashMap;
 
@@ -60,9 +64,20 @@ const MAX_OPEN_BOOKS: usize = 16;
 /// The largest xlsx the service reads or writes (bytes).
 const MAX_XLSX_BYTES: u64 = 64 << 20;
 
-/// Which apps may call the service: system apps, as News.
+/// Which apps may call the service: system apps, as News, and the native
+/// Sheets app (the shell routes its agent's `sheets.*` tools here as
+/// `"sheets"`).
 fn may_call(app_id: &str) -> bool {
-    app_id.starts_with("os.")
+    app_id == "sheets" || app_id.starts_with("os.")
+}
+
+/// The service's own area under the shared host directory. Every path a
+/// caller names is contained here, never in the host directory itself,
+/// which other services (Mail, Calendar) keep their data under.
+fn area(host_dir: &Path) -> Result<PathBuf, String> {
+    let area = host_dir.join("sheet");
+    std::fs::create_dir_all(&area).map_err(|e| format!("sheet: service area: {e}"))?;
+    Ok(area)
 }
 
 pub struct SheetsService;
@@ -84,8 +99,7 @@ impl HostService for SheetsService {
         }
         let method = call.method().to_string();
         let args = call.args.clone();
-        let host_dir = call.host_dir.clone();
-        reply.send(dispatch(&method, &args, &host_dir));
+        reply.send(area(&call.host_dir).and_then(|area| dispatch(&method, &args, &area)));
     }
 }
 
@@ -236,15 +250,23 @@ fn cells_get(args: &Json) -> Result<Json, String> {
 }
 
 fn eval_adhoc(args: &Json) -> Result<Json, String> {
-    with_book(args, |book| {
-        let si = sheet_index(&book.wb, args)?;
+    let eval = |wb: &Workbook, si: usize| -> Result<Json, String> {
         let at = match args["at"].as_str() {
             Some(s) => parse_a1(s)?,
             None => CellRef::new(0, 0),
         };
         let formula = args["formula"].as_str().ok_or("sheet.eval: `formula` is required")?;
-        let v = gridcraft_calc::evaluate(&book.wb, si, at, formula);
+        let v = gridcraft_calc::evaluate(wb, si, at, formula);
         Ok(json!({"value": value_to_json(&v)}))
+    };
+    if args["book"].is_null() {
+        // A plain calculation: no workbook to open, nothing read or kept.
+        let wb = Workbook::new();
+        return eval(&wb, sheet_index(&wb, args)?);
+    }
+    with_book(args, |book| {
+        let si = sheet_index(&book.wb, args)?;
+        eval(&book.wb, si)
     })
 }
 
@@ -471,9 +493,37 @@ mod tests {
     }
 
     #[test]
-    fn only_system_apps_may_call() {
+    fn only_system_apps_and_the_native_sheets_app_may_call() {
         assert!(may_call("os.sheets"));
+        assert!(may_call("sheets"));
         assert!(!may_call("org.example.anything"));
+        assert!(!may_call("sheetsy"));
         assert!(!may_call(""));
+    }
+
+    /// The service works in its own area under the shared host directory,
+    /// so an exported path can never land in another service's data.
+    #[test]
+    fn the_service_area_is_a_subdirectory_of_the_host_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path();
+        let a = area(host).unwrap();
+        assert_eq!(a, host.join("sheet"));
+        assert!(a.is_dir());
+        let book = book_new().unwrap()["book"].as_u64().unwrap();
+        dispatch("export", &json!({"book": book, "path": "out.xlsx"}), &a).unwrap();
+        dispatch("close", &json!({"book": book}), &a).unwrap();
+        assert!(host.join("sheet/out.xlsx").is_file());
+        assert!(!host.join("out.xlsx").exists());
+    }
+
+    /// `eval` without `book` computes against an empty transient workbook:
+    /// the one read tool an agent can call with no session first.
+    #[test]
+    fn eval_without_a_book_is_a_plain_calculation() {
+        let v = eval_adhoc(&json!({"formula": "=1+2*3"})).unwrap();
+        assert_eq!(v["value"], json!(7.0), "{v}");
+        let v = eval_adhoc(&json!({"formula": "=CONCAT(\"a\",\"b\")"})).unwrap();
+        assert_eq!(v["value"], json!("ab"), "{v}");
     }
 }

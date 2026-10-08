@@ -44,6 +44,8 @@ pub(crate) mod admission;
 pub mod toolbox;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod script_apps;
+#[cfg(feature = "app-hub")]
+pub mod engines;
 
 #[cfg(test)]
 mod tests;

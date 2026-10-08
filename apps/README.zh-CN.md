@@ -87,7 +87,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；Shell 通知服务的 `photos.notify`（原图使用资源挂载） |
+| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；自己的 `photos` 服务：`photos.notify` 经 Shell 的通知回调、`photos.info` 在照片引擎上（原图使用资源挂载） |
 | [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；搜索和路线地图使用 makepad 预先烘焙的世界地图（`makepad.nl`），驾驶地图仍通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
 | [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
@@ -176,11 +176,12 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
    ```
 
 2. 通过 Shell（[`crates/shell`](../crates/shell) 的 `app-hub` 特性）链接宿主服务
-   `octosense-mail-service`、`octosense-calendar-service`、`octosense-news-service` 和
-   `octosense-llm-service`（workspace 内的 path 依赖），并在启动时注册
+   `octosense-mail-service`、`octosense-calendar-service`、`octosense-news-service`、
+   `octosense-llm-service`，以及引擎服务 `octosense-sheets-service` 和
+   `octosense-photo-service`（workspace 内的 path 依赖），并在启动时注册
    （`crates/shell/src/apps.rs` 的 `register_host_services`）：Mail 服务在真实账户下用
    `register()`，Shell 的应用配置中 `mail_demo: true` 时用 `register_demo()`。
-   Mail 和 News 安装 `on_notify` 回调，调用 Shell 共用通知渲染器；Calendar 安装卡片发布器。
+   Mail、News 和 Photos 安装 `on_notify` 回调，调用 Shell 共用通知渲染器；Calendar 安装卡片发布器。
    Shell 为其余系统应用命名空间注册 `NoticeService`；`llm` 服务使用 octos 内核的 core 目录以及
    Shell 的二维码扫描器和图片选择器（见 [`llm` 服务](#llm-服务)）。App Hub 只在根目录
    `Cargo.toml` 中固定一次，因此只有一个宿主服务注册表。
@@ -439,7 +440,8 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 | 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
 | 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.draft`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`、`mail.propose_reply`、`mail.suggest_reply`、`mail.propose_send`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
-| 照片、地图、YouTube、相机 | `agent` 块、`glance` | `photos.notify`、`maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
+| 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查其工作区内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | Shell 的通知卡片 |
+| 地图、YouTube、相机 | `agent` 块、`glance` | `maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
 **邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审阅界面。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
@@ -480,7 +482,8 @@ Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Cal
   （[`../crates/shell/resources/glance/notice.card`](../crates/shell/resources/glance/notice.card)，
   由 [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs) 填充），带有应用的
   图标和名称、时间，以及 Agent 写的标题（最多 80 个字符）和正文（最多 600 个字符）；同一个
-  `card_id` 会替换该应用之前的通知。邮件和新闻的服务把 `notify` 交给 Shell；照片、地图、YouTube
+  `card_id` 会替换该应用之前的通知。邮件、新闻和照片的服务把 `notify` 交给 Shell（照片的 `photos` 服务还在照片引擎上应答
+  `photos.info`）；地图、YouTube
   和相机没有自己的服务，由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历
   自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
   （应用需要 `glance` 权限）。这些固定模板工具由模型提供文字；`mail.publish_card`
