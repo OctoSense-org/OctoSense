@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "7133ac8e40a37402cb30f623e613683ca2c54f91",
+    "tree": "6a6baef94610d7b6f8c7edcb0e7db3fc786415ea",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -26,7 +26,8 @@
       "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority.",
       "Host request JSON and pre-drain queues are bounded before native allocation; delayed host callbacks retain their nonprompting origin after an agent tool completes or is cancelled.",
       "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind.",
-      "Ordinary WebReader embeds sandboxed WebKitGTK in X11/XWayland and private WebView2 controllers on Windows, with bounded UI integration, URL policy, no app bridge and explicit engine errors. Native Wayland and Linux/Windows production embedded authentication remain unsupported."
+      "Ordinary WebReader embeds sandboxed WebKitGTK in X11/XWayland and private WebView2 controllers on Windows, with bounded UI integration, URL policy, no app bridge and explicit engine errors. Native Wayland and Linux/Windows production embedded authentication remain unsupported.",
+      "Native host-response envelope keys are interned when created, so contained apps can forward raw success, error and capability-refusal replies as bounded JSON without first naming each field in script source."
     ],
     "stacked": [
       {
@@ -104,6 +105,10 @@
       {
         "patch": "tools/runtime-patches/makepad-desktop-webview.patch",
         "sha256": "dda81412903a247525cf3750a00aab820aa1dea28722cc633cbdf65fd5770221"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-response-json.patch",
+        "sha256": "a95cd969b2d034ca30d38bfdb6ca6a890aaef4f24c7034076ddf72eb4c3d829a"
       }
     ]
   }

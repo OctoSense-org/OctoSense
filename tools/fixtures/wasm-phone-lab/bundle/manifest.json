@@ -1,0 +1,33 @@
+{
+  "agent": {
+    "background": false,
+    "instructions": "AGENT.md",
+    "model": {
+      "local_only": false,
+      "needs": [
+        "tool_calling"
+      ]
+    },
+    "profile": "read-only",
+    "tools": []
+  },
+  "capabilities": [
+    "wasm"
+  ],
+  "host_api": {
+    "required": {
+      "app_tools.dispatch": 1
+    }
+  },
+  "id": "org.octosense.samples.wasmprobe",
+  "integrity": {
+    "bundle_blake3": "2dc9b724c9d3a9c909a9cb0e57a5409ea78f4835d4be12c708e03db791230aa2"
+  },
+  "name": "Wasm isolation probe",
+  "requires": [
+    "host-api-v1",
+    "script-tools-v1"
+  ],
+  "schema": 1,
+  "version": "0.1.0"
+}

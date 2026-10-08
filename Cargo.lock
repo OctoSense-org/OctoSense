@@ -8261,6 +8261,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-wasm-phone-smoke"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "octosense-appstore",
+ "octosense-shell",
+ "serde_json",
+]
+
+[[package]]
 name = "ohos-sys"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

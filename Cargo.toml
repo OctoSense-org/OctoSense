@@ -19,6 +19,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/wasm-phone-smoke",
     "desktop",
     "phone",
     "crates/kernel",
