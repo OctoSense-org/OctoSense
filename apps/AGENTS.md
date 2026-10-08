@@ -50,6 +50,8 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `apps/photo/host-service` and `cargo test --locked -p octosense-photo-service`.
   The word engine's (wordcraft behind `word.*`, same ADR, no bundle yet):
   `apps/word/host-service` and `cargo test --locked -p octosense-word-service`.
+  The deck engine's (deckcraft behind `deck.*`, same ADR, no bundle yet):
+  `apps/deck/host-service` and `cargo test --locked -p octosense-deck-service`.
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.
