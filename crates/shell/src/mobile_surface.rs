@@ -557,7 +557,24 @@ impl PhoneSurface {
         let insets=vec![(screen.pos.x-full.pos.x)/full.size.x,(screen.pos.y-full.pos.y)/full.size.y,
             (full.pos.x+full.size.x-screen.pos.x-screen.size.x)/full.size.x,
             (full.pos.y+full.size.y-screen.pos.y-screen.size.y)/full.size.y];
+        let covered=crate::system_chat::is_open() || crate::app_chat::is_open()
+            || crate::approvals::with(|a|a.settings_open || a.router.front_sheet().is_some() || a.consent.prompt().is_some()).unwrap_or(false);
+        let mut pager_edges=Vec::new();
+        if phone.owns_launcher_edges() && !covered {
+            let m=crate::mobile_gestures::GestureMetrics::default();
+            let dpi=cx.current_dpi_factor();
+            let left=screen.pos.x-full.pos.x;
+            let right=left+screen.size.x;
+            let top=screen.pos.y-full.pos.y+m.top_band;
+            let bottom=screen.pos.y-full.pos.y+screen.size.y-m.bottom_band;
+            if bottom>top && right-left>m.edge_band*2.0 {
+                for r in [[left,top,left+m.edge_band,bottom],[right-m.edge_band,top,right,bottom]] {
+                    pager_edges.push(Value::Arr(r.into_iter().map(|v|Value::Int((v*dpi).round() as i64)).collect()));
+                }
+            }
+        }
         let packet=obj(vec![("generation",Value::Int(phone.android.home_layout_generation as i64)),("ready",Value::Bool(ready)),
+            ("pager_edges",Value::Arr(pager_edges)),
             ("transition_id",Value::Int(phone.android.home_transition_id as i64)),
             ("catalog_revision",Value::Int(phone.android.catalog_revision as i64)),
             ("pixel_width",Value::F64(full.size.x*cx.current_dpi_factor())),("pixel_height",Value::F64(full.size.y*cx.current_dpi_factor())),

@@ -203,11 +203,11 @@ does not establish that integration.
 | Home page, right quarter | pull down | the shade's Controls (Wi-Fi, brightness, …) |
 | Home page, left quarter | pull down | the shade's Notifications |
 | Top edge, left / right | pull down | Notifications / Controls (as well) |
-| Home page | swipe sideways | pages: Glance ⇠ apps ⇢ App Library |
+| Home page, including both side edges on Android | swipe sideways | pages: Glance ⇠ apps ⇢ App Library |
 | App Library | drag | scrolls the grid; past either end it stretches and springs back (Back or Home closes it) |
 | App Library or Search | swipe right across the content | returns to the Home page you left and dismisses the keyboard |
 | Bottom band (above the system's) | swipe up / hold / sideways | Home / Recents / quick switch |
-| Side edges | swipe in | Back |
+| Side edges inside an app or opened card | swipe in | Back; on Android Home, the side edges belong to paging |
 | App icon | long press | Add to / remove from Home, dock, App info, Uninstall |
 | Home-page icon | long press, then drag | Reorder the page (drop between icons), dock it (drop on the dock), make a folder (drop on another icon) or add to one (drop on a folder tile) |
 | App pair tile | long press | Change either app, or remove the pair |

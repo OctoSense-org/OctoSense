@@ -22,6 +22,8 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 > **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) 开始。[`apps/`](apps/README.zh-CN.md) 中的系统应用就是完整的示例。只有想在发布前先在 Shell 里试用自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)）。
 
+Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使用返回手势。参见[手机手势说明](phone/README.zh-CN.md#手势)。
+
 ## 关键概念
 
 | 术语 | 在这里的含义 |

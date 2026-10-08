@@ -288,13 +288,14 @@ impl GestureRecognizer {
         let clear = |edge: Edge| !exclusions.excludes(p, edge);
         let glance_body = ctx.body && ctx.phone == PhoneScreen::Home
             && ctx.glance.is_some_and(|r| r.contains(p));
+        let launcher_body = ctx.body && matches!(ctx.phone, PhoneScreen::Home | PhoneScreen::Drawer);
         if ctx.system_edges {
-            // Android decides which physical edge touches reach us. Do not
-            // add a dead strip to Glance when it delivers a content swipe.
-            // Top/bottom navigation and hosted apps keep their edge policy.
+            // Home reserves its side edges with Android while the launcher
+            // owns input. Delivered touches must page every Home page, not
+            // only Glance. Apps and the top/bottom system bands stay native.
             if p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
-            if p.x <= left + m.edge_band && (!glance_body || !clear(Edge::Left)) { return None; }
-            if p.x >= right - m.edge_band && (!glance_body || !clear(Edge::Right)) { return None; }
+            if p.x <= left + m.edge_band && (!launcher_body || !clear(Edge::Left)) { return None; }
+            if p.x >= right - m.edge_band && (!launcher_body || !clear(Edge::Right)) { return None; }
         } else {
             if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
             if p.y <= top + m.top_band {
@@ -412,7 +413,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_edges_never_become_shell_navigation() {
+    fn app_side_edges_and_all_system_bars_stay_native() {
         let zones=ExclusionZones::default();
         for phone in [PhoneScreen::Home, PhoneScreen::App, PhoneScreen::Drawer, PhoneScreen::Recents] {
             let context=GestureContext { system_edges: true, shade: false, ..ctx(phone) };
@@ -422,6 +423,7 @@ mod tests {
                 dvec2(s.pos.x+12.0,middle.y), dvec2(s.pos.x+s.size.x-12.0,middle.y),
                 dvec2(middle.x,s.pos.y+12.0), dvec2(middle.x,s.pos.y+s.size.y-12.0),
             ] {
+                if matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer) && start.y == middle.y {continue;}
                 let mut g=GestureRecognizer::default();
                 assert_eq!(g.feed(FingerPhase::Down,start,0.0,&context,&zones),None);
                 assert!(!g.active(),"the OS owns this edge on {phone:?}");
@@ -437,6 +439,21 @@ mod tests {
         g.feed(FingerPhase::Move,start-dvec2(150.0,0.0),0.2,&context,&zones);
         assert_eq!(g.feed(FingerPhase::Up,start-dvec2(150.0,0.0),0.3,&context,&zones),
             Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))));
+    }
+
+    #[test]
+    fn every_home_page_accepts_both_delivered_side_edges_at_all_body_heights() {
+        let context=GestureContext {system_edges:true,shade:false,..ctx(PhoneScreen::Home)};
+        for y in [50.0,180.0,450.0,820.0] {
+            for (start,end,dir) in [(1.0,190.0,Dir::Right),(411.0,210.0,Dir::Left)] {
+                let mut rec=GestureRecognizer::default();
+                let out=drive(&mut rec,&context,&ExclusionZones::default(),&swipe((start,y),(end,y),0.4,8));
+                assert_eq!(last(&out),ShellGesture::Commit(GestureKind::Page(dir)),"x={start}, y={y}");
+            }
+        }
+        let library=GestureContext {phone:PhoneScreen::Drawer,..context};
+        let out=drive(&mut GestureRecognizer::default(),&library,&ExclusionZones::default(),&swipe((1.0,450.0),(210.0,450.0),0.4,8));
+        assert_eq!(last(&out),ShellGesture::Commit(GestureKind::Back));
     }
     use FingerPhase::*;
 
