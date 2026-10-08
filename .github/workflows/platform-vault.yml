@@ -1,0 +1,43 @@
+name: Platform credential vault
+
+on:
+  pull_request:
+    paths:
+      - 'crates/oauth-service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'native-runtime.lock.json'
+      - 'runtime-patches.lock.json'
+      - 'tools/runtime-patches/**'
+      - '.github/workflows/platform-vault.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-vault-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - name: Preserve runtime patch bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: embedded-browser-windows
+          cache-on-failure: true
+      - name: Actual Windows Credential Manager lifecycle
+        # A fresh synthetic profile on a disposable runner. Missing/unusable
+        # native credentials are a failure, never replaced by a file vault.
+        # This checks storage/revocation, not provider login or user approval.
+        run: cargo test --locked --release -p octosense-oauth-service --features host host_vault_acceptance::platform_vault_persists_across_reopen_without_plaintext_credentials -- --ignored --exact --nocapture
