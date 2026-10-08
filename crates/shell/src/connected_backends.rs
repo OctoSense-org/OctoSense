@@ -21,7 +21,7 @@ pub fn register() {
                     if let Some(root) = octosense_appstore::data_root_if_set() {
                         let stamp = (
                             root.clone(),
-                            file_stamp(&root.join("catalog.json")),
+                            catalog_stamp(&root, octosense_appstore::source::CatalogChannel::from_environment(&root)),
                             file_stamp(&root.join(".host/oauth/connections.json")),
                             octosense_app_hub_app::icons::generation(),
                         );
@@ -47,6 +47,17 @@ pub fn register() {
 fn file_stamp(path: &Path) -> Option<(u64, std::time::SystemTime)> {
     let metadata = std::fs::metadata(path).ok()?;
     Some((metadata.len(), metadata.modified().ok()?))
+}
+
+// Include the selected channel even if its cache is missing. A transition to
+// v2 (or a refused channel selection) must revalidate existing registrations;
+// otherwise a quiet legacy cache could leave them active until the next call.
+fn catalog_stamp(
+    root: &Path,
+    channel: Result<octosense_appstore::source::CatalogChannel, String>,
+) -> Result<(&'static str, Option<(u64, std::time::SystemTime)>), String> {
+    let channel = channel?;
+    Ok((channel.filename(), file_stamp(&root.join(channel.filename()))))
 }
 
 fn valid_backend_app_id(app: &str) -> bool {
@@ -165,6 +176,26 @@ pub fn installed_changed(app: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn watcher_tracks_selected_catalog_updates_and_channel_refusal() {
+        use octosense_appstore::source::CatalogChannel::{GitHub, Legacy};
+        let root = std::env::temp_dir().join(format!("backend-catalog-watch-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("catalog.json"), "unchanged legacy").unwrap();
+        let legacy = catalog_stamp(&root, Ok(Legacy));
+        let missing_v2 = catalog_stamp(&root, Ok(GitHub));
+        assert_ne!(legacy, missing_v2, "changing channel must invalidate even before its cache arrives");
+        std::fs::write(root.join("catalog-v2.json"), "first v2").unwrap();
+        let first_v2 = catalog_stamp(&root, Ok(GitHub));
+        assert_ne!(missing_v2, first_v2);
+        std::fs::write(root.join("catalog-v2.json"), "updated v2 withdrawal").unwrap();
+        assert_ne!(first_v2, catalog_stamp(&root, Ok(GitHub)));
+        assert_eq!(legacy, catalog_stamp(&root, Ok(Legacy)), "v2 refresh is independent of legacy bytes");
+        assert_ne!(legacy, catalog_stamp(&root, Err("downgrade refused".into())));
+        std::fs::remove_file(root.join("catalog-v2.json")).unwrap();
+        assert_eq!(missing_v2, catalog_stamp(&root, Ok(GitHub)), "cache removal must invalidate too");
+        std::fs::remove_dir_all(root).unwrap();
+    }
     fn manifest() -> Value {
         serde_json::json!({"schema":1,"id":"org.example.backend","version":"1.0.0","name":"Backend fixture",
             "integrity":{"bundle_blake3":"00".repeat(32)},"capabilities":["auth"],"storage":{"accounts":true},

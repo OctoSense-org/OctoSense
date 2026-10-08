@@ -154,6 +154,16 @@ For agent calls resolving to `glance.publish`, including aliases such as `inbox.
 
 An installed app's agent also depends on its exact release remaining admitted. Guidance, tool offers and system-agent input read the current signed local catalog. The broker also checks `ToolHost::admit_turn` immediately before every actual `turn/start`, including cached conversations, queued input and retries; the relay checks both tool owner and calling app again before execution, including after a pending approval. A withdrawal takes effect after the next catalog fetch, even for cached peers. The Gmail dispatcher then releases the unavailable peer and retains its unfinished event for a later authorized retry. Saved user consent is unchanged; an unavailable app is not treated as a user denial.
 
+The App Hub UI, agent admission, Glance isolates and backend registration watcher
+use the host-selected `CatalogChannel`. Legacy catalogs use `catalog.json`;
+the GitHub-attested channel uses `catalog-v2.json` and verifies its proof before
+admitting an app. An existing v2 cache keeps that library on v2: malformed proof
+or a missing selected cache is an error, never a reason to use the legacy file.
+The default remains legacy until official v2 acceptance; the operator can select
+`OCTOSENSE_HUB_CATALOG=github-v2`. Both cache names and their `.lock` counterparts
+are host-owned names, not app storage IDs. A new channel or changed cache causes
+the backend watcher to recheck connected apps; per-call admission still applies.
+
 The relay routes every call by the tool's owner:
 
 | Owner | Executor |

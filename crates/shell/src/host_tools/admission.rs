@@ -24,13 +24,14 @@ pub(crate) fn installed_bundle(root: &Path, app: &str) -> Result<PathBuf, String
 }
 
 fn installed_bundle_with_anchor(root: &Path, app: &str, anchor: &str) -> Result<PathBuf, String> {
-    let mut store = octosense_app_hub::Store::new(
+    let channel = octosense_appstore::source::CatalogChannel::from_environment(root)?;
+    let mut store = channel.configure(octosense_app_hub::Store::new(
         anchor,
         root,
         octosense_app_contract::HostLimits::default(),
     )
-    .with_host_api_versions(octosense_appstore::host_api::available_versions());
-    let catalog = std::fs::read_to_string(root.join("catalog.json"))
+    .with_host_api_versions(octosense_appstore::host_api::available_versions()));
+    let catalog = channel.read_cache(root)
         .map_err(|_| "No verified App Hub catalog is available on this device".to_string())?;
     store.accept_catalog(&catalog).map_err(|e| format!("App Hub catalog refused: {e}"))?;
     store.may_run(app).map_err(|e| format!("App agent is unavailable: {e}"))?;
@@ -71,6 +72,16 @@ mod tests {
         };
         write(&mut catalog);
         let check = || installed_bundle_with_anchor(&root,id,&anchor.public_hex());
+        assert_eq!(check().unwrap(), bundle);
+        // A v2 cache selects v2 verification for agents as well as the UI.
+        // Neither an invalid proof nor a legacy document renamed to v2 may
+        // fall back to the still-valid, offered legacy release beside it.
+        let v2 = root.join("catalog-v2.json");
+        for bytes in ["{}".to_string(), std::fs::read_to_string(root.join("catalog.json")).unwrap()] {
+            std::fs::write(&v2, bytes).unwrap();
+            assert!(check().unwrap_err().contains("catalog refused"));
+        }
+        std::fs::remove_file(v2).unwrap();
         assert_eq!(check().unwrap(), bundle);
         catalog.sequence += 1;
         catalog.entries[0].status = Status::Withdrawn("unsafe release".into());
