@@ -56,6 +56,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `apps/cad/host-service` and `cargo test --locked -p octosense-cad-service`.
   The light engine's (lightcraft behind `light.*`, same ADR, no bundle yet):
   `apps/light/host-service` and `cargo test --locked -p octosense-light-service`.
+  The sound engine's (soundcraft behind `sound.*`, same ADR, offline only,
+  no bundle yet): `apps/sound/host-service` and
+  `cargo test --locked -p octosense-sound-service`.
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.

@@ -45,6 +45,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   control catalog, and single or batch parametric develop, for system apps
   only and contained to the `light/` area of the caller's host directory. No
   bundle yet.
+- **The `sound` host service** (`sound/host-service`) is soundcraft's audio engine behind `sound.*` (ADR 0013), offline file processing only — info, convert, trim, mix and waveform peaks inside the host directory's `sound/` area; it never opens an audio or MIDI device, and no bundle exists yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link

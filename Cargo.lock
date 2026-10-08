@@ -10029,6 +10029,7 @@ dependencies = [
  "octosense-photo-service",
  "octosense-reference",
  "octosense-sheets-service",
+ "octosense-sound-service",
  "octosense-wasm-host",
  "octosense-word-service",
  "rinx",
@@ -10039,6 +10040,17 @@ dependencies = [
  "tokio-tungstenite 0.24.0",
  "uuid",
  "wat",
+]
+
+[[package]]
+name = "octosense-sound-service"
+version = "0.1.0"
+dependencies = [
+ "octosense-appstore",
+ "serde_json",
+ "soundcraft-audio-io",
+ "soundcraft-dsp",
+ "tempfile",
 ]
 
 [[package]]
@@ -11018,6 +11030,15 @@ name = "presser"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
+
+[[package]]
+name = "primal-check"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc0d895b311e3af9902528fbb8f928688abbd95872819320517cc24ca6b2bd08"
+dependencies = [
+ "num-integer",
+]
 
 [[package]]
 name = "proc-macro-crate"
@@ -12496,6 +12517,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustfft"
+version = "6.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21db5f9893e91f41798c88680037dba611ca6674703c1a18601b01a72c8adb89"
+dependencies = [
+ "num-complex",
+ "num-integer",
+ "num-traits 0.2.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "primal-check",
+ "strength_reduce",
+ "transpose",
+]
+
+[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13633,6 +13668,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "soundcraft-audio-io"
+version = "0.3.0"
+source = "git+https://github.com/ymote/soundcraft.git?rev=c51e5d5ec52f11c6264b72e26661fa712feb5345#c51e5d5ec52f11c6264b72e26661fa712feb5345"
+dependencies = [
+ "log",
+ "serde",
+ "symphonia",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "soundcraft-dsp"
+version = "0.3.0"
+source = "git+https://github.com/ymote/soundcraft.git?rev=c51e5d5ec52f11c6264b72e26661fa712feb5345#c51e5d5ec52f11c6264b72e26661fa712feb5345"
+dependencies = [
+ "log",
+ "rustfft",
+ "serde",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13717,6 +13773,12 @@ dependencies = [
  "rusty-mermaid",
  "usvg",
 ]
+
+[[package]]
+name = "strength_reduce"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
 
 [[package]]
 name = "strict-num"
@@ -14753,6 +14815,16 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "transpose"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
+dependencies = [
+ "num-integer",
+ "strength_reduce",
 ]
 
 [[package]]

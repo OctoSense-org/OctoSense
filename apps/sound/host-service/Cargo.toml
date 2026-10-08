@@ -1,0 +1,26 @@
+# octosense-sound-service — the `sound` host service (ADR 0013).
+#
+# soundcraft's audio engine behind typed `sound.*` methods, offline file
+# processing only: probe, convert, trim, mix and waveform peaks, confined
+# to the `sound/` area of the caller's host directory. The service consumes
+# only soundcraft's device-free crates (bytes-in/bytes-out file I/O and
+# offline DSP) and never opens an audio or MIDI device: no playback, no
+# recording, no cpal, no plugin hosts.
+[package]
+name = "octosense-sound-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned as a family to one ymote/soundcraft revision (ADR 0013):
+# only the device-free crates.
+soundcraft-audio-io = { workspace = true }
+soundcraft-dsp = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
