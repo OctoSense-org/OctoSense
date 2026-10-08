@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-> **在整个系统中的位置。**每个 Shell 一个 octos 内核：桌面端和 Android 上是子进程，OpenHarmony 上在进程内，iOS 上没有。Shell 持有宿主 token，是唯一的宿主连接；系统 Agent 和每个应用 Agent 都是这个内核中的会话，Talk to Octos 客户端只能用外部 token 使用系统对话。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../../docs/adr/0004-native-apps-hosting-and-peers.md)。
+> **在整个系统中的位置**。每个 Shell 一个 octos 内核：桌面端和 Android 上是子进程，OpenHarmony 上在进程内，iOS 上没有。Shell 持有宿主 token，是唯一的宿主连接；系统 Agent 和每个应用 Agent 都是这个内核中的会话，Talk to Octos 客户端只能用外部 token 使用系统对话。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
 [octos](https://github.com/octos-org/octos) Agent 内核是一项 **Shell 服务**。
 Shell（`phone/` 中的 Home、`desktop/` 中的桌面）拥有它；**AI providers** 系统应用
