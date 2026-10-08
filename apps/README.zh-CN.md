@@ -35,6 +35,10 @@ OctoSense-System-Apps 仓库（已归档）。
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
 - **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在宿主目录自己的 `deck/` 子目录内；尚无 bundle。
 - **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在宿主自己的 `cad` 目录内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
+- **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
+  放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
+  批量参数化显影；仅服务系统应用，且只在调用方宿主目录的 `light/` 区域内读写。
+  暂无 bundle。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`

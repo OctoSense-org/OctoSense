@@ -294,6 +294,9 @@ pub fn register_host_services() {
         // The cad engine service (ADR 0013): cadcraft behind `cad.*`.
         #[cfg(feature = "app-hub")]
         octosense_cad_service::register();
+        // The light engine service (ADR 0013): lightcraft behind `light.*`.
+        #[cfg(feature = "app-hub")]
+        octosense_light_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();
