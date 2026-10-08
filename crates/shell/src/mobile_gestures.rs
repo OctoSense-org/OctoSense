@@ -124,8 +124,8 @@ pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone:
     /// Glance's feed owns vertical movement. Even a feed that fits on screen
     /// must not turn a thumb's initial vertical arc into Home search/shade.
     pub glance: Option<Rect>,
-    /// The host OS owns edge navigation. Glance may page with side-edge
-    /// touches the OS delivers; hosted apps retain their own edge touches.
+    /// The host OS owns edge navigation. Home pages with side-edge touches
+    /// the OS delivers; hosted apps retain their own edge touches.
     pub system_edges: bool,
     /// The shell's own shade is in use. Off when the system-wide OctoSense
     /// panel owns every pull-down: the top band and the home page's side

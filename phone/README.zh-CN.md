@@ -101,7 +101,17 @@ Home 已以 `OctoSense Icons`（`dev.makepad.octosense.icontest`）在运行 And
 adb shell cmd package set-home-activity dev.makepad.octosense/.MakepadApp
 ```
 
-或者在 Android 的桌面选择器中选择 OctoSense。之后按下 Home 键或使用 Home 手势时，正在运行的 Shell 会收到 `Event::HomeIntent` 并显示桌面页面。Home 角色**不会**改变的是：系统仍保留自己的底部手势区域、自己的最近任务（上滑并停顿）以及自己的状态栏通知面板**。三按钮导航**可以消除与手势区域的冲突，是推荐的模式：
+或者在 Android 的桌面选择器中选择 OctoSense。之后按下 Home 键或使用 Home 手势时，正在运行的 Shell 会收到 `Event::HomeIntent` 并显示桌面页面。
+
+安装或选择 Home 后，请先通过 Android 的 Home 键或手势进入桌面，再测试侧边滑动。
+使用 `am start` 显式启动 activity，可能会让已经选为默认桌面的应用仍处于普通任务中。
+这时 Android 会把侧边手势排除区域限制为 200 dp，导致只有靠近底部的一小段区域
+可以正常翻页。真正的 Home 任务会在整个页面内容区保留左右边缘用于翻页；进入应用、
+展开卡片、显示键盘或浮层后，会把边缘交还给返回手势。
+此行为已在 OnePlus 6 / Android 15 上验证。
+
+系统仍保留底部手势区域、最近任务（上滑并停顿）及状态栏通知面板。
+三按钮导航是这些系统手势的替代模式，Home 的侧边翻页不要求切换到三按钮导航：
 
 ```sh
 adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.threebutton

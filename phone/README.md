@@ -156,7 +156,19 @@ The activity offers the `HOME` intent filter and is `singleInstance`. On a devic
 adb shell cmd package set-home-activity dev.makepad.octosense/.MakepadApp
 ```
 
-or pick OctoSense in Android's Home chooser. A Home press or gesture then reaches the running shell as `Event::HomeIntent` and shows the home page. What the Home role does **not** change: the system keeps its bottom gesture zone, its Recents (swipe-up-and-hold) and its status-bar shade. **3-button navigation** removes the gesture-zone race and is the recommended mode:
+or pick OctoSense in Android's Home chooser. A Home press or gesture then reaches the running shell as `Event::HomeIntent` and shows the home page.
+
+After installing or choosing Home, enter it through Android's Home button or
+gesture before testing side swipes. Starting the activity explicitly with
+`am start` can put even the selected launcher in a standard activity task.
+Android then limits side-gesture exclusions to 200 dp, so only a short strip
+near the bottom pages correctly. The actual Home task reserves both side edges
+throughout the page body; apps, expanded cards, the keyboard and overlays
+release them for Back. This was verified on OnePlus 6 / Android 15.
+
+The system still owns its bottom gesture zone, Recents (swipe-up-and-hold)
+and status-bar shade. Three-button navigation is an alternative for those
+system gestures; it is not required for Home's side paging:
 
 ```sh
 adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.threebutton
