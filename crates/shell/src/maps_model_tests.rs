@@ -663,13 +663,58 @@ for r in listed(recents) { pick(r) }
 [screen place mod.texts mod.writes.len() mod.writes[0][0] mod.writes[0][1].parse_json() mod.urls mod.flights].to_json()"#,
     );
     let old = serde_json::json!({"id": "", "name": "Old Recent", "cat": "", "label": "", "lat": 37.335, "lon": -121.885});
+    let out = out.as_array().unwrap();
     assert_eq!(
-        out,
-        serde_json::json!([
-            "place", old, {"pname": "Old Recent", "pcat": "", "paddr": "", "pdist": "", "save": "Save"},
-            1, "accounts/device/recents.json", [old], [], [[37.335, -121.885, 16]]
-        ])
+        out[..7],
+        [
+            serde_json::json!("place"),
+            old.clone(),
+            serde_json::json!({"pname": "Old Recent", "pcat": "", "paddr": "", "pdist": "", "save": "Save"}),
+            serde_json::json!(1),
+            serde_json::json!("accounts/device/recents.json"),
+            serde_json::json!([old]),
+            serde_json::json!([]),
+        ]
     );
+    // One flight, at zoom 16, that lands the place above the card.
+    let flight = &out[7][0];
+    assert_eq!(out[7].as_array().unwrap().len(), 1, "{}", out[7]);
+    assert_eq!((&flight[1], &flight[2]), (&serde_json::json!(-121.885), &serde_json::json!(16)));
+    let above = points_above(37.335, flight[0].as_f64().unwrap(), 16.0);
+    assert!((above - 160.0).abs() < 0.5, "{above}");
+}
+
+/// How many points north of the map's centre (`centre_lat`) a place at
+/// `place_lat` shows on a north-up map at `zoom`: MapView's Web Mercator,
+/// 256 points to a tile.
+fn points_above(place_lat: f64, centre_lat: f64, zoom: f64) -> f64 {
+    let y = |lat: f64| {
+        let r = lat.to_radians();
+        (1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0
+    };
+    (y(centre_lat) - y(place_lat)) * 256.0 * 2f64.powi(zoom as i32)
+}
+
+#[test]
+fn maps_lands_a_cards_place_above_the_middle_of_the_map() {
+    // A card covers the bottom of the map, past its middle on a phone once
+    // the place has details: its flight lands the place 160 points above the
+    // centre, at any latitude, without moving it east or west.
+    let out = maps_model(
+        r#"let log = []
+for lat in [0 37.335 -45 60 78] {
+    let c = card_centre({lat: lat lon: -121.885})
+    log.push([lat c.lat c.lon])
+}
+[log CARD_ZOOM].to_json()"#,
+    );
+    assert_eq!(out[1], serde_json::json!(16));
+    for row in out[0].as_array().unwrap() {
+        let (lat, centre_lat) = (row[0].as_f64().unwrap(), row[1].as_f64().unwrap());
+        let above = points_above(lat, centre_lat, 16.0);
+        assert!((above - 160.0).abs() < 0.5, "{row}: {above}");
+        assert_eq!(row[2], serde_json::json!(-121.885), "{row}");
+    }
 }
 
 #[test]
@@ -1051,8 +1096,10 @@ fn maps_opens_a_card_with_its_own_flight_and_shows_a_website_on_its_own() {
 mod.answers = [{status_code: 200 body: '{"elements":[{"tags":{"website":"site.example.com"}}]}'}]
 open_place({id: "N:9" name: "Site" cat: "" label: "" lat: 37.2 lon: -121.2})
 log.push([detail.website mod.shown["details"] mod.renders])
-log.push([app_target centered])
-viewport_moved(37.2, -121.2, 16)
+// It flies to the card's centre, south of the place, so the place shows above the card.
+let c = card_centre(place)
+log.push([own_landing(app_target, c.lat, c.lon) centered])
+viewport_moved(c.lat, c.lon, 16)
 log.push([app_target])
 close_place()
 mod.fix = true
@@ -1065,7 +1112,7 @@ log.to_json()"#;
         out,
         serde_json::json!([
             ["https://site.example.com", true, 1],
-            [{"lat": 37.2, "lon": -121.2}, true],
+            [true, true],
             [null],
             true
         ])

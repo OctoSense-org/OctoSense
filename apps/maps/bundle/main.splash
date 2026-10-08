@@ -577,12 +577,26 @@ fn open_card(){
     centered = true
     show("place")
 }
+// A card covers the bottom of the map, on a phone past its middle once the
+// place has details, so a card's flight puts the place CARD_RISE points
+// above the map's centre: about 30% down a phone's map, where Directions
+// frames a route. MapView is Web Mercator with 256-point tiles, so
+// CARD_WORLD points go round the world at CARD_ZOOM, and a point there spans
+// cos(lat) times as many degrees of latitude as of longitude. Maps can't
+// read the map's turn: on a map the person has turned, the rise turns too.
+let CARD_ZOOM = 16
+let CARD_RISE = 160
+let CARD_WORLD = 16777216   // 256 · 2^16
+fn card_centre(p){
+    return {lat: p.lat - CARD_RISE / CARD_WORLD * 360 * cos(radians(p.lat)) lon: p.lon}
+}
 // A place's card, from a row (`pick`) or a pin (`marker_tapped`): a place
 // with every field (`as_place`, `photon_hits`).
 fn open_place(p){
     place = p
     open_card()
-    fly(p.lat, p.lon, 16)
+    let c = card_centre(p)
+    fly(c.lat, c.lon, CARD_ZOOM)
     load_details(p, card_seq)
 }
 fn close_place(){
