@@ -22,6 +22,8 @@ gridcraft-formula = { workspace = true }
 gridcraft-calc = { workspace = true }
 gridcraft-model = { workspace = true }
 gridcraft-xlsx = { workspace = true }
+# sheet.fill: the formula AST lowered onto the Splash kernel JIT (f64).
+makepad-script-compute = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

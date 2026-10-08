@@ -23,6 +23,8 @@
 //! designed.
 
 use std::collections::HashMap;
+
+mod fill;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -37,6 +39,8 @@ use serde_json::{json, Value as Json};
 struct Book {
     wb: Workbook,
     calc: Calc,
+    /// `sheet.fill`'s compiled kernels, by canonical formula text.
+    kernels: HashMap<String, std::sync::Arc<makepad_script_compute::kernel::Kernel>>,
 }
 
 #[derive(Default)]
@@ -93,6 +97,7 @@ fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> 
         "get" => cells_get(args),
         "eval" => eval_adhoc(args),
         "recalc" => recalc(args),
+        "fill" => fill_column(args),
         "export" => export(args, host_dir),
         "close" => close(args),
         other => Err(format!("sheet.{other} is not a method of the sheet service")),
@@ -107,7 +112,7 @@ fn insert(wb: Workbook) -> Result<Json, String> {
     }
     books.next += 1;
     let id = books.next;
-    books.open.insert(id, Book { wb, calc: Calc::new() });
+    books.open.insert(id, Book { wb, calc: Calc::new(), kernels: HashMap::new() });
     Ok(json!({"book": id, "sheets": names}))
 }
 
@@ -243,9 +248,60 @@ fn eval_adhoc(args: &Json) -> Result<Json, String> {
     })
 }
 
+/// `fill {book, sheet?, column, rows, formula}` — the formula filled down
+/// `column` for `rows` rows. The numeric subset runs as one f64 compute
+/// kernel (cached per formula text on the workbook); anything else falls
+/// back to the engine's evaluator per row. Results land as values.
+fn fill_column(args: &Json) -> Result<Json, String> {
+    let col_s = args["column"].as_str().ok_or("sheet.fill: `column` is a column like C")?;
+    let col = gridcraft_core::letters_to_col(col_s).ok_or_else(|| format!("sheet.fill: `{col_s}` is not a column"))?;
+    let rows = args["rows"].as_u64().ok_or("sheet.fill: `rows` is required")? as usize;
+    if rows == 0 || rows > fill::MAX_FILL_ROWS {
+        return Err(format!("sheet.fill: `rows` is 1..={}", fill::MAX_FILL_ROWS));
+    }
+    let formula = args["formula"].as_str().ok_or("sheet.fill: `formula` is required")?;
+    let body = formula.strip_prefix('=').unwrap_or(formula);
+    let expr = gridcraft_formula::parse(body).map_err(|e| format!("sheet.fill: {e:?}"))?;
+    with_book(args, |book| {
+        let si = sheet_index(&book.wb, args)?;
+        match fill::lower(&expr) {
+            Ok(lowered) => {
+                let kernel = match book.kernels.get(body) {
+                    Some(k) => k.clone(),
+                    None => {
+                        let k = fill::compile(&lowered)?;
+                        if book.kernels.len() >= 32 {
+                            book.kernels.clear();
+                        }
+                        book.kernels.insert(body.to_string(), k.clone());
+                        k
+                    }
+                };
+                let inputs: Vec<Vec<f64>> =
+                    lowered.cols.iter().map(|c| fill::column_f64(&book.wb, si, *c, rows)).collect();
+                let out = fill::run(&kernel, &inputs, rows)?;
+                let sheet = Arc::make_mut(&mut book.wb.sheets[si]);
+                for (r, v) in out.iter().enumerate() {
+                    sheet.set_value(CellRef::new(r as u32, col), Value::Number(*v));
+                }
+                Ok(json!({"rows": rows, "accelerated": true}))
+            }
+            Err(reason) => {
+                for r in 0..rows {
+                    let at = CellRef::new(r as u32, col);
+                    let v = gridcraft_calc::recalc::evaluate_expr(&book.wb, si, at, &expr);
+                    let sheet = Arc::make_mut(&mut book.wb.sheets[si]);
+                    sheet.set_value(at, v);
+                }
+                Ok(json!({"rows": rows, "accelerated": false, "reason": reason}))
+            }
+        }
+    })
+}
+
 fn recalc(args: &Json) -> Result<Json, String> {
     with_book(args, |book| {
-        let Book { wb, calc } = book;
+        let Book { wb, calc, .. } = book;
         calc.recalc_all(wb);
         Ok(json!({}))
     })
@@ -356,6 +412,50 @@ mod tests {
         dispatch("close", &json!({"book": book}), host).unwrap();
         dispatch("close", &json!({"book": book2}), host).unwrap();
         assert!(dispatch("get", &json!({"book": book, "range": "A1"}), host).is_err());
+    }
+
+    #[test]
+    fn fill_matches_the_evaluator_and_falls_back_outside_the_subset() {
+        let host = Path::new("/");
+        let book = book_new().unwrap()["book"].as_u64().unwrap();
+        // Columns A and B: 10k rows of inputs.
+        {
+            let mut books = books().lock().unwrap();
+            let b = books.open.get_mut(&book).unwrap();
+            let sheet = Arc::make_mut(&mut b.wb.sheets[0]);
+            for r in 0..10_000u32 {
+                sheet.set_value(CellRef::new(r, 0), Value::Number(r as f64 * 0.001));
+                sheet.set_value(CellRef::new(r, 1), Value::Number(r as f64 * 0.013));
+            }
+        }
+        let formula = "@A:A*1.05+SIN(@B:B)*0.5+EXP(-@A:A*0.01)";
+        let done = dispatch("fill", &json!({"book": book, "column": "C", "rows": 10000, "formula": formula}), host).unwrap();
+        assert_eq!(done["accelerated"], json!(true), "{done}");
+        // The kernel's column agrees with the engine's evaluator.
+        let expr = gridcraft_formula::parse(formula).unwrap();
+        {
+            let mut books = books().lock().unwrap();
+            let b = books.open.get_mut(&book).unwrap();
+            for r in [0u32, 1234, 9999] {
+                let want = match gridcraft_calc::recalc::evaluate_expr(&b.wb, 0, CellRef::new(r, 2), &expr) {
+                    Value::Number(n) => n,
+                    other => panic!("{other:?}"),
+                };
+                let got = match b.wb.sheets[0].cell(CellRef::new(r, 2)).map(|c| c.value.clone()) {
+                    Some(Value::Number(n)) => n,
+                    other => panic!("{other:?}"),
+                };
+                assert!((want - got).abs() <= 1e-9 * want.abs().max(1.0), "row {r}: {want} vs {got}");
+            }
+        }
+        // The second fill with the same text reuses the cached kernel.
+        let again = dispatch("fill", &json!({"book": book, "column": "D", "rows": 10000, "formula": formula}), host).unwrap();
+        assert_eq!(again["accelerated"], json!(true));
+        // Outside the subset: computed anyway, honestly unaccelerated.
+        let fb = dispatch("fill", &json!({"book": book, "column": "E", "rows": 16, "formula": "CONCAT(\"r\",@A:A)"}), host);
+        let fb = fb.unwrap();
+        assert_eq!(fb["accelerated"], json!(false), "{fb}");
+        dispatch("close", &json!({"book": book}), host).unwrap();
     }
 
     #[test]

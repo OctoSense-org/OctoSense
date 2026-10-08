@@ -6050,6 +6050,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-script-compute"
+version = "1.0.0"
+
+[[package]]
 name = "makepad-script-derive"
 version = "1.0.0"
 dependencies = [
@@ -8385,6 +8389,7 @@ dependencies = [
  "gridcraft-formula",
  "gridcraft-model",
  "gridcraft-xlsx",
+ "makepad-script-compute",
  "octosense-appstore",
  "serde_json",
  "tempfile",
