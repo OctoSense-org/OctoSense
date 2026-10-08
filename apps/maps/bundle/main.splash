@@ -60,6 +60,7 @@ let app_target = nil    // where Maps last sent the map and hasn't seen it land:
 let locating = false    // ◎ asked for a fix that hasn't come yet
 let OVERPASS = ["overpass-api.de" "overpass.kumi.systems" "overpass.openstreetmap.fr"]
 let CACHE_DAYS = 7
+let FETCH_SECS = 15      // a request with no answer by then has failed
 
 // ADR 0004 §11: the app's data is its account folder (a system app acts for
 // the device), the folder its agent works in; what it can fetch again is
@@ -85,17 +86,29 @@ fn cache_path(name){ return moved(name, "cache/" + name) }
 // of the response, or of nil when the request failed. A request the runtime
 // refuses outright (a host off the manifest's list) raises instead of
 // calling on_error; uncaught, the raise would end `search_for` before its
-// await, and "Searching…" would stay on screen for good.
+// await, and "Searching…" would stay on screen for good. A request with no
+// answer in FETCH_SECS fails too: Android waits for good on a server that
+// accepts and then stalls, and Apple up to two minutes, so a stalled mirror
+// would hold back the next. The promise settles once; a late answer is
+// dropped.
 fn fetch(url){
     let p = promise()
+    let state = {done: false timer: nil}
+    let settle = |v| {
+        if state.done { return }
+        state.done = true
+        if state.timer != nil { stop_timer(state.timer) }
+        p.resolve(v)
+    }
     let sent = try {
         net.http_request(net.HttpRequest{url: url method: net.HttpMethod.GET headers: {"User-Agent": "OctoSense-Maps/1.0"}}) do net.HttpEvents{
-            on_response: |res| p.resolve(res)
-            on_error: |_err| p.resolve(nil)
+            on_response: |res| settle(res)
+            on_error: |_err| settle(nil)
         }
         true
     } catch { false }
-    if !sent { p.resolve(nil) }
+    if !sent { settle(nil) }
+    else if !state.done { state.timer = start_timeout(FETCH_SECS, || settle(nil)) }
     p
 }
 // A response's body as text; nil for no response, an HTTP error or no body.
@@ -561,8 +574,8 @@ fn close_place(){
     place = nil
     show("search")
 }
-// One Overpass request per opened place, on the three declared mirrors in
-// turn, kept for a week. Without an answer the card shows Photon's data only.
+// An opened place's details: one Overpass request at a time, on the three
+// declared mirrors in turn, kept for a week. Without an answer the card shows Photon's data only.
 // An answer that isn't Overpass's, or Overpass's own error, is nil: the next
 // mirror is asked and nothing is kept, so a busy page is never cached as "no
 // details". A place without an OpenStreetMap id asks nothing and touches no

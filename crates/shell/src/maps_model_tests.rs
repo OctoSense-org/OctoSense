@@ -992,6 +992,69 @@ log.to_json()"#
 }
 
 #[test]
+fn maps_gives_up_on_a_server_that_never_answers() {
+    // Android's request waits for good on a server that accepts and then
+    // stalls. The timer gives up on it, the next mirror answers, and the
+    // stalled answer, if it ever comes, is dropped.
+    let code = r#"mod.timers = []
+mod.stopped = []
+fn start_timeout(secs, f){ mod.timers.push({secs: secs f: f}); return "t" + mod.timers.len() }
+fn stop_timer(t){ mod.stopped.push(t) }
+mod.held = []
+net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
+    http_request: fn(req, events) {
+        mod.urls.push(req.url)
+        if mod.urls.len() == 1 { mod.held.push(events); return }
+        events.on_response({status_code: 200 body: mod.pizza})
+    }}
+// While the first mirror stalls, its timer fires.
+mod.during = fn() { mod.timers[0].f() }
+open_place({id: "N:1" name: "Pizza" cat: "Restaurant" label: "" lat: 37.1 lon: -121.1})
+let log = [hosts() detail.hours mod.timers.len() mod.timers[0].secs]
+mod.held[0].on_response({status_code: 200 body: '{"elements":[]}'})
+log.push(detail.hours)
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}mod.pizza = '{PIZZA_DETAILS}'\n{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["https://overpass-api.de", "https://overpass.kumi.systems"],
+            "Mo-Su 11:00-22:00", 1, 15, "Mo-Su 11:00-22:00"
+        ])
+    );
+}
+
+#[test]
+fn maps_opens_a_card_with_its_own_flight_and_shows_a_website_on_its_own() {
+    // A place whose only detail is its website still shows it. The card's
+    // flight is Maps' own: its landing is not the person's move, and once the
+    // card has moved the map, a late fix no longer does.
+    let code = r#"let log = []
+mod.answers = [{status_code: 200 body: '{"elements":[{"tags":{"website":"site.example.com"}}]}'}]
+open_place({id: "N:9" name: "Site" cat: "" label: "" lat: 37.2 lon: -121.2})
+log.push([detail.website mod.shown["details"] mod.renders])
+log.push([app_target centered])
+viewport_moved(37.2, -121.2, 16)
+log.push([app_target])
+close_place()
+mod.fix = true
+let flights = mod.flights.len()
+tick()
+log.push(mod.flights.len() == flights)
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["https://site.example.com", true, 1],
+            [{"lat": 37.2, "lon": -121.2}, true],
+            [null],
+            true
+        ])
+    );
+}
+
+#[test]
 fn maps_drops_the_details_of_a_card_that_moved_on_and_asks_nothing_for_a_place_without_an_id() {
     let code = r#"let pizza = {id: "N:1" name: "Pizza" cat: "Restaurant" label: "" lat: 37.1 lon: -121.1}
 let sushi = {id: "N:3" name: "Sushi" cat: "Restaurant" label: "" lat: 37.3 lon: -121.3}
