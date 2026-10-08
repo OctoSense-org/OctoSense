@@ -147,6 +147,10 @@ Android developer-backend login has its own isolated package and real-form proce
 
 ## Native backend browser acceptance (2026-10-08)
 
+The separately built Linux desktop `.deb` passed eight package launch, render,
+resource and shutdown checks. See the immutable [package receipt and scope](LINUX-PACKAGE.md)
+([中文](LINUX-PACKAGE.zh-CN.md)); that run did not install an app or connect an account.
+
 `backend_login.py` uses a real host, browser and operating-system credential
 vault. Only the backend HTTP server and its fictional users are synthetic; no
 account or token is injected into the host. Linux and Windows use the supported
@@ -174,7 +178,15 @@ The Linux run used that interface with the real engine and normal host vault.
 `--chrome PATH` instead uses an existing Chromium browser through Playwright.
 The `Platform accounts` workflow exercises the Windows native vault and this
 same browser/callback journey using the runner's existing Edge installation.
-The vault job passed; the added Windows browser journey is pending execution.
+Both passed in [run 37730564370](https://github.com/OctoSense-org/OctoSense/actions/runs/37730564370).
+The [Windows receipt](evidence/windows-backend-37730564370.json) ([中文](WINDOWS-BACKEND.zh-CN.md)) records all
+seven backend behaviors, normal Credential Manager use and clean native/server
+shutdown. Its 35 recorded source/lockfile hashes match the reviewed files.
+The actual workflow checkout was merge commit
+`95d1da069c01cebdb585eca3e75354e58833abd8`, with PR head `723b202e`.
+That receipt preserves the original artifact hash and clarifies its incorrectly
+named checkout-revision field. It does not claim Windows visual UX acceptance
+or independent readback after credential deletion.
 
 The acceptance host copies its own consent-sheet link into a private test
 file, and the harness opens that exact URL in a fresh browser. **The OS default
