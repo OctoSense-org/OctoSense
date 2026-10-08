@@ -284,6 +284,19 @@ fn maps_asks_overpass_only_for_openstreetmap_ids() {
 }
 
 #[test]
+fn maps_asks_an_overpass_mirror_its_query_whole() {
+    // The query goes in `data`, percent-encoded: its `[`, `:`, `;`, `(` and
+    // spaces would otherwise end or split the parameter.
+    let u = maps_model(r#"[overpass_url("overpass-api.de", "[out:json][timeout:10];way(25904339);out tags center;")].to_json()"#);
+    assert_eq!(
+        u,
+        serde_json::json!([
+            "https://overpass-api.de/api/interpreter?data=%5Bout%3Ajson%5D%5Btimeout%3A10%5D%3Bway%2825904339%29%3Bout%20tags%20center%3B"
+        ])
+    );
+}
+
+#[test]
 fn maps_opens_websites_over_https() {
     let u = maps_model(r#"[site_url("www.example.com") site_url("http://a.example.com") site_url("https://b.example.com") site_url("ftp://c.example.com") site_url("")].to_json()"#);
     assert_eq!(
@@ -496,8 +509,8 @@ let log = []
 show_results(true)
 log.push(mod.visible)
 // Nor when their files hold only entries that show no row.
-saved = list_in('[3,{"lat":37.1,"lon":-121.1}]')
-recents = list_in('[inf,{"name":"X"}]')
+saved = places_in('[3,{"lat":37.1,"lon":-121.1}]')
+recents = places_in('[inf,{"name":"X"}]')
 show_results(true)
 log.push(mod.visible)
 // A recent place the list can show (a nameless or unplaced entry has no row).
@@ -601,33 +614,32 @@ fn maps_shows_only_named_places_from_saved_and_recent_files() {
     // its tap gets every field of a place; `maps_model` also fails on any
     // script error they raise.
     let out = maps_model(
-        r#"let disk = list_in('[inf,3,null,"x",{"name":"X"},{"lat":37.1,"lon":-121.1},{"name":"  ","lat":37.1,"lon":-121.1},{"name":NaN,"lat":1,"lon":1},{"name":"Inf","lat":inf,"lon":1},{"name":"Text","lat":"37.3","lon":"-121.3"},{"name":"Zero","lat":0,"lon":0},{"name":"North","lat":95,"lon":1},{"name":"A","lat":37.1,"lon":-121.1},{"id":"W:1","name":"B","cat":"Retail","label":"San Jose","lat":37.2,"lon":-121.2}]')
+        r#"let text = '[inf,3,null,"x",{"name":"X"},{"lat":37.1,"lon":-121.1},{"name":"  ","lat":37.1,"lon":-121.1},{"name":NaN,"lat":1,"lon":1},{"name":"Inf","lat":inf,"lon":1},{"name":"Text","lat":"37.3","lon":"-121.3"},{"name":"Zero","lat":0,"lon":0},{"name":"North","lat":95,"lon":1},{"name":"A","lat":37.1,"lon":-121.1},{"id":"W:1","name":"B","cat":"Retail","label":"San Jose","lat":37.2,"lon":-121.2}]'
+let disk = list_in(text)
 let rows = []
 let picked = []
 for s in listed(disk) {
     rows.push([text_of(s, "name") text_of(s, "label")])
     picked.push(as_place(s))
 }
-[disk.len() rows picked].to_json()"#,
+// What Maps keeps of such a file (`load_saved`, `load_recents`): those
+// places, each with every field.
+[disk.len() rows picked places_in(text)].to_json()"#,
     );
-    assert_eq!(
-        out,
-        serde_json::json!([
-            14,
-            [["A", ""], ["B", "San Jose"]],
-            [{"id": "", "name": "A", "cat": "", "label": "", "lat": 37.1, "lon": -121.1},
-             {"id": "W:1", "name": "B", "cat": "Retail", "label": "San Jose", "lat": 37.2, "lon": -121.2}]
-        ])
-    );
+    let places = serde_json::json!([
+        {"id": "", "name": "A", "cat": "", "label": "", "lat": 37.1, "lon": -121.1},
+        {"id": "W:1", "name": "B", "cat": "Retail", "label": "San Jose", "lat": 37.2, "lon": -121.2}
+    ]);
+    assert_eq!(out, serde_json::json!([14, [["A", ""], ["B", "San Jose"]], places, places]));
 }
 
 #[test]
 fn maps_opens_a_recent_place_from_an_older_build_with_every_field() {
-    // A recent place from before ids has no `id`, `cat` or `label`. Its tap
-    // opens the card, which reads each field (`place.cat` raises on a missing
-    // one), and remembers it whole. Without an OpenStreetMap id it asks
-    // Overpass nothing and reads no cache. `ui`, `host`, `sys`, `fs` and
-    // `net` stubbed.
+    // A recent place from before ids has no `id`, `cat` or `label`: it loads
+    // with every field. Its tap opens the card, which reads each field
+    // (`place.cat` raises on a missing one), and remembers it whole. Without
+    // an OpenStreetMap id it asks Overpass nothing and reads no cache. `ui`,
+    // `host`, `sys`, `fs` and `net` stubbed.
     let out = maps_model(
         r#"mod.texts = {}
 mod.writes = []
@@ -642,10 +654,11 @@ let ui = {results: widget search_panel: widget place_panel: widget route_panel: 
     save: text_field("save")}
 let host = {has: fn(capability) { false }}
 let sys = {gps: fn(field) { 0 } navroute: fn(a, b, c, d, field, v) { "—" }}
-let fs = {exists: fn(path) { true } write: fn(path, data) { mod.writes.push([path data]) }}
+let fs = {exists: fn(path) { true } read: fn(path) { '[{"name":"Old Recent","lat":37.335,"lon":-121.885}]' }
+    write: fn(path, data) { mod.writes.push([path data]) }}
 let net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
     http_request: fn(req, events) { mod.urls.push(req.url); events.on_error("offline") }}
-recents = list_in('[{"name":"Old Recent","lat":37.335,"lon":-121.885}]')
+load_recents()
 for r in listed(recents) { pick(r) }
 [screen place mod.texts mod.writes.len() mod.writes[0][0] mod.writes[0][1].parse_json() mod.urls mod.flights].to_json()"#,
     );
@@ -1216,9 +1229,10 @@ log.to_json()"#;
 
 #[test]
 fn maps_opens_a_pins_place_by_its_position_among_the_drawn_pins() {
-    let code = r#"// An entry as an older build's saved.json holds it (no id, cat or
-// label), one that isn't a place (never pinned), and a saved place.
-saved = list_in('[{"name":"Raw","lat":37.3,"lon":-121.3},{"name":"Nowhere"},{"id":"W:1","name":"A","cat":"Mall","label":"San Jose","lat":37.1,"lon":-121.1}]')
+    let code = r#"// An older build's saved.json: an entry with no id, cat or label, one
+// that isn't a place (never pinned), and a saved place.
+mod.files["accounts/device/saved.json"] = '[{"name":"Raw","lat":37.3,"lon":-121.3},{"name":"Nowhere"},{"id":"W:1","name":"A","cat":"Mall","label":"San Jose","lat":37.1,"lon":-121.1}]'
+load_saved()
 let log = []
 show("search")
 log.push(mod.markers[mod.markers.len() - 1])
@@ -1272,6 +1286,86 @@ log.push([mod.texts["pdist"] mod.shown["pdist"]])
 log.to_json()"#;
     let out = maps_model(&format!("{CARD_STUBS}{code}"));
     assert_eq!(out, serde_json::json!([["", false], ["5.8 km away", true]]));
+}
+
+#[test]
+fn maps_hides_a_cards_empty_category_and_address_lines() {
+    // A dropped pin has no category, and a Saved or Recent place from an
+    // older build may have none, or no address. An empty line would stay as
+    // a gap, so each shows only with its text, as the distance does; the
+    // long press's answer shows both.
+    let code = r#"let cafe = {status_code: 200 body: 'CAFE'}
+fn lines(){ return [mod.texts["pcat"] mod.shown["pcat"] mod.texts["paddr"] mod.shown["paddr"]] }
+let log = []
+open_place(as_place({name: "Old" lat: 37.1 lon: -121.1}))
+log.push(lines())
+open_place({id: "" name: "Shop" cat: "Retail" label: "" lat: 37.2 lon: -121.2})
+log.push(lines())
+mod.answers = [cafe]
+mod.during = fn() { log.push(lines()) }
+map_long_pressed(37.3349, -121.8851)
+log.push(lines())
+log.to_json()"#
+        .replace("CAFE", CAFE_HERE);
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["", false, "", false],
+            ["Retail", true, "", false],
+            ["", false, "37.3349, -121.8851", true],
+            ["Cafe", true, "Market Street, San Jose, California", true]
+        ])
+    );
+}
+
+#[test]
+fn maps_loads_only_the_places_it_can_show_so_a_write_never_turns_a_bare_word_into_a_name() {
+    // Saved and Recent files from an older or broken build: bare words, a
+    // number, null, text, a nameless place, a bare `NaN` name, bare `inf`
+    // and `NaN` coordinates, and one past the largest number. Only the named
+    // places load, each with every field of a place. Written back as read,
+    // the bare `NaN` name would become the text "NaN": a Saved row and a pin
+    // after the next launch.
+    let code = r#"mod.files["accounts/device/saved.json"] = '[inf,3,null,"x",{"name":NaN,"lat":1,"lon":1},{"name":"Inf","lat":inf,"lon":1},{"name":"Nan","lat":NaN,"lon":1},{"name":"Far","lat":1e999,"lon":1},{"name":"X"},{"id":"W:1","name":"A","cat":"Mall","label":"San Jose","lat":37.1,"lon":-121.1}]'
+mod.files["accounts/device/recents.json"] = '[NaN,{"name":NaN,"lat":2,"lon":2},{"name":"Inf","lat":1,"lon":inf},{"name":"R","lat":37.3,"lon":-121.3}]'
+fn names(list){
+    let out = []
+    for p in listed(list) { out.push(text_of(p, "name")) }
+    out
+}
+load_recents()
+load_saved()
+let log = [saved recents]
+// A row's tap remembers the place, and Save saves it: both files are written.
+pick({id: "" name: "B" cat: "" label: "" lat: 37.2 lon: -121.2})
+toggle_save()
+let saved_file = mod.files["accounts/device/saved.json"]
+let recents_file = mod.files["accounts/device/recents.json"]
+log.push([saved_file.search("NaN") saved_file.search("inf") saved_file.search("Inf")
+    recents_file.search("NaN") recents_file.search("inf") recents_file.search("Inf")])
+log.push([saved_file.parse_json() recents_file.parse_json()])
+// The next launch: the same rows, and only their pins.
+close_place()
+load_recents()
+load_saved()
+show("search")
+log.push([names(saved) names(recents) mod.markers[mod.markers.len() - 1]])
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let a = serde_json::json!({"id": "W:1", "name": "A", "cat": "Mall", "label": "San Jose", "lat": 37.1, "lon": -121.1});
+    let b = serde_json::json!({"id": "", "name": "B", "cat": "", "label": "", "lat": 37.2, "lon": -121.2});
+    let r = serde_json::json!({"id": "", "name": "R", "cat": "", "label": "", "lat": 37.3, "lon": -121.3});
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [a],
+            [r],
+            [-1, -1, -1, -1, -1, -1],
+            [[a, b], [r, b]],
+            [["A", "B"], ["R", "B"], "37.1,-121.1,1;37.2,-121.2,1"]
+        ])
+    );
 }
 
 /// Photon's reverse lookup at two pressed points: a cafe a few meters from
@@ -1472,7 +1566,8 @@ mod.line = "line-a"
 tick()
 tick()
 log.push(drew())
-// A new mode: drawn and framed once more.
+// A new mode: the route's pins at once, then its line drawn and framed once
+// more.
 set_mode("walk")
 tick()
 log.push(drew())
@@ -1528,7 +1623,7 @@ log.to_json()"#;
         serde_json::json!([
             [["clear", route], []],
             [["line line-a", route, "fit"], []],
-            [["line line-a", route, "fit"], []],
+            [["clear", route, "line line-a", route, "fit"], []],
             [["clear", route, "line line-a", route, "fit", "line line-b", moved], []],
             [["clear", places], []],
             [["clear", moved, "line line-b", moved, "fit"], []],
@@ -1624,6 +1719,45 @@ log.to_json()"#;
             [[], []],
             [["line line-a", "pins 37.3352,-121.885,0;37.1,-121.1,2", "fit"], []],
             [["line line-b", "pins 37.3353,-121.885,0;37.1,-121.1,2"], []]
+        ])
+    );
+}
+
+#[test]
+fn maps_frames_a_new_modes_pins_not_the_line_of_an_older_start() {
+    // A line is drawn; the fix moves the start and its route fails, so the
+    // old line is still on the map. A new mode frames the route's pins, as a
+    // new start does: the old line goes from under them first, or the
+    // framing would show it.
+    let code = r#"let log = []
+mod.fix = true
+open_place(pizza)
+drew()
+show("route")
+mod.line = "line-a"
+tick()
+log.push(drew())
+mod.fix_lat = 37.3351
+mod.line = "n/a"
+tick()
+log.push(drew())
+set_mode("walk")
+log.push(drew())
+// The line that comes after it is framed too.
+mod.line = "line-b"
+tick()
+log.push(drew())
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{ROUTE_STEPS}{code}"));
+    let route = "pins 37.335,-121.885,0;37.1,-121.1,2";
+    let moved = "pins 37.3351,-121.885,0;37.1,-121.1,2";
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [["clear", route, "line line-a", route, "fit"], []],
+            [[], []],
+            [["clear", moved, "fit"], []],
+            [["line line-b", moved, "fit"], []]
         ])
     );
 }

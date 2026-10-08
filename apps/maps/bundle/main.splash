@@ -56,7 +56,7 @@ let finding = ""        // "" | "origin" | "stop": the search picks the start or
 let stops = []          // up to two stops on the way, in order
 let view3d = true       // drive view: 3D follow camera, or the flat 2D map
 let seen = {lat: 37.3350 lon: -121.8850}   // the browse map's centre (on_viewport)
-let centered = false    // moved to the GPS fix already, or by the person
+let centered = false    // the fix moves the map no more: it went there, the person moved it, or a card opened
 let app_target = nil    // where Maps last sent the map and hasn't seen it land: that landing is not the person's move
 let locating = false    // ◎ asked for a fix that hasn't come yet
 let OVERPASS = ["overpass-api.de" "overpass.kumi.systems" "overpass.openstreetmap.fr"]
@@ -241,6 +241,11 @@ fn overpass_query(id){
     if kind == "node" { out = "out tags;" }
     "[out:json][timeout:10];" + kind + "(" + parts[1] + ");" + out
 }
+// The request for a query (`overpass_query`) on one Overpass mirror. The
+// query is percent-encoded: its `[`, `;` and spaces would end or split `data`.
+fn overpass_url(host, query){
+    "https://" + host + "/api/interpreter?data=" + query.url_encode()
+}
 // The cache file for a place's details; "" for an id that isn't
 // OpenStreetMap's, so no other text from an answer reaches a file name.
 fn cache_name(id){
@@ -414,7 +419,7 @@ fn as_place(p){
 }
 // A list kept in a file (saved.json, recents.json) from its text: [] when
 // the text holds no list. Its entries stay as written, broken ones too:
-// `listed` picks the ones to show.
+// `places_in` keeps the ones that show.
 fn list_in(text){
     let v = text.parse_json()
     if v == nil || !v.is_array() { return [] }
@@ -428,6 +433,15 @@ fn listed(list){
     let out = []
     if list == nil || !list.is_array() { return out }
     for p in list { if is_a_place(p) && text_of(p, "name") != "" { out.push(p) } }
+    out
+}
+// The places a Saved or Recent file holds, as Maps keeps them: the entries
+// that show as rows (`listed`), each copied with a place's own fields
+// (`as_place`). An entry kept as read would be written back at the next
+// write, a bare word as text: a bare `NaN` name would become the name "NaN".
+fn places_in(text){
+    let out = []
+    for p in listed(list_in(text)) { out.push(as_place(p)) }
     out
 }
 // Recent places with `p` as the newest: once by name, at most 8, oldest
@@ -489,12 +503,13 @@ fn fix_origin(){
     }
 }
 // Recent places from an older build have no `id`, and either file may hold
-// anything a broken build wrote: the lists show only `listed` entries.
+// anything a broken build wrote: each list keeps only its file's places
+// (`places_in`), so the next write drops the rest from the file too.
 fn load_recents(){
-    if fs.exists(data_path("recents.json")) { recents = list_in(fs.read(data_path("recents.json"))) }
+    if fs.exists(data_path("recents.json")) { recents = places_in(fs.read(data_path("recents.json"))) }
 }
 fn load_saved(){
-    if fs.exists(data_path("saved.json")) { saved = list_in(fs.read(data_path("saved.json"))) }
+    if fs.exists(data_path("saved.json")) { saved = places_in(fs.read(data_path("saved.json"))) }
 }
 fn remember(p){
     recents = remembered(recents, p)
@@ -534,7 +549,7 @@ fn show_results(open){
 }
 // A row's place: a search hit (`photon_hits`) or a Saved or Recent entry
 // (`listed`), so its name and coordinates are there; copied with every
-// field of a place, which an entry from an older build may lack.
+// field of a place.
 fn pick(row){
     let p = as_place(row)
     if finding == "stop" {
@@ -593,7 +608,7 @@ fn load_details(p, mine){
         return
     }
     for host in OVERPASS {
-        let body = body_of(fetch("https://" + host + "/api/interpreter?data=" + query.url_encode()).await())
+        let body = body_of(fetch(overpass_url(host, query)).await())
         if mine != card_seq { return }   // the card moved on
         if body != nil {
             let d = place_details(body)
@@ -640,16 +655,19 @@ fn place_distance(){
     if sys.gps("ok") < 1 || !is_a_place(place) { return "" }
     distance_text(distance_km(sys.gps("lat"), sys.gps("lon"), place.lat, place.lon)) + " away"
 }
-// The straight-line distance, shown only with a fix.
-fn show_distance(){
-    let text = place_distance()
-    ui.pdist.set_text(text)
-    ui.pdist.set_visible(text != "")
+// A card line shows only with its text: an empty one would stay as a gap.
+// A dropped pin has no category, and a Saved or Recent place from an older
+// build may have no category or address.
+fn show_line(label, text){
+    label.set_text(text)
+    label.set_visible(text != "")
 }
+// The straight-line distance, shown only with a fix.
+fn show_distance(){ show_line(ui.pdist, place_distance()) }
 fn fill_place(){
     ui.pname.set_text(place.name)
-    ui.pcat.set_text(place.cat)
-    ui.paddr.set_text(place.label)
+    show_line(ui.pcat, place.cat)
+    show_line(ui.paddr, place.label)
     show_distance()
     sync_save()
     render_details()
@@ -667,8 +685,8 @@ fn toggle_save(){
 // Saved places, and the open one, as pins on the browse map; `shown_pins`
 // is the list the pins were drawn from, so a pin's tap finds its place.
 // Directions and the drive show only the route's own pins: `route_pins` sets
-// them on entering Directions and on a new start, and `draw_route` with each
-// line it draws.
+// them on entering Directions, on a new start and on a new mode, and
+// `draw_route` with each line it draws.
 fn show_pins(){
     if screen != "search" && screen != "place" { return }
     let open = nil
@@ -755,9 +773,9 @@ fn map_long_pressed(lat, lon){
     show_pins()
     load_details(place, mine)
 }
-// A pin's tap, by its position among the drawn pins (`shown_pins`). A saved
-// pin may be an entry as `saved.json` holds it, so its card gets a copy with
-// every field of a place. The open place's own pin does nothing.
+// A pin's tap, by its position among the drawn pins (`shown_pins`). Its card
+// gets a copy with every field of a place, as a row's does (`pick`). The
+// open place's own pin does nothing.
 fn marker_tapped(i){
     if screen != "search" && screen != "place" { return }
     if !i.is_number() || i - i != 0 || i < 0 || i >= shown_pins.len() || floor(i) != i { return }
@@ -789,9 +807,10 @@ fn locate(){
         ui.search_hint.set_text("Waiting for location…")
     }
 }
-// Maps opens at the GPS fix when one comes before the person moves the map.
-// A map reports its viewport only after a gesture, a zoom or a flight, never
-// at start-up, so `centered` stays false until the person or ◎ moves it.
+// Maps opens at the GPS fix when one comes before the person moves the map
+// or opens a card. A map reports its viewport only after a gesture, a zoom
+// or a flight, never at start-up, so `centered` stays false until the person
+// or ◎ moves the map, or a card opens (`open_card`).
 fn center_on_fix(){
     if sys.gps("ok") < 1 { return }
     // The wait ◎ announced is over, even when the person has moved the map
@@ -889,14 +908,16 @@ fn show(s){
     tick()
 }
 // Directions' own pins on the browse map at once, with no line under them:
-// a place's pins, or the line of the route before this start or stop, must
-// not stay while the new line loads, or for good when it fails. The line is
-// framed once it comes (`draw_route`).
+// a place's pins, or the line of the route before this start, stop or mode,
+// must not stay while the new line loads, or for good when it fails. The
+// line is framed once it comes (`draw_route`).
 fn route_pins(){
     ui.browse_map.clear_route()
     ui.browse_map.set_route_markers(markers())
 }
-fn set_mode(m){ mode = m; shown_route = ""; frame_next = true; ui.modes.render(); tick() }
+// A new mode is framed once more. If its route fails, the framing shows its
+// pins (`route_pins`), not the line of an older start still on the map.
+fn set_mode(m){ mode = m; shown_route = ""; frame_next = true; route_pins(); ui.modes.render(); tick() }
 fn eta_field(){
     if mode == "walk" { return "walk" }
     if mode == "bike" { return "bike" }
