@@ -1,0 +1,29 @@
+# octosense-film-service — the `film` host service (ADR 0013).
+#
+# filmcraft's video engine behind typed `film.*` methods: probe a media
+# file (container, streams, duration), render one frame to PNG through the
+# engine's program renderer, transcode a range through the engine's own
+# encoders (H.264+AAC, ProRes, PCM, GIF), and inspect a project file —
+# pure Rust, headless and offline, with every path held inside the
+# caller's `<host dir>/film` area. Stateless: every call is a fresh
+# session.
+[package]
+name = "octosense-film-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/filmcraft revision (ADR 0013).
+filmcraft-engine = { workspace = true }
+filmcraft-codecs = { workspace = true }
+filmcraft-media = { workspace = true }
+# PNG encoding for `film.frame` (pure Rust, the crate the engine itself uses).
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+tempfile = "3"

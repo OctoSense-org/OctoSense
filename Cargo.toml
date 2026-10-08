@@ -44,6 +44,7 @@ members = [
     "apps/light/host-service",
     "apps/sound/host-service",
     "apps/design/host-service",
+    "apps/film/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -206,6 +207,7 @@ octosense-cad-service = { path = "apps/cad/host-service" }
 octosense-light-service = { path = "apps/light/host-service" }
 octosense-sound-service = { path = "apps/sound/host-service" }
 octosense-design-service = { path = "apps/design/host-service" }
+octosense-film-service = { path = "apps/film/host-service" }
 # The wordcraft document engine (ADR 0013): the pinned ymote fork, one revision.
 wordcraft-engine = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
 wordcraft-doc = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
@@ -230,6 +232,10 @@ soundcraft-dsp = { git = "https://github.com/ymote/soundcraft.git", rev = "c51e5
 # The designcraft page-layout engine (ADR 0013): the pinned ymote fork, one revision.
 designcraft-engine = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
 designcraft-render = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
+# The filmcraft video engine (ADR 0013): the pinned ymote fork, one revision.
+filmcraft-engine = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
+filmcraft-codecs = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
+filmcraft-media = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }

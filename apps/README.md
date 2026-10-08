@@ -47,6 +47,9 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   bundle yet.
 - **The `sound` host service** (`sound/host-service`) is soundcraft's audio engine behind `sound.*` (ADR 0013), offline file processing only — info, convert, trim, mix and waveform peaks inside the host directory's `sound/` area; it never opens an audio or MIDI device, and no bundle exists yet.
 - **The `design` host service** (`design/host-service`) is designcraft's page-layout engine (ADR 0013) behind `design.*`: document info, page renders to PNG and PDF/IDML/EPUB export, with every path inside its own `design/` area of the host directory; no bundle yet.
+- **The `film` host service** (`film/host-service`) is the pinned filmcraft
+  video engine (ADR 0013) behind `film.*`: probe, frame-to-PNG and bounded
+  exports through its own pure-Rust codecs — headless, offline, no bundle yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link

@@ -3684,6 +3684,423 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-aac"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-ac3"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-apv"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-audio-dsp"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+
+[[package]]
+name = "filmcraft-av1"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-bitstream"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+
+[[package]]
+name = "filmcraft-captions"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-color",
+ "filmcraft-project",
+ "filmcraft-text",
+ "filmcraft-time",
+ "roxmltree 0.21.1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-cfb"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+
+[[package]]
+name = "filmcraft-codecs"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-aac",
+ "filmcraft-ac3",
+ "filmcraft-apv",
+ "filmcraft-av1",
+ "filmcraft-bitstream",
+ "filmcraft-color",
+ "filmcraft-dnx",
+ "filmcraft-frame",
+ "filmcraft-h264",
+ "filmcraft-hevc",
+ "filmcraft-isobmff",
+ "filmcraft-matroska",
+ "filmcraft-media",
+ "filmcraft-mpeg2v",
+ "filmcraft-mpegts",
+ "filmcraft-mxf",
+ "filmcraft-ogg",
+ "filmcraft-opus",
+ "filmcraft-prores",
+ "filmcraft-time",
+ "filmcraft-vp9",
+ "image",
+ "log",
+ "symphonia",
+ "thiserror 2.0.20",
+ "web-time",
+]
+
+[[package]]
+name = "filmcraft-color"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "filmcraft-dnx"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-edit"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-project",
+ "filmcraft-time",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-engine"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-audio-dsp",
+ "filmcraft-captions",
+ "filmcraft-codecs",
+ "filmcraft-color",
+ "filmcraft-edit",
+ "filmcraft-export",
+ "filmcraft-format",
+ "filmcraft-frame",
+ "filmcraft-geom",
+ "filmcraft-interchange",
+ "filmcraft-media",
+ "filmcraft-mxf",
+ "filmcraft-project",
+ "filmcraft-render",
+ "filmcraft-scopes",
+ "filmcraft-speech",
+ "filmcraft-text",
+ "filmcraft-time",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "web-time",
+]
+
+[[package]]
+name = "filmcraft-export"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-aac",
+ "filmcraft-apv",
+ "filmcraft-audio-dsp",
+ "filmcraft-color",
+ "filmcraft-dnx",
+ "filmcraft-frame",
+ "filmcraft-geom",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
+ "filmcraft-media",
+ "filmcraft-mxf",
+ "filmcraft-project",
+ "filmcraft-prores",
+ "filmcraft-render",
+ "filmcraft-text",
+ "filmcraft-time",
+ "image",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "web-time",
+]
+
+[[package]]
+name = "filmcraft-format"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-project",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-frame"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-color",
+ "filmcraft-time",
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "filmcraft-geom"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "filmcraft-h264"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-h264enc"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-hevc"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-interchange"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-cfb",
+ "filmcraft-color",
+ "filmcraft-geom",
+ "filmcraft-media",
+ "filmcraft-project",
+ "filmcraft-time",
+ "roxmltree 0.21.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-isobmff"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-matroska"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+
+[[package]]
+name = "filmcraft-media"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-color",
+ "filmcraft-frame",
+ "filmcraft-time",
+ "image",
+ "rayon",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-mpeg2v"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-mpegts"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-mxf"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+
+[[package]]
+name = "filmcraft-ogg"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+
+[[package]]
+name = "filmcraft-opus"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+
+[[package]]
+name = "filmcraft-project"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-color",
+ "filmcraft-geom",
+ "filmcraft-media",
+ "filmcraft-time",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-prores"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-render"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-audio-dsp",
+ "filmcraft-captions",
+ "filmcraft-color",
+ "filmcraft-frame",
+ "filmcraft-geom",
+ "filmcraft-media",
+ "filmcraft-project",
+ "filmcraft-text",
+ "filmcraft-time",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "filmcraft-scopes"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-color",
+ "serde",
+]
+
+[[package]]
+name = "filmcraft-speech"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-project",
+ "filmcraft-time",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "filmcraft-text"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-color",
+ "harfrust 0.12.0",
+ "skrifa 0.44.0",
+ "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-linebreak 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "filmcraft-time"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "filmcraft-vp9"
+version = "0.4.0"
+source = "git+https://github.com/ymote/filmcraft.git?rev=5231852443363f001c3f6b396dd9b1e6461ae2be#5231852443363f001c3f6b396dd9b1e6461ae2be"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10076,6 +10493,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-film-service"
+version = "0.1.0"
+dependencies = [
+ "filmcraft-codecs",
+ "filmcraft-engine",
+ "filmcraft-media",
+ "image",
+ "octosense-appstore",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "octosense-guest"
 version = "0.1.0"
 dependencies = [
@@ -10343,6 +10773,7 @@ dependencies = [
  "octosense-calendar-service",
  "octosense-deck-service",
  "octosense-design-service",
+ "octosense-film-service",
  "octosense-l0-chat",
  "octosense-light-service",
  "octosense-mail-service",

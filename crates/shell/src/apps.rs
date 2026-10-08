@@ -304,6 +304,10 @@ pub fn register_host_services() {
         // The design engine service (ADR 0013): designcraft behind `design.*`.
         #[cfg(feature = "app-hub")]
         octosense_design_service::register();
+        // The film engine service (ADR 0013): filmcraft behind `film.*`,
+        // offline only.
+        #[cfg(feature = "app-hub")]
+        octosense_film_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();
