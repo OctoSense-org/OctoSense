@@ -348,3 +348,65 @@ fn maps_asks_photon_near_the_visible_map() {
         serde_json::json!(["https://photon.komoot.io/api/?q=A%26B%20%231&limit=8&lang=en&lat=37.335&lon=-121.885"])
     );
 }
+
+#[test]
+fn maps_saves_a_place_once_and_pins_the_open_one_last() {
+    let out = maps_model(
+        r#"let a = {id: "W:1" name: "A" cat: "" label: "" lat: 37.1 lon: -121.1}
+let b = {name: "B" cat: "" label: "" lat: 37.2 lon: -121.2}
+let s = with_saved(with_saved(with_saved([], a), b), a)
+[s.len() is_saved(s, b) without_saved(s, a).len() pins_text(pin_places(s, b), b) pins_text(pin_places(s, nil), nil)].to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([2, true, 1, "37.1,-121.1,1;37.2,-121.2,2", "37.2,-121.2,1;37.1,-121.1,1"])
+    );
+    // MapView draws only places (in range, not 0,0) and counts only the pins
+    // it draws, so `on_marker(i)` means `pin_places(...)[i]`: 0,0, a latitude
+    // of 95 and a longitude of 181 are in neither list, while a pole on the
+    // date line and a point on the equator are. An open place that isn't a
+    // place is not pinned.
+    let out = maps_model(
+        r#"let a = {id: "W:1" name: "A" cat: "" label: "" lat: 37.1 lon: -121.1}
+let b = {name: "B" cat: "" label: "" lat: 37.2 lon: -121.2}
+let zero = {name: "Zero" cat: "" label: "" lat: 0 lon: 0}
+let north = {name: "North" lat: 95 lon: -121.3}
+let pole = {name: "Pole" lat: -90 lon: 180}
+let equator = {name: "Equator" lat: 0 lon: 9.5}
+let east = {name: "East" lat: 37.3 lon: 181}
+let s = [zero a north pole equator east b]
+let names = []
+for p in pin_places(s, a) { names.push(p.name) }
+let unopened = []
+for p in pin_places(s, zero) { unopened.push(p.name) }
+[names pins_text(pin_places(s, a), a) unopened pins_text(pin_places(s, zero), zero)].to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["Pole", "Equator", "B", "A"], "-90,180,1;0,9.5,1;37.2,-121.2,1;37.1,-121.1,2",
+            ["A", "Pole", "Equator", "B"], "37.1,-121.1,1;-90,180,1;0,9.5,1;37.2,-121.2,1"
+        ])
+    );
+    // A `saved.json` from an older or broken build: a bare number, null, text,
+    // a place without coordinates, one with them as text and one past the
+    // largest number (it reads as infinity) stay in the list but are never
+    // pinned; `maps_model` also fails on any script error they raise. Saving
+    // keeps only a place's own fields.
+    let out = maps_model(
+        r#"let disk = '[3,null,"x",{"name":"X"},{"name":"Text","lat":"37.3","lon":"-121.3"},{"name":"Far","lat":1e999,"lon":1},{"id":"W:1","name":"A","lat":37.1,"lon":-121.1}]'.parse_json()
+let b = {name: "B" cat: "" label: "" lat: 37.2 lon: -121.2}
+let names = []
+for p in pin_places(disk, b) { names.push(p.name) }
+[is_saved(disk, {id: "W:1"}) is_saved(disk, b) names pins_text(pin_places(disk, b), b)
+    with_saved(disk, b).len() without_saved(disk, {name: "X"}).len()
+    with_saved([], {name: " Q " lat: 1.5 lon: 2 extra: true})].to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([
+            true, false, ["A", "B"], "37.1,-121.1,1;37.2,-121.2,2", 8, 6,
+            [{"id": "", "name": "Q", "cat": "", "label": "", "lat": 1.5, "lon": 2}]
+        ])
+    );
+}

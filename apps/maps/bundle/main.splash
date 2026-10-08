@@ -291,6 +291,70 @@ fn reverse_url(lat, lon){
     "https://photon.komoot.io/reverse?lat=" + round4(lat) + "&lon=" + round4(lon) + "&lang=en&limit=1"
 }
 
+// A coordinate in a place's key: "" when it isn't a number (a saved.json
+// from an older or broken build may lack one or hold text).
+fn coord_key(o, key){
+    let v = optional(o, key, nil)
+    if !v.is_number() { return "" }
+    "" + round4(v)
+}
+// What tells two places apart: OpenStreetMap's id, else the name at the point
+// (a dropped pin, or a recent place from before ids were kept).
+fn place_key(p){
+    let id = text_of(p, "id")
+    if id != "" { return id }
+    text_of(p, "name") + "@" + coord_key(p, "lat") + "," + coord_key(p, "lon")
+}
+// What MapView draws as a pin (makepad's `is_a_place`): numbers in range,
+// and not the 0,0 an unresolved endpoint reports. NaN is not a number here,
+// and the range is written so that it would fail anyway.
+fn is_a_place(p){
+    let lat = optional(p, "lat", nil)
+    let lon = optional(p, "lon", nil)
+    if !lat.is_number() || !lon.is_number() { return false }
+    if !(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) { return false }
+    !(lat > -1e-9 && lat < 1e-9 && lon > -1e-9 && lon < 1e-9)
+}
+fn is_saved(list, p){
+    let k = place_key(p)
+    for s in list { if place_key(s) == k { return true } }
+    false
+}
+fn without_saved(list, p){
+    let k = place_key(p)
+    let out = []
+    for s in list { if place_key(s) != k { out.push(s) } }
+    out
+}
+fn with_saved(list, p){
+    let out = without_saved(list, p)
+    out.push({id: text_of(p, "id") name: text_of(p, "name") cat: text_of(p, "cat") label: text_of(p, "label")
+        lat: optional(p, "lat", nil) lon: optional(p, "lon", nil)})
+    out
+}
+// The browse map's pins: saved places, then the open place once, last.
+// Only places: MapView skips the rest and counts only the pins it draws, so
+// its `on_marker(index)` means this list's [index].
+fn pin_places(list, open){
+    let shown = is_a_place(open)
+    let out = []
+    for s in list { if is_a_place(s) && (!shown || place_key(s) != place_key(open)) { out.push(s) } }
+    if shown { out.push(open) }
+    out
+}
+// `pin_places` as MapView's `route_markers`. Kind 1 is the stop colour, 2
+// the destination's (makepad's route pins).
+fn pins_text(pins, open){
+    let out = ""
+    for p in pins {
+        let kind = 1
+        if open != nil && place_key(p) == place_key(open) { kind = 2 }
+        if out != "" { out = out + ";" }
+        out = out + text_of(p, "lat") + "," + text_of(p, "lon") + "," + kind
+    }
+    out
+}
+
 fn fix_origin(){
     if origin.picked { return }
     if sys.gps("ok") >= 1 {
