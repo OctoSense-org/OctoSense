@@ -269,6 +269,9 @@ pub fn register_host_services() {
         // desktop only until its binary cost is weighed for the phone.
         #[cfg(feature = "app-hub")]
         octosense_sheets_service::register();
+        // The photo engine service (ADR 0013): photocraft behind `photo.*`.
+        #[cfg(feature = "app-hub")]
+        octosense_photo_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();

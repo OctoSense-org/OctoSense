@@ -37,6 +37,7 @@ members = [
     "apps/reference",
     "apps/news/host-service",
     "apps/sheets/host-service",
+    "apps/photo/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -189,6 +190,10 @@ gridcraft-functions = { git = "https://github.com/ymote/gridcraft.git", rev = "c
 gridcraft-calc = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
 gridcraft-model = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
 gridcraft-xlsx = { git = "https://github.com/ymote/gridcraft.git", rev = "c6b6f4177cbf52aa7a8bac8aa15650a7502926fe" }
+octosense-photo-service = { path = "apps/photo/host-service" }
+# The photocraft raster engine (ADR 0013): the pinned ymote fork, one revision.
+photocraft-automation = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
