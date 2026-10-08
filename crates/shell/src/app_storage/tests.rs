@@ -83,6 +83,20 @@ fn app_ids_are_single_plain_path_components() {
     }
 }
 
+#[test]
+fn catalog_caches_and_locks_cannot_become_an_app_jail() {
+    let home = Scratch::new("catalog-host-files");
+    let host = storage(&home.0);
+    for name in ["catalog.json", "catalog.lock", "catalog-v2.json", "catalog-v2.lock"] {
+        for id in [name.to_string(), name.to_ascii_uppercase()] {
+            assert!(validate_app_id(&id).is_err(), "{id}");
+            assert!(host.open(&id).is_err(), "{id} must not create storage over a host file");
+            assert!(!home.0.join("apps").join(&id).exists());
+        }
+    }
+    assert!(host.open("org.example.catalog").is_ok());
+}
+
 // ---- the account hash -----------------------------------------------------
 
 #[test]
@@ -484,6 +498,9 @@ fn populated(tag: &str) -> (Scratch, Arc<Storage>, PathBuf, PathBuf) {
     // App Hub's own entries beside the jails are not apps.
     std::fs::create_dir_all(home.0.join("apps/.host/model")).unwrap();
     std::fs::write(home.0.join("apps/catalog.json"), "{}").unwrap();
+    for name in ["catalog.lock", "catalog-v2.json", "catalog-v2.lock"] {
+        std::fs::write(home.0.join("apps").join(name), "host metadata").unwrap();
+    }
     let secret = home.0.join("secrets/rinx/token");
     (home, host, ws, secret)
 }

@@ -261,7 +261,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -272,7 +272,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -636,6 +636,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -1346,6 +1347,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
+name = "cms"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b77c319abfd5219629c45c34c89ba945ed3c5e49fcde9d16b6c3885f118a730"
+dependencies = [
+ "const-oid 0.9.6",
+ "der",
+ "spki",
+ "x509-cert",
+]
+
+[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1400,7 +1413,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1455,6 +1468,12 @@ checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
 dependencies = [
  "crossbeam-utils",
 ]
+
+[[package]]
+name = "const-oid"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
 name = "const-oid"
@@ -2173,6 +2192,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "der"
+version = "0.7.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
+dependencies = [
+ "const-oid 0.9.6",
+ "der_derive",
+ "flagset",
+ "pem-rfc7468",
+ "zeroize",
+]
+
+[[package]]
+name = "der_derive"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8034092389675178f570469e6c3b0465d3d30b4505c294a6550db47f3c17ad18"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2275,7 +2318,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer 0.12.1",
- "const-oid",
+ "const-oid 0.10.2",
  "crypto-common 0.2.2",
  "ctutils",
 ]
@@ -2310,7 +2353,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2417,7 +2460,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29fcf32e6c73d1079f83ab4d782de2d81620346a5f38c6237a86a22f8368980a"
 dependencies = [
  "serdect",
- "signature",
+ "signature 3.0.0",
 ]
 
 [[package]]
@@ -2431,7 +2474,7 @@ dependencies = [
  "rand_core 0.10.1",
  "serde",
  "sha2 0.11.0",
- "signature",
+ "signature 3.0.0",
  "subtle",
  "zeroize",
 ]
@@ -2607,7 +2650,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3127,8 +3170,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "windows-result 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -4773,7 +4816,7 @@ version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "82cb6a9f675da968c63b6208c641b9dca58fc0133ae53375736b1767b0cab8bd"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5883,10 +5926,13 @@ dependencies = [
  "ohos-sys",
  "rqrr",
  "smallvec 1.15.1",
+ "url",
  "wayland-client",
  "wayland-egl",
  "wayland-protocols",
+ "webview2-com",
  "windows 0.62.2",
+ "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "windows-core 0.62.2",
  "windows-targets 0.52.6",
 ]
@@ -6990,7 +7036,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7943,9 +7989,9 @@ dependencies = [
 
 [[package]]
 name = "octosense-app-contract"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c3e8bb885e67a1290abdf6d3a71bf59b2707fa7e67c9b833eae6843355e86e5"
+checksum = "0222acdc13544bb9bbf661321b99f2ecd8aefa631b746a8ff44162d6fd0337da"
 dependencies = [
  "blake3",
  "serde",
@@ -7956,26 +8002,32 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=2e5768964f15916cdb66cc6824f7671dafc6445a#2e5768964f15916cdb66cc6824f7671dafc6445a"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=ba36df0505e198f998201af312ff5184df98cae9#ba36df0505e198f998201af312ff5184df98cae9"
 dependencies = [
  "base64 0.22.1",
  "blake3",
  "ed25519-dalek",
+ "fs2",
  "hex",
  "image",
  "octoscript-ui-l0",
  "octosense-app-policy",
  "rand_core 0.9.5",
  "roxmltree 0.21.1",
+ "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "sigstore-trust-root",
+ "sigstore-types",
+ "sigstore-verify",
  "ureq 3.4.2",
 ]
 
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=2e5768964f15916cdb66cc6824f7671dafc6445a#2e5768964f15916cdb66cc6824f7671dafc6445a"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=ba36df0505e198f998201af312ff5184df98cae9#ba36df0505e198f998201af312ff5184df98cae9"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -8003,7 +8055,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=2e5768964f15916cdb66cc6824f7671dafc6445a#2e5768964f15916cdb66cc6824f7671dafc6445a"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=ba36df0505e198f998201af312ff5184df98cae9#ba36df0505e198f998201af312ff5184df98cae9"
 dependencies = [
  "makepad-widgets",
  "octosense-app-contract",
@@ -8025,7 +8077,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=2e5768964f15916cdb66cc6824f7671dafc6445a#2e5768964f15916cdb66cc6824f7671dafc6445a"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=ba36df0505e198f998201af312ff5184df98cae9#ba36df0505e198f998201af312ff5184df98cae9"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -8034,6 +8086,16 @@ dependencies = [
  "octosense-app-hub",
  "octosense-app-policy",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-browser-smoke"
+version = "0.1.0"
+dependencies = [
+ "makepad-widgets",
+ "serde_json",
+ "webview2-com",
+ "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -8072,6 +8134,19 @@ dependencies = [
  "octosense-reference",
  "octosense-shell",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "octosense-host-api-smoke"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "octosense-appstore",
+ "octosense-shell",
  "serde_json",
 ]
 
@@ -8276,6 +8351,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.24.0",
  "uuid",
+ "wat",
 ]
 
 [[package]]
@@ -8309,6 +8385,19 @@ dependencies = [
  "wasmlab-functions",
  "wasmtime",
  "wat",
+]
+
+[[package]]
+name = "octosense-wasm-phone-smoke"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "octosense-appstore",
+ "octosense-shell",
+ "serde_json",
 ]
 
 [[package]]
@@ -8520,6 +8609,15 @@ checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
 dependencies = [
  "base64 0.22.1",
  "serde_core",
+]
+
+[[package]]
+name = "pem-rfc7468"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88b39c9bfcfc231068454382784bb460aae594343fb030d46e9f50a645418412"
+dependencies = [
+ "base64ct",
 ]
 
 [[package]]
@@ -9066,7 +9164,7 @@ dependencies = [
  "once_cell 1.21.4",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9522,7 +9620,7 @@ dependencies = [
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "getrandom 0.2.17",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -10106,7 +10204,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10165,7 +10263,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10183,7 +10281,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -10304,6 +10402,12 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "ryu-js"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
 
 [[package]]
 name = "safe_arch"
@@ -10701,6 +10805,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_json_canonicalizer"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe52319a927259afbfa5180c5157cd8167edfd3e8c254f9558c7fef44c5649f2"
+dependencies = [
+ "ryu-js",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "serde_path_to_error"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10901,11 +11016,158 @@ dependencies = [
 
 [[package]]
 name = "signature"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+dependencies = [
+ "rand_core 0.6.4",
+]
+
+[[package]]
+name = "signature"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d567dcbaf0049cb8ac2608a76cd95ff9e4412e1899d389ee400918ca7537f5"
 dependencies = [
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "sigstore-bundle"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a74b758235084c8baee7869e6073702b04d42d1efbd55b7042a43dca3a27f15e"
+dependencies = [
+ "jiff",
+ "serde_json",
+ "sigstore-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sigstore-crypto"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62ee2920d66400eef83fe543bff02c3ac5ea9a59ff864d365dd746ada4c8fc4c"
+dependencies = [
+ "aws-lc-rs",
+ "const-oid 0.9.6",
+ "der",
+ "futures-io",
+ "jiff",
+ "sigstore-types",
+ "spki",
+ "thiserror 2.0.20",
+ "x509-cert",
+]
+
+[[package]]
+name = "sigstore-merkle"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f64415f7d91620a3fce3f89f5955997e7104d863c12f36bf0dcbad1b258cf584"
+dependencies = [
+ "sigstore-crypto",
+ "sigstore-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sigstore-rekor"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b17fdd6fd9070f6779b117594582b9d2b4d9a9339d1b2f57711ad10f6a0cc0c8"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "jiff",
+ "serde",
+ "serde_json",
+ "sigstore-merkle",
+ "sigstore-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sigstore-trust-root"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16644cdbe963a469df667174ce6447649281aef02300149b195bd6f66d910ae4"
+dependencies = [
+ "hex",
+ "jiff",
+ "serde",
+ "serde_json",
+ "sigstore-crypto",
+ "sigstore-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sigstore-tsa"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "403b8a741c152f65752314805dd20bf9022a2e23191f7aa39b4fe8bf30699265"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "cms",
+ "const-oid 0.9.6",
+ "der",
+ "hex",
+ "jiff",
+ "rand 0.9.5",
+ "rustls-pki-types",
+ "rustls-webpki",
+ "sigstore-crypto",
+ "sigstore-types",
+ "thiserror 2.0.20",
+ "tracing",
+ "x509-cert",
+]
+
+[[package]]
+name = "sigstore-types"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d644275d2d22b52bc872214dc1618bcbb830f71064124f8e8b3cfc07c1020205"
+dependencies = [
+ "base64 0.22.1",
+ "hex",
+ "jiff",
+ "pem",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sigstore-verify"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc73ef1cd580920f1233358cebe550a43369daf8110b57cf820576888fbc0a8d"
+dependencies = [
+ "base64 0.22.1",
+ "const-oid 0.9.6",
+ "futures-io",
+ "hex",
+ "jiff",
+ "rustls-pki-types",
+ "rustls-webpki",
+ "serde",
+ "serde_json",
+ "serde_json_canonicalizer",
+ "sigstore-bundle",
+ "sigstore-crypto",
+ "sigstore-merkle",
+ "sigstore-rekor",
+ "sigstore-trust-root",
+ "sigstore-tsa",
+ "sigstore-types",
+ "thiserror 2.0.20",
+ "tls_codec",
+ "tracing",
+ "x509-cert",
 ]
 
 [[package]]
@@ -11008,7 +11270,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11022,6 +11284,16 @@ name = "spirv"
 version = "0.3.0+sdk-1.3.268.0"
 dependencies = [
  "bitflags 2.10.0",
+]
+
+[[package]]
+name = "spki"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
+dependencies = [
+ "base64ct",
+ "der",
 ]
 
 [[package]]
@@ -11319,10 +11591,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell 1.21.4",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11514,6 +11786,27 @@ name = "tinyvec"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
+
+[[package]]
+name = "tls_codec"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0de2e01245e2bb89d6f05801c564fa27624dbd7b1846859876c7dad82e90bf6b"
+dependencies = [
+ "tls_codec_derive",
+ "zeroize",
+]
+
+[[package]]
+name = "tls_codec_derive"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d2e76690929402faae40aebdda620a2c0e25dd6d3b9afe48867dfd95991f4bd"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "tokio"
@@ -12056,7 +12349,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12214,6 +12507,12 @@ dependencies = [
  "crypto-common 0.2.2",
  "ctutils",
 ]
+
+[[package]]
+name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "untrusted"
@@ -12920,6 +13219,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "webview2-com"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f89fca7a704cee10dcb3654c1dbb8941d1783132f1917358af75bec37a7d7e6"
+dependencies = [
+ "webview2-com-macros",
+ "webview2-com-sys",
+ "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-core 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "webview2-com-macros"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67a921c1b6914c367b2b823cd4cde6f96beec77d30a939c8199bb377cf9b9b54"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "webview2-com-sys"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3a07132775117d6065853d9d1178157b8c90e228de47129d6bce2c7edebedfb"
+dependencies = [
+ "thiserror 2.0.20",
+ "windows 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-core 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "weezl"
 version = "0.1.12"
 
@@ -12994,7 +13327,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -13704,6 +14037,20 @@ dependencies = [
  "rand_core 0.10.1",
  "serde",
  "zeroize",
+]
+
+[[package]]
+name = "x509-cert"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1301e935010a701ae5f8655edc0ad17c44bad3ac5ce8c39185f75453b720ae94"
+dependencies = [
+ "const-oid 0.9.6",
+ "der",
+ "sha1",
+ "signature 2.2.0",
+ "spki",
+ "tls_codec",
 ]
 
 [[package]]

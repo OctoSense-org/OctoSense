@@ -17,6 +17,8 @@ const IDS: &[&str] = &[
     #[cfg(feature = "acceptance-fixtures")]
     "org.octosense.samples.apilab",
     #[cfg(feature = "acceptance-fixtures")]
+    "org.octosense.samples.wasmprobe",
+    #[cfg(feature = "acceptance-fixtures")]
     "org.octosense.samples.backend",
     #[cfg(feature = "acceptance-fixtures")]
     "org.octosense.samples.backendother",

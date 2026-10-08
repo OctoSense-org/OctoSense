@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "6105f0025e748857a620e3c368c6d572a2493555",
+    "tree": "6c080f31adb899611e6ebe132ccfa2eead06cf9b",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -23,10 +23,12 @@
       "Label keeps its native wrapping default across retained theme reapplication; named labels populated after mounting stay wrapped, while explicit app no-wrap flows remain unchanged.",
       "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status.",
       "Host API v1 apps opt into host-owned device consent before source evaluation. Cached host grants gate camera, microphone and location paths; camera revocation stops an active preview and cached GPS reads fail closed. Older bundles keep their existing capability behavior.",
-      "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
       "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority.",
       "Host request JSON and pre-drain queues are bounded before native allocation; delayed host callbacks retain their nonprompting origin after an agent tool completes or is cancelled.",
       "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind.",
+      "Ordinary WebReader embeds sandboxed WebKitGTK in X11/XWayland and private WebView2 controllers on Windows, with bounded UI integration, URL policy, no app bridge and explicit engine errors. Native Wayland and Linux/Windows production embedded authentication remain unsupported.",
+      "Native host-response envelope keys are interned when created, so contained apps can forward raw success, error and capability-refusal replies as bounded JSON without first naming each field in script source.",
+      "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
       "A Splash isolate entry keeps its 64 ms wall-clock budget unless MAKEPAD_SPLASH_BUDGET_MS sets another (makepad#109). Only the shell test step sets it: ~1,000 tests in one process wait on shared locks and page faults, which a wall-clock budget counts against the script."
     ],
     "stacked": [
@@ -101,6 +103,14 @@
       {
         "patch": "tools/runtime-patches/makepad-async-prompt-provenance.patch",
         "sha256": "46bb7620ccb4f6a76a08d0333c0249d2619123da2a2649f55294fd4d35f0d905"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-desktop-webview.patch",
+        "sha256": "dda81412903a247525cf3750a00aab820aa1dea28722cc633cbdf65fd5770221"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-response-json.patch",
+        "sha256": "a95cd969b2d034ca30d38bfdb6ca6a890aaef4f24c7034076ddf72eb4c3d829a"
       },
       {
         "patch": "tools/runtime-patches/makepad-splash-budget.patch",

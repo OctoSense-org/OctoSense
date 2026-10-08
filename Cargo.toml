@@ -19,6 +19,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/wasm-phone-smoke",
     "desktop",
     "phone",
     "crates/kernel",
@@ -30,6 +31,8 @@ members = [
     "crates/l0-chat",
     "crates/oauth-service",
     "crates/markdown-editor",
+    "crates/browser-smoke",
+    "crates/host-api-smoke",
     "crates/wasm-host",
     "apps/reference",
     "apps/news/host-service",
@@ -73,7 +76,7 @@ octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 octosense-appcard = { path = "apps/appcard/module" }
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
 makepad-calculator = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
@@ -109,17 +112,17 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "33dea2f1f3ad3f1346a219aa8cf6e91b31361e23" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
 # The app policy (resolution, isolate settings, the Splash adapter) and the
 # Hub client the Card runner resolves an app's policy with; the shell's
 # glance tiles run cards under it (crates/shell/src/glance_card.rs).
-octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
-octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
+octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
+octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
 # The app contract (ADR 0005), from crates.io by version: App Hub, the shell
 # and Rinx all depend on `octosense-app-contract = "1"`, so Cargo links ONE
 # 1.x for the whole build (Cargo.lock pins the exact version OctoSense ships)
 # and App Hub and Rinx no longer need the same App Hub commit.
-octosense-app-contract = "1.7"
+octosense-app-contract = "1.8"
 # --- octos: ONE source for every octos crate (reviewed octos#2715 at
 # b0759a57: bounded ledger session-directory names, serialized peer purge
 # against session writes, and provider transport diagnostics that omit
@@ -187,6 +190,9 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Native browser acceptance fixture only; registry bindings match WebView2.
+webview2-com = "=0.39.1"
+webview2-windows = { package = "windows", version = "=0.62.2", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10.4"

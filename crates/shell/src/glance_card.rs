@@ -1351,10 +1351,14 @@ fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::Isol
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.1,
         None => {
             let anchor = std::env::var("OCTOSENSE_HUB_ANCHOR").unwrap_or_else(|_| octosense_appstore::DEFAULT_ANCHOR.to_string());
-            let mut store = octosense_app_hub::Store::new(&anchor, &root, octosense_app_contract::HostLimits::default())
-                .with_host_api_versions(octosense_appstore::host_api::available_versions());
-            let catalog = std::fs::read_to_string(root.join("catalog.json")).unwrap_or_default();
+            let channel = octosense_appstore::source::CatalogChannel::from_environment(&root)?;
+            let mut store = channel.configure(octosense_app_hub::Store::new(&anchor, &root, octosense_app_contract::HostLimits::default())
+                .with_host_api_versions(octosense_appstore::host_api::available_versions()));
+            let catalog = channel.read_cache(&root).map_err(|e| format!("no verified catalog on this device ({e})"))?;
             store.accept_catalog(&catalog).map_err(|e| format!("no verified catalog on this device ({e})"))?;
+            octosense_app_hub_app::catalog::check_verified_catalog_floor(
+                &root, &anchor, store.catalog().map(|catalog| catalog.sequence),
+            )?;
             store.may_run(app)?
         }
     };

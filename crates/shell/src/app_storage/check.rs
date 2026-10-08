@@ -153,7 +153,7 @@ pub fn check_workspaces(layout: &Layout) -> Report {
     for app in apps {
         let app_id = app.file_name().to_string_lossy().into_owned();
         if validate_app_id(&app_id).is_err() {
-            continue; // App Hub's own `.host`, `.system`, `catalog.json`
+            continue; // Host directories and catalog cache/lock files are not apps.
         }
         let jail = app.path();
         let accounts = jail.join("accounts");

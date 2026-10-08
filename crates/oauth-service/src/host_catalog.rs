@@ -93,7 +93,20 @@ fn method(
         args,
         result,
     )
-    .with_platforms(&["macos", "android"])
+    // Native account/vault and external-browser routes exist on both desktop
+    // targets too. Do not hide read/local-draft methods from their agents.
+    // Write-review methods retain the physical-approval platform boundary;
+    // a separate OS-authenticated approval adapter must establish the others.
+    .with_platforms(
+        if matches!(
+            name,
+            "github.review_save" | "gcalendar.review_save" | "gmail.draft.review"
+        ) {
+            &["macos", "android"]
+        } else {
+            &["macos", "android", "linux", "windows"]
+        },
+    )
     .with_agent_access(agent)
 }
 fn result() -> Value {
@@ -325,6 +338,34 @@ pub(crate) fn gmail(native_review: bool) -> Vec<HostApiMethod> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn desktop_accounts_reads_and_local_drafts_are_discoverable_without_widening_write_approval() {
+        let methods = auth()
+            .into_iter()
+            .chain(connector("github", true))
+            .chain(connector("gcalendar", true))
+            .chain(gmail(true));
+        let mut count = 0;
+        for method in methods {
+            let review = matches!(
+                method.name.as_str(),
+                "github.review_save" | "gcalendar.review_save" | "gmail.draft.review"
+            );
+            for platform in ["linux", "windows"] {
+                assert_eq!(
+                    method.platforms.iter().any(|p| p == platform),
+                    !review,
+                    "{} on {platform}",
+                    method.name
+                );
+            }
+            if method.name == "auth.backend.request" {
+                assert!(method.platforms.iter().any(|p| p == "linux"));
+            }
+            count += 1;
+        }
+        assert!(count > 20);
+    }
     #[test]
     fn descriptors_are_unique_valid_and_exclude_private_sheet_controls() {
         let methods = auth()

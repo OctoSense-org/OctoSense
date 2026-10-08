@@ -40,9 +40,12 @@ Rust 授权协议、连接器、原生审阅、账户生命周期和示例界面
 
 后端登录复用原生 WebView 引擎的专用认证模式。macOS 每次登录使用独立、非持久化 WKWebView 存储；Android 9+ 使用不可导出的独立进程 Activity 及唯一 WebView 数据目录，进程退出后删除该目录，不影响阅读器现有 Cookie。导航限制在已注册登录来源，加载前拦截精确回调，页面没有调用应用工具的 JavaScript 桥。返回、取消、加载与重试控件由宿主管理；受限应用不能直接打开认证模式或检查其页面。
 
-GitHub 和 Google 保留现有提供商授权流程。需要访问其他提供商来源的后端登录应选择桌面浏览器模式；嵌入模式不会悄悄打开外站。Windows/Linux 保留桌面浏览器登录，iOS 后端登录仍不可用。
-
-在 Linux 和 Windows 上，`WebReader.open` 同样会拒绝：固定版本的运行时没有适用于这两个平台的嵌入式浏览器适配器，因此 `open` 返回 `false`，并报告 `Embedded web pages are unavailable on this platform; this host has no native WebReader adapter`。可选的 CEF Browser 控件是另一个组件，不能代替登录视图：它为整个程序保留同一个持久化配置目录，并在关闭 Chromium 沙箱的情况下运行，因此缺少登录所需的按应用隔离的会话和导航限制。要在这两个平台上支持嵌入式后端登录，仍需要一个隔离的适配器，并在各个操作系统上通过原生验收；外部浏览器不算嵌入式支持。
+GitHub 和 Google 保留现有提供方授权流程。需要访问其他提供方来源的后端登录应
+选择桌面浏览器模式；嵌入模式不会悄悄打开外站。Windows/Linux 保留桌面浏览器登录，
+iOS 后端登录仍不可用。兼容源码宿主为普通 `WebReader` 新增 Linux X11/XWayland
+（WebKitGTK）和 Windows（WebView2）适配器，运行条件及原生验收范围见
+[桌面浏览器指南](../../docs/desktop-embedded-browser.zh-CN.md)。这不会启用两平台的
+嵌入式后端认证；该宿主入口仍关闭。原生 Wayland 仍明确报不支持。
 
 ## 开发者后端接口约定
 

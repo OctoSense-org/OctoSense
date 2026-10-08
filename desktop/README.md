@@ -128,6 +128,10 @@ App Hub's modules have no process form and always open in-process.
 | `OCTOSENSE_REDUCE_MOTION=1` | Keep the glance panel and its toasts still instead of sliding them in and out ([The glance panel](#the-glance-panel)). |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
 
+Embedded pages on Linux X11/XWayland and Windows use native WebKitGTK/WebView2
+child views. See [runtime requirements and acceptance](../docs/desktop-embedded-browser.md);
+missing engines and native Wayland report an explicit error.
+
 ## Application icons
 
 Both `octosense` and `octosense-home` use OctoSense's green eight-petal mark.
@@ -183,6 +187,7 @@ What a package contains and how it is found at run time:
 - **System apps** (News, Photos, Maps, Camera, Mail, AI providers) are already in the binary: App Hub packs the bundles `system-apps.json` selects at build time. Nothing else is read from `apps/` or `desktop/config/`.
 - **The octos kernel.** The script builds octos at the revision `Cargo.lock` pins with `tools/kernel-artifact.py --host`'s steps and stages it with its `stage` (which checks the binary's `--version`). It ships as `octos-kernel` beside the executable (`Contents/MacOS/` in the app), with its receipt `octos-kernel.json` among the resources; the kernel service runs it only when the receipt names the pinned revision and the binary's SHA-256 ([Build and run](#build-and-run)). `--no-kernel` ships none, and the app then runs without an assistant. `target/octosense-package/receipt.json` records the version, resource crates and the kernel's receipt.
 - **Private-path-free.** Paths in the binaries are remapped (`--remap-path-prefix` for the home directory, `CARGO_HOME` and the checkout) and debug info stripped (symbol names stay, for readable backtraces). Crates also embed their source directories as plain strings, which remapping does not reach, so build from a directory outside any user's home, with `CARGO_HOME` outside it too (the release workflow does). `tools/release-scan.py` fails on `/Users/…`, `C:\Users\…` and homes other than a CI runner's (`/home/runner`, `C:\Users\runneradmin`), `*.local` hosts, private IPv4 addresses, the scanning account's and host's names and any `RELEASE_SCAN_EXTRA` pattern, inside the `.app`, `.dmg`, `.deb`, `.AppImage`, `.zip` and NSIS installers.
+- **Package inspection does not run the AppImage.** The scanner reads its type-2 ELF boundary and extracts its filesystem with the host's `unsquashfs` (`squashfs-tools`, installed by the Linux build and release jobs). Missing tools, malformed headers and extraction failures stop publication. The GitHub publication token is scoped to the tag-verification and upload steps; it is absent during artifact inspection. Packaging also removes the inline `APPLE_API_KEY_P8` signing credential from build subprocesses.
 - **Identity.** Product name **OctoSense**, identifier `org.octosense.desktop` (`desktop/packaging/release.json`), icon from `desktop/packaging/icons/` (`make_icons.py` renders it). Android keeps `dev.makepad.octosense`.
 
 ### Cutting a desktop release

@@ -92,6 +92,25 @@ def evidence_problems(last, head, changed_files):
     return problems, required
 
 
+# Native Windows acceptance cannot be replaced by a macOS/Linux local pass.
+REMOTE_REQUIRED = ("embedded-browser.yml",)
+
+
+def remote_evidence_problems(head, changed_files):
+    problems = []
+    required = []
+    for workflow in REMOTE_REQUIRED:
+        paths = ci_local.pull_request_paths(workflow)
+        if paths is not None and not any(ci_local.glob_match(f, p) for f in changed_files for p in paths):
+            continue
+        required.append(workflow)
+        runs = gh_json(["run", "list", "--workflow", workflow, "--commit", head,
+                        "--event", "pull_request", "--limit", "1", "--json", "headSha,status,conclusion"])
+        if not runs or runs[0].get("headSha") != head or runs[0].get("status") != "completed" or runs[0].get("conclusion") != "success":
+            problems.append(f"{workflow}: native GitHub acceptance has not passed on {head[:12]}")
+    return problems, required
+
+
 RED = ("failure", "timed_out", "startup_failure")
 
 
@@ -169,12 +188,17 @@ def main(argv=None):
         problems, required = evidence_problems(last, head, changed)
         if problems:
             raise Refused("the local run is not evidence for this merge:\n  - " + "\n  - ".join(problems))
-        red = red_main(ci_local.GROUPS["all"])
+        remote_problems, remote_required = remote_evidence_problems(head, changed)
+        if remote_problems:
+            raise Refused("native acceptance cannot be replaced by local CI:\n  - " + "\n  - ".join(remote_problems))
+        red = red_main(ci_local.GROUPS["all"] + list(REMOTE_REQUIRED))
         if red and not args.fixes_main:
             raise Refused("main is red on GitHub; fix it first (or pass --fixes-main for the fix):\n  - "
                           + "\n  - ".join(red))
 
         body = comment_body(last, required)
+        if remote_required:
+            body += "\nNative GitHub acceptance passed on the same head: " + ", ".join(remote_required) + ".\n"
         owner = (info.get("headRepositoryOwner") or {}).get("login", "")
         subject = f"Merge pull request #{args.pr} from {owner}/{info['headRefName']}"
         merge_body = f"Local CI (tools/ci-local.sh --only {last['only']}) passed on {head}."

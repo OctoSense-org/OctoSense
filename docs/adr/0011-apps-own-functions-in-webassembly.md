@@ -37,9 +37,9 @@ outside their own input and output.
    Cranelift when they load. Compiled code is cached in the host directory,
    keyed by the module's digest and the engine's compatibility hash. Every
    call has a deadline (2 s, epoch interruption against wall-clock time);
-   memory (256 MiB), the wasm stack (512 KiB), the module (8 MiB) and input
-   and output (16 MiB) have caps. A trap or a deadline ends the call with an
-   error, never the process, and spends the instance: the next call gets a
+   memory (256 MiB), table elements (16,384), the wasm stack (512 KiB),
+   the module (8 MiB) and runtime input/output (16 MiB) have caps. A trap or
+   a deadline ends the call with an error, never the process, and spends the instance: the next call gets a
    fresh one, because a Rust guest's stack pointer and allocator may be
    half-updated.
 3. **The `wasm` host service** (shell feature `wasm-lab`). `wasm.<function>`
@@ -48,8 +48,31 @@ outside their own input and output.
    anything else as JSON; JSON output comes back as data, anything else as
    `{"text": …}`. Modules come only from the calling app's own admitted,
    digest-checked bundle, never from an argument, and the service checks the
-   admitted manifest's grant itself. Each app has one worker thread, so no
-   call runs on the UI thread and a slow function holds up only its own app.
+   admitted manifest's grant itself. Each invocation gets a fresh instance,
+   including after successful calls and guest-returned errors: memory, globals,
+   tables and logs cannot carry one caller's input into another call. Only
+   compiled Programs are reused. The low-level runtime's reusable `Instance`
+   API remains available for benchmarks; the app service never reuses it.
+
+   The service admits at most four active workers, four queued requests per
+   app, 1 MiB serialized input per request and 16 MiB total buffered input
+   (including executing calls). Full queues return an error without blocking
+   the UI. Workers release Programs and exit after five idle seconds. A
+   request has a ten-second budget including queueing/loading; guest start
+   and function execution share at most two seconds, with cancellation
+   checked at each epoch. Compilation itself is not interruptible, but an
+   expired or cancelled request cannot proceed from compilation to execution.
+   Queueing clones a host-owned admission identity; it does no bundle IO,
+   signature verification or digest work on the UI thread. The first cold
+   request binds that identity when the worker first verifies admission:
+   `ServiceCall` does not carry the originating UI's loaded-revision token.
+   Later queued requests retain that verified revision. The worker rechecks
+   admission before execution and before delivery; changed bundles/grants or
+   signed withdrawal discard the result and cached Program references, and
+   invalidate the old identity. A fresh request can then load the new code;
+   already queued old requests remain refused. A closing worker keeps its
+   global slot until its queue and compiled Programs have been dropped.
+   The disk cache contains compiled code only, never guest state.
 4. **The `wasm` capability** joins App Hub's closed capability list. A store
    says: "Runs its own functions in a sandbox on this device; they reach no
    files, network or other apps."
@@ -77,6 +100,9 @@ CoreMark on the M5 Max (higher is faster; native Rust is about 45,000):
 - **Splash compute kernels** stay the answer for numeric kernels.
 
 ## Measurements (Wasm Lab, `apps/wasmlab`)
+
+These are the original runtime measurements, before the service switched to
+fresh instances for every call. They are not a new end-to-end service benchmark.
 
 Light algorithms only: Markdown to HTML (pulldown-cmark), free slots around
 busy times, fuzzy ranking (strsim), a line diff (similar).
@@ -146,12 +172,14 @@ Two platform findings:
   (about 17× slower than Cranelift). A shipped system app's functions could
   be translated to native code when the app is built; a store app's could
   not. OpenHarmony's JIT policy is unknown (**unverified**).
-- The limits are per call and per instance. Nothing yet stops an app from
-  keeping one core busy with back-to-back calls, or from using 256 MiB in
-  each of its eight modules; a per-app CPU and memory budget is follow-up
-  work. A request that App Hub has timed out still runs in the worker.
-- An app updated while the shell runs keeps its old functions until the
-  shell restarts; workers live as long as the shell.
+- Guest memory is no longer retained across calls or across the eight modules:
+  each worker holds at most one live instance, and only four workers may run.
+  Continuous admitted requests can still keep those workers busy; CPU fairness
+  across applications and a bounded disk-cache eviction policy remain follow-up
+  work. Compiled Programs also consume host memory beyond the linear-memory cap.
+- Runtime and shell service regression tests cover actual Wasm state retention,
+  table growth, cancellation, input/queue bounds, revision/grant changes and
+  signed withdrawal. This hardening has not been revalidated on a phone yet.
 
 ## Open questions
 

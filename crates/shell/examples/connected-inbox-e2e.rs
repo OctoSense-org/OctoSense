@@ -43,6 +43,8 @@ fn setup() {
     )
     .expect("Read fixture metadata");
     assert_eq!(meta["fixture"], "connected-e2e");
+    // The marked fixture uses its own ephemeral legacy catalog authority.
+    std::env::set_var("OCTOSENSE_HUB_CATALOG", "legacy");
     assert!(meta["apps"]
         .as_array()
         .unwrap()

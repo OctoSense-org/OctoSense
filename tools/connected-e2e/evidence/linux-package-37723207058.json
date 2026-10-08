@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "platform": "linux-x86_64",
+  "package_run": 37723207058,
+  "source_revision": "c15a0ab93d6d4991e5774e1b56028247bf9c7ac2",
+  "pull_request_head": "9f8ce11c7cc890aa77131821c42a0ae61b46fc54",
+  "source_identity_evidence": "Release desktop run37723207058 plan job113135689588 exact planned PR merge commit",
+  "deb_sha256": "08dc2761669e3477fa2ec2466dfa976c2a1eda4871b7f3b447a8a51d422a057f",
+  "binary_sha256": "ca92f9f8d9460c6a18648bb32c733c4c3976171f1a2a0e4cf27277c85f425553",
+  "personal_accounts_used": false,
+  "system_packages_changed": false,
+  "checks": {
+    "packaged_binary_present": true,
+    "isolated_x_display": true,
+    "desktop_stays_running": true,
+    "native_widget_snapshot_available": true,
+    "actual_packaged_frame_captured": true,
+    "app_hub_loaded": true,
+    "packaged_resources_found": true,
+    "normal_owned_shutdown": true
+  },
+  "passed": true,
+  "owned_processes_stopped": true,
+  "namespace_exit": 0,
+  "test_scope": "Unprivileged package extraction; real Xvfb/Makepad launch, App Hub catalog rendering, clean shutdown. No agent consent or app installation.",
+  "artifact_id": 11528131778,
+  "package_kind": "deb",
+  "package_installation": "extracted without installing into the host OS",
+  "agent_consent_approved": false,
+  "screenshot_sha256": "92461d087d85ddbc808b22da686ea861e2c89823845e2e4040175beb144c0e5a",
+  "visual_observations": [
+    "App Hub rendered Google Calendar, GitHub Notes and Inbox Assistant listing rows.",
+    "The native agent-consent dialog was visible and remained unanswered."
+  ],
+  "not_verified": [
+    "App installation or launch from App Hub",
+    "Any provider sign-in or account access",
+    "OS-authenticated business writes",
+    "Package-manager installation or system-policy installation",
+    "Final integrated release"
+  ]
+}

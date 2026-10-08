@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "subtitle": "Wasm isolation acceptance fixture",
+  "description": "Synthetic signed fixture exercising fresh Wasm invocation state, guest errors, traps and deadlines. No accounts, model or external communication.",
+  "category": "utilities",
+  "keywords": [
+    "developer",
+    "host-api"
+  ],
+  "screenshots": [
+    "screenshots/01-main.png"
+  ],
+  "icon": "assets/icon.svg",
+  "platforms": [
+    "android"
+  ],
+  "publisher": {
+    "name": "Local acceptance fixture",
+    "support": "https://github.com/OctoSense-org/OctoSense/issues",
+    "privacy_policy_url": "https://github.com/OctoSense-org/OctoSense"
+  },
+  "release_notes": "Local validation only; ephemeral test signing keys.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

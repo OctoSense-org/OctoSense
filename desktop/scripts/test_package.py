@@ -91,6 +91,8 @@ class ConfigTests(unittest.TestCase):
         base = json.loads((HERE.parent / "packaging/release.json").read_text())
         self.assertEqual(base["identifier"], "org.octosense.desktop")
         self.assertEqual(base["productName"], "OctoSense")
+        self.assertIn("libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37", base["deb"]["depends"])
+        self.assertIn("libgtk-3-0t64 | libgtk-3-0", base["deb"]["depends"])
         for icon in base["icons"]:
             self.assertTrue((HERE.parent / "packaging" / icon).is_file(), icon)
         config = package.packager_config(base, version="0.2.0", binaries_dir=Path("/t/release"), out_dir=Path("/t/dist"),
@@ -107,11 +109,13 @@ class ConfigTests(unittest.TestCase):
 
     def test_the_build_never_sees_a_signing_variable(self):
         base = {"PATH": "/bin", "RUSTFLAGS": "-C x", "APPLE_SIGNING_IDENTITY": "Developer ID Application: X (T)",
-                "APPLE_CERTIFICATE": "secret", "APPLE_API_KEY_PATH": "/k.p8", "WINDOWS_CERTIFICATE_THUMBPRINT": "AB12"}
+                "APPLE_CERTIFICATE": "secret", "APPLE_API_KEY_PATH": "/k.p8", "APPLE_API_KEY_P8": "synthetic-p8",
+                "WINDOWS_CERTIFICATE_THUMBPRINT": "AB12"}
         env = package.build_env({"MAKEPAD_PACKAGE_DIR": "."}, base)
         self.assertEqual(env["PATH"], "/bin")
         self.assertEqual(env["MAKEPAD_PACKAGE_DIR"], ".")
         self.assertNotIn("RUSTFLAGS", env, "folded into CARGO_ENCODED_RUSTFLAGS")
+        self.assertNotIn("APPLE_API_KEY_P8", env, "the inline signing credential must not reach a build")
         for name in package.SIGNING_ENV:
             self.assertNotIn(name, env)
         self.assertIn("APPLE_SIGNING_IDENTITY", base, "the caller's environment is not modified")

@@ -1,0 +1,36 @@
+fn app_tool(name, call_id) {
+    let request = mod.app_tools.request(call_id)
+    let results = {}
+    host.request("wasm.remember", "synthetic earlier input", fn(reply_0) {
+        results.remember = reply_0
+        host.request("wasm.recall", {}, fn(reply_1) {
+            results.after_success = reply_1
+            host.request("wasm.remember_fail", "synthetic failed input", fn(reply_2) {
+                results.guest_error = reply_2
+                host.request("wasm.recall", {}, fn(reply_3) {
+                    results.after_guest_error = reply_3
+                    host.request("wasm.trap", {}, fn(reply_4) {
+                        results.trap = reply_4
+                        host.request("wasm.recall", {}, fn(reply_5) {
+                            results.after_trap = reply_5
+                            host.request("wasm.spin", {}, fn(reply_6) {
+                                results.deadline = reply_6
+                                host.request("wasm.recall", {}, fn(reply_7) {
+                                    results.after_deadline = reply_7
+                                    host.request("wasm.functions", {}, fn(reply_8) {
+                                        ui.status.set_text("Wasm checks completed")
+                                        mod.app_tools.complete(call_id, {account: request.context.account results: results functions: reply_8})
+                                    })
+                                })
+                            })
+                        })
+                    })
+                })
+            })
+        })
+    })
+}
+SolidView {width: Fill height: Fill flow: Down padding: 28 spacing: 20 draw_bg.color: #xf5f7fa
+    Label {text: "Wasm isolation acceptance" draw_text.color: #x17243b draw_text.text_style.font_size: 26}
+    status := Label {text: "Running synthetic signed app tool" draw_text.color: #x48566b}
+}

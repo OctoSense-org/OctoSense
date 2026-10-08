@@ -61,11 +61,19 @@ struct App {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        #[cfg(not(target_os = "android"))]
         let arg =
             |name: &str| std::env::args().find_map(|a| a.strip_prefix(name).map(str::to_owned));
+        #[cfg(not(target_os = "android"))]
         let root =
             PathBuf::from(arg("--app-data=").expect("Pass an isolated --app-data directory"));
+        #[cfg(not(target_os = "android"))]
         let bundle = PathBuf::from(arg("--bundle=").expect("Pass --bundle=<Host API Lab bundle>"));
+        #[cfg(target_os = "android")]
+        let data = PathBuf::from(cx.get_data_dir().expect("Android private data directory"))
+            .join("host-api-lab");
+        #[cfg(target_os = "android")]
+        let (root, bundle) = (data.join("apps"), data.join("bundle"));
         let preview = std::env::args().any(|a| a == "--preview");
         octosense_appstore::set_data_root(root.clone());
         let policy = if preview {
@@ -81,6 +89,8 @@ impl MatchEvent for App {
         } else {
             let installed =
                 connected_support::install(&[bundle.clone()], &root).expect("Signed installation");
+            // This example creates an ephemeral legacy catalog, not the public Hub.
+            std::env::set_var("OCTOSENSE_HUB_CATALOG", "legacy");
             std::env::set_var(
                 "OCTOSENSE_HUB_ANCHOR",
                 installed["anchor"].as_str().unwrap(),
@@ -117,9 +127,13 @@ impl MatchEvent for App {
         if preview {
             return;
         }
-        self.receipt = Some(PathBuf::from(
+        #[cfg(not(target_os = "android"))]
+        let receipt = PathBuf::from(
             arg("--receipt=").expect("Pass a new --receipt file"),
-        ));
+        );
+        #[cfg(target_os = "android")]
+        let receipt = data.join("receipt.json");
+        self.receipt = Some(receipt);
         assert!(
             !self.receipt.as_ref().unwrap().exists(),
             "Receipt must be a new file"
@@ -206,7 +220,7 @@ impl AppMain for App {
                 "signed_install":true,"bundle_digest":self.launch.as_ref().unwrap().manifest.integrity.bundle_blake3,
                 "tool_result":reply,"refusals":self.preliminary,"closed_app":closed,
                 "host_sheet_visible":self.sheet.borrow().is_some_and(|s| s.view.visible),
-                "not_verified":["model or peer relay consent", "physical OS permission approval", "camera capture", "Android runtime"]});
+                "not_verified":["model or peer relay consent", "physical OS permission approval", "camera capture"]});
             use std::io::Write;
             std::fs::OpenOptions::new()
                 .write(true)

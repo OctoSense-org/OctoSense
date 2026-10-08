@@ -1,0 +1,61 @@
+# ledger ws-group@1.0.0
+# level: L0
+# profile: ui/l0
+# Static design fixture, runtime native Kit composition.
+theme light
+copy t_ws0_name_text { class: user-copy, en: "octos" }
+copy t_ws0_path_text { class: user-copy, en: "~/home/octos" }
+copy t_ws1_name_text { class: user-copy, en: "octoscode-app" }
+copy t_ws1_path_text { class: user-copy, en: "~/home/octos/octoscode-app" }
+copy t_ws2_name_text { class: user-copy, en: "robrix2" }
+copy t_ws2_path_text { class: user-copy, en: "~/home/octos/robrix2" }
+copy t_ws3_name_text { class: user-copy, en: "octos-web" }
+copy t_ws3_path_text { class: user-copy, en: "~/home/octos/octos-web" }
+component Surface7a7bef822439(instance: text) {
+  view Kit(component: "Surface7a7bef822439", instance: instance) { slot }
+}
+component Vectore0a378fde04f(instance: text) {
+  view Kit(component: "Vectore0a378fde04f", instance: instance)
+}
+component Text404646513d4f(instance: text, text: text) {
+  view Kit(component: "Text404646513d4f", instance: instance, text: text)
+}
+component Textfd6a3ee4835f(instance: text, text: text) {
+  view Kit(component: "Textfd6a3ee4835f", instance: instance, text: text)
+}
+component Surfacec4c38149242a(instance: text) {
+  view Kit(component: "Surfacec4c38149242a", instance: instance) { slot }
+}
+component Texta90b9b77c268(instance: text, text: text) {
+  view Kit(component: "Texta90b9b77c268", instance: instance, text: text)
+}
+component Textfd1c766318fb(instance: text, text: text) {
+  view Kit(component: "Textfd1c766318fb", instance: instance, text: text)
+}
+component Text2cf7aad1d558(instance: text, text: text) {
+  view Kit(component: "Text2cf7aad1d558", instance: instance, text: text)
+}
+
+view root Surface7a7bef822439(instance: "recent_group") {
+  Vectore0a378fde04f(instance: "ws_icon0")
+  Text404646513d4f(instance: "t_ws0_name", text: copy.t_ws0_name_text)
+  Textfd6a3ee4835f(instance: "t_ws0_path", text: copy.t_ws0_path_text)
+  Surfacec4c38149242a(instance: "hair_ws1") {
+
+  }
+  Vectore0a378fde04f(instance: "ws_icon1")
+  Texta90b9b77c268(instance: "t_ws1_name", text: copy.t_ws1_name_text)
+  Textfd1c766318fb(instance: "t_ws1_path", text: copy.t_ws1_path_text)
+  Surfacec4c38149242a(instance: "hair_ws2") {
+
+  }
+  Vectore0a378fde04f(instance: "ws_icon2")
+  Text404646513d4f(instance: "t_ws2_name", text: copy.t_ws2_name_text)
+  Text2cf7aad1d558(instance: "t_ws2_path", text: copy.t_ws2_path_text)
+  Surfacec4c38149242a(instance: "hair_ws3") {
+
+  }
+  Vectore0a378fde04f(instance: "ws_icon3")
+  Text404646513d4f(instance: "t_ws3_name", text: copy.t_ws3_name_text)
+  Text2cf7aad1d558(instance: "t_ws3_path", text: copy.t_ws3_path_text)
+}

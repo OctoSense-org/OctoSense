@@ -69,7 +69,11 @@ flowchart TD
 
 改动横跨 App Hub 契约、分发器和运行器，OctoSense 中转、认证及设备服务，以及固定版本的 Makepad 授权补丁。必须一起发布并固定兼容组件，才能宣称已发布宿主支持这些要求。通过应用包检查本身不证明服务能够运行。
 
-macOS/Android 实现嵌入式后端登录；Windows/Linux 保留独立的外部浏览器认证路径，仍需平台执行验收。Windows/Linux 的嵌入式 `WebReader` 不受支持，必须明确报错。Google Android 登录仍不受支持。新设备适配器不宣称支持 Windows/Linux/iOS。不增加广泛系统访问、任意 Rust/原生动态库执行或 Wasm 加载。
+macOS/Android 实现嵌入式后端登录；Windows/Linux 保留独立的外部浏览器认证
+路径，仍需平台执行验收。后续[桌面浏览器扩展](../desktop-embedded-browser.zh-CN.md)为 Windows 和
+Linux X11/XWayland 提供普通 `WebReader`；原生 Wayland 或引擎缺失时明确报错。
+这不启用嵌入式后端认证。Google Android 登录仍不受支持。新设备适配器不宣称支持
+Windows/Linux/iOS。不增加广泛系统访问、任意 Rust/原生动态库执行或 Wasm 加载。
 
 ## 证据与待完成验收
 

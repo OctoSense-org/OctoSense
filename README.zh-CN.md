@@ -44,6 +44,13 @@ Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使
 
 连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** 现有 beta.2 下载包未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
 
+此源码构建中的 App Hub 默认使用带 GitHub 证明的目录，并通过应用契约 1.8.0 支持
+`publisher-github-v1` 发布包。开发者通过[提交 App Hub issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)
+申请发布；GitHub 发布证明取代单独的开发者签名密钥，仍须由 Hub 管理员批准准入。
+首次获取目录需要网络连接，旧的离线目录不会被转换成 GitHub 证明。自定义本地测试
+目录可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2
+缓存的应用库会拒绝这种降级。beta.2 不支持此发布模式，兼容的发行包尚待发布。
+
 ## 整体如何运作
 
 每台设备一个 Shell 进程，每个 Shell 一个 octos 内核，每个 Agent 都是这个内核中的一个会话。Shell 是内核唯一的完整客户端：它启动 octos 并持有宿主 token，启动每个应用 Agent 的回合，转交每一次对应用工具的调用，并掌管所有审批。应用从不直接与内核通信。
@@ -362,6 +369,9 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 | `Cargo.toml`、`Cargo.lock`、`native-runtime.lock.json`、`runtime-patches.lock.json` | 一个工作区。所有外部依赖都只锁定一次；运行时锁文件指定 OctoScript-Makepad 发行版和 Makepad 之上经审查的补丁。 |
 
 Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md)）：桌面端与手机端以目标平台和 feature 区分，而不是各持一份源码副本。若某个 Shell 源文件同时出现在两个 crate 中，CI 会失败。
+
+桌面源码构建新增 Linux X11/XWayland 和 Windows 的[嵌入式网页阅读器](docs/desktop-embedded-browser.zh-CN.md)，
+引擎运行条件与原生验收独立说明；不改变提供方登录和原生审批支持范围。
 
 ## 依赖
 

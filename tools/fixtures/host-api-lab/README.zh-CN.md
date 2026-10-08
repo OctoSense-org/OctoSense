@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+[Android 复现步骤与 OnePlus 6 结果](ANDROID.zh-CN.md)：同一原生宿主完成了全部 14 项手机检查，没有启动模型、登录账户或批准权限。
+
 这个开发测试示例演示应用自己的 Splash 工具如何调用已经编译进 OctoSense 的 Rust 代码。工具读取 macOS 上真实的摄像头权限状态，更新应用界面，并把结构化结果返回给原生调用方。它从不采集媒体，也从不批准设备访问。它不是提交给 App Hub 的应用，也不能用来加载任意 Rust 库。
 
 一次调用经过以下路径：
@@ -50,7 +52,7 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 
 **已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
 
-**未覆盖**：真实的模型推理、亲手点按批准权限、摄像头拍摄、Android、Linux 和 Windows 上“不支持该平台”的应答，以及发布兼容的宿主二进制文件。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
+**本次 macOS 运行未覆盖**：真实的模型推理、亲手点按批准权限、摄像头拍摄、Android、Linux 和 Windows 上“不支持该平台”的应答，以及发布兼容的宿主二进制文件。Android 的结果见[单独的 OnePlus 6 验收记录](ANDROID.zh-CN.md)。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
 
 ## 复用这一模式
 

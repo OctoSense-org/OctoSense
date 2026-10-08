@@ -128,6 +128,10 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `OCTOSENSE_REDUCE_MOTION=1` | 一览面板及其 toast 不再滑入滑出，保持静止（见[一览面板](#一览面板)）。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
+Linux X11/XWayland 和 Windows 的嵌入页面使用原生 WebKitGTK/WebView2 子视图。
+见[运行条件与验收](../docs/desktop-embedded-browser.zh-CN.md)；引擎缺失或原生 Wayland
+会明确报错。
+
 ## 应用图标
 
 `octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。
@@ -180,6 +184,7 @@ python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private
 - **系统应用**（新闻、相册、地图、相机、邮件、AI 提供商）已在二进制中：App Hub 在构建时打包 `system-apps.json` 选中的应用包。运行时不再读取 `apps/` 或 `desktop/config/`。
 - **octos 内核。** 脚本按 `tools/kernel-artifact.py --host` 的步骤构建 `Cargo.lock` 固定版本的 octos，并用其 `stage` 放置（会检查二进制的 `--version`）。内核以 `octos-kernel` 放在可执行文件旁（应用中为 `Contents/MacOS/`），收据 `octos-kernel.json` 随资源一起；只有收据中的版本与固定版本一致且二进制 SHA-256 相符时，内核服务才运行它（见[构建与运行](#构建与运行)）。`--no-kernel` 不附带内核，应用随后在没有助手的情况下运行。`target/octosense-package/receipt.json` 记录版本、资源 crate 和内核收据。
 - **不含私有路径。** 二进制中的路径被重映射（对主目录、`CARGO_HOME` 和检出目录使用 `--remap-path-prefix`），并去掉调试信息（保留符号名，便于阅读回溯）。crate 还会以普通字符串嵌入源码目录，重映射无法处理，所以要在任何用户主目录之外构建，`CARGO_HOME` 也放在外面（发布工作流就是这样做的）。`tools/release-scan.py` 会在 `.app`、`.dmg`、`.deb`、`.AppImage`、`.zip` 和 NSIS 安装包内部查找：`/Users/…`、`C:\Users\…` 以及 CI 运行器之外的主目录（`/home/runner`、`C:\Users\runneradmin` 除外）、`*.local` 主机名、私有 IPv4 地址、执行扫描的账户名和主机名，以及任何 `RELEASE_SCAN_EXTRA` 模式，发现即失败。
+- **包检查不执行 AppImage。** 扫描器读取 type-2 ELF 边界，再用主机的 `unsquashfs` 解压文件系统（由 Linux 构建与发布任务安装 `squashfs-tools`）。缺少工具、头部格式错误或解压失败都会阻止发布。GitHub 发布令牌仅提供给标签校验和上传步骤，不进入包检查步骤。打包脚本也会从构建子进程的环境中移除内联签名凭据 `APPLE_API_KEY_P8`。
 - **标识。** 产品名 **OctoSense**，标识符 `org.octosense.desktop`（`desktop/packaging/release.json`），图标来自 `desktop/packaging/icons/`（由 `make_icons.py` 生成）。Android 仍为 `dev.makepad.octosense`。
 
 ### 发布桌面版本

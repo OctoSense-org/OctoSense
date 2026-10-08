@@ -72,6 +72,8 @@ impl MatchEvent for App {
             })
             .or(installed);
         let (bundle, policy) = if let Some(id) = installed {
+            // connected_support only serves isolated legacy test catalogs.
+            std::env::set_var("OCTOSENSE_HUB_CATALOG", "legacy");
             let launch = connected_support::open(&root, &id).expect("Verify installed launch");
             let result = (launch.bundle().to_path_buf(), launch.policy.clone());
             println!(

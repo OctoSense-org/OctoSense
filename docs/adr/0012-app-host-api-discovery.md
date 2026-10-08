@@ -137,8 +137,9 @@ these requirements. A successful bundle check alone does not prove services run.
 
 Embedded backend login is implemented on macOS/Android; Windows/Linux keep the
 separate external-browser authentication path, with platform execution still
-requiring acceptance. Embedded `WebReader` is unsupported on Windows/Linux and
-must fail visibly. Google Android login remains unsupported. The new device
+requiring acceptance. The subsequent [desktop browser extension](../desktop-embedded-browser.md) adds
+ordinary `WebReader` on Windows and Linux X11/XWayland; native Wayland and missing
+engines fail visibly. This does not enable embedded backend authentication. Google Android login remains unsupported. The new device
 adapter does not advertise Windows/Linux/iOS support. No broad OS access,
 arbitrary Rust/native library execution, or Wasm loading is added.
 

@@ -125,6 +125,10 @@ jobs:
           # The linked Terminal (the desktop's default): its AI tools reach
           # the live emulator behind the module's TermTabs root.
           cargo test --locked --features mobile-apps,app-terminal -p octosense-shell terminal
+          # The opt-in Wasm service must keep fresh per-call guest state and
+          # enforce resource, cancellation and current-admission boundaries.
+          cargo test --locked -p octosense-wasm-host
+          cargo test --locked --features mobile-apps,wasm-lab -p octosense-shell wasm_service::tests
           cargo test --locked -p makepad-widgets splash_policy
           cargo test --locked -p makepad-script-std gate::tests
       # The two-lane scenario (crates/shell/src/host_tools/scenario_tests.rs):
