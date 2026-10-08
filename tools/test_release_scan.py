@@ -63,6 +63,21 @@ class PatternTests(unittest.TestCase):
         ):
             self.assertTrue(findings(leak), leak)
 
+    def test_only_the_proven_mail_literal_seam_is_ignored(self):
+        prefix = b"Mail service is not "
+        apparent_host = b"registeredattemptssendoctosense.local"
+        self.assertEqual(findings(prefix + apparent_host + b"\x00"), [])
+        for leak in (
+            apparent_host,
+            b"https://" + apparent_host + b"/",
+            b"Other service is not " + apparent_host,
+            prefix + b"registeredattemptssendprivate.local",
+            prefix + b"registeredattemptsotheroctosense.local",
+            prefix + b"registeredattemptssendoctosense2.local",
+            prefix + apparent_host + b"\x00" + apparent_host,
+        ):
+            self.assertTrue(findings(leak), leak)
+
     def test_findings_are_masked_and_extra_patterns_apply(self):
         out = findings(b"/Users/someone/x")
         self.assertEqual(len(out), 1)
