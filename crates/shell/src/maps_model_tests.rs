@@ -477,9 +477,12 @@ fn maps_closes_the_list_when_the_person_moves_the_map_not_when_its_own_flight_la
 mod.flights = []
 let ui = {results: {set_visible: fn(v) {mod.visible = v}}
     browse_map: {fly_to: fn(lat, lon, zoom) {mod.flights.push([lat lon zoom])}}}
+let log = []
+// With the box empty and nothing in Saved or Recent, there is no list to open.
+show_results(true)
+log.push(mod.visible)
 // A recent place the list can show (a nameless or unplaced entry has no row).
 recents = [{name: "A" lat: 37.1 lon: -121.1}]
-let log = []
 // Opened while Maps flies to the fix: its landing leaves the list open and
 // is not the person's move.
 show_results(true)
@@ -492,8 +495,12 @@ log.push([mod.visible centered])
 show_results(true)
 map_tapped(37.7, -122.4)
 log.push(mod.visible)
-// A tap that stops a flight reports no landing; the next pan still closes.
+// A tap that stops a flight reports no landing; the next pan still closes,
+// and the tap forgets the flight's target.
 fly(40.7128, -74.006, 15)
+show_results(true)
+map_tapped(40.7, -74.0)
+log.push(app_target)
 show_results(true)
 viewport_moved(40.7, -74.01, 15)
 log.push(mod.visible)
@@ -510,10 +517,44 @@ fly(0, 0, 14)
     assert_eq!(
         out,
         serde_json::json!([
-            [[true, false], [false, true], false, false, "untouched"],
+            [false, [true, false], [false, true], false, null, false, "untouched"],
             [[37.7749, -122.4194, 14], [40.7128, -74.006, 15]],
             {"lat": 3, "lon": 4}
         ])
+    );
+}
+
+#[test]
+fn maps_asks_for_location_only_from_its_button_and_the_fix_never_moves_a_map_the_person_moved() {
+    // `center_on_fix` runs on the timer: it only reads the fix. Only ◎
+    // asks for one. A fix that comes after the person moved the map moves
+    // nothing, but ends ◎'s "Waiting for location…".
+    let out = maps_model(
+        r#"mod.flights = []
+mod.hint = ""
+mod.requests = 0
+mod.fixed = false
+let ui = {results: {set_visible: fn(v) {}}
+    search_hint: {set_text: fn(t) {mod.hint = t}}
+    browse_map: {fly_to: fn(lat, lon, zoom) {mod.flights.push([lat lon zoom])}}}
+let sys = {request_location: fn() {mod.requests = mod.requests + 1; return 1}
+    gps: fn(field) {if !mod.fixed {return 0}; if field == "lat" {return 37.7}; if field == "lon" {return -122.4}; return 1}}
+let log = []
+center_on_fix()
+log.push([mod.requests mod.flights.len()])
+locate()
+log.push([mod.requests mod.hint])
+viewport_moved(37.0, -121.0, 13)
+mod.fixed = true
+center_on_fix()
+log.push([mod.requests mod.flights.len() mod.hint])
+locate()
+log.push([mod.requests mod.flights])
+log.to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([[0, 0], [1, "Waiting for location…"], [1, 0, "Where to?"], [1, [[37.7, -122.4, 15]]]])
     );
 }
 

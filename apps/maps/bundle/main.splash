@@ -55,7 +55,8 @@ let stops = []          // up to two stops on the way, in order
 let view3d = true       // drive view: 3D follow camera, or the flat 2D map
 let seen = {lat: 37.3350 lon: -121.8850}   // the browse map's centre (on_viewport)
 let centered = false    // moved to the GPS fix already, or by the person
-let app_target = nil    // where Maps' own flight is headed: its landing is not the person's move
+let app_target = nil    // where Maps last sent the map and hasn't seen it land: that landing is not the person's move
+let locating = false    // ◎ asked for a fix that hasn't come yet
 let OVERPASS = ["overpass-api.de" "overpass.kumi.systems" "overpass.openstreetmap.fr"]
 let CACHE_DAYS = 7
 
@@ -446,8 +447,8 @@ fn pins_text(pins, open){
     }
     out
 }
-// Whether the browse map's reported centre is where Maps' own flight was
-// sent (`target`, or nil when none is under way). MapView reports a landing
+// Whether the browse map's reported centre is where Maps last sent it
+// (`target`, or nil). MapView reports a landing
 // through its Mercator round trip, well within 1e-12 degrees of the target;
 // a person who pans the map ends within 1e-6 degrees (about 10 cm) of it
 // only by chance.
@@ -549,6 +550,7 @@ fn use_my_location(){
 // The browse map's callbacks. A tap or a drag on the map closes the search
 // list; a place card stays until Close.
 fn map_tapped(lat, lon){
+    app_target = nil   // a press on the map ends Maps' flight
     if screen == "search" { show_results(false) }
 }
 // MapView reports the viewport when any flight lands, Maps' own too: that
@@ -585,13 +587,23 @@ fn locate(){
     let request = sys.request_location()
     if request < 0 { ui.search_hint.set_text("Maps has no location access") }
     else if request == 0 { ui.search_hint.set_text("No location here") }
-    else { ui.search_hint.set_text("Waiting for location…") }
+    else {
+        locating = true
+        ui.search_hint.set_text("Waiting for location…")
+    }
 }
 // Maps opens at the GPS fix when one comes before the person moves the map.
 // A map reports its viewport only after a gesture, a zoom or a flight, never
 // at start-up, so `centered` stays false until the person or ◎ moves it.
 fn center_on_fix(){
-    if centered || screen != "search" || sys.gps("ok") < 1 { return }
+    if sys.gps("ok") < 1 { return }
+    // The wait ◎ announced is over, even when the person has moved the map
+    // since and it stays where they put it.
+    if locating {
+        locating = false
+        if finding == "" { ui.search_hint.set_text("Where to?") }
+    }
+    if centered || screen != "search" { return }
     centered = true
     if finding == "" { ui.search_hint.set_text("Where to?") }
     fly(sys.gps("lat"), sys.gps("lon"), 14)
@@ -741,12 +753,16 @@ let PillOn = Pill{
 }
 let Primary = UiPrimary{width: Fill}
 let Link = UiButton{}
-// A panel takes the presses that land on it, so a tap or drag on a card or
-// the search list (not on the map around it) neither closes the list nor
-// moves the map under it.
-let Panel = RoundedView{width: Fill max_width: 480 height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 14 bottom: 18} spacing: 8
-    new_batch: true show_bg: true draw_bg.color: ui_surface draw_bg.border_radius: 18.0 cursor: MouseCursor.Default
+// A sheet over the map. A panel is a sheet that takes the presses no child
+// took: `cursor` is what makes a View claim them, touches included, and the
+// result rows (GestureViews) claim none. So a tap or drag on a card or the
+// search list neither closes the list nor moves the map under it. Like any
+// claimed press it also takes key focus, which closes the keyboard. The
+// drive bar stays a plain sheet: a drag there pans the drive map, as before.
+let Sheet = RoundedView{width: Fill max_width: 480 height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 14 bottom: 18} spacing: 8
+    new_batch: true show_bg: true draw_bg.color: ui_surface draw_bg.border_radius: 18.0
 }
+let Panel = Sheet{cursor: MouseCursor.Default}
 let HitRow = GestureView{width: Fill height: Fit flow: Down padding: Inset{top: 12 bottom: 12} spacing: 6
     name := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
     label := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 13}
@@ -877,7 +893,7 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             }
         }
         View{width: Fill height: Fill}
-        Panel{flow: Right align: Align{y: 0.5} spacing: 6
+        Sheet{flow: Right align: Align{y: 0.5} spacing: 6
             remain := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
             views := View{width: Fit height: Fit flow: Right spacing: 4 on_render: || {
                 if view3d { Pill{text: "2D" on_click: || set_view(false)} PillOn{text: "3D"} }
