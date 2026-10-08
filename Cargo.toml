@@ -40,6 +40,7 @@ members = [
     "apps/photo/host-service",
     "apps/word/host-service",
     "apps/deck/host-service",
+    "apps/cad/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -198,6 +199,7 @@ photocraft-automation = { git = "https://github.com/ymote/photocraft.git", rev =
 photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 octosense-word-service = { path = "apps/word/host-service" }
 octosense-deck-service = { path = "apps/deck/host-service" }
+octosense-cad-service = { path = "apps/cad/host-service" }
 # The wordcraft document engine (ADR 0013): the pinned ymote fork, one revision.
 wordcraft-engine = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
 wordcraft-doc = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
@@ -206,6 +208,9 @@ wordcraft-doc = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b
 deckcraft-engine = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
 deckcraft-format = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
 deckcraft-model = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
+# The cadcraft drafting engine (ADR 0013): the pinned ymote fork, one revision.
+cadcraft-engine = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
+cadcraft-io = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }

@@ -1,0 +1,25 @@
+# octosense-cad-service — the `cad` host service (ADR 0013).
+#
+# cadcraft's drafting engine behind typed `cad.*` methods: inspect a DXF or
+# DWG drawing, list and filter its entities, measure distances and areas,
+# render it to PNG or SVG, and convert between the engine's formats.
+# Stateless: every call reads, acts and replies, and every path stays inside
+# the caller's `<host dir>/cad` area — the shared `.host` directory also
+# holds Mail's and Calendar's data, which this service never touches.
+[package]
+name = "octosense-cad-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/cadcraft revision (ADR 0013).
+cadcraft-engine = { workspace = true }
+cadcraft-io = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -39,6 +39,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   exact host API versions; provider entitlement is checked when used. See the
   [media contract and validation limits](ai-providers/host-service/MEDIA.md).
 - **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the host directory's own `deck/` corner; no bundle yet.
+- **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the host's own `cad` directory.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
