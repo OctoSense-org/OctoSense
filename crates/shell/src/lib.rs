@@ -123,7 +123,7 @@ pub use octosense_ai_host as ai_host;
 // (the phone's Settings app) wraps this `App` and plugs in through `ext`.
 
 pub use makepad_widgets;
-use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskHandle};
+use makepad_widgets::makepad_platform::thread::{Lane, TaskHandle};
 use makepad_widgets::*;
 
 /// The standalone mobile shell: the Android phone shell fills the window
@@ -6306,6 +6306,10 @@ impl MatchEvent for App {
 
     fn handle_signal(&mut self, cx: &mut Cx) {
         if self.state.is_some() {
+            // The platform has already consumed the global wake flag before
+            // dispatching Signal. Inspect our pending results, not that flag.
+            crate::run_view::trace_host("sig");
+            self.poll_backgrounds(cx);
             #[cfg(any(feature = "app-hub", native_mobile))]
             for id in octosense_app_hub_app::take_completed_installs() {
                 self.installed_app_changed(cx, &id);
@@ -6862,12 +6866,6 @@ impl App {
                 for note in glance::take_notifications() {
                     self.glance_notify(cx, &note);
                 }
-            }
-            if SignalToUI::check_and_clear_ui_signal() && self.state.is_some() {
-                crate::run_view::trace_host("sig");
-                self.poll_backgrounds(cx);
-                self.drain_hub(cx);
-                self.drain_client_lines(cx);
             }
         }
 
