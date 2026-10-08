@@ -477,7 +477,8 @@ fn maps_closes_the_list_when_the_person_moves_the_map_not_when_its_own_flight_la
 mod.flights = []
 let ui = {results: {set_visible: fn(v) {mod.visible = v}}
     browse_map: {fly_to: fn(lat, lon, zoom) {mod.flights.push([lat lon zoom])}}}
-recents = [{name: "A"}]
+// A recent place the list can show (a nameless or unplaced entry has no row).
+recents = [{name: "A" lat: 37.1 lon: -121.1}]
 let log = []
 // Opened while Maps flies to the fix: its landing leaves the list open and
 // is not the person's move.
@@ -512,6 +513,194 @@ fly(0, 0, 14)
             [[true, false], [false, true], false, false, "untouched"],
             [[37.7749, -122.4194, 14], [40.7128, -74.006, 15]],
             {"lat": 3, "lon": 4}
+        ])
+    );
+}
+
+#[test]
+fn maps_shows_only_named_places_from_saved_and_recent_files() {
+    // A file of ours that holds no list reads as an empty one; a truncated
+    // list keeps what parsed, and none of it shows.
+    let out = maps_model(
+        r#"[list_in('') list_in('inf') list_in('null') list_in('3') list_in('"x"') list_in('{"name":"A","lat":1,"lon":2}')
+    listed(list_in('[1,')) listed(nil) listed("x") listed({name: "A" lat: 1 lon: 2})].to_json()"#,
+    );
+    assert_eq!(out, serde_json::json!([[], [], [], [], [], [], [], [], [], []]));
+    // An older or broken build's entries stay in the list but show no row:
+    // bare words, a number, null and text, a place without a name or with a
+    // blank or bare-word one, one without coordinates or with them as text,
+    // a bare `inf`, 0,0 or out of range. A row reads its name and address
+    // safely (an entry from before ids has no `id`, `cat` or `label`), and
+    // its tap gets every field of a place; `maps_model` also fails on any
+    // script error they raise.
+    let out = maps_model(
+        r#"let disk = list_in('[inf,3,null,"x",{"name":"X"},{"lat":37.1,"lon":-121.1},{"name":"  ","lat":37.1,"lon":-121.1},{"name":NaN,"lat":1,"lon":1},{"name":"Inf","lat":inf,"lon":1},{"name":"Text","lat":"37.3","lon":"-121.3"},{"name":"Zero","lat":0,"lon":0},{"name":"North","lat":95,"lon":1},{"name":"A","lat":37.1,"lon":-121.1},{"id":"W:1","name":"B","cat":"Retail","label":"San Jose","lat":37.2,"lon":-121.2}]')
+let rows = []
+let picked = []
+for s in listed(disk) {
+    rows.push([text_of(s, "name") text_of(s, "label")])
+    picked.push(as_place(s))
+}
+[disk.len() rows picked].to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([
+            14,
+            [["A", ""], ["B", "San Jose"]],
+            [{"id": "", "name": "A", "cat": "", "label": "", "lat": 37.1, "lon": -121.1},
+             {"id": "W:1", "name": "B", "cat": "Retail", "label": "San Jose", "lat": 37.2, "lon": -121.2}]
+        ])
+    );
+}
+
+#[test]
+fn maps_remembers_a_place_once_and_the_last_eight() {
+    // Recent places: the newest last, once by name, at most 8. Entries from
+    // a broken file (a bare `inf` first, a place without a name, text, null,
+    // a number) count toward the 8 and roll off the front like the others,
+    // and a nameless one is never taken for the new place.
+    let out = maps_model(
+        r#"fn names_of(list){
+    let out = []
+    for r in list { out.push(text_of(r, "name")) }
+    out
+}
+let disk = list_in('[inf,{"lat":1},{"name":"A","lat":1,"lon":1},"x",null,3,{"name":"B","lat":2,"lon":2},{"name":"C","lat":3,"lon":3}]')
+let a = {id: "" name: "A" cat: "" label: "" lat: 5 lon: 5}
+let d = {id: "N:4" name: "D" cat: "" label: "" lat: 4 lon: 4}
+let once = remembered(disk, a)
+let twice = remembered(once, d)
+let again = remembered(twice, {name: "B" lat: 6 lon: 6})
+[names_of(once) names_of(twice) names_of(listed(twice)) names_of(listed(again)) listed(again)[3].lat].to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["", "", "", "", "", "B", "C", "A"],
+            ["", "", "", "", "B", "C", "A", "D"],
+            ["B", "C", "A", "D"],
+            ["C", "A", "D", "B"],
+            6
+        ])
+    );
+}
+
+/// Maps' search with the runtime stubbed: `ui` (the list's visibility is
+/// `mod.visible`), `host`, `sys`, and the request under `fetch`. Each
+/// request's answer is the next of `mod.answers` (nil: the request failed;
+/// "refused": the runtime refuses it, raising as it does for a host off the
+/// manifest's list), and `mod.during` is what the person does while it is
+/// on its way.
+const SEARCH_STUBS: &str = r#"mod.visible = nil
+mod.urls = []
+mod.agents = []
+mod.answers = []
+mod.during = nil
+let widget = {set_visible: fn(v) {} set_text: fn(text) {} render: fn() {}}
+let ui = {results: {set_visible: fn(v) {mod.visible = v} render: fn() {}}
+    search: widget search_hint: widget search_panel: widget place_panel: widget route_panel: widget
+    browse_box: widget locate_box: widget drive_box: widget drive_bar: widget}
+let host = {has: fn(capability) { false }}
+let sys = {gps: fn(field) { 0 }}
+let net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
+    http_request: fn(req, events) {
+        mod.urls.push(req.url)
+        mod.agents.push(req.headers["User-Agent"])
+        let res = mod.answers[0]
+        mod.answers.remove(0)
+        if res == "refused" { refuse_the_request() }
+        if res == nil { events.on_error("offline") } else { events.on_response(res) }
+    }}
+// A promise nothing resolves would wait for good: here it raises instead.
+fn promise(){
+    let held = {value: nil resolved: false}
+    let act = mod.during
+    mod.during = nil
+    return {resolve: fn(v) { held.value = v; held.resolved = true } await: fn() {
+        if act != nil { act() }
+        if !held.resolved { never_answered() }
+        held.value
+    }}
+}
+fn state(){ return [q search_state hits.len() mod.visible list_open] }
+recents = [{name: "R" lat: 37.1 lon: -121.1}]
+"#;
+
+#[test]
+fn maps_shows_only_the_newest_searchs_answer_and_leaves_the_list_as_the_person_left_it() {
+    let code = r#"seen = {lat: 40.7128 lon: -74.006}
+let places = {status_code: 200 body: 'PHOTON_BODY'}
+let none = {status_code: 200 body: '{"features":[]}'}
+let busy = {status_code: 503 body: 'PHOTON_BODY'}
+let bodiless = {status_code: 200 body: nil}
+let page = {status_code: 200 body: '<html>busy</html>'}
+let log = []
+// A search near the visible map.
+mod.answers = [places]
+search_for(" Pizza ")
+log.push(state())
+// The box emptied while the answer is on its way: Saved and Recent show,
+// and the late answer is dropped.
+mod.answers = [places]
+mod.during = fn() { search_for("") }
+search_for("Sushi")
+log.push(state())
+// A newer search while one is on its way: only the newer answer shows.
+mod.answers = [places none]
+mod.during = fn() { search_for("Tacos") }
+search_for("Pizza")
+log.push(state())
+// The list closed while the answer is on its way: the answer fills it, and
+// it stays closed.
+mod.answers = [places]
+mod.during = fn() { map_tapped(40.7, -74.0) }
+search_for("Pizza")
+log.push(state())
+// A start chosen while the answer is on its way: its list stays empty.
+mod.answers = [places]
+mod.during = fn() { find_for("origin") }
+search_for("Pizza")
+log.push(state())
+log.push(screen)
+screen = "search"
+finding = ""
+// No answer, an HTTP error, no body, not Photon's, or a request the runtime
+// refused: search isn't available. Photon with no places: none found.
+mod.answers = [nil busy bodiless page "refused" none]
+let outcomes = []
+search_for("Pizza")
+outcomes.push(search_state)
+search_for("Pizza")
+outcomes.push(search_state)
+search_for("Pizza")
+outcomes.push(search_state)
+search_for("Pizza")
+outcomes.push(search_state)
+search_for("Pizza")
+outcomes.push(search_state)
+search_for("Pizza")
+outcomes.push([search_state hits.len()])
+log.push(outcomes)
+[log mod.urls[0] mod.agents[0] mod.urls.len()].to_json()"#
+        .replace("PHOTON_BODY", PHOTON);
+    let out = maps_model(&format!("{SEARCH_STUBS}{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [
+                ["Pizza", "done", 2, true, true],
+                ["", "", 0, true, true],
+                ["Tacos", "done", 0, true, true],
+                ["Pizza", "done", 2, false, false],
+                ["", "", 0, true, true],
+                "origin",
+                ["failed", "failed", "failed", "failed", "failed", ["done", 0]]
+            ],
+            "https://photon.komoot.io/api/?q=Pizza&limit=8&lang=en&lat=40.7128&lon=-74.006",
+            "OctoSense-Maps/1.0",
+            // An emptied box asks for nothing.
+            12
         ])
     );
 }

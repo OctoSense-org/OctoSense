@@ -37,7 +37,6 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 // END shared app interface
 let origin = {lat: 37.3350 lon: -121.8850 name: "San Jose (downtown)" picked: false}
 let q = ""
-let loaded_q = ""
 let hits = []
 let search_state = ""   // "" | "loading" | "done" | "failed"
 let search_seq = 0      // the newest search: an older answer is dropped
@@ -79,6 +78,29 @@ fn moved(name, path){
 }
 fn data_path(name){ return moved(name, DATA + name) }
 fn cache_path(name){ return moved(name, "cache/" + name) }
+
+// A GET that names Maps, as the free OpenStreetMap services ask: a promise
+// of the response, or of nil when the request failed. A request the runtime
+// refuses outright (a host off the manifest's list) raises instead of
+// calling on_error; uncaught, it would leave the caller waiting for good.
+fn fetch(url){
+    let p = promise()
+    let sent = try {
+        net.http_request(net.HttpRequest{url: url method: net.HttpMethod.GET headers: {"User-Agent": "OctoSense-Maps/1.0"}}) do net.HttpEvents{
+            on_response: |res| p.resolve(res)
+            on_error: |_err| p.resolve(nil)
+        }
+        true
+    } catch { false }
+    if !sent { p.resolve(nil) }
+    p
+}
+// A response's body as text; nil for no response, an HTTP error or no body.
+// The runtime sets every field of a response (`body` is nil when it has none).
+fn body_of(res){
+    if res == nil || res.status_code >= 400 || res.body == nil { return nil }
+    res.body.to_string()
+}
 
 // ---- Places: pure functions (crates/shell/src/maps_model_tests.rs runs them) ----
 
@@ -358,8 +380,43 @@ fn without_saved(list, p){
 }
 fn with_saved(list, p){
     let out = without_saved(list, p)
-    out.push({id: text_of(p, "id") name: text_of(p, "name") cat: text_of(p, "cat") label: text_of(p, "label")
-        lat: number_of(p, "lat") lon: number_of(p, "lon")})
+    out.push(as_place(p))
+    out
+}
+// A place's own fields, each of its kind: text, or a finite number or nil.
+// An entry from an older or broken file may lack any of them.
+fn as_place(p){
+    return {id: text_of(p, "id") name: text_of(p, "name") cat: text_of(p, "cat") label: text_of(p, "label")
+        lat: number_of(p, "lat") lon: number_of(p, "lon")}
+}
+// A list kept in a file (saved.json, recents.json) from its text: [] when
+// the text holds no list. Its entries stay as written, broken ones too:
+// `listed` picks the ones to show.
+fn list_in(text){
+    let v = text.parse_json()
+    if v == nil || !v.is_array() { return [] }
+    v
+}
+// The entries of a Saved or Recent list that show as rows: places with a
+// name, so a row's tap (`pick`) has what it reads. A file from an older or
+// broken build may hold anything; a bare word in it (inf) raises when read
+// on its own, so entries are only ever reached through `for`.
+fn listed(list){
+    let out = []
+    if list == nil || !list.is_array() { return out }
+    for p in list { if is_a_place(p) && text_of(p, "name") != "" { out.push(p) } }
+    out
+}
+// Recent places with `p` as the newest: once by name, at most 8, oldest
+// first. Not `remove(0)`: it reads the oldest entry on its own, which raises
+// for a bare word.
+fn remembered(list, p){
+    let name = text_of(p, "name")
+    let kept = []
+    for r in list { if text_of(r, "name") != name { kept.push(r) } }
+    kept.push(p)
+    let out = []
+    for i r in kept { if i + 8 >= kept.len() { out.push(r) } }
     out
 }
 // The browse map's pins: saved places, each once, then the open place,
@@ -408,49 +465,54 @@ fn fix_origin(){
         location_note("")
     }
 }
+// Recent places from an older build have no `id`, and either file may hold
+// anything a broken build wrote: the lists show only `listed` entries.
 fn load_recents(){
-    if fs.exists(data_path("recents.json")) {
-        let v = fs.read(data_path("recents.json")).parse_json()
-        if v != nil { recents = v }
-    }
+    if fs.exists(data_path("recents.json")) { recents = list_in(fs.read(data_path("recents.json"))) }
+}
+fn load_saved(){
+    if fs.exists(data_path("saved.json")) { saved = list_in(fs.read(data_path("saved.json"))) }
 }
 fn remember(p){
-    recents.retain(|r| r.name != p.name)
-    recents.push(p)
-    if recents.len() > 8 { recents.remove(0) }
+    recents = remembered(recents, p)
     fs.write(data_path("recents.json"), recents.to_json())
 }
+// Photon's search near the visible map (`seen`), on Return. Each search
+// takes the next `search_seq`; an answer that comes back after a newer
+// search, an emptied box or a new start or stop is dropped. The answer
+// leaves the list as open or closed as the person left it meanwhile.
 fn search_for(text){
     q = ("" + text).trim()
-    loaded_q = ""
     hits = []
-    ui.results.render()
+    search_seq = search_seq + 1
+    let mine = search_seq
+    if q == "" { search_state = "" } else { search_state = "loading" }
     show_results(true)
+    ui.results.render()
+    if q == "" { return }
+    let body = body_of(fetch(search_url(q, seen.lat, seen.lon)).await())
+    if mine != search_seq { return }
+    let found = nil
+    if body != nil { found = photon_hits(body) }
+    if found == nil { search_state = "failed" } else { hits = found; search_state = "done" }
+    show_results(list_open)
+    ui.results.render()
 }
 // The list under the search box. On the search screen it is closed until the
 // box is tapped or a search is made, and a tap or drag on the map closes it.
-// It closes by hiding: a render that emits nothing keeps the rows it had.
-// Choosing a start or a stop keeps its list open, with "‹ Back to route".
+// It closes by hiding: a render that emits nothing keeps the rows it had,
+// so with the box empty it opens only when Saved or Recent has a row to
+// show. Choosing a start or a stop keeps its list open, with "‹ Back to
+// route".
 fn show_results(open){
     list_open = open
-    let any = q != "" || saved.len() > 0 || recents.len() > 0
+    let any = q != "" || listed(saved).len() > 0 || listed(recents).len() > 0
     ui.results.set_visible((open && any) || screen != "search")
 }
-fn read_hits(){
-    if q == "" || loaded_q == q { return }
-    let n = sys.searchnum(q, 0, "count")
-    if n < 0 { return }
-    hits = []
-    for i in n {
-        if i < 6 {
-            hits.push({name: sys.search(q, i, "name") cat: sys.search(q, i, "cat") label: sys.search(q, i, "label")
-                lat: sys.searchnum(q, i, "lat") lon: sys.searchnum(q, i, "lon")})
-        }
-    }
-    loaded_q = q
-    ui.results.render()
-}
-fn pick(p){
+// A row's place: a search hit, or a Saved or Recent entry (`listed`, so its
+// name and coordinates are there), copied with every field of a place.
+fn pick(row){
+    let p = as_place(row)
     if finding == "stop" {
         stops.push({lat: p.lat lon: p.lon name: p.name})
         finding = ""
@@ -552,6 +614,8 @@ fn find_for(what){
     finding = what
     q = ""
     hits = []
+    search_state = ""
+    search_seq = search_seq + 1   // a search still on its way was for the old list
     ui.search.set_text("")
     show(what)
 }
@@ -637,7 +701,6 @@ fn progress(){
 fn tick(){
     fix_origin()
     center_on_fix()
-    if screen == "search" || screen == "origin" || screen == "stop" { read_hits() }
     if screen == "place" {
         ui.peta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "min") + "  ·  " + sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km"))
         draw_route(ui.browse_map)
@@ -660,6 +723,7 @@ fn tick(){
 }
 fn boot(){
     load_recents()
+    load_saved()
     fix_origin()
     show("search")
 }
@@ -730,12 +794,23 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             results := View{width: Fill height: Fit flow: Down on_render: || {
                 if screen == "origin" { Link{text: "◎  Your location" on_click: || use_my_location()} }
                 if screen == "origin" || screen == "stop" { Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }} }
-                if q != "" && loaded_q != q { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 13} }
+                if search_state == "loading" { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 13} }
+                else if search_state == "failed" { Label{text: "Search isn't available right now." draw_text.color: secondary draw_text.text_style.font_size: 13} }
                 else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 13} }
-                for h in hits { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label} }
-                if q == "" && recents.len() > 0 {
-                    Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 13}
-                    for r in recents { HitRow{on_tap: |x, y| pick(r) name.text: r.name label.text: r.label} }
+                for i h in hits { if i < 6 { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label} } }
+                // With the box empty: Saved above Recent, each only with a
+                // row to show. An entry that isn't a named place has none.
+                if q == "" {
+                    let saved_rows = listed(saved)
+                    if saved_rows.len() > 0 {
+                        Label{text: "Saved" draw_text.color: secondary draw_text.text_style.font_size: 13}
+                        for s in saved_rows { HitRow{on_tap: |x, y| pick(s) name.text: text_of(s, "name") label.text: text_of(s, "label")} }
+                    }
+                    let recent_rows = listed(recents)
+                    if recent_rows.len() > 0 {
+                        Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 13}
+                        for r in recent_rows { HitRow{on_tap: |x, y| pick(r) name.text: text_of(r, "name") label.text: text_of(r, "label")} }
+                    }
                 }
             }}
         }
