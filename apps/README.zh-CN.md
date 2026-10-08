@@ -25,6 +25,7 @@ OctoSense-System-Apps 仓库（已归档）。
   （`desktop/system-apps.json` 与 `phone/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
   Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
+- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方宿主目录的 `word/` 区域内。暂无 bundle。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
