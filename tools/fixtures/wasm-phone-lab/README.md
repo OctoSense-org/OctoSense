@@ -23,3 +23,5 @@ cargo run --locked --offline -p octosense-wasm-host --example encode_phone_fixtu
 ```
 
 The guest deliberately remembers input if its instance is reused. Passing requires the host to create a new instance, including after success. Earlier 19-check evidence used explicit result fields and did not prove raw response forwarding; the repaired raw path adds that check, and the reproducible harness adds two compiled-identity checks. The [OnePlus 6 receipt](acceptance-oneplus6.json) records **22/22 checks passed** on Android 15, built from source `e67ce63ebca6054961899691e1644a54c2b4f081` with runtime tree `0fc8e29e2411fd7eb94d845ba16a261d2ebc9dfc`. The build and driver commands above were executed with local tool paths. Live model/peer relay, performance and release APK behavior remain unverified.
+
+The listing image is a separate native macOS capture of this fixture after its signed app tool completed, made in a hidden Makepad window from source `d3535a95`. It is not a phone screenshot and does not extend the 22-check OnePlus receipt to the later screenshot-only change. The image and refreshed fixture digest replace the earlier unrelated Host API Lab image.
