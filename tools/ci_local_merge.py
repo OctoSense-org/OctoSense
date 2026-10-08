@@ -116,7 +116,11 @@ def comment_body(last, required):
     flag = ""
     if linux:
         flag = " --linux-host"
-        where += f"; the ubuntu jobs on the Linux build host, {linux.get('system')} {linux.get('machine')}"
+        moved = "the ubuntu jobs"
+        if last.get("offload"):
+            flag += " --offload"
+            moved += " and the macOS jobs' portable steps (their macOS steps ran here)"
+        where += f"; {moved} on the Linux build host, {linux.get('system')} {linux.get('machine')}"
     lines = [f"Local CI passed on {head} (`tools/ci-local.sh --only {last['only']}{flag}`, "
              f"{ci_local.fmt_seconds(last['seconds'])}, {where}).",
              "",
