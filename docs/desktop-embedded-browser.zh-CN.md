@@ -45,7 +45,7 @@ URL 检查不是网络沙箱：公开的主机名也可能解析到私有地址�
 - `desktop/src/main.rs` 在 Linux 上会先调用 `Cx::prefer_x11_for_embedded_browser()`，再由 Makepad 选择窗口后端。显式指定的 `--linux-backend` 选项仍然优先。
 - `tools/runtime-patches/makepad-desktop-webview.patch` 保存这项运行时改动。`runtime-patches.lock.json` 固定该补丁的 SHA-256 和应用补丁后的 Makepad 树，`tools/setup.py` 把它叠加在其他运行时补丁之上。
 - Makepad 的 `system_browser::BrowserPolicy` 用 `url` crate 解析每个 URL，并决定是否放行。`linux_webkit.rs` 通过 XEmbed 把 `GtkPlug` 嵌入一个 X11 子窗口（socket），并在已有的 UI 线程上处理有限量的 GTK 事件。`windows_webview.rs` 把 WebView2 控制器放进一个负责裁剪的子窗口（`HWND`），在 UI 线程的单线程单元（STA）上接收异步回调。
-- `WebReader` 保留原有的覆盖层生命周期，把原生的加载、导航和失败事件转换为控件状态。拦下某次导航不算致命错误：拒绝某个 iframe 不会让外层获准的页面无法显示。标题变化会传给控件。Linux 还会报告 URL 变化，并在网页调用 `window.close()` 触发的回调返回之后释放原生视图。缺少引擎时走错误路径，所以控件绝不会显示一个看不见、却自称已加载的视图。
+- `WebReader` 保留原有的覆盖层生命周期，把原生的加载、导航和失败事件转换为控件状态。拦下某次导航不算致命错误：拒绝某个 iframe 时，外层获准的页面照常显示。标题变化会传给控件。Linux 还会报告 URL 变化，并在网页调用 `window.close()` 触发的回调返回之后释放原生视图。缺少引擎时走错误路径，所以控件绝不会显示一个看不见、却自称已加载的视图。
 
 ## 验收测试
 

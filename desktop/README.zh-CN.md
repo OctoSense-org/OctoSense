@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-**下载：**[桌面版 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) 支持当前的 App Hub 签名目录和带 GitHub 证明的应用 Release。请选择与操作系统和架构对应的文件，并核对发行说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
+**下载**：[桌面版 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) 支持当前的 App Hub 签名目录和带 GitHub 证明的应用 Release。请选择与操作系统和架构对应的文件，并核对发行说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
