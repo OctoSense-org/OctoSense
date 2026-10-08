@@ -48,9 +48,9 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 
 工具会在宿主回调中刻意调用 `camera.permission.request`；这个回调保留了工具的后台来源，以此证明 App Hub 会拒绝这次申请。测试示例中没有任何环节能批准权限。能力、应用授权和系统权限始终是三项独立的检查。这台 Mac 可能早已授予 OctoSense 摄像头权限，但全新的测试配置目录仍必须报告 `app_consent: false`。
 
-**已验证：**`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
+**已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
 
-**未覆盖：**真实的模型推理、亲手点按批准权限、摄像头拍摄、Android、Linux 和 Windows 上“不支持该平台”的应答，以及发布兼容的宿主二进制文件。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
+**未覆盖**：真实的模型推理、亲手点按批准权限、摄像头拍摄、Android、Linux 和 Windows 上“不支持该平台”的应答，以及发布兼容的宿主二进制文件。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
 
 ## 复用这一模式
 

@@ -30,7 +30,7 @@ OctoSense 提供可复用 OAuth 宿主服务，首先支持 GitHub 和 Google �
 
 应用可使用自己的后端账户。宿主按应用配置精确、同源的 HTTPS 授权、令牌、身份与退出端点，在 macOS/Android 的宿主 WebView 或桌面外部浏览器打开后端注册/登录页面，交换 PKCE 绑定的单次代码，并将会话保存在同一套绑定应用的凭据库中。应用不获得 bearer 凭据，也不能在登录请求中提供端点。保存的注册摘要防止配置变更把旧令牌发送到新端点。
 
-适配器提供 provider 为 `backend`、scope 为 `app.session` 的 `auth.connect`，复用账户生命周期，并用 `auth.backend.me` 读取受保护身份。后端业务 API 和应用包自行注册需要另行实现。*（2026-10-07：[ADR 0012](0012-app-host-api-discovery.zh-CN.md#后端登录与业务请求) 补上了这两项：签名应用包可以声明后端注册信息和命名操作，应用用 `auth.backend.request` 调用这些操作。已在 OctoSense `main` 上，尚未进入任何发布版本。）*macOS 嵌入会话使用非持久化 WKWebView 存储；Android 9+ 使用每次登录独立的 WebView 进程及数据目录。宿主拦截 `https://octosense.invalid/auth/callback`，限定登录来源，提供返回、取消与重试，不向受限应用开放页面桥。提供商授权保留浏览器/设备流程；Windows/Linux 保留浏览器适配器，iOS 后端登录不可用。本地撤销先于远程退出，远程失败单独报告。测试后端必须运行真实浏览器表单和代码交换，不能预置已登录账户；HTTP 回环例外仅存在于验收构建。
+适配器提供 provider 为 `backend`、scope 为 `app.session` 的 `auth.connect`，复用账户生命周期，并用 `auth.backend.me` 读取受保护身份。后端业务 API 和应用包自行注册需要另行实现。*（2026-10-07：[ADR 0012](0012-app-host-api-discovery.zh-CN.md#后端登录与业务请求) 补上了这两项：签名应用包可以声明后端注册信息和命名操作，应用用 `auth.backend.request` 调用这些操作。已在 OctoSense `main` 上，尚未进入任何发布版本。）* macOS 嵌入会话使用非持久化 WKWebView 存储；Android 9+ 使用每次登录独立的 WebView 进程及数据目录。宿主拦截 `https://octosense.invalid/auth/callback`，限定登录来源，提供返回、取消与重试，不向受限应用开放页面桥。提供商授权保留浏览器/设备流程；Windows/Linux 保留浏览器适配器，iOS 后端登录不可用。本地撤销先于远程退出，远程失败单独报告。测试后端必须运行真实浏览器表单和代码交换，不能预置已登录账户；HTTP 回环例外仅存在于验收构建。
 
 ### 连接账户的 App Hub 示例
 
