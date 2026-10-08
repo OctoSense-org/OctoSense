@@ -297,6 +297,10 @@ pub fn register_host_services() {
         // The light engine service (ADR 0013): lightcraft behind `light.*`.
         #[cfg(feature = "app-hub")]
         octosense_light_service::register();
+        // The sound engine service (ADR 0013): soundcraft behind `sound.*`,
+        // offline only — it never opens an audio device.
+        #[cfg(feature = "app-hub")]
+        octosense_sound_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();
