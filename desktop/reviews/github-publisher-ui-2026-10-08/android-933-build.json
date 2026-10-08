@@ -1,0 +1,15 @@
+{
+  "source_revision": "933abbcf2737e652acd9cae2a4c9ffc16bfdaec6",
+  "runtime_tree": "6c080f31adb899611e6ebe132ccfa2eead06cf9b",
+  "source_dirty": false,
+  "package": "dev.makepad.octosense.publisherlab.checked8af",
+  "crate": "octosense-home",
+  "started_at_utc": "2026-10-08T09:12:46.980289+00:00",
+  "packager_sha256": "585e8edcdfbdfa8bbd1fb77f0d76a85edbf92fd378dc5b6c5887196ed9d53dcb",
+  "jobs": 2,
+  "debuggable_test_build": true,
+  "host_aws_lc_builder": "cc (committed target-scoped Cargo configuration)",
+  "exit_code": 0,
+  "elapsed_seconds": 292.186,
+  "finished_at_utc": "2026-10-08T09:17:39.200783+00:00"
+}

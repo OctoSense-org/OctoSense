@@ -256,15 +256,24 @@ App Hub 默认开启。从 launcher 打开 **App Hub**，浏览签名目录并�
 
 #### 发布前试用自己的应用
 
-用一次性信任锚把应用包发布到本地目录（命令见 OctoScript-App-Design-Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)：`hub keygen`/`certify`/`publish`），再让本 Shell 指向它：
+正式分发时，先创建 [App Hub 投稿 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)，准备好后再补充 GitHub 发布证据。常规 [GitHub 发布流程](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md)不要求开发者单独管理发布者密钥；创建标签或 Release 不等于获得 Hub 批准。
+
+下文是**可选的本地旧版目录演练**。Design Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)说明其兼容包与一次性目录密钥（`hub keygen`/`certify`/`publish`）；它们不是常规 GitHub 发布的前置要求。不要为这个旧流程重新写入已附加 GitHub 证明的发布包摘要。
+
+准备好镜像后，替换下方两个带引号的值。始终使用全新的配置目录：已经缓存 v2 目录的库会拒绝降级到旧版目录。**这份修订后的启动配方已经过源码核对，但尚未在新兼容 Shell 二进制上运行。**
 
 ```sh
-OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
-  OCTOSENSE_HOME=/tmp/octosense-test OCTOSENSE_APP_DATA=/tmp/octosense-test-apps \
+REHEARSAL_MIRROR='/absolute/path/to/your/test-mirror'
+REHEARSAL_ANCHOR='replace-with-test-anchor-public-hex'
+REHEARSAL_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/octosense-hub-rehearsal.XXXXXX")"
+OCTOSENSE_HUB_CATALOG=legacy \
+  OCTOSENSE_HUB="$REHEARSAL_MIRROR" OCTOSENSE_HUB_ANCHOR="$REHEARSAL_ANCHOR" \
+  OCTOSENSE_HOME="$REHEARSAL_ROOT/shell" OCTOSENSE_APP_DATA="$REHEARSAL_ROOT/apps" \
+  OCTOS_APP_CORE_DIR="$REHEARSAL_ROOT/core" \
   cargo run --release -p octosense
 ```
 
-打开 **App Hub**，选中应用，点 **Get**，向下滚动到 **Install**，然后点 **Open**：它会像商店应用一样，在 Card runner 中按其 manifest 运行。已于 2026-09-26 在 macOS 上用一个新的脚本应用验证（当时在仓库合并前的 OctoSense-Desktop 仓库中）。两个 `OCTOSENSE_*` 状态变量让测试不影响 `~/.octosense`。
+打开 **App Hub**，选中应用，点 **Get**，向下滚动到 **Install**，然后点 **Open**：应用在 Card runner 中按其 manifest 运行。早期旧版目录的界面流程已于 2026-09-26 在 macOS 上用一个新的脚本应用验证，当时仓库尚未合并；这条历史记录不验证新的 GitHub 发布者路径。独立的 Shell／应用目录让演练不影响平时的配置，显式指定内核目录可阻止把个人提供商设置复制进去。本地目录不会向官方 Hub 提交或发布应用。
 
 ### 选择与覆盖系统应用
 
