@@ -74,7 +74,12 @@ fn cache_path(name){ return moved(name, "cache/" + name) }
 // indexing what is not an object (a string, a number) raises.
 fn optional(o, key, fallback){
     if o == nil { return fallback }
-    let v = try { o[key] } catch { nil }
+    // Read the value inside the try: parse_json keeps a bare word (inf, NaN)
+    // as a name, and using one outside it raises "variable not found".
+    let v = try {
+        let x = o[key]
+        x
+    } catch { nil }
     if v == nil { return fallback }
     v
 }
@@ -301,9 +306,15 @@ fn reverse_url(lat, lon){
 // A coordinate in a place's key: "" when it isn't a number (a saved.json
 // from an older or broken build may lack one or hold text).
 fn coord_key(o, key){
-    let v = optional(o, key, nil)
-    if !v.is_number() { return "" }
+    let v = number_of(o, key)
+    if v == nil { return "" }
     "" + round4(v)
+}
+// A field as a finite number, else nil (missing, text, NaN or infinite).
+fn number_of(o, key){
+    let v = optional(o, key, nil)
+    if !v.is_number() || v - v != 0 { return nil }
+    v
 }
 // What tells two places apart: OpenStreetMap's id, else the name at the point
 // (a dropped pin, or a recent place from before ids were kept).
@@ -312,13 +323,13 @@ fn place_key(p){
     if id != "" { return id }
     text_of(p, "name") + "@" + coord_key(p, "lat") + "," + coord_key(p, "lon")
 }
-// What MapView draws as a pin (makepad's `is_a_place`): numbers in range,
-// and not the 0,0 an unresolved endpoint reports. NaN is not a number here,
-// and the range is written so that it would fail anyway.
+// What MapView draws as a pin (makepad's `is_a_place`): finite numbers in
+// range, and not the 0,0 an unresolved endpoint reports. Stricter on text
+// ("37.3"), which MapView would read, but text never reaches `pins_text`.
 fn is_a_place(p){
-    let lat = optional(p, "lat", nil)
-    let lon = optional(p, "lon", nil)
-    if !lat.is_number() || !lon.is_number() { return false }
+    let lat = number_of(p, "lat")
+    let lon = number_of(p, "lon")
+    if lat == nil || lon == nil { return false }
     if !(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) { return false }
     !(lat > -1e-9 && lat < 1e-9 && lon > -1e-9 && lon < 1e-9)
 }
@@ -336,26 +347,31 @@ fn without_saved(list, p){
 fn with_saved(list, p){
     let out = without_saved(list, p)
     out.push({id: text_of(p, "id") name: text_of(p, "name") cat: text_of(p, "cat") label: text_of(p, "label")
-        lat: optional(p, "lat", nil) lon: optional(p, "lon", nil)})
+        lat: number_of(p, "lat") lon: number_of(p, "lon")})
     out
 }
-// The browse map's pins: saved places, then the open place once, last.
-// Only places: MapView skips the rest and counts only the pins it draws, so
-// its `on_marker(index)` means this list's [index].
+// The browse map's pins: saved places, each once, then the open place,
+// last. Only places: MapView skips the rest and counts only the pins it
+// draws, so its `on_marker(index)` means this list's [index].
 fn pin_places(list, open){
     let shown = is_a_place(open)
+    let k = ""
+    if shown { k = place_key(open) }
     let out = []
-    for s in list { if is_a_place(s) && (!shown || place_key(s) != place_key(open)) { out.push(s) } }
+    for s in list { if is_a_place(s) && place_key(s) != k && !is_saved(out, s) { out.push(s) } }
     if shown { out.push(open) }
     out
 }
 // `pin_places` as MapView's `route_markers`. Kind 1 is the stop colour, 2
-// the destination's (makepad's route pins).
+// the destination's (makepad's route pins): the open place, when it could
+// be pinned.
 fn pins_text(pins, open){
+    let k = ""
+    if is_a_place(open) { k = place_key(open) }
     let out = ""
     for p in pins {
         let kind = 1
-        if open != nil && place_key(p) == place_key(open) { kind = 2 }
+        if k != "" && place_key(p) == k { kind = 2 }
         if out != "" { out = out + ";" }
         out = out + text_of(p, "lat") + "," + text_of(p, "lon") + "," + kind
     }

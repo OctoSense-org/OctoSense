@@ -399,24 +399,51 @@ for p in pin_places(s, zero) { unopened.push(p.name) }
         ])
     );
     // A `saved.json` from an older or broken build: a bare number, null, text,
-    // a place without coordinates, one with them as text and one past the
-    // largest number (it reads as infinity) stay in the list but are never
-    // pinned; `maps_model` also fails on any script error they raise. Saving
-    // keeps only a place's own fields.
+    // a place without coordinates, one with them as text, one past the
+    // largest number (it reads as infinity) and bare `inf`/`NaN` words stay
+    // in the list but are never pinned; `maps_model` also fails on any script
+    // error they raise. A bare word read as a name is no name. Saving keeps
+    // only a place's own fields, and a coordinate only when it is a finite
+    // number, so the app never writes `inf` or `NaN` itself.
     let out = maps_model(
-        r#"let disk = '[3,null,"x",{"name":"X"},{"name":"Text","lat":"37.3","lon":"-121.3"},{"name":"Far","lat":1e999,"lon":1},{"id":"W:1","name":"A","lat":37.1,"lon":-121.1}]'.parse_json()
+        r#"let disk = '[3,null,"x",{"name":"X"},{"name":"Text","lat":"37.3","lon":"-121.3"},{"name":"Far","lat":1e999,"lon":1},{"name":"Inf","lat":inf,"lon":1},{"name":"Nan","lat":NaN,"lon":1},{"name":NaN,"lat":1,"lon":1},{"id":"W:1","name":"A","lat":37.1,"lon":-121.1}]'.parse_json()
 let b = {name: "B" cat: "" label: "" lat: 37.2 lon: -121.2}
 let names = []
-for p in pin_places(disk, b) { names.push(p.name) }
+for p in pin_places(disk, b) { names.push(text_of(p, "name")) }
 [is_saved(disk, {id: "W:1"}) is_saved(disk, b) names pins_text(pin_places(disk, b), b)
     with_saved(disk, b).len() without_saved(disk, {name: "X"}).len()
-    with_saved([], {name: " Q " lat: 1.5 lon: 2 extra: true})].to_json()"#,
+    with_saved([], {name: " Q " lat: 1.5 lon: 2 extra: true})
+    with_saved([], {name: "Inf" lat: 1 / 0 lon: 0 / 0}).to_json()].to_json()"#,
     );
     assert_eq!(
         out,
         serde_json::json!([
-            true, false, ["A", "B"], "37.1,-121.1,1;37.2,-121.2,2", 8, 6,
-            [{"id": "", "name": "Q", "cat": "", "label": "", "lat": 1.5, "lon": 2}]
+            true, false, ["", "A", "B"], "1,1,1;37.1,-121.1,1;37.2,-121.2,2", 11, 9,
+            [{"id": "", "name": "Q", "cat": "", "label": "", "lat": 1.5, "lon": 2}],
+            r#"[{"id":"","name":"Inf","cat":"","label":"","lat":null,"lon":null}]"#
+        ])
+    );
+    // MapView's own boundaries: 1e-9 from 0,0 is a place, just under it is
+    // not, nor is a coordinate that isn't a number. A place saved twice gets
+    // one pin. When the open place can't be pinned, nothing is drawn as the
+    // open one, not even a saved place with its id.
+    let out = maps_model(
+        r#"let tiny = {name: "Tiny" lat: 0.000000001 lon: 0}
+let under = {name: "Under" lat: 0.0000000009999 lon: 0}
+let minus = {name: "Minus" lat: -0.0 lon: 5}
+let word = {name: "Word" lat: "x".to_number() lon: 1}
+let a = {id: "W:1" name: "A" lat: 37.1 lon: -121.1}
+let twin = {id: "W:1" name: "A again" lat: 37.2 lon: -121.2}
+let lost = {id: "W:1" name: "Lost" lat: "37.1" lon: -121.1}
+let s = [tiny under minus word a twin]
+let names = []
+for p in pin_places(s, nil) { names.push(p.name) }
+[names pins_text(pin_places(s, nil), nil) pins_text(pin_places(s, lost), lost)].to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["Tiny", "Minus", "A"], "0.000000001,0,1;-0,5,1;37.1,-121.1,1", "0.000000001,0,1;-0,5,1;37.1,-121.1,1"
         ])
     );
 }
