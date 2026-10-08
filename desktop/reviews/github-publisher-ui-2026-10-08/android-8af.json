@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "scope": "actual-oneplus6-full-shell-app-hub-publisher-ui",
+  "tested_source": "8afcf35f03649f31b939b822302c132f18feb86e",
+  "source_dirty": false,
+  "runtime_tree": "6a6baef94610d7b6f8c7edcb0e7db3fc786415ea",
+  "hub_revision": "655114c4943cd2490daaefa2173e7b5aaa20669f",
+  "app_contract_version": "1.8.0",
+  "device_model": "OnePlus 6",
+  "input_method": "scoped-adb-with-owned-package-foreground-check",
+  "build_features": [
+    "dev-mode",
+    "app-hub"
+  ],
+  "package": "dev.makepad.octosense.publisherlab.checked8af",
+  "apk_sha256": "d6b330ff2219aa288da189cbfd183ff7c1d31e9977bf1b4a1f351db1ab45f521",
+  "original_apk_sha256": "d6b55de5a9d37db9b3b9195a29d337e47bd03d0de01971757fb37ef03aa7efc0",
+  "native_library_sha256": "5d0f68938f854e2cda511267eb09755e88100a309f50b64a6ca21b6cfc65b507",
+  "native_library_unmodified_by_debug_wrapper": true,
+  "debug_wrapper_purpose": "isolate shell/app/core storage and use ephemeral local catalog mirror",
+  "first_package_install_utc": "2026-10-08T07:45:52Z",
+  "finished_utc": "2026-10-08T07:56:35Z",
+  "catalog_authority": "ephemeral-local-legacy-not-production-github-v2",
+  "developer_key_used": false,
+  "publisher_proof": "genuine-github-tag-push",
+  "production_publication": false,
+  "normal_home_changed": false,
+  "personal_accounts_used": false,
+  "models_used": false,
+  "owned_package_stopped": true,
+  "functional_checks_passed": 8,
+  "functional_checks_total": 8,
+  "functional_passed": true,
+  "checks": [
+    {
+      "name": "search_and_install_initial_genuine_release",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "05-search-result.png",
+          "sha256": "2fb7faec8b8005fa1cf24a90cd05e57b8f9deaef069e3adb0b24c5c49cfe01dd"
+        },
+        {
+          "file": "07-install-review.png",
+          "sha256": "ebc625334c04e280e3a029653a422c13026788802577a49d4a38585aa74fdd06"
+        },
+        {
+          "file": "08-installed.png",
+          "sha256": "f96d87b6e94aa2bef4dedfa34bc38367ef55d710679119e528dd89e45252d174"
+        }
+      ]
+    },
+    {
+      "name": "open_initial_app_and_persist_note",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "10-opened.png",
+          "sha256": "ee0e468460e46a9449bcfa5e86359296a7b3f77f907264e4ff8f43cf1fd429a1"
+        },
+        {
+          "file": "12-note-saved.png",
+          "sha256": "34aee84e3236c1d44083218d9923b9b4519a3ba07831559d421c1a0ab220581c"
+        }
+      ]
+    },
+    {
+      "name": "recognize_new_genuine_release_as_update",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "13-update-catalog.png",
+          "sha256": "1ef3238653870de97b34696f12c4453c25345e5603f06e59767544b7de090439"
+        }
+      ]
+    },
+    {
+      "name": "install_update_preserves_exact_github_proof",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "15-update-review.png",
+          "sha256": "2f0466acad5963c3aecb04528cd8b9e3a0d81ea4b6156e2340a11998bcefeea1"
+        },
+        {
+          "file": "17-updated-open-ready.png",
+          "sha256": "15e200524ad408a662163645082b0ab9c71ff0d580014baed849a1ae61568a63"
+        }
+      ]
+    },
+    {
+      "name": "updated_app_loads_existing_note",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "18-note-after-update.png",
+          "sha256": "128c358dd8dd3b36f19c1392f5ec108afe7cb1f43f299fc7d08e32832bfff7ca"
+        }
+      ]
+    },
+    {
+      "name": "updated_app_adds_second_note",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "19-two-notes.png",
+          "sha256": "3db12dc713812ac74d8922707026fbae30b8d3072b449fa4ffac67a9a30cb4b6"
+        }
+      ]
+    },
+    {
+      "name": "updated_app_removes_selected_note",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "20-note-removed.png",
+          "sha256": "3d185d48a768a0de229e03be6504637ac86dc3e7c20b03a3abbd2375a891d5ab"
+        }
+      ]
+    },
+    {
+      "name": "process_restart_and_library_open_preserve_final_note",
+      "passed": true,
+      "evidence": [
+        {
+          "file": "23-library.png",
+          "sha256": "d87db2c4a07a96b5f8764f0d20f68fa5606ed9205f03a54d2af76fcdbffcb173"
+        },
+        {
+          "file": "24-library-opened.png",
+          "sha256": "daa501b339e7189eadbda1750bdcefd0f34222529e028e2e976fe3ca5ee8ea9a"
+        }
+      ]
+    }
+  ],
+  "fixture_releases": [
+    {
+      "version": "0.1.2",
+      "app_id": "dev.octosense.publisher-fixture",
+      "pack_sha256": "6f0f48859044f280bb70caa9e5686478d712dfc7b497a8ff5d47aac887b80d6f",
+      "catalog_sha256": "54ec6c01c08c2462c836ef47b72557a6ca46c030a72a51b52e401c14c101e137",
+      "source_commit": "9df54b1fc8b701e4356b16dd8e8acdce43fc010d",
+      "full_github_proof_preserved": true
+    },
+    {
+      "version": "0.1.3",
+      "app_id": "dev.octosense.publisher-fixture",
+      "pack_sha256": "ac62bad25923e112cc64ce863df9fac20f6feebecb0e6df253695f4203629053",
+      "catalog_sha256": "a8771e88f82cc27453f2ca4e0912587e3e8fea9faad748c64c58e8d5a3b3bb30",
+      "source_commit": "fdbdf950589f16220a5579786b44c4d1626292e7",
+      "full_github_proof_preserved": true
+    }
+  ],
+  "final_state": {
+    "version": "0.1.3",
+    "manifest_and_proof_exact": true,
+    "notes": [
+      [
+        "Saved after update"
+      ]
+    ]
+  },
+  "visual_review": {
+    "performed": true,
+    "overall": "functional-pass-with-fixture-layout-defect",
+    "finding": "The fixture title Publishing Test Notes clips at the right edge on this phone. Body text wraps; input, Add, remove, Hub consent, Update and Open remain reachable. This is not a clean mobile UX pass.",
+    "evidence": "24-library-opened.png"
+  },
+  "test_limits": [
+    "Full isolated Home shell built without default model/kernel features.",
+    "Catalog authority is an ephemeral local legacy test authority; these genuine publisher fixtures were not admitted to the production catalog.",
+    "OS screenshots and scoped ADB input cover the real phone UI; Makepad remote instrumentation is unavailable in this Android build.",
+    "No account connection, provider/model call, personal data, physical write approval or normal Home replacement was tested.",
+    "Brief startup black frame and immediate pre-focus capture refusal were retained; no ambiguous write was replayed."
+  ],
+  "actions_sha256": "af73513b283ef7398738420d5928e0d1293368af5da596b0216464900181d2f8",
+  "private_driver_sha256": "e9bc50ef9050766ccd38ce5053f65754ea86e61dfc691631b542987c6369c870",
+  "packaging_receipt_sha256": "914cf73ed47923d30f6885013544900843225dc9e58b7f239f3cfc9526d6a542"
+}

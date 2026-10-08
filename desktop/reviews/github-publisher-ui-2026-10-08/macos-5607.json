@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "driver": "native Makepad instrument on an owned hidden Mac shell",
+  "shell_source": "5607e90b5c0ac217d6cd2d946c06dc6d2f046c00",
+  "shell_binary_sha256": "e758a27c2d07ea7e8651e953b5ec267fcb19918a9b4dc04166cc77c0de530539",
+  "catalog_authority": "temporary-local-legacy-not-production-v2",
+  "publisher_proof": "genuine-github-tag-push",
+  "fixture_submission_issue": false,
+  "production_publication": false,
+  "personal_profiles_or_credentials_used": false,
+  "checks": [
+    "optional_hub_agent_declined_in_test_profile",
+    "search_displays_genuine_first_release",
+    "ui_installs_and_opens_first_release",
+    "first_note_added_in_app_ui",
+    "ui_installs_verified_keyless_update",
+    "note_survives_update_and_restart",
+    "note_removed_in_app_ui",
+    "updated_app_reopens_from_library_with_persistent_data"
+  ],
+  "owned_processes_stopped": true,
+  "visual_review": {
+    "status": "passed",
+    "method": "inspected four original native Makepad captures",
+    "observations": [
+      "Search result and Get action visible",
+      "Editable note input and Add action readable and reachable",
+      "Updated note visible after deletion of original note",
+      "Library reopen retains the remaining note"
+    ],
+    "not_claimed": [
+      "extended UX soaking",
+      "public catalog admission",
+      "Google or GitHub account login",
+      "phone validation",
+      "release availability"
+    ]
+  },
+  "input_completion": "queued native input followed by bounded snapshot/state checks and real captures",
+  "release_inputs": [
+    {
+      "version": "0.1.0",
+      "app_id": "dev.octosense.publisher-fixture",
+      "pack_sha256": "2447bde3fe6789efd288b9470f24660e45ec4f57849b40b204c35ba297cd2a6b",
+      "catalog_sha256": "29f2ae626fb82cc28c9592d5e018f7f791e3b4817340d99e5324a685abeee83c",
+      "source_commit": "6d77703ba5877051cd1b7da36b21deee7aa08038",
+      "full_github_proof_preserved": true
+    },
+    {
+      "version": "0.1.1",
+      "app_id": "dev.octosense.publisher-fixture",
+      "pack_sha256": "9a0d13ea3b02758a960064d9503358e027a8c1370ca247022febb9664cf5df34",
+      "catalog_sha256": "230f3606121882a20d0cb8e9bb98622fb965c4f2d8feb35a736a6b6c70cef732",
+      "source_commit": "6019a0e169d4c65cefc211cb3082ca1bbde6ad3a",
+      "full_github_proof_preserved": true
+    }
+  ],
+  "versions": [
+    "0.1.0",
+    "0.1.1"
+  ],
+  "instrument_limitations": [
+    "wait=1 input may return requested input frame could not be submitted; retry after the input is applied. Final driver uses wait=0 and verifies UI/state instead of replaying ambiguous writes.",
+    "Read-only screenshot grab can return grab frame could not be submitted at arming; retry. Final driver bounds retries to eight seconds.",
+    "Initial App Hub agent-consent buttons are custom-drawn and absent from widget snapshots; the driver declines the optional agent using the inspected screen and verifies the persisted denial."
+  ],
+  "driver_sha256": "87094cac045167235ef8a1ec6fe89b49762b136542bed02d4b58d141e07c2937",
+  "captures": [
+    {
+      "name": "01-search.png",
+      "sha256": "9051e407dd2e4cab33050756864763af8de3747a692dbc3dcf1d4a44c6fc9a81",
+      "kind": "original-native-capture",
+      "privacy_review": "synthetic app and fresh shell; no private paths/accounts"
+    },
+    {
+      "name": "02-installed-note.png",
+      "sha256": "b43dbfd6889706d37aac209ae98ae8f8074ef2d0da3e8a2bc1d1de7233c4abe6",
+      "kind": "original-native-capture",
+      "privacy_review": "synthetic app and fresh shell; no private paths/accounts"
+    },
+    {
+      "name": "03-updated-notes.png",
+      "sha256": "7b89fb9f93d3eb53762afc2c0b36e880831424a081730b6f8456253c9414672d",
+      "kind": "original-native-capture",
+      "privacy_review": "synthetic app and fresh shell; no private paths/accounts"
+    },
+    {
+      "name": "04-retained-note.png",
+      "sha256": "3f8e64dbfef6ada6b19f8605a28a51cc0fa7a89a6be5fe2826f8c1700f1031f6",
+      "kind": "original-native-capture",
+      "privacy_review": "synthetic app and fresh shell; no private paths/accounts"
+    }
+  ],
+  "earlier_attempts": [
+    {
+      "attempt": 1,
+      "outcome": "driver omitted optional agent-consent handling"
+    },
+    {
+      "attempt": 2,
+      "outcome": "driver omitted scroll to installation confirmation"
+    },
+    {
+      "attempt": 3,
+      "outcome": "startup snapshot not yet available"
+    },
+    {
+      "attempt": 4,
+      "outcome": "input frame acknowledgement failed after update; installed version verified as 0.1.1"
+    },
+    {
+      "attempt": 5,
+      "outcome": "input frame acknowledgement failed on Search; exact error retained privately"
+    },
+    {
+      "attempt": 6,
+      "outcome": "read-only capture frame arming failed after successful install and note entry"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "scope": "synthetic-android-publisher-release-preparation",
+  "design_flow_source": "6f4ce207",
+  "hub_workflow_source": "655114c4943cd2490daaefa2173e7b5aaa20669f",
+  "repository": "ymote/octosense-publisher-fixture",
+  "developer_signing_key": false,
+  "submission_issue_created": false,
+  "production_hub_admission": false,
+  "platforms": [
+    "macos",
+    "android"
+  ],
+  "source_gate_passed": true,
+  "releases": [
+    {
+      "tag": "v0.1.2",
+      "source": "9df54b1fc8b701e4356b16dd8e8acdce43fc010d",
+      "run": "https://github.com/ymote/octosense-publisher-fixture/actions/runs/37742612574",
+      "workflow_conclusion": "success",
+      "pack_sha256": "6f0f48859044f280bb70caa9e5686478d712dfc7b497a8ff5d47aac887b80d6f",
+      "native_publisher_verify": "passed",
+      "platform_declaration_verified": [
+        "macos",
+        "android"
+      ]
+    },
+    {
+      "tag": "v0.1.3",
+      "source": "fdbdf950589f16220a5579786b44c4d1626292e7",
+      "run": "https://github.com/ymote/octosense-publisher-fixture/actions/runs/37742627927",
+      "workflow_conclusion": "success",
+      "pack_sha256": "ac62bad25923e112cc64ce863df9fac20f6feebecb0e6df253695f4203629053",
+      "native_publisher_verify": "passed",
+      "platform_declaration_verified": [
+        "macos",
+        "android"
+      ]
+    }
+  ],
+  "native_phone_install": "pending",
+  "ephemeral_hub_private_keys_deleted": true,
+  "catalog_scope": "temporary-local-legacy-not-production-github-v2"
+}
