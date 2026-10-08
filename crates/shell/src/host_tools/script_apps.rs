@@ -192,7 +192,7 @@ pub fn load(app: &str) -> Result<(), String> {
 
 /// `app`'s admitted bundle: a system app's packed bundle, or an installed
 /// one, with App Hub's apps root.
-fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
+pub(crate) fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
     // Never a native app's tools, executor or grants (ADR 0004 §3, §7).
     crate::apps::check_script_app_id(app)?;
     let root = octosense_appstore::data_root_if_set().ok_or("App Hub has no apps root yet")?;

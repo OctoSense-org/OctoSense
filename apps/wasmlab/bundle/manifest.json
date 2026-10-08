@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "os.wasmlab",
+  "version": "0.1.0",
+  "name": "Wasm Lab",
+  "integrity": { "bundle_blake3": "" },
+  "capabilities": ["wasm"],
+  "agent": {
+    "profile": "read-only",
+    "tools": ["ask_user_question"],
+    "model": { "needs": ["tool_calling"] },
+    "instructions": "AGENT.md"
+  }
+}

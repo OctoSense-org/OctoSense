@@ -17,6 +17,7 @@ How these decisions fit together in the code on `main`, and which parts are stil
 | [0007](0007-composable-mail-action-cards.md) | Composable Mail cards with editing, chat and approved actions | Implementation in progress; phone acceptance pending |
 | [0008](0008-quiet-android-mail-jobs.md) | Quiet Android Mail jobs and native card notifications | Implemented in this change; device acceptance in progress |
 | [0010](0010-shared-oauth-and-connected-apps.md) | Shared OAuth and independently installed connected apps | Implementation in progress; live sign-in passed on macOS; GitHub writes, Gmail sends and device acceptance pending |
+| [0011](0011-apps-own-functions-in-webassembly.md) | An app's own functions, in WebAssembly | Proposed; behind the `wasm-lab` feature, validated on macOS and an Android phone |
 | [0012](0012-app-host-api-discovery.md) | Discoverable host APIs, signed backend operations and live script tools | Implemented in source; contract 1.6.0 published; host release and phone acceptance pending |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25

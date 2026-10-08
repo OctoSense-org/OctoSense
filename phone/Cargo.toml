@@ -98,5 +98,7 @@ app-weather = ["octosense-shell/app-weather"]
 # END native-apps: features
 app-aichat = ["dep:makepad-aichat", "octosense-shell/app-aichat"]
 dev-mode = ["octosense-shell/dev-mode"]
+# Apps' own WebAssembly functions (ADR 0011; off by default).
+wasm-lab = ["octosense-shell/wasm-lab"]
 # The system toolbox offered to app agents (off by default; ADR 0002 §6).
 toolbox-peers = ["octosense-shell/toolbox-peers"]

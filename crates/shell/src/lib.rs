@@ -100,6 +100,8 @@ pub mod connected_backends;
 pub mod glance_digest;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_notice;
+#[cfg(feature = "wasm-lab")]
+pub mod wasm_service;
 pub mod glance_panel;
 pub mod glance_sheet;
 mod card_presentation;

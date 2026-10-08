@@ -71,5 +71,7 @@ app-aichat = ["octosense-shell/app-aichat"]
 # Developer mode from Settings and OCTOSENSE_DEV_MODE in a release build
 # (debug builds have it already; ADR 0004 §13).
 dev-mode = ["octosense-shell/dev-mode"]
+# Apps' own WebAssembly functions (ADR 0011; off by default).
+wasm-lab = ["octosense-shell/wasm-lab"]
 # The system toolbox offered to app agents (off by default; ADR 0002 §6).
 toolbox-peers = ["octosense-shell/toolbox-peers"]

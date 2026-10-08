@@ -31,6 +31,7 @@ members = [
     "crates/oauth-service",
     "crates/markdown-editor",
     "crates/browser-smoke",
+    "crates/wasm-host",
     "apps/reference",
     "apps/news/host-service",
     "apps/mail/host-service",
@@ -50,6 +51,7 @@ exclude = [
     "apps/appcard/tools",
     "apps/appcard/vendor",
     "apps/appcard/app/splash-native",
+    "apps/wasmlab/guest",
 ]
 default-members = ["desktop"]
 
@@ -72,7 +74,7 @@ octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 octosense-appcard = { path = "apps/appcard/module" }
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "b1109a397ae45349546d50889a1706f6c58fb923" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
 makepad-calculator = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
@@ -107,17 +109,17 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "33dea2f1f3ad3f1346a219aa8cf6e91b31361e23" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "b1109a397ae45349546d50889a1706f6c58fb923" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
 # The app policy (resolution, isolate settings, the Splash adapter) and the
 # Hub client the Card runner resolves an app's policy with; the shell's
 # glance tiles run cards under it (crates/shell/src/glance_card.rs).
-octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "b1109a397ae45349546d50889a1706f6c58fb923" }
-octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "b1109a397ae45349546d50889a1706f6c58fb923" }
+octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
+octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "2e5768964f15916cdb66cc6824f7671dafc6445a" }
 # The app contract (ADR 0005), from crates.io by version: App Hub, the shell
 # and Rinx all depend on `octosense-app-contract = "1"`, so Cargo links ONE
 # 1.x for the whole build (Cargo.lock pins the exact version OctoSense ships)
 # and App Hub and Rinx no longer need the same App Hub commit.
-octosense-app-contract = "1.6"
+octosense-app-contract = "1.7"
 # --- octos: ONE source for every octos crate (reviewed octos#2715 at
 # b0759a57: bounded ledger session-directory names, serialized peer purge
 # against session writes, and provider transport diagnostics that omit
@@ -166,6 +168,7 @@ octosense-toolbox = { path = "crates/toolbox" }
 octosense-l0-chat = { path = "crates/l0-chat" }
 octosense-oauth-service = { path = "crates/oauth-service" }
 octosense-markdown-editor = { path = "crates/markdown-editor" }
+octosense-wasm-host = { path = "crates/wasm-host" }
 article-core = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 article-makepad = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
@@ -198,6 +201,10 @@ keyring = "3"
 # process with them (OctoSense hosting Rinx).
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 log = "0.4"
+# Developers' own functions compiled to WebAssembly, run for their app with
+# a deadline and a memory cap (crates/wasm-host, ADR 0011). Cranelift compiles;
+# no component model, async, GC or threads.
+wasmtime = { version = "49.0.2", default-features = false, features = ["cranelift", "runtime", "std", "parallel-compilation"] }
 
 # Workspace-wide clippy policy for the crates that opt in (`[lints]
 # workspace = true`, AppCard's): lints that are real but tracked elsewhere.
