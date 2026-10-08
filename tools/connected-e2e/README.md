@@ -181,3 +181,15 @@ approval. The disposable fictional account is not Google/GitHub provider
 acceptance. Keep the entire run directory private: raw callback URLs and
 fictional tokens are not suitable for public artifacts. Publish only reviewed
 receipts.
+
+The Linux test did not install packages systemwide. Its disposable bwrap mount
+namespace overlays the owned extracted browser/vault package trees onto `/usr`,
+read-only. Therefore WebDriver's MiniBrowser path resolves to the extracted
+engine, not another system browser. The receipt includes both engine hashes.
+Linux/Windows account, read and local-draft methods are now advertised in runtime
+discovery; native write-review methods retain their physical-approval platform
+limits. `auth.backend.request` supports declared GETs there, while mutations
+still require the separately available native approval. Google authorization on
+Android remains unsupported by the current provider adapter; the OnePlus 6 test
+device has no Play Services. A method's platform support does not configure an
+OAuth client or approve a remote write.

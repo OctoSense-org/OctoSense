@@ -69,7 +69,12 @@
     "webdriver_package_bytes": 529074,
     "system_packages_changed": false,
     "personal_accounts_used": false,
-    "owned_runtime_descendants_remaining": 0
+    "owned_runtime_descendants_remaining": 0,
+    "namespace_mapping": "Read-only bwrap /usr overlay combines the owned extracted browser and vault package trees; MiniBrowser path resolves inside that disposable namespace only",
+    "engine_sha256": {
+      "MiniBrowser": "3b394371daa9f980d0973de9d7301608d7feb3b126ebfa9bfee298f431e7b94a",
+      "libwebkit2gtk-4.1.so.0.21.10": "9f2cbdef0697bb3da401a0453e921fd47be00fb932fefa723c94c495082debe6"
+    }
   },
   "not_verified": [
     "OS default browser link click",

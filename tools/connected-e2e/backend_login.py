@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -147,6 +148,7 @@ def main():
 
         def start(app):
             nonlocal native, native_count
+            receipt['stage'] = 'native startup for ' + app
             if native:
                 receipt['instrument_events'] += native.actions
                 native.check_logs()
@@ -160,6 +162,7 @@ def main():
             return capture
 
         def state(expected):
+            receipt['stage'] = 'waiting for ' + expected
             native.wait(lambda: (native.find(identifier='status', kind='Label') or {}).get('t') == expected)
 
         def me():
@@ -176,6 +179,7 @@ def main():
             return next(value['handle'] for value in entries.values() if value['app_id'] == app)
 
         with sync_playwright() as playwright:
+            receipt['stage'] = 'launching isolated browser'
             browser = playwright.chromium.launch(executable_path=str(args.chrome), headless=True)
             context = browser.new_context(viewport={'width': 1000, 'height': 800})
             page = context.new_page()
@@ -294,6 +298,21 @@ def main():
     except Exception as error:
         receipt['result'] = 'FAIL'
         receipt['error_type'] = type(error).__name__
+        if native:
+            try:
+                statuses = []
+                for row in native.rows():
+                    if row.get('i') not in ('status', 'oauth_status'):
+                        continue
+                    value = str(row.get('t', ''))
+                    if re.search(r'access_token|refresh_token|password|bearer|client_secret|code=', value, re.I):
+                        value = '[redacted status]'
+                    value = re.sub(r'https?://\S+', '[URL]', value)
+                    value = value.replace(str(run), '[fixture]').replace(str(ROOT), '[source]')
+                    statuses.append({'id': row['i'], 'text': value[:256]})
+                receipt['failure_native_status'] = statuses
+            except Exception:
+                receipt['failure_native_status'] = 'native snapshot unavailable'
         # Full exceptions may contain callback URLs. Keep raw failure only privately.
         (run / 'private-error.txt').write_text(str(error))
         if native:
