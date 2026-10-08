@@ -258,15 +258,24 @@ App Hub is on by default. Open **App Hub** from the launcher to browse the signe
 
 #### Try your own app before it is published
 
-Publish the bundle into a local catalog with a throwaway anchor (OctoScript-App-Design-Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) gives the `hub keygen`/`certify`/`publish` commands), then point this shell at it:
+For public distribution, open an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml), then add the GitHub release evidence when ready. The normal [GitHub publishing flow](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.md) requires no separate developer publisher key; a tag or Release alone is not Hub approval.
+
+The following is an **optional local legacy-catalog rehearsal**. Design Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) describes its compatibility bundle and throwaway catalog keys (`hub keygen`/`certify`/`publish`); these are not prerequisites for normal GitHub publishing. Never restamp a GitHub-attested release for this older recipe.
+
+After preparing the mirror, replace the two quoted values below. Always use a fresh profile: a library that already cached the v2 catalog refuses a legacy downgrade. **This revised launch recipe is source-reviewed, not yet run against the newly compatible shell binary.**
 
 ```sh
-OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
-  OCTOSENSE_HOME=/tmp/octosense-test OCTOSENSE_APP_DATA=/tmp/octosense-test-apps \
+REHEARSAL_MIRROR='/absolute/path/to/your/test-mirror'
+REHEARSAL_ANCHOR='replace-with-test-anchor-public-hex'
+REHEARSAL_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/octosense-hub-rehearsal.XXXXXX")"
+OCTOSENSE_HUB_CATALOG=legacy \
+  OCTOSENSE_HUB="$REHEARSAL_MIRROR" OCTOSENSE_HUB_ANCHOR="$REHEARSAL_ANCHOR" \
+  OCTOSENSE_HOME="$REHEARSAL_ROOT/shell" OCTOSENSE_APP_DATA="$REHEARSAL_ROOT/apps" \
+  OCTOS_APP_CORE_DIR="$REHEARSAL_ROOT/core" \
   cargo run --release -p octosense
 ```
 
-Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**: it runs in the Card runner under its manifest, as a store app would. Verified on macOS on 2026-09-26 with a new script app (in the OctoSense-Desktop repository, before the merge). The two `OCTOSENSE_*` state variables keep the test out of `~/.octosense`.
+Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**: it runs in the Card runner under its manifest. The earlier legacy-catalog UI flow was verified on macOS on 2026-09-26 with a new script app, before the repository merge; that historical result does not verify the new GitHub publisher path. The separate shell/app directories keep this rehearsal out of your normal profile, and the explicit kernel directory prevents copying personal provider settings into it. This local catalog does not submit or publish an app to the official Hub.
 
 ### Choosing and overriding system apps
 
