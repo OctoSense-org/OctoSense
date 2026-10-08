@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+[Android reproduction and OnePlus 6 results](ANDROID.md): the same native host completed all 14 phone checks, without a model, account login or permission approval.
+
 This development fixture demonstrates an app-owned Splash tool calling Rust
 already compiled into OctoSense. It reads the real macOS camera permission
 status, updates the same app UI, and returns a structured answer to its native

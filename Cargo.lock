@@ -8017,6 +8017,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-host-api-smoke"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "octosense-appstore",
+ "octosense-shell",
+ "serde_json",
+]
+
+[[package]]
 name = "octosense-kernel"
 version = "0.1.0"
 dependencies = [

@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+[Android 复现步骤与 OnePlus 6 结果](ANDROID.zh-CN.md)：同一原生宿主完成了全部 14 项手机检查，没有启动模型、登录账户或批准权限。
+
 此开发测试示例展示：应用自己的 Splash 工具调用已编译进 OctoSense 的
 Rust 服务，读取真实 macOS 相机权限状态，更新同一应用的界面，并把结构化
 结果返回给原生调用方。它不会采集媒体或批准设备访问，不是 App Hub 投稿，

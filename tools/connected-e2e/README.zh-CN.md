@@ -116,3 +116,42 @@ python3 tools/connected-e2e/notes_recovery.py \
 测试不执行提供商写入；正常准入、提供商流程和浸泡测试继续使用上面的命令。
 
 Android 开发者后端登录使用独立测试包和真实表单，参见 [Android 后端验收](ANDROID-BACKEND.zh-CN.md)。这不代表支持 Google 嵌入式登录。
+
+## 原生后端浏览器验收（2026-10-08）
+
+`backend_login.py` 使用真实宿主、浏览器和操作系统凭据库。只有后端 HTTP
+服务及虚构用户是模拟数据；不会向宿主注入账户或 token。Linux 和 Windows
+使用受支持的外部浏览器路径与临时回环回调。嵌入式 WebReader 的验收是另一个
+测试，不能证明后端登录可用。
+
+[Linux 回执](evidence/linux-backend-native.json) 记录七项成功行为：浏览器注册/
+登录与 PKCE 回调、受保护身份读取、轮换刷新恢复、原生进程重启、退出登录、
+再次登录，以及两个签名应用之间的账户隔离。MiniBrowser/WebKitGTK 2.52.6
+和原生 Secret Service 在隔离显示/会话中运行；所有测试进程与虚构连接均已清理。
+回执绑定实际二进制及源码哈希。归档 Cargo 锁文件早于之后的 Wasm 集成，其余
+35 个测试/OAuth 源文件与本次验收变更一致。这不表示整个 shell 的当前提交构建
+已通过。
+
+按前文构建宿主/安装器，并用
+`cargo build --locked --release -p octosense-app-hub --bin hub` 构建固定版本 Hub
+命令行。启动已有的隔离 WebKitWebDriver 后，以 `--binary`、`--installer`、
+`--hub`、`--webdriver http://127.0.0.1:PORT` 和新的私有 `--out` 目录调用
+`backend_login.py`。Linux 验收使用此接口、真实引擎及普通宿主凭据库。
+`--chrome PATH` 则通过 Playwright 使用已有 Chromium 浏览器。
+`Platform accounts` 工作流使用执行器已有的 Edge，验证 Windows 原生凭据库
+及同一浏览器/回调流程。凭据库测试已通过，新增浏览器流程仍待执行。
+
+验收宿主把其原生授权页中的链接复制到私有测试文件，测试器在新浏览器中打开
+完全相同的 URL。**未测试操作系统默认浏览器链接的点击。** Makepad 合成点击
+不能批准业务写入；这些测试不证明物理点击或操作系统身份认证批准。一次性
+虚构账户也不等同于 Google/GitHub 提供商验收。整个运行目录须保密：原始回调
+URL 及虚构 token 不适合作为公开工件，只发布审查过的回执。
+
+Linux 测试未安装系统级软件包。一次性 bwrap 挂载命名空间把测试拥有的浏览器/
+凭据库软件包目录只读叠加到 `/usr`；因此 WebDriver 的 MiniBrowser 路径解析到
+提取出的引擎，而不是另一个系统浏览器。回执包含浏览器与 WebKit 库的哈希。
+运行时发现现在会列出 Linux/Windows 的账户、读取和本地草稿方法；原生写入
+审查方法仍保留物理批准的平台限制。`auth.backend.request` 在这些平台支持声明
+的 GET，变更仍须可用的原生批准。当前提供商适配器仍不支持 Android Google
+授权，OnePlus 6 测试设备没有 Play Services。方法支持某个平台不表示已经配置
+OAuth 客户端，更不等于批准远端写入。

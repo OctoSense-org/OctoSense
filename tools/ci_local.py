@@ -73,6 +73,8 @@ GROUPS["all"] = [w for g in ("desktop", "phone", "apps", "rom") for w in GROUPS[
 NOT_LOCAL = {
     "os-approval.yml": "native Windows Hello availability needs Windows; local compile and mock results "
                        "do not substitute for the explicit non-authenticating Windows job",
+    "platform-vault.yml": "actual Windows Credential Manager and backend browser acceptance need a Windows session; "
+                          "compilation or another OS is not native account evidence",
     "embedded-browser.yml": "native Windows WebView2 acceptance needs a Windows desktop and installed engine; "
                             "ci-local-merge requires a successful GitHub run on the exact PR head",
     "release-desktop.yml": "a release workflow (tag push or manual run): signed packages for three OSes, "

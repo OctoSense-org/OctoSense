@@ -1,0 +1,109 @@
+{
+  "bundle_digest": "ce4a5b1ca73b733413a553e69cf0d710f04b3888c833504dec2878c9f67e8d6d",
+  "closed_app": "app_not_running: open this app before calling its script tools",
+  "host_sheet_visible": false,
+  "not_verified": [
+    "model or peer relay consent",
+    "physical OS permission approval",
+    "camera capture"
+  ],
+  "platform": "android",
+  "proof": "signed app -> app_tool -> host.request -> native OS permission status",
+  "refusals": {
+    "invalid_arguments": "invalid_arguments: $: injected is not a declared field",
+    "undeclared_tool": "tool_not_declared: the running bundle does not implement this tool",
+    "wrong_account": "account_scope: app account changed"
+  },
+  "schema": 1,
+  "signed_install": true,
+  "tool_result": {
+    "Ok": {
+      "account": "device",
+      "background_error": "camera.permission.request is unavailable to agents/background surfaces",
+      "background_prompt_allowed": false,
+      "calls": 1,
+      "camera": {
+        "app_consent": false,
+        "app_policy_granted": true,
+        "background_permission": false,
+        "capability": "camera",
+        "location_read_supported": false,
+        "os_permission": "not_determined",
+        "scope": "host_api_v1_device_access",
+        "supported": true
+      },
+      "discovery": {
+        "authorization": "checked-on-call",
+        "configured": null,
+        "descriptor": {
+          "agent_access": "allowed",
+          "capability": "camera",
+          "input_schema": {
+            "additionalProperties": false,
+            "type": "object"
+          },
+          "name": "camera.permission.status",
+          "output_schema": {
+            "properties": {
+              "app_consent": {
+                "type": "boolean"
+              },
+              "app_policy_granted": {
+                "type": "boolean"
+              },
+              "background_permission": {
+                "const": false
+              },
+              "capability": {
+                "type": "string"
+              },
+              "location_read_supported": {
+                "type": "boolean"
+              },
+              "os_permission": {
+                "enum": [
+                  "granted",
+                  "not_determined",
+                  "denied",
+                  "settings_required",
+                  "unsupported"
+                ]
+              },
+              "scope": {
+                "const": "host_api_v1_device_access"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "capability",
+              "supported",
+              "app_policy_granted",
+              "app_consent",
+              "os_permission"
+            ],
+            "type": "object"
+          },
+          "platforms": [
+            "android",
+            "macos"
+          ],
+          "summary": "Read this app's device consent and the OS permission without prompting",
+          "version": 1
+        },
+        "implemented": true,
+        "supported": true
+      },
+      "microphone_allowed": false,
+      "microphone_error": "this app was not granted \"microphone\", which \"microphone.permission.status\" needs",
+      "missing": {
+        "authorization": "unavailable",
+        "configured": null,
+        "implemented": false,
+        "method": "apilab.custom_rust",
+        "supported": false
+      }
+    }
+  }
+}

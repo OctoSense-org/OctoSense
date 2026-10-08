@@ -1,0 +1,76 @@
+name: Platform accounts
+
+on:
+  pull_request:
+    paths:
+      - 'crates/oauth-service/**'
+      - 'crates/shell/examples/connected-app-host.rs'
+      - 'crates/shell/examples/connected-install.rs'
+      - 'crates/shell/examples/connected_support/**'
+      - 'tools/connected-e2e/backend_login.py'
+      - 'tools/connected-e2e/webdriver_browser.py'
+      - 'tools/connected-e2e/native.py'
+      - 'tools/connected-e2e/backend-login/**'
+      - 'tools/backend-login-fixture.py'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'native-runtime.lock.json'
+      - 'runtime-patches.lock.json'
+      - 'tools/runtime-patches/**'
+      - '.github/workflows/platform-vault.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-vault-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    env:
+      PYTHONUTF8: '1'
+      MAKEPAD_D3D11_WARP: '1'
+    steps:
+      - name: Preserve runtime patch bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: embedded-browser-windows
+          cache-on-failure: true
+      - name: Actual Windows Credential Manager lifecycle
+        # A fresh synthetic profile on a disposable runner. Missing/unusable
+        # native credentials are a failure, never replaced by a file vault.
+        # This checks storage/revocation, not provider login or user approval.
+        run: cargo test --locked --release -p octosense-oauth-service --features host host_vault_acceptance::platform_vault_persists_across_reopen_without_plaintext_credentials -- --ignored --exact --nocapture
+      - name: Build real connected-app host and signed installer
+        run: |
+          cargo build --locked --release -p octosense-shell --features acceptance-fixtures --example connected-app-host --example connected-install
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --locked --release -p octosense-app-hub --bin hub
+      - name: Browser automation client only
+        # Use the runner's existing Edge browser. No downloaded browser engine,
+        # developer profile, provider account, or credential injection.
+        run: python -m pip install 'playwright==1.55.0'
+      - name: Actual synthetic backend browser and callback
+        run: |
+          $edge = Join-Path ${env:ProgramFiles(x86)} 'Microsoft/Edge/Application/msedge.exe'
+          if (-not (Test-Path $edge)) { throw 'The runner must already provide Edge' }
+          python tools/connected-e2e/backend_login.py --binary target/release/examples/connected-app-host.exe --installer target/release/examples/connected-install.exe --hub target/release/hub.exe --chrome "$edge" --out "$env:RUNNER_TEMP/backend-login"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-backend-account-receipt
+          if-no-files-found: ignore
+          # Never upload the whole private directory: it contains OAuth URLs,
+          # fictional tokens and raw failure diagnostics.
+          path: ${{ runner.temp }}/backend-login/receipt.json
