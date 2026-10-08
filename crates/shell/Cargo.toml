@@ -76,6 +76,8 @@ octosense-markdown-editor = { workspace = true, optional = true }
 octosense-wasm-host = { workspace = true, optional = true }
 octosense-calendar-service = { workspace = true, optional = true }
 octosense-news-service = { workspace = true, optional = true }
+# The sheet engine service (ADR 0013): gridcraft behind `sheet.*`, desktop only.
+octosense-sheets-service = { workspace = true, optional = true }
 # App Hub's host-service registry: the `glance` service registers into it.
 octosense-appstore = { workspace = true, optional = true }
 # The Card runner's policy resolution and Splash adapter: glance tiles run
@@ -148,7 +150,7 @@ app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 app-terminal = ["dep:makepad-terminal"]
 app-appcard = ["dep:octosense-appcard", "octos-core"]
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-calendar-service", "octosense-ai-host/llm"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-calendar-service", "octosense-ai-host/llm"]
 app-calculator = ["dep:makepad-calculator"]
 app-clock = ["dep:makepad-clock"]
 app-notes = ["dep:makepad-notes"]

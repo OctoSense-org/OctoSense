@@ -4042,6 +4042,79 @@ dependencies = [
 ]
 
 [[package]]
+name = "gridcraft-calc"
+version = "0.1.0"
+source = "git+https://github.com/ymote/gridcraft.git?rev=c6b6f4177cbf52aa7a8bac8aa15650a7502926fe#c6b6f4177cbf52aa7a8bac8aa15650a7502926fe"
+dependencies = [
+ "gridcraft-core",
+ "gridcraft-formula",
+ "gridcraft-functions",
+ "gridcraft-model",
+ "gridcraft-numfmt",
+ "log",
+]
+
+[[package]]
+name = "gridcraft-core"
+version = "0.1.0"
+source = "git+https://github.com/ymote/gridcraft.git?rev=c6b6f4177cbf52aa7a8bac8aa15650a7502926fe#c6b6f4177cbf52aa7a8bac8aa15650a7502926fe"
+dependencies = [
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "gridcraft-formula"
+version = "0.1.0"
+source = "git+https://github.com/ymote/gridcraft.git?rev=c6b6f4177cbf52aa7a8bac8aa15650a7502926fe#c6b6f4177cbf52aa7a8bac8aa15650a7502926fe"
+dependencies = [
+ "gridcraft-core",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "gridcraft-functions"
+version = "0.1.0"
+source = "git+https://github.com/ymote/gridcraft.git?rev=c6b6f4177cbf52aa7a8bac8aa15650a7502926fe#c6b6f4177cbf52aa7a8bac8aa15650a7502926fe"
+dependencies = [
+ "gridcraft-core",
+ "regex",
+]
+
+[[package]]
+name = "gridcraft-model"
+version = "0.1.0"
+source = "git+https://github.com/ymote/gridcraft.git?rev=c6b6f4177cbf52aa7a8bac8aa15650a7502926fe#c6b6f4177cbf52aa7a8bac8aa15650a7502926fe"
+dependencies = [
+ "gridcraft-core",
+ "gridcraft-formula",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "gridcraft-numfmt"
+version = "0.1.0"
+source = "git+https://github.com/ymote/gridcraft.git?rev=c6b6f4177cbf52aa7a8bac8aa15650a7502926fe#c6b6f4177cbf52aa7a8bac8aa15650a7502926fe"
+dependencies = [
+ "gridcraft-core",
+]
+
+[[package]]
+name = "gridcraft-xlsx"
+version = "0.1.0"
+source = "git+https://github.com/ymote/gridcraft.git?rev=c6b6f4177cbf52aa7a8bac8aa15650a7502926fe#c6b6f4177cbf52aa7a8bac8aa15650a7502926fe"
+dependencies = [
+ "gridcraft-core",
+ "gridcraft-formula",
+ "gridcraft-model",
+ "quick-xml 0.38.4",
+ "thiserror 2.0.20",
+ "zip 3.0.0",
+]
+
+[[package]]
 name = "growable-bloom-filter"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7523,7 +7596,7 @@ dependencies = [
  "open",
  "percent-encoding",
  "qrcode",
- "quick-xml",
+ "quick-xml 0.37.5",
  "rand 0.8.8",
  "redb",
  "regex",
@@ -7552,7 +7625,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "zip",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -7705,7 +7778,7 @@ dependencies = [
  "futures",
  "makepad-script",
  "octoscript-core",
- "quick-xml",
+ "quick-xml 0.37.5",
  "regex",
  "reqwest 0.12.28",
  "scraper 0.22.0",
@@ -8304,6 +8377,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-sheets-service"
+version = "0.1.0"
+dependencies = [
+ "gridcraft-calc",
+ "gridcraft-core",
+ "gridcraft-formula",
+ "gridcraft-model",
+ "gridcraft-xlsx",
+ "octosense-appstore",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "octosense-shell"
 version = "0.1.0"
 dependencies = [
@@ -8343,6 +8430,7 @@ dependencies = [
  "octosense-news-service",
  "octosense-oauth-service",
  "octosense-reference",
+ "octosense-sheets-service",
  "octosense-wasm-host",
  "rinx",
  "serde",
@@ -8365,7 +8453,7 @@ dependencies = [
  "octoscript-capabilities",
  "octoscript-core",
  "octoscript-schema",
- "quick-xml",
+ "quick-xml 0.37.5",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -9106,6 +9194,15 @@ name = "quick-xml"
 version = "0.37.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+dependencies = [
+ "memchr 2.8.3",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.38.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
 dependencies = [
  "memchr 2.8.3",
 ]
@@ -14389,6 +14486,20 @@ dependencies = [
  "zeroize",
  "zopfli",
  "zstd",
+]
+
+[[package]]
+name = "zip"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12598812502ed0105f607f941c386f43d441e00148fce9dec3ca5ffb0bde9308"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "flate2",
+ "indexmap 2.14.2",
+ "memchr 2.8.3",
+ "zopfli",
 ]
 
 [[package]]

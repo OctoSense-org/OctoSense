@@ -265,6 +265,10 @@ pub fn register_host_services() {
         // published the same way.
         register_calendar_services();
         register_news();
+        // The sheet engine service (ADR 0013): gridcraft behind `sheet.*`,
+        // desktop only until its binary cost is weighed for the phone.
+        #[cfg(feature = "app-hub")]
+        octosense_sheets_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();

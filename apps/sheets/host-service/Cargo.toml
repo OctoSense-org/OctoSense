@@ -1,0 +1,27 @@
+# octosense-sheets-service — the `sheet` host service (ADR 0013).
+#
+# gridcraft's spreadsheet engine (formula parser, evaluator, recalc, xlsx)
+# behind typed `sheet.*` methods: workbooks as host-owned sessions, cells
+# and formulas set and read as JSON, recalc on demand, xlsx in and out
+# confined to the caller's host directory. Headless by design: agents and
+# apps compute without any sheet UI existing yet.
+[package]
+name = "octosense-sheets-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned as a family to one ymote/gridcraft revision (ADR 0013).
+gridcraft-core = { workspace = true }
+gridcraft-formula = { workspace = true }
+gridcraft-calc = { workspace = true }
+gridcraft-model = { workspace = true }
+gridcraft-xlsx = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
