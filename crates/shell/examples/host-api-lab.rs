@@ -89,6 +89,8 @@ impl MatchEvent for App {
         } else {
             let installed =
                 connected_support::install(&[bundle.clone()], &root).expect("Signed installation");
+            // This example creates an ephemeral legacy catalog, not the public Hub.
+            std::env::set_var("OCTOSENSE_HUB_CATALOG", "legacy");
             std::env::set_var(
                 "OCTOSENSE_HUB_ANCHOR",
                 installed["anchor"].as_str().unwrap(),

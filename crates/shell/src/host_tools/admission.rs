@@ -49,6 +49,17 @@ mod tests {
 
     #[test]
     fn cached_agent_admission_tracks_signed_withdrawal_and_bundle_integrity() {
+        const CHILD: &str = "OCTOSENSE_TEST_AGENT_ADMISSION";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "host_tools::admission::tests::cached_agent_admission_tracks_signed_withdrawal_and_bundle_integrity", "--nocapture"])
+                .env(CHILD, "1")
+                .env("OCTOSENSE_HUB_CATALOG", "legacy")
+                .output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            return;
+        }
         let root = std::env::temp_dir().join(format!("agent-withdrawal-{}", uuid::Uuid::new_v4()));
         let id = "org.example.fixture";
         let bundle = octosense_app_hub::installed_bundle_dir(&root, id);
@@ -76,13 +87,13 @@ mod tests {
         write(&mut catalog);
         let check = || installed_bundle_with_anchor(&root,id,&anchor.public_hex());
         assert_eq!(check().unwrap(), bundle);
-        // A v2 cache selects v2 verification for agents as well as the UI.
+        // This isolated legacy fixture must stop when a v2 cache appears.
         // Neither an invalid proof nor a legacy document renamed to v2 may
-        // fall back to the still-valid, offered legacy release beside it.
+        // let an agent continue using the offered legacy release beside it.
         let v2 = root.join("catalog-v2.json");
         for bytes in ["{}".to_string(), std::fs::read_to_string(root.join("catalog.json")).unwrap()] {
             std::fs::write(&v2, bytes).unwrap();
-            assert!(check().unwrap_err().contains("catalog refused"));
+            assert!(check().unwrap_err().contains("downgrade refused"));
         }
         std::fs::remove_file(v2).unwrap();
         assert_eq!(check().unwrap(), bundle);

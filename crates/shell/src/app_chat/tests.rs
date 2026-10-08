@@ -501,6 +501,7 @@ impl AgentFixture {
             .env("OCTOSENSE_CHAT_FIXTURE_CHILD", test)
             .env("OCTOSENSE_CHAT_FIXTURE_ROOT", &root)
             .env("OCTOSENSE_HUB_ANCHOR", anchor.public_hex())
+            .env("OCTOSENSE_HUB_CATALOG", "legacy")
             .output();
         let _ = std::fs::remove_dir_all(&root);
         let output = output.expect("start isolated app-chat test");

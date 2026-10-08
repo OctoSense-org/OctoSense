@@ -797,7 +797,9 @@ mod tests {
         if std::env::var_os(CHILD).is_none() {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", "wasm_service::tests::invocation_isolation_revocation_cancellation_and_queue_bounds", "--nocapture"])
-                .env(CHILD, "1").output().unwrap();
+                .env(CHILD, "1")
+                .env("OCTOSENSE_HUB_CATALOG", "legacy")
+                .output().unwrap();
             assert!(
                 output.status.success(),
                 "{}\n{}",

@@ -46,6 +46,16 @@ To read the code in order, start with [From an app window to an agent turn](docs
 
 Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** Existing beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
 
+App Hub in this source build defaults to the GitHub-attested catalog and supports
+`publisher-github-v1` releases through app-contract 1.8.0. Developers request
+publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml);
+GitHub release proofs replace separate developer signing keys, while a Hub admin
+still approves admission. The first catalog fetch needs a network connection;
+an old offline catalog is not converted into a GitHub proof. Custom local test
+catalogs can explicitly select `OCTOSENSE_HUB_CATALOG=legacy` with a fresh app-data
+directory; a library with a v2 cache refuses that downgrade. Beta.2 does not
+support this publishing mode; a compatible packaged release is pending.
+
 ## How it fits together
 
 One shell process per device, one octos kernel per shell, and every agent is a session in that kernel. The shell is the kernel's only full client. It starts octos and holds its host token, starts every app agent's turns, relays every call to an app's tools, and owns every approval. Apps never talk to the kernel.
