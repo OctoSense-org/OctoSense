@@ -100,7 +100,7 @@
       "id": "apphub",
       "feature": "app-hub",
       "crate": "octosense-app-hub-app",
-      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "4759c56b09e6e1b063f2647efb03ba7e60757245", "local": null },
+      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "5a4b3afe02ed9ddbd4f33849b7dd1970d0b4fa4e", "local": null },
       "module": ["octosense_app_hub_app::APP_HUB_MODULE", "octosense_app_hub_app::CARD_MODULE"],
       "bin": null,
       "default_features": true,
