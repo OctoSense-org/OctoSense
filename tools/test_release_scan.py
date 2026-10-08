@@ -21,6 +21,31 @@ def findings(data, extra=()):
     return out
 
 
+def appimage_bytes(runtime=b"", filesystem=b"", after=b"", elf_class=2, order="little", section_last=False):
+    """Synthetic type-2 ELF; extraction is mocked, never an executable fixture."""
+    data = bytearray(4096)
+    data[:11] = b"\x7fELF" + bytes((elf_class, 1 if order == "little" else 2, 1, 0)) + b"AI\x02"
+    header, shoff_pos, word, ehsize_pos, entsize_pos, count_pos, size, section_pos = (
+        (52, 32, 4, 40, 46, 48, 40, 16) if elf_class == 1 else (64, 40, 8, 52, 58, 60, 64, 24))
+
+    def put(pos, width, value):
+        data[pos:pos + width] = value.to_bytes(width, order)
+
+    table = 2048 if section_last else 4096 - size
+    for pos, width, value in ((shoff_pos, word, table), (ehsize_pos, 2, header),
+                              (entsize_pos, 2, size), (count_pos, 2, 1)):
+        put(pos, width, value)
+    if section_last:
+        put(table + section_pos, word, 3072)
+        put(table + section_pos + word, word, 1024)
+    data[header:header + len(runtime)] = runtime
+    superblock = bytearray(96)
+    superblock[:4] = b"hsqs"
+    superblock[28:32] = b"\x04\x00\x00\x00"
+    superblock[40:48] = (96 + len(filesystem)).to_bytes(8, "little")
+    return bytes(data + superblock + filesystem + after)
+
+
 class PatternTests(unittest.TestCase):
     def test_only_proven_octoscode_placeholder_seams_are_ignored(self):
         themes = b"/home/user/src/octoscode-app/home/user/src/octosSystemSolarizedSlateClaudeCodexLight"
@@ -203,36 +228,93 @@ class ContainerTests(unittest.TestCase):
             self.assertIn("OctoSense.app/leak (link target): Linux home directory", out)
 
     def test_an_appimage_is_read_except_its_compressed_filesystem(self):
-        def appimage(path, runtime=b"", filesystem=b"", after=b"", file=b"app", link=b"usr/bin/app"):
-            # A shell script standing in for the runtime: it answers the two
-            # options the scan uses. The filesystem starts at 4096 with a
-            # squashfs superblock whose bytes_used (offset 40) covers it.
-            script = (b"#!/bin/sh\n# " + runtime + b"\ncase \"$1\" in\n"
-                      b"  --appimage-offset) echo 4096 ;;\n"
-                      b"  --appimage-extract) mkdir -p squashfs-root/usr/bin && printf '%s' '" + file
-                      + b"' > squashfs-root/usr/bin/app && ln -s '" + link + b"' squashfs-root/AppRun ;;\n"
-                      b"esac\nexit 0\n")
-            squashfs = b"hsqs" + bytes(36) + (48 + len(filesystem)).to_bytes(8, "little") + filesystem
-            path.write_bytes(script.ljust(4096, b"\n") + squashfs + after)
-
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "octosense_0.1.0_x86_64.AppImage"
-            # zstd's literals back to back: "/home/" then the next run's "io/".
-            appimage(path, filesystem=b"\x28\xb5\x2f\xfd/home/io/\x91\x07")
-            code, out = self.run_scan(path)
-            self.assertEqual(code, 0, out)
-            for kind, where in ((dict(runtime=b"/Users/someone/runtime"), "AppImage (runtime)"),
-                                (dict(after=b"/home/someone/x"), "AppImage (after its filesystem)"),
-                                (dict(file=b"/Users/someone/src"), "AppImage/usr/bin/app"),
-                                (dict(link=b"/home/someone/app"), "AppImage/AppRun (link target)")):
-                appimage(path, **kind)
+            def extract(command, **kwargs):
+                self.assertEqual(command[0], "/trusted/unsquashfs")
+                self.assertEqual(command[command.index("-offset") + 1], "4096")
+                self.assertIn("-strict-errors", command)
+                self.assertTrue(kwargs["check"])
+                self.assertNotIn("GH_TOKEN", kwargs["env"])
+                self.assertNotIn("RELEASE_SCAN_EXTRA", kwargs["env"])
+                self.assertEqual(Path(command[-1]).read_bytes(), path.read_bytes())
+                self.assertEqual(Path(command[-1]).stat().st_mode & 0o111, 0)
+                root = Path(command[command.index("-dest") + 1])
+                (root / "usr/bin").mkdir(parents=True)
+                (root / "usr/bin/app").write_bytes(file)
+                (root / "AppRun").symlink_to(link.decode())
+
+            with mock.patch.object(scan.shutil, "which", return_value="/trusted/unsquashfs"), \
+                    mock.patch.object(scan.subprocess, "run", side_effect=extract):
+                file, link = b"app", b"usr/bin/app"
+                # Compressed literal runs are not logical file content.
+                path.write_bytes(appimage_bytes(filesystem=b"\x28\xb5\x2f\xfd/home/io/\x91\x07"))
                 code, out = self.run_scan(path)
-                self.assertEqual(code, 1, kind)
-                self.assertIn(where, out)
-            path.write_bytes(b"#!/bin/sh\necho 0\n")
-            code, out = self.run_scan(path)
-            self.assertEqual(code, 1)
-            self.assertIn("no squashfs filesystem", out)
+                self.assertEqual(code, 0, out)
+                for kind, where in ((dict(runtime=b"/Users/someone/runtime"), "AppImage (runtime)"),
+                                    (dict(after=b"/home/someone/x"), "AppImage (after its filesystem)"),
+                                    (dict(file=b"/Users/someone/src"), "AppImage/usr/bin/app"),
+                                    (dict(link=b"/home/someone/app"), "AppImage/AppRun (link target)")):
+                    file, link = kind.get("file", b"app"), kind.get("link", b"usr/bin/app")
+                    path.write_bytes(appimage_bytes(**{k: v for k, v in kind.items() if k not in ("file", "link")}))
+                    code, out = self.run_scan(path)
+                    self.assertEqual(code, 1, kind)
+                    self.assertIn(where, out)
+
+    def test_appimage_never_executes_an_artifact_to_find_its_offset(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path, marker = Path(temp) / "malicious.AppImage", Path(temp) / "exfiltrated"
+            # The old scanner chmod'ed and ran this with inherited credentials.
+            path.write_text('#!/bin/sh\nprintf "%s" "$GH_TOKEN" > "$ATTACK_MARKER"\necho 4096\n')
+            path.chmod(0o755)
+            with mock.patch.dict(scan.os.environ, {"GH_TOKEN": "synthetic-token", "ATTACK_MARKER": str(marker)}), \
+                    mock.patch.object(scan.subprocess, "run", wraps=scan.subprocess.run) as run:
+                code, out = self.run_scan(path)
+            self.assertEqual(code, 1, out)
+            self.assertIn("not a type-2 ELF AppImage", out)
+            run.assert_not_called()
+            self.assertFalse(marker.exists(), "no executable artifact may inherit the publication token")
+
+    def test_appimage_elf_classes_byte_orders_and_section_layouts(self):
+        for elf_class in (1, 2):
+            for order in ("little", "big"):
+                for section_last in (False, True):
+                    with self.subTest(elf_class=elf_class, order=order, section_last=section_last):
+                        self.assertEqual(scan.appimage_filesystem(appimage_bytes(
+                            elf_class=elf_class, order=order, section_last=section_last)), (4096, 4192))
+
+    def test_appimage_malformed_headers_fail_before_any_extractor(self):
+        good = appimage_bytes()
+        cases = [good[:15], good[:60], good[:4090], good[:4191]]
+        for pos, data in ((8, b"AI\x01"), (4, b"\x03"), (5, b"\x00"), (6, b"\x00"),
+                          (52, bytes(2)), (58, bytes(2)), (60, bytes(2)), (40, (2**64-1).to_bytes(8, "little")),
+                          (4096, b"nope"), (4096 + 28, bytes(4)),
+                          (4096 + 40, (95).to_bytes(8, "little")),
+                          (4096 + 40, (2**64-1).to_bytes(8, "little"))):
+            cases.append(good[:pos] + data + good[pos + len(data):])
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(scan.subprocess, "run") as run:
+            path = Path(temp) / "bad.AppImage"
+            for data in cases:
+                path.write_bytes(data)
+                code, out = self.run_scan(path)
+                self.assertEqual(code, 1, out)
+            run.assert_not_called()
+
+    def test_appimage_missing_failed_or_empty_extractor_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "test.AppImage"
+            path.write_bytes(appimage_bytes())
+            with mock.patch.object(scan.shutil, "which", return_value=None):
+                code, out = self.run_scan(path)
+                self.assertEqual(code, 1, out)
+                self.assertIn("unsquashfs missing", out)
+            with mock.patch.object(scan.shutil, "which", return_value="/trusted/unsquashfs"):
+                with mock.patch.object(scan.subprocess, "run", side_effect=scan.subprocess.CalledProcessError(1, "unsquashfs")):
+                    self.assertEqual(self.run_scan(path)[0], 1)
+                with mock.patch.object(scan.subprocess, "run"):
+                    code, out = self.run_scan(path)
+                    self.assertEqual(code, 1, out)
+                    self.assertIn("did not produce a filesystem directory", out)
 
     def test_a_clean_artifact_passes(self):
         with tempfile.TemporaryDirectory() as temp:

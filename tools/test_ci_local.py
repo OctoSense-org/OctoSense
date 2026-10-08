@@ -24,6 +24,20 @@ merge = load("ci_local_merge", "tools/ci_local_merge.py")
 
 
 class WorkflowReader(unittest.TestCase):
+    def test_release_token_is_scoped_to_github_cli_steps(self):
+        workflow = ci.load_workflow("release-desktop.yml")
+        self.assertNotIn("GH_TOKEN", workflow.get("env", {}))
+        release = workflow["jobs"]["release"]
+        self.assertNotIn("GH_TOKEN", release.get("env", {}))
+        authenticated = []
+        for step in release["steps"]:
+            if "GH_TOKEN" in step.get("env", {}):
+                authenticated.append(step["name"])
+                self.assertNotIn("release-scan.py", step.get("run", ""))
+            if "release-scan.py" in step.get("run", ""):
+                self.assertNotIn("GH_TOKEN", step.get("env", {}))
+        self.assertEqual(authenticated, ["HEAD is the tag's commit", "Attach to the tag's draft release"])
+
     def test_reads_what_workflows_use(self):
         text = (
             "name: X\n"

@@ -6,15 +6,16 @@
 
 Every file is read as bytes, including the files inside the packages a
 release ships: `.app` bundles and directories, `.dmg` images (mounted with
-hdiutil on macOS), `.deb` (ar + tar), `.AppImage` (`--appimage-extract` on
-Linux), `.zip`, `.tar.*`, and NSIS installers (7-Zip, when installed; the
+hdiutil on macOS), `.deb` (ar + tar), `.AppImage` (trusted `unsquashfs`,
+from squashfs-tools), `.zip`, `.tar.*`, and NSIS installers (7-Zip, when installed; the
 installed files themselves are scanned before packaging on Windows, since
 the release workflow scans the staged payload too). In a directory, a
 symbolic link's target is read too. An unreadable container fails the scan
 rather than being skipped.
 
-An AppImage's own bytes are read except for its squashfs filesystem, which
-is read through its extracted files and links instead. That filesystem is
+An AppImage is never executed, including to find its payload: its type-2
+ELF section table determines the offset. Its own bytes are read except for
+its squashfs filesystem, which is read through its extracted files and links instead. That filesystem is
 zstd-compressed, and zstd keeps a block's literal bytes back to back, so the
 raw bytes hold text that no file has (in octosense 0.1.0's AppImage, a
 `/home/` path from a literal run followed by the start of the next run).
@@ -267,31 +268,73 @@ def ar_members(data):
         pos += 60 + size + (size % 2)
 
 
+def appimage_filesystem(data):
+    """Return the bounded type-2 SquashFS span without running the artifact.
+
+    libappimage's ElfFile::getSize uses the later of the section-table end
+    and the last section's end. Read both ELF classes and byte orders, and
+    refuse unsupported/invalid layouts instead of guessing an offset.
+    https://github.com/AppImageCommunity/libappimage/blob/master/src/libappimage/utils/ElfFile.cpp
+    """
+    if len(data) < 16 or data[:4] != b"\x7fELF" or data[8:11] != b"AI\x02":
+        raise ValueError("not a type-2 ELF AppImage")
+    if data[4] not in (1, 2) or data[5] not in (1, 2) or data[6] != 1:
+        raise ValueError("unsupported AppImage ELF class, byte order or version")
+    order = "little" if data[5] == 1 else "big"
+    header, shoff_pos, word, ehsize_pos, entsize_pos, count_pos, section_size, section_pos = (
+        (52, 32, 4, 40, 46, 48, 40, 16) if data[4] == 1 else
+        (64, 40, 8, 52, 58, 60, 64, 24))
+
+    def integer(pos, size):
+        if pos < 0 or pos + size > len(data):
+            raise ValueError("truncated AppImage ELF header")
+        return int.from_bytes(data[pos:pos + size], order)
+
+    if len(data) < header or integer(ehsize_pos, 2) != header:
+        raise ValueError("invalid AppImage ELF header size")
+    shoff, entsize, count = integer(shoff_pos, word), integer(entsize_pos, 2), integer(count_pos, 2)
+    if shoff < header or entsize != section_size or not count:
+        raise ValueError("unsupported AppImage ELF section table")
+    table_end = shoff + entsize * count
+    if table_end > len(data):
+        raise ValueError("truncated AppImage ELF section table")
+    last = table_end - entsize
+    section_end = integer(last + section_pos, word) + integer(last + section_pos + word, word)
+    offset = max(table_end, section_end)
+    superblock = data[offset:offset + 96]
+    if len(superblock) != 96 or superblock[:4] != b"hsqs":
+        raise ValueError("no squashfs filesystem at the AppImage ELF boundary")
+    if superblock[28:32] != b"\x04\x00\x00\x00":
+        raise ValueError("unsupported AppImage squashfs version")
+    used = int.from_bytes(superblock[40:48], "little")
+    end = offset + used
+    if used < 96 or end > len(data):
+        raise ValueError("truncated or invalid AppImage squashfs size")
+    return offset, end
+
+
 def scan_appimage(path, data, patterns, findings):
-    """An AppImage: the runtime before its squashfs, and anything after it,
-    as bytes; the squashfs through `--appimage-extract` (see the module
-    docstring). Only a machine that can run it can extract it (Linux)."""
+    """Scan the runtime, trusted-tool-extracted filesystem and trailing bytes.
+    Neither the input runtime nor any extracted program is executed."""
     name = path.name
+    offset, end = appimage_filesystem(data)
+    extractor = shutil.which("unsquashfs")
+    if not extractor:
+        raise RuntimeError(f"{name}: install squashfs-tools to scan AppImages (unsquashfs missing)")
+    scan_bytes(data[:offset], f"{name} (runtime)", patterns, findings)
+    scan_bytes(data[end:], f"{name} (after its filesystem)", patterns, findings)
     with tempfile.TemporaryDirectory() as temp:
-        copy = Path(temp) / name
-        shutil.copy2(path, copy)
-        copy.chmod(0o755)
-
-        def run(option):
-            try:
-                return subprocess.run([str(copy), option], cwd=temp, check=True, capture_output=True).stdout
-            except OSError as e:   # not an executable format this machine runs
-                raise RuntimeError(f"{name}: an AppImage can only be extracted on Linux ({e})") from e
-
-        offset = int(run("--appimage-offset"))
-        superblock = data[offset:offset + 48]
-        if len(superblock) < 48 or superblock[:4] != b"hsqs":
-            raise RuntimeError(f"{name}: no squashfs filesystem at offset {offset}")
-        end = offset + int.from_bytes(superblock[40:48], "little")   # the superblock's bytes_used
-        scan_bytes(data[:offset], f"{name} (runtime)", patterns, findings)
-        scan_bytes(data[end:], f"{name} (after its filesystem)", patterns, findings)
-        run("--appimage-extract")
-        return 1 + scan_tree(Path(temp) / "squashfs-root", name, patterns, findings)
+        # Extract precisely the bytes checked above, even if the caller's
+        # original path is replaced meanwhile. The copy is never executable.
+        copy = Path(temp) / "input.AppImage"
+        copy.write_bytes(data)
+        destination = Path(temp) / "squashfs-root"
+        subprocess.run([extractor, "-strict-errors", "-no-progress", "-no-xattrs",
+                        "-processors", "2", "-offset", str(offset), "-dest", str(destination), str(copy)],
+                       check=True, capture_output=True, env={"PATH": os.defpath, "LC_ALL": "C"})
+        if not destination.is_dir() or destination.is_symlink():
+            raise RuntimeError(f"{name}: unsquashfs did not produce a filesystem directory")
+        return 1 + scan_tree(destination, name, patterns, findings)
 
 
 def scan_artifact(path, patterns, findings, dmg_bytes_only=False):
