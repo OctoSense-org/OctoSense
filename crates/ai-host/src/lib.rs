@@ -370,6 +370,24 @@ fn register_contained(kernel: bool, policy: &Policy) {
 }
 
 #[cfg(feature = "llm")]
+static MODEL_GRANTS: std::sync::Mutex<Option<octosense_llm_service::complete::Grants>> = std::sync::Mutex::new(None);
+#[cfg(feature = "llm")]
+static MODEL_SCOPE: std::sync::Mutex<Option<octosense_llm_service::complete::Scope>> = std::sync::Mutex::new(None);
+
+/// The shell's current signed-bundle admission check. The service resolves this
+/// callback on each check, even if AI registration happened before App Hub was
+/// ready. Missing admission fails closed; no app-provided manifest is trusted.
+#[cfg(feature = "llm")]
+pub fn set_model_grants(grants: impl Fn(&str, &std::path::Path) -> bool + Send + Sync + 'static) {
+    *MODEL_GRANTS.lock().unwrap() = Some(std::sync::Arc::new(grants));
+}
+
+#[cfg(feature = "llm")]
+pub fn set_model_scope(scope: impl Fn(&str, &std::path::Path) -> Option<String> + Send + Sync + 'static) {
+    *MODEL_SCOPE.lock().unwrap() = Some(std::sync::Arc::new(scope));
+}
+
+#[cfg(feature = "llm")]
 fn register_llm(core_dir: Option<PathBuf>, import: QrImport) -> bool {
     let mut options = octosense_llm_service::Options::default();
     match &core_dir {
@@ -399,7 +417,15 @@ fn register_llm(core_dir: Option<PathBuf>, import: QrImport) -> bool {
     // calls over the same providers, with per-app budgets. Apps granted the
     // `model` capability only; the ledger lives in the Card runner's host
     // dir, attached at the first call.
-    octosense_llm_service::register_model(&options, octosense_llm_service::complete::Options::default());
+    let mut model = octosense_llm_service::complete::Options::default().grants(|app, root| {
+        let grants = MODEL_GRANTS.lock().unwrap().clone();
+        grants.is_some_and(|grants| grants(app, root))
+    });
+    model.scope = Some(std::sync::Arc::new(|app, root| {
+        let scope = MODEL_SCOPE.lock().unwrap().clone();
+        scope.and_then(|scope| scope(app, root))
+    }));
+    octosense_llm_service::register_model(&options, model);
     log!("model: service registered (one-shot calls; granted apps only)");
     true
 }
