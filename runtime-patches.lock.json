@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "makepad": {
-    "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
+    "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "96ea6f774be9edc7c26c895883daa4b81b333d33",
+    "tree": "4fb9744e3d9525c725dedcb1100c14451d2bb118",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -18,8 +18,6 @@
       "Android multiline Enter key events finish the active composition before inserting a newline, retaining the last word; ordinary IME composition commits keep replacement semantics.",
       "Host-owned backend authentication reuses native WebViews with isolated sessions, exact callback interception, same-origin navigation and no page tool bridge; Android uses an ephemeral private process and profile.",
       "Android Camera waits for one permission answer and refreshes an empty camera list after grant. Video pause/resume preserves an unprepared player so first-use authorization cannot prevent its initial source assignment.",
-      "Video uses its resolved drawable size for aspect-preserving fill, including Fill/Fit and resized layouts, so rotated Android camera previews are cropped instead of stretched.",
-      "Android QR scanning selects a supported common preview/YUV buffer size before opening Camera2, fits the preview without stretching, and ignores callbacks from a previous scanner session.",
       "Android startup and resume never request location for the legacy GPS cache; it uses existing grants only. Explicit location actions retain the normal permission flow.",
       "Android Maps requests its first location grant only from Your location through the app location capability and the existing foreground GPS listener/permission callback; GPS reads stay passive.",
       "Label keeps its native wrapping default across retained theme reapplication; named labels populated after mounting stay wrapped, while explicit app no-wrap flows remain unchanged.",
@@ -70,14 +68,6 @@
       {
         "patch": "tools/runtime-patches/makepad-camera-permission-wait.patch",
         "sha256": "6b1c5998521dbf44e70bc8b90ab025d8f449a8e646c363585f3b172734d478c2"
-      },
-      {
-        "patch": "tools/runtime-patches/makepad-video-fill-aspect.patch",
-        "sha256": "7e6db1f32b3d27c3bf30ec9acbdb85abd33539b619ba59370cbe7b8931a7d17d"
-      },
-      {
-        "patch": "tools/runtime-patches/makepad-qr-preview-size.patch",
-        "sha256": "8866e751196dc1b33d8a4cc5de1872cd62999f4d565b1bc903327c3dd8dfa676"
       },
       {
         "patch": "tools/runtime-patches/makepad-location-explicit-consent.patch",
