@@ -1,0 +1,24 @@
+# octosense-pdf-service — the `pdf` host service (ADR 0013).
+#
+# pdfcraft's PDF engine behind typed `pdf.*` methods, through its own
+# headless automation layer: inspect a document, extract its text, render
+# a page to PNG, merge files and split one, with every path confined to
+# the service's own `pdf/` area inside the caller's host directory.
+# Stateless: every call opens, acts and closes.
+[package]
+name = "octosense-pdf-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/pdfcraft revision (ADR 0013); default
+# features off to leave its MCP server out of the build.
+pdfcraft-automation = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

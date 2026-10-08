@@ -314,6 +314,9 @@ pub fn register_host_services() {
         // The vector engine service (ADR 0013): vectorcraft behind `vector.*`.
         #[cfg(feature = "app-hub")]
         octosense_vector_service::register();
+        // The pdf engine service (ADR 0013): pdfcraft behind `pdf.*`.
+        #[cfg(feature = "app-hub")]
+        octosense_pdf_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(wasm_functions)]
         crate::wasm_service::register();

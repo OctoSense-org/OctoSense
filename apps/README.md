@@ -278,6 +278,7 @@ mail/host-service/           octosense-mail-service, the `mail` host service (Ru
 mail/docs/                   Mail's plans (the email action card)
 calendar/host-service/       octosense-calendar-service, the `calendar` host service; resources/event.card, agenda.card
 news/host-service/           octosense-news-service, the `news` host service (News's data service)
+pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013; no bundle yet)
 <name>/bundle/tools.json     app tools: News, Mail, Calendar, Photos, Maps, YouTube, Camera
 ../crates/shell/src/glance_notice.rs   shared notice service; ../crates/shell/resources/glance/notice.card
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
