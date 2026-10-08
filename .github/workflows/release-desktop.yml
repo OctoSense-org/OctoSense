@@ -201,6 +201,19 @@ jobs:
           cd "$SRC"
           python tools/setup.py --check --cargo
           bash tools/check-shell-graph.sh -p octosense
+      - name: Check diagnostic encryption before the long build
+        run: |
+          cd "$SRC"
+          python - <<'PY'
+          import base64, importlib.util
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location("sealed", "tools/release-scan-sealed.py")
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          encrypted = module.seal(b"synthetic preflight", Path("tools/release-scan-diagnostic-public.pem"))
+          assert len(base64.b64decode(encrypted, validate=True)) == 512
+          print("Diagnostic RSA-OAEP encryption passed")
+          PY
       - name: Build and package, unsigned (paths remapped, resources and kernel bundled)
         run: |
           cd "$SRC"
@@ -228,6 +241,7 @@ jobs:
           cp receipt.json "upload/packages/OctoSense_${version}_${{ matrix.platform }}.receipt.json"
           ls -la upload/packages
       - name: Refuse private paths and names (the packages and their payloads)
+        id: privacy
         run: |
           cd "$SRC/target/octosense-package"
           # The packages (inside .dmg, .deb, .AppImage, .zip, the NSIS
@@ -235,6 +249,20 @@ jobs:
           # the staged resources.
           exe=octosense; [ "$RUNNER_OS" = Windows ] && exe=octosense.exe
           python "$SRC/tools/release-scan.py" upload/packages/* resources kernel "$SRC/target/release/$exe"
+      - name: Seal bounded failure diagnostics for the local reviewer
+        if: failure() && steps.privacy.outcome == 'failure'
+        run: |
+          exe=octosense; [ "$RUNNER_OS" = Windows ] && exe=octosense.exe
+          python "$SRC/tools/release-scan-sealed.py" --binary "$SRC/target/release/$exe" \
+            --public-key "$SRC/tools/release-scan-diagnostic-public.pem" \
+            --output "$RUNNER_TEMP/release-scan-sealed.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure() && steps.privacy.outcome == 'failure'
+        with:
+          name: sealed-release-diagnostic-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release-scan-sealed.json
+          if-no-files-found: error
+          retention-days: 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: octosense-desktop-unsigned-${{ matrix.platform }}
