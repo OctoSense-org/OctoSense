@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Real native host + isolated Chrome + synthetic HTTP backend acceptance.
+"""Real native host + isolated browser + synthetic HTTP backend acceptance.
 
-Run with a Python environment containing Playwright, and an existing Chrome.
+Use Playwright with an existing Chromium browser, or a loopback W3C WebDriver.
 No real provider sign-in is automated. All account creation occurs in the
 browser, and all token exchanges, vault persistence and revocation in the host.
 The private run directory is never an artifact to publish wholesale.
@@ -12,8 +12,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -59,6 +61,30 @@ class BrowserNative(Native):
                 time.sleep(.2)
 
 
+def failure_geometry(native):
+    """Bounded structural diagnostics; no widget text, URLs or log contents."""
+    snapshot = native.call('snap').get('s', [])
+    windows = native.call('s').get('w', [])
+    allowed_ids = {'status', 'oauth_status', 'account', 'identity', 'app', 'sheet'}
+    def dimensions(value, length):
+        return value if isinstance(value, list) and len(value) == length and all(
+            type(n) in (int, float) and -1e9 <= n <= 1e9 for n in value) else None
+    rows = []
+    for row in snapshot[:80]:
+        kind = row.get('ty', '')
+        rows.append({
+            'kind': kind if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', kind) else 'other',
+            'id': row.get('i') if row.get('i') in allowed_ids else None,
+            'rect': dimensions(row.get('r'), 4),
+        })
+    log = native.log_path.read_text(errors='replace')
+    return {'child_running': native.child.poll() is None,
+            'window_sizes': [dimensions(window.get('sz'), 2) for window in windows[:4]],
+            'snapshot_row_count': len(snapshot), 'rows': rows,
+            'log_markers': {marker: log.count(marker) for marker in
+                            ('ScriptError', 'callback error', 'on_render closure failed', 'panicked')}}
+
+
 def bundle(path, app, hub):
     path.mkdir()
     shutil.copyfile(ROOT / 'tools/connected-e2e/backend-login/main.splash', path / 'main.splash')
@@ -71,7 +97,7 @@ def bundle(path, app, hub):
     listing = {'schema': 1, 'subtitle': 'Internal browser login acceptance',
                'description': 'Private test fixture; not a published app. Placeholder listing artwork is not UX evidence.',
                'category': 'productivity', 'screenshots': ['fixture.svg'], 'icon': 'fixture.svg',
-               'platforms': ['macos'], 'publisher': {'name': 'Acceptance fixture',
+               'platforms': [{'darwin': 'macos', 'win32': 'windows'}.get(sys.platform, 'linux')], 'publisher': {'name': 'Acceptance fixture',
                'support': 'https://example.test/support', 'privacy_policy_url': 'https://example.test/privacy'},
                'age_rating': 'all', 'license': 'Apache-2.0'}
     (path / 'listing.json').write_text(json.dumps(listing, indent=2))
@@ -83,25 +109,36 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--installer', type=Path, required=True)
     parser.add_argument('--hub', type=Path, required=True)
-    parser.add_argument('--chrome', type=Path, required=True)
+    browser = parser.add_mutually_exclusive_group(required=True)
+    browser.add_argument('--chrome', type=Path)
+    browser.add_argument('--webdriver', help='Existing isolated W3C WebDriver endpoint for MiniBrowser or Edge')
+    parser.add_argument('--webdriver-browser', default='MiniBrowser', choices=['MiniBrowser', 'MicrosoftEdge'])
     parser.add_argument('--out', type=Path, required=True, help='NEW private run directory')
     args = parser.parse_args()
-    from playwright.sync_api import sync_playwright
+    if args.webdriver:
+        from webdriver_browser import automation
+        sync_playwright = lambda: automation(args.webdriver, args.webdriver_browser)
+    else:
+        from playwright.sync_api import sync_playwright
     os.umask(0o077)
     run = args.out.resolve()
     run.mkdir(mode=0o700, parents=True, exist_ok=False)
     os.environ['RINX_DATA_DIR'] = str(run / 'rinx')
     pixels = run / 'evidence'
     pixels.mkdir()
+    revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
+                              text=True, capture_output=True)
     receipt = {'schema': 1, 'result': 'running', 'started_utc': datetime.now(timezone.utc).isoformat(),
                'case': 'Real native backend login with synthetic server and actual browser callbacks',
                'provider': 'synthetic HTTP loopback; not live GitHub or Google',
                'vault': 'normal platform credential vault; no preseeded accounts or tokens',
-               'browser_handoff': 'host-only LinkLabel URL copied privately by test example; exact URL opened in fresh Chrome context; OS-default-browser click omitted',
+               'browser_handoff': 'host-only LinkLabel URL copied privately by test example; exact URL opened in a fresh browser context; OS-default-browser click omitted',
+               'browser_engine': args.webdriver_browser if args.webdriver else args.chrome.name,
                'installation': 'ephemeral fixture signing, actual Store install and prepared launch',
                'input': 'Makepad native instrument, default input acknowledgement, no input replay',
                'binary_sha256': sha(args.binary), 'installer_sha256': sha(args.installer),
-               'runtime_base_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+               'runtime_base_commit': revision.stdout.strip() if revision.returncode == 0 else None,
+               'source_identity': 'Git revision plus file hashes' if revision.returncode == 0 else 'Archived source: file hashes below are authoritative',
                'visual_review': 'pending', 'checks': [], 'instrument_events': []}
     source_files = [Path(__file__).resolve(), ROOT / 'tools/backend-login-fixture.py',
                     ROOT / 'tools/connected-e2e/native.py',
@@ -109,6 +146,8 @@ def main():
                     ROOT / 'crates/shell/examples/connected-app-host.rs',
                     ROOT / 'crates/shell/examples/connected_support/mod.rs', ROOT / 'Cargo.lock']
     source_files += sorted((ROOT / 'crates/oauth-service/src').rglob('*.rs'))
+    if args.webdriver:
+        source_files.append(ROOT / 'tools/connected-e2e/webdriver_browser.py')
     receipt['source_sha256'] = {str(p.relative_to(ROOT)): sha(p) for p in source_files}
     server_log = (run / 'server.log').open('w')
     server = subprocess.Popen(['python3', str(ROOT / 'tools/backend-login-fixture.py'),
@@ -133,6 +172,7 @@ def main():
 
         def start(app):
             nonlocal native, native_count
+            receipt['stage'] = 'native startup for ' + app
             if native:
                 receipt['instrument_events'] += native.actions
                 native.check_logs()
@@ -146,6 +186,7 @@ def main():
             return capture
 
         def state(expected):
+            receipt['stage'] = 'waiting for ' + expected
             native.wait(lambda: (native.find(identifier='status', kind='Label') or {}).get('t') == expected)
 
         def me():
@@ -162,6 +203,7 @@ def main():
             return next(value['handle'] for value in entries.values() if value['app_id'] == app)
 
         with sync_playwright() as playwright:
+            receipt['stage'] = 'launching isolated browser'
             browser = playwright.chromium.launch(executable_path=str(args.chrome), headless=True)
             context = browser.new_context(viewport={'width': 1000, 'height': 800})
             page = context.new_page()
@@ -280,6 +322,22 @@ def main():
     except Exception as error:
         receipt['result'] = 'FAIL'
         receipt['error_type'] = type(error).__name__
+        if native:
+            try:
+                receipt['failure_geometry'] = failure_geometry(native)
+                statuses = []
+                for row in native.rows():
+                    if row.get('i') not in ('status', 'oauth_status'):
+                        continue
+                    value = str(row.get('t', ''))
+                    if re.search(r'access_token|refresh_token|password|bearer|client_secret|code=', value, re.I):
+                        value = '[redacted status]'
+                    value = re.sub(r'https?://\S+', '[URL]', value)
+                    value = value.replace(str(run), '[fixture]').replace(str(ROOT), '[source]')
+                    statuses.append({'id': row['i'], 'text': value[:256]})
+                receipt['failure_native_status'] = statuses
+            except Exception:
+                receipt['failure_native_status'] = 'native snapshot unavailable'
         # Full exceptions may contain callback URLs. Keep raw failure only privately.
         (run / 'private-error.txt').write_text(str(error))
         if native:
@@ -287,7 +345,7 @@ def main():
                 native.capture('FAILURE')
             except Exception:
                 pass
-        raise
+        raise SystemExit('Backend acceptance failed; inspect the private error file') from None
     finally:
         if native:
             receipt['instrument_events'] += native.actions

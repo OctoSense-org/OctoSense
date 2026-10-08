@@ -128,6 +128,10 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `OCTOSENSE_REDUCE_MOTION=1` | 一览面板及其 toast 不再滑入滑出，保持静止（见[一览面板](#一览面板)）。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
+Linux X11/XWayland 和 Windows 的嵌入页面使用原生 WebKitGTK/WebView2 子视图。
+见[运行条件与验收](../docs/desktop-embedded-browser.zh-CN.md)；引擎缺失或原生 Wayland
+会明确报错。
+
 ## 应用图标
 
 `octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。

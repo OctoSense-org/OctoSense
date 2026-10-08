@@ -46,6 +46,38 @@ class PatternTests(unittest.TestCase):
         for leak in (b"my-send-queue.local", b"send-queue2.local", b"xsend-queue.local"):
             self.assertTrue(findings(b"at " + leak + b" end"), leak)
 
+    def test_only_the_proven_public_rinx_source_seam_is_ignored(self):
+        root = b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097/src"
+        first = root + b"/home/main_desktop_ui.rs"
+        second = root + b"/home/tombstone_footer.rs"
+        self.assertEqual(findings(first + second), [])
+        for leak in (
+            b"/home/main_desktop_ui.rs/private",
+            b"/home/someone/private",
+            first + b"/private",
+            first + second.replace(b"rinx-", b"other-"),
+            first + second.replace(b"4b89097", b"1234567"),
+            first + second.replace(b"tombstone_footer", b"unproven_file"),
+            (first + second).replace(b"/cargo/", b"/private/"),
+            first + second + b"\x00/home/main_desktop_ui.rs/private",
+        ):
+            self.assertTrue(findings(leak), leak)
+
+    def test_only_the_proven_mail_literal_seam_is_ignored(self):
+        prefix = b"Mail service is not "
+        apparent_host = b"registeredattemptssendoctosense.local"
+        self.assertEqual(findings(prefix + apparent_host + b"\x00"), [])
+        for leak in (
+            apparent_host,
+            b"https://" + apparent_host + b"/",
+            b"Other service is not " + apparent_host,
+            prefix + b"registeredattemptssendprivate.local",
+            prefix + b"registeredattemptsotheroctosense.local",
+            prefix + b"registeredattemptssendoctosense2.local",
+            prefix + apparent_host + b"\x00" + apparent_host,
+        ):
+            self.assertTrue(findings(leak), leak)
+
     def test_findings_are_masked_and_extra_patterns_apply(self):
         out = findings(b"/Users/someone/x")
         self.assertEqual(len(out), 1)

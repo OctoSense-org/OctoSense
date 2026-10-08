@@ -365,6 +365,10 @@ A phone runs the shell, the kernel, up to a dozen app agents and their apps at t
 
 The shell exists once, in `crates/shell` ([ADR 0001](docs/adr/0001-one-octosense-repository.md)): desktop and phone differ by target and features, not by copies of the source. CI fails if a shell source file appears in two crates.
 
+Desktop source builds also include [embedded web readers](docs/desktop-embedded-browser.md)
+for Linux X11/XWayland and Windows, with separate engine requirements and native
+acceptance gates. This does not change provider sign-in or native approval support.
+
 ## What it depends on
 
 Pinned exactly once, in the root `Cargo.toml` and the runtime locks:
@@ -376,6 +380,7 @@ Pinned exactly once, in the root `Cargo.toml` and the runtime locks:
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store, and the Card runner that contains every script app. |
 | [octos](https://github.com/octos-org/octos) | The agent kernel. Android bundles it in the APK as `liboctos.so`; the desktop runs the packaged `octos-kernel` beside the shell, checked against this revision (`tools/kernel-artifact.py --host --stage` builds it). |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, hosted as a native module. |
+| [OctosCode](https://github.com/octos-org/octoscode-app) | The coding client of the person's assistant, hosted as a native module that reaches the kernel through its port in the coding scope (ADR 0003, item 9). |
 
 Related, not build inputs: [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
 

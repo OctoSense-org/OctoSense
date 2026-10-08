@@ -38,7 +38,8 @@ Exit status 1 with one line per finding (the match is shown masked), 0 when
 clean. Findings are about the build, not the code: fix them with neutral
 build paths (see desktop/scripts/package.py). The only exceptions are known
 `.local` constants, exact names: the product's own (PRODUCT_LOCAL_NAMES) and
-its dependencies' (DEPENDENCY_LOCAL_NAMES).
+its dependencies' (DEPENDENCY_LOCAL_NAMES), plus the independently verified
+public-source seams in RINX_SOURCE_SEAM and MAIL_LITERAL_SEAM below.
 """
 import argparse
 import getpass
@@ -72,6 +73,27 @@ DEPENDENCY_LOCAL_NAMES = (
     # their own; when the next constant starts with a non-name byte, they
     # read as this name (seen in the Windows build).
     "send-queue.local",
+)
+
+# Rinx 4b89097's two public source filenames are adjacent Rust literals in
+# the Linux executable. The slash starting the second remapped path makes
+# the first filename look like a Linux account: /home/main_desktop_ui.rs/.
+# Admit only this proven pair, in the same neutral Cargo checkout/revision;
+# a standalone /home/main_desktop_ui.rs/private path must still fail.
+RINX_SOURCE_SEAM = re.compile(
+    rb"(?P<root>/cargo/git/checkouts/rinx-[0-9a-f]{16}/[0-9a-f]{7,40}/src)"
+    rb"/home/main_desktop_ui\.rs(?P<next>(?P=root))"
+    rb"/home/tombstone_footer\.rs"
+)
+
+# The Windows linker pools these four public Mail literals without NULs:
+# `Mail service is not registered`, `attempts`, `send`, `octosense.local`
+# (apps/mail/host-service/src/drafts.rs: configured() and add_attempt()).
+# The scanner otherwise reads the last word + three literals as one host.
+# Require the entire known sentence and exact sequence; the same apparent
+# hostname standing alone, or another hostname after the sentence, fails.
+MAIL_LITERAL_SEAM = re.compile(
+    rb"Mail service is not (?P<host>registeredattemptssendoctosense\.local)"
 )
 
 BASE_PATTERNS = [
@@ -124,8 +146,18 @@ def mask(match):
 
 def scan_bytes(data, where, patterns, findings):
     for label, regex in patterns:
+        source_seams = set()
+        if label == "Linux home directory":
+            source_seams = {
+                (seam.start("next") - len(b"/home/main_desktop_ui.rs"), seam.start("next") + 1)
+                for seam in RINX_SOURCE_SEAM.finditer(data)
+            }
+        elif label == "mDNS .local host name":
+            source_seams = {seam.span("host") for seam in MAIL_LITERAL_SEAM.finditer(data)}
         seen = set()
         for m in regex.finditer(data):
+            if (m.start(), m.end()) in source_seams:
+                continue
             if m.group(0) in seen:
                 continue
             seen.add(m.group(0))

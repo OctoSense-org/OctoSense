@@ -144,3 +144,67 @@ copy. No provider write occurs. Normal Notes admission/provider and soak drivers
 remain the commands above.
 
 Android developer-backend login has its own isolated package and real-form procedure: [Android backend acceptance](ANDROID-BACKEND.md). It does not authorize Google embedded login.
+
+## Native backend browser acceptance (2026-10-08)
+
+The separately built Linux desktop `.deb` passed eight package launch, render,
+resource and shutdown checks. See the immutable [package receipt and scope](LINUX-PACKAGE.md)
+([中文](LINUX-PACKAGE.zh-CN.md)); that run did not install an app or connect an account.
+
+`backend_login.py` uses a real host, browser and operating-system credential
+vault. Only the backend HTTP server and its fictional users are synthetic; no
+account or token is injected into the host. Linux and Windows use the supported
+external-browser route with an ephemeral loopback callback. Embedded WebReader
+acceptance is a separate test and does not establish backend sign-in.
+
+The [Linux receipt](evidence/linux-backend-native.json) records seven successful
+behaviors: browser registration/sign-in and PKCE callback, protected identity,
+rotated refresh recovery, native restart, logout, repeat login and isolation
+between two signed apps. MiniBrowser/WebKitGTK 2.52.6 and native Secret Service
+ran in an isolated display/session; all owned processes and fictional
+connections were cleaned up. The receipt binds the actual binary and source
+hashes. The native examples were rebuilt from `e9765575` with its current locked
+dependencies; all 36 recorded host/OAuth/fixture/lockfile hashes match the
+reviewed source. The final run includes the responsive fixture and bounded
+failure diagnostics; those two test files changed after the native build, with
+no Rust source changes. This validates the installed-app fixture, not the entire
+shell or OS-authenticated business writes.
+
+Build the host/installer as above and the pinned Hub CLI with
+`cargo build --locked --release -p octosense-app-hub --bin hub`. With an existing
+isolated WebKitWebDriver, invoke `backend_login.py` with `--binary`, `--installer`,
+`--hub`, `--webdriver http://127.0.0.1:PORT` and a new private `--out` directory.
+The Linux run used that interface with the real engine and normal host vault.
+`--chrome PATH` instead uses an existing Chromium browser through Playwright.
+The `Platform accounts` workflow exercises the Windows native vault and this
+same browser/callback journey using the runner's existing Edge installation.
+Both passed in [run 37730564370](https://github.com/OctoSense-org/OctoSense/actions/runs/37730564370).
+The [Windows receipt](evidence/windows-backend-37730564370.json) ([中文](WINDOWS-BACKEND.zh-CN.md)) records all
+seven backend behaviors, normal Credential Manager use and clean native/server
+shutdown. Its 35 recorded source/lockfile hashes match the reviewed files.
+The actual workflow checkout was merge commit
+`95d1da069c01cebdb585eca3e75354e58833abd8`, with PR head `723b202e`.
+That receipt preserves the original artifact hash and clarifies its incorrectly
+named checkout-revision field. It does not claim Windows visual UX acceptance
+or independent readback after credential deletion.
+
+The acceptance host copies its own consent-sheet link into a private test
+file, and the harness opens that exact URL in a fresh browser. **The OS default
+browser link click is not tested.** Synthetic Makepad clicks cannot approve a
+business write; these tests do not prove a physical press or OS-authenticated
+approval. The disposable fictional account is not Google/GitHub provider
+acceptance. Keep the entire run directory private: raw callback URLs and
+fictional tokens are not suitable for public artifacts. Publish only reviewed
+receipts.
+
+The Linux test did not install packages systemwide. Its disposable bwrap mount
+namespace overlays the owned extracted browser/vault package trees onto `/usr`,
+read-only. Therefore WebDriver's MiniBrowser path resolves to the extracted
+engine, not another system browser. The receipt includes both engine hashes.
+Linux/Windows account, read and local-draft methods are now advertised in runtime
+discovery; native write-review methods retain their physical-approval platform
+limits. `auth.backend.request` supports declared GETs there, while mutations
+still require the separately available native approval. Google authorization on
+Android remains unsupported by the current provider adapter; the OnePlus 6 test
+device has no Play Services. A method's platform support does not configure an
+OAuth client or approve a remote write.

@@ -365,6 +365,9 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 
 Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md)）：桌面端与手机端以目标平台和 feature 区分，而不是各持一份源码副本。若某个 Shell 源文件同时出现在两个 crate 中，CI 会失败。
 
+桌面源码构建新增 Linux X11/XWayland 和 Windows 的[嵌入式网页阅读器](docs/desktop-embedded-browser.zh-CN.md)，
+引擎运行条件与原生验收独立说明；不改变提供方登录和原生审批支持范围。
+
 ## 依赖
 
 只在根目录 `Cargo.toml` 和运行时锁文件中锁定一次：
@@ -376,6 +379,7 @@ Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/000
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店，以及隔离运行每个脚本应用的 Card runner。 |
 | [octos](https://github.com/octos-org/octos) | Agent 内核。Android 上 APK 以 `liboctos.so` 形式内置它；桌面端运行 Shell 旁随附的 `octos-kernel`，并核对其版本与此处固定的一致（由 `tools/kernel-artifact.py --host --stage` 构建）。 |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，作为原生模块托管。 |
+| [OctosCode](https://github.com/octos-org/octoscode-app) | 用户助手的编码客户端，作为原生模块托管，经由编码范围内的内核端口访问内核（ADR 0003 第 9 条）。 |
 
 相关但不参与构建：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（如何构建和发布应用）、[OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) 和 [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH)（其他渲染后端）、[OctoSense 网站](https://github.com/OctoSense-org/octosense-org.github.io)。
 

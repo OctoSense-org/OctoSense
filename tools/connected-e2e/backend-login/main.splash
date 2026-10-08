@@ -53,6 +53,8 @@ SolidView {width: Fill height: Fill flow: Down padding: 24 spacing: 10 draw_bg.c
     Label {width: Fill text: "Synthetic test account. Credentials stay in the browser and host vault." draw_text.color: #43536c}
     account := Label {width: Fill text: "No account" draw_text.color: #172033}
     identity := Label {width: Fill text: "No protected data" draw_text.color: #172033}
+    status := Label {width: Fill text: "Ready" draw_text.color: #233854}
+    ScrollYView {width: Fill height: Fill flow: Down spacing: 10
     Button {width: Fill height: 44 text: "Connect backend" on_click: || connect("backend", ["app.session"])}
     Button {width: Fill height: 44 text: "Connect in WebView" on_click: || connect_webview()}
     Button {width: Fill height: 44 text: "Connect GitHub" on_click: || connect("github", ["read:user"])}
@@ -61,5 +63,5 @@ SolidView {width: Fill height: Fill flow: Down padding: 24 spacing: 10 draw_bg.c
     Button {width: Fill height: 44 text: "Protected identity" on_click: || identity()}
     Button {width: Fill height: 44 text: "Disconnect" on_click: || disconnect()}
     Button {width: Fill height: 44 text: "Probe other app" on_click: || probe()}
-    status := Label {width: Fill text: "Ready" draw_text.color: #233854}
+    }
 }

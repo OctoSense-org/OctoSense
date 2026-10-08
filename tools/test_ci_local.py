@@ -224,6 +224,23 @@ class MergeEvidence(unittest.TestCase):
         self.assertIn("| phone.yml / home | Test | PASS |", body)
 
 
+class NativeRemoteEvidence(unittest.TestCase):
+    def test_unrelated_changes_do_not_query_native_runner(self):
+        with patch.object(merge, "gh_json") as query:
+            self.assertEqual(merge.remote_evidence_problems("b" * 40, ["docs/x.md"]), ([], []))
+            query.assert_not_called()
+
+    def test_only_success_on_the_exact_head_satisfies_native_gate(self):
+        head = "b" * 40
+        changed = ["tools/browser-smoke.py"]
+        good = {"headSha": head, "status": "completed", "conclusion": "success"}
+        for runs in ([], [dict(good, headSha="a" * 40)], [dict(good, status="in_progress")], [dict(good, conclusion="skipped")], [dict(good, conclusion="failure")]):
+            with self.subTest(runs=runs), patch.object(merge, "gh_json", return_value=runs):
+                self.assertTrue(merge.remote_evidence_problems(head, changed)[0])
+        with patch.object(merge, "gh_json", return_value=[good]):
+            self.assertEqual(merge.remote_evidence_problems(head, changed), ([], ["embedded-browser.yml"]))
+
+
 class LinuxHostPlan(unittest.TestCase):
     def where(self, workflows, linux_host):
         return {(w, j): where for w, j, _, where in ci.plan_jobs(workflows, linux_host)}

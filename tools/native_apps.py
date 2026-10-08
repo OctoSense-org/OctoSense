@@ -73,8 +73,13 @@ BASE_DEFAULT = ["octos-core"]
 # system toolbox (ADR 0002 §6), reading pages in its own WebView.
 SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"]}
 APP_KEYS = {"id", "feature", "crate", "source", "module", "bin", "bin_features", "default_features", "crate_features",
-            "implies", "hosting", "shells", "native_mobile", "sandbox", "storage", "agent"}
-REQUIRED_KEYS = APP_KEYS - {"feature", "bin_features"}
+            "implies", "hosting", "shells", "native_mobile", "sandbox", "storage", "agent", "kernel"}
+REQUIRED_KEYS = APP_KEYS - {"feature", "bin_features", "kernel"}
+# `kernel`: the port to the shell's octos kernel an app that is itself an
+# octos client gets (ADR 0003, "An app that is an octos client"): `coding`,
+# the coding scope the shell's kernel router enforces. Without it, a port the
+# app opens is closed.
+KERNEL_PORTS = ("coding",)
 # The workspace member a process launch selects with the app's crate, so the
 # build gets `bin_features` and the workspace lock (clients.rs `launch_plan`).
 PROCESS_APPS = "crates/process-apps/Cargo.toml"
@@ -210,6 +215,8 @@ def validate(data):
             problems += [f"{where}: {p}" for p in sandbox_problems(app["sandbox"])]
         if isinstance(app["storage"], dict):
             problems += [f"{where}: {p}" for p in storage_problems(app["storage"])]
+        if "kernel" in app and app["kernel"] not in KERNEL_PORTS:
+            problems.append(f"{where}: kernel must be one of {', '.join(KERNEL_PORTS)}")
         if isinstance(app["agent"], dict) and not isinstance(app["agent"].get("octos"), list):
             problems.append(f"{where}: agent.octos must be a list")
         if isinstance(app["agent"], dict):
@@ -633,6 +640,17 @@ def render_rust(apps):
         "    Any,",
         "}",
         "",
+        "/// The port to the shell's octos kernel an app that is itself an octos",
+        "/// client gets (`kernel`; ADR 0003).",
+        "#[derive(Clone, Copy, Debug, PartialEq, Eq)]",
+        "pub enum KernelPort {",
+        "    /// None: a port the app opens is closed.",
+        "    None,",
+        "    /// The coding scope the kernel router enforces: the app's own",
+        "    /// sessions, in workspaces the person picked.",
+        "    Coding,",
+        "}",
+        "",
         "/// One `native-apps.json` entry, as far as the shell reads it.",
         "#[derive(Debug)]",
         "pub struct NativeApp {",
@@ -682,6 +700,8 @@ def render_rust(apps):
         "    /// (`None`: the shell's defaults).",
         "    pub calls_per_turn: Option<u32>,",
         "    pub calls_per_day: Option<u32>,",
+        "    /// `kernel`: its port to the shell's kernel.",
+        "    pub kernel: KernelPort,",
         "}",
         "",
         "pub const APPS: &[NativeApp] = &[",
@@ -732,6 +752,7 @@ def render_rust(apps):
         for key in ("calls_per_turn", "calls_per_day"):
             value = f"Some({budget[key]})" if key in budget else "None"
             out.append(f"        {key}: {value},")
+        out.append(f"        kernel: KernelPort::{app.get('kernel', 'none').capitalize()},")
         out.append("    },")
     out += [
         "];",

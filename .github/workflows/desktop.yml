@@ -107,6 +107,8 @@ jobs:
           shared-key: native-host-api
       - name: Build the native acceptance host and pinned Hub CLI
         run: |
+          # Fresh child processes catch native response keys missing from the string lookup table.
+          cargo test --manifest-path .sources/makepad/Cargo.toml -p makepad-widgets splash_host::tests
           cargo build --locked --release -p octosense-shell --example host-api-lab --features acceptance-fixtures
           cargo build --locked -p octosense-app-hub --bin hub
       - name: Signed app tool calls a real OS permission API

@@ -332,7 +332,10 @@ def main(argv=None):
     if os_name == "linux":
         depends = debian_depends([binaries_dir / PACKAGE, *([sidecar.with_name(f"{KERNEL_NAME}-{triple}")] if sidecar else [])])
         if depends:
-            config.setdefault("deb", {})["depends"] = depends
+            # GTK/WebKit are loaded dynamically and do not appear in shlibdeps.
+            # Preserve explicit runtime dependencies from release.json.
+            deb = config.setdefault("deb", {})
+            deb["depends"] = list(dict.fromkeys([*deb.get("depends", []), *depends]))
     # Relative paths in the config resolve from its directory, so the
     # generated copy sits beside release.json (git-ignored).
     generated = PACKAGING / ".release.generated.json"
