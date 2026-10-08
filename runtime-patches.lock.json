@@ -45,7 +45,7 @@
       "CameraPreview correlates native events before the child retires its player generation; cancelling preparation permits an explicit retry without waiting for a stale release callback.",
       "Video numeric controls accept both integer and floating Splash arguments while refusing nonnumeric, nonfinite and out-of-range values; native acceptance exposed the integer-seek regression.",
       "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback.",
-      "A script can move a plain map and hear it (makepad branch octosense/map-script-api; pull request not yet open): fly_to, fit_route and clear_route, and the on_tap, on_long_press, on_marker and on_viewport callbacks on MapView. A script's fly_to and a pending fit give way to the person's drag; clear_route also drops a script route, its vehicle and a pending fit. On any map, a wheel that a scroll view over or around it already used no longer zooms it. Maps' route preview stays draggable; the plan, follow and drive cameras are unchanged."
+      "A script can move a plain map and hear it (makepad#113, branch octosense/map-script-api): fly_to, fit_route and clear_route, and the on_tap, on_long_press, on_marker and on_viewport callbacks on MapView. A script's fly_to and a pending fit give way to the person's drag; clear_route also drops a script route, its vehicle and a pending fit. On any map, a wheel that a scroll view over or around it already used no longer zooms it. Maps' route preview stays draggable; the plan, follow and drive cameras are unchanged."
     ],
     "stacked": [
       {
