@@ -398,6 +398,26 @@ pub(crate) fn desktop_stdio(program: PathBuf, core_dir: &Path, extra: &[(String,
 /// the kernel home (octos finds `<home>/.octos` from it), the a2app memory
 /// tree is a skill read-zone, and the per-session workspace hint is left out
 /// of prompts so the provider's prompt cache is reused across sessions.
+/// The phone kernel's memory profile, as environment knobs octos reads at
+/// start. Its defaults are a desktop's: a conversation compacts at 70 % of the
+/// model's window (about 734k tokens for deepseek-v4-flash, so never), a
+/// loaded session may hold 32 MiB of history and an idle session's runtime
+/// stays cached for 30 minutes. In a soak on a OnePlus 6 (2 Oct 2026) the
+/// kernel grew about 0.5 MB a turn and an app agent resent its whole 267 KB
+/// transcript on every turn. A launch `extra` with the same name wins.
+pub(crate) const PHONE_KERNEL_ENV: &[(&str, &str)] = &[
+    // Compact a conversation (the system agent's and every app agent's)
+    // once its items pass about 32k tokens, down to about 16k.
+    ("OCTOS_CONTEXT_COMPACT_THRESHOLD_TOKENS", "32768"),
+    ("OCTOS_CONTEXT_COMPACT_TARGET_TOKENS", "16384"),
+    // Drop an idle session's cached runtime after 10 minutes.
+    ("OCTOS_SESSION_CACHE_IDLE_TTL_SECS", "600"),
+    // Load at most 4 MiB of a session's history into memory, and seal its
+    // active file at 1 MiB so older segments stay on disk.
+    ("OCTOS_SESSION_LOAD_BUDGET_BYTES", "4194304"),
+    ("OCTOS_SESSION_SEGMENT_BYTES", "1048576"),
+];
+
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, String)]) -> Launch {
     let home = dirs::kernel_home(core_dir);
@@ -418,6 +438,7 @@ pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, S
         // prefix reuse): the workspace hint is the only volatile byte.
         ("OCTOS_OMIT_WORKSPACE_HINT".to_owned(), "1".to_owned()),
     ];
+    env.extend(PHONE_KERNEL_ENV.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
     // Route the kernel's HTTPS through a proxy when the device has no route
     // of its own (an `adb reverse` tunnel): launch extra `makepad.OCTOS_PROXY`.
     if let Ok(proxy) = std::env::var("MAKEPAD_OCTOS_PROXY") {
@@ -481,16 +502,26 @@ pub(crate) fn prepare(launch: &Launch, core_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Floor for `memory.max_inject_tokens` in the phone kernel's config.
+/// Floor for `memory.max_inject_tokens` when AppCard's a2app card memory is
+/// on the phone (`<home>/a2app`): octos's default, 2500, truncates its ~23k
+/// tree silently.
 pub const INJECT_BUDGET_TOKENS: u64 = 40_000;
 
+/// `memory.max_inject_tokens` on a phone without AppCard's card memory: the
+/// injected memory block is re-sent with every turn (and a changed block is
+/// appended as a new snapshot until the conversation compacts), so a phone
+/// keeps it small.
+pub const PHONE_INJECT_BUDGET_TOKENS: u64 = 4_000;
+
 /// Ensure the phone kernel's config (`<home>/.config/octos/config.json`)
-/// carries a `memory.max_inject_tokens` big enough for AppCard's a2app card
-/// memory (octos's default, 2500, truncates the ~23k tree silently) and
+/// carries a `memory.max_inject_tokens` sized for the phone and
 /// `appui.sessions_in_cwd: false` (else the composer session's transcripts
-/// land in the card tree). Merge-only: every other key is kept, a larger
-/// explicit budget and an explicit `sessions_in_cwd` win, and an unparseable
-/// file is left for the kernel to report. Moved from AppCard unchanged.
+/// land in the card tree). The budget is [`INJECT_BUDGET_TOKENS`] (a floor)
+/// when AppCard's a2app card memory exists, else [`PHONE_INJECT_BUDGET_TOKENS`]
+/// for an unset budget or for the 40k this function used to write everywhere.
+/// Merge-only: every other key is kept, any other explicit budget and an
+/// explicit `sessions_in_cwd` win, and an unparseable file is left for the
+/// kernel to report.
 pub fn ensure_kernel_config(home: &Path) {
     let path = home.join(".config/octos/config.json");
     let mut root = match std::fs::read(&path) {
@@ -504,20 +535,20 @@ pub fn ensure_kernel_config(home: &Path) {
         Err(_) => serde_json::json!({}),
     };
     let mut changed = false;
+    let appcard_memory = home.join("a2app").is_dir();
+    let mut budget = None;
     {
         let memory = root.as_object_mut().unwrap().entry("memory").or_insert_with(|| serde_json::json!({}));
         match memory.as_object_mut() {
-            Some(memory)
-                if memory
-                    .get("max_inject_tokens")
-                    .and_then(|v| v.as_f64())
-                    .map(|n| n < INJECT_BUDGET_TOKENS as f64)
-                    .unwrap_or(!memory.contains_key("max_inject_tokens")) =>
-            {
-                memory.insert("max_inject_tokens".into(), serde_json::json!(INJECT_BUDGET_TOKENS));
-                changed = true;
+            Some(memory) => {
+                let current = memory.get("max_inject_tokens").and_then(|v| v.as_f64());
+                let unset = !memory.contains_key("max_inject_tokens");
+                budget = inject_budget(current, unset, appcard_memory);
+                if let Some(budget) = budget {
+                    memory.insert("max_inject_tokens".into(), serde_json::json!(budget));
+                    changed = true;
+                }
             }
-            Some(_) => {}
             None => log::warn!("octos-core: kernel config `memory` is not an object; leaving it alone"),
         }
     }
@@ -538,10 +569,35 @@ pub fn ensure_kernel_config(home: &Path) {
     }
     match serde_json::to_vec_pretty(&root) {
         Ok(bytes) => match std::fs::write(&path, bytes) {
-            Ok(()) => log::info!("octos-core: set memory.max_inject_tokens={INJECT_BUDGET_TOKENS} in {}", path.display()),
+            Ok(()) => match budget {
+                Some(budget) => log::info!("octos-core: set memory.max_inject_tokens={budget} in {}", path.display()),
+                None => log::info!("octos-core: updated {}", path.display()),
+            },
             Err(e) => log::warn!("octos-core: write {}: {e}", path.display()),
         },
         Err(e) => log::warn!("octos-core: serialize kernel config: {e}"),
+    }
+}
+
+/// The `memory.max_inject_tokens` to write, if any, given the current value
+/// (`unset` when the key is absent) and whether AppCard's card memory exists.
+fn inject_budget(current: Option<f64>, unset: bool, appcard_memory: bool) -> Option<u64> {
+    if appcard_memory {
+        // AppCard's floor: raise an unset or smaller budget, keep a larger one.
+        return match current {
+            Some(n) if n >= INJECT_BUDGET_TOKENS as f64 => None,
+            Some(_) => Some(INJECT_BUDGET_TOKENS),
+            None if unset => Some(INJECT_BUDGET_TOKENS),
+            None => None,
+        };
+    }
+    match current {
+        // The 40k this function used to write on every phone becomes the
+        // phone budget; any other explicit value is the person's.
+        Some(n) if n == INJECT_BUDGET_TOKENS as f64 => Some(PHONE_INJECT_BUDGET_TOKENS),
+        Some(_) => None,
+        None if unset => Some(PHONE_INJECT_BUDGET_TOKENS),
+        None => None,
     }
 }
 
@@ -598,7 +654,18 @@ mod tests {
         assert_eq!(args, ["serve", "--stdio"]);
         assert!(env.contains(&("HOME".into(), "/f/octos-home".into())));
         assert!(env.contains(&("OCTOS_SKILLS_PATH".into(), "/f/octos-home/a2app".into())));
+        // The phone's memory profile is in the kernel's environment.
+        for (k, v) in PHONE_KERNEL_ENV {
+            assert!(env.contains(&((*k).into(), (*v).into())), "{k} missing");
+        }
         assert_eq!(cwd, Some(PathBuf::from("/f/octos-home")));
+        // A launch extra with the same name comes later, so it wins.
+        let extra = [("OCTOS_CONTEXT_COMPACT_THRESHOLD_TOKENS".to_owned(), "9000".to_owned())];
+        let Launch::Stdio { env, .. } = phone_stdio("/lib/liboctos.so".into(), Path::new("/f/octos-home/.octos"), &extra) else {
+            panic!("stdio")
+        };
+        let last = env.iter().rev().find(|(k, _)| k == "OCTOS_CONTEXT_COMPACT_THRESHOLD_TOKENS").unwrap();
+        assert_eq!(last.1, "9000");
         // Any other core dir is passed explicitly.
         let Launch::Stdio { args, .. } = phone_stdio("/lib/liboctos.so".into(), Path::new("/f/core"), &[]) else {
             panic!("stdio")
@@ -610,20 +677,48 @@ mod tests {
     fn kernel_config_is_merged_not_replaced() {
         let home = tmp("cfg");
         let path = home.join(".config/octos/config.json");
+        let read = |path: &Path| -> serde_json::Value { serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap() };
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, r#"{"keep":1,"memory":{"max_inject_tokens":2500.0}}"#).unwrap();
+        // No AppCard card memory: an unset budget gets the phone's.
+        std::fs::write(&path, r#"{"keep":1}"#).unwrap();
         ensure_kernel_config(&home);
-        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let v = read(&path);
         assert_eq!(v["keep"], 1);
-        assert_eq!(v["memory"]["max_inject_tokens"], INJECT_BUDGET_TOKENS);
+        assert_eq!(v["memory"]["max_inject_tokens"], PHONE_INJECT_BUDGET_TOKENS);
         assert_eq!(v["appui"]["sessions_in_cwd"], false);
-        // An operator's larger budget and explicit knob win.
-        std::fs::write(&path, r#"{"memory":{"max_inject_tokens":90000},"appui":{"sessions_in_cwd":true}}"#).unwrap();
+        // The 40k this used to write everywhere becomes the phone's budget ...
+        std::fs::write(&path, r#"{"memory":{"max_inject_tokens":40000}}"#).unwrap();
         ensure_kernel_config(&home);
-        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(v["memory"]["max_inject_tokens"], 90000);
+        assert_eq!(read(&path)["memory"]["max_inject_tokens"], PHONE_INJECT_BUDGET_TOKENS);
+        // ... and any other explicit budget and knob are the person's.
+        std::fs::write(&path, r#"{"memory":{"max_inject_tokens":2500.0},"appui":{"sessions_in_cwd":true}}"#).unwrap();
+        ensure_kernel_config(&home);
+        let v = read(&path);
+        assert_eq!(v["memory"]["max_inject_tokens"], 2500.0);
         assert_eq!(v["appui"]["sessions_in_cwd"], true);
+        // With AppCard's card memory, its floor applies; a larger budget wins.
+        std::fs::create_dir_all(home.join("a2app")).unwrap();
+        ensure_kernel_config(&home);
+        assert_eq!(read(&path)["memory"]["max_inject_tokens"], INJECT_BUDGET_TOKENS);
+        std::fs::write(&path, r#"{"memory":{"max_inject_tokens":90000}}"#).unwrap();
+        ensure_kernel_config(&home);
+        assert_eq!(read(&path)["memory"]["max_inject_tokens"], 90000);
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn inject_budget_follows_appcard_memory() {
+        let (phone, card) = (PHONE_INJECT_BUDGET_TOKENS, INJECT_BUDGET_TOKENS);
+        // Without AppCard's card memory.
+        assert_eq!(inject_budget(None, true, false), Some(phone), "unset");
+        assert_eq!(inject_budget(Some(40_000.0), false, false), Some(phone), "what this wrote before");
+        assert_eq!(inject_budget(Some(2_500.0), false, false), None, "explicit, kept");
+        assert_eq!(inject_budget(Some(90_000.0), false, false), None, "explicit, kept");
+        assert_eq!(inject_budget(None, false, false), None, "not a number: left for the kernel");
+        // With it: the floor.
+        assert_eq!(inject_budget(None, true, true), Some(card));
+        assert_eq!(inject_budget(Some(2_500.0), false, true), Some(card));
+        assert_eq!(inject_budget(Some(90_000.0), false, true), None);
     }
 
     #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]

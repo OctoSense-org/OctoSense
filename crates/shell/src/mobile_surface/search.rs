@@ -115,6 +115,7 @@ impl PhoneSurface {
         phone.search_focused = false;
         self.search_focus_pending = false;
         self.search_pointer = false;
+        self.search_press = None;
         if clear && !phone.search_query.is_empty() {
             input.set_text(cx, "");
             phone.search_query.clear();
@@ -160,12 +161,13 @@ impl PhoneSurface {
             return false;
         }
         let pointer = match event {
-            Event::MouseDown(e) => Some((e.abs, true, false)),
-            Event::MouseMove(e) => Some((e.abs, false, false)),
-            Event::MouseUp(e) => Some((e.abs, false, true)),
+            Event::MouseDown(e) => Some((e.abs, e.time, true, false)),
+            Event::MouseMove(e) => Some((e.abs, e.time, false, false)),
+            Event::MouseUp(e) => Some((e.abs, e.time, false, true)),
             Event::TouchUpdate(e) => e.touches.first().map(|t| {
                 (
                     t.abs,
+                    t.time,
                     t.state == makepad_platform::event::TouchState::Start,
                     t.state == makepad_platform::event::TouchState::Stop,
                 )
@@ -173,14 +175,26 @@ impl PhoneSurface {
             _ => None,
         };
         let mut consumed = false;
-        if let Some((point, down, up)) = pointer {
+        if let Some((point, time, down, up)) = pointer {
             let inside = self.search_rect.contains(point) && self.hit(point).is_none();
             if down && inside {
                 self.search_pointer = true;
+                self.search_press = Some((point, time));
+            }
+            // A pull down from the field is a pull on the list (mobile.rs):
+            // let it go, and the shell takes it from where it landed.
+            if let (true, Some((start, at))) = (self.search_pointer && !down && !up, self.search_press) {
+                if crate::mobile::search_field_releases(start, point, phone.search_scroll) {
+                    self.search_pointer = false;
+                    self.search_press = None;
+                    phone.search_field_pull = Some((start, at));
+                    return false;
+                }
             }
             consumed = inside || self.search_pointer;
             if up {
                 self.search_pointer = false;
+                self.search_press = None;
             }
             if !consumed {
                 return false;
