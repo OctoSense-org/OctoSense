@@ -10,9 +10,7 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 本仓库存放 Shell、Shell 服务、系统应用，以及由它们构建的三个产品。大多数原生应用来自其他仓库：OctoSense 的 Makepad fork、App Hub 和 Rinx（见[依赖](#依赖)）。
 
-脚本应用在桌面和手机端共用[自适应主题与布局](apps/README.zh-CN.md#共用外观)。
-[本机原生 UX 检查](tools/app-ux/README.zh-CN.md) 验证真实交互和保存状态；
-手机尺寸预览与真机验收分别记录。
+脚本应用在桌面和手机端共用[自适应主题与布局](apps/README.zh-CN.md#共用外观)。[本机原生 UX 检查](tools/app-ux/README.zh-CN.md)验证真实交互和保存状态；手机尺寸预览与真机验收分别记录。
 
 | 产品 | 是什么 | 位置 |
 | --- | --- | --- |

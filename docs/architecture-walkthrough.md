@@ -159,7 +159,7 @@ The relay routes every call by the tool's owner:
 | Owner | Executor |
 | --- | --- |
 | Script app, `implemented_by: "host-service"` | `HostServiceExecutor`: the app's host service (`calendar`, `mail`, `news`), the shell's notice service for `<app>.notify`, or the shared service a store app's tool names in `host_method` (`github`, `gmail`, `gcalendar`, `glance`). For `github`, `gmail` and `gcalendar` it injects the app's active connection. |
-| Script app, `implemented_by: "app"` | `ScriptAppExecutor` queues the call to App Hub’s admitted full-app runner. Its `app_tool(name, call_id)` hook runs on the UI thread in the existing Splash VM and storage jail. A closed app returns `app_not_running`. |
+| Script app, `implemented_by: "app"` | `ScriptAppExecutor` queues the call to App Hub's admitted full-app runner. Its `app_tool(name, call_id)` hook runs on the UI thread in the existing Splash VM and storage jail. A closed app returns `app_not_running`. |
 | Native app | Its open instance: `OctosPeer::serve_tools` on its peer link, else its AI bus service ("Open … first" when closed). An executor from `OctosAppService::set_tool_executor` comes first. |
 | `terminal.run` (system agent only) | The visible Terminal, over the AI bus, after a sheet with the exact command |
 | `files.list`, `files.read`, `files.search`, `dev.run` | The shell itself |
