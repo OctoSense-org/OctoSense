@@ -220,6 +220,19 @@ pub fn register_host_services() {
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        crate::ai_host::set_model_grants(|app, host_dir| {
+            crate::host_tools::script_apps::admitted_bundle(app)
+                .and_then(|(root, bundle)| {
+                    if root.join(".host") != host_dir { return Err("Model caller belongs to another app root".into()); }
+                    crate::host_tools::script_apps::from_bundle(&bundle)
+                })
+                .is_ok_and(|bundle| bundle.families.contains("model"))
+        });
+        crate::ai_host::set_model_scope(|app, _| Some(
+            crate::app_storage::lifecycle::contained_account(app)
+                .map(|account| crate::app_storage::account_hash(&account))
+                .unwrap_or_else(|| crate::app_storage::DEVICE.into())
+        ));
         crate::platform_services::register();
         octosense_markdown_editor::register();
         crate::connected_review::register();

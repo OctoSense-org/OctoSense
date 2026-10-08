@@ -33,6 +33,10 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   between devices by a PIN-protected `OCTOS1E` QR (camera, image or paste).
   Keys are typed and QRs drawn only on the host's own sheets; the app sees
   masked status.
+- **The `model` media APIs** use those host-held providers for bounded image,
+  speech, embedding and asynchronous video requests. Apps declare `model` and
+  exact host API versions; provider entitlement is checked when used. See the
+  [media contract and validation limits](ai-providers/host-service/MEDIA.md).
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
