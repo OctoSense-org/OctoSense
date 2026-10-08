@@ -592,7 +592,7 @@ Shell 的 `system-apps.json` 中加入它。
 | 仓库 | 作用 |
 | --- | --- |
 | [OctoSense](../README.zh-CN.md)（本仓库） | 内置这些应用的 Shell：[`desktop/`](../desktop/README.zh-CN.md) 和 [`phone/`](../phone/README.zh-CN.md) 中的 Home（独立启动器，或由 [`rom/`](../rom/README.zh-CN.md) 镜像预装）；`crates/` 中的 Shell 服务 |
-| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 目录、准入检查（`hub stamp`、`check`、`scan`、`sign-manifest`、`publish`）、`card-host`、Card runner 与宿主服务注册表，以及每个 Shell 都链接的 `octosense-app-hub-app` |
+| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、准入检查（`hub stamp`、`check`、`scan`、`publisher-verify`）、`card-host`、Card runner 与宿主服务注册表，以及每个 Shell 都链接的 `octosense-app-hub-app` |
 | [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | 如何设计、构建、检查和发布应用 |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript)、[OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad)、[makepad](https://github.com/OctoSense-org/makepad) | 语言与运行时 |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，原生模块；通过 `crates/app-peers` 访问助手 |

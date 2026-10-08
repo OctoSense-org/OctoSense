@@ -51,8 +51,8 @@ Connected App Hub samples share a host-owned GitHub/Google OAuth service, withou
 App Hub in desktop RC1 and this source build defaults to the GitHub-attested catalog and supports
 `publisher-github-v1` releases through app-contract 1.8.0. Developers request
 publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml).
-GitHub release proofs replace separate developer signing keys: the app's public
-repository is its publisher identity
+App Hub accepts only GitHub-attested releases, so a developer needs no publisher
+key: the app's public repository is its publisher identity
 ([App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.md)).
 A Hub admin still approves admission. The first catalog fetch needs a network connection;
 an old offline catalog is not converted into a GitHub proof. Custom local test

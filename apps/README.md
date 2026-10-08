@@ -727,7 +727,7 @@ plus an entry in each shell's `system-apps.json`.
 | Repository | Role |
 | --- | --- |
 | [OctoSense](../README.md) (this repository) | the shells that ship these apps: [`desktop/`](../desktop/README.md) and Home in [`phone/`](../phone/README.md) (standalone launcher or preinstalled by the [`rom/`](../rom/README.md) image); the shell services in `crates/` |
-| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `sign-manifest`, `publish`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
+| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `publisher-verify`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
 | [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | how to design, build, check and publish an app |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript), [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [makepad](https://github.com/OctoSense-org/makepad) | the language and runtime |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, a native module; reaches the assistant through `crates/app-peers` |

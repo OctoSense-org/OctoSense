@@ -258,9 +258,9 @@ App Hub 默认开启。从启动器打开 **App Hub**，浏览签名目录并安
 
 #### 发布前试用自己的应用
 
-正式分发时，先创建 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)，准备好后再补充 GitHub Release 证据。常规的 [GitHub 发布流程](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md)不要求开发者另外管理发布者密钥，因为应用的 GitHub 仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。仅有标签或 Release 不等于获得 Hub 批准。
+正式分发时，按 App Hub [提交指南](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md#5-生成最终字节)使用 GitHub Release 工作流：用 App Flow 的 `tools/octo publish-github <app-directory>` 安装工作流，把工作流与测试通过的应用一起 commit 到应用的公开仓库，再推送新的 `v<manifest.version>` 标签。然后把 Release 证据补充到 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 中；如果还没有这个 issue，请先创建。App Hub 只接受带 GitHub 证明的版本，你无需发布者密钥：应用的 GitHub 仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。仅有标签或 Release 不等于获得 Hub 批准。
 
-下文是**可选的本地旧版目录演练**。App Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)说明其兼容包与一次性目录密钥（`hub keygen`/`certify`/`publish`）；它们不是常规 GitHub 发布的前置要求。不要为这个旧流程重新写入已附加 GitHub 证明的发布包摘要。
+下文是**可选的本地演练**。演练使用旧格式的测试签名目录，由你用一次性的签名目录密钥（`hub keygen`、`certify`、`publish`）签名，不会向 App Hub 发布任何内容。演练不需要发布者密钥：请使用 Release 工作流构建的 Release 包，绝不要为已带 GitHub 证明的版本重新写入摘要。具体步骤见 App Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)。从这种签名目录安装带 GitHub 证明的版本尚**未验证**。
 
 准备好镜像后，替换下方两个带引号的值。始终使用全新的配置目录：已经缓存 v2 目录的库会拒绝降级到旧版目录。**这份修订后的启动配方已经过源码核对，但尚未在新兼容 Shell 二进制上运行。**
 
