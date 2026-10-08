@@ -6,7 +6,7 @@
 
 **Tech stack:** Makepad Splash (the app), Rust (the makepad `MapView` addition), Photon and Overpass (OpenStreetMap data), OSRM through `sys.navroute` (routes, unchanged).
 
-**Status:** design only, approved by the product owner on 2026-10-06. Nothing here is built; every check below is still to be run.
+**Status:** approved by the product owner on 2026-10-06, and built on the branch `feat/maps-place-first` by the [implementation plan](2026-10-06-maps-place-first.md). The plan and the branch's commits, not this design, are the record of what was built and checked; anything not run on a device stays **unverified**.
 
 ## Why
 
@@ -81,7 +81,7 @@ Callbacks are queued with `widget_to_script_call`, like GestureView's. They gran
 
 ## Data, storage and errors
 
-- **Search:** `net.http_request` GET to `photon.komoot.io/api/?q=…&limit=8&lang=en&lat=…&lon=…`. The position is the last `on_viewport` centre, else the GPS fix, else the default. The script reads:
+- **Search:** `net.http_request` GET to `photon.komoot.io/api/?q=…&limit=8&lang=en&lat=…&lon=…`. The position is the visible map's centre: the default at start, then each `on_viewport` centre. The script reads:
   - name and address parts;
   - the OpenStreetMap type and id;
   - `osm_key`/`osm_value`, which a small table maps to a category label (falling back to the raw value).
