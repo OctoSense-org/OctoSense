@@ -52,7 +52,7 @@ Alternatives considered:
   Its actions:
   - **Directions**;
   - **Save/Saved**;
-  - **Website**, which opens in the app's `WebReader`. A place's site is on no host list, so Maps adds the `web` grant (News and YouTube already hold it).
+  - **Website**, which opens in the app's `WebReader`. A place's site is on no host list, so Maps adds the `web` grant (News already holds it).
 
   There is no **Call** action: the runtime can't hand a `tel:` link to the phone, so the phone number is shown as text.
 
