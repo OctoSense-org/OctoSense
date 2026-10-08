@@ -52,7 +52,7 @@ From a host callback, which keeps the tool's background provenance, the tool del
 
 **Verified:** the `native-host-api` job of `.github/workflows/desktop.yml` ran these commands on a GitHub `macos-14` runner for the change that added this fixture, adding `--output` for its evidence directory, and they passed.
 
-**Not covered:** real model reasoning, approving a permission with a physical press, camera capture, Android, the unsupported-platform answers on Linux and Windows, and publishing a compatible host binary. Separate runtime regression tests on the real Splash VM cover detached timers, paused tasks, HTTP and WebSocket callbacks, and the gates in the native device helpers; this fixture covers chained host callbacks.
+**Not covered by this macOS run:** real model reasoning, approving a permission with a physical press, camera capture, Android, the unsupported-platform answers on Linux and Windows, and publishing a compatible host binary. Android has its [separate OnePlus 6 acceptance record](ANDROID.md). Separate runtime regression tests on the real Splash VM cover detached timers, paused tasks, HTTP and WebSocket callbacks, and the gates in the native device helpers; this fixture covers chained host callbacks.
 
 ## Reuse the pattern
 

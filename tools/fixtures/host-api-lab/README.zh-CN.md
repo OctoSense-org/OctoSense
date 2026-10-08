@@ -52,7 +52,7 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 
 **已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
 
-**未覆盖**：真实的模型推理、亲手点按批准权限、摄像头拍摄、Android、Linux 和 Windows 上“不支持该平台”的应答，以及发布兼容的宿主二进制文件。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
+**本次 macOS 运行未覆盖**：真实的模型推理、亲手点按批准权限、摄像头拍摄、Android、Linux 和 Windows 上“不支持该平台”的应答，以及发布兼容的宿主二进制文件。Android 的结果见[单独的 OnePlus 6 验收记录](ANDROID.zh-CN.md)。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
 
 ## 复用这一模式
 
