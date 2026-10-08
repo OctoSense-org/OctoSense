@@ -8,7 +8,7 @@ OctoSense ROM 是面向 OnePlus 6（一加 6，`enchilada`）的 LineageOS 22.2�
 
 Home 应用本身（也可作为普通 Home 应用安装在任意 Android 手机上）从 [`../phone/`](../phone/README.zh-CN.md) 构建。镜像使用这个以平台密钥签名的 APK，并加上具有系统权限的系统侧组件。
 
-> **要开发 OctoSense 应用？** 不需要 ROM。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始（先读 OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`）。目前还不支持把自己的应用包安装到手机上；想在发布前在 Shell 中看到它，请用指向本地目录的桌面端 Shell（见[桌面端 README](../desktop/README.zh-CN.md#发布前试用自己的应用)）。
+> **要开发 OctoSense 应用？** 不需要 ROM。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：先读 OctoSense App Flow（原 Design Flow）的 `AGENTS.md`，再读它的 `docs/QUICKSTART.md`。目前还不支持把自己的应用包安装到手机上；想在发布前在 Shell 中看到它，请用指向本地签名目录的桌面端 Shell（见[桌面端 README](../desktop/README.zh-CN.md#发布前试用自己的应用)）。
 
 ## 目录结构
 

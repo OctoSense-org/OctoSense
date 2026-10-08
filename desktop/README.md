@@ -10,7 +10,7 @@ English | [简体中文](README.zh-CN.md)
 
 The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent shell on top of your operating system, and the desktop packaging of the OctoSense repository (formerly the OctoSense-Desktop repository). It is one Makepad window that is the desktop: a launcher, a dock and tiles, hosting system apps and App Hub store apps as contained script programs, trusted native modules in-process, and Makepad developer programs as child processes. It gets its apps the same way the phone shell, [Home](../phone/README.md), does. Setup, the repository layout and CI are in the [root README](../README.md).
 
-**Building an OctoSense app?** You do not need this repository to build, check or publish one: start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then `docs/QUICKSTART.md`). Build this shell only if you want to see your app in the desktop shell before it is published ([Try your own app](#try-your-own-app-before-it-is-published)).
+**Building an OctoSense app?** You do not need this repository to build, check or publish one. Start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list: the `AGENTS.md` of OctoSense App Flow (formerly Design Flow), then its `docs/QUICKSTART.md`. Build this shell only if you want to see your app in the desktop shell before it is published ([Try your own app](#try-your-own-app-before-it-is-published)).
 
 ## Where it sits
 
@@ -20,7 +20,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | [`../apps/`](../apps/README.md) | News, Photos, Maps, Mail, Calendar, AI providers and YouTube bundles (Camera is phone-only), the Mail, Calendar and `llm` host services, the AppCard assistant (`octos-app`, opt-in, not shipped by default), and Reference. |
 | [`../crates/`](../crates/) | The shell itself (`crates/shell`, package `octosense-shell`, which this package wraps), its AI services (`crates/ai-host`), the octos kernel service (`crates/kernel`, package `octosense-kernel`) and the app-agent broker (`crates/app-peers`). |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store and the Card runner. Linked as the Git crate `octosense-app-hub-app`. |
-| [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | Where apps are designed, built and published to the App Hub. |
+| [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | Where apps are designed, built and published to the App Hub. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | The runtime release that pins Makepad and OctoScript. Checked out in `.sources/`. |
 | [makepad (OctoSense fork)](https://github.com/OctoSense-org/makepad) | The framework. Checked out in `.sources/makepad`. |
 | [octos](https://github.com/octos-org/octos) | The agent kernel, a shell service (`octos-core`, on by default): AI providers configures it, AppCard, Rinx and other consumers connect to it. One revision, pinned in the root `Cargo.toml`; the kernel itself is a separate binary (desktop: the packaged `octos-kernel` beside the shell, see [Build and run](#build-and-run), or `OCTOS_APP_CORE_BIN`; Android: bundled `liboctos.so`). |
@@ -257,13 +257,13 @@ New app features that need a password, PIN or token belong in a host service and
 
 ### Store apps (App Hub)
 
-App Hub is on by default. Open **App Hub** from the launcher to browse the signed catalog and install apps; installed apps appear in the launcher without a restart. The catalog origin defaults to the App Hub repository and can be pointed elsewhere with `OCTOSENSE_HUB`. To build and publish an app, start from [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).
+App Hub is on by default. Open **App Hub** from the launcher to browse the signed catalog and install apps; installed apps appear in the launcher without a restart. The catalog origin defaults to the App Hub repository and can be pointed elsewhere with `OCTOSENSE_HUB`. To build and publish an app, start from [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow).
 
 #### Try your own app before it is published
 
 For public distribution, open an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml), then add the GitHub release evidence when ready. The normal [GitHub publishing flow](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.md) requires no separate developer publisher key; a tag or Release alone is not Hub approval.
 
-The following is an **optional local legacy-catalog rehearsal**. Design Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) describes its compatibility bundle and throwaway catalog keys (`hub keygen`/`certify`/`publish`); these are not prerequisites for normal GitHub publishing. Never restamp a GitHub-attested release for this older recipe.
+The following is an **optional local legacy-catalog rehearsal**. App Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) describes its compatibility bundle and throwaway catalog keys (`hub keygen`/`certify`/`publish`); these are not prerequisites for normal GitHub publishing. Never restamp a GitHub-attested release for this older recipe.
 
 After preparing the mirror, replace the two quoted values below. Always use a fresh profile: a library that already cached the v2 catalog refuses a legacy downgrade. **This revised launch recipe is source-reviewed, not yet run against the newly compatible shell binary.**
 

@@ -92,9 +92,7 @@ cargo run --locked --release -p octosense-card-host --bin card-host -- --bundle 
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosense
 ```
 
-演示账户密码为 `demo`，发送留在演示环境。新商店应用在 OctoScript-App-Design-Flow 中开发，
-使用 App Hub 的准入/发布流程。[本地目录配方](../README.zh-CN.md#发布前试用自己的应用)
-用于发布前验证安装到 Shell 的路径。
+演示账户密码为 `demo`，发送留在演示环境。新商店应用在 OctoSense App Flow（原 Design Flow）中开发，使用 App Hub 的准入/发布流程。[本地签名目录配方](../README.zh-CN.md#发布前试用自己的应用)用于在发布前测试应用能否安装到 Shell。
 
 [`desktop/system-apps.json`](../system-apps.json) 和
 [`phone/system-apps.json`](../../phone/system-apps.json) 选择 `apps/` 中的 bundle。

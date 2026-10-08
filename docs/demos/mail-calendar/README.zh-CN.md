@@ -7,8 +7,7 @@
 预约后，Mail 会调用 Calendar 的工具，保存本地事件并发布 Calendar 自己的卡片。
 卡片内的 **Open Calendar** 打开真实 Calendar 应用中的同一条事件。
 
-这是系统应用的真实流程。Design Flow 的黑客松示例使用虚构的本地发件箱和日历，
-不能代替 Gmail 收信测试。
+这是系统应用的真实流程。OctoSense App Flow（原 Design Flow）中的黑客松示例使用虚构的本地发件箱和日历，不会重现 Gmail 的真实投递。
 
 ## 1. 获取完整源码
 
@@ -34,10 +33,7 @@ python3 tools/setup.py --check --cargo
 python3 tools/native_apps.py --check
 ```
 
-已有依赖仓库时，先按 [Set up](../../../README.md#set-up) 配置 source hub。
-setup 会准备固定版本的工作树并应用已提交补丁，不依赖开发者未提交的依赖修改。
-Cargo 会取得 App Hub 和内核版本；真实演示不需要额外检出旧 AppCard、
-OctoSense-mobile 或 Design Flow 仓库。
+已有依赖仓库时，先按 [Set up](../../../README.md#set-up) 配置 source hub。setup 会创建固定版本的工作树并打上仓库跟踪的补丁，不需要开发者带有未 commit 修改的依赖检出。Cargo 会取得 App Hub 和内核版本；真实演示不需要额外检出旧 AppCard、OctoSense-mobile 或 App Flow 仓库。
 
 ## 2. 构建包含内核的 Android 安装包
 

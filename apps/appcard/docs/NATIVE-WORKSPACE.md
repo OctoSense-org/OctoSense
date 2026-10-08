@@ -40,7 +40,7 @@ Before 2026-09-27 AppCard lived in the OctoSense-System-Apps repository, and
 the workspace was the parent of that checkout, with `makepad/`, `octoscript/`
 and `octoscript-makepad/` beside it.
 
-Mail's `scripts/setup_native.py` (in the design-flow harness) calls the same setup. Its default runtime root
+Mail's `scripts/setup_native.py` (in OctoSense App Flow, formerly Design Flow) calls the same setup. Its default runtime root
 is the organization workspace. `OCTOS_MAIL_NATIVE_ROOT` may select an isolated
 copy, but it must use the same AppCards runtime release and engine commits.
 The WASM builder also consumes this release in both `existing` and `isolated`
@@ -54,5 +54,5 @@ Android/desktop client and checks the resolved Makepad source graph. The old
 Native UI checks use standalone release binaries, Makepad's built-in HTTP
 instrument and hidden Metal windows. They do not use Studio. Close owned test
 instances through `/gq` and verify exit. See
-[the instrument runbook](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/flows/core/NATIVE-INSTRUMENT.md).
+[the instrument runbook](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/flows/core/NATIVE-INSTRUMENT.md).
 Historical evidence retains the source paths and hashes from its original run.

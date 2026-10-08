@@ -339,7 +339,7 @@ See the crate's
 [README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/crates/app-hub-app/README.md)
 (read the revision selected by the root `Cargo.toml`) and the [native design evidence](docs/design/app-hub/README.md).
 App authors start with
-[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).
+[OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (formerly Design Flow).
 
 ## Run on a desktop
 

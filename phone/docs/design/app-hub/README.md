@@ -19,10 +19,11 @@ pretending the requested dimensions were delivered. `intake/intake.json` records
 hashes, dimensions and uniform transforms.
 
 Reproduce the image-to-appcard intake from `home/`, using a checkout of
-OctoScript-App-Design-Flow (formerly Octoscript-AppCard) at `cbbda4da`:
+OctoSense App Flow (formerly Design Flow, and Octoscript-AppCard before that)
+at `cbbda4da`:
 
 ```sh
-python3 /path/to/OctoScript-App-Design-Flow/lab/image-to-appcard-flow/atlas.py \
+python3 /path/to/OctoSense-App-Flow/lab/image-to-appcard-flow/atlas.py \
   --manifest docs/design/app-hub/image-to-appcard-flow.json \
   --project docs/design/app-hub --output docs/design/app-hub/intake
 ```

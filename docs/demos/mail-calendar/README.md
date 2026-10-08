@@ -8,8 +8,9 @@ edit it, review it and optionally approve sending. An explicit Chat request lets
 Mail call Calendar's tools, create a local event and publish Calendar's own card.
 **Open Calendar** inside that card opens the same event in the Calendar app.
 
-This is the real system-app workflow. The Design Flow hackathon examples use
-fictional local outboxes and calendars; they do not reproduce Gmail delivery.
+This is the real system-app workflow. The hackathon examples in OctoSense App
+Flow (formerly Design Flow) use fictional local outboxes and calendars; they do
+not reproduce Gmail delivery.
 
 ## 1. Get the complete source
 
@@ -39,7 +40,7 @@ If you already have dependency clones, configure the source hub as described in
 [Set up](../../../README.md#set-up) before setup. It creates the pinned worktrees
 and applies tracked patches. No developer's dirty dependency checkout is needed.
 Cargo fetches the App Hub and kernel revisions; separate legacy AppCard,
-OctoSense-mobile or Design Flow checkouts are not required for this live demo.
+OctoSense-mobile or App Flow checkouts are not required for this live demo.
 
 ## 2. Build one Android package with its kernel
 

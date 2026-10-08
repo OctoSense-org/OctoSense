@@ -20,7 +20,7 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 | **OctoSense Home** | 手机 Shell，可作为普通 Home 应用安装在任意 Android 手机上（也支持 OpenHarmony 和 iOS 模拟器） | [`phone/`](phone/README.zh-CN.md) |
 | **OctoSense ROM** | 面向 OnePlus 6 的 LineageOS 22.2，预装 Home、具有系统权限的系统桥、Quickstep 和 SystemUI | [`rom/`](rom/README.zh-CN.md) |
 
-> **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) 开始。[`apps/`](apps/README.zh-CN.md) 中的系统应用就是完整的示例。只有想在发布前先在 Shell 里试用自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)）。
+> **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（原 Design Flow；先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) 开始。[`apps/`](apps/README.zh-CN.md) 中的系统应用就是完整的示例。只有想在发布前先在 Shell 里试用自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)）。
 
 Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使用返回手势。参见[手机手势说明](phone/README.zh-CN.md#手势)。
 
@@ -263,7 +263,7 @@ fn ask(){
 }
 ```
 
-在托管了内核的 Shell 中，第一次调用会请用户允许这个应用的 Agent。请把“不可用”当作正常状态处理：设备可能没有内核（iOS）或没有配置提供方，用户也可能拒绝了。这个示例和完整接口见 Design Flow 的 [AI-SERVICES 指南](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#最小调用示例与不可用状态)。
+在托管了内核的 Shell 中，第一次调用会请用户允许这个应用的 Agent。请把“不可用”当作正常状态处理：设备可能没有内核（iOS）或没有配置提供商，用户也可能拒绝了。这个示例和完整接口见 App Flow 的 [AI-SERVICES 指南](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#最小调用示例与不可用状态)。
 
 ### 应用要给 Agent 提供什么
 
@@ -388,7 +388,7 @@ Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/000
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，作为原生模块托管。 |
 | [OctosCode](https://github.com/octos-org/octoscode-app) | 用户助手的编码客户端，作为原生模块托管，经由编码范围内的内核端口访问内核（ADR 0003 第 9 条）。 |
 
-相关但不参与构建：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（如何构建和发布应用）、[OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) 和 [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH)（其他渲染后端）、[OctoSense 网站](https://github.com/OctoSense-org/octosense-org.github.io)。
+相关但不参与构建：[OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（如何构建和发布应用）、[OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) 和 [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH)（其他渲染后端）、[OctoSense 网站](https://github.com/OctoSense-org/octosense-org.github.io)。
 
 ## 环境准备
 

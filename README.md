@@ -22,7 +22,7 @@ saved state and actual interaction; phone-size previews remain separate from dev
 | **OctoSense Home** | The phone shell, an ordinary Home app for any Android phone (also OpenHarmony and the iOS simulator) | [`phone/`](phone/README.md) |
 | **OctoSense ROM** | LineageOS 22.2 for the OnePlus 6 with Home, the privileged system bridge, Quickstep and SystemUI preinstalled | [`rom/`](rom/README.md) |
 
-> **Building an app?** You don't need this repository to build, check or publish one. Start with [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (`AGENTS.md`, then `docs/QUICKSTART.md`) and [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). The system apps in [`apps/`](apps/README.md) are complete examples. Build the desktop shell from here only to try your app in a shell before you publish it ([PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)).
+> **Building an app?** You don't need this repository to build, check or publish one. Start with [OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (formerly Design Flow; read `AGENTS.md`, then `docs/QUICKSTART.md`) and [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). The system apps in [`apps/`](apps/README.md) are complete examples. Build the desktop shell from here only to try your app in a shell before you publish it ([PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)).
 
 Android Home supports page swipes from either side edge; apps and opened cards retain Back. See [phone gestures](phone/README.md#gestures).
 
@@ -268,7 +268,7 @@ fn ask(){
 }
 ```
 
-In a shell with a kernel, the first call asks the person to allow the app's agent. Treat "unavailable" as a normal state: the device may have no kernel (iOS) or no provider, or the person may have said no. This example and the rest of the API are in Design Flow's [AI-SERVICES guide](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md#a-minimal-call-and-handling-unavailable).
+In a shell with a kernel, the first call asks the person to allow the app's agent. Treat "unavailable" as a normal state: the device may have no kernel (iOS) or no provider, or the person may have said no. This example and the rest of the API are in App Flow's [AI-SERVICES guide](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md#a-minimal-call-and-handling-unavailable).
 
 ### What an app gives its agent
 
@@ -394,7 +394,7 @@ Pinned exactly once, in the root `Cargo.toml` and the runtime locks:
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, hosted as a native module. |
 | [OctosCode](https://github.com/octos-org/octoscode-app) | The coding client of the person's assistant, hosted as a native module that reaches the kernel through its port in the coding scope (ADR 0003, item 9). |
 
-Related, not build inputs: [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
+Related, not build inputs: [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
 
 ## Set up
 

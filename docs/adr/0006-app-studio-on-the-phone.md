@@ -2,14 +2,14 @@
 
 - **Date:** 2026-10-02
 - **Status:** Accepted (2026-10-03). Implementation has not started; milestone 1 comes first.
-- **Scope:** How an agent on the phone turns an image (a generated design or a screenshot of an existing app) into an OctoSense app or glance card, looks at its own result and improves it, entirely on the phone, at first in developer mode. Covers the inputs, the in-process renderer, the checks, the rules that can change without a build, the tools agents get, and what of the OctoScript App Design Flow moves to the phone. There is no compile in the loop and no Mac.
-- **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (§6 the `card_render` and `card_critique_payload` toolbox tools; §7 a card is rendered, critiqued and revised before it is published; milestone M6); [ADR 0004](0004-native-apps-hosting-and-peers.md) (app agents, host tools, approvals, §13 developer mode); [ADR 0005](0005-app-contract.md) (the app contract and bundles); [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (contained script apps); [Home ADR 0005](home/0005-settings-octoscript-controller.md) and [Home ADR 0006](home/0006-builtin-settings.md) (Settings and its developer options); App Hub's [`card-studio`](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/card-studio) crate and [skill](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/skills/card-studio); the [OctoScript App Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (`flows/image-to-card`, `flows/image-lib`); octos issue #1149, closed, which added the `image_generation` stub (its backend needs a new issue).
+- **Scope:** How an agent on the phone turns an image (a generated design or a screenshot of an existing app) into an OctoSense app or glance card, looks at its own result and improves it, entirely on the phone, at first in developer mode. Covers the inputs, the in-process renderer, the checks, the rules that can change without a build, the tools agents get, and what of OctoSense App Flow (formerly Design Flow) moves to the phone. There is no compile in the loop and no Mac.
+- **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (§6 the `card_render` and `card_critique_payload` toolbox tools; §7 a card is rendered, critiqued and revised before it is published; milestone M6); [ADR 0004](0004-native-apps-hosting-and-peers.md) (app agents, host tools, approvals, §13 developer mode); [ADR 0005](0005-app-contract.md) (the app contract and bundles); [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (contained script apps); [Home ADR 0005](home/0005-settings-octoscript-controller.md) and [Home ADR 0006](home/0006-builtin-settings.md) (Settings and its developer options); App Hub's [`card-studio`](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/card-studio) crate and [skill](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/skills/card-studio); [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (`flows/image-to-card`, `flows/image-lib`); octos issue #1149, closed, which added the `image_generation` stub (its backend needs a new issue).
 
 ## Context
 
 Making an OctoSense app or card from a picture works today only on a desktop:
 
-- **The OctoScript App Design Flow** is about 12,150 lines of Python tooling (about 16,000 with its tests), plus per-app examples. It runs on a Mac with cargo, Makepad Studio and App Hub's `card-host --remote`, and also needs Python 3.12 with numpy, OpenCV, Pillow and fontTools, Swift and Node. Its two image paths are:
+- **App Flow** is about 12,150 lines of Python tooling (about 16,000 with its tests), plus per-app examples. It runs on a Mac with cargo, Makepad Studio and App Hub's `card-host --remote`, and also needs Python 3.12 with numpy, OpenCV, Pillow and fontTools, Swift and Node. Its two image paths are:
   - the Sketch kit (`flows/kits/sketch`), which needs `sketchtool`, Swift and a licensed kit, and has its own gates (`gate_structure`, `gate_composition`, `gate_fill`, `gate_visual`);
   - image-to-card (`flows/image-to-card`, `flows/image-lib`): crop scenes from an image, read their text with Apple Vision OCR (through Swift), map regions to widgets, generate L0, render and compare. Its gate is `flows/image-lib/gate.py`: native geometry, OCR text, ink and colour checks, and the visual-review receipt.
 - **App Hub's `card-studio`** renders a card in a hidden `card-host --remote`, grabs a PNG, runs measured checks (hidden, clipped or truncated text, overflow, overlap, empty or failed states, fit, lint, realize) and builds a critique payload for a vision model. The checks and the payload are plain Rust that depends only on serde and serde_json. They read the remote instrument's snapshot and dump formats and card-host's widget ids, and the critique prompt is written for an L0 glance card. The rendering needs the remote instrument and a separate process.
@@ -115,7 +115,7 @@ The system toolbox's runner becomes the studio runner.
   - SVG checks, image size, cropping and PNG encoding.
 
   Large results are written to files and passed back as paths, because Octoscript's JSON values are capped at 64 KiB.
-- **What moves from the design flow to Octoscript** (rules and text, not pixels):
+- **What moves from App Flow to Octoscript** (rules and text, not pixels):
   - the role-first mapping policy (`semantics`, `core/policy`);
   - review records;
   - the code generation of image-to-card (`compile`, `extract`, `register`), without its desktop assumptions: fonts read from a `splash-makepad` checkout, artwork fetched from a local server, and the single 406×776 artboard;
@@ -185,7 +185,7 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 | Octoscript | `sort`, number formatting for scripts | S |
 | octos | An `image_generation` backend (a new issue; #1149 is closed); the tool on the external-client list; a media field on `peer/tool/result` | M |
 | Phone packaging | The developer build (`--dev-mode`), platform-signed on the ROM | S |
-| App Design Flow | The Sketch kit and its gates stay on the desktop; image-to-card Python retires as each part lands on the phone | — |
+| App Flow | The Sketch kit and its gates stay on the desktop; image-to-card Python retires as each part lands on the phone | — |
 
 ## Milestones
 
@@ -198,7 +198,7 @@ An octos change adds a media field to `peer/tool/result`, mapped onto octos's in
 ## Consequences
 
 - One implementation of checks and comparison for desktop and phone, so a card judged on a Mac and on a phone gets the same report.
-- The design flow's Python shrinks to the Sketch kit and desktop-only tools as the image-to-card parts move to Octoscript and Rust.
+- App Flow's Python shrinks to the Sketch kit and desktop-only tools as the image-to-card parts move to Octoscript and Rust.
 - The shell gains a renderer that can show any card offscreen. It is a new attack surface for script cards, which is why studio renders run without side effects.
 - Rules and templates change on the phone without a build, under the toolbox's digest and budget rules.
 - Developer mode gains the `studio.*` tools and one approval it never answers by itself.

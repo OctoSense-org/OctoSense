@@ -10,7 +10,7 @@
 
 OctoSense 提供可复用 OAuth 宿主服务，首先支持 GitHub 和 Google 适配器。无需创建 OctoSense 用户账户。提供商注册及凭据属于宿主；商店应用只获得绑定自身的不透明连接句柄及授权业务结果，不得到 token。
 
-首批消费者是在 App Design Flow 维护的三个普通 App Hub 包：GitHub Notes、Inbox Assistant 和 Google Calendar。ID 不使用 `os.*`，安装不依赖打开系统 Mail/Calendar。
+首批使用方是在 OctoSense App Flow（原 Design Flow）中维护的三个普通 App Hub 包：GitHub Notes、Inbox Assistant 和 Google Calendar。ID 不使用 `os.*`，安装不依赖打开系统 Mail/Calendar。
 
 ## 身份授权边界
 
@@ -42,7 +42,7 @@ Google Calendar 使用真实 Calendar API：选择日历、列举/创建/编辑�
 
 ## 交付与验收
 
-平台代码属于 OctoSense，能力/准入规则属于 App Hub，示例和入门流程属于 App Design Flow。通过兼容且固定版本的依赖图复用 Rinx 组件，不复制整个聊天应用或引入第二份 Makepad。
+平台代码属于 OctoSense，能力/准入规则属于 App Hub，示例和入门流程属于 App Flow。通过兼容且固定版本的依赖图复用 Rinx 组件，不复制整个聊天应用或引入第二份 Makepad。
 
 先通过确定性传输测试协议、身份隔离和冲突。然后使用临时签名目录在干净配置下安装精确包，用 Makepad instrument 验证可见交互，再检查真实提供商的获准远程结果。Windows/Linux 需在相应平台测试；Android 使用指定的 OnePlus 6。缺少客户端注册、用户授权或未执行的设备测试必须标为待完成。
 

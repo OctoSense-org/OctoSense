@@ -83,7 +83,7 @@ all remote writes still fail. Do not place real account configuration in this
 test directory. Close the owned process through its printed `/quit` endpoint.
 
 The companion sample and acceptance record live in
-`OctoScript-App-Design-Flow/examples/connected-apps/github-notes`. Actual OAuth,
+`OctoSense-App-Flow/examples/connected-apps/github-notes`. Actual OAuth,
 host approval, installed-app grants and a GitHub commit require an integrated
 OctoSense host; the fixture cannot validate them.
 

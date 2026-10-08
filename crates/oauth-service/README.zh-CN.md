@@ -228,7 +228,7 @@ cargo test --locked -p octosense-oauth-service --features host host_vault_accept
 
 这不验证提供商授权或亲手点按的发送审批，也不能证明旧 Mail 凭据适配器中无返回值的删除操作实际删掉了系统条目。测试不请求提供商，也不读取已有账户。
 
-测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、有限窗口分页、窗口移动、重复实例、ETag、DST、跨应用可用性、刷新提交竞态、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见 [Design Flow connected-apps](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/main/examples/connected-apps)。不要把 `card-host` 准入当作正在运行的提供商服务：普通 `card-host` 不提供 OAuth、Gmail、Calendar 或 octos 宿主。`connected-app-host` 是独立的私有配置测试宿主；不启动 Agent 内核，也不能代替生产安装验证。
+测试使用确定性传输及虚构账户，覆盖隔离、撤销、回调重放、刷新、冲突、有限窗口分页、窗口移动、重复实例、ETag、DST、跨应用可用性、刷新提交竞态、草稿版本、注入审批拒绝、发送不明、事件重试和持久化决定。示例原生测试证据与编写说明见 OctoSense App Flow（原 Design Flow）的 [connected-apps 示例](https://github.com/OctoSense-org/OctoSense-App-Flow/tree/main/examples/connected-apps)。不要把 `card-host` 准入当作正在运行的提供商服务：普通 `card-host` 不提供 OAuth、Gmail、Calendar 或 octos 宿主。`connected-app-host` 是独立的私有配置测试宿主；不启动 Agent 内核，也不能代替生产安装验证。
 
 ### 后端业务请求验证
 
