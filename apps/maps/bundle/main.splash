@@ -50,6 +50,7 @@ let recents = []
 let saved = []
 let shown_pins = []     // the places behind the browse map's pins, in pin order
 let shown_route = ""
+let frame_next = false  // Directions frames the next route it draws: on entering it, and on a new mode
 let finding = ""        // "" | "origin" | "stop": the search picks the start or a stop instead
 let stops = []          // up to two stops on the way, in order
 let view3d = true       // drive view: 3D follow camera, or the flat 2D map
@@ -651,7 +652,8 @@ fn toggle_save(){
 }
 // Saved places, and the open one, as pins on the browse map; `shown_pins`
 // is the list the pins were drawn from, so a pin's tap finds its place.
-// Directions and the drive show only the route's own pins.
+// Directions and the drive show only the route's own pins: `show` sets them
+// on entering Directions, and `draw_route` with each line it draws.
 fn show_pins(){
     if screen != "search" && screen != "place" { return }
     let open = nil
@@ -822,6 +824,9 @@ fn active_drive_map(){
 }
 fn show(s){
     screen = s
+    // Each screen draws its route afresh (`draw_route`): Directions and the
+    // drive draw on different maps, and Directions draws again the route
+    // that ‹ Back cleared, with the same key.
     shown_route = ""
     ui.search_panel.set_visible(s == "search" || s == "origin" || s == "stop")
     ui.place_panel.set_visible(s == "place")
@@ -830,8 +835,16 @@ fn show(s){
     ui.locate_box.set_visible(s == "search" && host.has("location"))
     ui.drive_box.set_visible(s == "drive")
     ui.drive_bar.set_visible(s == "drive")
+    // The route belongs to Directions and the drive; elsewhere the map is a
+    // map of places. clear_route leaves the route's pins: show_pins, below,
+    // puts the places' pins in their place.
+    if s == "search" || s == "place" { ui.browse_map.clear_route() }
     if s == "place" { fill_place() }
     if s == "route" {
+        // The route's own pins at once, so a place's pins don't stay while
+        // the line loads or when it fails; the line is framed once it comes.
+        ui.browse_map.set_route_markers(markers())
+        frame_next = true
         ui.rfrom.set_text(origin.name)
         ui.rto.set_text(place.name)
         ui.modes.render()
@@ -854,14 +867,19 @@ fn show(s){
     show_pins()
     tick()
 }
-fn set_mode(m){ mode = m; shown_route = ""; ui.modes.render(); tick() }
+fn set_mode(m){ mode = m; shown_route = ""; frame_next = true; ui.modes.render(); tick() }
 fn eta_field(){
     if mode == "walk" { return "walk" }
     if mode == "bike" { return "bike" }
     "min"
 }
 fn route_key(){ "" + origin.lat + "," + origin.lon + ">" + vias() + ">" + place.lat + "," + place.lon + ":" + mode }
-fn draw_route(map){
+// A route is drawn once per key, so a new start, stop or mode, or a fix that
+// moves the start, replaces the line. On the browse map (`fit`) it is framed
+// once, on entering Directions or changing the mode (`frame_next`), and not
+// each time the fix moves: after that the camera is the person's to drag
+// and zoom. The drive's maps have their own camera.
+fn draw_route(map, fit){
     let key = route_key()
     if shown_route == key { return }
     let line = sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "polyline", vias())
@@ -869,6 +887,13 @@ fn draw_route(map){
     if line == "" || line == "—" || line == "n/a" { return }
     map.set_nav_polyline(line)
     map.set_route_markers(markers())
+    if fit && frame_next {
+        // The framing's landing reads as the person's move in viewport_moved.
+        // That is harmless here: Directions has no list to close, and
+        // `centered` is already true (a card came first).
+        map.fit_route()
+        frame_next = false
+    }
     shown_route = key
 }
 fn progress(){
@@ -888,10 +913,10 @@ fn tick(){
         ui.reta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, eta_field(), vias()))
         ui.rdist.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km", vias()))
         ui.rfrom.set_text(origin.name)
-        draw_route(ui.browse_map)
+        draw_route(ui.browse_map, true)
     }
     if screen == "drive" {
-        draw_route(active_drive_map())
+        draw_route(active_drive_map(), false)
         let d = progress()
         let v = vias()
         ui.instr.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "instr", v))

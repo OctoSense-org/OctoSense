@@ -637,7 +637,7 @@ fn text_field(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn
 let widget = {set_visible: fn(v) {} set_text: fn(t) {} render: fn() {}}
 let ui = {results: widget search_panel: widget place_panel: widget route_panel: widget browse_box: widget
     locate_box: widget drive_box: widget drive_bar: widget details: widget
-    browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) } set_route_markers: fn(text) {}}
+    browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) } set_route_markers: fn(text) {} clear_route: fn() {}}
     pname: text_field("pname") pcat: text_field("pcat") paddr: text_field("paddr") pdist: text_field("pdist")
     save: text_field("save")}
 let host = {has: fn(capability) { false }}
@@ -671,7 +671,7 @@ let widget = {set_visible: fn(v) {} set_text: fn(t) {} render: fn() {}}
 let ui = {results: widget search: widget search_hint: widget search_panel: widget place_panel: widget
     route_panel: widget browse_box: widget locate_box: widget drive_box: widget drive_bar: widget
     finding_links: shown("finding_links") your_location: shown("your_location")
-    browse_map: {set_route_markers: fn(text) {}}}
+    browse_map: {set_route_markers: fn(text) {} clear_route: fn() {}}}
 let host = {has: fn(capability) { false }}
 let sys = {gps: fn(field) { 0 }}
 let log = []
@@ -846,8 +846,11 @@ log.push(outcomes)
 /// Maps' place card with the runtime stubbed. `ui`: each widget's text is
 /// `mod.texts[id]` and its visibility `mod.shown[id]`, the details' renders
 /// count in `mod.renders`, and the browse map's pins and flights are
-/// `mod.markers` and `mod.flights`. `sys`: a fix only with `mod.fix`, and
-/// every route field is `mod.line` ("—": the route is still loading).
+/// `mod.markers` and `mod.flights`. What is drawn on the browse map (its
+/// line, pins, framing and clearing) is logged in order in `mod.browse`, and
+/// on the drive's maps in `mod.drive`. `sys`: a fix only with `mod.fix`, at
+/// `mod.fix_lat`; every route field is `mod.line` ("—": the route is still
+/// loading), and the drive's figures are blank.
 /// `fs`: files are `mod.files[path]`, and
 /// every call is logged in `mod.io` (a read of a missing file raises, as the
 /// runtime's does). The clock is `mod.now`. Requests go as in SEARCH_STUBS:
@@ -866,7 +869,10 @@ mod.answers = []
 mod.during = nil
 mod.now = 1800000000
 mod.fix = false
+mod.fix_lat = 37.3350
 mod.line = "—"
+mod.browse = []
+mod.drive = []
 fn w(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn(v) { mod.shown[id] = v }
     render: fn() { if id == "details" { mod.renders = mod.renders + 1 } }} }
 let ui = {results: w("results") search: w("search") search_hint: w("search_hint") search_panel: w("search_panel")
@@ -874,12 +880,21 @@ let ui = {results: w("results") search: w("search") search_hint: w("search_hint"
     drive_box: w("drive_box") drive_bar: w("drive_bar") finding_links: w("finding_links") your_location: w("your_location")
     pname: w("pname") pcat: w("pcat") paddr: w("paddr") pdist: w("pdist") details: w("details") save: w("save")
     location_status: w("location_status") rfrom: w("rfrom") rto: w("rto") modes: w("modes") stop_rows: w("stop_rows")
-    reta: w("reta") rdist: w("rdist")
-    browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) } set_route_markers: fn(text) { mod.markers.push(text) }}}
+    reta: w("reta") rdist: w("rdist") drive_3d: w("drive_3d") drive_2d: w("drive_2d") views: w("views")
+    instr: w("instr") arrow: w("arrow") ndist: w("ndist") remain: w("remain")
+    browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) }
+        set_route_markers: fn(text) { mod.markers.push(text); mod.browse.push("pins " + text) }
+        set_nav_polyline: fn(text) { mod.browse.push("line " + text) }
+        fit_route: fn() { mod.browse.push("fit") } clear_route: fn() { mod.browse.push("clear") }}
+    drive_map: {set_route_markers: fn(text) { mod.drive.push("pins " + text) } set_nav_polyline: fn(text) { mod.drive.push("line " + text) }}
+    drive_map_2d: {set_route_markers: fn(text) { mod.drive.push("2d pins " + text) } set_nav_polyline: fn(text) { mod.drive.push("2d line " + text) }}}
 let host = {has: fn(capability) { false }}
-// No fix unless `mod.fix`; then downtown San Jose.
-let sys = {gps: fn(field) { if !mod.fix { return 0 }; if field == "lat" { return 37.3350 }; if field == "lon" { return -121.8850 }; return 1 }
-    navroute: fn(lat1, lon1, lat2, lon2, field, vias) { mod.line }}
+// No fix unless `mod.fix`; then downtown San Jose, or `mod.fix_lat` north.
+let sys = {gps: fn(field) { if !mod.fix { return 0 }; if field == "lat" { return mod.fix_lat }; if field == "lon" { return -121.8850 }; return 1 }
+    navroute: fn(lat1, lon1, lat2, lon2, field, vias) { mod.line }
+    navroutenum: fn(lat1, lon1, lat2, lon2, field, vias) { -1 }
+    navprog: fn(lat1, lon1, lat2, lon2, lat, lon, vias) { 0 }
+    navstep: fn(lat1, lon1, lat2, lon2, progress, field, vias) { "" }}
 fn time_now(){ mod.now }
 let fs = {
     exists: fn(path) { mod.io.push("exists " + path); return optional(mod.files, path, nil) != nil }
@@ -1286,6 +1301,100 @@ log.to_json()"#
             [true, 0, "Dropped pin"],
             ["route", "Corner Cafe", "Corner Cafe", 37.3349, -121.8851, 1],
             [true, "Corner Cafe", 1]
+        ])
+    );
+}
+
+#[test]
+fn maps_frames_a_route_once_and_draws_it_again_after_back_and_end() {
+    // Directions on the browse map: the route's own pins at once, the line
+    // drawn once per route and framed once, so the person can drag and zoom
+    // after; ‹ Back and Close clear it and put the places' pins back.
+    let code = r#"let pizza = {id: "" name: "Pizza" cat: "" label: "" lat: 37.1 lon: -121.1}
+saved = [{id: "W:9" name: "Saved" cat: "" label: "" lat: 37.2 lon: -121.2}]
+// What the step drew on the browse map and on the drive's maps, in order.
+fn drew(){
+    let out = [mod.browse mod.drive]
+    mod.browse = []
+    mod.drive = []
+    return out
+}
+let log = []
+open_place(pizza)
+drew()
+// Directions while the route loads: only the route's pins, no line yet.
+show("route")
+tick()
+log.push(drew())
+// The line comes: drawn and framed once, then left alone while it is the
+// same route.
+mod.line = "line-a"
+tick()
+tick()
+log.push(drew())
+// A new mode: drawn and framed once more.
+set_mode("walk")
+tick()
+log.push(drew())
+// A fix at the start changes nothing; a fix that moves the start draws its
+// new line, without framing it again.
+mod.fix = true
+tick()
+mod.fix_lat = 37.3351
+mod.line = "line-b"
+tick()
+tick()
+log.push(drew())
+// ‹ Back: the line goes, and the places' pins replace the route's.
+show("place")
+log.push(drew())
+// Directions again: the same route (the same key) drawn and framed again.
+show("route")
+log.push(drew())
+// Start: the drive's map draws it, and nothing is framed.
+show("drive")
+tick()
+log.push(drew())
+// End: back on the browse map, drawn and framed again.
+show("route")
+log.push(drew())
+// Choosing a stop keeps the route under the list; the route with the stop
+// is drawn and framed once.
+find_for("stop")
+log.push(drew())
+pick({name: "Stop" lat: 37.25 lon: -121.3})
+tick()
+log.push(drew())
+// A route that fails: the route's pins, with no line.
+mod.line = "n/a"
+remove_stop(0)
+tick()
+log.push(drew())
+// Close from the card: no route on the search screen, the saved pin only.
+show("place")
+close_place()
+log.push(drew())
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let route = "pins 37.335,-121.885,0;37.1,-121.1,2";
+    let moved = "pins 37.3351,-121.885,0;37.1,-121.1,2";
+    let with_stop = "pins 37.3351,-121.885,0;37.25,-121.3,1;37.1,-121.1,2";
+    let places = "pins 37.2,-121.2,1;37.1,-121.1,2";
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [[route], []],
+            [["line line-a", route, "fit"], []],
+            [["line line-a", route, "fit"], []],
+            [["line line-b", moved], []],
+            [["clear", places], []],
+            [[moved, "line line-b", moved, "fit"], []],
+            [[], ["line line-b", moved]],
+            [[moved, "line line-b", moved, "fit"], []],
+            [[], []],
+            [[with_stop, "line line-b", with_stop, "fit"], []],
+            [[moved], []],
+            [["clear", places, "clear", "pins 37.2,-121.2,1"], []]
         ])
     );
 }
