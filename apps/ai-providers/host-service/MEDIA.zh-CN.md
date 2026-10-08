@@ -19,6 +19,7 @@
 ```json
 {
   "capabilities": ["model", "runtime"],
+  "requires": ["host-api-v1"],
   "host_api": {
     "required": {"model.embeddings": 1},
     "optional": {"model.image": 1, "model.audio": 1, "model.video": 1}
