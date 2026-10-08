@@ -87,7 +87,7 @@ Glance 数据。独立的 Home 与测试 APK 各自保存账户、代理配置�
 
 同一个包内的 Mail、Calendar、News 等发布应用共用这一信息流。跨包迁移 Mail
 数据不会转移 Android Keystore 访问权：Gmail 加密凭据需要在目标 Home 中通过
-Mail 的 **Reconnect account（重新连接账户）**重新登录。使用相同账户、用户名和收件
+Mail 的 **Reconnect account**（重新连接账户）重新登录。使用相同账户、用户名和收件
 服务器设置，才能保留账户身份与已保存的草稿。
 
 `mail.publish_card` 发布的卡片只能是 L0：没有表达式，也没有脚本。Shell 会检查每个 `sys.dataset` 源都声明了非空的 `fields` 列表，并在 `data` 中为每个字段提供了值，还会检查各个源之间没有循环依赖。这项检查能发现缺失的绑定，发现不了错误的事实。之后 Shell 以邮件应用的身份发布卡片并发出通知；点按通知打开的正是这张卡片，手机上以全屏工作区显示。

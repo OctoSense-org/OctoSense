@@ -2,11 +2,11 @@
 
 [English](README.md) | 简体中文
 
-**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
+**初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
 [OctoSense](https://github.com/OctoSense-org)（运行在操作系统之上的 Agent 交互 Shell）的桌面端 Shell，也是 OctoSense 仓库中的桌面端打包（原为 OctoSense-Desktop 仓库）。它是一个 Makepad 窗口，这个窗口本身就是桌面：launcher、dock 和平铺窗格（tile）。系统应用和 App Hub 商店应用以隔离的脚本程序运行，受信任的原生模块在进程内运行，Makepad 开发者程序作为子进程运行。它获取应用的方式与手机 Shell [Home](../phone/README.zh-CN.md) 完全相同。环境准备、仓库结构和 CI 见[根目录 README](../README.zh-CN.md)。
 
-> **在整个系统中的位置。**桌面端是一个 Shell 进程，octos 内核是它的子进程（随附的 `octos-kernel`，或 `OCTOS_APP_CORE_BIN`）。App Hub、运行脚本应用的 Card runner 和 Rinx 在进程内运行；Terminal 作为独立进程运行，在 macOS 和 Linux 上运行在系统沙箱中（Windows 上尚未实现），通过 Shell 的 hub 连接。在 macOS 上，该沙箱中 `~/.cargo`、`~/.rustup` 和 OctoSense 源码目录是只读的，因此 `cargo install`、`rustup update` 以及构建 OctoSense 本身都要在其他终端里运行。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
+> **在整个系统中的位置**。桌面端是一个 Shell 进程，octos 内核是它的子进程（随附的 `octos-kernel`，或 `OCTOS_APP_CORE_BIN`）。App Hub、运行脚本应用的 Card runner 和 Rinx 在进程内运行；Terminal 作为独立进程运行，在 macOS 和 Linux 上运行在系统沙箱中（Windows 上尚未实现），通过 Shell 的 hub 连接。在 macOS 上，该沙箱中 `~/.cargo`、`~/.rustup` 和 OctoSense 源码目录是只读的，因此 `cargo install`、`rustup update` 以及构建 OctoSense 本身都要在其他终端里运行。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
 **要开发 OctoSense 应用？** 构建、检查和发布应用都不需要本仓库：请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始（先读 OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`）。只有想在发布前在桌面 Shell 中看到自己的应用时，才需要构建本 Shell（见[发布前试用自己的应用](#发布前试用自己的应用)）。
 

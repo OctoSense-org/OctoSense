@@ -47,8 +47,11 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.
-  Add the implementation before adding a tool declaration; `implemented_by:
-  "app"` still has no Card runner executor.
+  Add the implementation before adding a tool declaration. A host-service tool
+  needs its handler in the host service. An `implemented_by: "app"` tool needs
+  the app's `app_tool(name, call_id)` hook and `"requires": ["script-tools-v1"]`
+  in the manifest; it runs only while the app is open
+  ([ADR 0012](../docs/adr/0012-app-host-api-discovery.md)).
 - For a notification tool, follow `../crates/shell/src/glance_notice.rs`.
   Mail/News install `on_notify` callbacks; the shell's `NoticeService` serves
   Photos, Maps, YouTube and Camera. The fixed notice template lives in
