@@ -50,6 +50,11 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **The `film` host service** (`film/host-service`) is the pinned filmcraft
   video engine (ADR 0013) behind `film.*`: probe, frame-to-PNG and bounded
   exports through its own pure-Rust codecs — headless, offline, no bundle yet.
+- **The `effect` host service** (`effect/host-service`) is the effectcraft
+  motion-graphics engine (ADR 0013) behind `effect.*` for system apps:
+  project info, comp frames rendered to PNG, the engine's command catalog
+  and Lottie import/export, every file under the caller's `effect/` area;
+  no bundle yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link

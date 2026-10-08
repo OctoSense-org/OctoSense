@@ -308,6 +308,9 @@ pub fn register_host_services() {
         // offline only.
         #[cfg(feature = "app-hub")]
         octosense_film_service::register();
+        // The effect engine service (ADR 0013): effectcraft behind `effect.*`.
+        #[cfg(feature = "app-hub")]
+        octosense_effect_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(feature = "wasm-lab")]
         crate::wasm_service::register();

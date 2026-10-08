@@ -45,6 +45,7 @@ members = [
     "apps/sound/host-service",
     "apps/design/host-service",
     "apps/film/host-service",
+    "apps/effect/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -208,6 +209,7 @@ octosense-light-service = { path = "apps/light/host-service" }
 octosense-sound-service = { path = "apps/sound/host-service" }
 octosense-design-service = { path = "apps/design/host-service" }
 octosense-film-service = { path = "apps/film/host-service" }
+octosense-effect-service = { path = "apps/effect/host-service" }
 # The wordcraft document engine (ADR 0013): the pinned ymote fork, one revision.
 wordcraft-engine = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
 wordcraft-doc = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
@@ -236,6 +238,13 @@ designcraft-render = { git = "https://github.com/ymote/designcraft.git", rev = "
 filmcraft-engine = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
 filmcraft-codecs = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
 filmcraft-media = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
+# The effectcraft motion-graphics engine (ADR 0013): the pinned ymote fork, one
+# revision for the whole family (it pins filmcraft's codecs itself).
+effectcraft-engine = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-automation = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-media = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-expr = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-model = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
