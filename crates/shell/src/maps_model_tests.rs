@@ -318,17 +318,23 @@ fn maps_opens_websites_over_https() {
 fn maps_says_how_far_a_place_is() {
     let km = maps_model("[distance_km(37.3350, -121.8850, 37.3209796, -121.9486002)].to_json()");
     let km = km[0].as_f64().unwrap();
-    assert!((5.5..6.1).contains(&km), "{km} km downtown San Jose to Santana Row");
+    assert!((5.83..5.84).contains(&km), "{km} km downtown San Jose to Santana Row");
+    // The other side of the earth: half its circumference, not NaN. And
+    // next to the pole, where f32 rounding once gave NaN too.
+    let far = maps_model("[distance_km(37.335, -121.885, -37.335, 58.115) distance_km(90, 0, 89.99999, 180) < 0.01].to_json()");
+    let km_far = far[0].as_f64().unwrap();
+    assert!((20000.0..20016.0).contains(&km_far), "{km_far} km to the antipode");
+    assert_eq!(far[1], serde_json::json!(true), "a meter from the pole");
     let t = maps_model(r#"[distance_text(0.354) distance_text(2.44) distance_text(12.7) coords_text(37.33501, -121.88499)].to_json()"#);
     assert_eq!(t, serde_json::json!(["350 m", "2.4 km", "13 km", "37.335, -121.885"]));
     // A place to itself, the boundaries between meters, tenths of a
     // kilometer and whole kilometers, and a coordinate that rounds to zero
     // from below (not "-0").
     let edge = maps_model(
-        r#"[distance_km(37.335, -121.885, 37.335, -121.885) == 0 distance_text(0.994) distance_text(0.996) distance_text(9.96)
-            coords_text(-0.00001, 51.47791)].to_json()"#,
+        r#"[distance_km(37.335, -121.885, 37.335, -121.885) == 0 distance_text(0.994) distance_text(0.996) distance_text(0.99499999)
+            distance_text(9.96) coords_text(-0.00001, 51.47791)].to_json()"#,
     );
-    assert_eq!(edge, serde_json::json!([true, "990 m", "1 km", "10 km", "0, 51.4779"]));
+    assert_eq!(edge, serde_json::json!([true, "990 m", "1 km", "1 km", "10 km", "0, 51.4779"]));
 }
 
 #[test]
@@ -341,11 +347,15 @@ fn maps_asks_photon_near_the_visible_map() {
             "https://photon.komoot.io/reverse?lat=37.335&lon=-121.885&lang=en&limit=1"
         ])
     );
-    // What the reader typed stays inside `q`: `&` and `#` are percent-encoded.
-    let odd = maps_model(r#"[search_url("A&B #1", 37.33501, -121.88499)].to_json()"#);
+    // What the reader typed stays inside `q`: `&` and `#` are percent-encoded,
+    // and so is each byte of a letter outside ASCII.
+    let odd = maps_model(r#"[search_url("A&B #1", 37.33501, -121.88499) search_url("Café", 37.33501, -121.88499)].to_json()"#);
     assert_eq!(
         odd,
-        serde_json::json!(["https://photon.komoot.io/api/?q=A%26B%20%231&limit=8&lang=en&lat=37.335&lon=-121.885"])
+        serde_json::json!([
+            "https://photon.komoot.io/api/?q=A%26B%20%231&limit=8&lang=en&lat=37.335&lon=-121.885",
+            "https://photon.komoot.io/api/?q=Caf%C3%A9&limit=8&lang=en&lat=37.335&lon=-121.885"
+        ])
     );
 }
 

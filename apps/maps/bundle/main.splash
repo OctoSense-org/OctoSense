@@ -263,8 +263,9 @@ fn place_details(body){
     d
 }
 // A coordinate to 4 decimals (about 11 m): 37.33501 reads 37.335. The math
-// builtins work in f32, which still holds any coordinate to 4 decimals.
-// `+ 0` turns the -0 of a value just below zero into 0.
+// builtins work in f32: the result has 4 decimals, but a coordinate within
+// a meter of a half step may round the other way. `+ 0` turns the -0 of a
+// value just below zero into 0.
 fn round4(x){ round(x * 10000) / 10000 + 0 }
 fn coords_text(lat, lon){ "" + round4(lat) + ", " + round4(lon) }
 // Straight-line distance (km): Directions gives the road's.
@@ -272,13 +273,19 @@ fn distance_km(lat1, lon1, lat2, lon2){
     let dlat = radians(lat2 - lat1)
     let dlon = radians(lon2 - lon1)
     let a = sin(dlat / 2) * sin(dlat / 2) + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) * sin(dlon / 2)
+    // Rounding can push `a` just past 0 or 1, where sqrt or asin gives NaN.
+    if a < 0 { a = 0 }
+    if a > 1 { a = 1 }
     2 * 6371 * asin(sqrt(a))
 }
-// "350 m", "2.4 km", "13 km": tens of meters below 995 m (which would
-// read "1000 m"), tenths of a kilometer below 10 km.
+// "350 m", "2.4 km", "13 km": tens of meters below 1000 m, tenths of a
+// kilometer below 10 km. The unit follows the rounded value, so 999.99 m
+// reads "1 km", not "1000 m".
 fn distance_text(km){
-    if km < 0.995 { return "" + round(km * 100) * 10 + " m" }
-    if km < 10 { return "" + round(km * 10) / 10 + " km" }
+    let m = round(km * 100) * 10
+    if m < 1000 { return "" + m + " m" }
+    let tenths = round(km * 10) / 10
+    if tenths < 10 { return "" + tenths + " km" }
     "" + round(km) + " km"
 }
 // Photon's search, ranked near the visible map, and its reverse lookup
