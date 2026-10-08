@@ -21,7 +21,7 @@
   },
   "id": "org.octosense.samples.wasmprobe",
   "integrity": {
-    "bundle_blake3": "2dc9b724c9d3a9c909a9cb0e57a5409ea78f4835d4be12c708e03db791230aa2"
+    "bundle_blake3": "162037c17ea778ddfd413c212062d07ab85d209eca75344bea361ff5f3d76fa7"
   },
   "name": "Wasm isolation probe",
   "requires": [
