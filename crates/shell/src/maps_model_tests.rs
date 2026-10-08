@@ -718,6 +718,49 @@ for lat in [0 37.335 -45 60 78] {
 }
 
 #[test]
+fn maps_draws_every_map_from_the_world_archive_and_raises_buildings_in_3d() {
+    // The drive maps once built their tiles on the phone from Overpass, and
+    // the 3D one drew a flat, patchy map: every map now reads makepad's
+    // pre-baked world map, and the 3D drive map raises its buildings.
+    let maps: Vec<&str> = MAPS
+        .split("MapView{")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('}').unwrap()])
+        .collect();
+    assert_eq!(maps.len(), 3);
+    for map in &maps {
+        assert!(map.contains(r#"archive_url: "https://makepad.nl/maps/world-"#), "{map}");
+    }
+    let raised: Vec<bool> = maps.iter().map(|map| map.contains("buildings_3d: true")).collect();
+    let drive_3d: Vec<bool> = maps.iter().map(|map| map.contains(r#"nav_mode: "3d""#)).collect();
+    assert_eq!(raised, drive_3d);
+}
+
+#[test]
+fn maps_declares_only_the_hosts_it_asks() {
+    // Photon searches, OSRM routes (`sys.navroute`), Maps' own Overpass
+    // mirrors give a place's details and makepad.nl serves the maps.
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../../../apps/maps/bundle/manifest.json")).unwrap();
+    let mut declared: Vec<String> = manifest["network"]["hosts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|host| host.as_str().unwrap().to_string())
+        .collect();
+    let mut asked: Vec<String> = maps_model("OVERPASS.to_json()")
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|host| host.as_str().unwrap().to_string())
+        .collect();
+    asked.extend(["photon.komoot.io", "router.project-osrm.org", "makepad.nl"].map(String::from));
+    declared.sort();
+    asked.sort();
+    assert_eq!(declared, asked);
+}
+
+#[test]
 fn maps_keeps_the_way_back_above_the_list_while_choosing_a_start_or_a_stop() {
     // The list scrolls, and keeps its place when the screen changes: "◎ Your
     // location" and "‹ Back to route" sit above it, so they never scroll

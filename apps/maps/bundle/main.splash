@@ -1063,11 +1063,11 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
     drive_box := View{visible: false width: Fill height: Fill flow: Overlay
         drive_3d := View{width: Fill height: Fill
             drive_map := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0
-                center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
+                center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" buildings_3d: true debug_cam: false}
         }
         drive_2d := View{visible: false width: Fill height: Fill
             drive_map_2d := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "2d" nav_period: 100 nav_route_width: 11.0 zoom: 16.0 min_zoom: 3.0 max_zoom: 19.0
-                center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
+                center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false}
         }
     }
     View{width: Fill height: Fill flow: Down padding: Inset{left: 10 right: 10 top: 10 bottom: 16}
