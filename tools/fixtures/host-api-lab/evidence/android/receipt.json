@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "platform": "android",
+  "model": "ONEPLUS A6003",
+  "android": "15",
+  "package": "dev.makepad.octosense.hostapilab",
+  "apk_sha256": "14b3dd6ea65338927da3f321e359f284dd4cc422fcc72340f82884530283ea65",
+  "personal_accounts_used": false,
+  "model_started": false,
+  "checks": {
+    "signed_native_android_install": true,
+    "real_script_tool_completed": true,
+    "bound_device_account": true,
+    "native_camera_status": true,
+    "declared_capability_is_not_consent": true,
+    "runtime_api_discovery": true,
+    "uncompiled_rust_function_refused": true,
+    "undeclared_microphone_refused": true,
+    "background_permission_prompt_refused": true,
+    "no_native_approval_sheet": true,
+    "cross_account_refused": true,
+    "undeclared_tool_refused": true,
+    "invalid_arguments_refused": true,
+    "closed_tool_endpoint_refused": true
+  },
+  "passed": true,
+  "not_verified": [
+    "model or peer relay consent",
+    "physical OS permission approval",
+    "camera capture"
+  ],
+  "owned_package_stopped": true,
+  "runtime_tree": "7133ac8e40a37402cb30f623e613683ca2c54f91",
+  "tested_source_base": "9f8ce11c7cc890aa77131821c42a0ae61b46fc54",
+  "fixture_source": "Android adaptation in this change"
+}

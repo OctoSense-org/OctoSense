@@ -31,6 +31,7 @@ members = [
     "crates/oauth-service",
     "crates/markdown-editor",
     "crates/browser-smoke",
+    "crates/host-api-smoke",
     "crates/wasm-host",
     "apps/reference",
     "apps/news/host-service",
