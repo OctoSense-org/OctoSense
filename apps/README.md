@@ -62,7 +62,7 @@ repository. Start at the [OctoSense-org profile](https://github.com/OctoSense-or
 reading list: the `AGENTS.md` of OctoSense App Flow (formerly Design Flow),
 then its `docs/QUICKSTART.md`. Read the bundles here as worked examples
 (`apps/<name>/bundle/main.splash`). To run one next to your app, clone the
-OctoSense repository into the same workspace and, from your App Flow checkout:
+OctoSense repository into the same workspace, then run this from your App Flow checkout:
 `tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`
 (`--no-stamp` leaves the checkout unmodified; Mail needs a shell, see below).
 

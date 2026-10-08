@@ -105,7 +105,7 @@ Beside the manifest, a bundle carries `listing.json`: subtitle, description, cat
 1. Where the catalog and artifacts are hosted, which decides offline and restricted-network behaviour.
 2. The freshness window for a cached catalog, and what an app does when it lapses mid-use.
 3. Whether the store surfaces per-app usage (network hosts contacted, storage used) from the runtime, which requires the enforcement points of ADR 0002 phase 2 to report as well as refuse.
-4. How a publisher proves identity at first registration, beyond holding a key. *(2026-10-08: answered by App Hub [ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.md): with a GitHub-attested release from the app's public repository.)*
+4. How a publisher proves identity at first registration, beyond holding a key. *(2026-10-08: App Hub [ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.md) answers this: a publisher proves its identity with a GitHub-attested release from the app's public repository.)*
 5. Whether script apps join cards in the first version of the hub, or whether the hub ships card-only until per-app vocabulary exists.
 
 ## Implementation note

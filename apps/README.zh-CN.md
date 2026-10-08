@@ -50,7 +50,7 @@ OctoSense-System-Apps 仓库（已归档）。
 [appcard/AGENTS.md](appcard/AGENTS.md)，它们在仓库根目录的
 [AGENTS.md](../AGENTS.md) 基础上补充。
 
-**要开发自己的应用？** 不需要构建或修改本仓库。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：先读 OctoSense App Flow（原 Design Flow）的 `AGENTS.md`，再读它的 `docs/QUICKSTART.md`。把这里的应用包当作完整示例来读（`apps/<name>/bundle/main.splash`）。想在自己的应用旁边运行其中一个：把 OctoSense 仓库克隆到同一个工作区，然后在 App Flow 检出目录中执行 `tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`（`--no-stamp` 不会改动检出；Mail 需要在 Shell 中运行，见下文）。
+**要开发自己的应用？** 不需要构建或修改本仓库。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：先读 OctoSense App Flow（原 Design Flow）的 `AGENTS.md`，再读它的 `docs/QUICKSTART.md`。把这里的应用包当作完整示例来读（`apps/<name>/bundle/main.splash`）。想在自己的应用旁边运行其中一个：把 OctoSense 仓库克隆到同一个工作区，然后在 App Flow 检出目录中执行 `tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`（`--no-stamp` 不会改动检出目录；Mail 需要在 Shell 中运行，见下文）。
 
 ## 应用一览
 

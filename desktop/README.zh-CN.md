@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-**下载：**[桌面版 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) 支持当前 App Hub 目录和带 GitHub 证明的应用包。请选择与操作系统和架构对应的文件，并核对发布说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
+**下载：**[桌面版 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) 支持当前的 App Hub 签名目录和带 GitHub 证明的应用 Release。请选择与操作系统和架构对应的文件，并核对发行说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
@@ -134,7 +134,7 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 
 ## 应用图标
 
-`octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。工作区的 Cargo 环境配置会为普通 `cargo run`/`cargo build` 嵌入桌面图标。两个包还都提供 PNG、ICO 和 ICNS 文件，供锁定版本的 `cargo-makepad desktop` 自动发现，用于 macOS 应用包、Windows 可执行文件资源和 Linux 桌面入口。发行包继续使用 `packaging/icons/`。
+`octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。工作区的 Cargo 环境配置会为普通 `cargo run`/`cargo build` 嵌入桌面图标。两个包还都提供各尺寸的 PNG 以及 ICO 和 ICNS 文件，供锁定版本的 `cargo-makepad desktop` 自动发现，用于 macOS 应用包、Windows 可执行文件资源和 Linux 桌面入口。发行包继续使用 `packaging/icons/`。
 
 两个包的 Android 构建都包含各密度的传统图标、自适应图标和 Android 13 主题图标。两个包都提供不透明、尺寸正确的 iPhone/iPad 图标资源目录；Home 的 OpenHarmony 构建脚本还会替换框架的应用、分层启动器和启动窗口图标。各应用目标目前能否构建成功，不受这些资源影响。
 
@@ -146,7 +146,7 @@ python3 desktop/packaging/make_icons.py --check
 python3 -m unittest discover -s tools -p test_app_icons.py
 ```
 
-已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。Home 已在 Pixel 7 Pro / Android 17 上全新安装，应用信息页显示品牌图标，应用也能正常启动。其他平台安装后的外观、Android 主题图标模式及 Windows/Linux 桌面集成仍**未经验证**。
+已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。Home 已在 Pixel 7 Pro / Android 17 上全新安装，应用信息页显示品牌图标，应用也能正常启动。其他平台安装后的外观、Android 主题图标模式及 Windows/Linux 桌面集成仍**未验证**。
 
 ## 发布构建
 
@@ -244,11 +244,11 @@ App Hub 默认开启。从启动器打开 **App Hub**，浏览签名目录并安
 
 #### 发布前试用自己的应用
 
-正式分发时，按 App Hub [提交指南](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md#5-生成最终字节)使用 GitHub Release 工作流：用 App Flow 的 `tools/octo publish-github <app-directory>` 安装工作流，把工作流与测试通过的应用一起 commit 到应用的公开仓库，再推送新的 `v<manifest.version>` 标签。然后把 Release 证据补充到 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 中；如果还没有这个 issue，请先创建。App Hub 只接受带 GitHub 证明的版本，你无需发布者密钥：应用的 GitHub 仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。仅有标签或 Release 不等于获得 Hub 批准。
+正式分发时，按 App Hub [提交指南](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md#5-生成最终字节)使用 GitHub Release 工作流：用 App Flow 的 `tools/octo publish-github <app-directory>` 安装工作流，把工作流与测试通过的应用一起 commit 到应用的公开仓库，再推送新的 `v<manifest.version>` 标签。然后把 Release 证据补充到 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 中；如果还没有这个 issue，请先创建。App Hub 只接受带 GitHub 证明的 Release，因此你无需发布者密钥：应用的 GitHub 仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。仅有标签或 Release 不等于获得 Hub 批准。
 
-下文是**可选的本地演练**。演练使用旧格式的测试签名目录，由你用一次性的签名目录密钥（`hub keygen`、`certify`、`publish`）签名，不会向 App Hub 发布任何内容。演练不需要发布者密钥：请使用 Release 工作流构建的 Release 包，绝不要为已带 GitHub 证明的版本重新写入摘要。具体步骤见 App Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)。从这种签名目录安装带 GitHub 证明的版本尚**未验证**。
+下文是**可选的本地演练**。演练使用旧格式的测试签名目录，由你用一次性的签名目录密钥（`hub keygen`、`certify`、`publish`）签名；整个演练不会向 App Hub 发布任何内容。演练不需要发布者密钥：请使用 Release 工作流构建的 Release pack，绝不要为带 GitHub 证明的 Release 重新写入摘要。具体步骤见 App Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)。从这种签名目录安装带 GitHub 证明的 Release 尚**未验证**。
 
-准备好镜像后，替换下方两个带引号的值。始终使用全新的配置目录：已经缓存 v2 目录的库会拒绝降级到旧版目录。**这份修订后的启动配方已经过源码核对，但尚未在新兼容 Shell 二进制上运行。**
+准备好镜像后，替换下方两个带引号的值。始终使用全新的配置目录：已经缓存 v2 签名目录的应用库会拒绝降级到旧格式的签名目录。**这份修订后的启动配方已经过源码核对，但尚未在新兼容 Shell 二进制上运行。**
 
 ```sh
 REHEARSAL_MIRROR='/absolute/path/to/your/test-mirror'

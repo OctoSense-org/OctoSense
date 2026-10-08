@@ -4,7 +4,7 @@ English | [简体中文](desktop-embedded-browser.zh-CN.md)
 
 Since desktop 0.1.0-rc.1, `WebReader` works on Linux and Windows desktops. `WebReader` is the Splash widget that shows a web page inside a script app. On these platforms it embeds the system's own browser engine as a child view of the Makepad window:
 
-- **Linux under X11 or XWayland** (the X server that Wayland desktops run for X11 programs): WebKitGTK.
+- **Linux under X11 or XWayland** (XWayland is the X server that Wayland desktops run for X11 programs): WebKitGTK.
 - **Windows:** Microsoft Edge WebView2.
 
 It never opens an external browser and does not use CEF (the Chromium Embedded Framework). Earlier releases, such as `desktop-v0.1.0-beta.2`, cannot show embedded pages on Linux or Windows. The feature is part of the host's runtime, so installing a newer app does not add it to an older host.
@@ -28,7 +28,7 @@ Apps use `WebReader` as before, with the same capability checks. After a page op
 - A reader with the `web` grant can also go to public HTTPS pages.
 - Both refuse local files, other apps' URL schemes, URLs that carry a user name or password, and malformed addresses.
 
-The first page may be plain HTTP when the app's checks admitted it. The acceptance test relies on this to serve its page from loopback; it opens no other local address.
+The first page may be plain HTTP when the app's capability checks admitted it. The acceptance test relies on this to serve its page from loopback; the exception grants no other local URL.
 
 Each reader that opens gets a new private browser session. Closing the reader stops the page's scripts and destroys the native view; opening it again starts a new session, with no cookies from the last one. Hiding or clipping the reader only takes the native view off the screen and keeps the page. The native view keeps the page's full size inside a clipping parent window, so scrolling the app does not re-lay out the page to its visible part.
 
@@ -61,7 +61,7 @@ Backend sign-in is a separate, host-owned flow. **On Linux and Windows it still 
 
 The test uses no personal accounts and downloads no engine.
 
-On Windows, the workflow also requires a PNG snapshot taken by the engine itself, and the driver reads back the native settings to prove that web messaging and host objects are off. To show that the message counter works, a separate, disposable controller in the test host enables messaging for one fixed synthetic page, confirms that the counter receives that page's message, then closes and deletes its profile. The production controller never enables messaging; its counter only counts native deliveries, never reads a payload and never acts on one. The driver requires zero deliveries after a bounded wait and again just before the same view closes. This proves that nothing was delivered while the test watched.
+On Windows, the workflow also requires a PNG snapshot taken by the engine itself, and the driver reads back the native settings to prove that web messaging and host objects are off. To show that the message counter works, the test host opens a separate, disposable controller that enables messaging for one fixed synthetic page, confirms that the counter receives that page's message, then closes the controller and deletes its profile. The production controller never enables messaging; its counter only counts native deliveries, never reads a payload and never acts on one. The driver requires zero deliveries after a bounded wait and again just before the same view closes. This proves that nothing was delivered while the test watched.
 
 The receipt keeps the JavaScript result of the page's message call, or its exception, only as a diagnostic. [Microsoft's documentation](https://learn.microsoft.com/en-us/dotnet/api/microsoft.web.webview2.core.corewebview2settings.iswebmessageenabled) says that the call throws when messaging is off, but the tested runtime returned normally with both native settings off. Neither the presence of `chrome.webview` nor a normal return shows that a message reached the host; only the native count does.
 

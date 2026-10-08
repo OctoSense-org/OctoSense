@@ -41,5 +41,5 @@ OnePlus 6 镜像及其交付方式的记录位于 [`rom/docs/adr/`](../../rom/do
 ## 其他位置
 
 - 应用与 Agent 之间的代理（`crates/app-peers`）遵循 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)（由宿主持有的 octos 应用 peer）。
-- App Hub、目录与准入检查：[OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。
-- 应用的发布者身份：App Hub [ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)（通过 GitHub 证明发布者身份）。来自应用公开仓库、带 GitHub 证明的版本确立其发布者身份，取代 [Home ADR 0003（英文）](home/0003-app-hub-and-store.md)中的发布者密钥。
+- App Hub、签名目录与准入检查：[OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。
+- 应用的发布者身份：App Hub [ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)（通过 GitHub 证明发布者身份）。来自应用公开仓库、带 GitHub 证明的 Release 确立其发布者身份，取代 [Home ADR 0003（英文）](home/0003-app-hub-and-store.md)中的发布者密钥。

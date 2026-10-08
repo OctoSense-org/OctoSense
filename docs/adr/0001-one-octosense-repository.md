@@ -67,7 +67,7 @@ These have their own users, upstreams or release cycles and are consumed by pin:
 | octos-org/octos | separate project and organisation |
 | OctoScript, OctoScript-Makepad, OctoScript-Android, OctoScript-OH | the language and its runtimes, used beyond OctoSense |
 | OctoSense-App-Hub | the public store: catalog, gate, `hub`, `card-host`, submission issues |
-| OctoSense App Flow (formerly Design Flow) | the contestant harness; must stay small to clone and link-stable during the contest |
+| OctoSense-App-Flow (formerly OctoScript-App-Design-Flow) | the contestant harness; must stay small to clone and link-stable during the contest |
 | websites (OctoSense-website, OctoScript-website, octosense-org.github.io) | separate deploys |
 | hagency-org/Rinx | separate project, hosted as a module |
 

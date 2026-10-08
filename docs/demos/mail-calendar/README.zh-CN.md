@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-使用你自己的邮箱和模型账号。新邮件触发 Mail Agent，由模型判断是否生成卡片。
+使用你自己的邮箱和模型账户。新邮件触发 Mail Agent，由模型判断是否生成卡片。
 你可以在卡片内聊天、修改已保存的回复、审阅，并选择是否发送。明确在 Chat 中要求
 预约后，Mail 会调用 Calendar 的工具，保存本地事件并发布 Calendar 自己的卡片。
 卡片内的 **Open Calendar** 打开真实 Calendar 应用中的同一条事件。
@@ -33,7 +33,7 @@ python3 tools/setup.py --check --cargo
 python3 tools/native_apps.py --check
 ```
 
-已有依赖仓库时，先按 [Set up](../../../README.md#set-up) 配置 source hub。setup 会创建固定版本的工作树并打上仓库跟踪的补丁，不需要开发者带有未 commit 修改的依赖检出。Cargo 会取得 App Hub 和内核版本；真实演示不需要额外检出旧 AppCard、OctoSense-mobile 或 App Flow 仓库。
+已有依赖仓库时，先按[环境准备](../../../README.zh-CN.md#环境准备)配置 source hub。环境准备脚本会创建固定版本的工作树并打上仓库跟踪的补丁，不依赖任何开发者本地未 commit 的依赖改动。Cargo 会取得 App Hub 和内核版本；真实演示不需要额外检出旧 AppCard、OctoSense-mobile 或 App Flow 仓库。
 
 ## 2. 构建包含内核的 Android 安装包
 
@@ -78,7 +78,7 @@ PY
 
 ## 3. 在同一个安装包中配置
 
-1. 在 **AI providers** 配置自己的模型账号。医疗预约演示使用 DeepSeek
+1. 在 **AI providers** 配置自己的模型账户。医疗预约演示使用 DeepSeek
    `deepseek-v4-flash`。必须具备真实模型服务；独立 `card-host` 不能代替 Agent。
    MiniMax 验证过较早的邮件/卡片流程，但最新医疗邮件到 Calendar 的流程只验证了 DeepSeek。
 2. 打开 **Mail**，在宿主登录界面输入自己的 IMAP/SMTP 凭据；Gmail 表单支持应用密码。

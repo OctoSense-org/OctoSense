@@ -93,7 +93,7 @@ p50/p95/最大值。这里计量的是包含原生帧等待和状态轮询的 Ma
 [2026-10-06 Notes 浸泡记录](evidence/notes-soak-20261006/README.zh-CN.md)通过十分钟
 36 轮及独立 120 轮密集测试，保留精确草稿、原生截图检查、耗时边界与内存增长记录。
 
-Calendar 和 Inbox 各自的可复用浸泡测试及证据位于 OctoSense App Flow（原 Design Flow）：[Calendar（英文）](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)及 [Inbox](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/inbox/README.zh-CN.md)。两者使用的宿主不同：Calendar 使用提供商宿主，Inbox 使用完整 Shell 并实际调用 DeepSeek，因此不要把两者的耗时与内存数值合并为同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)包含修正监控状态后的 Inbox 包，三者均通过重开和篡改拒绝，未修改公开签名目录。
+Calendar 和 Inbox 各自的可复用浸泡测试及证据位于 OctoSense App Flow（原 Design Flow）：[Calendar（英文）](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)及 [Inbox](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/inbox/README.zh-CN.md)。两者使用的宿主不同：Calendar 使用提供商宿主，Inbox 使用完整 Shell 并实际调用 DeepSeek，因此不要把两者的耗时与内存数值合并为同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)包含修正了监控状态的 Inbox 包；三个包都通过了重新打开和篡改拒绝两项检查，整个检查没有修改公开签名目录。
 
 ## Rinx 编辑器与无法加载的草稿
 
