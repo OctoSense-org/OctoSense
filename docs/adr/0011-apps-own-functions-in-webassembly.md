@@ -62,9 +62,16 @@ outside their own input and output.
    and function execution share at most two seconds, with cancellation
    checked at each epoch. Compilation itself is not interruptible, but an
    expired or cancelled request cannot proceed from compilation to execution.
-   Admission is checked before queueing, before execution and before delivery;
-   changed bundles/grants or signed withdrawal discard the result and cached
-   Program references. On a valid new revision the worker loads the new code.
+   Queueing clones a host-owned admission identity; it does no bundle IO,
+   signature verification or digest work on the UI thread. The first cold
+   request binds that identity when the worker first verifies admission:
+   `ServiceCall` does not carry the originating UI's loaded-revision token.
+   Later queued requests retain that verified revision. The worker rechecks
+   admission before execution and before delivery; changed bundles/grants or
+   signed withdrawal discard the result and cached Program references, and
+   invalidate the old identity. A fresh request can then load the new code;
+   already queued old requests remain refused. A closing worker keeps its
+   global slot until its queue and compiled Programs have been dropped.
    The disk cache contains compiled code only, never guest state.
 4. **The `wasm` capability** joins App Hub's closed capability list. A store
    says: "Runs its own functions in a sandbox on this device; they reach no

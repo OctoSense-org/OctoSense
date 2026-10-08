@@ -53,6 +53,35 @@ static BUFFERED_BYTES: AtomicUsize = AtomicUsize::new(0);
 struct Worker {
     jobs: SyncSender<Job>,
     retired: Arc<AtomicBool>,
+    admission: Arc<AdmissionEpoch>,
+}
+
+/// Enqueue only clones this host-owned identity. Bundle IO, signature checks
+/// and digesting run on the worker, including the first cold admission.
+#[derive(Default)]
+struct AdmissionEpoch {
+    admitted: OnceLock<Result<Admission, String>>,
+    obsolete: AtomicBool,
+}
+
+/// Removed only after the worker has dropped its queue and compiled modules.
+/// A closing worker keeps its slot until then, even during revision churn.
+struct RetireWorker {
+    app: String,
+    retired: Arc<AtomicBool>,
+}
+impl Drop for RetireWorker {
+    fn drop(&mut self) {
+        let mut workers = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(workers) = workers.as_mut() {
+            if workers
+                .get(&self.app)
+                .is_some_and(|worker| Arc::ptr_eq(&worker.retired, &self.retired))
+            {
+                workers.remove(&self.app);
+            }
+        }
+    }
 }
 
 /// Includes executing input: cancelling a queued request cannot free its
@@ -108,7 +137,7 @@ struct Job {
     method: String,
     input: Vec<u8>,
     host_dir: PathBuf,
-    admission: Admission,
+    admission: Arc<AdmissionEpoch>,
     deadline: Instant,
     reply: Replier,
     _reservation: Reservation,
@@ -117,15 +146,39 @@ impl Job {
     fn live(&self) -> bool {
         self.reply.is_pending() && Instant::now() < self.deadline
     }
-    fn check(&self, app: &str) -> Result<(), String> {
+    fn check(&self, app: &str) -> Result<&Admission, String> {
         if !self.live() {
             return Err("wasm invocation cancelled or past its deadline".into());
         }
-        self.admission.verify(app)?;
+        if self.admission.obsolete.load(Ordering::Acquire) {
+            return Err("wasm app admission changed; retry from the current app".into());
+        }
+        let admitted = self
+            .admission
+            .admitted
+            .get_or_init(|| Admission::current(app));
+        let verified = admitted
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|admission| {
+                admission.verify(app)?;
+                Ok(admission)
+            });
+        let admission = match verified {
+            Ok(admission) => admission,
+            Err(error) => {
+                self.admission.obsolete.store(true, Ordering::Release);
+                return Err(error);
+            }
+        };
+        // The cache is host-owned, not a caller-selected or app directory.
+        if self.host_dir != admission.root.join(".host") {
+            return Err("wasm host directory does not belong to this app store".into());
+        }
         if !self.live() {
             return Err("wasm invocation cancelled or past its deadline".into());
         }
-        Ok(())
+        Ok(admission)
     }
 }
 
@@ -176,14 +229,9 @@ impl HostService for WasmService {
         let prepared = (|| {
             let input = input_bytes(&call.args)?;
             let reservation = Reservation::acquire(input.len())?;
-            let admission = Admission::current(&call.app_id)?;
-            // The cache is host-owned, not a caller-selected or app directory.
-            if call.host_dir != admission.root.join(".host") {
-                return Err("wasm host directory does not belong to this app store".into());
-            }
-            Ok((input, reservation, admission))
+            Ok((input, reservation))
         })();
-        let (input, reservation, admission) = match prepared {
+        let (input, reservation) = match prepared {
             Ok(prepared) => prepared,
             Err(error) => {
                 reply.send(Err(error));
@@ -195,7 +243,7 @@ impl HostService for WasmService {
             method: call.method().to_string(),
             host_dir: call.host_dir,
             input,
-            admission,
+            admission: Arc::default(),
             deadline,
             reply,
             _reservation: reservation,
@@ -203,20 +251,33 @@ impl HostService for WasmService {
         if !job.live() {
             return;
         }
-        let mut workers = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
-        let workers = workers.get_or_insert_with(HashMap::new);
-        workers.retain(|_, worker| !worker.retired.load(Ordering::Acquire));
-        if let Some(worker) = workers.get(&app) {
-            job = match worker.jobs.try_send(job) {
+        let mut registry = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+        let workers = registry.get_or_insert_with(HashMap::new);
+        if let Some(worker) = workers.get_mut(&app) {
+            if worker.retired.load(Ordering::Acquire) {
+                job.reply
+                    .send(Err("wasm worker is closing; try again later".into()));
+                return;
+            }
+            if worker.admission.obsolete.load(Ordering::Acquire) {
+                worker.admission = Arc::default();
+            }
+            job.admission = worker.admission.clone();
+            match worker.jobs.try_send(job) {
                 Ok(()) => return,
                 Err(TrySendError::Full(job)) => {
                     job.reply
                         .send(Err("wasm app queue is full; try again later".into()));
                     return;
                 }
-                Err(TrySendError::Disconnected(job)) => job,
+                Err(TrySendError::Disconnected(job)) => {
+                    // The worker's guard removes its slot after all resources
+                    // have dropped. Do not create an overlapping replacement.
+                    job.reply
+                        .send(Err("wasm worker is closing; try again later".into()));
+                    return;
+                }
             };
-            workers.remove(&app);
         }
         if workers.len() >= MAX_WORKERS {
             job.reply
@@ -225,35 +286,64 @@ impl HostService for WasmService {
         }
         let (jobs, queue) = sync_channel(MAX_QUEUED_PER_APP);
         let retired = Arc::new(AtomicBool::new(false));
-        let done = retired.clone();
+        let admission = job.admission.clone();
+        // Reserve the worker slot and queue before spawning, then release the
+        // registry mutex: neither thread creation nor admission holds it.
+        if jobs.try_send(job).is_err() {
+            unreachable!("new wasm queue has room");
+        }
+        workers.insert(
+            app.clone(),
+            Worker {
+                jobs,
+                retired: retired.clone(),
+                admission,
+            },
+        );
+        // Keep ownership outside the spawn closure too, so a spawn failure
+        // can explicitly answer every request accepted during this interval.
+        let queue = Arc::new(Mutex::new(Some(queue)));
+        drop(registry);
+        self.start_worker(app, retired, queue);
+    }
+}
+
+impl WasmService {
+    fn start_worker(
+        &self,
+        app: String,
+        retired: Arc<AtomicBool>,
+        queue: Arc<Mutex<Option<Receiver<Job>>>>,
+    ) {
         let name = app.clone();
+        let worker_queue = queue.clone();
+        let worker_retired = retired.clone();
         let spawned = std::thread::Builder::new()
             .name(format!("wasm {app}"))
             .spawn(move || {
-                struct Retire(Arc<AtomicBool>);
-                impl Drop for Retire {
-                    fn drop(&mut self) {
-                        self.0.store(true, Ordering::Release);
-                    }
-                }
-                let _retire = Retire(done);
-                work(name, queue, &_retire.0);
+                let _retire = RetireWorker {
+                    app: name.clone(),
+                    retired: worker_retired.clone(),
+                };
+                let queue = worker_queue
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take()
+                    .unwrap();
+                work(name, queue, &worker_retired);
             });
         if let Err(error) = spawned {
-            job.reply
-                .send(Err(format!("cannot start {app}'s functions: {error}")));
-            return;
+            let registry = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+            retired.store(true, Ordering::Release);
+            drop(registry);
+            if let Some(queue) = queue.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                for job in queue.try_iter() {
+                    job.reply
+                        .send(Err(format!("cannot start {app}'s functions: {error}")));
+                }
+            }
+            drop(RetireWorker { app, retired });
         }
-        if let Err(error) = jobs.try_send(job) {
-            let job = match error {
-                TrySendError::Full(job) | TrySendError::Disconnected(job) => job,
-            };
-            job.reply.send(Err(
-                "wasm worker stopped before accepting the invocation".into()
-            ));
-            return;
-        }
-        workers.insert(app, Worker { jobs, retired });
     }
 }
 
@@ -269,19 +359,13 @@ fn work(app: String, jobs: Receiver<Job>, retired: &Arc<AtomicBool>) {
             Err(_) => {
                 // Serialize idle retirement with enqueue. A sender that won
                 // the timeout race still gets its accepted request processed.
-                let mut workers = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+                let _workers = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
                 if let Ok(job) = jobs.try_recv() {
                     job
                 } else {
                     retired.store(true, Ordering::Release);
-                    if let Some(workers) = workers.as_mut() {
-                        if workers
-                            .get(&app)
-                            .is_some_and(|worker| Arc::ptr_eq(&worker.retired, retired))
-                        {
-                            workers.remove(&app);
-                        }
-                    }
+                    // The outer retirement guard removes the slot only once
+                    // this function has dropped the Lab and queued inputs.
                     return;
                 }
             }
@@ -307,13 +391,16 @@ fn process_checked(
     job: &Job,
     before_delivery: impl FnOnce(),
 ) -> Result<Value, String> {
-    if let Err(error) = job.check(app) {
-        *lab = None;
-        return Err(error);
-    }
+    let admission = match job.check(app) {
+        Ok(admission) => admission,
+        Err(error) => {
+            *lab = None;
+            return Err(error);
+        }
+    };
     if lab
         .as_ref()
-        .is_some_and(|loaded| loaded.admission != job.admission)
+        .is_some_and(|loaded| loaded.admission != *admission)
     {
         *lab = None;
     }
@@ -379,7 +466,7 @@ struct Stats {
 
 impl Lab {
     fn load(app: &str, job: &Job) -> Result<Lab, String> {
-        let admission = &job.admission;
+        let admission = job.check(app)?;
         let bundle = &admission.bundle;
         let runtime = runtime(&job.host_dir)?;
         let mut files: Vec<PathBuf> = std::fs::read_dir(bundle.join("fns"))
@@ -684,7 +771,10 @@ mod tests {
                 method: method.into(),
                 input: Vec::new(),
                 host_dir: host_dir.into(),
-                admission: Admission::current(app).unwrap(),
+                admission: Arc::new(AdmissionEpoch {
+                    admitted: OnceLock::from(Ok(Admission::current(app).unwrap())),
+                    obsolete: AtomicBool::new(false),
+                }),
                 deadline: Instant::now() + REQUEST_TIMEOUT,
                 reply,
                 _reservation: Reservation::acquire(0).unwrap(),
@@ -721,6 +811,53 @@ mod tests {
         octosense_appstore::set_data_root(root.clone());
         ship_state("os.wasmstate", "1.0.0", true);
         register();
+        // Real dispatch into a held cold queue must neither unpack nor verify
+        // a bundle on this (UI) thread. The old synchronous admission path
+        // creates .system here and populates the identity before returning.
+        let (cold_sender, cold_queue) = sync_channel(MAX_QUEUED_PER_APP);
+        let cold_epoch = Arc::new(AdmissionEpoch::default());
+        WORKERS
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .insert(
+                "os.wasmstate".into(),
+                Worker {
+                    jobs: cold_sender,
+                    retired: Arc::new(AtomicBool::new(false)),
+                    admission: cold_epoch.clone(),
+                },
+            );
+        let cold_heap = NEXT_HEAP.fetch_add(1, Ordering::Relaxed);
+        octosense_appstore::services::dispatch(
+            ServiceCall {
+                app_id: "os.wasmstate".into(),
+                service: "wasm.recall".into(),
+                args: json!(null),
+                from_sheet: false,
+                may_prompt: false,
+                host_dir: host_dir.clone(),
+            },
+            cold_heap,
+            1,
+            &mut NoSheet,
+        );
+        assert!(cold_epoch.admitted.get().is_none());
+        assert!(
+            !root.join(".system").exists(),
+            "enqueue must not touch bundle storage"
+        );
+        let cold_job = cold_queue.try_recv().unwrap();
+        assert!(process("os.wasmstate", &mut None, &cold_job).is_ok());
+        assert!(cold_epoch.admitted.get().unwrap().is_ok());
+        assert!(
+            root.join(".system").exists(),
+            "the worker performed actual admission"
+        );
+        octosense_appstore::services::cancel_heap(cold_heap);
+        drop(cold_job);
+        WORKERS.lock().unwrap().as_mut().unwrap().clear();
+        drop(cold_queue);
         // Positive control: this guest really retains input when an Instance
         // is reused, reproducing the old host behavior rather than testing an
         // inert fixture that could never leak.
@@ -812,6 +949,10 @@ mod tests {
             Worker {
                 jobs: tx,
                 retired: Arc::new(AtomicBool::new(false)),
+                admission: Arc::new(AdmissionEpoch {
+                    admitted: OnceLock::from(Ok(Admission::current("os.wasmstate").unwrap())),
+                    obsolete: AtomicBool::new(false),
+                }),
             },
         );
         let mut heaps = Vec::new();
@@ -838,11 +979,43 @@ mod tests {
                 assert!(replies[0].2.as_ref().unwrap_err().contains("queue is full"));
             }
         }
+        let queued = held.try_iter().collect::<Vec<_>>();
+        assert_eq!(queued.len(), MAX_QUEUED_PER_APP);
+        ship_state("os.wasmstate", "5.0.0", true);
+        for job in &queued {
+            assert!(
+                process("os.wasmstate", &mut lab, job)
+                    .unwrap_err()
+                    .contains("admission changed"),
+                "the actual dispatch queue retains its original verified revision"
+            );
+        }
+        let retry_heap = NEXT_HEAP.fetch_add(1, Ordering::Relaxed);
+        octosense_appstore::services::dispatch(
+            ServiceCall {
+                app_id: "os.wasmstate".into(),
+                service: "wasm.recall".into(),
+                args: json!(null),
+                from_sheet: false,
+                may_prompt: false,
+                host_dir: host_dir.clone(),
+            },
+            retry_heap,
+            1,
+            &mut NoSheet,
+        );
+        let retry = held.try_recv().unwrap();
+        assert!(!Arc::ptr_eq(&retry.admission, &queued[0].admission));
+        assert_eq!(
+            process("os.wasmstate", &mut lab, &retry).unwrap(),
+            json!({"text":""}),
+            "a fresh dispatched request re-admits the new revision on the same worker"
+        );
+        octosense_appstore::services::cancel_heap(retry_heap);
+        drop(retry);
         for heap in heaps {
             octosense_appstore::services::cancel_heap(heap);
         }
-        let queued = held.try_iter().collect::<Vec<_>>();
-        assert_eq!(queued.len(), MAX_QUEUED_PER_APP);
         assert!(queued.iter().all(|job| !job.live()));
         drop(queued);
         let used = BUFFERED_BYTES.load(Ordering::Acquire);
@@ -862,7 +1035,10 @@ mod tests {
                 format!("busy-{n}"),
                 Worker {
                     jobs,
-                    retired: Arc::new(AtomicBool::new(false)),
+                    // Closing workers still hold resources. They must not
+                    // release a slot merely because retirement has started.
+                    retired: Arc::new(AtomicBool::new(n == 0)),
+                    admission: Arc::default(),
                 },
             );
         }
