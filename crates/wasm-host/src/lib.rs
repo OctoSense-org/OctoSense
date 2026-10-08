@@ -28,8 +28,9 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -55,6 +56,8 @@ pub struct Limits {
     pub deadline: Duration,
     /// The most linear memory an instance may have.
     pub memory_bytes: usize,
+    /// The most elements in an instance's single table (including growth).
+    pub table_elements: usize,
     /// The largest module the runtime loads.
     pub module_bytes: usize,
     /// The largest input, and the largest output, of a call.
@@ -68,6 +71,7 @@ impl Default for Limits {
         Limits {
             deadline: Duration::from_secs(2),
             memory_bytes: 256 << 20,
+            table_elements: 16_384,
             module_bytes: 8 << 20,
             io_bytes: 16 << 20,
             stack_bytes: 512 << 10,
@@ -172,6 +176,16 @@ struct State {
     logs: Vec<String>,
 }
 
+struct InvocationGuard {
+    deadline: Instant,
+    pending: Box<dyn Fn() -> bool + Send + Sync>,
+}
+impl InvocationGuard {
+    fn live(&self) -> bool {
+        Instant::now() < self.deadline && (self.pending)()
+    }
+}
+
 /// One app's instance of a [`Program`]: its own memory and its own state.
 /// It may move to another thread.
 pub struct Instance {
@@ -186,6 +200,7 @@ pub struct Instance {
     /// be half-updated then (a Rust guest's stack pointer and allocator live
     /// in its memory and globals), so the instance takes no more calls.
     spent: bool,
+    guard: Option<Arc<InvocationGuard>>,
     _ticker: Arc<Ticker>,
 }
 
@@ -245,8 +260,25 @@ impl Runtime {
             // Check before caching: a refused module is never stored.
             check(&module)?;
             if let Ok(code) = module.serialize() {
-                let tmp = path.with_extension("tmp");
-                if std::fs::write(&tmp, &code).is_ok() && std::fs::rename(&tmp, path).is_ok() {
+                // Different apps may compile identical bytes concurrently.
+                // Never truncate another worker's staging file: deserialization
+                // is only safe for complete, unmodified serialized modules.
+                static NEXT_CACHE_WRITE: AtomicU64 = AtomicU64::new(0);
+                let tmp = path.with_extension(format!(
+                    "{}-{}.tmp",
+                    std::process::id(),
+                    NEXT_CACHE_WRITE.fetch_add(1, Ordering::Relaxed)
+                ));
+                let published = (|| -> std::io::Result<()> {
+                    let mut file = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&tmp)?;
+                    file.write_all(&code)?;
+                    drop(file);
+                    std::fs::rename(&tmp, path)
+                })();
+                if published.is_ok() {
                     // Read it back off this thread: an on-access scanner
                     // (Microsoft Defender's, on a managed Mac) holds the
                     // first open of a new file for about a second, so let
@@ -256,6 +288,7 @@ impl Runtime {
                         .name("wasm-cache".into())
                         .spawn(move || drop(std::fs::read(path)));
                 }
+                let _ = std::fs::remove_file(tmp);
             }
         }
         Ok(module)
@@ -275,8 +308,38 @@ impl Runtime {
 
     /// A fresh instance of `program`, with its own memory.
     pub fn instantiate(&self, program: &Program) -> Result<Instance, LoadError> {
+        self.instantiate_inner(program, None)
+    }
+
+    /// A fresh invocation whose start function and exported call share a
+    /// deadline. Cancellation is checked before starting and every epoch;
+    /// compiled code is reusable, but none of the instance's state is shared.
+    pub fn instantiate_guarded(
+        &self,
+        program: &Program,
+        deadline: Instant,
+        pending: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Result<Instance, LoadError> {
+        let deadline = deadline.min(Instant::now() + self.limits.deadline);
+        self.instantiate_inner(program, Some((deadline, Box::new(pending))))
+    }
+
+    fn instantiate_inner(
+        &self,
+        program: &Program,
+        guard: Option<(Instant, Box<dyn Fn() -> bool + Send + Sync>)>,
+    ) -> Result<Instance, LoadError> {
+        if guard
+            .as_ref()
+            .is_some_and(|(deadline, pending)| Instant::now() >= *deadline || !pending())
+        {
+            return Err(LoadError::Invalid(
+                "invocation cancelled or past its deadline".into(),
+            ));
+        }
         let limits = StoreLimitsBuilder::new()
             .memory_size(self.limits.memory_bytes)
+            .table_elements(self.limits.table_elements)
             .instances(1)
             .memories(1)
             .tables(1)
@@ -290,7 +353,19 @@ impl Runtime {
             },
         );
         store.limiter(|state| &mut state.limits);
-        store.epoch_deadline_trap();
+        let guard =
+            guard.map(|(deadline, pending)| Arc::new(InvocationGuard { deadline, pending }));
+        if let Some(guard) = guard.clone() {
+            store.epoch_deadline_callback(move |_| {
+                Ok(if !guard.live() {
+                    wasmtime::UpdateDeadline::Interrupt
+                } else {
+                    wasmtime::UpdateDeadline::Continue(1)
+                })
+            });
+        } else {
+            store.epoch_deadline_trap();
+        }
         // Instantiation runs the start function and data initialisers: a
         // deadline covers it too.
         let deadline_ticks = self
@@ -299,7 +374,7 @@ impl Runtime {
             .as_millis()
             .div_ceil(TICK.as_millis())
             .max(1) as u64;
-        store.set_epoch_deadline(deadline_ticks);
+        store.set_epoch_deadline(if guard.is_some() { 1 } else { deadline_ticks });
         let mut linker = Linker::new(&self.engine);
         linker
             .func_wrap(
@@ -349,6 +424,7 @@ impl Runtime {
             deadline_ticks,
             io_bytes: self.limits.io_bytes,
             spent: false,
+            guard,
             _ticker: self.ticker.clone(),
         })
     }
@@ -449,6 +525,10 @@ impl Instance {
         if self.spent {
             return Err(CallError::Spent);
         }
+        if self.guard.as_ref().is_some_and(|guard| !guard.live()) {
+            self.spent = true;
+            return Err(CallError::Deadline);
+        }
         let f = self
             .functions
             .get(name)
@@ -470,7 +550,11 @@ impl Instance {
     }
 
     fn run(&mut self, f: TypedFunc<(i32, i32), i64>, input: &[u8]) -> Result<Vec<u8>, CallError> {
-        self.store.set_epoch_deadline(self.deadline_ticks);
+        self.store.set_epoch_deadline(if self.guard.is_some() {
+            1
+        } else {
+            self.deadline_ticks
+        });
         let len = input.len() as i32;
         let ptr = self.alloc.call(&mut self.store, len).map_err(trap)?;
         self.memory
