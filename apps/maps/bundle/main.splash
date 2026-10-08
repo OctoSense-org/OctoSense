@@ -262,6 +262,34 @@ fn place_details(body){
     d.cuisine = list_of(replace_all(text_of(tags, "cuisine"), "_", " "))
     d
 }
+// A coordinate to 4 decimals (about 11 m): 37.33501 reads 37.335. The math
+// builtins work in f32, which still holds any coordinate to 4 decimals.
+// `+ 0` turns the -0 of a value just below zero into 0.
+fn round4(x){ round(x * 10000) / 10000 + 0 }
+fn coords_text(lat, lon){ "" + round4(lat) + ", " + round4(lon) }
+// Straight-line distance (km): Directions gives the road's.
+fn distance_km(lat1, lon1, lat2, lon2){
+    let dlat = radians(lat2 - lat1)
+    let dlon = radians(lon2 - lon1)
+    let a = sin(dlat / 2) * sin(dlat / 2) + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) * sin(dlon / 2)
+    2 * 6371 * asin(sqrt(a))
+}
+// "350 m", "2.4 km", "13 km": tens of meters below 995 m (which would
+// read "1000 m"), tenths of a kilometer below 10 km.
+fn distance_text(km){
+    if km < 0.995 { return "" + round(km * 100) * 10 + " m" }
+    if km < 10 { return "" + round(km * 10) / 10 + " km" }
+    "" + round(km) + " km"
+}
+// Photon's search, ranked near the visible map, and its reverse lookup
+// (the address at a point). `url_encode` leaves only letters, digits and
+// `-_.~`, so an `&` or `#` the reader typed stays inside `q`.
+fn search_url(q, lat, lon){
+    "https://photon.komoot.io/api/?q=" + q.url_encode() + "&limit=8&lang=en&lat=" + round4(lat) + "&lon=" + round4(lon)
+}
+fn reverse_url(lat, lon){
+    "https://photon.komoot.io/reverse?lat=" + round4(lat) + "&lon=" + round4(lon) + "&lang=en&limit=1"
+}
 
 fn fix_origin(){
     if origin.picked { return }
