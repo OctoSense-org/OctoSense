@@ -193,10 +193,18 @@ reaches only the hosts the manifest lists.
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
   no full-size image there. The viewer keeps a thumbnail fallback visible.
   Memories on physical phones and with a live AI provider are **unverified**.
-- **Maps**: on the OnePlus 6 (2026-09-27) search, place, route, adding and
-  removing a stop, driving with turn-by-turn and the 2D view worked. The 3D
-  drive view draws the route but no map tiles, on the phone and on the
-  desktop, before and after the stops change.
+- **Maps**: on the Pixel 7 Pro (2026-10-08, dark mode) the place map
+  worked: it opened at the GPS fix and ◎ flew back to it; the map dragged
+  and zoomed with two fingers; search near the visible map, Saved and
+  Recent, a place card with OpenStreetMap details and its Website reader,
+  Save and pins, a long press, Directions framed once and then left to the
+  person, ‹ Back and Close removing the route, and the drive view with End.
+  The 3D drive view drew map tiles near the route, some still missing after
+  30 seconds. Before the place map, on the OnePlus 6 (2026-09-27), search,
+  place, route, adding and removing a stop, driving with turn-by-turn and
+  the 2D view worked; the 3D drive view drew the route but no map tiles, on
+  the phone and on the desktop, before and after the stops changed. The
+  OnePlus 6T, iOS and OpenHarmony are **unverified**.
 - **News**: runs in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
