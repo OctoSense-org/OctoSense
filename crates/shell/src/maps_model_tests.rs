@@ -288,15 +288,17 @@ fn maps_opens_websites_over_https() {
     );
     // A scheme in any case (only the scheme is lowered), "//", an empty host,
     // and characters parsers read differently: a newline, a space, a
-    // backslash, anything but ASCII in the host. `@` and non-ASCII in the
-    // path are kept; which hosts may open is the reader's to decide.
+    // backslash, a `%` or anything but ASCII in the host. `@`, `%` and
+    // non-ASCII in the path are kept; which hosts may open is the reader's
+    // to decide.
     let more = maps_model(
         r#"[site_url("Https://Example.com") site_url("HTTP://EXAMPLE.COM/Path") site_url("JavaScript:alert(1)")
             site_url("//example.com") site_url("/x") site_url("https:///x") site_url("?q=1")
             site_url("www.a\nexample.com") site_url("www.a example.com") site_url("192.168.1.1\\@x.example.com")
-            site_url("192.168.1。1") site_url("https://münchen.example")
+            site_url("192.168.1。1") site_url("https://münchen.example") site_url("192.168.1%2e1")
+            site_url("https://192.168.1.%31/admin")
             site_url("https://medium.com/@user") site_url("https://example.com/café?q=1#é") site_url("example.com?q=1")
-            site_url("localhost")].to_json()"#,
+            site_url("localhost") site_url("https://example.com/a%20b")].to_json()"#,
     );
     assert_eq!(
         more,
@@ -304,9 +306,10 @@ fn maps_opens_websites_over_https() {
             "https://Example.com", "https://EXAMPLE.COM/Path", "",
             "https://example.com", "", "", "",
             "", "", "",
-            "", "",
+            "", "", "",
+            "",
             "https://medium.com/@user", "https://example.com/café?q=1#é", "https://example.com?q=1",
-            "https://localhost"
+            "https://localhost", "https://example.com/a%20b"
         ])
     );
 }

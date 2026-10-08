@@ -211,8 +211,9 @@ fn lower_scheme(u){
 // ("http://", "https://" in any case, or "//"), or "". This settles only the
 // scheme (ftp://, javascript:, mailto:, any ":" before the first "/" give "")
 // and refuses odd characters that parsers read differently: a space or
-// control character, a backslash, or anything but ASCII in the host. Which
-// hosts may open is the reader's policy: public https, with the `web` grant.
+// control character, a backslash, or a "%" or anything but ASCII in the
+// host. Which hosts may open is the reader's policy: public https, with the
+// `web` grant.
 fn site_url(s){
     let u = lower_scheme(s.split(";")[0].trim())
     let rest = u.strip_prefix("https://")
@@ -230,7 +231,8 @@ fn site_url(s){
         if c <= 32 || c == 127 || c == 92 { return "" }
         if c == 47 || c == 63 || c == 35 { in_host = false }
         if in_host {
-            if c > 127 { return "" }
+            // A browser decodes "%2e" in a host; the reader's gate does not.
+            if c > 127 || c == 37 { return "" }
             host = host + 1
         }
     }
