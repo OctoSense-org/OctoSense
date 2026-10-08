@@ -447,3 +447,71 @@ for p in pin_places(s, nil) { names.push(p.name) }
         ])
     );
 }
+
+#[test]
+fn maps_tells_its_own_flights_landing_from_the_persons_move() {
+    // MapView reports where a flight landed through its Mercator round trip,
+    // well within 1e-12 degrees of the target. Within 1e-6 degrees on both
+    // axes it is Maps' own landing; 2e-6 off on either axis, elsewhere, or
+    // with no flight of Maps' own under way, the person moved the map.
+    let out = maps_model(
+        r#"let t = {lat: 37.3349 lon: -121.8851}
+[own_landing(t, 37.3349, -121.8851) own_landing(t, 37.334900000001, -121.885099999999)
+    own_landing(t, 37.3349005, -121.8851005) own_landing(t, 37.334902, -121.8851)
+    own_landing(t, 37.3349, -121.885098) own_landing(t, -37.3349, 121.8851)
+    own_landing(nil, 37.3349, -121.8851)].to_json()"#,
+    );
+    assert_eq!(out, serde_json::json!([true, true, true, false, false, false, false]));
+    // The script subtracts in f64: in f32 one step at 37 degrees is 3.8e-6,
+    // and the 5e-7 between these two coordinates would read 0 or 3.8e-6.
+    let d = maps_model("[37.3349005 - 37.3349].to_json()")[0].as_f64().unwrap();
+    assert!(d > 4.9e-7 && d < 5.1e-7, "{d}");
+}
+
+#[test]
+fn maps_closes_the_list_when_the_person_moves_the_map_not_when_its_own_flight_lands() {
+    // The browse map's callbacks, with `ui` stubbed: whether the results
+    // list shows after each, and the flights Maps starts.
+    let out = maps_model(
+        r#"mod.visible = nil
+mod.flights = []
+let ui = {results: {set_visible: fn(v) {mod.visible = v}}
+    browse_map: {fly_to: fn(lat, lon, zoom) {mod.flights.push([lat lon zoom])}}}
+recents = [{name: "A"}]
+let log = []
+// Opened while Maps flies to the fix: its landing leaves the list open and
+// is not the person's move.
+show_results(true)
+fly(37.7749, -122.4194, 14)
+viewport_moved(37.7749, -122.4194, 14)
+log.push([mod.visible centered])
+// Once landed, the same centre again (a zoom) is the person's.
+viewport_moved(37.7749, -122.4194, 15)
+log.push([mod.visible centered])
+show_results(true)
+map_tapped(37.7, -122.4)
+log.push(mod.visible)
+// A tap that stops a flight reports no landing; the next pan still closes.
+fly(40.7128, -74.006, 15)
+show_results(true)
+viewport_moved(40.7, -74.01, 15)
+log.push(mod.visible)
+// Off the search screen the map leaves the list alone.
+screen = "place"
+mod.visible = "untouched"
+map_tapped(1, 2)
+viewport_moved(3, 4, 15)
+log.push(mod.visible)
+// MapView would ignore a flight to a point that isn't a place.
+fly(0, 0, 14)
+[log mod.flights seen].to_json()"#,
+    );
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [[true, false], [false, true], false, false, "untouched"],
+            [[37.7749, -122.4194, 14], [40.7128, -74.006, 15]],
+            {"lat": 3, "lon": 4}
+        ])
+    );
+}
