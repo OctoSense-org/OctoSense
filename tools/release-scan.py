@@ -38,7 +38,8 @@ Exit status 1 with one line per finding (the match is shown masked), 0 when
 clean. Findings are about the build, not the code: fix them with neutral
 build paths (see desktop/scripts/package.py). The only exceptions are known
 `.local` constants, exact names: the product's own (PRODUCT_LOCAL_NAMES) and
-its dependencies' (DEPENDENCY_LOCAL_NAMES).
+its dependencies' (DEPENDENCY_LOCAL_NAMES), plus the independently verified
+public-source seam in RINX_SOURCE_SEAM below.
 """
 import argparse
 import getpass
@@ -72,6 +73,17 @@ DEPENDENCY_LOCAL_NAMES = (
     # their own; when the next constant starts with a non-name byte, they
     # read as this name (seen in the Windows build).
     "send-queue.local",
+)
+
+# Rinx 4b89097's two public source filenames are adjacent Rust literals in
+# the Linux executable. The slash starting the second remapped path makes
+# the first filename look like a Linux account: /home/main_desktop_ui.rs/.
+# Admit only this proven pair, in the same neutral Cargo checkout/revision;
+# a standalone /home/main_desktop_ui.rs/private path must still fail.
+RINX_SOURCE_SEAM = re.compile(
+    rb"(?P<root>/cargo/git/checkouts/rinx-[0-9a-f]{16}/[0-9a-f]{7,40}/src)"
+    rb"/home/main_desktop_ui\.rs(?P<next>(?P=root))"
+    rb"/home/tombstone_footer\.rs"
 )
 
 BASE_PATTERNS = [
@@ -124,8 +136,16 @@ def mask(match):
 
 def scan_bytes(data, where, patterns, findings):
     for label, regex in patterns:
+        source_seams = set()
+        if label == "Linux home directory":
+            source_seams = {
+                (seam.start("next") - len(b"/home/main_desktop_ui.rs"), seam.start("next") + 1)
+                for seam in RINX_SOURCE_SEAM.finditer(data)
+            }
         seen = set()
         for m in regex.finditer(data):
+            if (m.start(), m.end()) in source_seams:
+                continue
             if m.group(0) in seen:
                 continue
             seen.add(m.group(0))
