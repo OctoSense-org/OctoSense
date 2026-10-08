@@ -22,4 +22,4 @@ python3 tools/test-wasm-phone.py --adb "$ADB" --aapt2 "$AAPT2" --hub "$HUB"   --
 cargo run --locked --offline -p octosense-wasm-host --example encode_phone_fixture --   tools/fixtures/wasm-phone-lab/state.wat tools/fixtures/wasm-phone-lab/bundle/fns/state.wasm
 ```
 
-客体在实例复用时会主动保留输入；通过测试要求宿主在每次调用（包括成功调用）之后创建新实例。先前的 19 项结果使用了显式组装的字段，不能证明原始响应转发。修复后的原始路径增加一项转发检查，可复现的公开测试还增加两项编译标识检查。实际设备结果与未执行的说明分开记录。
+客体在实例复用时会主动保留输入；通过测试要求宿主在每次调用（包括成功调用）之后创建新实例。先前的 19 项结果使用了显式组装的字段，不能证明原始响应转发。修复后的原始路径增加一项转发检查，可复现的公开测试还增加两项编译标识检查。[OnePlus 6 回执](acceptance-oneplus6.json)记录 Android 15 上 **22/22 项通过**，构建源码为 `e67ce63ebca6054961899691e1644a54c2b4f081`，运行时树为 `0fc8e29e2411fd7eb94d845ba16a261d2ebc9dfc`。上面的构建和驱动命令已使用本机工具路径执行。真实模型/对等代理转发、性能和发布 APK 行为仍未验证。
