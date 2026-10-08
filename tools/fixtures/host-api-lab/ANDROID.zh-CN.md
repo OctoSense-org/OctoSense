@@ -15,6 +15,8 @@ cargo build --release --offline --manifest-path .sources/makepad/tools/cargo_mak
 
 将 `JAVA_HOME`、`ANDROID_HOME` 指向已有工具，将 `PACKAGER` 指向生成的 `cargo-makepad`，将 `MAKEPAD_ANDROID_SDK` 指向已有 Makepad Android SDK。构建独立、可调试的测试包。`octosense-host-api-smoke` 与桌面 `host-api-lab` 示例共用 Rust 源码：
 
+工作区 Cargo 配置为 Android arm64 目标和 Apple arm64 构建主机选择 AWS-LC 支持的 CC 构建器。否则，Android 打包器也会强制宿主侧的测试包验证依赖使用 CMake。此设置避免额外安装 CMake，不禁用密码学或汇编功能。在写入配置前，等效的宿主目标环境变量覆盖已用于实际 Android 构建。
+
 ```sh
 MAKEPAD_FORCE_DEBUGGABLE=1 "$PACKAGER" makepad android \
   --sdk-path="$MAKEPAD_ANDROID_SDK" --abi=aarch64 \

@@ -90,6 +90,9 @@ impl MatchEvent for App {
         } else {
             let installed =
                 connected_support::install(&[bundle.clone()], &root).expect("Signed installation");
+            // Only this isolated fixture uses the temporary legacy catalog.
+            // The Wasm worker rechecks it through normal host admission.
+            std::env::set_var("OCTOSENSE_HUB_CATALOG", "legacy");
             std::env::set_var(
                 "OCTOSENSE_HUB_ANCHOR",
                 installed["anchor"].as_str().unwrap(),
