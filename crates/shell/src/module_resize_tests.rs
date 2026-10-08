@@ -515,6 +515,7 @@ fn card_runner_restyles_nested_script_without_replacing_draft() {
 }
 
 #[test]
+#[cfg(feature = "app-hub")]
 fn card_runner_restyle_keeps_dynamic_labels_wrapped_and_explicit_no_wrap() {
     use makepad_app_module::AppModule;
     let mut cx = Cx::new(Box::new(|_, _| {}));
