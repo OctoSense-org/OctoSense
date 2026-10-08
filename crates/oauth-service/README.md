@@ -7,6 +7,11 @@ to GitHub or Google, approves that app's scopes, and gets an app-bound connectio
 There is no OctoSense account or central login backend. This implements the
 shared-service part of [ADR 0010](../../docs/adr/0010-shared-oauth-and-connected-apps.md).
 
+The separate Linux/Windows OS-authenticated write approval implementation and
+its remaining native acceptance requirements are described in
+[desktop write approval](../../docs/os-authenticated-approval.md). It does not
+upgrade synthetic input to trusted physical input.
+
 ## Current delivery boundary
 
 The Rust protocol, connectors, native review, account lifecycle and sample UI
@@ -39,11 +44,11 @@ editing, in a standalone test APK that left the regular Home in place
 ([OnePlus Notes check](../../tools/connected-e2e/evidence/notes-oneplus-20261006/README.md));
 Inbox Assistant and Google Calendar have not run there.
 
-| Platform | Provider authorization | Credential storage | Gmail send approval |
+| Platform | Provider authorization | Credential storage | Native write approval |
 | --- | --- | --- | --- |
 | macOS | GitHub device flow; Google browser/PKCE loopback | Mail's platform Keychain adapter, separate OAuth namespace | Native pointer provenance; remote clicks refused; physical acceptance unverified |
-| Windows | Same desktop flows; platform execution unverified | Windows Credential Manager; unverified on Windows | Unsupported: fails closed |
-| Linux | Protocol tests and host compilation passed on Linux; browser login and GUI unverified | Secret Service; unlocked service required, no plaintext fallback; native vault test refused the locked/unavailable build-host store | Unsupported: fails closed |
+| Windows | Desktop flows implemented; actual synthetic backend browser acceptance is pending | Native Windows Credential Manager persistence/reopen/logout tested | OS authentication adapter implemented; needs Windows Hello and build 22000+; user-positive write unverified |
+| Linux | Synthetic backend registration/login, callback and two-app isolation passed with native host + real browser; see the exact source/lock limitation in the [receipt](../../tools/connected-e2e/evidence/linux-backend-native.json) | Real isolated Secret Service persistence/reopen/logout tested; no plaintext fallback | OS authentication adapter implemented; requires installed polkit policy and session agent; user-positive write unverified |
 | Android | GitHub flow present but unverified; **Google connection refused until its native adapter is implemented** | Mail's Android platform vault, separate namespace | Existing physical-touch provenance; this sample unverified |
 
 `desktop-v0.1.0-beta.2` is the first release with the connected-account
@@ -195,7 +200,8 @@ Call the declared operations with an active connection:
 
 Both objects are arguments to `auth.backend.request`. GET operations execute on a
 worker. POST/PUT/PATCH/DELETE open the same native immutable review used for
-GitHub/Calendar; a physical activation is required, and scripts/agents cannot
+GitHub/Calendar; physical approval on macOS/Android or fresh OS-authenticated approval
+on Linux/Windows is required. Scripts/agents cannot
 approve through `auth.backend.sheet.save`. Background mutations return a request
 to open the app. Cancellation or expiry before approval performs no write. Once an
 approved HTTP request begins, cancellation cannot promise to undo the server's
@@ -227,7 +233,7 @@ registration requires reconnecting; it cannot redirect an existing token.
 Logout revokes the local handle before attempting remote logout and reports
 the remote result separately. Embedded callbacks retain caller, state, expiry
 and single-use checks. Android versions below 9 and iOS refuse embedded backend
-login. Windows/Linux execution remains unverified.
+login. Linux external-browser backend execution has a [native receipt](../../tools/connected-e2e/evidence/linux-backend-native.json); Windows browser/callback acceptance remains pending.
 
 The synthetic backend uses real browser forms, HTTP code exchange and protected
 requests. HTTP loopback is available only in the non-default acceptance build,
@@ -332,10 +338,11 @@ host.request("auth.connect", {
 `github.review_save` freezes repository/branch/path/content/base SHA.
 `gcalendar.review_save` freezes calendar/event/ETag; a stale ETag is a conflict,
 not permission to overwrite. `gmail.draft.review` freezes the durable draft
-revision, recipient and body. All three writes require a physical activation
-of the native host review control, with native provenance checked on press and
-release before the one-use capability crosses into the worker. Scripts,
-agents, remote instrumentation and JSON flags cannot approve a save or send.
+revision, recipient and body. macOS/Android require physical activation of the
+native review control, checking provenance on press and release. Linux/Windows
+require the distinct [OS-authenticated proof](../../docs/os-authenticated-approval.md).
+Both routes consume a one-use capability; scripts, agents, remote clicks and JSON
+flags cannot approve a save or send by themselves.
 Dismissal cancels an unsubmitted review; a selected-account change is checked
 again before writing. Unknown Gmail submission outcomes stay unknown and are
 not retried blindly.

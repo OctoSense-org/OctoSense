@@ -71,6 +71,8 @@ GROUPS["all"] = [w for g in ("desktop", "phone", "apps", "rom") for w in GROUPS[
 # Workflows ci-local deliberately does not run, and why. --check-drift skips
 # them (an entry naming no workflow, or one ci-local runs, is drift).
 NOT_LOCAL = {
+    "os-approval.yml": "native Windows Hello availability needs Windows; local compile and mock results "
+                       "do not substitute for the explicit non-authenticating Windows job",
     "platform-vault.yml": "actual Windows Credential Manager and backend browser acceptance need a Windows session; "
                           "compilation or another OS is not native account evidence",
     "embedded-browser.yml": "native Windows WebView2 acceptance needs a Windows desktop and installed engine; "

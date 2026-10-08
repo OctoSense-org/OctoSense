@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "case": "Native OS-authenticated approval refusal and availability",
+  "windows": {
+    "source_revision": "8b8a4a36",
+    "workflow_run": 37729789805,
+    "workflow_url": "https://github.com/OctoSense-org/OctoSense/actions/runs/37729789805",
+    "runner": "windows-2022",
+    "oauth_and_adapter_tests": {
+      "passed": 97,
+      "failed": 0,
+      "ignored": 2
+    },
+    "native_availability_probe": {
+      "passed": 1,
+      "api": "UserConsentVerifier.CheckAvailabilityAsync",
+      "result": 1,
+      "available": false,
+      "authentication_attempted": false
+    }
+  },
+  "linux": {
+    "native_missing_policy_test": "approval::linux::tests::native_missing_policy_cannot_start_approval",
+    "passed": true,
+    "policy_installed": false,
+    "authentication_attempted": false,
+    "provider_write_attempted": false
+  },
+  "not_verified": [
+    "Human completion of a polkit or Windows Hello authentication dialog",
+    "OS-authenticated execution of the exact reviewed synthetic business write",
+    "Human cancellation while the native authentication dialog is visible",
+    "Administrator policy installation and a configured active Linux session"
+  ],
+  "scope": "Windows result is actual native API availability, not an authentication result; Linux missing-policy refusal does not invoke the authority or install system policy."
+}

@@ -246,6 +246,12 @@ def packager_config(base, *, version, binaries_dir, out_dir, resources, kernel):
     config["binariesDir"] = str(binaries_dir)
     config["outDir"] = str(out_dir)
     config["resources"] = [{"src": str(resources), "target": "."}]
+    # Debian installs this policy as a root-owned package payload. The app
+    # never writes a system policy itself; AppImage/source users must arrange
+    # an explicit administrator installation of the identical file.
+    config.setdefault("deb", {}).setdefault("files", {})[
+        str(DESKTOP / "resources/org.octosense.policy")
+    ] = "usr/share/polkit-1/actions/org.octosense.policy"
     if kernel:
         # cargo-packager copies `<path>-<target triple>[.exe]` beside the
         # main binary as `<name>[.exe]`.

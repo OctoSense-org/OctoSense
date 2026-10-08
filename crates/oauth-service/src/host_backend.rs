@@ -421,13 +421,25 @@ impl PreparedRequest {
         self.method != "GET"
     }
     pub fn execute(&self) -> Result<Value, String> {
+        self.execute_checked(|| Ok(()))
+    }
+    pub fn execute_checked(
+        &self,
+        check: impl FnOnce() -> Result<(), String>,
+    ) -> Result<Value, String> {
         with_session(
             &self.root,
             &self.app,
             &self.request.connection,
             &self.scope_check,
             Some((&self.binding, self.epoch)),
-            |backend, tokens, _| backend.request(&self.app, tokens, &self.request),
+            |backend, tokens, _| {
+                // with_session owns the per-app operation lock here, and has
+                // completed any refresh. Check the exact OS approval binding
+                // immediately before the declared business request.
+                check()?;
+                backend.request(&self.app, tokens, &self.request)
+            },
         )
     }
 }

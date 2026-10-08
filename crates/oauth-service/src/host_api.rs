@@ -36,6 +36,28 @@ struct Review {
     save: Arc<SaveState>,
     account: String,
 }
+
+/// Authentication binds the complete executable operation, independently of
+/// the human-readable presentation. Include version/resource IDs that do not
+/// necessarily appear verbatim in the summary shown by the native widget.
+fn approval_snapshot(review: &Review) -> Value {
+    match &review.change {
+        Change::Github(file) => {
+            json!({"operation":"github.save","connection":review.connection,"file":file})
+        }
+        Change::Calendar {
+            calendar,
+            event,
+            existing,
+            create_id,
+        } => json!({"operation":"gcalendar.save",
+            "connection":review.connection,"calendar":calendar,"event":event,"existing":existing,"create_id":create_id}),
+        Change::Backend(request) => {
+            json!({"operation":"backend.request","connection":review.connection,
+            "backend_binding":request.binding,"origin":request.origin,"method":request.method,"path":request.path,"request":request.request})
+        }
+    }
+}
 #[derive(Default)]
 struct SaveState {
     phase: AtomicU8, // 0 pending, 1 submitted, 2 cancelled
@@ -69,6 +91,7 @@ pub struct ReviewRequest {
     family: &'static str,
     ticket: String,
     review: Arc<Review>,
+    os_binding: Result<crate::approval::Binding, String>,
 }
 impl ReviewRequest {
     pub fn snapshot(&self) -> Value {
@@ -86,6 +109,9 @@ impl ReviewRequest {
                 "Saving requires a physical activation of the native Approve & Save control".into(),
             );
         }
+        self.claim_once()
+    }
+    fn claim_once(&self) -> Result<(), String> {
         if Instant::now() >= self.review.deadline {
             self.cancel()?;
             return Err("Review expired; check the current draft again".into());
@@ -101,16 +127,68 @@ impl ReviewRequest {
     /// the worker. Rejected automation does not consume the pending review.
     pub fn approve(&mut self, down: bool, up: bool) -> Result<(), String> {
         self.claim_approval(down, up)?;
+        self.execute(None)
+    }
+    pub fn begin_os_approval(
+        &self,
+        cx: &makepad_widgets::Cx,
+        window: makepad_widgets::WindowId,
+        owner: &str,
+    ) -> Result<crate::approval::PendingApproval, String> {
+        self.os_pending_check()?;
+        let binding = self.os_binding.clone()?;
+        binding.revalidate()?;
+        crate::approval::PendingApproval::begin(
+            cx,
+            window,
+            owner,
+            binding,
+            "Approve the exact account change displayed by OctoSense",
+        )
+    }
+    pub fn poll_os_approval(
+        &mut self,
+        cx: &makepad_widgets::Cx,
+        window: makepad_widgets::WindowId,
+        owner: &str,
+        pending: &mut crate::approval::PendingApproval,
+    ) -> Result<bool, String> {
+        self.os_pending_check()?;
+        let binding = self.os_binding.clone()?;
+        binding.revalidate()?;
+        let Some(evidence) = pending.poll(cx, window, owner, &binding)? else {
+            return Ok(false);
+        };
+        let approved = evidence.consume(&binding)?.limit_to(self.review.deadline);
+        self.claim_once()?;
+        self.execute(Some(approved))?;
+        Ok(true)
+    }
+    fn os_pending_check(&self) -> Result<(), String> {
+        if self.review.save.phase.load(Ordering::Acquire) != 0 || !self.review.reply.is_pending() {
+            return Err("This native review was cancelled or its app is no longer waiting".into());
+        }
+        Ok(())
+    }
+    fn execute(
+        &self,
+        authenticated: Option<crate::approval::ApprovedOperation>,
+    ) -> Result<(), String> {
         let review = self.review.clone();
         let fallback = review.clone();
         if std::thread::Builder::new()
             .name("connector-reviewed-save".into())
             .spawn(move || {
                 let result = match &review.change {
-                    Change::Backend(request) => request.execute(),
-                    _ => with_provider_api(&review.root, &review.app, |api| {
-                        execute_review(&review, api)
+                    Change::Backend(request) => request.execute_checked(|| {
+                        authenticated.map_or(Ok(()), |approval| approval.revalidate())
                     }),
+                    _ => crate::host::with_provider_api_checked(
+                        &review.root,
+                        &review.app,
+                        || authenticated.map_or(Ok(()), |approval| approval.revalidate()),
+                        |api| execute_review(&review, api),
+                    ),
                 };
                 *review.save.result.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(result.clone());
@@ -233,10 +311,19 @@ impl Connector {
             save: Arc::new(SaveState::default()),
             account,
         });
+        let os_binding = crate::approval::Binding::capture(
+            &review.root,
+            &review.app,
+            self.family,
+            &review.connection,
+            &ticket,
+            &approval_snapshot(&review),
+        );
         let request = ReviewRequest {
             family: self.family,
             ticket: ticket.clone(),
             review: review.clone(),
+            os_binding,
         };
         let source = match hook(request) {
             Ok(source) => source,
@@ -768,9 +855,51 @@ mod tests {
                 family: "github",
                 ticket: Uuid::new_v4().to_string(),
                 review,
+                os_binding: Err("Physical-only test fixture".into()),
             },
             heap,
         )
+    }
+
+    #[test]
+    fn operation_fingerprint_binds_github_revision_and_calendar_resource_ids() {
+        let (mut request, heap) = fixture();
+        let digest = |review: &Review| {
+            crate::approval::canonical_digest(&approval_snapshot(review)).unwrap()
+        };
+        let original = digest(&request.review);
+        if let Change::Github(file) = &mut Arc::get_mut(&mut request.review).unwrap().change {
+            file.sha = Some("new-sha".into());
+        }
+        assert_ne!(original, digest(&request.review));
+        Arc::get_mut(&mut request.review).unwrap().change = Change::Calendar {
+            calendar: "calendar-one".into(),
+            event: serde_json::from_value(
+                json!({"summary":"Meeting","description":"Review","location":"Office",
+                "start":{"date":"2026-10-08"},"end":{"date":"2026-10-09"}}),
+            )
+            .unwrap(),
+            existing: Some(("event-one".into(), "etag-one".into())),
+            create_id: "create-one".into(),
+        };
+        for field in 0..3 {
+            let before = digest(&request.review);
+            if let Change::Calendar {
+                existing,
+                create_id,
+                ..
+            } = &mut Arc::get_mut(&mut request.review).unwrap().change
+            {
+                match field {
+                    0 => existing.as_mut().unwrap().0.push('x'),
+                    1 => existing.as_mut().unwrap().1.push('x'),
+                    _ => create_id.push('x'),
+                }
+            }
+            assert_ne!(before, digest(&request.review));
+        }
+        drop(request);
+        services::cancel_heap(heap);
     }
 
     #[test]

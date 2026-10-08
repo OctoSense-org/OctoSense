@@ -7,7 +7,7 @@ publish = false
 
 [features]
 default = []
-host = ["dep:octosense-appstore", "dep:octosense-mail-service", "dep:keyring", "dep:makepad-widgets"]
+host = ["dep:octosense-appstore", "dep:octosense-mail-service", "dep:keyring", "dep:makepad-widgets", "dep:dbus", "dep:webview2-windows", "dep:windows-future"]
 # Native acceptance executables only; no environment/config switch in releases.
 acceptance-fixtures = ["host"]
 
@@ -28,6 +28,9 @@ octosense-mail-service = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"], optional = true }
+webview2-windows = { workspace = true, optional = true, features = ["Security_Credentials_UI", "Win32_System_WinRT", "Win32_System_Threading"] }
+windows-future = { version = "=0.3.2", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"], optional = true }
+dbus = { version = "=0.9.12", features = ["vendored"], optional = true }

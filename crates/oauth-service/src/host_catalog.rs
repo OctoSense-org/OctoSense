@@ -93,20 +93,9 @@ fn method(
         args,
         result,
     )
-    // Native account/vault and external-browser routes exist on both desktop
-    // targets too. Do not hide read/local-draft methods from their agents.
-    // Write-review methods retain the physical-approval platform boundary;
-    // a separate OS-authenticated approval adapter must establish the others.
-    .with_platforms(
-        if matches!(
-            name,
-            "github.review_save" | "gcalendar.review_save" | "gmail.draft.review"
-        ) {
-            &["macos", "android"]
-        } else {
-            &["macos", "android", "linux", "windows"]
-        },
-    )
+    // Native write reviews on Linux/Windows require fresh OS authentication;
+    // runtime availability still depends on the OS policy or Windows Hello.
+    .with_platforms(&["macos", "android", "linux", "windows"])
     .with_agent_access(agent)
 }
 fn result() -> Value {
@@ -134,7 +123,7 @@ pub(crate) fn auth() -> Vec<HostApiMethod> {
         method("auth.select", "Select an app-owned account and invalidate pending authorizations", input(&["connection"], &[]), connection(), ForegroundOnly),
         method("auth.disconnect", "Revoke the local connection, then attempt backend remote logout", input(&["connection"], &[]), result(), ForegroundOnly),
         method("auth.backend.me", "Read this app's active backend identity", input(&["connection"], &[]), object(json!({"connection":string(),"backend_id":string(),"identity":object(json!({"sub":string(),"label":string()}), &["sub","label"])}), &["connection","backend_id","identity"]), Allowed),
-        method("auth.backend.request", "Execute a declared backend operation; GET can run in background, mutations require native physical review", input(&["connection","operation"], &[
+        method("auth.backend.request", "Execute a declared backend operation; GET can run in background, mutations require native review and physical or OS-authenticated approval", input(&["connection","operation"], &[
             ("query",json!({"type":"object","maxProperties":32,"additionalProperties":{"type":"string","maxLength":2048}})),
             ("body",json!({"description":"Operation JSON body, at most 64 KiB; omitted for GET"}))]), json!({"description":"Declared endpoint JSON result, at most 64 KiB"}), Allowed),
     ]
@@ -214,7 +203,7 @@ pub(crate) fn connector(family: &str, native_review: bool) -> Vec<HostApiMethod>
         match family {
             "github" => methods.push(method(
                 "github.review_save",
-                "Review an immutable Markdown commit; only physical native approval can save",
+                "Review an immutable Markdown commit; physical or OS-authenticated native approval is required to save",
                 requiring(
                     input(&["connection"], &[("file", github_file())]),
                     &["file"],
@@ -224,7 +213,7 @@ pub(crate) fn connector(family: &str, native_review: bool) -> Vec<HostApiMethod>
             )),
             "gcalendar" => methods.push(method(
                 "gcalendar.review_save",
-                "Review an immutable event create/update; only physical native approval can save",
+                "Review an immutable event create/update; physical or OS-authenticated native approval is required to save",
                 requiring(
                     input(
                         &["connection", "calendar"],
@@ -320,7 +309,7 @@ pub(crate) fn gmail(native_review: bool) -> Vec<HostApiMethod> {
     if native_review {
         methods.push(method(
             "gmail.draft.review",
-            "Review the exact saved draft; physical native approval is required to send",
+            "Review the exact saved draft; physical or OS-authenticated native approval is required to send",
             requiring(
                 input(
                     &["connection", "draft"],
@@ -339,7 +328,7 @@ pub(crate) fn gmail(native_review: bool) -> Vec<HostApiMethod> {
 mod tests {
     use super::*;
     #[test]
-    fn desktop_accounts_reads_and_local_drafts_are_discoverable_without_widening_write_approval() {
+    fn desktop_reviews_are_discoverable_but_never_background_approvals() {
         let methods = auth()
             .into_iter()
             .chain(connector("github", true))
@@ -352,15 +341,14 @@ mod tests {
                 "github.review_save" | "gcalendar.review_save" | "gmail.draft.review"
             );
             for platform in ["linux", "windows"] {
-                assert_eq!(
+                assert!(
                     method.platforms.iter().any(|p| p == platform),
-                    !review,
                     "{} on {platform}",
                     method.name
                 );
             }
-            if method.name == "auth.backend.request" {
-                assert!(method.platforms.iter().any(|p| p == "linux"));
+            if review {
+                assert_eq!(method.agent_access, AgentAccess::ForegroundOnly);
             }
             count += 1;
         }

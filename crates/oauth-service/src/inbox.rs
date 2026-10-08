@@ -639,7 +639,7 @@ impl DraftStore {
         self.save(next)?;
         Ok(draft)
     }
-    fn validate(&self, ticket: &ReviewTicket) -> Result<Draft, String> {
+    pub(crate) fn validate(&self, ticket: &ReviewTicket) -> Result<Draft, String> {
         if ticket.app != self.app
             || ticket.connection != self.connection
             || Instant::now() >= ticket.expires
@@ -669,6 +669,28 @@ impl DraftStore {
         up_trusted: bool,
         api: &mut Api<'_>,
     ) -> Result<Draft, String> {
+        if !down_trusted || !up_trusted {
+            return Err(
+                "Approve & Send requires a physical activation of the native host review".into(),
+            );
+        }
+        self.submit_account_checked(ticket, api)
+    }
+    #[cfg(feature = "host")]
+    pub(crate) fn submit_authenticated(
+        &mut self,
+        ticket: ReviewTicket,
+        approval: crate::approval::ApprovedOperation,
+        api: &mut Api<'_>,
+    ) -> Result<Draft, String> {
+        approval.validate(&self.app, &self.connection, &ticket.snapshot())?;
+        self.submit_account_checked(ticket, api)
+    }
+    fn submit_account_checked(
+        &mut self,
+        ticket: ReviewTicket,
+        api: &mut Api<'_>,
+    ) -> Result<Draft, String> {
         if !api
             .connections
             .active(&self.app)
@@ -682,10 +704,9 @@ impl DraftStore {
         if sender != ticket.snapshot.from {
             return Err("Sending account changed; review again".into());
         }
-        self.submit_with(ticket, down_trusted, up_trusted, |draft, attempt| {
-            api.send_claimed(draft, attempt)
-        })
+        self.submit_claimed(ticket, |draft, attempt| api.send_claimed(draft, attempt))
     }
+    #[cfg(test)]
     fn submit_with(
         &mut self,
         ticket: ReviewTicket,
@@ -698,6 +719,13 @@ impl DraftStore {
                 "Approve & Send requires a physical activation of the native host review".into(),
             );
         }
+        self.submit_claimed(ticket, send)
+    }
+    fn submit_claimed(
+        &mut self,
+        ticket: ReviewTicket,
+        send: impl FnOnce(&Draft, &Attempt) -> SendOutcome,
+    ) -> Result<Draft, String> {
         let mut draft = self.validate(&ticket)?;
         draft.status = Status::Sending;
         draft.attempts.last_mut().unwrap().status = Status::Sending;

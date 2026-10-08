@@ -6,6 +6,10 @@ OctoSense 为已安装应用保存服务商凭据。用户登录 GitHub 或 Goog
 应用得到绑定自身身份的连接句柄。无需 OctoSense 账户或中心登录后台。
 本服务实现 [ADR 0010](../../docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md) 的共享服务部分。
 
+Linux/Windows 独立的 OS 认证写入审批实现及剩余原生验收要求，见
+[桌面写入审批](../../docs/os-authenticated-approval.zh-CN.md)。它不会将合成输入
+升级为可信的物理输入。
+
 ## 当前交付边界
 
 Rust 授权协议、连接器、原生审批、账户生命周期和示例界面已实现。macOS 原生宿主与
@@ -32,8 +36,8 @@ Inbox Assistant 和 Google Calendar 尚未在该设备上运行。
 | 平台 | 服务商授权 | 凭据保存 | Gmail 发信审批 |
 | --- | --- | --- | --- |
 | macOS | GitHub 设备授权；Google 浏览器/PKCE/回环回调 | 复用 Mail 的 Keychain 适配器，独立 OAuth 命名空间 | 原生鼠标来源校验；远程点击被拒绝，亲手点按未验证 |
-| Windows | 同样的桌面流程，平台运行未验证 | Windows Credential Manager；未在 Windows 验证 | 不支持，明确拒绝 |
-| Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；原生测试被构建主机未解锁/不可用的凭据库拒绝 | 不支持，明确拒绝 |
+| Windows | 已实现桌面流程；真实合成后端浏览器验收待完成 | 原生 Windows Credential Manager 持久化、重开、退出已测试 | OS 认证适配器已实现；需要 Windows Hello 和 build 22000+；用户认证写入正向验收未验证 |
+| Linux | 原生宿主与真实浏览器的合成后端注册/登录、回调、双应用隔离已通过；准确源码/锁文件限制见[记录](../../tools/connected-e2e/evidence/linux-backend-native.json) | 独立真实 Secret Service 的持久化、重开、退出已测试，不回退到明文 | OS 认证适配器已实现；需要已安装的 polkit 策略和会话认证 agent；用户认证写入正向验收未验证 |
 | Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有的亲手点按来源校验；本示例未验证 |
 
 `desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本；
@@ -152,7 +156,7 @@ shell 通过 `host::set_backend_resolver` 提供经过摘要验证的 manifest `
 ```
 
 GET 在工作线程执行；POST/PUT/PATCH/DELETE 复用 GitHub/Calendar 的原生不可变
-审核界面，须通过真实输入确认。脚本和 agent 不能通过 `auth.backend.sheet.save`
+审核界面；macOS/Android 要求物理输入确认，Linux/Windows 要求新的 OS 认证证据。脚本和 agent 不能通过 `auth.backend.sheet.save`
 批准发送。后台写操作要求先打开应用。批准前取消或超时不会发送；已批准的 HTTP
 请求一旦开始，取消不能承诺撤销服务端结果，错误也不会自动重试。
 
@@ -172,7 +176,7 @@ GET 在工作线程执行；POST/PUT/PATCH/DELETE 复用 GitHub/Calendar 的原�
 URL 凭据及 HTTP 重定向。宿主把保存的连接绑定到规范化注册，修改注册后必须
 重新连接，不能把旧令牌发送到新端点。退出先撤销本地句柄，再尝试远程退出，
 并单独报告远程结果。嵌入回调仍检查调用者、state、有效期及单次使用。
-Android 9 以下与 iOS 拒绝嵌入后端登录；Windows/Linux 的运行尚未验证。
+Android 9 以下与 iOS 拒绝嵌入后端登录。Linux 外部浏览器后端流程已有[原生记录](../../tools/connected-e2e/evidence/linux-backend-native.json)，Windows 浏览器/回调验收仍待完成。
 
 合成后端使用真实浏览器表单、HTTP 代码交换及受保护请求。HTTP 回环仅在非默认
 验收构建中通过显式隔离注册开放，不是发行版本的配置开关。参阅
@@ -251,8 +255,9 @@ Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`�
 
 GitHub 保存冻结仓库、分支、路径、内容及原 blob SHA。Calendar 保存冻结日历、事件和 ETag；
 过期 ETag 会报冲突，不会静默覆盖。Gmail 原生审阅界面冻结持久化草稿版本、收件人及正文。
-这三种写入都必须由用户亲手点按宿主原生审阅界面上的控件；按下与释放时分别检查原生输入来源，
-然后才把一次性能力交给工作线程。脚本、Agent、远程测试及 JSON 标记不能批准保存或发送。
+macOS/Android 要求用户亲手点按宿主原生审阅控件，按下与释放时分别检查输入来源。
+Linux/Windows 使用独立的 [OS 认证证据](../../docs/os-authenticated-approval.zh-CN.md)。
+两条路径都消费一次性能力；脚本、Agent、远程点击或 JSON 标记本身不能批准保存或发送。
 关闭审阅界面会取消尚未提交的请求；写入前再次检查当前账户。结果不明的 Gmail 提交保持
 不明状态，不会盲目重试。
 
