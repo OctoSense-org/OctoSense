@@ -535,10 +535,140 @@ fn pick(row){
         show("route")
         return
     }
-    place = p
-    stops = []
     remember(p)
+    open_place(p)
+}
+// A new card: whatever an older card's lookup brings is dropped, and the
+// fix no longer moves the map (the card's place is where the person looks).
+fn open_card(){
+    card_seq = card_seq + 1
+    detail = blank_detail()
+    stops = []
+    centered = true
     show("place")
+}
+// A place's card, from a row (`pick`) or a pin (`marker_tapped`): a place
+// with every field (`as_place`, `photon_hits`).
+fn open_place(p){
+    place = p
+    open_card()
+    fly(p.lat, p.lon, 16)
+    load_details(p, card_seq)
+}
+fn close_place(){
+    card_seq = card_seq + 1
+    place = nil
+    show("search")
+}
+// One Overpass request per opened place, on the three declared mirrors in
+// turn, kept for a week. Without an answer the card shows Photon's data only.
+// An answer that isn't Overpass's, or Overpass's own error, is nil: the next
+// mirror is asked and nothing is kept, so a busy page is never cached as "no
+// details". A place without an OpenStreetMap id asks nothing and touches no
+// file (`cache_path("")` would be the cache folder itself).
+fn load_details(p, mine){
+    let id = text_of(p, "id")
+    let query = overpass_query(id)
+    let name = cache_name(id)
+    if query == "" || name == "" || mine != card_seq { return }
+    let cached = cached_detail(name)
+    if cached != nil {
+        detail = cached
+        render_details()
+        return
+    }
+    for host in OVERPASS {
+        let body = body_of(fetch("https://" + host + "/api/interpreter?data=" + query.url_encode()).await())
+        if mine != card_seq { return }   // the card moved on
+        if body != nil {
+            let d = place_details(body)
+            if d != nil {
+                detail = d
+                render_details()
+                fs.write(cache_path(name), {at: time_now() detail: d}.to_json())
+                return
+            }
+        }
+    }
+}
+// A place's kept details, or nil: none kept, a week old (or from a clock
+// that has since gone back), or a file that doesn't read as one Maps wrote:
+// a number `at`, and the four details as text (a file cut short may parse in
+// part). The website goes through `site_url` again, so a file an older
+// build wrote can't open what `site_url` refuses.
+fn cached_detail(name){
+    if !fs.exists(cache_path(name)) { return nil }
+    let text = try { fs.read(cache_path(name)) } catch { nil }
+    if text == nil || !text.is_string() { return nil }
+    let v = text.parse_json()
+    let at = number_of(v, "at")
+    if at == nil { return nil }
+    let age = time_now() - at
+    if age < 0 || age > CACHE_DAYS * 86400 { return nil }
+    let d = optional(v, "detail", nil)
+    if d == nil || !d.is_object() { return nil }
+    for k in ["hours" "phone" "website" "cuisine"] {
+        let x = optional(d, k, nil)
+        if x == nil || !x.is_string() { return nil }
+    }
+    return {hours: text_of(d, "hours") phone: text_of(d, "phone") website: site_url(text_of(d, "website")) cuisine: text_of(d, "cuisine")}
+}
+fn has_details(){ detail.hours != "" || detail.phone != "" || detail.website != "" || detail.cuisine != "" }
+// Hidden when empty: a render that emits nothing keeps the last place's rows.
+// A render re-applies the view as declared once it is done, so `details`
+// declares no `visible: false`: that would hide it again after each render.
+fn render_details(){
+    ui.details.set_visible(has_details())
+    if has_details() { ui.details.render() }
+}
+fn place_distance(){
+    if sys.gps("ok") < 1 || !is_a_place(place) { return "" }
+    distance_text(distance_km(sys.gps("lat"), sys.gps("lon"), place.lat, place.lon)) + " away"
+}
+// The straight-line distance, shown only with a fix.
+fn show_distance(){
+    let text = place_distance()
+    ui.pdist.set_text(text)
+    ui.pdist.set_visible(text != "")
+}
+fn fill_place(){
+    ui.pname.set_text(place.name)
+    ui.pcat.set_text(place.cat)
+    ui.paddr.set_text(place.label)
+    show_distance()
+    sync_save()
+    render_details()
+}
+fn sync_save(){
+    if place != nil && is_saved(saved, place) { ui.save.set_text("Saved") } else { ui.save.set_text("Save") }
+}
+fn toggle_save(){
+    if place == nil { return }
+    if is_saved(saved, place) { saved = without_saved(saved, place) } else { saved = with_saved(saved, place) }
+    fs.write(data_path("saved.json"), saved.to_json())
+    sync_save()
+    show_pins()
+}
+// Saved places, and the open one, as pins on the browse map; `shown_pins`
+// is the list the pins were drawn from, so a pin's tap finds its place.
+// Directions and the drive show only the route's own pins.
+fn show_pins(){
+    if screen != "search" && screen != "place" { return }
+    let open = nil
+    if screen == "place" { open = place }
+    shown_pins = pin_places(saved, open)
+    ui.browse_map.set_route_markers(pins_text(shown_pins, open))
+}
+// A place's website, over the whole app, in its reader.
+fn open_site(url){
+    ui.site_fail.set_text("")
+    ui.site_title.set_text(place.name)
+    ui.site_pane.set_visible(true)
+    ui.site.open(url)
+}
+fn close_site(){
+    ui.site.close()
+    ui.site_pane.set_visible(false)
 }
 fn location_note(message){
     ui.location_status.set_text(message)
@@ -575,7 +705,16 @@ fn viewport_moved(lat, lon, zoom){
     if screen == "search" { show_results(false) }
 }
 fn map_long_pressed(lat, lon){}
-fn marker_tapped(i){}
+// A pin's tap, by its position among the drawn pins (`shown_pins`). A saved
+// pin may be an entry as `saved.json` holds it, so its card gets a copy with
+// every field of a place. The open place's own pin does nothing.
+fn marker_tapped(i){
+    if screen != "search" && screen != "place" { return }
+    if !i.is_number() || i - i != 0 || i < 0 || i >= shown_pins.len() || floor(i) != i { return }
+    let p = as_place(shown_pins[i])
+    if place != nil && place_key(p) == place_key(place) { return }
+    open_place(p)
+}
 // Every flight of Maps' own on the browse map goes through here, so its
 // landing is known by its target. MapView ignores a point that isn't a place.
 fn fly(lat, lon, zoom){
@@ -666,12 +805,7 @@ fn show(s){
     ui.locate_box.set_visible(s == "search" && host.has("location"))
     ui.drive_box.set_visible(s == "drive")
     ui.drive_bar.set_visible(s == "drive")
-    if s == "place" {
-        ui.pname.set_text(place.name)
-        ui.pcat.set_text(place.cat)
-        ui.paddr.set_text(place.label)
-        ui.peta.set_text("")
-    }
+    if s == "place" { fill_place() }
     if s == "route" {
         ui.rfrom.set_text(origin.name)
         ui.rto.set_text(place.name)
@@ -692,6 +826,7 @@ fn show(s){
         ui.results.render()
     }
     show_results(s != "search")
+    show_pins()
     tick()
 }
 fn set_mode(m){ mode = m; shown_route = ""; ui.modes.render(); tick() }
@@ -723,10 +858,7 @@ fn progress(){
 fn tick(){
     fix_origin()
     center_on_fix()
-    if screen == "place" {
-        ui.peta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "min") + "  ·  " + sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km"))
-        draw_route(ui.browse_map)
-    }
+    if screen == "place" { show_distance() }
     if screen == "route" {
         ui.reta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, eta_field(), vias()))
         ui.rdist.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km", vias()))
@@ -857,12 +989,22 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
         place_panel := Panel{visible: false
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
                 pname := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
-                Link{text: "Close" on_click: || show("search")}
+                Link{text: "Close" on_click: || close_place()}
             }
             pcat := Label{width: Fill text: "" draw_text.color: #xe37400 draw_text.text_style.font_size: 13}
             paddr := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
-            peta := Label{width: Fill text: "" draw_text.color: #x188038 draw_text.text_style.font_size: 13}
-            Primary{text: "Directions" on_click: || show("route")}
+            pdist := Label{width: Fill text: "" draw_text.color: #x188038 draw_text.text_style.font_size: 13}
+            // OpenStreetMap's details, as mapped; long opening hours wrap.
+            details := View{width: Fill height: Fit flow: Down spacing: 2 on_render: || {
+                if detail.hours != "" { Label{width: Fill flow: Flow.Right{wrap: true} text: "Hours  " + detail.hours draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.phone != "" { Label{width: Fill flow: Flow.Right{wrap: true} text: "Phone  " + detail.phone draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.cuisine != "" { Label{width: Fill flow: Flow.Right{wrap: true} text: "Cuisine  " + detail.cuisine draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.website != "" { Link{text: "Website" on_click: || open_site(detail.website)} }
+            }}
+            View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                Primary{text: "Directions" on_click: || show("route")}
+                save := Pill{text: "Save" on_click: || toggle_save()}
+            }
         }
         route_panel := Panel{visible: false
             modes := View{width: Fill height: Fit flow: Right spacing: 6 on_render: || {
@@ -918,5 +1060,17 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             }}
             Link{text: "End" on_click: || show("route")}
         }
+    }
+    // A place's website over everything, in the app's reader: a place's site
+    // is on no host list, so it opens with the `web` grant. Like a panel, it
+    // takes the presses its children don't, so nothing under it moves.
+    site_pane := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true cursor: MouseCursor.Default
+        show_bg: true draw_bg.color: ui_page
+        View{width: Fill height: 52 flow: Right align: Align{y: 0.5} padding: Inset{left: 4 right: 8} spacing: 4
+            Link{text: "‹ Maps" on_click: || close_site()}
+            site_title := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
+        }
+        site_fail := Label{width: Fill padding: Inset{left: 18 right: 18} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
+        site := WebReader{width: Fill height: Fill on_error: || ui.site_fail.set_text(ui.site.error())}
     }
 }

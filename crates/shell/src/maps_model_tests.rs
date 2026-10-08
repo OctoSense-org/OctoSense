@@ -625,28 +625,36 @@ for s in listed(disk) {
 fn maps_opens_a_recent_place_from_an_older_build_with_every_field() {
     // A recent place from before ids has no `id`, `cat` or `label`. Its tap
     // opens the card, which reads each field (`place.cat` raises on a missing
-    // one), and remembers it whole. `ui`, `host`, `sys` and `fs` stubbed.
+    // one), and remembers it whole. Without an OpenStreetMap id it asks
+    // Overpass nothing and reads no cache. `ui`, `host`, `sys`, `fs` and
+    // `net` stubbed.
     let out = maps_model(
         r#"mod.texts = {}
 mod.writes = []
-fn text_field(id){ return {set_text: fn(t) { mod.texts[id] = t }} }
+mod.urls = []
+mod.flights = []
+fn text_field(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn(v) {} render: fn() {}} }
 let widget = {set_visible: fn(v) {} set_text: fn(t) {} render: fn() {}}
 let ui = {results: widget search_panel: widget place_panel: widget route_panel: widget browse_box: widget
-    locate_box: widget drive_box: widget drive_bar: widget browse_map: widget
-    pname: text_field("pname") pcat: text_field("pcat") paddr: text_field("paddr") peta: widget}
+    locate_box: widget drive_box: widget drive_bar: widget details: widget
+    browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) } set_route_markers: fn(text) {}}
+    pname: text_field("pname") pcat: text_field("pcat") paddr: text_field("paddr") pdist: text_field("pdist")
+    save: text_field("save")}
 let host = {has: fn(capability) { false }}
 let sys = {gps: fn(field) { 0 } navroute: fn(a, b, c, d, field, v) { "—" }}
 let fs = {exists: fn(path) { true } write: fn(path, data) { mod.writes.push([path data]) }}
+let net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
+    http_request: fn(req, events) { mod.urls.push(req.url); events.on_error("offline") }}
 recents = list_in('[{"name":"Old Recent","lat":37.335,"lon":-121.885}]')
 for r in listed(recents) { pick(r) }
-[screen place mod.texts mod.writes.len() mod.writes[0][0] mod.writes[0][1].parse_json()].to_json()"#,
+[screen place mod.texts mod.writes.len() mod.writes[0][0] mod.writes[0][1].parse_json() mod.urls mod.flights].to_json()"#,
     );
     let old = serde_json::json!({"id": "", "name": "Old Recent", "cat": "", "label": "", "lat": 37.335, "lon": -121.885});
     assert_eq!(
         out,
         serde_json::json!([
-            "place", old, {"pname": "Old Recent", "pcat": "", "paddr": ""},
-            1, "accounts/device/recents.json", [old]
+            "place", old, {"pname": "Old Recent", "pcat": "", "paddr": "", "pdist": "", "save": "Save"},
+            1, "accounts/device/recents.json", [old], [], [[37.335, -121.885, 16]]
         ])
     );
 }
@@ -662,7 +670,8 @@ fn shown(id){ return {set_visible: fn(v) { mod.shown[id] = v }} }
 let widget = {set_visible: fn(v) {} set_text: fn(t) {} render: fn() {}}
 let ui = {results: widget search: widget search_hint: widget search_panel: widget place_panel: widget
     route_panel: widget browse_box: widget locate_box: widget drive_box: widget drive_bar: widget
-    finding_links: shown("finding_links") your_location: shown("your_location")}
+    finding_links: shown("finding_links") your_location: shown("your_location")
+    browse_map: {set_route_markers: fn(text) {}}}
 let host = {has: fn(capability) { false }}
 let sys = {gps: fn(field) { 0 }}
 let log = []
@@ -832,4 +841,348 @@ log.push(outcomes)
             13
         ])
     );
+}
+
+/// Maps' place card with the runtime stubbed. `ui`: each widget's text is
+/// `mod.texts[id]` and its visibility `mod.shown[id]`, the details' renders
+/// count in `mod.renders`, and the browse map's pins and flights are
+/// `mod.markers` and `mod.flights`. `sys`: a fix only with `mod.fix`.
+/// `fs`: files are `mod.files[path]`, and
+/// every call is logged in `mod.io` (a read of a missing file raises, as the
+/// runtime's does). The clock is `mod.now`. Requests go as in SEARCH_STUBS:
+/// each takes the next of `mod.answers` (nil, or none left: the request
+/// failed; "refused": the runtime refuses it), and `mod.during` is what
+/// happens while one is on its way.
+const CARD_STUBS: &str = r#"mod.texts = {}
+mod.shown = {}
+mod.renders = 0
+mod.markers = []
+mod.flights = []
+mod.files = {}
+mod.io = []
+mod.urls = []
+mod.answers = []
+mod.during = nil
+mod.now = 1800000000
+mod.fix = false
+fn w(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn(v) { mod.shown[id] = v }
+    render: fn() { if id == "details" { mod.renders = mod.renders + 1 } }} }
+let ui = {results: w("results") search: w("search") search_hint: w("search_hint") search_panel: w("search_panel")
+    place_panel: w("place_panel") route_panel: w("route_panel") browse_box: w("browse_box") locate_box: w("locate_box")
+    drive_box: w("drive_box") drive_bar: w("drive_bar") finding_links: w("finding_links") your_location: w("your_location")
+    pname: w("pname") pcat: w("pcat") paddr: w("paddr") pdist: w("pdist") details: w("details") save: w("save")
+    location_status: w("location_status")
+    browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) } set_route_markers: fn(text) { mod.markers.push(text) }}}
+let host = {has: fn(capability) { false }}
+// No fix unless `mod.fix`; then downtown San Jose.
+let sys = {gps: fn(field) { if !mod.fix { return 0 }; if field == "lat" { return 37.3350 }; if field == "lon" { return -121.8850 }; return 1 }}
+fn time_now(){ mod.now }
+let fs = {
+    exists: fn(path) { mod.io.push("exists " + path); return optional(mod.files, path, nil) != nil }
+    read: fn(path) {
+        mod.io.push("read " + path)
+        let text = optional(mod.files, path, nil)
+        if text == nil { no_such_file() }
+        text
+    }
+    write: fn(path, data) { mod.io.push("write " + path); mod.files[path] = data }
+}
+let net = {HttpMethod: {GET: "GET"} HttpRequest: {} HttpEvents: {}
+    http_request: fn(req, events) {
+        mod.urls.push(req.url)
+        let res = nil
+        if mod.answers.len() > 0 {
+            res = mod.answers[0]
+            mod.answers.remove(0)
+        }
+        if res == "refused" { refuse_the_request() }
+        if res == nil { events.on_error("offline") } else { events.on_response(res) }
+    }}
+fn promise(){
+    let held = {value: nil resolved: false}
+    let act = mod.during
+    mod.during = nil
+    return {resolve: fn(v) { held.value = v; held.resolved = true } await: fn() {
+        if act != nil { act() }
+        if !held.resolved { never_answered() }
+        held.value
+    }}
+}
+// The host each request went to, in order.
+fn hosts(){
+    let out = []
+    for u in mod.urls { out.push(u.split("/api/")[0]) }
+    out
+}
+fn kept(name){
+    let text = optional(mod.files, "cache/" + name, nil)
+    if text == nil { return nil }
+    text.parse_json()
+}
+"#;
+
+const PIZZA_DETAILS: &str = r#"{"elements":[{"type":"node","id":1,"tags":{"opening_hours":"Mo-Su 11:00-22:00","phone":"+1 408 555 0100","website":"pizza.example.com","cuisine":"pizza"}}]}"#;
+const SUSHI_DETAILS: &str = r#"{"elements":[{"type":"node","id":3,"tags":{"opening_hours":"Tu-Su 17:00-22:00","cuisine":"sushi"}}]}"#;
+
+#[test]
+fn maps_keeps_only_overpass_answers_and_tries_the_next_mirror_on_anything_else() {
+    let code = r#"let pizza = {id: "N:1" name: "Pizza" cat: "Restaurant" label: "" lat: 37.1 lon: -121.1}
+let gateway = {status_code: 504 body: '<html>504 Gateway Time-out</html>'}
+let timed_out = {status_code: 200 body: '{"elements":[],"remark":"runtime error: Query timed out"}'}
+let busy = {status_code: 200 body: '<?xml version="1.0"?><html><body>The server is probably too busy</body></html>'}
+let answer = {status_code: 200 body: 'PIZZA'}
+let log = []
+// No answer, a 504 page, and Overpass's own timeout (no elements, a
+// remark): every mirror is asked once, nothing is shown and nothing is kept.
+// (Each answer is named: `[nil {…}]` would read as one value.)
+mod.answers = [nil gateway timed_out]
+open_place(pizza)
+log.push([hosts() detail mod.shown["details"] kept("place_N_1.json")])
+mod.urls = []
+// A request the runtime refused, Overpass's busy page with a 200, then the
+// last mirror's real answer: it shows, and is kept with the time.
+mod.answers = ["refused" busy answer]
+open_place(pizza)
+log.push([hosts() detail mod.shown["details"] mod.renders kept("place_N_1.json")])
+// The same place again: from the cache, with no request.
+mod.urls = []
+close_place()
+open_place(pizza)
+log.push([mod.urls.len() detail.hours mod.shown["details"]])
+// A real "no details" answer is an answer: kept, and the details hidden.
+mod.urls = []
+mod.answers = [{status_code: 200 body: '{"version":0.6,"elements":[]}'}]
+open_place({id: "W:2" name: "Park" cat: "Park" label: "" lat: 37.2 lon: -121.2})
+log.push([hosts() detail mod.shown["details"] kept("place_W_2.json")])
+log.to_json()"#
+        .replace("PIZZA", PIZZA_DETAILS);
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let blank = serde_json::json!({"hours": "", "phone": "", "website": "", "cuisine": ""});
+    let pizza = serde_json::json!({"hours": "Mo-Su 11:00-22:00", "phone": "+1 408 555 0100",
+        "website": "https://pizza.example.com", "cuisine": "pizza"});
+    let mirrors = ["https://overpass-api.de", "https://overpass.kumi.systems", "https://overpass.openstreetmap.fr"];
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [mirrors, blank, false, null],
+            [mirrors, pizza, true, 1, {"at": 1800000000, "detail": pizza}],
+            [0, "Mo-Su 11:00-22:00", true],
+            [&mirrors[..1], blank, false, {"at": 1800000000, "detail": blank}]
+        ])
+    );
+}
+
+#[test]
+fn maps_drops_the_details_of_a_card_that_moved_on_and_asks_nothing_for_a_place_without_an_id() {
+    let code = r#"let pizza = {id: "N:1" name: "Pizza" cat: "Restaurant" label: "" lat: 37.1 lon: -121.1}
+let sushi = {id: "N:3" name: "Sushi" cat: "Restaurant" label: "" lat: 37.3 lon: -121.3}
+let pizza_answer = {status_code: 200 body: 'PIZZA'}
+let sushi_answer = {status_code: 200 body: 'SUSHI'}
+let log = []
+// Sushi opened while Pizza's answer is on its way: only Sushi's shows, and
+// Pizza's is neither kept nor asked of another mirror.
+mod.answers = [pizza_answer sushi_answer]
+mod.during = fn() { open_place(sushi) }
+open_place(pizza)
+log.push([mod.urls.len() place.name detail kept("place_N_1.json") == nil kept("place_N_3.json") != nil])
+// Closed while the first mirror fails: the next isn't asked.
+mod.urls = []
+mod.answers = [nil pizza_answer]
+mod.during = fn() { close_place() }
+open_place(pizza)
+log.push([mod.urls.len() place screen kept("place_N_1.json") == nil])
+// No OpenStreetMap id, or one `cache_name` rejects: no request and no file
+// touched (`cache_path("")` would be the cache folder itself). Nor for a
+// lookup whose card is no longer open.
+mod.urls = []
+mod.io = []
+for id in ["" "X:1" "N:1.5" "N/../../x:1" "N:1:2"] {
+    open_place({id: id name: "Spot" cat: "" label: "" lat: 37.4 lon: -121.4})
+}
+// A recent place from before ids, as a row's tap copies it.
+open_place(as_place({name: "No id" lat: 37.4 lon: -121.4}))
+load_details(pizza, card_seq - 1)
+log.push([mod.urls.len() mod.io detail mod.shown["details"]])
+log.to_json()"#
+        .replace("PIZZA", PIZZA_DETAILS)
+        .replace("SUSHI", SUSHI_DETAILS);
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let blank = serde_json::json!({"hours": "", "phone": "", "website": "", "cuisine": ""});
+    let sushi = serde_json::json!({"hours": "Tu-Su 17:00-22:00", "phone": "", "website": "", "cuisine": "sushi"});
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [2, "Sushi", sushi, true, true],
+            [1, null, "search", true],
+            [0, [], blank, false]
+        ])
+    );
+}
+
+#[test]
+fn maps_reads_kept_details_only_when_fresh_and_whole() {
+    let code = r#"let day = 86400
+fn keep(name, text){ mod.files["cache/" + name] = text }
+let good = '"detail":{"hours":"24/7","phone":"1","website":"http://ok.example.com","cuisine":"pizza"}'
+keep("fresh.json", '{"at":' + (mod.now - day) + ',' + good + '}')
+keep("stale.json", '{"at":' + (mod.now - 8 * day) + ',' + good + '}')
+keep("future.json", '{"at":' + (mod.now + day) + ',' + good + '}')
+keep("no_at.json", '{' + good + '}')
+keep("text_at.json", '{"at":"' + (mod.now - day) + '",' + good + '}')
+keep("nan_at.json", '{"at":NaN,' + good + '}')
+keep("truncated.json", '{"at":' + (mod.now - day) + ',"detail":{"hours":')
+keep("list.json", '[1,2]')
+keep("null.json", 'null')
+keep("text_detail.json", '{"at":' + (mod.now - day) + ',"detail":"x"}')
+keep("list_detail.json", '{"at":' + (mod.now - day) + ',"detail":[1]}')
+keep("missing_field.json", '{"at":' + (mod.now - day) + ',"detail":{"hours":"24/7","phone":"1","website":""}}')
+keep("number_field.json", '{"at":' + (mod.now - day) + ',"detail":{"hours":"24/7","phone":5550100,"website":"","cuisine":""}}')
+keep("bad_site.json", '{"at":' + (mod.now - day) + ',"detail":{"hours":"24/7","phone":"","website":"javascript:alert(1)","cuisine":""}}')
+keep("spaced_site.json", '{"at":' + (mod.now - day) + ',"detail":{"hours":"","phone":"","website":"https://a.example.com/a b","cuisine":""}}')
+keep("upper_site.json", '{"at":' + (mod.now - day) + ',"detail":{"hours":"","phone":"","website":"HTTP://Up.example.com","cuisine":"","extra":1}}')
+let out = []
+for name in ["fresh.json" "stale.json" "future.json" "no_at.json" "text_at.json" "nan_at.json" "truncated.json"
+    "list.json" "null.json" "text_detail.json" "list_detail.json" "missing_field.json" "number_field.json"
+    "bad_site.json" "spaced_site.json" "upper_site.json" "missing.json"] {
+    out.push(cached_detail(name))
+}
+out.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let d = |hours: &str, phone: &str, website: &str, cuisine: &str| {
+        serde_json::json!({"hours": hours, "phone": phone, "website": website, "cuisine": cuisine})
+    };
+    assert_eq!(
+        out,
+        serde_json::json!([
+            d("24/7", "1", "https://ok.example.com", "pizza"),
+            // A week old, from the future, without a numeric `at`, cut short,
+            // not an object, or details that aren't the four texts Maps
+            // writes: asked again.
+            null, null, null, null, null, null, null, null, null, null, null, null,
+            // A website `site_url` refuses opens nothing; the rest is kept.
+            d("24/7", "", "", ""),
+            d("", "", "", ""),
+            d("", "", "https://Up.example.com", ""),
+            null
+        ])
+    );
+}
+
+#[test]
+fn maps_pins_saved_places_and_the_open_one_from_the_list_it_shows() {
+    let code = r#"let a = {id: "W:1" name: "A" cat: "" label: "" lat: 37.1 lon: -121.1}
+let b = {id: "" name: "B" cat: "" label: "" lat: 37.2 lon: -121.2}
+fn names(){
+    let out = []
+    for p in shown_pins { out.push(text_of(p, "name")) }
+    out
+}
+// Each step: Save's text, the pins drawn last, the places behind them in pin
+// order, and saved.json.
+fn step(){
+    let file = optional(mod.files, "accounts/device/saved.json", nil)
+    let names_saved = []
+    if file != nil { for p in list_in(file) { names_saved.push(text_of(p, "name")) } }
+    return [mod.texts["save"] mod.markers[mod.markers.len() - 1] names() names_saved]
+}
+let log = []
+show("search")
+log.push([mod.markers.len() mod.markers[0]])
+open_place(a)
+log.push(step())
+toggle_save()
+log.push(step())
+open_place(b)
+toggle_save()
+log.push(step())
+close_place()
+log.push(step())
+open_place(a)
+toggle_save()
+log.push(step())
+close_place()
+log.push(step())
+// Directions and the drive keep the route's own pins.
+let drawn = mod.markers.len()
+screen = "route"
+show_pins()
+log.push(mod.markers.len() == drawn)
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [1, ""],
+            ["Save", "37.1,-121.1,2", ["A"], []],
+            ["Saved", "37.1,-121.1,2", ["A"], ["A"]],
+            ["Saved", "37.1,-121.1,1;37.2,-121.2,2", ["A", "B"], ["A", "B"]],
+            // Close keeps the saved pins, none of them the open one.
+            ["Saved", "37.1,-121.1,1;37.2,-121.2,1", ["A", "B"], ["A", "B"]],
+            // Unsaved while open: still pinned as the open place.
+            ["Save", "37.2,-121.2,1;37.1,-121.1,2", ["B", "A"], ["B"]],
+            // Closed: its pin is gone.
+            ["Save", "37.2,-121.2,1", ["B"], ["B"]],
+            true
+        ])
+    );
+}
+
+#[test]
+fn maps_opens_a_pins_place_by_its_position_among_the_drawn_pins() {
+    let code = r#"// An entry as an older build's saved.json holds it (no id, cat or
+// label), one that isn't a place (never pinned), and a saved place.
+saved = list_in('[{"name":"Raw","lat":37.3,"lon":-121.3},{"name":"Nowhere"},{"id":"W:1","name":"A","cat":"Mall","label":"San Jose","lat":37.1,"lon":-121.1}]')
+let log = []
+show("search")
+log.push(mod.markers[mod.markers.len() - 1])
+marker_tapped(0)
+log.push([screen place mod.texts["pname"] mod.texts["pcat"] mod.urls.len() mod.markers[mod.markers.len() - 1]])
+// The open place's own pin (now last) does nothing; the other opens A.
+let seq = card_seq
+marker_tapped(1)
+log.push(card_seq == seq)
+mod.answers = [{status_code: 200 body: '{"elements":[]}'}]
+marker_tapped(0)
+log.push([place.name place.cat mod.urls.len()])
+// No pin there, or no index at all: nothing.
+seq = card_seq
+let infinite = 1 / 0
+let not_a_number = 0 / 0
+for i in [-1 2 99 0.5 nil "0" infinite not_a_number true] { marker_tapped(i) }
+log.push([card_seq == seq place.name])
+// Directions and the drive show the route's pins, not these.
+screen = "route"
+marker_tapped(0)
+log.push([card_seq == seq place.name])
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            "37.3,-121.3,1;37.1,-121.1,1",
+            ["place", {"id": "", "name": "Raw", "cat": "", "label": "", "lat": 37.3, "lon": -121.3},
+             "Raw", "", 0, "37.1,-121.1,1;37.3,-121.3,2"],
+            true,
+            ["A", "Mall", 1],
+            [true, "A"],
+            [true, "A"]
+        ])
+    );
+}
+
+#[test]
+fn maps_shows_a_places_distance_only_with_a_fix() {
+    // The card's distance line: hidden without a fix (an empty line would
+    // stay as a gap), straight-line text with one, and kept current by the
+    // timer's tick.
+    let code = r#"let santana = {id: "" name: "Santana Row" cat: "" label: "" lat: 37.3209796 lon: -121.9486002}
+let log = []
+open_place(santana)
+log.push([mod.texts["pdist"] mod.shown["pdist"]])
+mod.fix = true
+tick()
+log.push([mod.texts["pdist"] mod.shown["pdist"]])
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    assert_eq!(out, serde_json::json!([["", false], ["5.8 km away", true]]));
 }
