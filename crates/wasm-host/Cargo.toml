@@ -1,0 +1,21 @@
+[package]
+name = "octosense-wasm-host"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+wasmtime = { workspace = true }
+sha2 = "0.10"
+# Not used directly: Wasmtime reads a trap's registers through libc's
+# ucontext_t, and before 0.2.190 Android aarch64's lacked the kernel's
+# padding after the signal mask, so the faulting pc was misread, no trap was
+# recognised as wasm and every trap ended the app.
+libc = "0.2.190"
+
+[dev-dependencies]
+wat = "1"
+serde_json = { workspace = true }
+# The sample functions natively, to check the module against them.
+wasmlab-functions = { path = "../../apps/wasmlab/guest/functions" }

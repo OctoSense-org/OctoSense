@@ -252,6 +252,9 @@ pub fn register_host_services() {
         // published the same way.
         register_calendar_services();
         register_news();
+        // Apps' own WebAssembly functions (ADR 0011).
+        #[cfg(feature = "wasm-lab")]
+        crate::wasm_service::register();
         // After every service of the shell's own: the notice service never
         // stands in for one.
         let served = crate::glance_notice::serve_system_apps();

@@ -1,0 +1,199 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "wasmlab.find_slots",
+      "description": "Find free slots of `duration` minutes between day_start and day_end, around the busy intervals given, every `step` minutes. Computes only: it reads no calendar.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "day_start": {
+            "type": "string",
+            "description": "Start of the day, HH:MM",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+          },
+          "day_end": {
+            "type": "string",
+            "description": "End of the day, HH:MM",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Minutes each slot lasts",
+            "minimum": 5,
+            "maximum": 720
+          },
+          "step": {
+            "type": "integer",
+            "description": "Minutes between slot starts (default 15)",
+            "minimum": 5,
+            "maximum": 120
+          },
+          "busy": {
+            "type": "array",
+            "description": "Busy intervals as [start, end] pairs of HH:MM",
+            "maxItems": 200,
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "string",
+                "pattern": "^[0-2][0-9]:[0-5][0-9]$"
+              }
+            }
+          },
+          "max": {
+            "type": "integer",
+            "description": "Most slots to return (default 10)",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "day_start",
+          "day_end",
+          "duration",
+          "busy"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "slots"
+        ]
+      },
+      "risk": "read",
+      "background": true,
+      "shareable": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.find_slots"
+    },
+    {
+      "name": "wasmlab.rank",
+      "description": "Rank names against a query, best first: a prefix beats a word start beats a substring beats letters in order; a near miss (a typo) still ranks.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "maxItems": 5000
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "query",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "ranked": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "item",
+                "score"
+              ]
+            }
+          }
+        },
+        "required": [
+          "ranked"
+        ]
+      },
+      "risk": "read",
+      "background": true,
+      "shareable": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.fuzzy_rank"
+    },
+    {
+      "name": "wasmlab.diff",
+      "description": "A unified line diff of two texts, with the number of lines added and removed.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "old": {
+            "type": "string",
+            "maxLength": 200000
+          },
+          "new": {
+            "type": "string",
+            "maxLength": 200000
+          },
+          "context": {
+            "type": "integer",
+            "description": "Unchanged lines around each change (default 3)",
+            "minimum": 0,
+            "maximum": 20
+          }
+        },
+        "required": [
+          "old",
+          "new"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "unified": {
+            "type": "string"
+          },
+          "added": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unified",
+          "added",
+          "removed"
+        ]
+      },
+      "risk": "read",
+      "background": true,
+      "shareable": true,
+      "implemented_by": "host-service",
+      "host_method": "wasm.text_diff"
+    }
+  ]
+}
