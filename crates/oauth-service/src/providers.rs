@@ -17,7 +17,7 @@ pub fn scope_words(scope: &str) -> &str {
         "openid" => "Verify your Google account identity",
         "email" => "Read your verified account email address",
         "profile" => "Read your account profile",
-        "app.session" => "Sign in to this app's backend and read your account profile",
+        "app.session" => "Sign in to this app's backend and use its declared account data APIs",
         "https://www.googleapis.com/auth/calendar.calendarlist.readonly" => {
             "List your Google calendars"
         }

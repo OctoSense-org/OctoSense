@@ -29,6 +29,10 @@ name = "connected-app-host"
 required-features = ["app-hub"]
 
 [[example]]
+name = "host-api-lab"
+required-features = ["acceptance-fixtures"]
+
+[[example]]
 name = "connected-install"
 required-features = ["app-hub"]
 

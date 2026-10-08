@@ -1,7 +1,9 @@
 //! App-bound backend login within the host-owned auth service. This module
 //! never accepts an endpoint or registration from an app request.
 use super::*;
-use crate::backend::{BackendClient, BackendRegistration, SESSION_SCOPE};
+use crate::backend::{
+    BackendClient, BackendDeclaration, BackendRegistration, BackendRequest, SESSION_SCOPE,
+};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -10,6 +12,46 @@ use std::collections::BTreeMap;
 struct Registrations {
     schema: u32,
     apps: BTreeMap<String, BackendRegistration>,
+}
+
+/// The shell resolves only digest-verified admitted bundle metadata. This hook
+/// runs for every use; errors (including withdrawal) never fall back to config.
+pub type BackendResolver =
+    Arc<dyn Fn(&Path, &str) -> Result<Option<BackendDeclaration>, String> + Send + Sync>;
+static RESOLVER: Mutex<Option<BackendResolver>> = Mutex::new(None);
+pub fn set_backend_resolver(resolver: BackendResolver) {
+    *RESOLVER.lock().unwrap_or_else(|e| e.into_inner()) = Some(resolver);
+}
+
+/// Install/update owner calls this when a backend declaration changes or is
+/// removed. Existing token handles are durably revoked before the new bundle
+/// can reconnect; restoring an older declaration cannot revive old sessions.
+pub fn invalidate_backend_registration(root: &Path, app: &str) -> Result<(), String> {
+    let operation = operation_lock(root, app);
+    let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    invalidate_authorizations(root, app);
+    let mut store = connections(root)?;
+    let previous = store.active(app);
+    let mut failure = None;
+    for entry in store
+        .list(app)
+        .into_iter()
+        .filter(|entry| entry.provider == Provider::Backend)
+    {
+        if let Err(error) = store.disconnect(app, &entry.handle) {
+            failure.get_or_insert(error);
+        }
+    }
+    let selected = store.active(app);
+    drop(guard);
+    drop(operation_guard);
+    account_changed(
+        app,
+        previous.as_ref().map(|entry| entry.handle.as_str()),
+        selected.as_ref().map(|entry| entry.handle.as_str()),
+    );
+    failure.map_or(Ok(()), Err)
 }
 
 #[cfg(feature = "acceptance-fixtures")]
@@ -33,7 +75,55 @@ pub fn register_fixture(root: &Path, client: BackendClient) -> Result<(), String
     Ok(())
 }
 
+/// Called while STORE_LOCK is held. Resolving an updated/withdrawn bundle
+/// durably revokes earlier handles before its credentials could be used.
 pub(super) fn client(root: &Path, app: &str) -> Result<Arc<BackendClient>, String> {
+    let result = resolve_client(root, app);
+    if RESOLVER.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+        crate::backend_registry::observe(
+            root,
+            app,
+            result.as_ref().ok().map(|client| client.binding()),
+            || {
+                invalidate_authorizations(root, app);
+                let mut store = connections(root)?;
+                let mut failure = None;
+                for entry in store
+                    .list(app)
+                    .into_iter()
+                    .filter(|entry| entry.provider == Provider::Backend)
+                {
+                    if let Err(error) = store.disconnect(app, &entry.handle) {
+                        failure.get_or_insert(error);
+                    }
+                }
+                failure.map_or(Ok(()), Err)
+            },
+        )?;
+    }
+    result
+}
+
+/// The shell calls this after an install/catalog change, outside the UI thread.
+/// Resolution repeats on every actual request, so this is eager cleanup only.
+pub fn revalidate_backend_registration(root: &Path, app: &str) -> Result<(), String> {
+    let operation = operation_lock(root, app);
+    let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let previous = connections(root)?.active(app);
+    let result = client(root, app).map(|_| ());
+    let selected = connections(root)?.active(app);
+    drop(guard);
+    drop(operation_guard);
+    account_changed(
+        app,
+        previous.as_ref().map(|entry| entry.handle.as_str()),
+        selected.as_ref().map(|entry| entry.handle.as_str()),
+    );
+    result
+}
+
+fn resolve_client(root: &Path, app: &str) -> Result<Arc<BackendClient>, String> {
     #[cfg(feature = "acceptance-fixtures")]
     if let Ok(canonical) = root.canonicalize() {
         if let Some(client) = fixtures()
@@ -43,6 +133,12 @@ pub(super) fn client(root: &Path, app: &str) -> Result<Arc<BackendClient>, Strin
             .cloned()
         {
             return Ok(client);
+        }
+    }
+    let resolver = RESOLVER.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(resolver) = resolver {
+        if let Some(declaration) = resolver(root, app)? {
+            return BackendClient::new(declaration.into_registration(app)).map(Arc::new);
         }
     }
     let file = std::fs::File::open(root.join("oauth/backends.json"))
@@ -288,21 +384,124 @@ pub(super) fn me(call: &ServiceCall, scope_check: &ScopeCheck) -> Result<Value, 
     let handle = call.args["connection"]
         .as_str()
         .ok_or("Choose a backend account")?;
-    let _lease = ProfileLease::acquire(&call.host_dir, &call.app_id, handle)?;
+    with_session(
+        &call.host_dir,
+        &call.app_id,
+        handle,
+        scope_check,
+        None,
+        |backend, tokens, subject| {
+            let identity = backend.me(&call.app_id, tokens)?;
+            if identity.sub != subject {
+                return Err("Backend account identity changed; sign in again".into());
+            }
+            Ok(
+                json!({"connection":handle,"backend_id":backend.registration().id,"identity":identity}),
+            )
+        },
+    )
+}
+
+/// Immutable request retained only in host Rust while the native review is open.
+#[derive(Clone)]
+pub(crate) struct PreparedRequest {
+    pub app: String,
+    pub root: PathBuf,
+    pub request: BackendRequest,
+    pub account: String,
+    pub origin: String,
+    pub method: String,
+    pub path: String,
+    pub binding: String,
+    epoch: u64,
+    scope_check: ScopeCheck,
+}
+impl PreparedRequest {
+    pub fn mutates(&self) -> bool {
+        self.method != "GET"
+    }
+    pub fn execute(&self) -> Result<Value, String> {
+        with_session(
+            &self.root,
+            &self.app,
+            &self.request.connection,
+            &self.scope_check,
+            Some((&self.binding, self.epoch)),
+            |backend, tokens, _| backend.request(&self.app, tokens, &self.request),
+        )
+    }
+}
+pub(crate) fn prepare_request(
+    call: &ServiceCall,
+    scope_check: ScopeCheck,
+) -> Result<PreparedRequest, String> {
+    let request: BackendRequest =
+        serde_json::from_value(call.args.clone()).map_err(|_| "Invalid backend request")?;
+    let _guard = STORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let backend = client(&call.host_dir, &call.app_id)?;
+    let epoch = authorization_epoch(&call.host_dir, &call.app_id);
+    current(&call.host_dir, &call.app_id, &backend, epoch, &scope_check)?;
+    backend.validate_request(&request)?;
+    let operation = backend.operation(&request.operation)?;
+    let store = connections(&call.host_dir)?;
+    store.backend_tokens(
+        &call.app_id,
+        &request.connection,
+        &backend.registration().id,
+        backend.binding(),
+    )?;
+    let account = store
+        .authorized(
+            &call.app_id,
+            &request.connection,
+            Provider::Backend,
+            SESSION_SCOPE,
+        )?
+        .label
+        .clone();
+    Ok(PreparedRequest {
+        app: call.app_id.clone(),
+        root: call.host_dir.clone(),
+        request,
+        account,
+        origin: url::Url::parse(&backend.registration().authorization_url)
+            .unwrap()
+            .origin()
+            .ascii_serialization(),
+        method: operation.method.clone(),
+        path: operation.path.clone(),
+        binding: backend.binding().into(),
+        epoch,
+        scope_check,
+    })
+}
+
+fn with_session(
+    root: &Path,
+    app: &str,
+    handle: &str,
+    scope_check: &ScopeCheck,
+    expected: Option<(&str, u64)>,
+    run: impl FnOnce(&BackendClient, &Tokens, &str) -> Result<Value, String>,
+) -> Result<Value, String> {
+    let operation = operation_lock(root, app);
+    let _operation = operation.lock().unwrap_or_else(|e| e.into_inner());
+    let _lease = ProfileLease::acquire(root, app, handle)?;
     let (backend, epoch, subject, mut tokens) = {
         let _guard = STORE_LOCK.lock().unwrap();
-        let backend = client(&call.host_dir, &call.app_id)?;
-        let epoch = authorization_epoch(&call.host_dir, &call.app_id);
-        current(&call.host_dir, &call.app_id, &backend, epoch, scope_check)?;
-        let store = connections(&call.host_dir)?;
-        let tokens = store.backend_tokens(
-            &call.app_id,
-            handle,
-            &backend.registration().id,
-            backend.binding(),
-        )?;
+        let backend = client(root, app)?;
+        let epoch = authorization_epoch(root, app);
+        current(root, app, &backend, epoch, scope_check)?;
+        if expected.is_some_and(|(binding, original_epoch)| {
+            binding != backend.binding() || original_epoch != epoch
+        }) {
+            return Err("Backend authorization or registration changed; review again".into());
+        }
+        let store = connections(root)?;
+        let tokens =
+            store.backend_tokens(app, handle, &backend.registration().id, backend.binding())?;
         let subject = store
-            .authorized(&call.app_id, handle, Provider::Backend, SESSION_SCOPE)?
+            .authorized(app, handle, Provider::Backend, SESSION_SCOPE)?
             .subject
             .clone();
         (backend, epoch, subject, tokens)
@@ -311,7 +510,7 @@ pub(super) fn me(call: &ServiceCall, scope_check: &ScopeCheck) -> Result<Value, 
         .expires_at
         .is_some_and(|at| at <= unix_now().saturating_add(60));
     if refreshed {
-        tokens = backend.refresh(&call.app_id, &tokens, unix_now())?;
+        tokens = backend.refresh(app, &tokens, unix_now())?;
     }
     // A backend may rotate its refresh token immediately. Persist it before
     // /me: a transient profile failure must not strand the next login attempt
@@ -319,44 +518,27 @@ pub(super) fn me(call: &ServiceCall, scope_check: &ScopeCheck) -> Result<Value, 
     // a revoked or switched account from accepting refreshed credentials.
     {
         let _guard = STORE_LOCK.lock().unwrap();
-        current(&call.host_dir, &call.app_id, &backend, epoch, scope_check)?;
-        let mut store = connections(&call.host_dir)?;
-        store.backend_tokens(
-            &call.app_id,
-            handle,
-            &backend.registration().id,
-            backend.binding(),
-        )?;
+        current(root, app, &backend, epoch, scope_check)?;
+        let mut store = connections(root)?;
+        store.backend_tokens(app, handle, &backend.registration().id, backend.binding())?;
         if refreshed {
             store.replace_backend_tokens(
-                &call.app_id,
+                app,
                 handle,
                 &backend.registration().id,
                 backend.binding(),
                 tokens,
             )?;
-            tokens = store.backend_tokens(
-                &call.app_id,
-                handle,
-                &backend.registration().id,
-                backend.binding(),
-            )?;
+            tokens =
+                store.backend_tokens(app, handle, &backend.registration().id, backend.binding())?;
         }
     }
-    let identity = backend.me(&call.app_id, &tokens)?;
-    if identity.sub != subject {
-        return Err("Backend account identity changed; sign in again".into());
-    }
+    let result = run(&backend, &tokens, &subject)?;
     let _guard = STORE_LOCK.lock().unwrap();
-    current(&call.host_dir, &call.app_id, &backend, epoch, scope_check)?;
-    let store = connections(&call.host_dir)?;
-    store.backend_tokens(
-        &call.app_id,
-        handle,
-        &backend.registration().id,
-        backend.binding(),
-    )?;
-    Ok(json!({"connection":handle,"backend_id":backend.registration().id,"identity":identity}))
+    current(root, app, &backend, epoch, scope_check)?;
+    let store = connections(root)?;
+    store.backend_tokens(app, handle, &backend.registration().id, backend.binding())?;
+    Ok(result)
 }
 
 pub(super) type Logout = Option<(Arc<BackendClient>, Tokens)>;
@@ -404,6 +586,7 @@ mod tests {
             me_url: "https://backend.example/me".into(),
             logout_url: "https://backend.example/logout".into(),
             scopes: BTreeSet::from([SESSION_SCOPE.into()]),
+            operations: Default::default(),
         }
     }
     fn root() -> PathBuf {

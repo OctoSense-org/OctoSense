@@ -17,6 +17,7 @@ use std::{
 use uuid::Uuid;
 
 enum Change {
+    Backend(crate::host::backend_host::PreparedRequest),
     Github(GithubFile),
     Calendar {
         calendar: String,
@@ -105,9 +106,12 @@ impl ReviewRequest {
         if std::thread::Builder::new()
             .name("connector-reviewed-save".into())
             .spawn(move || {
-                let result = with_provider_api(&review.root, &review.app, |api| {
-                    execute_review(&review, api)
-                });
+                let result = match &review.change {
+                    Change::Backend(request) => request.execute(),
+                    _ => with_provider_api(&review.root, &review.app, |api| {
+                        execute_review(&review, api)
+                    }),
+                };
                 *review.save.result.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(result.clone());
                 review.reply.clone().send(result);
@@ -155,6 +159,7 @@ struct Connector {
 pub fn register() {
     register_review(None);
 }
+static REVIEW_HOOK: Mutex<Option<ReviewHook>> = Mutex::new(None);
 pub type ReviewHook = Arc<dyn Fn(ReviewRequest) -> Result<String, String> + Send + Sync>;
 pub fn register_with_review_hook(
     hook: impl Fn(ReviewRequest) -> Result<String, String> + Send + Sync + 'static,
@@ -162,6 +167,7 @@ pub fn register_with_review_hook(
     register_review(Some(Arc::new(hook)));
 }
 fn register_review(review_hook: Option<ReviewHook>) {
+    *REVIEW_HOOK.lock().unwrap_or_else(|e| e.into_inner()) = review_hook.clone();
     for family in ["github", "gcalendar"] {
         services::register_host_service(Box::new(Connector {
             family,
@@ -178,7 +184,148 @@ fn field<'a>(value: &'a Value, name: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("Missing {name}"))
 }
 
+impl Connector {
+    fn open_review(
+        &mut self,
+        call: ServiceCall,
+        reply: Replier,
+        host: &mut dyn ServiceHost,
+        connection: String,
+        change: Change,
+        account: String,
+    ) {
+        let Some(hook) = self.review_hook.clone() else {
+            reply.send(Err(
+                "Native trusted save review is unavailable on this host".into(),
+            ));
+            return;
+        };
+        // A replaced sheet must settle the request whose controls disappeared.
+        let previous: Vec<_> = self
+            .reviews
+            .iter()
+            .filter(|(_, r)| r.app == call.app_id && r.root == call.host_dir)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in previous {
+            if let Some(old) = self.reviews.remove(&id) {
+                if old.save.cancel() {
+                    old.reply
+                        .clone()
+                        .send(Err("A newer draft replaced this review".into()));
+                }
+            }
+        }
+        if self.reviews.len() >= 32 {
+            reply.send(Err(
+                "Too many pending reviews; close an earlier review".into()
+            ));
+            return;
+        }
+        let ticket = Uuid::new_v4().to_string();
+        let review = Arc::new(Review {
+            app: call.app_id,
+            root: call.host_dir,
+            connection,
+            change,
+            reply,
+            deadline: Instant::now() + Duration::from_secs(600),
+            save: Arc::new(SaveState::default()),
+            account,
+        });
+        let request = ReviewRequest {
+            family: self.family,
+            ticket: ticket.clone(),
+            review: review.clone(),
+        };
+        let source = match hook(request) {
+            Ok(source) => source,
+            Err(error) => {
+                review.reply.clone().send(Err(error));
+                return;
+            }
+        };
+        host.open_sheet(source);
+        self.current
+            .insert((review.app.clone(), review.root.clone()), ticket.clone());
+        self.reviews.insert(ticket, review);
+    }
+}
+
+/// Backend writes share the exact native-only review capability used for
+/// GitHub/Calendar. No script method can claim physical approval.
+pub(crate) struct BackendReviews(Connector);
+impl Default for BackendReviews {
+    fn default() -> Self {
+        Self(Connector {
+            family: "auth.backend",
+            review_hook: None,
+            reviews: HashMap::new(),
+            current: HashMap::new(),
+        })
+    }
+}
+impl BackendReviews {
+    pub(crate) fn call(
+        &mut self,
+        mut call: ServiceCall,
+        reply: Replier,
+        host: &mut dyn ServiceHost,
+        scope_check: crate::host::ScopeCheck,
+    ) {
+        self.0.review_hook = REVIEW_HOOK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if call.method() != "backend.request" {
+            call.service = call.service.replacen("auth.backend.", "auth.", 1);
+            self.0.call(call, reply, host);
+            return;
+        }
+        self.0.reviews.retain(|_, review| {
+            if Instant::now() < review.deadline {
+                return true;
+            }
+            if review.save.cancel() {
+                review
+                    .reply
+                    .clone()
+                    .send(Err("Review expired; check the current draft again".into()));
+            }
+            review.save.started() && review.save.result().is_none()
+        });
+        let prepared = match crate::host::backend_host::prepare_request(&call, scope_check) {
+            Ok(request) => request,
+            Err(error) => {
+                reply.send(Err(error));
+                return;
+            }
+        };
+        if !prepared.mutates() {
+            std::thread::spawn(move || {
+                reply.send(prepared.execute());
+            });
+            return;
+        }
+        if !call.may_prompt {
+            reply.send(Err("Open the app to review this backend change".into()));
+            return;
+        }
+        self.0.open_review(
+            call,
+            reply,
+            host,
+            prepared.request.connection.clone(),
+            Change::Backend(prepared.clone()),
+            prepared.account.clone(),
+        );
+    }
+}
+
 impl HostService for Connector {
+    fn api_methods(&self) -> Vec<services::HostApiMethod> {
+        crate::host_catalog::connector(self.family, self.review_hook.is_some())
+    }
     fn family(&self) -> &'static str {
         self.family
     }
@@ -211,10 +358,10 @@ impl HostService for Connector {
                     reply.send(Err("Open the app to review this change".into()));
                     return;
                 }
-                let Some(hook) = self.review_hook.clone() else {
+                if self.review_hook.is_none() {
                     reply.send(Err("Native trusted save review is unavailable on this host; your local draft is unchanged".into()));
                     return;
-                };
+                }
                 let parsed = (|| {
                     let connection = field(&call.args, "connection")?.to_string();
                     let change = if self.family == "github" {
@@ -276,55 +423,7 @@ impl HostService for Connector {
                         return;
                     }
                 };
-                // A replaced sheet must settle the request whose controls disappeared.
-                let previous: Vec<_> = self
-                    .reviews
-                    .iter()
-                    .filter(|(_, r)| r.app == call.app_id && r.root == call.host_dir)
-                    .map(|(id, _)| id.clone())
-                    .collect();
-                for id in previous {
-                    if let Some(old) = self.reviews.remove(&id) {
-                        if old.save.cancel() {
-                            old.reply
-                                .clone()
-                                .send(Err("A newer draft replaced this review".into()));
-                        }
-                    }
-                }
-                if self.reviews.len() >= 32 {
-                    reply.send(Err(
-                        "Too many pending reviews; close an earlier review".into()
-                    ));
-                    return;
-                }
-                let ticket = Uuid::new_v4().to_string();
-                let review = Arc::new(Review {
-                    app: call.app_id,
-                    root: call.host_dir,
-                    connection,
-                    change,
-                    reply,
-                    deadline: Instant::now() + Duration::from_secs(600),
-                    save: Arc::new(SaveState::default()),
-                    account,
-                });
-                let request = ReviewRequest {
-                    family: self.family,
-                    ticket: ticket.clone(),
-                    review: review.clone(),
-                };
-                let source = match hook(request) {
-                    Ok(source) => source,
-                    Err(error) => {
-                        review.reply.clone().send(Err(error));
-                        return;
-                    }
-                };
-                host.open_sheet(source);
-                self.current
-                    .insert((review.app.clone(), review.root.clone()), ticket.clone());
-                self.reviews.insert(ticket, review);
+                self.open_review(call, reply, host, connection, change, account);
             }
             "sheet.save" => {
                 reply.send(Err("Saving requires a physical activation of the native host review. Script and agent requests cannot approve it.".into()));
@@ -513,6 +612,7 @@ fn execute_review(review: &Review, api: &mut crate::api::Api<'_>) -> Result<Valu
         return Err("The selected account changed; review again under the original account".into());
     }
     match &review.change {
+        Change::Backend(_) => Err("Backend writes require their scoped executor".into()),
         Change::Github(file) => api.github_save(&review.app, &review.connection, file),
         Change::Calendar {
             calendar,
@@ -534,6 +634,21 @@ fn execute_review(review: &Review, api: &mut crate::api::Api<'_>) -> Result<Valu
 
 fn review_snapshot(review: &Review) -> Value {
     let (title, details, body) = match &review.change {
+        Change::Backend(request) => (
+            "Submit backend change",
+            format!(
+                "{}\n{} {}\nOperation: {}\nAccount: {}",
+                request.origin,
+                request.method,
+                request.path,
+                request.request.operation,
+                request.account
+            ),
+            serde_json::to_string_pretty(
+                &serde_json::json!({"query":request.request.query,"body":request.request.body}),
+            )
+            .unwrap_or_default(),
+        ),
         Change::Github(file) => (
             "Save Markdown to GitHub",
             format!(

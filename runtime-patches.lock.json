@@ -4,7 +4,7 @@
     "base_revision": "68d1f4ecc111daa90c50530e77df3245f05fc2cf",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "c8cf9450e3b00bde30fdf5f3d9b9a8351b803bc3",
+    "tree": "96ea6f774be9edc7c26c895883daa4b81b333d33",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -23,7 +23,12 @@
       "Android startup and resume never request location for the legacy GPS cache; it uses existing grants only. Explicit location actions retain the normal permission flow.",
       "Android Maps requests its first location grant only from Your location through the app location capability and the existing foreground GPS listener/permission callback; GPS reads stay passive.",
       "Label keeps its native wrapping default across retained theme reapplication; named labels populated after mounting stay wrapped, while explicit app no-wrap flows remain unchanged.",
-      "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status."
+      "Android native Camera checks each startup stage, cleans partially initialized resources, reports missing first frames after a bounded wait, and retries only after an explicit user action; unrelated video events cannot change its status.",
+      "Host API v1 apps opt into host-owned device consent before source evaluation. Cached host grants gate camera, microphone and location paths; camera revocation stops an active preview and cached GPS reads fail closed. Older bundles keep their existing capability behavior.",
+      "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
+      "Opted-in camera and microphone check OS grants before prompting; background/agent requests retain nonprompt authority through callbacks and cannot use desktop timeout approval. Passive location reads remain available; legacy GPS requests require foreground prompt authority.",
+      "Host request JSON and pre-drain queues are bounded before native allocation; delayed host callbacks retain their nonprompting origin after an agent tool completes or is cancelled.",
+      "Agent/background prompt denial follows detached timers, tasks, paused continuations, widget callbacks and HTTP/WebSocket callbacks, including native device helpers. A fresh foreground entry retains its own authority; scoped denial restores on exit or unwind."
     ],
     "stacked": [
       {
@@ -89,6 +94,22 @@
       {
         "patch": "tools/runtime-patches/makepad-camera-checked-start.patch",
         "sha256": "f28349631a2f7b851c0d5289ebebfa387a020170a69793f65c4f2f985504ffc0"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-device-consent.patch",
+        "sha256": "8a09c8c07f15d899667db40500bf407393fc9ec262b8a01d01d4a7852c4c2693"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-web-reader-availability.patch",
+        "sha256": "5db088e4fa0b15a59861e52e65a2194e80bb8c351eafc2dd57e59c0d7161c71e"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-json-boundary.patch",
+        "sha256": "7235aea8fa614e19e7ca9133712967d49ec908bf5a0319fcdda4cea7134cbe69"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-async-prompt-provenance.patch",
+        "sha256": "46bb7620ccb4f6a76a08d0333c0249d2619123da2a2649f55294fd4d35f0d905"
       }
     ]
   }

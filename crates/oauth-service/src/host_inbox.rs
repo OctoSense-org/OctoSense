@@ -181,6 +181,9 @@ fn revision(args: &Value) -> Result<u64, String> {
         .ok_or_else(|| "Missing saved draft revision".into())
 }
 impl HostService for InboxService {
+    fn api_methods(&self) -> Vec<services::HostApiMethod> {
+        crate::host_catalog::gmail(self.review.is_some())
+    }
     fn family(&self) -> &'static str {
         "gmail"
     }

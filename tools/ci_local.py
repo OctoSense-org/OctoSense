@@ -14,6 +14,8 @@ commands cannot drift from the workflows. What GitHub does with an action
   actions/cache (the octos kernel)         a per-user cache shared by every
                                            clone, keyed by the octos revision
   actions/setup-node                       the node/npm on PATH
+  actions/upload-artifact                  files stay at the workflow's local paths;
+                                           nothing is uploaded
 
 A step that cannot run here is SKIPPED with the reason, never passed. Jobs
 GitHub runs on ubuntu-latest run on this Mac; `#[cfg(target_os = "linux")]`
@@ -274,12 +276,14 @@ ACTIONS = {
     "Swatinem/rust-cache": "this clone's target/",
     "actions/cache": "the per-user octos kernel cache",
     "actions/setup-node": "the node/npm on PATH",
+    "actions/upload-artifact": "artifacts retained at the workflow's local paths; no upload",
 }
 
 # Every job the workflows define, and where it runs here. A new job fails
 # --check-drift until it is listed (it would still run, as `run`).
 JOBS = {
     "desktop.yml:desktop": {},
+    "desktop.yml:native-host-api": {"macos_only": True},
     "phone.yml:home": {},
     "apps.yml:services": {"linux_only_note": True},
     "apps.yml:kernel-security": {"linux_only_note": True},
@@ -759,6 +763,8 @@ class Run:
 
     def job_problem(self, workflow, job_id, job):
         runs_on = str(job.get("runs-on", ""))
+        if JOBS.get(f"{workflow}:{job_id}", {}).get("macos_only") and sys.platform != "darwin":
+            return "native acceptance requires a graphical macOS session; unverified on this host"
         if "windows" in runs_on:
             return f"runs on {runs_on}: Windows cannot run here"
         for step in job.get("steps") or []:

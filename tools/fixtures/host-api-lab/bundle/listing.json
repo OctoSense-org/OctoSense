@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "subtitle": "Native host API acceptance fixture",
+  "description": "Development fixture for a signed app-owned tool calling a native host service. Declares an optional read-only assistant tool; the acceptance host does not start a model. No camera capture, account login or external transmission. Not a public App Hub release.",
+  "category": "utilities",
+  "keywords": ["developer", "host-api"],
+  "screenshots": ["screenshots/01-main.png"],
+  "icon": "assets/icon.svg",
+  "platforms": ["macos"],
+  "publisher": {"name": "Local acceptance fixture", "support": "https://github.com/OctoSense-org/OctoSense/issues", "privacy_policy_url": "https://github.com/OctoSense-org/OctoSense"},
+  "release_notes": "Local validation only; ephemeral test signing keys.",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

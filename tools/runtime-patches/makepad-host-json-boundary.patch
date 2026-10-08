@@ -1,0 +1,287 @@
+diff --git a/platform/script/src/heap.rs b/platform/script/src/heap.rs
+index 58c21a392..11292ce9e 100644
+--- a/platform/script/src/heap.rs
++++ b/platform/script/src/heap.rs
+@@ -985,7 +985,8 @@ fn escaped_len(value: &str, cap: usize) -> Option<usize> {
+             let mut len = 0usize;
+             for ch in value.chars() {
+                 let additional = match ch {
+-                    '\x08' | '\x0c' | '\n' | '\r' | '"' | '\\' => 2,
++                    '\x08' | '\x0c' | '\n' | '\r' | '\t' | '"' | '\\' => 2,
++                    ch if (ch as u32) < 0x20 => 6,
+                     ch => ch.len_utf8(),
+                 };
+                 add(&mut len, additional, cap)?;
+@@ -993,7 +994,7 @@ fn escaped_len(value: &str, cap: usize) -> Option<usize> {
+             Some(len)
+         }
+ 
+-        if recur.len() >= 128 || recur.contains(&value) {
++        if cap == 0 || recur.len() >= 128 || recur.contains(&value) {
+             return None;
+         }
+         if let Some(obj) = value.as_object() {
+@@ -1003,7 +1004,7 @@ fn escaped_len(value: &str, cap: usize) -> Option<usize> {
+             let mut ptr = obj;
+             let mut proto_seen = Vec::new();
+             loop {
+-                if proto_seen.contains(&ptr) {
++                if proto_seen.len() >= 128 || proto_seen.contains(&ptr) {
+                     return None;
+                 }
+                 proto_seen.push(ptr);
+@@ -1089,6 +1090,16 @@ fn escaped_len(value: &str, cap: usize) -> Option<usize> {
+         (4 <= cap).then_some(4) // null
+     }
+ 
++    /// Serialize at a native boundary only after proving a byte ceiling and
++    /// refusing cycles. Shared subgraphs count every expanded occurrence;
++    /// a small script heap cannot allocate an exponential native String.
++    pub fn to_json_string_bounded(&self, value: ScriptValue, max_bytes: usize) -> Option<String> {
++        let size = self.to_json_len_bounded(value, &mut Vec::new(), max_bytes)?;
++        let mut out = String::with_capacity(size);
++        self.to_json_inner(value, &mut out);
++        (out.len() <= max_bytes).then_some(out)
++    }
++
+     pub fn to_json_inner(&self, value: ScriptValue, out: &mut String) {
+         self.to_json_depth(value, out, 0);
+     }
+@@ -1247,6 +1258,33 @@ fn string_of(vm: &ScriptVm, value: ScriptValue) -> Option<String> {
+         vm.bx.heap.string_with(value, |_, text| text.to_owned())
+     }
+ 
++    #[test]
++    fn native_json_boundary_bounds_shared_graphs_cycles_and_escaped_controls() {
++        let mut heap = ScriptHeap::empty();
++        let control = heap.new_string_from_str("\u{1}");
++        assert_eq!(heap.to_json_string_bounded(control, 8).as_deref(), Some("\"\\u0001\""));
++        assert!(heap.to_json_string_bounded(control, 7).is_none());
++        let array = heap.new_array();
++        assert!(heap.to_json_string_bounded(array.into(), 0).is_none());
++        assert!(heap.to_json_string_bounded(array.into(), 1).is_none());
++        assert_eq!(heap.to_json_string_bounded(array.into(), 2).as_deref(), Some("[]"));
++        heap.array_push(array, array.into(), ScriptTrap::NoTrap);
++        assert!(heap.to_json_string_bounded(array.into(), 1024).is_none());
++
++        let object = heap.new_object();
++        heap.objects[object].proto = object.into();
++        assert!(heap.to_json_string_bounded(object.into(), 1024).is_none());
++
++        let mut value = heap.new_string_from_str("shared");
++        for _ in 0..24 {
++            let pair = heap.new_array();
++            heap.array_push(pair, value, ScriptTrap::NoTrap);
++            heap.array_push(pair, value, ScriptTrap::NoTrap);
++            value = pair.into();
++        }
++        assert!(heap.to_json_string_bounded(value, 1024).is_none());
++    }
++
+     #[test]
+     fn numeric_string_conversion_handles_inline_and_heap_strings_and_yields_nan() {
+         let mut host = ScriptVmHost::new((), ());
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index 81529af28..7028cd4ad 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -73,10 +73,30 @@ struct HostBridge {
+     /// Requests awaiting the host's next drain.
+     queue: Vec<SplashHostRequest>,
+     /// (heap key, req id) -> the script callback awaiting an answer.
+-    callbacks: HashMap<(usize, u64), ScriptFnRef>,
++    callbacks: HashMap<(usize, u64), HostCallback>,
+     next_req_id: u64,
+ }
+ 
++struct HostCallback {
++    function: ScriptFnRef,
++    may_prompt: bool,
++}
++
++/// A delayed callback retains the authority of the originating request, even
++/// when its tool has completed and the foreground app has regained its baseline.
++struct CallbackPromptScope { heap: usize, restore: bool }
++impl CallbackPromptScope {
++    fn enter(heap: usize, may_prompt: bool) -> Self {
++        let restore = !may_prompt && BRIDGE.with(|bridge| bridge.borrow_mut().no_prompt.insert(heap));
++        Self { heap, restore }
++    }
++}
++impl Drop for CallbackPromptScope {
++    fn drop(&mut self) {
++        if self.restore { BRIDGE.with(|bridge| { bridge.borrow_mut().no_prompt.remove(&self.heap); }); }
++    }
++}
++
+ std::thread_local! {
+     /// UI-thread-owned like the isolate registry itself.
+     static BRIDGE: std::cell::RefCell<HostBridge> = Default::default();
+@@ -164,6 +184,7 @@ pub fn splash_host_respond(
+     let Some(vm_id) = crate::widget_async::vm_for_heap(cx, heap_key) else {
+         return SplashRespondOutcome::IsolateGone;
+     };
++    let _prompt_scope = CallbackPromptScope::enter(heap_key, callback.may_prompt);
+     let mut delivered = true;
+     let contained = crate::widget_async::contain_isolate_panic("host request callback", || {
+     cx.with_script_vm_id(vm_id, |vm| {
+@@ -196,7 +217,7 @@ pub fn splash_host_respond(
+             return;
+         }
+         vm.with_instruction_limit(WIDGET_SCRIPT_INSTRUCTION_LIMIT, |vm| {
+-            vm.call(callback.as_object().into(), &[obj.into()]);
++            vm.call(callback.function.as_object().into(), &[obj.into()]);
+         });
+         if !crate::splash_policy::charge(heap_key, vm.last_limit_consumed() as u64) {
+             crate::makepad_draw::log!("splash host: an app spent its instruction budget in a callback and is stopped");
+@@ -253,13 +274,38 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             let on_result = script_value!(vm, args.on_result);
+ 
+             let mut service = None;
+-            vm.string_with(service_val, |_vm, s| service = Some(s.to_string()));
++            vm.string_with(service_val, |_vm, s| {
++                if s.len() <= 128 { service = Some(s.to_string()); }
++            });
+             let Some(service) = service else {
+-                return script_err_invalid_args!(vm.trap(), "service must be a string");
++                return script_err_invalid_args!(vm.trap(), "service must be a string within 128 bytes");
+             };
+ 
+-            let mut args_json = String::new();
+-            vm.bx.heap.to_json_inner(request_args, &mut args_json);
++            let heap_key = vm.bx.heap.heap_key();
++            // The host cannot drain while this script runs. Bound the native
++            // bridge here, before the service layer's pending limits can run.
++            let full = BRIDGE.with(|bridge| {
++                let bridge = bridge.borrow();
++                bridge.queue.len() >= 256 || bridge.callbacks.len() >= 256
++                    || bridge.queue.iter().filter(|request| request.heap_key == heap_key).count() >= 32
++                    || bridge.callbacks.keys().filter(|(heap, _)| *heap == heap_key).count() >= 32
++            });
++            if full {
++                return script_err_invalid_args!(vm.trap(), "too many host requests are pending");
++            }
++            let Some(args_json) = vm.bx.heap.to_json_string_bounded(request_args, 1024 * 1024) else {
++                return script_err_invalid_args!(vm.trap(), "host arguments must be acyclic JSON within 1 MiB");
++            };
++            let full = BRIDGE.with(|bridge| {
++                let bridge = bridge.borrow();
++                let total: usize = bridge.queue.iter().map(|request| request.args_json.len()).sum();
++                let own: usize = bridge.queue.iter().filter(|request| request.heap_key == heap_key)
++                    .map(|request| request.args_json.len()).sum();
++                total + args_json.len() > 16 * 1024 * 1024 || own + args_json.len() > 4 * 1024 * 1024
++            });
++            if full {
++                return script_err_invalid_args!(vm.trap(), "queued host arguments exceed the bridge byte limit");
++            }
+ 
+             let callback = if let Some(obj) = on_result.as_object() {
+                 Some(vm.bx.heap.new_fn_ref(obj))
+@@ -269,7 +315,6 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return script_err_invalid_args!(vm.trap(), "on_result must be a fn or nil");
+             };
+ 
+-            let heap_key = vm.bx.heap.heap_key();
+             // ADR 0002 phase 2: the capability list is checked HERE, not
+             // merely reported. A refused request never reaches the host's
+             // queue; the app hears `{is_ok: false, error}` like any other
+@@ -294,11 +339,11 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 let mut b = b.borrow_mut();
+                 b.next_req_id += 1;
+                 let req_id = b.next_req_id;
++                let may_prompt = !b.no_prompt.contains(&heap_key);
+                 if let Some(callback) = callback {
+-                    b.callbacks.insert((heap_key, req_id), callback);
++                    b.callbacks.insert((heap_key, req_id), HostCallback { function: callback, may_prompt });
+                 }
+                 let app_tag = b.tags.get(&heap_key).cloned().unwrap_or_default();
+-                let may_prompt = !b.no_prompt.contains(&heap_key);
+                 b.queue.push(SplashHostRequest {
+                     app_tag,
+                     heap_key,
+@@ -356,6 +401,85 @@ pub fn script_mod(vm: &mut ScriptVm) {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn delayed_background_callbacks_keep_nested_requests_nonprompting() {
++        use crate::*;
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let root = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = script_eval!(vm, { use mod.widgets.* View { card := Splash{} } });
++            WidgetRef::script_from_value(vm, value)
++        });
++        let card = root.splash(&mut cx, ids!(card));
++        card.set_host_caps(&mut cx, vec!["fixture".into()]);
++        card.set_policy(&mut cx, Some(vec![]), Some(100_000));
++        card.set_host_prompts(&mut cx, false);
++        card.set_text(&mut cx, r#"
++            host.request("fixture.first", {}, fn(result) {
++                host.request("fixture.second", {}, fn(result) {
++                    host.request("fixture.third", {}, nil)
++                })
++            })
++            Label{text:"callback fixture"}
++        "#);
++        let heap = card.isolate_heap_key(&mut cx).unwrap();
++        let first = take_splash_host_requests_for(&[heap]).pop().unwrap();
++        assert!(!first.may_prompt);
++        // Tool completion restored the app baseline before the answer arrives.
++        card.set_host_prompts(&mut cx, true);
++        splash_host_respond(&mut cx, heap, first.req_id, Ok("{}"));
++        let second = take_splash_host_requests_for(&[heap]).pop().unwrap();
++        assert!(!second.may_prompt);
++        assert!(BRIDGE.with(|bridge| !bridge.borrow().no_prompt.contains(&heap)));
++        splash_host_respond(&mut cx, heap, second.req_id, Ok("{}"));
++        let third = take_splash_host_requests_for(&[heap]).pop().unwrap();
++        assert!(!third.may_prompt);
++        assert!(BRIDGE.with(|bridge| !bridge.borrow().no_prompt.contains(&heap)));
++        gc_bridge(&[heap]);
++    }
++
++    #[test]
++    fn oversized_or_cyclic_host_arguments_never_enter_the_request_queue() {
++        let mut host = ScriptVmHost::new((), ());
++        let mut vm = ScriptVm { host: &mut host, bx: Box::new(ScriptVmBase::new()) };
++        vm.bx.captured_errors = Some(Vec::new());
++        script_mod(&mut vm);
++        let heap = vm.bx.heap.heap_key();
++        let array = vm.bx.heap.new_array();
++        vm.bx.heap.array_push(array, array.into(), ScriptTrap::NoTrap);
++        vm.set_injected_global(id!(cyclic), array.into());
++        let huge = vm.bx.heap.new_string_from_str(&"x".repeat(1024 * 1024));
++        vm.set_injected_global(id!(huge), huge);
++        for argument in ["cyclic", "huge"] {
++            vm.bx.captured_errors = Some(Vec::new());
++            let result = vm.eval(ScriptMod { file: format!("host-{argument}.splash"),
++                code: format!("use mod.host\nhost.request(\"fixture.read\", {argument}, nil)\n;"),
++                ..Default::default() });
++            assert!(result.is_err());
++            assert!(take_splash_host_requests_for(&[heap]).is_empty());
++            assert!(vm.take_errors().iter().any(|message| message.contains("acyclic JSON within 1 MiB")));
++        }
++        let result = vm.eval(ScriptMod { file: "host-small.splash".into(),
++            code: "use mod.host\nhost.request(\"fixture.read\", {value:1}, nil)\n;".into(),
++            ..Default::default() });
++        assert!(!result.is_err(), "{:?}", vm.take_errors());
++        assert_eq!(take_splash_host_requests_for(&[heap]).len(), 1);
++        for _ in 0..32 {
++            let result = vm.eval(ScriptMod { file: "host-queue.splash".into(),
++                code: "use mod.host\nhost.request(\"fixture.read\", {}, nil)\n;".into(),
++                ..Default::default() });
++            assert!(!result.is_err());
++        }
++        vm.bx.captured_errors = Some(Vec::new());
++        let result = vm.eval(ScriptMod { file: "host-queue-full.splash".into(),
++            code: "use mod.host\nhost.request(\"fixture.read\", {}, nil)\n;".into(),
++            ..Default::default() });
++        assert!(result.is_err());
++        assert!(vm.take_errors().iter().any(|error| error.contains("too many host requests")));
++        assert_eq!(take_splash_host_requests_for(&[heap]).len(), 32);
++        gc_bridge(&[heap]);
++    }
++
+     fn queue_raw(heap_key: usize, req_id: u64, service: &str) {
+         BRIDGE.with(|b| {
+             b.borrow_mut().queue.push(SplashHostRequest {

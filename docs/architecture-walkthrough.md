@@ -159,11 +159,23 @@ The relay routes every call by the tool's owner:
 | Owner | Executor |
 | --- | --- |
 | Script app, `implemented_by: "host-service"` | `HostServiceExecutor`: the app's host service (`calendar`, `mail`, `news`), the shell's notice service for `<app>.notify`, or the shared service a store app's tool names in `host_method` (`github`, `gmail`, `gcalendar`, `glance`). For `github`, `gmail` and `gcalendar` it injects the app's active connection. |
-| Script app, `implemented_by: "app"` | None yet: the call is refused `app_tool_unavailable` |
+| Script app, `implemented_by: "app"` | `ScriptAppExecutor` queues the call to App Hub’s admitted full-app runner. Its `app_tool(name, call_id)` hook runs on the UI thread in the existing Splash VM and storage jail. A closed app returns `app_not_running`. |
 | Native app | Its open instance: `OctosPeer::serve_tools` on its peer link, else its AI bus service ("Open … first" when closed). An executor from `OctosAppService::set_tool_executor` comes first. |
 | `terminal.run` (system agent only) | The visible Terminal, over the AI bus, after a sheet with the exact command |
 | `files.list`, `files.read`, `files.search`, `dev.run` | The shell itself |
 | The toolbox (feature `toolbox-peers`) | The toolbox's executor |
+
+Script tool bundles declare `requires: ["script-tools-v1"]`. The caller never
+selects the VM, filesystem path, app identity, or owner account in its arguments.
+The relay validates grants and schemas; the runner checks the actual running
+bundle's declarations again. Only a full-app instance owns these tools, not
+its Glance copy. Closing, cancellation, account changes and the bounded deadline
+invalidate pending results. The handler can use `mod.app_tools.request`,
+`complete`, `fail`, and `active`; see App Hub's
+[script ABI](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md#script-tool-execution-script-tools-v1).
+This first version does not start closed apps or background VMs and cannot
+synthesize native confirmation. It preserves host-service execution for the
+existing system apps. Phone/model acceptance remains unverified until run.
 
 ### Approval order
 

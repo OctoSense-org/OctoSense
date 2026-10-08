@@ -403,6 +403,9 @@ pub fn install(storage: &'static Arc<Storage>) {
             mail_account(storage, &event);
         })));
         octosense_oauth_service::host::on_account_changed(Arc::new(move |app, previous, current| {
+            // Revoke old VM calls immediately, including system/cross-app
+            // callers, before a queued callback can publish an old result.
+            octosense_appstore::script_tools::set_account(app, current.unwrap_or("device"));
             if !storage.has_spec(app) {record_manifest_spec(storage, storage.layout().apps_root(), app);}
             account_changed(storage, app, previous, current);
             crate::ai_host::contained::account_changed(app);

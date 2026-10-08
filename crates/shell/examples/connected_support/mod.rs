@@ -15,6 +15,8 @@ use std::{
 const PUBLISHER: &str = "connected-e2e-fixture";
 const IDS: &[&str] = &[
     #[cfg(feature = "acceptance-fixtures")]
+    "org.octosense.samples.apilab",
+    #[cfg(feature = "acceptance-fixtures")]
     "org.octosense.samples.backend",
     #[cfg(feature = "acceptance-fixtures")]
     "org.octosense.samples.backendother",
@@ -126,7 +128,8 @@ pub fn install(inputs: &[PathBuf], root: &Path) -> Result<Value, String> {
         let mut catalog = Catalog::new(1, &today, entries);
         working.sign_catalog(&mut catalog, &anchor.certify(&working.public_hex())?)?;
         let catalog_json = serde_json::to_string_pretty(&catalog).map_err(|e| e.to_string())?;
-        let mut store = Store::new(&anchor.public_hex(), root, limits);
+        let mut store = Store::new(&anchor.public_hex(), root, limits)
+            .with_host_api_versions(octosense_appstore::host_api::available_versions());
         store.accept_catalog(&catalog_json)?;
         let mut apps = Vec::new();
         for (source, original, digest, id, copy) in copies {
@@ -171,7 +174,8 @@ pub fn open(root: &Path, id: &str) -> Result<PreparedLaunch, String> {
     let anchor = metadata["anchor"]
         .as_str()
         .ok_or("Fixture public trust anchor is absent")?;
-    let mut store = Store::new(anchor, root, HostLimits::default());
+    let mut store = Store::new(anchor, root, HostLimits::default())
+        .with_host_api_versions(octosense_appstore::host_api::available_versions());
     store.accept_catalog(
         &fs::read_to_string(root.join("catalog.json")).map_err(|e| e.to_string())?,
     )?;

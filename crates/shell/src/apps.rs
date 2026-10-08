@@ -220,6 +220,7 @@ pub fn register_host_services() {
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        crate::platform_services::register();
         octosense_markdown_editor::register();
         crate::connected_review::register();
         octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);
@@ -229,6 +230,7 @@ pub fn register_host_services() {
                 && crate::mail_background::has_publication(app,account,card_id,card.published_ms))
         });
         crate::connected_events::start();
+        crate::connected_backends::register();
         octosense_oauth_service::host::register(std::sync::Arc::new(|app, provider, scopes| {
             use octosense_oauth_service::Provider;
             let granted = |family| crate::host_tools::script_apps::grants(app, family);

@@ -159,11 +159,20 @@ Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别�
 | 所有者 | 执行器 |
 | --- | --- |
 | 脚本应用，`implemented_by: "host-service"` | `HostServiceExecutor`：应用的宿主服务（`calendar`、`mail`、`news`）、应答 `<app>.notify` 的 Shell 通知服务，或商店应用的工具在 `host_method` 中指定的共享服务（`github`、`gmail`、`gcalendar`、`glance`）。对 `github`、`gmail` 和 `gcalendar`，它还会注入该应用当前的连接。 |
-| 脚本应用，`implemented_by: "app"` | 尚无：调用以 `app_tool_unavailable` 被拒绝 |
+| 脚本应用，`implemented_by: "app"` | `ScriptAppExecutor` 将调用排入 App Hub 已准入的完整应用运行器；其 `app_tool(name, call_id)` 钩子在 UI 线程运行，与界面共享现有 Splash VM 和存储沙箱。应用关闭时返回 `app_not_running`。 |
 | 原生应用 | 它已打开的实例：经由 peer link 上的 `OctosPeer::serve_tools`，否则经由它的 AI bus 服务（应用没打开时回答 “Open … first”）。用 `OctosAppService::set_tool_executor` 安装的执行器优先。 |
 | `terminal.run`（仅系统 Agent） | 先由面板展示确切的命令，再经 AI bus 输入到可见的 Terminal |
 | `files.list`、`files.read`、`files.search`、`dev.run` | Shell 自己 |
 | 工具箱（`toolbox-peers` feature） | 工具箱的执行器 |
+
+脚本工具包声明 `requires: ["script-tools-v1"]`。调用者不能通过参数选择 VM、
+文件系统路径、应用身份或所有者账号。中继验证授权和 schema，运行器再次验证
+实际运行包中的工具声明。只有完整应用实例持有工具，Glance 副本不持有。
+关闭、取消、账号切换和有界期限会使待处理结果失效。处理函数使用
+`mod.app_tools.request`、`complete`、`fail` 和 `active`；详见 App Hub 的
+[脚本 ABI](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md#script-tool-execution-script-tools-v1)。
+首版不启动已关闭应用或后台 VM，也不能伪造原生人工确认。既有系统应用的
+宿主服务执行方式保持不变。手机和真实模型验收在实际执行前仍为未验证。
 
 ### 审批顺序
 

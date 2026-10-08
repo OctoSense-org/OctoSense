@@ -51,6 +51,7 @@ class State:
         self.users, self.flows, self.codes, self.access, self.refresh = {}, {}, {}, {}, {}
         self.sequence = 0
         self.web_sessions = set()
+        self.notes = {}
 
     def event(self, event, status):
         # Never record query strings, forms, passwords, codes or bearer tokens.
@@ -130,6 +131,26 @@ def handler(state):
                 if path.path == "/information":
                     state.event("information", 200)
                     return self.respond(200, '<!doctype html><html><title>Fictional backend information</title><h1 id="information-title">Fictional backend information</h1><p>Use the host Back control to return to the login form.</p></html>', "text/html")
+                if path.path.startswith("/api/"):
+                    token = self.headers.get("Authorization", "").removeprefix("Bearer ")
+                    record = state.access.get(token)
+                    if not record or record[1] <= time.monotonic():
+                        state.event("business", 401)
+                        return self.respond(401, {"error": "unauthorized"})
+                    state.event("business", 200)
+                    if path.path == "/api/notes":
+                        return self.respond(200, {"notes": state.notes.get(record[0], []),
+                            "query": parse_qs(path.query, keep_blank_values=True)})
+                    if path.path == "/api/redirect":
+                        return self.respond(302, {}, headers={"Location": "/api/redirect-target"})
+                    if path.path == "/api/redirect-target":
+                        state.event("redirect_followed", 200)
+                        return self.respond(200, {})
+                    if path.path == "/api/large":
+                        return self.respond(200, {"payload": "x" * 65537})
+                    if path.path == "/api/echo-token":
+                        return self.respond(200, {"accidental_echo": token})
+                    return self.respond(404, {"error": "not_found"})
                 if path.path == "/me":
                     if state.fail_me:
                         state.fail_me -= 1
@@ -195,6 +216,22 @@ def handler(state):
                     state.fail_me = count
                     state.event("fault_me", 200)
                     return self.respond(200, {"scheduled_failures": count})
+                if path == "/api/notes":
+                    token = self.headers.get("Authorization", "").removeprefix("Bearer ")
+                    record = state.access.get(token)
+                    if not record or record[1] <= time.monotonic():
+                        state.event("business_write", 401)
+                        return self.respond(401, {"error": "unauthorized"})
+                    try:
+                        note = json.loads(body)["text"]
+                        if not isinstance(note, str) or not 0 < len(note) <= 1024:
+                            raise ValueError()
+                    except (ValueError, KeyError, TypeError):
+                        return self.respond(400, {"error": "invalid_note"})
+                    notes = state.notes.setdefault(record[0], [])
+                    notes.append({"id": len(notes) + 1, "text": note})
+                    state.event("business_write", 201)
+                    return self.respond(201, notes[-1])
                 if path == "/logout":
                     token = self.headers.get("Authorization", "").removeprefix("Bearer ")
                     record = state.access.pop(token, None)
@@ -271,7 +308,13 @@ def main():
     origin = f"http://127.0.0.1:{server.server_port}"
     registration = {"id": "fixture", "app_id": args.app_id, "client_id": "octosense-fixture",
         "authorization_url": origin + "/authorize", "token_url": origin + "/token",
-        "me_url": origin + "/me", "logout_url": origin + "/logout", "scopes": ["app.session"]}
+        "me_url": origin + "/me", "logout_url": origin + "/logout", "scopes": ["app.session"],
+        "operations": {
+            "notes.list": {"method": "GET", "path": "/api/notes", "query_keys": ["tag"]},
+            "notes.create": {"method": "POST", "path": "/api/notes"},
+            "fixture.redirect": {"method": "GET", "path": "/api/redirect"},
+            "fixture.large": {"method": "GET", "path": "/api/large"},
+            "fixture.echo": {"method": "GET", "path": "/api/echo-token"}}}
     (args.directory / "metadata.json").write_text(json.dumps({"fixture": True, "origin": origin,
         "token_ttl_seconds": args.token_ttl_seconds, "registration": registration}, indent=2))
     print(json.dumps({"ready": True, "origin": origin}), flush=True)

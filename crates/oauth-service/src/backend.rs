@@ -1,6 +1,6 @@
-//! Public-client login to one host-configured developer backend.
+//! Public-client login and declared business operations for one developer backend.
 //!
-//! This is not an authenticated HTTP proxy. Every operation has one immutable
+//! This is not an open HTTP proxy. Every operation has one immutable
 //! endpoint, credentials stay in Rust, redirects are refused, and callers must
 //! also check the connection's persisted registration binding before token use.
 use crate::oauth::{Tokens, AUTH_LIFETIME};
@@ -11,7 +11,7 @@ use oauth2::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     io::Read,
     time::{Duration, Instant},
 };
@@ -35,6 +35,64 @@ pub struct BackendRegistration {
     pub me_url: String,
     pub logout_url: String,
     pub scopes: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub operations: BTreeMap<String, BackendOperation>,
+}
+
+/// Bundle metadata. The host supplies the admitted app identity separately.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackendDeclaration {
+    pub id: String,
+    pub client_id: String,
+    pub authorization_url: String,
+    pub token_url: String,
+    pub me_url: String,
+    pub logout_url: String,
+    pub scopes: BTreeSet<String>,
+    #[serde(default)]
+    pub operations: BTreeMap<String, BackendOperation>,
+}
+impl BackendDeclaration {
+    pub fn into_registration(self, app_id: &str) -> BackendRegistration {
+        BackendRegistration {
+            id: self.id,
+            app_id: app_id.into(),
+            client_id: self.client_id,
+            authorization_url: self.authorization_url,
+            token_url: self.token_url,
+            me_url: self.me_url,
+            logout_url: self.logout_url,
+            scopes: self.scopes,
+            operations: self.operations,
+        }
+    }
+}
+
+/// Exact same-origin endpoint; dynamic data goes in declared query keys or JSON.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BackendOperation {
+    pub method: String,
+    pub path: String,
+    #[serde(default)]
+    pub query_keys: BTreeSet<String>,
+}
+impl BackendOperation {
+    pub fn mutates(&self) -> bool {
+        self.method != "GET"
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackendRequest {
+    pub connection: String,
+    pub operation: String,
+    #[serde(default)]
+    pub query: BTreeMap<String, String>,
+    #[serde(default)]
+    pub body: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -158,6 +216,46 @@ impl BackendClient {
         registration.token_url = urls[1].to_string();
         registration.me_url = urls[2].to_string();
         registration.logout_url = urls[3].to_string();
+        if registration.operations.len() > 64 {
+            return Err("Backend declares too many operations".into());
+        }
+        for (name, operation) in &registration.operations {
+            let valid_name = |s: &str| {
+                !s.is_empty()
+                    && s.len() <= 128
+                    && s.bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+            };
+            if !valid_name(name)
+                || !matches!(
+                    operation.method.as_str(),
+                    "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+                )
+                || operation.query_keys.len() > 32
+                || operation.query_keys.iter().any(|s| !valid_name(s))
+            {
+                return Err("Invalid backend operation name, method or query keys".into());
+            }
+            // Exact ASCII paths avoid percent decoding, dot-segment and authority ambiguity.
+            let path = &operation.path;
+            if !path.starts_with('/')
+                || path.len() > 1024
+                || path == "/"
+                || path.contains("//")
+                || path.split('/').any(|s| s == "." || s == "..")
+                || !path
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"/_-.~".contains(&c))
+            {
+                return Err("Backend operation requires an exact absolute path".into());
+            }
+            let endpoint = urls[0]
+                .join(path)
+                .map_err(|_| "Invalid backend operation path")?;
+            if urls.contains(&endpoint) {
+                return Err("Business operations cannot target authentication endpoints".into());
+            }
+        }
         let canonical =
             serde_json::to_vec(&registration).map_err(|_| "Invalid backend registration")?;
         let binding = format!("{:x}", Sha256::digest(canonical));
@@ -331,6 +429,95 @@ impl BackendClient {
         Ok(identity)
     }
 
+    pub fn operation(&self, name: &str) -> Result<&BackendOperation, String> {
+        self.registration
+            .operations
+            .get(name)
+            .ok_or_else(|| "Backend operation is not declared by this app".into())
+    }
+
+    /// The host checks the connection binding and approval before this transport.
+    /// No URL, method, header or credential override is accepted from the app.
+    pub fn request(
+        &self,
+        caller: &str,
+        tokens: &Tokens,
+        request: &BackendRequest,
+    ) -> Result<serde_json::Value, String> {
+        self.caller(caller)?;
+        self.validate_request(request)?;
+        let operation = self.operation(&request.operation)?;
+        let body = request
+            .body
+            .as_ref()
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|_| "Invalid backend request body")?;
+        let mut url = Url::parse(&self.registration.authorization_url)
+            .unwrap()
+            .join(&operation.path)
+            .map_err(|_| "Invalid backend operation path")?;
+        if !request.query.is_empty() {
+            url.query_pairs_mut().extend_pairs(&request.query);
+        }
+        let method = reqwest::Method::from_bytes(operation.method.as_bytes())
+            .map_err(|_| "Invalid backend method")?;
+        let mut outgoing = self
+            .http
+            .request(method, url)
+            .bearer_auth(&tokens.access)
+            .header(reqwest::header::ACCEPT, "application/json");
+        if let Some(body) = body {
+            outgoing = outgoing
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(body);
+        }
+        let response = outgoing
+            .send()
+            .map_err(|_| "Backend operation connection failed")?;
+        let value = response_json(response)?;
+        // A faulty endpoint must not accidentally expose its Authorization header.
+        let encoded = serde_json::to_string(&value).map_err(|_| "Invalid backend response")?;
+        if encoded.contains(&tokens.access)
+            || tokens
+                .refresh
+                .as_ref()
+                .is_some_and(|token| encoded.contains(token))
+        {
+            return Err("Backend response exposed credential material".into());
+        }
+        Ok(value)
+    }
+
+    pub fn validate_request(&self, request: &BackendRequest) -> Result<(), String> {
+        let operation = self.operation(&request.operation)?;
+        if request.query.len() > 32
+            || request.query.iter().any(|(key, value)| {
+                !operation.query_keys.contains(key)
+                    || value.len() > 2048
+                    || value.chars().any(char::is_control)
+            })
+        {
+            return Err("Backend query contains an undeclared key or oversized value".into());
+        }
+        if !operation.mutates() && request.body.is_some() {
+            return Err("Backend GET cannot carry a body".into());
+        }
+        let body = request
+            .body
+            .as_ref()
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|_| "Invalid backend request body")?;
+        if body
+            .as_ref()
+            .is_some_and(|body| body.len() > RESPONSE_LIMIT)
+        {
+            return Err("Backend request exceeds 64 KiB".into());
+        }
+        Ok(())
+    }
+
     /// The host must revoke its local handle before calling this remote endpoint.
     pub fn logout(&self, caller: &str, tokens: &Tokens) -> Result<(), String> {
         self.caller(caller)?;
@@ -394,6 +581,9 @@ fn response_json(response: reqwest::blocking::Response) -> Result<serde_json::Va
         .map_err(|_| "Cannot read backend response")?;
     if bytes.len() > RESPONSE_LIMIT {
         return Err("Backend response exceeds 64 KiB".into());
+    }
+    if bytes.is_empty() {
+        return Ok(serde_json::Value::Null);
     }
     serde_json::from_slice(&bytes).map_err(|_| "Backend returned invalid JSON".into())
 }

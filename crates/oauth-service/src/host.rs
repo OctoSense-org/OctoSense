@@ -22,9 +22,13 @@ use std::{
 use uuid::Uuid;
 
 #[path = "host_backend.rs"]
-mod backend_host;
+pub(crate) mod backend_host;
 #[cfg(feature = "acceptance-fixtures")]
 pub use backend_host::register_fixture as register_backend_fixture;
+pub use backend_host::{
+    invalidate_backend_registration, revalidate_backend_registration, set_backend_resolver,
+    BackendResolver,
+};
 
 pub type ScopeCheck = Arc<dyn Fn(&str, Provider, &BTreeSet<String>) -> bool + Send + Sync>;
 pub type AccountChanged = Arc<dyn Fn(&str, Option<&str>, Option<&str>) + Send + Sync>;
@@ -303,12 +307,14 @@ struct Pending {
     callback_rx: Mutex<std::sync::mpsc::Receiver<String>>,
 }
 struct AuthService {
+    backend_reviews: crate::host_api::BackendReviews,
     scope_check: ScopeCheck,
     pending: HashMap<String, Arc<Pending>>,
 }
 
 pub fn register(scope_check: ScopeCheck) {
     services::register_host_service(Box::new(AuthService {
+        backend_reviews: Default::default(),
         scope_check,
         pending: HashMap::new(),
     }));
@@ -345,6 +351,9 @@ impl AuthService {
     }
 }
 impl HostService for AuthService {
+    fn api_methods(&self) -> Vec<services::HostApiMethod> {
+        crate::host_catalog::auth()
+    }
     fn family(&self) -> &'static str {
         "auth"
     }
@@ -352,6 +361,11 @@ impl HostService for AuthService {
         self.cleanup();
         if call.method().starts_with("sheet.") && !call.from_sheet {
             reply.send(Err("Authentication controls belong to the host".into()));
+            return;
+        }
+        if call.method() == "backend.request" || call.method().starts_with("backend.sheet.") {
+            self.backend_reviews
+                .call(call, reply, host, self.scope_check.clone());
             return;
         }
         match call.method() {
@@ -398,7 +412,7 @@ impl HostService for AuthService {
                         let handle = call.args["connection"]
                             .as_str()
                             .ok_or("Choose a connected account")?;
-                        let mut store = connections(&call.host_dir)?;
+                        let store = connections(&call.host_dir)?;
                         let previous = store.active(&call.app_id);
                         let remote = backend_host::logout_material(
                             &call.host_dir,
@@ -406,7 +420,20 @@ impl HostService for AuthService {
                             handle,
                             &store,
                         );
-                        let revoked = store.disconnect(&call.app_id, handle);
+                        // Resolving logout may have revoked every backend handle
+                        // after a declaration change. Never persist an older
+                        // metadata snapshot over that durable revocation.
+                        let mut store = connections(&call.host_dir)?;
+                        let already_revoked = remote.is_some()
+                            && !store
+                                .list(&call.app_id)
+                                .iter()
+                                .any(|entry| entry.handle == handle);
+                        let revoked = if already_revoked {
+                            Ok(())
+                        } else {
+                            store.disconnect(&call.app_id, handle)
+                        };
                         invalidate_authorizations(&call.host_dir, &call.app_id);
                         let current = store.active(&call.app_id);
                         drop(guard);
@@ -1003,7 +1030,7 @@ let content = SolidView {{width: Fill height: Fill flow: Down padding: 16 spacin
     Label {{width: Fill text: {app} draw_text.color: #43536c draw_text.text_style.font_size: 12}}
     Label {{width: Fill text: {origin} draw_text.color: #172033 draw_text.text_style.font_size: 13}}
     oauth_intro := View {{width: Fill height: Fill flow: Down spacing: 12
-        Label {{width: Fill text: "Continue to this app’s website to sign in or create an account. OctoSense keeps the resulting session in its secure credential store." draw_text.color: #43536c}}
+        Label {{width: Fill text: "Continue to this app’s website to sign in or create an account. This app can then read its declared backend data. Changes require your review. OctoSense keeps credentials in its secure store." draw_text.color: #43536c}}
     }}
     oauth_webview := WebReader {{width: Fill height: Fill visible: false on_auth: || changed()}}
     oauth_status := Label {{width: Fill text: "Continue to authorize this connection." draw_text.color: #43536c draw_text.text_style.font_size: 12}}
