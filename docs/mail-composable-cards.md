@@ -310,7 +310,7 @@ receipt without a payload fingerprint allows one validated refresh.
 The [tool schemas](../apps/mail/bundle/tools.json) describe the four draft/proposal
 tools. Catalog contracts are pinned to Octoscript
 `2e37d9e657a246f16718d9a475e167ccd2d5b5fa`; Octoscript-Makepad is pinned to
-`aa80f72c509c767faf04822b939d44b2f34fbc81`. Both Mail sources require literal app
+`33dea2f1f3ad3f1346a219aa8cf6e91b31361e23`. Both Mail sources require literal app
 identity; this host additionally requires their literal draft ID to match the
 trusted publication. Draft `to`, `subject`, `body` and `suggestion_body` remain
 model-tainted for checker purposes: display/edit is allowed, direct reuse in
