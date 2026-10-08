@@ -7,6 +7,29 @@ name = "ab_glyph_rasterizer"
 version = "0.1.8"
 
 [[package]]
+name = "acadrust"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7df99ae4f5a6d0147907f9976fe1dd166d01e72ab1a93820b50242937c5797e6"
+dependencies = [
+ "anyhow",
+ "bitflags 2.13.2",
+ "byteorder 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "encoding_rs",
+ "flate2",
+ "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "indexmap 2.14.2",
+ "itoa",
+ "memmap2",
+ "nom 7.1.3",
+ "once_cell 1.21.4",
+ "rayon",
+ "ryu",
+ "thiserror 2.0.20",
+ "web-time",
+]
+
+[[package]]
 name = "accessory"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1039,6 +1062,117 @@ checksum = "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14"
 dependencies = [
  "cc",
  "pkg-config 0.3.34",
+]
+
+[[package]]
+name = "cadcraft-color"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "cadcraft-constraints"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "cadcraft-doc",
+ "cadcraft-geom",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cadcraft-doc"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "cadcraft-color",
+ "cadcraft-geom",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cadcraft-dwg"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "acadrust",
+]
+
+[[package]]
+name = "cadcraft-dxf"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cadcraft-engine"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "cadcraft-color",
+ "cadcraft-constraints",
+ "cadcraft-doc",
+ "cadcraft-fonts",
+ "cadcraft-geom",
+ "cadcraft-render",
+ "log",
+ "rstar",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cadcraft-fonts"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "cadcraft-geom",
+ "skrifa 0.47.0",
+]
+
+[[package]]
+name = "cadcraft-geom"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "cadcraft-io"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "cadcraft-color",
+ "cadcraft-doc",
+ "cadcraft-dwg",
+ "cadcraft-dxf",
+ "cadcraft-geom",
+ "cadcraft-render",
+ "miniz_oxide 0.8.9",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cadcraft-render"
+version = "0.3.0"
+source = "git+https://github.com/ymote/cadcraft.git?rev=59631c8d4f9ffe6c08c5c2065ea17504e53bf821#59631c8d4f9ffe6c08c5c2065ea17504e53bf821"
+dependencies = [
+ "cadcraft-color",
+ "cadcraft-doc",
+ "cadcraft-fonts",
+ "cadcraft-geom",
+ "tiny-skia",
 ]
 
 [[package]]
@@ -2679,7 +2813,7 @@ dependencies = [
  "cssparser 0.37.0",
  "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "html5ever 0.39.0",
- "nom",
+ "nom 8.0.0",
  "precomputed-hash",
  "selectors 0.38.0",
  "tendril 0.5.1",
@@ -5857,7 +5991,7 @@ dependencies = [
  "httpdate",
  "idna",
  "mime",
- "nom",
+ "nom 8.0.0",
  "percent-encoding",
  "quoted_printable",
  "rustls",
@@ -6019,7 +6153,7 @@ dependencies = [
  "itoa",
  "log",
  "md-5",
- "nom",
+ "nom 8.0.0",
  "nom_locate",
  "rand 0.9.5",
  "rangemap",
@@ -7493,6 +7627,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7724,6 +7864,16 @@ dependencies = [
 
 [[package]]
 name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr 2.8.3",
+ "minimal-lexical",
+]
+
+[[package]]
+name = "nom"
 version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
@@ -7739,7 +7889,7 @@ checksum = "0b577e2d69827c4740cba2b52efaad1c4cc7c73042860b199710b3575c68438d"
 dependencies = [
  "bytecount",
  "memchr 2.8.3",
- "nom",
+ "nom 8.0.0",
 ]
 
 [[package]]
@@ -7841,6 +7991,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+ "libm",
 ]
 
 [[package]]
@@ -8821,6 +8972,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-cad-service"
+version = "0.1.0"
+dependencies = [
+ "cadcraft-engine",
+ "cadcraft-io",
+ "octosense-appstore",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "octosense-calendar-service"
 version = "0.1.0"
 dependencies = [
@@ -9096,6 +9258,7 @@ dependencies = [
  "octosense-app-policy",
  "octosense-appcard",
  "octosense-appstore",
+ "octosense-cad-service",
  "octosense-calendar-service",
  "octosense-deck-service",
  "octosense-l0-chat",
@@ -11216,6 +11379,17 @@ checksum = "c51c9ae4df8a7fba42103df5c621fa3c37eccf3a3c650879e90fc48b11cc192c"
 dependencies = [
  "hashbrown 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "rstar"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "421400d13ccfd26dfa5858199c30a5d76f9c54e0dba7575273025b43c5175dbb"
+dependencies = [
+ "heapless",
+ "num-traits 0.2.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "smallvec 1.16.1",
 ]
 
 [[package]]
