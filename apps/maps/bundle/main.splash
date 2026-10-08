@@ -704,7 +704,32 @@ fn viewport_moved(lat, lon, zoom){
     centered = true
     if screen == "search" { show_results(false) }
 }
-fn map_long_pressed(lat, lon){}
+// A long press drops a pin and asks Photon what is there. The person pressed
+// there, so the map stays put. The card keeps the pressed point, which is
+// where Directions goes, even once Photon names the nearest place or
+// address; its name, category, address and id come from Photon's answer.
+// A press that isn't a place (zoomed far out, MapView can report a
+// longitude past 180) does nothing. An answer for an older press or a card
+// that has since closed is dropped; without one the card stays "Dropped
+// pin" with the coordinates.
+fn map_long_pressed(lat, lon){
+    if screen != "search" && screen != "place" { return }
+    if !is_a_place({lat: lat lon: lon}) { return }
+    place = {id: "" name: "Dropped pin" cat: "" label: coords_text(lat, lon) lat: lat lon: lon}
+    open_card()
+    let mine = card_seq
+    let body = body_of(fetch(reverse_url(lat, lon)).await())
+    if mine != card_seq || body == nil { return }
+    let found = photon_hits(body)
+    if found == nil || found.len() == 0 { return }
+    let h = found[0]
+    place = {id: h.id name: h.name cat: h.cat label: h.label lat: lat lon: lon}
+    fill_place()
+    // Directions may already be open: its "To" names the place too.
+    if screen == "route" { ui.rto.set_text(place.name) }
+    show_pins()
+    load_details(place, mine)
+}
 // A pin's tap, by its position among the drawn pins (`shown_pins`). A saved
 // pin may be an entry as `saved.json` holds it, so its card gets a copy with
 // every field of a place. The open place's own pin does nothing.

@@ -846,7 +846,8 @@ log.push(outcomes)
 /// Maps' place card with the runtime stubbed. `ui`: each widget's text is
 /// `mod.texts[id]` and its visibility `mod.shown[id]`, the details' renders
 /// count in `mod.renders`, and the browse map's pins and flights are
-/// `mod.markers` and `mod.flights`. `sys`: a fix only with `mod.fix`.
+/// `mod.markers` and `mod.flights`. `sys`: a fix only with `mod.fix`, and
+/// every route field is `mod.line` ("—": the route is still loading).
 /// `fs`: files are `mod.files[path]`, and
 /// every call is logged in `mod.io` (a read of a missing file raises, as the
 /// runtime's does). The clock is `mod.now`. Requests go as in SEARCH_STUBS:
@@ -865,17 +866,20 @@ mod.answers = []
 mod.during = nil
 mod.now = 1800000000
 mod.fix = false
+mod.line = "—"
 fn w(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn(v) { mod.shown[id] = v }
     render: fn() { if id == "details" { mod.renders = mod.renders + 1 } }} }
 let ui = {results: w("results") search: w("search") search_hint: w("search_hint") search_panel: w("search_panel")
     place_panel: w("place_panel") route_panel: w("route_panel") browse_box: w("browse_box") locate_box: w("locate_box")
     drive_box: w("drive_box") drive_bar: w("drive_bar") finding_links: w("finding_links") your_location: w("your_location")
     pname: w("pname") pcat: w("pcat") paddr: w("paddr") pdist: w("pdist") details: w("details") save: w("save")
-    location_status: w("location_status")
+    location_status: w("location_status") rfrom: w("rfrom") rto: w("rto") modes: w("modes") stop_rows: w("stop_rows")
+    reta: w("reta") rdist: w("rdist")
     browse_map: {fly_to: fn(lat, lon, zoom) { mod.flights.push([lat lon zoom]) } set_route_markers: fn(text) { mod.markers.push(text) }}}
 let host = {has: fn(capability) { false }}
 // No fix unless `mod.fix`; then downtown San Jose.
-let sys = {gps: fn(field) { if !mod.fix { return 0 }; if field == "lat" { return 37.3350 }; if field == "lon" { return -121.8850 }; return 1 }}
+let sys = {gps: fn(field) { if !mod.fix { return 0 }; if field == "lat" { return 37.3350 }; if field == "lon" { return -121.8850 }; return 1 }
+    navroute: fn(lat1, lon1, lat2, lon2, field, vias) { mod.line }}
 fn time_now(){ mod.now }
 let fs = {
     exists: fn(path) { mod.io.push("exists " + path); return optional(mod.files, path, nil) != nil }
@@ -1185,4 +1189,103 @@ log.push([mod.texts["pdist"] mod.shown["pdist"]])
 log.to_json()"#;
     let out = maps_model(&format!("{CARD_STUBS}{code}"));
     assert_eq!(out, serde_json::json!([["", false], ["5.8 km away", true]]));
+}
+
+/// Photon's reverse lookup at two pressed points: a cafe a few meters from
+/// the first, a street near the second.
+const CAFE_HERE: &str = r#"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-121.88512,37.33478]},"properties":{"osm_type":"N","osm_id":21,"osm_key":"amenity","osm_value":"cafe","name":"Corner Cafe","street":"Market Street","city":"San Jose","state":"California"}}]}"#;
+const STREET_THERE: &str = r#"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-121.94871,37.32093]},"properties":{"osm_type":"W","osm_id":22,"osm_key":"highway","osm_value":"residential","name":"Olin Avenue","city":"San Jose"}}]}"#;
+
+#[test]
+fn maps_shows_what_is_at_a_long_pressed_point_and_drops_an_answer_for_an_older_press() {
+    let code = r#"let cafe = {status_code: 200 body: 'CAFE'}
+let street = {status_code: 200 body: 'STREET'}
+let hours = {status_code: 200 body: '{"elements":[{"tags":{"opening_hours":"24/7"}}]}'}
+// The card's name, category and address, the place it is about, and the
+// pins drawn last.
+fn card(){ return [screen mod.texts["pname"] mod.texts["pcat"] mod.texts["paddr"] place mod.markers[mod.markers.len() - 1]] }
+let log = []
+// A press on the search screen: at once a "Dropped pin" card at the point,
+// with its pin and no flight (the person pressed there); then Photon's
+// name for the spot, still at the pressed point, and its details by its id.
+mod.answers = [cafe hours]
+mod.during = fn() { log.push(card()) }
+map_long_pressed(37.3349, -121.8851)
+log.push([card() detail.hours hosts() mod.flights])
+// A second press before the first answer comes: only the second's shows,
+// and the first asks Overpass nothing.
+mod.urls = []
+mod.answers = [cafe street]
+mod.during = fn() { map_long_pressed(37.321, -121.9486) }
+map_long_pressed(37.3349, -121.8851)
+log.push([card() hosts()])
+// Closed before the answer: the card stays closed, and nothing more is asked.
+mod.urls = []
+mod.answers = [cafe]
+mod.during = fn() { close_place() }
+map_long_pressed(37.3349, -121.8851)
+log.push([screen place mod.urls.len() mod.markers[mod.markers.len() - 1]])
+// Photon unreachable, an error page (HTTP or not), Photon naming nothing
+// there, or a request the runtime refused: the card stays "Dropped pin" with
+// the coordinates, and asks Overpass nothing.
+mod.urls = []
+let busy = {status_code: 503 body: 'CAFE'}
+let page = {status_code: 200 body: '<html>busy</html>'}
+let nothing = {status_code: 200 body: '{"features":[]}'}
+let kept_pins = []
+for res in [nil busy page nothing "refused"] {
+    mod.answers = [res]
+    map_long_pressed(37.3349, -121.8851)
+    kept_pins.push([mod.texts["pname"] mod.texts["paddr"] place.id place.lat])
+}
+log.push([kept_pins mod.urls.len()])
+// A press that isn't a place (MapView zoomed far out can report a longitude
+// past 180) opens nothing and asks nothing.
+mod.urls = []
+let seq = card_seq
+map_long_pressed(37.3, 181)
+map_long_pressed(37.3, -200)
+map_long_pressed(95, 1)
+map_long_pressed(0, 0)
+map_long_pressed(0 / 0, 1)
+log.push([card_seq == seq mod.urls.len() place.name])
+// Directions opened before the answer: its "To" names the place, and the
+// route still goes to the pressed point (the cafe's details are kept).
+mod.answers = [cafe]
+mod.during = fn() { show("route") }
+map_long_pressed(37.3349, -121.8851)
+log.push([screen mod.texts["rto"] place.name place.lat place.lon mod.urls.len()])
+// On Directions a long press does nothing.
+seq = card_seq
+map_long_pressed(37.5, -121.5)
+log.push([card_seq == seq place.name mod.urls.len()])
+log.to_json()"#
+        .replace("CAFE", CAFE_HERE)
+        .replace("STREET", STREET_THERE);
+    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let here = "https://photon.komoot.io/reverse?lat=37.3349&lon=-121.8851&lang=en&limit=1";
+    let there = "https://photon.komoot.io/reverse?lat=37.321&lon=-121.9486&lang=en&limit=1";
+    let dropped = serde_json::json!({"id": "", "name": "Dropped pin", "cat": "", "label": "37.3349, -121.8851",
+        "lat": 37.3349, "lon": -121.8851});
+    let cafe = serde_json::json!({"id": "N:21", "name": "Corner Cafe", "cat": "Cafe",
+        "label": "Market Street, San Jose, California", "lat": 37.3349, "lon": -121.8851});
+    let street = serde_json::json!({"id": "W:22", "name": "Olin Avenue", "cat": "Street", "label": "San Jose",
+        "lat": 37.321, "lon": -121.9486});
+    let pin_here = "37.3349,-121.8851,2";
+    let still_dropped = serde_json::json!(["Dropped pin", "37.3349, -121.8851", "", 37.3349]);
+    assert_eq!(
+        out,
+        serde_json::json!([
+            ["place", "Dropped pin", "", "37.3349, -121.8851", dropped, pin_here],
+            [["place", "Corner Cafe", "Cafe", "Market Street, San Jose, California", cafe, pin_here],
+             "24/7", [here, "https://overpass-api.de"], []],
+            [["place", "Olin Avenue", "Street", "San Jose", street, "37.321,-121.9486,2"],
+             [here, there, "https://overpass-api.de", "https://overpass.kumi.systems", "https://overpass.openstreetmap.fr"]],
+            ["search", null, 1, ""],
+            [[still_dropped, still_dropped, still_dropped, still_dropped, still_dropped], 5],
+            [true, 0, "Dropped pin"],
+            ["route", "Corner Cafe", "Corner Cafe", 37.3349, -121.8851, 1],
+            [true, "Corner Cafe", 1]
+        ])
+    );
 }
