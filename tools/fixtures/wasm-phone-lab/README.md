@@ -16,6 +16,8 @@ python3 tools/test-wasm-phone.py --adb "$ADB" --aapt2 "$AAPT2" --hub "$HUB"   --
 
 The driver stamps a temporary copy. The native host creates ephemeral signing keys in memory and uses normal signature, digest, capability and tool admission. Keys and provider credentials are not published. Receipts record APK/source/runtime identities and individual results, without device serials or SDK paths. Keep an earlier receipt separate; choose a new package suffix for another install or remove only your previous test package.
 
+This isolated fixture explicitly selects its temporary legacy catalog before the Wasm worker rechecks admission. Normal OctoSense keeps the GitHub catalog default; this test does not establish production catalog publication or keyless App Hub UI acceptance. Apple arm64 Android build hosts use the workspace's target-scoped AWS-LC CC configuration described in the [Android build note](../host-api-lab/ANDROID.md).
+
 `state.wat` is the source of `bundle/fns/state.wasm`. To reproduce the checked-in module:
 
 ```sh

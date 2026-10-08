@@ -73,7 +73,7 @@ tools/ci-local.sh --only all --linux-host --offload --list   # what runs where
 | --- | --- | --- |
 | desktop / `desktop` | Compile the desktop; desktop tools and scripts | The shell-source, single-graph and native-apps checks |
 | desktop / `native-host-api` | All of it (a real macOS host) | Nothing |
-| phone / `home` | Apple icons and asset catalogs; compile Home; Home's and App Hub's tests (three fail on Linux, see `JOBS`) | The graph checks, the octos kernel, the two-lane scenario |
+| phone / `home` | Apple icons and asset catalogs; compile Home | The graph checks, the octos kernel, Home's and App Hub's tests, the two-lane scenario |
 | apps / `apps` | Nothing | All of it |
 
 Each part prepares the sources itself (the job's `python3 tools/setup.py`). The host's part runs as `<job>@linux`; its steps join the table under the job, marked `(linux)`. `--check-drift` fails when a name in `mac_steps` stops matching a step.

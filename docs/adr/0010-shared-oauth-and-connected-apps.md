@@ -73,7 +73,10 @@ configuration change from redirecting an existing token.
 The adapter provides `auth.connect` with provider `backend` and
 scope `app.session`, the shared account lifecycle, and `auth.backend.me` for
 protected identity. Backend business APIs and bundle-driven registration require
-separate implementations. Embedded sessions use nonpersistent WKWebView storage
+separate implementations. *(2026-10-07: [ADR 0012](0012-app-host-api-discovery.md#backend-login-and-business-requests)
+adds both: a signed bundle can declare its backend registration and named
+operations, and the app calls them with `auth.backend.request`. On OctoSense
+`main`, in no release yet.)* Embedded sessions use nonpersistent WKWebView storage
 on macOS and a private per-attempt WebView process/profile on Android 9+.
 The host intercepts `https://octosense.invalid/auth/callback`, limits navigation
 to the registered login origin, supplies Back/Cancel/retry, and exposes no page

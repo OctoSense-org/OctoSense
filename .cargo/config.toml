@@ -27,6 +27,10 @@ OCTOSENSE_SYSTEM_APPS = { value = "desktop/system-apps.json", relative = true }
 # The locked aws-lc-sys supports its CC builder on Android arm64. Use the
 # installed NDK Clang directly; no additional CMake installation is needed.
 AWS_LC_SYS_CMAKE_BUILDER_aarch64_linux_android = "0"
+# The Android packager also forces its global CMake setting into host-side
+# bundle validation dependencies. On Apple arm64, use the supported CC builder
+# there too. This changes only the build driver, not crypto or assembly features.
+AWS_LC_SYS_CMAKE_BUILDER_aarch64_apple_darwin = "0"
 
 # iOS gives the main thread a 1 MB stack, and the shell's widget tree is
 # built on it through nested script_apply/script_new calls that overflowed

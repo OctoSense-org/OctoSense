@@ -2,9 +2,9 @@
 
 [English](README.md) | 简体中文
 
-**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
+**初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
-> **在整个系统中的位置。**在手机上，OctoSense 托管的原生模块和脚本应用在 Home 进程内运行（不使用桌面式进程托管）；普通 Android 应用仍在各自的 Android 进程中运行。octos 内核在 Android 上是 APK 中作为子进程运行的 `liboctos.so`，在 OpenHarmony 上是进程内的任务，在 iOS 上没有。应用仍然只能通过 Shell 使用自己的 Agent。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
+> **在整个系统中的位置**。在手机上，OctoSense 托管的原生模块和脚本应用在 Home 进程内运行（不使用桌面式进程托管）；普通 Android 应用仍在各自的 Android 进程中运行。octos 内核在 Android 上是 APK 中作为子进程运行的 `liboctos.so`，在 OpenHarmony 上是进程内的任务，在 iOS 上没有。应用仍然只能通过 Shell 使用自己的 Agent。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
 OctoSense 手机 Shell：一个 Makepad 应用，也就是设备的桌面。它包括带实时磁贴和应用组合的桌面页面、手势层、通知面板（左侧通知，右侧控制）、最近任务、用于展示进行中活动的实时岛，以及在进程内绘制于磁贴中的托管应用：App Hub 及其运行的应用、系统应用、Reference 和 Sheets、Makepad 应用 Calculator、Clock、Notes、Reminders 和 Weather（各自有自己的 Agent），另外还有作为服务的 octos Agent 内核。（AppCard 目前不随产品发布，只有使用 `--features app-appcard` 时才会链接。）
 

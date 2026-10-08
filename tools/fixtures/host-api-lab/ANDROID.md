@@ -15,6 +15,8 @@ cargo build --release --offline --manifest-path .sources/makepad/tools/cargo_mak
 
 Set `JAVA_HOME` and `ANDROID_HOME` to existing tool installations. Set `PACKAGER` to that built `cargo-makepad` executable and `MAKEPAD_ANDROID_SDK` to the existing Makepad Android SDK. Build a separate debuggable package; `octosense-host-api-smoke` uses the same Rust source as the desktop `host-api-lab` example:
 
+The workspace Cargo configuration selects the supported AWS-LC CC builder for both Android arm64 and an Apple arm64 build host. The Android packager otherwise forces CMake for host-side bundle validation too. This avoids an extra CMake installation without disabling cryptography or assembly. The equivalent target-scoped host environment override was exercised in the Android build before being added to the configuration.
+
 ```sh
 MAKEPAD_FORCE_DEBUGGABLE=1 "$PACKAGER" makepad android \
   --sdk-path="$MAKEPAD_ANDROID_SDK" --abi=aarch64 \

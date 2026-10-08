@@ -16,6 +16,8 @@ python3 tools/test-wasm-phone.py --adb "$ADB" --aapt2 "$AAPT2" --hub "$HUB"   --
 
 驱动只给临时副本重新计算摘要。原生宿主在内存中生成临时签名密钥，使用正常的签名、摘要、能力和工具准入检查，不发布密钥或服务商凭据。回执记录 APK、源码及运行时标识和各项结果，不包含设备序列号或 SDK 路径。保留旧回执；重新安装时选择新的包后缀，或只删除自己上一次的测试包。
 
+这个独立测试会在 Wasm 工作线程重新检查准入前，明确选择其临时旧格式目录。正常 OctoSense 仍默认使用 GitHub 目录；本测试不能证明生产目录发布或免开发者密钥的 App Hub 界面验收。Apple arm64 主机的 Android 构建使用工作区按目标设置的 AWS-LC CC 配置，见 [Android 构建说明](../host-api-lab/ANDROID.zh-CN.md)。
+
 `state.wat` 是 `bundle/fns/state.wasm` 的源码。重建已提交的模块：
 
 ```sh

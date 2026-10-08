@@ -68,7 +68,7 @@ KERNEL_NAME = "octos-kernel"
 RECEIPT_NAME = "octos-kernel.json"
 # cargo-packager signs when these are set; the build never does (see above).
 SIGNING_ENV = ("APPLE_SIGNING_IDENTITY", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_API_KEY",
-               "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
+               "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_P8", "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
                "WINDOWS_CERTIFICATE", "WINDOWS_CERTIFICATE_PASSWORD", "WINDOWS_CERTIFICATE_THUMBPRINT")
 DEFAULT_FORMATS = {"macos": ["app", "dmg"], "windows": ["nsis"], "linux": ["deb", "appimage"]}
 # Where Makepad reads packaged resources from, per OS (see the table above).

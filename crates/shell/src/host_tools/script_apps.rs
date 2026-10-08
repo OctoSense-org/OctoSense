@@ -832,8 +832,16 @@ pub(crate) mod tests {
             request.args = json!({"connection":current,"operation":"notes.list"});
             let (r,sent) = reply();exec.execute(request,r);
             let output = sent.lock().unwrap();
-            assert_eq!(output[0]["error"]["kind"],"account_scope", "{method}");
-            assert!(output[0]["error"]["message"].as_str().unwrap().contains("account changed"),"{}",output[0]);
+            if output[0]["error"]["kind"] == "api_unavailable" {
+                // A host without the backend API (auth is macOS and Android
+                // only) refuses it before the account check, once any test
+                // has registered the auth catalog in this process.
+                assert!(octosense_appstore::host_api::methods().iter()
+                    .any(|api| api.name == method && !api.supports(octosense_appstore::host_api::platform())),"{}",output[0]);
+            } else {
+                assert_eq!(output[0]["error"]["kind"],"account_scope", "{method}");
+                assert!(output[0]["error"]["message"].as_str().unwrap().contains("account changed"),"{}",output[0]);
+            }
             assert!(!is_waiting(&format!("c-{alias}")),"stale peer must not reach a backend service");
         }
         std::fs::remove_dir_all(host_dir).unwrap();

@@ -51,8 +51,8 @@ services (`auth`, `github`, `gmail`, `gcalendar`); no Home (phone) release can
 install connected apps yet. In beta.2, `auth` has no backend sign-in, and
 provider registrations come only from `clients.json`
 ([Advanced operator override](#advanced-operator-override)). Beta.2 also
-predates [#356](https://github.com/OctoSense-org/OctoSense/pull/356), which is
-on `main` but in no release yet. So in beta.2, only a Gmail send checks for a
+predates later changes that are on OctoSense `main` but in no release yet. So in
+beta.2, only a Gmail send checks for a
 physical press, while GitHub and Calendar saves use a host sheet that does not;
 an agent's `glance.publish` still accepts a `script` card; and Calendar syncs
 the full event history with `gcalendar.sync` and sync tokens instead of the
@@ -92,7 +92,7 @@ These are separate choices; none requires an OctoSense account.
 | Identify a GitHub user inside an app | Grant `auth` and request `read:user`. The host verifies GitHub's numeric user ID and login, then returns an app-bound handle plus `app_id`, `provider`, `subject`, `label`, `scopes` and optional `expires_at`. Repository access is not required. This does not provide a verified email address. |
 | Identify a Google user inside an app | `auth` also admits identity-only `openid`, `email` and `profile` scopes without Gmail or Calendar capabilities. The host verifies the provider subject and uses the email as its label only when Google reports it verified. The same platform authorization limitations apply. |
 | Access provider data | GitHub repositories additionally require the `github` capability and repository scopes. Google Gmail and Calendar require their own `gmail` / `gcalendar` capabilities and scopes, regardless of which identity an app uses for login. |
-| Register or log in to an app's own backend | A host-owned login WebView on macOS/Android uses the admitted bundle's app-bound registration, PKCE code exchange and the backend's protected identity endpoint. An external-browser option remains available on desktop. |
+| Register or log in to an app's own backend | On macOS and Android 9 or later, a host-owned login WebView uses the app's backend registration, a PKCE code exchange and the backend's protected identity endpoint. On desktop, the external browser remains an option. The registration comes from the `backend` block of the app's signed manifest or, if the manifest has none, from the operator ([Developer backend contract](#developer-backend-contract)). |
 
 The backend flow lets the developer's HTTPS login page offer its own
 registration and login. A desktop backend flow that also offers GitHub sign-in
@@ -134,32 +134,49 @@ Use the ordinary `auth.accounts`, `auth.active`, `auth.select` and
 `auth.disconnect` lifecycle. `auth.backend.me` takes this app's active
 `connection` handle and returns
 `{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`,
-containing the backend's verified identity.
-Apps may also declare bounded business operations and call `auth.backend.request`.
-The host supplies the bearer credential; the app receives only the operation's JSON
-result. This is not an open HTTP proxy: callers cannot choose a URL, method, header,
-or a path outside their admitted declaration.
+containing the backend's verified identity. `auth.backend.request` calls the
+operations that the registration declares
+([Call a declared operation](#call-a-declared-operation)).
 
-The shell can supply a digest-verified manifest `backend` declaration through
-`host::set_backend_resolver`. It is re-read on every credential use; a resolver error
-fails closed. Its JSON shape matches the registration below without `app_id`, which
-always comes from the admitted bundle. The manifest requires `backend-api-v1`,
-`auth`, and `storage.accounts: true`. Without a bundle declaration, the existing
-operator registration remains available. The shell wires this resolver to its signed
-catalog and digest-checked bundle loader. Each resolution records the binding in
-host-private metadata; a changed, removed, withdrawn or invalid declaration revokes
-backend handles before returning. This durable observation prevents restoring an
-older declaration from reviving a session. Installation/update/removal notifications
-also revoke existing backend handles, requiring reconnect even when a new version
-keeps the same declaration. A quiet five-second local metadata watcher performs
-eager revalidation without provider HTTP.
-`host::invalidate_backend_registration` remains available for explicit lifecycle
-revocation. Each request also checks the registration binding and authorization epoch before
-network access and before accepting its response.
+### Where the registration comes from
 
-For operator-managed integrations, an operator provisions `<apps root>/.host/oauth/backends.json`, outside app
-bundles and source control. Example configuration only; the example domain
-does not host a service:
+On OctoSense `main`, not yet in any release, an app declares its backend in the
+`backend` block of its signed manifest. The manifest must also require
+`backend-api-v1`, request `auth` and set `storage.accounts: true`. The block has
+the JSON shape of the operator registration below, without `app_id`: the app's
+identity always comes from its admitted bundle. App Hub's
+[Sign in to your own backend](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md#sign-in-to-your-own-backend)
+gives the rules for each field. Only a host that implements
+`auth.backend.request@1` installs such an app; on `main`, that is macOS and
+Android.
+
+The shell reads the declaration through its signed catalog and digest-checked
+bundle loader (`crates/shell/src/connected_backends.rs`) and hands it to this
+crate through `host::set_backend_resolver`. The host resolves the declaration
+again every time it uses a credential. If the bundle cannot be resolved, for
+example because the app was withdrawn or its digest no longer matches, the call
+fails; it never falls back to the operator file. An app without a `backend`
+block still uses the operator's registration.
+
+The host revokes an app's backend connections, and the person must reconnect,
+in these cases:
+
+- The declaration changes, disappears, is withdrawn or becomes invalid. The host
+  revokes before it answers, and it records in its private metadata which
+  registration each app last used, so restoring an older declaration cannot
+  bring an old session back.
+- The app is installed, updated or removed, even when the new version keeps the
+  same declaration.
+- A local watcher finds a stale connection. Every five seconds it checks the
+  catalog and the connection metadata; it never contacts the backend.
+- The shell calls `host::invalidate_backend_registration`.
+
+Every request also checks the registration binding and the authorization epoch
+before it goes out, and again before the host accepts the answer.
+
+An operator can instead register an app's backend in
+`<apps root>/.host/oauth/backends.json`, outside app bundles and source control.
+This example shows only the format; its domain hosts no service:
 
 ```json
 {
@@ -183,7 +200,10 @@ does not host a service:
 }
 ```
 
-Call the declared operations with an active connection:
+### Call a declared operation
+
+Pass an object like one of these to `auth.backend.request`; `connection` is the
+handle of the app's active connection:
 
 ```json
 {"connection":"opaque-host-handle","operation":"notes.list","query":{"tag":"work"}}
@@ -193,22 +213,39 @@ Call the declared operations with an active connection:
 {"connection":"opaque-host-handle","operation":"notes.create","body":{"text":"A fictional note"}}
 ```
 
-Both objects are arguments to `auth.backend.request`. GET operations execute on a
-worker. POST/PUT/PATCH/DELETE open the same native immutable review used for
-GitHub/Calendar; a physical activation is required, and scripts/agents cannot
-approve through `auth.backend.sheet.save`. Background mutations return a request
-to open the app. Cancellation or expiry before approval performs no write. Once an
-approved HTTP request begins, cancellation cannot promise to undo the server's
-operation; errors are not automatically retried.
+The host adds the session's bearer token, calls the declared method and path,
+and returns only the operation's JSON result. `auth.backend.request` is not an
+open HTTP proxy: the caller cannot choose a URL, method or header, or a path
+outside the admitted declaration.
 
-Operations have exact ASCII paths on the login origin, up to 32 declared query keys,
-and no path templates or auth-endpoint aliases. JSON requests and responses are
-bounded to 64 KiB, transport time to 30 seconds, and redirects are refused.
-Only declared query keys are accepted and URL-encoded by the host. Connections
-remain app-bound and active-account-bound; account selection, logout, withdrawal,
-or grant changes invalidate pending work. Per-app serialization prevents account
-changes crossing a remote write without holding the global vault metadata lock.
-Servers remain responsible for their own user authorization and idempotency.
+A `GET` runs at once on a worker thread, even when an agent or a background card
+calls it. A `POST`, `PUT`, `PATCH` or `DELETE` opens the same native review that
+GitHub and Calendar saves use. The review shows the exact request, which cannot
+change, and the request runs only after a physical press. Scripts and agents
+cannot approve it through
+`auth.backend.sheet.save`. From the background, a write fails with
+`Open the app to review this backend change`. Cancelling the review, or letting
+it expire, before approval sends nothing. Once an approved request has started,
+cancelling it cannot undo what the server did, and the host does not retry a
+request that failed.
+
+- A registration declares at most 64 operations. Each has an exact ASCII path on
+  the login origin and up to 32 declared query keys. There are no path
+  templates, and an operation cannot reuse an authentication endpoint.
+- The host accepts only declared query keys and URL-encodes their values itself.
+- Request and response bodies are JSON of at most 64 KiB. A request may take at
+  most 30 seconds, and redirects are refused.
+- A connection stays bound to its app and to the active account. Selecting
+  another account, signing out, withdrawing the app or changing its grants
+  invalidates work that is still waiting.
+- The host serializes each app's requests and account changes, so an account
+  change cannot land in the middle of a remote write. It does this without
+  holding the global vault metadata lock during the network call.
+
+The server stays responsible for its own user authorization and for making
+repeated requests safe (idempotency).
+
+### What the backend implements
 
 The backend must implement a public-client authorization-code flow with S256
 PKCE, state echo and one-time codes. For embedded login, allow exactly
@@ -441,9 +478,9 @@ cargo check --locked -p octosense-oauth-service --features host
 cargo test --offline --locked -p octosense-oauth-service --features host,acceptance-fixtures --lib
 ```
 
-At [#353](https://github.com/OctoSense-org/OctoSense/pull/353), the last command
-passed 75 tests with one explicit platform-vault test ignored. #356 added tests;
-the count on `main` has not been recorded.
+An earlier run of the last command passed 75 tests, with the explicit
+platform-vault test ignored. Tests have been added since, and the count on
+`main` has not been recorded.
 The separate native backend acceptance used the actual vault, including a cold
 process restart. Live provider acceptance covered identity login, connection
 metadata restoration after restart and local disconnect, not provider refresh
@@ -480,17 +517,21 @@ profile; it does not start an agent kernel or prove production installation.
 
 ### Backend business-request validation
 
-Run on macOS for this implementation:
+These commands passed on macOS:
 
 ```sh
 cargo test --locked -p octosense-oauth-service --features host
 cargo test --locked -p octosense-oauth-service --features acceptance-fixtures backend
 ```
 
-The fixture performs real local HTTP signup/login, notes create/list, distinct-account
-isolation, logout, redirect refusal, payload limits and accidental credential-echo
-refusal. Host tests cover active-handle/scope invalidation, durable registration
-revocation, background-write refusal, and cancellation of the native review. These
-are synthetic protocol/host tests with an isolated memory vault, not a claim of a
-physical approval, a rendered installed-app journey, live provider integration, or
-Android/Windows/Linux acceptance. The separate OS-vault test remains opt-in.
+The fixture runs a real local HTTP backend. It signs up and logs in, creates and
+lists notes, keeps two accounts apart and logs out, and it checks that the host
+refuses a redirect, an oversized payload and a response that echoes a credential
+by mistake. The host tests cover invalidation when the active handle or its
+scopes change, durable revocation of a registration, refusal of background
+writes, and cancellation of the native review. Both use an isolated in-memory
+vault; the test against the operating system's vault is separate and runs only
+on request.
+
+**Unverified:** a physical approval, the journey through a rendered installed
+app, a live backend service, and Android, Windows and Linux.

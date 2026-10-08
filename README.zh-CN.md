@@ -10,9 +10,7 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 本仓库存放 Shell、Shell 服务、系统应用，以及由它们构建的三个产品。大多数原生应用来自其他仓库：OctoSense 的 Makepad fork、App Hub 和 Rinx（见[依赖](#依赖)）。
 
-脚本应用在桌面和手机端共用[自适应主题与布局](apps/README.zh-CN.md#共用外观)。
-[本机原生 UX 检查](tools/app-ux/README.zh-CN.md) 验证真实交互和保存状态；
-手机尺寸预览与真机验收分别记录。
+脚本应用在桌面和手机端共用[自适应主题与布局](apps/README.zh-CN.md#共用外观)。[本机原生 UX 检查](tools/app-ux/README.zh-CN.md)验证真实交互和保存状态；手机尺寸预览与真机验收分别记录。
 
 | 产品 | 是什么 | 位置 |
 | --- | --- | --- |
@@ -271,7 +269,7 @@ Agent 能做什么，取决于应用交给它什么。脚本应用把这些都�
 
 - **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
-- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。标为 `implemented_by: "app"` 的工具在 Card runner 中还没有执行器。
+- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。标为 `implemented_by: "app"` 的工具由应用自己的 Splash 代码执行，并且只在应用打开时可用。这项能力已在 `main` 上，但尚未进入任何发布版本：`desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝这类调用。
 - **数据。** Agent 在它所属账户的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账户的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账户的文件夹。
 - **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账户一起清除。
 - **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。

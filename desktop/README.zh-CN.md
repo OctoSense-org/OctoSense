@@ -2,11 +2,11 @@
 
 [English](README.md) | 简体中文
 
-**初次阅读源码？**先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
+**初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
 [OctoSense](https://github.com/OctoSense-org)（运行在操作系统之上的 Agent 交互 Shell）的桌面端 Shell，也是 OctoSense 仓库中的桌面端打包（原为 OctoSense-Desktop 仓库）。它是一个 Makepad 窗口，这个窗口本身就是桌面：launcher、dock 和平铺窗格（tile）。系统应用和 App Hub 商店应用以隔离的脚本程序运行，受信任的原生模块在进程内运行，Makepad 开发者程序作为子进程运行。它获取应用的方式与手机 Shell [Home](../phone/README.zh-CN.md) 完全相同。环境准备、仓库结构和 CI 见[根目录 README](../README.zh-CN.md)。
 
-> **在整个系统中的位置。**桌面端是一个 Shell 进程，octos 内核是它的子进程（随附的 `octos-kernel`，或 `OCTOS_APP_CORE_BIN`）。App Hub、运行脚本应用的 Card runner 和 Rinx 在进程内运行；Terminal 作为独立进程运行，在 macOS 和 Linux 上运行在系统沙箱中（Windows 上尚未实现），通过 Shell 的 hub 连接。在 macOS 上，该沙箱中 `~/.cargo`、`~/.rustup` 和 OctoSense 源码目录是只读的，因此 `cargo install`、`rustup update` 以及构建 OctoSense 本身都要在其他终端里运行。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
+> **在整个系统中的位置**。桌面端是一个 Shell 进程，octos 内核是它的子进程（随附的 `octos-kernel`，或 `OCTOS_APP_CORE_BIN`）。App Hub、运行脚本应用的 Card runner 和 Rinx 在进程内运行；Terminal 作为独立进程运行，在 macOS 和 Linux 上运行在系统沙箱中（Windows 上尚未实现），通过 Shell 的 hub 连接。在 macOS 上，该沙箱中 `~/.cargo`、`~/.rustup` 和 OctoSense 源码目录是只读的，因此 `cargo install`、`rustup update` 以及构建 OctoSense 本身都要在其他终端里运行。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
 **要开发 OctoSense 应用？** 构建、检查和发布应用都不需要本仓库：请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始（先读 OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`）。只有想在发布前在桌面 Shell 中看到自己的应用时，才需要构建本 Shell（见[发布前试用自己的应用](#发布前试用自己的应用)）。
 
@@ -184,6 +184,7 @@ python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private
 - **系统应用**（新闻、相册、地图、相机、邮件、AI 提供商）已在二进制中：App Hub 在构建时打包 `system-apps.json` 选中的应用包。运行时不再读取 `apps/` 或 `desktop/config/`。
 - **octos 内核。** 脚本按 `tools/kernel-artifact.py --host` 的步骤构建 `Cargo.lock` 固定版本的 octos，并用其 `stage` 放置（会检查二进制的 `--version`）。内核以 `octos-kernel` 放在可执行文件旁（应用中为 `Contents/MacOS/`），收据 `octos-kernel.json` 随资源一起；只有收据中的版本与固定版本一致且二进制 SHA-256 相符时，内核服务才运行它（见[构建与运行](#构建与运行)）。`--no-kernel` 不附带内核，应用随后在没有助手的情况下运行。`target/octosense-package/receipt.json` 记录版本、资源 crate 和内核收据。
 - **不含私有路径。** 二进制中的路径被重映射（对主目录、`CARGO_HOME` 和检出目录使用 `--remap-path-prefix`），并去掉调试信息（保留符号名，便于阅读回溯）。crate 还会以普通字符串嵌入源码目录，重映射无法处理，所以要在任何用户主目录之外构建，`CARGO_HOME` 也放在外面（发布工作流就是这样做的）。`tools/release-scan.py` 会在 `.app`、`.dmg`、`.deb`、`.AppImage`、`.zip` 和 NSIS 安装包内部查找：`/Users/…`、`C:\Users\…` 以及 CI 运行器之外的主目录（`/home/runner`、`C:\Users\runneradmin` 除外）、`*.local` 主机名、私有 IPv4 地址、执行扫描的账户名和主机名，以及任何 `RELEASE_SCAN_EXTRA` 模式，发现即失败。
+- **包检查不执行 AppImage。** 扫描器读取 type-2 ELF 边界，再用主机的 `unsquashfs` 解压文件系统（由 Linux 构建与发布任务安装 `squashfs-tools`）。缺少工具、头部格式错误或解压失败都会阻止发布。GitHub 发布令牌仅提供给标签校验和上传步骤，不进入包检查步骤。打包脚本也会从构建子进程的环境中移除内联签名凭据 `APPLE_API_KEY_P8`。
 - **标识。** 产品名 **OctoSense**，标识符 `org.octosense.desktop`（`desktop/packaging/release.json`），图标来自 `desktop/packaging/icons/`（由 `make_icons.py` 生成）。Android 仍为 `dev.makepad.octosense`。
 
 ### 发布桌面版本
