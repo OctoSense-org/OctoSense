@@ -50,7 +50,8 @@ let recents = []
 let saved = []
 let shown_pins = []     // the places behind the browse map's pins, in pin order
 let shown_route = ""
-let frame_next = false  // Directions frames the next route it draws: on entering it, and on a new mode
+let frame_next = false  // Directions frames the next route it draws: on entering it, on a new mode, and on a new start
+let frame_line = false  // a failed route's pins were framed in its place: the line still is, if one comes
 let finding = ""        // "" | "origin" | "stop": the search picks the start or a stop instead
 let stops = []          // up to two stops on the way, in order
 let view3d = true       // drive view: 3D follow camera, or the flat 2D map
@@ -665,8 +666,9 @@ fn toggle_save(){
 }
 // Saved places, and the open one, as pins on the browse map; `shown_pins`
 // is the list the pins were drawn from, so a pin's tap finds its place.
-// Directions and the drive show only the route's own pins: `show` sets them
-// on entering Directions, and `draw_route` with each line it draws.
+// Directions and the drive show only the route's own pins: `route_pins` sets
+// them on entering Directions and on a new start, and `draw_route` with each
+// line it draws.
 fn show_pins(){
     if screen != "search" && screen != "place" { return }
     let open = nil
@@ -854,9 +856,7 @@ fn show(s){
     if s == "search" || s == "place" { ui.browse_map.clear_route() }
     if s == "place" { fill_place() }
     if s == "route" {
-        // The route's own pins at once, so a place's pins don't stay while
-        // the line loads or when it fails; the line is framed once it comes.
-        ui.browse_map.set_route_markers(markers())
+        route_pins()
         frame_next = true
         ui.rfrom.set_text(origin.name)
         ui.rto.set_text(place.name)
@@ -880,6 +880,14 @@ fn show(s){
     show_pins()
     tick()
 }
+// Directions' own pins on the browse map at once, with no line under them:
+// a place's pins, or the line of the route before this start or stop, must
+// not stay while the new line loads, or for good when it fails. The line is
+// framed once it comes (`draw_route`).
+fn route_pins(){
+    ui.browse_map.clear_route()
+    ui.browse_map.set_route_markers(markers())
+}
 fn set_mode(m){ mode = m; shown_route = ""; frame_next = true; ui.modes.render(); tick() }
 fn eta_field(){
     if mode == "walk" { return "walk" }
@@ -887,25 +895,41 @@ fn eta_field(){
     "min"
 }
 fn route_key(){ "" + origin.lat + "," + origin.lon + ">" + vias() + ">" + place.lat + "," + place.lon + ":" + mode }
-// A route is drawn once per key, so a new start, stop or mode, or a fix that
-// moves the start, replaces the line. On the browse map (`fit`) it is framed
-// once, on entering Directions or changing the mode (`frame_next`), and not
-// each time the fix moves: after that the camera is the person's to drag
-// and zoom. The drive's maps have their own camera.
+// A route is drawn once per key: a new start or stop, or a fix that moves
+// the start, draws its own line. A new mode sets the same line again, since
+// every mode is routed on OSRM's driving profile (only the time differs).
+// On the browse map (`fit`) a route is framed once, on entering Directions,
+// a new mode or a new start (`frame_next`), and not each time the fix
+// moves: after that the camera is the person's to drag and zoom. The
+// drive's maps have their own camera.
 fn draw_route(map, fit){
     let key = route_key()
     if shown_route == key { return }
     let line = sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "polyline", vias())
+    // A failed route has no line to frame: its own pins are framed instead
+    // (they are on the map with no line, `route_pins`, and MapView frames
+    // the pins when there is no line), so the start is in sight. A line
+    // that still comes after it, for a start the fix has moved, is framed
+    // too (`frame_line`), as one that took long to load would be: the pins
+    // stood in for it. A fix that moves the start while routes still fail
+    // frames nothing.
+    if line == "n/a" && fit && frame_next {
+        map.fit_route()
+        frame_next = false
+        frame_line = true
+        return
+    }
     // "—" while the route loads, "n/a" once it failed: not a line yet.
     if line == "" || line == "—" || line == "n/a" { return }
     map.set_nav_polyline(line)
     map.set_route_markers(markers())
-    if fit && frame_next {
+    if fit && (frame_next || frame_line) {
         // The framing's landing reads as the person's move in viewport_moved.
         // That is harmless here: Directions has no list to close, and
         // `centered` is already true (a card came first).
         map.fit_route()
         frame_next = false
+        frame_line = false
     }
     shown_route = key
 }
@@ -919,7 +943,17 @@ fn progress(){
     sys.navsecs(km * 1000 / 15.2) * 15.2
 }
 fn tick(){
+    // The start becoming the fix (◎ Your location, or the first fix) is a
+    // new start, not a move: Directions shows its pins at once and frames
+    // its route once more. `shown_route` goes too: a fix on the old start's
+    // very point would otherwise leave `frame_next` set for the next move.
+    let start = origin.name
     fix_origin()
+    if origin.name != start {
+        frame_next = true
+        shown_route = ""
+        if screen == "route" { route_pins() }
+    }
     center_on_fix()
     if screen == "place" { show_distance() }
     if screen == "route" {

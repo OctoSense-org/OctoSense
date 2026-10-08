@@ -850,7 +850,8 @@ log.push(outcomes)
 /// line, pins, framing and clearing) is logged in order in `mod.browse`, and
 /// on the drive's maps in `mod.drive`. `sys`: a fix only with `mod.fix`, at
 /// `mod.fix_lat`; every route field is `mod.line` ("—": the route is still
-/// loading), and the drive's figures are blank.
+/// loading), the drive's figures are blank, and `mod.requests` counts the
+/// requests for a fix.
 /// `fs`: files are `mod.files[path]`, and
 /// every call is logged in `mod.io` (a read of a missing file raises, as the
 /// runtime's does). The clock is `mod.now`. Requests go as in SEARCH_STUBS:
@@ -871,6 +872,7 @@ mod.now = 1800000000
 mod.fix = false
 mod.fix_lat = 37.3350
 mod.line = "—"
+mod.requests = 0
 mod.browse = []
 mod.drive = []
 fn w(id){ return {set_text: fn(t) { mod.texts[id] = t } set_visible: fn(v) { mod.shown[id] = v }
@@ -886,15 +888,18 @@ let ui = {results: w("results") search: w("search") search_hint: w("search_hint"
         set_route_markers: fn(text) { mod.markers.push(text); mod.browse.push("pins " + text) }
         set_nav_polyline: fn(text) { mod.browse.push("line " + text) }
         fit_route: fn() { mod.browse.push("fit") } clear_route: fn() { mod.browse.push("clear") }}
-    drive_map: {set_route_markers: fn(text) { mod.drive.push("pins " + text) } set_nav_polyline: fn(text) { mod.drive.push("line " + text) }}
-    drive_map_2d: {set_route_markers: fn(text) { mod.drive.push("2d pins " + text) } set_nav_polyline: fn(text) { mod.drive.push("2d line " + text) }}}
+    drive_map: {set_route_markers: fn(text) { mod.drive.push("pins " + text) } set_nav_polyline: fn(text) { mod.drive.push("line " + text) }
+        fit_route: fn() { mod.drive.push("fit") }}
+    drive_map_2d: {set_route_markers: fn(text) { mod.drive.push("2d pins " + text) } set_nav_polyline: fn(text) { mod.drive.push("2d line " + text) }
+        fit_route: fn() { mod.drive.push("2d fit") }}}
 let host = {has: fn(capability) { false }}
 // No fix unless `mod.fix`; then downtown San Jose, or `mod.fix_lat` north.
 let sys = {gps: fn(field) { if !mod.fix { return 0 }; if field == "lat" { return mod.fix_lat }; if field == "lon" { return -121.8850 }; return 1 }
     navroute: fn(lat1, lon1, lat2, lon2, field, vias) { mod.line }
     navroutenum: fn(lat1, lon1, lat2, lon2, field, vias) { -1 }
     navprog: fn(lat1, lon1, lat2, lon2, lat, lon, vias) { 0 }
-    navstep: fn(lat1, lon1, lat2, lon2, progress, field, vias) { "" }}
+    navstep: fn(lat1, lon1, lat2, lon2, progress, field, vias) { "" }
+    request_location: fn() { mod.requests = mod.requests + 1; return 1 }}
 fn time_now(){ mod.now }
 let fs = {
     exists: fn(path) { mod.io.push("exists " + path); return optional(mod.files, path, nil) != nil }
@@ -1368,20 +1373,23 @@ log.to_json()"#
     );
 }
 
-#[test]
-fn maps_frames_a_route_once_and_draws_it_again_after_back_and_end() {
-    // Directions on the browse map: the route's own pins at once, the line
-    // drawn once per route and framed once, so the person can drag and zoom
-    // after; ‹ Back and Close clear it and put the places' pins back.
-    let code = r#"let pizza = {id: "" name: "Pizza" cat: "" label: "" lat: 37.1 lon: -121.1}
-saved = [{id: "W:9" name: "Saved" cat: "" label: "" lat: 37.2 lon: -121.2}]
-// What the step drew on the browse map and on the drive's maps, in order.
+/// What a step drew on the browse map and on the drive's maps, in order
+/// (CARD_STUBS' `mod.browse` and `mod.drive`), for the route tests.
+const ROUTE_STEPS: &str = r#"let pizza = {id: "" name: "Pizza" cat: "" label: "" lat: 37.1 lon: -121.1}
 fn drew(){
     let out = [mod.browse mod.drive]
     mod.browse = []
     mod.drive = []
     return out
 }
+"#;
+
+#[test]
+fn maps_frames_a_route_once_and_draws_it_again_after_back_and_end() {
+    // Directions on the browse map: the route's own pins at once, the line
+    // drawn once per route and framed once, so the person can drag and zoom
+    // after; ‹ Back and Close clear it and put the places' pins back.
+    let code = r#"saved = [{id: "W:9" name: "Saved" cat: "" label: "" lat: 37.2 lon: -121.2}]
 let log = []
 open_place(pizza)
 drew()
@@ -1399,8 +1407,9 @@ log.push(drew())
 set_mode("walk")
 tick()
 log.push(drew())
-// A fix at the start changes nothing; a fix that moves the start draws its
-// new line, without framing it again.
+// The first fix becomes the start ("Your location"): a new start, so its
+// route is drawn and framed once more, even on the old start's very point.
+// A fix that then moves the start draws its new line, without framing it.
 mod.fix = true
 tick()
 mod.fix_lat = 37.3351
@@ -1421,14 +1430,16 @@ log.push(drew())
 // End: back on the browse map, drawn and framed again.
 show("route")
 log.push(drew())
-// Choosing a stop keeps the route under the list; the route with the stop
-// is drawn and framed once.
+// Choosing a stop keeps the route under the list; then the old line goes
+// from under the new pins, and the route with the stop is drawn and framed
+// once.
 find_for("stop")
 log.push(drew())
 pick({name: "Stop" lat: 37.25 lon: -121.3})
 tick()
 log.push(drew())
-// A route that fails: the route's pins, with no line.
+// A route that fails: the route's pins with no line under them, framed
+// (MapView frames the pins when there is no line) so the start is in sight.
 mod.line = "n/a"
 remove_stop(0)
 tick()
@@ -1438,7 +1449,7 @@ show("place")
 close_place()
 log.push(drew())
 log.to_json()"#;
-    let out = maps_model(&format!("{CARD_STUBS}{code}"));
+    let out = maps_model(&format!("{CARD_STUBS}{ROUTE_STEPS}{code}"));
     let route = "pins 37.335,-121.885,0;37.1,-121.1,2";
     let moved = "pins 37.3351,-121.885,0;37.1,-121.1,2";
     let with_stop = "pins 37.3351,-121.885,0;37.25,-121.3,1;37.1,-121.1,2";
@@ -1446,18 +1457,136 @@ log.to_json()"#;
     assert_eq!(
         out,
         serde_json::json!([
-            [[route], []],
+            [["clear", route], []],
             [["line line-a", route, "fit"], []],
             [["line line-a", route, "fit"], []],
-            [["line line-b", moved], []],
+            [["clear", route, "line line-a", route, "fit", "line line-b", moved], []],
             [["clear", places], []],
-            [[moved, "line line-b", moved, "fit"], []],
+            [["clear", moved, "line line-b", moved, "fit"], []],
             [[], ["line line-b", moved]],
-            [[moved, "line line-b", moved, "fit"], []],
+            [["clear", moved, "line line-b", moved, "fit"], []],
             [[], []],
-            [[with_stop, "line line-b", with_stop, "fit"], []],
-            [[moved], []],
+            [["clear", with_stop, "line line-b", with_stop, "fit"], []],
+            [["clear", moved, "fit"], []],
             [["clear", places, "clear", "pins 37.2,-121.2,1"], []]
+        ])
+    );
+}
+
+#[test]
+fn maps_frames_the_route_from_a_new_start_once_the_fix_comes() {
+    // "◎ Your location" before any fix keeps the old start, so Directions
+    // frames the old start's route at once. The fix that then comes is a new
+    // start: its pins at once, with the old line gone from under them, and
+    // its route framed when it comes, once.
+    let code = r#"let log = []
+open_place(pizza)
+mod.line = "line-a"
+show("route")
+drew()
+find_for("origin")
+use_my_location()
+log.push([drew() origin.name mod.requests])
+// The fix, far from the old start; its route still loading.
+mod.fix = true
+mod.fix_lat = 37.40
+mod.line = "—"
+tick()
+log.push([drew() origin.name])
+mod.line = "from-fix"
+tick()
+tick()
+log.push(drew())
+// The fix moves the start: its line is drawn, not framed, and nothing asks
+// for a fix again.
+mod.fix_lat = 37.4001
+mod.line = "from-fix-2"
+tick()
+log.push([drew() mod.requests])
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{ROUTE_STEPS}{code}"));
+    let route = "pins 37.335,-121.885,0;37.1,-121.1,2";
+    let fixed = "pins 37.4,-121.885,0;37.1,-121.1,2";
+    let moved = "pins 37.4001,-121.885,0;37.1,-121.1,2";
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [[["clear", route, "line line-a", route, "fit"], []], "San Jose (downtown)", 1],
+            [[["clear", fixed], []], "Your location"],
+            [["line from-fix", fixed, "fit"], []],
+            [[["line from-fix-2", moved], []], 1]
+        ])
+    );
+}
+
+#[test]
+fn maps_frames_a_failed_routes_pins_and_the_line_that_comes_after_it() {
+    // A route that fails has no line: Directions frames its pins instead, so
+    // the start is in sight, once. A line that comes after it (the fix moved
+    // the start to a point with a route) is framed too, as a line that took
+    // long to load would be; after that the camera is the person's.
+    let code = r#"let log = []
+mod.fix = true
+open_place(pizza)
+mod.line = "n/a"
+drew()
+show("route")
+tick()
+log.push(drew())
+// The fix moves while routes still fail: nothing is framed again.
+mod.fix_lat = 37.3351
+tick()
+log.push(drew())
+mod.fix_lat = 37.3352
+mod.line = "line-a"
+tick()
+tick()
+log.push(drew())
+mod.fix_lat = 37.3353
+mod.line = "line-b"
+tick()
+log.push(drew())
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{ROUTE_STEPS}{code}"));
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [["clear", "pins 37.335,-121.885,0;37.1,-121.1,2", "fit"], []],
+            [[], []],
+            [["line line-a", "pins 37.3352,-121.885,0;37.1,-121.1,2", "fit"], []],
+            [["line line-b", "pins 37.3353,-121.885,0;37.1,-121.1,2"], []]
+        ])
+    );
+}
+
+#[test]
+fn maps_frames_nothing_on_the_drive_and_frames_on_end_a_route_that_came_during_it() {
+    // Start pressed before the route came: the drive's maps draw it when it
+    // comes and frame nothing, failed or not (their camera follows the
+    // drive); End frames it on the browse map, once.
+    let code = r#"let log = []
+open_place(pizza)
+show("route")
+drew()
+show("drive")
+mod.line = "n/a"
+tick()
+log.push(drew())
+mod.line = "line-a"
+tick()
+log.push(drew())
+show("route")
+tick()
+log.push(drew())
+log.to_json()"#;
+    let out = maps_model(&format!("{CARD_STUBS}{ROUTE_STEPS}{code}"));
+    let route = "pins 37.335,-121.885,0;37.1,-121.1,2";
+    assert_eq!(
+        out,
+        serde_json::json!([
+            [[], []],
+            [[], ["line line-a", route]],
+            [["clear", route, "line line-a", route, "fit"], []]
         ])
     );
 }
