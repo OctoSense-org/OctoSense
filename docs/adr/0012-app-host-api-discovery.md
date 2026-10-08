@@ -168,8 +168,8 @@ fixture verified missing API fallback, capability/account/schema refusals,
 background callback prompt refusal and closed-app behavior. Its explicit test
 caller enters the tool queue directly, so this is not model/peer-consent evidence.
 
-Implementation owners: App Hub `app-contract/src/{host_api,backend}.rs` and
-`appstore/src/{host_api,script_tools}.rs`; OctoSense
+Implementation owners: App Hub `crates/app-contract/src/{host_api,backend}.rs` and
+`crates/appstore/src/{host_api,script_tools}.rs`; OctoSense
 [`host_tools/script_apps.rs`](../../crates/shell/src/host_tools/script_apps.rs),
 [`oauth-service`](../../crates/oauth-service/README.md), and
 [`platform_services`](../../crates/shell/src/platform_services/README.md).

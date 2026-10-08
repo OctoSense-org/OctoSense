@@ -165,14 +165,7 @@ Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别�
 | `files.list`、`files.read`、`files.search`、`dev.run` | Shell 自己 |
 | 工具箱（`toolbox-peers` feature） | 工具箱的执行器 |
 
-脚本工具包声明 `requires: ["script-tools-v1"]`。调用者不能通过参数选择 VM、
-文件系统路径、应用身份或所有者账号。中继验证授权和 schema，运行器再次验证
-实际运行包中的工具声明。只有完整应用实例持有工具，Glance 副本不持有。
-关闭、取消、账号切换和有界期限会使待处理结果失效。处理函数使用
-`mod.app_tools.request`、`complete`、`fail` 和 `active`；详见 App Hub 的
-[脚本 ABI](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md#script-tool-execution-script-tools-v1)。
-首版不启动已关闭应用或后台 VM，也不能伪造原生人工确认。既有系统应用的
-宿主服务执行方式保持不变。手机和真实模型验收在实际执行前仍为未验证。
+脚本工具包声明 `requires: ["script-tools-v1"]`。调用者不能通过参数选择 VM、文件系统路径、应用身份或所有者账户。中转验证授权和 schema，运行器再次验证实际运行包中的工具声明。只有完整应用实例持有工具，速览卡片中的应用副本不持有。关闭、取消、账户切换和有界期限会使待处理结果失效。处理函数使用 `mod.app_tools.request`、`complete`、`fail` 和 `active`；详见 App Hub 的[脚本 ABI](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.zh-CN.md#脚本工具执行script-tools-v1)。首版不启动已关闭应用或后台 VM，也不能伪造原生人工确认。既有系统应用的宿主服务执行方式保持不变。手机和真实模型验收在实际执行前仍为未验证。
 
 ### 审批顺序
 

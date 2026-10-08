@@ -127,7 +127,7 @@ Home 通过 `LauncherApps` 回调刷新已固定的快捷方式，包括发布�
 
 ## 原生小组件工作区
 
-在 Home 的空白处长按并选择 **Widgets**（小组件）即可打开原生工作区**。Add**（添加）会列出已解锁用户资料中的提供方。绑定授权界面和提供方的配置 activity 由 Android 负责；工作区通过可选的 activity 扩展接收其结果**。Configure**（配置）、**Resize**（调整大小）和 **Remove**（移除）作用于所选的小组件**。Done**（完成）、返回键或新的 Home intent 会关闭工作区。同一个 Home 菜单还可以打开 Android 的壁纸选择器。
+在 Home 的空白处长按并选择 **Widgets**（小组件）即可打开原生工作区。**Add**（添加）会列出已解锁用户资料中的提供方。绑定授权界面和提供方的配置 activity 由 Android 负责；工作区通过可选的 activity 扩展接收其结果。**Configure**（配置）、**Resize**（调整大小）和 **Remove**（移除）作用于所选的小组件。**Done**（完成）、返回键或新的 Home intent 会关闭工作区。同一个 Home 菜单还可以打开 Android 的壁纸选择器。
 
 `NativeWidgets` 托管真实的 `AppWidgetHostView` 实例。小组件更新、提供方的点击操作和输入都保持原生处理。发现、ID 管理、选项和磁盘存储在 Home 的工作线程上运行；Android 视图的创建/监听生命周期以及外部 activity 的启动在 Android 主线程上运行。不使用任何小组件像素复制，也不进行逐帧的 root 操作。
 
