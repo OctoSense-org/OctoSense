@@ -1802,3 +1802,45 @@ Do this once the makepad pull request has merged; the page describes the runtime
 Mark them **✓ run** only where Task 18 ran them.
 
 **Step 2:** Commit (`docs: MapView's plain-map calls and events`), draft the pull request text, and **stop** for the product owner's approval before pushing and opening it.
+
+---
+
+## Execution notes (2026-10-07 and 2026-10-08)
+
+Where the build differs from the tasks above. Each task was reviewed, and the reviews' findings were fixed with tests.
+
+**Rebase.** The branch moved to main `dba19330` after #348 merged. Main repinned makepad to `32d6415f`; the makepad branch was rebased there with no overlap, and the MapView patch was stacked last on main's stack.
+
+**makepad (Part A).**
+- `plan_fit_zoom` takes the lowest zoom: plan mode keeps 10, `fit_route` may zoom out to `min_zoom` (at least 3) so a long route fits whole.
+- `fit_route` turns the view north-up and flat, waits for a draw with an area, does nothing on a nav-mode map, and is dropped if it arrives during a gesture.
+- `clear_route` extends the existing Rust method: it also forgets a script route at once, its vehicle and a pending fit.
+- Script `fly_to`: no zoom keeps the flight's target zoom; a later `fly_to` drops a pending fit; a call during the person's drag is ignored (a flight started mid-drag would land after the release and undo it).
+- `on_marker` counts only the pins drawn from `route_markers` (unreadable, out-of-range and 0,0 entries are skipped).
+- A wheel that a scroll view already used no longer zooms the map: one drawn over it (Maps' scrolling list) or one it sits in (a feed).
+
+**Model (Tasks 8–11).**
+- `cap` works on code points. A label compares whole address parts and doesn't repeat the street; only road `highway` values read "Street".
+- Every read of network or disk data goes through `optional`/`text_of`/`number_of`. `optional` resolves inside its `try`, because `parse_json` keeps a bare `inf` or `NaN` as a name and using one outside raises.
+- `photon_hits` keeps only features with real coordinates.
+- `place_details` returns nil for an answer that isn't Overpass's, or for an Overpass error. Nil means the next mirror and nothing cached; a blank detail is a real "no details".
+- `site_url` lets only http(s) out, always as https. It refuses control characters, spaces, a backslash, and `%` or anything but ASCII in the host. Unicode IDN hosts give no link.
+- `distance_km` clamps the haversine term (f32 math gave NaN by the pole); `distance_text` picks its unit after rounding.
+- Pins mirror makepad's `is_a_place`, so a pin tap's index finds its place. Saved and Recent files load only the places that can be shown.
+
+**UI (Tasks 12–16).**
+- Maps knows its own flights' landings by target (`app_target`, both axes within 1e-6°), not a one-shot flag; a tap that stops a flight reports no viewport.
+- Panels claim the presses no child took, so a tap or drag on a card or the list doesn't reach the map. The drive bar doesn't, so a drag there still pans the drive map.
+- The list is a capped scroll view, with "◎ Your location" and "‹ Back to route" kept above it.
+- Every request gives up after 15 s: Android waits for good on a stalled server.
+- The details view declares no `visible: false`: a render re-applies the declaration and would hide it again.
+- Directions frames once on entering, on a new mode and on a new start, and frames a failed route's pins. A start that follows the GPS fix isn't re-framed on every tick. The old line is cleared when the pins change.
+- A long press keeps the pressed point and doesn't move the map. A Save before Photon's answer keeps one saved entry, under the answer's name.
+- `web` added to Maps' manifest for the Website reader. Only News held it before; the design said YouTube too.
+
+**Known limitations.**
+- A route that arrives after the person has panned is still framed once.
+- A ◎ or card flight asked for during a drag doesn't happen.
+- On a desktop, a wheel over a card or Directions still zooms the map, and a long press is a double click whose first click is also a tap.
+- The Website reader checks only the first URL; links and redirects are followed (as in News).
+- No Call action: the phone number is text.
