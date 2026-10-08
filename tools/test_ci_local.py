@@ -265,7 +265,7 @@ class LinuxHostPlan(unittest.TestCase):
         mac = ci.JOBS["phone.yml:home"]["mac_steps"]
         self.assertEqual([s for s in here if s in mac], mac)
         self.assertFalse(set(mac) & set(there), "a macOS step never runs on the host")
-        self.assertIn("Test Home, App Hub admission and runtime policy", there)
+        self.assertIn("Two-lane scenario (real kernel, scripted model)", there)
         setup = "Prepare pinned sources and the reviewed runtime patch"
         self.assertTrue(setup in here and setup in there, "both parts prepare the sources")
         whole = [ci.step_label(s, i) for i, s in enumerate(ci.job_definition("phone.yml:home")["steps"]) if "run" in s]

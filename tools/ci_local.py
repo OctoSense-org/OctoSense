@@ -297,8 +297,17 @@ JOBS = {
     "desktop.yml:desktop": {"mac_steps": ["Compile the desktop with the shared runtime",
                                           "Desktop tools and scripts"]},
     "desktop.yml:native-host-api": {"macos_only": True},
+    # Home's test suite stays here until it passes on Linux: on the first
+    # offloaded run (8 Oct 2026) 1017 of 1020 shell tests did. Failing were
+    # host_tools::script_apps::tests::backend_data_aliases_cannot_reuse_a_stale_peer_with_the_current_handle
+    # (auth.backend.* is not a Linux host API, so the executor answers
+    # api_unavailable before the account check the test expects) and two
+    # module_resize_tests::photos_preview_* (the Splash script time budget
+    # ran out on the host's slower cores).
     "phone.yml:home": {"mac_steps": ["Validate launcher icons and Apple asset catalogs",
-                                     "Compile Home and its bundled modules"]},
+                                     "Compile Home and its bundled modules",
+                                     "Build Home, App Hub admission and runtime policy tests",
+                                     "Test Home, App Hub admission and runtime policy"]},
     "apps.yml:services": {"linux_only_note": True},
     "apps.yml:kernel-security": {"linux_only_note": True},
     "apps.yml:apps": {"mac_steps": []},
