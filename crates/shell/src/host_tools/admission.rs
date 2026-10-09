@@ -14,6 +14,12 @@ pub(crate) fn check(app: &str) -> Result<(), String> {
         octosense_appstore::system::prepare(&root, &system)?;
         return Ok(());
     }
+    // An engine's virtual owner (ADR 0013, `engines.rs`): the shell's own
+    // compiled-in service, with no catalog entry or bundle to withdraw.
+    #[cfg(feature = "app-hub")]
+    if super::engines::is_virtual_owner(app) {
+        return Ok(());
+    }
     installed_bundle(&root, app).map(|_| ())
 }
 

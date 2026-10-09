@@ -280,6 +280,7 @@ calendar/host-service/       octosense-calendar-service, the `calendar` host ser
 news/host-service/           octosense-news-service, the `news` host service (News's data service)
 pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013; no bundle yet)
 <name>/bundle/tools.json     app tools: News, Mail, Calendar, Photos, Maps, YouTube, Camera
+<family>/host-service/tools.json  the craft engines' tools (word, deck, cad, light, sound, design, film, effect, vector, pdf), the system agent's (ADR 0013)
 ../crates/shell/src/glance_notice.rs   shared notice service; ../crates/shell/resources/glance/notice.card
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
@@ -547,6 +548,22 @@ model lane and tools. Which system apps have one, and how
 | Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in its workspace, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)) | the shell's notice card |
 | Maps, YouTube, Camera | `agent` block, `glance` | `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
+
+**Engine tools ([ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)).**
+The ten craft engines (word, deck, cad, light, sound, design, film, effect,
+vector, pdf) have no app and no app agent; their tools ship with their
+services, in `<family>/host-service/tools.json`. The shell declares them under
+a virtual owner `os.<family>` and grants them to the system agent alone
+(`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)):
+each engine's read tools (`info`, `text`, `inspect`, `entities`, `measure`,
+`controls`, `peaks`, `project.info`) and its act tools that write only inside
+its own area (`new`, `convert`, `render`, `export`, `frame`, `develop`,
+`batch`, `trim`, `mix`, `merge`, `split`, `export_lottie`, `import_lottie`).
+`vector.run` and `effect.run`, which run any engine command, are declared but
+not granted. Every path is relative to the engine's own area,
+`<apps root>/.host/<family>`: no tool copies a file in or out yet, so an
+engine works on what its own tools wrote (`word.new`, `deck.new`, the
+conversions).
 
 **Mail card reply modes.** The system agent can provision automatic drafts for replyable important mail and Compose reply on request for automated/no-reply mail. The host adds Compose reply to informational incoming-email cards, verifies the original message and asks the Mail agent to create a draft. The same card becomes Email/Chat with saved editing and host review. See [Mail events](../docs/mail-agent-events.md).
 

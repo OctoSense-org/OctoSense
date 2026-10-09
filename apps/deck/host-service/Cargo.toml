@@ -25,4 +25,6 @@ deckcraft-format = { workspace = true }
 deckcraft-model = { workspace = true }
 
 [dev-dependencies]
+# Its tool manifest is checked with App Hub's own loader (tools.json).
+octosense-app-policy = { workspace = true }
 tempfile = "3"

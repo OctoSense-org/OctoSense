@@ -28,8 +28,10 @@
 //! (`crate::peer_link`, which keeps the host obligations for the process);
 //! an in-process module's (or a script app's host service's) to the
 //! executor it installed through its service
-//! (`OctosAppService::set_tool_executor`); the Terminal's `run` to the
-//! Terminal on the AI bus. A `confirm: app` tool is confirmed on the owning
+//! (`OctosAppService::set_tool_executor`); a craft engine's (ADR 0013) to
+//! its engine's host service, under the virtual owner `os.<family>`
+//! ([`engines`]); the Terminal's `run` to the Terminal on the AI bus. A
+//! `confirm: app` tool is confirmed on the owning
 //! app's own sheet: an in-process app installs it through its service
 //! (`OctosAppService::set_confirm_sheet`), which registers it with the
 //! router here ([`SheetBridge`]).
@@ -213,19 +215,21 @@ pub fn system_call_test(spec: &str) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let (tool, args) = spec.split_once(' ').unwrap_or((spec, "{}"));
-    let read = owner_of(tool).and_then(|owner| declaration(&owner, tool)).is_some_and(|d| d["risk"] == "read");
-    if !read {
+    let owner = owner_of(tool).filter(|owner| declaration(owner, tool).is_some_and(|d| d["risk"] == "read"));
+    let Some(owner) = owner else {
         makepad_widgets::log!("[system-call] {tool}: a test call runs only a declared read tool");
         return;
-    }
+    };
     let Ok(args) = serde_json::from_str::<Value>(args) else {
         makepad_widgets::log!("[system-call] {tool}: the arguments are not JSON");
         return;
     };
     let id = format!("system-call-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+    // The owning app as the kernel names it from the registered declaration
+    // (`os.calendar`, `os.word`), not the name's first segment.
     let params = serde_json::json!({
         "session_id": crate::system_chat::session::SYSTEM_SESSION, "turn_id": format!("turn-{id}"),
-        "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "test",
+        "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "test", "app": owner,
         "name": tool, "caller": {"kind": "system"}, "args": args, "risk": "read", "confirm_required": false,
     });
     let Ok(call) = HostToolCall::parse(&params) else {

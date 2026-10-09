@@ -23,4 +23,6 @@ soundcraft-audio-io = { workspace = true }
 soundcraft-dsp = { workspace = true }
 
 [dev-dependencies]
+# Its tool manifest is checked with App Hub's own loader (tools.json).
+octosense-app-policy = { workspace = true }
 tempfile = "3"

@@ -51,6 +51,12 @@ pub fn register() {
     register_host_service(Box::new(VectorService));
 }
 
+/// The `vector.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
+/// shape: the shell declares them for the virtual owner `os.vector` and grants
+/// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
+/// `crates/shell/src/system_chat/grants.rs` `ENGINE_TOOLS`).
+pub const TOOLS_JSON: &str = include_str!("../tools.json");
+
 impl HostService for VectorService {
     fn family(&self) -> &'static str {
         "vector"
@@ -477,5 +483,28 @@ mod tests {
         assert!(may_call("os.sheets"));
         assert!(!may_call("org.example.anything"));
         assert!(!may_call(""));
+    }
+
+    /// The agent tools (`tools.json`) pass App Hub's own loader, as the shell
+    /// reads them, keep the object schemas octos takes both ways, and name
+    /// only methods this service dispatches.
+    #[test]
+    fn the_agent_tools_pass_app_hubs_loader_and_name_real_methods() {
+        use octosense_app_policy::{ImplementedBy, ToolHost, ToolManifest};
+        let (manifest, _) = ToolManifest::load(TOOLS_JSON, "vector", ToolHost::Contained, false).unwrap();
+        assert!(!manifest.tools.is_empty());
+        let dir = tempfile::tempdir().unwrap();
+        for tool in &manifest.tools {
+            assert_eq!(tool.implemented_by, ImplementedBy::HostService, "{}", tool.name);
+            assert!(tool.host_method.is_none(), "{}: the shell routes each tool to the method of its own name", tool.name);
+            for schema in [&tool.input_schema, &tool.output_schema] {
+                assert_eq!(schema["type"], json!("object"), "{}: octos takes object schemas only", tool.name);
+            }
+            assert!(tool.description.is_ascii(), "{}: descriptions stay within octos's byte limit", tool.name);
+            let method = tool.name.strip_prefix("vector.").unwrap();
+            if let Err(e) = dispatch(method, &json!({}), dir.path()) {
+                assert!(!e.contains("is not a method"), "{}: {e}", tool.name);
+            }
+        }
     }
 }

@@ -226,6 +226,7 @@ calendar/host-service/       octosense-calendar-service，`calendar` 宿主服�
 news/host-service/           octosense-news-service，`news` 宿主服务（新闻的数据服务）
 pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013；尚无应用包）
 <name>/bundle/tools.json     新闻、邮件、日历、相册、地图、YouTube、相机的 Agent 工具
+<family>/host-service/tools.json  craft 引擎（word、deck、cad、light、sound、design、film、effect、vector、pdf）的工具，供系统 Agent 使用（ADR 0013）
 ../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card
 ai-providers/                `llm` 宿主服务（host-service/）和 octosense-llm-config（config/：
                              octos 模型目录与服务商注册表、profile 合并、OCTOS1/OCTOS1E 二维码）
@@ -464,6 +465,19 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 | 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查其工作区内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | Shell 的通知卡片 |
 | 地图、YouTube、相机 | `agent` 块、`glance` | `maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
+
+**引擎工具（[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)）。**
+十个 craft 引擎（word、deck、cad、light、sound、design、film、effect、vector、
+pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发布，位于
+`<family>/host-service/tools.json`。Shell 以虚拟所有者 `os.<family>` 的名义声明这些
+工具，并只授予系统 Agent（[`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)
+中的 `ENGINE_TOOLS`）：每个引擎的读工具（`info`、`text`、`inspect`、`entities`、
+`measure`、`controls`、`peaks`、`project.info`），以及只在其自身区域内写入的 act 工具
+（`new`、`convert`、`render`、`export`、`frame`、`develop`、`batch`、`trim`、`mix`、
+`merge`、`split`、`export_lottie`、`import_lottie`）。可以运行任意引擎命令的
+`vector.run` 和 `effect.run` 已声明但不授予。所有路径都相对于引擎自己的区域
+`<apps root>/.host/<family>`：目前没有工具能把文件复制进来或取出去，所以引擎只处理
+它自己的工具写出的文件（`word.new`、`deck.new` 以及各种转换）。
 
 **邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审阅界面。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
 

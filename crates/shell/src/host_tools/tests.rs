@@ -1367,3 +1367,355 @@ fn a_cancelled_confirm_app_call_is_withdrawn_from_the_apps_sheet() {
     assert!(!w.router.is_pending(&id), "withdrawn with the call");
     assert!(exec.0.lock().unwrap().is_empty());
 }
+
+// ------------------------------------------------------------ the engines
+//
+// ADR 0013: the ten craft engines' tools, declared under their virtual
+// owners `os.<family>` (`engines.rs`) and granted to the system agent alone
+// (`system_chat::grants::ENGINE_TOOLS`), run on the real engine services.
+
+/// The engines' services, registered as `apps::register_host_services`
+/// does (App Hub's registry replaces a family registered twice).
+#[cfg(feature = "app-hub")]
+fn register_engine_services() {
+    octosense_word_service::register();
+    octosense_deck_service::register();
+    octosense_cad_service::register();
+    octosense_light_service::register();
+    octosense_sound_service::register();
+    octosense_design_service::register();
+    octosense_film_service::register();
+    octosense_effect_service::register();
+    octosense_vector_service::register();
+    octosense_pdf_service::register();
+}
+
+/// A relay with the engines' virtual owners on `host` (a fixed host
+/// directory instead of the apps root's `.host`), and the system agent's
+/// real grant.
+#[cfg(feature = "app-hub")]
+fn engine_world(host: &std::path::Path) -> (Relay, World) {
+    register_engine_services();
+    let mut relay = Relay::default();
+    super::engines::install(&mut relay, Some(host.to_path_buf()));
+    let mut world = World::new(FixedDevMode::off());
+    world.system = crate::system_chat::grants::host_tools();
+    (relay, world)
+}
+
+/// The system agent's call to `tool`, owned as its session names it (the
+/// registered declaration's app), in a turn of its own.
+#[cfg(feature = "app-hub")]
+fn system_engine_call(relay: &Relay, id: &str, tool: &str, args: Value) -> HostToolCall {
+    let mut c = call(id, tool, super::relay::SYSTEM);
+    c.app = relay.catalog.owner_of(tool).unwrap();
+    c.caller_kind = CallerKind::System;
+    c.origin = CallOrigin::System;
+    c.account = None;
+    c.client = None;
+    c.turn_id = format!("turn-{id}");
+    c.args = args;
+    c
+}
+
+/// The answer to `call`, once its service replied (`script_apps::poll`).
+#[cfg(feature = "app-hub")]
+fn answer(relay: &mut Relay, world: &mut World, call: HostToolCall) -> Value {
+    let (r, sent) = reply(&call.call_id.clone());
+    relay.handle(Event::Call { call, reply: r }, world);
+    for _ in 0..500 {
+        super::script_apps::poll();
+        if let Some(v) = sent.lock().unwrap().first().cloned() {
+            return v;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("no answer");
+}
+
+/// The system agent's call to `tool`, answered.
+#[cfg(feature = "app-hub")]
+fn ask(relay: &mut Relay, world: &mut World, id: &str, tool: &str, args: Value) -> Value {
+    let call = system_engine_call(relay, id, tool, args);
+    answer(relay, world, call)
+}
+
+/// The system agent reaches the engines by its reviewed grant: a granted
+/// act tool writes inside its engine's own area and a granted read tool
+/// reads it back, with no approval asked (a local write, as Calendar's
+/// `calendar.add_event`); a missing file is the engine's own error, proof
+/// the call routed, naming the file relative to the engine's area. The
+/// command doors are declared but never granted, and no app's agent may
+/// call an engine tool (none is shareable).
+#[cfg(feature = "app-hub")]
+#[test]
+fn the_system_agent_reaches_the_engines_by_its_grant_and_never_their_doors() {
+    let host = std::env::temp_dir().join(format!("engine-grant-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&host).unwrap();
+    let (mut relay, mut world) = engine_world(&host);
+    let made = ask(&mut relay, &mut world, "g-new", "word.new", json!({"out": "notes/hello.docx", "text": "Hello engines\nA second line", "title": "Hello"}));
+    assert_eq!(made["ok"], true, "{made}");
+    assert!(host.join("word/notes/hello.docx").is_file(), "written inside the word area");
+    let info = ask(&mut relay, &mut world, "g-info", "word.info", json!({"path": "notes/hello.docx"}));
+    assert_eq!(info["ok"], true, "{info}");
+    assert_eq!((info["data"]["file"].as_str(), info["data"]["paragraphs"].as_u64()), (Some("notes/hello.docx"), Some(2)), "{info}");
+    let missing = ask(&mut relay, &mut world, "g-missing", "word.info", json!({"path": "none.docx"}));
+    assert_eq!(missing["error"]["kind"], "app_error", "{missing}");
+    assert!(missing["error"]["message"].as_str().unwrap().starts_with("word.info: "), "the engine's own answer: {missing}");
+    assert!(world.asked.is_empty(), "no engine tool asks for approval");
+    for (id, door, args) in [("g-vector", "vector.run", json!({"cmds": [{"id": "shape.rectangle", "params": {"x": 0, "y": 0, "width": 4, "height": 4}}], "out": "drawn.svg"})), ("g-effect", "effect.run", json!({"cmds": [{"id": "comp.new"}], "out": "x.ecproj"}))] {
+        assert!(relay.catalog.entry(&relay.catalog.owner_of(door).unwrap(), door).is_some(), "{door} is declared");
+        let refused = ask(&mut relay, &mut world, id, door, args);
+        assert_eq!(refused["error"]["kind"], "not_granted", "{door}: {refused}");
+    }
+    assert!(!host.join("vector").exists() && !host.join("effect").exists(), "a refused door touched nothing");
+    // effectcraft names the absolute path it was handed; the answer names
+    // the file relative to the engine's area, never the host's layout.
+    let effect = ask(&mut relay, &mut world, "g-effect-missing", "effect.info", json!({"path": "none.ecproj"}));
+    let message = effect["error"]["message"].as_str().unwrap();
+    assert!(message.contains("none.ecproj"), "{effect}");
+    for spelled in [host.clone(), host.canonicalize().unwrap()] {
+        assert!(!message.contains(spelled.to_str().unwrap()), "{effect}");
+    }
+    // An app's agent (here a store app's) is granted no engine tool, even
+    // when it asks for one: none is shareable.
+    relay.catalog.grant("org.example.notes", "os.word", "word.info");
+    let mut app = call("g-app", "word.info", "card.org.example.notes");
+    app.app = "os.word".into();
+    app.args = json!({"path": "notes/hello.docx"});
+    let refused = answer(&mut relay, &mut world, app);
+    assert_eq!(refused["error"]["kind"], "not_granted", "{refused}");
+    let _ = std::fs::remove_dir_all(host);
+}
+
+/// Every engine's service serves system apps only: a store app's identity
+/// is refused by the service itself, even through an executor that routes
+/// it there.
+#[cfg(feature = "app-hub")]
+#[test]
+fn every_engine_service_refuses_a_store_apps_identity() {
+    use super::script_apps::HostServiceExecutor;
+    register_engine_services();
+    let host = std::env::temp_dir().join(format!("engine-store-{}", uuid::Uuid::new_v4()));
+    for engine in super::engines::ENGINES {
+        let tool = format!("{}.info", engine.family);
+        let exec = HostServiceExecutor {
+            app: format!("org.example.{}", engine.family),
+            tools: [tool.clone()].into_iter().collect(),
+            methods: Default::default(),
+            families: [engine.family.to_string()].into_iter().collect(),
+            host_dir: host.clone(),
+        };
+        let mut c = call(&format!("store-{}", engine.family), &tool, "card.org.example.notes");
+        c.args = json!({"path": "x"});
+        let (r, sent) = reply(&c.call_id.clone());
+        exec.execute(c, r);
+        for _ in 0..500 {
+            super::script_apps::poll();
+            if !sent.lock().unwrap().is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let got = sent.lock().unwrap()[0].clone();
+        assert_eq!(got["error"]["kind"], "app_error", "{tool}: {got}");
+        assert!(got["error"]["message"].as_str().unwrap().contains("serves system apps only"), "{tool}: {got}");
+    }
+    assert!(!host.exists(), "the refusal came before any area was made");
+}
+
+/// A virtual owner has no bundle, so every lazy path that would load one
+/// fails, and none of them takes its tools or its executor: `ensure_loaded`
+/// skips an owner the catalog knows, and a load that fails (App Hub
+/// installing or updating an app of that id, or an app asking for one of
+/// its tools) changes nothing before it has an admitted bundle.
+#[cfg(feature = "app-hub")]
+#[test]
+fn a_failed_bundle_load_never_clobbers_an_engines_virtual_owner() {
+    super::engines::register();
+    let snapshot = || super::with_relay(|r| {
+        super::engines::ENGINES
+            .iter()
+            .map(|engine| (r.catalog.declarations(&engine.owner(), false), r.has_executor(&engine.owner())))
+            .collect::<Vec<_>>()
+    });
+    let before = snapshot();
+    assert!(before.iter().all(|(tools, executor)| !tools.is_empty() && *executor), "every engine declared, with its executor");
+    for engine in super::engines::ENGINES {
+        let owner = engine.owner();
+        assert!(super::script_apps::load(&owner).is_err(), "{owner} has no bundle to load");
+        super::script_app_installed(&owner);
+        super::ensure_loaded(&format!("card.{owner}"));
+    }
+    // An app that asks for an engine's tool: the ask is recorded against
+    // the virtual owner, which stays as it was, and grants nothing.
+    let loaded = super::script_apps::Loaded { asks: vec!["word.info".into(), "vector.run".into()], ..Default::default() };
+    super::script_apps::install("org.example.wordy", loaded, std::env::temp_dir());
+    assert_eq!(snapshot(), before, "no failed load or grant touched a virtual owner");
+    super::with_relay(|r| {
+        assert!(!r.catalog.may_call("org.example.wordy", "os.word", "word.info", false));
+        assert!(!r.catalog.may_call("org.example.wordy", "os.vector", "vector.run", true), "not even under developer mode");
+    });
+}
+
+/// What the person sees in Settings, and who may ask an agent: a virtual
+/// owner is no app, so it is no agent app and has no agent of its own.
+#[cfg(feature = "app-hub")]
+#[test]
+fn an_engines_virtual_owner_is_no_agent_app() {
+    super::engines::register();
+    let apps = crate::apps::agent_apps();
+    for engine in super::engines::ENGINES {
+        let owner = engine.owner();
+        assert!(!apps.iter().any(|a| a.id == owner || a.id == engine.family), "{owner} listed as an agent app");
+        assert!(crate::apps::declared_octos(&owner).is_none(), "{owner} has no agent");
+        assert_eq!(crate::agents::prepared(&owner), None, "{owner} has no peer");
+    }
+}
+
+/// Every tool of the system agent's engine grant answers, on real files,
+/// within its declared result (the relay checks each answer against its
+/// `output_schema`, G8), and writes only inside its own engine's area.
+/// The fixtures are the engines' own output where one can make it; a file
+/// moves between areas only here, as a test (no tool stages one).
+/// `film.project.info` (no tool writes a project) and Design's tools (no
+/// tool writes a layout document) are checked in their crates.
+#[cfg(feature = "app-hub")]
+#[test]
+fn every_granted_engine_tool_answers_within_its_declared_result() {
+    let host = std::env::temp_dir().join(format!("engine-answers-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&host).unwrap();
+    let (mut relay, mut world) = engine_world(&host);
+    let mut exercised: BTreeSet<String> = BTreeSet::new();
+    let mut n = 0;
+    let mut ok = |relay: &mut Relay, world: &mut World, tool: &str, args: Value| -> Value {
+        n += 1;
+        let got = ask(relay, world, &format!("a{n}"), tool, args);
+        assert_eq!(got["ok"], true, "{tool}: {got}");
+        exercised.insert(tool.to_string());
+        got["data"].clone()
+    };
+    let place = |from: &str, to: &str| {
+        let to = host.join(to);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::copy(host.join(from), to).unwrap();
+    };
+    let write = |to: &str, bytes: &[u8]| {
+        let to = host.join(to);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::write(to, bytes).unwrap();
+    };
+    // word
+    ok(&mut relay, &mut world, "word.new", json!({"out": "doc.docx", "text": "Engines answer\nwithin their results", "title": "Fixture"}));
+    ok(&mut relay, &mut world, "word.info", json!({"path": "doc.docx"}));
+    ok(&mut relay, &mut world, "word.text", json!({"path": "doc.docx"}));
+    ok(&mut relay, &mut world, "word.inspect", json!({"path": "doc.docx", "text": false}));
+    ok(&mut relay, &mut world, "word.convert", json!({"path": "doc.docx", "out": "doc.pdf"}));
+    // deck
+    ok(&mut relay, &mut world, "deck.new", json!({"out": "talk.pptx", "slides": [{"title": "One", "bullets": ["a", "b"]}, {"title": "Two"}]}));
+    ok(&mut relay, &mut world, "deck.info", json!({"path": "talk.pptx"}));
+    ok(&mut relay, &mut world, "deck.text", json!({"path": "talk.pptx"}));
+    ok(&mut relay, &mut world, "deck.render", json!({"path": "talk.pptx", "slide": 1, "out": "s2.png", "max_side": 64}));
+    ok(&mut relay, &mut world, "deck.convert", json!({"path": "talk.pptx", "out": "talk.txt"}));
+    // pdf, on Word's PDF
+    place("word/doc.pdf", "pdf/a.pdf");
+    place("word/doc.pdf", "pdf/b.pdf");
+    ok(&mut relay, &mut world, "pdf.info", json!({"path": "a.pdf"}));
+    ok(&mut relay, &mut world, "pdf.text", json!({"path": "a.pdf", "pages": [1]}));
+    ok(&mut relay, &mut world, "pdf.render", json!({"path": "a.pdf", "page": 1, "out": "p1.png", "max_side": 64}));
+    ok(&mut relay, &mut world, "pdf.merge", json!({"paths": ["a.pdf", "b.pdf"], "out": "ab.pdf"}));
+    ok(&mut relay, &mut world, "pdf.split", json!({"path": "ab.pdf", "out_dir": "parts", "every": 1}));
+    // vector, then cad on Vector's DXF
+    write("vector/in.svg", br##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40"><rect x="4" y="4" width="32" height="20" fill="#3366cc"/><line x1="40" y1="4" x2="60" y2="36" stroke="#cc3333"/></svg>"##);
+    ok(&mut relay, &mut world, "vector.info", json!({"path": "in.svg"}));
+    ok(&mut relay, &mut world, "vector.convert", json!({"path": "in.svg", "out": "in.dxf"}));
+    ok(&mut relay, &mut world, "vector.render", json!({"path": "in.svg", "out": "in.png", "max_side": 64}));
+    place("vector/in.dxf", "cad/in.dxf");
+    ok(&mut relay, &mut world, "cad.info", json!({"path": "in.dxf"}));
+    ok(&mut relay, &mut world, "cad.entities", json!({"path": "in.dxf", "limit": 10}));
+    ok(&mut relay, &mut world, "cad.measure", json!({"path": "in.dxf", "dist": {"p1": [0, 0], "p2": [3, 4]}}));
+    ok(&mut relay, &mut world, "cad.measure", json!({"path": "in.dxf", "area": {"points": [[0, 0], [4, 0], [4, 3]]}}));
+    ok(&mut relay, &mut world, "cad.render", json!({"path": "in.dxf", "out": "in.svg"}));
+    ok(&mut relay, &mut world, "cad.convert", json!({"path": "in.dxf", "out": "copy.dxf"}));
+    // light and film, on a 12x8 PNG
+    let png: Vec<u8> = {
+        const HEX: &str = "89504e470d0a1a0a0000000d494844520000000c000000080802000000428689a60000001d49444154789c6378616383866c725ea021063a2bb279d14310d15911005b9497817c6155610000000049454e44ae426082";
+        (0..HEX.len()).step_by(2).map(|i| u8::from_str_radix(&HEX[i..i + 2], 16).unwrap()).collect()
+    };
+    write("light/in.png", &png);
+    write("light/other.png", &png);
+    ok(&mut relay, &mut world, "light.info", json!({"path": "in.png"}));
+    ok(&mut relay, &mut world, "light.controls", json!({}));
+    ok(&mut relay, &mut world, "light.develop", json!({"path": "in.png", "out": "in.jpg", "params": {"light.exposure": 0.5}}));
+    ok(&mut relay, &mut world, "light.batch", json!({"paths": ["in.png", "other.png"], "out_dir": "batch", "format": "png"}));
+    write("film/still.png", &png);
+    ok(&mut relay, &mut world, "film.info", json!({"path": "still.png"}));
+    ok(&mut relay, &mut world, "film.frame", json!({"path": "still.png", "out": "f.png", "max_side": 16}));
+    ok(&mut relay, &mut world, "film.export", json!({"path": "still.png", "out": "still.gif", "end_ms": 200}));
+    // sound, on an 8 kHz mono PCM WAV
+    let wav = {
+        let frames: u32 = 800;
+        let mut b: Vec<u8> = Vec::new();
+        b.extend(b"RIFF");
+        b.extend((36 + frames * 2).to_le_bytes());
+        b.extend(b"WAVEfmt ");
+        b.extend(16u32.to_le_bytes());
+        b.extend(1u16.to_le_bytes());
+        b.extend(1u16.to_le_bytes());
+        b.extend(8000u32.to_le_bytes());
+        b.extend(16000u32.to_le_bytes());
+        b.extend(2u16.to_le_bytes());
+        b.extend(16u16.to_le_bytes());
+        b.extend(b"data");
+        b.extend((frames * 2).to_le_bytes());
+        for i in 0..frames {
+            b.extend((((i % 80) as i16) * 200 - 8000).to_le_bytes());
+        }
+        b
+    };
+    write("sound/in.wav", &wav);
+    ok(&mut relay, &mut world, "sound.info", json!({"path": "in.wav"}));
+    ok(&mut relay, &mut world, "sound.peaks", json!({"path": "in.wav", "cols": 8}));
+    ok(&mut relay, &mut world, "sound.convert", json!({"path": "in.wav", "out": "in.flac"}));
+    ok(&mut relay, &mut world, "sound.trim", json!({"path": "in.wav", "out": "cut.wav", "start_ms": 10, "end_ms": 60}));
+    ok(&mut relay, &mut world, "sound.mix", json!({"tracks": [{"path": "in.wav"}, {"path": "cut.wav", "gain_db": -6}], "out": "mix.wav"}));
+    // effect: its project made by its own command door, as its owner
+    // (never the system agent's grant), then the granted tools
+    let door = super::script_apps::HostServiceExecutor {
+        app: "os.effect".into(),
+        tools: ["effect.run".to_string()].into_iter().collect(),
+        methods: Default::default(),
+        families: ["effect".to_string()].into_iter().collect(),
+        host_dir: host.clone(),
+    };
+    let mut made = call("effect-fixture", "effect.run", "os.effect");
+    made.args = json!({"cmds": [
+        {"id": "comp.new", "params": {"name": "Main", "width": 32, "height": 18, "frameRate": 24, "duration": 1.0}},
+        {"id": "layer.newSolid", "params": {"name": "Red", "color": "#cc3344"}},
+    ], "out": "main.ecproj"});
+    let (r, sent) = reply("effect-fixture");
+    door.execute(made, r);
+    for _ in 0..500 {
+        super::script_apps::poll();
+        if !sent.lock().unwrap().is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let fixture = sent.lock().unwrap()[0].clone();
+    assert_eq!(fixture["ok"], true, "{fixture}");
+    ok(&mut relay, &mut world, "effect.info", json!({"path": "main.ecproj"}));
+    ok(&mut relay, &mut world, "effect.render", json!({"path": "main.ecproj", "out": "frame.png", "time": 0.0, "max_side": 16}));
+    ok(&mut relay, &mut world, "effect.export_lottie", json!({"path": "main.ecproj", "comp": "Main", "out": "main.json"}));
+    ok(&mut relay, &mut world, "effect.import_lottie", json!({"path": "main.json", "out": "again.ecproj"}));
+    // Everything the grant names, but what no tool can make a file for.
+    let granted: BTreeSet<String> = crate::system_chat::grants::ENGINE_TOOLS.iter().map(|t| t.to_string()).collect();
+    let elsewhere: BTreeSet<String> = ["film.project.info", "design.info", "design.render", "design.export"].into_iter().map(String::from).collect();
+    assert_eq!(exercised, &granted - &elsewhere);
+    assert!(world.asked.is_empty(), "no engine tool asks for approval");
+    // Nothing landed beside the areas.
+    let mut top: Vec<String> = std::fs::read_dir(&host).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    top.sort();
+    assert!(top.iter().all(|name| super::engines::ENGINES.iter().any(|e| e.family == name.as_str())), "{top:?}");
+    let _ = std::fs::remove_dir_all(host);
+}

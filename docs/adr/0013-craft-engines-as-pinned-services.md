@@ -94,6 +94,55 @@ entirely.
   exactly the engine's except where a kernel provably computes the same
   values (f64 kernels; the f32 probe is not the production shape).
 
+## Agent tools (8 Oct 2026)
+
+The ten engine services (word, deck, cad, light, sound, design, film,
+effect, vector, pdf) now have agent tools, and the system agent can call
+them:
+
+- **Declared with each service.** `apps/<family>/host-service/tools.json`,
+  in App Hub's `tools.json` shape (the crate's `TOOLS_JSON`), with object
+  schemas both ways. Each crate's tests load it with App Hub's own loader.
+- **A virtual owner per engine.** No app ships these tools yet, so the
+  shell declares them under `os.<family>`
+  (`crates/shell/src/host_tools/engines.rs`) and runs each on the engine's
+  service, as that system identity, by the method of its own name, in the
+  engine's area `<apps root>/.host/<family>`; answers and errors name files
+  relative to it, never by the host's own paths. A virtual owner is not an app:
+  it has no bundle, no app agent and no Settings row, and it is admitted as
+  the shell's own compiled-in service. When an engine ships as an app
+  (decision 1), its bundle's `tools.json` takes over the namespace and the
+  virtual owner goes.
+- **Granted to the system agent only.** `ENGINE_TOOLS`
+  (`crates/shell/src/system_chat/grants.rs`) is a reviewed narrow grant
+  like Calendar's: 43 tools, every read tool and each act tool that writes
+  only inside its engine's own area. None is destructive, outward or
+  shareable, so no app's agent can be granted one. The generic command
+  doors `vector.run` and `effect.run` are declared but held back for a
+  separate review. The `commands` catalogs of design, effect and vector are
+  not declared, because they answer JSON arrays and octos takes object
+  results only.
+- **Files are the open gap.** Decision 5 expected file access through the
+  existing files host tools. They do not reach the engines' areas, and
+  neither does the system agent's workspace. Until a reviewed staging path
+  exists, an engine sees only what its own tools wrote (`word.new`,
+  `deck.new` and the conversions), and every tool description says its
+  paths are relative to its engine's workspace. designcraft resolves
+  data-merge sources and vectorcraft linked images by the paths inside the
+  documents they open, so a staging path must not admit outside documents
+  to those two until that is contained.
+- **The kernel's cap.** octos takes at most 64 host tools in one
+  registration and refuses a larger set whole. With the engines, the system
+  session's largest set is 63. The shell offers the engine tools last and
+  cuts them first past the cap, and a test keeps the whole grant within it.
+- **Long calls.** An engine call runs on the thread that dispatches it
+  (the shell's UI thread for a tool call) and holds App Hub's service
+  registry while it runs, as app calls to the engines always have. A long
+  export stalls the shell for its duration. The kernel waits 30 s for a
+  host tool's answer (an act call then ends with an unknown outcome), and
+  App Hub times the request out after 60 s. Moving engine work to a worker
+  with per-method timeouts is follow-up work.
+
 ## Open questions
 
 - Where the service crates live (`crates/craft-*` vs per-app

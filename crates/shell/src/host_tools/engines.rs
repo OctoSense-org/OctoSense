@@ -1,52 +1,174 @@
-//! Native engine apps' agent tools (ADR 0013): the Sheets app's `sheets.*`
-//! run on the `sheet` host service in this process, exactly as a script
-//! app's host-service tools run on theirs
-//! ([`super::script_apps::HostServiceExecutor`]), with the engine's own
-//! containment (its area under the apps root's `.host`). The relay has
-//! already authorized the call — the app's own agent by `agent.own_tools`,
-//! the system agent by `agent.system_tools` (`native-apps.json`); this
-//! executor only renames `sheets.<tool>` to `sheet.<tool>` and routes it.
-//! Without an executor the relay would route a native app's tools to its
-//! AI bus service, which the Sheets module does not serve.
+//! The craft engines' agent tools (ADR 0013): each runs on its engine's
+//! host service in this process, exactly as a script app's host-service
+//! tools run on theirs ([`super::script_apps::HostServiceExecutor`]), with
+//! the engine's own containment (its area under the apps root's `.host`).
+//! The relay has already authorized every call; an [`EngineExecutor`] only
+//! routes it. Without one the relay would send a native app's tools to its
+//! AI bus service, and would have nowhere to send an engine's.
+//!
+//! **Sheets** (#382): the native Sheets app's `sheets.*` run on the `sheet`
+//! service, renamed into its family (`sheets.eval` → `sheet.eval`). Its own
+//! agent may call them by `agent.own_tools`, the system agent by
+//! `agent.system_tools` (`native-apps.json`).
+//!
+//! **The ten engines** ([`ENGINES`], ADR 0013's agent tools): word, deck,
+//! cad, light, sound, design, film, effect, vector and pdf. Each ships its
+//! tool manifest with its service (`apps/<family>/host-service/tools.json`,
+//! the crate's `TOOLS_JSON`), read here with App Hub's own loader, the one
+//! a bundle's `tools.json` goes through. No app ships them yet, so the
+//! shell declares them under a **virtual owner**, `os.<family>`:
+//!
+//! - It is not an app. It has no bundle, no app agent, no peer and no
+//!   Settings row (`apps::agent_apps` lists apps, not owners), and nothing
+//!   to consent to: the system agent's calls are authorized by its reviewed
+//!   grant alone (`system_chat::grants::ENGINE_TOOLS`), as its Calendar
+//!   tools are. None of the tools is shareable, so no app's agent can be
+//!   granted one. The generic engine command doors are declared but held
+//!   back from that grant ([`HELD_FOR_REVIEW`]).
+//! - It is admitted as the shell's own compiled-in service
+//!   (`admission::check`): no catalog entry or bundle exists to withdraw.
+//!   No path loads a bundle for it: `ensure_loaded` skips an owner the
+//!   catalog knows, and a load that fails anyway (`script_apps::load`)
+//!   changes nothing before it has an admitted bundle.
+//! - Its calls run as `os.<family>` on the `<family>` service, each tool
+//!   on the method of its own name. Every path is relative to the engine's
+//!   own area, `<apps root>/.host/<family>`, in its answers and in its
+//!   errors ([`area_relative_errors`]). The system agent's workspace does
+//!   not reach that area: until a reviewed way to stage a file there
+//!   exists, an engine sees only what its own tools wrote (`word.new`,
+//!   `deck.new` and the conversions).
 
 use std::collections::{BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use octosense_app_policy::{ImplementedBy, ToolHost, ToolManifest, ToolSpec};
+use serde_json::Value;
 
 use crate::ai_host::app_peers::host_tools::{HostToolCall, ToolExecutor, ToolOutcome, ToolReply};
 
 use super::script_apps::HostServiceExecutor;
 
-/// One native app whose declared tools run on an engine's host service.
+/// One engine whose host service the system agent reaches through a
+/// virtual owner.
+pub struct Engine {
+    /// Its service family (`word`): its tools' namespace, and its area's
+    /// name under the apps root's `.host`.
+    pub family: &'static str,
+    /// Its `tools.json`, as its service crate ships it.
+    pub tools_json: &'static str,
+}
+
+/// The ten engines, in the order their services register
+/// (`apps::register_host_services`).
+pub const ENGINES: &[Engine] = &[
+    Engine { family: "word", tools_json: octosense_word_service::TOOLS_JSON },
+    Engine { family: "deck", tools_json: octosense_deck_service::TOOLS_JSON },
+    Engine { family: "cad", tools_json: octosense_cad_service::TOOLS_JSON },
+    Engine { family: "light", tools_json: octosense_light_service::TOOLS_JSON },
+    Engine { family: "sound", tools_json: octosense_sound_service::TOOLS_JSON },
+    Engine { family: "design", tools_json: octosense_design_service::TOOLS_JSON },
+    Engine { family: "film", tools_json: octosense_film_service::TOOLS_JSON },
+    Engine { family: "effect", tools_json: octosense_effect_service::TOOLS_JSON },
+    Engine { family: "vector", tools_json: octosense_vector_service::TOOLS_JSON },
+    Engine { family: "pdf", tools_json: octosense_pdf_service::TOOLS_JSON },
+];
+
+/// Declared, never in the system agent's grant: the generic engine command
+/// doors, which run any command of an engine's catalog. Their services
+/// fence file access, but what a command can do is the whole engine's
+/// surface, so they are reviewed separately before anyone is granted one.
+pub const HELD_FOR_REVIEW: &[&str] = &["effect.run", "vector.run"];
+
+impl Engine {
+    /// Its virtual owner, `os.<family>`.
+    pub fn owner(&self) -> String {
+        format!("{}{}", octosense_appstore::system::SYSTEM_ID_PREFIX, self.family)
+    }
+
+    /// Its tools as App Hub's loader admits them: named in its family,
+    /// each run on its service by the method of its own name.
+    pub fn tools(&self) -> Result<Vec<ToolSpec>, String> {
+        let (manifest, _) = ToolManifest::load(self.tools_json, self.family, ToolHost::Contained, false)?;
+        if let Some(tool) = manifest.tools.iter().find(|t| t.implemented_by != ImplementedBy::HostService || t.host_method.is_some()) {
+            return Err(format!("{} must run on the {} service by its own name", tool.name, self.family));
+        }
+        Ok(manifest.tools)
+    }
+}
+
+/// Whether `app` is an engine's virtual owner (`os.word`).
+pub fn is_virtual_owner(app: &str) -> bool {
+    app.strip_prefix(octosense_appstore::system::SYSTEM_ID_PREFIX)
+        .is_some_and(|family| ENGINES.iter().any(|engine| engine.family == family))
+}
+
+/// At startup, once the engines' services are registered: every engine's
+/// tools declared under its virtual owner, with its executor. An engine
+/// whose manifest App Hub's loader refuses is left out, and says why.
+pub fn register() {
+    super::with_relay(|relay| install(relay, None));
+}
+
+/// [`register`] into `relay`: `host_dir` fixes the host directory (tests);
+/// `None` resolves the apps root's `.host` at every call.
+pub(crate) fn install(relay: &mut super::Relay, host_dir: Option<PathBuf>) {
+    for engine in ENGINES {
+        let owner = engine.owner();
+        match engine.tools() {
+            Ok(tools) => {
+                relay.catalog.declare(&owner, tools.iter().map(super::script_apps::declaration).collect());
+                relay.set_executor(&owner, Some(Arc::new(EngineExecutor::engine(engine, &tools, host_dir.clone()))));
+            }
+            Err(e) => makepad_widgets::log!("host tools: {owner}'s tools were refused: {e}"),
+        }
+    }
+}
+
+/// The declared tools of one owner, run on an engine's host service.
 pub struct EngineExecutor {
-    app: &'static str,
-    /// The service family the tools rename to (`sheets.*` → `sheet.*`).
-    family: &'static str,
+    /// The owning app the service sees: a native app (`sheets`) or an
+    /// engine's virtual owner (`os.word`).
+    app: String,
+    /// The service family the tools run on (`sheet`, `word`).
+    family: String,
+    /// Each declared tool's service method.
+    methods: HashMap<String, String>,
+    /// A fixed host directory (tests); `None`: the apps root's `.host`,
+    /// resolved at each call.
+    host_dir: Option<PathBuf>,
+    /// Keep the host's paths out of the engine's error messages
+    /// ([`area_relative_errors`]): an engine's virtual owner does.
+    relative_errors: bool,
 }
 
 impl EngineExecutor {
     /// The Sheets app's: its `sheets.*` tools on the `sheet` service
-    /// (gridcraft, `apps/sheets/host-service`).
+    /// (gridcraft, `apps/sheets/host-service`), each renamed into it.
     pub fn sheets() -> Self {
-        Self { app: "sheets", family: "sheet" }
-    }
-
-    /// The route for one call, bound to the apps root of this moment: the
-    /// app's declared tool names, each renamed into the engine's family.
-    fn service(&self, host_dir: std::path::PathBuf) -> HostServiceExecutor {
-        let tools: BTreeSet<String> = crate::native_apps::find(self.app)
+        let tools: BTreeSet<String> = crate::native_apps::find("sheets")
             .and_then(|app| serde_json::from_str::<Vec<serde_json::Value>>(app.tools_json).ok())
             .unwrap_or_default()
             .iter()
             .filter_map(|tool| tool["name"].as_str().map(str::to_string))
             .collect();
-        let methods: HashMap<String, String> = tools
-            .iter()
-            .filter_map(|name| Some((name.clone(), format!("{}.{}", self.family, name.split_once('.')?.1))))
-            .collect();
+        let methods = tools.iter().filter_map(|name| Some((name.clone(), format!("sheet.{}", name.split_once('.')?.1)))).collect();
+        EngineExecutor { app: "sheets".into(), family: "sheet".into(), methods, host_dir: None, relative_errors: false }
+    }
+
+    /// An engine's, as its virtual owner: each tool on its own method.
+    fn engine(engine: &Engine, tools: &[ToolSpec], host_dir: Option<PathBuf>) -> Self {
+        let methods = tools.iter().map(|tool| (tool.name.clone(), tool.service_method().to_string())).collect();
+        EngineExecutor { app: engine.owner(), family: engine.family.into(), methods, host_dir, relative_errors: true }
+    }
+
+    /// The route for one call, bound to the host directory of this moment.
+    fn service(&self, host_dir: PathBuf) -> HostServiceExecutor {
         HostServiceExecutor {
-            app: self.app.to_string(),
-            tools,
-            methods,
-            families: [self.family.to_string()].into(),
+            app: self.app.clone(),
+            tools: self.methods.keys().cloned().collect(),
+            methods: self.methods.clone(),
+            families: [self.family.clone()].into(),
             host_dir,
         }
     }
@@ -54,17 +176,56 @@ impl EngineExecutor {
 
 impl ToolExecutor for EngineExecutor {
     fn execute(&self, call: HostToolCall, reply: ToolReply) {
-        let Some(root) = octosense_appstore::data_root_if_set() else {
-            reply.finish(ToolOutcome::error("engine_unready", "App Hub has no apps root yet"));
-            return;
+        let host_dir = match &self.host_dir {
+            Some(dir) => dir.clone(),
+            None => match octosense_appstore::data_root_if_set() {
+                Some(root) => root.join(".host"),
+                None => {
+                    reply.finish(ToolOutcome::error("engine_unready", "App Hub has no apps root yet"));
+                    return;
+                }
+            },
         };
-        self.service(root.join(".host")).execute(call, reply);
+        let reply = if self.relative_errors { area_relative_errors(reply, &host_dir, &self.family) } else { reply };
+        self.service(host_dir).execute(call, reply);
     }
 
     fn cancel(&self, call_id: &str) {
         // Cancellation only clears the waiting reply; no path is touched.
-        self.service(std::path::PathBuf::new()).cancel(call_id);
+        self.service(PathBuf::new()).cancel(call_id);
     }
+}
+
+/// `reply`, with the host's own spelling of an engine's area taken out of
+/// its error messages: a tool's paths are relative to its engine's area,
+/// and the host's layout (the person's home directory in it) is not the
+/// model's business. Some engines name the absolute path the service handed
+/// them (effectcraft: `cannot read /…/.host/effect/x.ecproj`).
+fn area_relative_errors(reply: ToolReply, host_dir: &Path, family: &str) -> ToolReply {
+    let mut hosts = vec![host_dir.to_path_buf()];
+    hosts.extend(host_dir.canonicalize().ok());
+    let mut prefixes: Vec<String> = hosts
+        .iter()
+        .flat_map(|host| [format!("{}/", host.join(family).display()), format!("{}/", host.display())])
+        .collect();
+    // The longest first: the area before the host directory holding it.
+    prefixes.sort_by_key(|prefix| std::cmp::Reverse(prefix.len()));
+    let outer = reply.clone();
+    ToolReply::new(reply.call_id().to_string(), move |fields: Value| {
+        if fields.get("status").is_some() {
+            outer.acknowledge();
+            return;
+        }
+        if fields["ok"] == true {
+            outer.finish(ToolOutcome::Ok(fields.get("data").cloned().unwrap_or(Value::Null)));
+            return;
+        }
+        let mut message = fields["error"]["message"].as_str().unwrap_or("").to_string();
+        for prefix in &prefixes {
+            message = message.replace(prefix.as_str(), "");
+        }
+        outer.finish(ToolOutcome::error(fields["error"]["kind"].as_str().unwrap_or("error"), message));
+    })
 }
 
 #[cfg(test)]
@@ -85,5 +246,118 @@ mod tests {
             assert_eq!(method, &format!("sheet.{local}"));
         }
         assert!(service.families.contains("sheet"));
+    }
+
+    /// Each engine's tools load with App Hub's loader and route, as
+    /// `os.<family>`, to the method of their own name on their own family:
+    /// the service sees a system app's identity, never the caller's.
+    #[test]
+    fn each_engine_routes_its_tools_as_its_virtual_owner_on_its_own_family() {
+        assert_eq!(ENGINES.len(), 10);
+        for engine in ENGINES {
+            let tools = engine.tools().unwrap_or_else(|e| panic!("{}: {e}", engine.family));
+            let service = EngineExecutor::engine(engine, &tools, None).service(PathBuf::from("/host"));
+            assert_eq!(service.app, format!("os.{}", engine.family));
+            assert!(is_virtual_owner(&service.app));
+            assert_eq!(service.families, [engine.family.to_string()].into());
+            assert_eq!(service.host_dir, PathBuf::from("/host"));
+            assert_eq!(service.tools.len(), tools.len());
+            for tool in &tools {
+                assert!(tool.name.starts_with(&format!("{}.", engine.family)), "{}", tool.name);
+                assert_eq!(service.methods[&tool.name], tool.name, "a tool runs on the method of its own name");
+                assert!(!tool.shareable, "{}: only the system agent's grant reaches an engine", tool.name);
+                assert!(!tool.outward, "{}: an engine never reaches past the device", tool.name);
+            }
+        }
+        for not_owner in ["os.mail", "os.calendar", "os.photos", "word", "org.example.word", "os.", "os.sheet"] {
+            assert!(!is_virtual_owner(not_owner), "{not_owner}");
+        }
+    }
+
+    /// The system agent's engine grant is exactly every declared engine
+    /// tool but the held command doors, each a read or an act (an act
+    /// writes only inside its engine's own area: each service's tests); none
+    /// is destructive or outward, and no door reaches the grant.
+    #[test]
+    fn the_system_grant_is_every_engine_tool_but_the_held_doors() {
+        use octosense_app_policy::Risk;
+        use crate::system_chat::grants::{self, ENGINE_TOOLS};
+        let granted: BTreeSet<String> = ENGINE_TOOLS.iter().map(|tool| tool.to_string()).collect();
+        assert_eq!(granted.len(), ENGINE_TOOLS.len(), "no tool granted twice");
+        let mut declared = BTreeSet::new();
+        for engine in ENGINES {
+            for tool in engine.tools().unwrap() {
+                assert!(matches!(tool.risk, Risk::Read | Risk::Act), "{} is {:?}", tool.name, tool.risk);
+                declared.insert(tool.name);
+            }
+        }
+        let held: BTreeSet<String> = HELD_FOR_REVIEW.iter().map(|tool| tool.to_string()).collect();
+        assert!(held.is_subset(&declared));
+        assert_eq!(granted, &declared - &held);
+        let now = grants::host_tools();
+        for tool in &granted {
+            assert!(!tool.ends_with(".run"), "{tool} is a command door");
+            assert!(grants::is_engine_tool(tool) && now.contains(tool), "{tool}");
+        }
+        for door in HELD_FOR_REVIEW {
+            assert!(!now.contains(*door) && !grants::is_engine_tool(door), "{door}");
+        }
+    }
+
+    /// The command doors are declared by their engines, so the relay can
+    /// refuse them by name (`not_granted`) rather than as unknown tools.
+    #[test]
+    fn the_held_doors_are_declared_tools() {
+        for door in HELD_FOR_REVIEW {
+            let family = door.split('.').next().unwrap();
+            let engine = ENGINES.iter().find(|e| e.family == family).unwrap();
+            assert!(engine.tools().unwrap().iter().any(|t| t.name == *door), "{door}");
+        }
+    }
+
+    /// No engine ships as an app yet. When one does, its bundle's
+    /// `tools.json` owns the namespace: retire its virtual owner then,
+    /// rather than let both declare `os.<family>`.
+    #[test]
+    fn no_shipped_app_takes_an_engines_virtual_owner() {
+        let apps = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps");
+        for packaging in ["../../desktop/system-apps.json", "../../phone/system-apps.json"] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(packaging);
+            let list: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            for engine in ENGINES {
+                assert!(!list["apps"].as_array().unwrap().iter().any(|app| app == engine.family), "{packaging} ships {}", engine.family);
+            }
+        }
+        for engine in ENGINES {
+            assert!(!apps.join(engine.family).join("bundle").exists(), "apps/{}/bundle exists: retire os.{}", engine.family, engine.family);
+            assert!(crate::native_apps::find(engine.family).is_none(), "a native app named {}", engine.family);
+        }
+    }
+
+    /// An engine's error names its files relative to its area, whichever
+    /// spelling of the host directory the engine was handed; answers and
+    /// acknowledgements pass through untouched.
+    #[test]
+    fn engine_errors_name_files_relative_to_their_area() {
+        let host = std::env::temp_dir().join(format!("engine-errors-{}", std::process::id()));
+        std::fs::create_dir_all(host.join("effect")).unwrap();
+        let canonical = host.canonicalize().unwrap();
+        for spelled in [&host, &canonical] {
+            let sent: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+            let s = sent.clone();
+            let reply = area_relative_errors(ToolReply::new("e", move |v| s.lock().unwrap().push(v)), &host, "effect");
+            let message = format!("effect.info: cannot read {}: No such file; beside it {}", spelled.join("effect/none.ecproj").display(), spelled.join("word/a.docx").display());
+            reply.finish(ToolOutcome::error("app_error", message));
+            let got = sent.lock().unwrap()[0].clone();
+            assert_eq!(got["error"]["kind"], "app_error");
+            assert_eq!(got["error"]["message"], "effect.info: cannot read none.ecproj: No such file; beside it word/a.docx", "{got}");
+        }
+        let sent: std::sync::Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+        let s = sent.clone();
+        let reply = area_relative_errors(ToolReply::new("ok", move |v| s.lock().unwrap().push(v)), &host, "effect");
+        let data = serde_json::json!({"path": host.join("effect/kept.png").display().to_string()});
+        reply.finish(ToolOutcome::Ok(data.clone()));
+        assert_eq!(sent.lock().unwrap()[0]["data"], data, "an answer is the engine's own");
+        let _ = std::fs::remove_dir_all(host);
     }
 }
