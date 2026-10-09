@@ -41,7 +41,7 @@ def require(condition, message):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", type=Path, default=REPO / "target/release/examples/host-api-lab")
-    parser.add_argument("--hub", type=Path, required=True, help="Contract 1.6 compatible hub binary")
+    parser.add_argument("--hub", type=Path, required=True, help="Current-source hub binary supporting the files capability (contract 1.9)")
     parser.add_argument("--output", type=Path, help="New evidence directory; defaults to a private temporary directory")
     args = parser.parse_args()
     root = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="octosense-host-api-native-"))
@@ -49,6 +49,7 @@ def main():
         root.mkdir(mode=0o700, parents=True, exist_ok=False)
     result = {"schema": 1, "result": "failed", "verified": [], "not_verified": [
         "model reasoning and peer consent", "physical permission approval", "camera capture",
+        "interactive file selection/export", "live location sampling", "native external-browser launch",
         "Android runtime", "Linux and Windows device services", "public host release"]}
     try:
         require(sys.platform == "darwin", "This native OS status acceptance currently requires macOS")
@@ -68,7 +69,15 @@ def main():
             env = os.environ.copy()
             for name in ["MAKEPAD_FORCE_FOCUS", "OCTOSENSE_HUB_ANCHOR"]:
                 env.pop(name, None)
-            env.update(MAKEPAD_HIDE_WINDOWS="1", MAKEPAD_REMOTE=str(port))
+            # Dependency initialization must never discover the user's native
+            # app profiles, even if a future fixture creates another module.
+            env.update(
+                MAKEPAD_HIDE_WINDOWS="1", MAKEPAD_REMOTE=str(port),
+                RINX_DATA_DIR=str(root / phase / "rinx"),
+                OCTOSENSE_HOME=str(root / phase / "shell"),
+                OCTOS_APP_CORE_DIR=str(root / phase / "kernel"),
+                OCTOSENSE_APP_DATA=str(root / phase),
+            )
             command = [str(host), f"--bundle={bundle}", f"--app-data={root / phase}"]
             receipt = root / "native-result.json"
             command += ["--preview"] if phase == "preview" else [f"--receipt={receipt}"]
