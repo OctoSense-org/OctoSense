@@ -55,32 +55,6 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 // calls are answered in this file, from the drafts themselves, and every
 // screen shows a "Fixture engine" badge. Writer never writes that file.
 
-let docs = []              // [{id title snippet created updated words rev saved_rev saved_at docx exports}]
-let doc = nil              // the open document (an entry of docs)
-let doc_is_new = false     // made with New and not stored yet
-let kept_text = ""         // the open draft as last written to storage
-let draft_timer = nil
-let next_seq = 0
-let busy = false
-let busy_at = 0            // when the running engine action started
-let fixture = nil          // dev-fixtures.json, when present
-let booted = false
-let blocks = []            // word.inspect blocks of the previewed document
-let outline = []           // [{level text index}] headings among the blocks
-let section = -1           // the outline entry shown alone, or -1
-let shown = []             // the blocks the preview draws
-let shown_limit = 240      // how many of them it draws now ("Show more")
-let pending_delete = false
-let months = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
-let formats = [
-    {id: "pdf" name: "PDF" note: "For sharing and printing" state: "" text: ""}
-    {id: "md" name: "Markdown" note: "Plain text that keeps headings and lists" state: "" text: ""}
-    {id: "html" name: "Web page" note: "HTML for a browser or a website" state: "" text: ""}
-    {id: "odt" name: "OpenDocument" note: "For LibreOffice and other word processors" state: "" text: ""}
-]
-
-// ---- small helpers -------------------------------------------------------
-
 // A field of an object, or `fallback` when the object has none (reading a
 // missing field is an error). Keys compare as text: parsed JSON has string
 // keys, object literals have names.
@@ -88,23 +62,65 @@ fn field(o, name, fallback){
     for k v in o { if "" + k == name { return v } }
     return fallback
 }
+
+// ---- state ----------------------------------------------------------------
+// Everything Writer remembers is one object kept on `mod`. Switching between
+// light and dark runs this file again to restyle it: the widgets keep what
+// they show and the runtime keeps the `mod` entries this file made, but every
+// `let` starts over. So the rerun finds `mod.writer` here and goes on with it.
+
+let st = field(mod, "writer", nil)
+if st == nil {
+    st = {
+        docs: []              // [{id title snippet created updated words rev saved_rev saved_at docx exports}]
+        doc: nil              // the open document (an entry of docs)
+        doc_is_new: false     // made with New and not stored yet
+        kept_text: ""         // the open draft as last written to storage
+        draft_timer: nil
+        next_seq: 0
+        busy: false
+        busy_at: 0            // when the running engine action started
+        fixture: nil          // dev-fixtures.json, when present
+        booted: false
+        screen: "docs"        // the pane on show: docs, editor, preview or export
+        md_job: nil           // the Markdown conversion under way
+        blocks: []            // word.inspect blocks of the previewed document
+        outline: []           // [{level text index}] headings among the blocks
+        section: -1           // the outline entry shown alone, or -1
+        shown: []             // the blocks the preview draws
+        shown_limit: 240      // how many of them it draws now ("Show more")
+        pending_delete: false
+        formats: [
+            {id: "pdf" name: "PDF" note: "For sharing and printing" state: "" text: ""}
+            {id: "md" name: "Markdown" note: "Plain text that keeps headings and lists" state: "" text: ""}
+            {id: "html" name: "Web page" note: "HTML for a browser or a website" state: "" text: ""}
+            {id: "odt" name: "OpenDocument" note: "For LibreOffice and other word processors" state: "" text: ""}
+        ]
+    }
+    mod.writer = st
+}
+let months = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
+
+// ---- small helpers -------------------------------------------------------
+
 fn plural(n, one, many){
     if n == 1 { return "1 " + one }
     return "" + n + " " + many
 }
-fn two(n){
-    if n < 10 { return "0" + n }
-    return "" + n
-}
+// How long ago `t` was, in words. Relative times need no time zone: the
+// runtime's local_time() is UTC unless the host sets an offset, and the
+// shells do not set one yet.
 fn when(t){
     if t == nil || t == 0 { return "" }
-    let d = local_time(t)
-    let now = local_time(time_now())
-    let hm = two(d.hour) + ":" + two(d.minute)
-    if d.year == now.year && d.month == now.month && d.day == now.day { return "today " + hm }
-    let label = months[d.month - 1] + " " + d.day
-    if d.year != now.year { label = label + ", " + d.year }
-    return label
+    let d = time_now() - t
+    if d < 60 { return "just now" }
+    if d < 3600 { return "" + floor(d / 60) + " min ago" }
+    if d < 86400 { return "" + floor(d / 3600) + " h ago" }
+    let days = floor(d / 86400)
+    if days < 2 { return "1 day ago" }
+    if days < 45 { return "" + days + " days ago" }
+    let m = local_time(t)
+    return months[m.month - 1] + " " + m.year
 }
 fn size_text(bytes){
     if bytes < 1024 { return "" + bytes + " bytes" }
@@ -112,7 +128,11 @@ fn size_text(bytes){
     return "" + floor(bytes / 104857.6) / 10 + " MB"
 }
 fn leaf(path){ return path.replace(regex("^.*/"), "") }
-fn count_words(text){ return text.match_str(regex("\\S*\\w\\S*", "g")).len() }
+// Words as the engine counts them: a numbered item's "1." becomes the list's
+// numbering in the document, not a word.
+fn count_words(text){
+    return text.match_str(regex("\\S*\\w\\S*", "g")).len() - text.match_str(regex("(?:^|\\n)[ \\t]*\\d+[.)][ \\t]", "g")).len()
+}
 // At most `n` characters of `s` (to_chars gives the character codes, and
 // to_string turns the shortened codes back into text).
 fn clip(s, n){
@@ -173,7 +193,6 @@ fn front(d, list){
 // held under four spaces so no line turns into a code block. Long drafts are
 // converted a slice per turn, inside the per-turn instruction budget; the
 // regular expressions use whole matches only.
-let md_job = nil
 let item_re = regex("^[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]")
 let deep_re = regex("^ *\\t|^    ")     // a tab counts as four columns
 let lead_re = regex("^[ \\t]+")
@@ -185,13 +204,13 @@ fn line_kind(line){
     return "text"
 }
 fn to_markdown(text, done){
-    md_job = {lines: text.replace(regex("\\r", "g"), "").split("\n") i: 0 out: "" prev: "" done: done}
+    st.md_job = {lines: text.replace(regex("\\r", "g"), "").split("\n") i: 0 out: "" prev: "" done: done}
     md_step()
 }
 // Each turn joins a slice of lines in small groups: a string grows by copying,
 // so one long running concatenation would spend the script heap.
 fn md_step(){
-    let job = md_job
+    let job = st.md_job
     let end = min(job.i + 240, job.lines.len())
     let chunk = ""
     while job.i < end {
@@ -217,7 +236,7 @@ fn md_step(){
         start_timeout(0.0, || md_step())
         return
     }
-    md_job = nil
+    st.md_job = nil
     let done = job.done
     done(job.out)
 }
@@ -235,7 +254,7 @@ fn docx_name(d){
     let n = 2
     loop {
         let taken = false
-        for x in docs { if x.id != d.id && x.docx == name { taken = true } }
+        for x in st.docs { if x.id != d.id && x.docx == name { taken = true } }
         if !taken { return name }
         name = "documents/" + stem + " " + n + ".docx"
         n = n + 1
@@ -249,26 +268,45 @@ fn export_of(d, id){
 // ---- storage ------------------------------------------------------------
 
 fn store_index(){
-    let data = {schema: 1 docs: docs}
+    let data = {schema: 1 docs: st.docs}
     fs.write("index.json", data.to_json())
 }
 fn boot(){
+    if st.booted { resume() return }
     if fs.exists("dev-fixtures.json") {
         let f = fs.read("dev-fixtures.json").parse_json()
         if f == nil { f = {} }
-        fixture = f
+        st.fixture = f
     }
-    for badge in [ui.dev_docs ui.dev_editor ui.dev_preview ui.dev_export] { badge.set_visible(fixture != nil) }
+    for badge in [ui.dev_docs ui.dev_editor ui.dev_preview ui.dev_export] { badge.set_visible(st.fixture != nil) }
     if fs.exists("index.json") {
         let v = fs.read("index.json").parse_json()
-        if v != nil { docs = field(v, "docs", []) }
+        if v != nil { st.docs = field(v, "docs", []) }
     }
     render_docs()
-    booted = true
+    st.booted = true
+}
+// After a restyle (see "state" above): the same screen, its lists drawn again
+// with the new look.
+fn resume(){
+    for badge in [ui.dev_docs ui.dev_editor ui.dev_preview ui.dev_export] { badge.set_visible(st.fixture != nil) }
+    pane(st.screen)
+    render_docs()
+    if st.doc != nil && !is_busy() { refresh_editor(ui.editor_text.text()) }
+    ui.outline_rows.render()
+    ui.preview_body.render()
+    ui.export_rows.render()
 }
 start_timeout(0.05, || boot())
+// Relative times ("5 min ago") on the visible screen stay true.
+start_interval(30.0, || refresh_times())
+fn refresh_times(){
+    if is_busy() { return }
+    if st.screen == "docs" { ui.doc_rows.render() }
+    if st.screen == "editor" && st.doc != nil { show_status(st.doc.words) }
+}
 // A first turn cut short by the time budget leaves the list unloaded: retry.
-start_timeout(1.5, || { if !booted { boot() } })
+start_timeout(1.5, || { if !st.booted { boot() } })
 
 // ---- engine -------------------------------------------------------------
 
@@ -276,8 +314,8 @@ start_timeout(1.5, || { if !booted { boot() } })
 // it. The answer always arrives on a later turn: a refused request calls back
 // at once, inside host.request, and work done in that nested call is fragile.
 fn engine(method, args, done){
-    if fixture != nil {
-        let delay = field(fixture, "delay", 0.4)
+    if st.fixture != nil {
+        let delay = field(st.fixture, "delay", 0.4)
         start_timeout(delay, || done(fixture_answer(method, args)))
         return
     }
@@ -299,6 +337,7 @@ fn engine_message(what, error){
 // ---- screens ------------------------------------------------------------
 
 fn pane(name){
+    st.screen = name
     ui.docs.set_visible(name == "docs")
     ui.editor.set_visible(name == "editor")
     ui.preview.set_visible(name == "preview")
@@ -309,32 +348,32 @@ fn notice(where, text){
     if where == "preview" { ui.preview_notice_text.set_text(text) ui.preview_notice.set_visible(text != "") }
 }
 fn render_docs(){
-    ui.doc_count.set_text(plural(docs.len(), "document", "documents") + " on this device")
-    ui.doc_count.set_visible(docs.len() > 0)
-    ui.new_top.set_visible(docs.len() > 0)
+    ui.doc_count.set_text(plural(st.docs.len(), "document", "documents") + " on this device")
+    ui.doc_count.set_visible(st.docs.len() > 0)
+    ui.new_top.set_visible(st.docs.len() > 0)
     ui.doc_rows.render()
 }
 
 // ---- documents ------------------------------------------------------------
 
 fn new_doc(){
-    next_seq = next_seq + 1
-    doc = {id: "d" + floor(time_now()) + "-" + next_seq title: "" snippet: "" created: time_now() updated: time_now() words: 0 rev: 0 saved_rev: -1 saved_at: 0 docx: "" exports: []}
-    doc_is_new = true
-    kept_text = ""
+    st.next_seq = st.next_seq + 1
+    st.doc = {id: "d" + floor(time_now()) + "-" + st.next_seq title: "" snippet: "" created: time_now() updated: time_now() words: 0 rev: 0 saved_rev: -1 saved_at: 0 docx: "" exports: []}
+    st.doc_is_new = true
+    st.kept_text = ""
     ui.editor_text.set_text("")
     show_editor()
 }
 fn open_doc(d){
-    doc = d
-    doc_is_new = false
-    kept_text = ""
-    if fs.exists(draft_path(d)) { kept_text = fs.read(draft_path(d)) }
-    ui.editor_text.set_text(kept_text)
+    st.doc = d
+    st.doc_is_new = false
+    st.kept_text = ""
+    if fs.exists(draft_path(d)) { st.kept_text = fs.read(draft_path(d)) }
+    ui.editor_text.set_text(st.kept_text)
     show_editor()
 }
 fn show_editor(){
-    pending_delete = false
+    st.pending_delete = false
     ui.delete_button.set_text("Delete")
     notice("editor", "")
     refresh_editor(ui.editor_text.text())
@@ -342,46 +381,39 @@ fn show_editor(){
 }
 fn back_to_docs(){
     flush_now()
-    doc = nil
+    st.doc = nil
     pane("docs")
     render_docs()
 }
 fn delete_doc(){
-    if doc == nil || is_busy() { return }
-    if !pending_delete {
-        pending_delete = true
+    if st.doc == nil || is_busy() { return }
+    if !st.pending_delete {
+        st.pending_delete = true
         ui.delete_button.set_text("Tap again to delete")
         return
     }
-    let d = doc
-    if draft_timer != nil { stop_timer(draft_timer) draft_timer = nil }
-    if !doc_is_new {
+    let d = st.doc
+    if st.draft_timer != nil { stop_timer(st.draft_timer) st.draft_timer = nil }
+    if !st.doc_is_new {
         remove_file(draft_path(d))
         if d.docx != "" { remove_file(d.docx) }
         for e in d.exports { remove_file(e.out) }
         let kept = []
-        for x in docs { if x.id != d.id { kept.push(x) } }
-        docs = kept
+        for x in st.docs { if x.id != d.id { kept.push(x) } }
+        st.docs = kept
         store_index()
     }
-    doc = nil
+    st.doc = nil
     pane("docs")
     render_docs()
 }
 
 // ---- editor ---------------------------------------------------------------
 
-// When a save happened, in the fewest words: "at 10:42", or "on Oct 7".
-fn saved_when(t){
-    let d = local_time(t)
-    let now = local_time(time_now())
-    if d.year == now.year && d.month == now.month && d.day == now.day { return "at " + two(d.hour) + ":" + two(d.minute) }
-    return "on " + months[d.month - 1] + " " + d.day
-}
 fn save_state(){
-    if doc == nil || doc_is_new { return "Not saved yet" }
-    if doc.docx != "" && doc.saved_rev == doc.rev { return "Saved as DOCX " + saved_when(doc.saved_at) }
-    if doc.docx != "" { return "Edited since saving" }
+    if st.doc == nil || st.doc_is_new { return "Not saved yet" }
+    if st.doc.docx != "" && st.doc.saved_rev == st.doc.rev { return "Saved as DOCX " + when(st.doc.saved_at) }
+    if st.doc.docx != "" { return "Edited since saving" }
     return "Draft kept"
 }
 fn show_status(words){
@@ -393,12 +425,12 @@ fn refresh_editor(text){
 }
 fn draft_changed(text){
     ui.tip.set_visible(text == "")
-    if pending_delete { pending_delete = false ui.delete_button.set_text("Delete") }
-    if draft_timer != nil { stop_timer(draft_timer) }
-    draft_timer = start_timeout(0.6, || flush())
+    if st.pending_delete { st.pending_delete = false ui.delete_button.set_text("Delete") }
+    if st.draft_timer != nil { stop_timer(st.draft_timer) }
+    st.draft_timer = start_timeout(0.6, || flush())
 }
 fn flush_now(){
-    if draft_timer != nil { stop_timer(draft_timer) draft_timer = nil }
+    if st.draft_timer != nil { stop_timer(st.draft_timer) st.draft_timer = nil }
     flush()
 }
 // Write the draft and its index entry when the text changed. The runtime can
@@ -406,10 +438,10 @@ fn flush_now(){
 // first and the draft counts as kept only after the index is written: the
 // next flush retries whatever did not finish.
 fn flush(){
-    draft_timer = nil
-    if doc == nil { return }
+    st.draft_timer = nil
+    if st.doc == nil { return }
     let text = ui.editor_text.text()
-    if text == kept_text || (doc_is_new && text.trim() == "") {
+    if text == st.kept_text || (st.doc_is_new && text.trim() == "") {
         refresh_editor(text)
         return
     }
@@ -417,16 +449,16 @@ fn flush(){
     let snippet = snippet_of(text)
     let words = count_words(text)
     if !fs.exists("drafts") { fs.mkdir("drafts") }
-    fs.write(draft_path(doc), text)
-    doc.title = title
-    doc.snippet = snippet
-    doc.words = words
-    doc.updated = time_now()
-    doc.rev = doc.rev + 1
-    docs = front(doc, docs)
+    fs.write(draft_path(st.doc), text)
+    st.doc.title = title
+    st.doc.snippet = snippet
+    st.doc.words = words
+    st.doc.updated = time_now()
+    st.doc.rev = st.doc.rev + 1
+    st.docs = front(st.doc, st.docs)
     store_index()
-    doc_is_new = false
-    kept_text = text
+    st.doc_is_new = false
+    st.kept_text = text
     show_status(words)
     ui.tip.set_visible(false)
 }
@@ -434,13 +466,13 @@ fn flush(){
 // Save the draft as a Word document, then run `next`; `what` names the
 // action in messages ("save Word documents", "show a preview").
 // An action that never answered (a failed turn) frees the buttons again.
-fn is_busy(){ return busy && time_now() - busy_at < 90 }
+fn is_busy(){ return st.busy && time_now() - st.busy_at < 90 }
 fn set_busy(){
-    busy = true
-    busy_at = time_now()
+    st.busy = true
+    st.busy_at = time_now()
 }
 fn save_then(what, next){
-    if is_busy() || doc == nil { return }
+    if is_busy() || st.doc == nil { return }
     flush_now()
     if ui.editor_text.text().trim() == "" {
         notice("editor", "Write something first, then save it as a Word document.")
@@ -449,22 +481,22 @@ fn save_then(what, next){
     set_busy()
     notice("editor", "")
     ui.save_button.set_text("Saving…")
-    let d = doc
+    let d = st.doc
     let rev = d.rev
     let source = "work/" + d.id + ".md"
     let out = docx_name(d)
-    to_markdown(kept_text, fn(md){ convert_draft(what, next, d, rev, source, out, md) })
+    to_markdown(st.kept_text, fn(md){ convert_draft(what, next, d, rev, source, out, md) })
 }
 fn convert_draft(what, next, d, rev, source, out, md){
     if !fs.exists("work") { fs.mkdir("work") }
     fs.write(source, md)
     engine("word.convert", {path: source out: out format: "docx"}, fn(r){
-        busy = false
+        st.busy = false
         ui.save_button.set_text("Save")
         remove_file(source)
         if !r.is_ok {
             notice("editor", engine_message(what, r.error))
-            if doc != nil { refresh_editor(ui.editor_text.text()) }
+            if st.doc != nil { refresh_editor(ui.editor_text.text()) }
             return
         }
         if d.docx != "" && d.docx != out { remove_file(d.docx) }
@@ -472,7 +504,7 @@ fn convert_draft(what, next, d, rev, source, out, md){
         d.saved_rev = rev
         d.saved_at = time_now()
         store_index()
-        if doc != nil && doc.id == d.id { refresh_editor(ui.editor_text.text()) next() }
+        if st.doc != nil && st.doc.id == d.id { refresh_editor(ui.editor_text.text()) next() }
     })
 }
 fn save_doc(){ save_then("save Word documents", || {}) }
@@ -513,81 +545,100 @@ fn list_indent(b){
     return field(list, "level", 0) * 18
 }
 fn open_preview(){
-    if is_busy() || doc == nil { return }
+    if is_busy() || st.doc == nil { return }
     flush_now()
     if ui.editor_text.text().trim() == "" {
         notice("editor", "Write something first, then preview it.")
         return
     }
-    if doc.docx != "" && doc.saved_rev == doc.rev { read_preview() } else { save_then("show a preview", || read_preview()) }
+    // The engine works in Writer's own storage, so Writer can see whether the
+    // saved document is still there; one that went missing is saved again.
+    // (The developer fixture writes no files.)
+    if st.fixture == nil && st.doc.docx != "" && !fs.exists(st.doc.docx) {
+        st.doc.docx = ""
+        store_index()
+    }
+    if st.doc.docx != "" && st.doc.saved_rev == st.doc.rev { read_preview() } else { save_then("show a preview", || read_preview()) }
 }
+// Reopen the saved document through the engine: word.info for its numbers,
+// then word.inspect for its outline and blocks.
 fn read_preview(){
-    if is_busy() || doc == nil { return }
+    if is_busy() || st.doc == nil { return }
     set_busy()
     ui.editor_status.set_text("Opening the preview…")
-    let d = doc
-    engine("word.inspect", {path: d.docx text: true}, fn(r){
-        busy = false
-        if doc == nil || doc.id != d.id { return }
-        if !r.is_ok {
-            notice("editor", engine_message("show a preview", r.error))
+    let d = st.doc
+    engine("word.info", {path: d.docx}, fn(info){
+        if !info.is_ok {
+            st.busy = false
+            if st.doc == nil || st.doc.id != d.id { return }
+            notice("editor", engine_message("show a preview", info.error))
             refresh_editor(ui.editor_text.text())
             return
         }
-        blocks = field(r.data, "blocks", [])
-        let list = []
-        let i = 0
-        for b in blocks {
-            let level = heading_level(b)
-            if level > 0 && level <= 3 && field(b, "text", "").trim() != "" { list.push({level: level text: b.text.trim() index: i}) }
-            i = i + 1
-        }
-        outline = list
-        section = -1
-        shown = blocks
-        shown_limit = 240
-        ui.preview_info.set_text(plural(field(r.data, "pages", 1), "page", "pages") + "  ·  " + plural(field(r.data, "words", d.words), "word", "words") + "  ·  " + leaf(d.docx))
-        ui.outline_card.set_visible(outline.len() > 0)
-        ui.section_bar.set_visible(false)
-        notice("preview", "")
-        refresh_editor(ui.editor_text.text())
-        pane("preview")
-        ui.outline_rows.render()
-        ui.preview_body.render()
+        engine("word.inspect", {path: d.docx text: true}, fn(r){ show_preview(d, info.data, r) })
     })
 }
+fn show_preview(d, info, r){
+    st.busy = false
+    if st.doc == nil || st.doc.id != d.id { return }
+    if !r.is_ok {
+        notice("editor", engine_message("show a preview", r.error))
+        refresh_editor(ui.editor_text.text())
+        return
+    }
+    st.blocks = field(r.data, "blocks", [])
+    let list = []
+    let i = 0
+    for b in st.blocks {
+        let level = heading_level(b)
+        if level > 0 && level <= 3 && field(b, "text", "").trim() != "" { list.push({level: level text: b.text.trim() index: i}) }
+        i = i + 1
+    }
+    st.outline = list
+    st.section = -1
+    st.shown = st.blocks
+    st.shown_limit = 240
+    ui.preview_info.set_text(plural(field(info, "pages", 1), "page", "pages") + "  ·  " + plural(field(info, "words", d.words), "word", "words") + "  ·  " + plural(field(info, "paragraphs", 0), "paragraph", "paragraphs") + "  ·  " + leaf(d.docx))
+    ui.outline_card.set_visible(st.outline.len() > 0)
+    ui.section_bar.set_visible(false)
+    notice("preview", "")
+    refresh_editor(ui.editor_text.text())
+    pane("preview")
+    ui.outline_rows.render()
+    ui.preview_body.render()
+}
 fn show_section(k){
-    section = k
-    let start = outline[k].index
-    let stop = blocks.len()
+    st.section = k
+    let start = st.outline[k].index
+    let stop = st.blocks.len()
     let j = k + 1
-    while j < outline.len() {
-        if outline[j].level <= outline[k].level { stop = outline[j].index break }
+    while j < st.outline.len() {
+        if st.outline[j].level <= st.outline[k].level { stop = st.outline[j].index break }
         j = j + 1
     }
     let out = []
     let i = 0
-    for b in blocks {
+    for b in st.blocks {
         if i >= start && i < stop { out.push(b) }
         i = i + 1
     }
-    shown = out
-    shown_limit = 240
-    ui.section_label.set_text(outline[k].text)
+    st.shown = out
+    st.shown_limit = 240
+    ui.section_label.set_text(st.outline[k].text)
     ui.section_bar.set_visible(true)
     ui.outline_rows.render()
     ui.preview_body.render()
 }
 fn show_whole(){
-    section = -1
-    shown = blocks
-    shown_limit = 240
+    st.section = -1
+    st.shown = st.blocks
+    st.shown_limit = 240
     ui.section_bar.set_visible(false)
     ui.outline_rows.render()
     ui.preview_body.render()
 }
 fn show_more(){
-    shown_limit = shown_limit + 240
+    st.shown_limit = st.shown_limit + 240
     ui.preview_body.render()
 }
 fn back_to_editor(){
@@ -598,27 +649,27 @@ fn back_to_editor(){
 // ---- export ---------------------------------------------------------------
 
 fn open_export(){
-    if doc == nil { return }
-    for f in formats {
+    if st.doc == nil { return }
+    for f in st.formats {
         f.state = ""
         f.text = ""
-        let e = export_of(doc, f.id)
+        let e = export_of(st.doc, f.id)
         if e != nil { f.text = "Last copy " + when(e.at) + "  ·  " + size_text(e.bytes) }
     }
-    ui.export_doc.set_text(shown_title(doc))
+    ui.export_doc.set_text(shown_title(st.doc))
     pane("export")
     ui.export_rows.render()
 }
 fn export_as(f){
-    if is_busy() || doc == nil || doc.docx == "" { return }
+    if is_busy() || st.doc == nil || st.doc.docx == "" { return }
     set_busy()
     f.state = "busy"
     f.text = ""
     ui.export_rows.render()
-    let d = doc
+    let d = st.doc
     let out = "exports/" + stem_of(leaf(d.docx).replace(regex("\\.docx$"), "")) + "." + f.id
     engine("word.convert", {path: d.docx out: out format: f.id}, fn(r){
-        busy = false
+        st.busy = false
         if r.is_ok {
             let bytes = field(r.data, "bytes", 0)
             let kept = []
@@ -641,18 +692,29 @@ fn export_as(f){
 // {"delay": seconds, "fail": ["word.convert", …]} shape its answers.
 
 fn fixture_answer(method, args){
-    for m in field(fixture, "fail", []) {
+    for m in field(st.fixture, "fail", []) {
         if m == method { return {is_ok: false data: nil error: method + ": fixture failure (dev-fixtures.json)"} }
     }
     if method == "word.convert" {
         let words = 0
-        for d in docs { if d.docx == args.path || "work/" + d.id + ".md" == args.path { words = d.words } }
+        for d in st.docs { if d.docx == args.path || "work/" + d.id + ".md" == args.path { words = d.words } }
         return {is_ok: true data: {out: args.out format: args.format bytes: 6144 + words * 7} error: nil}
+    }
+    if method == "word.info" {
+        let words = 0
+        let paragraphs = 0
+        for d in st.docs {
+            if d.docx == args.path {
+                words = d.words
+                if fs.exists(draft_path(d)) { paragraphs = fixture_blocks(fs.read(draft_path(d))).len() }
+            }
+        }
+        return {is_ok: true data: {file: args.path pages: 1 + floor(words / 450) words: words paragraphs: paragraphs sections: 1 comments: 0 properties: {}} error: nil}
     }
     if method == "word.inspect" {
         let text = ""
         let words = 0
-        for d in docs {
+        for d in st.docs {
             if d.docx == args.path {
                 words = d.words
                 if fs.exists(draft_path(d)) { text = fs.read(draft_path(d)) }
@@ -732,7 +794,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
         }
         doc_rows := ScrollYView{width: Fill height: Fill flow: Down spacing: 10 padding: Inset{left: 14 right: 14 top: 6 bottom: 24} on_render: || {
             View{width: Fill height: 1}
-            if docs.len() == 0 {
+            if st.docs.len() == 0 {
                 View{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{top: 64}
                     UiCard{width: Fill max_width: 460 padding: 28 spacing: 14 align: Align{x: 0.5}
                         Label{width: Fill align: Align{x: 0.5} text: "Start your first document" draw_text +: {color: ink text_style: theme.font_bold{font_size: 20}}}
@@ -743,7 +805,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                     }
                 }
             }
-            for d in docs {
+            for d in st.docs {
                 GestureView{width: Fill height: Fit on_tap: |x, y| open_doc(d)
                     RoundedView{width: Fill height: Fit flow: Down spacing: 6 padding: Inset{left: 18 right: 18 top: 15 bottom: 15}
                         show_bg: true draw_bg +: {color: ui_surface border_radius: 14.0}
@@ -828,10 +890,10 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                 Caption{text: "OUTLINE"}
                 outline_rows := View{width: Fill height: Fit flow: Down spacing: 2 on_render: || {
                     View{width: Fill height: 1}
-                    for k in outline.len() {
-                        GestureView{width: Fill height: Fit padding: Inset{left: (outline[k].level - 1) * 16 top: 6 bottom: 6} on_tap: |x, y| show_section(k)
-                            if section == k { OutlineRowOn{text: outline[k].text} }
-                            if section != k { OutlineRow{text: outline[k].text} }
+                    for k in st.outline.len() {
+                        GestureView{width: Fill height: Fit padding: Inset{left: (st.outline[k].level - 1) * 16 top: 6 bottom: 6} on_tap: |x, y| show_section(k)
+                            if st.section == k { OutlineRowOn{text: st.outline[k].text} }
+                            if st.section != k { OutlineRow{text: st.outline[k].text} }
                         }
                     }
                 }}
@@ -844,10 +906,10 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                 preview_body := View{width: Fill height: Fit flow: Down spacing: 10 on_render: || {
                     View{width: Fill height: 1}
                     let n = 0
-                    for b in shown {
+                    for b in st.shown {
                         n = n + 1
                         let kind = "skip"
-                        if n <= shown_limit { kind = kind_of(b) }
+                        if n <= st.shown_limit { kind = kind_of(b) }
                         if kind == "h1" { H1{text: b.text} }
                         if kind == "h2" { H2{text: b.text} }
                         if kind == "h3" { H3{text: b.text} }
@@ -884,7 +946,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                             }
                         }
                     }
-                    if shown.len() > shown_limit {
+                    if st.shown.len() > st.shown_limit {
                         View{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{top: 8}
                             Bar{text: "Show more of the document" draw_text +: {color: #x285cd6 color_hover: #x285cd6 color_down: #x285cd6 color_focus: #x285cd6}
                                 draw_bg +: {color_hover: #xeef1fb color_down: #xe2e8f8 color_focus: #xeef1fb} on_click: || show_more()}
@@ -912,20 +974,20 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
             }
             export_rows := View{width: Fill max_width: 760 height: Fit flow: Down spacing: 10 on_render: || {
                 View{width: Fill height: 1}
-                for f in formats {
+                for f in st.formats {
                     GestureView{width: Fill height: Fit on_tap: |x, y| export_as(f)
-                        RoundedView{width: Fill height: Fit flow: Down spacing: 4 padding: Inset{left: 18 right: 18 top: 14 bottom: 14}
+                        RoundedView{width: Fill height: Fit flow: Down spacing: 6 padding: Inset{left: 18 right: 18 top: 14 bottom: 14}
                             show_bg: true draw_bg +: {color: ui_surface border_radius: 14.0}
                             View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
-                                Label{width: Fill text: f.name draw_text +: {color: ink text_style: theme.font_bold{font_size: 16}}}
-                                if f.state == "" { Label{text: "›" draw_text +: {color: muted text_style: theme.font_bold{font_size: 20}}} }
-                                if f.state == "busy" { Label{text: "Exporting…" draw_text +: {color: muted text_style: theme.font_regular{font_size: 13}}} }
-                                if f.state == "done" { Label{text: "Done" draw_text +: {color: ui_success text_style: theme.font_bold{font_size: 14}}} }
-                                if f.state == "fail" { Label{text: "Try again" draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}} }
+                                Label{width: Fill padding: 0 text: f.name draw_text +: {color: ink text_style: theme.font_bold{font_size: 16}}}
+                                if f.state == "" { Label{padding: 0 text: "›" draw_text +: {color: muted text_style: theme.font_bold{font_size: 20}}} }
+                                if f.state == "busy" { Label{padding: 0 text: "Exporting…" draw_text +: {color: muted text_style: theme.font_regular{font_size: 13}}} }
+                                if f.state == "done" { Label{padding: 0 text: "Done" draw_text +: {color: ui_success text_style: theme.font_bold{font_size: 14}}} }
+                                if f.state == "fail" { Label{padding: 0 text: "Try again" draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}} }
                             }
-                            Label{width: Fill text: f.note draw_text +: {color: muted text_style: theme.font_regular{font_size: 13}}}
-                            if f.state == "fail" { Label{width: Fill text: f.text draw_text +: {color: ui_danger text_style: theme.font_regular{font_size: 13 line_spacing: 1.35}}} }
-                            if f.state != "fail" && f.text != "" { Label{width: Fill text: f.text draw_text +: {color: muted text_style: theme.font_regular{font_size: 12}}} }
+                            Label{width: Fill padding: 0 text: f.note draw_text +: {color: muted text_style: theme.font_regular{font_size: 13}}}
+                            if f.state == "fail" { Label{width: Fill padding: 0 text: f.text draw_text +: {color: ui_danger text_style: theme.font_regular{font_size: 13 line_spacing: 1.35}}} }
+                            if f.state != "fail" && f.text != "" { Label{width: Fill padding: 0 text: f.text draw_text +: {color: muted text_style: theme.font_regular{font_size: 12}}} }
                         }
                     }
                 }

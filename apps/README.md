@@ -133,7 +133,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage`, `deck` | none | [`deck`](deck/host-service): `new`, `info`, `render`, `convert`, in Quick Deck's own storage |
 | [PDF Tools](pdftools/bundle) | `os.pdftools` (desktop) | The PDFs in its own storage: a library with each first page, a document view with page thumbnails, text with find, and info; a page view; merge in three steps (choose, order, done) and split every few pages or where you choose; open a PDF from the device (up to 64 MiB) and remove one. See [its README](pdftools/README.md), with the hidden-shell journey that tests it | `storage`, `files`, `pdf` | none | the [`pdf`](pdf/host-service) engine service in the app's own storage: `pdf.info`, `pdf.render`, `pdf.text`, `pdf.merge`, `pdf.split`; the shell's `files.status` and `files.import` |
-| [Writer](writer/bundle) | `os.writer` (desktop) | A calm editor on a white page (a line starting with `#` is a heading, `-` a bullet, `>` a quote), a document list, Save as a Word document, a preview of the saved document with an outline from its headings, and export to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage` | none | [`word`](word/host-service) (`word.convert`, `word.inspect`), once App Hub admits a `word` capability |
+| [Writer](writer/bundle) | `os.writer` (desktop) | A calm editor on a white page (a line starting with `#` is a heading, `-` a bullet, `>` a quote), a document list, Save as a Word document, a preview of the saved document with an outline from its headings, and export to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage`, `word` | none | [`word`](word/host-service) (`word.convert`, `word.info`, `word.inspect`), in Writer's own storage |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -237,13 +237,20 @@ reaches only the hosts the manifest lists.
   for a five-slide deck, 16 s on the very first call of a session. Every
   screen and state, refusals included, is also covered in `card-host` by
   `quickdeck/tests/ui.py` with the dev fixture below.
-- **Writer** (2026-10-09, `card-host` hidden `--remote` runs, light and dark,
-  412-point and 1100×760 windows): writing, the document list, draft
-  autosave across a restart and deleting were driven with real typing. App Hub
-  does not admit a `word` capability yet, so every engine action answers
-  "Writer can't … yet" and the draft stays; Save, Preview and Export were
-  exercised against Writer's developer fixture (below), not the engine. Not
-  run in a shell yet.
+- **Writer** (2026-10-09). In a hidden desktop shell built from this tree
+  (`MAKEPAD_WM_TEST_APP=writer`, a hidden `--remote` run, light and dark),
+  with the real `word` engine working in Writer's own storage: a document
+  typed through the instrument was saved as a Word document (`word.convert`
+  of the Markdown Writer writes to `work/`), reopened in Preview
+  (`word.info`, `word.inspect`), edited, saved over the open document and
+  reopened, and exported to PDF, Markdown, HTML and OpenDocument
+  (`exports/`). A damaged DOCX showed the engine's refusal, and a DOCX that
+  went missing was saved again before the preview. Switching between light
+  and dark kept the open document and its preview, and text typed after the
+  switch was kept and saved. In `card-host` (412-point and 1100×760
+  windows), the screens without an engine answer "Writer can't … yet" and
+  keep the draft; Save, Preview and Export also ran against the developer
+  fixture (below). Writer is desktop only, so there is no phone run.
 - Camera and AI providers ship PNG launcher artwork; YouTube, Quick Deck and
   Writer ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
@@ -474,8 +481,8 @@ so each slide shows its text.
 screens without the `word` engine, put a `dev-fixtures.json` file in Writer's
 storage jail (`<app-data>/os.writer/` for `card-host`): `{}` is enough, and
 `{"delay": 3, "fail": ["word.convert"]}` slows the answers down or makes a
-method fail. Writer then answers `word.convert` and `word.inspect` itself, from
-the drafts, and shows a "Fixture engine" badge on every screen. Writer never
+method fail. Writer then answers `word.convert`, `word.info` and `word.inspect`
+itself, from the drafts, and shows a "Fixture engine" badge on every screen. Writer never
 writes that file; delete it to go back to the real engine.
 
 ## Host services and sheets

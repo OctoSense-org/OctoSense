@@ -110,7 +110,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`、`deck` | 无 | [`deck`](deck/host-service)：`new`、`info`、`render`、`convert`，在 Quick Deck 自己的存储中运行 |
 | [PDF Tools](pdftools/bundle) | `os.pdftools`（桌面） | 管理自己存储中的 PDF：带首页预览的资料库，带页面缩略图、可查找的文字和信息的文档视图；单页视图；三步合并（选择、排序、完成），以及按固定页数或在指定页面处拆分；从设备打开 PDF（最大 64 MiB）和移除 PDF。见[它的 README](pdftools/README.zh-CN.md)，其中介绍了测试它的隐藏 Shell 流程 | `storage`、`files`、`pdf` | 无 | 在应用自己的存储中工作的 [`pdf`](pdf/host-service) 引擎服务：`pdf.info`、`pdf.render`、`pdf.text`、`pdf.merge`、`pdf.split`；Shell 的 `files.status` 和 `files.import` |
-| [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage` | 无 | [`word`](word/host-service)（`word.convert`、`word.inspect`），在 App Hub 接纳 `word` 权限之后 |
+| [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage`、`word` | 无 | [`word`](word/host-service)（`word.convert`、`word.info`、`word.inspect`），在 Writer 自己的存储中 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -183,10 +183,15 @@ OctoSense-System-Apps 仓库（已归档）。
   （#399），所以它工作时 Shell 会停顿：五张幻灯片约 3 秒，会话中的第一次调用 16 秒。
   每个页面和状态（包括各种拒绝）也由 `quickdeck/tests/ui.py` 用下方的开发夹具在
   `card-host` 中覆盖。
-- **Writer**（2026-10-09，`card-host` 隐藏窗口的 `--remote` 运行，浅色与深色，
-  412 点宽与 1100×760 的窗口）：用真实输入驱动了写作、文档列表、重启后仍在的自动保存草稿
-  和删除。App Hub 尚不接纳 `word` 权限，所以每个引擎操作都回答“Writer 暂时无法……”，草稿保留；
-  保存、预览和导出是用 Writer 的开发者 fixture（见下文）而不是引擎运行的。尚未在 Shell 中运行。
+- **Writer**（2026-10-09）。在用本仓库构建的隐藏桌面 Shell 中（`MAKEPAD_WM_TEST_APP=writer`，
+  隐藏窗口的 `--remote` 运行，浅色与深色），使用在 Writer 自己存储中工作的真实 `word` 引擎：
+  通过 instrument 输入的文档被保存为 Word 文档（`word.convert` 转换 Writer 写到 `work/` 的
+  Markdown），在预览中重新打开（`word.info`、`word.inspect`），编辑后覆盖保存当前文档并再次打开，
+  并导出为 PDF、Markdown、HTML 和 OpenDocument（`exports/`）。损坏的 DOCX 显示了引擎的拒绝信息，
+  丢失的 DOCX 会在预览前重新保存。在浅色与深色之间切换后，打开的文档和它的预览都保留，
+  切换后输入的文字也被保留并保存。在 `card-host` 中（412 点宽与 1100×760 的窗口），没有引擎时的
+  各个界面回答“Writer 暂时无法……”并保留草稿；保存、预览和导出也用开发者 fixture（见下文）
+  运行过。Writer 只在桌面端，所以没有手机上的运行。
 - Camera 和 AI providers 自带 PNG 启动器图案，YouTube、Quick Deck 和 Writer 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
@@ -393,7 +398,7 @@ python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-hos
 **Writer 的开发者 fixture。** 要在没有 `word` 引擎的情况下验证 Writer 的保存、预览和导出界面，
 在 Writer 的存储 jail 中（`card-host` 下是 `<app-data>/os.writer/`）放一个 `dev-fixtures.json`：
 内容写 `{}` 即可，`{"delay": 3, "fail": ["word.convert"]}` 会让回答变慢或让某个方法失败。
-此时 Writer 自己根据草稿回答 `word.convert` 和 `word.inspect`，并在每个界面上显示
+此时 Writer 自己根据草稿回答 `word.convert`、`word.info` 和 `word.inspect`，并在每个界面上显示
 “Fixture engine”标记。Writer 从不写这个文件；删除它即可回到真实引擎。
 
 ## 宿主服务与面板
