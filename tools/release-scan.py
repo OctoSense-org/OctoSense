@@ -105,14 +105,17 @@ RINX_MIME_SOURCE_SEAM = re.compile(
     rb"(?P<home>/home/room_screen\.rsapplication/)octet-stream"
 )
 
-# The Windows linker pools these four public Mail literals without NULs:
+# The Windows linker pools these public Mail literals without NULs:
 # `Mail service is not registered`, `attempts`, `send`, `octosense.local`
 # (apps/mail/host-service/src/drafts.rs: configured() and add_attempt()).
-# The scanner otherwise reads the last word + three literals as one host.
-# Require the entire known sentence and exact sequence; the same apparent
-# hostname standing alone, or another hostname after the sentence, fails.
+# RC2's verified Windows PE omits `attempts` from that adjacent sequence.
+# Both forms otherwise read as one host. Require the entire known sentence
+# and one of those two exact sequences; the same apparent hostname alone,
+# or another hostname after the sentence, fails. Public source proof:
+# https://github.com/OctoSense-org/OctoSense/blob/4ccf8e068399b1da139771a9ed94cef05fa6ae60/apps/mail/host-service/src/drafts.rs#L79
+# The `send` and `octosense.local` literals are at lines 649 and 653.
 MAIL_LITERAL_SEAM = re.compile(
-    rb"Mail service is not (?P<host>registeredattemptssendoctosense\.local)"
+    rb"Mail service is not (?P<host>registered(?:attempts)?sendoctosense\.local)"
 )
 
 # Public OctosCode 5d0c2a0 UI examples pooled by the macOS linker. chrome.rs

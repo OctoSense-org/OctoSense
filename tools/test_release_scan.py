@@ -211,6 +211,42 @@ class PatternTests(unittest.TestCase):
         ):
             self.assertTrue(findings(leak), leak)
 
+    def test_proven_short_mail_literal_seam_is_ignored(self):
+        # RC2's actual Windows PE pools the same public literals without
+        # "attempts". The full configured() sentence still precedes the host.
+        known = b"Mail service is not registeredsendoctosense.local"
+        self.assertEqual(findings(known + b"\x00"), [])
+        self.assertEqual(findings(b"before\x00" + known + b"\x00after"), [])
+
+    def test_mail_literal_seams_require_exact_public_prefix_and_host(self):
+        prefix = b"Mail service is not "
+        for apparent_host in (b"registeredattemptssendoctosense.local",
+                              b"registeredsendoctosense.local"):
+            for leak in (
+                apparent_host,
+                b"https://" + apparent_host + b"/",
+                b"Other service is not " + apparent_host,
+                prefix[1:] + apparent_host,
+                prefix + apparent_host.replace(b"octosense", b"private"),
+                prefix + apparent_host.replace(b"send", b"other"),
+                prefix + apparent_host.replace(b"octosense", b"octosense2"),
+            ):
+                self.assertTrue(findings(leak), leak)
+
+    def test_mail_literal_exceptions_are_match_and_rule_scoped(self):
+        for apparent_host in (b"registeredattemptssendoctosense.local",
+                              b"registeredsendoctosense.local"):
+            known = b"Mail service is not " + apparent_host
+            for leak in (apparent_host, b"private-host.local"):
+                for combined in (leak + b"\x00" + known, known + b"\x00" + leak):
+                    self.assertTrue(findings(combined), combined)
+            self.assertTrue(findings(known, extra=[scan.re.escape(apparent_host.decode())]),
+                            "explicit extra patterns must not be exempted")
+            identity = [("the scanning host's name", scan.re.compile(scan.re.escape(apparent_host)))]
+            out = []
+            scan.scan_bytes(known, "public", identity, out)
+            self.assertTrue(out, "identity checks must not be exempted")
+
     def test_findings_are_masked_and_extra_patterns_apply(self):
         out = findings(b"/Users/someone/x")
         self.assertEqual(len(out), 1)
