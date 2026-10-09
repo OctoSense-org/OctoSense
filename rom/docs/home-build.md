@@ -66,8 +66,9 @@ cargo test --locked --bin octosense --features mobile-apps
 Current Home and System Bridge APKs require Android 13 (API 33) or newer.
 The standard Home kernel is compiled with NDK API 33, so Home sets
 `[package.metadata.makepad.android].min_sdk_version = 33` and Bridge sets
-`minSdk 33`. This prevents installing the pair on an older OS where the bundled
-kernel may not run. It sets the package compatibility floor; final device/feature
+`minSdk 33`. This follows the bundled kernel's supported build target instead
+of inheriting the packager's older minimum. It is a conservative supported floor,
+not proof that every older OS would fail; final device/feature
 validation remains a separate release gate. `--octos-kernel` and
 `--no-octos-kernel` retain this minimum, including for development and ROM builds;
 a custom kernel must be compatible with the devices on which it will run.

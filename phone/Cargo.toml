@@ -25,8 +25,8 @@ default-run = "octosense-home"
 product_name = "OctoSense"
 identifier = "dev.makepad.octosense"
 
-# Standard Home includes an Android API33 octos kernel; do not inherit the
-# packager's older minimum and allow installation where that kernel cannot run.
+# Standard Home follows the bundled kernel's supported Android API33 build
+# target rather than inheriting the packager's older minimum.
 [package.metadata.makepad.android]
 min_sdk_version = 33
 

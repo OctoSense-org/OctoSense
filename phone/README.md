@@ -61,9 +61,9 @@ cargo run --release -p octosense-home --features mobile-only
 
 **Android requirement.** Current Home and System Bridge builds require Android 13
 (API 33) or newer on ARM64. Home bundles an octos kernel compiled against API 33;
-both APK manifests use the same minimum so Android refuses installation on older
-systems instead of allowing a launcher whose kernel cannot run. This is the
-package compatibility floor, not a claim that every device or feature has been
+both APK manifests use the same supported minimum instead of inheriting the
+packager's older default. This is a conservative package compatibility floor,
+not proof that all older systems would fail or that every device or feature has been
 validated. `--octos-kernel` and `--no-octos-kernel` change the kernel payload only;
 they do not lower this minimum or change OpenHarmony/iOS requirements.
 
