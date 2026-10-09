@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "passed": true,
+  "checks": {
+    "contained_local_source": true,
+    "script_prepare_native_decoder": true,
+    "invalid_numeric_controls_refused": true,
+    "script_play_advances_native_frames": true,
+    "silent_clip_stays_muted": true,
+    "script_pause_stable": true,
+    "paused_native_capture": true,
+    "forward_seek_has_distinct_start": true,
+    "script_seek_updates_position": true,
+    "script_seek_resume_native_frames": true,
+    "forward_seek_reaches_requested_position": true,
+    "script_seek_reaches_native_decoder": true,
+    "resumed_native_capture": true,
+    "script_stop_releases_native_player": true,
+    "app_close_releases_native_player": true,
+    "closed_app_has_no_late_frames": true
+  },
+  "synthetic_media": true,
+  "fixture_sha256": "66ed412a780d9114a6eb0c732114f1566724e655c6cf161c7be900cfae99971c",
+  "host_sha256": "c5940213e81e13d3d058f68eb032e75aae7fba795a41a2db8a9bc5023be6aad0",
+  "not_verified": [
+    "network streaming",
+    "device capture",
+    "audible sound",
+    "other platform decoders",
+    "App Hub signed admission"
+  ],
+  "native_forward_seek_positions_ms": [
+    2333
+  ],
+  "native_rewind_positions_ms": [
+    0,
+    41,
+    83,
+    125
+  ],
+  "owned_host_exit_code": 0,
+  "platform": "macos",
+  "backend": "Metal",
+  "runtime_tree": "fc938badf98eade0732384bfc94e37ca497ddadf",
+  "host_code_commit": "f1f8816d",
+  "driver_commit": "2f5e3380",
+  "frames_reviewed": [
+    "paused",
+    "resumed"
+  ],
+  "native_lifecycle": {
+    "close_released": true,
+    "closed": true,
+    "error": null,
+    "frames": 26,
+    "frames_after_close_release": 0,
+    "heap_closed": true,
+    "position_ms": 291,
+    "prepared": 2,
+    "released": 2,
+    "resume_positions_ms": [
+      0,
+      41,
+      83,
+      125,
+      166,
+      208
+    ]
+  },
+  "personal_data": false
+}

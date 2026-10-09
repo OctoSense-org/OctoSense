@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import plistlib
 import tempfile
 import unittest
 
@@ -87,6 +88,22 @@ class ResourceTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
+    def test_packaged_macos_calendar_access_has_usage_descriptions_and_entitlement(self):
+        packaging = HERE.parent / "packaging"
+        config = json.loads((packaging / "release.json").read_text())
+        with (packaging / config["macos"]["infoPlistPath"]).open("rb") as stream:
+            info = plistlib.load(stream)
+        # EventKit uses the legacy key before macOS 14 and the full-access
+        # key on newer systems. The host refuses requests when either
+        # applicable packaged declaration is missing.
+        for key in ("NSCalendarsUsageDescription", "NSCalendarsFullAccessUsageDescription"):
+            with self.subTest(key=key):
+                self.assertIsInstance(info.get(key), str)
+                self.assertTrue(info[key].strip())
+        with (packaging / config["macos"]["entitlements"]).open("rb") as stream:
+            entitlements = plistlib.load(stream)
+        self.assertIs(entitlements.get("com.apple.security.personal-information.calendars"), True)
+
     def test_the_release_config_is_filled_in_per_build(self):
         base = json.loads((HERE.parent / "packaging/release.json").read_text())
         self.assertEqual(base["identifier"], "org.octosense.desktop")

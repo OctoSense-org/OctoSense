@@ -1,0 +1,41 @@
+// All playback controls cross Video::script_call from this contained isolate.
+fn report(action, accepted) {
+    host.request("video_lab.report", {
+        action: action
+        accepted: accepted
+        state: ui.clip.state()
+        error: ui.clip.error()
+        position_ms: ui.clip.current_position_ms()
+        duration_ms: ui.clip.total_duration_ms()
+        muted: ui.clip.is_muted()
+    }, nil)
+}
+View {width: Fill height: Fill flow: Down padding: 16 spacing: 12
+    Label {text: "Video API Lab" draw_text.text_style.font_size: 24}
+    Label {width: Fill text: "Synthetic local H.264; no camera, microphone, network media or accounts."}
+    clip := Video {
+        width: Fill height: 180
+        source: VideoDataSource.Filesystem {path: "playback.mp4"}
+        autoplay: false is_looping: false mute: true show_controls: false
+    }
+    View {width: Fill height: 40 flow: Right spacing: 8
+        Button {text: "Prepare" on_click: || report("prepare", ui.clip.prepare_playback())}
+        Button {text: "Play" on_click: || report("play", ui.clip.begin_playback())}
+        Button {text: "Pause" on_click: || report("pause", ui.clip.pause_playback())}
+    }
+    View {width: Fill height: 40 flow: Right spacing: 8
+        Button {text: "Resume" on_click: || report("resume", ui.clip.resume_playback())}
+        Button {text: "Seek 2s" on_click: || report("seek", ui.clip.seek_to(2000))}
+        Button {text: "Seek start" on_click: || report("seek-start", ui.clip.seek_to(0))}
+    }
+    View {width: Fill height: 40 flow: Right spacing: 8
+        Button {text: "Stop" on_click: || report("stop", ui.clip.stop_and_cleanup_resources())}
+        Button {text: "Probe" on_click: || report("probe", nil)}
+        Button {text: "Check args" on_click: || report("args",
+            ui.clip.seek_to(-1) == false && ui.clip.seek_to("invalid") == false &&
+            ui.clip.set_playback_rate(0) == false && ui.clip.set_volume("invalid") == false)}
+    }
+    View {width: Fill height: 40 flow: Right spacing: 8
+        Button {text: "Close app" on_click: || host.request("video_lab.close", {}, nil)}
+    }
+}

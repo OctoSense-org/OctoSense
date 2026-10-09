@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "6c080f31adb899611e6ebe132ccfa2eead06cf9b",
+    "tree": "7c859055c2ab8a1841e86b58fef0fb7b4eec4ad6",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -29,7 +29,22 @@
       "Ordinary WebReader embeds sandboxed WebKitGTK in X11/XWayland and private WebView2 controllers on Windows, with bounded UI integration, URL policy, no app bridge and explicit engine errors. Native Wayland and Linux/Windows production embedded authentication remain unsupported.",
       "Native host-response envelope keys are interned when created, so contained apps can forward raw success, error and capability-refusal replies as bounded JSON without first naming each field in script source.",
       "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
-      "A Splash isolate entry keeps its 64 ms wall-clock budget unless MAKEPAD_SPLASH_BUDGET_MS sets another (makepad#109). Only the shell test step sets it: ~1,000 tests in one process wait on shared locks and page faults, which a wall-clock budget counts against the script."
+      "A Splash isolate entry keeps its 64 ms wall-clock budget unless MAKEPAD_SPLASH_BUDGET_MS sets another (makepad#109). Only the shell test step sets it: ~1,000 tests in one process wait on shared locks and page faults, which a wall-clock budget counts against the script.",
+      "Contained foreground document import/export and binary jail writes; bounded no-prompt fresh location with independent native/sample ownership and Android approximate permission; gated HTTP(S) external links; explicit unsupported capture errors.",
+      "Typed numeric arrays retain integer literal values. Reentrant native-to-script callbacks preserve yielded widget continuations on bounded reusable threads, retain nonprompting authority, and share instruction fuel with their caller.",
+      "Foreground image selection reuses native file transfer. Android text sharing reports bounded correlated chooser handoff, preserves Unicode through UTF-16 JNI, and makes no recipient or delivery claim.",
+      "Native audio sessions share microphone ownership with VoiceWave and native camera-video recording, retaining leases through native capture completion; foreground/storage snapshots support bounded asynchronous read/staging and atomic no-overwrite UI commit.",
+      "Apple audio input/output startup is bound to an individual pending open. Cancelled or superseded asynchronous completions release their resources without starting hardware, taking over a replacement session, or reporting a stale device failure.",
+      "Video exposes its existing native playback controls and state to Splash; finite seek, volume and playback-rate inputs are bounded, and source policy still applies.",
+      "Contained Video camera sources require CameraPreview app and OS permission flow. Native video players have bounded weak lifetime ownership, retire on widget/isolate close, and preserve manual pause across activity pause/resume.",
+      "CameraPreview cleanup keeps weak parent and child lifetimes, retires its watchdog when removed, and revokes a retained parent on isolate release so late events cannot reopen capture. Video lifecycle tests use the actual native-player retirement selector without private platform fields.",
+      "Prepared Video playback enters playing state, restores desired mute on each native player, and cancels a deferred Android texture-start on Stop; late prepared events cannot undo Stop.",
+      "Windows camera still capture takes one bounded next frame, validates MJPEG or encodes NV12/YUY2 on a dedicated worker, refuses overwrite, cancels on close and deadline, and reports unsupported video/library operations explicitly.",
+      "Retiring a CameraPreview explicitly stops its pending or active recording before video cleanup, including when another preview keeps the shared OpenHarmony camera session alive; terminal completion retires recording ownership.",
+      "Video controls report accepted transitions, pending cancellation retires native IDs before retry, decoder errors release ownership without losing the error, and rejected sources return observable errors.",
+      "CameraPreview correlates native events before the child retires its player generation; cancelling preparation permits an explicit retry without waiting for a stale release callback.",
+      "Video numeric controls accept both integer and floating Splash arguments while refusing nonnumeric, nonfinite and out-of-range values; native acceptance exposed the integer-seek regression.",
+      "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback."
     ],
     "stacked": [
       {
@@ -115,6 +130,46 @@
       {
         "patch": "tools/runtime-patches/makepad-splash-budget.patch",
         "sha256": "cebcae3327ec955a2b37eb1f3353e97160d702bd4081abb264006fee4ac17ee5"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-os-batch1.patch",
+        "sha256": "e336290797373331285ae16c2a6414c20b5674eb550b7219ba1132e4743c0141"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-api-runtime-fixes.patch",
+        "sha256": "89459d67c66ec1bea55987b89d4ae0b080324f873ddd17883d6f698f8e7a4343"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-photo-text-sharing.patch",
+        "sha256": "8a027f43b6d63f31bfe272e48c2b1968047907e5c76f2685f01b1c5446c4735f"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-native-audio-session-ownership.patch",
+        "sha256": "79d33aa0756f140de9f15db326e17bfd01d12856069d17721845b459540dea3f"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-apple-audio-open-generation.patch",
+        "sha256": "ad052e78a6982fc4cbd1688a1d8178ba7a8deb211fe35b096cd998fbf28c756a"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-video-controls-lifecycle.patch",
+        "sha256": "c92fd343720ab6e26564ac782b9276ce9e5f0708e3c7547f0b17981c340f88ea"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-windows-still-capture.patch",
+        "sha256": "7e80e9414355979a9bafbfda847c2a33f63ce4b30776a7cb813e78cc3b6fa964"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-camera-video-generation-routing.patch",
+        "sha256": "20199283857f477e150c7b35951c31f129852d0f21c904c375968847f91b47e9"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-video-numeric-arguments.patch",
+        "sha256": "3d853bae0414084e6a22ca8e658231a598c3851f6a84bfd721d2da47fa129d03"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-android-video-seek.patch",
+        "sha256": "e52e281cd375d25105dbaa285354c970148ab07442400c3cda6a712c460b01e9"
       }
     ]
   }

@@ -211,6 +211,9 @@ pub fn register_mail_services() {
             crate::mail_card::queue_review(key, review);
             Ok(())
         })));
+        octosense_mail_service::public_review::on_review(Some(std::sync::Arc::new(
+            crate::connected_review::smtp_sheet,
+        )));
         crate::mail_card::publication_host_ready();
     });
 }
@@ -234,6 +237,14 @@ pub fn register_host_services() {
                 .unwrap_or_else(|| crate::app_storage::DEVICE.into())
         ));
         crate::platform_services::register();
+        crate::device_calendar::register(|app| {
+            crate::app_storage::lifecycle::contained_account(app)
+                .map(|account| crate::app_storage::account_hash(&account))
+        });
+        crate::files_service::register();
+        crate::audio_service::register();
+        octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
+        octosense_appstore::host_api::register_runtime_feature("video.playback_controls", 1);
         octosense_markdown_editor::register();
         crate::connected_review::register();
         octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);
@@ -928,6 +939,7 @@ mod tests {
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
+        if crate::module_host::run_with_isolated_module_data("apps::tests::bundled_apps_open_without_catalog_files_or_child_processes") { return; }
         let _one_rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let catalog = build_rows(bundled_catalog());
         // The linked modules in link order (AppCard is opt-in, `app-appcard`,
@@ -979,6 +991,7 @@ mod tests {
     fn bundled_apps_receive_same_base_theme_without_recreation() {
         use crate::mobile_theme::{Preset, Selection};
         use makepad_widgets::*;
+        if crate::module_host::run_with_isolated_module_data("apps::tests::bundled_apps_receive_same_base_theme_without_recreation") { return; }
         let _one_rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let registry = AppRegistry::default();
         let mut cx = Cx::new(Box::new(|_, _| {}));

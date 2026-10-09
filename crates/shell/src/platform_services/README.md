@@ -2,13 +2,13 @@
 
 English | [简体中文](README.zh-CN.md)
 
-On OctoSense `main`, not yet in any release, an installed script app can ask the host for camera, microphone and location access. Three separate checks decide whether an app can use a device:
+An installed script app can ask a compatible OctoSense host for camera, microphone and location access. Query API discovery on the actual host; fresh location sampling described here belongs to the unreleased OS wiring batch. Three separate checks decide whether an app can use a device:
 
 - **Capability.** The app's manifest declares `camera`, `microphone` or `location`. This is the most the app can ever get.
 - **App consent.** The person allows this app on a native host sheet. Consent covers this app on all of its accounts, and no other app.
 - **OS permission.** The operating system grants it to OctoSense as a whole, so on its own it authorizes no installed app.
 
-This module's device service (`DeviceService`) implements permission status, request and revoke on Android and macOS, and reading the last-known location on Android. On other platforms, API discovery (`runtime.list` and `runtime.describe`) does not list these methods: `status` answers `os_permission: "unsupported"`, and `request` and `location.get` fail with `unsupported_platform`. A permission adds no calendar, file picker, camera capture or background location service. To show the camera, use the existing `CameraPreview` widget.
+This module's device service (`DeviceService`) implements permission status, request and revoke on Android and macOS, bounded fresh location sampling on Android and macOS, and reading the legacy last-known location on Android. On other platforms, API discovery (`runtime.list` and `runtime.describe`) does not list these methods: `status` answers `os_permission: "unsupported"`, and `request` and `location.get` fail with `unsupported_platform`. A permission adds no calendar, file picker, camera capture or background location service. To show the camera, use the existing `CameraPreview` widget.
 
 ## Declare what the app uses
 
@@ -32,9 +32,11 @@ The host puts the consent check in place before it runs any of the app's source.
 | `camera.permission.revoke` | `{}` | Withdraws this app's consent and stops its running `CameraPreview`. The OS permission for OctoSense is unchanged. |
 | `microphone.permission.*` | `{}` | The same three methods for the microphone. Revoking also stops a camera recording that captures sound. |
 | `location.permission.*` | `{}` | The same three methods for location. On Android, a granted request also starts the host's existing foreground location updates. |
-| `location.get` | `{}` | Android only: checks the OS permission again, then returns the last-known location. |
+| `location.get` | `{}` | Android only: checks the OS permission again, then returns the last-known location. Its version 1 response is unchanged. |
+| `location.sample` | Optional `timeout_ms`, `max_age_ms`, `max_accuracy_m` | Android/macOS foreground app only: waits for a fix meeting the requested age and accuracy, without raising permission UI. |
+| `location.sample.cancel` | `{}` | Cancels every pending sample belonging to this app; returns `cancelled`, the count. Other apps are unaffected. |
 
-Beyond `host-api-v1`, `status` and `revoke` need only the capability. `request` is how the app gets consent, and `location.get` needs both consent and the OS permission.
+Beyond `host-api-v1`, `status` and `revoke` need only the capability. `request` is how the app gets consent, and `location.get` and `location.sample` need both consent and the OS permission.
 
 ## Request access
 
@@ -68,20 +70,33 @@ An agent or a background card cannot use these paths to raise an OS dialog eithe
 
 Apps that do not require `host-api-v1` keep the earlier manifest-only rules, and their calls to these methods fail with `host_requirement_missing`.
 
+## Fresh location samples
+
+After `location.permission.request` succeeds, the foreground app can call `location.sample`. Optional arguments: `timeout_ms` defaults to 10,000 (1–30,000), `max_age_ms` defaults to 5,000 (1–60,000), and `max_accuracy_m` optionally limits horizontal accuracy in metres (greater than zero, at most 100,000). The timeout includes OS checks and acquisition.
+
+Android accepts the person's approximate-location grant without requesting an upgrade to precise access. Results retain the OS-reported accuracy; a stricter `max_accuracy_m` can time out and never triggers a permission escalation.
+
+The result has `latitude`, `longitude`, `accuracy_m`, `timestamp` (Unix seconds), `age_ms`, `source: "platform"` and `freshness: "fresh"`. Cached OS fixes are accepted only within the requested age and accuracy limits. Timestamps more than one second in the future are rejected; smaller clock skew produces zero age. Age and accuracy are rechecked after the final OS check. The service stores no readings.
+
+`location.permission.status` reports `location_sample_supported`; its older `location_read_supported` field still describes the legacy `location.get` reader. The host uses Android LocationManager / macOS CoreLocation events and a nonprompting start operation. It checks OS authorization before acquisition and again before delivering the result; sampling never opens permission UI. Agents/background cards cannot start samples. This API does not provide a watch or background location.
+
+`location.sample.cancel` cancels this app's samples across its surfaces. Closing the originating isolate, revoking consent, losing the app capability, timeout or host backgrounding also stops acquisition. A 250 ms timer bounds cleanup when no native event arrives. The sampler releases its stream ownership once no sample is acquiring. Native route/location requests retain separate ownership, so either caller can stop without interrupting the other; the platform keeps its existing best-accuracy request. The separate Android legacy GPS feed and `location.get@1` response remain unchanged.
+
 ## Errors
 
 | Error | When |
 | --- | --- |
 | `host_requirement_missing` | The manifest does not require `host-api-v1`. |
 | `permission_denied` | The manifest lacks the capability, or the app was removed, lost the capability or had its consent changed while the request waited. |
-| `invalid_arguments` | The arguments are not `{}`. |
+| `invalid_arguments` | Arguments are not an object, include unknown fields, or exceed the documented bounds. Methods other than `location.sample` require `{}`. |
 | `method_unavailable` | The method is not one of those listed above, for example `camera.get`. |
 | `authorization_required` | `location.get` ran without app consent or without the OS permission, or a `request` arrived when the host could not prompt, for example while it was in the background. |
 | `unsupported_platform` | The platform has no adapter for `request`, or `location.get` ran outside Android. |
 | `cancelled` | The person chose **Not now**, a newer request for the same capability replaced the sheet, or the host left the foreground. |
 | `timeout` | The consent sheet stayed open for 5 minutes. |
 | `busy` | 64 device requests, or 64 consent sheets, are already waiting. |
-| `location_unavailable` | Android has no last-known location. |
+| `location_unavailable` | Android has no legacy last-known location, or the modern OS provider reports a location failure. |
+| `location_timeout` | No fix met the requested age and accuracy before the sample deadline. |
 | `the host service timed out` | App Hub's 60-second limit passed. The limit pauses while the consent sheet is open, so this happens, for example, when the OS dialog stays open after the sheet closes. |
 
 ## How the host runs a request
@@ -97,3 +112,5 @@ Consent lives in `<apps root>/.host/device-api-consent.json`, outside every app'
 **Verified on macOS:** the native Makepad policy tests and the camera regression tests pass; the implementation change records the results. The [Host API Lab](../../../../tools/fixtures/host-api-lab/README.md) also reads the real camera permission status through this service.
 
 **Unverified:** approving the consent sheet with a physical press, the live OS permission dialogs and camera capture on any platform, and the location flow on a OnePlus 6. Each needs the integrated host installed on the device and a person pressing the sheet's buttons.
+
+Fresh sampling regression coverage injects native events through the real host broker; it does not validate physical GPS reception or live macOS/Android permission dialogs. Those device paths remain **unverified**.

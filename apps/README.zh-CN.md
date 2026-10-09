@@ -380,6 +380,8 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 ### `mail` 服务
 
+普通 App Hub 应用现可使用按应用/账户隔离的撰写、状态查询和原生 SMTP 审阅接口。见 [Mail 服务与迁移示例](mail/host-service/README.zh-CN.md)；Agent 和合成输入仍不能直接批准发送。
+
 `octosense-mail-service`（`apps/mail/host-service/src/`）：
 
 | 文件 | 作用 |

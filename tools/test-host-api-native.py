@@ -19,6 +19,33 @@ import time
 import urllib.request
 
 REPO = Path(__file__).resolve().parents[1]
+OS_BATCH_CHECKS = (
+    "files_status_discovery",
+    "files_import_discovery",
+    "files_export_discovery",
+    "storage_binary_write_discovery",
+    "contained_binary_roundtrip",
+    "files_status_truthful",
+    "location_sample_discovery",
+    "background_import_refused",
+    "background_export_refused",
+    "location_without_consent_refused",
+    "public_calendar_read_discovery", "public_calendar_write_discovery",
+    "public_mail_compose_discovery", "public_mail_send_discovery",
+    "calendar_status_without_data_access", "calendar_choices_without_consent_refused",
+    "background_calendar_permission_refused", "background_calendar_selection_refused",
+    "background_calendar_write_refused", "mail_compose_without_account_refused",
+    "background_mail_send_refused",
+    "photo_picker_discovery",
+    "text_share_discovery_truthful",
+    "background_photo_picker_refused",
+    "background_text_share_refused",
+    "video_controls_discovery",
+    "audio_playback_discovery",
+    "microphone_recording_discovery",
+    "background_audio_playback_refused",
+    "undeclared_microphone_recording_refused",
+)
 
 
 def require(condition, message):
@@ -29,7 +56,7 @@ def require(condition, message):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", type=Path, default=REPO / "target/release/examples/host-api-lab")
-    parser.add_argument("--hub", type=Path, required=True, help="Contract 1.6 compatible hub binary")
+    parser.add_argument("--hub", type=Path, required=True, help="Current-source hub binary supporting files, device_calendar and audio (contract 1.10 source)")
     parser.add_argument("--output", type=Path, help="New evidence directory; defaults to a private temporary directory")
     args = parser.parse_args()
     root = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="octosense-host-api-native-"))
@@ -37,6 +64,8 @@ def main():
         root.mkdir(mode=0o700, parents=True, exist_ok=False)
     result = {"schema": 1, "result": "failed", "verified": [], "not_verified": [
         "model reasoning and peer consent", "physical permission approval", "camera capture",
+        "interactive file selection/export", "live location sampling", "native external-browser launch",
+        "Calendar permission approval and event reads/writes", "SMTP delivery", "live audio recording/playback and photo/share choosers",
         "Android runtime", "Linux and Windows device services", "public host release"]}
     try:
         require(sys.platform == "darwin", "This native OS status acceptance currently requires macOS")
@@ -56,7 +85,15 @@ def main():
             env = os.environ.copy()
             for name in ["MAKEPAD_FORCE_FOCUS", "OCTOSENSE_HUB_ANCHOR"]:
                 env.pop(name, None)
-            env.update(MAKEPAD_HIDE_WINDOWS="1", MAKEPAD_REMOTE=str(port))
+            # Dependency initialization must never discover the user's native
+            # app profiles, even if a future fixture creates another module.
+            env.update(
+                MAKEPAD_HIDE_WINDOWS="1", MAKEPAD_REMOTE=str(port),
+                RINX_DATA_DIR=str(root / phase / "rinx"),
+                OCTOSENSE_HOME=str(root / phase / "shell"),
+                OCTOS_APP_CORE_DIR=str(root / phase / "kernel"),
+                OCTOSENSE_APP_DATA=str(root / phase),
+            )
             command = [str(host), f"--bundle={bundle}", f"--app-data={root / phase}"]
             receipt = root / "native-result.json"
             command += ["--preview"] if phase == "preview" else [f"--receipt={receipt}"]
@@ -106,6 +143,12 @@ def main():
                         require("tool_not_declared" in native["refusals"]["undeclared_tool"], "Undeclared tool accepted")
                         require("invalid_arguments" in native["refusals"]["invalid_arguments"], "Invalid tool input accepted")
                         require("app_not_running" in native["closed_app"], "Closed app retained its tool endpoint")
+                        checks = native.get("checks", {})
+                        require(set(checks) == set(OS_BATCH_CHECKS), "Incomplete native OS API batch checks")
+                        for name in OS_BATCH_CHECKS:
+                            require(checks[name] is True, "Native OS API check failed: " + name)
+                        require(all(checks.values()), "Native OS API batch failed")
+                        result["checks"] = checks
                         require(any(w.get("ty") == "Label" and w.get("t") == "Completed native queries: 1" for w in snapshot.get("s", [])), "Tool did not update live app state")
                         button = next(w for w in snapshot["s"] if w.get("ty") == "Button" and w.get("t") == "Read permission status")
                         x, y, width, height = button["r"]
@@ -121,7 +164,7 @@ def main():
                         (root / "ui-snapshot.json").write_text(json.dumps(updated, indent=2))
                         shutil.copyfile(get("g?scale=1")["png"], root / "ui.png")
                         result["bundle_digest"] = native["bundle_digest"]
-                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "undeclared capability refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal"]
+                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "undeclared capability refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal", "file and location API discovery", "contained binary storage round trip", "file status metadata", "background import/export refusal", "location refusal without app consent", "public Calendar/Mail discovery", "Calendar status and consent refusal", "background Calendar/Mail mutation refusal", "Mail refusal without connected account"]
                 finally:
                     if process.poll() is None:
                         try:

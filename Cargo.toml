@@ -33,6 +33,7 @@ members = [
     "crates/markdown-editor",
     "crates/browser-smoke",
     "crates/host-api-smoke",
+    "crates/video-api-smoke",
     "crates/wasm-host",
     "crates/skill-gen",
     "apps/reference",
@@ -89,7 +90,7 @@ octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 octosense-appcard = { path = "apps/appcard/module" }
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "95e4831afca7227b640f075b252c04355bb63865" }
 makepad-calculator = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
@@ -109,6 +110,7 @@ makepad-code-editor = { git = "https://github.com/OctoSense-org/makepad.git", re
 makepad-ai = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
+makepad-audio-decode = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
@@ -127,17 +129,17 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "33dea2f1f3ad3f1346a219aa8cf6e91b31361e23" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "95e4831afca7227b640f075b252c04355bb63865" }
 # The app policy (resolution, isolate settings, the Splash adapter) and the
 # Hub client the Card runner resolves an app's policy with; the shell's
 # glance tiles run cards under it (crates/shell/src/glance_card.rs).
-octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
-octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
+octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "95e4831afca7227b640f075b252c04355bb63865" }
+octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "95e4831afca7227b640f075b252c04355bb63865" }
 # The app contract (ADR 0005), from crates.io by version: App Hub, the shell
 # and Rinx all depend on `octosense-app-contract = "1"`, so Cargo links ONE
 # 1.x for the whole build (Cargo.lock pins the exact version OctoSense ships)
 # and App Hub and Rinx no longer need the same App Hub commit.
-octosense-app-contract = "1.8"
+octosense-app-contract = "1.10"
 # --- octos: ONE source for every octos crate (reviewed octos#2715 at
 # b0759a57: bounded ledger session-directory names, serialized peer purge
 # against session writes, and provider transport diagnostics that omit
@@ -345,6 +347,7 @@ makepad-code-editor = { path = ".sources/makepad/code_editor" }
 makepad-ai = { path = ".sources/makepad/libs/makepad_ai" }
 makepad-studio-protocol = { path = ".sources/makepad/platform/studio" }
 makepad-network = { path = ".sources/makepad/platform/network" }
+makepad-audio-decode = { path = ".sources/makepad/libs/audio_decode" }
 makepad-wm-api = { path = ".sources/makepad/libs/wm_api" }
 makepad-ai-services = { path = ".sources/makepad/libs/ai/services" }
 makepad-strict-json = { path = ".sources/makepad/libs/strict_json" }
@@ -408,6 +411,8 @@ ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 # 18fcd3f1 (octos main no longer vendors it). Not an octos crate: `cargo tree
 # -i octos-core` still sees one octos source.
 [patch.crates-io]
+# Keep the contract identical to the pinned SDK for this release candidate.
+octosense-app-contract = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "95e4831afca7227b640f075b252c04355bb63865" }
 nix = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8" }
 
 # pdfcraft's bootstrap PDF stack: its workspace patches these five

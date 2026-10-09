@@ -13,6 +13,9 @@ use std::sync::{
 
 const BODY_MAX: usize = 8192;
 const RECORD_MAX: usize = 512 * 1024;
+const PUBLIC_COMPOSERS_MAX: usize = 128;
+// Each admitted record may reach RECORD_MAX, including its final receipt.
+const PUBLIC_COMPOSERS_BYTES: usize = PUBLIC_COMPOSERS_MAX * RECORD_MAX;
 const REVIEW_SECONDS: u64 = 600;
 static SERIAL: Mutex<()> = Mutex::new(());
 static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -20,6 +23,15 @@ type Changed = Arc<dyn Fn() + Send + Sync>;
 fn changed_hook() -> &'static Mutex<Option<Changed>> {
     static HOOK: OnceLock<Mutex<Option<Changed>>> = OnceLock::new();
     HOOK.get_or_init(Default::default)
+}
+pub(crate) fn wake_ui() {
+    let callback = changed_hook()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if let Some(callback) = callback {
+        callback();
+    }
 }
 pub fn generation() -> u64 {
     GENERATION.load(Ordering::Acquire)
@@ -196,6 +208,15 @@ fn save(store: &Store, draft: &Value) -> Result<(), String> {
     if bytes.len() > RECORD_MAX {
         return Err("Draft history is full; keep this receipt and create a new reply".into());
     }
+    if draft["kind"] == "public_compose" {
+        public_storage_budget(
+            store,
+            draft,
+            bytes.len(),
+            PUBLIC_COMPOSERS_MAX,
+            PUBLIC_COMPOSERS_BYTES,
+        )?;
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         #[cfg(unix)]
@@ -221,14 +242,21 @@ fn active() -> &'static Mutex<BTreeSet<PathBuf>> {
     ACTIVE.get_or_init(Default::default)
 }
 fn load(store: &Store, app: &str, account: &str, id: &str) -> Result<Value, String> {
-    check_account(store, app, account)?;
+    // Public composers have a separate host-minted namespace. Legacy reply
+    // drafts remain Mail-only, including when another app shares the account.
+    if id.starts_with("composer-") {
+        store.granted(app, account)?;
+    } else {
+        check_account(store, app, account)?;
+    }
     let file = path(store, account, id)?;
     let bytes = std::fs::read(&file).map_err(|e| format!("Cannot read reply draft: {e}"))?;
     if bytes.len() > RECORD_MAX {
         return Err("Invalid draft record size".into());
     }
     let mut d: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid reply draft record")?;
-    if d["schema"] != 1
+    if (id.starts_with("composer-") && d["kind"] != "public_compose")
+        || d["schema"] != 1
         || d["publisher"] != app
         || d["account"] != account
         || d["draft_id"] != id
@@ -786,6 +814,15 @@ pub fn revoke_review(review: Review) {
         .unwrap_or_else(|e| e.into_inner())
         .remove(&review.token);
 }
+/// Retire a native public view without draft I/O or the SERIAL lock. Claiming
+/// and retirement both atomically remove this map entry; an already claimed
+/// send is allowed to finish. Other views' review capabilities are unchanged.
+pub(crate) fn retire_public_review(review: Review) {
+    reviews()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&review.token);
+}
 fn cancel_in(review: Review, vault: Arc<dyn Vault>) -> Result<(), String> {
     let _guard = lock();
     let Some(r) = reviews()
@@ -824,10 +861,22 @@ pub fn approve_and_send(review: Review) -> Result<Value, String> {
     let (transport, vault) = configured()?;
     execute(review, transport.as_ref(), vault)
 }
+pub(crate) fn approve_and_send_pending(review: Review, reply: &Replier) -> Result<Value, String> {
+    let (transport, vault) = configured()?;
+    execute_pending(review, transport.as_ref(), vault, || reply.is_pending())
+}
 fn execute(
     review: Review,
     transport: &dyn Transport,
     vault: Arc<dyn Vault>,
+) -> Result<Value, String> {
+    execute_pending(review, transport, vault, || true)
+}
+fn execute_pending(
+    review: Review,
+    transport: &dyn Transport,
+    vault: Arc<dyn Vault>,
+    originating_request_is_live: impl FnOnce() -> bool,
 ) -> Result<Value, String> {
     let (r, store, account, payload, file) = {
         let _guard = lock();
@@ -836,6 +885,9 @@ fn execute(
             .unwrap_or_else(|e| e.into_inner())
             .remove(&review.token)
             .ok_or("Review was cancelled, expired or already consumed")?;
+        if !originating_request_is_live() {
+            return Err("The originating app closed before the send claim".into());
+        }
         if r.expires <= now() || r.snapshot != review.snapshot {
             return Err("Review expired or snapshot changed".into());
         }
@@ -950,6 +1002,7 @@ pub(crate) fn agent_call(
     method: &str,
     args: &Value,
 ) -> Result<Value, String> {
+    check_account(store, app, text(args, "account"))?;
     let allowed: &[&str] = match method {
         "propose_reply" => &["account", "folder", "message", "body", "reply_key"],
         "draft" => &["account", "draft_id"],
@@ -1055,7 +1108,7 @@ pub(crate) fn review_composer(store: &Store, app: &str, args: &Value) -> Result<
         json!({"review_required":true,"compose_id":d["compose_id"],"draft_id":id,"revision":d["revision"]}),
     )
 }
-fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Value, String> {
+pub(crate) fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Value, String> {
     let allowed = [
         "account",
         "to",
@@ -1072,9 +1125,27 @@ fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Value, String
     {
         return Err("Unsupported composer fields: one To address and plain text only".into());
     }
+    for field in ["compose_id", "folder", "message"] {
+        if args.get(field).is_some_and(|v| !v.is_string()) {
+            return Err(format!("{field} must be text"));
+        }
+    }
+    if args
+        .get("expected_revision")
+        .is_some_and(|v| v.as_u64().is_none_or(|r| r == 0))
+    {
+        return Err("expected_revision must be a positive integer".into());
+    }
+    if text(args, "compose_id").is_empty() && args.get("expected_revision").is_some() {
+        return Err("expected_revision requires an existing compose_id".into());
+    }
     let _guard = lock();
     let account = text(args, "account");
-    let granted = check_account(store, app, account)?;
+    let granted = if app == "os.mail" {
+        check_account(store, app, account)?
+    } else {
+        store.granted(app, account)?
+    };
     let to = args["to"].as_str().ok_or("to must be text")?;
     let subject = args["subject"].as_str().ok_or("subject must be text")?;
     let body = args["body"].as_str().ok_or("body must be text")?;
@@ -1088,10 +1159,7 @@ fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Value, String
         }
         supplied.to_string()
     };
-    let id = format!(
-        "draft-{}",
-        &network::hash(&format!("{account}:{compose_id}"))[..32]
-    );
+    let id = composer_id(app, account, &compose_id);
     let mut d = if supplied.is_empty() {
         let message = text(args, "message");
         let folder = if text(args, "folder").is_empty() {
@@ -1176,12 +1244,127 @@ fn compose_draft(store: &Store, app: &str, args: &Value) -> Result<Value, String
         }
         d
     };
+    if app != "os.mail" {
+        d["kind"] = json!("public_compose");
+    }
     d["to"] = json!(to);
     d["subject"] = json!(subject);
     d["body"] = json!(body);
     d["body_origin"] = json!("app");
     save(store, &d)?;
     Ok(snapshot(&d))
+}
+
+fn composer_id(app: &str, account: &str, compose: &str) -> String {
+    if app == "os.mail" {
+        format!(
+            "draft-{}",
+            &network::hash(&format!("{account}:{compose}"))[..32]
+        )
+    } else {
+        format!(
+            "{}{}",
+            composer_prefix(app),
+            &network::hash(&json!([app, account, compose]).to_string())[..32]
+        )
+    }
+}
+
+fn composer_prefix(app: &str) -> String {
+    format!("composer-{}-", &network::hash(app)[..32])
+}
+
+// App/account quotas are checked under SERIAL on every write, including send
+// receipts. The byte allowance reserves RECORD_MAX per permitted composer, so
+// a draft reaching its count limit can still record every bounded outcome.
+fn public_storage_budget(
+    store: &Store,
+    draft: &Value,
+    bytes: usize,
+    count_max: usize,
+    bytes_max: usize,
+) -> Result<(), String> {
+    let file = path(store, text(draft, "account"), text(draft, "draft_id"))?;
+    let directory = file.parent().ok_or("Invalid composer storage")?;
+    let prefix = composer_prefix(text(draft, "publisher"));
+    let mut count = 1usize;
+    let mut total = bytes;
+    match std::fs::read_dir(directory) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let candidate = entry.path();
+                if candidate == file
+                    || candidate.extension().and_then(|s| s.to_str()) != Some("json")
+                    || !entry.file_name().to_string_lossy().starts_with(&prefix)
+                {
+                    continue;
+                }
+                let metadata = std::fs::symlink_metadata(candidate).map_err(|e| e.to_string())?;
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    return Err("Unsafe composer storage file".into());
+                }
+                count = count.saturating_add(1);
+                total = total.saturating_add(usize::try_from(metadata.len()).unwrap_or(usize::MAX));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    if count > count_max || total > bytes_max {
+        return Err("resource_limit: this app/account's saved composer quota is full; existing drafts remain available; do not create a new draft to retry sending".into());
+    }
+    Ok(())
+}
+
+/// App/account-bound composer status; a caller cannot address Mail's historical
+/// reply drafts or another app's composer by guessing its draft identifier.
+pub(crate) fn composer_status(store: &Store, app: &str, args: &Value) -> Result<Value, String> {
+    if args.as_object().is_none_or(|o| {
+        o.keys()
+            .any(|k| !["account", "compose_id"].contains(&k.as_str()))
+    }) {
+        return Err("Expected account and compose_id".into());
+    }
+    let compose = text(args, "compose_id");
+    if !valid_id(compose) || !compose.starts_with("compose-") {
+        return Err("Invalid composer identity".into());
+    }
+    let _guard = lock();
+    let d = load(
+        store,
+        app,
+        text(args, "account"),
+        &composer_id(app, text(args, "account"), compose),
+    )?;
+    Ok(snapshot(&d))
+}
+
+pub(crate) fn composer_review(store: &Store, app: &str, args: &Value) -> Result<Review, String> {
+    let d = compose_draft(store, app, args)?;
+    let account = text(&d, "account");
+    let id = text(&d, "draft_id");
+    let expected = d["revision"].as_u64().ok_or("Invalid revision")?;
+    propose(store, app, account, id, expected)?;
+    let _guard = lock();
+    let current = load(store, app, account, id)?;
+    revision(&current, expected)?;
+    review_from(
+        store.dir.parent().ok_or("Invalid host root")?,
+        app,
+        account,
+        &current,
+    )
+}
+
+pub(crate) fn composer_result(draft: &Value, foreground: bool) -> Value {
+    if foreground {
+        snapshot(draft)
+    } else {
+        let mut result = for_agent(draft);
+        result["compose_id"] = draft["compose_id"].clone();
+        result
+    }
 }
 
 /// Only the service calls this, after checking the authenticated tool account.
@@ -1196,6 +1379,38 @@ pub(crate) fn publication_binding(
     Ok(
         json!({"publisher":app,"account":account,"source_message":d["source_message"],"draft_id":d["draft_id"],"draft_revision":d["revision"],"chat_thread":d["chat_thread"]}),
     )
+}
+/// Delete this app's public composers even when another app still uses the
+/// mailbox. Called with the same lock as account removal and send claims.
+pub(crate) fn forget_composers(store: &Store, app: &str, account: &str) {
+    let directory = store.dir.join(format!("drafts-{}", network::hash(account)));
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let file = entry.path();
+        let Some(id) = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| s.starts_with("composer-"))
+        else {
+            continue;
+        };
+        if path(store, account, id).as_ref().ok() != Some(&file) {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&file) else {
+            continue;
+        };
+        if bytes.len() > RECORD_MAX {
+            continue;
+        }
+        if let Ok(d) = serde_json::from_slice::<Value>(&bytes) {
+            if d["kind"] == "public_compose" && d["publisher"] == app && d["account"] == account {
+                let _ = std::fs::remove_file(file);
+            }
+        }
+    }
 }
 /// Account data deletion, called under the draft lock by remove_account.
 pub(crate) fn forget(store: &Store, account: &str) {
@@ -1733,6 +1948,184 @@ mod tests {
         duplicate.join().unwrap();
         assert_eq!(result.unwrap().unwrap()["status"], "sending");
     }
+    fn public_fixture() -> Fixture {
+        let f = Fixture::new();
+        let mut accounts = f.store.accounts();
+        accounts[0]["apps"] = json!(["os.mail", "sample.mail", "other.mail"]);
+        f.store.save_accounts(&accounts).unwrap();
+        f
+    }
+    fn public_args() -> Value {
+        json!({"account":"one","to":"recipient@example.com","subject":"Review me","body":"Exact reviewed text"})
+    }
+    #[test]
+    fn public_composers_are_isolated_from_other_apps_accounts_and_legacy_drafts() {
+        let f = public_fixture();
+        let d = compose_draft(&f.store, "sample.mail", &public_args()).unwrap();
+        let query = json!({"account":"one","compose_id":d["compose_id"]});
+        assert_eq!(
+            composer_status(&f.store, "sample.mail", &query).unwrap()["body"],
+            d["body"]
+        );
+        assert!(
+            composer_status(&f.store, "other.mail", &query).is_err(),
+            "even a shared account does not share drafts"
+        );
+        assert!(composer_status(&f.store, "os.mail", &query).is_err());
+        assert!(composer_status(
+            &f.store,
+            "sample.mail",
+            &json!({"account":"two","compose_id":d["compose_id"]})
+        )
+        .is_err());
+        assert!(agent_call(
+            &f.store,
+            "sample.mail",
+            "draft",
+            &json!({"account":"one","draft_id":d["draft_id"]})
+        )
+        .unwrap_err()
+        .contains("Only Mail"));
+        let legacy = f.create();
+        assert!(
+            load(&f.store, "sample.mail", "one", text(&legacy, "draft_id"))
+                .unwrap_err()
+                .contains("Only Mail")
+        );
+        assert_eq!(f.transport.calls.load(Ordering::SeqCst), 0);
+    }
+    #[test]
+    fn public_composer_quota_is_bounded_and_does_not_charge_another_app() {
+        let f = public_fixture();
+        let first = compose_draft(&f.store, "sample.mail", &public_args()).unwrap();
+        for _ in 1..PUBLIC_COMPOSERS_MAX {
+            compose_draft(&f.store, "sample.mail", &public_args()).unwrap();
+        }
+        assert!(compose_draft(&f.store, "sample.mail", &public_args())
+            .unwrap_err()
+            .starts_with("resource_limit:"));
+        let other = compose_draft(&f.store, "other.mail", &public_args()).unwrap();
+        let mut edit = public_args();
+        edit["compose_id"] = first["compose_id"].clone();
+        edit["expected_revision"] = json!(1);
+        edit["body"] = json!("Edited at the count limit");
+        assert_eq!(
+            compose_draft(&f.store, "sample.mail", &edit).unwrap()["revision"],
+            2
+        );
+        let record = load(&f.store, "other.mail", "one", text(&other, "draft_id")).unwrap();
+        let bytes = serde_json::to_vec(&record).unwrap().len();
+        assert!(
+            public_storage_budget(&f.store, &record, bytes, 1, bytes).is_ok(),
+            "other app's records are not counted"
+        );
+        assert!(
+            public_storage_budget(&f.store, &record, bytes + 1, 1, bytes)
+                .unwrap_err()
+                .starts_with("resource_limit:")
+        );
+        let reviewed = composer_review(&f.store, "sample.mail", &edit)
+            .err()
+            .unwrap();
+        assert!(reviewed.contains("revision_conflict"));
+        edit["expected_revision"] = json!(2);
+        assert_eq!(
+            f.send(composer_review(&f.store, "sample.mail", &edit).unwrap())
+                .unwrap()["status"],
+            "accepted",
+            "quota reserves room for final receipts"
+        );
+    }
+    #[test]
+    fn removing_one_app_clears_only_its_public_composers() {
+        let f = public_fixture();
+        let mine = compose_draft(&f.store, "sample.mail", &public_args()).unwrap();
+        let theirs = compose_draft(&f.store, "other.mail", &public_args()).unwrap();
+        let legacy = f.create();
+        {
+            let _guard = lock();
+            forget_composers(&f.store, "sample.mail", "one");
+        }
+        assert!(load(&f.store, "sample.mail", "one", text(&mine, "draft_id")).is_err());
+        assert!(load(&f.store, "other.mail", "one", text(&theirs, "draft_id")).is_ok());
+        assert!(load(&f.store, "os.mail", "one", text(&legacy, "draft_id")).is_ok());
+    }
+    #[test]
+    fn edited_public_composer_invalidates_review_and_exact_snapshot_sends_once() {
+        let f = public_fixture();
+        let r = composer_review(&f.store, "sample.mail", &public_args()).unwrap();
+        let id = r.snapshot()["draft_id"].as_str().unwrap().to_owned();
+        let d = load(&f.store, "sample.mail", "one", &id).unwrap();
+        let mut edit = public_args();
+        edit["compose_id"] = d["compose_id"].clone();
+        edit["expected_revision"] = json!(1);
+        edit["body"] = json!("Corrected appointment time");
+        assert_eq!(
+            compose_draft(&f.store, "sample.mail", &edit).unwrap()["revision"],
+            2
+        );
+        assert!(f.send(r).unwrap_err().contains("revision_conflict"));
+        assert!(compose_draft(&f.store, "sample.mail", &edit)
+            .unwrap_err()
+            .contains("revision_conflict"));
+        edit["expected_revision"] = json!(2);
+        let first = composer_review(&f.store, "sample.mail", &edit).unwrap();
+        let duplicate = composer_review(&f.store, "sample.mail", &edit).unwrap();
+        assert_eq!(f.send(first).unwrap()["status"], "accepted");
+        assert_eq!(f.send(duplicate).unwrap()["status"], "accepted");
+        assert_eq!(f.transport.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            f.transport.sent.lock().unwrap()[0]["body"],
+            "Corrected appointment time"
+        );
+        assert!(compose_draft(&f.store, "sample.mail", &edit)
+            .unwrap_err()
+            .contains("submission attempt"));
+    }
+    #[test]
+    fn public_review_rechecks_grant_expiry_and_preserves_uncertain_outcome() {
+        let f = public_fixture();
+        let expired = composer_review(&f.store, "sample.mail", &public_args()).unwrap();
+        reviews()
+            .lock()
+            .unwrap()
+            .get_mut(&expired.token)
+            .unwrap()
+            .expires = 0;
+        assert!(f.send(expired).is_err());
+        let closed = composer_review(&f.store, "sample.mail", &public_args()).unwrap();
+        assert!(
+            execute_pending(closed, &f.transport, Arc::new(TestVault), || false)
+                .unwrap_err()
+                .contains("originating app closed")
+        );
+        let removed = composer_review(&f.store, "sample.mail", &public_args()).unwrap();
+        let accounts = f.store.accounts();
+        let mut changed = accounts.clone();
+        changed[0]["apps"] = json!(["os.mail"]);
+        f.store.save_accounts(&changed).unwrap();
+        assert!(f.send(removed).is_err());
+        assert_eq!(f.transport.calls.load(Ordering::SeqCst), 0);
+        f.store.save_accounts(&accounts).unwrap();
+        let uncertain = composer_review(&f.store, "sample.mail", &public_args()).unwrap();
+        let id = uncertain.snapshot()["draft_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        *f.transport.failure.lock().unwrap() = Some(SendFailure::Unknown("connection lost".into()));
+        assert_eq!(f.send(uncertain).unwrap()["status"], "outcome_unknown");
+        let d = load(&f.store, "sample.mail", "one", &id).unwrap();
+        let mut repeat = public_args();
+        repeat["compose_id"] = d["compose_id"].clone();
+        repeat["expected_revision"] = json!(1);
+        assert!(composer_review(&f.store, "sample.mail", &repeat).is_err());
+        assert_eq!(
+            f.transport.calls.load(Ordering::SeqCst),
+            1,
+            "uncertainty must not cause an automatic retry"
+        );
+    }
+
     #[test]
     fn composer_returns_host_identity_and_cas_preserves_thread_binding() {
         let f = Fixture::new();

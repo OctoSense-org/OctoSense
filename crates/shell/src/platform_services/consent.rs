@@ -27,6 +27,14 @@ pub(super) fn cached(root: &Path, app: &str, family: &str) -> bool {
         .get(&(root.to_owned(), app.into(), family.into()))
         .is_some_and(|g| g.allowed)
 }
+pub(super) fn cached_revision(root: &Path, app: &str, family: &str) -> Option<u64> {
+    cache()
+        .try_lock()
+        .ok()?
+        .get(&(root.to_owned(), app.into(), family.into()))
+        .filter(|grant| grant.allowed)
+        .map(|grant| grant.revision)
+}
 const FILE: &str = "device-api-consent.json";
 
 #[derive(Clone, Copy, Default, Debug, Deserialize, Serialize, PartialEq)]

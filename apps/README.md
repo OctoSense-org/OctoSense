@@ -445,6 +445,8 @@ isolate under no app's policy. Calls from the sheet arrive marked
 
 ### The `mail` service
 
+Ordinary App Hub apps now have account-bound compose/status APIs and native SMTP review. See the [Mail service guide and migration example](mail/host-service/README.md); direct agent or synthetic sending remains refused.
+
 `octosense-mail-service` (`apps/mail/host-service/src/`):
 
 | File | Role |
