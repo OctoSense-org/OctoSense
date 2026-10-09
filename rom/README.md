@@ -44,6 +44,13 @@ Quickstep and SystemUI projects, platform build stagers) lives with Home in
 
 ## Prerequisites
 
+Current Home and System Bridge APKs require Android 13 (API 33) or newer, matching
+the standard bundled kernel's API 33 build target. The builder verifies each
+signed APK's minimum SDK and records its minimum/target SDK in `build.json`;
+custom or omitted kernels do not lower this package requirement. See the
+[Home build contract](docs/home-build.md#android-builds). Device validation is
+separate from this declared compatibility floor.
+
 - Everything the Home APK needs ([phone/README.md](../phone/README.md#build-and-run)):
   the prepared framework sources (`python3 tools/setup.py` at the repository
   root), the pinned `cargo-makepad`, an Android SDK/NDK, a full JDK 17+ and

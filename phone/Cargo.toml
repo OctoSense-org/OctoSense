@@ -25,6 +25,11 @@ default-run = "octosense-home"
 product_name = "OctoSense"
 identifier = "dev.makepad.octosense"
 
+# Standard Home includes an Android API33 octos kernel; do not inherit the
+# packager's older minimum and allow installation where that kernel cannot run.
+[package.metadata.makepad.android]
+min_sdk_version = 33
+
 # Merged over the Info.plist cargo-makepad generates for the iOS bundle:
 # the App Transport Security exception News needs (see the file).
 [package.metadata.makepad.ios]

@@ -59,10 +59,20 @@ cargo run --release -p octosense-home --features mobile-only
 | `MAKEPAD_APP_CONFIG='{"mail_demo":true}'` | Serve Mail from a demo mailbox (password `demo`) |
 | `OCTOSENSE_HOME=<dir>` | Keep state somewhere other than `~/.octosense` |
 
+**Android requirement.** Current Home and System Bridge builds require Android 13
+(API 33) or newer on ARM64. Home bundles an octos kernel compiled against API 33;
+both APK manifests use the same minimum so Android refuses installation on older
+systems instead of allowing a launcher whose kernel cannot run. This is the
+package compatibility floor, not a claim that every device or feature has been
+validated. `--octos-kernel` and `--no-octos-kernel` change the kernel payload only;
+they do not lower this minimum or change OpenHarmony/iOS requirements.
+
 **Android APK.** `rom/scripts/build-home.sh` (a wrapper for
 `build-home.py`) builds the Home APK and its System Bridge APK, signs them
 together, bundles the octos kernel as `liboctos.so`, and writes
-`OctoSenseHome.apk`, `OctoSenseBridge.apk` and a `build.json` receipt. It never
+`OctoSenseHome.apk`, `OctoSenseBridge.apk` and a `build.json` receipt. The builder
+reads both signed APKs' actual minimum/target SDK levels into each artifact entry
+and rejects a pair whose minimum is not API 33 before replacing the outputs. It never
 installs or flashes. A standalone development pair, signed with Makepad's
 development key, from the repository root:
 

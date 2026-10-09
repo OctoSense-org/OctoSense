@@ -114,11 +114,11 @@ class BuildTests(unittest.TestCase):
                 self.args("--variant", "standalone", "--development", option, value)
 
     def test_package_metadata_comes_from_the_actual_apk(self):
-        output = "package: name='dev.makepad.octosense.bridge' versionCode='2026100908' versionName='0.1.0-beta.2' platformBuildVersionName='15'\n"
+        output = "package: name='dev.makepad.octosense.bridge' versionCode='2026100908' versionName='0.1.0-beta.2' platformBuildVersionName='15'\nsdkVersion:'33'\ntargetSdkVersion:'35'\n"
         with mock.patch.object(build.subprocess, "check_output", return_value=output) as command:
             result = build.apk_metadata(Path("/sdk/aapt2"), Path("/out/bridge.pending.apk"), {"LANG": "C"})
         self.assertEqual(result, {"package_name": "dev.makepad.octosense.bridge", "version_code": 2026100908,
-                                  "version_name": "0.1.0-beta.2"})
+                                  "version_name": "0.1.0-beta.2", "min_sdk_version": 33, "target_sdk_version": 35})
         command.assert_called_once_with(["/sdk/aapt2", "dump", "badging", "/out/bridge.pending.apk"],
                                         env={"LANG": "C"}, text=True)
         with mock.patch.object(build.subprocess, "check_output", return_value="sdkVersion:'26'\n"), self.assertRaises(RuntimeError):
@@ -129,9 +129,11 @@ class BuildTests(unittest.TestCase):
                          "--version-name", "0.1.0-beta.2", "--expected-signer", "A" * 64)
         artifacts = {
             "OctoSenseHome.apk": {"package_name": "dev.makepad.octosense", "version_code": 2026100908,
-                                  "version_name": "0.1.0-beta.2", "certificate_sha256": "a" * 64},
+                                  "version_name": "0.1.0-beta.2", "certificate_sha256": "a" * 64,
+                                  "min_sdk_version": 33, "target_sdk_version": 35},
             "OctoSenseBridge.apk": {"package_name": "dev.makepad.octosense.bridge", "version_code": 2026100908,
-                                    "version_name": "0.1.0-beta.2", "certificate_sha256": "a" * 64},
+                                    "version_name": "0.1.0-beta.2", "certificate_sha256": "a" * 64,
+                                    "min_sdk_version": 33, "target_sdk_version": 35},
         }
         build.verify_pair(artifacts, args)
         for field, value in (("version_code", 1), ("version_name", "1.0.0"),
@@ -143,6 +145,50 @@ class BuildTests(unittest.TestCase):
         both_wrong = {name: dict(item, certificate_sha256="b" * 64) for name, item in artifacts.items()}
         with self.assertRaises(RuntimeError):
             build.verify_pair(both_wrong, args)
+
+    def test_apk_metadata_requires_numeric_sdk_levels_and_valid_order(self):
+        package = "package: name='dev.makepad.octosense' versionCode='1' versionName='test'\n"
+        for sdk in ("", "sdkVersion:'33'\n", "targetSdkVersion:'35'\n",
+                    "sdkVersion:'Q'\ntargetSdkVersion:'35'\n",
+                    "sdkVersion:'33'\ntargetSdkVersion:'Preview'\n",
+                    "sdkVersion:'0'\ntargetSdkVersion:'35'\n",
+                    "sdkVersion:'33'\ntargetSdkVersion:'32'\n"):
+            with self.subTest(sdk=sdk), mock.patch.object(build.subprocess, "check_output", return_value=package + sdk):
+                with self.assertRaises(RuntimeError):
+                    build.apk_metadata(Path("/sdk/aapt2"), Path("/out/home.pending.apk"), {})
+
+    def test_pair_refuses_the_old_minimum_even_without_the_default_kernel(self):
+        # A custom/omitted kernel changes the payload, not Home/Bridge's support contract.
+        for kernel in ((), ("--no-octos-kernel",), ("--octos-kernel", "/k/octos")):
+            args = self.args("--variant", "standalone", "--development", "--version-code", "1", *kernel)
+            artifacts = {name: {"package_name": package, "version_code": 1, "version_name": "test",
+                                "certificate_sha256": "a" * 64, "min_sdk_version": 33, "target_sdk_version": 35}
+                         for name, package in (("OctoSenseHome.apk", "dev.makepad.octosense"),
+                                               ("OctoSenseBridge.apk", "dev.makepad.octosense.bridge"))}
+            build.verify_pair(artifacts, args)
+            for name in artifacts:
+                for minimum in (26, 32, 34, None):
+                    altered = {key: dict(value) for key, value in artifacts.items()}
+                    altered[name]["min_sdk_version"] = minimum
+                    with self.subTest(kernel=kernel, apk=name, minimum=minimum), self.assertRaises(RuntimeError):
+                        build.verify_pair(altered, args)
+
+    def test_product_minimum_covers_the_default_kernel_in_both_packagers(self):
+        # Cross-language configuration guard: direct cargo-makepad and Gradle builds
+        # must not silently retain their older SDK26 defaults.
+        manifest = (ROOT.parent / "phone/Cargo.toml").read_text()
+        section = re.search(r"(?ms)^\[package\.metadata\.makepad\.android\]\n(.*?)(?=^\[|\Z)", manifest)
+        self.assertIsNotNone(section, "Home must override cargo-makepad's default minimum")
+        minimum = re.search(r"(?m)^min_sdk_version\s*=\s*([0-9]+)\s*$", section[1])
+        self.assertIsNotNone(minimum)
+        bridge = (ROOT.parent / "phone/android/system-bridge/build.gradle").read_text()
+        bridge_minimum = re.search(r"(?m)^\s*minSdk\s+([0-9]+)\s*$", bridge)
+        self.assertIsNotNone(bridge_minimum)
+        self.assertEqual(int(minimum[1]), build.ANDROID_MIN_SDK)
+        self.assertEqual(int(bridge_minimum[1]), build.ANDROID_MIN_SDK)
+        self.assertGreaterEqual(build.ANDROID_MIN_SDK, int(build.ANDROID_API))
+        template = (ROOT.parent / "phone/resources/android/AndroidManifest.xml.template").read_text()
+        self.assertIn('android:minSdkVersion="{min_sdk_version}"', template)
 
     def test_the_default_phone_build_bundles_the_pinned_octos_kernel(self):
         args = self.args("--variant", "standalone", "--development")
