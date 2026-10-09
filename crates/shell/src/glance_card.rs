@@ -1669,12 +1669,12 @@ mod tests {
             splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap()
         };
         let mut background = GlanceTiles::default();
-        let summary = background.open(&mut cx, "summary", "os.glanceforeground", true, &"View{}".into());
+        let summary = background.open_ready(&mut cx, "summary", "os.glanceforeground", true, &"View{}".into());
         assert!(!ask(&mut cx, &summary).may_prompt);
         let mut workspace = GlanceTiles::scrolling();
         workspace.viewport_layout = true;
         workspace.set_foreground(&mut cx, true);
-        let app = workspace.open(&mut cx, "workspace", "os.glanceforeground", true,
+        let app = workspace.open_ready(&mut cx, "workspace", "os.glanceforeground", true,
             &r#"View{sheet := Label{text: "app-owned name"} probe := GlanceInputProbe{}}"#.into());
         assert!(ask(&mut cx, &app).may_prompt);
         let original_heap = heap_of(&mut cx, &app);

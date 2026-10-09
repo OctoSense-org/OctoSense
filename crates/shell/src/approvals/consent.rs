@@ -343,7 +343,7 @@ mod persistence_tests {
         let (mut store, root) = fixture();
         let writer = ConsentWriter::new(root.join(CONSENT_FILE), TaskPool::closed());
         store.path = None;
-        store.set(&ApprovalGesture::sheet_tap(), "os.mail", true, 1);
+        super::super::tests::allow_consent_for_test(&mut store, "os.mail", 1);
         writer.shared.pending.force_push(ConsentFile { schema: 1, apps: store.decided.clone() });
         store.turn_off("os.mail", 2);
         writer.shared.pending.force_push(ConsentFile { schema: 1, apps: store.decided.clone() });
