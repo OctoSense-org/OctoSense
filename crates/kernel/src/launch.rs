@@ -455,8 +455,10 @@ pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, S
 
 /// Make what a start needs: the core dir, the cwd (a missing cwd fails the
 /// spawn's chdir with ENOENT, permanently, since the kernel would create it),
-/// on Android the kernel config's memory budget (as AppCard did), and the
-/// system agent's tool policy in the profile ([`crate::system_tools`]).
+/// on Android the kernel config's memory budget (as AppCard did), the
+/// system agent's tool policy in the profile ([`crate::system_tools`]) and
+/// its managed skills in the profile's skills dir ([`crate::skills`]).
+/// `Ok` carries the lines to log.
 ///
 /// **Fails closed** (ADR 0004 §12, G13): when the tool policy cannot be
 /// written and read back (a foreign policy in the profile, the person's own
@@ -465,7 +467,7 @@ pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, S
 /// without the policy would give the system agent octos's shell. Likewise
 /// on a desktop when a packaged kernel's bytes are not the ones its receipt
 /// records ([`check_sha256`]).
-pub(crate) fn prepare(launch: &Launch, core_dir: &Path) -> Result<(), String> {
+pub(crate) fn prepare(launch: &Launch, core_dir: &Path) -> Result<Vec<String>, String> {
     // A packaged kernel's bytes, against its receipt (never on the thread
     // that resolved it).
     #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
@@ -499,7 +501,10 @@ pub(crate) fn prepare(launch: &Launch, core_dir: &Path) -> Result<(), String> {
     // ... and the grants it starts with (a Settings change applies from the
     // next start: the shell offers a restart).
     crate::system_tools::take_grants_for_start();
-    Ok(())
+    // The system agent's managed skills (ADR 0013), refreshed before the
+    // kernel reads its skills dir. Guidance, not a boundary: whatever
+    // happens is logged and never stops the start.
+    Ok(crate::skills::before_start(core_dir).into_iter().collect())
 }
 
 /// Floor for `memory.max_inject_tokens` when AppCard's a2app card memory is

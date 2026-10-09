@@ -479,6 +479,15 @@ pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发�
 `<apps root>/.host/<family>`：目前没有工具能把文件复制进来或取出去，所以引擎只处理
 它自己的工具写出的文件（`word.new`、`deck.new` 以及各种转换）。
 
+**引擎技能。** 每个引擎（包括 sheet 和 photo 引擎）还在 `<family>/host-service/skill/` 中为系统 Agent
+附带一个技能：手写的 `SKILL.md`（引擎能做什么、系统 Agent 用哪些工具调用它、文件规则、示例），以及按引擎固定版本
+生成的参考文件：`commands.md`（命令目录，每个 id 一行，并标出每条命令能触及什么）、light 的 `controls.md` 和 sheet 的
+`functions.md`。与它们并列的 `safety.json`（每个命令 id 的类别，供经过审查的命令入口使用）只留在仓库中。内核服务在每次
+启动前把已链接引擎的技能安装到 `_main` profile 的技能目录（[`../crates/kernel/README.zh-CN.md`](../crates/kernel/README.zh-CN.md#系统智能体的技能)）；
+octos 把它们的一行描述列入系统 Agent 的提示词，Agent 需要某个引擎时再读取对应技能。各服务的 `tests/skill.rs` 会在参考文件
+与固定版本的引擎不一致时失败；用 `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
+重新生成。
+
 **邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审阅界面。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
 
 **宿主服务 API 不会自动成为 Agent 工具。** Mail 显式声明了账户绑定的读取/同步、

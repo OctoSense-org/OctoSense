@@ -184,6 +184,19 @@ objects (octos takes no other), and add a new tool to `ENGINE_TOOLS` only
 after reviewing it; the shell's `host_tools` tests run every granted tool
 against its declared result.
 
+Every engine (sheet and photo too) ships the system agent's skill for it in
+`<family>/host-service/skill/`, embedded by `src/skill.rs`. `SKILL.md` is
+written by hand: its `## Tools` must list exactly the engine tools the
+system agent is granted, and its `## Examples` calls must match the tools'
+schemas (the shell's `system_chat` tests check both, so a grant or schema
+change fails until the skill follows). `commands.md` and `safety.json` are
+generated from the pinned engine and `skill/safety-rules.json`, the
+hand-written classification of every engine command (safe, file, code,
+network, device, host), made from reading the command implementations;
+regenerate with `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p
+octosense-<family>-service --test skill` after an engine pin moves, and
+review the classes of new ids before committing.
+
 Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,
 requesting app's grant and App Hub admission offer together. Keep credentials in

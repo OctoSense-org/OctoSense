@@ -143,6 +143,57 @@ them:
   App Hub times the request out after 60 s. Moving engine work to a worker
   with per-method timeouts is follow-up work.
 
+## Engine skills (9 Oct 2026)
+
+The system agent now learns each engine from an octos skill it reads on
+demand. The per-method tools send their full schemas on every turn (about
+29 KB for the 43 engine tools) and still leave most of each engine out of
+reach: photocraft alone has 817 commands.
+
+- **One skill per linked engine.** `apps/<family>/host-service/skill/`
+  holds a hand-written `SKILL.md`: frontmatter `name: <family>-engine` and a
+  one-line `description` under 200 bytes, then what the engine does, the
+  tools the system agent has for it, the file rules and worked examples.
+  Beside it are references generated from the engine at its pin: the
+  command catalog `commands.md`, one line per id, for the ten engines that
+  have a catalog (photo, word, deck, cad, light, design, film, effect,
+  vector, pdf; 4,557 ids in all), light's `controls.md` and sheet's
+  `functions.md`. Each service embeds its skill (`src/skill.rs`), so a build
+  ships the skill that matches its engine. The shell registers the linked
+  engines' skills with the services' own gates
+  (`crates/shell/src/system_chat/skills.rs`): sheet and photo with
+  `app-hub`, the ten with `craft-engines`.
+- **Installed before every kernel start.** The kernel service
+  (`crates/kernel/src/skills.rs`) writes them into the skills dir octos
+  reads for the system agent's profile, `<core dir>/profiles/_main/data/skills`,
+  each marked `.octosense-managed`. It refreshes a changed skill, removes a
+  managed one that is no longer registered, and never touches the person's.
+  When the profile runtime starts, octos lists each skill's name,
+  description and location in the profile's system prompt
+  (`build_skills_summary`). The agent reads a `SKILL.md` with `read_file`,
+  since the dir is a read zone of every session's file tools. The twelve
+  summary entries cost about 4.6 KB a turn.
+- **Every `_main` session sees them.** octos scopes skills to a profile,
+  and app agents' peers run on `_main` too. They hold no engine tool, and
+  each description says to read the skill before using `<family>.*` tools.
+- **Generated and checked.** `crates/skill-gen` makes `commands.md` and
+  `safety.json` from the engine's live catalog and the hand-written
+  `safety-rules.json`. Each service's `tests/skill.rs` fails on an
+  unclassified id, a stale rule or a drifted file;
+  `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
+  regenerates them. The shell's tests check that each skill's `## Tools` is
+  exactly the system agent's grant for its engine and that its examples
+  match the tools' schemas.
+- **Safety classes.** Every catalog id is classed from its implementation
+  as `safe`, `file`, `code` (plug-ins, scripts, commands that run other
+  commands), `network`, `device` or `host` (windows, views, preferences,
+  the clipboard). Each `safety.json` has its engine's counts.
+- **Next (not done).** Once per-caller areas land, `<family>.info` plus
+  one reviewed `<family>.run` door per engine with a catalog replace the 43
+  per-method tools. Each door denies `file` outside the caller's area and
+  every `code`, `network`, `device` and `host` id. An engine that cannot be
+  fenced keeps its curated tools.
+
 ## Open questions
 
 - Where the service crates live (`crates/craft-*` vs per-app

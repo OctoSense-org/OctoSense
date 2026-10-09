@@ -8,6 +8,7 @@
 //! | the session driver: open, hydrate, turns, interrupt, new conversation, reconnect and resume | [`session`] |
 //! | its link: the shell's one kernel through `octosense_ai_host::kernel` | `link` (with a kernel) |
 //! | Setup → Assistant → Command execution: the grant, the person's gesture, restart to apply | [`grants`] |
+//! | its skills: one per linked craft engine, installed into the kernel's skills dir (ADR 0013) | [`skills`] |
 //! | the pane (desktop side panel, phone full screen) | [`view`] |
 //! | its prompt: text input, the input method, the pane's keys | [`composer`] |
 //! | Markdown in the replies, as the pane draws it | [`markdown`] |
@@ -42,6 +43,7 @@ pub mod grants;
 pub mod markdown;
 pub mod model;
 pub mod session;
+pub mod skills;
 pub mod view;
 
 #[cfg(kernel)]
@@ -300,10 +302,11 @@ fn command(cmd: Command) {
 
 // ------------------------------------------------------------ the pane
 
-/// At startup: the command-execution grant of this home, and the app
-/// agents' questions this chat shows.
+/// At startup: the command-execution grant of this home, the system
+/// agent's skills, and the app agents' questions this chat shows.
 pub fn init(home: &std::path::Path) {
     grants::init(home);
+    skills::init();
     subscribe_questions();
 }
 

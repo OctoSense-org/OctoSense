@@ -118,6 +118,46 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   act 调用以结果未知结束），App Hub 在 60 秒后让请求超时。把引擎工作移到
   工作线程并按方法设置超时，是后续工作。
 
+## 引擎技能（2026 年 10 月 9 日）
+
+系统代理现在通过按需读取的 octos 技能来了解每个引擎。按方法划分的工具每个
+回合都要发送完整 schema（43 个引擎工具约 29 KB），却仍让每个引擎的大部分能力
+够不着：仅 photocraft 就有 817 条命令。
+
+- **每个已链接引擎一个技能。** `apps/<family>/host-service/skill/` 中有手写的
+  `SKILL.md`：frontmatter 为 `name: <family>-engine` 和一行不超过 200 字节的
+  `description`，正文写引擎能做什么、系统代理可用的工具、文件规则和示例。旁边是
+  按引擎固定版本生成的参考文件：有命令目录的十个引擎（photo、word、deck、cad、
+  light、design、film、effect、vector、pdf，共 4,557 个 id）各有一份
+  `commands.md`，每个 id 一行；light 有 `controls.md`，sheet 有 `functions.md`。
+  每个服务都嵌入自己的技能（`src/skill.rs`），因此构建发布的技能总与其引擎一致。
+  Shell 用与服务相同的条件注册已链接引擎的技能
+  （`crates/shell/src/system_chat/skills.rs`）：sheet 和 photo 随 `app-hub`，
+  另外十个随 `craft-engines`。
+- **每次内核启动前安装。** 内核服务（`crates/kernel/src/skills.rs`）把它们写入
+  octos 为系统代理的 profile 读取的技能目录 `<core dir>/profiles/_main/data/skills`，
+  每个都带 `.octosense-managed` 标记。它刷新有变化的技能，删除不再注册的受管理
+  技能，从不触碰用户自己的技能。profile 运行时启动时，octos 把每个技能的名称、
+  描述和位置列入该 profile 的系统提示词（`build_skills_summary`）。代理用
+  `read_file` 读取 `SKILL.md`，因为该目录是每个会话文件工具的只读区域。十二条
+  摘要每个回合约占 4.6 KB。
+- **`_main` 的每个会话都能看到。** octos 按 profile 划定技能范围，应用代理的
+  peer 也运行在 `_main` 上。它们没有任何引擎工具，而每条描述都写明在使用
+  `<family>.*` 工具之前先读该技能。
+- **生成并校验。** `crates/skill-gen` 根据引擎的实时目录和手写的
+  `safety-rules.json` 生成 `commands.md` 与 `safety.json`。若有未分类的 id、
+  过时的规则或与引擎不一致的文件，各服务的 `tests/skill.rs` 就会失败；用
+  `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
+  重新生成。Shell 的测试检查每个技能的 `## Tools` 恰好等于系统代理对该引擎的
+  授权，且示例符合工具的 schema。
+- **安全类别。** 每个目录 id 都依据其实现归入 `safe`、`file`、`code`（插件、
+  脚本、会运行其他命令的命令）、`network`、`device` 或 `host`（窗口、视图、
+  偏好设置、剪贴板）。每份 `safety.json` 都有该引擎的统计。
+- **下一步（尚未完成）。** 按调用方划分的区域落地后，`<family>.info` 加上每个
+  有目录的引擎一个经过审查的 `<family>.run` 入口，将取代这 43 个按方法划分的
+  工具。每个入口拒绝调用方区域之外的 `file`，以及所有 `code`、`network`、
+  `device` 和 `host` id。无法加以围栏的引擎保留其精选工具。
+
 ## 待决问题
 
 - 第一个服务写出后，服务 crate 的归属（`crates/craft-*` 还是各应用的
