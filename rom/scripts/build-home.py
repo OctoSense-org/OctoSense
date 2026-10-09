@@ -141,6 +141,22 @@ def rustflags(env):
     return " ".join([env.get("RUSTFLAGS", "").strip(), *remaps]).strip()
 
 
+def updater_identity(args):
+    """Only the explicit standalone release version is a public updater
+    identity. ROM and development builds cannot inherit a stale release tag
+    from the shell and then request an incompatible standalone package."""
+    version = args.version_name
+    number = r"(?:0|[1-9][0-9]*)"
+    if (args.variant == "standalone" and not args.development and version
+            and re.fullmatch(rf"{number}\.{number}\.{number}(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", version)):
+        if "-" in version:
+            prerelease = version.split("-", 1)[1]
+            if any(part.isdigit() and len(part) > 1 and part.startswith("0") for part in prerelease.split(".")):
+                return ""
+        return f"home-v{version}"
+    return ""
+
+
 # What a published (ROM) Home must not carry in its native libraries.
 # `--remap-path-prefix` cannot reach env!("CARGO_MANIFEST_DIR"), which every
 # `script_mod!` compiles in, so a ROM build must run from a checkout (and
@@ -199,7 +215,8 @@ def main(argv=None):
                           "output": str(args.output), "version_code": int(args.version_code),
                           "version_name": args.version_name, "expected_signer": args.expected_signer,
                           "octos_kernel": str(kernel) if kernel else None,
-                          "android_env": {"MAKEPAD_ANDROID_EXTRA_LIBS": extra_libs(kernel)},
+                          "android_env": {"MAKEPAD_ANDROID_EXTRA_LIBS": extra_libs(kernel),
+                                          "OCTOSENSE_RELEASE_TAG": updater_identity(args)},
                           "steps": [
                               {"cwd": str(cwd), "argv": command} for cwd, command in plan],
                           "artifacts": ["OctoSenseHome.apk", "OctoSenseBridge.apk", "build.json"],
@@ -222,7 +239,8 @@ def main(argv=None):
                 raise RuntimeError("Keep signing keys and certificates outside the product checkout")
     env = dict(os.environ)
     env.update(JAVA_HOME=str(args.java_home), ANDROID_HOME=str(args.android_sdk),
-               ANDROID_SDK_ROOT=str(args.android_sdk), OCTOSENSE_WORKSPACE=str(sources))
+               ANDROID_SDK_ROOT=str(args.android_sdk), OCTOSENSE_WORKSPACE=str(sources),
+               OCTOSENSE_RELEASE_TAG=updater_identity(args))
     env["PATH"] = str(args.java_home / "bin") + os.pathsep + env.get("PATH", "")
     # Always build the unsigned Bridge release and sign the pair together below.
     env.pop("OCTOSENSE_KEYSTORE", None)
@@ -275,6 +293,7 @@ def main(argv=None):
     bridge_version = artifacts["OctoSenseBridge.apk"]
     packager = args.packager or sources / "makepad/target/release/cargo-makepad"
     receipt = {"schema_version": 1, "variant": args.variant, "development": args.development,
+               "release_tag": updater_identity(args) or None,
                "home_version_code": home_version["version_code"], "home_version_name": home_version["version_name"],
                "bridge_version_code": bridge_version["version_code"], "bridge_version_name": bridge_version["version_name"],
                "source_revision": subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip(),

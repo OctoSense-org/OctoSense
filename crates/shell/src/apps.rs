@@ -799,7 +799,7 @@ impl AppRegistry {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
         // Neither the store nor Settings has a process form.
-        if matches!(id, "apphub" | "settings") && self.module(id).is_some() {
+        if matches!(id, "apphub" | "settings" | "updater") && self.module(id).is_some() {
             return Hosting::Module;
         }
         if self.modules.iter().any(|m| m.id() == id) && !self.overrides.contains_key(id) {

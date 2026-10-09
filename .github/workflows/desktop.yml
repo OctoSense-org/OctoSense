@@ -86,6 +86,10 @@ jobs:
           python3 desktop/packaging/make_icons.py --check
           # The release packaging script (no build; release-desktop.yml builds).
           python3 -m unittest discover -s desktop/scripts -p 'test_package.py'
+      - name: In-app updater and installer handoff
+        run: |
+          cargo test --locked -p octosense-updater-ui --lib
+          cargo check --locked -p octosense-updater-ui --example updates
       - name: One Makepad, App Hub, octos and Rinx in the locked graph
         run: python3 tools/setup.py --check --cargo
       - name: The native apps' generated places match native-apps.json

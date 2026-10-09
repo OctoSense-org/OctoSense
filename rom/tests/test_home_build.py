@@ -96,6 +96,26 @@ class BuildTests(unittest.TestCase):
         self.assertIn("--version-code=2026100908", plan[-1][1])
         self.assertIn("--version-name=0.1.0-beta.2", plan[-1][1])
 
+    def test_only_versioned_standalone_release_gets_public_updater_identity(self):
+        release = self.args("--variant", "standalone", "--sign-key", "/keys/release.pk8",
+                            "--sign-cert", "/keys/release.x509.pem", "--version-name", "0.1.0-beta.3")
+        self.assertEqual(build.updater_identity(release), "home-v0.1.0-beta.3")
+        for changes in ({"development": True}, {"variant": "rom"}, {"version_name": None},
+                        {"version_name": "local-build"}, {"version_name": "01.2.3"},
+                        {"version_name": "1.2.3-rc..1"}, {"version_name": "1.2.3-rc.01"}):
+            altered = type(release)(**{**vars(release), **changes})
+            self.assertEqual(build.updater_identity(altered), "")
+
+    def test_dry_run_exposes_release_tag_without_deploying(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            build.main(["--variant", "standalone", "--sdk", "/sdk", "--android-sdk", "/android",
+                        "--sign-key", "/keys/release.pk8", "--sign-cert", "/keys/release.x509.pem",
+                        "--no-octos-kernel", "--version-name", "0.1.0-beta.3", "--dry-run"])
+        plan = json.loads(output.getvalue())
+        self.assertEqual(plan["android_env"]["OCTOSENSE_RELEASE_TAG"], "home-v0.1.0-beta.3")
+        self.assertFalse(plan["installs_or_flashes"])
+
     def test_auto_version_is_resolved_once_before_either_build(self):
         with mock.patch.object(build, "datetime") as clock:
             clock.now.return_value = datetime(2026, 10, 9, 8, 59, 59, tzinfo=timezone.utc)

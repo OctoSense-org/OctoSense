@@ -11894,6 +11894,7 @@ dependencies = [
  "octosense-reference",
  "octosense-sheets-service",
  "octosense-sound-service",
+ "octosense-updater-ui",
  "octosense-vector-service",
  "octosense-wasm-host",
  "octosense-word-service",
@@ -11947,6 +11948,30 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.24.0",
  "url",
+]
+
+[[package]]
+name = "octosense-updater"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "octosense-updater-ui"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "octosense-updater",
+ "serde_json",
 ]
 
 [[package]]

@@ -58,6 +58,7 @@ import org.json.JSONObject;
 public final class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
     private final MakepadActivity activity;
     private final DeviceCalendarClient deviceCalendar;
+    private final HomeUpdaterClient homeUpdater;
     private Runnable unregisterSystemBack;
     private final ObscuredTouchGuard touchGuard=new ObscuredTouchGuard();
     @Override public boolean filterTouchEvent(android.view.MotionEvent event) {return touchGuard.accept(event);}
@@ -145,6 +146,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     public MakepadAppExtension(MakepadActivity activity) {
         this.activity=activity;
         deviceCalendar=new DeviceCalendarClient(activity,(channel,value) -> {offer(() -> emit(channel,value));},() -> resumed&&windowFocused&&!destroyed);
+        homeUpdater=new HomeUpdaterClient(activity,(channel,value) -> {offer(() -> emit(channel,value));},() -> resumed&&windowFocused&&!destroyed);
         // Home also hosts trusted Settings, theme controls and native overlays.
         // Protect its window before an external Settings intent can be handled.
         if(android.os.Build.VERSION.SDK_INT>=31) activity.getWindow().setHideOverlayWindows(true);
@@ -491,6 +493,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         main.post(() -> replyComposer.updateTargets(current));
     }
     @Override public void command(String channel,String payload) {
+        if("home_updater.command".equals(channel)){homeUpdater.command(payload);return;}
         if("device_calendar.probe".equals(channel)){offer(() -> emit("device_calendar.ready",new JSONObject()));return;}
         if("device_calendar.command".equals(channel)){deviceCalendar.command(payload);return;}
         if(validationBuild&&"validation.ui".equals(channel)) {
@@ -1634,6 +1637,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     }
     @Override public void onDestroy() {
         deviceCalendar.close();
+        homeUpdater.close();
         homeGestureEdges.close();
         if(unregisterSystemBack!=null) {unregisterSystemBack.run();unregisterSystemBack=null;}
         QrImagePickActivity.setListener(null);

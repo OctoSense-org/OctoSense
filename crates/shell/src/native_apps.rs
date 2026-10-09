@@ -115,6 +115,33 @@ pub struct NativeApp {
 
 pub const APPS: &[NativeApp] = &[
     NativeApp {
+        id: "updater",
+        feature: "app-updater",
+        bin: None,
+        macos: Hosting::Module,
+        windows: Hosting::Module,
+        linux: Hosting::Module,
+        android: Hosting::Module,
+        ios: Hosting::Module,
+        ohos: Hosting::Module,
+        wasm: Hosting::Module,
+        octos: &[],
+        tools: &[],
+        network: Network::Any,
+        processes: false,
+        accounts: false,
+        external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        system_tools: &[],
+        own_tools: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
+        kernel: KernelPort::None,
+    },
+    NativeApp {
         id: "rinx",
         feature: "app-rinx",
         bin: None,
@@ -523,6 +550,8 @@ pub fn package_of(id: &str) -> Option<&'static str> {
 /// Push the native modules this build links, in manifest order.
 #[allow(unused_variables)]
 pub fn link(out: &mut Vec<&'static dyn AppModule>) {
+    #[cfg(any(feature = "app-updater", native_mobile))]
+    out.push(&octosense_updater_ui::UPDATER_MODULE);
     #[cfg(feature = "app-rinx")]
     out.push(&rinx::module::RINX_MODULE);
     #[cfg(any(feature = "app-reference", native_mobile))]

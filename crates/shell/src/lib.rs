@@ -6009,6 +6009,8 @@ impl MatchEvent for App {
         // the one path a style switch uses.
         self.apply_material_to_chrome(cx, material, None);
         self.next_id = 1;
+        #[cfg(any(feature = "app-updater", native_mobile))]
+        octosense_updater_ui::configure(crate::octosense::paths::home().join("updates"));
         // The hosting registry: the linked modules, the person's overrides
         // in ~/.makepad/wm/apps.splash, a dev run's `--module <id>` flags.
         let args: Vec<String> = std::env::args().collect();
@@ -6423,6 +6425,10 @@ impl App {
     }
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        #[cfg(any(feature = "app-updater", native_mobile))]
+        if let Event::AndroidIntegration { channel, payload } = event {
+            if channel == "home_updater.result" { octosense_updater_ui::android_result(payload); }
+        }
         #[cfg(any(feature = "app-hub", native_mobile))]
         self.audio_session_event(cx, event);
         #[cfg(any(feature = "app-hub", native_mobile))]

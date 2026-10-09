@@ -1323,6 +1323,7 @@
     ]}
 ,
     {t: "scroll", id: "updates_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "button", id: "updates_app", text: "Open OctoSense app updater", fillw: 1},
         {t: "text", id: "updates_availability", fillw: 1},
         {t: "text", id: "updates_current", fillw: 1},
         {t: "button", id: "updates_refresh", text: "Refresh status", fillw: 1},
