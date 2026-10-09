@@ -1718,4 +1718,77 @@ mod tests {
         assert_eq!(plain.describe()["modules"][0]["storage"], "none");
         let _ = std::fs::remove_dir_all(root);
     }
+
+    /// A component through the whole path, in a process of its own: shipped
+    /// as a system app that requires `wasm-components-v1` (App Hub's
+    /// admission reads the component's imports), its functions answer the
+    /// app's script with typed JSON, its instance keeps its state from one
+    /// request to the next, and without `storage` it has no folder.
+    #[test]
+    fn a_shipped_component_answers_its_apps_script() {
+        const CHILD: &str = "OCTOSENSE_TEST_WASM_SHIPPED_COMPONENT";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wasm_service::tests::a_shipped_component_answers_its_apps_script",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        let root = std::env::temp_dir().join(format!(
+            "octosense-wasm-shipped-component-{}",
+            std::process::id()
+        ));
+        let host_dir = root.join(".host");
+        // This exact test runs alone in its child process. Keep the env
+        // override and registered root identical even under an isolated suite.
+        std::env::set_var("OCTOSENSE_APP_DATA", &root);
+        octosense_appstore::set_data_root(root.clone());
+        ship("os.wasmnotes", "component", |dir, manifest| {
+            manifest["capabilities"] = json!(["wasm"]);
+            manifest["requires"] = json!(["wasm-components-v1"]);
+            manifest.as_object_mut().unwrap().remove("agent");
+            std::fs::remove_file(dir.join("tools.json")).unwrap();
+            std::fs::remove_file(dir.join("AGENT.md")).unwrap();
+            std::fs::remove_file(dir.join("fns/wasmlab.wasm")).unwrap();
+            std::fs::copy(NOTES_COMPONENT, dir.join("fns/notes.wasm")).unwrap();
+        });
+        register();
+        let call = |method: &str, args: Value| request("os.wasmnotes", method, args, &host_dir);
+
+        assert_eq!(
+            call("wasm.to_html", json!("# Hi")).unwrap(),
+            "<h1>Hi</h1>\n"
+        );
+        assert_eq!(
+            call("wasm.analyze", json!({"markdown": "# One\n\ntwo words"})).unwrap(),
+            json!({"words": 4, "lines": 3, "headings": ["One"]})
+        );
+        assert_eq!(call("wasm.count", json!({})).unwrap(), 1);
+        assert_eq!(call("wasm.count", json!({})).unwrap(), 2);
+        let error = call(
+            "wasm.save_html",
+            json!({"markdown": "# Hi", "path": "a.html"}),
+        )
+        .unwrap_err();
+        assert!(!error.is_empty());
+        let described = call("wasm.functions", json!({})).unwrap();
+        let notes = &described["modules"][0];
+        assert_eq!(notes["file"], "notes.wasm", "{described}");
+        assert_eq!(notes["kind"], "component");
+        assert_eq!(notes["instances"], 1);
+        assert_eq!(notes["storage"], "none");
+        assert_eq!(described["stats"]["count"]["calls"], 2);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
