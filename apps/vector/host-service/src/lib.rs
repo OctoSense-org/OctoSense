@@ -212,7 +212,16 @@ fn convert(args: &Json, host_dir: &Path) -> Result<Json, String> {
 /// export, place), the `app.*` host group and the swatch libraries — are
 /// refused, except the read-only document queries. As a second fence,
 /// parameters carrying path-like keys are refused wholesale.
+///
+/// Every `plugin.*` id is refused too, as `photo.run` refuses photocraft's:
+/// vectorcraft's plug-in registry is process-wide and installs WebAssembly
+/// from in-band `dataBase64`, so an installed plug-in would outlive the
+/// call and serve every later caller of any app, outside the shell's `wasm`
+/// service (ADR 0011).
 fn callable(id: &str, params: &Json) -> Result<(), String> {
+    if id == "plugin" || id.starts_with("plugin.") {
+        return Err(format!("vector.run: `{id}` is not available through the vector service"));
+    }
     const READ_ONLY: &[&str] = &["document.inspect", "document.node", "document.json", "document.find"];
     if !READ_ONLY.contains(&id) && ["file.", "document.", "app.", "swatch.library."].iter().any(|p| id.starts_with(p)) {
         return Err(format!("vector.run: `{id}` is the host's; file access goes through the service's `path` and `out`"));
@@ -380,6 +389,30 @@ mod tests {
             let r = dispatch("run", &json!({"path": input, "cmds": [refused]}), host);
             assert!(r.is_err(), "{refused}");
         }
+    }
+
+    /// The plug-in registry is process-wide and installs WebAssembly from
+    /// in-band data: `run` refuses every `plugin.*` id before the engine
+    /// sees it, and the catalog offer matches.
+    #[test]
+    fn run_refuses_plugin_commands_and_the_catalog_omits_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path();
+        for cmd in [
+            // A core module's header: refused before anything parses it.
+            json!({"id": "plugin.install", "params": {"dataBase64": "AGFzbQEAAAA="}}),
+            json!({"id": "plugin.list"}),
+            json!({"id": "plugin.remove", "params": {"id": "org.vectorcraft.example.desaturate"}}),
+            json!({"id": "plugin.reload"}),
+            json!({"id": "plugin"}),
+        ] {
+            let r = dispatch("run", &json!({"cmds": [cmd.clone()]}), host);
+            let e = r.expect_err(&cmd.to_string());
+            assert!(e.contains("is not available through the vector service"), "{cmd}: {e}");
+        }
+        let cat = commands().unwrap();
+        let ids: Vec<&str> = cat.as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+        assert!(ids.iter().all(|id| *id != "plugin" && !id.starts_with("plugin.")), "no plug-in commands offered");
     }
 
     #[test]
