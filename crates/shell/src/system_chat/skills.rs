@@ -13,10 +13,10 @@
 //! Each engine service embeds its own skill (`apps/<family>/host-service/
 //! skill/`, its `skill` module), so the set follows the build's features,
 //! with the same gates that link the services (`apps::register_host_services`):
-//! the sheet and photo engines come with `app-hub`, the ten engines behind
-//! the system agent's engine tools with the desktop-only `craft-engines`
-//! ([`engine_skills`]). An engine that is not linked has no skill, and the
-//! kernel removes one an earlier build installed.
+//! the sheet engine comes with `app-hub`, the photo engine and the ten
+//! engines behind the system agent's engine tools with the desktop-only
+//! `craft-engines` ([`engine_skills`]). An engine that is not linked has no
+//! skill, and the kernel removes one an earlier build installed.
 
 /// One linked engine's skill: its name and files.
 pub type Skill = (&'static str, &'static [(&'static str, &'static str)]);
@@ -25,17 +25,16 @@ pub type Skill = (&'static str, &'static [(&'static str, &'static str)]);
 pub fn engine_skills() -> Vec<Skill> {
     #[allow(unused_mut)]
     let mut skills: Vec<Skill> = Vec::new();
-    // The sheet and photo engines: the native Sheets app's and Photos'
-    // agent tools run on them wherever App Hub is linked.
+    // The sheet engine: the native Sheets app's agent tools run on it
+    // wherever App Hub is linked, Home included.
     #[cfg(feature = "app-hub")]
-    skills.extend([
-        (octosense_sheets_service::skill::NAME, octosense_sheets_service::skill::FILES),
-        (octosense_photo_service::skill::NAME, octosense_photo_service::skill::FILES),
-    ]);
-    // The ten engines behind the system agent's engine tools
-    // (`host_tools::engines::ENGINES`): desktop only.
+    skills.push((octosense_sheets_service::skill::NAME, octosense_sheets_service::skill::FILES));
+    // The photo engine (Photos' `photos.info`) and the ten engines behind
+    // the system agent's engine tools (`host_tools::engines::ENGINES`):
+    // desktop only.
     #[cfg(feature = "craft-engines")]
     skills.extend([
+        (octosense_photo_service::skill::NAME, octosense_photo_service::skill::FILES),
         (octosense_word_service::skill::NAME, octosense_word_service::skill::FILES),
         (octosense_deck_service::skill::NAME, octosense_deck_service::skill::FILES),
         (octosense_cad_service::skill::NAME, octosense_cad_service::skill::FILES),
@@ -131,15 +130,17 @@ mod tests {
         }
     }
 
-    /// Exactly the linked engines have a skill: the sheet and photo engines
-    /// with App Hub, the ten engines with `craft-engines` (the desktop's
-    /// default), none without either.
+    /// Exactly the linked engines have a skill: the sheet engine with App
+    /// Hub, the photo engine and the ten with `craft-engines` (the
+    /// desktop's default), none without either.
     #[test]
     fn only_linked_engines_have_skills() {
         let names: BTreeSet<&str> = engine_skills().iter().map(|(name, _)| *name).collect();
         let mut expected: BTreeSet<String> = BTreeSet::new();
         #[cfg(feature = "app-hub")]
-        expected.extend(["sheet-engine".to_owned(), "photo-engine".to_owned()]);
+        expected.insert("sheet-engine".to_owned());
+        #[cfg(feature = "craft-engines")]
+        expected.insert("photo-engine".to_owned());
         #[cfg(feature = "craft-engines")]
         expected.extend(crate::host_tools::engines::ENGINES.iter().map(|engine| format!("{}-engine", engine.family)));
         assert_eq!(names, expected.iter().map(String::as_str).collect::<BTreeSet<_>>());

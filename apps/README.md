@@ -124,7 +124,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine (full-size photos use the asset mount) |
+| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service on the desktop: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine; on the phone, which leaves that engine out, the shell notice service answers `photos.notify` and `photos.info` is unavailable (full-size photos use the asset mount) |
 | [Maps](maps/bundle) | `os.maps` | `MapView` map of places that can always be dragged and zoomed: search near the visible area, place cards with OpenStreetMap details (hours, phone, website, cuisine), saved places as pins, a long press for "What's here", directions with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the browse map draws makepad's pre-baked world map (`makepad.nl`), the drive maps and the place details read OpenStreetMap through Overpass | `storage`, `net`, `location`, `web`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
@@ -280,11 +280,13 @@ standalone launcher and ROM image). Each packaging:
 
 2. Links the host services `octosense-mail-service`,
    `octosense-calendar-service`, `octosense-news-service`,
-   `octosense-llm-service` and the engine services `octosense-sheets-service`
-   and `octosense-photo-service` (workspace path dependencies) through the shell,
-   [`crates/shell`](../crates/shell) (its `app-hub` feature), and registers them at startup (`crates/shell/src/apps.rs`, `register_host_services`): Mail with `register()` for real accounts, or `register_demo()`
-   when the shell's app config has `mail_demo: true`. Mail, News and Photos install
-   `on_notify` callbacks to the shell's common notice renderer; Calendar
+   `octosense-llm-service` and the sheet engine's `octosense-sheets-service`
+   (workspace path dependencies) through the shell,
+   [`crates/shell`](../crates/shell) (its `app-hub` feature; the photo engine's
+   `octosense-photo-service` comes with the desktop-only `craft-engines`, weighed
+   per engine in [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)), and registers them at startup (`crates/shell/src/apps.rs`, `register_host_services`): Mail with `register()` for real accounts, or `register_demo()`
+   when the shell's app config has `mail_demo: true`. Mail, News and, with the photo
+   engine, Photos install `on_notify` callbacks to the shell's common notice renderer; Calendar
    installs its card publisher. The shell registers `NoticeService` for
    remaining system-app namespaces; `llm` with the octos
    kernel's core dir and the shell's QR scanner and image picker (see
@@ -631,7 +633,7 @@ model lane and tools. Which system apps have one, and how
 | News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
 | Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.draft` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event`, `mail.propose_reply`, `mail.suggest_reply`, `mail.propose_send` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
-| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in the Photos agent's own folder, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)) | the shell's notice card |
+| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in the Photos agent's own folder, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md); desktop only, on the phone it answers `unavailable`) | the shell's notice card |
 | Maps, YouTube, Camera | `agent` block, `glance` | `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
@@ -743,10 +745,12 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   filled by [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs)),
   with the app's icon and name, the time, and the agent's title (at most 80
   characters) and text (at most 600); the same `card_id` replaces the app's
-  earlier notice. Mail's, News's and Photos' services hand `notify` to the
-  shell (Photos' `photos` service also answers `photos.info` on the photo
-  engine); Maps, YouTube and Camera have no service of their own, so the
-  shell's notice service answers it. `calendar.notify` and
+  earlier notice. Mail's, News's and, where the photo engine is linked (the
+  desktop), Photos' services hand `notify` to the shell (Photos' `photos`
+  service also answers `photos.info` on the photo engine); Maps, YouTube and
+  Camera have no service of their own, nor does Photos on the phone, so the
+  shell's notice service answers it (and there `photos.info` answers that it
+  isn't available on this device). `calendar.notify` and
   `calendar.agenda` fill Calendar's own event and agenda cards. Every card
   is published with `notify` through the shell's `glance` service as the
   app (the app needs the `glance` capability). These fixed-template tools take

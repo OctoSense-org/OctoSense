@@ -45,9 +45,11 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `cargo test --locked -p octosense-mail-service`. Calendar's and News's:
   `apps/calendar/host-service`, `apps/news/host-service`, and
   `cargo test --locked -p octosense-calendar-service -p octosense-news-service`.
-  The sheet engine's (gridcraft behind `sheet.*`, ADR 0013, no bundle yet):
-  `apps/sheets/host-service` and `cargo test --locked -p octosense-sheets-service`.
-  The photo engine's (photocraft behind `photo.*`, same ADR, no bundle yet):
+  The sheet engine's (gridcraft behind `sheet.*`, ADR 0013, no bundle yet; in
+  Home too): `apps/sheets/host-service` and
+  `cargo test --locked -p octosense-sheets-service`.
+  The photo engine's (photocraft behind `photo.*`, same ADR, no bundle yet;
+  desktop only, `craft-engines`, weighed per engine):
   `apps/photo/host-service` and `cargo test --locked -p octosense-photo-service`.
   The word engine's (wordcraft behind `word.*`, same ADR; its app is Writer,
   `apps/writer/bundle`, desktop only, whose own `word.*` calls work in its
@@ -170,7 +172,9 @@ caller identity, approval behavior and results at that boundary. Keep UI API
 methods separate from the tools actually declared for the agent: Mail exposes
 account-scoped accounts/folders/sync/list/peek and notify/publish_card; its
 credentials, send and mark-read APIs remain host/UI-only. News exposes list/read/notify; Photos notify and
-info (its `photos` service: `photos.info` on the photo engine, ADR 0013); Maps, YouTube
+info (its `photos` service: `photos.info` on the photo engine, ADR 0013; on
+Home, which leaves that engine out, the shell's notice service answers
+`photos.notify` and `photos.info` is refused as `unavailable`); Maps, YouTube
 and Camera expose notify only. AI providers declares no app agent. The native
 Sheets app declares `sheets.*`, which the shell's engine executor
 (`../crates/shell/src/host_tools/engines.rs`) runs on the sheet engine.
