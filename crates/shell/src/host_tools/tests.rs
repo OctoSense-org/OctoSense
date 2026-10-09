@@ -1450,21 +1450,31 @@ fn ask(relay: &mut Relay, world: &mut World, id: &str, tool: &str, args: Value) 
     answer(relay, world, call)
 }
 
+/// Word's commands that write a two-paragraph document, for `word.run`.
+#[cfg(feature = "craft-engines")]
+fn two_paragraphs(first: &str, second: &str) -> Value {
+    json!([
+        {"id": "text.insert", "params": {"text": first}},
+        {"id": "text.newParagraph"},
+        {"id": "text.insert", "params": {"text": second}}
+    ])
+}
+
 /// The system agent reaches the engines by its reviewed grant: a granted
-/// act tool writes into its own workspace and a granted read tool reads it
-/// back, with no approval asked (a local write, as Calendar's
+/// command door writes into its own workspace and a granted read tool
+/// reads it back, with no approval asked (a local write, as Calendar's
 /// `calendar.add_event`); a missing file is the engine's own error, proof
-/// the call routed, naming the file relative to the workspace. The command
-/// doors are declared but never granted, and no app's agent may call an
-/// engine tool (none is shareable).
+/// the call routed, naming the file relative to the workspace. No app's
+/// agent may call an engine tool (none is shareable).
 #[cfg(feature = "craft-engines")]
 #[test]
-fn the_system_agent_reaches_the_engines_by_its_grant_and_never_their_doors() {
+fn the_system_agent_reaches_the_engines_by_its_grant() {
     let host = std::env::temp_dir().join(format!("engine-grant-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&host).unwrap();
     let (mut relay, mut world) = engine_world(&host);
-    let made = ask(&mut relay, &mut world, "g-new", "word.new", json!({"out": "notes/hello.docx", "text": "Hello engines\nA second line", "title": "Hello"}));
+    let made = ask(&mut relay, &mut world, "g-new", "word.run", json!({"cmds": two_paragraphs("Hello engines", "A second line"), "out": "notes/hello.docx"}));
     assert_eq!(made["ok"], true, "{made}");
+    assert_eq!(made["data"]["out"], "notes/hello.docx", "{made}");
     assert!(host.join("notes/hello.docx").is_file(), "written into the system agent's workspace");
     assert!(!host.join("word").exists(), "no private folder");
     let info = ask(&mut relay, &mut world, "g-info", "word.info", json!({"path": "notes/hello.docx"}));
@@ -1474,12 +1484,6 @@ fn the_system_agent_reaches_the_engines_by_its_grant_and_never_their_doors() {
     assert_eq!(missing["error"]["kind"], "app_error", "{missing}");
     assert!(missing["error"]["message"].as_str().unwrap().starts_with("word.info: "), "the engine's own answer: {missing}");
     assert!(world.asked.is_empty(), "no engine tool asks for approval");
-    for (id, door, args) in [("g-vector", "vector.run", json!({"cmds": [{"id": "shape.rectangle", "params": {"x": 0, "y": 0, "width": 4, "height": 4}}], "out": "drawn.svg"})), ("g-effect", "effect.run", json!({"cmds": [{"id": "comp.new"}], "out": "x.ecproj"}))] {
-        assert!(relay.catalog.entry(&relay.catalog.owner_of(door).unwrap(), door).is_some(), "{door} is declared");
-        let refused = ask(&mut relay, &mut world, id, door, args);
-        assert_eq!(refused["error"]["kind"], "not_granted", "{door}: {refused}");
-    }
-    assert!(!host.join("drawn.svg").exists() && !host.join("x.ecproj").exists(), "a refused door touched nothing");
     // effectcraft names the absolute path it was handed; the answer names
     // the file relative to the workspace, never the host's layout.
     let effect = ask(&mut relay, &mut world, "g-effect-missing", "effect.info", json!({"path": "none.ecproj"}));
@@ -1496,6 +1500,80 @@ fn the_system_agent_reaches_the_engines_by_its_grant_and_never_their_doors() {
     app.args = json!({"path": "notes/hello.docx"});
     let refused = answer(&mut relay, &mut world, app);
     assert_eq!(refused["error"]["kind"], "not_granted", "{refused}");
+    let _ = std::fs::remove_dir_all(host);
+}
+
+/// Every command door the system agent holds refuses what its review does
+/// not admit, through the relay, before any command runs: an id classed
+/// code, network, device or host, a file command it did not review, an
+/// unknown id, an app-wide setter, and #418's routes past a deny-list (a
+/// batch wrapping a plug-in install, a plug-ins-folder preference, a
+/// plug-in effect named to a built-in effect command). A refused id
+/// anywhere in a call refuses all of it, so nothing is written.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn every_command_door_refuses_what_its_review_does_not_admit() {
+    let host = std::env::temp_dir().join(format!("engine-doors-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&host).unwrap();
+    let (mut relay, mut world) = engine_world(&host);
+    let png: Vec<u8> = {
+        const HEX: &str = "89504e470d0a1a0a0000000d494844520000000c000000080802000000428689a60000001d49444154789c6378616383866c725ea021063a2bb279d14310d15911005b9497817c6155610000000049454e44ae426082";
+        (0..HEX.len()).step_by(2).map(|i| u8::from_str_radix(&HEX[i..i + 2], 16).unwrap()).collect()
+    };
+    std::fs::write(host.join("photo.png"), &png).unwrap();
+    let seeded: BTreeSet<String> = ["photo.png".to_string()].into();
+    let ok_first = |cmd: Value| json!([{"id": "text.insert", "params": {"text": "first"}}, cmd]);
+    let cases: Vec<(&str, Value, &str)> = vec![
+        // word
+        ("word.run", json!({"cmds": ok_first(json!({"id": "tools.macros", "params": {"run": "m"}})), "out": "w.docx"}), "`tools.macros` is classed code"),
+        ("word.run", json!({"cmds": [{"id": "review.readAloud"}], "out": "w.docx"}), "`review.readAloud` is classed device"),
+        ("word.run", json!({"cmds": [{"id": "references.researcher", "params": {"query": "x"}}]}), "`references.researcher` is classed network"),
+        ("word.run", json!({"cmds": [{"id": "file.print"}]}), "`file.print` is classed host"),
+        ("word.run", json!({"cmds": [{"id": "file.saveAs", "params": {"path": "w.docx"}}]}), "`file.saveAs` reads or writes files"),
+        ("word.run", json!({"cmds": [{"id": "word.secret"}], "out": "w.docx"}), "`word.secret` is not a reviewed word command"),
+        // deck
+        ("deck.run", json!({"cmds": [{"id": "media.play"}], "out": "d.pptx"}), "`media.play` is classed device"),
+        ("deck.run", json!({"cmds": [{"id": "file.save"}], "out": "d.pptx"}), "`file.save` is classed host"),
+        ("deck.run", json!({"cmds": [{"id": "file.close"}], "out": "d.pptx"}), "`file.close` reads or writes files"),
+        ("deck.run", json!({"cmds": [{"id": "shape.fill", "params": {"picture": null, "path": "../outside.png"}}], "out": "d.pptx"}), "`shape.fill` reads or writes files"),
+        // cad
+        ("cad.run", json!({"cmds": [{"id": "open", "params": {"path": "../outside.dxf"}}], "out": "c.dxf"}), "`open` reads or writes files"),
+        ("cad.run", json!({"cmds": [{"id": "qsave"}], "out": "c.dxf"}), "`qsave` reads or writes files"),
+        ("cad.run", json!({"cmds": [{"id": "setvar", "params": {"name": "FILEDIA", "value": 0}}], "out": "c.dxf"}), "`setvar` sets app-wide variables"),
+        // light
+        ("light.run", json!({"path": "photo.png", "cmds": [{"id": "segment.model.download"}], "out": "l.jpg"}), "`segment.model.download` is classed network"),
+        ("light.run", json!({"path": "photo.png", "cmds": [{"id": "library.devices"}], "out": "l.jpg"}), "`library.devices` is classed device"),
+        ("light.run", json!({"path": "photo.png", "cmds": [{"id": "app.gpu"}], "out": "l.jpg"}), "`app.gpu` is classed host"),
+        ("light.run", json!({"path": "photo.png", "cmds": [{"id": "folder.move"}], "out": "l.jpg"}), "`folder.move` reads or writes files"),
+        // film
+        ("film.run", json!({"path": "photo.png", "cmds": [{"id": "prefs.set", "params": {"key": "scratchDisk", "value": "/tmp"}}], "out": "f.png"}), "`prefs.set` is classed host"),
+        ("film.run", json!({"path": "photo.png", "cmds": [{"id": "audio.voiceover.start"}], "out": "f.png"}), "`audio.voiceover.start` is classed device"),
+        ("film.run", json!({"path": "photo.png", "cmds": [{"id": "transcript.downloadModel"}], "out": "f.png"}), "`transcript.downloadModel` is classed network"),
+        ("film.run", json!({"path": "photo.png", "cmds": [{"id": "lut.import", "params": {"path": "look.cube"}}], "out": "f.png"}), "`lut.import` reads or writes files"),
+        ("film.run", json!({"path": "photo.png", "cmds": [{"id": "captions.import", "params": {"path": "../subs.srt"}}], "out": "f.png"}), "`captions.import`: `path`: a path stays inside"),
+        // effect: #418's three routes, and a script
+        ("effect.run", json!({"cmds": [{"id": "engine.batch", "params": {"steps": [{"command": "effect.plugins.load", "params": {"path": "evil"}}]}}], "out": "e.ecproj"}), "`engine.batch` is classed code"),
+        ("effect.run", json!({"cmds": [{"id": "prefs.set", "params": {"key": "pluginsFolder", "value": "/tmp/evil"}}], "out": "e.ecproj"}), "`prefs.set` is classed host"),
+        ("effect.run", json!({"cmds": [{"id": "comp.new"}, {"id": "effect.apply", "params": {"effect": "plugin.evil"}}], "out": "e.ecproj"}), "`plugin.evil` is not an effect the engine builds in"),
+        ("effect.run", json!({"cmds": [{"id": "file.runScript", "params": {"path": "evil.jsx"}}], "out": "e.ecproj"}), "`file.runScript` is classed code"),
+        // vector: #418's three routes
+        ("vector.run", json!({"cmds": [{"id": "command.batch", "params": {"commands": [{"command": "plugin.install", "params": {"path": "evil.wasm"}}]}}], "out": "v.svg"}), "`command.batch` is classed code"),
+        ("vector.run", json!({"cmds": [{"id": "prefs.set", "params": {"key": "pluginsFolder", "value": "/tmp/evil"}}], "out": "v.svg"}), "`prefs.set` is classed code"),
+        ("vector.run", json!({"cmds": [{"id": "effect.apply", "params": {"effect": "plugin.evil"}}], "out": "v.svg"}), "`plugin.evil` is not an effect the engine builds in"),
+        ("vector.run", json!({"cmds": [{"id": "plugin.install", "params": {"path": "evil.wasm"}}], "out": "v.svg"}), "`plugin.install` is classed code"),
+    ];
+    let mut families = BTreeSet::new();
+    for (n, (door, args, why)) in cases.into_iter().enumerate() {
+        let got = ask(&mut relay, &mut world, &format!("r{n}"), door, args);
+        assert_eq!(got["error"]["kind"], "app_error", "{door}: {got}");
+        let message = got["error"]["message"].as_str().unwrap();
+        assert!(message.starts_with(&format!("{door}")) && message.contains(why), "{door}: `{why}` in {got}");
+        families.insert(door.split('.').next().unwrap().to_string());
+    }
+    assert_eq!(families.len(), 7, "every door: {families:?}");
+    let left: BTreeSet<String> = std::fs::read_dir(&host).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(left, seeded, "a refused call wrote nothing");
+    assert!(world.asked.is_empty(), "no engine tool asks for approval");
     let _ = std::fs::remove_dir_all(host);
 }
 
@@ -1593,9 +1671,10 @@ fn an_engines_virtual_owner_is_no_agent_app() {
 /// within its declared result (the relay checks each answer against its
 /// `output_schema`, G8), and writes only into the system agent's own
 /// workspace, where every engine finds what another wrote. The fixtures
-/// are the engines' own output where one can make it. `film.project.info`
-/// (no tool writes a project) and Design's tools (no tool writes a layout
-/// document) are checked in their crates.
+/// are the engines' own output where one can make it; each command door
+/// makes, edits, queries and writes through reviewed commands only.
+/// Design's tools (no tool writes a layout document) are checked in their
+/// crate.
 #[cfg(feature = "craft-engines")]
 #[test]
 fn every_granted_engine_tool_answers_within_its_declared_result() {
@@ -1621,18 +1700,18 @@ fn every_granted_engine_tool_answers_within_its_declared_result() {
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
         std::fs::write(to, bytes).unwrap();
     };
-    // word
-    ok(&mut relay, &mut world, "word.new", json!({"out": "doc.docx", "text": "Engines answer\nwithin their results", "title": "Fixture"}));
+    // word: make, query, convert
+    ok(&mut relay, &mut world, "word.run", json!({"cmds": two_paragraphs("Engines answer", "within their results"), "out": "doc.docx"}));
     ok(&mut relay, &mut world, "word.info", json!({"path": "doc.docx"}));
-    ok(&mut relay, &mut world, "word.text", json!({"path": "doc.docx"}));
-    ok(&mut relay, &mut world, "word.inspect", json!({"path": "doc.docx", "text": false}));
-    ok(&mut relay, &mut world, "word.convert", json!({"path": "doc.docx", "out": "doc.pdf"}));
-    // deck
-    ok(&mut relay, &mut world, "deck.new", json!({"out": "talk.pptx", "slides": [{"title": "One", "bullets": ["a", "b"]}, {"title": "Two"}]}));
+    let text = ok(&mut relay, &mut world, "word.run", json!({"path": "doc.docx", "cmds": [{"id": "document.text"}, {"id": "document.inspect", "params": {"text": false}}]}));
+    assert!(text["results"][0]["result"].to_string().contains("within their results") && text["out"].is_null(), "{text}");
+    ok(&mut relay, &mut world, "word.run", json!({"path": "doc.docx", "cmds": [], "out": "doc.pdf"}));
+    // deck: make, query, render a slide, write its outline
+    ok(&mut relay, &mut world, "deck.run", json!({"cmds": [{"id": "slide.new", "params": {"layout": "titleAndContent", "title": "One", "body": "a\nb"}}, {"id": "slide.new", "params": {"layout": "titleOnly", "title": "Two"}}], "out": "talk.pptx"}));
     ok(&mut relay, &mut world, "deck.info", json!({"path": "talk.pptx"}));
-    ok(&mut relay, &mut world, "deck.text", json!({"path": "talk.pptx"}));
-    ok(&mut relay, &mut world, "deck.render", json!({"path": "talk.pptx", "slide": 1, "out": "s2.png", "max_side": 64}));
-    ok(&mut relay, &mut world, "deck.convert", json!({"path": "talk.pptx", "out": "talk.txt"}));
+    ok(&mut relay, &mut world, "deck.run", json!({"path": "talk.pptx", "cmds": [{"id": "document.inspect"}]}));
+    ok(&mut relay, &mut world, "deck.run", json!({"path": "talk.pptx", "cmds": [], "out": "s2.png", "slide": 1, "max_side": 64}));
+    ok(&mut relay, &mut world, "deck.run", json!({"path": "talk.pptx", "cmds": [], "out": "talk.txt"}));
     // pdf, on Word's PDF
     place("doc.pdf", "a.pdf");
     place("doc.pdf", "b.pdf");
@@ -1644,29 +1723,27 @@ fn every_granted_engine_tool_answers_within_its_declared_result() {
     // vector, then cad on Vector's DXF, in the same folder
     write("in.svg", br##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40"><rect x="4" y="4" width="32" height="20" fill="#3366cc"/><line x1="40" y1="4" x2="60" y2="36" stroke="#cc3333"/></svg>"##);
     ok(&mut relay, &mut world, "vector.info", json!({"path": "in.svg"}));
-    ok(&mut relay, &mut world, "vector.convert", json!({"path": "in.svg", "out": "in.dxf"}));
-    ok(&mut relay, &mut world, "vector.render", json!({"path": "in.svg", "out": "vector.png", "max_side": 64}));
+    ok(&mut relay, &mut world, "vector.run", json!({"path": "in.svg", "cmds": [{"id": "document.inspect"}], "out": "in.dxf"}));
+    ok(&mut relay, &mut world, "vector.run", json!({"path": "in.svg", "cmds": [], "out": "vector.png", "scale": 1}));
+    ok(&mut relay, &mut world, "vector.run", json!({"cmds": [{"id": "shape.rectangle", "params": {"x": 0, "y": 0, "width": 4, "height": 4}}], "out": "drawn.svg"}));
     ok(&mut relay, &mut world, "cad.info", json!({"path": "in.dxf"}));
-    ok(&mut relay, &mut world, "cad.entities", json!({"path": "in.dxf", "limit": 10}));
-    ok(&mut relay, &mut world, "cad.measure", json!({"path": "in.dxf", "dist": {"p1": [0, 0], "p2": [3, 4]}}));
-    ok(&mut relay, &mut world, "cad.measure", json!({"path": "in.dxf", "area": {"points": [[0, 0], [4, 0], [4, 3]]}}));
-    ok(&mut relay, &mut world, "cad.render", json!({"path": "in.dxf", "out": "cad.svg"}));
-    ok(&mut relay, &mut world, "cad.convert", json!({"path": "in.dxf", "out": "copy.dxf"}));
+    ok(&mut relay, &mut world, "cad.run", json!({"path": "in.dxf", "cmds": [{"id": "entities", "params": {"limit": 10}}, {"id": "dist", "params": {"p1": [0, 0], "p2": [3, 4]}}, {"id": "area", "params": {"points": [[0, 0], [4, 0], [4, 3]]}}]}));
+    ok(&mut relay, &mut world, "cad.run", json!({"path": "in.dxf", "cmds": [], "out": "cad.svg"}));
+    ok(&mut relay, &mut world, "cad.run", json!({"path": "in.dxf", "cmds": [], "out": "cad.png", "max_side": 64}));
+    ok(&mut relay, &mut world, "cad.run", json!({"cmds": [{"id": "line", "params": {"points": [[0, 0], [10, 0], [10, 5]]}}, {"id": "circle", "params": {"center": [5, 5], "radius": 2}}], "out": "drawn.dxf"}));
     // light and film, on a 12x8 PNG
     let png: Vec<u8> = {
         const HEX: &str = "89504e470d0a1a0a0000000d494844520000000c000000080802000000428689a60000001d49444154789c6378616383866c725ea021063a2bb279d14310d15911005b9497817c6155610000000049454e44ae426082";
         (0..HEX.len()).step_by(2).map(|i| u8::from_str_radix(&HEX[i..i + 2], 16).unwrap()).collect()
     };
     write("photo.png", &png);
-    write("other.png", &png);
     ok(&mut relay, &mut world, "light.info", json!({"path": "photo.png"}));
-    ok(&mut relay, &mut world, "light.controls", json!({}));
-    ok(&mut relay, &mut world, "light.develop", json!({"path": "photo.png", "out": "photo.jpg", "params": {"light.exposure": 0.5}}));
-    ok(&mut relay, &mut world, "light.batch", json!({"paths": ["photo.png", "other.png"], "out_dir": "batch", "format": "png"}));
+    ok(&mut relay, &mut world, "light.run", json!({"path": "photo.png", "cmds": [{"id": "develop.controls", "params": {"section": "light"}}]}));
+    ok(&mut relay, &mut world, "light.run", json!({"path": "photo.png", "cmds": [{"id": "develop.set", "params": {"values": {"light.exposure": 0.5}}}], "out": "photo.jpg"}));
     write("still.png", &png);
     ok(&mut relay, &mut world, "film.info", json!({"path": "still.png"}));
-    ok(&mut relay, &mut world, "film.frame", json!({"path": "still.png", "out": "f.png", "max_side": 16}));
-    ok(&mut relay, &mut world, "film.export", json!({"path": "still.png", "out": "still.gif", "end_ms": 200}));
+    ok(&mut relay, &mut world, "film.run", json!({"path": "still.png", "cmds": [{"id": "project.inspect"}], "out": "f.png", "max_side": 16}));
+    ok(&mut relay, &mut world, "film.run", json!({"path": "still.png", "cmds": [], "out": "still.gif", "end_ms": 200}));
     // sound, on an 8 kHz mono PCM WAV
     let wav = {
         let frames: u32 = 800;
@@ -1694,40 +1771,17 @@ fn every_granted_engine_tool_answers_within_its_declared_result() {
     ok(&mut relay, &mut world, "sound.convert", json!({"path": "in.wav", "out": "in.flac"}));
     ok(&mut relay, &mut world, "sound.trim", json!({"path": "in.wav", "out": "cut.wav", "start_ms": 10, "end_ms": 60}));
     ok(&mut relay, &mut world, "sound.mix", json!({"tracks": [{"path": "in.wav"}, {"path": "cut.wav", "gain_db": -6}], "out": "mix.wav"}));
-    // effect: a Lottie animation placed in the workspace, made a project
-    // by the granted `effect.import_lottie`, then the other granted tools.
-    // The command door is no way in: run straight on its executor (never
-    // through the system agent's grant), the shell's resolver holds it.
+    // effect: a Lottie animation placed in the workspace, opened and saved
+    // as a project by the door, then rendered, exported and built on.
     write("intro.json", br##"{"v":"5.7.0","fr":24,"ip":0,"op":24,"w":32,"h":18,"nm":"Main","ddd":0,"assets":[],"layers":[{"ddd":0,"ind":1,"ty":1,"nm":"Red","sr":1,"ks":{"o":{"a":0,"k":100},"r":{"a":0,"k":0},"p":{"a":0,"k":[16,9,0]},"a":{"a":0,"k":[16,9,0]},"s":{"a":0,"k":[100,100,100]}},"ao":0,"sw":32,"sh":18,"sc":"#cc3344","ip":0,"op":24,"st":0,"bm":0}]}"##);
-    ok(&mut relay, &mut world, "effect.import_lottie", json!({"path": "intro.json", "out": "main.ecproj"}));
+    ok(&mut relay, &mut world, "effect.run", json!({"path": "intro.json", "cmds": [], "out": "main.ecproj"}));
     ok(&mut relay, &mut world, "effect.info", json!({"path": "main.ecproj"}));
-    ok(&mut relay, &mut world, "effect.render", json!({"path": "main.ecproj", "out": "frame.png", "time": 0.0, "max_side": 16}));
-    ok(&mut relay, &mut world, "effect.export_lottie", json!({"path": "main.ecproj", "out": "main.json"}));
-    let door = super::script_apps::HostServiceExecutor {
-        app: "os.effect".into(),
-        tools: ["effect.run".to_string()].into_iter().collect(),
-        methods: Default::default(),
-        families: ["effect".to_string()].into_iter().collect(),
-        host_dir: host.clone(),
-    };
-    let mut made = call("effect-door", "effect.run", super::relay::SYSTEM);
-    made.caller_kind = CallerKind::System;
-    made.args = json!({"cmds": [{"id": "comp.new", "params": {"name": "Door"}}], "out": "door.ecproj"});
-    let (r, sent) = reply("effect-door");
-    door.run(made, r, Some(engine_areas(&host, None)));
-    for _ in 0..500 {
-        super::script_apps::poll();
-        if !sent.lock().unwrap().is_empty() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    let held = sent.lock().unwrap()[0].clone();
-    assert!(held["error"]["message"].as_str().is_some_and(|m| m.contains("held for its own review")), "{held}");
-    assert!(!host.join("door.ecproj").exists());
+    ok(&mut relay, &mut world, "effect.run", json!({"path": "main.ecproj", "cmds": [{"id": "comp.info"}], "out": "frame.png", "time": 0.0, "max_side": 16}));
+    ok(&mut relay, &mut world, "effect.run", json!({"path": "main.ecproj", "cmds": [], "out": "main.json"}));
+    ok(&mut relay, &mut world, "effect.run", json!({"cmds": [{"id": "comp.new", "params": {"name": "Door"}}], "out": "door.ecproj"}));
     // Everything the grant names, but what no tool can make a file for.
     let granted: BTreeSet<String> = crate::system_chat::grants::ENGINE_TOOLS.iter().map(|t| t.to_string()).collect();
-    let elsewhere: BTreeSet<String> = ["film.project.info", "design.info", "design.render", "design.export"].into_iter().map(String::from).collect();
+    let elsewhere: BTreeSet<String> = ["design.info", "design.render", "design.export"].into_iter().map(String::from).collect();
     assert_eq!(exercised, &granted - &elsewhere);
     assert!(world.asked.is_empty(), "no engine tool asks for approval");
     // No private folder, and no staging folder left behind.
@@ -1738,8 +1792,8 @@ fn every_granted_engine_tool_answers_within_its_declared_result() {
 
 /// The system agent's Word tools work on a file placed in its workspace
 /// (as its own file tools, or the person, would put one there): it reads
-/// it, converts it beside it, never replaces a file, and a missing file is
-/// named relative to the workspace.
+/// it, edits and converts it beside it, never replaces a file, and a
+/// missing file is named relative to the workspace.
 #[cfg(feature = "craft-engines")]
 #[test]
 fn the_system_agents_word_tools_work_on_a_file_in_its_workspace() {
@@ -1749,24 +1803,38 @@ fn the_system_agents_word_tools_work_on_a_file_in_its_workspace() {
     std::fs::create_dir_all(workspace.join("inbox")).unwrap();
     // A real document, made elsewhere, then placed in the workspace.
     let (mut seed, mut seed_world) = engine_world(&made);
-    let seeded = ask(&mut seed, &mut seed_world, "seed", "word.new", json!({"out": "report.docx", "text": "Quarterly report\nRevenue grew", "title": "Report"}));
+    let seeded = ask(&mut seed, &mut seed_world, "seed", "word.run", json!({"cmds": two_paragraphs("Quarterly report", "Revenue grew"), "out": "report.docx"}));
     assert_eq!(seeded["ok"], true, "{seeded}");
     std::fs::copy(made.join("report.docx"), workspace.join("inbox/report.docx")).unwrap();
     let (mut relay, mut world) = engine_world(&workspace);
     let info = ask(&mut relay, &mut world, "w-info", "word.info", json!({"path": "inbox/report.docx"}));
     assert_eq!(info["ok"], true, "{info}");
     assert_eq!((info["data"]["file"].as_str(), info["data"]["paragraphs"].as_u64()), (Some("inbox/report.docx"), Some(2)), "{info}");
-    let converted = ask(&mut relay, &mut world, "w-convert", "word.convert", json!({"path": "inbox/report.docx", "out": "inbox/report.md"}));
+    let converted = ask(&mut relay, &mut world, "w-convert", "word.run", json!({"path": "inbox/report.docx", "cmds": [], "out": "inbox/report.md"}));
     assert_eq!(converted["ok"], true, "{converted}");
     assert!(std::fs::read_to_string(workspace.join("inbox/report.md")).unwrap().contains("Quarterly report"));
-    let again = ask(&mut relay, &mut world, "w-again", "word.convert", json!({"path": "inbox/report.docx", "out": "inbox/report.md"}));
+    let again = ask(&mut relay, &mut world, "w-again", "word.run", json!({"path": "inbox/report.docx", "cmds": [], "out": "inbox/report.md"}));
     assert_eq!(again["error"]["kind"], "app_error", "{again}");
     assert!(again["error"]["message"].as_str().unwrap().contains("`inbox/report.md` already exists"), "{again}");
+    // An edit: a heading style on the first paragraph, read back through
+    // the engine's own query, written as a new file.
+    let edited = ask(
+        &mut relay,
+        &mut world,
+        "w-edit",
+        "word.run",
+        json!({"path": "inbox/report.docx", "cmds": [{"id": "caret.docStart"}, {"id": "para.style", "params": {"style": "Heading 1"}}, {"id": "document.text"}], "out": "inbox/report-2.docx"}),
+    );
+    assert_eq!(edited["ok"], true, "{edited}");
+    assert_eq!(edited["data"]["out"], "inbox/report-2.docx", "{edited}");
+    assert!(edited["data"]["results"][2]["result"].to_string().contains("Revenue grew"), "{edited}");
     let missing = ask(&mut relay, &mut world, "w-missing", "word.info", json!({"path": "inbox/none.docx"}));
     let message = missing["error"]["message"].as_str().unwrap();
     assert!(message.contains("inbox/none.docx") && !message.contains(workspace.to_str().unwrap()), "{missing}");
     // Outside the workspace is out of reach.
     let outside = ask(&mut relay, &mut world, "w-outside", "word.info", json!({"path": "../report.docx"}));
+    assert_eq!(outside["error"]["kind"], "app_error", "{outside}");
+    let outside = ask(&mut relay, &mut world, "w-outside-run", "word.run", json!({"path": "../report.docx", "cmds": []}));
     assert_eq!(outside["error"]["kind"], "app_error", "{outside}");
     let _ = std::fs::remove_dir_all(made);
     let _ = std::fs::remove_dir_all(workspace);
@@ -1877,15 +1945,15 @@ fn a_signed_out_accounts_engine_call_is_refused() {
     // agent (no grant gives one an engine tool today).
     let word = HostServiceExecutor {
         app: "os.word".into(),
-        tools: ["word.new".to_string()].into_iter().collect(),
+        tools: ["word.run".to_string()].into_iter().collect(),
         methods: Default::default(),
         families: ["word".to_string()].into_iter().collect(),
         host_dir: std::path::PathBuf::new(),
     };
     let run = |id: &str| {
-        let mut c = call(id, "word.new", "card.org.example.notes");
+        let mut c = call(id, "word.run", "card.org.example.notes");
         c.app = "os.word".into();
-        c.args = json!({"out": "a.docx", "text": "hi"});
+        c.args = json!({"cmds": [{"id": "text.insert", "params": {"text": "hi"}}], "out": "a.docx"});
         let (r, sent) = reply(id);
         word.run(c, r, Some(areas.clone()));
         for _ in 0..500 {

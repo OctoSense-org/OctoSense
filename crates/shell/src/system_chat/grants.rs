@@ -190,24 +190,35 @@ pub(crate) const CALENDAR_TOOLS: &[&str] = &["calendar.events", "calendar.add_ev
 /// The craft engines' tools the system agent may call (ADR 0013), each
 /// declared by its engine's `tools.json` under the virtual owner
 /// `os.<family>` (`host_tools::engines`). A reviewed narrow grant like
-/// [`CALENDAR_TOOLS`]: every engine's read tools, and its act tools that
-/// only create new files inside the system agent's own workspace, never
-/// replacing one (new, convert, render, export, frame, develop, batch,
-/// trim, mix, merge, split, the Lottie export and import;
-/// `host_tools::areas`). None is destructive or outward. Never a
-/// generic command door (`effect.run`, `vector.run`:
-/// `host_tools::engines::HELD_FOR_REVIEW`), which is reviewed separately.
+/// [`CALENDAR_TOOLS`], one surface per engine:
+///
+/// - The seven engines with a command catalog it may use (word, deck, cad,
+///   light, film, effect, vector): `<family>.info`, a read, and
+///   `<family>.run`, the engine's reviewed command door. Its service
+///   admits every command of a call before any runs, through an allowlist
+///   built from the engine's reviewed classification
+///   (`octosense_engine_area::door`): a command that works inside the open
+///   document runs, and so does a reviewed read of a file inside the
+///   caller's own folder; any other id is refused (one that reaches other
+///   files, code, the network, a device or the app, or one the
+///   classification does not know).
+/// - sound, design and pdf keep their fixed tools: sound has no command
+///   catalog, design has no door by decision (#418), and pdf's operations
+///   are a few fixed methods.
+///
+/// Every act only creates new files inside the caller's own folder, never
+/// replacing one (`host_tools::areas`). None is destructive or outward.
 #[cfg(feature = "craft-engines")]
 pub(crate) const ENGINE_TOOLS: &[&str] = &[
-    "word.info", "word.text", "word.inspect", "word.convert", "word.new",
-    "deck.info", "deck.text", "deck.render", "deck.new", "deck.convert",
-    "cad.info", "cad.entities", "cad.measure", "cad.render", "cad.convert",
-    "light.info", "light.controls", "light.develop", "light.batch",
+    "word.info", "word.run",
+    "deck.info", "deck.run",
+    "cad.info", "cad.run",
+    "light.info", "light.run",
     "sound.info", "sound.peaks", "sound.convert", "sound.trim", "sound.mix",
     "design.info", "design.render", "design.export",
-    "film.info", "film.project.info", "film.frame", "film.export",
-    "effect.info", "effect.render", "effect.export_lottie", "effect.import_lottie",
-    "vector.info", "vector.convert", "vector.render",
+    "film.info", "film.run",
+    "effect.info", "effect.run",
+    "vector.info", "vector.run",
     "pdf.info", "pdf.text", "pdf.render", "pdf.merge", "pdf.split",
 ];
 
