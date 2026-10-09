@@ -261,6 +261,22 @@ impl Runtime {
         })
     }
 
+    /// Compiles `bytes`, a module or a component, into the cache unless it
+    /// is there already; whether it compiled. An app's install calls this so
+    /// that its first call loads from the cache instead of waiting for
+    /// Cranelift (ADR 0014 phase 3). Without a cache it only checks.
+    pub fn precompile(&self, bytes: &[u8]) -> Result<bool, LoadError> {
+        if self.cache_path(bytes).is_some_and(|path| path.is_file()) {
+            return Ok(false);
+        }
+        if component::is_component(bytes) {
+            self.load_component(bytes)
+                .map(|program| !program.from_cache())
+        } else {
+            self.load(bytes).map(|program| !program.from_cache())
+        }
+    }
+
     fn compile(&self, bytes: &[u8], cache: Option<&PathBuf>) -> Result<Module, LoadError> {
         let module =
             Module::new(&self.engine, bytes).map_err(|e| LoadError::Invalid(format!("{e:#}")))?;

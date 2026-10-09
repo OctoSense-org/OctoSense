@@ -6319,6 +6319,9 @@ impl MatchEvent for App {
                 self.installed_app_changed(cx, &id);
                 // Its tools, grants and kernel tools, as installed (ADR 0004 §7).
                 host_tools::script_app_installed(&id);
+                // Its own functions, compiled before its first call (ADR 0014).
+                #[cfg(wasm_functions)]
+                wasm_service::warm(&id);
             }
             self.drain_hub(cx);
             self.drain_client_lines(cx);

@@ -620,6 +620,75 @@ struct Lab {
     host_calls: Arc<dyn HostCalls>,
 }
 
+/// Compile an installed or updated app's functions into the disk cache in
+/// the background, so that its first call does not wait for Cranelift (ADR
+/// 0014 phase 3; a phone takes about 0.4 s for a 433 KiB module). From its
+/// admitted bundle only, and only with the `wasm` grant; one app at a time,
+/// on a thread of its own, never in a worker's place. A call that comes
+/// first compiles the same code itself: the cache takes either.
+pub fn warm(app: &str) {
+    static QUEUE: Mutex<(Vec<String>, bool)> = Mutex::new((Vec::new(), false));
+    {
+        let mut queue = QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+        if !queue.0.iter().any(|queued| queued == app) {
+            queue.0.push(app.to_string());
+        }
+        if std::mem::replace(&mut queue.1, true) {
+            return;
+        }
+    }
+    let spawned = std::thread::Builder::new()
+        .name("wasm-warm".into())
+        .spawn(|| loop {
+            let next = {
+                let mut queue = QUEUE.lock().unwrap_or_else(|e| e.into_inner());
+                if queue.0.is_empty() {
+                    queue.1 = false;
+                    return;
+                }
+                queue.0.remove(0)
+            };
+            match warm_now(&next) {
+                Ok((0, _, _)) => {}
+                Ok((compiled, files, ms)) => makepad_widgets::log!(
+                    "wasm {next}: compiled {compiled} of {files} function files ahead of its first call in {ms:.0} ms"
+                ),
+                Err(error) => makepad_widgets::log!("wasm {next}: not compiled ahead: {error}"),
+            }
+        });
+    if spawned.is_err() {
+        QUEUE.lock().unwrap_or_else(|e| e.into_inner()).1 = false;
+    }
+}
+
+/// [`warm`]'s work for one app: how many files it compiled, of how many, and
+/// how long it took.
+fn warm_now(app: &str) -> Result<(usize, usize, f64), String> {
+    let admission = Admission::current(app)?;
+    let runtime = runtime(&admission.root.join(".host"))?;
+    let started = Instant::now();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(admission.bundle.join("fns"))
+        .map_err(|_| format!("{app}'s bundle has no fns directory"))?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "wasm")
+                && std::fs::symlink_metadata(path)
+                    .is_ok_and(|m| m.is_file() && m.len() <= runtime.limits().module_bytes as u64)
+        })
+        .collect();
+    files.sort();
+    files.truncate(MAX_MODULES);
+    let mut compiled = 0;
+    for path in &files {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        if runtime.precompile(&bytes).map_err(|e| e.to_string())? {
+            compiled += 1;
+        }
+    }
+    Ok((compiled, files.len(), started.elapsed().as_secs_f64() * 1e3))
+}
+
 /// The hosts an app's components may reach over HTTP(S): its policy's
 /// `network.hosts` when it is granted `net`, as for its script; none when
 /// the manifest does not resolve.
@@ -2126,6 +2195,72 @@ mod tests {
         assert!(error.contains("not JSON"), "{error}");
         stop.store(true, Ordering::Relaxed);
         pump.join().unwrap();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// An installed app's functions are compiled before its first call, in
+    /// a process of its own (the apps root and the registries are
+    /// process-wide): the first call loads them from the cache.
+    #[test]
+    fn an_installed_apps_first_call_loads_from_the_cache() {
+        const CHILD: &str = "OCTOSENSE_TEST_WASM_WARM";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wasm_service::tests::an_installed_apps_first_call_loads_from_the_cache",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("octosense-wasm-warm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let host_dir = root.join(".host");
+        // This exact test runs alone in its child process. Keep the env
+        // override and registered root identical even under an isolated suite.
+        std::env::set_var("OCTOSENSE_APP_DATA", &root);
+        octosense_appstore::set_data_root(root.clone());
+        ship("os.wasmlab", "warm", |_, _| {});
+        register();
+        warm("os.wasmlab");
+        let cache = host_dir.join("wasm-cache");
+        let cached = || {
+            std::fs::read_dir(&cache)
+                .map(|entries| {
+                    entries
+                        .flatten()
+                        .any(|e| e.path().extension().is_some_and(|x| x == "cwasm"))
+                })
+                .unwrap_or(false)
+        };
+        for _ in 0..3000 {
+            if cached() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(cached(), "warm compiled nothing into {}", cache.display());
+        let ranked = request(
+            "os.wasmlab",
+            "wasm.fuzzy_rank",
+            json!({"query": "m", "items": ["Mail"]}),
+            &host_dir,
+        )
+        .unwrap();
+        assert_eq!(ranked["ranked"][0]["item"], "Mail");
+        let described = request("os.wasmlab", "wasm.functions", json!({}), &host_dir).unwrap();
+        assert_eq!(described["modules"][0]["from_cache"], true, "{described}");
+        // Warming again finds it compiled.
+        assert_eq!(warm_now("os.wasmlab").unwrap().0, 0);
         let _ = std::fs::remove_dir_all(root);
     }
 }
