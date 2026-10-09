@@ -27,6 +27,23 @@ opens it through `prepare_launch` and `validate_prepared_launch`. Restart reuses
 that exact private catalog/profile. `connected_support` refuses an existing
 nonempty installation root. Source bundles are not signed or changed in place.
 
+`notes_signin.py` installs the bundle the same way, then signs in against a
+signed-out synthetic GitHub (`--provider-fixture=github-sign-in`): a device-code
+endpoint, a token endpoint whose answer the driver sets in the profile's
+`.host/fixtures/github-sign-in.json`, and a fictional identity. Through the
+host's real sheet and the app's account card it approves, disconnects, declines
+and cancels. The Notes drivers need a bundle with the 0.2.2 account card. On
+the Linux build host, with debug builds of the two examples, this ran:
+
+```sh
+python3 tools/connected-e2e/notes_signin.py --bundle <stamped GitHub Notes bundle> \
+  --host target/debug/examples/connected-app-host \
+  --installer target/debug/examples/connected-install
+```
+
+It ends with `PASS: installed Notes sign-in with synthetic GitHub; native pixel
+review pending`. Its macOS run is **unverified**.
+
 A manual isolated launch uses:
 
 ```sh

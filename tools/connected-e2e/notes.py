@@ -87,11 +87,11 @@ def run():
             assert content() == local
             receipt['checks'].append('Verified installed restart restores exact unsent local note')
             ui.click('Repository')
-            ui.wait(lambda: ui.find(text='Selected · Fixture GitHub · synthetic provider'))
-            ui.click('Refresh repositories')
+            ui.wait(lambda: ui.find(text='Fixture GitHub · synthetic provider', kind='Label'))
+            ui.click('Refresh')
             ui.label('Choose a repository')
-            ui.click('Next'); ui.label('Choose a repository · page 2')
-            ui.label('No repositories on this page'); ui.click('Previous')
+            ui.click('Next page'); ui.label('Choose a repository · page 2')
+            ui.label('No repositories on this page'); ui.click('Previous page')
             ui.label('Choose a repository · page 1')
             ui.click('fixture-author/empty'); ui.label('fixture-author/empty · main')
             ui.reachable(text='No Markdown files here · choose a new path below', kind='Label')
@@ -178,7 +178,7 @@ def run():
             control.write_text(json.dumps({'offline':True}))
             ui = start('03-offline-restart'); ui.tab('Markdown')
             assert content() == conflicting
-            ui.click('Repository'); ui.click('Refresh repositories')
+            ui.click('Repository'); ui.click('Refresh')
             ui.label('Synthetic provider is offline'); ui.click('Back to note')
             assert content() == conflicting
             ui.capture('08-offline-restart-retains-note')
