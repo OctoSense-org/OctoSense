@@ -23,11 +23,13 @@ answers with the workbook's `book` number, which `sheets.get` and
 
 ## Files
 
-Workbooks are files in the sheet engine's own folder, relative paths inside
-it; only `sheets.open` and `sheets.export` touch it. Your own workspace and
-the person's files are outside it. `sheets.eval` without a workbook needs no
-file at all, so prefer it for arithmetic you would otherwise do in your
-head.
+Workbooks are files in the Sheets agent's own folder, relative paths inside
+it; only `sheets.open` and `sheets.export` touch it, and `sheets.export`
+never replaces an existing file. Your own workspace and the person's files
+are outside it. A workbook number belongs to that folder, so `sheets.get`
+reads the workbooks the Sheets agent opened. `sheets.eval` without a
+workbook needs no file at all, so prefer it for arithmetic you would
+otherwise do in your head.
 
 ## Examples
 

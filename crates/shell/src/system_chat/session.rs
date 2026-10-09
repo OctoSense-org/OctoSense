@@ -623,6 +623,11 @@ impl Driver {
                 }
                 None => {
                     self.opened = true;
+                    // Where the kernel runs the system conversation: where
+                    // the engines work for the system agent too.
+                    if let Some(root) = result.and_then(super::workspace::of_opened) {
+                        super::workspace::confirm(&root);
+                    }
                     self.backoff = Duration::from_millis(500);
                     self.model.set_phase(Phase::Ready);
                     self.sync_tools();

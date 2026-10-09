@@ -45,6 +45,7 @@ pub mod model;
 pub mod session;
 pub mod skills;
 pub mod view;
+pub mod workspace;
 
 #[cfg(kernel)]
 pub(crate) mod link;

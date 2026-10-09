@@ -2,7 +2,9 @@
 #
 # soundcraft's audio engine behind typed `sound.*` methods, offline file
 # processing only: probe, convert, trim, mix and waveform peaks, confined
-# to the `sound/` area of the caller's host directory. The service consumes
+# to the call's area: the caller's own folder from the shell's resolver,
+# else the legacy `sound/` corner of the caller's host directory. The
+# service consumes
 # only soundcraft's device-free crates (bytes-in/bytes-out file I/O and
 # offline DSP) and never opens an audio or MIDI device: no playback, no
 # recording, no cpal, no plugin hosts.
@@ -16,6 +18,8 @@ publish = false
 [dependencies]
 # The same App Hub rev as Mail and News: one appstore, one service registry.
 octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
 serde_json = { workspace = true }
 # The engine, pinned as a family to one ymote/soundcraft revision (ADR 0013):
 # only the device-free crates.

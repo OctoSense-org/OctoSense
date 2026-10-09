@@ -698,6 +698,14 @@ pub fn core_dir() -> Option<PathBuf> {
     global().core_dir()
 }
 
+/// The system conversation's workspace when one is saved in the core dir
+/// (Talk to Octos' web client saves the one the kernel confirmed): the
+/// router then opens the system conversation there. `None` otherwise: the
+/// kernel picks it, and says which when the conversation opens.
+pub fn system_workspace() -> Option<PathBuf> {
+    core_dir().and_then(|dir| network::saved_system_workspace(&dir))
+}
+
 /// The process kernel's HOME (the parent of a `<home>/.octos` core dir).
 pub fn home() -> Option<PathBuf> {
     core_dir().map(|d| kernel_home(&d))

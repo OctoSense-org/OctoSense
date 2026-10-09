@@ -107,8 +107,9 @@ them:
   shell declares them under `os.<family>`
   (`crates/shell/src/host_tools/engines.rs`) and runs each on the engine's
   service, as that system identity, by the method of its own name, in the
-  engine's area `<apps root>/.host/<family>`; answers and errors name files
-  relative to it, never by the host's own paths. A virtual owner is not an app:
+  engine's area `<apps root>/.host/<family>` (since 9 Oct 2026, in the
+  caller's own folder: see below); answers and errors name files relative
+  to it, never by the host's own paths. A virtual owner is not an app:
   it has no bundle, no app agent and no Settings row, and it is admitted as
   the shell's own compiled-in service. When an engine ships as an app
   (decision 1), its bundle's `tools.json` takes over the namespace and the
@@ -122,15 +123,15 @@ them:
   separate review. The `commands` catalogs of design, effect and vector are
   not declared, because they answer JSON arrays and octos takes object
   results only.
-- **Files are the open gap.** Decision 5 expected file access through the
-  existing files host tools. They do not reach the engines' areas, and
-  neither does the system agent's workspace. Until a reviewed staging path
-  exists, an engine sees only what its own tools wrote (`word.new`,
-  `deck.new` and the conversions), and every tool description says its
-  paths are relative to its engine's workspace. designcraft resolves
-  data-merge sources and vectorcraft linked images by the paths inside the
-  documents they open, so a staging path must not admit outside documents
-  to those two until that is contained.
+- **Files are the open gap** (closed on 9 Oct 2026: see below). Decision 5
+  expected file access through the existing files host tools. They do not
+  reach the engines' areas, and neither does the system agent's workspace.
+  Until a reviewed staging path exists, an engine sees only what its own
+  tools wrote (`word.new`, `deck.new` and the conversions), and every tool
+  description says its paths are relative to its engine's workspace.
+  designcraft resolves data-merge sources and vectorcraft linked images by
+  the paths inside the documents they open, so a staging path must not
+  admit outside documents to those two until that is contained.
 - **The kernel's cap.** octos takes at most 64 host tools in one
   registration and refuses a larger set whole. With the engines, the system
   session's largest set is 63. The shell offers the engine tools last and
@@ -193,6 +194,125 @@ reach: photocraft alone has 817 commands.
   per-method tools. Each door denies `file` outside the caller's area and
   every `code`, `network`, `device` and `host` id. An engine that cannot be
   fenced keeps its curated tools.
+
+## Engines work in the caller's own folder (9 Oct 2026)
+
+The engines are OctoSense-wide tools that run in an app's file folders, not
+in folders of their own. This closes "Files are the open gap" above. The
+private per-engine folder `<apps root>/.host/<family>` is used only by a
+service run without the shell (its own tests, App Hub's card-host).
+
+- **One resolver per service.** Each of the twelve engine services (sheet,
+  photo and the ten above) asks a resolver where a call works
+  (`set_area_resolver`; the shared rules are in `crates/engine-area`). The
+  shell installs its resolver when the services register
+  (`crates/shell/src/host_tools/areas.rs`). An area is a root folder,
+  whether a write there may replace a file, and how many bytes the call
+  may still add. The resolver decides from trusted host data only, never
+  from a call's arguments:
+  - **The system agent's call to a craft engine's tool:** its workspace,
+    the folder its conversation runs in, which its own file tools
+    (`read_file`, `list_dir`) see. The kernel names it when the system
+    conversation opens (`session/open`'s `workspace_root`); before that,
+    the workspace saved in the core directory counts. When neither is
+    known, the call is refused (`no_workspace`).
+  - **An app agent's call to a craft engine's tool:** that account's folder
+    `accounts/<hash>/` in the app's jail, the agent's own workspace. None of
+    the tools is shareable, so no app's agent reaches one today (developer
+    mode grants only shareable tools across apps); the rule is ready for
+    when one may.
+  - **Any agent's call to an app's own engine tool** (Sheets' `sheets.*`,
+    Photos' `photos.info`): that app's agent folder, for its own agent's
+    account or else the account the app acts for now. Every app tool works
+    on its app's data, so the system agent's `sheets.get` reads the
+    workbook that Sheets' agent opened, in Sheets' folder.
+  - **An app's own `host.request` to an engine** (no bundle makes one
+    yet): the app's storage, the jail its `fs.*` sees. The app must hold
+    the `storage` capability.
+
+  A signed-out, suspended or refused account is refused (`signed_out`,
+  `workspace_refused`), and so is a request that names any other folder.
+- **Plumbing.** The executor that runs an agent's tool knows who called
+  (the app, account and caller kind that the broker stamps) and which owner
+  it runs the tool as. It resolves the area from both before dispatch and
+  registers it as a grant, held until the call is
+  answered or cancelled. It passes the area's root in the `ServiceCall`'s
+  `host_dir`, the one field that only host code sets. The resolver answers
+  a granted root with its area, and App Hub's shared `<apps root>/.host`
+  with the calling app's storage.
+- **Agents never overwrite.** An agent's call (`may_prompt` false) never
+  replaces an existing file. A write refuses any entry already at its path
+  (a file, a folder or a link), and a file created at the same moment is
+  not replaced either (`create_new`, or a hard link from a staging
+  folder). The error asks for a new name. An app's own foreground request
+  may still replace a file, atomically. An engine that writes its own
+  files (a PDF split, a batch develop with its sidecars, a multi-artboard
+  SVG, a video export) writes them into a hidden staging folder inside the
+  area. They are moved into place all at once, or not at all.
+- **Quota.** Output into an app's jail must fit what is left of the app's
+  storage quota: the jail's ceiling (App Hub's admitted `storage` limit
+  for a script app, `storage.max_bytes` for a native app) less what the
+  jail holds when the call starts. All writes of one call share that
+  budget, and each is checked before it is written. The system agent's
+  workspace has no quota beyond the services' own per-call caps.
+- **Containment.** Every path is relative to the area. `..`, absolute paths
+  and symbolic links that lead out of it are refused, and no write goes
+  through a link. Answers and errors name files relative to the area.
+- **Paths inside documents.** Each engine was checked for files it opens
+  on its own, and the per-command safety review of the engine skills
+  (above) for what else a document can make it do. Each is fenced to the
+  area, and each fence has a hostile fixture in its service's tests:
+  - **design:** an IDML whose graphics are links (any link, `file://`
+    included) is refused before the engine opens it: the engine's own
+    importer runs first, with a reader that records each link instead of
+    reading it. The `Document Fonts` folder beside a document must stay
+    inside the area. A `.designcraft` document's data-merge source and
+    asset links are cleared before any output, so no path elsewhere
+    reaches an output. A placed SVG that links a file (`<image href>`)
+    refuses the document for every call, because usvg reads the link as
+    soon as it parses the SVG.
+  - **vector:** the engine's own SVG importer and native loader run first
+    and list every file a document links (absolute, `file://`, `../`, and
+    the editing payload inside an exported SVG or PDF). A document that
+    links a file outside the area is refused.
+  - **effect:** footage and every frame of an image sequence must be inside
+    the area, and 3D models are refused. An effect parameter that the
+    engine reads as a file by its own path, with `std::fs` past every gate
+    (Apply Color LUT, Lumetri's input LUT and look, an OCIO file transform
+    or config, mocha shape data), refuses the project unless it holds the
+    file's text inline; so does an expression on such a parameter, which
+    could produce a path when the frame renders.
+  - **photo:** the engine's own authorized workspace is the area. A
+    document with a smart object linked to a file outside it is refused
+    when it opens, nested smart objects included: the engine reads such a
+    link by its own path, and a PSD export embeds the file's raw bytes.
+  - **pdf:** reads and writes are rooted at the area, and a document's own
+    scripts never run: every service session turns the engine's
+    JavaScript off (it runs an XFA form's scripts on opening by default,
+    in its sandbox).
+  - **film:** media a project points at outside the area stay offline.
+    **light:** an original must be a regular file, and its XMP sidecars
+    must be inside the area.
+  - **word, deck, cad, sound, sheet:** bytes in, bytes out; the engines
+    open no other file. word, deck and cad use system fonts by family
+    name, gridcraft refuses links to other workbooks, and sound never
+    opens an audio or MIDI device. The word service runs no engine
+    command but `file.info` and `document.inspect`, so wordcraft's
+    `review.readAloud` (which starts a speech program) is out of reach.
+
+  All twelve engines are fenced; none was left on its private folder.
+- **The command doors are held.** `vector.run` and `effect.run` were
+  never granted, and their lists of refused ids are no fence: a wrapper
+  (`command.batch`, `engine.batch`, `file.runScript`), a preference
+  (`prefs.set` of a plug-ins folder) or a plug-in effect runs past them.
+  With the shell's resolver installed, both services refuse `run`
+  outright, so the doors reach no caller's folder until their review.
+  `photo.run`, also ungranted, keeps photocraft's own allow-list for file
+  commands and smart-object paths.
+- **Workbooks.** A Sheets workbook belongs to the area it was created or
+  opened in. A call from another area cannot see, change, export or close
+  it. Each area holds at most 16 open workbooks, and all areas together
+  at most 64.
 
 ## Open questions
 

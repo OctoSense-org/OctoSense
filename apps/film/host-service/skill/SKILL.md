@@ -14,7 +14,7 @@ projects (`.fcproj`): bins, sequences, clips and effects.
 ## Tools
 
 - `film.info {path}`: container, video and audio streams, duration in ms, timecode and size.
-- `film.project.info {path}`: a `.fcproj` opened headlessly: its bins and items, and the active sequence when it has one. Media it points at outside the folder stay offline.
+- `film.project.info {path}`: a `.fcproj` opened headlessly: its bins and items, and the active sequence when it has one. Media it points at outside your workspace stay offline.
 - `film.frame {path, out, at_ms?, max_side?}`: the frame at `at_ms` (default 0) through the program renderer, as a PNG at most `max_side` pixels long (default 1024).
 - `film.export {path, out, format?, start_ms?, end_ms?, audio?}`: the range transcoded (default the whole clip, at most 5 minutes per call) to H.264+AAC MP4 (`h264`), ProRes MOV (`prores`), `wav` or `gif`, by `format` or the extension of `out`; `audio: false` drops the sound.
 
@@ -22,14 +22,15 @@ projects (`.fcproj`): bins, sequences, clips and effects.
 
 ## Files
 
-Every path is relative to the film engine's folder, a private workspace that
-only `film.*` tools read and write. Absolute paths, `..` and links out of it
-are refused. Your own workspace (`read_file`, `write_file`, `view_video`),
-the person's files and the other engines' folders are outside it, and what
-these tools write stays in it. Nothing you have puts a clip into this
-folder: these tools open only files an earlier `film.*` call wrote there, so
-a video the person has elsewhere cannot be opened yet. Say so rather than
-guessing names, and pick a new name for each `out`.
+Every path is relative to your own workspace, the folder your file tools
+(`read_file`, `write_file`, `list_dir`, `view_video`) see: the film engine
+works in it for you. Absolute paths, `..` and links out of it are refused.
+Every engine works in the same folder, so what one writes the next can open,
+and a file the person puts there is yours to use. No call ever replaces an
+existing file: pick a new name for each `out`, or the call is refused. If
+the person names a file outside your workspace, say that the film engine
+cannot reach it. Media a project points at outside your workspace stay
+offline.
 
 ## Examples
 

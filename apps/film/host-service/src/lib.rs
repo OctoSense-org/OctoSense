@@ -7,8 +7,8 @@
 //! (H.264, AAC, ProRes, PCM, GIF) — no ffmpeg, no system codecs, no GPU,
 //! no network. Every call is a fresh, stateless session.
 //!
-//! Methods (all under the `film` family; paths relative to the caller's
-//! film area):
+//! Methods (all under the `film` family; paths relative to the call's
+//! area):
 //! - `info {path}` → container, streams and duration as JSON
 //! - `frame {path, at_ms?, out, max_side?}` → the frame at `at_ms`
 //!   through the engine's program renderer, written to `out` as PNG
@@ -18,13 +18,17 @@
 //! - `project.info {path}` → a `.fcproj` opened headlessly and inspected
 //!   (`project.inspect` / `sequence.inspect`)
 //!
-//! Containment: the service works only inside `<host dir>/film` — the
-//! shared `.host` directory also holds Mail's and Calendar's data, which
-//! this service must never see. Boundary paths are checked here (`..`,
-//! absolute paths and symlink escapes are refused, the sheets service's
-//! stance rooted one level down), and every read the engine makes on its
-//! own — media a project file points at included — passes
-//! [`AreaServices`], which refuses anything outside the area again.
+//! **Where a call works** (ADR 0013, 2026-10-08): the caller's own folder,
+//! the [`Area`] the shell's resolver gives it ([`set_area_resolver`]), or
+//! without one the legacy `<host dir>/film`. Boundary paths are checked
+//! here (`..`, absolute paths and symlink escapes are refused), and every
+//! read the engine makes on its own — media a project file points at
+//! included — passes [`AreaServices`], which refuses anything outside the
+//! area again. Writes keep the area's rules (a write that may not replace,
+//! an agent's, only creates new files, within the quota): a frame through
+//! [`Area::write`], the engine's own writes through [`AreaServices`], and an
+//! export, which the engine streams to a path itself, into a staging folder
+//! inside the area first ([`octosense_engine_area::Stage`]).
 //!
 //! The service serves system apps only until ADR 0013's store capability
 //! is designed.
@@ -39,6 +43,7 @@ use filmcraft_engine::project::{resolve_auto_points, ItemId, SequenceSettings, T
 use filmcraft_engine::time::{FrameRate, Tick, TimeRange};
 use filmcraft_engine::{Services, Session};
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
 /// The largest media file the service reads (bytes).
@@ -66,6 +71,14 @@ pub fn register() {
     register_host_service(Box::new(FilmService));
 }
 
+/// The shell's resolver: where each call works (`None` removes it, and
+/// calls work in the legacy `<host dir>/film` again).
+static AREAS: Slot = Slot::new();
+
+pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
+    AREAS.set(resolver);
+}
+
 /// The `film.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
 /// shape: the shell declares them for the virtual owner `os.film` and grants
 /// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
@@ -78,37 +91,45 @@ impl HostService for FilmService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !may_call(&call.app_id) {
-            reply.send(Err("The film service serves system apps only.".into()));
-            return;
-        }
-        let method = call.method().to_string();
-        let args = call.args.clone();
-        let host_dir = call.host_dir.clone();
-        reply.send(dispatch(&method, &args, &host_dir));
+        reply.send(serve(&AREAS, &call));
     }
 }
 
-fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+/// One call, in the area `areas` gives it.
+fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err("The film service serves system apps only.".into());
+    }
+    let area = areas.area(call, "film").map_err(|e| format!("film: {e}"))?;
+    dispatch_in(call.method(), &call.args, Arc::new(area))
+}
+
+fn dispatch_in(method: &str, args: &Json, area: Arc<Area>) -> Result<Json, String> {
     match method {
-        "info" => info(args, host_dir),
-        "frame" => frame(args, host_dir),
-        "export" => export(args, host_dir),
-        "project.info" => project_info(args, host_dir),
+        "info" => info(args, &area),
+        "frame" => frame(args, &area),
+        "export" => export(args, &area),
+        "project.info" => project_info(args, &area),
         other => Err(format!("film.{other} is not a method of the film service")),
     }
+}
+
+/// [`dispatch_in`] in the legacy area `<host_dir>/film`, as a call without
+/// the shell's resolver works.
+#[cfg(test)]
+fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+    let area = Area::legacy(host_dir, "film");
+    std::fs::create_dir_all(&area.root).map_err(|e| format!("the film area: {e}"))?;
+    dispatch_in(method, args, Arc::new(area))
 }
 
 // ---------------------------------------------------------------------------
 // containment
 // ---------------------------------------------------------------------------
 
-/// The service's area inside the caller's host directory, created on first
-/// use and returned canonicalized: `<host_dir>/film`.
-fn area(host_dir: &Path) -> Result<PathBuf, String> {
-    let a = host_dir.join("film");
-    std::fs::create_dir_all(&a).map_err(|e| format!("the film area: {e}"))?;
-    a.canonicalize().map_err(|e| format!("the film area: {e}"))
+/// The call's area, canonicalized: what every path is checked against.
+fn canonical(area: &Area) -> Result<PathBuf, String> {
+    area.root.canonicalize().map_err(|e| format!("the call's folder: {e}"))
 }
 
 /// A path strictly inside the (canonical) area: relative, no `..`, no
@@ -120,7 +141,7 @@ fn contained(area: &Path, rel: &str, what: &str) -> Result<PathBuf, String> {
     }
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err(format!("`{what}` stays inside the app's film area"));
+        return Err(format!("`{what}` stays inside this call's film area"));
     }
     let joined = area.join(rel_path);
     let deepest = {
@@ -135,7 +156,7 @@ fn contained(area: &Path, rel: &str, what: &str) -> Result<PathBuf, String> {
     };
     let resolved = deepest.canonicalize().map_err(|e| format!("{rel}: {e}"))?;
     if !resolved.starts_with(area) {
-        return Err(format!("`{what}` stays inside the app's film area"));
+        return Err(format!("`{what}` stays inside this call's film area"));
     }
     Ok(joined)
 }
@@ -156,25 +177,33 @@ fn input(area: &Path, args: &Json, key: &str, cap: u64) -> Result<(PathBuf, Stri
     Ok((abs, rel.to_string()))
 }
 
-/// `args[key]` as an output path inside the area, its parent created.
-fn output(area: &Path, args: &Json, key: &str) -> Result<(PathBuf, String), String> {
+/// `args[key]` as an output path inside the (canonical) area, admitted by
+/// the call's rules before the engine works.
+fn output(area: &Area, canon: &Path, args: &Json, key: &str) -> Result<(PathBuf, String), String> {
     let rel = args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("`{key}` is required"))?;
-    let p = contained(area, rel, key)?;
-    if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("{rel}: {e}"))?;
-    }
+    let p = contained(canon, rel, key)?;
+    area.check(&canon_to_area(area, canon, &p), 0)?;
     Ok((p, rel.to_string()))
+}
+
+/// A path under the canonical area as the call's area spells it, so the
+/// area's rules (and its messages) see the caller's own path.
+fn canon_to_area(area: &Area, canon: &Path, p: &Path) -> PathBuf {
+    p.strip_prefix(canon).map(|rel| area.root.join(rel)).unwrap_or_else(|_| p.to_path_buf())
 }
 
 /// The engine's file access, rooted in the area. The engine only ever gets
 /// paths this service blessed, but a project file can carry any path
 /// (media to relink), so every path the engine asks for is resolved —
 /// through symlinks, to the deepest existing ancestor for writes — and
-/// refused unless it stays inside the area. No directory listing, no
-/// volumes, no home directory.
+/// refused unless it stays inside the area. What the engine writes keeps
+/// the call's rules ([`Area::write`]). No directory listing, no volumes, no
+/// home directory.
 struct AreaServices {
     /// Canonical.
     area: PathBuf,
+    /// The call's area, whose rules the engine's writes keep.
+    rules: Arc<Area>,
 }
 
 impl AreaServices {
@@ -201,7 +230,9 @@ impl Services for AreaServices {
         std::fs::read(self.allowed(path)?)
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
-        std::fs::write(self.allowed(path)?, data)
+        let p = self.allowed(path)?;
+        let p = canon_to_area(&self.rules, &self.area, &p);
+        self.rules.write(&p, data).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))
     }
     fn file_size(&self, path: &str) -> std::io::Result<u64> {
         let m = std::fs::metadata(self.allowed(path)?)?;
@@ -227,8 +258,8 @@ impl Services for AreaServices {
 // the engine session
 // ---------------------------------------------------------------------------
 
-fn session(area: &Path) -> Session {
-    Session::new(Arc::new(AreaServices { area: area.to_path_buf() }))
+fn session(canon: &Path, rules: &Arc<Area>) -> Session {
+    Session::new(Arc::new(AreaServices { area: canon.to_path_buf(), rules: rules.clone() }))
 }
 
 /// Import `abs` and lay the whole clip on a fresh sequence sized like it
@@ -282,9 +313,9 @@ fn lay_on_sequence(s: &mut Session, id: ItemId, info: &filmcraft_media::MediaInf
 
 /// `film.info {path}` → the engine's probe of the file: container, video
 /// and audio streams, duration (ticks and `duration_ms`), timecode, size.
-fn info(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn info(args: &Json, rules: &Arc<Area>) -> Result<Json, String> {
     let err = |e: String| format!("film.info: {e}");
-    let area = area(host_dir).map_err(err)?;
+    let area = canonical(rules).map_err(err)?;
     let (abs, rel) = input(&area, args, "path", MAX_MEDIA_BYTES).map_err(err)?;
     let bytes: Arc<[u8]> = std::fs::read(&abs).map_err(|e| err(format!("{rel}: {e}")))?.into();
     let name = abs.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| rel.clone());
@@ -298,18 +329,18 @@ fn info(args: &Json, host_dir: &Path) -> Result<Json, String> {
 /// `film.frame {path, at_ms?, out, max_side?}` → the frame at `at_ms`
 /// (default 0), rendered by the engine's program compositor over black and
 /// written to `out` as PNG with its longest edge at most `max_side`.
-fn frame(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn frame(args: &Json, rules: &Arc<Area>) -> Result<Json, String> {
     let err = |e: String| format!("film.frame: {e}");
-    let area = area(host_dir).map_err(err)?;
+    let area = canonical(rules).map_err(err)?;
     let (abs, _) = input(&area, args, "path", MAX_MEDIA_BYTES).map_err(err)?;
-    let (out_abs, out_rel) = output(&area, args, "out").map_err(err)?;
+    let (out_abs, out_rel) = output(rules, &area, args, "out").map_err(err)?;
     let at_ms = args["at_ms"].as_f64().unwrap_or(0.0);
     if !at_ms.is_finite() || at_ms < 0.0 {
         return Err(err("`at_ms` is a time in milliseconds from the start".into()));
     }
     let max_side = (args["max_side"].as_u64().unwrap_or(DEFAULT_RENDER_SIDE as u64) as u32).clamp(16, MAX_RENDER_SIDE);
 
-    let mut s = session(&area);
+    let mut s = session(&area, rules);
     let info = clip_sequence(&mut s, &abs).map_err(err)?;
     let v = info.video.as_ref().ok_or_else(|| err("the file has no video stream".into()))?;
     let duration_ms = info.duration.seconds() * 1000.0;
@@ -323,7 +354,7 @@ fn frame(args: &Json, host_dir: &Path) -> Result<Json, String> {
     let scale = if long > max_side { max_side as f32 / long as f32 } else { 1.0 };
     let img = s.try_render_program_at(scale, t).map_err(|e| err(e.to_string()))?;
     let png = png_at_most(img.w as u32, img.h as u32, img.over_black_rgba8(), max_side).map_err(err)?;
-    std::fs::write(&out_abs, &png).map_err(|e| err(format!("{out_rel}: {e}")))?;
+    rules.write(&canon_to_area(rules, &area, &out_abs), &png).map_err(err)?;
     let (w, h) = png_size(&png);
     Ok(json!({"out": out_rel, "width": w, "height": h, "at_ms": at_ms, "bytes": png.len()}))
 }
@@ -362,11 +393,11 @@ fn format_for(path: &str) -> Option<&'static str> {
 /// range re-encoded by the engine's own encoders. `format` defaults from
 /// the `out` extension; the range defaults to the whole clip and is capped
 /// at [`MAX_EXPORT_MS`].
-fn export(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn export(args: &Json, rules: &Arc<Area>) -> Result<Json, String> {
     let err = |e: String| format!("film.export: {e}");
-    let area = area(host_dir).map_err(err)?;
+    let area = canonical(rules).map_err(err)?;
     let (abs, _) = input(&area, args, "path", MAX_MEDIA_BYTES).map_err(err)?;
-    let (out_abs, out_rel) = output(&area, args, "out").map_err(err)?;
+    let (out_abs, out_rel) = output(rules, &area, args, "out").map_err(err)?;
     let format = match args["format"].as_str() {
         Some(f) => f.to_string(),
         None => format_for(&out_rel).ok_or_else(|| err(format!("give `format` ({}) or an out path ending .mp4/.mov/.wav/.gif", FORMATS.join(" | "))))?.to_string(),
@@ -375,7 +406,7 @@ fn export(args: &Json, host_dir: &Path) -> Result<Json, String> {
         return Err(err(format!("`{format}` is not offered ({})", FORMATS.join(" | "))));
     }
 
-    let mut s = session(&area);
+    let mut s = session(&area, rules);
     let info = clip_sequence(&mut s, &abs).map_err(err)?;
     let duration_ms = info.duration.seconds() * 1000.0;
     let start_ms = args["start_ms"].as_f64().unwrap_or(0.0);
@@ -389,11 +420,16 @@ fn export(args: &Json, host_dir: &Path) -> Result<Json, String> {
     if end_ms > duration_ms + 1.0 {
         return Err(err(format!("`end_ms` {end_ms} is past the end ({duration_ms:.0} ms)")));
     }
+    // The engine streams the export to a path itself: a staging folder in
+    // the area, then into place under the call's rules.
+    let stage = rules.stage().map_err(err)?;
+    let leaf = out_abs.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "export".into());
+    let staged = stage.path(&leaf);
     let r = s
         .execute(
             "file.exportMedia",
             json!({
-                "path": out_abs.to_string_lossy(),
+                "path": staged.to_string_lossy(),
                 "format": format,
                 "audio": args["audio"].as_bool().unwrap_or(true),
                 "range": "custom",
@@ -403,7 +439,8 @@ fn export(args: &Json, host_dir: &Path) -> Result<Json, String> {
             }),
         )
         .map_err(|e| err(e.to_string()))?;
-    let bytes = std::fs::metadata(&out_abs).map(|m| m.len()).map_err(|e| err(format!("{out_rel}: {e}")))?;
+    let bytes = std::fs::metadata(&staged).map(|m| m.len()).map_err(|e| err(format!("{out_rel}: {e}")))?;
+    stage.commit(&[(staged, canon_to_area(rules, &area, &out_abs))]).map_err(err)?;
     Ok(json!({"out": out_rel, "format": format, "start_ms": start_ms, "end_ms": end_ms, "bytes": bytes, "result": r["result"]}))
 }
 
@@ -411,13 +448,18 @@ fn export(args: &Json, host_dir: &Path) -> Result<Json, String> {
 /// `project.inspect`, and `sequence.inspect` when a sequence is active.
 /// Media the project points at outside the area stay offline (refused by
 /// [`AreaServices`]).
-fn project_info(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn project_info(args: &Json, rules: &Arc<Area>) -> Result<Json, String> {
     let err = |e: String| format!("film.project.info: {e}");
-    let area = area(host_dir).map_err(err)?;
+    let area = canonical(rules).map_err(err)?;
     let (abs, rel) = input(&area, args, "path", MAX_PROJECT_BYTES).map_err(err)?;
-    let mut s = session(&area);
+    let mut s = session(&area, rules);
     s.execute("file.open", json!({"path": abs.to_string_lossy()})).map_err(|e| err(e.to_string()))?;
-    let project = s.execute("project.inspect", json!({})).map_err(|e| err(e.to_string()))?;
+    let mut project = s.execute("project.inspect", json!({})).map_err(|e| err(e.to_string()))?;
+    // The engine names the project by the host's own path: the caller's is
+    // the area-relative one.
+    if let Some(path) = project.get_mut("path").filter(|p| p.is_string()) {
+        *path = json!(rel);
+    }
     let sequence = s.execute("sequence.inspect", json!({})).unwrap_or(Json::Null);
     Ok(json!({"file": rel, "project": project, "sequence": sequence}))
 }
@@ -508,14 +550,16 @@ mod tests {
     fn project_info_opens_a_saved_project() {
         // Written by the engine itself: import the clip, save the project
         // into the area (through the contained services).
-        let film = area(host()).unwrap();
-        let mut s = session(&film);
+        let film = host().join("film").canonicalize().unwrap();
+        let rules = Arc::new(Area::new(&film, None, true));
+        let mut s = session(&film, &rules);
         let abs = film.join(clip());
         s.execute("file.import", json!({"paths": [abs.to_string_lossy()]})).unwrap();
         s.execute("file.saveAs", json!({"path": film.join("p.fcproj").to_string_lossy()})).unwrap();
 
         let v = dispatch("project.info", &json!({"path": "p.fcproj"}), host()).unwrap();
         assert_eq!(v["file"], json!("p.fcproj"));
+        assert!(!v.to_string().contains(&*film.to_string_lossy()), "no host path in the answer: {v}");
         let project = v["project"].to_string();
         assert!(project.contains("clip"), "the imported clip is in the tree: {project}");
         // As `tools.json` declares the answer.
@@ -542,7 +586,8 @@ mod tests {
             assert!(e.contains("film area"), "{e}");
             // The engine-side guard refuses strays on its own (a project
             // file could carry any path), while area files stay readable.
-            let svc = AreaServices { area: area(host()).unwrap() };
+            let film = host().join("film").canonicalize().unwrap();
+            let svc = AreaServices { area: film.clone(), rules: Arc::new(Area::new(&film, None, true)) };
             assert!(svc.read_file(&host().join("film/esc/beside.txt").to_string_lossy()).is_err());
             assert!(svc.read_file("/etc/hosts").is_err());
             assert!(svc.read_file(&host().join("film/clip.mp4").to_string_lossy()).is_ok());
@@ -552,14 +597,110 @@ mod tests {
     #[test]
     fn the_area_is_the_film_subdir_of_the_host_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let a = area(dir.path()).unwrap();
-        assert!(a.is_dir());
-        assert_eq!(a.file_name().unwrap(), "film");
-        assert_eq!(a, dir.path().canonicalize().unwrap().join("film"));
-        // Idempotent, and never the host dir itself (Mail's and
-        // Calendar's data live beside it).
-        assert_eq!(area(dir.path()).unwrap(), a);
-        assert_ne!(a, dir.path().canonicalize().unwrap());
+        let a = Slot::new().area(&service_call("info", json!({}), dir.path(), false), "film").unwrap();
+        assert!(a.root.is_dir());
+        assert_eq!(a.root, dir.path().join("film"));
+        // Never the host dir itself (Mail's and Calendar's data live
+        // beside it), and as before: replacing allowed, no quota.
+        assert!(a.may_replace && a.quota_left.is_none());
+        assert_ne!(canonical(&a).unwrap(), dir.path().canonicalize().unwrap());
+    }
+
+    /// A call as App Hub hands it to the service.
+    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+        ServiceCall { app_id: "os.fixture".into(), service: format!("film.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
+    }
+
+    /// A resolver shaped like the shell's: every call works in `root`, an
+    /// app's own foreground call may replace a file and an agent's may not,
+    /// within `quota`.
+    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+        let slot = Slot::new();
+        let root = root.to_path_buf();
+        slot.set(Some(Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
+        slot
+    }
+
+    /// The suite's clip, copied into a caller's folder.
+    fn clip_in(root: &Path) -> &'static str {
+        std::fs::create_dir_all(root).unwrap();
+        std::fs::copy(host().join("film").join(clip()), root.join(clip())).unwrap();
+        clip()
+    }
+
+    fn no_staging_left(root: &Path) -> bool {
+        std::fs::read_dir(root).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with(octosense_engine_area::STAGING_PREFIX))
+    }
+
+    /// With the shell's resolver every path is relative to the caller's own
+    /// folder and stays inside it, through a link too; an export the engine
+    /// streams itself lands where it was asked.
+    #[test]
+    fn the_resolver_root_is_used_and_paths_stay_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        let clip = clip_in(&root);
+        let areas = resolver(&root, None);
+        let host = dir.path().join(".host");
+        let v = serve(&areas, &service_call("info", json!({"path": clip}), &host, false)).unwrap();
+        assert_eq!(v["video"]["width"], json!(160), "{v}");
+        serve(&areas, &service_call("frame", json!({"path": clip, "out": "shots/f.png", "max_side": 32}), &host, false)).unwrap();
+        let e = serve(&areas, &service_call("export", json!({"path": clip, "out": "cut/a.wav", "end_ms": 100}), &host, false)).unwrap();
+        assert!(root.join("shots/f.png").is_file() && root.join("cut/a.wav").is_file(), "{e}");
+        assert_eq!(e["bytes"].as_u64().unwrap(), std::fs::metadata(root.join("cut/a.wav")).unwrap().len());
+        assert!(!host.exists() && !root.join("film").exists() && no_staging_left(&root));
+        std::fs::write(dir.path().join("beside.mp4"), b"x").unwrap();
+        for bad in ["../beside.mp4", "/etc/hosts", "cut/../../beside.mp4"] {
+            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("export", json!({"path": clip, "out": bad, "end_ms": 100}), &host, true)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            assert!(serve(&areas, &service_call("info", json!({"path": "up/beside.mp4"}), &host, false)).is_err());
+            assert!(serve(&areas, &service_call("frame", json!({"path": clip, "out": "up/f.png"}), &host, true)).is_err());
+            assert!(serve(&areas, &service_call("export", json!({"path": clip, "out": "up/x.wav", "end_ms": 100}), &host, true)).is_err());
+            assert!(!dir.path().join("f.png").exists() && !dir.path().join("x.wav").exists());
+        }
+    }
+
+    /// An agent's call never replaces a file, before the engine works; an
+    /// app's own foreground call may.
+    #[test]
+    fn an_agent_never_replaces_a_file_and_an_app_may() {
+        let dir = tempfile::tempdir().unwrap();
+        let clip = clip_in(dir.path());
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("taken.wav"), b"keep me").unwrap();
+        std::fs::write(dir.path().join("taken.png"), b"keep me").unwrap();
+        for (method, args) in [
+            ("export", json!({"path": clip, "out": "taken.wav", "end_ms": 100})),
+            ("frame", json!({"path": clip, "out": "taken.png"})),
+        ] {
+            let refused = serve(&areas, &service_call(method, args, dir.path(), false)).unwrap_err();
+            assert!(refused.contains("already exists"), "{method}: {refused}");
+        }
+        assert_eq!(std::fs::read(dir.path().join("taken.wav")).unwrap(), b"keep me");
+        assert!(no_staging_left(dir.path()));
+        serve(&areas, &service_call("export", json!({"path": clip, "out": "taken.wav", "end_ms": 100}), dir.path(), true)).unwrap();
+        assert!(std::fs::read(dir.path().join("taken.wav")).unwrap().starts_with(b"RIFF"));
+    }
+
+    /// What a call writes, the engine's streamed export included, must fit
+    /// what is left of the area's quota.
+    #[test]
+    fn output_over_the_quota_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let clip = clip_in(dir.path());
+        let tight = resolver(dir.path(), Some(64));
+        for (method, args) in [
+            ("export", json!({"path": clip, "out": "a.wav", "end_ms": 100})),
+            ("frame", json!({"path": clip, "out": "f.png"})),
+        ] {
+            let refused = serve(&tight, &service_call(method, args, dir.path(), true)).unwrap_err();
+            assert!(refused.contains("bytes left"), "{method}: {refused}");
+        }
+        assert!(!dir.path().join("a.wav").exists() && !dir.path().join("f.png").exists() && no_staging_left(dir.path()));
     }
 
     #[test]

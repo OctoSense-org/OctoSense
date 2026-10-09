@@ -3,13 +3,16 @@
 //! deckcraft's presentation engine behind typed `deck.*` methods. Every
 //! call is a fresh, stateless engine session. The service does all file
 //! I/O itself and feeds the engine bytes, so the engine never touches a
-//! path; everything the service reads or writes lives in the family's
-//! own corner of the caller's host directory (`<host_dir>/deck`) — the
-//! shared `.host` also holds Mail's and Calendar's data, which this
-//! service must never reach. Everything is JSON at the boundary; the
-//! engine's types never cross it.
+//! path, and a link written inside a presentation (an external picture or
+//! media relationship) is kept as a string and never followed. Everything
+//! the service reads or writes lives in the call's area (ADR 0013,
+//! 2026-10-08): the caller's own folder from the shell's resolver
+//! ([`set_area_resolver`]), or without one the legacy `<host_dir>/deck`. A
+//! write that may not replace (an agent's) only creates new files, within
+//! the area's quota ([`Area::write`]). Everything is JSON at the boundary;
+//! the engine's types never cross it.
 //!
-//! Methods (all under the `deck` family; paths relative to `<host_dir>/deck`):
+//! Methods (all under the `deck` family; paths relative to the call's area):
 //! - `info {path}` → the deck inspected: slides with titles, layouts,
 //!   shape counts, sections, theme (a `.pptx`, `.deckcraft` or outline text)
 //! - `text {path}` → `{outline, slides}` — titles unindented, bullets
@@ -32,6 +35,7 @@ use std::path::{Component, Path, PathBuf};
 use deckcraft_engine::cmd::file as engine_file;
 use deckcraft_engine::Session;
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
 /// The longest preview edge `render` produces.
@@ -57,6 +61,14 @@ pub fn register() {
     register_host_service(Box::new(DeckService));
 }
 
+/// The shell's resolver: where each call works (`None` removes it, and
+/// calls work in the legacy `<host dir>/deck` again).
+static AREAS: Slot = Slot::new();
+
+pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
+    AREAS.set(resolver);
+}
+
 /// The `deck.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
 /// shape: the shell declares them for the virtual owner `os.deck` and grants
 /// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
@@ -69,52 +81,53 @@ impl HostService for DeckService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !may_call(&call.app_id) {
-            reply.send(Err("The deck service serves system apps only.".into()));
-            return;
-        }
-        let method = call.method().to_string();
-        let args = call.args.clone();
-        let host_dir = call.host_dir.clone();
-        reply.send(dispatch(&method, &args, &host_dir));
+        reply.send(serve(&AREAS, &call));
     }
 }
 
-fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+/// One call, in the area `areas` gives it.
+fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err("The deck service serves system apps only.".into());
+    }
+    let area = areas.area(call, "deck").map_err(|e| format!("deck: {e}"))?;
+    dispatch_in(call.method(), &call.args, &area)
+}
+
+fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
     match method {
-        "info" => info(args, host_dir),
-        "text" => text(args, host_dir),
-        "render" => render(args, host_dir),
-        "new" => new_deck(args, host_dir),
-        "convert" => convert(args, host_dir),
+        "info" => info(args, area),
+        "text" => text(args, area),
+        "render" => render(args, area),
+        "new" => new_deck(args, area),
+        "convert" => convert(args, area),
         other => Err(format!("deck.{other} is not a method of the deck service")),
     }
 }
 
-/// The family's own corner of the host directory: `<host_dir>/deck`,
-/// created on first use. The shared `.host` also holds other services'
-/// data (Mail's, Calendar's), so nothing the deck service reads or
-/// writes may leave this subdirectory.
-fn area(host_dir: &Path) -> Result<PathBuf, String> {
-    let dir = host_dir.join("deck");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("deck: {e}"))?;
-    Ok(dir)
+/// [`dispatch_in`] in the legacy area `<host_dir>/deck`, as a call without
+/// the shell's resolver works.
+#[cfg(test)]
+fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+    let area = Area::legacy(host_dir, "deck");
+    std::fs::create_dir_all(&area.root).map_err(|e| format!("deck: {e}"))?;
+    dispatch_in(method, args, &area)
 }
 
-/// A path strictly inside the family area: relative, no `..`, no absolute
-/// or prefix component; the resolved path stays under `<host_dir>/deck`
-/// even through symlinks.
-fn contained(host_dir: &Path, rel: &str, method: &str, key: &str) -> Result<PathBuf, String> {
+/// A path strictly inside the call's area: relative, no `..`, no absolute
+/// or prefix component; the resolved path stays under the area even
+/// through symlinks.
+fn contained(area: &Area, rel: &str, method: &str, key: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err(format!("deck.{method}: `{key}` is required"));
     }
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err(format!("deck.{method}: `{key}` stays inside the app's deck directory"));
+        return Err(format!("deck.{method}: `{key}` stays inside this call's folder"));
     }
-    let root = area(host_dir)?;
+    let root = &area.root;
     let joined = root.join(rel_path);
-    let check_root = root.canonicalize().map_err(|e| format!("deck.{method}: deck dir: {e}"))?;
+    let check_root = root.canonicalize().map_err(|e| format!("deck.{method}: folder: {e}"))?;
     let deepest = {
         let mut p = joined.clone();
         while !p.exists() {
@@ -127,17 +140,26 @@ fn contained(host_dir: &Path, rel: &str, method: &str, key: &str) -> Result<Path
     };
     let resolved = deepest.canonicalize().map_err(|e| format!("deck.{method}: {e}"))?;
     if !resolved.starts_with(&check_root) {
-        return Err(format!("deck.{method}: `{key}` stays inside the app's deck directory"));
+        return Err(format!("deck.{method}: `{key}` stays inside this call's folder"));
     }
     Ok(joined)
 }
 
-/// Read `args.path` from the family area and seat it in a fresh engine
+/// A contained output path the call may write: refused before the engine
+/// works when the area's rules would refuse it (an existing file for a call
+/// that may not replace).
+fn out_path(area: &Area, rel: &str, method: &str) -> Result<PathBuf, String> {
+    let out = contained(area, rel, method, "out")?;
+    area.check(&out, 0).map_err(|e| format!("deck.{method}: {e}"))?;
+    Ok(out)
+}
+
+/// Read `args.path` from the call's area and seat it in a fresh engine
 /// session (the engine gets bytes, never a path). Reads `.pptx`,
 /// `.deckcraft` and outline `.txt`/`.md`, by content.
-fn read_deck(args: &Json, host_dir: &Path, method: &str) -> Result<(Session, String), String> {
+fn read_deck(args: &Json, area: &Area, method: &str) -> Result<(Session, String), String> {
     let rel = args["path"].as_str().unwrap_or("").to_string();
-    let path = contained(host_dir, &rel, method, "path")?;
+    let path = contained(area, &rel, method, "path")?;
     let meta = std::fs::metadata(&path).map_err(|e| format!("deck.{method}: {rel}: {e}"))?;
     if meta.len() > MAX_DECK_BYTES {
         return Err(format!("deck.{method}: the file is larger than the service reads"));
@@ -149,15 +171,13 @@ fn read_deck(args: &Json, host_dir: &Path, method: &str) -> Result<(Session, Str
     Ok((s, rel))
 }
 
-/// Write engine output into the family area, capped like reads are.
-fn write_out(path: &Path, bytes: &[u8], method: &str) -> Result<(), String> {
+/// Write engine output into the call's area, capped like reads are, under
+/// the area's rules ([`Area::write`]).
+fn write_out(area: &Area, path: &Path, bytes: &[u8], method: &str) -> Result<(), String> {
     if bytes.len() as u64 > MAX_DECK_BYTES {
         return Err(format!("deck.{method}: the result is larger than the service writes"));
     }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("deck.{method}: {e}"))?;
-    }
-    std::fs::write(path, bytes).map_err(|e| format!("deck.{method}: {e}"))
+    area.write(path, bytes).map_err(|e| format!("deck.{method}: {e}"))
 }
 
 /// The output format `rel`'s extension names, confined to `allowed`
@@ -175,8 +195,8 @@ fn out_format(rel: &str, method: &str, allowed: &[(&str, &'static str)]) -> Resu
 }
 
 /// `info {path}` — the engine's `document.inspect` as JSON.
-fn info(args: &Json, host_dir: &Path) -> Result<Json, String> {
-    let (mut s, rel) = read_deck(args, host_dir, "info")?;
+fn info(args: &Json, area: &Area) -> Result<Json, String> {
+    let (mut s, rel) = read_deck(args, area, "info")?;
     let mut v = s.execute("document.inspect", &json!({})).map_err(|e| format!("deck.info: {e}"))?;
     v["file"] = json!(rel);
     Ok(v)
@@ -184,23 +204,23 @@ fn info(args: &Json, host_dir: &Path) -> Result<Json, String> {
 
 /// `text {path}` — the deck as outline text (titles unindented, body
 /// paragraphs tab-indented by level).
-fn text(args: &Json, host_dir: &Path) -> Result<Json, String> {
-    let (s, _rel) = read_deck(args, host_dir, "text")?;
+fn text(args: &Json, area: &Area) -> Result<Json, String> {
+    let (s, _rel) = read_deck(args, area, "text")?;
     let st = s.doc().map_err(|e| format!("deck.text: {e}"))?;
     Ok(json!({"outline": deckcraft_format::slides_to_outline(&st.doc), "slides": st.doc.slides.len()}))
 }
 
 /// `render {path, slide?, out, max_side?}` — one slide as a PNG whose
 /// longest edge is `max_side` (default 1024, at most 4096).
-fn render(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn render(args: &Json, area: &Area) -> Result<Json, String> {
     let out_rel = args["out"].as_str().unwrap_or("");
     if !out_rel.to_ascii_lowercase().ends_with(".png") {
         return Err("deck.render: `out` is a .png path".into());
     }
-    let out = contained(host_dir, out_rel, "render", "out")?;
+    let out = out_path(area, out_rel, "render")?;
     let slide = args["slide"].as_u64().unwrap_or(0) as usize;
     let max_side = args["max_side"].as_u64().unwrap_or(1024).clamp(16, MAX_RENDER_SIDE) as f64;
-    let (s, _rel) = read_deck(args, host_dir, "render")?;
+    let (s, _rel) = read_deck(args, area, "render")?;
     let st = s.doc().map_err(|e| format!("deck.render: {e}"))?;
     let n = st.doc.slides.len();
     if slide >= n {
@@ -208,16 +228,16 @@ fn render(args: &Json, host_dir: &Path) -> Result<Json, String> {
     }
     let longest = st.doc.slide_size.width.max(st.doc.slide_size.height).max(1.0);
     let (png, width, height) = engine_file::render_png(&st.doc, slide, max_side / longest, false);
-    write_out(&out, &png, "render")?;
+    write_out(area, &out, &png, "render")?;
     Ok(json!({"out": out_rel, "slide": slide, "width": width, "height": height, "bytes": png.len()}))
 }
 
 /// `new {out, slides: [{title, bullets?}]}` — a deck built from titles
 /// and flat bullet lists, written as `.pptx` or `.deckcraft`.
-fn new_deck(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn new_deck(args: &Json, area: &Area) -> Result<Json, String> {
     let out_rel = args["out"].as_str().unwrap_or("");
     let format = out_format(out_rel, "new", &[(".pptx", "pptx"), (".deckcraft", "deckcraft")])?;
-    let out = contained(host_dir, out_rel, "new", "out")?;
+    let out = out_path(area, out_rel, "new")?;
     let slides = args["slides"].as_array().ok_or("deck.new: `slides` is a list of {title, bullets?}")?;
     if slides.is_empty() || slides.len() > MAX_NEW_SLIDES {
         return Err(format!("deck.new: `slides` is 1..={MAX_NEW_SLIDES} slides"));
@@ -259,24 +279,24 @@ fn new_deck(args: &Json, host_dir: &Path) -> Result<Json, String> {
     let mut p = deckcraft_model::defaults::blank_presentation(deckcraft_model::defaults::WIDE, Default::default(), false);
     let made = deckcraft_format::outline_to_slides(&mut p, &outline);
     let bytes = engine_file::save_bytes(&p, format).map_err(|e| format!("deck.new: {e}"))?;
-    write_out(&out, &bytes, "new")?;
+    write_out(area, &out, &bytes, "new")?;
     Ok(json!({"out": out_rel, "slides": made, "format": format}))
 }
 
 /// `convert {path, out}` — the deck re-encoded by `out`'s extension:
 /// `.pptx`, `.deckcraft`, outline `.txt` or `.pdf`.
-fn convert(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn convert(args: &Json, area: &Area) -> Result<Json, String> {
     let out_rel = args["out"].as_str().unwrap_or("");
     let format = out_format(
         out_rel,
         "convert",
         &[(".pptx", "pptx"), (".deckcraft", "deckcraft"), (".txt", "outline"), (".pdf", "pdf")],
     )?;
-    let out = contained(host_dir, out_rel, "convert", "out")?;
-    let (s, _rel) = read_deck(args, host_dir, "convert")?;
+    let out = out_path(area, out_rel, "convert")?;
+    let (s, _rel) = read_deck(args, area, "convert")?;
     let st = s.doc().map_err(|e| format!("deck.convert: {e}"))?;
     let bytes = engine_file::save_bytes(&st.doc, format).map_err(|e| format!("deck.convert: {e}"))?;
-    write_out(&out, &bytes, "convert")?;
+    write_out(area, &out, &bytes, "convert")?;
     Ok(json!({"out": out_rel, "format": format, "bytes": bytes.len()}))
 }
 
@@ -395,16 +415,93 @@ mod tests {
         assert_eq!(std::fs::read(host.join("calendar/events.json")).unwrap(), b"[]", "untouched");
     }
 
+    /// A call as App Hub hands it to the service.
+    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+        ServiceCall { app_id: "os.fixture".into(), service: format!("deck.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
+    }
+
+    /// A resolver shaped like the shell's: every call works in `root`, an
+    /// app's own foreground call may replace a file and an agent's may not,
+    /// within `quota`.
+    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+        let slot = Slot::new();
+        let root = root.to_path_buf();
+        slot.set(Some(std::sync::Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
+        slot
+    }
+
+    fn slides() -> Json {
+        json!([{"title": "Why decks", "bullets": ["One engine"]}, {"title": "How it ports"}])
+    }
+
+    /// Without the shell's resolver a call works in `<host dir>/deck`, as
+    /// before, and may replace.
     #[test]
-    fn the_family_area_is_its_own_subdir() {
+    fn without_a_resolver_the_area_is_the_deck_subdir() {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
-        let a = area(host).unwrap();
-        assert_eq!(a, host.join("deck"));
-        assert!(a.is_dir(), "created on first use");
-        make(host);
+        serve(&Slot::new(), &service_call("new", json!({"out": "talk.pptx", "slides": slides()}), host, false)).unwrap();
         assert!(host.join("deck/talk.pptx").is_file(), "writes land inside the area");
         assert!(!host.join("talk.pptx").exists(), "never beside it");
+        serve(&Slot::new(), &service_call("new", json!({"out": "talk.pptx", "slides": slides()}), host, false)).unwrap();
+    }
+
+    /// With the shell's resolver every path is relative to the caller's own
+    /// folder and stays inside it, through a link too.
+    #[test]
+    fn the_resolver_root_is_used_and_paths_stay_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let areas = resolver(&root, None);
+        let host = dir.path().join(".host");
+        serve(&areas, &service_call("new", json!({"out": "talks/t.pptx", "slides": slides()}), &host, false)).unwrap();
+        assert!(root.join("talks/t.pptx").is_file() && !host.exists() && !root.join("deck").exists());
+        let v = serve(&areas, &service_call("info", json!({"path": "talks/t.pptx"}), &host, false)).unwrap();
+        assert_eq!(v["slides"].as_array().unwrap().len(), 2, "{v}");
+        std::fs::write(dir.path().join("beside.pptx"), b"x").unwrap();
+        for bad in ["../beside.pptx", "/etc/hosts", "talks/../../beside.pptx"] {
+            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("convert", json!({"path": "talks/t.pptx", "out": bad}), &host, true)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("out")).unwrap();
+            assert!(serve(&areas, &service_call("render", json!({"path": "talks/t.pptx", "out": "out/s.png"}), &host, true)).is_err());
+            assert!(!dir.path().join("s.png").exists());
+        }
+    }
+
+    /// An agent's call never replaces a file, before the engine runs; an
+    /// app's own foreground call may.
+    #[test]
+    fn an_agent_never_replaces_a_file_and_an_app_may() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        serve(&areas, &service_call("new", json!({"out": "t.pptx", "slides": slides()}), dir.path(), false)).unwrap();
+        std::fs::write(dir.path().join("t.txt"), b"keep me").unwrap();
+        for (method, args) in [
+            ("convert", json!({"path": "t.pptx", "out": "t.txt"})),
+            ("new", json!({"out": "t.pptx", "slides": slides()})),
+        ] {
+            let refused = serve(&areas, &service_call(method, args, dir.path(), false)).unwrap_err();
+            assert!(refused.contains("already exists"), "{method}: {refused}");
+        }
+        std::fs::write(dir.path().join("s.png"), b"keep").unwrap();
+        assert!(serve(&areas, &service_call("render", json!({"path": "t.pptx", "out": "s.png"}), dir.path(), false)).is_err());
+        assert_eq!(std::fs::read(dir.path().join("t.txt")).unwrap(), b"keep me");
+        serve(&areas, &service_call("convert", json!({"path": "t.pptx", "out": "t.txt"}), dir.path(), true)).unwrap();
+        assert!(std::fs::read_to_string(dir.path().join("t.txt")).unwrap().contains("Why decks"));
+    }
+
+    /// What a call writes must fit what is left of the area's quota.
+    #[test]
+    fn output_over_the_quota_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let refused = serve(&resolver(dir.path(), Some(100)), &service_call("new", json!({"out": "t.pptx", "slides": slides()}), dir.path(), true)).unwrap_err();
+        assert!(refused.contains("bytes left"), "{refused}");
+        assert!(!dir.path().join("t.pptx").exists());
+        serve(&resolver(dir.path(), Some(1 << 22)), &service_call("new", json!({"out": "t.pptx", "slides": slides()}), dir.path(), true)).unwrap();
     }
 
     #[test]

@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "design.info",
-      "description": "Inspect a page-layout document in the design engine's workspace (.designcraft or .idml): page count, page settings, spreads, stories (with overset), styles and swatches. Reads only. `path` is relative to that workspace, a private folder only the design.* tools read and write; files elsewhere on the device are not in it and cannot be named.",
+      "description": "Inspect a page-layout document in your workspace (.designcraft or .idml): page count, page settings, spreads, stories (with overset), styles and swatches. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -28,7 +28,7 @@
     },
     {
       "name": "design.render",
-      "description": "Render one page (0-based `page`, default 0) of a document in the design engine's workspace to a PNG at `out` (a .png path), its longest edge `max_side` pixels (default 1024). Both paths are relative to that workspace (see design.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Render one page (0-based `page`, default 0) of a document in your workspace to a PNG at `out` (a .png path), its longest edge `max_side` pixels (default 1024). Both paths are relative to your workspace (see design.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -56,7 +56,7 @@
     },
     {
       "name": "design.export",
-      "description": "Export a document in the design engine's workspace in the format the extension of `out` names: .pdf, .idml, .epub or .designcraft. For a PDF, `pdf` takes the engine's export options (a page range, spreads, bleed and marks, a PDF/X standard, view settings). Both paths are relative to that workspace (see design.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Export a document in your workspace in the format the extension of `out` names: .pdf, .idml, .epub or .designcraft. For a PDF, `pdf` takes the engine's export options (a page range, spreads, bleed and marks, a PDF/X standard, view settings). Both paths are relative to your workspace (see design.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {

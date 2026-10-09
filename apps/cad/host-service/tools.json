@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "cad.info",
-      "description": "Inspect a drawing (DXF or DWG) in the cad engine's workspace: entity counts by type, layers, blocks, layouts and the model-space extents. Reads only. `path` is relative to that workspace, a private folder only the cad.* tools read and write; files elsewhere on the device are not in it and cannot be named.",
+      "description": "Inspect a drawing (DXF or DWG) in your workspace: entity counts by type, layers, blocks, layouts and the model-space extents. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -30,7 +30,7 @@
     },
     {
       "name": "cad.entities",
-      "description": "List the model-space entities of a drawing in the cad engine's workspace, optionally only one `type` (line, circle, ...) or one `layer`, at most `limit` (default 500, at most 2000) from `offset`. Each entity has its type, layer and handle. Reads only. `path` is relative to that workspace (see cad.info).",
+      "description": "List the model-space entities of a drawing in your workspace, optionally only one `type` (line, circle, ...) or one `layer`, at most `limit` (default 500, at most 2000) from `offset`. Each entity has its type, layer and handle. Reads only. `path` is relative to your workspace (see cad.info).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -56,7 +56,7 @@
     },
     {
       "name": "cad.measure",
-      "description": "Measure in a drawing in the cad engine's workspace, giving exactly one of `dist` (the distance and angle from point p1 to p2) or `area` (the area and perimeter of a polygon through `points`, or of the closed entity with that `handle`, as cad.entities reports it). Points are [x, y]. Reads only. `path` is relative to that workspace (see cad.info).",
+      "description": "Measure in a drawing in your workspace, giving exactly one of `dist` (the distance and angle from point p1 to p2) or `area` (the area and perimeter of a polygon through `points`, or of the closed entity with that `handle`, as cad.entities reports it). Points are [x, y]. Reads only. `path` is relative to your workspace (see cad.info).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -99,7 +99,7 @@
     },
     {
       "name": "cad.render",
-      "description": "Render a drawing's model space in the cad engine's workspace to `out`: a .png fitted to the drawing's extents with its longest edge `max_side` pixels (default 1024), or an .svg. Both paths are relative to that workspace (see cad.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Render a drawing's model space in your workspace to `out`: a .png fitted to the drawing's extents with its longest edge `max_side` pixels (default 1024), or an .svg. Both paths are relative to your workspace (see cad.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -124,7 +124,7 @@
     },
     {
       "name": "cad.convert",
-      "description": "Convert a drawing in the cad engine's workspace and write it there as DXF, DWG, SVG, PNG or PDF, chosen by `format` or else by the extension of `out`. Both paths are relative to that workspace (see cad.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Convert a drawing in your workspace and write it there as DXF, DWG, SVG, PNG or PDF, chosen by `format` or else by the extension of `out`. Both paths are relative to your workspace (see cad.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {

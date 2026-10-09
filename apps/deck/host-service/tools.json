@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "deck.info",
-      "description": "Inspect a presentation in the deck engine's workspace (.pptx, .deckcraft or outline text): its slides with titles, layouts and shape counts, sections and theme. Reads only. `path` is relative to that workspace, a private folder only the deck.* tools read and write; files elsewhere on the device are not in it, so name a file deck.new or an earlier conversion wrote there.",
+      "description": "Inspect a presentation in your workspace (.pptx, .deckcraft or outline text): its slides with titles, layouts and shape counts, sections and theme. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -25,7 +25,7 @@
     },
     {
       "name": "deck.text",
-      "description": "Read a presentation in the deck engine's workspace as outline text: slide titles unindented, bullets tab-indented by level, and the slide count. Reads only. `path` is relative to that workspace (see deck.info).",
+      "description": "Read a presentation in your workspace as outline text: slide titles unindented, bullets tab-indented by level, and the slide count. Reads only. `path` is relative to your workspace (see deck.info).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -47,7 +47,7 @@
     },
     {
       "name": "deck.render",
-      "description": "Render one slide (0-based `slide`, default 0) of a presentation in the deck engine's workspace to a PNG at `out` (a .png path), its longest edge `max_side` pixels (default 1024). Both paths are relative to that workspace (see deck.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Render one slide (0-based `slide`, default 0) of a presentation in your workspace to a PNG at `out` (a .png path), its longest edge `max_side` pixels (default 1024). Both paths are relative to your workspace (see deck.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -75,7 +75,7 @@
     },
     {
       "name": "deck.new",
-      "description": "Write a new presentation into the deck engine's workspace from slide titles and flat bullet lists (1 to 200 slides, at most 64 bullets each). `out` ends in .pptx or .deckcraft and is relative to that workspace (see deck.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Write a new presentation into your workspace from slide titles and flat bullet lists (1 to 200 slides, at most 64 bullets each). `out` ends in .pptx or .deckcraft and is relative to your workspace (see deck.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -112,7 +112,7 @@
     },
     {
       "name": "deck.convert",
-      "description": "Convert a presentation in the deck engine's workspace and write it there, in the format the extension of `out` names: .pptx, .deckcraft, outline .txt or .pdf. Both paths are relative to that workspace (see deck.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Convert a presentation in your workspace and write it there, in the format the extension of `out` names: .pptx, .deckcraft, outline .txt or .pdf. Both paths are relative to your workspace (see deck.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {

@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "sound.info",
-      "description": "Inspect an audio file in the sound engine's workspace (WAV/BWF/RF64, AIFF, FLAC, MP3, Ogg, AAC, ALAC or CAF): format, sample format, sample rate, channels, frames, duration and any BWF metadata. Reads only; offline, no audio device. `path` is relative to that workspace, a private folder only the sound.* tools read and write; files elsewhere on the device are not in it and cannot be named.",
+      "description": "Inspect an audio file in your workspace (WAV/BWF/RF64, AIFF, FLAC, MP3, Ogg, AAC, ALAC or CAF): format, sample format, sample rate, channels, frames, duration and any BWF metadata. Reads only; offline, no audio device. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -31,7 +31,7 @@
     },
     {
       "name": "sound.peaks",
-      "description": "The waveform of an audio file in the sound engine's workspace as `cols` columns (default 512, at most 4096) of [min, max] sample values of a mono mixdown, with its frames, rate, channels and duration. Reads only; files up to 10 minutes. `path` is relative to that workspace (see sound.info).",
+      "description": "The waveform of an audio file in your workspace as `cols` columns (default 512, at most 4096) of [min, max] sample values of a mono mixdown, with its frames, rate, channels and duration. Reads only; files up to 10 minutes. `path` is relative to your workspace (see sound.info).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -58,7 +58,7 @@
     },
     {
       "name": "sound.convert",
-      "description": "Decode an audio file in the sound engine's workspace (up to 10 minutes) and write it there as WAV, AIFF or FLAC, chosen by `format` or else by the extension of `out`, at `bit_depth` (default int24). Offline, no audio device. Both paths are relative to that workspace (see sound.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Decode an audio file in your workspace (up to 10 minutes) and write it there as WAV, AIFF or FLAC, chosen by `format` or else by the extension of `out`, at `bit_depth` (default int24). Offline, no audio device. Both paths are relative to your workspace (see sound.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -87,7 +87,7 @@
     },
     {
       "name": "sound.trim",
-      "description": "Cut the span from `start_ms` to `end_ms` of an audio file in the sound engine's workspace into a new WAV, AIFF or FLAC file at `out` (`format` or the extension of `out`; `bit_depth` as for sound.convert). Offline. Both paths are relative to that workspace (see sound.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Cut the span from `start_ms` to `end_ms` of an audio file in your workspace into a new WAV, AIFF or FLAC file at `out` (`format` or the extension of `out`; `bit_depth` as for sound.convert). Offline. Both paths are relative to your workspace (see sound.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -116,7 +116,7 @@
     },
     {
       "name": "sound.mix",
-      "description": "Mix 1 to 16 audio files in the sound engine's workspace, each with an optional `gain_db` (-96 to 24), into one WAV, AIFF or FLAC file at `out` (`format` or the extension of `out`; `bit_depth` as for sound.convert). Tracks are resampled to the highest rate and mono is spread to the widest layout; the answer says whether the sum clipped. Offline. All paths are relative to that workspace (see sound.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Mix 1 to 16 audio files in your workspace, each with an optional `gain_db` (-96 to 24), into one WAV, AIFF or FLAC file at `out` (`format` or the extension of `out`; `bit_depth` as for sound.convert). Tracks are resampled to the highest rate and mono is spread to the widest layout; the answer says whether the sum clipped. Offline. All paths are relative to your workspace (see sound.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {

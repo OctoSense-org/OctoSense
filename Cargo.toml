@@ -36,6 +36,7 @@ members = [
     "crates/video-api-smoke",
     "crates/wasm-host",
     "crates/skill-gen",
+    "crates/engine-area",
     "apps/reference",
     "apps/news/host-service",
     "apps/sheets/host-service",
@@ -196,6 +197,8 @@ article-core = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0"
 article-makepad = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
+# Where a craft engine works (ADR 0013): the caller's area, its write rules.
+octosense-engine-area = { path = "crates/engine-area" }
 octosense-sheets-service = { path = "apps/sheets/host-service" }
 # The gridcraft spreadsheet engine (ADR 0013): a pinned read-only fork of
 # storytold/gridcraft under ymote; fixes go upstream first, adoption moves
@@ -210,6 +213,10 @@ octosense-photo-service = { path = "apps/photo/host-service" }
 # The photocraft raster engine (ADR 0013): the pinned ymote fork, one revision.
 photocraft-automation = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+# The photo service's linked-file fence (ADR 0013): the document model, and
+# the native format of an embedded smart object's contents.
+photocraft-doc = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-format = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 octosense-word-service = { path = "apps/word/host-service" }
 octosense-deck-service = { path = "apps/deck/host-service" }
 octosense-cad-service = { path = "apps/cad/host-service" }
@@ -244,6 +251,12 @@ soundcraft-dsp = { git = "https://github.com/ymote/soundcraft.git", rev = "c51e5
 # The designcraft page-layout engine (ADR 0013): the pinned ymote fork, one revision.
 designcraft-engine = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
 designcraft-render = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
+# The design service's embedded-reference fence (ADR 0013): the engine's own
+# IDML importer, run with a reader that records instead of reads, and the
+# exact usvg the engine draws placed SVGs with (re-exported by its images
+# crate).
+designcraft-idml = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
+designcraft-images = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
 # The filmcraft video engine (ADR 0013): the pinned ymote fork, one revision.
 filmcraft-engine = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
 filmcraft-codecs = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
@@ -258,9 +271,17 @@ effectcraft-model = { git = "https://github.com/ymote/effectcraft.git", rev = "d
 # The vectorcraft vector engine (ADR 0013): the pinned ymote fork, one revision.
 vectorcraft-engine = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
 vectorcraft-render = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
+# The vector service's embedded-reference fence (ADR 0013): the engine's own
+# SVG importer, run with a reader that records instead of reads, and its
+# native format, for the links a document carries.
+vectorcraft-svg = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
+vectorcraft-format = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
 # The pdfcraft PDF engine (ADR 0013): the pinned ymote fork, one revision;
 # default features off to leave its MCP server out of the build.
 pdfcraft-automation = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399", default-features = false }
+# The pdf service's tests only: the engine's own scripted XFA form, the
+# hostile fixture of the scripts-off fence (ADR 0013).
+pdfcraft-xfa = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }

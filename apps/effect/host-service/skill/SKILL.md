@@ -13,7 +13,7 @@ projects and Lottie (`.json` and dotLottie `.lottie`).
 ## Tools
 
 - `effect.info {path}`: the project's items (names, types, sizes, durations) and each composition's layer count and frame rate.
-- `effect.render {path, out, comp?, time?, max_side?, transparent?}`: one frame of a composition (`comp`: its name or id, default the active one) at `time` seconds, as a PNG at most `max_side` pixels long (default 1024); `transparent` keeps the alpha. Footage outside the folder renders as a placeholder.
+- `effect.render {path, out, comp?, time?, max_side?, transparent?}`: one frame of a composition (`comp`: its name or id, default the active one) at `time` seconds, as a PNG at most `max_side` pixels long (default 1024); `transparent` keeps the alpha. Footage outside your workspace renders as a placeholder.
 - `effect.export_lottie {path, out, comp?, include_expressions?}`: a composition as Lottie (`.json`, or `.lottie`), with the engine's warnings about what Lottie cannot carry.
 - `effect.import_lottie {path, out}`: a Lottie file opened as a composition and saved as a project (`.ecproj`); embedded images are written beside the Lottie file.
 
@@ -21,15 +21,16 @@ projects and Lottie (`.json` and dotLottie `.lottie`).
 
 ## Files
 
-Every path is relative to the effect engine's folder, a private workspace
-that only `effect.*` tools read and write. Absolute paths, `..` and links
-out of it are refused. Your own workspace (`read_file`, `write_file`,
-`view_image`), the person's files and the other engines' folders are outside
-it, and what these tools write stays in it. Nothing you have puts a project
-into this folder: these tools open only files an earlier `effect.*` call
-wrote there, so a project or animation the person has elsewhere cannot be
-opened yet. Say so rather than guessing names, and pick a new name for each
-`out`.
+Every path is relative to your own workspace, the folder your file tools
+(`read_file`, `write_file`, `list_dir`, `view_image`) see: the effect engine
+works in it for you. Absolute paths, `..` and links out of it are refused.
+Every engine works in the same folder, so what one writes the next can open,
+and a file the person puts there is yours to use. No call ever replaces an
+existing file: pick a new name for each `out`, or the call is refused. If
+the person names a file outside your workspace, say that the effect engine
+cannot reach it. Footage outside your workspace renders as a placeholder, 3D
+models are refused, and so is a project whose effects name a LUT, OCIO or
+mocha file by its path rather than holding its text.
 
 ## Examples
 

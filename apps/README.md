@@ -27,7 +27,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
   and `news.notify` (the shell draws the notice).
-- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's `word/` host area. No bundle yet.
+- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's own folder. No bundle yet.
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
@@ -38,29 +38,27 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   speech, embedding and asynchronous video requests. Apps declare `model` and
   exact host API versions; provider entitlement is checked when used. See the
   [media contract and validation limits](ai-providers/host-service/MEDIA.md).
-- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the host directory's own `deck/` corner; no bundle yet.
-- **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the host's own `cad` directory.
+- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder; no bundle yet.
+- **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the caller's own folder.
 - **The `light` engine service** (`light/host-service`) is lightcraft's RAW
   develop engine behind `light.*` (ADR 0013): EXIF/XMP metadata, the develop
   control catalog, and single or batch parametric develop, for system apps
-  only and contained to the `light/` area of the caller's host directory. No
-  bundle yet.
-- **The `sound` host service** (`sound/host-service`) is soundcraft's audio engine behind `sound.*` (ADR 0013), offline file processing only — info, convert, trim, mix and waveform peaks inside the host directory's `sound/` area; it never opens an audio or MIDI device, and no bundle exists yet.
-- **The `design` host service** (`design/host-service`) is designcraft's page-layout engine (ADR 0013) behind `design.*`: document info, page renders to PNG and PDF/IDML/EPUB export, with every path inside its own `design/` area of the host directory; no bundle yet.
+  only and contained to the caller's own folder. No bundle yet.
+- **The `sound` host service** (`sound/host-service`) is soundcraft's audio engine behind `sound.*` (ADR 0013), offline file processing only — info, convert, trim, mix and waveform peaks inside the caller's own folder; it never opens an audio or MIDI device, and no bundle exists yet.
+- **The `design` host service** (`design/host-service`) is designcraft's page-layout engine (ADR 0013) behind `design.*`: document info, page renders to PNG and PDF/IDML/EPUB export, with every path inside the caller's own folder; no bundle yet.
 - **The `film` host service** (`film/host-service`) is the pinned filmcraft
   video engine (ADR 0013) behind `film.*`: probe, frame-to-PNG and bounded
   exports through its own pure-Rust codecs — headless, offline, no bundle yet.
 - **The `effect` host service** (`effect/host-service`) is the effectcraft
   motion-graphics engine (ADR 0013) behind `effect.*` for system apps:
   project info, comp frames rendered to PNG, the engine's command catalog
-  and Lottie import/export, every file under the caller's `effect/` area;
-  no bundle yet.
+  and Lottie import/export, every file in the caller's own folder; no
+  bundle yet.
 - **The vector engine service** (`vector/host-service`,
   `octosense-vector-service`) runs the pinned vectorcraft engine headless
   behind `vector.*` (ADR 0013): inspect, convert, draw by engine commands and
-  render vector documents (SVG, PDF, EPS, DXF, raster) inside its own
-  `vector/` area of the caller's host directory; system apps only, no bundle
-  yet.
+  render vector documents (SVG, PDF, EPS, DXF, raster) inside the caller's
+  own folder; system apps only, no bundle yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
@@ -555,7 +553,7 @@ model lane and tools. Which system apps have one, and how
 | News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
 | Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.draft` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event`, `mail.propose_reply`, `mail.suggest_reply`, `mail.propose_send` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
-| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in its workspace, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)) | the shell's notice card |
+| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in the Photos agent's own folder, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)) | the shell's notice card |
 | Maps, YouTube, Camera | `agent` block, `glance` | `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
@@ -566,14 +564,17 @@ services, in `<family>/host-service/tools.json`. The shell declares them under
 a virtual owner `os.<family>` and grants them to the system agent alone
 (`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)):
 each engine's read tools (`info`, `text`, `inspect`, `entities`, `measure`,
-`controls`, `peaks`, `project.info`) and its act tools that write only inside
-its own area (`new`, `convert`, `render`, `export`, `frame`, `develop`,
-`batch`, `trim`, `mix`, `merge`, `split`, `export_lottie`, `import_lottie`).
+`controls`, `peaks`, `project.info`) and its act tools that only create new
+files (`new`, `convert`, `render`, `export`, `frame`, `develop`, `batch`,
+`trim`, `mix`, `merge`, `split`, `export_lottie`, `import_lottie`).
 `vector.run` and `effect.run`, which run any engine command, are declared but
-not granted. Every path is relative to the engine's own area,
-`<apps root>/.host/<family>`: no tool copies a file in or out yet, so an
-engine works on what its own tools wrote (`word.new`, `deck.new`, the
-conversions).
+not granted, and the shell refuses them. An engine works in its caller's own
+folder (ADR 0013, `../crates/shell/src/host_tools/areas.rs`): for the system
+agent, its workspace, where its own file tools see what the engines wrote and
+every engine opens what the others made. Every path is relative to that
+folder and kept inside it, no call replaces an existing file, and output into
+an app's storage keeps to its quota. Sheets' `sheets.*` and Photos'
+`photos.info` work in their own app's agent folder.
 
 **Engine skills.** Each engine, the sheet and photo engines included, also
 ships a skill for the system agent in `<family>/host-service/skill/`: a

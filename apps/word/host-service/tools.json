@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "word.info",
-      "description": "Inspect a document in the word engine's workspace (docx, md, html, rtf, odt, txt or json): pages, words, paragraphs, sections, comments and document properties. Reads only. `path` is relative to that workspace, a private folder only the word.* tools read and write; files elsewhere on the device are not in it, so name a file word.new or an earlier conversion wrote there.",
+      "description": "Inspect a document in your workspace (docx, md, html, rtf, odt, txt or json): pages, words, paragraphs, sections, comments and document properties. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -30,7 +30,7 @@
     },
     {
       "name": "word.text",
-      "description": "Extract the plain text of a document in the word engine's workspace, with its word and paragraph counts. Reads only. `path` is relative to that workspace (see word.info). A very long document can exceed the answer size limit; word.inspect with text false gives its structure instead.",
+      "description": "Extract the plain text of a document in your workspace, with its word and paragraph counts. Reads only. `path` is relative to your workspace (see word.info). A very long document can exceed the answer size limit; word.inspect with text false gives its structure instead.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -53,7 +53,7 @@
     },
     {
       "name": "word.inspect",
-      "description": "Inspect a document's structure in the word engine's workspace: its blocks (paragraphs with style and runs, tables with cells), with their text unless `text` is false. Reads only. `path` is relative to that workspace (see word.info).",
+      "description": "Inspect a document's structure in your workspace: its blocks (paragraphs with style and runs, tables with cells), with their text unless `text` is false. Reads only. `path` is relative to your workspace (see word.info).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -75,7 +75,7 @@
     },
     {
       "name": "word.convert",
-      "description": "Convert a document in the word engine's workspace and write the result there: docx, md, html, rtf, odt, txt, json, pdf or png, chosen by `format` or else by the extension of `out`. Both paths are relative to that workspace (see word.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Convert a document in your workspace and write the result there: docx, md, html, rtf, odt, txt, json, pdf or png, chosen by `format` or else by the extension of `out`. Both paths are relative to your workspace (see word.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -100,7 +100,7 @@
     },
     {
       "name": "word.new",
-      "description": "Write a new document into the word engine's workspace from plain text: each line becomes a paragraph, with an optional title property. The extension of `out` picks the format, usually .docx. `out` is relative to that workspace (see word.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Write a new document into your workspace from plain text: each line becomes a paragraph, with an optional title property. The extension of `out` picks the format, usually .docx. `out` is relative to your workspace (see word.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {

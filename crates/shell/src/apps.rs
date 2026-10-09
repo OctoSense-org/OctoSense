@@ -344,6 +344,13 @@ pub fn register_host_services() {
         // granted them (`system_chat::grants::ENGINE_TOOLS`).
         #[cfg(feature = "craft-engines")]
         crate::host_tools::engines::register();
+        // Every engine above works in a folder the host picks for each call
+        // (ADR 0013, `host_tools::areas`): a craft engine's tool in its
+        // caller's own (the system agent's workspace, an app agent's
+        // account folder), an app's own engine tool in that app's agent
+        // folder, an app's own request in its storage.
+        #[cfg(feature = "app-hub")]
+        crate::host_tools::areas::install_resolvers();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(wasm_functions)]
         crate::wasm_service::register();

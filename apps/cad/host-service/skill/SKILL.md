@@ -21,14 +21,14 @@ The first three only read; the others write `out`.
 
 ## Files
 
-Every path is relative to the cad engine's folder, a private workspace that
-only `cad.*` tools read and write. Absolute paths, `..` and links out of it
-are refused. Your own workspace (`read_file`, `write_file`, `view_image`),
-the person's files and the other engines' folders are outside it, and what
-these tools write stays in it. Nothing you have puts a drawing into this
-folder: these tools open only files an earlier `cad.*` call wrote there, so
-a drawing the person has elsewhere cannot be opened yet. Say so rather than
-guessing names, and pick a new name for each `out`.
+Every path is relative to your own workspace, the folder your file tools
+(`read_file`, `write_file`, `list_dir`, `view_image`) see: the cad engine
+works in it for you. Absolute paths, `..` and links out of it are refused.
+Every engine works in the same folder, so what one writes the next can open,
+and a file the person puts there is yours to use. No call ever replaces an
+existing file: pick a new name for each `out`, or the call is refused. If
+the person names a file outside your workspace, say that the cad engine
+cannot reach it.
 
 ## Examples
 

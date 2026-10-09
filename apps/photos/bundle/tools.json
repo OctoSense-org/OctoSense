@@ -58,7 +58,7 @@
     },
     {
       "name": "photos.info",
-      "description": "Inspect an image or document in the photo engine's workspace: width, height, layers, colour mode and format warnings, as JSON. Reads only. The path is relative to that workspace and cannot leave it; name a file that is there (a conversion's input or output), not a gallery photo.",
+      "description": "Inspect an image or document in your workspace: width, height, layers, colour mode and format warnings, as JSON. Reads only. The path is relative to your workspace and cannot leave it; name a file that is there, not a gallery photo.",
       "input_schema": {
         "type": "object",
         "properties": {

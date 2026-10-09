@@ -174,12 +174,20 @@ the shell declares them under a virtual owner `os.<family>` (no bundle, no app
 agent, no Settings row) and runs them on the engine's service as that system
 identity. Only the system agent gets them: `ENGINE_TOOLS` in
 `../crates/shell/src/system_chat/grants.rs` grants every read tool and each
-act tool that writes only inside its engine's area, never the command doors
-`vector.run` and `effect.run` (held for their own review). No app's agent gets
-an engine tool: none is shareable. Every path is relative to the engine's own
-area, `<apps root>/.host/<family>`, which neither the files host tools nor the
-system agent's workspace reaches, so an engine sees only what its own tools
-wrote. Change a tool's schema and the service together, keep both schemas
+act tool that only creates new files, never the command doors `vector.run`
+and `effect.run` (held for their own review). No app's agent gets an engine
+tool: none is shareable. An engine works in its caller's own folder (ADR
+0013, 9 Oct 2026; `../crates/shell/src/host_tools/areas.rs` decides it):
+for the system agent, its workspace, the folder its own file tools see, so
+it hands an engine a file by placing it there and reads the result back.
+Sheets' `sheets.*` and Photos' `photos.info` work in their own app's agent
+folder. Every path is relative to that folder and kept inside it, links
+resolved; an agent's write never replaces an existing file, and output into
+an app's jail must fit what is left of its storage quota. These rules live
+once in `../crates/engine-area` (`cargo test --locked -p
+octosense-engine-area`); each service applies them, and fences the paths
+written inside the documents it opens (design, vector, effect, film,
+light). Change a tool's schema and the service together, keep both schemas
 objects (octos takes no other), and add a new tool to `ENGINE_TOOLS` only
 after reviewing it; the shell's `host_tools` tests run every granted tool
 against its declared result.

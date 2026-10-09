@@ -22,15 +22,15 @@ charts.
 
 ## Files
 
-Every path is relative to the deck engine's folder, a private workspace that
-only `deck.*` tools read and write. Absolute paths, `..` and links out of it
-are refused. Your own workspace (`read_file`, `write_file`, `view_image`),
-the person's files and the other engines' folders are outside it, and what
-these tools write stays in it: a PDF that `deck.convert` makes cannot be
-opened by `pdf.*`, and a slide `deck.render` draws cannot be shown from your
-workspace. So work on decks that `deck.new` or an earlier call made, and
-pick a new name for each `out`. If the person names a file of their own, say
-that the deck engine cannot reach it yet.
+Every path is relative to your own workspace, the folder your file tools
+(`read_file`, `write_file`, `list_dir`, `view_image`) see: the deck engine
+works in it for you. Absolute paths, `..` and links out of it are refused.
+Every engine works in the same folder, so what one writes the next can open,
+and a file the person puts there is yours to use. No call ever replaces an
+existing file: pick a new name for each `out`, or the call is refused. If
+the person names a file outside your workspace, say that the deck engine
+cannot reach it. A PDF that `deck.convert` makes opens with `pdf.*`, and a
+slide `deck.render` draws shows with `view_image`.
 
 ## Examples
 
