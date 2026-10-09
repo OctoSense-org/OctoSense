@@ -13,7 +13,7 @@ projects and Lottie (`.json` and dotLottie `.lottie`).
 ## Tools
 
 - `effect.info {path}`: the project's items (names, types, sizes, durations) and each composition's layer count and frame rate. Reads only.
-- `effect.run {path?, cmds, out?, comp?, time?, max_side?, transparent?, include_expressions?}`: up to 64 of the engine's commands, run in order on the project at `path` (an `.ecproj`, or a Lottie `.json`/`.lottie` opened as a new project) or on a new empty project, then written to `out` when given, by its extension: the project as `.ecproj`; a composition (`comp`: its name or id, default the active one) as Lottie `.json` or `.lottie`, with the engine's warnings about what Lottie cannot carry (`include_expressions` keeps expressions); or one frame of it at `time` seconds as a `.png` at most `max_side` pixels long (default 1024; `transparent` keeps the alpha). Each command is `{"id": ..., "params": {...}}`. The answer has each command's result in `results`, so query commands read without writing anything; `"cmds": []` with an `out` converts or renders.
+- `effect.run {path?, cmds, out?, comp?, time?, max_side?, transparent?}`: up to 64 of the engine's commands, run in order on the project at `path` (an `.ecproj`, or a Lottie `.json`/`.lottie` opened as a new project) or on a new empty project, then written to `out` when given, by its extension: the project as `.ecproj`; a composition (`comp`: its name or id, default the active one) as Lottie `.json` or `.lottie`, with the engine's warnings about what Lottie cannot carry; or one frame of it at `time` seconds as a `.png` at most `max_side` pixels long (default 1024; `transparent` keeps the alpha). Each command is `{"id": ..., "params": {...}}`. The answer has each command's result in `results`, so query commands read without writing anything; `"cmds": []` with an `out` converts or renders.
 
 ## How `effect.run` works
 
@@ -25,7 +25,16 @@ lists them), never an effect plug-in. Every tagged id ([file], [code],
 the whole call, and nothing is written. After every command the project is
 checked again: footage outside your workspace, 3D models, effect plug-ins,
 and a LUT, OCIO or mocha parameter that names a file rather than holding
-its text fail the call.
+its text fail the call. Expressions are code: the commands that set them
+are tagged [code], and a project whose compositions hold an enabled
+expression is saved as `.ecproj` but never rendered or exported.
+
+Each call is capped so it cannot stall the device: a composition holds at
+most 8.8 million pixels (4096 × 2160) and 36,000 frames, at 1 to 240 fps;
+a project holds at most 5,000 items, layers and effects; and effect
+parameters stay within their reviewed ranges (a Gaussian blur of at most
+200, an Echo of at most 8 echoes). A command over a cap refuses the whole
+call and says which cap.
 
 The commands act like the app's own menus on one open project: `comp.new`
 makes a composition and opens it, new layers go into the open one, and

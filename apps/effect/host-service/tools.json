@@ -25,7 +25,7 @@
     },
     {
       "name": "effect.run",
-      "description": "Run up to 64 commands from the effect engine's catalog, in order, on the project (.ecproj) or Lottie file at `path` in your workspace, or on a new empty project, then write the project (.ecproj), a composition as Lottie (.json or .lottie; `comp`, `include_expressions`), or one frame (`comp`, `time` seconds) as a .png at most `max_side` pixels long (`transparent` keeps the alpha) to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document) and effects the engine builds in; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the effect-engine skill first.",
+      "description": "Run up to 64 commands from the effect engine's catalog, in order, on the project (.ecproj) or Lottie file at `path` in your workspace, or on a new empty project, then write the project (.ecproj), a composition (`comp`) as Lottie (.json or .lottie), or one frame (`comp`, `time` seconds) as a .png at most `max_side` pixels long (`transparent` keeps the alpha); a project with expressions is saved but never rendered or exported to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document) and effects the engine builds in; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the effect-engine skill first.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -47,8 +47,7 @@
           "comp": {"type": ["string", "integer"]},
           "time": {"type": "number", "minimum": 0},
           "max_side": {"type": "integer", "minimum": 1, "maximum": 4096},
-          "transparent": {"type": "boolean"},
-          "include_expressions": {"type": "boolean"}
+          "transparent": {"type": "boolean"}
         },
         "required": ["cmds"],
         "additionalProperties": false

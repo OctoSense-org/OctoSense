@@ -35,6 +35,14 @@ artboards and selection, with object ids) and `document.info` (counts,
 fonts, images and swatches). The file at `path` is never changed: write
 the result to a new `out`.
 
+Each call is capped so it cannot stall the device: a star or polygon has
+at most 1,000 points, a blend 1,000 steps, a repeat, mosaic or grid
+10,000 copies, and the copies of one call multiply to at most 10,000; a
+document holds at most 20,000 nodes and 100,000 objects as drawn (live
+repeats and effects counted); a raster `out` is at most 8192 pixels on a
+side and 16 megapixels, so choose `scale` to fit. A command over a cap
+refuses the whole call and says which cap.
+
 ## Files
 
 Every path is relative to your own workspace, the folder your file tools

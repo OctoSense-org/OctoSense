@@ -35,6 +35,12 @@ slide's shapes with their ids and text, which `text.set {id, text}`
 replaces). For the outline as text, write `out` as a `.txt` and read it.
 The file at `path` is never changed: write the result to a new `out`.
 
+Each call is capped so it cannot stall the device: a table has at most
+5,625 cells (75 × 75), a chart at most 10,000 data points, a slide at
+most 1920 × 1080 points of area, and the presentations at most 500
+slides, 20,000 shapes and 1,000,000 characters. A command over a cap
+refuses the whole call and says which cap.
+
 ## Files
 
 Every path is relative to your own workspace, the folder your file tools

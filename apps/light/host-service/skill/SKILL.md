@@ -34,6 +34,14 @@ whole develop state. To develop several photos alike, make one call per
 photo with the same commands. The original is never changed: write the
 result to a new `out`.
 
+Each call is capped so it cannot stall the device: an original is at
+most 64 megapixels, an export at most 16 megapixels (AVIF 4: give a
+camera raw's export a `long_edge`, such as 4096), a call
+holds at most 16 photos (virtual copies included), a crop keeps at least
+1% of each side, and an edit holds at most 16 masks, 256 brush strokes
+and 64 spots. A command over a cap refuses the whole call and says which
+cap.
+
 ## Files
 
 Every path is relative to your own workspace, the folder your file tools
@@ -52,8 +60,8 @@ be inside your workspace too.
    (camera, lens, exposure, GPS when the file has it).
 2. Half a stop brighter, white balance at 7200 K, as a JPEG at most 2048 pixels long:
    `light.run {"path": "IMG_0042.dng", "cmds": [{"id": "develop.set", "params": {"values": {"light.exposure": 0.5, "wb.temp": 7200}}}], "out": "IMG_0042-edit.jpg", "long_edge": 2048}`.
-3. Auto-tone, then a little more vibrance, as WebP:
-   `light.run {"path": "IMG_0042.dng", "cmds": [{"id": "develop.auto"}, {"id": "develop.adjust", "params": {"control": "color.vibrance", "delta": 15}}], "out": "IMG_0042-auto.webp", "quality": 85}`.
+3. Auto-tone, then a little more vibrance, as WebP at most 4096 pixels long:
+   `light.run {"path": "IMG_0042.dng", "cmds": [{"id": "develop.auto"}, {"id": "develop.adjust", "params": {"control": "color.vibrance", "delta": 15}}], "out": "IMG_0042-auto.webp", "quality": 85, "long_edge": 4096}`.
 4. The colour controls and their ranges, without writing anything:
    `light.run {"path": "IMG_0042.dng", "cmds": [{"id": "develop.controls", "params": {"section": "color"}}]}`.
 

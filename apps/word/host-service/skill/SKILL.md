@@ -33,6 +33,13 @@ blocks: paragraphs with style and runs, tables with cells; `"text": false`
 leaves the text out). The file at `path` is never changed: write the result
 to a new `out`.
 
+Each call is capped so it cannot stall the device: a table has at most
+10,000 cells, a page is 72 to 1584 points on a side, a replacement may
+grow the text at most 1,000-fold (and replacements chained in one call
+10,000-fold), and a document holds at most 500,000 characters, 50,000
+paragraphs and 128 MiB of pictures; a PDF is at most 10,000 pages. A
+command over a cap refuses the whole call and says which cap.
+
 ## Files
 
 Every path is relative to your own workspace, the folder your file tools

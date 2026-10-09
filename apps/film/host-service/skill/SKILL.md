@@ -28,6 +28,13 @@ not in `commands.md` refuse the whole call, and nothing is written. After
 every command the project is checked again: an effect or setting that
 names a file outside your workspace fails the call.
 
+Each call is capped so it cannot stall the device: a sequence is at most
+4096 pixels on a side (9.4 million in all) at up to 120 fps and 96 kHz; a
+clip's speed is 1% to 10,000%; an export is at most 18,000 frames (5
+minutes at 60 fps); and a call adds at most 5,000 clips, tracks, markers
+and other elements to a project. A command over a cap refuses the whole
+call and says which cap.
+
 Useful queries: `project.inspect` (the bins and items with their ids, and
 the active sequence) and `sequence.inspect {item?}` (its tracks with clip
 ids, timing, effects and transitions). Effects apply to the clips you name

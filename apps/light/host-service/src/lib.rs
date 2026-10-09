@@ -41,6 +41,10 @@
 //!   other id is refused before any command runs. `develop.set {values:
 //!   {control: number}}` sets develop controls, `develop.auto` runs
 //!   auto-tone and `develop.controls` lists the controls with their ranges.
+//!   What one call may ask for is capped: the parameters that multiply work
+//!   at the gate ([`REVIEWED`]), the photos and their settings after every
+//!   command in the service ([`RunBudget`]), the original's and the export's
+//!   pixels (`header_pixels`, `check_export_size`).
 //!
 //! `params` is a `{control: number}` map of the engine's own control ids
 //! (`light.exposure`, `color.vibrance`, `wb.temp`…; `light.controls`
@@ -51,14 +55,17 @@
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
 
+use std::collections::{HashMap, HashSet};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use lightcraft_engine::catalog::PhotoId;
-use lightcraft_engine::export::{export_photo, ExportFormat, ExportOptions};
+use lightcraft_engine::develop::{BrushStroke, DevelopSettings, MaskShape, Spot};
+use lightcraft_engine::export::{export_photo, output_size, ExportFormat, ExportOptions};
 use lightcraft_engine::Session;
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
-use octosense_engine_area::door::{Door, Reviewed};
+use octosense_engine_area::door::{Door, Limit, Measure, Reviewed};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
@@ -93,7 +100,328 @@ const MAX_LONG_EDGE: u64 = 16_384;
 /// a library on disk, and XMP auto-write is off unless a refused `host`
 /// command turns it on. What `safe` commands read are the catalogued photos'
 /// originals, only the one the service imported (a virtual copy shares it).
-static REVIEWED: Reviewed = Reviewed::NONE;
+///
+/// The limits bound the parameters that multiply work or memory. No `safe`
+/// command renders the photo at full size (only the service's own export
+/// does) or makes it larger, and every slider value, curve, profile and
+/// preset is clamped by the engine, except where `develop.merge` and
+/// `mask.update` write settings unchecked, which the service checks after
+/// every command ([`check_settings`]). No command takes a copy count: a
+/// virtual copy is one per photo it names, so nothing here is a copy and the
+/// door's copy factor stays 1; the copies one call makes are bounded by the
+/// service's photo ceiling ([`MAX_RUN_PHOTOS`]).
+static REVIEWED: Reviewed = Reviewed {
+    file_reads: &[],
+    setters: &[],
+    inner: &[],
+    limits: &[
+        BRUSH_PAINT,
+        SPOT_COST,
+        COLOR_SAMPLES,
+        CROP_SIDE,
+        CROP_ASPECT,
+        MERGE_SIZE,
+        UPDATE_SIZE,
+        ids("album.addPhotos"),
+        ids("album.removePhotos"),
+        ids("album.toggleTarget"),
+        ids("develop.matchExposure"),
+        ids("develop.paste"),
+        ids("develop.pastePrevious"),
+        ids("develop.quickAdjust"),
+        ids("develop.reset"),
+        ids("develop.set"),
+        ids("keyword.suggest"),
+        ids("keyword.toggleFromSet"),
+        ids("library.select"),
+        ids("metadata.applyPreset"),
+        ids("photo.addToLibrary"),
+        ids("photo.analyze"),
+        ids("photo.delete"),
+        ids("photo.deletePermanently"),
+        ids("photo.flag"),
+        ids("photo.flipHorizontal"),
+        ids("photo.flipVertical"),
+        ids("photo.label"),
+        ids("photo.pasteMetadata"),
+        ids("photo.pick"),
+        ids("photo.rate"),
+        ids("photo.reject"),
+        ids("photo.restore"),
+        ids("photo.rotateLeft"),
+        ids("photo.rotateRight"),
+        ids("photo.setCaptureTime"),
+        ids("photo.setMeta"),
+        ids("photo.unflag"),
+        ids("photo.virtualCopy"),
+        ids("preset.apply"),
+        ids("stack.auto"),
+        ids("stack.group"),
+        ids("stack.remove"),
+        ids("stack.toggle"),
+        ids("stack.ungroup"),
+    ],
+    copies_per_call: 1.0,
+};
+
+/// A command's `ids`: the engine runs it once for every entry, repeats
+/// included (`ids: [1, 1, 1, …]` repeats the work, `photo.virtualCopy` the
+/// copies), and some of them compare every entry with every other. At most
+/// the photos a call may hold ([`MAX_RUN_PHOTOS`]), each named once
+/// ([`ids_named`]). The service checks the `ids` of every other command
+/// the same way before it runs ([`RunBudget::before`]).
+const fn ids(id: &'static str) -> Limit {
+    Limit { id, what: "photos in `ids`", measure: Measure::Custom(ids_named), max: MAX_RUN_PHOTOS as f64, copies: false }
+}
+
+/// `mask.brushStroke {points, size}`: the renderer places a dab every
+/// quarter of its radius (at least every half pixel) along the path, each
+/// painting a disc of `size` × the photo's long edge, and the engine clamps
+/// neither the points nor their coordinates nor the size: points far
+/// outside the photo make billions of dabs and exhaust memory. A stroke
+/// paints about 4π × its length × its size image areas ([`brush_paint`]);
+/// 16 image areas (a long scribble with a large brush) is a few hundred
+/// million pixel writes at full size.
+const BRUSH_PAINT: Limit = Limit { id: "mask.brushStroke", what: "image areas of brush", measure: Measure::Custom(brush_paint), max: MAX_STROKE_PAINT, copies: false };
+
+/// `spot.add {points, size}`: every pixel of the spot's bounding box
+/// measures its distance to every point, and the engine leaves the points
+/// and their coordinates unbounded: the box (clipped to the photo) × the
+/// points, in image areas ([`spot_cost`]); 16 is a long healing stroke
+/// across the photo.
+const SPOT_COST: Limit = Limit { id: "spot.add", what: "image areas of spot", measure: Measure::Custom(spot_cost), max: MAX_SPOT_COST, copies: false };
+
+/// `mask.add {kind: "colorRange", samples}`: every pixel is compared with
+/// every sample when the mask renders, and `mask.add` takes any number
+/// (`mask.sampleColor` stops at 5); 16.
+const COLOR_SAMPLES: Limit =
+    Limit { id: "mask.add", what: "colour samples", measure: Measure::Custom(color_samples), max: MAX_COLOR_SAMPLES as f64, copies: false };
+
+/// `crop.set {rect}`: the engine keeps the crop inside the photo but gives it
+/// no minimum, and the blur radii of the 384-pixel sample renders
+/// (`pointColor.pick`, `develop.targeted`) grow with the output pixels a
+/// source pixel spans, so a sliver of a crop makes them run for minutes. A
+/// crop side at least 1% of the photo ([`crop_rect`]).
+const CROP_SIDE: Limit = Limit { id: "crop.set", what: "crop", measure: Measure::Custom(crop_rect), max: 1.0, copies: false };
+
+/// `crop.aspect {aspect}`: an extreme ratio refits the crop into the same
+/// sliver ([`crop_ratio`]); at most 100 : 1 either way, which keeps a side at
+/// least 1% of the photo.
+const CROP_ASPECT: Limit = Limit { id: "crop.aspect", what: "to 1 crop ratio", measure: Measure::Custom(crop_ratio), max: 100.0, copies: false };
+
+/// `develop.merge {settings}` merges settings JSON into the photo
+/// unchecked: masks, strokes, spots, curve points, a crop out of the photo,
+/// noise-reduction and defringe strengths past their sliders. The service
+/// checks the settings it leaves after every command ([`check_settings`]);
+/// this refuses a payload larger than a photo's settings may be at all
+/// ([`MAX_SETTINGS_BYTES`]) before anything runs.
+const MERGE_SIZE: Limit =
+    Limit { id: "develop.merge", what: "bytes of settings", measure: Measure::Custom(settings_param_bytes), max: MAX_SETTINGS_BYTES as f64, copies: false };
+
+/// `mask.update {shape}`: the same for one mask part's shape.
+const UPDATE_SIZE: Limit =
+    Limit { id: "mask.update", what: "bytes of settings", measure: Measure::Custom(shape_param_bytes), max: MAX_SETTINGS_BYTES as f64, copies: false };
+
+/// The most photos a call may hold: the original and its virtual copies.
+/// Each copy decodes the original again for every render it gets (the
+/// decoded source is cached per photo), and the commands that act on every
+/// selected photo repeat their work per photo. `batch`'s own 16.
+const MAX_RUN_PHOTOS: usize = 16;
+/// The most image areas one brush stroke may paint ([`BRUSH_PAINT`]).
+const MAX_STROKE_PAINT: f64 = 16.0;
+/// The most image areas one spot may cost ([`SPOT_COST`]).
+const MAX_SPOT_COST: f64 = 16.0;
+/// The most colour samples one colour-range part may hold.
+const MAX_COLOR_SAMPLES: usize = 16;
+/// The most points a stroke or a spot may have, and the coordinates they
+/// stay within (normalized: the photo is 0..1, a stroke may start outside
+/// it).
+const MAX_POINTS: usize = 10_000;
+const POINT_RANGE: std::ops::RangeInclusive<f64> = -1.0..=2.0;
+/// The most a stroke's path may run, in long edges of the photo.
+const MAX_STROKE_LENGTH: f64 = 100.0;
+/// The most a photo's develop settings may hold, as JSON: a photo with
+/// dozens of masks and long strokes is ~100 KB; every edit clones them into
+/// its history and undo, and every render reads them.
+const MAX_SETTINGS_BYTES: usize = 1 << 20;
+/// The most masks, mask parts, brush strokes, spots and red-eye corrections
+/// a photo may hold: every visible mask keeps a plane of the output's size
+/// while it renders (4 bytes a pixel), every part makes a pass over every
+/// pixel, every pixel loops over every red-eye correction.
+const MAX_MASKS: usize = 16;
+const MAX_MASK_PARTS: usize = 32;
+const MAX_STROKES: usize = 256;
+const MAX_SPOTS: usize = 64;
+const MAX_RED_EYES: usize = 16;
+/// The most image areas all the strokes and all the spots of a photo may
+/// paint and cost, together.
+const MAX_PHOTO_PAINT: f64 = 64.0;
+/// The most pixels an exported image may have: the export renders at its
+/// output size with ~20–30 bytes a pixel beyond the decoded source (a
+/// 6000 × 4000 JPEG took 0.9 s and 1.8 GB at opt-level 1, a TIFF 1.9 s and
+/// 2.5 GB), so 16 Mpx (4900 × 3266); `long_edge` exports a larger photo
+/// smaller. AVIF encodes ~10× slower a pixel (8.2 s for 24 Mpx), so 4 Mpx.
+const MAX_OUT_PIXELS: u64 = 16_000_000;
+const MAX_AVIF_PIXELS: u64 = 4_000_000;
+/// The most pixels an original may have: PNG, TIFF, WebP, GIF, BMP, PSD and
+/// JPEG XL are decoded whole when they are imported (~12–16 bytes a pixel;
+/// the decoder's own limit is 2^30 pixels, 16 GB), camera raws when they
+/// are developed (2 bytes a pixel and their demosaic). 64 Mpx, past every
+/// camera but the largest medium formats.
+const MAX_INPUT_PIXELS: u64 = 64_000_000;
+/// `spot.findDust` decodes the original and renders it at 1600 px every time
+/// (it caches neither): at most this many a call.
+const MAX_DUST_SEARCHES: usize = 4;
+/// The most bytes of results one call may return, together (every result is
+/// kept until the reply; `export.savePreset` answers every preset each
+/// time): what the service reads at most.
+const MAX_RUN_RESULT_BYTES: u64 = 64 << 20;
+
+/// A command's `ids`, refused when one repeats.
+fn ids_named(params: &Json) -> Result<Option<f64>, String> {
+    let Some(ids) = params.get("ids").and_then(Json::as_array) else { return Ok(None) };
+    let mut seen = HashSet::new();
+    if let Some(twice) = ids.iter().find(|id| !seen.insert(id.to_string())) {
+        return Err(format!("`ids` names photo {twice} twice"));
+    }
+    Ok(Some(ids.len() as f64))
+}
+
+/// The points of a stroke or spot (`points: [[x, y], …]`), refused when
+/// there are more than [`MAX_POINTS`] or one is out of [`POINT_RANGE`]
+/// (the engine skips a pair that is not two numbers).
+fn points_of(params: &Json) -> Result<Vec<(f64, f64)>, String> {
+    let points: Vec<(f64, f64)> = params
+        .get("points")
+        .and_then(Json::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|p| Some((p.get(0)?.as_f64()?, p.get(1)?.as_f64()?)))
+        .collect();
+    check_points(points.iter().copied())?;
+    Ok(points)
+}
+
+fn check_points(points: impl ExactSizeIterator<Item = (f64, f64)>) -> Result<(), String> {
+    if points.len() > MAX_POINTS {
+        return Err(format!("{} points, more than the {MAX_POINTS} the door allows a stroke or spot", points.len()));
+    }
+    for (x, y) in points {
+        if !(POINT_RANGE.contains(&x) && POINT_RANGE.contains(&y)) {
+            return Err(format!("a point at {x}, {y} is outside the {}..{} the door allows (the photo is 0..1)", POINT_RANGE.start(), POINT_RANGE.end()));
+        }
+    }
+    Ok(())
+}
+
+/// The image areas a stroke of `points` and `size` paints (4π × length ×
+/// size), refused past [`MAX_STROKE_LENGTH`] or with a size outside 0..1.
+fn paint_of(points: &[(f64, f64)], size: f64) -> Result<f64, String> {
+    if !(0.0..=1.0).contains(&size) {
+        return Err(format!("a brush size of {size} is outside the 0..1 (of the long edge) the door allows"));
+    }
+    let length: f64 = points.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
+    if length > MAX_STROKE_LENGTH {
+        return Err(format!("a stroke {length} long edges long, more than the {MAX_STROKE_LENGTH} the door allows"));
+    }
+    Ok(4.0 * std::f64::consts::PI * length * size)
+}
+
+/// `mask.brushStroke`'s paint ([`BRUSH_PAINT`]); the engine's default size
+/// is 0.03.
+fn brush_paint(params: &Json) -> Result<Option<f64>, String> {
+    let points = points_of(params)?;
+    let size = params.get("size").and_then(Json::as_f64).unwrap_or(0.03);
+    Ok(Some(paint_of(&points, size)?))
+}
+
+/// The image areas a spot of `points` and `size` costs: its points'
+/// bounding box, grown by the size and clipped to the photo, × the points.
+fn spot_area(points: &[(f64, f64)], size: f64) -> f64 {
+    let Some(&first) = points.first() else { return 0.0 };
+    let (x0, y0, x1, y1) = points.iter().fold((first.0, first.1, first.0, first.1), |(a, b, c, d), &(x, y)| (a.min(x), b.min(y), c.max(x), d.max(y)));
+    let clip = |lo: f64, hi: f64| ((hi + size).min(1.0) - (lo - size).max(0.0)).max(0.0);
+    clip(x0, x1) * clip(y0, y1) * points.len() as f64
+}
+
+/// `spot.add`'s cost ([`SPOT_COST`]): the engine clamps its size to
+/// 0.001–0.25, default 0.02.
+fn spot_cost(params: &Json) -> Result<Option<f64>, String> {
+    let points = points_of(params)?;
+    let size = params.get("size").and_then(Json::as_f64).unwrap_or(0.02).clamp(0.001, 0.25);
+    Ok(Some(spot_area(&points, size)))
+}
+
+/// `mask.add`'s colour samples, when it adds a colour range.
+fn color_samples(params: &Json) -> Result<Option<f64>, String> {
+    Ok(params.get("samples").and_then(Json::as_array).map(|s| s.len() as f64))
+}
+
+/// `crop.set`'s rectangle (normalized `[x0, y0, x1, y1]`), refused when a
+/// side is under 1% of the photo or a value is not a number.
+fn crop_rect(params: &Json) -> Result<Option<f64>, String> {
+    let Some(rect) = params.get("rect").and_then(Json::as_array) else { return Ok(None) };
+    let v: Vec<f64> = rect.iter().filter_map(Json::as_f64).collect();
+    let [x0, y0, x1, y1] = v[..] else { return Ok(None) };
+    if !((x1 - x0).abs() >= 0.01 && (y1 - y0).abs() >= 0.01) {
+        return Err("a crop side is at least 1% of the photo".into());
+    }
+    Ok(None)
+}
+
+/// `crop.aspect`'s ratio, the larger side over the smaller: `"WxH"` or
+/// `[w, h]` (the other spellings keep the photo's or the crop's own).
+fn crop_ratio(params: &Json) -> Result<Option<f64>, String> {
+    let (w, h) = match params.get("aspect") {
+        Some(Json::String(s)) => match s.split_once(['x', 'X', ':']) {
+            Some((w, h)) => (w.trim().parse::<f64>().map_err(|_| "`aspect` is WxH")?, h.trim().parse::<f64>().map_err(|_| "`aspect` is WxH")?),
+            None => return Ok(None),
+        },
+        Some(Json::Array(a)) => (a.first().and_then(Json::as_f64).unwrap_or(1.0), a.get(1).and_then(Json::as_f64).unwrap_or(1.0)),
+        _ => return Ok(None),
+    };
+    let ratio = (w / h).max(h / w);
+    if !(ratio.is_finite() && ratio >= 1.0) {
+        return Err("`aspect` is two numbers above 0".into());
+    }
+    Ok(Some(ratio))
+}
+
+/// The JSON size of a command's `settings` or `shape`.
+fn settings_param_bytes(params: &Json) -> Result<Option<f64>, String> {
+    Ok(params.get("settings").map(|v| json_len(v) as f64))
+}
+
+fn shape_param_bytes(params: &Json) -> Result<Option<f64>, String> {
+    Ok(params.get("shape").map(|v| json_len(v) as f64))
+}
+
+/// Bytes written to it, counted and dropped.
+struct Count(u64);
+
+impl std::io::Write for Count {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len() as u64;
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The length of `v` as JSON, without writing it out.
+fn json_len(v: &Json) -> u64 {
+    let mut count = Count(0);
+    let _ = serde_json::to_writer(&mut count, v);
+    count.0
+}
+
+/// The length of a photo's develop settings as JSON.
+fn settings_len(d: &DevelopSettings) -> u64 {
+    let mut count = Count(0);
+    let _ = serde_json::to_writer(&mut count, d);
+    count.0
+}
 
 /// The command door's gate: lightcraft's reviewed classification
 /// (`skill/safety.json`, generated and drift-checked by `tests/skill.rs`)
@@ -218,6 +546,13 @@ fn original(dir: &Path, rel: &str, method: &str) -> Result<PathBuf, String> {
     if !std::fs::metadata(&abs).is_ok_and(|m| m.is_file()) {
         return Err(format!("light.{method}: `{rel}` is not a file"));
     }
+    // The engine decodes most formats whole when it imports them: their size
+    // is read from the header first.
+    if let Some(pixels) = header_pixels(&abs).map_err(|e| format!("light.{method}: `{rel}`: {e}"))? {
+        if pixels > MAX_INPUT_PIXELS {
+            return Err(format!("light.{method}: `{rel}` is {pixels} pixels, more than the {MAX_INPUT_PIXELS} the service decodes"));
+        }
+    }
     let root = dir.canonicalize().map_err(|e| format!("light.{method}: folder: {e}"))?;
     let full = abs.to_string_lossy();
     let stem = abs.with_extension("xmp");
@@ -302,20 +637,16 @@ fn apply_params(s: &mut Session, args: &Json, method: &str) -> Result<(), String
 /// and write the bytes, its sidecars with it, all or none under the area's
 /// rules — never over an imported original.
 fn export_one(s: &mut Session, area: &Area, id: PhotoId, out_abs: &Path, out_rel: &str, args: &Json, method: &str) -> Result<Json, String> {
-    let quality = args["quality"].as_u64().unwrap_or(92).clamp(1, 100);
-    let mut p = json!({"quality": quality});
-    if let Some(n) = args["long_edge"].as_u64() {
-        p["longEdge"] = json!(n.clamp(16, MAX_LONG_EDGE));
-    }
-    let ext = out_abs.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-    let format = ExportFormat::parse(&ext)
-        .ok_or_else(|| format!("light.{method}: `{out_rel}`: unknown extension (use .jpg, .png, .tif, .webp, .avif or .dng)"))?;
-    let mut o = ExportOptions::from_json(&p);
-    o.format = format;
+    let o = export_options(args, out_abs, out_rel, method)?;
     let guard = s.original_guard();
     guard.check(out_abs).map_err(|e| format!("light.{method}: {e}"))?;
     area.check(out_abs, 0).map_err(|e| format!("light.{method}: {e}"))?;
-    let e = export_photo(s, id, &o, 1).map_err(|e| format!("light.{method}: {e}"))?;
+    check_export_size(s, id, &o, method)?;
+    // A panic in the export (it runs outside the engine's command guard)
+    // is the call's error, not the caller's thread's.
+    let e = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| export_photo(s, id, &o, 1)))
+        .map_err(|_| format!("light.{method}: the engine failed to export the photo"))?
+        .map_err(|e| format!("light.{method}: {e}"))?;
     // The output and its sidecars, staged, then moved into place together.
     let stage = area.stage().map_err(|e| format!("light.{method}: {e}"))?;
     let main = stage.path("out");
@@ -332,6 +663,45 @@ fn export_one(s: &mut Session, area: &Area, id: PhotoId, out_abs: &Path, out_rel
     }
     stage.commit(&moves).map_err(|e| format!("light.{method}: {e}"))?;
     Ok(json!({"out": out_rel, "width": e.width, "height": e.height, "sidecars": sidecars}))
+}
+
+/// The export options of a call: `quality` (1–100, default 92), `long_edge`
+/// (16–16384, a whole number however it is written; none exports the
+/// photo's own size) and the format `out`'s extension names.
+fn export_options(args: &Json, out_abs: &Path, out_rel: &str, method: &str) -> Result<ExportOptions, String> {
+    let quality = args["quality"].as_u64().unwrap_or(92).clamp(1, 100);
+    let mut p = json!({"quality": quality});
+    if let Some(n) = args["long_edge"].as_f64().filter(|n| n.is_finite() && *n > 0.0) {
+        p["longEdge"] = json!((n.round() as u64).clamp(16, MAX_LONG_EDGE));
+    }
+    let ext = out_abs.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+    let format = ExportFormat::parse(&ext)
+        .ok_or_else(|| format!("light.{method}: `{out_rel}`: unknown extension (use .jpg, .png, .tif, .webp, .avif or .dng)"))?;
+    let mut o = ExportOptions::from_json(&p);
+    o.format = format;
+    Ok(o)
+}
+
+/// Before an export: a rendered image within [`MAX_OUT_PIXELS`] (AVIF
+/// [`MAX_AVIF_PIXELS`]), the original a DNG re-encodes within
+/// [`MAX_INPUT_PIXELS`]. The engine renders at the output size, which a crop
+/// (or a `long_edge`) sets.
+fn check_export_size(s: &Session, id: PhotoId, o: &ExportOptions, method: &str) -> Result<(), String> {
+    let photo = s.catalog.photo(id).ok_or_else(|| format!("light.{method}: no photo to export"))?;
+    if !o.format.is_rendered() {
+        let pixels = u64::from(photo.width) * u64::from(photo.height);
+        if pixels > MAX_INPUT_PIXELS {
+            return Err(format!("light.{method}: the original is {pixels} pixels, more than the {MAX_INPUT_PIXELS} the service re-encodes"));
+        }
+        return Ok(());
+    }
+    let (w, h) = output_size(photo, o);
+    let pixels = w as u64 * h as u64;
+    let max = if o.format == ExportFormat::Avif { MAX_AVIF_PIXELS } else { MAX_OUT_PIXELS };
+    if pixels > max {
+        return Err(format!("light.{method}: the export would be {w} × {h} = {pixels} pixels, more than the {max} the service writes (give a smaller `long_edge`)"));
+    }
+    Ok(())
 }
 
 fn develop(args: &Json, area: &Area) -> Result<Json, String> {
@@ -424,10 +794,21 @@ fn run(args: &Json, area: &Area) -> Result<Json, String> {
         None => None,
     };
     let mut s = Session::new().with_fs();
-    import(&mut s, &input, rel, "run")?;
+    let photo = import(&mut s, &input, rel, "run")?;
+    // A camera raw is sized from its header when it is imported, and decoded
+    // whole when it is developed.
+    if let Some(p) = s.catalog.photo(photo) {
+        let pixels = u64::from(p.width) * u64::from(p.height);
+        if pixels > MAX_INPUT_PIXELS {
+            return Err(format!("light.run: `{rel}` is {pixels} pixels, more than the {MAX_INPUT_PIXELS} the service decodes"));
+        }
+    }
+    let mut budget = RunBudget::start(&s, !admitted.is_empty())?;
     let mut results = Vec::with_capacity(admitted.len());
     for (id, params) in admitted {
+        budget.before(&id, &params)?;
         let r = s.execute(&id, &params).map_err(|e| format!("light.run {id}: {e}"))?;
+        budget.after(&s, &id, &r)?;
         results.push(json!({"id": id, "result": r}));
     }
     let Some((out_rel, out)) = out else { return Ok(json!({"results": results, "out": Json::Null})) };
@@ -435,6 +816,302 @@ fn run(args: &Json, area: &Area) -> Result<Json, String> {
     let mut written = export_one(&mut s, area, active, &out, out_rel, args, "run")?;
     written["results"] = Json::Array(results);
     Ok(written)
+}
+
+/// What one `run` call has done so far, against the door's ceilings: at
+/// most [`MAX_RUN_PHOTOS`] photos, each photo's settings within
+/// [`check_settings`] after every command (whatever wrote them: a slider,
+/// `develop.merge`, a preset, a paste), at most [`MAX_DUST_SEARCHES`] dust
+/// searches, and its answers within [`MAX_RUN_RESULT_BYTES`].
+struct RunBudget {
+    /// Each photo's settings as last checked. Holding them makes the
+    /// catalog copy them for an edit (it edits in place what nothing else
+    /// holds), so the same pointer means unchanged.
+    checked: HashMap<u64, Arc<DevelopSettings>>,
+    dust_searches: usize,
+    result_bytes: u64,
+}
+
+impl RunBudget {
+    /// The budget of a call on `s` as imported (its settings may come from an
+    /// XMP sidecar): with commands to run, refused if it is already over.
+    fn start(s: &Session, runs_commands: bool) -> Result<RunBudget, String> {
+        if runs_commands {
+            for p in s.catalog.photos() {
+                check_settings(&p.develop).map_err(|e| format!("light.run: the photo's settings hold {e}, so the door does not run commands on it"))?;
+            }
+        }
+        let checked = s.catalog.photos().map(|p| (p.id.0, p.develop.clone())).collect();
+        Ok(RunBudget { checked, dust_searches: 0, result_bytes: 0 })
+    }
+
+    /// Before command `id`: its `ids` (every command's, those the gate does
+    /// not know too) and the dust searches of the call.
+    fn before(&mut self, id: &str, params: &Json) -> Result<(), String> {
+        if let Some(n) = ids_named(params).map_err(|e| format!("light.run: `{id}`: {e}"))? {
+            if n > MAX_RUN_PHOTOS as f64 {
+                return Err(format!("light.run: `{id}`: `ids` names {n} photos, more than the {MAX_RUN_PHOTOS} the door allows"));
+            }
+        }
+        if id == "spot.findDust" {
+            self.dust_searches += 1;
+            if self.dust_searches > MAX_DUST_SEARCHES {
+                return Err(format!("light.run: `spot.findDust` decodes and renders the photo every time: at most {MAX_DUST_SEARCHES} in one call"));
+            }
+        }
+        Ok(())
+    }
+
+    /// After command `id`: the photos within the ceiling, the settings of
+    /// every photo it changed within [`check_settings`], and its answer
+    /// within the results budget.
+    fn after(&mut self, s: &Session, id: &str, result: &Json) -> Result<(), String> {
+        let n = s.catalog.len();
+        if n > MAX_RUN_PHOTOS {
+            return Err(format!("light.run: `{id}` leaves {n} photos, more than the {MAX_RUN_PHOTOS} the door allows (the original and its virtual copies)"));
+        }
+        for p in s.catalog.photos() {
+            if !self.checked.get(&p.id.0).is_some_and(|c| Arc::ptr_eq(c, &p.develop) || **c == *p.develop) {
+                check_settings(&p.develop).map_err(|e| format!("light.run: `{id}` leaves photo {} with {e}", p.id.0))?;
+                self.checked.insert(p.id.0, p.develop.clone());
+            }
+        }
+        self.result_bytes += json_len(result);
+        if self.result_bytes > MAX_RUN_RESULT_BYTES {
+            return Err(format!("light.run: `{id}`: the results of this call total {} bytes, more than the {MAX_RUN_RESULT_BYTES} the door returns", self.result_bytes));
+        }
+        Ok(())
+    }
+}
+
+/// Whether a photo's develop settings are within what the door lets a call
+/// render: every slider within its range, the crop inside the photo and at
+/// least 1% of it, and the masks, strokes, spots and red-eye corrections
+/// within their counts and what they paint ([`MAX_PHOTO_PAINT`]), the
+/// whole within [`MAX_SETTINGS_BYTES`]. The engine clamps what its sliders
+/// and tools write; `develop.merge`, `mask.update` and a sidecar write
+/// anything.
+fn check_settings(d: &DevelopSettings) -> Result<(), String> {
+    for spec in lightcraft_engine::develop::CONTROLS {
+        if let Some(v) = lightcraft_engine::develop::controls::get(d, spec.id) {
+            if !(spec.min..=spec.max).contains(&v) {
+                return Err(format!("`{}` at {v}, outside its {}..{}", spec.id, spec.min, spec.max));
+            }
+        }
+    }
+    let crop = &d.crop.geometry;
+    let r = &crop.rect;
+    let inside = [r.x0, r.y0, r.x1, r.y1].iter().all(|v| (-1.0..=2.0).contains(v));
+    if !(inside && (r.x1 - r.x0).abs() >= 0.01 && (r.y1 - r.y0).abs() >= 0.01 && (-45.0..=45.0).contains(&crop.angle)) {
+        return Err(format!("a crop of {}, {} to {}, {} at {}°, not one the door renders (inside the photo, each side at least 1% of it)", r.x0, r.y0, r.x1, r.y1, crop.angle));
+    }
+    let mut paint = 0.0;
+    let parts: usize = d.masks.iter().map(|m| m.components.len()).sum();
+    if d.masks.len() > MAX_MASKS || parts > MAX_MASK_PARTS {
+        return Err(format!("{} masks of {parts} parts, more than the {MAX_MASKS} masks and {MAX_MASK_PARTS} parts the door allows", d.masks.len()));
+    }
+    let strokes: Vec<&BrushStroke> = d.masks.iter().flat_map(|m| &m.components).flat_map(|c| match &c.shape {
+        MaskShape::Brush { strokes } => strokes.as_slice(),
+        _ => &[],
+    }).collect();
+    if strokes.len() > MAX_STROKES {
+        return Err(format!("{} brush strokes, more than the {MAX_STROKES} the door allows", strokes.len()));
+    }
+    for stroke in strokes {
+        check_points(stroke.points.iter().map(|p| (p.x, p.y)))?;
+        let points: Vec<(f64, f64)> = stroke.points.iter().map(|p| (p.x, p.y)).collect();
+        let painted = paint_of(&points, stroke.size)?;
+        if painted > MAX_STROKE_PAINT {
+            return Err(format!("a brush stroke painting {painted} image areas, more than the {MAX_STROKE_PAINT} the door allows"));
+        }
+        paint += painted;
+    }
+    for c in d.masks.iter().flat_map(|m| &m.components) {
+        if let MaskShape::ColorRange { samples, .. } = &c.shape {
+            if samples.len() > MAX_COLOR_SAMPLES {
+                return Err(format!("{} colour samples, more than the {MAX_COLOR_SAMPLES} the door allows", samples.len()));
+            }
+        }
+    }
+    if d.spots.len() > MAX_SPOTS || d.red_eye.len() > MAX_RED_EYES {
+        return Err(format!("{} spots and {} red-eye corrections, more than the {MAX_SPOTS} and {MAX_RED_EYES} the door allows", d.spots.len(), d.red_eye.len()));
+    }
+    for spot in &d.spots {
+        paint += check_spot(spot)?;
+    }
+    if paint > MAX_PHOTO_PAINT {
+        return Err(format!("strokes and spots painting {paint} image areas, more than the {MAX_PHOTO_PAINT} the door allows a photo"));
+    }
+    let bytes = settings_len(d);
+    if bytes > MAX_SETTINGS_BYTES as u64 {
+        return Err(format!("{bytes} bytes of settings, more than the {MAX_SETTINGS_BYTES} the door allows"));
+    }
+    Ok(())
+}
+
+/// What a spot costs ([`spot_area`]), refused out of the size the engine
+/// gives it (0.001–0.25) or past [`MAX_SPOT_COST`].
+fn check_spot(spot: &Spot) -> Result<f64, String> {
+    check_points(spot.points.iter().map(|p| (p.x, p.y)))?;
+    if !(0.0..=0.25).contains(&spot.size) {
+        return Err(format!("a spot of size {}, outside the 0..0.25 the door allows", spot.size));
+    }
+    let points: Vec<(f64, f64)> = spot.points.iter().map(|p| (p.x, p.y)).collect();
+    let cost = spot_area(&points, spot.size);
+    if cost > MAX_SPOT_COST {
+        return Err(format!("a spot costing {cost} image areas, more than the {MAX_SPOT_COST} the door allows"));
+    }
+    Ok(cost)
+}
+
+/// The pixels an original decodes to, from its header, for the formats the
+/// engine decodes whole when it imports them: PNG, TIFF (BigTIFF too),
+/// WebP, GIF, BMP, PSD and JPEG XL. `None` for the others: a camera raw is
+/// sized from its own header (and checked after import), a JPEG decodes at
+/// an eighth of its size. A JPEG XL container whose codestream does not
+/// start near the top of the file is refused: the door cannot size it.
+fn header_pixels(path: &Path) -> Result<Option<u64>, String> {
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut head = Vec::new();
+    (&mut file).take(64 << 10).read_to_end(&mut head).map_err(|e| e.to_string())?;
+    let b = head.as_slice();
+    let get = |o: usize, n: usize| b.get(o..o + n);
+    let le16 = |o: usize| get(o, 2).map(|x| u64::from(u16::from_le_bytes([x[0], x[1]])));
+    let be32 = |o: usize| get(o, 4).map(|x| u64::from(u32::from_be_bytes([x[0], x[1], x[2], x[3]])));
+    let le32 = |o: usize| get(o, 4).map(|x| u64::from(u32::from_le_bytes([x[0], x[1], x[2], x[3]])));
+    let le24 = |o: usize| get(o, 3).map(|x| u64::from(x[0]) | u64::from(x[1]) << 8 | u64::from(x[2]) << 16);
+    let area = |w: Option<u64>, h: Option<u64>| w.zip(h).map(|(w, h)| w * h);
+    if b.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Ok(area(be32(16), be32(20)));
+    }
+    if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
+        return Ok(area(le16(6), le16(8)));
+    }
+    if b.starts_with(b"BM") {
+        return Ok(match le32(14) {
+            Some(12) => area(le16(18), le16(20)),
+            Some(_) => area(le32(18).map(|w| u64::from((w as u32 as i32).unsigned_abs())), le32(22).map(|h| u64::from((h as u32 as i32).unsigned_abs()))),
+            None => None,
+        });
+    }
+    if b.starts_with(b"8BPS") {
+        return Ok(area(be32(18), be32(14)));
+    }
+    if b.len() >= 30 && &b[0..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+        return Ok(match &b[12..16] {
+            b"VP8 " => area(le16(26).map(|w| w & 0x3fff), le16(28).map(|h| h & 0x3fff)),
+            b"VP8L" => le32(21).map(|v| ((v & 0x3fff) + 1) * (((v >> 14) & 0x3fff) + 1)),
+            b"VP8X" => area(le24(24).map(|w| w + 1), le24(27).map(|h| h + 1)),
+            _ => None,
+        });
+    }
+    let tiff = match b.get(0..4) {
+        Some(b"II*\0") => Some((false, false)),
+        Some(b"MM\0*") => Some((true, false)),
+        Some(b"II+\0") => Some((false, true)),
+        Some(b"MM\0+") => Some((true, true)),
+        _ => None,
+    };
+    if let Some((big_endian, big)) = tiff {
+        return tiff_pixels(&mut file, b, big_endian, big);
+    }
+    if b.starts_with(&[0xFF, 0x0A]) {
+        return Ok(jxl_pixels(&b[2..]));
+    }
+    if b.starts_with(&[0, 0, 0, 0x0C, b'J', b'X', b'L', b' ', 0x0D, 0x0A, 0x87, 0x0A]) {
+        let mut at = 0usize;
+        while let (Some(size), Some(kind)) = (be32(at), get(at + 4, 4)) {
+            let (header, size) = match size {
+                1 => (16, get(at + 8, 8).map_or(0, |x| u64::from_be_bytes(x.try_into().unwrap_or_default()) as usize)),
+                0 => (8, b.len() - at),
+                n => (8, n as usize),
+            };
+            let start = at + header + if kind == b"jxlp" { 4 } else { 0 };
+            if matches!(kind, b"jxlc" | b"jxlp") {
+                if let Some(code) = b.get(start..).filter(|c| c.starts_with(&[0xFF, 0x0A])) {
+                    return Ok(jxl_pixels(&code[2..]));
+                }
+                break;
+            }
+            if size < header {
+                break;
+            }
+            at += size;
+        }
+        return Err("a JPEG XL file whose size the door cannot read".into());
+    }
+    Ok(None)
+}
+
+/// A TIFF's first image size (tags 256 and 257 of its first IFD).
+fn tiff_pixels(file: &mut std::fs::File, head: &[u8], big_endian: bool, big: bool) -> Result<Option<u64>, String> {
+    let num = |x: &[u8]| -> u64 {
+        let mut v = 0u64;
+        for (i, byte) in x.iter().enumerate() {
+            v |= u64::from(*byte) << (8 * if big_endian { x.len() - 1 - i } else { i });
+        }
+        v
+    };
+    let ifd = if big { head.get(8..16).map(num) } else { head.get(4..8).map(num) };
+    let Some(ifd) = ifd else { return Ok(None) };
+    let (count_len, entry_len) = if big { (8, 20) } else { (2, 12) };
+    let mut read = |offset: u64, len: usize| -> Option<Vec<u8>> {
+        let mut buf = vec![0u8; len];
+        file.seek(SeekFrom::Start(offset)).ok()?;
+        file.read_exact(&mut buf).ok()?;
+        Some(buf)
+    };
+    let Some(count) = read(ifd, count_len).map(|c| num(&c).min(4096) as usize) else { return Ok(None) };
+    let Some(entries) = read(ifd + count_len as u64, count * entry_len) else { return Ok(None) };
+    let (mut w, mut h) = (None, None);
+    for e in entries.chunks(entry_len) {
+        let (tag, kind) = (num(&e[0..2]), num(&e[2..4]));
+        let value = if big { &e[12..20] } else { &e[8..12] };
+        let v = match kind {
+            3 => num(&value[0..2]),
+            4 => num(&value[0..4]),
+            16 => num(&value[0..8]),
+            _ => continue,
+        };
+        match tag {
+            256 => w = Some(v),
+            257 => h = Some(v),
+            _ => {}
+        }
+    }
+    Ok(w.zip(h).map(|(w, h)| w * h))
+}
+
+/// A JPEG XL codestream's size (its `SizeHeader`, read after the 0xFF0A
+/// signature; bits least significant first).
+fn jxl_pixels(code: &[u8]) -> Option<u64> {
+    let mut pos = 0usize;
+    let mut bits = |n: usize| -> Option<u64> {
+        let mut v = 0u64;
+        for i in 0..n {
+            let bit = (code.get(pos / 8)? >> (pos % 8)) & 1;
+            v |= u64::from(bit) << i;
+            pos += 1;
+        }
+        Some(v)
+    };
+    let small = bits(1)? == 1;
+    let dim = |bits: &mut dyn FnMut(usize) -> Option<u64>| -> Option<u64> {
+        if small {
+            return Some((bits(5)? + 1) * 8);
+        }
+        let n = [9, 13, 18, 30][bits(2)? as usize];
+        Some(bits(n)? + 1)
+    };
+    let h = dim(&mut bits)?;
+    let w = match bits(3)? {
+        0 => dim(&mut bits)?,
+        r => {
+            let (num, den) = [(1, 1), (12, 10), (4, 3), (3, 2), (16, 9), (5, 4), (2, 1)][r as usize - 1];
+            h * num / den
+        }
+    };
+    Some(w * h)
 }
 
 #[cfg(test)]
@@ -774,7 +1451,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!((&developed["width"], &developed["height"]), (&ran["width"], &ran["height"]));
-        assert_eq!(std::fs::read(dir.path().join("out/developed.jpg")).unwrap(), by_run, "run covers develop: the same edit, the same bytes");
+        // The embedded ICC profile records the second it was made, so the
+        // two files are compared with that stamp blanked.
+        let unstamped = |mut jpeg: Vec<u8>| {
+            if let Some(at) = jpeg.windows(12).position(|w| w == b"ICC_PROFILE\0") {
+                let header = at + 14;
+                if jpeg.len() >= header + 36 {
+                    jpeg[header + 24..header + 36].fill(0);
+                }
+            }
+            jpeg
+        };
+        let developed_bytes = std::fs::read(dir.path().join("out/developed.jpg")).unwrap();
+        assert_eq!(unstamped(developed_bytes), unstamped(by_run.clone()), "run covers develop: the same edit, the same bytes");
         let query = serve(&areas, &service_call("run", json!({"path": "shot.dng", "cmds": [{"id": "photo.inspect"}]}), dir.path(), false)).unwrap();
         assert!(query["out"].is_null() && query["results"][0]["result"]["width"] == json!(96), "{query}");
         assert_eq!(query["results"][0]["result"]["source"]["path"], json!("shot.dng"), "host paths read relative: {query}");
@@ -984,5 +1673,264 @@ mod tests {
         let controls = serve(&areas, &service_call("run", json!({"path": "IMG_0042.dng", "cmds": [{"id": "develop.controls", "params": {"section": "color"}}]}), dir.path(), false)).unwrap();
         assert!(controls["results"][0]["result"].to_string().contains("color.vibrance"), "{controls}");
         assert!(!dir.path().join("IMG_0042.xmp").exists(), "nothing beside the original");
+    }
+
+    /// One `light.run` call on `path` in `dir`, as the system agent makes it.
+    fn run_on(dir: &Path, path: &str, cmds: Json, extra: Json) -> Result<Json, String> {
+        let mut args = json!({"path": path, "cmds": cmds});
+        for (k, v) in extra.as_object().into_iter().flatten() {
+            args[k] = v.clone();
+        }
+        serve(&resolver(dir, None), &service_call("run", args, dir, true))
+    }
+
+    /// Every limit of the door: a command at (or just within) the cap passes
+    /// the gate, one over is refused before anything runs.
+    #[test]
+    fn the_doors_limits_pass_at_their_cap_and_refuse_one_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let area = Area::new(dir.path(), None, false);
+        let gate = |id: &str, params: Json| door().unwrap().admit_all(&json!([{"id": id, "params": params}]), &area).map(|_| ());
+        let stroke = |size: f64| json!({"points": [[-1.0, 0.5], [2.0, 0.5]], "size": size});
+        let spot = |n: usize| json!({"points": (0..n).map(|i| if i % 2 == 0 { [0.0, 0.0] } else { [1.0, 1.0] }).collect::<Vec<_>>()});
+        let samples = |n: usize| json!({"kind": "colorRange", "samples": vec![[0.5, 0.0, 0.0]; n]});
+        let ids = |n: u64| json!({"ids": (1..=n).collect::<Vec<_>>(), "rating": 3});
+        let big = |key: &str, n: usize| json!({key: {"name": "x".repeat(n)}});
+        let cases = [
+            // 4π × 3 long edges × 0.42 = 15.8 image areas; × 0.43 = 16.2.
+            ("mask.brushStroke", stroke(0.42), stroke(0.43), "asks for 16.2"),
+            ("spot.add", spot(16), spot(17), "asks for 17 image areas of spot, more than the 16"),
+            ("mask.add", samples(16), samples(17), "asks for 17 colour samples, more than the 16"),
+            ("crop.aspect", json!({"aspect": "100x1"}), json!({"aspect": "101x1"}), "asks for 101 to 1 crop ratio, more than the 100"),
+            ("crop.aspect", json!({"aspect": [1, 100]}), json!({"aspect": [1, 101]}), "asks for 101 to 1 crop ratio, more than the 100"),
+            ("photo.rate", ids(16), ids(17), "asks for 17 photos in `ids`, more than the 16"),
+            ("photo.virtualCopy", ids(16), ids(17), "asks for 17 photos in `ids`, more than the 16"),
+            ("develop.merge", big("settings", 1000), big("settings", MAX_SETTINGS_BYTES), "bytes of settings, more than the 1048576"),
+            ("mask.update", big("shape", 1000), big("shape", MAX_SETTINGS_BYTES), "bytes of settings, more than the 1048576"),
+        ];
+        for (id, at, over, refusal) in cases {
+            gate(id, at).unwrap_or_else(|e| panic!("{id} at the cap: {e}"));
+            let e = gate(id, over).unwrap_err();
+            assert!(e.contains(&format!("`{id}`")) && e.contains(refusal), "{id}: {e}");
+        }
+        // The other ways a stroke, a spot or a crop asks for too much.
+        let refused = [
+            ("mask.brushStroke", json!({"points": [[0.0, 0.0], [1e9, 0.0]]}), "outside the -1..2"),
+            ("mask.brushStroke", json!({"points": [[0.0, 0.0], [1.0, 0.0]], "size": 1.5}), "brush size of 1.5"),
+            ("mask.brushStroke", json!({"points": (0..40).map(|i| [if i % 2 == 0 { -1.0 } else { 2.0 }, 0.5]).collect::<Vec<_>>(), "size": 0.001}), "long edges long, more than the 100"),
+            ("mask.brushStroke", json!({"points": vec![[0.5, 0.5]; MAX_POINTS + 1]}), "points, more than the 10000"),
+            ("spot.add", json!({"points": [[5.0, 5.0]]}), "outside the -1..2"),
+            ("crop.set", json!({"rect": [0.0, 0.0, 0.0099, 1.0]}), "a crop side is at least 1% of the photo"),
+            ("photo.rate", json!({"ids": [1, 1], "rating": 2}), "`ids` names photo 1 twice"),
+        ];
+        for (id, params, why) in refused {
+            let e = gate(id, params).unwrap_err();
+            assert!(e.contains(why), "{id}: {e}");
+        }
+        gate("crop.set", json!({"rect": [0.0, 0.0, 0.01, 0.01]})).unwrap();
+    }
+
+    /// The `ids` limits cover every command of the door whose engine spec
+    /// takes `ids`: one added upstream fails here until it is reviewed.
+    #[test]
+    fn every_command_that_takes_ids_has_its_limit() {
+        let safety: Json = serde_json::from_str(include_str!("../skill/safety.json")).unwrap();
+        let mut documented: Vec<&str> = include_str!("../skill/commands.md")
+            .lines()
+            .filter_map(|l| l.strip_prefix("- `")?.split_once('`'))
+            .filter(|(id, rest)| safety["commands"][*id] == json!("safe") && rest.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == "ids"))
+            .map(|(id, _)| id)
+            .collect();
+        documented.sort();
+        let mut limited: Vec<&str> = REVIEWED.limits.iter().filter(|l| l.what == "photos in `ids`").map(|l| l.id).collect();
+        limited.sort();
+        assert_eq!(limited, documented);
+    }
+
+    /// Select all and make virtual copies doubles the catalog every round,
+    /// with no count for the gate to see: the photo ceiling stops it.
+    #[test]
+    fn a_virtual_copy_loop_is_stopped_by_the_photo_ceiling() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.png"), png_bytes()).unwrap();
+        let cmds: Vec<Json> = (0..5).flat_map(|_| [json!({"id": "library.selectAll"}), json!({"id": "photo.virtualCopy"})]).collect();
+        let e = run_on(dir.path(), "in.png", Json::Array(cmds), json!({"out": "o.jpg"})).unwrap_err();
+        assert!(e.contains("`photo.virtualCopy` leaves 32 photos, more than the 16 the door allows"), "{e}");
+        assert!(!dir.path().join("o.jpg").exists());
+    }
+
+    /// `develop.merge` writes settings unchecked: a crop out of the photo
+    /// (an export larger than the original), dozens of masks, a noise
+    /// reduction past its slider are refused after the command, before any
+    /// render; within the bounds it runs.
+    #[test]
+    fn unchecked_settings_are_refused_after_the_command() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.png"), png_bytes()).unwrap();
+        let merge = |settings: Json| json!([{"id": "develop.merge", "params": {"settings": settings}}]);
+        for (settings, why) in [
+            (json!({"crop": {"geometry": {"rect": {"x0": 0.0, "y0": 0.0, "x1": 50.0, "y1": 50.0}}}}), "a crop of 0, 0 to 50, 50"),
+            (json!({"crop": {"geometry": {"rect": {"x0": 0.5, "y0": 0.5, "x1": 0.501, "y1": 0.9}}}}), "each side at least 1% of it"),
+            (json!({"masks": vec![json!({}); 17]}), "17 masks"),
+            (json!({"detail": {"nr_luminance": 1e6}}), "`detail.nrLuminance` at 1000000, outside its 0..100"),
+            (json!({"spots": vec![json!({"points": [[0.5, 0.5]]}); 65]}), "65 spots"),
+            (json!({"masks": [{"components": [{"shape": {"kind": "brush", "strokes": [{"points": [[0.0, 0.0], [1e12, 0.0]]}]}}]}]}), "outside the -1..2"),
+        ] {
+            let e = run_on(dir.path(), "in.png", merge(settings.clone()), json!({"out": "o.jpg"})).unwrap_err();
+            assert!(e.contains("`develop.merge` leaves photo") && e.contains(why), "{settings}: {e}");
+        }
+        assert!(!dir.path().join("o.jpg").exists());
+        let ok = merge(json!({"detail": {"nr_luminance": 40.0}, "masks": [{"components": [{"shape": {"kind": "radial", "center": {"x": 0.5, "y": 0.5}, "rx": 0.2, "ry": 0.2, "angle": 0.0, "feather": 50.0, "invert": false}}]}]}));
+        run_on(dir.path(), "in.png", ok, json!({"out": "ok.jpg"})).unwrap();
+    }
+
+    /// A PNG of `w` × `h` grey pixels, stored (uncompressed), as a quick
+    /// large original.
+    fn grey_png(w: u32, h: u32) -> Vec<u8> {
+        fn crc32(data: &[u8]) -> u32 {
+            let mut c = 0xFFFF_FFFFu32;
+            for &b in data {
+                c ^= u32::from(b);
+                for _ in 0..8 {
+                    c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+                }
+            }
+            !c
+        }
+        fn chunk(out: &mut Vec<u8>, kind: &[u8], data: &[u8]) {
+            out.extend((data.len() as u32).to_be_bytes());
+            let body: Vec<u8> = kind.iter().chain(data).copied().collect();
+            out.extend(&body);
+            out.extend(crc32(&body).to_be_bytes());
+        }
+        let row: Vec<u8> = std::iter::once(0).chain(std::iter::repeat_n(128, w as usize * 3)).collect();
+        let raw: Vec<u8> = std::iter::repeat_n(row, h as usize).flatten().collect();
+        let (mut a, mut b) = (1u32, 0u32);
+        for &v in &raw {
+            a = (a + u32::from(v)) % 65521;
+            b = (b + a) % 65521;
+        }
+        let mut z = vec![0x78, 0x01];
+        let blocks: Vec<&[u8]> = raw.chunks(65535).collect();
+        for (i, block) in blocks.iter().enumerate() {
+            z.push(u8::from(i + 1 == blocks.len()));
+            z.extend((block.len() as u16).to_le_bytes());
+            z.extend((!(block.len() as u16)).to_le_bytes());
+            z.extend(*block);
+        }
+        z.extend(((b << 16) | a).to_be_bytes());
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        let ihdr: Vec<u8> = w.to_be_bytes().into_iter().chain(h.to_be_bytes()).chain([8, 2, 0, 0, 0]).collect();
+        chunk(&mut out, b"IHDR", &ihdr);
+        chunk(&mut out, b"IDAT", &z);
+        chunk(&mut out, b"IEND", &[]);
+        out
+    }
+
+    /// The export's size: a rendered image within its pixel cap, refused
+    /// before it renders (AVIF lower), such as a crop `develop.merge` set
+    /// three times the photo across; `long_edge` read whatever way a whole
+    /// number is written.
+    #[test]
+    fn the_export_stays_within_its_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("shot.dng"), dng_bytes()).unwrap();
+        let ran = run_on(dir.path(), "shot.dng", json!([]), json!({"out": "small.jpg", "long_edge": 48.0})).unwrap();
+        assert!(ran["width"].as_u64().unwrap() <= 48, "a long edge written 48.0 still caps the export: {ran}");
+        std::fs::write(dir.path().join("grey.png"), grey_png(1400, 1400)).unwrap();
+        let crop = |lo: f64, hi: f64| json!([{"id": "develop.merge", "params": {"settings": {"crop": {"geometry": {"rect": {"x0": lo, "y0": lo, "x1": hi, "y1": hi}}}}}}]);
+        let e = run_on(dir.path(), "grey.png", crop(-1.0, 2.0), json!({"out": "big.jpg"})).unwrap_err();
+        assert!(e.contains("the export would be 4200 × 4200 = 17640000 pixels, more than the 16000000"), "{e}");
+        let e = run_on(dir.path(), "grey.png", crop(-0.5, 1.5), json!({"out": "big.avif"})).unwrap_err();
+        assert!(e.contains("the export would be 2800 × 2800 = 7840000 pixels, more than the 4000000"), "{e}");
+        assert!(!dir.path().join("big.jpg").exists() && !dir.path().join("big.avif").exists());
+        let ran = run_on(dir.path(), "grey.png", crop(-1.0, 2.0), json!({"out": "big-small.jpg", "long_edge": 256})).unwrap();
+        assert_eq!(ran["width"], json!(256), "{ran}");
+    }
+
+    /// A small file whose header claims an enormous image (the engine would
+    /// decode it whole when it imports it) is refused before it is read,
+    /// for every format the engine decodes whole, through every method.
+    #[test]
+    fn an_original_too_large_to_decode_is_refused_from_its_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let be = |n: u32| n.to_be_bytes().to_vec();
+        let le = |n: u32| n.to_le_bytes().to_vec();
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+        png.extend(be(40_000).into_iter().chain(be(40_000)).chain([8, 2, 0, 0, 0]));
+        let mut gif = b"GIF89a".to_vec();
+        gif.extend([0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0]);
+        let mut bmp = b"BM".to_vec();
+        bmp.extend([0u8; 12].into_iter().chain(le(40)).chain(le(20_000)).chain(le((-20_000i32) as u32)));
+        let mut psd = b"8BPS\0\x01\0\0\0\0\0\0\0\x03".to_vec();
+        psd.extend(be(30_000).into_iter().chain(be(30_000)));
+        let mut webp = b"RIFF\0\0\0\0WEBPVP8X\x0a\0\0\0\0\0\0\0".to_vec();
+        webp.extend([0xFF, 0x3F, 0x00, 0xFF, 0x3F, 0x00, 0, 0]);
+        let mut tiff = b"II*\0".to_vec();
+        tiff.extend(le(8).into_iter().chain([2, 0]).chain([0, 1, 4, 0]).chain(le(1)).chain(le(20_000)).chain([1, 1, 4, 0]).chain(le(1)).chain(le(20_000)).chain(le(0)));
+        let mut tiff_be = b"MM\0*".to_vec();
+        tiff_be.extend(be(8).into_iter().chain([0, 2]).chain([1, 0, 0, 3]).chain(be(1)).chain([0x4E, 0x20, 0, 0]).chain([1, 1, 0, 3]).chain(be(1)).chain([0x4E, 0x20, 0, 0]));
+        // JPEG XL: SizeHeader with a 30-bit height of 20,000 and a 1:1 ratio.
+        let mut bits: Vec<bool> = vec![false, true, true];
+        bits.extend((0..30).map(|i| (19_999u32 >> i) & 1 == 1));
+        bits.extend([true, false, false]);
+        let mut jxl = vec![0xFF, 0x0A];
+        jxl.extend(bits.chunks(8).map(|c| c.iter().enumerate().fold(0u8, |b, (i, on)| b | (u8::from(*on) << i))));
+        for (name, bytes, pixels) in [
+            ("bomb.png", png, 1_600_000_000u64),
+            ("bomb.gif", gif, 65_535 * 65_535),
+            ("bomb.bmp", bmp, 400_000_000),
+            ("bomb.psd", psd, 900_000_000),
+            ("bomb.webp", webp, 16_384 * 16_384),
+            ("bomb.tif", tiff, 400_000_000),
+            ("bomb-be.tif", tiff_be, 400_000_000),
+            ("bomb.jxl", jxl, 400_000_000),
+        ] {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+            for method in ["run", "info"] {
+                let args = json!({"path": name, "cmds": [], "out": "o.jpg"});
+                let e = serve(&resolver(dir.path(), None), &service_call(method, args, dir.path(), true)).unwrap_err();
+                assert!(e.contains(&format!("`{name}` is {pixels} pixels, more than the 64000000 the service decodes")), "{method} {name}: {e}");
+            }
+        }
+        // Ordinary photos still pass.
+        assert_eq!(header_pixels(&{
+            std::fs::write(dir.path().join("ok.png"), png_bytes()).unwrap();
+            dir.path().join("ok.png")
+        })
+        .unwrap(), Some(96));
+    }
+
+    /// `spot.findDust` decodes and renders the photo each time, caching
+    /// neither: a few a call.
+    #[test]
+    fn dust_searches_are_bounded_per_call() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.png"), png_bytes()).unwrap();
+        let dust = |n: usize| Json::Array((0..n).map(|_| json!({"id": "spot.findDust", "params": {"add": false}})).collect());
+        run_on(dir.path(), "in.png", dust(4), json!({})).unwrap();
+        let e = run_on(dir.path(), "in.png", dust(5), json!({})).unwrap_err();
+        assert!(e.contains("at most 4 in one call"), "{e}");
+    }
+
+    /// Every result is kept until the reply: `export.savePreset` answers every
+    /// preset each time, so the results of a call share a budget.
+    #[test]
+    fn the_results_of_a_call_share_a_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.png"), png_bytes()).unwrap();
+        let cmds: Vec<Json> = (0..12).map(|i| json!({"id": "export.savePreset", "params": {"name": format!("p{i}"), "params": {"note": "x".repeat(1_000_000)}}})).collect();
+        let e = run_on(dir.path(), "in.png", Json::Array(cmds), json!({})).unwrap_err();
+        assert!(e.contains("`export.savePreset`: the results of this call total") && e.contains("more than the 67108864 the door returns"), "{e}");
+    }
+
+    /// A command the gate's `ids` limits do not list still has its `ids`
+    /// checked before it runs.
+    #[test]
+    fn every_commands_ids_are_checked() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.png"), png_bytes()).unwrap();
+        let e = run_on(dir.path(), "in.png", json!([{"id": "stack.setTop", "params": {"ids": [1, 1]}}]), json!({})).unwrap_err();
+        assert!(e.contains("`stack.setTop`: `ids` names photo 1 twice"), "{e}");
     }
 }

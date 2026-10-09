@@ -44,8 +44,8 @@ A tag after the id marks a command that reaches past the open document (safety.j
 - `camera.dolly` Dolly Camera: {amount (px, + = forward), layer?, merge?}
 - `camera.fromModel` Create Cameras from 3D Model: {comp?, layers?: 3D model layers (default selected)}
 - `camera.fromView` Create Camera from 3D View: {comp?}
-- `camera.linkFocusToLayer` Link Focus Distance to Layer: {comp?, camera?, layer?}
-- `camera.linkFocusToPoi` Link Focus Distance to Point of Interest: {comp?, camera?}
+- `camera.linkFocusToLayer` [code] Link Focus Distance to Layer: {comp?, camera?, layer?}
+- `camera.linkFocusToPoi` [code] Link Focus Distance to Point of Interest: {comp?, camera?}
 - `camera.orbit` Orbit Camera: {yaw|dx deg, pitch|dy deg, layer?, merge?} — current 3D view (camera layer in Active Camera)
 - `camera.orbitNull` Create Orbit Null: {comp?, layer?: camera (default selected/active)}
 - `camera.pan` Pan Camera: {dx, dy (comp px), layer?, merge?}
@@ -54,7 +54,7 @@ A tag after the id marks a command that reaches past the open document (safety.j
 - `camera.setFocusToLayer` Set Focus Distance to Layer: {comp?, camera?, layer?}
 - `camera.setGroundPlane` Set Ground Plane and Origin: {points?: [id] (default: selected), layer?, effect?}
 - `camera.solveStatus` 3D Camera Tracker Status: {layer?, effect?}
-- `camera.stereoRig` Create Stereo 3D Rig: {comp?, configuration?: stereoPair|centerRight|centerLeft, sceneDepth? (% of comp width, default 3), convergence?: bool, convergenceOf?: poi|zoom, zOffset?, view3d?: 3D Glasses view index (default 5 Balanced Colored Red Blue)}
+- `camera.stereoRig` [code] Create Stereo 3D Rig: {comp?, configuration?: stereoPair|centerRight|centerLeft, sceneDepth? (% of comp width, default 3), convergence?: bool, convergenceOf?: poi|zoom, zOffset?, view3d?: 3D Glasses view index (default 5 Balanced Colored Red Blue)}
 
 ## command
 
@@ -98,9 +98,9 @@ A tag after the id marks a command that reaches past the open document (safety.j
 
 - `edit.clear` Clear: {layers?}
 - `edit.copy` Copy: {layers?} (keyframes, effects or shape items when they are selected)
-- `edit.copyExpressionOnly` Copy Expression Only: {}
-- `edit.copyWithPropertyLinks` Copy with Property Links: {layers?} (selected properties, or layers, as expressions linking to the originals)
-- `edit.copyWithRelativePropertyLinks` Copy with Relative Property Links: {layers?} (like Copy with Property Links, using thisComp)
+- `edit.copyExpressionOnly` [code] Copy Expression Only: {}
+- `edit.copyWithPropertyLinks` [code] Copy with Property Links: {layers?} (selected properties, or layers, as expressions linking to the originals)
+- `edit.copyWithRelativePropertyLinks` [code] Copy with Relative Property Links: {layers?} (like Copy with Property Links, using thisComp)
 - `edit.cut` Cut: {layers?} (keyframes, effects or shape items when they are selected)
 - `edit.deselectAll` Deselect All: {}
 - `edit.duplicate` Duplicate: {layers?} (effects or shape items when they are selected)
@@ -353,7 +353,7 @@ A tag after the id marks a command that reaches past the open document (safety.j
 - `layer.enablePerChar3D` Enable Per-character 3D: {layer?, enabled?: bool, toggle?: bool}
 - `layer.enableTimeRemap` Enable Time Remapping: {layers?, value?}
 - `layer.environment` Environment Layer: {layers?, on?}
-- `layer.expressions` Enable/Disable Expressions: {layers?, enabled: bool}
+- `layer.expressions` [code] Enable/Disable Expressions: {layers?, enabled: bool}
 - `layer.frameBlending` Frame Blending: {layers?, mode: off|frameMix|pixelMotion}
 - `layer.freezeFrame` Freeze Frame: {layers?}
 - `layer.freezeOnLastFrame` Freeze On Last Frame: {layers?}
@@ -526,9 +526,9 @@ A tag after the id marks a command that reaches past the open document (safety.j
 
 ## paths
 
-- `paths.nullsFollowPoints` Nulls Follow Points: {layer?, path?|prop?, pins?: [uid | name…]} → a null per vertex (or puppet pin) following it (Position expressions)
-- `paths.pointsFollowNulls` Points Follow Nulls: {layer?, path?|prop?, pins?: [uid | name…]} → a null per vertex (or Position / Advanced puppet pin); the path (pins) follow them (expressions)
-- `paths.tracePath` Trace Path: {layer?, path?|prop?, loop?: bool} → a null moving along the path (Progress slider)
+- `paths.nullsFollowPoints` [code] Nulls Follow Points: {layer?, path?|prop?, pins?: [uid | name…]} → a null per vertex (or puppet pin) following it (Position expressions)
+- `paths.pointsFollowNulls` [code] Points Follow Nulls: {layer?, path?|prop?, pins?: [uid | name…]} → a null per vertex (or Position / Advanced puppet pin); the path (pins) follow them (expressions)
+- `paths.tracePath` [code] Trace Path: {layer?, path?|prop?, loop?: bool} → a null moving along the path (Progress slider)
 
 ## playback
 
@@ -564,18 +564,18 @@ A tag after the id marks a command that reaches past the open document (safety.j
 ## prop
 
 - `prop.addKey` Add Keyframe: {layer?, path|prop, time?, value?}
-- `prop.convertExpressionToKeyframes` Convert Expression to Keyframes: {layer?, path|prop}
+- `prop.convertExpressionToKeyframes` [code] Convert Expression to Keyframes: {layer?, path|prop}
 - `prop.duplicateGroup` Duplicate Property Group: {layer?, prop: uid} → {prop: new uid}
 - `prop.get` Get Property: {layer?, path|prop, time? (comp s)}
 - `prop.moveGroup` Reorder Property Group: {layer?, prop: uid, index (1-based among its siblings)}
-- `prop.pickWhip` Pick Whip (Link Property): {layer?, path|prop, target: {layer, path|prop}} → sets an AE reference expression
+- `prop.pickWhip` [code] Pick Whip (Link Property): {layer?, path|prop, target: {layer, path|prop}} → sets an AE reference expression
 - `prop.removeGroup` Delete Property Group: {layer?, prop: uid}
 - `prop.renameGroup` Rename Property Group: {layer?, prop: uid, name}
 - `prop.reset` Reset Property: {layer?, path|prop, default?}
 - `prop.select` Select Property: {layer?, path|prop, add?, selectKeys?}
 - `prop.separateDimensions` Separate Dimensions: {layer?, value?}
 - `prop.set` Set Property Value: {layer?, path|prop, value, time?, merge?}
-- `prop.setExpression` Add Expression: {layer?, path|prop, expression?, enabled?}
+- `prop.setExpression` [code] Add Expression: {layer?, path|prop, expression?, enabled?}
 - `prop.setGroupEnabled` Enable Property Group: {layer?, prop: uid, value?}
 - `prop.toggleAnimation` Toggle Stopwatch: {layer?, path|prop, value?}
 - `prop.toggleKey` Add or Remove Keyframe at Current Time: {layer?, path|prop}
@@ -583,7 +583,7 @@ A tag after the id marks a command that reaches past the open document (safety.j
 ## puppet
 
 - `puppet.addPin` Add Puppet Pin: {layer?, kind?: position|advanced|bend|starch|overlap, position: [x,y] (layer space), time? (s) | frame?, mesh?: uid, newMesh?, density?, expansion?, triangles?}
-- `puppet.follow` Follow-Through...: {layer?, leader?: uid | name (default: the first selected pin), pins?: [uid | name…] (default: the other selected pins), delay? (s, 0.1), amount? (%, 100), cascade? (true: the k-th nearest pin trails k × delay)}
+- `puppet.follow` [code] Follow-Through...: {layer?, leader?: uid | name (default: the first selected pin), pins?: [uid | name…] (default: the other selected pins), delay? (s, 0.1), amount? (%, 100), cascade? (true: the k-th nearest pin trails k × delay)}
 - `puppet.info` Puppet Mesh Info: {layer?, time? | frame?}
 - `puppet.mesh` Puppet Mesh Options: {layer?, mesh?: uid, density?, expansion?, triangles?, showMesh?, time?, merge?}
 - `puppet.movePin` Move Puppet Pin: {layer?, pin: uid | name, position: [x,y], time? | frame?, merge?}
