@@ -40,6 +40,7 @@ on:
     paths:
       - 'desktop/packaging/**'
       - 'desktop/scripts/package.py'
+      - 'desktop/scripts/appimage_receipt.py'
       - 'tools/release-scan.py'
       - 'tools/release-scan-public-assets.json'
       - 'tools/test_release_scan.py'
