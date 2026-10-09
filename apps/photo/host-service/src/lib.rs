@@ -95,6 +95,8 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     }
     let area = areas.area(call, "photo").map_err(|e| format!("photo: {e}"))?;
     dispatch_in(call.method(), &call.args, &area)
+        .map(|answer| area.relative_json(answer))
+        .map_err(|error| area.relative_text(&error))
 }
 
 /// The shell's notice hook: `photos.notify`, as Photos, to the glance
@@ -132,7 +134,11 @@ impl HostService for PhotosAppService {
             return;
         }
         match call.method() {
-            "info" => reply.send(AREAS.area(&call, "photo").map_err(|e| format!("photos: {e}")).and_then(|area| info(&call.args, &area))),
+            "info" => reply.send(AREAS.area(&call, "photo").map_err(|e| format!("photos: {e}")).and_then(|area| {
+                info(&call.args, &area)
+                    .map(|answer| area.relative_json(answer))
+                    .map_err(|error| area.relative_text(&error))
+            })),
             "notify" => {
                 let notify = notifier().lock().unwrap_or_else(|e| e.into_inner()).clone();
                 reply.send(match notify {

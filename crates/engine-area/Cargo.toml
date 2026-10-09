@@ -17,7 +17,8 @@ publish = false
 [dependencies]
 # The same App Hub rev as every host service: the resolver reads the call.
 octosense-appstore = { workspace = true }
+# A service's answer, shown relative to the area (`Area::relative_json`).
+serde_json = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tempfile = "3"

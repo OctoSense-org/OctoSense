@@ -97,6 +97,8 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     }
     let area = areas.area(call, "pdf").map_err(|e| format!("pdf: {e}"))?;
     dispatch_in(call.method(), &call.args, &area)
+        .map(|answer| area.relative_json(answer))
+        .map_err(|error| area.relative_text(&error))
 }
 
 /// A fresh engine session whose every file read and write is root-confined
@@ -412,6 +414,31 @@ mod tests {
         }
         pdf.extend(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF", objs.len() + 1).bytes());
         pdf
+    }
+
+    /// pdfcraft's own `doc_info` names the absolute path it opened
+    /// (`document.path`); through the service, answers and errors read
+    /// relative to the area.
+    #[test]
+    fn answers_never_show_the_host_path_of_the_area() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path();
+        std::fs::create_dir_all(host.join("pdf")).unwrap();
+        std::fs::write(host.join("pdf/a.pdf"), tiny_pdf("Hello PDF", "Page two")).unwrap();
+        let call = |args: Json| ServiceCall {
+            app_id: "os.pdftools".into(),
+            service: "pdf.info".into(),
+            args,
+            from_sheet: false,
+            may_prompt: true,
+            host_dir: host.to_path_buf(),
+        };
+        let host = host.display().to_string();
+        let answer = serve(&Slot::new(), &call(json!({"path": "a.pdf"}))).unwrap();
+        assert_eq!(answer["document"]["pages"], json!(2), "{answer}");
+        assert!(!answer.to_string().contains(&host), "{answer}");
+        let error = serve(&Slot::new(), &call(json!({"path": "missing.pdf"}))).unwrap_err();
+        assert!(!error.contains(&host), "{error}");
     }
 
     #[test]

@@ -112,8 +112,10 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     if call.method() == "run" && areas.is_set() {
         return Err("effect.run is held for its own review: the engine's command door is not available in the shell".into());
     }
-    let area = areas.area(call, "effect").map_err(|e| format!("effect: {e}"))?;
-    dispatch_in(call.method(), &call.args, &Arc::new(area))
+    let area = Arc::new(areas.area(call, "effect").map_err(|e| format!("effect: {e}"))?);
+    dispatch_in(call.method(), &call.args, &area)
+        .map(|answer| area.relative_json(answer))
+        .map_err(|error| area.relative_text(&error))
 }
 
 fn dispatch_in(method: &str, args: &Json, area: &Arc<Area>) -> Result<Json, String> {
