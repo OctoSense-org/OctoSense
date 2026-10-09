@@ -142,6 +142,9 @@ script_mod! {
                         draw_bold_italic.text_style: theme.font_bold_italic{font_size: 15}
                         draw_bg +: {color: #xffffff color_hover: #xffffff color_focus: #xffffff color_down: #xffffff color_empty: #xffffff color_2: #xffffff color_2_hover: #xffffff color_2_focus: #xffffff color_2_down: #xffffff color_2_empty: #xffffff border_size: 0 border_radius: 6}
                         draw_text +: {color_empty: #x73869a color_empty_hover: #x73869a color_empty_focus: #x73869a}
+                        // The theme's caret is white: on these white blocks it
+                        // blinked unseen. The source view's green, here too.
+                        draw_cursor.color: #x07c160
                         draw_selection +: {color: #x9ab3d440 color_focus: #x9ab3d440}
                     }
                 }
@@ -679,6 +682,22 @@ impl Widget for MarkdownEditor {
         });
         if self.mode == Mode::Rich && matches!(event, Event::MouseDown(_) | Event::MouseUp(_)) {
             self.selection.after_event(cx, &list, &self.document);
+        }
+        // A drag across blocks leaves key focus in the block where it began, so
+        // the caret would blink at that block's end of the selection. The block
+        // the drag ended in takes focus: the caret blinks where the drag
+        // stopped, as Rinx's keyboard extension already moves it.
+        if self.mode == Mode::Rich && matches!(event, Event::MouseUp(_)) {
+            if let Some(selection) = self.selection.selection {
+                if selection.anchor.block != selection.cursor.block {
+                    if let Some((_, row)) = list.get_item(selection.cursor.block) {
+                        let input = row.article_rich_input(cx, ids!(rich));
+                        if !input.is_empty() && !input.has_focus(cx) {
+                            input.take_key_focus(cx);
+                        }
+                    }
+                }
+            }
         }
         if let Some(text) = self.view.text_input(cx, ids!(markdown)).changed(&actions) {
             self.source_changed(cx, text);
