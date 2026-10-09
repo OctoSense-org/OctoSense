@@ -8,7 +8,7 @@ count, never a host path or Android provider URI. No separate blob store is crea
 
 | Method | Arguments | Result |
 | --- | --- | --- |
-| `files.status` | `{}` | `import_supported`, `export_supported`, `photo_pick_supported`, `text_share_supported`, `storage_granted`, `max_file_bytes`, `max_share_text_bytes`, `foreground_required` |
+| `files.status` | `{}` | `import_supported`, `export_supported`, `photo_pick_supported`, `text_share_supported`, `storage_granted`, `max_file_bytes`, `max_import_bytes`, `max_share_text_bytes`, `foreground_required` |
 | `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123}` |
 | `files.pick_photo` | `{"path":"/photos/new.png"}` | Choose one PNG/JPEG/WebP; returns the import fields plus its signature-detected `mime` |
 | `files.share` | `{"text":"Good morning 🌅"}` | Android only: `{"handoff":"chooser_opened","delivery":"unknown"}` after native chooser dispatch |
@@ -37,6 +37,9 @@ require a new destination: they cannot overwrite an existing app document. The
 app can read imported bytes with `fs.read_bytes(path)`, pass that array to an image
 widget, or copy it with `fs.write_bytes(other_path, fs.read_bytes(path))`.
 `fs.write_bytes` accepts a typed U8 array and applies the same limits as text writes.
+A document above 1 MiB is meant for a host service that reads it natively, such
+as an engine: `fs.read_bytes` loads all of it into the app's heap, and
+`fs.write_bytes` refuses to copy it.
 
 The manifest must request `files` and `storage` for transfer; status only needs
 `files`. Import, export, photo selection and text sharing are foreground-only, including through agent tool wrappers.
@@ -50,13 +53,21 @@ before delivering bytes; export checks it before desktop rename and before reply
 request's isolate key and verifies its host-assigned app tag. Neither the app id,
 jail root, quota, native destination, nor URI is taken from request arguments.
 
-Imports use the existing 1 MiB per-file limit, granted whole-jail byte quota, and
-256-entry cap. Paths reject traversal, symlinks, drive prefixes, alternate data
-streams, and Windows device names. Import commit runs between script turns,
-sharing the existing filesystem quota writer. Native selection loading and export
-destination IO run on the existing bounded task pool. A single transfer reservation
-limits concurrent dialogs and snapshots; a blocked import or export provider retains
-that reservation until its worker returns, even after the app closes or times out.
+An import takes one document of up to 64 MiB (16 MiB on Android) and never more
+than the app's granted whole-jail byte quota; it also counts against the 256-entry
+cap. `files.status` reports the bound as `max_import_bytes`. The native loader
+reads at most that much. A worker then stages the bytes beside the jail, where the
+app cannot reach them, and the UI thread links the file in between script turns,
+after checking the live jail, its current quota and that the destination is still
+new. The bytes never pass through the script heap. Android's document loader holds
+a selection in the Java heap and copies it again into native memory, hence its
+smaller bound. Photo picks, exports and script writes keep the 1 MiB per-file
+limit (`max_file_bytes`). Paths reject traversal, symlinks, drive prefixes,
+alternate data streams, and Windows device names. Native selection loading, import
+staging and export destination IO run on the existing bounded task pool. A single
+transfer reservation limits concurrent dialogs, staged imports and snapshots; a
+blocked import or export provider retains that reservation until its worker
+returns, even after the app closes or times out.
 
 Requests expire after five minutes. Closing an app invalidates its request, and a
 late dialog result cannot import or start an export. A native dialog already on

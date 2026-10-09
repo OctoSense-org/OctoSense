@@ -7,7 +7,7 @@ use makepad_widgets::{
         thread::Lane,
         SignalToUI,
     },
-    splash_storage::{self, StorageAccess, MAX_FILE_BYTES},
+    splash_storage::{self, PreparedStorageImport, StorageAccess, MAX_FILE_BYTES, MAX_IMPORT_BYTES},
     Cx, Event, LiveId,
 };
 use octosense_appstore::services::{
@@ -28,8 +28,13 @@ mod tests;
 
 const TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_SHARE_TEXT: usize = 8192;
+/// The largest document `files.import` copies in. Android's document loader
+/// holds the selection in the Java heap and then copies it into native
+/// memory, so phones keep a smaller bound until it streams to a file.
+const MAX_IMPORT: u64 = if cfg!(target_os = "android") { 16 * 1024 * 1024 } else { MAX_IMPORT_BYTES };
 static BUSY: AtomicBool = AtomicBool::new(false);
 static QUEUED: Mutex<Option<Work>> = Mutex::new(None);
+static STAGED: Mutex<Option<Staged>> = Mutex::new(None);
 thread_local! { static PENDING: RefCell<Option<Pending>> = const { RefCell::new(None) }; }
 
 struct Foreground {
@@ -97,6 +102,12 @@ enum Operation {
 impl Operation {
     fn needs_storage(&self) -> bool {
         !matches!(self, Self::Share { .. })
+    }
+    /// What the native loader may read for this selection: the operation's
+    /// own bound, never more than the app's whole storage quota.
+    fn selection_limit(&self, quota: u64) -> u64 {
+        let bound = if matches!(self, Self::Import { .. }) { MAX_IMPORT } else { MAX_FILE_BYTES };
+        bound.min(quota)
     }
 }
 /// Inspect bytes, never a filename or a provider-supplied MIME hint. This is a
@@ -241,6 +252,12 @@ struct Pending {
     work: Work,
     export: Option<Vec<u8>>,
 }
+/// A selection a worker has staged beside the app's jail, with the reply
+/// the UI sends once it links the file in.
+struct Staged {
+    work: Work,
+    result: Result<(PreparedStorageImport, Value), String>,
+}
 
 pub fn register() {
     services::register_host_service(Box::new(FilesService));
@@ -260,8 +277,8 @@ impl HostService for FilesService {
     fn api_methods(&self) -> Vec<HostApiMethod> {
         let mut methods = vec![HostApiMethod::new("files.status", 1, "files", "Discover file transfer support without opening a dialog",
             json!({"type":"object","additionalProperties":false}),
-            json!({"type":"object","required":["import_supported","export_supported","max_file_bytes","storage_granted","foreground_required"],
-                "properties":{"import_supported":{"type":"boolean"},"export_supported":{"type":"boolean"},"max_file_bytes":{"type":"integer"},"photo_pick_supported":{"type":"boolean"},"text_share_supported":{"type":"boolean"},"max_share_text_bytes":{"type":"integer"},"storage_granted":{"type":"boolean"},"foreground_required":{"const":true}}}))
+            json!({"type":"object","required":["import_supported","export_supported","max_file_bytes","max_import_bytes","storage_granted","foreground_required"],
+                "properties":{"import_supported":{"type":"boolean"},"export_supported":{"type":"boolean"},"max_file_bytes":{"type":"integer"},"max_import_bytes":{"type":"integer"},"photo_pick_supported":{"type":"boolean"},"text_share_supported":{"type":"boolean"},"max_share_text_bytes":{"type":"integer"},"storage_granted":{"type":"boolean"},"foreground_required":{"const":true}}}))
             .with_platforms(&["macos","windows","linux","android","ios","openharmony","web"]).with_agent_access(AgentAccess::Allowed)];
         if cfg!(target_os = "android") {
             methods.push(HostApiMethod::new("files.share", 1, "files", "Open Android's text share chooser; OS handoff does not confirm delivery",
@@ -275,7 +292,7 @@ impl HostService for FilesService {
         for (method, summary, input) in [
             (
                 "import",
-                "Select one document and copy it into a new app file; requires storage",
+                "Select one document and copy it into a new app file; at most 64 MiB (16 MiB on Android) and the app's free storage, requires storage",
                 json!({"type":"object","required":["path"],"additionalProperties":false,"properties":{"path":{"type":"string","minLength":1,"maxLength":2048}}}),
             ),
             (
@@ -308,7 +325,7 @@ impl HostService for FilesService {
                 json!({
                     "import_supported":file_dialogs::native_file_bytes_supported(),
                     "export_supported":file_dialogs::native_file_bytes_supported(),
-                    "max_file_bytes":MAX_FILE_BYTES, "foreground_required":true,
+                    "max_file_bytes":MAX_FILE_BYTES, "max_import_bytes":MAX_IMPORT, "foreground_required":true,
                     "photo_pick_supported":file_dialogs::native_file_bytes_supported(),
                     "text_share_supported":cfg!(target_os="android"), "max_share_text_bytes":MAX_SHARE_TEXT,
                     "storage_granted":crate::host_tools::script_apps::grants(&call.app_id,"storage")
@@ -367,6 +384,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
     if cx.in_draw_event() {
         return;
     }
+    commit_staged();
     PENDING.with(|slot| {
         if slot
             .borrow()
@@ -487,7 +505,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                         return;
                     }
                     let previous = cx.virtual_file_limits();
-                    let limit = MAX_FILE_BYTES.min(storage.quota());
+                    let limit = work.operation.selection_limit(storage.quota());
                     cx.set_virtual_file_limits(limit, limit);
                     let photo = matches!(work.operation, Operation::PickPhoto { .. });
                     let dialog = if photo {
@@ -536,6 +554,23 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
     });
 }
 
+/// Links a staged selection into its app's live jail, between script turns.
+/// Never waits for the worker's slot: a worker still filling it signals again.
+fn commit_staged() {
+    let staged = match STAGED.try_lock() {
+        Ok(mut staged) => staged.take(),
+        Err(TryLockError::Poisoned(error)) => error.into_inner().take(),
+        Err(TryLockError::WouldBlock) => None,
+    };
+    if let Some(Staged { work, result }) = staged {
+        let result = result.and_then(|(staged, value)| {
+            work.storage()?.commit_import(staged)?;
+            Ok(value)
+        });
+        work.reply.send(result);
+    }
+}
+
 fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
     let Pending { work, export, .. } = pending;
     if matches!(
@@ -569,16 +604,31 @@ fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
             } else {
                 None
             };
-            // Uses the current live isolate's jail and granted quota, and runs
-            // between script turns so quota checking and writing are serialized.
-            work.reply
-                .send(storage.import_new(path, &file.bytes).map(|_| {
-                    let mut value = json!({"cancelled":false,"path":path,"bytes":file.bytes.len()});
-                    if let Some(mime) = mime {
-                        value["mime"] = mime.into();
-                    }
-                    value
-                }));
+            // A worker writes the bytes beside the jail; the UI links them in
+            // between script turns (`commit_staged`), against the live jail and
+            // its current quota.
+            let path = path.clone();
+            let bytes = file.bytes.clone();
+            let snapshot = storage.worker_snapshot();
+            let failed = work.reply.clone();
+            let submitted = cx.task_pool().submit(Lane::Heavy, move || {
+                let result = work
+                    .authorized()
+                    .and_then(|_| snapshot.prepare_import(&path, &bytes))
+                    .map(|staged| {
+                        let mut value = json!({"cancelled":false,"path":path,"bytes":bytes.len()});
+                        if let Some(mime) = mime {
+                            value["mime"] = mime.into();
+                        }
+                        (staged, value)
+                    });
+                *STAGED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Staged { work, result });
+                SignalToUI::set_ui_signal();
+            });
+            match submitted {
+                Ok(task) => task.detach(),
+                Err(_) => failed.send(Err("busy: File worker is unavailable".into())),
+            }
         }
         (
             Operation::Export { path, .. },
