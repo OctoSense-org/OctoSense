@@ -179,7 +179,8 @@ OctoSense-System-Apps 仓库（已归档）。
   拒绝都会在应用中显示：存储几乎已满、引擎无法读取的演示文稿文件、存储之外的路径。
   切换浅色或深色时，应用停留在用户所在的页面。`deck` 服务运行在 Shell 的 UI 线程上
   （#399），所以它工作时 Shell 会停顿：五张幻灯片约 3 秒，会话中的第一次调用 16 秒。
-  不涉及引擎的每个状态（包括各种拒绝）也用下方的开发夹具在 `card-host` 中覆盖。
+  每个页面和状态（包括各种拒绝）也由 `quickdeck/tests/ui.py` 用下方的开发夹具在
+  `card-host` 中覆盖。
 - Camera 和 AI providers 自带 PNG 启动器图案，YouTube 和 Quick Deck 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
@@ -364,24 +365,23 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 演示邮箱的密码存放在文件中，因此不会弹出钥匙串提示。
 
-**Quick Deck 的开发夹具。** `card-host` 没有 `deck` 服务，所以 Quick Deck 带有
-一个仅供开发和 UI 测试使用的夹具：它用预设结果回答应用的 `deck.*` 调用，并用真实的引擎
-渲染图代替图片。`quickdeck/dev-fixture/` 中的渲染图由固定版本的 deckcraft
-（d0e57d7e）根据 `dev-fixture/outline.txt` 生成。只有当应用存储中存在
-`dev/fixture.json` 时夹具才会启用；应用从不写入 `dev/`，所以用户永远看不到它，
-而且 Shell 只打包 `bundle/`。
+**Quick Deck 的开发夹具。** `card-host` 没有 `deck` 服务，而随 Shell 发布的
+bundle 中没有任何夹具代码。Quick Deck 的 UI 测试使用 bundle 之外的
+`quickdeck/dev-fixture/`：`engine.splash` 是引擎的替身，它把每次调用要求的内容
+写到调用给出的路径；`fixture.json` 是它的设置；图片是固定版本的 deckcraft
+（d0e57d7e）根据 `outline.txt` 生成的真实渲染图。`quickdeck/tests/ui.py` 会复制一份
+临时 bundle，用 `engine.splash` 替换其中的 `deck_call()`，把夹具复制到应用存储的
+`dev/` 中，然后在隐藏的 `card-host` 中以浅色和深色外观走遍每个页面和状态。第一轮
+直接使用随 Shell 发布的 bundle，展示没有引擎应答时的样子。
 
 ```sh
-mkdir -p <app-data>/os.quickdeck
-cp -R apps/quickdeck/dev-fixture <app-data>/os.quickdeck/dev
-MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port> card-host --bundle apps/quickdeck/bundle --system --app-data <app-data>
+python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
 ```
 
-此时演示文稿列表页会显示 DEV FIXTURE 标签。`fixture.json` 中，`delay` 是每次调用
-耗费的秒数，`fail` 指定失败的调用（`new`、`render`、`convert` 或 `all`），
-`unreadable: true` 会生成演示文稿但让图片保持不可读，就像引擎调用改为在调用方
-自己的存储中运行之前那样。输入 `outline.txt` 中的大纲即可得到对应的图片。加上
-`MAKEPAD_WIDGET_STYLE=macos-dark` 可查看深色外观。
+截图和每种外观的回执保存在 `target/quickdeck-ui/light` 与
+`target/quickdeck-ui/dark`。`fixture.json` 中，`delay` 是每次调用耗费的秒数，
+`fail` 指定失败的调用（`new`、`info`、`render`、`convert` 或 `all`），
+`unreadable: true` 让 `render` 正常应答但不留下图片，于是每张幻灯片显示其文字。
 
 ## 宿主服务与面板
 

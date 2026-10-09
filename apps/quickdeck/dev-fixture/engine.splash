@@ -1,0 +1,55 @@
+// Quick Deck's dev fixture: a stand-in for the shell's `deck` engine, for UI
+// tests in App Hub's card-host, which serves no host services. It never
+// ships. apps/quickdeck/tests/ui.py puts it in place of deck_call() in a
+// scratch copy of the bundle, and copies dev-fixture/ into the app's storage
+// as dev/, where the stand-in reads its settings (dev/fixture.json) and its
+// pictures: real deckcraft renders of dev-fixture/outline.txt. Like the
+// engine, it writes what it is asked for at the paths it is given, so the
+// app runs its one code path.
+let fixture = nil
+let fixture_slides = []     // what the last deck.new was given
+fn fixture_settings(){
+    if fixture == nil {
+        let f = try { fs.read("dev/fixture.json").parse_json() } catch { nil }
+        if f == nil { f = {} }
+        fixture = {dir: optional(f, "dir", "dev") delay: optional(f, "delay", 0.35) fail: optional(f, "fail", "") unreadable: optional(f, "unreadable", false)}
+    }
+    fixture
+}
+fn deck_call(method, args, done){
+    let f = fixture_settings()
+    let answer = fixture_answer(f, method, args)
+    start_timeout(f.delay, || done(answer))
+}
+fn fixture_answer(f, method, args){
+    if f.fail == method || f.fail == "all" {
+        return {is_ok: false data: nil error: "deck." + method + ": the dev fixture refuses this call"}
+    }
+    if method == "new" {
+        fixture_slides = args.slides
+        fs.write(args.out, "Quick Deck dev fixture: a stand-in deck\n")
+        return {is_ok: true error: nil data: {out: args.out slides: args.slides.len() format: "deckcraft"}}
+    }
+    if method == "info" {
+        let slides = []
+        for s in fixture_slides { slides.push({title: s.title layout: "Title and Content"}) }
+        return {is_ok: true error: nil data: {file: args.path slides: slides}}
+    }
+    if method == "render" {
+        let name = "slide-" + two(args.slide + 1) + ".png"
+        let src = f.dir + "/thumbs/" + name
+        if args.max_side > 600 && fs.exists(f.dir + "/views/" + name) { src = f.dir + "/views/" + name }
+        if !fs.exists(src) { return {is_ok: false data: nil error: "deck.render: no picture for slide " + (args.slide + 1) + " in the dev fixture"} }
+        // `unreadable`: the call answers but leaves no picture to read, so
+        // each slide shows its text.
+        if !f.unreadable { fs.write_bytes(args.out, fs.read_bytes(src)) }
+        return {is_ok: true error: nil data: {out: args.out slide: args.slide width: 480 height: 270 bytes: 0}}
+    }
+    if method == "convert" {
+        let format = "pptx"
+        if args.out.search(".pdf") >= 0 { format = "pdf" }
+        fs.write(args.out, "Quick Deck dev fixture: a stand-in " + format + "\n")
+        return {is_ok: true error: nil data: {out: args.out format: format bytes: 48213}}
+    }
+    {is_ok: false data: nil error: "deck." + method + " is not in the dev fixture"}
+}

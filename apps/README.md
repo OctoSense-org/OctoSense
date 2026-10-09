@@ -233,8 +233,8 @@ reaches only the hosts the manifest lists.
   or dark switch keeps the screen the person is on. The `deck` service runs on
   the shell's UI thread (#399), so the shell pauses while it works: about 3 s
   for a five-slide deck, 16 s on the very first call of a session. Every
-  state without the engine, refusals included, is also covered in `card-host`
-  with the dev fixture below.
+  screen and state, refusals included, is also covered in `card-host` by
+  `quickdeck/tests/ui.py` with the dev fixture below.
 - Camera and AI providers ship PNG launcher artwork; YouTube and Quick Deck
   ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
@@ -439,26 +439,26 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 The demo keeps its password in a file, so no keychain prompt appears.
 
-**Quick Deck's dev fixture.** `card-host` has no `deck` service, so Quick
-Deck carries a development-only fixture for its UI tests: it answers the app's `deck.*` calls
-with canned results and stands real engine renders in for the pictures. The
-renders in `quickdeck/dev-fixture/` were made by the pinned deckcraft
-(d0e57d7e) from `dev-fixture/outline.txt`. The fixture is on only while the
-app's storage holds `dev/fixture.json`; the app never writes `dev/`, so a
-person never sees it, and the shells pack only `bundle/`.
+**Quick Deck's dev fixture.** `card-host` has no `deck` service, and the
+shipped bundle has no fixture code. Quick Deck's UI tests use
+`quickdeck/dev-fixture/`, outside the bundle: `engine.splash`, a stand-in for
+the engine that writes what each call asks for at the paths it is given;
+`fixture.json`, its settings; and real renders of `outline.txt` by the pinned
+deckcraft (d0e57d7e), for its pictures. `quickdeck/tests/ui.py` makes a
+scratch copy of the bundle with `engine.splash` in place of `deck_call()`,
+copies the fixture into the app's storage as `dev/`, and drives every screen
+and state in a hidden `card-host`, light and dark. Its first run uses the
+shipped bundle as it is, which shows that no engine answers.
 
 ```sh
-mkdir -p <app-data>/os.quickdeck
-cp -R apps/quickdeck/dev-fixture <app-data>/os.quickdeck/dev
-MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port> card-host --bundle apps/quickdeck/bundle --system --app-data <app-data>
+python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
 ```
 
-The Decks screen then shows a DEV FIXTURE tag. In `fixture.json`, `delay` is
-the seconds each call takes, `fail` names a call that fails (`new`, `render`,
-`convert` or `all`), and `unreadable: true` makes the deck while keeping its
-pictures out of reach, as engine calls did before they ran in the caller's
-storage. Type the outline in `outline.txt` to get matching pictures. Add
-`MAKEPAD_WIDGET_STYLE=macos-dark` for the dark appearance.
+The grabs and a receipt per appearance land in `target/quickdeck-ui/light`
+and `target/quickdeck-ui/dark`. In `fixture.json`, `delay` is the seconds each
+call takes, `fail` names a call that fails (`new`, `info`, `render`, `convert`
+or `all`), and `unreadable: true` answers `render` without leaving a picture,
+so each slide shows its text.
 
 ## Host services and sheets
 

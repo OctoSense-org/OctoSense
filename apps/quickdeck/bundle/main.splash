@@ -44,11 +44,6 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 // regeneration never has to replace a file, and a failed one leaves the
 // previous deck as it was. Where a picture can't be read, its slide shows
 // its text instead.
-//
-// Dev fixture (development only): a `dev/fixture.json` in this app's storage
-// makes deck_call() answer from canned results and the PNGs beside it
-// (apps/quickdeck/dev-fixture, see apps/README.md). The app never writes
-// `dev/`, so a person never sees it.
 let SLIDE_LIMIT = 40
 let POINT_LIMIT = 12
 // fs.* refuses a 257th file or folder in the storage; leave room.
@@ -62,7 +57,6 @@ let cur = nil           // the deck on screen
 let screen = "decks"
 let app_width = 412
 let app_height = 860
-let fixture = nil       // dev/fixture.json, development only
 let save_seq = 0
 let busy = false
 let make_seq = 0
@@ -78,7 +72,6 @@ let make_count = 0
 let make_sent = []
 let make_thumbs = []
 let make_paths = []
-let fixture_slides = [] // what the dev fixture's last new was given
 let view_index = 0
 let view_seq = 0
 let view_res = nil      // the large picture of the slide on screen
@@ -172,10 +165,6 @@ fn normal_deck(d){
         sent: optional(d, "sent", []) thumbs: optional(d, "thumbs", []) exports: optional(d, "exports", []) gen: optional(d, "gen", 0)}
 }
 fn load(){
-    if fs.exists("dev/fixture.json") {
-        let f = fs.read("dev/fixture.json").parse_json()
-        fixture = {dir: optional(f, "dir", "dev") delay: optional(f, "delay", 0.35) fail: optional(f, "fail", "") unreadable: optional(f, "unreadable", false)}
-    }
     if fs.exists("decks.json") {
         let v = fs.read("decks.json").parse_json()
         let list = []
@@ -236,46 +225,10 @@ fn entries_needed(slides){
 // ---- the deck engine ----------------------------------------------------------
 
 fn deck_call(method, args, done){
-    if fixture != nil {
-        let answer = fixture_answer(method, args)
-        start_timeout(fixture.delay, || done(answer))
-        return
-    }
     // A refused request calls back from inside host.request itself; in
     // card-host only the first widget call of such a callback took effect.
     // Answer from a timer instead, as a served request does.
     host.request("deck." + method, args, fn(r){ start_timeout(0.01, || done(r)) })
-}
-// Development only: what the engine would answer, with real engine renders
-// of apps/quickdeck/dev-fixture/outline.txt standing in for its pictures.
-fn fixture_answer(method, args){
-    if fixture.fail == method || fixture.fail == "all" {
-        return {is_ok: false data: nil error: "deck." + method + ": the dev fixture refuses this call"}
-    }
-    if method == "new" {
-        fixture_slides = args.slides
-        return {is_ok: true error: nil data: {out: args.out slides: args.slides.len() format: "deckcraft"}}
-    }
-    if method == "info" {
-        let slides = []
-        for s in fixture_slides { slides.push({title: s.title layout: "Title and Content"}) }
-        return {is_ok: true error: nil data: {file: args.path slides: slides}}
-    }
-    if method == "render" {
-        // As engine calls did before they ran in the caller's storage.
-        if fixture.unreadable { return {is_ok: true error: nil data: {out: args.out slide: args.slide width: 480 height: 270 bytes: 24576}} }
-        let name = "slide-" + two(args.slide + 1) + ".png"
-        let path = fixture.dir + "/thumbs/" + name
-        if args.max_side > 600 && fs.exists(fixture.dir + "/views/" + name) { path = fixture.dir + "/views/" + name }
-        if !fs.exists(path) { return {is_ok: false data: nil error: "deck.render: no picture for slide " + (args.slide + 1) + " in the dev fixture"} }
-        return {is_ok: true error: nil data: {out: path slide: args.slide width: 480 height: 270 bytes: 0}}
-    }
-    if method == "convert" {
-        let format = "pptx"
-        if args.out.search(".pdf") >= 0 { format = "pdf" }
-        return {is_ok: true error: nil data: {out: args.out format: format bytes: 48213}}
-    }
-    {is_ok: false data: nil error: "deck." + method + " is not in the dev fixture"}
 }
 // A slide picture already read from this app's storage, or nil.
 fn picture(path){
@@ -394,7 +347,7 @@ fn remember(){
     // the empty start state would be recalled instead of the stored decks.
     if !booted { return }
     mod.quickdeck_state = {decks: decks cur: cur screen: screen view_index: view_index export_format: export_format
-        fixture: fixture app_width: app_width app_height: app_height}
+        app_width: app_width app_height: app_height}
 }
 fn recall(){
     let kept = try { mod.quickdeck_state } catch { nil }
@@ -404,7 +357,6 @@ fn recall(){
     screen = kept.screen
     view_index = kept.view_index
     export_format = kept.export_format
-    fixture = kept.fixture
     app_width = kept.app_width
     app_height = kept.app_height
     true
@@ -414,7 +366,6 @@ fn boot(){
         booted = true
         if !recall() { load() }
     }
-    ui.dev_chip.set_visible(fixture != nil)
     // A host restyle runs the body again: show the screen the person was on.
     if cur == nil || screen == "decks" { show_decks() return }
     if screen == "outline" { open_outline() return }
@@ -546,7 +497,6 @@ fn generate(){
     deck_call("new", {out: out slides: slides}, fn(r){
         if seq != make_seq { return }
         if !r.is_ok { fail_make("new", r.error) return }
-        if fixture != nil { make_file = optional(r.data, "out", out) }
         make_note = "Checking the deck…"
         show_make()
         // Read the deck back: the slides the engine actually made.
@@ -569,11 +519,9 @@ fn draw_next(seq, i){
     deck_call("render", {path: make_file slide: i out: out max_side: 480}, fn(r){
         if seq != make_seq { return }
         if r.is_ok {
-            let shown = out
-            if fixture != nil { shown = optional(r.data, "out", out) }
-            make_thumbs.push(shown)
+            make_thumbs.push(out)
             // One read per answer, so the review opens with its pictures.
-            read_picture(shown)
+            read_picture(out)
         } else {
             make_thumbs.push("")
             if render_error == "" { render_error = r.error }
@@ -706,11 +654,8 @@ fn render_view(){
     if cur.file == "" { return }
     let side = max(960, min(2048, slide_w() * 2))
     deck_call("render", {path: cur.file slide: view_index out: "view.png" max_side: side}, fn(r){
-        if seq != view_seq || !r.is_ok { return }
-        let out = "view.png"
-        if fixture != nil { out = optional(r.data, "out", "") }
-        if out == "" || !fs.exists(out) { return }
-        view_res = try { binary_resource(fs.read_bytes(out)) } catch { nil }
+        if seq != view_seq || !r.is_ok || !fs.exists("view.png") { return }
+        view_res = try { binary_resource(fs.read_bytes("view.png")) } catch { nil }
         ui.stage.render()
     })
 }
@@ -832,7 +777,6 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                     UiTitle{text: "Quick Deck" draw_text.text_style.font_size: 24}
                     UiCaption{text: "Outline it, get slides."}
                 }
-                dev_chip := Tag{visible: false draw_bg +: {color: deck_orange} TagText{text: "DEV FIXTURE" draw_text +: {color: #xffffff}}}
             }
             deck_list := View{width: Fill height: Fit flow: Down spacing: 10 on_render: || {
                 // Always one child: a render that yields none keeps the last rows.
