@@ -49,6 +49,29 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `apps/sheets/host-service` and `cargo test --locked -p octosense-sheets-service`.
   The photo engine's (photocraft behind `photo.*`, same ADR, no bundle yet):
   `apps/photo/host-service` and `cargo test --locked -p octosense-photo-service`.
+  The word engine's (wordcraft behind `word.*`, same ADR, no bundle yet):
+  `apps/word/host-service` and `cargo test --locked -p octosense-word-service`.
+  The deck engine's (deckcraft behind `deck.*`, same ADR, no bundle yet):
+  `apps/deck/host-service` and `cargo test --locked -p octosense-deck-service`.
+  The cad engine's (cadcraft behind `cad.*`, same ADR, no bundle yet):
+  `apps/cad/host-service` and `cargo test --locked -p octosense-cad-service`.
+  The light engine's (lightcraft behind `light.*`, same ADR, no bundle yet):
+  `apps/light/host-service` and `cargo test --locked -p octosense-light-service`.
+  The sound engine's (soundcraft behind `sound.*`, same ADR, offline only,
+  no bundle yet): `apps/sound/host-service` and
+  `cargo test --locked -p octosense-sound-service`.
+  The design engine's (designcraft behind `design.*`, same ADR, no bundle
+  yet): `apps/design/host-service` and
+  `cargo test --locked -p octosense-design-service`.
+  The film engine's (filmcraft behind `film.*`, same ADR, offline only, no
+  bundle yet): `apps/film/host-service` and
+  `cargo test --locked -p octosense-film-service`.
+  The effect engine's (effectcraft behind `effect.*`, same ADR, no bundle yet):
+  `apps/effect/host-service` and `cargo test --locked -p octosense-effect-service`.
+  The vector engine's (vectorcraft behind `vector.*`, same ADR, no bundle yet):
+  `apps/vector/host-service` and `cargo test --locked -p octosense-vector-service`.
+  The pdf engine's (pdfcraft behind `pdf.*`, same ADR, no bundle yet):
+  `apps/pdf/host-service` and `cargo test --locked -p octosense-pdf-service`.
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.
@@ -144,6 +167,44 @@ info (its `photos` service: `photos.info` on the photo engine, ADR 0013); Maps, 
 and Camera expose notify only. AI providers declares no app agent. The native
 Sheets app declares `sheets.*`, which the shell's engine executor
 (`../crates/shell/src/host_tools/engines.rs`) runs on the sheet engine.
+
+The ten craft engines (word, deck, cad, light, sound, design, film, effect,
+vector, pdf; ADR 0013) declare their tools in `<family>/host-service/tools.json`,
+which each crate's tests load with App Hub's own loader. No app ships them, so
+the shell declares them under a virtual owner `os.<family>` (no bundle, no app
+agent, no Settings row) and runs them on the engine's service as that system
+identity. Only the system agent gets them: `ENGINE_TOOLS` in
+`../crates/shell/src/system_chat/grants.rs` grants every read tool and each
+act tool that only creates new files, never the command doors `vector.run`
+and `effect.run` (held for their own review). No app's agent gets an engine
+tool: none is shareable. An engine works in its caller's own folder (ADR
+0013, 9 Oct 2026; `../crates/shell/src/host_tools/areas.rs` decides it):
+for the system agent, its workspace, the folder its own file tools see, so
+it hands an engine a file by placing it there and reads the result back.
+Sheets' `sheets.*` and Photos' `photos.info` work in their own app's agent
+folder. Every path is relative to that folder and kept inside it, links
+resolved; an agent's write never replaces an existing file, and output into
+an app's jail must fit what is left of its storage quota. These rules live
+once in `../crates/engine-area` (`cargo test --locked -p
+octosense-engine-area`); each service applies them, and fences the paths
+written inside the documents it opens (design, vector, effect, film,
+light). Change a tool's schema and the service together, keep both schemas
+objects (octos takes no other), and add a new tool to `ENGINE_TOOLS` only
+after reviewing it; the shell's `host_tools` tests run every granted tool
+against its declared result.
+
+Every engine (sheet and photo too) ships the system agent's skill for it in
+`<family>/host-service/skill/`, embedded by `src/skill.rs`. `SKILL.md` is
+written by hand: its `## Tools` must list exactly the engine tools the
+system agent is granted, and its `## Examples` calls must match the tools'
+schemas (the shell's `system_chat` tests check both, so a grant or schema
+change fails until the skill follows). `commands.md` and `safety.json` are
+generated from the pinned engine and `skill/safety-rules.json`, the
+hand-written classification of every engine command (safe, file, code,
+network, device, host), made from reading the command implementations;
+regenerate with `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p
+octosense-<family>-service --test skill` after an engine pin moves, and
+review the classes of new ids before committing.
 
 Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,

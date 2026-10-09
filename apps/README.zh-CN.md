@@ -25,6 +25,7 @@ OctoSense-System-Apps 仓库（已归档）。
   （`desktop/system-apps.json` 与 `phone/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
   Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
+- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方自己的文件夹内。暂无 bundle。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
@@ -32,6 +33,25 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内；尚无 bundle。
+- **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
+- **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
+  放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
+  批量参数化显影；仅服务系统应用，且只在调用方自己的文件夹内读写。
+  暂无 bundle。
+- **`sound` 宿主服务**（`sound/host-service`）：soundcraft 音频引擎置于 `sound.*` 之后（ADR 0013），只做离线文件处理——info、convert、trim、mix 和波形峰值，数据都在调用方自己的文件夹内；它从不打开音频或 MIDI 设备，暂时也没有应用包。
+- **`design` 宿主服务**（`design/host-service`）把 designcraft 排版引擎（ADR 0013）放在 `design.*` 后面：文档信息、页面渲染为 PNG、导出 PDF/IDML/EPUB，所有路径都限制在调用方自己的文件夹内；暂无应用包。
+- **`film` 宿主服务**（`film/host-service`）是锁定版本的 filmcraft 视频引擎
+  （ADR 0013），以 `film.*` 提供探测、抽帧为 PNG 和有上限的导出，全部使用其
+  纯 Rust 编解码器——无界面、离线，暂无应用包。
+- **`effect` 宿主服务**（`effect/host-service`）是 effectcraft 动态图形引擎
+  （ADR 0013），通过 `effect.*` 方法服务系统应用：工程信息、把合成帧渲染为
+  PNG、引擎命令目录以及 Lottie 导入/导出，所有文件都在调用方自己的文件夹
+  内；尚无应用包。
+- **矢量引擎服务**（`vector/host-service`，`octosense-vector-service`）以无界面方式
+  运行固定版本的 vectorcraft 矢量引擎，提供 `vector.*` 方法（ADR 0013）：在调用方
+  自己的文件夹内检查、转换、按引擎命令绘制并渲染矢量文档
+  （SVG、PDF、EPS、DXF、位图）；仅服务系统应用，暂无应用包。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`
@@ -82,7 +102,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
 | [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；自己的 `photos` 服务：`photos.notify` 经 Shell 的通知回调、`photos.info` 在照片引擎上（原图使用资源挂载） |
-| [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；搜索和路线地图使用 makepad 预先烘焙的世界地图（`makepad.nl`），驾驶地图仍通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
+| [Maps](maps/bundle) | `os.maps` | 随时可拖动和缩放的 `MapView` 地点地图：按可见区域搜索、带 OpenStreetMap 详情（营业时间、电话、网站、菜系）的地点卡片、以图钉显示的收藏地点、长按查看“这里是什么”、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；浏览地图使用 makepad 预先烘焙的世界地图（`makepad.nl`），驾驶地图和地点详情通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`web`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
 | [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
@@ -128,9 +148,14 @@ OctoSense-System-Apps 仓库（已归档）。
   挂载 `photos/resources/photos`（约 87 MB，见 `phone/system-apps.json`）；
   桌面端不挂载任何目录（`desktop/system-apps.json`），所以那里的查看器没有原图，
   会保留缩略图作为后备。回忆功能在实体手机及真实 AI 服务商上均**未验证**。
-- **Maps**：在 OnePlus 6 上（2026-09-27）搜索、地点详情、路线、添加和移除途经点、
-  逐向导航驾驶以及 2D 视图都正常。3D 驾驶视图会画出路线但没有地图瓦片，手机和桌面
-  上都是如此，途经点改动前后一样。
+- **Maps**：在 Pixel 7 Pro 上（2026-10-08，深色模式）地点地图运行正常：打开时位于
+  GPS 定位处，◎ 能飞回该处；地图可拖动，也可双指缩放；按可见地图搜索、收藏与最近、
+  带 OpenStreetMap 详情的地点卡片及其网站阅读器、收藏与图钉、长按、路线只取景一次
+  之后由使用者掌控、‹ Back 和 Close 移除路线，以及驾驶视图和 End 都正常。3D 驾驶
+  视图在路线附近画出了地图瓦片，30 秒后仍有部分缺失。改为地点地图之前，在 OnePlus 6
+  上（2026-09-27）搜索、地点详情、路线、添加和移除途经点、逐向导航驾驶以及 2D 视图
+  都正常；3D 驾驶视图会画出路线但没有地图瓦片，手机和桌面上都是如此，途经点改动前后
+  一样。OnePlus 6T、iOS 和 OpenHarmony **未验证**。
 - **News**：开发时在 `card-host` 中运行过，但在 Shell PR 的测试中没有
   端到端验证（测试手机没有网络）。
 - **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。Mail 与 `llm` 两个宿主服务使用根目录
@@ -198,7 +223,9 @@ mail/host-service/           octosense-mail-service，`mail` 宿主服务（Rust
 mail/docs/                   邮件的计划（邮件操作卡片）
 calendar/host-service/       octosense-calendar-service，`calendar` 宿主服务；resources/event.card、agenda.card
 news/host-service/           octosense-news-service，`news` 宿主服务（新闻的数据服务）
+pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013；尚无应用包）
 <name>/bundle/tools.json     新闻、邮件、日历、相册、地图、YouTube、相机的 Agent 工具
+<family>/host-service/tools.json  craft 引擎（word、deck、cad、light、sound、design、film、effect、vector、pdf）的工具，供系统 Agent 使用（ADR 0013）
 ../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card
 ai-providers/                `llm` 宿主服务（host-service/）和 octosense-llm-config（config/：
                              octos 模型目录与服务商注册表、profile 合并、OCTOS1/OCTOS1E 二维码）
@@ -349,6 +376,8 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 ### `mail` 服务
 
+普通 App Hub 应用现可使用按应用/账户隔离的撰写、状态查询和原生 SMTP 审阅接口。见 [Mail 服务与迁移示例](mail/host-service/README.zh-CN.md)；Agent 和合成输入仍不能直接批准发送。
+
 `octosense-mail-service`（`apps/mail/host-service/src/`）：
 
 | 文件 | 作用 |
@@ -431,9 +460,34 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 | 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
 | 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.draft`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`、`mail.propose_reply`、`mail.suggest_reply`、`mail.propose_send`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
-| 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查其工作区内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | Shell 的通知卡片 |
+| 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查照片 Agent 自己文件夹内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | Shell 的通知卡片 |
 | 地图、YouTube、相机 | `agent` 块、`glance` | `maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
+
+**引擎工具（[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)）。**
+十个 craft 引擎（word、deck、cad、light、sound、design、film、effect、vector、
+pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发布，位于
+`<family>/host-service/tools.json`。Shell 以虚拟所有者 `os.<family>` 的名义声明这些
+工具，并只授予系统 Agent（[`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)
+中的 `ENGINE_TOOLS`）：每个引擎的读工具（`info`、`text`、`inspect`、`entities`、
+`measure`、`controls`、`peaks`、`project.info`），以及只新建文件的 act 工具
+（`new`、`convert`、`render`、`export`、`frame`、`develop`、`batch`、`trim`、`mix`、
+`merge`、`split`、`export_lottie`、`import_lottie`）。可以运行任意引擎命令的
+`vector.run` 和 `effect.run` 已声明但不授予，Shell 也拒绝它们。引擎在调用方自己的
+文件夹里工作（ADR 0013，`../crates/shell/src/host_tools/areas.rs`）：对系统 Agent
+而言就是它的工作区，它自己的文件工具能看到引擎写出的文件，每个引擎也能打开其他引擎
+做出的文件。所有路径都相对于该文件夹并留在其中，任何调用都不会替换已有文件，写进
+应用存储的输出也受其配额限制。Sheets 的 `sheets.*` 和照片的 `photos.info` 在各自
+应用的 Agent 文件夹里工作。
+
+**引擎技能。** 每个引擎（包括 sheet 和 photo 引擎）还在 `<family>/host-service/skill/` 中为系统 Agent
+附带一个技能：手写的 `SKILL.md`（引擎能做什么、系统 Agent 用哪些工具调用它、文件规则、示例），以及按引擎固定版本
+生成的参考文件：`commands.md`（命令目录，每个 id 一行，并标出每条命令能触及什么）、light 的 `controls.md` 和 sheet 的
+`functions.md`。与它们并列的 `safety.json`（每个命令 id 的类别，供经过审查的命令入口使用）只留在仓库中。内核服务在每次
+启动前把已链接引擎的技能安装到 `_main` profile 的技能目录（[`../crates/kernel/README.zh-CN.md`](../crates/kernel/README.zh-CN.md#系统智能体的技能)）；
+octos 把它们的一行描述列入系统 Agent 的提示词，Agent 需要某个引擎时再读取对应技能。各服务的 `tests/skill.rs` 会在参考文件
+与固定版本的引擎不一致时失败；用 `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
+重新生成。
 
 **邮件卡片的回复方式。** 系统代理可以配置：可回复的重要邮件自动生成草稿；自动发送或 no-reply 邮件等用户点击 Compose reply（撰写回复）后再生成。宿主在邮件事件的信息卡片上提供该操作，核实原邮件，再请 Mail 代理创建草稿。同一张卡片随即变成 Email/Chat，支持持久编辑和宿主审阅界面。见[邮件事件导读](../docs/mail-agent-events.zh-CN.md)。
 

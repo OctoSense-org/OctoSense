@@ -1,0 +1,37 @@
+# octosense-effect-service — the `effect` host service (ADR 0013).
+#
+# effectcraft's motion-graphics engine (an After Effects-class compositor:
+# compositions, layers, keyframes, effects, expressions, Lottie) behind
+# typed `effect.*` methods, through its headless automation backend:
+# inspect a project, render a comp frame to PNG, run engine commands (the
+# command catalog every frontend dispatches through) and move compositions
+# to and from Lottie. Stateless: every call opens, acts and closes, and
+# every file lives in the call's area: the caller's own folder from the
+# shell's resolver, else the legacy `<host_dir>/effect`.
+[package]
+name = "octosense-effect-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/effectcraft revision (ADR 0013).
+effectcraft-engine = { workspace = true }
+effectcraft-automation = { workspace = true }
+effectcraft-media = { workspace = true }
+effectcraft-expr = { workspace = true }
+effectcraft-model = { workspace = true }
+
+[dev-dependencies]
+# Generates and checks the skill's references (tests/skill.rs).
+octosense-skill-gen = { workspace = true }
+# Its tool manifest is checked with App Hub's own loader (tools.json).
+octosense-app-policy = { workspace = true }
+tempfile = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }

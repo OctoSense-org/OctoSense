@@ -28,6 +28,9 @@
     "section": "utils",
     "depends": ["libgtk-3-0t64 | libgtk-3-0", "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37"]
   },
+  "appimage": {
+    "excludedLibs": ["libwayland-client.so*", "libwayland-cursor.so*", "libwayland-egl.so*", "libwayland-server.so*"]
+  },
   "nsis": {
     "installMode": "currentUser"
   }

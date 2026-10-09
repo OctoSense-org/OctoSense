@@ -179,11 +179,54 @@ pub fn host_tools() -> std::collections::BTreeSet<String> {
         // shareable tool. Keep this check pure: the relay calls it while locked.
         tools.extend(CALENDAR_TOOLS.iter().map(|tool| tool.to_string()));
     }
+    #[cfg(feature = "craft-engines")]
+    tools.extend(ENGINE_TOOLS.iter().map(|tool| tool.to_string()));
     tools
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub(crate) const CALENDAR_TOOLS: &[&str] = &["calendar.events", "calendar.add_event", "calendar.notify"];
+
+/// The craft engines' tools the system agent may call (ADR 0013), each
+/// declared by its engine's `tools.json` under the virtual owner
+/// `os.<family>` (`host_tools::engines`). A reviewed narrow grant like
+/// [`CALENDAR_TOOLS`]: every engine's read tools, and its act tools that
+/// only create new files inside the system agent's own workspace, never
+/// replacing one (new, convert, render, export, frame, develop, batch,
+/// trim, mix, merge, split, the Lottie export and import;
+/// `host_tools::areas`). None is destructive or outward. Never a
+/// generic command door (`effect.run`, `vector.run`:
+/// `host_tools::engines::HELD_FOR_REVIEW`), which is reviewed separately.
+#[cfg(feature = "craft-engines")]
+pub(crate) const ENGINE_TOOLS: &[&str] = &[
+    "word.info", "word.text", "word.inspect", "word.convert", "word.new",
+    "deck.info", "deck.text", "deck.render", "deck.new", "deck.convert",
+    "cad.info", "cad.entities", "cad.measure", "cad.render", "cad.convert",
+    "light.info", "light.controls", "light.develop", "light.batch",
+    "sound.info", "sound.peaks", "sound.convert", "sound.trim", "sound.mix",
+    "design.info", "design.render", "design.export",
+    "film.info", "film.project.info", "film.frame", "film.export",
+    "effect.info", "effect.render", "effect.export_lottie", "effect.import_lottie",
+    "vector.info", "vector.convert", "vector.render",
+    "pdf.info", "pdf.text", "pdf.render", "pdf.merge", "pdf.split",
+];
+
+/// Whether `tool` is one of [`ENGINE_TOOLS`]: the system session's set
+/// gives these up first when it would pass [`MAX_SESSION_TOOLS`].
+pub fn is_engine_tool(tool: &str) -> bool {
+    #[cfg(feature = "craft-engines")]
+    return ENGINE_TOOLS.contains(&tool);
+    #[cfg(not(feature = "craft-engines"))]
+    {
+        let _ = tool;
+        false
+    }
+}
+
+/// The most host tools the kernel takes in one registration (octos
+/// `MAX_APP_TOOLS` at the pinned revision). It refuses a larger set whole,
+/// which would leave the system agent with no host tool at all.
+pub const MAX_SESSION_TOOLS: usize = 64;
 
 /// The native apps' own read tools the system agent may call
 /// (`native-apps.json` `agent.system_tools`), for the apps that run here:

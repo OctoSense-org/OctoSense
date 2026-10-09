@@ -211,6 +211,9 @@ pub fn register_mail_services() {
             crate::mail_card::queue_review(key, review);
             Ok(())
         })));
+        octosense_mail_service::public_review::on_review(Some(std::sync::Arc::new(
+            crate::connected_review::smtp_sheet,
+        )));
         crate::mail_card::publication_host_ready();
     });
 }
@@ -234,6 +237,14 @@ pub fn register_host_services() {
                 .unwrap_or_else(|| crate::app_storage::DEVICE.into())
         ));
         crate::platform_services::register();
+        crate::device_calendar::register(|app| {
+            crate::app_storage::lifecycle::contained_account(app)
+                .map(|account| crate::app_storage::account_hash(&account))
+        });
+        crate::files_service::register();
+        crate::audio_service::register();
+        octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
+        octosense_appstore::host_api::register_runtime_feature("video.playback_controls", 1);
         octosense_markdown_editor::register();
         crate::connected_review::register();
         octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);
@@ -258,6 +269,14 @@ pub fn register_host_services() {
                 },
             })
         }));
+        // Provider sign-in sheets name the app from its admitted manifest and
+        // show GitHub's one-time code in a host-held panel (ADR 0010).
+        octosense_oauth_service::sign_in_code::register();
+        octosense_oauth_service::host::set_app_names(std::sync::Arc::new(|app| {
+            let (_, bundle) = crate::host_tools::script_apps::admitted_bundle(app).ok()?;
+            let loaded = crate::host_tools::script_apps::from_bundle(&bundle).ok()?;
+            loaded.manifest["name"].as_str().map(str::to_owned)
+        }));
         octosense_oauth_service::host_api::register_with_review_hook(
             crate::connected_review::connector_sheet,
         );
@@ -265,8 +284,10 @@ pub fn register_host_services() {
         // published the same way.
         register_calendar_services();
         register_news();
-        // The sheet engine service (ADR 0013): gridcraft behind `sheet.*`,
-        // desktop only until its binary cost is weighed for the phone.
+        // The sheet engine service (ADR 0013): gridcraft behind `sheet.*`.
+        // With the photo engine it still ships on the phone, where the
+        // native Sheets app's and Photos' agent tools use them; the ten
+        // engines below are desktop only (`craft-engines`).
         #[cfg(feature = "app-hub")]
         octosense_sheets_service::register();
         // The native Sheets app's agent tools (`sheets.*`) run on that
@@ -285,8 +306,53 @@ pub fn register_host_services() {
             octosense_photo_service::register_photos();
             octosense_photo_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));
         }
+        // The word engine service (ADR 0013): wordcraft behind `word.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_word_service::register();
+        // The deck engine service (ADR 0013): deckcraft behind `deck.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_deck_service::register();
+        // The cad engine service (ADR 0013): cadcraft behind `cad.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_cad_service::register();
+        // The light engine service (ADR 0013): lightcraft behind `light.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_light_service::register();
+        // The sound engine service (ADR 0013): soundcraft behind `sound.*`,
+        // offline only — it never opens an audio device.
+        #[cfg(feature = "craft-engines")]
+        octosense_sound_service::register();
+        // The design engine service (ADR 0013): designcraft behind `design.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_design_service::register();
+        // The film engine service (ADR 0013): filmcraft behind `film.*`,
+        // offline only.
+        #[cfg(feature = "craft-engines")]
+        octosense_film_service::register();
+        // The effect engine service (ADR 0013): effectcraft behind `effect.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_effect_service::register();
+        // The vector engine service (ADR 0013): vectorcraft behind `vector.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_vector_service::register();
+        // The pdf engine service (ADR 0013): pdfcraft behind `pdf.*`.
+        #[cfg(feature = "craft-engines")]
+        octosense_pdf_service::register();
+        // The ten engines' agent tools (ADR 0013): each engine's
+        // `tools.json` declared under its virtual owner `os.<family>` and
+        // run on the service registered above. Only the system agent is
+        // granted them (`system_chat::grants::ENGINE_TOOLS`).
+        #[cfg(feature = "craft-engines")]
+        crate::host_tools::engines::register();
+        // Every engine above works in a folder the host picks for each call
+        // (ADR 0013, `host_tools::areas`): a craft engine's tool in its
+        // caller's own (the system agent's workspace, an app agent's
+        // account folder), an app's own engine tool in that app's agent
+        // folder, an app's own request in its storage.
+        #[cfg(feature = "app-hub")]
+        crate::host_tools::areas::install_resolvers();
         // Apps' own WebAssembly functions (ADR 0011).
-        #[cfg(feature = "wasm-lab")]
+        #[cfg(wasm_functions)]
         crate::wasm_service::register();
         // After every service of the shell's own: the notice service never
         // stands in for one.
@@ -880,6 +946,7 @@ mod tests {
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
+        if crate::module_host::run_with_isolated_module_data("apps::tests::bundled_apps_open_without_catalog_files_or_child_processes") { return; }
         let _one_rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let catalog = build_rows(bundled_catalog());
         // The linked modules in link order (AppCard is opt-in, `app-appcard`,
@@ -931,6 +998,7 @@ mod tests {
     fn bundled_apps_receive_same_base_theme_without_recreation() {
         use crate::mobile_theme::{Preset, Selection};
         use makepad_widgets::*;
+        if crate::module_host::run_with_isolated_module_data("apps::tests::bundled_apps_receive_same_base_theme_without_recreation") { return; }
         let _one_rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let registry = AppRegistry::default();
         let mut cx = Cx::new(Box::new(|_, _| {}));

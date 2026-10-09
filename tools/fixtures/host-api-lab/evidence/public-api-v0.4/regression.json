@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "result": "pass",
+  "source_revision": "53bab40fbdf2071cde5c7d5ca935e866373539e7",
+  "runtime_tree": "fc938badf98eade0732384bfc94e37ca497ddadf",
+  "sdk_revision": "67810fa5ce8486c285c141018834dd5ba04a46f7",
+  "sdk_version": "1.10.0",
+  "sdk_published": false,
+  "shell_tests": {
+    "passed": 1051,
+    "failed": 0,
+    "ignored": 0,
+    "measured": 0,
+    "filtered_out": 0
+  },
+  "packaging_checks_passed": 3,
+  "native_fixture_build_passed": true,
+  "stages": [
+    {
+      "name": "shell-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--release",
+        "--locked",
+        "--offline",
+        "--features",
+        "mobile-apps",
+        "-p",
+        "octosense-shell",
+        "--lib",
+        "-j6"
+      ],
+      "exit_code": 0,
+      "seconds": 170.2
+    },
+    {
+      "name": "desktop-default",
+      "command": [
+        "cargo",
+        "check",
+        "--release",
+        "--locked",
+        "--offline",
+        "-p",
+        "octosense",
+        "-j6"
+      ],
+      "exit_code": 0,
+      "seconds": 488.1
+    },
+    {
+      "name": "desktop-mobile",
+      "command": [
+        "cargo",
+        "check",
+        "--release",
+        "--locked",
+        "--offline",
+        "-p",
+        "octosense",
+        "--features",
+        "mobile-apps",
+        "-j6"
+      ],
+      "exit_code": 0,
+      "seconds": 72.3
+    },
+    {
+      "name": "home-mobile",
+      "command": [
+        "cargo",
+        "check",
+        "--release",
+        "--locked",
+        "--offline",
+        "-p",
+        "octosense-home",
+        "--features",
+        "mobile-apps",
+        "-j6"
+      ],
+      "exit_code": 0,
+      "seconds": 64.7
+    },
+    {
+      "name": "host-api-native-build",
+      "command": [
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--offline",
+        "-p",
+        "octosense-shell",
+        "--example",
+        "host-api-lab",
+        "--features",
+        "acceptance-fixtures",
+        "-j6"
+      ],
+      "exit_code": 0,
+      "seconds": 49.6
+    }
+  ],
+  "profiles": "isolated",
+  "personal_accounts_used": false,
+  "evidence_sha256": {
+    "binding.json": "2d269cd1feba2c4d39fea0492671635cae907a43d695726d38ca8ce3f03cff59",
+    "results.json": "96fb09e738e17cbfc8d842beac897772184390f4b63c3ed558c019604e8ae3d9",
+    "shell-tests.log": "088e36478d92bfd99f9d95c921980f2ff9591e2026738f32dd130598d9c49370"
+  },
+  "scope_note": "Shared-shell tests, three packaging checks and the native fixture build are separate from device acceptance. The test count does not establish live model or external-provider success. Later Android Video Java changes are not bound by this receipt.",
+  "not_verified": [
+    "model reasoning and peer consent",
+    "physical OS permission approval",
+    "real Calendar event reads/writes",
+    "SMTP delivery",
+    "audio capture and audible playback",
+    "native file/photo/share chooser interaction",
+    "video playback (separate fixture)",
+    "all-platform device execution",
+    "public host release"
+  ]
+}

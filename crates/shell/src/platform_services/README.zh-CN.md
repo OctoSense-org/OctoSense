@@ -2,13 +2,13 @@
 
 [English](README.md) | 简体中文
 
-在 OctoSense `main`（尚未进入任何发布版本）上，已安装的脚本应用可以向宿主申请摄像头、麦克风和位置权限。应用能否使用设备，由三项相互独立的检查决定：
+已安装的脚本应用可以向兼容的 OctoSense 宿主申请摄像头、麦克风和位置权限。请查询实际宿主的 API 发现结果；本文描述的新鲜位置采样属于尚未发布的 OS 接线批次。应用能否使用设备，由三项相互独立的检查决定：
 
 - **能力。** 应用清单声明 `camera`、`microphone` 或 `location`。这是应用能得到的上限。
 - **应用授权。** 用户在宿主的原生面板上允许这个应用。授权覆盖该应用的所有账户，不覆盖其他应用。
 - **系统权限。** 操作系统授予 OctoSense 本身的权限。单凭它，任何已安装应用都无权使用设备。
 
-本模块的设备服务（`DeviceService`）在 Android 和 macOS 上实现权限的查询、申请和撤销，在 Android 上还能读取最近已知位置。在其他平台上，API 发现接口（`runtime.list` 和 `runtime.describe`）不列出这些方法：`status` 返回 `os_permission: "unsupported"`，`request` 和 `location.get` 以 `unsupported_platform` 失败。获得权限并不会多出日历、文件选择器、摄像头拍摄或后台定位服务。要显示摄像头画面，请使用已有的 `CameraPreview` 控件。
+本模块的设备服务（`DeviceService`）在 Android 和 macOS 上实现权限的查询、申请和撤销，支持 Android/macOS 有时限的新鲜位置采样，并保留 Android 最近已知位置读取。在其他平台上，API 发现接口（`runtime.list` 和 `runtime.describe`）不列出这些方法：`status` 返回 `os_permission: "unsupported"`，`request` 和 `location.get` 以 `unsupported_platform` 失败。获得权限并不会多出日历、文件选择器、摄像头拍摄或后台定位服务。要显示摄像头画面，请使用已有的 `CameraPreview` 控件。
 
 ## 声明应用要用的能力
 
@@ -32,9 +32,11 @@
 | `camera.permission.revoke` | `{}` | 撤销本应用的授权，并停止它正在运行的 `CameraPreview`。系统授予 OctoSense 的权限不变。 |
 | `microphone.permission.*` | `{}` | 麦克风的同样三个方法。撤销时还会停止正在录制声音的摄像头录像。 |
 | `location.permission.*` | `{}` | 位置的同样三个方法。在 Android 上，申请获准后宿主还会启动已有的前台位置更新。 |
-| `location.get` | `{}` | 仅限 Android：重新检查系统权限，然后返回最近已知位置。 |
+| `location.get` | `{}` | 仅限 Android：重新检查系统权限，然后返回最近已知位置。版本 1 的响应保持不变。 |
+| `location.sample` | 可选 `timeout_ms`、`max_age_ms`、`max_accuracy_m` | 仅限 Android/macOS 前台应用：等待符合时效和精度要求的位置，不弹出权限界面。 |
+| `location.sample.cancel` | `{}` | 取消当前应用全部待完成采样，返回数量 `cancelled`；不影响其他应用。 |
 
-除了 `host-api-v1`，`status` 和 `revoke` 只需要相应的能力。`request` 是应用获得授权的途径，`location.get` 则同时需要应用授权和系统权限。
+除了 `host-api-v1`，`status` 和 `revoke` 只需要相应的能力。`request` 是应用获得授权的途径，`location.get` 和 `location.sample` 则同时需要应用授权和系统权限。
 
 ## 申请权限
 
@@ -58,7 +60,9 @@ Agent、后台卡片（例如应用在速览栏上的卡片），以及它们启
 
 ## 读取位置
 
-`location.get` 返回 `latitude`、`longitude`、`accuracy_m`、`source: "last_known"`、`timestamp: null` 和 `freshness: "unknown"`。宿主的 GPS 缓存不记录时间，所以无法判断这个位置是何时取得的：不要把它当作当前位置展示，也不要用于安全攸关的导航。它不授予后台定位，设备关闭定位服务时也不保证能得到位置。没有最近已知位置时，它以 `location_unavailable` 失败。
+`location.get` Android 接受用户选择的大致位置授权，不自动升级为精确定位。结果保留系统报告的精度；严格的 `max_accuracy_m` 可能导致超时，不会触发权限升级。
+
+返回 `latitude`、`longitude`、`accuracy_m`、`source: "last_known"`、`timestamp: null` 和 `freshness: "unknown"`。宿主的 GPS 缓存不记录时间，所以无法判断这个位置是何时取得的：不要把它当作当前位置展示，也不要用于安全攸关的导航。它不授予后台定位，设备关闭定位服务时也不保证能得到位置。没有最近已知位置时，它以 `location_unavailable` 失败。
 
 ## 旧的设备接口
 
@@ -68,20 +72,31 @@ Agent 和后台卡片同样不能借这些接口弹出系统对话框。`CameraP
 
 没有要求 `host-api-v1` 的应用沿用此前只看清单的规则，它们调用这些方法会以 `host_requirement_missing` 失败。
 
+## 新鲜位置采样
+
+`location.permission.request` 成功后，前台应用可以调用 `location.sample`。参数均可省略：`timeout_ms` 默认 10,000（范围 1–30,000）；`max_age_ms` 默认 5,000（范围 1–60,000）；`max_accuracy_m` 可限制水平误差半径，单位米，必须大于零且不超过 100,000。超时包含权限检查和采样等待。
+
+返回 `latitude`、`longitude`、`accuracy_m`、`timestamp`（Unix 秒）、`age_ms`、`source: "platform"` 和 `freshness: "fresh"`。系统最初提供的缓存位置也必须满足指定时效和精度。未来超过一秒的时间戳被拒绝；更小的时钟偏差按零年龄返回。最终系统权限检查后会再次验证时效和精度。服务不保存位置读数。
+
+`location.permission.status` 的 `location_sample_supported` 表示新采样接口可用；旧字段 `location_read_supported` 仍只表示 `location.get` 可用。宿主接入 Android LocationManager / macOS CoreLocation 事件，使用不弹窗的启动操作，在采样前和交付结果前分别检查系统权限。采样不会转为权限申请；Agent 和后台卡片不能启动采样。本次不提供持续订阅或后台定位。
+
+`location.sample.cancel` 取消本应用各界面的全部待完成采样。来源隔离环境关闭、应用授权撤销、能力移除、超时或宿主进入后台都会停止采样。没有原生事件时，250 毫秒计时器仍会执行清理。没有待采样请求后释放采样器的位置流所有权；原生路线/位置请求保留独立所有权，任何一方停止都不会中断另一方，平台维持原有的最高精度请求；独立的 Android 旧 GPS 流和 `location.get@1` 响应保持不变。
+
 ## 错误
 
 | 错误 | 出现时机 |
 | --- | --- |
 | `host_requirement_missing` | 清单没有要求 `host-api-v1`。 |
 | `permission_denied` | 清单缺少该能力；或在请求等待期间，应用已卸载、失去该能力，或授权已变化。 |
-| `invalid_arguments` | 参数不是 `{}`。 |
+| `invalid_arguments` | 参数不是对象、包含未知字段或超出规定范围。除 `location.sample` 外的方法都要求 `{}`。 |
 | `method_unavailable` | 方法不在上表之列，例如 `camera.get`。 |
 | `authorization_required` | 在没有应用授权或没有系统权限时调用了 `location.get`；或 `request` 到达时宿主无法弹窗，例如宿主正处于后台。 |
 | `unsupported_platform` | 当前平台没有实现 `request` 的适配器，或在 Android 以外调用了 `location.get`。 |
 | `cancelled` | 用户选择了 **Not now**，同一能力的新申请替换了面板，或宿主离开了前台。 |
 | `timeout` | 授权面板打开超过 5 分钟。 |
 | `busy` | 已有 64 个设备请求或 64 个授权面板在等待。 |
-| `location_unavailable` | Android 没有最近已知位置。 |
+| `location_unavailable` | Android 没有旧接口所需的最近已知位置，或现代系统定位服务报告失败。 |
+| `location_timeout` | 采样期限内没有符合指定时效和精度的位置。 |
 | `the host service timed out` | 超过了 App Hub 的 60 秒时限。授权面板打开期间计时暂停；例如面板关闭后系统对话框一直开着，就会出现这个错误。 |
 
 ## 宿主如何处理请求
@@ -97,3 +112,5 @@ Agent 和后台卡片同样不能借这些接口弹出系统对话框。`CameraP
 **已验证**：在 macOS 上运行了原生 Makepad 策略测试和摄像头回归测试，全部通过，结果随实现改动一并记录。[Host API Lab](../../../../tools/fixtures/host-api-lab/README.zh-CN.md) 也通过本服务读取了真实的摄像头权限状态。
 
 **未验证**：在任何平台上亲手点按批准授权面板、真实的系统权限对话框和摄像头拍摄，以及 OnePlus 6 上的定位流程。这些都需要在设备上安装集成后的宿主，并由用户亲手点按面板上的按钮。
+
+新鲜位置采样回归通过真实宿主 broker 注入原生事件，不代表物理 GPS 接收或 macOS/Android 实际权限弹窗验证；这些设备路径仍为**未验证**。

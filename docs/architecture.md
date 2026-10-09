@@ -431,6 +431,7 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
 | Boundary | What holds it |
 | --- | --- |
 | Script app ↔ shell | The Card runner's isolate, jail and quota; `host.request` only for granted families |
+| An app's own WebAssembly functions ↔ shell | A fresh Wasmtime instance per call that reaches only its own memory and `octo.log`, with a deadline and memory, stack and size caps; in standard builds on macOS, Linux and Android ([WebAssembly in OctoSense](wasm.md)) |
 | Native module ↔ shell | Nothing in memory: review of first-party code, and panic containment |
 | Process app ↔ shell | Its own address space and an OS sandbox: Seatbelt on macOS, Landlock and seccomp on Linux. **Not yet:** Windows. |
 | App ↔ kernel | No app sees the host token. Only an octos client's kernel port speaks OUP, held by the router to the coding scope (ADR 0003, item 9) |

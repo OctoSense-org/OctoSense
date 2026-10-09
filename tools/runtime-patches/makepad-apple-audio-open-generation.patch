@@ -1,0 +1,252 @@
+diff --git a/platform/src/os/apple/audio_unit.rs b/platform/src/os/apple/audio_unit.rs
+index 18b6216a7..a42b7327c 100644
+--- a/platform/src/os/apple/audio_unit.rs
++++ b/platform/src/os/apple/audio_unit.rs
+@@ -156,9 +156,24 @@ pub struct CoreAudioDeviceDesc {
+ 
+ pub struct RunningAudioUnit {
+     device_id: AudioDeviceId,
++    // A device may be cancelled and reopened before async instantiation ends.
++    // Only the exact pending open may install a unit or mark a failure.
++    generation: Arc<()>,
+     audio_unit: Option<AudioUnit>,
+ }
+ 
++fn pending_audio_unit_index(
++    units: &[RunningAudioUnit],
++    device_id: AudioDeviceId,
++    generation: &Arc<()>,
++) -> Option<usize> {
++    units.iter().position(|unit| {
++        unit.device_id == device_id
++            && Arc::ptr_eq(&unit.generation, generation)
++            && unit.audio_unit.is_none()
++    })
++}
++
+ impl AudioUnitAccess {
+     pub fn new(change_signal: SignalToUI) -> Arc<Mutex<Self>> {
+         Self::observe_route_changes(change_signal.clone());
+@@ -411,18 +426,19 @@ pub fn use_audio_inputs_with_options(
+                     .find(|v| v.device_id == *device_id)
+                     .is_none()
+                 {
+-                    new.push((index, *device_id))
++                    new.push((index, *device_id, Arc::new(())))
+                 }
+             }
+-            for (_, device_id) in &new {
++            for (_, device_id, generation) in &new {
+                 audio_inputs.push(RunningAudioUnit {
+                     device_id: *device_id,
++                    generation: generation.clone(),
+                     audio_unit: None,
+                 });
+             }
+             new
+         };
+-        for (index, device_id) in new {
++        for (index, device_id, generation) in new {
+             // lets create an audio input
+             let use_voice = options.echo_cancellation
+                 && !self.voice_input_unusable.load(Ordering::Relaxed);
+@@ -443,27 +459,30 @@ pub fn use_audio_inputs_with_options(
+                 device_id,
+                 move |result| {
+                     let mut audio_inputs = audio_inputs.lock().unwrap();
++                    let Some(slot) = pending_audio_unit_index(&audio_inputs, device_id, &generation) else {
++                        // Construction never starts hardware. A cancelled or
++                        // superseded open only releases its private resources.
++                        if let Ok(mut unit) = result { unit.release_audio_unit(); }
++                        return;
++                    };
++                    let result = result.and_then(|mut audio_unit| {
++                        let audio_input_cb = audio_input_cb.clone();
++                        let sample_rate = audio_unit.sample_rate;
++                        audio_unit.set_input_handler(move |time, output| {
++                            if let Some(audio_input_cb) = &mut *audio_input_cb.lock().unwrap() {
++                                audio_input_cb(AudioInfo { device_id, time: Some(time), sample_rate }, output);
++                            }
++                        });
++                        if let Err(error) = audio_unit.start_hardware() {
++                            audio_unit.clear_input_handler();
++                            audio_unit.release_audio_unit();
++                            return Err(error);
++                        }
++                        Ok(audio_unit)
++                    });
+                     match result {
+                         Ok(audio_unit) => {
+-                            let running = audio_inputs
+-                                .iter_mut()
+-                                .find(|v| v.device_id == device_id)
+-                                .unwrap();
+-                            let audio_input_cb = audio_input_cb.clone();
+-                            let sample_rate = audio_unit.sample_rate;
+-                            audio_unit.set_input_handler(move |time, output| {
+-                                if let Some(audio_input_cb) = &mut *audio_input_cb.lock().unwrap() {
+-                                    return audio_input_cb(
+-                                        AudioInfo {
+-                                            device_id,
+-                                            time: Some(time),
+-                                            sample_rate,
+-                                        },
+-                                        output,
+-                                    );
+-                                }
+-                            });
+-                            running.audio_unit = Some(audio_unit);
++                            audio_inputs[slot].audio_unit = Some(audio_unit);
+                         }
+                         Err(err) => {
+                             if use_voice {
+@@ -518,18 +537,19 @@ pub fn use_audio_outputs(&mut self, devices: &[AudioDeviceId]) {
+                     .find(|v| v.device_id == *device_id)
+                     .is_none()
+                 {
+-                    new.push((index, *device_id))
++                    new.push((index, *device_id, Arc::new(())))
+                 }
+             }
+-            for (_, device_id) in &new {
++            for (_, device_id, generation) in &new {
+                 audio_outputs.push(RunningAudioUnit {
+                     device_id: *device_id,
++                    generation: generation.clone(),
+                     audio_unit: None,
+                 });
+             }
+             new
+         };
+-        for (index, device_id) in new {
++        for (index, device_id, generation) in new {
+             let unit_info = &AudioUnitAccess::query_audio_units(AudioUnitQuery::Output)[0];
+             let audio_outputs = self.audio_outputs.clone();
+             let audio_output_cb = self.audio_output_cb[index].clone();
+@@ -541,28 +561,28 @@ pub fn use_audio_outputs(&mut self, devices: &[AudioDeviceId]) {
+                 device_id,
+                 move |result| {
+                     let mut audio_outputs = audio_outputs.lock().unwrap();
++                    let Some(slot) = pending_audio_unit_index(&audio_outputs, device_id, &generation) else {
++                        if let Ok(mut unit) = result { unit.release_audio_unit(); }
++                        return;
++                    };
++                    let result = result.and_then(|mut audio_unit| {
++                        let audio_output_cb = audio_output_cb.clone();
++                        let sample_rate = audio_unit.sample_rate;
++                        audio_unit.set_output_provider(move |time, output| {
++                            if let Some(audio_output_cb) = &mut *audio_output_cb.lock().unwrap() {
++                                audio_output_cb(AudioInfo { device_id, time: Some(time), sample_rate }, output);
++                            }
++                        });
++                        if let Err(error) = audio_unit.start_hardware() {
++                            audio_unit.clear_output_provider();
++                            audio_unit.release_audio_unit();
++                            return Err(error);
++                        }
++                        Ok(audio_unit)
++                    });
+                     match result {
+                         Ok(audio_unit) => {
+-                            let running = audio_outputs
+-                                .iter_mut()
+-                                .find(|v| v.device_id == device_id)
+-                                .unwrap();
+-                            let audio_output_cb = audio_output_cb.clone();
+-                            let sample_rate = audio_unit.sample_rate;
+-                            audio_unit.set_output_provider(move |time, output| {
+-                                if let Some(audio_output_cb) = &mut *audio_output_cb.lock().unwrap()
+-                                {
+-                                    audio_output_cb(
+-                                        AudioInfo {
+-                                            device_id,
+-                                            time: Some(time),
+-                                            sample_rate,
+-                                        },
+-                                        output,
+-                                    )
+-                                }
+-                            });
+-                            running.audio_unit = Some(audio_unit);
++                            audio_outputs[slot].audio_unit = Some(audio_unit);
+                         }
+                         Err(_err) => {
+                             failed_devices.lock().unwrap().insert(device_id);
+@@ -1033,8 +1053,8 @@ unsafe fn inner(
+                             let () = msg_send![au_audio_unit, setDeviceID: core_device_id error: &mut err];
+                             OSError::from_nserror(err)?;
+                         }
+-                        let () = msg_send![au_audio_unit, startHardwareAndReturnError: &mut err];
+-                        OSError::from_nserror(err)?;
++                        // Start only after the completion verifies that the
++                        // original pending generation is still selected.
+                     }
+                     AudioUnitQuery::Input | AudioUnitQuery::VoiceInput => {
+                         // On iOS/tvOS, mic is commonly mono. Prefer 1 channel there.
+@@ -1187,8 +1207,8 @@ fn AudioUnitSetProperty(
+                             }
+                         }
+ 
+-                        let () = msg_send![au_audio_unit, startHardwareAndReturnError: &mut err];
+-                        OSError::from_nserror(err)?;
++                        // Start only after the completion verifies that the
++                        // original pending generation is still selected.
+ 
+                         let block_ptr: ObjcId = msg_send![au_audio_unit, renderBlock];
+                         let () = msg_send![block_ptr, retain];
+@@ -1771,6 +1791,14 @@ pub fn clear_input_handler(&mut self) {
+         }
+     }
+ 
++    fn start_hardware(&mut self) -> Result<(), AudioError> {
++        unsafe {
++            let mut error: ObjcId = nil;
++            let () = msg_send![self.au_audio_unit, startHardwareAndReturnError: &mut error];
++            OSError::from_nserror(error).map_err(|error| AudioError::System(format!("{error:?}")))
++        }
++    }
++
+     pub fn stop_hardware(&mut self) {
+         unsafe {
+             let () = msg_send![self.au_audio_unit, stopHardware];
+@@ -1895,3 +1923,40 @@ pub fn ocr_ui(&self) {
+         };
+     }*/
+ }
++
++#[cfg(test)]
++mod pending_audio_tests {
++    use super::*;
++
++    #[test]
++    fn cancelled_open_cannot_reclaim_same_device_after_restart() {
++        let device = AudioDeviceId(LiveId(7));
++        let original = Arc::new(());
++        let mut units = vec![RunningAudioUnit {
++            device_id: device, generation: original.clone(), audio_unit: None,
++        }];
++        assert_eq!(pending_audio_unit_index(&units, device, &original), Some(0));
++        units.clear();
++        assert_eq!(pending_audio_unit_index(&units, device, &original), None);
++        let replacement = Arc::new(());
++        units.push(RunningAudioUnit {
++            device_id: device, generation: replacement.clone(), audio_unit: None,
++        });
++        assert_eq!(pending_audio_unit_index(&units, device, &original), None,
++            "late success or failure cannot start or remove the replacement");
++        assert_eq!(pending_audio_unit_index(&units, device, &replacement), Some(0));
++    }
++
++    #[test]
++    fn completion_cannot_claim_another_device_or_direction() {
++        let input = Arc::new(());
++        let output = Arc::new(());
++        let device = AudioDeviceId(LiveId(9));
++        let units = vec![RunningAudioUnit {
++            device_id: device, generation: input.clone(), audio_unit: None,
++        }];
++        assert_eq!(pending_audio_unit_index(&units, device, &output), None);
++        assert_eq!(pending_audio_unit_index(&units, AudioDeviceId(LiveId(10)), &input), None);
++        assert_eq!(pending_audio_unit_index(&units, device, &input), Some(0));
++    }
++}

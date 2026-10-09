@@ -1104,3 +1104,40 @@ fn the_system_agent_gets_the_read_tools_of_the_native_apps_that_run_here_never_t
     assert_eq!(crate::native_apps::find("notes").unwrap().system_tools, ["notes.search", "notes.read"]);
     assert_eq!(crate::native_apps::find("apphub").unwrap().system_tools, ["apphub.search", "apphub.installed", "apphub.updates"]);
 }
+
+/// The kernel refuses a host-tool set over its cap whole (octos
+/// `MAX_APP_TOOLS`), which would leave the system agent with no host tool
+/// at all: everything it can be granted at once, with every native app
+/// here and command execution on, fits.
+#[test]
+fn the_system_agents_whole_grant_fits_the_kernels_cap() {
+    let mut most = grants::host_tools_given(true, true);
+    most.extend(grants::native_system_tools_given(|_| true));
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    most.extend(grants::CALENDAR_TOOLS.iter().map(|tool| tool.to_string()));
+    #[cfg(feature = "craft-engines")]
+    most.extend(grants::ENGINE_TOOLS.iter().map(|tool| tool.to_string()));
+    let total = most.len() + crate::agents::declarations().len();
+    assert!(total <= grants::MAX_SESSION_TOOLS, "{total} host tools pass the kernel's cap of {}", grants::MAX_SESSION_TOOLS);
+}
+
+/// Past the cap, the engines' tools give way first, whatever order the
+/// grants came in, and the rest keeps its order; under it nothing goes.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn over_the_kernels_cap_the_engines_tools_give_way_first() {
+    let decl = |name: &str| json!({"name": name, "description": "d", "input_schema": {"type": "object"}, "risk": "read"});
+    let engines: Vec<Value> = grants::ENGINE_TOOLS.iter().map(|tool| decl(tool)).collect();
+    let others: Vec<Value> = (0..30).map(|i| decl(&format!("app{i}.read"))).collect();
+    let agents = vec![decl("agents.list"), decl("agents.ask")];
+    let mut granted = engines.clone();
+    granted.extend(others.clone());
+    let set = super::session::session_set(granted, agents.clone());
+    assert_eq!(set.len(), grants::MAX_SESSION_TOOLS);
+    assert_eq!(&set[..30], &others[..]);
+    assert_eq!(&set[30..32], &agents[..]);
+    assert!(set[32..].iter().all(|d| grants::is_engine_tool(d["name"].as_str().unwrap())));
+    let set = super::session::session_set(engines.clone(), agents.clone());
+    assert_eq!(set.len(), engines.len() + agents.len(), "under the cap, nothing is dropped");
+    assert_eq!(&set[..2], &agents[..]);
+}

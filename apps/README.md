@@ -27,6 +27,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
   and `news.notify` (the shell draws the notice).
+- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's own folder. No bundle yet.
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
@@ -37,6 +38,27 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   speech, embedding and asynchronous video requests. Apps declare `model` and
   exact host API versions; provider entitlement is checked when used. See the
   [media contract and validation limits](ai-providers/host-service/MEDIA.md).
+- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder; no bundle yet.
+- **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the caller's own folder.
+- **The `light` engine service** (`light/host-service`) is lightcraft's RAW
+  develop engine behind `light.*` (ADR 0013): EXIF/XMP metadata, the develop
+  control catalog, and single or batch parametric develop, for system apps
+  only and contained to the caller's own folder. No bundle yet.
+- **The `sound` host service** (`sound/host-service`) is soundcraft's audio engine behind `sound.*` (ADR 0013), offline file processing only — info, convert, trim, mix and waveform peaks inside the caller's own folder; it never opens an audio or MIDI device, and no bundle exists yet.
+- **The `design` host service** (`design/host-service`) is designcraft's page-layout engine (ADR 0013) behind `design.*`: document info, page renders to PNG and PDF/IDML/EPUB export, with every path inside the caller's own folder; no bundle yet.
+- **The `film` host service** (`film/host-service`) is the pinned filmcraft
+  video engine (ADR 0013) behind `film.*`: probe, frame-to-PNG and bounded
+  exports through its own pure-Rust codecs — headless, offline, no bundle yet.
+- **The `effect` host service** (`effect/host-service`) is the effectcraft
+  motion-graphics engine (ADR 0013) behind `effect.*` for system apps:
+  project info, comp frames rendered to PNG, the engine's command catalog
+  and Lottie import/export, every file in the caller's own folder; no
+  bundle yet.
+- **The vector engine service** (`vector/host-service`,
+  `octosense-vector-service`) runs the pinned vectorcraft engine headless
+  behind `vector.*` (ADR 0013): inspect, convert, draw by engine commands and
+  render vector documents (SVG, PDF, EPS, DXF, raster) inside the caller's
+  own folder; system apps only, no bundle yet.
 - **AppCard** (`appcard`) is an optional native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
@@ -103,7 +125,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
 | [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine (full-size photos use the asset mount) |
-| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the search and route map draws makepad's pre-baked world map (`makepad.nl`), the drive maps still read OpenStreetMap through Overpass | `storage`, `net`, `location`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
+| [Maps](maps/bundle) | `os.maps` | `MapView` map of places that can always be dragged and zoomed: search near the visible area, place cards with OpenStreetMap details (hours, phone, website, cuisine), saved places as pins, a long press for "What's here", directions with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the browse map draws makepad's pre-baked world map (`makepad.nl`), the drive maps and the place details read OpenStreetMap through Overpass | `storage`, `net`, `location`, `web`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
@@ -168,10 +190,18 @@ reaches only the hosts the manifest lists.
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
   no full-size image there. The viewer keeps a thumbnail fallback visible.
   Memories on physical phones and with a live AI provider are **unverified**.
-- **Maps**: on the OnePlus 6 (2026-09-27) search, place, route, adding and
-  removing a stop, driving with turn-by-turn and the 2D view worked. The 3D
-  drive view draws the route but no map tiles, on the phone and on the
-  desktop, before and after the stops change.
+- **Maps**: on the Pixel 7 Pro (2026-10-08, dark mode) the place map
+  worked: it opened at the GPS fix and ◎ flew back to it; the map dragged
+  and zoomed with two fingers; search near the visible map, Saved and
+  Recent, a place card with OpenStreetMap details and its Website reader,
+  Save and pins, a long press, Directions framed once and then left to the
+  person, ‹ Back and Close removing the route, and the drive view with End.
+  The 3D drive view drew map tiles near the route, some still missing after
+  30 seconds. Before the place map, on the OnePlus 6 (2026-09-27), search,
+  place, route, adding and removing a stop, driving with turn-by-turn and
+  the 2D view worked; the 3D drive view drew the route but no map tiles, on
+  the phone and on the desktop, before and after the stops changed. The
+  OnePlus 6T, iOS and OpenHarmony are **unverified**.
 - **News**: runs in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
@@ -253,7 +283,9 @@ mail/host-service/           octosense-mail-service, the `mail` host service (Ru
 mail/docs/                   Mail's plans (the email action card)
 calendar/host-service/       octosense-calendar-service, the `calendar` host service; resources/event.card, agenda.card
 news/host-service/           octosense-news-service, the `news` host service (News's data service)
+pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013; no bundle yet)
 <name>/bundle/tools.json     app tools: News, Mail, Calendar, Photos, Maps, YouTube, Camera
+<family>/host-service/tools.json  the craft engines' tools (word, deck, cad, light, sound, design, film, effect, vector, pdf), the system agent's (ADR 0013)
 ../crates/shell/src/glance_notice.rs   shared notice service; ../crates/shell/resources/glance/notice.card
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
@@ -418,6 +450,8 @@ isolate under no app's policy. Calls from the sheet arrive marked
 
 ### The `mail` service
 
+Ordinary App Hub apps now have account-bound compose/status APIs and native SMTP review. See the [Mail service guide and migration example](mail/host-service/README.md); direct agent or synthetic sending remains refused.
+
 `octosense-mail-service` (`apps/mail/host-service/src/`):
 
 | File | Role |
@@ -518,9 +552,44 @@ model lane and tools. Which system apps have one, and how
 | News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
 | Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.draft` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event`, `mail.propose_reply`, `mail.suggest_reply`, `mail.propose_send` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
-| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in its workspace, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)) | the shell's notice card |
+| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in the Photos agent's own folder, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)) | the shell's notice card |
 | Maps, YouTube, Camera | `agent` block, `glance` | `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
+
+**Engine tools ([ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)).**
+The ten craft engines (word, deck, cad, light, sound, design, film, effect,
+vector, pdf) have no app and no app agent; their tools ship with their
+services, in `<family>/host-service/tools.json`. The shell declares them under
+a virtual owner `os.<family>` and grants them to the system agent alone
+(`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)):
+each engine's read tools (`info`, `text`, `inspect`, `entities`, `measure`,
+`controls`, `peaks`, `project.info`) and its act tools that only create new
+files (`new`, `convert`, `render`, `export`, `frame`, `develop`, `batch`,
+`trim`, `mix`, `merge`, `split`, `export_lottie`, `import_lottie`).
+`vector.run` and `effect.run`, which run any engine command, are declared but
+not granted, and the shell refuses them. An engine works in its caller's own
+folder (ADR 0013, `../crates/shell/src/host_tools/areas.rs`): for the system
+agent, its workspace, where its own file tools see what the engines wrote and
+every engine opens what the others made. Every path is relative to that
+folder and kept inside it, no call replaces an existing file, and output into
+an app's storage keeps to its quota. Sheets' `sheets.*` and Photos'
+`photos.info` work in their own app's agent folder.
+
+**Engine skills.** Each engine, the sheet and photo engines included, also
+ships a skill for the system agent in `<family>/host-service/skill/`: a
+hand-written `SKILL.md` (what the engine does, the tools the system agent has
+for it, the file rules, worked examples) and references generated from the
+engine at its pin: `commands.md` (its command catalog, one line per id,
+tagged by what each command reaches), light's `controls.md` and sheet's
+`functions.md`. Beside them, `safety.json` (every command id's class, for a
+reviewed command door) stays in the repository. The kernel service installs
+the linked engines' skills into the `_main` profile's skills dir before every
+start ([`../crates/kernel/README.md`](../crates/kernel/README.md#the-system-agents-skills));
+octos lists their one-line descriptions in the system agent's prompt, and the
+agent reads a skill when it needs that engine. Each service's
+`tests/skill.rs` fails when a reference drifts from the pinned engine;
+`OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
+regenerates it.
 
 **Mail card reply modes.** The system agent can provision automatic drafts for replyable important mail and Compose reply on request for automated/no-reply mail. The host adds Compose reply to informational incoming-email cards, verifies the original message and asks the Mail agent to create a draft. The same card becomes Email/Chat with saved editing and host review. See [Mail events](../docs/mail-agent-events.md).
 

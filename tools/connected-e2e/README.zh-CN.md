@@ -24,6 +24,22 @@ python3 ../OctoSense-App-Flow/examples/connected-apps/google-calendar/scripts/ve
 验证并打开。重启复用同一私有目录和配置。`connected_support` 拒绝非空的安装根目录，
 不会原地签名或修改源码应用包。
 
+`notes_signin.py` 以同样方式安装应用包，再对未登录的合成 GitHub
+（`--provider-fixture=github-sign-in`）登录：合成设备码接口、由驱动写入配置中
+`.host/fixtures/github-sign-in.json` 决定结果的令牌接口，以及虚构身份。
+它经宿主真实的登录面板和应用的账户卡片完成批准、断开、拒绝和取消。
+Notes 驱动需要带 0.2.2 账户卡片的应用包。在 Linux 构建主机上用两个示例的 debug
+构建执行过：
+
+```sh
+python3 tools/connected-e2e/notes_signin.py --bundle <已加摘要的 GitHub Notes 应用包> \
+  --host target/debug/examples/connected-app-host \
+  --installer target/debug/examples/connected-install
+```
+
+结尾输出 `PASS: installed Notes sign-in with synthetic GitHub; native pixel
+review pending`。macOS 上的运行**未验证**。
+
 手动隔离启动示例（路径需替换；该占位路径未执行）：
 
 ```sh

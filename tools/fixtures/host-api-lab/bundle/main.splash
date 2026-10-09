@@ -12,6 +12,103 @@ fn read_status() {
         else { ui.status.set_text(r.error) }
     })
 }
+// Typed U8 data includes NUL and non-UTF8 values; no personal file is read.
+fn inspect_os_batch(call_id, report) {
+    let bytes = "abcd".to_bytes()
+    bytes[0] = 0
+    bytes[1] = 127
+    bytes[2] = 128
+    bytes[3] = 255
+    fs.write_bytes("acceptance-roundtrip.bin", bytes)
+    let readback = fs.read_bytes("acceptance-roundtrip.bin")
+    let binary = {length: readback.len() values: [readback[0], readback[1], readback[2], readback[3]]}
+    fs.remove("acceptance-roundtrip.bin")
+    host.request("runtime.describe", {method: "files.status"}, fn(status_api) {
+        if !status_api.is_ok { mod.app_tools.fail(call_id, status_api.error); return }
+        host.request("runtime.describe", {method: "files.import"}, fn(import_api) {
+            if !import_api.is_ok { mod.app_tools.fail(call_id, import_api.error); return }
+            host.request("runtime.describe", {method: "files.export"}, fn(export_api) {
+                if !export_api.is_ok { mod.app_tools.fail(call_id, export_api.error); return }
+                host.request("runtime.describe", {method: "storage.binary_write"}, fn(storage_api) {
+                    if !storage_api.is_ok { mod.app_tools.fail(call_id, storage_api.error); return }
+                    host.request("runtime.describe", {method: "location.sample"}, fn(location_api) {
+                        if !location_api.is_ok { mod.app_tools.fail(call_id, location_api.error); return }
+                        report.os_batch = {
+                            files_status_discovery: status_api.data
+                            files_import_discovery: import_api.data
+                            files_export_discovery: export_api.data
+                            storage_discovery: storage_api.data
+                            location_discovery: location_api.data
+                            binary: binary
+                        }
+                        inspect_background_refusals(call_id, report)
+                    })
+                })
+            })
+        })
+    })
+}
+fn inspect_background_refusals(call_id, report) {
+    host.request("files.status", {}, fn(status) {
+        if !status.is_ok { mod.app_tools.fail(call_id, status.error); return }
+        // These calls retain agent provenance. Refusal must precede a native
+        // picker, app-consent sheet or location-provider start.
+        host.request("files.import", {path: "background-import.bin"}, fn(imported) {
+            host.request("files.export", {path: "background-export.bin"}, fn(exported) {
+                host.request("location.sample", {}, fn(sample) {
+                    report.os_batch.files_status = status.data
+                    report.os_batch.background_import_allowed = imported.is_ok
+                    report.os_batch.background_import_error = imported.error
+                    report.os_batch.background_export_allowed = exported.is_ok
+                    report.os_batch.background_export_error = exported.error
+                    report.os_batch.background_location_allowed = sample.is_ok
+                    report.os_batch.background_location_error = sample.error
+                    ui.safety.set_text("OS API checks complete; no picker, sensor or approval opened")
+                    report.public_services = {}
+                    inspect_public_services(call_id, report, 0)
+                })
+            })
+        })
+    })
+}
+// Calls run with the originating app tool's no-prompt provenance. This fixture
+// has no connected Mail account or native-calendar consent. It must never
+// read events, open an OS permission dialog, or deliver a message.
+let public_checks = [
+    {key: "calendar_discovery" method: "runtime.describe" args: {method: "device_calendar.events.list"}}
+    {key: "calendar_write_discovery" method: "runtime.describe" args: {method: "device_calendar.events.create"}}
+    {key: "mail_discovery" method: "runtime.describe" args: {method: "mail.compose"}}
+    {key: "mail_send_discovery" method: "runtime.describe" args: {method: "mail.send"}}
+    {key: "calendar_status" method: "device_calendar.permission.status" args: {}}
+    {key: "calendar_choices" method: "device_calendar.calendars.list" args: {}}
+    {key: "calendar_permission" method: "device_calendar.permission.request" args: {}}
+    {key: "calendar_select" method: "device_calendar.calendars.select" args: {calendar_id: "synthetic-unselected"}}
+    {key: "calendar_create" method: "device_calendar.events.create" args: {handle: "synthetic-unselected" event: {title: "Never saved" start_ms: 1792000000000 end_ms: 1792003600000 timezone: "UTC"}}}
+    {key: "mail_compose" method: "mail.compose" args: {account: "synthetic-unconnected" to: "recipient@example.invalid" subject: "Never sent" body: "Synthetic test"}}
+    {key: "mail_send" method: "mail.send" args: {account: "synthetic-unconnected" to: "recipient@example.invalid" subject: "Never sent" body: "Synthetic test"}}
+    {key: "photo_discovery" method: "runtime.describe" args: {method: "files.pick_photo"}}
+    {key: "share_discovery" method: "runtime.describe" args: {method: "files.share"}}
+    {key: "photo_pick" method: "files.pick_photo" args: {path: "never-selected.png"}}
+    {key: "text_share" method: "files.share" args: {text: "Synthetic sharing refusal test"}}
+    {key: "audio_discovery" method: "runtime.describe" args: {method: "audio.play"}}
+    {key: "video_discovery" method: "runtime.describe" args: {method: "video.playback_controls"}}
+    {key: "record_discovery" method: "runtime.describe" args: {method: "microphone.record_start"}}
+    {key: "audio_play" method: "audio.play" args: {path: "never-played.wav"}}
+    {key: "record_start" method: "microphone.record_start" args: {path: "never-recorded.wav"}}
+]
+fn inspect_public_services(call_id, report, index) {
+    if index == public_checks.len() {
+        ui.safety.set_text("Public API checks complete; no account data, prompts or external writes")
+        mod.app_tools.complete(call_id, report)
+        return
+    }
+    let step = public_checks[index]
+    host.request(step.method, step.args, fn(reply) {
+        report.public_services[step.key] = {"ok": reply.is_ok data: reply.data error: reply.error}
+        inspect_public_services(call_id, report, index + 1)
+    })
+}
+
 fn app_tool(name, call_id) {
     let request = mod.app_tools.request(call_id)
     host.request("runtime.describe", {method: "camera.permission.status"}, fn(discovery) {
@@ -27,7 +124,7 @@ fn app_tool(name, call_id) {
                     host.request("camera.permission.request", {}, fn(prompt) {
                         ui.safety.set_text("Permission checks complete; no approval sheet opened")
                         ui.origin.set_text("Own app tool completed through the native host service")
-                        mod.app_tools.complete(call_id, {
+                        inspect_os_batch(call_id, {
                             account: request.context.account
                             camera: camera.data
                             discovery: discovery.data

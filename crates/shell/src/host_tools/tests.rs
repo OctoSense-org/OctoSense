@@ -1367,3 +1367,543 @@ fn a_cancelled_confirm_app_call_is_withdrawn_from_the_apps_sheet() {
     assert!(!w.router.is_pending(&id), "withdrawn with the call");
     assert!(exec.0.lock().unwrap().is_empty());
 }
+
+// ------------------------------------------------------------ the engines
+//
+// ADR 0013: the ten craft engines' tools, declared under their virtual
+// owners `os.<family>` (`engines.rs`) and granted to the system agent alone
+// (`system_chat::grants::ENGINE_TOOLS`), run on the real engine services,
+// in the calling agent's own folder (`areas.rs`).
+
+/// The engines' services, registered as `apps::register_host_services`
+/// does (App Hub's registry replaces a family registered twice), each with
+/// the shell's area resolver.
+#[cfg(feature = "craft-engines")]
+fn register_engine_services() {
+    octosense_sheets_service::register();
+    octosense_word_service::register();
+    octosense_deck_service::register();
+    octosense_cad_service::register();
+    octosense_light_service::register();
+    octosense_sound_service::register();
+    octosense_design_service::register();
+    octosense_film_service::register();
+    octosense_effect_service::register();
+    octosense_vector_service::register();
+    octosense_pdf_service::register();
+    super::areas::install_resolvers();
+}
+
+/// The areas of a test: the system agent's workspace at `workspace`, and
+/// `storage` for apps' agents.
+#[cfg(feature = "craft-engines")]
+fn engine_areas(workspace: &std::path::Path, storage: Option<Arc<crate::app_storage::Storage>>) -> Arc<dyn super::areas::AreaEnv> {
+    Arc::new(super::areas::FixedEnv { system: Some(workspace.to_path_buf()), storage, ..Default::default() })
+}
+
+/// A relay with the engines' virtual owners, the system agent's workspace
+/// at `host`, and the system agent's real grant.
+#[cfg(feature = "craft-engines")]
+fn engine_world(host: &std::path::Path) -> (Relay, World) {
+    register_engine_services();
+    let mut relay = Relay::default();
+    super::engines::install(&mut relay, Some(engine_areas(host, None)));
+    let mut world = World::new(FixedDevMode::off());
+    world.system = crate::system_chat::grants::host_tools();
+    (relay, world)
+}
+
+/// The system agent's call to `tool`, owned as its session names it (the
+/// registered declaration's app), in a turn of its own.
+#[cfg(feature = "craft-engines")]
+fn system_engine_call(relay: &Relay, id: &str, tool: &str, args: Value) -> HostToolCall {
+    let mut c = call(id, tool, super::relay::SYSTEM);
+    c.app = relay.catalog.owner_of(tool).unwrap();
+    c.caller_kind = CallerKind::System;
+    c.origin = CallOrigin::System;
+    c.account = None;
+    c.client = None;
+    c.turn_id = format!("turn-{id}");
+    c.args = args;
+    c
+}
+
+/// The answer to `call`, once its service replied (`script_apps::poll`).
+#[cfg(feature = "app-hub")]
+fn answer(relay: &mut Relay, world: &mut World, call: HostToolCall) -> Value {
+    let (r, sent) = reply(&call.call_id.clone());
+    relay.handle(Event::Call { call, reply: r }, world);
+    for _ in 0..500 {
+        super::script_apps::poll();
+        if let Some(v) = sent.lock().unwrap().first().cloned() {
+            return v;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("no answer");
+}
+
+/// The system agent's call to `tool`, answered.
+#[cfg(feature = "craft-engines")]
+fn ask(relay: &mut Relay, world: &mut World, id: &str, tool: &str, args: Value) -> Value {
+    let call = system_engine_call(relay, id, tool, args);
+    answer(relay, world, call)
+}
+
+/// The system agent reaches the engines by its reviewed grant: a granted
+/// act tool writes into its own workspace and a granted read tool reads it
+/// back, with no approval asked (a local write, as Calendar's
+/// `calendar.add_event`); a missing file is the engine's own error, proof
+/// the call routed, naming the file relative to the workspace. The command
+/// doors are declared but never granted, and no app's agent may call an
+/// engine tool (none is shareable).
+#[cfg(feature = "craft-engines")]
+#[test]
+fn the_system_agent_reaches_the_engines_by_its_grant_and_never_their_doors() {
+    let host = std::env::temp_dir().join(format!("engine-grant-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&host).unwrap();
+    let (mut relay, mut world) = engine_world(&host);
+    let made = ask(&mut relay, &mut world, "g-new", "word.new", json!({"out": "notes/hello.docx", "text": "Hello engines\nA second line", "title": "Hello"}));
+    assert_eq!(made["ok"], true, "{made}");
+    assert!(host.join("notes/hello.docx").is_file(), "written into the system agent's workspace");
+    assert!(!host.join("word").exists(), "no private folder");
+    let info = ask(&mut relay, &mut world, "g-info", "word.info", json!({"path": "notes/hello.docx"}));
+    assert_eq!(info["ok"], true, "{info}");
+    assert_eq!((info["data"]["file"].as_str(), info["data"]["paragraphs"].as_u64()), (Some("notes/hello.docx"), Some(2)), "{info}");
+    let missing = ask(&mut relay, &mut world, "g-missing", "word.info", json!({"path": "none.docx"}));
+    assert_eq!(missing["error"]["kind"], "app_error", "{missing}");
+    assert!(missing["error"]["message"].as_str().unwrap().starts_with("word.info: "), "the engine's own answer: {missing}");
+    assert!(world.asked.is_empty(), "no engine tool asks for approval");
+    for (id, door, args) in [("g-vector", "vector.run", json!({"cmds": [{"id": "shape.rectangle", "params": {"x": 0, "y": 0, "width": 4, "height": 4}}], "out": "drawn.svg"})), ("g-effect", "effect.run", json!({"cmds": [{"id": "comp.new"}], "out": "x.ecproj"}))] {
+        assert!(relay.catalog.entry(&relay.catalog.owner_of(door).unwrap(), door).is_some(), "{door} is declared");
+        let refused = ask(&mut relay, &mut world, id, door, args);
+        assert_eq!(refused["error"]["kind"], "not_granted", "{door}: {refused}");
+    }
+    assert!(!host.join("drawn.svg").exists() && !host.join("x.ecproj").exists(), "a refused door touched nothing");
+    // effectcraft names the absolute path it was handed; the answer names
+    // the file relative to the workspace, never the host's layout.
+    let effect = ask(&mut relay, &mut world, "g-effect-missing", "effect.info", json!({"path": "none.ecproj"}));
+    let message = effect["error"]["message"].as_str().unwrap();
+    assert!(message.contains("none.ecproj"), "{effect}");
+    for spelled in [host.clone(), host.canonicalize().unwrap()] {
+        assert!(!message.contains(spelled.to_str().unwrap()), "{effect}");
+    }
+    // An app's agent (here a store app's) is granted no engine tool, even
+    // when it asks for one: none is shareable.
+    relay.catalog.grant("org.example.notes", "os.word", "word.info");
+    let mut app = call("g-app", "word.info", "card.org.example.notes");
+    app.app = "os.word".into();
+    app.args = json!({"path": "notes/hello.docx"});
+    let refused = answer(&mut relay, &mut world, app);
+    assert_eq!(refused["error"]["kind"], "not_granted", "{refused}");
+    let _ = std::fs::remove_dir_all(host);
+}
+
+/// Every engine's service serves system apps only: a store app's identity
+/// is refused by the service itself, even through an executor that routes
+/// it there (in that app's own folder), before it touches a file.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn every_engine_service_refuses_a_store_apps_identity() {
+    use super::script_apps::HostServiceExecutor;
+    register_engine_services();
+    let home = crate::app_storage::tests::Scratch::new("engine-store");
+    let storage = crate::app_storage::Storage::with_file_secrets(crate::app_storage::Layout::new(&home.0).unwrap());
+    let host = storage.layout().apps_root().join(".host");
+    let areas = engine_areas(&home.0.join("ws"), Some(storage.clone()));
+    for engine in super::engines::ENGINES {
+        let tool = format!("{}.info", engine.family);
+        let exec = HostServiceExecutor {
+            app: format!("org.example.{}", engine.family),
+            tools: [tool.clone()].into_iter().collect(),
+            methods: Default::default(),
+            families: [engine.family.to_string()].into_iter().collect(),
+            host_dir: host.clone(),
+        };
+        let mut c = call(&format!("store-{}", engine.family), &tool, "card.org.example.notes");
+        c.args = json!({"path": "x"});
+        let (r, sent) = reply(&c.call_id.clone());
+        exec.run(c, r, Some(areas.clone()));
+        for _ in 0..500 {
+            super::script_apps::poll();
+            if !sent.lock().unwrap().is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let got = sent.lock().unwrap()[0].clone();
+        assert_eq!(got["error"]["kind"], "app_error", "{tool}: {got}");
+        assert!(got["error"]["message"].as_str().unwrap().contains("serves system apps only"), "{tool}: {got}");
+        let folder = storage.layout().app(&format!("org.example.{}", engine.family)).unwrap().account(None);
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 0, "{tool}: the refusal came before a file was touched");
+    }
+    assert!(!host.exists(), "no legacy private folder");
+}
+
+/// A virtual owner has no bundle, so every lazy path that would load one
+/// fails, and none of them takes its tools or its executor: `ensure_loaded`
+/// skips an owner the catalog knows, and a load that fails (App Hub
+/// installing or updating an app of that id, or an app asking for one of
+/// its tools) changes nothing before it has an admitted bundle.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn a_failed_bundle_load_never_clobbers_an_engines_virtual_owner() {
+    super::engines::register();
+    let snapshot = || super::with_relay(|r| {
+        super::engines::ENGINES
+            .iter()
+            .map(|engine| (r.catalog.declarations(&engine.owner(), false), r.has_executor(&engine.owner())))
+            .collect::<Vec<_>>()
+    });
+    let before = snapshot();
+    assert!(before.iter().all(|(tools, executor)| !tools.is_empty() && *executor), "every engine declared, with its executor");
+    for engine in super::engines::ENGINES {
+        let owner = engine.owner();
+        assert!(super::script_apps::load(&owner).is_err(), "{owner} has no bundle to load");
+        super::script_app_installed(&owner);
+        super::ensure_loaded(&format!("card.{owner}"));
+    }
+    // An app that asks for an engine's tool: the ask is recorded against
+    // the virtual owner, which stays as it was, and grants nothing.
+    let loaded = super::script_apps::Loaded { asks: vec!["word.info".into(), "vector.run".into()], ..Default::default() };
+    super::script_apps::install("org.example.wordy", loaded, std::env::temp_dir());
+    assert_eq!(snapshot(), before, "no failed load or grant touched a virtual owner");
+    super::with_relay(|r| {
+        assert!(!r.catalog.may_call("org.example.wordy", "os.word", "word.info", false));
+        assert!(!r.catalog.may_call("org.example.wordy", "os.vector", "vector.run", true), "not even under developer mode");
+    });
+}
+
+/// What the person sees in Settings, and who may ask an agent: a virtual
+/// owner is no app, so it is no agent app and has no agent of its own.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn an_engines_virtual_owner_is_no_agent_app() {
+    super::engines::register();
+    let apps = crate::apps::agent_apps();
+    for engine in super::engines::ENGINES {
+        let owner = engine.owner();
+        assert!(!apps.iter().any(|a| a.id == owner || a.id == engine.family), "{owner} listed as an agent app");
+        assert!(crate::apps::declared_octos(&owner).is_none(), "{owner} has no agent");
+        assert_eq!(crate::agents::prepared(&owner), None, "{owner} has no peer");
+    }
+}
+
+/// Every tool of the system agent's engine grant answers, on real files,
+/// within its declared result (the relay checks each answer against its
+/// `output_schema`, G8), and writes only into the system agent's own
+/// workspace, where every engine finds what another wrote. The fixtures
+/// are the engines' own output where one can make it. `film.project.info`
+/// (no tool writes a project) and Design's tools (no tool writes a layout
+/// document) are checked in their crates.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn every_granted_engine_tool_answers_within_its_declared_result() {
+    let host = std::env::temp_dir().join(format!("engine-answers-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&host).unwrap();
+    let (mut relay, mut world) = engine_world(&host);
+    let mut exercised: BTreeSet<String> = BTreeSet::new();
+    let mut n = 0;
+    let mut ok = |relay: &mut Relay, world: &mut World, tool: &str, args: Value| -> Value {
+        n += 1;
+        let got = ask(relay, world, &format!("a{n}"), tool, args);
+        assert_eq!(got["ok"], true, "{tool}: {got}");
+        exercised.insert(tool.to_string());
+        got["data"].clone()
+    };
+    let place = |from: &str, to: &str| {
+        let to = host.join(to);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::copy(host.join(from), to).unwrap();
+    };
+    let write = |to: &str, bytes: &[u8]| {
+        let to = host.join(to);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::write(to, bytes).unwrap();
+    };
+    // word
+    ok(&mut relay, &mut world, "word.new", json!({"out": "doc.docx", "text": "Engines answer\nwithin their results", "title": "Fixture"}));
+    ok(&mut relay, &mut world, "word.info", json!({"path": "doc.docx"}));
+    ok(&mut relay, &mut world, "word.text", json!({"path": "doc.docx"}));
+    ok(&mut relay, &mut world, "word.inspect", json!({"path": "doc.docx", "text": false}));
+    ok(&mut relay, &mut world, "word.convert", json!({"path": "doc.docx", "out": "doc.pdf"}));
+    // deck
+    ok(&mut relay, &mut world, "deck.new", json!({"out": "talk.pptx", "slides": [{"title": "One", "bullets": ["a", "b"]}, {"title": "Two"}]}));
+    ok(&mut relay, &mut world, "deck.info", json!({"path": "talk.pptx"}));
+    ok(&mut relay, &mut world, "deck.text", json!({"path": "talk.pptx"}));
+    ok(&mut relay, &mut world, "deck.render", json!({"path": "talk.pptx", "slide": 1, "out": "s2.png", "max_side": 64}));
+    ok(&mut relay, &mut world, "deck.convert", json!({"path": "talk.pptx", "out": "talk.txt"}));
+    // pdf, on Word's PDF
+    place("doc.pdf", "a.pdf");
+    place("doc.pdf", "b.pdf");
+    ok(&mut relay, &mut world, "pdf.info", json!({"path": "a.pdf"}));
+    ok(&mut relay, &mut world, "pdf.text", json!({"path": "a.pdf", "pages": [1]}));
+    ok(&mut relay, &mut world, "pdf.render", json!({"path": "a.pdf", "page": 1, "out": "p1.png", "max_side": 64}));
+    ok(&mut relay, &mut world, "pdf.merge", json!({"paths": ["a.pdf", "b.pdf"], "out": "ab.pdf"}));
+    ok(&mut relay, &mut world, "pdf.split", json!({"path": "ab.pdf", "out_dir": "parts", "every": 1}));
+    // vector, then cad on Vector's DXF, in the same folder
+    write("in.svg", br##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40"><rect x="4" y="4" width="32" height="20" fill="#3366cc"/><line x1="40" y1="4" x2="60" y2="36" stroke="#cc3333"/></svg>"##);
+    ok(&mut relay, &mut world, "vector.info", json!({"path": "in.svg"}));
+    ok(&mut relay, &mut world, "vector.convert", json!({"path": "in.svg", "out": "in.dxf"}));
+    ok(&mut relay, &mut world, "vector.render", json!({"path": "in.svg", "out": "vector.png", "max_side": 64}));
+    ok(&mut relay, &mut world, "cad.info", json!({"path": "in.dxf"}));
+    ok(&mut relay, &mut world, "cad.entities", json!({"path": "in.dxf", "limit": 10}));
+    ok(&mut relay, &mut world, "cad.measure", json!({"path": "in.dxf", "dist": {"p1": [0, 0], "p2": [3, 4]}}));
+    ok(&mut relay, &mut world, "cad.measure", json!({"path": "in.dxf", "area": {"points": [[0, 0], [4, 0], [4, 3]]}}));
+    ok(&mut relay, &mut world, "cad.render", json!({"path": "in.dxf", "out": "cad.svg"}));
+    ok(&mut relay, &mut world, "cad.convert", json!({"path": "in.dxf", "out": "copy.dxf"}));
+    // light and film, on a 12x8 PNG
+    let png: Vec<u8> = {
+        const HEX: &str = "89504e470d0a1a0a0000000d494844520000000c000000080802000000428689a60000001d49444154789c6378616383866c725ea021063a2bb279d14310d15911005b9497817c6155610000000049454e44ae426082";
+        (0..HEX.len()).step_by(2).map(|i| u8::from_str_radix(&HEX[i..i + 2], 16).unwrap()).collect()
+    };
+    write("photo.png", &png);
+    write("other.png", &png);
+    ok(&mut relay, &mut world, "light.info", json!({"path": "photo.png"}));
+    ok(&mut relay, &mut world, "light.controls", json!({}));
+    ok(&mut relay, &mut world, "light.develop", json!({"path": "photo.png", "out": "photo.jpg", "params": {"light.exposure": 0.5}}));
+    ok(&mut relay, &mut world, "light.batch", json!({"paths": ["photo.png", "other.png"], "out_dir": "batch", "format": "png"}));
+    write("still.png", &png);
+    ok(&mut relay, &mut world, "film.info", json!({"path": "still.png"}));
+    ok(&mut relay, &mut world, "film.frame", json!({"path": "still.png", "out": "f.png", "max_side": 16}));
+    ok(&mut relay, &mut world, "film.export", json!({"path": "still.png", "out": "still.gif", "end_ms": 200}));
+    // sound, on an 8 kHz mono PCM WAV
+    let wav = {
+        let frames: u32 = 800;
+        let mut b: Vec<u8> = Vec::new();
+        b.extend(b"RIFF");
+        b.extend((36 + frames * 2).to_le_bytes());
+        b.extend(b"WAVEfmt ");
+        b.extend(16u32.to_le_bytes());
+        b.extend(1u16.to_le_bytes());
+        b.extend(1u16.to_le_bytes());
+        b.extend(8000u32.to_le_bytes());
+        b.extend(16000u32.to_le_bytes());
+        b.extend(2u16.to_le_bytes());
+        b.extend(16u16.to_le_bytes());
+        b.extend(b"data");
+        b.extend((frames * 2).to_le_bytes());
+        for i in 0..frames {
+            b.extend((((i % 80) as i16) * 200 - 8000).to_le_bytes());
+        }
+        b
+    };
+    write("in.wav", &wav);
+    ok(&mut relay, &mut world, "sound.info", json!({"path": "in.wav"}));
+    ok(&mut relay, &mut world, "sound.peaks", json!({"path": "in.wav", "cols": 8}));
+    ok(&mut relay, &mut world, "sound.convert", json!({"path": "in.wav", "out": "in.flac"}));
+    ok(&mut relay, &mut world, "sound.trim", json!({"path": "in.wav", "out": "cut.wav", "start_ms": 10, "end_ms": 60}));
+    ok(&mut relay, &mut world, "sound.mix", json!({"tracks": [{"path": "in.wav"}, {"path": "cut.wav", "gain_db": -6}], "out": "mix.wav"}));
+    // effect: a Lottie animation placed in the workspace, made a project
+    // by the granted `effect.import_lottie`, then the other granted tools.
+    // The command door is no way in: run straight on its executor (never
+    // through the system agent's grant), the shell's resolver holds it.
+    write("intro.json", br##"{"v":"5.7.0","fr":24,"ip":0,"op":24,"w":32,"h":18,"nm":"Main","ddd":0,"assets":[],"layers":[{"ddd":0,"ind":1,"ty":1,"nm":"Red","sr":1,"ks":{"o":{"a":0,"k":100},"r":{"a":0,"k":0},"p":{"a":0,"k":[16,9,0]},"a":{"a":0,"k":[16,9,0]},"s":{"a":0,"k":[100,100,100]}},"ao":0,"sw":32,"sh":18,"sc":"#cc3344","ip":0,"op":24,"st":0,"bm":0}]}"##);
+    ok(&mut relay, &mut world, "effect.import_lottie", json!({"path": "intro.json", "out": "main.ecproj"}));
+    ok(&mut relay, &mut world, "effect.info", json!({"path": "main.ecproj"}));
+    ok(&mut relay, &mut world, "effect.render", json!({"path": "main.ecproj", "out": "frame.png", "time": 0.0, "max_side": 16}));
+    ok(&mut relay, &mut world, "effect.export_lottie", json!({"path": "main.ecproj", "out": "main.json"}));
+    let door = super::script_apps::HostServiceExecutor {
+        app: "os.effect".into(),
+        tools: ["effect.run".to_string()].into_iter().collect(),
+        methods: Default::default(),
+        families: ["effect".to_string()].into_iter().collect(),
+        host_dir: host.clone(),
+    };
+    let mut made = call("effect-door", "effect.run", super::relay::SYSTEM);
+    made.caller_kind = CallerKind::System;
+    made.args = json!({"cmds": [{"id": "comp.new", "params": {"name": "Door"}}], "out": "door.ecproj"});
+    let (r, sent) = reply("effect-door");
+    door.run(made, r, Some(engine_areas(&host, None)));
+    for _ in 0..500 {
+        super::script_apps::poll();
+        if !sent.lock().unwrap().is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let held = sent.lock().unwrap()[0].clone();
+    assert!(held["error"]["message"].as_str().is_some_and(|m| m.contains("held for its own review")), "{held}");
+    assert!(!host.join("door.ecproj").exists());
+    // Everything the grant names, but what no tool can make a file for.
+    let granted: BTreeSet<String> = crate::system_chat::grants::ENGINE_TOOLS.iter().map(|t| t.to_string()).collect();
+    let elsewhere: BTreeSet<String> = ["film.project.info", "design.info", "design.render", "design.export"].into_iter().map(String::from).collect();
+    assert_eq!(exercised, &granted - &elsewhere);
+    assert!(world.asked.is_empty(), "no engine tool asks for approval");
+    // No private folder, and no staging folder left behind.
+    let top: Vec<String> = std::fs::read_dir(&host).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert!(!top.iter().any(|name| super::engines::ENGINES.iter().any(|e| e.family == name.as_str()) || name.starts_with(octosense_engine_area::STAGING_PREFIX)), "{top:?}");
+    let _ = std::fs::remove_dir_all(host);
+}
+
+/// The system agent's Word tools work on a file placed in its workspace
+/// (as its own file tools, or the person, would put one there): it reads
+/// it, converts it beside it, never replaces a file, and a missing file is
+/// named relative to the workspace.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn the_system_agents_word_tools_work_on_a_file_in_its_workspace() {
+    let made = std::env::temp_dir().join(format!("engine-seed-{}", uuid::Uuid::new_v4()));
+    let workspace = std::env::temp_dir().join(format!("engine-workspace-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&made).unwrap();
+    std::fs::create_dir_all(workspace.join("inbox")).unwrap();
+    // A real document, made elsewhere, then placed in the workspace.
+    let (mut seed, mut seed_world) = engine_world(&made);
+    let seeded = ask(&mut seed, &mut seed_world, "seed", "word.new", json!({"out": "report.docx", "text": "Quarterly report\nRevenue grew", "title": "Report"}));
+    assert_eq!(seeded["ok"], true, "{seeded}");
+    std::fs::copy(made.join("report.docx"), workspace.join("inbox/report.docx")).unwrap();
+    let (mut relay, mut world) = engine_world(&workspace);
+    let info = ask(&mut relay, &mut world, "w-info", "word.info", json!({"path": "inbox/report.docx"}));
+    assert_eq!(info["ok"], true, "{info}");
+    assert_eq!((info["data"]["file"].as_str(), info["data"]["paragraphs"].as_u64()), (Some("inbox/report.docx"), Some(2)), "{info}");
+    let converted = ask(&mut relay, &mut world, "w-convert", "word.convert", json!({"path": "inbox/report.docx", "out": "inbox/report.md"}));
+    assert_eq!(converted["ok"], true, "{converted}");
+    assert!(std::fs::read_to_string(workspace.join("inbox/report.md")).unwrap().contains("Quarterly report"));
+    let again = ask(&mut relay, &mut world, "w-again", "word.convert", json!({"path": "inbox/report.docx", "out": "inbox/report.md"}));
+    assert_eq!(again["error"]["kind"], "app_error", "{again}");
+    assert!(again["error"]["message"].as_str().unwrap().contains("`inbox/report.md` already exists"), "{again}");
+    let missing = ask(&mut relay, &mut world, "w-missing", "word.info", json!({"path": "inbox/none.docx"}));
+    let message = missing["error"]["message"].as_str().unwrap();
+    assert!(message.contains("inbox/none.docx") && !message.contains(workspace.to_str().unwrap()), "{missing}");
+    // Outside the workspace is out of reach.
+    let outside = ask(&mut relay, &mut world, "w-outside", "word.info", json!({"path": "../report.docx"}));
+    assert_eq!(outside["error"]["kind"], "app_error", "{outside}");
+    let _ = std::fs::remove_dir_all(made);
+    let _ = std::fs::remove_dir_all(workspace);
+}
+
+/// The system agent has no area until its workspace is known: the call is
+/// refused before any engine runs.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn an_engine_call_without_a_known_workspace_is_refused() {
+    register_engine_services();
+    let mut relay = Relay::default();
+    super::engines::install(&mut relay, Some(Arc::new(super::areas::FixedEnv::default())));
+    let mut world = World::new(FixedDevMode::off());
+    world.system = crate::system_chat::grants::host_tools();
+    let refused = ask(&mut relay, &mut world, "nows", "word.info", json!({"path": "a.docx"}));
+    assert_eq!(refused["error"]["kind"], "no_workspace", "{refused}");
+}
+
+/// An app's agent works in its own account's folder and cannot reach
+/// another app's: the native Sheets app's own agent exports into
+/// `<apps root>/sheets/accounts/device/`, and a path into another app's
+/// folder (climbing out, absolute, or through a link) is refused. Sheets'
+/// tools work on Sheets' data whoever calls them: the system agent's
+/// `sheets.get` reads the workbook Sheets' agent opened.
+#[cfg(feature = "app-hub")]
+#[test]
+fn an_apps_agent_works_in_its_own_folder_and_cannot_reach_anothers() {
+    let home = crate::app_storage::tests::Scratch::new("engine-app-folder");
+    let storage = crate::app_storage::Storage::with_file_secrets(crate::app_storage::Layout::new(&home.0).unwrap());
+    octosense_sheets_service::register();
+    super::areas::install_resolvers();
+    let areas: Arc<dyn super::areas::AreaEnv> = Arc::new(super::areas::FixedEnv { storage: Some(storage.clone()), ..Default::default() });
+    let mut relay = Relay::default();
+    let tools: Vec<Value> = serde_json::from_str(crate::native_apps::find("sheets").unwrap().tools_json).unwrap();
+    relay.catalog.declare("sheets", tools);
+    relay.set_executor("sheets", Some(Arc::new(super::engines::EngineExecutor::sheets().with_areas(Some(areas)))));
+    let mut world = World::new(FixedDevMode::off());
+    let sheet_call = |id: &str, tool: &str, args: Value| {
+        let mut c = call(id, tool, "sheets");
+        c.app = "sheets".into();
+        c.args = args;
+        c
+    };
+    let book = answer(&mut relay, &mut world, sheet_call("s-new", "sheets.new", json!({})));
+    assert_eq!(book["ok"], true, "{book}");
+    let id = book["data"]["book"].as_u64().unwrap();
+    let exported = answer(&mut relay, &mut world, sheet_call("s-export", "sheets.export", json!({"book": id, "path": "mine.xlsx"})));
+    assert_eq!(exported["ok"], true, "{exported}");
+    let own = storage.layout().app("sheets").unwrap().account(None);
+    assert!(own.join("mine.xlsx").is_file(), "the agent's own folder: {}", own.display());
+    // Another app's file, in its own folder.
+    let theirs = storage.layout().app("os.notes").unwrap().account(None);
+    std::fs::create_dir_all(&theirs).unwrap();
+    std::fs::copy(own.join("mine.xlsx"), theirs.join("secret.xlsx")).unwrap();
+    let climb = format!("../../../os.notes/accounts/{}/secret.xlsx", crate::app_storage::DEVICE);
+    let mut refused = vec![climb, theirs.join("secret.xlsx").display().to_string()];
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&theirs, own.join("theirs")).unwrap();
+        refused.push("theirs/secret.xlsx".into());
+    }
+    for (n, path) in refused.iter().enumerate() {
+        let got = answer(&mut relay, &mut world, sheet_call(&format!("s-open-{n}"), "sheets.open", json!({"path": path})));
+        assert_eq!(got["error"]["kind"], "app_error", "{path}: {got}");
+        let wrote = answer(&mut relay, &mut world, sheet_call(&format!("s-out-{n}"), "sheets.export", json!({"book": id, "path": path})));
+        assert_eq!(wrote["error"]["kind"], "app_error", "{path}: {wrote}");
+    }
+    assert_eq!(std::fs::read_dir(&theirs).unwrap().count(), 1, "nothing written into the other app's folder");
+    // Signed out, the relay refuses the agent's call before any executor.
+    world.suspended = true;
+    let out = answer(&mut relay, &mut world, sheet_call("s-signed-out", "sheets.open", json!({"path": "mine.xlsx"})));
+    assert_eq!(out["error"]["kind"], "signed_out", "{out}");
+    world.suspended = false;
+    // The system agent's granted `sheets.get` reads that workbook, in
+    // Sheets' folder, not its own workspace.
+    let set = answer(&mut relay, &mut world, sheet_call("s-set", "sheets.set", json!({"book": id, "cells": [{"at": "A1", "value": 42}]})));
+    assert_eq!(set["ok"], true, "{set}");
+    world.system.insert("sheets.get".to_string());
+    let mut read = call("s-system-get", "sheets.get", super::relay::SYSTEM);
+    read.app = "sheets".into();
+    read.caller_kind = CallerKind::System;
+    read.origin = CallOrigin::System;
+    read.account = None;
+    read.client = None;
+    read.args = json!({"book": id, "range": "A1"});
+    let got = answer(&mut relay, &mut world, read);
+    assert_eq!(got["ok"], true, "{got}");
+    assert_eq!(got["data"]["values"], json!([[42.0]]), "{got}");
+    let closed = answer(&mut relay, &mut world, sheet_call("s-close", "sheets.close", json!({"book": id})));
+    assert_eq!(closed["ok"], true, "{closed}");
+}
+
+/// A signed-out account's agent has no area. The relay refuses its calls
+/// first (`signed_out`, the same suspension); an engine call that reaches
+/// an executor anyway is refused before the engine runs. Signed in again,
+/// the agent works in that account's folder.
+#[cfg(feature = "craft-engines")]
+#[test]
+fn a_signed_out_accounts_engine_call_is_refused() {
+    use super::script_apps::HostServiceExecutor;
+    let home = crate::app_storage::tests::Scratch::new("engine-signed-out");
+    let storage = crate::app_storage::Storage::with_file_secrets(crate::app_storage::Layout::new(&home.0).unwrap());
+    storage.set_spec("org.example.notes", crate::app_storage::StorageSpec { accounts: true, ..Default::default() });
+    register_engine_services();
+    let areas = engine_areas(&home.0.join("ws"), Some(storage.clone()));
+    // Word's executor, as `engines::install` makes it, reached by an app's
+    // agent (no grant gives one an engine tool today).
+    let word = HostServiceExecutor {
+        app: "os.word".into(),
+        tools: ["word.new".to_string()].into_iter().collect(),
+        methods: Default::default(),
+        families: ["word".to_string()].into_iter().collect(),
+        host_dir: std::path::PathBuf::new(),
+    };
+    let run = |id: &str| {
+        let mut c = call(id, "word.new", "card.org.example.notes");
+        c.app = "os.word".into();
+        c.args = json!({"out": "a.docx", "text": "hi"});
+        let (r, sent) = reply(id);
+        word.run(c, r, Some(areas.clone()));
+        for _ in 0..500 {
+            super::script_apps::poll();
+            if let Some(v) = sent.lock().unwrap().first().cloned() {
+                return v;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("no answer");
+    };
+    storage.sign_out("org.example.notes", Some("@alice:x"));
+    let refused = run("so-new");
+    assert_eq!(refused["error"]["kind"], "signed_out", "{refused}");
+    let folder = storage.layout().app("org.example.notes").unwrap().account(Some("@alice:x"));
+    assert!(!folder.join("a.docx").exists());
+    storage.sign_in("org.example.notes", Some("@alice:x"));
+    let made = run("si-new");
+    assert_eq!(made["ok"], true, "{made}");
+    assert!(folder.join("a.docx").is_file(), "the account's own folder");
+}

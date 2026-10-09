@@ -10,6 +10,7 @@
     "storage",
     "net",
     "location",
+    "web",
     "glance"
   ],
   "network": {

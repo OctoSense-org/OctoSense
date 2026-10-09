@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "film.info",
+      "description": "Probe a media file in your workspace (MP4/MOV, Matroska/WebM, MXF, MPEG TS/PS, Ogg, WAV or a still image): container, video and audio streams, duration in ms, timecode and size. Reads only; offline, pure-Rust codecs. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "duration_ms": {"type": "number"},
+          "video": {"type": ["object", "null"]},
+          "audio": {"type": ["object", "null"]}
+        },
+        "required": ["file", "duration_ms"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "film.project.info",
+      "description": "Open a FilmCraft project (.fcproj) in your workspace headlessly and inspect it: its bins and items, and the active sequence when it has one. Media the project points at outside your workspace stay offline. Reads only. `path` is relative to your workspace (see film.info).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "project": {"type": "object"},
+          "sequence": {"type": ["object", "null"]}
+        },
+        "required": ["file", "project"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "film.frame",
+      "description": "Render the frame at `at_ms` (default 0) of a video in your workspace through the engine's program renderer, written as a PNG to `out` with its longest edge at most `max_side` pixels (default 1024). Both paths are relative to your workspace (see film.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "at_ms": {"type": "number", "minimum": 0},
+          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"},
+          "at_ms": {"type": "number"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "width", "height", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "film.export",
+      "description": "Transcode the range `start_ms` to `end_ms` (default the whole clip, at most 5 minutes per call) of a media file in your workspace with the engine's own encoders: H.264+AAC MP4 (h264), ProRes MOV (prores), WAV or GIF, chosen by `format` or else by the extension of `out`; `audio` false drops the sound. Offline. Both paths are relative to your workspace (see film.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "format": {"type": "string", "enum": ["h264", "prores", "wav", "gif"]},
+          "start_ms": {"type": "number", "minimum": 0},
+          "end_ms": {"type": "number", "minimum": 0},
+          "audio": {"type": "boolean"}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "format": {"type": "string"},
+          "start_ms": {"type": "number"},
+          "end_ms": {"type": "number"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "format", "start_ms", "end_ms", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

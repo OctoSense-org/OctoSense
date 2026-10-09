@@ -2,9 +2,9 @@
 
 [English](README.md) | 简体中文
 
-[Android 复现步骤与 OnePlus 6 结果](ANDROID.zh-CN.md)：同一原生宿主完成了全部 14 项手机检查，没有启动模型、登录账户或批准权限。
+[Android 复现步骤与 OnePlus 6 结果](ANDROID.zh-CN.md)：测试应用 0.4 在 **OnePlus 6／Android 15 上通过全部 44 项检查**，没有启动模型、登录账户或批准权限。原始 14 项记录继续保留为历史证据。
 
-这个开发测试示例演示应用自己的 Splash 工具如何调用已经编译进 OctoSense 的 Rust 代码。工具读取 macOS 上真实的摄像头权限状态，更新应用界面，并把结构化结果返回给原生调用方。它从不采集媒体，也从不批准设备访问。它不是提交给 App Hub 的应用，也不能用来加载任意 Rust 库。
+这个开发测试示例演示应用自己的 Splash 工具如何调用已经编译进 OctoSense 的 Rust 代码。工具读取 macOS 上真实的摄像头权限状态，更新应用界面，并把结构化结果返回给原生调用方。它还发现文件/定位 API，在自身存储隔离目录中写入并读回四个合成字节，验证后台调用被拒绝。它从不采集媒体、启动定位采样、打开文件选择器或批准设备访问。它不是提交给 App Hub 的应用，也不能用来加载任意 Rust 库。
 
 一次调用经过以下路径：
 
@@ -18,6 +18,12 @@
 ```
 
 测试宿主把调用直接放进已授权的工具调用队列。真实 Agent 的调用要先经过 Shell 的中转，由它检查用户对应用 Agent 的同意，以及账户和工具权限；本测试**不**覆盖这段模型与 peer 路径。它覆盖的是真实的签名应用包检查、Splash 隔离环境和[设备服务](../../../crates/shell/src/platform_services/README.zh-CN.md)。
+
+## 公共日历与邮件检查（测试应用 0.4）
+
+当前版本增加公共 `device_calendar` 和 `mail` API，需要已发布的 [app-contract 1.10.0](https://crates.io/crates/octosense-app-contract/1.10.0) 声明及兼容的宿主实现，并保留之前的 `files` 能力。仅安装 SDK 不会提供这些宿主实现。新增十一项检查涵盖四个方法描述、原生日历权限状态、未获应用同意时拒绝列出日历、拒绝后台权限申请/日历选择/事件修改，以及无账户时拒绝准备邮件和拒绝后台发送。测试邮件服务使用合成传输，无法投递真实邮件。
+
+另外九项检查发现照片选择、文字分享、播放、录音 API 和 Video 控制运行时 ABI，并验证后台媒体请求和未声明麦克风能力的录音请求被拒绝。文字分享仅在 Android 上声明可用，不打开任何媒体设备。共二十项检查补充下文的十项 OS API 检查，不证明真实日历读写、亲手批准或 SMTP 投递。[Mac 回执](evidence/public-api-v0.4/macos.json)记录全部 30 项检查通过；[OnePlus 6 回执](evidence/public-api-v0.4/oneplus6.json)记录全部 44 项 Android 检查通过，其中包含原有 14 项。这些记录绑定各自列出的源码和运行时摘要；此前 14 项和 24 项记录继续作为历史证据保留。
 
 ## 在 macOS 上运行
 
@@ -45,14 +51,26 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 - `runtime.describe` 能发现已编译的 API；对于宿主没有的自定义函数，它报告不可用，而且不执行任何代码。
 - 没有 `microphone` 能力时，应用无法读取麦克风权限状态。
 - 工具的异步宿主回调不能打开权限面板。
+- 能发现文件状态、导入、导出和定位采样 API；二进制存储被标明为运行时 ABI，而不是可通过 `host.request` 调用的方法。
+- 真实的隔离 VM 用 `fs.write_bytes` / `fs.read_bytes` 往返读写字节 `0、127、128、255`，随后删除自己的临时文件。
+- 文件状态返回存储授权和字节上限；后台导入、导出在原生界面打开前被拒绝。
+- 未获得应用授权时，定位采样返回运行时授权检查的确切 `authorization_required` 错误。它的 API 描述也必须标明仅限前台调用。
 - 账户不对、工具未声明或输入无效的调用都会遭到拒绝。
 - 持有工具的应用关闭后，调用以 `app_not_running` 失败。
 
 工具会在宿主回调中刻意调用 `camera.permission.request`；这个回调保留了工具的后台来源，以此证明 App Hub 会拒绝这次申请。测试示例中没有任何环节能批准权限。能力、应用授权和系统权限始终是三项独立的检查。这台 Mac 可能早已授予 OctoSense 摄像头权限，但全新的测试配置目录仍必须报告 `app_consent: false`。
 
-**已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
+原生定位检查证明的是**没有应用授权时拒绝调用**，调用尚未到达宿主的前台限制检查。独立的 `platform_services::tests::location_sampling_broker_lifecycle` 回归测试会在隔离的测试存储中建立应用授权，再通过真实的服务代理发起后台采样请求。它要求返回确切的后台拒绝错误，而且没有排队请求、权限检查、授权审阅或正在运行的定位采样。该回归测试后续使用模拟权限结果检查生命周期，并不证明实际批准了权限或获得了真实定位。
 
-**本次 macOS 运行未覆盖**：真实的模型推理、亲手点按批准权限、摄像头拍摄、Android、Linux 和 Windows 上“不支持该平台”的应答，以及发布兼容的宿主二进制文件。Android 的结果见[单独的 OnePlus 6 验收记录](ANDROID.zh-CN.md)。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
+0.4 的 release 模式 Mac 运行在源码 `53bab40f`、运行时 `fc938badf` 上通过 **30/30 项具名 OS 和公共服务检查**，以及签名工具完成、实时 UI 更新和原生按钮操作。三张原生截图均已审视，两个测试宿主进程均正常退出。[Mac 回执](evidence/public-api-v0.4/macos.json)用源码、运行时和二进制摘要绑定结果。[OnePlus 6 运行](evidence/public-api-v0.4/oneplus6.json)在 **Android 15 上通过 44/44 项检查**，APK 使用生产源码 `13e3b21a` 和相同运行时；构建期间的 `53bab40f` 改动仅影响测试代码，不包含在该 APK 中。完成后已强制停止独立测试包。
+
+单独的[回归回执](evidence/public-api-v0.4/regression.json)记录 `53bab40f` 上 **1,051/1,051 项共享 Shell 测试通过，失败和忽略项均为零**，同时通过三个打包检查（桌面默认／mobile、Home mobile）及原生测试应用构建。这些回执不验证之后的 Android Video Java 改动，也不验证真实账户或硬件操作。SDK 1.10.0 已发布；[宿主分发状态](../../../docs/host-os-api-status.zh-CN.md)单独记录。这些历史回执不验证最终 Desktop RC2 发行包，也不会更新已发布的 Home beta.1。
+
+[早先批次记录](evidence/os-api-batch1/receipt.json)记录源码 `807f2bc8` 的十项 OS 检查；`evidence/android/` 保留原始 14 项手机记录。这些历史结果不能验证当前源码。
+
+**此前已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
+
+**本次 macOS 运行未覆盖**：真实的模型推理、亲手批准权限、摄像头拍摄、交互式文件／照片／分享选择器、实时定位采样、原生浏览器启动、日历事件读写、SMTP 投递、录音与音频播放、Android、Linux 和 Windows 设备服务，以及发布兼容的宿主二进制文件。Android 的结果见[单独的 OnePlus 6 验收记录](ANDROID.zh-CN.md)。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
 
 ## 复用这一模式
 

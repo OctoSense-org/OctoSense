@@ -1,0 +1,693 @@
+diff --git a/platform/Cargo.toml b/platform/Cargo.toml
+index 31b5a5398..e4f424ac7 100644
+--- a/platform/Cargo.toml
++++ b/platform/Cargo.toml
+@@ -104,6 +104,10 @@ napi-derive-ohos = "0.0.9"
+ napi-ohos = "0.1.3"
+ ohos-sys = { version = "0.2.1", features = ["xcomponent"] }
+ 
++[target.'cfg(windows)'.dependencies]
++jpeg-encoder = { path = "../libs/jpeg-encoder", version = "0.6.1" }
++makepad-zune-jpeg = { path = "../libs/zune/zune-jpeg", version = "0.5.15" }
++
+ [target.'cfg(windows)'.dependencies.makepad-futures-legacy]
+ path = "../libs/futures_legacy"
+ version = "1.0.0"
+diff --git a/platform/src/os/windows/camera_still.rs b/platform/src/os/windows/camera_still.rs
+new file mode 100644
+index 000000000..dead74b70
+--- /dev/null
++++ b/platform/src/os/windows/camera_still.rs
+@@ -0,0 +1,376 @@
++//! Bounded still capture; the UI never waits for the camera or file IO.
++use crate::{cx::Cx, video::*};
++use std::{
++    fs::OpenOptions,
++    io::Write,
++    path::Path,
++    sync::{
++        atomic::{AtomicBool, AtomicU64, Ordering},
++        mpsc::{sync_channel, Receiver, SyncSender},
++        Arc, OnceLock,
++    },
++    time::{Duration, Instant},
++};
++
++const PHASE: u64 = 7;
++const ARMING: u64 = 1;
++const WAITING: u64 = 2;
++const FRAME: u64 = 3;
++const WRITING: u64 = 4;
++const CANCELLED: u64 = 5;
++const MAX_BYTES: usize = 32 * 1024 * 1024;
++const MAX_PIXELS: usize = 8 * 1024 * 1024;
++const DEADLINE: Duration = Duration::from_secs(10);
++
++struct Shared {
++    state: AtomicU64,
++    closed: AtomicBool,
++}
++struct Request {
++    ticket: u64,
++    path: String,
++    deadline: Instant,
++}
++enum Command {
++    Start(Request),
++    Frame {
++        ticket: u64,
++        format: VideoFormat,
++        bytes: Result<Arc<[u8]>, String>,
++    },
++}
++pub(super) struct StillCapture {
++    input: VideoInputId,
++    shared: Arc<Shared>,
++    worker: OnceLock<Result<SyncSender<Command>, String>>,
++}
++impl StillCapture {
++    pub fn new(input: VideoInputId) -> Self {
++        Self {
++            input,
++            shared: Arc::new(Shared {
++                state: AtomicU64::new(0),
++                closed: AtomicBool::new(false),
++            }),
++            worker: OnceLock::new(),
++        }
++    }
++    pub fn request(&self, path: String) -> Result<(), String> {
++        if self.shared.closed.load(Ordering::Acquire) {
++            return Err("Camera is closed".into());
++        }
++        if !Path::new(&path).is_absolute() {
++            return Err("Capture path must be absolute".into());
++        }
++        let old = self.shared.state.load(Ordering::Acquire);
++        if old & PHASE != 0 {
++            return Err("A photo capture is already pending".into());
++        }
++        let ticket = old.wrapping_add(PHASE + 1);
++        self.shared
++            .state
++            .compare_exchange(old, ticket | ARMING, Ordering::AcqRel, Ordering::Acquire)
++            .map_err(|_| "A photo capture is already pending")?;
++        let sender = self.worker.get_or_init(|| {
++            let (tx, rx) = sync_channel(2);
++            let shared = self.shared.clone();
++            let input = self.input;
++            std::thread::Builder::new()
++                .name("windows-camera-still".into())
++                .spawn(move || worker(input, shared, rx))
++                .map_err(|e| e.to_string())?;
++            Ok(tx)
++        });
++        let sent = sender.as_ref().map_err(Clone::clone).and_then(|tx| {
++            tx.try_send(Command::Start(Request {
++                ticket,
++                path,
++                deadline: Instant::now() + DEADLINE,
++            }))
++            .map_err(|_| "Still capture queue is full or closed".into())
++        });
++        if sent.is_err() {
++            self.shared.state.store(ticket, Ordering::Release);
++        } else {
++            // Start is enqueued first; a frame cannot overtake its request.
++            let _ = self.shared.state.compare_exchange(
++                ticket | ARMING,
++                ticket | WAITING,
++                Ordering::AcqRel,
++                Ordering::Acquire,
++            );
++        }
++        sent
++    }
++    pub fn offer_frame(&self, format: VideoFormat, bytes: &[u8]) {
++        let state = self.shared.state.load(Ordering::Acquire);
++        if state & PHASE != WAITING {
++            return;
++        }
++        let ticket = state & !PHASE;
++        if self
++            .shared
++            .state
++            .compare_exchange(state, ticket | FRAME, Ordering::AcqRel, Ordering::Acquire)
++            .is_err()
++        {
++            return;
++        }
++        let data = if bytes.len() > MAX_BYTES || !valid_dimensions(format) {
++            Err("Camera frame exceeds the still capture budget".into())
++        } else if !matches!(
++            format.pixel_format,
++            VideoPixelFormat::MJPEG | VideoPixelFormat::NV12 | VideoPixelFormat::YUY2
++        ) {
++            Err("This camera format does not support JPEG capture".into())
++        } else {
++            Ok(Arc::from(bytes))
++        };
++        if let Some(Ok(tx)) = self.worker.get() {
++            if tx
++                .try_send(Command::Frame {
++                    ticket,
++                    format,
++                    bytes: data,
++                })
++                .is_ok()
++            {
++                return;
++            }
++        }
++        let _ = self.shared.state.compare_exchange(
++            ticket | FRAME,
++            ticket | CANCELLED,
++            Ordering::AcqRel,
++            Ordering::Acquire,
++        );
++    }
++    pub fn cancel(&self) {
++        let _ = self
++            .shared
++            .state
++            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |s| {
++                (s & PHASE != 0).then_some((s & !PHASE) | CANCELLED)
++            });
++    }
++    pub fn close(&self) {
++        self.shared.closed.store(true, Ordering::Release);
++        self.cancel();
++    }
++}
++fn valid_dimensions(format: VideoFormat) -> bool {
++    format.width > 0
++        && format.height > 0
++        && format.width <= 4096
++        && format.height <= 4096
++        && format
++            .width
++            .checked_mul(format.height)
++            .is_some_and(|n| n <= MAX_PIXELS)
++}
++fn check(request: &Request, shared: &Shared) -> Result<(), String> {
++    let state = shared.state.load(Ordering::Acquire);
++    if shared.closed.load(Ordering::Acquire)
++        || state & !PHASE != request.ticket
++        || state & PHASE == CANCELLED
++    {
++        Err("Photo capture cancelled because the camera closed or changed".into())
++    } else if Instant::now() >= request.deadline {
++        Err("Photo capture timed out".into())
++    } else {
++        Ok(())
++    }
++}
++fn settle(
++    input: VideoInputId,
++    shared: &Shared,
++    request: &Request,
++    result: Result<(u32, u32), String>,
++) {
++    let _ = shared
++        .state
++        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |s| {
++            (s & !PHASE == request.ticket).then_some(request.ticket)
++        });
++    Cx::post_action(CameraCaptureEvent {
++        input_id: input,
++        result: match result {
++            Ok((width, height)) => CameraCaptureResult::Photo {
++                path: request.path.clone(),
++                width,
++                height,
++            },
++            Err(error) => CameraCaptureResult::Failed {
++                what: "photo".into(),
++                error,
++            },
++        },
++    });
++}
++fn worker(input: VideoInputId, shared: Arc<Shared>, rx: Receiver<Command>) {
++    let mut pending: Option<Request> = None;
++    loop {
++        if let Some(request) = pending.as_ref() {
++            if let Err(error) = check(request, &shared) {
++                settle(input, &shared, request, Err(error));
++                pending = None;
++            }
++        }
++        match rx.recv_timeout(Duration::from_millis(100)) {
++            Ok(Command::Start(request)) => {
++                pending = Some(request);
++            }
++            Ok(Command::Frame {
++                ticket,
++                format,
++                bytes,
++            }) => {
++                if pending.as_ref().is_some_and(|p| p.ticket == ticket) {
++                    let request = pending.take().unwrap();
++                    let result = bytes.and_then(|data| save(&request, &shared, format, &data));
++                    settle(input, &shared, &request, result);
++                }
++            }
++            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
++            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
++        }
++        if shared.closed.load(Ordering::Acquire) && pending.is_none() {
++            break;
++        }
++    }
++}
++fn jpeg(
++    format: VideoFormat,
++    bytes: &[u8],
++    request: &Request,
++    shared: &Shared,
++) -> Result<Vec<u8>, String> {
++    check(request, shared)?;
++    if !valid_dimensions(format) || bytes.len() > MAX_BYTES {
++        return Err("Invalid or oversized camera frame".into());
++    }
++    if format.pixel_format == VideoPixelFormat::MJPEG {
++        use makepad_zune_jpeg::{
++            makepad_zune_core::{bytestream::ZCursor, options::DecoderOptions},
++            JpegDecoder,
++        };
++        let options = DecoderOptions::default()
++            .set_strict_mode(true)
++            .set_max_width(4096)
++            .set_max_height(4096);
++        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(bytes), options);
++        decoder
++            .decode_headers()
++            .map_err(|e| format!("Invalid camera JPEG: {e}"))?;
++        let info = decoder.info().ok_or("JPEG dimensions missing")?;
++        if info.width as usize != format.width || info.height as usize != format.height {
++            return Err("JPEG dimensions differ from the camera format".into());
++        }
++        decoder
++            .decode()
++            .map_err(|e| format!("Invalid camera JPEG: {e}"))?;
++        check(request, shared)?;
++        return Ok(bytes.to_vec());
++    }
++    if format.width % 2 != 0 || format.height % 2 != 0 {
++        return Err("Still capture needs an even YUV frame size".into());
++    }
++    let frame = super::media_foundation::camera_frame_from_media_buffer(format, 0, bytes)
++        .ok_or("Invalid camera plane layout")?;
++    let mut rgb = Vec::with_capacity(format.width * format.height * 3);
++    for y in 0..format.height {
++        check(request, shared)?;
++        for x in 0..format.width {
++            let (luma, u, v) = match frame.layout {
++                CameraFrameLayout::NV12 => {
++                    let uv = y / 2 * frame.planes[1].row_stride + (x / 2) * 2;
++                    (
++                        frame.planes[0].bytes[y * frame.planes[0].row_stride + x],
++                        frame.planes[1].bytes[uv],
++                        frame.planes[1].bytes[uv + 1],
++                    )
++                }
++                CameraFrameLayout::YUY2 => {
++                    let p = y * frame.planes[0].row_stride + (x / 2) * 4;
++                    (
++                        frame.planes[0].bytes[p + (x % 2) * 2],
++                        frame.planes[0].bytes[p + 1],
++                        frame.planes[0].bytes[p + 3],
++                    )
++                }
++                _ => return Err("This camera format cannot be encoded as JPEG".into()),
++            };
++            // Media Foundation camera frames here are limited-range BT.709.
++            let c = (luma as i32 - 16).max(0);
++            let d = u as i32 - 128;
++            let e = v as i32 - 128;
++            rgb.extend_from_slice(&[
++                ((298 * c + 459 * e + 128) >> 8).clamp(0, 255) as u8,
++                ((298 * c - 55 * d - 136 * e + 128) >> 8).clamp(0, 255) as u8,
++                ((298 * c + 541 * d + 128) >> 8).clamp(0, 255) as u8,
++            ]);
++        }
++    }
++    let mut encoded = Vec::new();
++    jpeg_encoder::Encoder::new(&mut encoded, 90)
++        .encode(
++            &rgb,
++            format.width as u16,
++            format.height as u16,
++            jpeg_encoder::ColorType::Rgb,
++        )
++        .map_err(|e| format!("JPEG encoding failed: {e}"))?;
++    check(request, shared)?;
++    if encoded.len() > MAX_BYTES {
++        return Err("Encoded photo exceeds capture budget".into());
++    }
++    Ok(encoded)
++}
++fn save(
++    request: &Request,
++    shared: &Shared,
++    format: VideoFormat,
++    bytes: &[u8],
++) -> Result<(u32, u32), String> {
++    let encoded = jpeg(format, bytes, request, shared)?;
++    check(request, shared)?;
++    shared
++        .state
++        .compare_exchange(
++            request.ticket | FRAME,
++            request.ticket | WRITING,
++            Ordering::AcqRel,
++            Ordering::Acquire,
++        )
++        .map_err(|_| "Photo capture cancelled before writing")?;
++    let mut file = OpenOptions::new()
++        .write(true)
++        .create_new(true)
++        .open(&request.path)
++        .map_err(|e| {
++            format!("Cannot create capture file without replacing an existing file: {e}")
++        })?;
++    let result = (|| {
++        file.write_all(&encoded)
++            .map_err(|e| format!("Cannot write capture: {e}"))?;
++        file.sync_all()
++            .map_err(|e| format!("Cannot save capture: {e}"))?;
++        check(request, shared)?;
++        // Commit is the cancellation boundary; no later close removes a completed capture.
++        shared
++            .state
++            .compare_exchange(
++                request.ticket | WRITING,
++                request.ticket,
++                Ordering::AcqRel,
++                Ordering::Acquire,
++            )
++            .map_err(|_| "Photo capture cancelled before commit")?;
++        Ok((format.width as u32, format.height as u32))
++    })();
++    drop(file);
++    if result.is_err() {
++        let _ = std::fs::remove_file(&request.path);
++    }
++    result
++}
+diff --git a/platform/src/os/windows/media_foundation.rs b/platform/src/os/windows/media_foundation.rs
+index 7e7f0aa55..09190745d 100644
+--- a/platform/src/os/windows/media_foundation.rs
++++ b/platform/src/os/windows/media_foundation.rs
+@@ -33,12 +33,12 @@
+             Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL},
+         },
+     },
+-    std::sync::{Arc, Mutex},
++    std::sync::{atomic::{AtomicBool, AtomicU8, Ordering}, Arc, Mutex},
+ };
+ #[allow(non_upper_case_globals)]
+ pub const MFVideoFormat_GRAY: GUID = GUID::from_u128(0x3030_3859_0000_0010_8000_00aa00389b71);
+ 
+-fn camera_frame_from_media_buffer<'a>(
++pub(super) fn camera_frame_from_media_buffer<'a>(
+     video_format: VideoFormat,
+     timestamp_ns: u64,
+     bytes: &'a [u8],
+@@ -141,6 +141,9 @@ fn camera_frame_from_media_buffer<'a>(
+ }
+ 
+ struct MfInput {
++    active: Arc<AtomicBool>,
++    reading: Arc<AtomicU8>,
++    still: Arc<super::camera_still::StillCapture>,
+     destroy_after_update: bool,
+     symlink: String,
+     active_format: Option<VideoFormatId>,
+@@ -157,47 +160,49 @@ fn activate(
+         callback: Arc<Mutex<Option<VideoInputFn>>>,
+         frame_callback: Arc<Mutex<Option<CameraFrameInputFn>>>,
+         video_encoder: Arc<Mutex<Option<VideoEncoder>>>,
+-    ) {
+-        if self.active_format.is_some() {
+-            panic!()
+-        };
+-        self.active_format = Some(video_format.format_id);
+-        let cb = unsafe { self.reader_callback.as_impl() };
+-        *cb.config.lock().unwrap() = Some(SourceReaderConfig {
+-            video_format,
+-            callback,
+-            frame_callback,
+-            video_encoder,
+-        });
+-        *cb.source_reader.lock().unwrap() = Some(self.source_reader.clone());
+-        unsafe {
+-            // trigger first frame
+-            let mt = self
+-                .media_types
+-                .iter()
+-                .find(|v| v.format_id == video_format.format_id)
+-                .unwrap();
+-            //let desc = self.desc.formats.iter().find( | v | v.format_id == format_id).unwrap();
+-            self.source_reader
+-                .SetCurrentMediaType(
+-                    MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+-                    None,
+-                    &mt.media_type,
+-                )
+-                .unwrap();
+-            self.source_reader
+-                .ReadSample(
+-                    MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+-                    0,
+-                    None,
+-                    None,
+-                    None,
+-                    None,
+-                )
+-                .unwrap();
++    ) -> Result<(), String> {
++        if self.active_format != Some(video_format.format_id) {
++            if self.reading.load(Ordering::Acquire) != 0 {
++                return Err("Wait for the current camera frame before changing format".into());
++            }
++            let cb = unsafe { self.reader_callback.as_impl() };
++            // The callback may still be consuming its previous frame. UI never waits.
++            let mut config = cb.config.try_lock().map_err(|_| "Camera frame is busy")?;
++            let mut reader = cb.source_reader.try_lock().map_err(|_| "Camera reader is busy")?;
++            let mt = self.media_types.iter().find(|v| v.format_id == video_format.format_id)
++                .ok_or("Unknown camera format")?;
++            self.active.store(false, Ordering::Release);
++            self.still.cancel();
++            unsafe {
++                self.source_reader.SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32, None, &mt.media_type)
++                    .map_err(|e| format!("Cannot select camera format: {e}"))?;
++            }
++            *config = Some(SourceReaderConfig { video_format, callback, frame_callback, video_encoder });
++            *reader = Some(self.source_reader.clone());
++            self.active_format = Some(video_format.format_id);
++        }
++        self.active.store(true, Ordering::Release);
++        // Resume and the previous callback race for this single read slot.
++        if self.reading.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire).is_ok() {
++            if let Err(error) = unsafe { self.source_reader.ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32, 0, None, None, None, None) } {
++                self.reading.store(0, Ordering::Release);
++                self.active.store(false, Ordering::Release);
++                return Err(format!("Cannot read camera: {error}"));
++            }
+         }
++        Ok(())
++    }
++    fn deactivate(&mut self) {
++        self.active.store(false, Ordering::Release);
++        self.still.cancel();
++    }
++}
++
++impl Drop for MfInput {
++    fn drop(&mut self) {
++        self.deactivate();
++        self.still.close();
+     }
+-    fn deactivate(&mut self) {}
+ }
+ 
+ struct MfMediaType {
+@@ -245,6 +250,12 @@ pub fn new(change_signal: SignalToUI) -> Arc<Mutex<Self>> {
+         }
+     }
+ 
++    pub fn capture_photo(&self, id: VideoInputId, path: String) -> Result<(), String> {
++        let input = self.inputs.iter().find(|i| i.desc.input_id == id && i.active.load(Ordering::Acquire))
++            .ok_or("Open this camera before taking a photo")?;
++        input.still.request(path)
++    }
++
+     pub fn use_video_input(&mut self, inputs: &[(VideoInputId, VideoFormatId)]) {
+         for slot in &self.video_encoder {
+             *slot.lock().unwrap() = None;
+@@ -288,13 +299,15 @@ pub fn use_video_input(&mut self, inputs: &[(VideoInputId, VideoFormatId)]) {
+                     );
+                 }
+ 
+-                if input.active_format.is_none() {
+-                    input.activate(
++                if !input.active.load(Ordering::Acquire) || input.active_format != Some(video_format.format_id) {
++                    if let Err(error) = input.activate(
+                         *video_format,
+                         self.video_input_cb[index].clone(),
+                         self.camera_frame_input_cb[index].clone(),
+                         self.video_encoder[index].clone(),
+-                    );
++                    ) {
++                        crate::cx::Cx::post_action(CameraCaptureEvent { input_id: *input_id, result: CameraCaptureResult::Failed { what: "camera".into(), error } });
++                    }
+                 }
+             }
+         }
+@@ -368,7 +381,14 @@ pub fn get_updated_descs(&mut self) -> Vec<VideoInputDesc> {
+                         .SetUINT32(&MF_READWRITE_DISABLE_CONVERTERS, TRUE.0 as u32)
+                         .unwrap();
+ 
++                    let active = Arc::new(AtomicBool::new(false));
++                    let reading = Arc::new(AtomicU8::new(0));
++                    let input_id: VideoInputId = LiveId::from_str(&symlink).into();
++                    let still = Arc::new(super::camera_still::StillCapture::new(input_id));
+                     let reader_callback: IMFSourceReaderCallback = SourceReaderCallback {
++                        active: active.clone(),
++                        reading: reading.clone(),
++                        still: still.clone(),
+                         config: Mutex::new(None),
+                         source_reader: Mutex::new(None),
+                     }
+@@ -426,11 +446,14 @@ pub fn get_updated_descs(&mut self) -> Vec<VideoInputDesc> {
+                         index += 1;
+                     }
+                     self.inputs.push(MfInput {
++                        active,
++                        reading,
++                        still,
+                         reader_callback,
+                         active_format: None,
+                         destroy_after_update: false,
+                         desc: VideoInputDesc {
+-                            input_id: LiveId::from_str(&symlink).into(),
++                            input_id,
+                             name,
+                             formats,
+                         },
+@@ -466,7 +489,17 @@ struct SourceReaderConfig {
+     video_encoder: Arc<Mutex<Option<VideoEncoder>>>,
+ }
+ 
++struct ReadInFlight<'a>(&'a AtomicU8);
++impl Drop for ReadInFlight<'_> {
++    fn drop(&mut self) {
++        let _ = self.0.compare_exchange(2, 0, Ordering::AcqRel, Ordering::Acquire);
++    }
++}
++
+ pub(crate) struct SourceReaderCallback {
++    active: Arc<AtomicBool>,
++    reading: Arc<AtomicU8>,
++    still: Arc<super::camera_still::StillCapture>,
+     config: Mutex<Option<SourceReaderConfig>>,
+     source_reader: Mutex<Option<IMFSourceReader>>,
+ }
+@@ -489,6 +522,15 @@ fn OnReadSample(
+         _lltimestamp: i64,
+         psample: crate::windows::core::Ref<'_, IMFSample>,
+     ) -> crate::windows::core::Result<()> {
++        // 0 = idle, 1 = read pending, 2 = callback consuming its frame.
++        // Reconfiguration is allowed only in state 0, never between entry and locking config.
++        self.reading.store(2, Ordering::Release);
++        let _read = ReadInFlight(&self.reading);
++        if _hrstatus.is_err() {
++            self.active.store(false, Ordering::Release);
++            self.still.cancel();
++        }
++        if !self.active.load(Ordering::Acquire) { return Ok(()); }
+         unsafe {
+             if let Some(sample) = psample.as_ref() {
+                 if let Ok(buffer) = sample.GetBufferByIndex(0) {
+@@ -498,6 +540,7 @@ fn OnReadSample(
+                         let mut len = 0;
+                         if buffer.Lock(&mut ptr, None, Some(&mut len)).is_ok() {
+                             let bytes = std::slice::from_raw_parts(ptr as *const u8, len as usize);
++                            self.still.offer_frame(config.video_format, bytes);
+                             let pts_ns = (_lltimestamp.max(0) as u64).saturating_mul(100);
+ 
+                             if let Some(frame_ref) =
+@@ -536,20 +579,19 @@ fn OnReadSample(
+                     }
+                 }
+             }
+-            let _ = self
+-                .source_reader
+-                .lock()
+-                .unwrap()
+-                .as_ref()
+-                .unwrap()
+-                .ReadSample(
+-                    MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32,
+-                    0,
+-                    None,
+-                    None,
+-                    None,
+-                    None,
+-                );
++            if !self.active.load(Ordering::Acquire) { return Ok(()); }
++            if self.reading.compare_exchange(2, 1, Ordering::AcqRel, Ordering::Acquire).is_ok() {
++                let reader = self.source_reader.lock().unwrap();
++                if let Some(reader) = reader.as_ref() {
++                    if reader.ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32, 0, None, None, None, None).is_err() {
++                        self.reading.store(0, Ordering::Release);
++                        self.active.store(false, Ordering::Release);
++                        self.still.cancel();
++                    }
++                } else {
++                    self.reading.store(0, Ordering::Release);
++                }
++            }
+         }
+ 
+         Ok(())
+diff --git a/platform/src/os/windows/mod.rs b/platform/src/os/windows/mod.rs
+index 9ec64eaec..4856a9235 100644
+--- a/platform/src/os/windows/mod.rs
++++ b/platform/src/os/windows/mod.rs
+@@ -7,6 +7,7 @@
+ pub mod droptarget;
+ pub mod file_dialog;
+ pub mod enumformatetc;
++mod camera_still;
+ pub mod media_foundation;
+ pub mod video_file_decoder;
+ pub mod video_file_encoder;
+diff --git a/platform/src/os/windows/windows_media.rs b/platform/src/os/windows/windows_media.rs
+index 96da97e59..17ea11ef7 100644
+--- a/platform/src/os/windows/windows_media.rs
++++ b/platform/src/os/windows/windows_media.rs
+@@ -197,6 +197,22 @@ fn video_capabilities(&self) -> VideoCapabilities {
+         )
+     }
+ 
++    fn camera_capture(&mut self, input_id: VideoInputId, request: CameraCaptureRequest) {
++        let (what, result) = match request {
++            CameraCaptureRequest::Photo { library: true, .. } => ("photo", Err("Saving captures to the Windows photo library is not supported".into())),
++            CameraCaptureRequest::Photo { path, library: false } => {
++                let result = self.os.media.media_foundation.as_ref().ok_or_else(|| "Open a camera before taking a photo".to_string())
++                    .and_then(|access| access.try_lock().map_err(|_| "Camera is busy".to_string())
++                        .and_then(|camera| camera.capture_photo(input_id, path)));
++                ("photo", result)
++            }
++            _ => ("video", Err("Windows camera video recording is not supported".into())),
++        };
++        if let Err(error) = result {
++            Cx::post_action(CameraCaptureEvent { input_id, result: CameraCaptureResult::Failed { what: what.into(), error } });
++        }
++    }
++
+     fn use_video_input(&mut self, inputs: &[(VideoInputId, VideoFormatId)]) {
+         self.os
+             .media

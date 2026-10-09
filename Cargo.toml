@@ -33,11 +33,24 @@ members = [
     "crates/markdown-editor",
     "crates/browser-smoke",
     "crates/host-api-smoke",
+    "crates/video-api-smoke",
     "crates/wasm-host",
+    "crates/skill-gen",
+    "crates/engine-area",
     "apps/reference",
     "apps/news/host-service",
     "apps/sheets/host-service",
     "apps/photo/host-service",
+    "apps/word/host-service",
+    "apps/deck/host-service",
+    "apps/cad/host-service",
+    "apps/light/host-service",
+    "apps/sound/host-service",
+    "apps/design/host-service",
+    "apps/film/host-service",
+    "apps/effect/host-service",
+    "apps/vector/host-service",
+    "apps/pdf/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -78,7 +91,7 @@ octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 octosense-appcard = { path = "apps/appcard/module" }
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "28745c0f6fd71986820e9835183a3045f61baefc" }
 makepad-calculator = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2", default-features = false }
@@ -98,6 +111,7 @@ makepad-code-editor = { git = "https://github.com/OctoSense-org/makepad.git", re
 makepad-ai = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
+makepad-audio-decode = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
 makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "32d6415fb7476345ad36ee4f98d6f844d1f07fd2" }
@@ -116,17 +130,17 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "33dea2f1f3ad3f1346a219aa8cf6e91b31361e23" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "28745c0f6fd71986820e9835183a3045f61baefc" }
 # The app policy (resolution, isolate settings, the Splash adapter) and the
 # Hub client the Card runner resolves an app's policy with; the shell's
 # glance tiles run cards under it (crates/shell/src/glance_card.rs).
-octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
-octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "ba36df0505e198f998201af312ff5184df98cae9" }
+octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "28745c0f6fd71986820e9835183a3045f61baefc" }
+octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "28745c0f6fd71986820e9835183a3045f61baefc" }
 # The app contract (ADR 0005), from crates.io by version: App Hub, the shell
 # and Rinx all depend on `octosense-app-contract = "1"`, so Cargo links ONE
 # 1.x for the whole build (Cargo.lock pins the exact version OctoSense ships)
 # and App Hub and Rinx no longer need the same App Hub commit.
-octosense-app-contract = "1.8"
+octosense-app-contract = "1.10"
 # --- octos: ONE source for every octos crate (reviewed octos#2715 at
 # b0759a57: bounded ledger session-directory names, serialized peer purge
 # against session writes, and provider transport diagnostics that omit
@@ -176,10 +190,15 @@ octosense-l0-chat = { path = "crates/l0-chat" }
 octosense-oauth-service = { path = "crates/oauth-service" }
 octosense-markdown-editor = { path = "crates/markdown-editor" }
 octosense-wasm-host = { path = "crates/wasm-host" }
+# The craft engines' skill references (ADR 0013): the engine services'
+# tests generate and check `commands.md` and `safety.json` with it.
+octosense-skill-gen = { path = "crates/skill-gen" }
 article-core = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 article-makepad = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
+# Where a craft engine works (ADR 0013): the caller's area, its write rules.
+octosense-engine-area = { path = "crates/engine-area" }
 octosense-sheets-service = { path = "apps/sheets/host-service" }
 # The gridcraft spreadsheet engine (ADR 0013): a pinned read-only fork of
 # storytold/gridcraft under ymote; fixes go upstream first, adoption moves
@@ -194,6 +213,75 @@ octosense-photo-service = { path = "apps/photo/host-service" }
 # The photocraft raster engine (ADR 0013): the pinned ymote fork, one revision.
 photocraft-automation = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
 photocraft-io = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+# The photo service's linked-file fence (ADR 0013): the document model, and
+# the native format of an embedded smart object's contents.
+photocraft-doc = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+photocraft-format = { git = "https://github.com/ymote/photocraft.git", rev = "eec4af65513b52084926f3c679fc6ac7821cafaf" }
+octosense-word-service = { path = "apps/word/host-service" }
+octosense-deck-service = { path = "apps/deck/host-service" }
+octosense-cad-service = { path = "apps/cad/host-service" }
+octosense-light-service = { path = "apps/light/host-service" }
+octosense-sound-service = { path = "apps/sound/host-service" }
+octosense-design-service = { path = "apps/design/host-service" }
+octosense-film-service = { path = "apps/film/host-service" }
+octosense-effect-service = { path = "apps/effect/host-service" }
+octosense-vector-service = { path = "apps/vector/host-service" }
+octosense-pdf-service = { path = "apps/pdf/host-service" }
+# The wordcraft document engine (ADR 0013): the pinned ymote fork, one revision.
+wordcraft-engine = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
+wordcraft-doc = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
+# The deckcraft presentation engine (ADR 0013): the pinned ymote fork, one
+# revision for the whole family.
+deckcraft-engine = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
+deckcraft-format = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
+deckcraft-model = { git = "https://github.com/ymote/deckcraft.git", rev = "d0e57d7e25f9852179cc66be12dd6188f1c05535" }
+# The cadcraft drafting engine (ADR 0013): the pinned ymote fork, one revision.
+cadcraft-engine = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
+cadcraft-io = { git = "https://github.com/ymote/cadcraft.git", rev = "59631c8d4f9ffe6c08c5c2065ea17504e53bf821" }
+# The lightcraft RAW develop/catalog engine (ADR 0013): the pinned ymote
+# fork, one revision (lightcraft-merge is test-only: synthetic DNG fixtures).
+lightcraft-engine = { git = "https://github.com/ymote/lightcraft.git", rev = "2472021091a28eb93a05947cfc9b941d3911543a" }
+lightcraft-merge = { git = "https://github.com/ymote/lightcraft.git", rev = "2472021091a28eb93a05947cfc9b941d3911543a" }
+# The soundcraft audio engine (ADR 0013): the pinned ymote fork, one revision —
+# only its device-free crates (bytes-in/bytes-out file I/O and offline DSP).
+# The device-facing crates (playback/cpal, the CLAP/VST3/AU plugin hosts) are
+# deliberately not consumed: the sound service never opens an audio device.
+soundcraft-audio-io = { git = "https://github.com/ymote/soundcraft.git", rev = "c51e5d5ec52f11c6264b72e26661fa712feb5345" }
+soundcraft-dsp = { git = "https://github.com/ymote/soundcraft.git", rev = "c51e5d5ec52f11c6264b72e26661fa712feb5345" }
+# The designcraft page-layout engine (ADR 0013): the pinned ymote fork, one revision.
+designcraft-engine = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
+designcraft-render = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
+# The design service's embedded-reference fence (ADR 0013): the engine's own
+# IDML importer, run with a reader that records instead of reads, and the
+# exact usvg the engine draws placed SVGs with (re-exported by its images
+# crate).
+designcraft-idml = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
+designcraft-images = { git = "https://github.com/ymote/designcraft.git", rev = "14e677b24216396e398823ff034d9882322362d1" }
+# The filmcraft video engine (ADR 0013): the pinned ymote fork, one revision.
+filmcraft-engine = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
+filmcraft-codecs = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
+filmcraft-media = { git = "https://github.com/ymote/filmcraft.git", rev = "5231852443363f001c3f6b396dd9b1e6461ae2be" }
+# The effectcraft motion-graphics engine (ADR 0013): the pinned ymote fork, one
+# revision for the whole family (it pins filmcraft's codecs itself).
+effectcraft-engine = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-automation = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-media = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-expr = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+effectcraft-model = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+# The vectorcraft vector engine (ADR 0013): the pinned ymote fork, one revision.
+vectorcraft-engine = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
+vectorcraft-render = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
+# The vector service's embedded-reference fence (ADR 0013): the engine's own
+# SVG importer, run with a reader that records instead of reads, and its
+# native format, for the links a document carries.
+vectorcraft-svg = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
+vectorcraft-format = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
+# The pdfcraft PDF engine (ADR 0013): the pinned ymote fork, one revision;
+# default features off to leave its MCP server out of the build.
+pdfcraft-automation = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399", default-features = false }
+# The pdf service's tests only: the engine's own scripted XFA form, the
+# hostile fixture of the scripts-off fence (ADR 0013).
+pdfcraft-xfa = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
@@ -280,6 +368,7 @@ makepad-code-editor = { path = ".sources/makepad/code_editor" }
 makepad-ai = { path = ".sources/makepad/libs/makepad_ai" }
 makepad-studio-protocol = { path = ".sources/makepad/platform/studio" }
 makepad-network = { path = ".sources/makepad/platform/network" }
+makepad-audio-decode = { path = ".sources/makepad/libs/audio_decode" }
 makepad-wm-api = { path = ".sources/makepad/libs/wm_api" }
 makepad-ai-services = { path = ".sources/makepad/libs/ai/services" }
 makepad-strict-json = { path = ".sources/makepad/libs/strict_json" }
@@ -343,4 +432,18 @@ ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 # 18fcd3f1 (octos main no longer vendors it). Not an octos crate: `cargo tree
 # -i octos-core` still sees one octos source.
 [patch.crates-io]
+# Keep the contract identical to the pinned SDK for this release candidate.
+octosense-app-contract = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "28745c0f6fd71986820e9835183a3045f61baefc" }
 nix = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8" }
+
+# pdfcraft's bootstrap PDF stack: its workspace patches these five
+# crates.io crates with hardened vendor/ copies (hayro render and
+# interpret APIs the engine uses, lopdf and jbig2 allocation fixes), and
+# [patch] sections do not reach a consumer workspace, so the same five
+# are patched here, pinned to the engine's own ymote/pdfcraft revision
+# (ADR 0013; the rev moves with the pdfcraft-automation pin above).
+hayro = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
+hayro-interpret = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
+hayro-jbig2 = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
+hayro-syntax = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
+lopdf = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }

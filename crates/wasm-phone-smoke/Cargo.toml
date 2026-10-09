@@ -19,7 +19,7 @@ path = "src/main.rs"
 
 [features]
 default = ["acceptance-fixtures"]
-acceptance-fixtures = ["octosense-shell/acceptance-fixtures", "octosense-shell/wasm-lab"]
+acceptance-fixtures = ["octosense-shell/acceptance-fixtures", "octosense-shell/wasm-functions"]
 
 [dependencies]
 makepad-widgets.workspace = true

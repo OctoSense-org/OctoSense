@@ -63,6 +63,12 @@ pub(crate) fn save_system_workspace(dir: &Path, workspace: &Path) -> Result<(), 
         .map_err(|e| format!("Could not save the system workspace: {e}"))
 }
 
+/// The system workspace saved in `dir` (the core dir), as the router opens
+/// the system conversation in it: an absolute path, or none.
+pub(crate) fn saved_system_workspace(dir: &Path) -> Option<PathBuf> {
+    std::fs::read_to_string(dir.join(SYSTEM_WORKSPACE_FILE)).ok().map(PathBuf::from).filter(|path| path.is_absolute())
+}
+
 /// Whether the person turned Talk to Octos on. A missing or unreadable file
 /// is off.
 pub(crate) fn external_access_enabled(dir: &Path) -> bool {
@@ -454,6 +460,18 @@ mod tests {
         assert_eq!(validate_origin("http://[::1]:4173").unwrap(), "http://[::1]:4173");
         assert_eq!(validate_origin("https://web.example").unwrap(), "https://web.example");
         assert_eq!(validate_origin("").unwrap(), "");
+    }
+
+    #[test]
+    fn the_saved_system_workspace_is_an_absolute_path_or_none() {
+        let dir = std::env::temp_dir().join(format!("octos-workspace-{}", uuid::Uuid::new_v4().simple()));
+        assert_eq!(saved_system_workspace(&dir), None);
+        save_system_workspace(&dir, Path::new("relative/ws")).unwrap();
+        assert_eq!(saved_system_workspace(&dir), None, "the router ignores a relative one too");
+        let ws = dir.join("ws");
+        save_system_workspace(&dir, &ws).unwrap();
+        assert_eq!(saved_system_workspace(&dir), Some(ws));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

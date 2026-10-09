@@ -91,14 +91,31 @@ RINX_SOURCE_SEAM = re.compile(
     rb"/home/tombstone_footer\.rs"
 )
 
-# The Windows linker pools these four public Mail literals without NULs:
+# Rinx's pinned public source filename and complete MIME literal are pooled
+# in the optimized Linux executable, making the filename look like a home
+# directory. Require this exact revision, filename and MIME sequence; only
+# the captured apparent home span is exempt, never a neighboring occurrence.
+# Public source proof (both at 4b89097d8791a7190d01de1c576979c93df0013d):
+# https://github.com/hagency-org/Rinx/blob/4b89097d8791a7190d01de1c576979c93df0013d/src/home/room_screen.rs
+# https://github.com/hagency-org/Rinx/blob/4b89097d8791a7190d01de1c576979c93df0013d/src/utils.rs#L295
+# There is no trailing MIME boundary: another Rust literal follows directly.
+RINX_MIME_SOURCE_SEAM = re.compile(
+    rb"/cargo/git/checkouts/rinx-[0-9a-f]{16}/"
+    rb"(?:4b89097|4b89097d8791a7190d01de1c576979c93df0013d)/src"
+    rb"(?P<home>/home/room_screen\.rsapplication/)octet-stream"
+)
+
+# The Windows linker pools these public Mail literals without NULs:
 # `Mail service is not registered`, `attempts`, `send`, `octosense.local`
 # (apps/mail/host-service/src/drafts.rs: configured() and add_attempt()).
-# The scanner otherwise reads the last word + three literals as one host.
-# Require the entire known sentence and exact sequence; the same apparent
-# hostname standing alone, or another hostname after the sentence, fails.
+# RC2's verified Windows PE omits `attempts` from that adjacent sequence.
+# Both forms otherwise read as one host. Require the entire known sentence
+# and one of those two exact sequences; the same apparent hostname alone,
+# or another hostname after the sentence, fails. Public source proof:
+# https://github.com/OctoSense-org/OctoSense/blob/4ccf8e068399b1da139771a9ed94cef05fa6ae60/apps/mail/host-service/src/drafts.rs#L79
+# The `send` and `octosense.local` literals are at lines 649 and 653.
 MAIL_LITERAL_SEAM = re.compile(
-    rb"Mail service is not (?P<host>registeredattemptssendoctosense\.local)"
+    rb"Mail service is not (?P<host>registered(?:attempts)?sendoctosense\.local)"
 )
 
 # Public OctosCode 5d0c2a0 UI examples pooled by the macOS linker. chrome.rs
@@ -111,6 +128,9 @@ OCTOSCODE_PLACEHOLDER_SEAMS = (
     re.compile(rb"(?P<first>/home/user/)src/octoscode-app"
                rb"(?P<second>/home/user/)src/octosSystemSolarizedSlateClaudeCodexLight"),
     re.compile(rb"(?P<first>/home/user/)codeUse this folderb1_br_use"),
+    # The same browser.rs:733/737 literals can pool without the translated
+    # button label. Require both surrounding widget IDs, not the path alone.
+    re.compile(rb"b1_br_path(?P<first>/home/user/)codeb1_br_use"),
 )
 
 BASE_PATTERNS = [
@@ -211,6 +231,7 @@ def scan_bytes(data, where, patterns, findings):
                 (seam.start("next") - len(b"/home/main_desktop_ui.rs"), seam.start("next") + 1)
                 for seam in RINX_SOURCE_SEAM.finditer(data)
             }
+            source_seams.update(seam.span("home") for seam in RINX_MIME_SOURCE_SEAM.finditer(data))
             source_seams.update(
                 seam.span(group)
                 for pattern in OCTOSCODE_PLACEHOLDER_SEAMS

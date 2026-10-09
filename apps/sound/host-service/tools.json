@@ -1,0 +1,162 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "sound.info",
+      "description": "Inspect an audio file in your workspace (WAV/BWF/RF64, AIFF, FLAC, MP3, Ogg, AAC, ALAC or CAF): format, sample format, sample rate, channels, frames, duration and any BWF metadata. Reads only; offline, no audio device. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "format": {"type": "string"},
+          "sample_format": {"type": "string"},
+          "sample_rate": {"type": "integer"},
+          "channels": {"type": "integer"},
+          "frames": {"type": "integer"},
+          "duration_secs": {"type": "number"},
+          "bwf": {"type": ["object", "null"]}
+        },
+        "required": ["path", "format", "sample_rate", "channels", "frames", "duration_secs"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "sound.peaks",
+      "description": "The waveform of an audio file in your workspace as `cols` columns (default 512, at most 4096) of [min, max] sample values of a mono mixdown, with its frames, rate, channels and duration. Reads only; files up to 10 minutes. `path` is relative to your workspace (see sound.info).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "cols": {"type": "integer", "minimum": 1, "maximum": 4096}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "cols": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}},
+          "frames": {"type": "integer"},
+          "sample_rate": {"type": "integer"},
+          "channels": {"type": "integer"},
+          "duration_secs": {"type": "number"}
+        },
+        "required": ["path", "cols", "frames", "sample_rate", "channels", "duration_secs"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "sound.convert",
+      "description": "Decode an audio file in your workspace (up to 10 minutes) and write it there as WAV, AIFF or FLAC, chosen by `format` or else by the extension of `out`, at `bit_depth` (default int24). Offline, no audio device. Both paths are relative to your workspace (see sound.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "format": {"type": "string", "enum": ["wav", "aiff", "flac"]},
+          "bit_depth": {"type": "string", "enum": ["int16", "int24", "int32", "float32"]}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "format": {"type": "string"},
+          "frames": {"type": "integer"},
+          "sample_rate": {"type": "integer"},
+          "channels": {"type": "integer"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "format", "frames", "sample_rate", "channels", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "sound.trim",
+      "description": "Cut the span from `start_ms` to `end_ms` of an audio file in your workspace into a new WAV, AIFF or FLAC file at `out` (`format` or the extension of `out`; `bit_depth` as for sound.convert). Offline. Both paths are relative to your workspace (see sound.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "start_ms": {"type": "integer", "minimum": 0},
+          "end_ms": {"type": "integer", "minimum": 1},
+          "format": {"type": "string", "enum": ["wav", "aiff", "flac"]},
+          "bit_depth": {"type": "string", "enum": ["int16", "int24", "int32", "float32"]}
+        },
+        "required": ["path", "out", "start_ms", "end_ms"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "frames": {"type": "integer"},
+          "sample_rate": {"type": "integer"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "frames", "sample_rate", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "sound.mix",
+      "description": "Mix 1 to 16 audio files in your workspace, each with an optional `gain_db` (-96 to 24), into one WAV, AIFF or FLAC file at `out` (`format` or the extension of `out`; `bit_depth` as for sound.convert). Tracks are resampled to the highest rate and mono is spread to the widest layout; the answer says whether the sum clipped. Offline. All paths are relative to your workspace (see sound.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tracks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "string", "minLength": 1, "maxLength": 512},
+                "gain_db": {"type": "number", "minimum": -96, "maximum": 24}
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "format": {"type": "string", "enum": ["wav", "aiff", "flac"]},
+          "bit_depth": {"type": "string", "enum": ["int16", "int24", "int32", "float32"]}
+        },
+        "required": ["tracks", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "tracks": {"type": "integer"},
+          "frames": {"type": "integer"},
+          "sample_rate": {"type": "integer"},
+          "channels": {"type": "integer"},
+          "peak": {"type": "number"},
+          "clipped": {"type": "boolean"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "tracks", "frames", "sample_rate", "channels", "peak", "clipped", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

@@ -108,45 +108,91 @@ jobs:
         run: cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-appcard -p octosense-ai-host --no-run
       - name: Test Home, App Hub admission and runtime policy
         working-directory: phone
-        # This step also compiles: four more shell feature builds, wasmtime
-        # for octosense-wasm-host, and makepad's own tests. Cold, it took
-        # 18 min before the wasm tests joined it, and ran past 30 after.
-        timeout-minutes: 60
+        # Keep test execution separate from each feature graph's build.
+        # The former combined step timed out after successful tests while
+        # compiling the next configuration, hiding which build was slow.
+        timeout-minutes: 15
         env:
-          # Runs the shell's real-kernel relay test instead of skipping it.
           OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
-          # A Splash entry's 64 ms budget is wall-clock time. With ~1,000
-          # tests in one process, an entry waits on shared locks and page
-          # faults, and the budget counts that against the script. These
-          # tests check behaviour, not time (makepad#109).
+          # Behaviour tests share locks across ~1,000 tests. Splash's normal
+          # 64 ms wall-clock entry budget is unsuitable here (makepad#109).
           MAKEPAD_SPLASH_BUDGET_MS: "10000"
         run: |
           # octosense-app-hub-app is App Hub's shared shell crate, a git
           # dependency with dev-dependencies: cargo cannot test it from here;
           # OctoSense-App-Hub's CI tests it.
           cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-appcard -p octosense-ai-host
-          # The opt-in AppCard build: its module registers into the shell.
-          cargo test --locked --features mobile-apps,app-appcard -p octosense-shell appcard
-          cargo test --locked --features mobile-apps,toolbox-peers -p octosense-shell host_tools
-          # The linked Terminal (the desktop's default): its AI tools reach
-          # the live emulator behind the module's TermTabs root.
-          cargo test --locked --features mobile-apps,app-terminal -p octosense-shell terminal
-          # The opt-in Wasm service must keep fresh per-call guest state and
-          # enforce resource, cancellation and current-admission boundaries.
-          cargo test --locked -p octosense-wasm-host
-          cargo test --locked --features mobile-apps,wasm-lab -p octosense-shell wasm_service::tests
-          cargo test --locked -p makepad-widgets splash_policy
-          cargo test --locked -p makepad-script-std gate::tests
-      # The two-lane scenario (crates/shell/src/host_tools/scenario_tests.rs):
-      # the system agent and the person with ONE app's agent at the same
-      # time, against the cached octos above and a scripted model, through
-      # the shell's broker, relay, approval router and question model. The
-      # tests share the shell's process-wide approval, relay and question
-      # state, so they run alone, one at a time. Same packages and features
-      # as the test step above: its build is reused.
+      # Reuse the baseline artifacts before compiling optional graphs. The
+      # real-kernel/scripted-model scenario shares process-wide approval,
+      # relay and question state, so run it alone, one test at a time.
       - name: Two-lane scenario (real kernel, scripted model)
         working-directory: phone
         timeout-minutes: 15
         env:
           OCTOS_SCENARIO_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
         run: cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-appcard -p octosense-ai-host --lib host_tools::scenario_tests -- --test-threads=1 --nocapture
+      - name: Build opt-in AppCard tests
+        working-directory: phone
+        timeout-minutes: 60
+        run: cargo test --locked --features mobile-apps,app-appcard -p octosense-shell --no-run
+      - name: Test opt-in AppCard
+        working-directory: phone
+        timeout-minutes: 15
+        env:
+          OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+          MAKEPAD_SPLASH_BUDGET_MS: "10000"
+        run: |
+          # The opt-in AppCard build: its module registers into the shell.
+          cargo test --locked --features mobile-apps,app-appcard -p octosense-shell appcard
+      - name: Build craft-engine relay and system-chat tests
+        working-directory: phone
+        timeout-minutes: 60
+        run: cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell --no-run
+      - name: Test craft-engine relay and system chat
+        working-directory: phone
+        timeout-minutes: 15
+        env:
+          OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+          MAKEPAD_SPLASH_BUDGET_MS: "10000"
+        run: |
+          # The ten ADR 0013 engines are desktop only (`craft-engines`, off in
+          # Home's build), so their relay, grant and kernel-cap tests run with it.
+          # Both filters use this same graph; the baseline suite above also
+          # covers the host tools with toolbox-peers and craft-engines off.
+          cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell host_tools
+          cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell system_chat
+      - name: Build linked Terminal tests
+        working-directory: phone
+        timeout-minutes: 60
+        run: cargo test --locked --features mobile-apps,app-terminal -p octosense-shell --no-run
+      - name: Test linked Terminal
+        working-directory: phone
+        timeout-minutes: 15
+        env:
+          OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+          MAKEPAD_SPLASH_BUDGET_MS: "10000"
+        run: |
+          # The linked Terminal (the desktop's default): its AI tools reach
+          # the live emulator behind the module's TermTabs root.
+          cargo test --locked --features mobile-apps,app-terminal -p octosense-shell terminal
+      - name: Build Wasm and runtime policy tests
+        working-directory: phone
+        timeout-minutes: 60
+        run: |
+          cargo test --locked -p octosense-wasm-host --no-run
+          cargo test --locked -p makepad-widgets --no-run
+          cargo test --locked -p makepad-script-std --no-run
+      - name: Test Wasm and runtime policy
+        working-directory: phone
+        timeout-minutes: 15
+        env:
+          OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+          MAKEPAD_SPLASH_BUDGET_MS: "10000"
+        run: |
+          # Apps' WebAssembly functions: the runtime's own tests. The `wasm`
+          # service's (fresh state per call; resource, cancellation and
+          # admission bounds) run with the shell's above: `mobile-apps`
+          # includes `wasm-functions`.
+          cargo test --locked -p octosense-wasm-host
+          cargo test --locked -p makepad-widgets splash_policy
+          cargo test --locked -p makepad-script-std gate::tests

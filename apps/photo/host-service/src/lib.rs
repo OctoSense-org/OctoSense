@@ -3,11 +3,22 @@
 //!
 //! photocraft's engine through its own headless automation layer. Every
 //! call is a fresh, stateless session whose file access is bound to the
-//! service's own area under the caller's host directory, `<host dir>/photo`
-//! ([`area`]), by photocraft's capability-rooted [`AuthorizedWorkspace`] —
-//! paths are relative, and separators, `..`, prefixes and escapes are
-//! refused by the engine before any I/O, so the shared host directory's
-//! other services (Mail's vaults, Calendar's events) stay out of reach.
+//! call's area by photocraft's capability-rooted [`AuthorizedWorkspace`] —
+//! paths are relative, and `..`, prefixes and symlink escapes are refused by
+//! the engine before any I/O — and whose commands pass photocraft's own
+//! policy, which refuses every command that names a path of its own.
+//!
+//! **Where a call works** (ADR 0013, 2026-10-08): the caller's own folder,
+//! the [`Area`] the shell's resolver gives it ([`set_area_resolver`]), or
+//! without one the legacy `<host dir>/photo`. A session may read the area
+//! and never write it directly: a rendered preview goes through
+//! [`Area::write`], and a saved document is written into a staging folder
+//! inside the area (the session's only write authority) and moved into place
+//! under the area's rules ([`octosense_engine_area::Stage`]), so a write that
+//! may not replace (an agent's) only creates new files, within the quota.
+//! A document with a smart object linked to a file outside it is refused
+//! once it opens ([`fence_links`]): the engine reads such a link by its own
+//! path, past the workspace (a PSD export embeds the file's raw bytes).
 //!
 //! Methods (all under the `photo` family; paths relative to the area):
 //! - `info {path}` → the document inspected as JSON
@@ -27,10 +38,14 @@
 //! engine and area, and `photos.notify` through the shell's notice hook
 //! ([`on_notify`]), so the notice service never stands in for Photos.
 
-use std::path::{Path, PathBuf};
+/// The system agent's skill for this engine (ADR 0013).
+pub mod skill;
+
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::{Area, Slot};
 use photocraft_automation::headless::Headless;
 use photocraft_automation::workspace::AuthorizedWorkspace;
 use photocraft_io::ExportOptions;
@@ -44,19 +59,20 @@ fn may_call(app_id: &str) -> bool {
     app_id.starts_with("os.")
 }
 
-/// The engine's own area under the shared host directory. Every path a
-/// caller names is contained here, never in the host directory itself.
-fn area(host_dir: &Path) -> Result<PathBuf, String> {
-    let area = host_dir.join("photo");
-    std::fs::create_dir_all(&area).map_err(|e| format!("photo: service area: {e}"))?;
-    Ok(area)
-}
-
 pub struct PhotoService;
 
 /// Register the `photo` service with App Hub's host-service registry.
 pub fn register() {
     register_host_service(Box::new(PhotoService));
+}
+
+/// The shell's resolver, for both the `photo` service and Photos' own
+/// `photos.info`: where each call works (`None` removes it, and calls work
+/// in the legacy `<host dir>/photo` again).
+static AREAS: Slot = Slot::new();
+
+pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
+    AREAS.set(resolver);
 }
 
 impl HostService for PhotoService {
@@ -65,14 +81,20 @@ impl HostService for PhotoService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !may_call(&call.app_id) {
-            reply.send(Err("The photo service serves system apps only.".into()));
-            return;
-        }
-        let method = call.method().to_string();
-        let args = call.args.clone();
-        reply.send(area(&call.host_dir).and_then(|area| dispatch(&method, &args, &area)));
+        reply.send(serve(&AREAS, &call));
     }
+}
+
+/// One call, in the area `areas` gives it.
+fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err("The photo service serves system apps only.".into());
+    }
+    if call.method() == "commands" {
+        return commands();
+    }
+    let area = areas.area(call, "photo").map_err(|e| format!("photo: {e}"))?;
+    dispatch_in(call.method(), &call.args, &area)
 }
 
 /// The shell's notice hook: `photos.notify`, as Photos, to the glance
@@ -110,7 +132,7 @@ impl HostService for PhotosAppService {
             return;
         }
         match call.method() {
-            "info" => reply.send(area(&call.host_dir).and_then(|area| info(&call.args, &area))),
+            "info" => reply.send(AREAS.area(&call, "photo").map_err(|e| format!("photos: {e}")).and_then(|area| info(&call.args, &area))),
             "notify" => {
                 let notify = notifier().lock().unwrap_or_else(|e| e.into_inner()).clone();
                 reply.send(match notify {
@@ -123,67 +145,195 @@ impl HostService for PhotosAppService {
     }
 }
 
-fn session(host_dir: &Path) -> Result<Headless, String> {
-    let ws = AuthorizedWorkspace::new(Some(host_dir), Some(host_dir)).map_err(|e| format!("photo: {e}"))?;
+/// A session that reads the area and may write only `write` (a staging
+/// folder inside the area), or nothing.
+fn session(area: &Area, write: Option<&Path>) -> Result<Headless, String> {
+    let ws = AuthorizedWorkspace::new(Some(&area.root), write).map_err(|e| format!("photo: {e}"))?;
     Ok(Headless::with_workspace(ws))
 }
 
-fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
     match method {
-        "info" => info(args, host_dir),
-        "convert" => convert(args, host_dir),
-        "run" => run(args, host_dir),
+        "info" => info(args, area),
+        "convert" => convert(args, area),
+        "run" => run(args, area),
         "commands" => commands(),
-        "render" => render(args, host_dir),
+        "render" => render(args, area),
         other => Err(format!("photo.{other} is not a method of the photo service")),
     }
+}
+
+/// [`dispatch_in`] in an area at `root` that may replace and has no quota,
+/// as the legacy area does.
+#[cfg(test)]
+fn dispatch(method: &str, args: &Json, root: &Path) -> Result<Json, String> {
+    dispatch_in(method, args, &Area::new(root, None, true))
+}
+
+/// The deepest smart objects nest that [`check_links`] follows (the PSD
+/// exporter refuses deeper nesting itself).
+const MAX_LINK_DEPTH: usize = 8;
+
+/// Refuse a document with a smart object linked to a file outside it. The
+/// engine reads such a link by its own path with `std::fs`, past the
+/// session's workspace: a PSD export embeds the file's raw bytes, and
+/// opening the contents reads it. A link whose file the document carries
+/// (a PSD's embedded linked file) is the document's own. An embedded source
+/// that is itself a layered document (a `.pcraft`, which the PSD exporter
+/// converts, a PSD, PSB or TIFF) is checked the same way.
+fn check_links(doc: &photocraft_doc::Document, depth: usize, m: &str) -> Result<(), String> {
+    use photocraft_doc::{LayerContent, SmartSource};
+    for (_, _, layer) in doc.walk() {
+        let LayerContent::Smart(sm) = &layer.content else { continue };
+        match &sm.source {
+            SmartSource::Linked { path } => {
+                if photocraft_io::linked::find_linked_file(&doc.metadata, path).is_none() {
+                    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+                    return Err(format!(
+                        "{m}: the smart object `{}` links a file outside the document (`{name}`): the engine would read it from wherever it points; embed it instead",
+                        layer.name
+                    ));
+                }
+            }
+            SmartSource::Embedded { file_name, bytes } => {
+                let layered = photocraft_format::is_pcraft(bytes) || bytes.starts_with(b"8BPS") || bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*");
+                if !layered {
+                    continue;
+                }
+                if depth >= MAX_LINK_DEPTH {
+                    return Err(format!("{m}: smart objects nest more than {MAX_LINK_DEPTH} deep"));
+                }
+                let inner = if photocraft_format::is_pcraft(bytes) {
+                    photocraft_format::load_from_bytes(bytes).map_err(|e| e.to_string())
+                } else {
+                    photocraft_io::import(file_name, bytes).map(|r| r.document).map_err(|e| e.to_string())
+                };
+                // Contents the engine cannot read as a document, it embeds
+                // as they are, reading nothing more.
+                if let Ok(inner) = inner {
+                    check_links(&inner, depth + 1, m)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// [`check_links`] on every document the session holds.
+fn fence_links(h: &Headless, m: &str) -> Result<(), String> {
+    for d in h.session.documents() {
+        check_links(&d.doc, 0, m)?;
+    }
+    Ok(())
+}
+
+/// An output path the call may write: relative and plain (the engine's own
+/// rules: no `..`, `\`, `:` or absolute path), its deepest existing
+/// ancestor inside the area through symlinks, and admitted by the area's
+/// rules before the engine works.
+fn out_path(area: &Area, rel: &str, m: &str) -> Result<PathBuf, String> {
+    let outside = || format!("{m}: `out` stays inside this call's folder");
+    let p = Path::new(rel);
+    if rel.contains(['\\', ':']) || p.is_absolute() || p.components().any(|c| !matches!(c, Component::Normal(_))) {
+        return Err(outside());
+    }
+    let joined = area.root.join(p);
+    let root = area.root.canonicalize().map_err(|e| format!("{m}: folder: {e}"))?;
+    let mut deepest = joined.clone();
+    while !deepest.exists() {
+        match deepest.parent() {
+            Some(parent) => deepest = parent.to_path_buf(),
+            None => break,
+        }
+    }
+    if !deepest.canonicalize().map_err(|e| format!("{m}: {e}"))?.starts_with(&root) {
+        return Err(outside());
+    }
+    area.check(&joined, 0).map_err(|e| format!("{m}: {e}"))?;
+    Ok(joined)
+}
+
+/// The saved document's name in the staging folder: `out`'s own leaf, so
+/// the engine picks the format by its extension as it would at `out`.
+fn leaf(out: &Path) -> String {
+    out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 fn arg_path<'a>(args: &'a Json, key: &str) -> Result<&'a str, String> {
     args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("photo: `{key}` is required"))
 }
 
-fn info(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn info(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_path(args, "path")?;
-    let mut h = session(host_dir)?;
+    let mut h = session(area, None)?;
     let opened = h.open(Path::new(path)).map_err(|e| format!("photo.info: {e}"))?;
+    fence_links(&h, "photo.info")?;
     let mut doc = h.inspect(None).map_err(|e| format!("photo.info: {e}"))?;
     doc["warnings"] = opened["warnings"].clone();
     doc["file"] = json!(path);
     Ok(doc)
 }
 
-fn convert(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn convert(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_path(args, "path")?;
     let out = arg_path(args, "out")?;
+    let out_abs = out_path(area, out, "photo.convert")?;
     let format = args["format"].as_str();
-    let mut h = session(host_dir)?;
+    let stage = area.stage().map_err(|e| format!("photo.convert: {e}"))?;
+    let mut h = session(area, Some(stage.dir()))?;
     let opened = h.open(Path::new(path)).map_err(|e| format!("photo.convert: {e}"))?;
+    fence_links(&h, "photo.convert")?;
     let saved = h
-        .save(None, Some(Path::new(out)), format, &ExportOptions::default())
+        .save(None, Some(Path::new(&leaf(&out_abs))), format, &ExportOptions::default())
         .map_err(|e| format!("photo.convert: {e}"))?;
+    stage.commit(&[(stage.path(leaf(&out_abs)), out_abs)]).map_err(|e| format!("photo.convert: {e}"))?;
     Ok(json!({"out": out, "warnings": [opened["warnings"], saved["warnings"]]}))
 }
 
-fn run(args: &Json, host_dir: &Path) -> Result<Json, String> {
+/// Engine commands `run` refuses. photocraft's plug-in registry is
+/// process-wide and takes WebAssembly from in-band `data`, which the
+/// engine's workspace policy does not cover: an installed plug-in would
+/// outlive the call, serve every later caller of any app, and run under
+/// photocraft's own budgets (60 s, 512 MiB), far above the shell's `wasm`
+/// service (ADR 0011). Agents install WebAssembly only through that
+/// service; nothing they need lives under `plugin.*`.
+fn callable(id: &str) -> Result<(), String> {
+    if id == "plugin" || id.starts_with("plugin.") {
+        return Err(format!("photo.run: `{id}` is not available through the photo service"));
+    }
+    Ok(())
+}
+
+fn run(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_path(args, "path")?;
     let cmds = args["cmds"].as_array().ok_or("photo.run: `cmds` is a list of {id, params?}")?;
     if cmds.len() > 64 {
         return Err("photo.run: at most 64 commands per call".into());
     }
-    let mut h = session(host_dir)?;
+    let out_abs = match args["out"].as_str() {
+        Some(out) if !out.is_empty() => Some(out_path(area, out, "photo.run")?),
+        _ => None,
+    };
+    // Whatever the commands might write lands in the staging folder, and
+    // only the saved document leaves it.
+    let stage = area.stage().map_err(|e| format!("photo.run: {e}"))?;
+    let mut h = session(area, Some(stage.dir()))?;
     h.open(Path::new(path)).map_err(|e| format!("photo.run: {e}"))?;
+    fence_links(&h, "photo.run")?;
     let mut results = Vec::new();
     for c in cmds {
         let id = c["id"].as_str().ok_or("photo.run: each command has an `id`")?;
+        callable(id)?;
         let params = if c["params"].is_null() { json!({}) } else { c["params"].clone() };
         let r = h.command_run(id, params).map_err(|e| format!("photo.run {id}: {e}"))?;
         results.push(json!({"id": id, "result": r}));
     }
-    let saved = match args["out"].as_str() {
-        Some(out) if !out.is_empty() => {
-            h.save(None, Some(Path::new(out)), args["format"].as_str(), &ExportOptions::default())
+    let saved = match (args["out"].as_str(), out_abs) {
+        (Some(out), Some(out_abs)) => {
+            fence_links(&h, "photo.run")?;
+            h.save(None, Some(Path::new(&leaf(&out_abs))), args["format"].as_str(), &ExportOptions::default())
                 .map_err(|e| format!("photo.run: {e}"))?;
+            stage.commit(&[(stage.path(leaf(&out_abs)), out_abs)]).map_err(|e| format!("photo.run: {e}"))?;
             json!(out)
         }
         _ => Json::Null,
@@ -191,18 +341,34 @@ fn run(args: &Json, host_dir: &Path) -> Result<Json, String> {
     Ok(json!({"results": results, "out": saved}))
 }
 
+/// The catalog `run` accepts: the engine's own, minus the refused
+/// `plugin.*` ids ([`callable`]), so the offer matches the gate.
 fn commands() -> Result<Json, String> {
-    Ok(Headless::new().command_list())
+    let keep = |items: Vec<Json>| -> Vec<Json> {
+        items.into_iter().filter(|c| c["id"].as_str().map_or(true, |id| callable(id).is_ok())).collect()
+    };
+    Ok(match Headless::new().command_list() {
+        Json::Array(items) => Json::Array(keep(items)),
+        Json::Object(mut map) => {
+            if let Some(Json::Array(items)) = map.remove("commands") {
+                map.insert("commands".into(), Json::Array(keep(items)));
+            }
+            Json::Object(map)
+        }
+        other => other,
+    })
 }
 
-fn render(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn render(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_path(args, "path")?;
     let out = arg_path(args, "out")?;
+    let out_abs = out_path(area, out, "photo.render")?;
     let max_side = args["max_side"].as_u64().unwrap_or(1024).min(MAX_RENDER_SIDE as u64) as u32;
-    let mut h = session(host_dir)?;
+    let mut h = session(area, None)?;
     h.open(Path::new(path)).map_err(|e| format!("photo.render: {e}"))?;
+    fence_links(&h, "photo.render")?;
     let png = h.render_png(None, max_side).map_err(|e| format!("photo.render: {e}"))?;
-    h.write_render(Path::new(out), &png).map_err(|e| format!("photo.render: {e}"))?;
+    area.write(&out_abs, &png).map_err(|e| format!("photo.render: {e}"))?;
     Ok(json!({"out": out, "bytes": png.len()}))
 }
 
@@ -265,19 +431,205 @@ mod tests {
         assert!(!may_call("org.example.app"));
     }
 
-    /// The engine works in its own area under the shared host directory,
-    /// so a written path can never land in another service's data.
+    /// The plug-in registry is process-wide and installs WebAssembly from
+    /// in-band data: `run` refuses every `plugin.*` id before the engine
+    /// sees it, and the catalog offer matches the gate.
+    #[test]
+    fn run_refuses_plugin_commands_and_the_catalog_omits_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path();
+        let input = fixture(host);
+        for id in ["plugin.install", "plugin.run", "plugin.list", "plugin.remove", "plugin.reload"] {
+            let r = dispatch("run", &json!({"path": input, "cmds": [{"id": id, "params": {"data": "AGFzbQEAAAA="}}]}), host);
+            let e = r.unwrap_err();
+            assert!(e.contains("not available"), "{id}: {e}");
+        }
+        // A refused id refuses the whole call, even behind an allowed one.
+        let r = dispatch("run", &json!({"path": input, "cmds": [{"id": "filter.blur.gaussianBlur", "params": {"radius": 1.0}}, {"id": "plugin.install", "params": {"data": "AGFzbQEAAAA="}}]}), host);
+        assert!(r.unwrap_err().contains("not available"));
+        let cat = commands().unwrap();
+        let items = cat.as_array().cloned().or_else(|| cat["commands"].as_array().cloned()).unwrap();
+        assert!(items.iter().all(|c| c["id"].as_str().map_or(true, |id| !id.starts_with("plugin"))), "no plugin ids offered");
+        assert!(items.len() > 500, "a real catalog remains");
+    }
+
+    /// Without the shell's resolver the engine works in its own area under
+    /// the shared host directory, so a written path can never land in
+    /// another service's data; it may replace, as before.
     #[test]
     fn the_service_area_is_a_subdirectory_of_the_host_dir() {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
-        let a = area(host).unwrap();
-        assert_eq!(a, host.join("photo"));
-        assert!(a.is_dir());
-        let input = fixture(&a);
-        dispatch("convert", &json!({"path": input, "out": "out.png"}), &a).unwrap();
+        std::fs::create_dir_all(host.join("photo")).unwrap();
+        let input = fixture(&host.join("photo"));
+        for _ in 0..2 {
+            serve(&Slot::new(), &service_call("convert", json!({"path": input, "out": "out.png"}), host, false)).unwrap();
+        }
         assert!(host.join("photo/out.png").is_file());
         assert!(!host.join("out.png").exists());
+    }
+
+    /// A call as App Hub hands it to the service.
+    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+        ServiceCall { app_id: "os.fixture".into(), service: format!("photo.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
+    }
+
+    /// A resolver shaped like the shell's: every call works in `root`, an
+    /// app's own foreground call may replace a file and an agent's may not,
+    /// within `quota`.
+    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+        let slot = Slot::new();
+        let root = root.to_path_buf();
+        slot.set(Some(Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
+        slot
+    }
+
+    fn no_staging_left(root: &Path) -> bool {
+        std::fs::read_dir(root).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with(octosense_engine_area::STAGING_PREFIX))
+    }
+
+    /// With the shell's resolver every path is relative to the caller's own
+    /// folder and stays inside it, through a link too.
+    #[test]
+    fn the_resolver_root_is_used_and_paths_stay_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let input = fixture(&root);
+        let areas = resolver(&root, None);
+        let host = dir.path().join(".host");
+        let doc = serve(&areas, &service_call("info", json!({"path": input}), &host, false)).unwrap();
+        assert_eq!(doc["width"], json!(12), "{doc}");
+        std::fs::create_dir(root.join("out")).unwrap();
+        serve(&areas, &service_call("convert", json!({"path": input, "out": "out/a.webp"}), &host, false)).unwrap();
+        serve(&areas, &service_call("render", json!({"path": input, "out": "out/p.png", "max_side": 8}), &host, false)).unwrap();
+        serve(&areas, &service_call("run", json!({"path": input, "cmds": [{"id": "filter.blur.gaussianBlur", "params": {"radius": 1.0}}], "out": "out/b.png"}), &host, false)).unwrap();
+        for made in ["out/a.webp", "out/p.png", "out/b.png"] {
+            assert!(root.join(made).is_file(), "{made}");
+        }
+        assert!(!host.exists() && !root.join("photo").exists() && no_staging_left(&root));
+        fixture(dir.path());
+        for bad in ["../in.png", "/etc/hosts", "out/../../in.png"] {
+            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("convert", json!({"path": input, "out": bad}), &host, true)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            assert!(serve(&areas, &service_call("info", json!({"path": "up/in.png"}), &host, false)).is_err());
+            assert!(serve(&areas, &service_call("render", json!({"path": input, "out": "up/p.png"}), &host, true)).is_err());
+            assert!(serve(&areas, &service_call("convert", json!({"path": input, "out": "up/c.png"}), &host, true)).is_err());
+            assert!(!dir.path().join("p.png").exists() && !dir.path().join("c.png").exists());
+        }
+    }
+
+    /// An agent's call never replaces a file; an app's own foreground call
+    /// may.
+    #[test]
+    fn an_agent_never_replaces_a_file_and_an_app_may() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = fixture(dir.path());
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("taken.png"), b"keep me").unwrap();
+        for (method, args) in [
+            ("convert", json!({"path": input, "out": "taken.png"})),
+            ("render", json!({"path": input, "out": "taken.png"})),
+            ("run", json!({"path": input, "cmds": [], "out": "taken.png"})),
+        ] {
+            let refused = serve(&areas, &service_call(method, args, dir.path(), false)).unwrap_err();
+            assert!(refused.contains("`taken.png` already exists"), "{method}: {refused}");
+        }
+        assert_eq!(std::fs::read(dir.path().join("taken.png")).unwrap(), b"keep me");
+        assert!(no_staging_left(dir.path()));
+        serve(&areas, &service_call("convert", json!({"path": input, "out": "taken.png"}), dir.path(), true)).unwrap();
+        assert!(std::fs::read(dir.path().join("taken.png")).unwrap().starts_with(&[0x89, b'P', b'N', b'G']));
+    }
+
+    /// What a call writes, the engine's saved document included, must fit
+    /// what is left of the area's quota.
+    #[test]
+    fn output_over_the_quota_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = fixture(dir.path());
+        let tight = resolver(dir.path(), Some(16));
+        for (method, args) in [
+            ("convert", json!({"path": input, "out": "c.png"})),
+            ("render", json!({"path": input, "out": "r.png"})),
+        ] {
+            let refused = serve(&tight, &service_call(method, args, dir.path(), true)).unwrap_err();
+            assert!(refused.contains("bytes left"), "{method}: {refused}");
+        }
+        assert!(!dir.path().join("c.png").exists() && !dir.path().join("r.png").exists() && no_staging_left(dir.path()));
+    }
+
+    /// What the hostile fixtures' outside file holds: not an image, so the
+    /// engine embeds it byte for byte.
+    const SECRET: &[u8] = b"TOP-SECRET-MARKER-0123456789";
+
+    /// A `.pcraft` document at `out`: the fixture photo turned into a smart
+    /// object whose source is `source`, made and saved by the engine's own
+    /// trusted session.
+    fn smart_document(dir: &Path, out: &Path, source: photocraft_doc::SmartSource) {
+        use photocraft_doc::LayerContent;
+        let input = fixture(dir);
+        let mut h = Headless::trusted_local();
+        h.open(&dir.join(input)).unwrap();
+        h.command_run("layer.smartObjects.convertToSmartObject", json!({})).unwrap();
+        let d = h.session.active_mut().unwrap();
+        let id = d.active_layer.unwrap();
+        let doc = Arc::make_mut(&mut d.doc);
+        let LayerContent::Smart(sm) = &mut doc.layer_mut(id).unwrap().content else { panic!("not a smart object") };
+        sm.source = source;
+        h.save(None, Some(out), None, &ExportOptions::default()).unwrap();
+    }
+
+    /// A document with a smart object linked to a file outside it is
+    /// refused by every method, before the engine could read the link. The
+    /// hostile fixture is a real `.pcraft` whose smart object links a file
+    /// beside the caller's folder: the engine's own session embeds that
+    /// file's raw bytes when it saves the document as a PSD. The same
+    /// document nested as another one's embedded smart object is refused
+    /// too.
+    #[test]
+    fn a_smart_object_linked_outside_is_refused() {
+        use photocraft_doc::SmartSource;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let secret = dir.path().join("secret.bin");
+        std::fs::write(&secret, SECRET).unwrap();
+        smart_document(&root, &root.join("hostile.pcraft"), SmartSource::Linked { path: secret.to_string_lossy().into_owned() });
+        // The engine's own session reads the link: its PSD carries the
+        // outside file's bytes.
+        let leak = dir.path().join("leak.psd");
+        let mut engine = Headless::trusted_local();
+        engine.open(&root.join("hostile.pcraft")).unwrap();
+        engine.save(None, Some(&leak), None, &ExportOptions::default()).unwrap();
+        let leaked = std::fs::read(&leak).unwrap();
+        assert!(leaked.windows(SECRET.len()).any(|w| w == SECRET), "the fixture is live: the engine embeds the linked file");
+        // The service refuses it, whatever the method.
+        let areas = resolver(&root, None);
+        let hostile = std::fs::read(root.join("hostile.pcraft")).unwrap();
+        smart_document(&root, &root.join("outer.pcraft"), SmartSource::Embedded { file_name: "inner.pcraft".into(), bytes: Arc::new(hostile) });
+        for path in ["hostile.pcraft", "outer.pcraft"] {
+            for (method, args) in [
+                ("info", json!({"path": path})),
+                ("convert", json!({"path": path, "out": "out.psd"})),
+                ("render", json!({"path": path, "out": "out.png"})),
+                ("run", json!({"path": path, "cmds": [], "out": "run.psd"})),
+            ] {
+                let refused = serve(&areas, &service_call(method, args, &root, true)).unwrap_err();
+                assert!(refused.contains("links a file outside the document") && refused.contains("secret.bin"), "{path} {method}: {refused}");
+            }
+        }
+        for out in ["out.psd", "out.png", "run.psd"] {
+            assert!(!root.join(out).exists(), "{out}");
+        }
+        assert!(no_staging_left(&root));
+        // An embedded smart object is the document's own, and opens.
+        let png = std::fs::read(root.join("in.png")).unwrap();
+        smart_document(&root, &root.join("embedded.pcraft"), SmartSource::Embedded { file_name: "in.png".into(), bytes: Arc::new(png) });
+        serve(&areas, &service_call("convert", json!({"path": "embedded.pcraft", "out": "embedded.psd"}), &root, true)).unwrap();
     }
 
     /// `photos.notify` without the shell's hook refuses rather than

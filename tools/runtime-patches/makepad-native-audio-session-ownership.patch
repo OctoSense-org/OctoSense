@@ -1,0 +1,451 @@
+diff --git a/libs/ai/hub/src/speech/mod.rs b/libs/ai/hub/src/speech/mod.rs
+index e869f28d4..b77eab9d7 100644
+--- a/libs/ai/hub/src/speech/mod.rs
++++ b/libs/ai/hub/src/speech/mod.rs
+@@ -237,7 +237,7 @@ pub enum TtsEvent {
+ 
+ pub(crate) enum SttMsg {
+     Transcribe { utterance: u64, generation: u64, samples: Vec<f32> },
+-    Listen,
++    Listen(Option<Box<dyn Send>>),
+     StopListening,
+ }
+ 
+@@ -300,6 +300,11 @@ pub fn listen(&self) {
+         self.handle.listen()
+     }
+ 
++    /// Retain a host microphone lease until the recognizer has ended capture.
++    pub fn listen_guarded(&self, guard: impl Send + 'static) {
++        let _ = self.handle.to_worker.send(SttMsg::Listen(Some(Box::new(guard))));
++    }
++
+     pub fn stop_listening(&self) {
+         self.handle.stop_listening()
+     }
+@@ -339,7 +344,7 @@ pub fn transcribe(&self, samples_16k: Vec<f32>) -> u64 {
+     /// capabilities say `engine_mic`). Results arrive as `Partial`/`Final`
+     /// with utterance id 0, then `ListenEnded`.
+     pub fn listen(&self) {
+-        let _ = self.to_worker.send(SttMsg::Listen);
++        let _ = self.to_worker.send(SttMsg::Listen(None));
+     }
+ 
+     pub fn stop_listening(&self) {
+diff --git a/libs/ai/hub/src/speech/stt_worker.rs b/libs/ai/hub/src/speech/stt_worker.rs
+index 451388b31..15c602b54 100644
+--- a/libs/ai/hub/src/speech/stt_worker.rs
++++ b/libs/ai/hub/src/speech/stt_worker.rs
+@@ -31,6 +31,9 @@ pub(crate) fn run(
+     };
+     send(SttEvent::Ready(engine.info()));
+ 
++    // Declared first so native capture is dropped before its ownership guard
++    // when the session worker exits (including a disconnected UI).
++    let mut _listening_guard: Option<Box<dyn Send>> = None;
+     let mut listening: Option<Listening> = None;
+     loop {
+         if let Some(live) = listening.as_mut() {
+@@ -50,6 +53,7 @@ pub(crate) fn run(
+             }
+             if ended {
+                 listening = None;
++                _listening_guard = None;
+                 send(SttEvent::ListenEnded);
+             }
+         }
+@@ -75,12 +79,12 @@ pub(crate) fn run(
+                     Err(message) => send(SttEvent::Error { utterance: Some(utterance), message }),
+                 }
+             }
+-            Ok(SttMsg::Listen) => {
++            Ok(SttMsg::Listen(guard)) => {
+                 if listening.is_some() {
+                     continue;
+                 }
+                 match engine.listen(&config) {
+-                    Ok(live) => listening = Some(live),
++                    Ok(live) => { listening = Some(live); _listening_guard = guard; }
+                     Err(message) => send(SttEvent::Error { utterance: None, message }),
+                 }
+             }
+diff --git a/platform/src/audio.rs b/platform/src/audio.rs
+index 3db9110a1..472c3ab03 100644
+--- a/platform/src/audio.rs
++++ b/platform/src/audio.rs
+@@ -5,6 +5,24 @@
+ pub type AudioOutputFn = Box<dyn FnMut(AudioInfo, &mut AudioBuffer) + Send + 'static>;
+ pub type AudioInputFn = Box<dyn FnMut(AudioInfo, &AudioBuffer) + Send + 'static>;
+ 
++/// Exclusive ownership of the process's ordinary microphone route. A caller
++/// holds this while its callback or an OS speech recognizer can still capture.
++/// This is a host coordination primitive, never a device permission grant.
++#[derive(Debug)]
++pub struct AudioInputLease { _private: () }
++static INPUT_LEASED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++impl AudioInputLease {
++    pub fn try_acquire() -> Option<Self> {
++        INPUT_LEASED.compare_exchange(false, true, std::sync::atomic::Ordering::AcqRel,
++            std::sync::atomic::Ordering::Acquire).ok().map(|_| Self { _private: () })
++    }
++}
++impl Drop for AudioInputLease {
++    fn drop(&mut self) {
++        INPUT_LEASED.store(false, std::sync::atomic::Ordering::Release);
++    }
++}
++
+ #[derive(Clone, Debug, Default, Eq, Hash, Copy, PartialEq, FromLiveId)]
+ pub struct AudioDeviceId(pub LiveId);
+ 
+diff --git a/platform/src/os/linux/open_harmony/oh_camera.rs b/platform/src/os/linux/open_harmony/oh_camera.rs
+index 7ee164283..a557a7c0d 100644
+--- a/platform/src/os/linux/open_harmony/oh_camera.rs
++++ b/platform/src/os/linux/open_harmony/oh_camera.rs
+@@ -464,6 +464,8 @@ struct VideoRec {
+     _file: std::fs::File,
+     _url: CString,
+     _strings: Vec<CString>,
++    // Retain ownership until the native recorder is stopped and released.
++    _microphone_lease: Option<crate::audio::AudioInputLease>,
+ }
+ 
+ /// Capture results waiting for the UI thread (`take_capture_results`).
+@@ -1055,6 +1057,9 @@ fn start_video(&mut self, path: String, audio: bool) -> Result<(), String> {
+         ) else {
+             return Err("the AV recorder NDK is not available on this device".into());
+         };
++        let microphone_lease = if audio {
++            Some(crate::audio::AudioInputLease::try_acquire().ok_or("microphone is in use by another recorder or speech session")?)
++        } else { None };
+         let device = self.devices.iter().find(|d| d.input_id == session.input_id).ok_or("unknown input")?;
+         let size = session.preview_size;
+         let profile = device
+@@ -1159,7 +1164,7 @@ fn start_video(&mut self, path: String, audio: bool) -> Result<(), String> {
+             return Err(format!("recorder start: {rc}"));
+         }
+         crate::log!("ohos camera: recording {path} at {}x{} {fps} fps{}", size.width, size.height, if audio { " with audio" } else { "" });
+-        session.video = Some(VideoRec { recorder, output, path, _file: file, _url: url, _strings: strings });
++        session.video = Some(VideoRec { recorder, output, path, _file: file, _url: url, _strings: strings, _microphone_lease: microphone_lease });
+         Ok(())
+     }
+ 
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index 3709be935..47a105f48 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -146,6 +146,17 @@ pub(crate) fn prompts_allowed_for_heap(heap_key: usize) -> bool {
+         && crate::makepad_platform::makepad_script_std::script_prompts_allowed(heap_key)
+ }
+ 
++/// UI-thread-only lifetime check for native device sessions. Identity and the
++/// foreground baseline are written by the host; script values cannot set them.
++/// Hosts must additionally enforce their window/active-app visibility policy.
++pub fn surface_is_foreground(heap_key: usize, app_id: &str) -> bool {
++    BRIDGE.with(|bridge| {
++        let bridge = bridge.borrow();
++        bridge.tags.get(&heap_key).is_some_and(|id| id == app_id)
++            && !bridge.no_prompt.contains(&heap_key)
++    })
++}
++
+ /// Drops all bridge state for reclaimed isolates (called from the isolate GC).
+ pub(crate) fn gc_bridge(dead_heaps: &[usize]) {
+     BRIDGE.with(|b| {
+diff --git a/widgets/src/splash_storage.rs b/widgets/src/splash_storage.rs
+index e7226acc5..56bca0918 100644
+--- a/widgets/src/splash_storage.rs
++++ b/widgets/src/splash_storage.rs
+@@ -130,13 +130,54 @@ fn root_for_vm(vm: &ScriptVm) -> Option<PathBuf> {
+ }
+ 
+ /// A native host's view of a live isolate's existing jail. Never constructed
+-/// from script arguments. Obtain and use this on the UI thread, where script
+-/// filesystem writes are serialized, and refresh it after an asynchronous UI.
++/// from script arguments. Obtain and commit on the UI thread, where script
++/// filesystem writes are serialized. worker_snapshot permits bounded worker
++/// IO; refresh this live scope before committing an asynchronous result.
+ pub struct StorageAccess {
+     root: PathBuf,
+     quota: u64,
+ }
+ 
++/// Immutable native scope captured on the UI. Workers may read bounded bytes
++/// or stage a new file; only StorageAccess::commit_import exposes staged data
++/// in the live jail, serialized with script writes and current quota checks.
++#[derive(Clone)]
++pub struct StorageSnapshot { root: PathBuf, quota: u64 }
++pub struct PreparedStorageImport { scope: StorageSnapshot, path: String, temporary: PathBuf, bytes: u64 }
++impl Drop for PreparedStorageImport {
++    fn drop(&mut self) { let _ = std::fs::remove_file(&self.temporary); }
++}
++impl StorageSnapshot {
++    pub fn read_bytes(&self, path: &str) -> Result<Vec<u8>, String> {
++        let target=resolve_jailed(&self.root,path)?;
++        verify_no_symlinks(&self.root,&target)?;
++        read_storage_bytes(&target)
++    }
++    /// Write privately beside (outside) the app's jail on a worker. The app
++    /// cannot read the temporary through fs, and Drop removes abandoned work.
++    pub fn prepare_import(&self, path:&str, bytes:&[u8])->Result<PreparedStorageImport,String>{
++        use std::io::Write;
++        if bytes.len() as u64>MAX_FILE_BYTES{return Err("file too large".into());}
++        let target=resolve_jailed(&self.root,path)?;
++        if target==self.root{return Err("cannot write the storage root".into());}
++        verify_no_symlinks(&self.root,&target)?;
++        let parent=self.root.parent().ok_or("storage has no private staging area")?;
++        std::fs::create_dir_all(parent).map_err(|_|"cannot prepare native file staging")?;
++        static NEXT:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
++        let sequence=NEXT.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
++        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_|"invalid clock")?.as_nanos();
++        let temporary=parent.join(format!(".native-import-{}-{stamp}-{sequence}",std::process::id()));
++        let mut options=std::fs::OpenOptions::new();options.write(true).create_new(true);
++        #[cfg(unix)]{use std::os::unix::fs::OpenOptionsExt;options.mode(0o600);}
++        let mut file=options.open(&temporary).map_err(|_|"cannot stage native file")?;
++        let staged=PreparedStorageImport{scope:self.clone(),path:path.into(),temporary,bytes:bytes.len() as u64};
++        let written=file.write_all(bytes).and_then(|_|file.sync_all());
++        drop(file);
++        written.map_err(|_|"native file staging failed")?;
++        Ok(staged)
++    }
++}
++
+ pub fn storage_for_heap(heap_key: usize, app_id: &str) -> Option<StorageAccess> {
+     if crate::splash_host::app_tag_for_heap(heap_key).as_deref() != Some(app_id) { return None; }
+     Some(StorageAccess {
+@@ -148,6 +189,30 @@ pub fn storage_for_heap(heap_key: usize, app_id: &str) -> Option<StorageAccess>
+ impl StorageAccess {
+     pub fn quota(&self) -> u64 { self.quota }
+ 
++    /// Native sessions must not save into a different account/jail after an
++    /// asynchronous operation. This compares host scopes without exposing paths.
++    pub fn same_scope(&self, other: &Self) -> bool { self.root == other.root && self.quota == other.quota }
++
++    pub fn worker_snapshot(&self)->StorageSnapshot{StorageSnapshot{root:self.root.clone(),quota:self.quota}}
++
++    /// UI-thread-only final commit. Bulk IO has finished; quota/entry checks
++    /// and an atomic no-overwrite link run between script turns. Staging is on
++    /// this same filesystem, never copied across it on the UI thread.
++    pub fn commit_import(&self, staged:PreparedStorageImport)->Result<(),String>{
++        if self.root!=staged.scope.root||self.quota!=staged.scope.quota{return Err("app storage scope changed".into());}
++        let real=self.target(&staged.path)?;
++        if std::fs::symlink_metadata(&real).is_ok(){return Err("destination already exists".into());}
++        if staged.bytes>MAX_FILE_BYTES{return Err("file too large".into());}
++        let(total,entries)=jail_usage(&self.root);
++        if total.saturating_add(staged.bytes)>self.quota{return Err("app storage is full".into());}
++        if entries.saturating_add(missing_entries(&self.root,&real))>MAX_ENTRIES{return Err("too many files".into());}
++        if let Some(parent)=real.parent(){std::fs::create_dir_all(parent).map_err(|_|"cannot prepare destination")?;}
++        verify_no_symlinks(&self.root,&real)?;
++        let metadata=std::fs::symlink_metadata(&staged.temporary).map_err(|_|"staged native file is unavailable")?;
++        if !metadata.is_file()||metadata.len()!=staged.bytes{return Err("staged native file changed".into());}
++        std::fs::hard_link(&staged.temporary,&real).map_err(|_|"cannot commit native file without overwriting".into())
++    }
++
+     pub fn validate_path(&self, path: &str) -> Result<(), String> {
+         self.target(path).map(|_| ())
+     }
+@@ -583,6 +648,26 @@ fn native_import_rejects_file_limit_entries_and_symlinked_jail() {
+         std::fs::remove_dir_all(dir).unwrap();
+     }
+ 
++    #[test]
++    fn worker_staging_rechecks_scope_quota_and_destination_without_exposing_partial_bytes() {
++        let parent=std::env::temp_dir().join(format!("mp-staged-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
++        let root=parent.join("app");std::fs::create_dir_all(&root).unwrap();
++        let storage=StorageAccess{root:root.clone(),quota:4};
++        let stage=storage.worker_snapshot().prepare_import("voice.wav",&[1,2]).unwrap();
++        let temporary=stage.temporary.clone();assert!(!root.join("voice.wav").exists());
++        std::fs::write(root.join("other"),[3,4,5]).unwrap();
++        assert!(storage.commit_import(stage).is_err());assert!(!temporary.exists());assert!(!root.join("voice.wav").exists());
++        std::fs::remove_file(root.join("other")).unwrap();
++        let stage=storage.worker_snapshot().prepare_import("voice.wav",&[1,2]).unwrap();
++        let other=StorageAccess{root:parent.join("another-account"),quota:4};assert!(other.commit_import(stage).is_err());
++        let stage=storage.worker_snapshot().prepare_import("voice.wav",&[1,2]).unwrap();storage.commit_import(stage).unwrap();
++        let stage=storage.worker_snapshot().prepare_import("voice.wav",&[9]).unwrap();assert!(storage.commit_import(stage).is_err());
++        assert_eq!(storage.read_bytes("voice.wav").unwrap(),[1,2]);
++        let stage=storage.worker_snapshot().prepare_import("cancelled.wav",&[1]).unwrap();let temporary=stage.temporary.clone();drop(stage);assert!(!temporary.exists());
++        assert!(storage.worker_snapshot().read_bytes("../outside").is_err());
++        std::fs::remove_dir_all(parent).unwrap();
++    }
++
+     #[test]
+     fn jail_resolution_contains_and_rejects() {
+         let root = Path::new("/jail/app");
+diff --git a/widgets/src/voice_wave.rs b/widgets/src/voice_wave.rs
+index b1a99623a..4211edcbd 100644
+--- a/widgets/src/voice_wave.rs
++++ b/widgets/src/voice_wave.rs
+@@ -510,11 +510,9 @@ fn set_echo_cancellation(&mut self, cx: &mut Cx, on: bool) {
+         self.voice_input.set_echo_cancellation(cx, on);
+     }
+ 
+-    // NOTE: no ensure_voice_initialized here — initialization registers the
+-    // GLOBAL audio-input callback slot (last registrant wins, platform-side),
+-    // so a passive VoiceWave (e.g. the Window caption one) that inits on
+-    // event traffic steals the mic audio from the active instance and every
+-    // sample is silently discarded. Only set_enabled/prewarm may initialize.
++    // Keep worker/model prewarming explicit. Microphone callback registration
++    // happens only after set_enabled acquires the shared AudioInputLease;
++    // prewarm never replaces another owner of the process's microphone route.
+     fn handle_voice_event(&mut self, cx: &mut Cx, event: &Event) {
+         let uid = self.widget_uid();
+ 
+diff --git a/widgets/src/window_voice_input.rs b/widgets/src/window_voice_input.rs
+index 7d50ec880..ee03dba3f 100644
+--- a/widgets/src/window_voice_input.rs
++++ b/widgets/src/window_voice_input.rs
+@@ -1,5 +1,5 @@
+ use crate::makepad_draw::{
+-    audio::{AudioBuffer, AudioDeviceId, AudioDevicesEvent, AudioInputOptions},
++    audio::{AudioBuffer, AudioDeviceId, AudioDevicesEvent, AudioInputLease, AudioInputOptions},
+     permission::{Permission, PermissionResult, PermissionStatus},
+     thread::{CancellationToken, SignalToUI, ThreadOptions, ThreadSpawner},
+     Cx, CxMediaApi, Event, NextFrame,
+@@ -39,7 +39,7 @@
+ enum VoiceControlMessage {
+     Reset,
+     /// Capture (re)started: an engine that owns the microphone starts listening.
+-    Start,
++    Start(Arc<AudioInputLease>),
+     /// Capture stopped: a mic-owning engine stops listening.
+     Stop,
+     Shutdown,
+@@ -67,6 +67,7 @@ pub struct WindowVoiceInput {
+     /// and eager spawns meant duplicate whisper workers/models.
+     worker_inputs: Option<(Receiver<Vec<f32>>, Receiver<VoiceControlMessage>, mpsc::Sender<String>, SyncSender<VoiceWaveEvent>)>,
+     callback_index: Option<usize>,
++    input_lease: Option<Arc<AudioInputLease>>,
+     default_input: Option<AudioDeviceId>,
+     pending_permission_request: Option<i32>,
+     capture_enabled: Arc<AtomicBool>,
+@@ -109,6 +110,7 @@ fn default() -> Self {
+             callback_installed: false,
+             worker_inputs: Some((audio_rx, control_rx, text_tx, wave_tx)),
+             callback_index: None,
++            input_lease: None,
+             default_input: None,
+             pending_permission_request: None,
+             capture_enabled,
+@@ -164,6 +166,14 @@ pub fn ensure_audio_callback(&mut self, cx: &mut Cx, callback_index: usize) {
+                 self.engine_mic.clone(),
+             );
+         }
++        // Prewarming may start a worker, but must not replace the microphone
++        // callback of another active owner. Install only after acquiring it.
++        self.callback_installed = true;
++        self.callback_index = Some(callback_index);
++    }
++
++    fn install_audio_callback(&mut self, cx: &mut Cx) {
++        let callback_index = self.callback_index.unwrap_or(0);
+         let callback_state = self.callback_state.clone();
+         let capture_enabled = self.capture_enabled.clone();
+         cx.audio_input(callback_index, move |info, input_buffer| {
+@@ -174,8 +184,6 @@ pub fn ensure_audio_callback(&mut self, cx: &mut Cx, callback_index: usize) {
+                 callback_state.handle_input(info.sample_rate, input_buffer);
+             }
+         });
+-        self.callback_installed = true;
+-        self.callback_index = Some(callback_index);
+     }
+ 
+     pub fn set_enabled(&mut self, cx: &mut Cx, enabled: bool) {
+@@ -242,6 +250,14 @@ pub fn shutdown(&mut self, cx: &mut Cx) {
+     }
+ 
+     fn request_enable(&mut self, cx: &mut Cx) {
++        if self.input_lease.is_none() {
++            let Some(lease) = AudioInputLease::try_acquire() else {
++                crate::log!("voice: microphone is in use; try again after recording stops");
++                return;
++            };
++            self.input_lease = Some(Arc::new(lease));
++            self.install_audio_callback(cx);
++        }
+         self.desired_enabled = true;
+         self.pending_permission_request = Some(cx.request_permission(Permission::AudioInput));
+         self.enter_after_next_text = false;
+@@ -262,14 +278,16 @@ fn reset_pipeline(&mut self) {
+     }
+ 
+     fn start_capture(&mut self, cx: &mut Cx) {
++        let Some(lease) = self.input_lease.clone() else { return; };
+         self.reset_pipeline();
+-        let _ = self.control_tx.send(VoiceControlMessage::Start);
++        let _ = self.control_tx.send(VoiceControlMessage::Start(lease));
+         self.rearm_capture(cx);
+     }
+ 
+     /// (Re)apply device + options for the current capture state. Called on
+     /// start and whenever the echo-cancellation need flips.
+     fn rearm_capture(&mut self, cx: &mut Cx) {
++        if self.input_lease.is_none() { return; }
+         if self.engine_mic.load(Ordering::Relaxed) {
+             self.capture_enabled.store(false, Ordering::Relaxed);
+             cx.use_audio_inputs(&[]);
+@@ -305,7 +323,8 @@ pub fn set_echo_cancellation(&mut self, cx: &mut Cx, on: bool) {
+     fn stop_capture_graceful(&mut self, cx: &mut Cx) {
+         let _ = self.control_tx.send(VoiceControlMessage::Stop);
+         self.capture_enabled.store(false, Ordering::Relaxed);
+-        cx.use_audio_inputs(&[]);
++        if self.input_lease.is_some() { cx.use_audio_inputs(&[]); }
++        self.input_lease = None;
+         if let Ok(mut callback_state) = self.callback_state.try_lock() {
+             callback_state.flush_partial_packet();
+         }
+@@ -470,6 +489,7 @@ pub struct VoiceVisualState {
+ 
+ impl Drop for WindowVoiceInput {
+     fn drop(&mut self) {
++        self.capture_enabled.store(false, Ordering::Relaxed);
+         let _ = self.control_tx.send(VoiceControlMessage::Shutdown);
+     }
+ }
+@@ -667,6 +687,7 @@ fn spawn_voice_worker(
+         // owns the microphone; we only relay its results.
+         let mut engine_owns_mic = false;
+         let mut listening_wanted = false;
++        let mut input_lease: Option<Arc<AudioInputLease>> = None;
+         let mut engine_ready = false;
+ 
+         // Learned gate when the Silero weights are present, RMS energy gate
+@@ -717,7 +738,7 @@ fn spawn_voice_worker(
+                             // Tell the UI side to release its own capture.
+                             text_signal.set();
+                             if listening_wanted {
+-                                session.listen();
++                                if let Some(lease) = input_lease.clone() { session.listen_guarded(lease); }
+                             }
+                         }
+                     }
+@@ -742,7 +763,7 @@ fn spawn_voice_worker(
+                         // Continuous dictation: the engine ends a session per
+                         // utterance; start the next one while the mic is on.
+                         if listening_wanted && engine_owns_mic {
+-                            session.listen();
++                            if let Some(lease) = input_lease.clone() { session.listen_guarded(lease); }
+                         }
+                     }
+                 }
+@@ -761,10 +782,11 @@ fn spawn_voice_worker(
+                         }
+                         session.cancel();
+                     }
+-                    VoiceControlMessage::Start => {
++                    VoiceControlMessage::Start(lease) => {
++                        input_lease = Some(lease);
+                         listening_wanted = true;
+                         if engine_owns_mic && engine_ready {
+-                            session.listen();
++                            if let Some(lease) = input_lease.clone() { session.listen_guarded(lease); }
+                         }
+                     }
+                     VoiceControlMessage::Stop => {
+@@ -772,6 +794,7 @@ fn spawn_voice_worker(
+                         if engine_owns_mic {
+                             session.stop_listening();
+                         }
++                        input_lease = None;
+                     }
+                     VoiceControlMessage::Shutdown => break 'worker,
+                 }

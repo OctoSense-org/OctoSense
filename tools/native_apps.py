@@ -67,11 +67,13 @@ HOSTINGS = ("module", "process", "process-if-vulkan", "none")
 # How a package links an app: in its default features, in its `mobile-apps`
 # set, only when asked for, or not at all.
 SHELL_LINKS = ("default", "mobile-apps", "opt-in", "off")
-# Every standard shell build runs the octos kernel as a shell service.
-BASE_DEFAULT = ["octos-core"]
+# Every standard shell build runs the octos kernel as a shell service, and
+# the `wasm` service for apps' own WebAssembly functions (ADR 0011; the shell
+# links it on macOS, Linux and Android only).
+BASE_DEFAULT = ["octos-core", "wasm-functions"]
 # Features on by default in one shell only: the phone offers app agents the
 # system toolbox (ADR 0002 §6), reading pages in its own WebView.
-SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"]}
+SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"], "desktop": ["craft-engines"]}
 APP_KEYS = {"id", "feature", "crate", "source", "module", "bin", "bin_features", "default_features", "crate_features",
             "implies", "hosting", "shells", "native_mobile", "sandbox", "storage", "agent", "kernel"}
 REQUIRED_KEYS = APP_KEYS - {"feature", "bin_features", "kernel"}

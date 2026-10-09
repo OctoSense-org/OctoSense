@@ -237,18 +237,19 @@ def main():
                     time.sleep(.1)
                 capture('00-saved-draft')
                 click_widget('repository_button')
-                click('Connect public repositories')
-                wait_for('Connect GitHub')
+                click('Connect GitHub')
+                # The app's own card behind the sheet has a "Connect GitHub" heading too.
+                wait_for('Connect GitHub', widget_id='oauth_title')
                 wait_for('Read and update your public repositories')
                 capture('01-host-consent')
                 retained = [row for row in rows() if row.get('ty') == 'Label'
-                            and (row.get('t') == 'Connect GitHub' or 'requests:' in row.get('t', ''))]
+                            and row.get('i') in ('oauth_title', 'oauth_subtitle')]
                 logical_size = call('/s')['w'][0]['sz']
-                click('Continue')
+                click('Continue to GitHub')
                 # The snapshot contains geometrically visible app widgets below
                 # the opaque host sheet. An arbitrary status-label match could
                 # therefore accept an error shown only behind the sheet.
-                wait_for('GitHub sign-in is unavailable in this build', widget_id='oauth_status')
+                wait_for('GitHub sign-in is unavailable in this build', widget_id='failure')
                 capture('02-missing-registration')
                 before = png_rgb(run / '01-host-consent.png')
                 after = png_rgb(run / '02-missing-registration.png')
@@ -262,15 +263,15 @@ def main():
                     result['visual_review'] = 'fail: static consent ink disappeared after the asynchronous status callback'
                     raise AssertionError(result['visual_review'])
                 result['visual_review'] = 'static consent ink preserved; manual full-frame review still required'
-                click('Cancel')
+                click('Close')
                 wait_for('Back to note', button=True)
                 click('Back to note')
                 wait_widget('markdown', 'TextInput')
                 assert next(row for row in rows() if row.get('i') == 'markdown')['t'] == note
                 capture('03-return-to-draft')
                 click_widget('repository_button')
-                click('Connect public repositories')
-                wait_for('Connect GitHub')
+                click('Connect GitHub')
+                wait_for('Connect GitHub', widget_id='oauth_title')
                 click('Cancel')
                 wait_for('Back to note', button=True)
                 click('Back to note')
@@ -288,9 +289,10 @@ def main():
                 metadata_path.parent.mkdir(parents=True, exist_ok=True)
                 metadata_path.write_text(json.dumps(metadata))
                 click_widget('repository_button')
-                wait_for('Selected · Fixture account A', button=True)
-                click('Fixture account B')
-                wait_for('Selected · Fixture account B', button=True)
+                wait_for('Fixture account A')
+                click('Use another account')
+                click('Use Fixture account B · public only')
+                wait_for('Fixture account B')
                 wait_for('This operation needs additional authorization')
                 assert json.loads(metadata_path.read_text())['active'][app_id] == second
                 capture('05-selected-host-account')

@@ -1,0 +1,424 @@
+{
+  "engine": "wordcraft",
+  "method": "Read every run fn in the 17 modules registry() collects (crates/engine/src/cmd/*.rs; 389 ids, identical to the catalog) and followed each into its helpers (io.rs open_path/save_path, session.rs run/clipboard/ui_requests, wordcraft_proof add_word, references::update_fields, layout fields), then grepped the engine and every lower crate for std::fs, std::process, network, env and clipboard use and checked the workspace dependencies: the engine has no network, OS-clipboard or dialog crate, so its only I/O is the path reads/writes and the process spawn named in these rules, and its front-end effects exist only as ui_requests (checked against wordcraft's egui UI for what each one does). Commands whose whole effect is a UI request, a ViewState toggle or a preference are host; a dialog request queued only when a path/url/text param is missing, or an incidental pane flag, does not reclassify an in-document or path command; caller-chosen nested execution (macros, replay) is code, while fixed engine-chosen delegation takes its target's class; stubs are classed by what they reach when implemented. Limits: nothing was built or executed (readAloud's argument-injection risk is unverified), and layout reads installed fonts from fixed platform font folders for any command (crates/fonts/src/fontdb.rs system_font_dirs), which no parameter can point at a path, so it is not counted as file.",
+  "rules": [
+    {
+      "prefix": "text.",
+      "class": "safe",
+      "why": "Typing, breaks and deletion edit the open document in memory (type_text, split_para, delete_selection); text.insert's AutoCorrect uses only the session's own word lists.",
+      "evidence": [
+        "crates/engine/src/cmd/text.rs:11-28 specs, 48-61 insert() -> tools::autocorrect",
+        "crates/engine/src/cmd/tools.rs:450-491 autocorrect(): s.autocorrect_user + built-in AUTOCORRECT table"
+      ]
+    },
+    {
+      "prefix": "caret.",
+      "class": "safe",
+      "why": "Caret moves only change s.sel, using the in-memory layout for up/down/line/page.",
+      "evidence": [
+        "crates/engine/src/cmd/caret.rs:11-41 specs, 64-224 movement fns"
+      ]
+    },
+    {
+      "prefix": "select.",
+      "class": "safe",
+      "why": "Selection commands set s.sel from positions, text matches, same-formatting runs or inline objects in the document.",
+      "evidence": [
+        "crates/engine/src/cmd/caret.rs:42-57 specs, 226-299",
+        "crates/engine/src/cmd/objects.rs:241-250 select.objects",
+        "crates/engine/src/cmd/tools.rs:377 select.similar, 828-850"
+      ]
+    },
+    {
+      "prefix": "edit.",
+      "class": "safe",
+      "why": "Undo/redo swap in-memory snapshots, find/replace run a size-limited regex over the document's paragraphs, and format-painter state lives in the session.",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs:14-57 specs, 113-140 search() size_limit(1<<20), 267-312 painter",
+        "crates/engine/src/session.rs:268-283 undo()/redo()"
+      ]
+    },
+    {
+      "prefix": "format.",
+      "class": "safe",
+      "why": "Character formatting rewrites run properties in the open document (format_range, or pending caret props); format.state is a query.",
+      "evidence": [
+        "crates/engine/src/cmd/format.rs:14-113 specs, 137-157 apply(), 393-417 state()"
+      ]
+    },
+    {
+      "prefix": "para.",
+      "class": "safe",
+      "why": "Paragraph formatting, lists, borders, tabs, sorting and numbering edit paragraph props and the document's numbering table in memory.",
+      "evidence": [
+        "crates/engine/src/cmd/para.rs:12-145 specs, 186-190 fmt()",
+        "crates/engine/src/cmd/tools.rs:304-358 setNumberingValue/defineNumber/rtl"
+      ]
+    },
+    {
+      "prefix": "styles.",
+      "class": "safe",
+      "why": "Create, modify, update, delete and list styles in the document's own style sheet (s.doc.styles).",
+      "evidence": [
+        "crates/engine/src/cmd/para.rs:146-176 specs, 442-538"
+      ]
+    },
+    {
+      "prefix": "view.",
+      "class": "host",
+      "why": "Every view.* command toggles UI-only view state in s.view (zoom, view mode, panes, ruler, dark mode, page movement) or queues a window request (newWindow, split, zoom dialog) for the front end, and view.state reads that UI state back. None changes the document.",
+      "evidence": [
+        "crates/engine/src/cmd/view.rs:9-13 toggle(s.view), 15-71 specs, 58-67 ui_requests newWindow/split, 80-100 zoom",
+        "crates/engine/src/session.rs:34-57 ViewState, separate from the Document",
+        "crates/engine/src/cmd/tools.rs:398-415 view.immersive/vertical/sideToSide"
+      ]
+    },
+    {
+      "prefix": "insert.",
+      "class": "safe",
+      "why": "Pages, tables, shapes, text boxes, bookmarks, headers/footers, symbols, equations, cross-references, Quick Parts (session s.building_blocks) and the date (system clock) are built in memory; none of these reads a path or the network.",
+      "evidence": [
+        "crates/engine/src/cmd/insert.rs:11-111 specs, 430-442 date_time()",
+        "crates/engine/src/cmd/tools.rs:178-223 quickParts/autoText/docProperty/signatureLine, 740-759 quick_parts()",
+        "crates/engine/src/cmd/citations.rs:78-79, 467-524 insert.crossReference"
+      ]
+    },
+    {
+      "prefix": "layout.",
+      "class": "safe",
+      "why": "Margins, size, orientation, columns, breaks, line numbers, hyphenation and header/footer linking edit section properties and document settings.",
+      "evidence": [
+        "crates/engine/src/cmd/page.rs:10-87 specs, 99-110 with_sect()",
+        "crates/engine/src/cmd/tools.rs:246-257 layout.linkToPrevious"
+      ]
+    },
+    {
+      "prefix": "table.",
+      "class": "safe",
+      "why": "Table edits change the in-memory table; table.formula is a bounded SUM/AVERAGE/COUNT/MAX/MIN/PRODUCT over neighbouring cells, and table.quick uses built-in data.",
+      "evidence": [
+        "crates/engine/src/cmd/table.rs:14-197 specs, 443-474 formula(), 527-580 quick_table()",
+        "crates/engine/src/cmd/tools.rs:273-297 textDirection/cellMargins"
+      ]
+    },
+    {
+      "prefix": "review.",
+      "class": "safe",
+      "why": "Comments, tracked changes, restrict editing, language tags, word count, and proofing against wordcraft_proof's embedded word lists and a built-in thesaurus, all on the open document.",
+      "evidence": [
+        "crates/engine/src/cmd/review.rs:10-89 specs, 374-384 para_issues() via wordcraft_proof::check_spelling/check_grammar, 440-483 thesaurus()",
+        "crates/engine/src/cmd/tools.rs:94-102 review.restrict, 359-369 review.language"
+      ]
+    },
+    {
+      "prefix": "file.",
+      "class": "file",
+      "why": "file.open and file.newFromTemplate read any path with io::open_path; file.save, saveAs, saveTemplate and exportPdf write any path with io::save_path (writes a <path>.<ext>.tmp sibling, then renames); exportPng uses std::fs::write. file.save with no path writes to the session's current path s.path; without a path, open/save/saveAs only queue a dialog.",
+      "evidence": [
+        "crates/engine/src/io.rs:43-51 open_path (fs::metadata, fs::read), 58-65 save_path (fs::write tmp + fs::rename)",
+        "crates/engine/src/cmd/file.rs:15-22 exportPdf, 92-106 open, 108-137 save/saveAs (s.path fallback), 139-150 exportPng fs::write",
+        "crates/engine/src/cmd/tools.rs:130-147 newFromTemplate/saveTemplate"
+      ]
+    },
+    {
+      "prefix": "document.",
+      "class": "safe",
+      "why": "Agent queries of the open document (structure, text, paragraph, selection, layout summary); document.setText replaces the body in memory.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:51-75 specs, 185-272"
+      ]
+    },
+    {
+      "prefix": "design.",
+      "class": "safe",
+      "why": "Themes, theme fonts and colours, style sets, spacing, watermark, page colour and borders come from built-in tables and edit the document's styles and settings.",
+      "evidence": [
+        "crates/engine/src/cmd/design.rs:11-48 THEMES, 50-96 specs",
+        "crates/engine/src/cmd/tools.rs:393-397 design.effects"
+      ]
+    },
+    {
+      "prefix": "references.",
+      "class": "safe",
+      "why": "TOC, notes, captions, citations, bibliography, index and tables of figures/authorities are generated from the document; sources come from command params into s.doc.sources, never from a bibliography file.",
+      "evidence": [
+        "crates/engine/src/cmd/references.rs:11-65 specs",
+        "crates/engine/src/cmd/citations.rs:14-95 specs, 210-231 sources() from params, 318-358 update_generated()"
+      ]
+    },
+    {
+      "prefix": "mailings.",
+      "class": "safe",
+      "why": "Merge fields, rules, preview, record navigation and checks work on the in-session merge state (s.merge) and the document; envelopes and labels build a new in-memory document. Nothing sends mail: the emails kind is only a label.",
+      "evidence": [
+        "crates/engine/src/cmd/mailings.rs:13-22 MergeState, 28-125 specs, 314-379 eval()/refresh(), 449-532 envelopes/labels"
+      ]
+    },
+    {
+      "prefix": "picture.",
+      "class": "safe",
+      "why": "Size, crop, alt text and image adjustments decode the picture from s.doc.media, transform it with the image crate (80 Mpx cap) and store a new PNG in the document.",
+      "evidence": [
+        "crates/engine/src/cmd/objects.rs:32-173 specs, 374-393 adjust(), 395-405 reset() from s.originals"
+      ]
+    },
+    {
+      "prefix": "arrange.",
+      "class": "safe",
+      "why": "Rotate, wrap, position, order and align change the selected object's float settings or bitmap in memory.",
+      "evidence": [
+        "crates/engine/src/cmd/objects.rs:174-239 specs, 328-333 with_float()"
+      ]
+    },
+    {
+      "prefix": "shape.",
+      "class": "safe",
+      "why": "Fill, outline and shape kind of the selected shape object.",
+      "evidence": [
+        "crates/engine/src/cmd/objects.rs:251-284"
+      ]
+    },
+    {
+      "prefix": "hf.",
+      "class": "safe",
+      "why": "Header/footer navigation between section parts, and header/footer distances in section props.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:258-272, 761-779 hf_nav()"
+      ]
+    },
+    {
+      "prefix": "tools.",
+      "class": "code",
+      "why": "tools.macros defines macros as arbitrary [{command, params}] lists and runs them through Session::run (up to 10,000 steps, any id including path and process commands); tools.recordMacro records later commands into such a macro. A deny-list on the outer id cannot see the steps.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:58-74 specs, 419-447 macros(): define, then s.run(id, params) per step",
+        "crates/engine/src/session.rs:331-336 recording captures every caret/select/mutating command"
+      ]
+    },
+    {
+      "ids": ["edit.repeat"],
+      "class": "code",
+      "why": "Replays s.last_command, the last mutating command with its original params, through Session::run. That command can be insert.picture, insert.textFromFile, review.compare or mailings.finish with a path, set earlier by another caller or a macro step.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:52-57 s.run(&id, &params)",
+        "crates/engine/src/session.rs:337-339 last_command records every mutating id"
+      ]
+    },
+    {
+      "ids": ["review.readAloud"],
+      "class": "code",
+      "why": "Spawns an OS process to speak up to 20,000 characters of document text: say on macOS, powershell -NoProfile -Command on Windows, spd-say or espeak on other Unix (audio output too). The text is one argv element with no --, so a paragraph starting with '-' reaches those tools as options.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:376, 781-826 read_aloud(): std::process::Command::new(say | powershell | spd-say | espeak)"
+      ]
+    },
+    {
+      "ids": ["references.researcher"],
+      "class": "network",
+      "why": "Stub: it only sets the status 'Researcher needs an online service' and returns available:false. Implemented, it queries an online research service.",
+      "evidence": [
+        "crates/engine/src/cmd/citations.rs:90-94"
+      ]
+    },
+    {
+      "ids": ["format.fontDialog", "para.dialog"],
+      "class": "host",
+      "why": "Their only effect is to queue a dialog request (ui_requests open: font | paragraph) for the front end.",
+      "evidence": [
+        "crates/engine/src/cmd/format.rs:106-111",
+        "crates/engine/src/cmd/para.rs:141-145",
+        "crates/ui-egui/src/lib.rs:179-199 handle_request() opens the dialog"
+      ]
+    },
+    {
+      "ids": ["styles.pane", "review.markup", "review.showMarkup"],
+      "class": "host",
+      "why": "They toggle UI-only view flags in s.view (styles pane; show markup / display for review); the document is unchanged.",
+      "evidence": [
+        "crates/engine/src/cmd/para.rs:163-168 s.view.styles_pane",
+        "crates/engine/src/cmd/review.rs:35-39 s.view.show_markup",
+        "crates/engine/src/cmd/tools.rs:370-374 s.view.show_markup"
+      ]
+    },
+    {
+      "ids": ["file.setAuthor", "tools.autocorrect", "review.proofing"],
+      "class": "host",
+      "why": "App preferences from File > Options: the user name stamped on comments, revisions and saves (s.author), AutoCorrect on/off and user entries, and check-spelling-as-you-type (s.view.proofing). wordcraft keeps them in session memory rather than a config file.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:46-50 s.author = name",
+        "crates/engine/src/cmd/tools.rs:75-88 s.autocorrect_on / s.autocorrect_user",
+        "crates/engine/src/cmd/review.rs:83-87 s.view.proofing"
+      ]
+    },
+    {
+      "ids": ["review.addToDictionary", "review.ignoreAll"],
+      "class": "host",
+      "why": "Both call wordcraft_proof::add_word, which inserts into a process-global user dictionary (static RwLock<HashSet>) shared by every session in the process; Ignore All is not document-scoped.",
+      "evidence": [
+        "crates/engine/src/cmd/review.rs:45-72 wordcraft_proof::add_word(&w)",
+        "crates/proof/src/lib.rs:34-42 user_words(): static OnceLock<RwLock<HashSet<String>>>"
+      ]
+    },
+    {
+      "ids": ["design.setDefault"],
+      "class": "host",
+      "why": "Stub: it only sets the status 'These settings will be used for new documents.' Implemented, it persists the current design as the app's default for new documents.",
+      "evidence": [
+        "crates/engine/src/cmd/design.rs:87-91 s.status only"
+      ]
+    },
+    {
+      "ids": ["file.print", "file.close", "file.options", "file.share"],
+      "class": "host",
+      "why": "Each only queues a front-end request: print opens wordcraft's backstage Print page (a PDF export; there is no printer API anywhere), close makes the desktop app quit, options opens Options, and share opens the Save As dialog with a hint (no upload).",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:26-45 ui_requests print / close / options",
+        "crates/engine/src/cmd/tools.rs:168-172 file.share: ui_requests saveAs",
+        "crates/ui-egui/src/lib.rs:179-199 close -> quit_requested; crates/ui-egui/src/backstage.rs:227-228 'Printing goes through a PDF'"
+      ]
+    },
+    {
+      "ids": ["file.encrypt"],
+      "class": "host",
+      "why": "Stub: it sets a status and always fails with 'password encryption isn't available yet'. Implemented, it needs a password, which only a host-owned prompt may collect.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:173-177"
+      ]
+    },
+    {
+      "ids": ["file.autosave"],
+      "class": "file",
+      "why": "Stub in the engine: it toggles s.autosave, which nothing reads. Working AutoSave (wordcraft's UI, using its own flag) re-runs file.save to the open document's path every few seconds.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:148-152",
+        "crates/ui-egui/src/lib.rs:312-324 UI AutoSave runs file.save"
+      ]
+    },
+    {
+      "ids": ["file.new"],
+      "class": "safe",
+      "why": "Replaces the open document with a template built in code by crate::sample (blank, sample, letter, resume, report); no file is read.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:79-90",
+        "crates/engine/src/sample.rs:30-210 templates constructed in code"
+      ]
+    },
+    {
+      "ids": ["file.properties", "file.info", "file.accessibility", "file.inspect", "file.compatibility", "file.protect"],
+      "class": "safe",
+      "why": "Metadata, reports and checks on the open document. file.inspect removes content through fixed review/insert commands, and file.protect only runs review.restrict (a document setting).",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:152-182 properties/info",
+        "crates/engine/src/cmd/tools.rs:91-107, 153-167, 648-738 accessibility/inspect/protect/compatibility"
+      ]
+    },
+    {
+      "ids": ["file.versions", "file.recover"],
+      "class": "safe",
+      "why": "Save, restore and list snapshots kept in session memory (s.versions, at most 50); despite its label, file.recover reads no recovery directory.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:108-129",
+        "crates/engine/src/session.rs:144-145 versions"
+      ]
+    },
+    {
+      "ids": ["insert.picture", "picture.change"],
+      "class": "file",
+      "why": "With path they std::fs::read any file (all of it, before insert.picture's 200 MB check) and embed the bytes; base64 data avoids I/O. insert.picture with neither only queues the picture dialog.",
+      "evidence": [
+        "crates/engine/src/cmd/insert.rs:194-213 fs::read(path), ui_requests insertPicture",
+        "crates/engine/src/cmd/objects.rs:135-160 fs::read(path)"
+      ]
+    },
+    {
+      "ids": ["insert.textFromFile", "insert.object"],
+      "class": "file",
+      "why": "insert.textFromFile parses any supported document at path with io::open_path and pastes its body; insert.object only runs insert.textFromFile with the same path.",
+      "evidence": [
+        "crates/engine/src/cmd/insert.rs:101-110 io::open_path",
+        "crates/engine/src/cmd/tools.rs:224-228 s.run(\"insert.textFromFile\")"
+      ]
+    },
+    {
+      "ids": ["review.compare", "review.combine"],
+      "class": "file",
+      "why": "With path they load the revised document via io::open_path and merge its text into the open document as tracked changes, which makes the file's contents readable; text avoids I/O.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:89-90, 495-502 compare(): io::open_path(path)"
+      ]
+    },
+    {
+      "ids": ["mailings.recipients"],
+      "class": "file",
+      "why": "With path it std::fs::reads any file as the CSV data source into s.merge, and mailings.editRecipients then returns those rows; csv or rows avoid I/O.",
+      "evidence": [
+        "crates/engine/src/cmd/mailings.rs:189-240 recipients(): fs::read(path) at 217",
+        "crates/engine/src/cmd/mailings.rs:39-47 editRecipients returns headers and rows"
+      ]
+    },
+    {
+      "ids": ["mailings.finish"],
+      "class": "file",
+      "why": "With path it writes the merged document via io::save_path; without it, it replaces the open document in memory.",
+      "evidence": [
+        "crates/engine/src/cmd/mailings.rs:383-422 finish(): io::save_path at 414"
+      ]
+    },
+    {
+      "ids": ["edit.cut", "edit.copy", "edit.paste", "edit.pasteText", "edit.pasteMerge"],
+      "class": "safe",
+      "why": "Engine-internal clipboard: copy and cut store a Fragment plus a text mirror in the session (s.clipboard, s.clipboard_text), and paste takes caller-supplied text or that Fragment. Only the egui front end touches the OS clipboard.",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs:59-111",
+        "crates/engine/src/session.rs:113-115 clipboard fields",
+        "crates/ui-egui/src/ribbon.rs:146-147 the UI copies clipboard_text to the OS clipboard"
+      ]
+    },
+    {
+      "ids": ["edit.find", "edit.goto", "layout.pageSetup"],
+      "class": "safe",
+      "why": "With params they search, move the caret, or set/read section props in the document. With none they also queue a dialog (ui_requests find / goto / pageSetup), which changes nothing else and can be discarded.",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs:160-180, 232-265",
+        "crates/engine/src/cmd/page.rs:46-54"
+      ]
+    },
+    {
+      "ids": ["insert.link"],
+      "class": "safe",
+      "why": "Stores the URL as a character property (props.link) and never fetches it; the workspace has no network dependency. With no url it only queues the link dialog.",
+      "evidence": [
+        "crates/engine/src/cmd/insert.rs:288-314",
+        "Cargo.toml [workspace.dependencies]: no HTTP/TLS crate"
+      ]
+    },
+    {
+      "ids": ["insert.field", "references.updateFields"],
+      "class": "safe",
+      "why": "Any field code is stored, but only DATE/TIME, SEQ, TITLE, AUTHOR, NUMWORDS, CITATION and TOC are updated, and layout fills PAGE/NUMPAGES/SECTION/FILENAME from memory. INCLUDETEXT- or INCLUDEPICTURE-style codes are never evaluated.",
+      "evidence": [
+        "crates/engine/src/cmd/insert.rs:508-520 field() -> update_fields",
+        "crates/engine/src/cmd/references.rs:262-308 update_fields()",
+        "crates/layout/src/fields.rs:65-78 field_text()"
+      ]
+    },
+    {
+      "ids": ["review.comments", "review.changes", "references.notes", "arrange.selectionPane"],
+      "class": "safe",
+      "why": "Despite labels like Show Comments, Reviewing Pane, Show Notes and Selection Pane, these only return lists of comments, tracked changes, notes or objects and open no pane.",
+      "evidence": [
+        "crates/engine/src/cmd/review.rs:219-233, 337-351",
+        "crates/engine/src/cmd/references.rs:48-57",
+        "crates/engine/src/cmd/objects.rs:240, 544-559"
+      ]
+    },
+    {
+      "ids": ["select.extend", "review.editor", "table.borderPainter", "para.defineBullet", "insert.spreadsheet"],
+      "class": "safe",
+      "why": "Each runs one fixed, engine-chosen safe command through Session::run (select.word/sentence/paragraph/all, review.spelling, table.borders, para.bullets, insert.table). The caller cannot choose the inner id, so this is not replay.",
+      "evidence": [
+        "crates/engine/src/cmd/tools.rs:229-245, 298-303, 329-332, 375, 378-392"
+      ]
+    }
+  ]
+}

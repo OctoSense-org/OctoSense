@@ -9,6 +9,7 @@ one, `--no-octos-kernel` leaves it out (Home then runs no kernel; the AI
 providers are still saved).
 """
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -60,6 +61,8 @@ def arguments(argv=None):
     p.add_argument("--sign-cert", type=Path, help="Existing signer X.509 certificate")
     p.add_argument("--development", action="store_true", help="Standalone only: sign both APKs with Makepad's development keystore")
     p.add_argument("--version-code", default="auto")
+    p.add_argument("--version-name", help="Version name for both Home and Bridge (for example 0.1.0-beta.2)")
+    p.add_argument("--expected-signer", help="Require this existing certificate SHA-256 digest on both APKs")
     p.add_argument("--output", type=Path)
     p.add_argument("--offline", action="store_true")
     kernel = p.add_mutually_exclusive_group()
@@ -75,6 +78,16 @@ def arguments(argv=None):
         p.error("Supply the existing signer with --sign-key/--sign-cert, or use --development for standalone testing")
     if args.version_code != "auto" and (not args.version_code.isdigit() or not 0 < int(args.version_code) < 2100000000):
         p.error("--version-code must be auto or a positive Android version code")
+    # Resolve once: Gradle and cargo-makepad must not cross an hour boundary
+    # and assign different versions to the same release pair.
+    if args.version_code == "auto":
+        args.version_code = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    if args.version_name is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}", args.version_name):
+        p.error("--version-name must be 1-64 letters, digits, dots, plus signs, underscores or hyphens")
+    if args.expected_signer:
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", args.expected_signer):
+            p.error("--expected-signer must be a certificate SHA-256 digest")
+        args.expected_signer = args.expected_signer.lower()
     for name in ("sdk", "android_sdk", "gradle_home", "java_home", "packager", "sign_key", "sign_cert", "output", "octos_kernel"):
         if getattr(args, name):
             setattr(args, name, Path(getattr(args, name)).resolve())
@@ -100,9 +113,12 @@ def kernel_plan(args):
 def build_plan(args):
     sources = REPO / ".sources"
     cargo = ["cargo", "build", "--locked", "--release", "--manifest-path", str(sources / "makepad/tools/cargo_makepad/Cargo.toml")]
-    gradle = [str(HOME / "android/gradlew"), "--no-daemon", ":contracts:exportHomeContracts", ":system-bridge:assembleRelease"]
+    gradle = [str(HOME / "android/gradlew"), "--no-daemon", f"-PoctosenseVersionCode={args.version_code}", ":contracts:exportHomeContracts", ":system-bridge:assembleRelease"]
     packager = args.packager or sources / "makepad/target/release/cargo-makepad"
     android = [str(packager), "makepad", "android", f"--sdk-path={args.sdk}", "--abi=aarch64", f"--version-code={args.version_code}", "--no-sign", "build", "-p", "octosense-home", "--release", "--locked"]
+    if args.version_name is not None:
+        gradle.insert(2, f"-PoctosenseVersionName={args.version_name}")
+        android.insert(android.index("build"), f"--version-name={args.version_name}")
     if args.offline:
         cargo.append("--offline")
         gradle.append("--offline")
@@ -152,13 +168,36 @@ def certificate_digest(apksigner, apk, env):
     return match[1]
 
 
+def apk_metadata(aapt, apk, env):
+    badging = subprocess.check_output([str(aapt), "dump", "badging", str(apk)], env=env, text=True)
+    match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']*)'", badging, re.MULTILINE)
+    if not match:
+        raise RuntimeError(f"No package/version metadata for {apk.name}")
+    return {"package_name": match[1], "version_code": int(match[2]), "version_name": match[3]}
+
+
+def verify_pair(artifacts, args):
+    expected_packages = {"OctoSenseHome.apk": "dev.makepad.octosense", "OctoSenseBridge.apk": "dev.makepad.octosense.bridge"}
+    for name, package in expected_packages.items():
+        item = artifacts[name]
+        if item["package_name"] != package or item["version_code"] != int(args.version_code):
+            raise RuntimeError(f"{name} package/version does not match the requested release")
+        if args.version_name is not None and item["version_name"] != args.version_name:
+            raise RuntimeError(f"{name} version name does not match the requested release")
+        if args.expected_signer and item["certificate_sha256"] != args.expected_signer:
+            raise RuntimeError(f"{name} does not have the required existing signing identity")
+    if len({item["certificate_sha256"] for item in artifacts.values()}) != 1:
+        raise RuntimeError("Home and Bridge must have the same signing identity")
+
+
 def main(argv=None):
     args = arguments(argv)
     plan = build_plan(args)
     kernel = kernel_plan(args)[1]
     if args.dry_run:
         print(json.dumps({"variant": args.variant, "development": args.development,
-                          "output": str(args.output),
+                          "output": str(args.output), "version_code": int(args.version_code),
+                          "version_name": args.version_name, "expected_signer": args.expected_signer,
                           "octos_kernel": str(kernel) if kernel else None,
                           "android_env": {"MAKEPAD_ANDROID_EXTRA_LIBS": extra_libs(kernel)},
                           "steps": [
@@ -211,6 +250,7 @@ def main(argv=None):
                                "CARGO_HOME outside /Users (script_mod! compiles CARGO_MANIFEST_DIR in)")
     args.output.mkdir(parents=True, exist_ok=True)
     apksigner = args.android_sdk / "build-tools/35.0.0/apksigner"
+    aapt = args.android_sdk / "build-tools/35.0.0/aapt2"
     artifacts = {}
     for name, source in inputs.items():
         destination = args.output / name
@@ -223,24 +263,30 @@ def main(argv=None):
             command += ["--key", str(args.sign_key), "--cert", str(args.sign_cert)]
         subprocess.run(command + ["--out", str(temporary), str(source)], env=env, check=True)
         digest = certificate_digest(apksigner, temporary, env)
-        temporary.replace(destination)
-        artifacts[name] = {"sha256": hashlib.sha256(destination.read_bytes()).hexdigest(), "certificate_sha256": digest}
-    if len({item["certificate_sha256"] for item in artifacts.values()}) != 1:
-        raise RuntimeError("Home and Bridge must have the same signing identity")
-    aapt = args.android_sdk / "build-tools/35.0.0/aapt2"
-    badging = subprocess.check_output([str(aapt), "dump", "badging", str(args.output / "OctoSenseHome.apk")], env=env, text=True)
-    version = re.search(r"versionCode='([0-9]+)'", badging).group(1)
+        artifacts[name] = {"sha256": hashlib.sha256(temporary.read_bytes()).hexdigest(), "certificate_sha256": digest,
+                           **apk_metadata(aapt, temporary, env)}
+    # A stale Bridge or unexpected signing input must never replace a previous
+    # good pair before both pending artifacts have been checked.
+    verify_pair(artifacts, args)
+    for name in inputs:
+        destination = args.output / name
+        destination.with_suffix(".pending.apk").replace(destination)
+    home_version = artifacts["OctoSenseHome.apk"]
+    bridge_version = artifacts["OctoSenseBridge.apk"]
+    packager = args.packager or sources / "makepad/target/release/cargo-makepad"
     receipt = {"schema_version": 1, "variant": args.variant, "development": args.development,
-               "home_version_code": int(version),
+               "home_version_code": home_version["version_code"], "home_version_name": home_version["version_name"],
+               "bridge_version_code": bridge_version["version_code"], "bridge_version_name": bridge_version["version_name"],
                "source_revision": subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip(),
                "source_dirty": bool(subprocess.check_output(["git", "-C", str(REPO), "status", "--porcelain"], text=True)),
                "runtime": json.loads((REPO / "native-runtime.lock.json").read_text()),
                "runtime_patches": json.loads((REPO / "runtime-patches.lock.json").read_text()),
-               "packager": str(args.packager) if args.packager else "pinned source",
+               "packager": "explicit override" if args.packager else "pinned source",
+               "packager_sha256": hashlib.sha256(packager.read_bytes()).hexdigest(),
                "octos_kernel": kernel_tool.receipt(kernel, kernel_source(args)[2]),
                "artifacts": artifacts}
     (args.output / "build.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"Built {args.variant} Home {version} and Bridge in {args.output}")
+    print(f"Built {args.variant} Home {home_version['version_code']} and Bridge in {args.output}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,643 @@
+{
+  "engine": "designcraft",
+  "method": "Mapped all 444 catalog ids to their cmd! specs in crates/engine/src/cmd (each id is defined exactly once, across 54 modules) and read every run fn and the helpers it reaches (test modules stripped), following calls into the idml, color/cms, fonts, textimport, render, pdf and epub crates and into engine recovery.rs, script.rs, guard.rs and lib.rs. Cross-checked with rg for std::fs, std::process, std::env, network crates, Session::execute/run_script, find_command, ui_requests, writes to Session.prefs/clipboard/recovery_dir and process-global statics (cms ACTIVE/USER, FontDb::global). Verified: the clipboard is session memory, URLs are only stored and the workspace has no HTTP client, only script.run runs commands the caller chooses, IDML import reads linked files even from base64, and data-merge image fill reads the paths in record cells. Known limits: effects that every command shares are not pinned to an id. All text layout reads installed fonts through the process-global FontDb (fixed system font folders, not caller paths), and Session::execute's panic guard saves every dirty document to Session.recovery_dir when a host has set one (OctoSense's service sets none).",
+  "rules": [
+    {
+      "prefix": "file.",
+      "class": "file",
+      "why": "The File menu works on raw paths. open, revert, save, saveAs, saveACopy, the exporters (PDF, EPUB, booklet, HTML, text, IDML, XML), importXml, place and package call std::fs::read/write/copy on the `path` or `dir` the call names, or on the document's saved path. file.open also reads the `Document Fonts` folder beside the file. file.place with a base64 `.idml` still reads linked files through idml::import_idml's default_reader. With no source given, it queues a UiRequest::Pick file picker, which is inert in a headless session.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:158-199 file_open: std::fs::read(path), resolve_sources_on_open, load_document_fonts → FontDb::load_document_fonts(folder)",
+        "crates/engine/src/cmd/file.rs:216-242 file_save std::fs::write; :26-32 file.saveACopy std::fs::write; :614-643 file_revert std::fs::read(saved path)",
+        "crates/engine/src/cmd/file.rs:244-257 file_place std::fs::read(path) or UiRequest::Pick; :511-516 place_layout_page → designcraft_idml::import_idml",
+        "crates/engine/src/cmd/export.rs:34-99,123-168,495-602 exportPdf/Epub/FixedEpub/printBooklet/Html/Text: std::fs::write(path) when `path` is given",
+        "crates/engine/src/cmd/interchange.rs:21-33 file.exportIdml std::fs::write(path)",
+        "crates/engine/src/cmd/xml.rs:303-312 file.exportXml std::fs::write; :383-397 text_or_path std::fs::read_to_string for file.importXml",
+        "crates/engine/src/cmd/package.rs:61-83,87-114,136-205 file.package: create_dir_all + std::fs::write into `dir`, std::fs::copy of installed font files"
+      ]
+    },
+    {
+      "ids": ["file.openBytes", "file.openIdml"],
+      "class": "file",
+      "why": "Naming trap: even given only `base64`, IDML import reads every linked image from disk. interchange::import → read_packaged_link tries the raw LinkResourceURI path first (any absolute path, e.g. file:///etc/passwd) and std::fs::read's it into an asset, which file.serialize then returns. Native bytes go through resolve_sources_on_open, which probes each data-merge source path the document names (Path::is_file, std::fs::metadata).",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:201-214 file_open_bytes → interchange::open_idml for IDML, else resolve_sources_on_open(&mut d, None)",
+        "crates/engine/src/cmd/interchange.rs:36-99 import → read_packaged_link: candidates start with PathBuf::from(link); std::fs::read at :91",
+        "crates/idml/src/import.rs:2100-2135 graphic(): empty Contents → read_link(LinkResourceURI); :2429 uri_to_path strips file://",
+        "crates/engine/src/cmd/datamerge/mod.rs:620-646 resolve_sources_on_open → status_of → fingerprint_of std::fs::metadata (parse.rs:332-341)"
+      ]
+    },
+    {
+      "prefix": "file.recovery.",
+      "class": "file",
+      "why": "Crash-recovery data in a folder, the `dir` the call names or Session.recovery_dir. list reads the folder. save writes <uid>.designcraft and <uid>.json (create_dir_all, write, rename) and deletes the entries of clean documents. open reads the entries back as documents and deletes them.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:34-45 the three specs; :592-603 recovery_dir prefers the `dir` param",
+        "crates/engine/src/recovery.rs:40-58 save (create_dir_all, std::fs::write, rename); :61-82 list (read_dir, read_to_string); :86-106 open (std::fs::read, discard → remove_file)"
+      ]
+    },
+    {
+      "ids": ["file.close"],
+      "class": "file",
+      "why": "Closes the document in the session. When the host has set Session.recovery_dir, close_document also calls recovery::discard, which deletes that document's <uid>.designcraft and <uid>.json there (std::fs::remove_file). With no recovery folder (OctoSense's service sets none) it is memory only.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:53-57 file.close → Session::close_document",
+        "crates/engine/src/lib.rs:372-384 close_document → recovery::discard(dir, uid) when recovery_dir is set",
+        "crates/engine/src/recovery.rs:32-36 discard: std::fs::remove_file of both files"
+      ]
+    },
+    {
+      "ids": ["file.new", "file.newSample", "file.presets", "file.serialize", "file.activate"],
+      "class": "safe",
+      "why": "No disk access despite the file. prefix. These build a new document in memory (Document::new; sample::magazine is built in code), return the static preset table, serialize the open document to base64 (no path), or switch the session's active document.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:118-156 file_new / file_sample → Session::add_document",
+        "crates/engine/src/cmd/file.rs:19 file.presets returns PRESETS; :46-52 file.serialize returns {base64}",
+        "crates/engine/src/cmd/file.rs:58-61 file.activate → Session::set_active (lib.rs:352-357)",
+        "crates/engine/src/sample.rs: the magazine is built in code (no fs, no include_bytes)"
+      ]
+    },
+    {
+      "ids": ["file.printers", "file.print"],
+      "class": "device",
+      "why": "Printers, through the system spooler. file.printers runs `lpstat -e` and `lpstat -d` (std::process::Command) to list them. file.print renders a PDF, writes it to the temp dir and runs `lpr -P <printer> -# <copies> -T <title> <file>`. With dryRun it only returns that command.",
+      "evidence": [
+        "crates/engine/src/cmd/print.rs:23-32 printers: Command::new(\"lpstat\")",
+        "crates/engine/src/cmd/print.rs:39-75 print: temp-dir PDF std::fs::write at :67, Command::new(lpr) at :68"
+      ]
+    },
+    {
+      "prefix": "snippet.",
+      "class": "file",
+      "why": "snippet.export writes the selection's .designcraft bytes to `path` (std::fs::write), or returns base64 when no path is given. snippet.place reads `path` through file::read_source (std::fs::read) unless `base64` is given.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:496-507 snippet_export std::fs::write(path)",
+        "crates/engine/src/cmd/file.rs:406-417 read_source std::fs::read(path); :559-590 snippet_place"
+      ]
+    },
+    {
+      "prefix": "place.",
+      "class": "file",
+      "why": "place.load and place.styles read the `path` they are given through file::read_source (std::fs::read), to load a graphic into the place cursor or to list a Word/RTF file's styles.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:64-78 place.styles → read_source + textimport::import",
+        "crates/engine/src/cmd/file.rs:419-434 place_load → read_source (std::fs::read at :412)"
+      ]
+    },
+    {
+      "ids": ["place.drop"],
+      "class": "safe",
+      "why": "Drops the graphic already loaded in the session's place cursor (Session.loaded, an asset already in the document) into a frame and resets the tool. No I/O.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:436-489 place_drop: s.edit with the loaded AssetId, then s.set_tool(\"selection\")"
+      ]
+    },
+    {
+      "prefix": "book.",
+      "class": "file",
+      "why": "A book is a file listing document paths. book.new, add, remove and styleSource rewrite the .dcbook (std::fs::write); book.open reads it. book.list, paginate, syncStyles and exportPdf load every chapter from disk (std::fs::read; an IDML chapter also reads its linked files). paginate and syncStyles write the chapters back.",
+      "evidence": [
+        "crates/engine/src/cmd/book.rs:28-32 save std::fs::write(b.path); :39-51 load std::fs::read + idml::import_idml",
+        "crates/engine/src/cmd/book.rs:53-61 store std::fs::write(chapter path); :83-221 specs",
+        "crates/engine/src/cmd/book.rs:195-220 book.exportPdf: load_document_fonts per chapter, optional std::fs::write(path)"
+      ]
+    },
+    {
+      "ids": ["book.close"],
+      "class": "safe",
+      "why": "Only drops the open book from the session (s.book = None). It writes nothing.",
+      "evidence": ["crates/engine/src/cmd/book.rs:104-107 book.close"]
+    },
+    {
+      "prefix": "library.",
+      "class": "file",
+      "why": "Object Library files. library.open reads `path` (std::fs::read_to_string), or takes inline `json`. library.new, add and remove call Library::save, which rewrites the library's file (std::fs::write) whenever the library has a path.",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:28-35 Library::save std::fs::write(path)",
+        "crates/engine/src/cmd/library.rs:49-71 library.new (save) / library.open (read_to_string)",
+        "crates/engine/src/cmd/library.rs:79-92 library.add and :109-117 library.remove call lib.save()"
+      ]
+    },
+    {
+      "ids": ["library.list", "library.json", "library.place", "library.close"],
+      "class": "safe",
+      "why": "These work on the library already in session memory: list its items, return it as JSON text, place an item, or drop the library from the session. library.place passes the item's stored base64 snippet to snippet_place, so no path is read.",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:72-78 library.list / library.json",
+        "crates/engine/src/cmd/library.rs:94-107 library.place: with_param(p, \"base64\", item.snippet) → snippet_place (read_source takes base64 first)",
+        "crates/engine/src/cmd/library.rs:158-161 library.close"
+      ]
+    },
+    {
+      "prefix": "conveyor.",
+      "class": "safe",
+      "why": "Content Collector: snippets of selected objects held in Session.conveyor (memory) and placed back from those bytes as base64. No file or path.",
+      "evidence": ["crates/engine/src/cmd/library.rs:119-157 conveyor.collect/place/list/clear on s.conveyor"]
+    },
+    {
+      "prefix": "links.",
+      "class": "file",
+      "why": "Placed-file links. relink reads the new `path`. relinkFolder probes `dir`, or each link's own folder, with Path::exists and reads the matches. update re-reads modified link files. copyTo writes every asset into `dir` (create_dir_all, std::fs::write) and relinks to the copies.",
+      "evidence": [
+        "crates/engine/src/cmd/links.rs:145-150 reload std::fs::read(path); :156-171 relink; :173-207 relink_folder (cand.exists → relink); :209-236 update",
+        "crates/engine/src/cmd/package.rs:61-83 write_links, used by links.copyTo (:208-)"
+      ]
+    },
+    {
+      "ids": ["links.list"],
+      "class": "file",
+      "why": "Looks like a pure query, but it works out each link's status by touching the path the document names: std::fs::metadata, then a full std::fs::read to compare bytes (ok, modified or missing). The paths come from the document (an imported IDML, for one), so it probes and reads arbitrary files.",
+      "evidence": [
+        "crates/engine/src/cmd/links.rs:18-20 links.list → list → status(a)",
+        "crates/engine/src/cmd/links.rs:92-108 status: std::fs::metadata + std::fs::read"
+      ]
+    },
+    {
+      "ids": ["links.embed", "links.goTo"],
+      "class": "safe",
+      "why": "Document only. embed clears the asset's link and keeps the embedded copy; goTo selects the frames that show the asset.",
+      "evidence": ["crates/engine/src/cmd/links.rs:48-55 links.embed (link = None); :56-66 links.goTo (selection)"]
+    },
+    {
+      "prefix": "data.",
+      "class": "file",
+      "why": "Data-merge sources are read from disk. data.source.select and data.fields take `path` (take_file → read_path: std::fs::metadata + std::fs::read, up to 256 MiB). data.source.update re-reads the path stored with the attached source. The CSV/XLSX rows become document data.",
+      "evidence": [
+        "crates/engine/src/cmd/datamerge/mod.rs:84-92 source_select → read_source/take_file (:648-673, :736-747)",
+        "crates/engine/src/cmd/datamerge/mod.rs:94-117 source_update → read_path(src.path)",
+        "crates/engine/src/cmd/datamerge/mod.rs:126-137 fields_cmd → load_inline → take_file when `path` is given",
+        "crates/engine/src/cmd/datamerge/mod.rs:766-781 read_path_capped std::fs::metadata / std::fs::read"
+      ]
+    },
+    {
+      "ids": ["data.preview", "data.merge"],
+      "class": "file",
+      "why": "Naming trap: filling image placeholders reads the image files named in record cells, absolute paths included, even when the rows come inline as `rows` or `csv` (fill_row → place_image → image_candidates → std::fs::metadata + std::fs::read). data.preview does this although it is a query spec. data.merge also reads a `path` source.",
+      "evidence": [
+        "crates/engine/src/cmd/datamerge/mod.rs:176-202 preview_cmd → fill_row; :204-257 merge_cmd → load_inline / linked_table → copy_records / tile_records → fill_row",
+        "crates/engine/src/cmd/datamerge/fill.rs:315-335 place_image: std::fs::metadata / std::fs::read of each candidate",
+        "crates/engine/src/cmd/datamerge/parse.rs:282-310 image_candidates: an absolute cell path, then the data file's and the document's folders"
+      ]
+    },
+    {
+      "prefix": "data.placeholder.",
+      "class": "safe",
+      "why": "Insert or remove a <<field>> placeholder in a story, or bind one to a frame. Only the document's data_merge.placeholders and story text change.",
+      "evidence": ["crates/engine/src/cmd/datamerge/mod.rs:139-166 placeholder_add / placeholder_remove via s.edit; :438-511 add_placeholder"]
+    },
+    {
+      "ids": ["data.source.remove", "data.options", "data.preview.stop"],
+      "class": "safe",
+      "why": "Document or session only. These drop the attached source, set merge options (apply_options, validate), or end the preview. data.preview.stop's run is a no-op, and Session::execute restores the stashed template.",
+      "evidence": [
+        "crates/engine/src/cmd/datamerge/mod.rs:119-124 source_remove; :168-174 options_cmd; :71 data.preview.stop",
+        "crates/engine/src/lib.rs:365-371,405-410 stop_data_preview before every journaled command"
+      ]
+    },
+    {
+      "prefix": "xml.",
+      "class": "safe",
+      "why": "Tags, style-to-tag maps, the structure view and DTD validation work on the document's xml data and its stored DTD text. The quick-xml and dtd parsers resolve no external entities and open no files.",
+      "evidence": [
+        "crates/engine/src/cmd/xml.rs:178-302 xml.tags/newTag/deleteTag/tagText/tag/mapStyle/structure via s.edit",
+        "crates/engine/src/cmd/xml.rs:341-369 xml.deleteDtd / xml.validate on d.xml.dtd",
+        "crates/engine/src/dtd.rs: parser and validator, no fs"
+      ]
+    },
+    {
+      "ids": ["xml.loadDtd"],
+      "class": "file",
+      "why": "Reads the DTD from `path` when no `text` is given (text_or_path → std::fs::read_to_string).",
+      "evidence": [
+        "crates/engine/src/cmd/xml.rs:313-338 xml.loadDtd → text_or_path",
+        "crates/engine/src/cmd/xml.rs:383-397 text_or_path std::fs::read_to_string(path)"
+      ]
+    },
+    {
+      "prefix": "swatch.",
+      "class": "safe",
+      "why": "Create, add, delete and group the document's colour swatches via s.edit.",
+      "evidence": ["crates/engine/src/cmd/style.rs:118-125 swatch.create and the swatch.* specs after it, all s.edit on d.swatches / d.color_groups"]
+    },
+    {
+      "ids": ["swatch.load", "swatch.save"],
+      "class": "file",
+      "why": "Swatch exchange files. swatch.load reads `path` (std::fs::read) unless `base64` is given. swatch.save writes the .ase file to `path` (std::fs::write), or returns base64.",
+      "evidence": [
+        "crates/engine/src/cmd/style.rs:716-744 load_swatches std::fs::read(path)",
+        "crates/engine/src/cmd/style.rs:746-757 save_swatches std::fs::write(path)"
+      ]
+    },
+    {
+      "prefix": "media.",
+      "class": "safe",
+      "why": "Reads a placed video's or sound's media options from the document.",
+      "evidence": ["crates/engine/src/cmd/media.rs:126-135 media.get"]
+    },
+    {
+      "ids": ["media.options"],
+      "class": "file",
+      "why": "Sets playback options. A `poster: {path}` is read from disk through file::read_source (std::fs::read) before the edit.",
+      "evidence": ["crates/engine/src/cmd/media.rs:71-125 media.options: read_source(&p[\"poster\"]) at :83"]
+    },
+    {
+      "prefix": "table.",
+      "class": "safe",
+      "why": "Tables live in story text. insert, delete, merge, split, sort, select, options and get edit or read the document or the selection via s.edit. table.dropCells re-runs only the fixed text.placeCaret and text.extendTo.",
+      "evidence": [
+        "crates/engine/src/cmd/table.rs:27-228 specs",
+        "crates/engine/src/cmd/table.rs:1213-1214 fixed nested text.placeCaret / text.extendTo"
+      ]
+    },
+    {
+      "ids": ["table.placeGraphic"],
+      "class": "file",
+      "why": "Turns a cell into a graphic cell from `path` through file::read_source (std::fs::read), unless `base64` is given.",
+      "evidence": ["crates/engine/src/cmd/table.rs:125-132 spec; :1217-1220 place_graphic → super::file::read_source(p)"]
+    },
+    {
+      "prefix": "color.",
+      "class": "host",
+      "why": "Colour settings are process-wide, not per document. color.settings replaces the global working spaces with cms::set_active (a static ACTIVE RwLock), which changes rendering and export for every session and document in the process.",
+      "evidence": [
+        "crates/engine/src/cmd/colorsettings.rs:1-2 (process-wide); :15-31 set → cms::set_active",
+        "crates/color/src/cms/mod.rs:604-628 static ACTIVE and set_active"
+      ]
+    },
+    {
+      "ids": ["color.loadProfile"],
+      "class": "host",
+      "why": "Reads an ICC file from `path` (cms::load_icc_file → std::fs::read) and registers it in the process-global profile list (static USER). That is file access plus app-wide state, and host is the stricter class.",
+      "evidence": [
+        "crates/engine/src/cmd/colorsettings.rs:44-56 color.loadProfile",
+        "crates/color/src/cms/mod.rs:155 static USER; :213-238 register_icc / load_icc_file std::fs::read"
+      ]
+    },
+    {
+      "ids": ["color.convert"],
+      "class": "safe",
+      "why": "Pure colour conversion through the active working spaces. It only reads the global settings; no I/O and no state change.",
+      "evidence": ["crates/engine/src/cmd/colorsettings.rs:57-71 color.convert"]
+    },
+    {
+      "prefix": "prefs.",
+      "class": "host",
+      "why": "Application preferences, not the document. prefs.set merges any key of Session.prefs, the engine's app-level Prefs (typographer's quotes, autocorrect list, smart text reflow, recovery interval and more), shared by every document in the session. The engine keeps them in memory; persisting them is the app's job.",
+      "evidence": [
+        "crates/engine/src/cmd/prefs.rs:1-2 (the application's, kept by the session); :46-60 s.prefs = merged value",
+        "crates/engine/src/lib.rs:149-196 Prefs: Preferences that the engine needs (UI keeps its own)"
+      ]
+    },
+    {
+      "prefix": "tool.",
+      "class": "safe",
+      "why": "The active pointer tool lives in the engine session (Session.tool via set_tool), and the tool list is a constant. No I/O and nothing outside the session.",
+      "evidence": ["crates/engine/src/cmd/inspect.rs:17-25 tool.select → s.set_tool; tool.list → designcraft_tools::TOOL_GROUPS"]
+    },
+    {
+      "ids": ["tool.polygonSettings"],
+      "class": "host",
+      "why": "Despite the tool. prefix, it writes application preferences: Session.prefs.polygon_sides and star_inset, the same Prefs that prefs.set edits, used by every later polygon in the session.",
+      "evidence": ["crates/engine/src/cmd/object.rs:584-599 tool.polygonSettings: s.prefs.polygon_sides / s.prefs.star_inset"]
+    },
+    {
+      "prefix": "app.",
+      "class": "host",
+      "why": "Help/About information: returns the constant ArtCraft community and project URLs (crate::links::all). It opens and fetches nothing, but it is app information, not the document.",
+      "evidence": [
+        "crates/engine/src/cmd/inspect.rs:12-13 app.links → crate::links::all()",
+        "crates/engine/src/links.rs:1-27 constant URLs"
+      ]
+    },
+    {
+      "prefix": "script.",
+      "class": "code",
+      "why": "script.run parses `text` into arbitrary `command {json}` steps (script::parse) and runs each one through Session::execute (run_script). The steps can be file, print or script.run itself, and a deny-list on the outer id cannot see them.",
+      "evidence": [
+        "crates/engine/src/cmd/scripts.rs:8-25 run → crate::script::parse + s.run_script",
+        "crates/engine/src/script.rs:144-160 run / run_script → self.execute(c, &p)"
+      ]
+    },
+    {
+      "prefix": "edit.",
+      "class": "safe",
+      "why": "Undo/redo, select all or none, clear, duplicate, step and repeat, and the transparency blend space edit the document or the selection. edit.duplicate re-runs only the fixed transform.move.",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs:104-199 undo/redo/selectAll/deselectAll/clear on DocState history and selection",
+        "crates/engine/src/cmd/edit.rs:259-260 edit.duplicate → fixed s.execute(\"transform.move\")",
+        "crates/engine/src/cmd/object.rs:554 edit.stepAndRepeat; crates/engine/src/cmd/prefs.rs:28-45 edit.transparencyBlendSpace → d.settings.blend_space"
+      ]
+    },
+    {
+      "ids": ["edit.copy", "edit.cut", "edit.paste", "edit.pasteWithoutFormatting", "edit.pasteInto", "edit.pasteInPlace"],
+      "class": "safe",
+      "why": "The clipboard is engine-internal session memory (Session.clipboard and text_clipboard); the engine never touches the OS clipboard. Copy returns plain text for the host to put there, and paste takes the OS clipboard's text only as the caller's `text` parameter.",
+      "evidence": [
+        "crates/engine/src/lib.rs:254,258 Session.clipboard / text_clipboard",
+        "crates/engine/src/cmd/edit.rs:42-92 copy_text / paste_text; :200-247 edit.copy/cut/paste (`text?: the system clipboard's text`)",
+        "crates/engine/src/cmd/edit.rs:248-258 edit.pasteInto / edit.pasteInPlace use s.clipboard"
+      ]
+    },
+    {
+      "prefix": "selection.",
+      "class": "safe",
+      "why": "Set or toggle the selected objects in DocState.selection.",
+      "evidence": ["crates/engine/src/cmd/edit.rs:124-156 selection.set / selection.toggle"]
+    },
+    {
+      "prefix": "select.",
+      "class": "safe",
+      "why": "Move the selection through the stacking order, groups and frame contents (DocState.selection only).",
+      "evidence": ["crates/engine/src/cmd/select.rs: select.firstAbove … select.previousInGroup change only the selection"]
+    },
+    {
+      "prefix": "object.",
+      "class": "safe",
+      "why": "Object-menu edits change the document via s.edit: arrange, group, lock/hide, fill, stroke and effects, fitting, text frame and corner options, pathfinder and compound paths, captions, QR codes, PDF layer visibility, labels. Placed-graphic data comes from assets already in the document. object.bringToFront and its siblings re-run only object.arrange.",
+      "evidence": [
+        "crates/engine/src/cmd/object.rs: object.* specs via s.edit; :124-130 fixed s.execute(\"object.arrange\")",
+        "crates/engine/src/cmd/captions.rs:24-46 caption variables come from the document ({path} is the stored link string)",
+        "crates/engine/src/cmd/qr.rs, pdflayers.rs, paths.rs, select.rs (object.convertShape), style.rs (object.gradient, object.color): in-memory geometry and asset bytes"
+      ]
+    },
+    {
+      "prefix": "transform.",
+      "class": "safe",
+      "why": "Move, resize, rotate, scale, shear, flip, set, clear and info act on the targets' geometry in the document.",
+      "evidence": ["crates/engine/src/cmd/object.rs: transform.* specs → s.edit on item transforms"]
+    },
+    {
+      "ids": ["transform.again"],
+      "class": "safe",
+      "why": "A replay, but a closed one. It re-runs only entries of Session.transforms, which record_transform fills solely with transform.move/rotate/scale/shear/flip calls, so it cannot reach any command beyond those geometry edits.",
+      "evidence": [
+        "crates/engine/src/cmd/object.rs:1064-1087 transform_again: find_command(cmd) + (spec.run)(s, &q)",
+        "crates/engine/src/lib.rs:497-518 record_transform guard: matches!(id, transform.move | rotate | scale | shear | flip)"
+      ]
+    },
+    {
+      "prefix": "frame.",
+      "class": "safe",
+      "why": "Create frames, or a grid of frames, in the document.",
+      "evidence": ["crates/engine/src/cmd/object.rs:19 frame.create; :611 frame.grid"]
+    },
+    {
+      "prefix": "line.",
+      "class": "safe",
+      "why": "Create a line item in the document.",
+      "evidence": ["crates/engine/src/cmd/object.rs: line.create → s.edit"]
+    },
+    {
+      "prefix": "gap.",
+      "class": "safe",
+      "why": "The Gap tool moves the gap between objects by resizing and moving them in the document.",
+      "evidence": ["crates/engine/src/cmd/object.rs:602 gap.move"]
+    },
+    {
+      "prefix": "path.",
+      "class": "safe",
+      "why": "Create and edit path anchors (add, delete, convert, erase, smooth, split, close, move) in the document.",
+      "evidence": ["crates/engine/src/cmd/object.rs path.create/appendAnchor/close/moveAnchors; anchors.rs:14-58; paths.rs:61 path.split"]
+    },
+    {
+      "prefix": "layout.",
+      "class": "safe",
+      "why": "Pages, spreads, parents, sections, margins, document setup, parent overrides, guides and alternate layouts are document edits via s.edit.",
+      "evidence": [
+        "crates/engine/src/cmd/layout.rs: layout.* specs via s.edit",
+        "crates/engine/src/cmd/overrides.rs, guides.rs:50 (layout.createGuides), liquid.rs:183 (layout.createAlternate)"
+      ]
+    },
+    {
+      "ids": ["layout.rotateSpreadView", "layout.parents.edit"],
+      "class": "safe",
+      "why": "They sound like view settings but live in engine state, not the host UI. rotateSpreadView stores page.view_rotation in the document (undoable, saved with it). parents.edit flips DocState.editing_parents, session memory that also scopes edit.selectAll.",
+      "evidence": [
+        "crates/engine/src/cmd/layout.rs:99-116 rotateSpreadView → s.edit … pg.view_rotation",
+        "crates/engine/src/cmd/layout.rs:182-188 parents.edit → st.editing_parents"
+      ]
+    },
+    {
+      "prefix": "layer.",
+      "class": "safe",
+      "why": "The document's layers: new, set, move, merge, delete and select items. layer.activate sets DocState.active_layer.",
+      "evidence": ["crates/engine/src/cmd/layout.rs: layer.* specs via s.edit / DocState"]
+    },
+    {
+      "prefix": "guide.",
+      "class": "safe",
+      "why": "Ruler guides on pages; guide.liquid marks one as a liquid guide.",
+      "evidence": ["crates/engine/src/cmd/guides.rs:16-50 guide.*; crates/engine/src/cmd/liquid.rs guide.liquid"]
+    },
+    {
+      "prefix": "liquid.",
+      "class": "safe",
+      "why": "Liquid-layout rules stored on pages and objects.",
+      "evidence": ["crates/engine/src/cmd/liquid.rs:118 liquid.pageRule, liquid.object via s.edit"]
+    },
+    {
+      "prefix": "page.",
+      "class": "safe",
+      "why": "Page transitions stored on pages for interactive PDF, and listing them.",
+      "evidence": ["crates/engine/src/cmd/transitions.rs:31 page.transition / page.transitions"]
+    },
+    {
+      "prefix": "text.",
+      "class": "safe",
+      "why": "Caret, text selection and typing in story text. text.insert only reads typographer's quotes and autocorrect from Session.prefs. All through s.edit or DocState.selection.",
+      "evidence": ["crates/engine/src/cmd/text.rs: text.* specs; :365-367 reads s.prefs only"]
+    },
+    {
+      "prefix": "story.",
+      "class": "safe",
+      "why": "story.setText, replaceRange, get and setDirection edit or read stories. story.placeAndLink, links, updateLink and unlink are in-document linked stories (Story.link is a parent story id), not file links.",
+      "evidence": [
+        "crates/engine/src/cmd/text.rs: story.* specs",
+        "crates/engine/src/cmd/linked.rs:11-18 copy_into copies a parent story inside the document"
+      ]
+    },
+    {
+      "prefix": "type.",
+      "class": "safe",
+      "why": "Character and paragraph formatting, case, OpenType, ruby, outlines (glyph paths from the font database) and type on a path edit stories via s.edit. type.fillWithPlaceholder uses the built-in PLACEHOLDER Latin text, not a file.",
+      "evidence": [
+        "crates/engine/src/cmd/text.rs:123 type.fillWithPlaceholder → fill_placeholder (:890-924, constant PLACEHOLDER)",
+        "crates/engine/src/cmd/path_type.rs:13 type.onPath; crates/engine/src/cmd/paths.rs:34 type.createOutlines"
+      ]
+    },
+    {
+      "prefix": "style.",
+      "class": "safe",
+      "why": "Paragraph, character, object, cell and table styles, composite fonts, style groups and export tags are document data edited via s.edit. Applying a style may re-run only the fixed type.selectionAttrs query.",
+      "evidence": [
+        "crates/engine/src/cmd/style.rs:10-140 style.* specs",
+        "crates/engine/src/cmd/table.rs:28-77 style.cell.* / style.table.*; crates/engine/src/cmd/text.rs:239 style.breakLink"
+      ]
+    },
+    {
+      "prefix": "font.",
+      "class": "safe",
+      "why": "font.list reports the fonts the document uses, looking them up in the process-global FontDb (the same lookup every text layout does). font.replace swaps font attributes in stories and styles via s.edit. Neither takes a path.",
+      "evidence": ["crates/engine/src/cmd/fonts.rs:20-25 specs; :46-91 list (FontDb::global().scoped); :107- replace via s.edit"]
+    },
+    {
+      "prefix": "find.",
+      "class": "safe",
+      "why": "Find and change text and objects in the document. GREP uses the regex crate (linear time, no backtracking), so nothing runs unbounded.",
+      "evidence": ["crates/engine/src/cmd/find.rs:12 find.objects …; :109-120 build → regex::RegexBuilder"]
+    },
+    {
+      "prefix": "spelling.",
+      "class": "safe",
+      "why": "Checks against the bundled Moby word list plus the document's user dictionary (d.user_words). spelling.change edits the story.",
+      "evidence": ["crates/engine/src/cmd/spelling.rs:1-2 bundled word list; :11-81 specs via s.edit"]
+    },
+    {
+      "prefix": "hyphenation.",
+      "class": "safe",
+      "why": "Hyphenation exceptions stored in d.hyphenation_exceptions.",
+      "evidence": ["crates/engine/src/cmd/spelling.rs:15-44 hyphenation.addException / removeException / list"]
+    },
+    {
+      "prefix": "variables.",
+      "class": "safe",
+      "why": "Text-variable definitions in d.text_variables. File-name and date variables come from the document's own stored fields, not from file metadata. variables.insert re-runs only text.insert.",
+      "evidence": [
+        "crates/engine/src/cmd/variables.rs:9-86 specs",
+        "crates/doc/src/vars.rs:190-198 FileName / ModificationDate from the document's fields"
+      ]
+    },
+    {
+      "prefix": "toc.",
+      "class": "safe",
+      "why": "Generate, update or preview a table of contents from the document's paragraph styles.",
+      "evidence": ["crates/engine/src/cmd/toc.rs:16 toc.generate / toc.update / toc.entries"]
+    },
+    {
+      "prefix": "index.",
+      "class": "safe",
+      "why": "Index page references in story text and the generated index story.",
+      "evidence": ["crates/engine/src/cmd/index.rs:14 index.addReference / list / generate / update"]
+    },
+    {
+      "prefix": "xref.",
+      "class": "safe",
+      "why": "Cross-references and their formats stored in the document.",
+      "evidence": ["crates/engine/src/cmd/xref.rs:12 xref.insert / list / formats / defineFormat / setFormat"]
+    },
+    {
+      "prefix": "anchor.",
+      "class": "safe",
+      "why": "Text anchors (hyperlink destinations) in story text.",
+      "evidence": ["crates/engine/src/cmd/xref.rs:21 anchor.create / anchor.list"]
+    },
+    {
+      "prefix": "anchored.",
+      "class": "safe",
+      "why": "Anchored (inline or custom-positioned) objects in story text.",
+      "evidence": ["crates/engine/src/cmd/anchored.rs:17 anchored.insert / options / release / list"]
+    },
+    {
+      "prefix": "footnote.",
+      "class": "safe",
+      "why": "Footnotes in stories; goToReference only moves the caret.",
+      "evidence": ["crates/engine/src/cmd/notes.rs:12-40 footnote.*"]
+    },
+    {
+      "prefix": "endnote.",
+      "class": "safe",
+      "why": "Endnotes and the document's endnote options.",
+      "evidence": ["crates/engine/src/cmd/endnotes.rs:13-60 endnote.*"]
+    },
+    {
+      "prefix": "note.",
+      "class": "safe",
+      "why": "Editorial notes anchored in stories.",
+      "evidence": ["crates/engine/src/cmd/editorial.rs: note.new / edit / delete / convertToText / list"]
+    },
+    {
+      "prefix": "changes.",
+      "class": "safe",
+      "why": "Track-changes state, and accepting or rejecting changes in stories.",
+      "evidence": ["crates/engine/src/cmd/changes.rs: changes.* via s.edit"]
+    },
+    {
+      "prefix": "condition.",
+      "class": "safe",
+      "why": "Conditional-text definitions, and applying them to the selected text.",
+      "evidence": ["crates/engine/src/cmd/conditions.rs: condition.* via s.edit"]
+    },
+    {
+      "prefix": "article.",
+      "class": "safe",
+      "why": "Articles (export reading order): lists of item ids in the document.",
+      "evidence": ["crates/engine/src/cmd/articles.rs: article.* via s.edit"]
+    },
+    {
+      "prefix": "button.",
+      "class": "safe",
+      "why": "Button actions for interactive PDF, GoToUrl included, are only stored on items. button.clear re-runs only button.set with action none.",
+      "evidence": ["crates/engine/src/cmd/buttons.rs:10-24 parse (ButtonAction::GoToUrl stored); :29-50 button.set / button.clear"]
+    },
+    {
+      "prefix": "form.",
+      "class": "safe",
+      "why": "Interactive-PDF form-field definitions stored on items.",
+      "evidence": ["crates/engine/src/cmd/buttons.rs:52- form.set / form.clear / form.list"]
+    },
+    {
+      "prefix": "hyperlink.",
+      "class": "safe",
+      "why": "Hyperlinks store a url, email or page destination in d.hyperlinks and fetch nothing. goToSource only selects.",
+      "evidence": ["crates/engine/src/cmd/interactive.rs:93-101 dest_param; :103-130 create pushes Hyperlink { dest }"]
+    },
+    {
+      "prefix": "bookmark.",
+      "class": "safe",
+      "why": "PDF bookmarks stored in d.bookmarks.",
+      "evidence": ["crates/engine/src/cmd/interactive.rs: bookmark.rename / add / delete / list"]
+    },
+    {
+      "prefix": "states.",
+      "class": "safe",
+      "why": "Multi-state objects in the document; states.create re-runs only object.group.",
+      "evidence": ["crates/engine/src/cmd/states.rs:20-35 states.create (fixed object.group) and states.*"]
+    },
+    {
+      "prefix": "strokeStyle.",
+      "class": "safe",
+      "why": "Custom stroke styles stored in the document.",
+      "evidence": ["crates/engine/src/cmd/strokes.rs: strokeStyle.list / new / delete"]
+    },
+    {
+      "prefix": "list.",
+      "class": "safe",
+      "why": "Named numbered lists stored in the document.",
+      "evidence": ["crates/engine/src/cmd/lists.rs:12 list.define / list.delete"]
+    },
+    {
+      "prefix": "math.",
+      "class": "safe",
+      "why": "math.insert and math.svg typeset a macro-free LaTeX subset (crate::math) into an SVG asset, or return the SVG. No file and no macro expansion.",
+      "evidence": ["crates/engine/src/cmd/mathexpr.rs:14-60 math_item → crate::math::to_svg", "crates/engine/src/math.rs:1-4 the supported LaTeX subset"]
+    },
+    {
+      "prefix": "ink.",
+      "class": "safe",
+      "why": "Ink Manager settings (spots to process, aliases) stored in d.inks.",
+      "evidence": ["crates/engine/src/cmd/style.rs:205-262 ink.list / ink.options"]
+    },
+    {
+      "prefix": "document.",
+      "class": "safe",
+      "why": "document.inspect, history and list read session memory. document.preferences edits d.settings (document-stored units, grids and guide colours) via s.edit.",
+      "evidence": ["crates/engine/src/cmd/inspect.rs:11-30 document.inspect / list / history", "crates/engine/src/cmd/prefs.rs:61-89 document.preferences"]
+    },
+    {
+      "prefix": "preflight.",
+      "class": "safe",
+      "why": "In-memory checks of the open document: overset text, missing glyphs, an empty asset counted as a missing link, low ppi, RGB swatches. Unlike links.list it touches no linked file.",
+      "evidence": ["crates/engine/src/cmd/preflight.rs:74-221 check; :170-179 missing link = asset.data.is_empty()"]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "result": "pass",
+  "not_verified": [
+    "Windows target ABI",
+    "Media Foundation device callbacks",
+    "OS permission",
+    "camera hardware",
+    "per-app quota reservation"
+  ],
+  "tests": 9,
+  "worker_sha256": "3c918806f91ff1b362bd21531f74dcf2cfa5e629a2fe066588db54e5558e549f",
+  "reader_sha256": "e18782e9de57b790ea4dd203c2b1c2f1501f934b0f6d85d6a7080b4a6b2db02f",
+  "harness_sha256": "a196a7e4132cb4b1a8a73b9a89ca6f9e047bca6bd8bc833e2cd2d4a1045a4537",
+  "scope": "Portable actual-source worker/JPEG tests; test doubles replace platform IDs and action delivery.",
+  "runtime_tree": "d5ab8c06e327afaa11b1a05634b6205b7c504900",
+  "windows_typecheck": {
+    "result": "pass",
+    "exit_code": 0,
+    "target": "x86_64-pc-windows-msvc",
+    "command": "cargo check --locked --offline --target x86_64-pc-windows-msvc -p makepad-platform -j1",
+    "log_sha256": "04357256964f6e854c0aa09b54f447bc6818b0d355ab086ac22c8a05a601c384",
+    "scope": "Cross-target Rust type checking; not linking, execution or hardware acceptance."
+  },
+  "runtime_setup": {
+    "result": "pass",
+    "checks": [
+      "python3 tools/setup.py --check",
+      "CARGO_NET_OFFLINE=true python3 tools/setup.py --check --cargo"
+    ],
+    "overlay_log_sha256": "ebabc5d599c6388ee9f59730cfa5f01fa3133fb3ca9109281f4275f695f81cd1",
+    "graph_log_sha256": "1be7167d698046c80b754506ae484b64002bc46ff4e5418f3a38ce9e650667d7"
+  }
+}

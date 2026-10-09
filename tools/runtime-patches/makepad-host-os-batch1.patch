@@ -1,0 +1,1559 @@
+diff --git a/platform/src/action.rs b/platform/src/action.rs
+index 159a9d530..66f5822d5 100644
+--- a/platform/src/action.rs
++++ b/platform/src/action.rs
+@@ -1,6 +1,6 @@
+ use crate::cx::Cx;
+ #[cfg(not(target_arch = "wasm32"))]
+-use crate::file_dialogs::{load_virtual_files_action, FileDialogAction, FileDialogLoadAction};
++use crate::file_dialogs::{load_virtual_files_guarded, FileDialogAction, FileDialogLoadAction};
+ use crate::thread::SignalToUI;
+ use std::any::TypeId;
+ use std::fmt;
+@@ -139,15 +139,18 @@ fn handle_native_file_dialog_action(&mut self, action: &ActionSend) -> bool {
+                 if !pending.want_bytes {
+                     return false;
+                 }
++                if !pending.multiple && paths.len() != 1 {
++                    self.new_actions.push(Box::new(FileDialogAction::FileLoadFailed { id }));
++                    return true;
++                }
+                 match self.task_pool().submit(crate::thread::Lane::Heavy, move || {
+-                    Cx::post_action(FileDialogLoadAction(load_virtual_files_action(
+-                        id,
+-                        paths,
+-                        pending.limits,
+-                    )));
++                    Cx::post_action(FileDialogLoadAction(load_virtual_files_guarded(id, paths, pending.limits, pending.access_guard)));
+                 }) {
+                     Ok(task) => task.detach(),
+-                    Err(error) => crate::error!("file dialog load refused by the task pool: {error}"),
++                    Err(error) => {
++                        crate::error!("file dialog load refused by the task pool: {error}");
++                        self.new_actions.push(Box::new(FileDialogAction::FileLoadFailed { id }));
++                    }
+                 }
+                 true
+             }
+diff --git a/platform/src/cx.rs b/platform/src/cx.rs
+index de09102a7..8a48805f3 100644
+--- a/platform/src/cx.rs
++++ b/platform/src/cx.rs
+@@ -131,6 +131,10 @@ pub struct Cx {
+     pub(crate) file_dialogs: FileDialogState,
+ 
+     pub(crate) platform_ops: VecDeque<CxOsOp>,
++    // The host sampler and native app keep independent location ownership.
++    // Each API retains its existing idempotent start/stop semantics.
++    pub(crate) location_updates_requested: bool,
++    pub(crate) location_updates_no_prompt_requested: bool,
+     pub(crate) pending_camera_playbacks: Vec<PendingCameraPlayback>,
+ 
+     pub(crate) new_next_frames: HashSet<NextFrame>,
+@@ -908,6 +912,8 @@ pub fn new(event_handler: Box<dyn FnMut(&mut Cx, &Event)>) -> Self {
+             ime_area: Default::default(),
+             keyboard_shift: 0.0,
+             platform_ops: Default::default(),
++            location_updates_requested: false,
++            location_updates_no_prompt_requested: false,
+             pending_camera_playbacks: Vec::new(),
+             studio_http: "".to_string(),
+             new_next_frames: Default::default(),
+diff --git a/platform/src/cx_api.rs b/platform/src/cx_api.rs
+index 8c8072dc9..e5087a9bd 100644
+--- a/platform/src/cx_api.rs
++++ b/platform/src/cx_api.rs
+@@ -40,6 +40,17 @@ pub enum OpenUrlInPlace {
+     No,
+ }
+ 
++/// Parse an absolute URL before handing it to a system handler. The same
++/// canonical URL must be used for an app's policy check and the native open.
++pub fn normalize_external_url(value: &str) -> Result<String, &'static str> {
++    if value.chars().any(char::is_control) || value.trim() != value {
++        return Err("URL contains control characters or surrounding whitespace");
++    }
++    url::Url::parse(value)
++        .map(|url| url.to_string())
++        .map_err(|_| "expected an absolute URL")
++}
++
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+ pub enum CxThreadPriority {
+     #[default]
+@@ -460,6 +471,7 @@ pub enum CxOsOp {
+     #[cfg(target_os = "android")]
+     RequestGpsLocation,
+     StartLocationUpdates,
++    StartLocationUpdatesNoPrompt,
+     StopLocationUpdates,
+ 
+     HttpRequest {
+@@ -679,6 +691,7 @@ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+             #[cfg(target_os = "android")]
+             Self::RequestGpsLocation => write!(f, "RequestGpsLocation"),
+             Self::StartLocationUpdates => write!(f, "StartLocationUpdates"),
++            Self::StartLocationUpdatesNoPrompt => write!(f, "StartLocationUpdatesNoPrompt"),
+             Self::StopLocationUpdates => write!(f, "StopLocationUpdates"),
+ 
+             Self::HttpRequest { .. } => write!(f, "HttpRequest"),
+@@ -1867,12 +1880,36 @@ pub fn request_gps_location(&mut self) {
+     /// platform, failures arrive as [`Event::LocationError`]. Platforms
+     /// without a location service log an error and stay silent.
+     pub fn start_location_updates(&mut self) {
++        self.location_updates_requested = true;
+         self.platform_ops.push_back(CxOsOp::StartLocationUpdates);
+     }
+ 
+-    /// Stop streaming position fixes.
++    /// Start foreground position updates only if OS authorization already exists.
++    /// Android and Apple backends recheck authorization without raising a dialog;
++    /// denial arrives as `Event::LocationError`. The host must obtain app consent
++    /// separately. Other backends do not implement this operation. This owner is
++    /// independent of `start_location_updates`; repeated starts are idempotent.
++    /// Release it with `stop_location_updates_no_prompt`.
++    pub fn start_location_updates_no_prompt(&mut self) {
++        self.location_updates_no_prompt_requested = true;
++        self.platform_ops.push_back(CxOsOp::StartLocationUpdatesNoPrompt);
++    }
++
++    /// Release the native app's streaming request. A host no-prompt request
++    /// keeps the platform feed alive until its own owner releases it.
+     pub fn stop_location_updates(&mut self) {
+-        self.platform_ops.push_back(CxOsOp::StopLocationUpdates);
++        self.location_updates_requested = false;
++        if !self.location_updates_no_prompt_requested {
++            self.platform_ops.push_back(CxOsOp::StopLocationUpdates);
++        }
++    }
++
++    /// Release the host's no-prompt request without stopping native subscribers.
++    pub fn stop_location_updates_no_prompt(&mut self) {
++        self.location_updates_no_prompt_requested = false;
++        if !self.location_updates_requested {
++            self.platform_ops.push_back(CxOsOp::StopLocationUpdates);
++        }
+     }
+ 
+     pub fn get_dpi_factor_of(&mut self, area: &Area) -> f64 {
+diff --git a/platform/src/file_dialogs.rs b/platform/src/file_dialogs.rs
+index 7999192a5..75db7ba97 100644
+--- a/platform/src/file_dialogs.rs
++++ b/platform/src/file_dialogs.rs
+@@ -12,6 +12,66 @@
+ 
+ pub const DEFAULT_VIRTUAL_FILE_SIZE_LIMIT: u64 = 512 * 1024 * 1024;
+ 
++/// Whether the current host has a native path/URI picker and the byte adapter.
++/// This does not claim that a provider is installed or a dialog was exercised.
++pub fn native_file_bytes_supported() -> bool {
++    #[cfg(all(not(gpusim), not(linux_direct), target_os = "linux", not(target_env = "ohos")))]
++    { return crate::os::linux::file_dialog::available(); }
++    #[cfg(not(all(not(gpusim), not(linux_direct), target_os = "linux", not(target_env = "ohos"))))]
++    { cfg!(all(not(gpusim), any(target_os = "macos", target_os = "windows", target_os = "android"))) }
++}
++
++/// Write only to a destination returned by a native save dialog. This is a
++/// trusted host API; a contained script must never supply this path/URI.
++/// Call on a worker: document providers and mounted filesystems can block.
++#[cfg(not(target_arch = "wasm32"))]
++pub fn write_selected_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
++    write_selected_file_guarded(path, bytes, || true)
++}
++
++/// As above, with a host authorization check immediately before native IO and
++/// again before a desktop temporary file replaces the selected destination.
++#[cfg(not(target_arch = "wasm32"))]
++pub fn write_selected_file_guarded(path: &std::path::Path, bytes: &[u8], authorized: impl Fn() -> bool) -> Result<(), String> {
++    if !authorized() { return Err("file transfer cancelled or permission changed".into()); }
++    #[cfg(all(not(gpusim), target_os = "android"))]
++    if path.to_string_lossy().starts_with("content://") {
++        return unsafe { crate::os::linux::android::android_jni::write_file_dialog_uri(&path.to_string_lossy(), bytes) };
++    }
++    use std::io::Write;
++    let parent = path.parent().ok_or("invalid save destination")?.canonicalize().map_err(|_| "save folder unavailable")?;
++    let name = path.file_name().ok_or("invalid save destination")?;
++    let destination = parent.join(name);
++    if let Ok(meta) = std::fs::symlink_metadata(&destination) {
++        if !meta.is_file() || meta.file_type().is_symlink() { return Err("save destination is not a regular file".into()); }
++    }
++    let temporary = parent.join(format!(".makepad-export-{}", LiveId::unique().0));
++    let result = (|| {
++        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temporary).map_err(|_| "cannot create export")?;
++        file.write_all(bytes).map_err(|_| "cannot write export")?;
++        drop(file);
++        if !authorized() { return Err("file transfer cancelled or permission changed"); }
++        std::fs::rename(&temporary, &destination).map_err(|_| "cannot finish export")
++    })();
++    if result.is_err() { let _ = std::fs::remove_file(&temporary); }
++    result.map_err(str::to_string)
++}
++
++/// Native-only liveness/admission predicate for loading a selected document.
++/// It runs on the task pool, so it must not access UI-thread-owned state.
++#[derive(Clone)]
++pub struct FileDialogAccessGuard(Arc<dyn Fn() -> bool + Send + Sync>);
++impl FileDialogAccessGuard {
++    pub fn new(authorized: impl Fn() -> bool + Send + Sync + 'static) -> Self { Self(Arc::new(authorized)) }
++    pub(crate) fn authorized(&self) -> bool { (self.0)() }
++}
++impl std::fmt::Debug for FileDialogAccessGuard {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("FileDialogAccessGuard") }
++}
++impl PartialEq for FileDialogAccessGuard {
++    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.0, &other.0) }
++}
++
+ /// Bytes accepted from a file picker or browser drop before they enter the
+ /// application. Both limits default to 512 MiB.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -87,13 +147,23 @@ pub(crate) fn load_virtual_files(
+     let mut total = 0u64;
+     let mut data = Vec::with_capacity(paths.len());
+     for path in paths {
++        #[cfg(all(not(gpusim), target_os = "android"))]
++        if path.to_string_lossy().starts_with("content://") {
++            let limit = limits.max_file_size.min(limits.max_total_size.saturating_sub(total));
++            let bytes = unsafe { crate::os::linux::android::android_jni::read_file_dialog_uri(&path.to_string_lossy(), limit)? };
++            total += bytes.len() as u64;
++            data.push(VirtualFileData { name: "document".into(), mime: "application/octet-stream".into(), bytes });
++            continue;
++        }
++        use std::io::Read;
+         let name = path
+             .file_name()
+             .map(|name| name.to_string_lossy().into_owned())
+             .unwrap_or_else(|| path.to_string_lossy().into_owned());
+-        let size = std::fs::metadata(&path)
+-            .map_err(|error| format!("cannot inspect '{}': {error}", path.display()))?
+-            .len();
++        let meta = std::fs::symlink_metadata(&path).map_err(|_| "cannot inspect selected file")?;
++        if !meta.is_file() { return Err("selected file is not a regular file".into()); }
++        let file = std::fs::File::open(&path).map_err(|_| "cannot open selected file")?;
++        let size = file.metadata().map_err(|_| "cannot inspect selected file")?.len();
+         if size > limits.max_file_size {
+             return Err(format!(
+                 "file '{}' is {} bytes, exceeding the per-file limit of {} bytes",
+@@ -109,8 +179,11 @@ pub(crate) fn load_virtual_files(
+                 total, limits.max_total_size
+             ));
+         }
+-        let bytes = std::fs::read(&path)
+-            .map_err(|error| format!("cannot read '{}': {error}", path.display()))?;
++        let mut bytes = Vec::new();
++        let limit = limits.max_file_size.min(limits.max_total_size.saturating_sub(total - size));
++        file.take(limit.saturating_add(1)).read_to_end(&mut bytes).map_err(|_| "cannot read selected file")?;
++        if bytes.len() as u64 > limit { return Err("selected file exceeds the byte limit".into()); }
++        total = total - size + bytes.len() as u64;
+         data.push(VirtualFileData {
+             mime: mime_from_path(&path).to_string(),
+             name,
+@@ -128,13 +201,20 @@ pub(crate) fn load_virtual_files_action(
+ ) -> FileDialogAction {
+     match load_virtual_files(paths, limits) {
+         Ok(files) => FileDialogAction::FileLoaded { id, files },
+-        Err(error) => {
+-            crate::error!("file dialog byte load failed: {error}");
+-            FileDialogAction::FileCancelled { id }
++        Err(_) => {
++            FileDialogAction::FileLoadFailed { id }
+         }
+     }
+ }
+ 
++#[cfg(not(target_arch = "wasm32"))]
++pub(crate) fn load_virtual_files_guarded(id: LiveId, paths: Vec<PathBuf>, limits: VirtualFileLimits, guard: Option<FileDialogAccessGuard>) -> FileDialogAction {
++    let authorized = || guard.as_ref().is_none_or(FileDialogAccessGuard::authorized);
++    if !authorized() { return FileDialogAction::FileLoadFailed { id }; }
++    let result = load_virtual_files_action(id, paths, limits);
++    if authorized() { result } else { FileDialogAction::FileLoadFailed { id } }
++}
++
+ #[cfg(not(target_arch = "wasm32"))]
+ fn mime_from_path(path: &std::path::Path) -> &'static str {
+     match path
+@@ -186,6 +266,11 @@ pub struct FileDialog {
+     /// Load selected files into [`VirtualFile`] values on a worker instead
+     /// of returning filesystem paths. Web always behaves as if this is true.
+     pub want_bytes: bool,
++    /// Android document grants normally survive process restarts. A contained
++    /// one-shot import/export must disable persistence.
++    pub persistent_access: bool,
++    /// Rechecked before reading a selected native file and before delivery.
++    pub access_guard: Option<FileDialogAccessGuard>,
+ }
+ 
+ impl FileDialog {
+@@ -199,6 +284,8 @@ pub fn new() -> Self {
+             multiple: false,
+             id: LiveId(0),
+             want_bytes: false,
++            persistent_access: true,
++            access_guard: None,
+         }
+     }
+ 
+@@ -208,6 +295,16 @@ pub fn set_title(mut self, title: String) -> Self {
+         self
+     }
+ 
++    pub fn set_persistent_access(mut self, persistent: bool) -> Self {
++        self.persistent_access = persistent;
++        self
++    }
++
++    pub fn set_access_guard(mut self, guard: FileDialogAccessGuard) -> Self {
++        self.access_guard = Some(guard);
++        self
++    }
++
+     /// Sets the default value of the filename text field in the dialog. For open dialogs of macOS
+     /// and zenity, this is a no-op because there's no such text field on the dialog.
+     pub fn set_filename(mut self, filename: String) -> Self {
+@@ -295,6 +392,9 @@ pub enum FileDialogAction {
+     FileLoaded { id: LiveId, files: Vec<VirtualFile> },
+     /// The user dismissed a file-open dialog without choosing.
+     FileCancelled { id: LiveId },
++    /// The selection could not be read within its limits. No host path is
++    /// included in the error passed to a contained caller.
++    FileLoadFailed { id: LiveId },
+     /// The user named this file to save to. The file may or may not exist
+     /// — the OS has already asked about overwriting.
+     SaveFileSelected { id: LiveId, path: PathBuf },
+@@ -323,6 +423,7 @@ pub fn id(&self) -> LiveId {
+             FileDialogAction::FileSelected { id, .. }
+             | FileDialogAction::FileLoaded { id, .. }
+             | FileDialogAction::FileCancelled { id }
++            | FileDialogAction::FileLoadFailed { id }
+             | FileDialogAction::SaveFileSelected { id, .. }
+             | FileDialogAction::SaveFileCancelled { id } => *id,
+             _ => LiveId(0),
+@@ -345,7 +446,9 @@ pub(crate) struct PendingFileDialog {
+     pub id: LiveId,
+     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+     pub want_bytes: bool,
++    pub multiple: bool,
+     pub limits: VirtualFileLimits,
++    pub access_guard: Option<FileDialogAccessGuard>,
+ }
+ 
+ #[derive(Default)]
+@@ -367,7 +470,9 @@ pub fn begin(&mut self, dialog: &FileDialog) {
+         self.pending.push(PendingFileDialog {
+             id: dialog.id,
+             want_bytes: dialog.want_bytes,
++            multiple: dialog.multiple,
+             limits: self.limits,
++            access_guard: dialog.access_guard.clone(),
+         });
+     }
+ 
+@@ -381,6 +486,44 @@ pub fn finish(&mut self, id: LiveId) -> Option<PendingFileDialog> {
+ mod tests {
+     use super::*;
+ 
++    #[cfg(not(target_arch = "wasm32"))]
++    #[test]
++    fn native_limits_errors_and_atomic_export_do_not_follow_leaf_links() {
++        let dir = std::env::temp_dir().join(format!("mp-file-dialog-limits-{}", std::process::id()));
++        let _ = std::fs::remove_dir_all(&dir);
++        std::fs::create_dir_all(&dir).unwrap();
++        let source = dir.join("source");
++        std::fs::write(&source, [0, 1, 2, 255]).unwrap();
++        let limits = VirtualFileLimits { max_file_size: 3, max_total_size: 3 };
++        assert_eq!(load_virtual_files_action(LiveId(12), vec![source.clone()], limits), FileDialogAction::FileLoadFailed { id: LiveId(12) });
++        assert!(load_virtual_files(vec![dir.clone()], VirtualFileLimits::default()).is_err());
++        let destination = dir.join("export");
++        write_selected_file(&destination, &[0, 255]).unwrap();
++        write_selected_file(&destination, &[1]).unwrap();
++        assert_eq!(std::fs::read(&destination).unwrap(), [1]);
++        let checks = std::sync::atomic::AtomicUsize::new(0);
++        assert!(write_selected_file_guarded(&destination, &[2], || checks.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0).is_err());
++        assert_eq!(std::fs::read(&destination).unwrap(), [1], "revocation before rename must preserve destination");
++        assert!(!std::fs::read_dir(&dir).unwrap().any(|entry| entry.unwrap().file_name().to_string_lossy().starts_with(".makepad-export-")));
++        let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
++        let check = checks.clone();
++        let guard = FileDialogAccessGuard::new(move || check.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0);
++        assert_eq!(load_virtual_files_guarded(LiveId(13), vec![source.clone()], VirtualFileLimits::default(), Some(guard)), FileDialogAction::FileLoadFailed { id: LiveId(13) });
++        assert_eq!(checks.load(std::sync::atomic::Ordering::Relaxed), 2, "revocation after load must discard bytes");
++        // A closed request does not even try opening a FIFO. This path need not
++        // exist: the rejected guard is evaluated before inspecting any path.
++        let guard = FileDialogAccessGuard::new(|| false);
++        assert_eq!(load_virtual_files_guarded(LiveId(14), vec![dir.join("never-opened")], VirtualFileLimits::default(), Some(guard)), FileDialogAction::FileLoadFailed { id: LiveId(14) });
++        #[cfg(unix)] {
++            let link = dir.join("link");
++            std::os::unix::fs::symlink(&source, &link).unwrap();
++            assert!(load_virtual_files(vec![link.clone()], VirtualFileLimits::default()).is_err());
++            assert!(write_selected_file(&link, &[9]).is_err());
++            assert_eq!(std::fs::read(&source).unwrap(), [0, 1, 2, 255]);
++        }
++        std::fs::remove_dir_all(dir).unwrap();
++    }
++
+     fn data(name: &str, bytes: &[u8]) -> VirtualFileData {
+         VirtualFileData {
+             name: name.to_string(),
+diff --git a/platform/src/lib.rs b/platform/src/lib.rs
+index ce292b230..b8c5da579 100644
+--- a/platform/src/lib.rs
++++ b/platform/src/lib.rs
+@@ -132,7 +132,7 @@
+ pub use crate::cx::{
+     startup_acc, startup_since_exec_ms, startup_trace, startup_trace_enabled, startup_trace_flush,
+ };
+-pub use crate::cx_api::{can_play_type, CxSystemBrowser, SystemBrowserId};
++pub use crate::cx_api::{can_play_type, normalize_external_url, CxSystemBrowser, SystemBrowserId};
+ pub use crate::xr_tsdf::{
+     XrDepthAlignHeightMap, XrTsdfCooperativeStepResult, XrTsdfCooperativeStepStats,
+ };
+diff --git a/platform/src/media_api.rs b/platform/src/media_api.rs
+index 5f2ce709f..348379b8e 100644
+--- a/platform/src/media_api.rs
++++ b/platform/src/media_api.rs
+@@ -87,8 +87,22 @@ fn refresh_video_inputs(&mut self) {}
+     fn camera_control(&mut self, _input_id: VideoInputId, _control: CameraControl) {}
+ 
+     /// Take a photo or record video on an open camera; results come back as
+-    /// `CameraCaptureEvent` actions. Backends without capture keep the no-op.
+-    fn camera_capture(&mut self, _input_id: VideoInputId, _request: CameraCaptureRequest) {}
++    /// `CameraCaptureEvent` actions. An unsupported backend must also settle
++    /// the request, so a widget cannot stay in a pending recording state.
++    fn camera_capture(&mut self, input_id: VideoInputId, request: CameraCaptureRequest) {
++        let what = match request {
++            CameraCaptureRequest::Photo { .. } => "photo",
++            _ => "video",
++        };
++        crate::cx::Cx::post_action(CameraCaptureEvent {
++            input_id,
++            result: CameraCaptureResult::Failed {
++                what: what.to_string(),
++                error: "unsupported_platform: camera capture is not implemented by this backend"
++                    .to_string(),
++            },
++        });
++    }
+ 
+     fn video_encoder_output<F>(&mut self, index: usize, config: VideoEncoderConfig, f: F)
+     where
+diff --git a/platform/src/os/apple/apple_geo.rs b/platform/src/os/apple/apple_geo.rs
+index f0b9c7ddf..0ce896e83 100644
+--- a/platform/src/os/apple/apple_geo.rs
++++ b/platform/src/os/apple/apple_geo.rs
+@@ -178,6 +178,17 @@ pub(crate) fn apple_start_location_updates(&mut self) {
+         self.location_access().start();
+     }
+ 
++    pub(crate) fn apple_start_location_updates_no_prompt(&mut self) {
++        let access = self.location_access();
++        access.denied_reported = false;
++        if matches!(access.auth_status(), CL_AUTH_AUTHORIZED_ALWAYS | CL_AUTH_AUTHORIZED_WHEN_IN_USE) {
++            access.running_wanted = true;
++            access.start_updating_raw();
++        } else {
++            access.report_denied_once();
++        }
++    }
++
+     pub(crate) fn apple_stop_location_updates(&mut self) {
+         if let Some(access) = self.os.media.location.access.as_mut() {
+             access.stop();
+diff --git a/platform/src/os/apple/ios/ios.rs b/platform/src/os/apple/ios/ios.rs
+index 9b14fcb3c..83a5fab33 100644
+--- a/platform/src/os/apple/ios/ios.rs
++++ b/platform/src/os/apple/ios/ios.rs
+@@ -1213,6 +1213,9 @@ fn handle_platform_ops(&mut self, metal_cx: &MetalCx) {
+                 CxOsOp::StartLocationUpdates => {
+                     self.apple_start_location_updates();
+                 }
++                CxOsOp::StartLocationUpdatesNoPrompt => {
++                    self.apple_start_location_updates_no_prompt();
++                }
+                 CxOsOp::StopLocationUpdates => {
+                     self.apple_stop_location_updates();
+                 }
+@@ -1884,8 +1887,29 @@ fn seconds_since_app_start(&self) -> f64 {
+             .as_secs_f64()
+     }
+ 
+-    fn open_url(&mut self, _url: &str, _in_place: OpenUrlInPlace) {
+-        crate::error!("open_url not implemented on this platform");
++    fn open_url(&mut self, url: &str, _in_place: OpenUrlInPlace) {
++        let url = match crate::cx_api::normalize_external_url(url) {
++            Ok(url) => url,
++            Err(error) => {
++                crate::error!("open_url: {error}");
++                return;
++            }
++        };
++        unsafe {
++            let url: ObjcId = msg_send![class!(NSURL), URLWithString: str_to_nsstring(&url)];
++            if url == nil {
++                crate::error!("open_url: NSURL rejected the URL");
++                return;
++            }
++            let app: ObjcId = msg_send![class!(UIApplication), sharedApplication];
++            let options: ObjcId = msg_send![class!(NSDictionary), dictionary];
++            let completion = objc_block!(move |opened: BOOL| {
++                if opened != YES {
++                    crate::error!("open_url: UIApplication could not open the URL");
++                }
++            });
++            let () = msg_send![app, openURL: url options: options completionHandler: &completion];
++        }
+     }
+ 
+     fn max_texture_width() -> usize {
+diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
+index bfb3af932..877a3781a 100644
+--- a/platform/src/os/apple/macos/macos.rs
++++ b/platform/src/os/apple/macos/macos.rs
+@@ -2157,6 +2157,9 @@ fn handle_platform_ops(
+                 CxOsOp::StartLocationUpdates => {
+                     self.apple_start_location_updates();
+                 }
++                CxOsOp::StartLocationUpdatesNoPrompt => {
++                    self.apple_start_location_updates_no_prompt();
++                }
+                 CxOsOp::StopLocationUpdates => {
+                     self.apple_stop_location_updates();
+                 }
+diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
+index edf7cf611..26fbdba61 100644
+--- a/platform/src/os/linux/android/android.rs
++++ b/platform/src/os/linux/android/android.rs
+@@ -3054,6 +3054,23 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+                         },
+                     }
+                 }
++                CxOsOp::StartLocationUpdatesNoPrompt => {
++                    if self.check_android_permission_status(crate::permission::Permission::Location)
++                        == crate::permission::PermissionStatus::Granted
++                    {
++                        self.os.location_updates_wanted = true;
++                        unsafe {
++                            android_jni::to_java_start_location_updates(
++                                LOCATION_MIN_INTERVAL_MS,
++                                LOCATION_MIN_DISTANCE_M,
++                            );
++                        }
++                    } else {
++                        self.call_event_handler(&Event::LocationError(
++                            crate::event::LocationErrorEvent::PermissionDenied,
++                        ));
++                    }
++                }
+                 CxOsOp::StopLocationUpdates => {
+                     self.os.location_updates_wanted = false;
+                     unsafe {
+@@ -3540,8 +3557,11 @@ fn seconds_since_app_start(&self) -> f64 {
+             .as_secs_f64()
+     }
+ 
+-    fn open_url(&mut self, _url: &str, _in_place: OpenUrlInPlace) {
+-        crate::error!("open_url not implemented on this platform");
++    fn open_url(&mut self, url: &str, _in_place: OpenUrlInPlace) {
++        match crate::cx_api::normalize_external_url(url) {
++            Ok(url) => unsafe { super::android_jni::to_java_open_url(&url) },
++            Err(error) => crate::error!("open_url: {error}"),
++        }
+     }
+ 
+     fn in_xr_mode(&self) -> bool {
+diff --git a/platform/src/os/linux/android/android_file_dialog.rs b/platform/src/os/linux/android/android_file_dialog.rs
+index 1e42638f4..5f00c2d45 100644
+--- a/platform/src/os/linux/android/android_file_dialog.rs
++++ b/platform/src/os/linux/android/android_file_dialog.rs
+@@ -130,6 +130,7 @@ fn start(settings: FileDialog, kind: DialogKind) {
+             &mime_types,
+             allow_multiple,
+             &file_name,
++            settings.persistent_access,
+         );
+     }
+ }
+diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
+index 226a23c85..e77a763d8 100644
+--- a/platform/src/os/linux/android/android_jni.rs
++++ b/platform/src/os/linux/android/android_jni.rs
+@@ -1776,13 +1776,17 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
+ }
+ 
+ unsafe fn jstring_to_string(env: *mut jni_sys::JNIEnv, java_string: jni_sys::jstring) -> String {
+-    let chars = (**env).GetStringUTFChars.unwrap()(env, java_string, std::ptr::null_mut());
+-    let rust_string = std::ffi::CStr::from_ptr(chars)
+-        .to_str()
+-        .unwrap()
+-        .to_string();
+-    (**env).ReleaseStringUTFChars.unwrap()(env, java_string, chars);
+-    rust_string
++    if java_string.is_null() { return String::new(); }
++    // JNI modified UTF-8 is not Rust UTF-8: supplementary characters use
++    // surrogate pairs and NUL has a special encoding. Use UTF-16 in both
++    // directions so document names/URIs cannot panic an extern callback.
++    let length = (**env).GetStringLength.unwrap()(env, java_string);
++    let chars = (**env).GetStringChars.unwrap()(env, java_string, std::ptr::null_mut());
++    if chars.is_null() { return String::new(); }
++    let value = String::from_utf16(std::slice::from_raw_parts(chars, length as usize))
++        .unwrap_or_default();
++    (**env).ReleaseStringChars.unwrap()(env, java_string, chars);
++    value
+ }
+ 
+ unsafe fn java_string_array_to_vec(
+@@ -1797,6 +1801,7 @@ unsafe fn java_string_array_to_vec(
+     for i in 0..length {
+         let string = (**env).GetObjectArrayElement.unwrap()(env, object_array, i as jni_sys::jsize);
+         out.push(jstring_to_string(env, string));
++        (**env).DeleteLocalRef.unwrap()(env, string);
+     }
+     out
+ }
+@@ -2602,6 +2607,7 @@ pub unsafe fn to_java_open_file_dialog(
+     mime_types: &[String],
+     allow_multiple: bool,
+     file_name: &str,
++    persistent_access: bool,
+ ) {
+     let env = attach_jni_env();
+     let mime_jstr = new_java_string(env, mime_type);
+@@ -2612,13 +2618,14 @@ pub unsafe fn to_java_open_file_dialog(
+         env,
+         get_activity(),
+         "openFileDialog",
+-        "(IILjava/lang/String;[Ljava/lang/String;ZLjava/lang/String;)V",
++        "(IILjava/lang/String;[Ljava/lang/String;ZLjava/lang/String;Z)V",
+         request_code as jni_sys::jint,
+         kind as jni_sys::jint,
+         mime_jstr,
+         mime_types_array,
+         allow_multiple as std::os::raw::c_int,
+-        file_name_jstr
++        file_name_jstr,
++        persistent_access as std::os::raw::c_int
+     );
+ 
+     (**env).DeleteLocalRef.unwrap()(env, file_name_jstr);
+@@ -2626,12 +2633,138 @@ pub unsafe fn to_java_open_file_dialog(
+     (**env).DeleteLocalRef.unwrap()(env, mime_jstr);
+ }
+ 
++/// File IO runs on reusable native workers. Scope references and exceptions to
++/// one transfer, and detach only when this transfer attached the worker.
++struct FileDialogJni {
++    env: *mut jni_sys::JNIEnv,
++    vm: *mut jni_sys::JavaVM,
++    attached: bool,
++    frame: bool,
++}
++
++impl FileDialogJni {
++    unsafe fn enter() -> Result<Self, String> {
++        let vm = get_java_vm();
++        if vm.is_null() { return Err("Android VM is unavailable".into()); }
++        let mut raw_env = std::ptr::null_mut();
++        let status = (**vm).GetEnv.unwrap()(vm, &mut raw_env, jni_sys::JNI_VERSION_1_6);
++        let mut env = raw_env.cast::<jni_sys::JNIEnv>();
++        let attached = match status {
++            0 => false,
++            -2 => { // JNI_EDETACHED: only this case needs a new attachment.
++                if (**vm).AttachCurrentThread.unwrap()(vm, &mut env, std::ptr::null_mut()) != 0 {
++                    return Err("cannot attach Android file worker".into());
++                }
++                true
++            }
++            _ => return Err("cannot access Android file worker".into()),
++        };
++        if env.is_null() {
++            if attached { (**vm).DetachCurrentThread.unwrap()(vm); }
++            return Err("Android file worker has no JNI environment".into());
++        }
++        let mut scope = Self { env, vm, attached, frame: false };
++        scope.check_exception()?;
++        let status = (**env).PushLocalFrame.unwrap()(env, 8);
++        scope.frame = status == 0;
++        scope.check_exception()?;
++        if !scope.frame { return Err("cannot allocate Android file references".into()); }
++        Ok(scope)
++    }
++
++    unsafe fn check_exception(&self) -> Result<(), String> {
++        if (**self.env).ExceptionCheck.unwrap()(self.env) != 0 {
++            (**self.env).ExceptionClear.unwrap()(self.env);
++            return Err("Android file transfer failed".into());
++        }
++        Ok(())
++    }
++
++    unsafe fn method(&self, name: &[u8], signature: &[u8]) -> Result<(jni_sys::jobject, jni_sys::jmethodID), String> {
++        let activity = get_activity();
++        if activity.is_null() { return Err("Android activity is unavailable".into()); }
++        let class = (**self.env).GetObjectClass.unwrap()(self.env, activity);
++        self.check_exception()?;
++        if class.is_null() { return Err("Android activity class is unavailable".into()); }
++        let method = (**self.env).GetMethodID.unwrap()(self.env, class, name.as_ptr().cast(), signature.as_ptr().cast());
++        self.check_exception()?;
++        if method.is_null() { return Err("Android file transfer method is unavailable".into()); }
++        Ok((activity, method))
++    }
++
++    unsafe fn string(&self, value: &str) -> Result<jni_sys::jstring, String> {
++        let length = value.encode_utf16().count();
++        let length = jni_sys::jsize::try_from(length).map_err(|_| "Android document URI is too long")?;
++        let mut chars = Vec::new();
++        chars.try_reserve_exact(length as usize).map_err(|_| "cannot allocate Android document URI")?;
++        chars.extend(value.encode_utf16());
++        let string = (**self.env).NewString.unwrap()(self.env, chars.as_ptr(), length);
++        self.check_exception()?;
++        if string.is_null() { return Err("cannot allocate Android document URI".into()); }
++        Ok(string)
++    }
++}
++
++impl Drop for FileDialogJni {
++    fn drop(&mut self) {
++        unsafe {
++            // Never leave an exception or a local reference on a pooled thread,
++            // including early returns after failed lookup, allocation or IO.
++            if (**self.env).ExceptionCheck.unwrap()(self.env) != 0 {
++                (**self.env).ExceptionClear.unwrap()(self.env);
++            }
++            if self.frame { (**self.env).PopLocalFrame.unwrap()(self.env, std::ptr::null_mut()); }
++            if (**self.env).ExceptionCheck.unwrap()(self.env) != 0 {
++                (**self.env).ExceptionClear.unwrap()(self.env);
++            }
++            if self.attached { (**self.vm).DetachCurrentThread.unwrap()(self.vm); }
++        }
++    }
++}
++
++/// Blocking ContentResolver IO, called only on the platform task pool.
++pub unsafe fn read_file_dialog_uri(uri: &str, limit: u64) -> Result<Vec<u8>, String> {
++    let scope = FileDialogJni::enter()?;
++    let env = scope.env;
++    let (activity, method) = scope.method(b"readFileDialogUri\0", b"(Ljava/lang/String;I)[B\0")?;
++    let uri = scope.string(uri)?;
++    let data = (**env).CallObjectMethod.unwrap()(env, activity, method, uri, limit.min(i32::MAX as u64) as jni_sys::jint);
++    scope.check_exception()?;
++    if data.is_null() { return Err("selected document cannot be read within its byte limit".into()); }
++    let length = (**env).GetArrayLength.unwrap()(env, data);
++    scope.check_exception()?;
++    if length < 0 || length as u64 > limit { return Err("selected document exceeds its byte limit".into()); }
++    let mut bytes = Vec::new();
++    bytes.try_reserve_exact(length as usize).map_err(|_| "cannot allocate selected document")?;
++    bytes.resize(length as usize, 0u8);
++    if length != 0 {
++        (**env).GetByteArrayRegion.unwrap()(env, data, 0, length, bytes.as_mut_ptr().cast());
++        scope.check_exception()?;
++    }
++    Ok(bytes)
++}
++
++pub unsafe fn write_file_dialog_uri(uri: &str, bytes: &[u8]) -> Result<(), String> {
++    if bytes.len() > i32::MAX as usize { return Err("export exceeds the byte limit".into()); }
++    let scope = FileDialogJni::enter()?;
++    let env = scope.env;
++    let (activity, method) = scope.method(b"writeFileDialogUri\0", b"(Ljava/lang/String;[B)Z\0")?;
++    let uri = scope.string(uri)?;
++    let data = (**env).NewByteArray.unwrap()(env, bytes.len() as jni_sys::jsize);
++    scope.check_exception()?;
++    if data.is_null() { return Err("cannot allocate export".into()); }
++    if !bytes.is_empty() {
++        (**env).SetByteArrayRegion.unwrap()(env, data, 0, bytes.len() as jni_sys::jsize, bytes.as_ptr().cast());
++        scope.check_exception()?;
++    }
++    let ok = (**env).CallBooleanMethod.unwrap()(env, activity, method, uri, data) != 0;
++    scope.check_exception()?;
++    if ok { Ok(()) } else { Err("cannot write selected document".into()) }
++}
++
+ unsafe fn new_java_string(env: *mut jni_sys::JNIEnv, value: &str) -> jni_sys::jstring {
+-    // An interior NUL cannot reach Java through the modified-UTF8 API at
+-    // all; an empty string is the harmless reading of a filename or MIME
+-    // type that malformed.
+-    let value = CString::new(value).unwrap_or_default();
+-    ((**env).NewStringUTF.unwrap())(env, value.as_ptr())
++    let value: Vec<u16> = value.encode_utf16().collect();
++    ((**env).NewString.unwrap())(env, value.as_ptr(), value.len() as jni_sys::jsize)
+ }
+ 
+ unsafe fn new_java_string_array(
+@@ -3039,6 +3172,22 @@ fn decode_qr_luma(luma: &[u8], w: usize, h: usize) -> Option<String> {
+ // Outbound: calls into the buildtool's octos Java (MakepadActivity).
+ // ===========================================================================
+ 
++pub unsafe fn to_java_open_url(url: &str) {
++    let env = attach_jni_env();
++    // NewString takes UTF-16, including supplementary characters, without
++    // passing ordinary UTF-8 to JNI's modified-UTF8 entry point.
++    let value: Vec<u16> = url.encode_utf16().collect();
++    let value = ((**env).NewString.unwrap())(env, value.as_ptr(), value.len() as i32);
++    ndk_utils::call_void_method!(
++        env,
++        get_activity(),
++        "openUrl",
++        "(Ljava/lang/String;)V",
++        value
++    );
++    ((**env).DeleteLocalRef.unwrap())(env, value);
++}
++
+ pub unsafe fn to_java_share_text(content: String) {
+     let env = attach_jni_env();
+     // Strip interior NULs: a NUL in a Java string aborts in NewStringUTF.
+diff --git a/platform/src/os/linux/file_dialog.rs b/platform/src/os/linux/file_dialog.rs
+index 84f7b6c92..4c0c8cfee 100644
+--- a/platform/src/os/linux/file_dialog.rs
++++ b/platform/src/os/linux/file_dialog.rs
+@@ -59,9 +59,13 @@ fn find_helper() -> Option<Helper> {
+     order.into_iter().find(|helper| on_path(helper.binary()))
+ }
+ 
++pub fn available() -> bool { find_helper().is_some() }
++
+ fn on_path(binary: &str) -> bool {
+     let Ok(path) = std::env::var("PATH") else { return false };
+-    std::env::split_paths(&path).any(|dir| dir.join(binary).is_file())
++    use std::os::unix::fs::PermissionsExt;
++    std::env::split_paths(&path).any(|dir| std::fs::metadata(dir.join(binary))
++        .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0))
+ }
+ 
+ /// What the caller wants a path for.
+diff --git a/platform/src/os/linux/windowing_backend.rs b/platform/src/os/linux/windowing_backend.rs
+index f7e8af444..142635bd4 100644
+--- a/platform/src/os/linux/windowing_backend.rs
++++ b/platform/src/os/linux/windowing_backend.rs
+@@ -188,8 +188,33 @@ fn seconds_since_app_start(&self) -> f64 {
+             .as_secs_f64()
+     }
+ 
+-    fn open_url(&mut self, _url: &str, _in_place: OpenUrlInPlace) {
+-        crate::error!("open_url not implemented on this platform");
++    fn open_url(&mut self, url: &str, _in_place: OpenUrlInPlace) {
++        let url = match crate::cx_api::normalize_external_url(url) {
++            Ok(url) => url,
++            Err(error) => {
++                crate::error!("open_url: {error}");
++                return;
++            }
++        };
++        // xdg-open is the desktop's browser dispatcher. Pass one argument,
++        // never a shell command, and reap it away from the UI thread.
++        match self.task_pool().reserve(crate::thread::Lane::Heavy) {
++            Ok(slot) => slot.submit_detached_silent("open_url", move || {
++                // Dispatcher diagnostics can echo private query strings.
++                match std::process::Command::new("xdg-open")
++                    .arg(url)
++                    .stdin(std::process::Stdio::null())
++                    .stdout(std::process::Stdio::null())
++                    .stderr(std::process::Stdio::null())
++                    .status()
++                {
++                    Ok(status) if status.success() => {}
++                    Ok(status) => crate::error!("open_url: xdg-open failed ({status})"),
++                    Err(error) => crate::error!("open_url: could not run xdg-open: {error}"),
++                }
++            }),
++            Err(error) => crate::error!("open_url: browser launch could not be queued: {error}"),
++        }
+     }
+ }
+ 
+diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
+index 19a5b124a..b3cc8f7d7 100644
+--- a/platform/src/os/windows/windows.rs
++++ b/platform/src/os/windows/windows.rs
+@@ -1453,8 +1453,42 @@ fn seconds_since_app_start(&self) -> f64 {
+             .as_secs_f64()
+     }
+ 
+-    fn open_url(&mut self, _url: &str, _in_place: OpenUrlInPlace) {
+-        crate::error!("open_url not implemented on this platform");
++    fn open_url(&mut self, url: &str, _in_place: OpenUrlInPlace) {
++        let url = match crate::cx_api::normalize_external_url(url) {
++            Ok(url) => url,
++            Err(error) => {
++                crate::error!("open_url: {error}");
++                return;
++            }
++        };
++        // The trimmed Windows bindings do not include ShellExecuteW. Call
++        // the system URL handler directly; no command shell parses the URL.
++        #[link(name = "shell32")]
++        unsafe extern "system" {
++            fn ShellExecuteW(
++                window: *mut std::ffi::c_void,
++                operation: *const u16,
++                file: *const u16,
++                parameters: *const u16,
++                directory: *const u16,
++                show: i32,
++            ) -> *mut std::ffi::c_void;
++        }
++        let url: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
++        let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
++        let result = unsafe {
++            ShellExecuteW(
++                std::ptr::null_mut(),
++                operation.as_ptr(),
++                url.as_ptr(),
++                std::ptr::null(),
++                std::ptr::null(),
++                1, // SW_SHOWNORMAL
++            )
++        } as isize;
++        if result <= 32 {
++            crate::error!("open_url: ShellExecuteW failed (code {result})");
++        }
+     }
+ }
+ 
+diff --git a/platform/src/permission.rs b/platform/src/permission.rs
+index f57575ea1..082980a69 100644
+--- a/platform/src/permission.rs
++++ b/platform/src/permission.rs
+@@ -22,7 +22,9 @@ pub enum Permission {
+     /// Unsupported on: iOS, macOS, Web
+     /// Auto-granted on: Windows, Linux
+     SceneAccess,
+-    /// Permission to access the device location (precise).
++    /// Permission to access the device location.
++    /// Android accepts fine or coarse authorization; inspect each fix's accuracy
++    /// rather than treating this grant as a promise of precise coordinates.
+     ///
+     /// Required on: iOS, Android, macOS, Web
+     /// Auto-granted on: Windows, Linux (no location service there yet)
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index e50abdfc3..ebb6cb2ab 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -1985,7 +1985,11 @@ public class MakepadActivity
+     public void onRequestPermissionsResult(int requestId, String[] permissions, int[] grantResults) {
+         super.onRequestPermissionsResult(requestId, permissions, grantResults);
+ 
+-        for (int i = 0; i < permissions.length; i++) {
++        // Location is one capability. Android 12+ can deny fine while granting
++        // coarse in the same answer; publish one result after considering both.
++        boolean locationResult = false;
++        int locationStatus = 3;
++        for (int i = 0; i < Math.min(permissions.length, grantResults.length); i++) {
+             int status;
+             if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+                 status = 1; // Granted
+@@ -1998,8 +2002,16 @@ public class MakepadActivity
+                 }
+             }
+             
+-            // Use the new unified callback
+-            MakepadNative.onPermissionResult(permissions[i], requestId, status);
++            if (Manifest.permission.ACCESS_FINE_LOCATION.equals(permissions[i])
++                    || Manifest.permission.ACCESS_COARSE_LOCATION.equals(permissions[i])) {
++                locationResult = true;
++                if (status == 1 || (status == 2 && locationStatus != 1)) locationStatus = status;
++            } else {
++                MakepadNative.onPermissionResult(permissions[i], requestId, status);
++            }
++        }
++        if (locationResult) {
++            MakepadNative.onPermissionResult(Manifest.permission.ACCESS_FINE_LOCATION, requestId, locationStatus);
+         }
+ 
+         // QR-scanner camera permission: open the scanner once granted, else
+@@ -2034,6 +2046,10 @@ public class MakepadActivity
+ 
+     public int checkPermission(String permission) {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
++            if (Manifest.permission.ACCESS_FINE_LOCATION.equals(permission)
++                    && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
++                return 1; // Location capability accepts the user's approximate grant.
++            }
+             if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+                 return 1; // Granted
+             } else {
+@@ -2056,8 +2072,13 @@ public class MakepadActivity
+ 
+     public void requestPermission(String permission, int requestId) {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+-            if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+-                requestPermissions(new String[]{permission}, requestId);
++            if (checkPermission(permission) != 1) {
++                if (Manifest.permission.ACCESS_FINE_LOCATION.equals(permission)) {
++                    requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
++                        Manifest.permission.ACCESS_COARSE_LOCATION}, requestId);
++                } else {
++                    requestPermissions(new String[]{permission}, requestId);
++                }
+             } else {
+                 // Permission already granted
+                 MakepadNative.onPermissionResult(permission, requestId, 1); // 1 = Granted
+@@ -2075,13 +2096,54 @@ public class MakepadActivity
+     //
+     // kind: 0 = ACTION_OPEN_DOCUMENT, 1 = ACTION_CREATE_DOCUMENT,
+     //       2 = ACTION_OPEN_DOCUMENT_TREE.
++    private final java.util.HashSet<Integer> mTransientFileDialogs = new java.util.HashSet<>();
++
++    // Called on Rust's worker pool. Providers may be remote: never perform
++    // stream IO on the activity/render thread or trust a provider's size hint.
++    public byte[] readFileDialogUri(String value, int limit) {
++        if (limit < 0 || value == null || !value.startsWith("content://")) return null;
++        try (java.io.InputStream input = getContentResolver().openInputStream(Uri.parse(value));
++             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
++            if (input == null) return null;
++            byte[] buffer = new byte[8192];
++            int total = 0;
++            while (true) {
++                int request = (int) Math.min(buffer.length, (long) limit - total + 1);
++                int count = input.read(buffer, 0, request);
++                if (count < 0) return output.toByteArray();
++                if (count == 0) { // Broken providers cannot spin an unbounded loop.
++                    int valueByte = input.read();
++                    if (valueByte < 0) return output.toByteArray();
++                    if (total == limit) return null;
++                    output.write(valueByte);
++                    total++;
++                } else {
++                    if ((long) total + count > limit) return null;
++                    output.write(buffer, 0, count);
++                    total += count;
++                }
++            }
++        } catch (Exception error) { return null; }
++    }
++
++    public boolean writeFileDialogUri(String value, byte[] bytes) {
++        if (value == null || bytes == null || !value.startsWith("content://")) return false;
++        try (java.io.OutputStream output = getContentResolver().openOutputStream(Uri.parse(value), "wt")) {
++            if (output == null) return false;
++            output.write(bytes);
++            output.flush();
++            return true;
++        } catch (Exception error) { return false; }
++    }
++
+     public void openFileDialog(
+         final int requestCode,
+         final int kind,
+         final String mimeType,
+         final String[] mimeTypes,
+         final boolean allowMultiple,
+-        final String fileName
++        final String fileName,
++        final boolean persistentAccess
+     ) {
+         runOnUiThread(new Runnable() {
+             @Override
+@@ -2111,8 +2173,9 @@ public class MakepadActivity
+                     // Ask for a grant that outlives this process, so a URI handed
+                     // to Rust is still openable after the app is killed and
+                     // relaunched (see takePersistableUriPermission below).
+-                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+-                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
++                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
++                    if (persistentAccess) intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
++                    else mTransientFileDialogs.add(requestCode);
+                     if (kind != 0) {
+                         intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                     }
+@@ -2124,6 +2187,7 @@ public class MakepadActivity
+                     // picker, and Rust must not be left waiting forever.
+                     Log.e(LOG_TAG, "openFileDialog failed", e);
+                     mFileDialogRequests.remove(requestCode);
++                    mTransientFileDialogs.remove(requestCode);
+                     MakepadNative.onFileDialogResult(requestCode, new String[0]);
+                 }
+             }
+@@ -2132,6 +2196,7 @@ public class MakepadActivity
+ 
+     // An empty URI array means cancelled, which is a normal outcome.
+     private void handleFileDialogResult(int requestCode, int resultCode, Intent data) {
++        boolean persistent = !mTransientFileDialogs.remove(requestCode);
+         ArrayList<String> uris = new ArrayList<>();
+         if (resultCode == RESULT_OK && data != null) {
+             ClipData clip = data.getClipData();
+@@ -2142,13 +2207,13 @@ public class MakepadActivity
+                 for (int i = 0; i < clip.getItemCount(); i++) {
+                     Uri uri = clip.getItemAt(i).getUri();
+                     if (uri != null) {
+-                        takePersistableUriPermission(uri, data.getFlags());
++                        if (persistent) takePersistableUriPermission(uri, data.getFlags());
+                         uris.add(uri.toString());
+                     }
+                 }
+             } else if (data.getData() != null) {
+                 Uri uri = data.getData();
+-                takePersistableUriPermission(uri, data.getFlags());
++                if (persistent) takePersistableUriPermission(uri, data.getFlags());
+                 uris.add(uri.toString());
+             }
+         }
+@@ -2989,6 +3054,24 @@ public class MakepadActivity
+         }).start();
+     }
+ 
++    // Called from Rust's render thread. Launch OS UI on the activity looper,
++    // outside the native event loop's Cx borrow, just like the file picker.
++    public void openUrl(final String url) {
++        runOnUiThread(new Runnable() {
++            @Override
++            public void run() {
++                try {
++                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
++                    intent.addCategory(Intent.CATEGORY_BROWSABLE);
++                    startActivity(intent);
++                } catch (Exception error) {
++                    // Do not include the URL: it can carry private query data.
++                    Log.e("Makepad", "openUrl failed: " + error.getClass().getSimpleName());
++                }
++            }
++        });
++    }
++
+     // Fire the system share sheet (ACTION_SEND) for social sharing. Called
+     // from Rust via `android_jni::to_java_share_text`.
+     public void shareText(String content) {
+@@ -4160,38 +4243,38 @@ public class MakepadActivity
+                     @Override public void onProviderDisabled(String provider) {}
+                 };
+                 boolean any = false;
+-                if (mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+-                    mLocationManager.requestLocationUpdates(
+-                        LocationManager.GPS_PROVIDER, minIntervalMs, minDistanceM,
+-                        listener, Looper.getMainLooper());
+-                    any = true;
+-                }
+-                if (mLocationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+-                    mLocationManager.requestLocationUpdates(
+-                        LocationManager.NETWORK_PROVIDER, minIntervalMs, minDistanceM,
+-                        listener, Looper.getMainLooper());
+-                    any = true;
++                Location latest = null;
++                // Own the listener before registration so a partial failure can
++                // always remove it. A provider needing finer permission must not
++                // prevent another provider from returning an approximate fix.
++                mLocationListener = listener;
++                for (String provider : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
++                    try {
++                        if (!mLocationManager.isProviderEnabled(provider)) continue;
++                        mLocationManager.requestLocationUpdates(provider, minIntervalMs, minDistanceM,
++                            listener, Looper.getMainLooper());
++                        any = true;
++                        Location last = mLocationManager.getLastKnownLocation(provider);
++                        if (last != null && (latest == null || last.getTime() > latest.getTime())) latest = last;
++                    } catch (SecurityException | IllegalArgumentException unavailableProvider) {
++                        // The remaining provider may be usable with coarse access.
++                    }
+                 }
+                 if (!any) {
+-                    MakepadNative.onLocationError(2, "location providers disabled");
++                    stopLocationUpdates();
++                    MakepadNative.onLocationError(checkPermission(Manifest.permission.ACCESS_FINE_LOCATION) == 1 ? 2 : 1,
++                        "no authorized location provider is enabled");
+                     return;
+                 }
+-                mLocationListener = listener;
+-                // seed with the last known fix so the app has a position immediately
+-                Location last = mLocationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+-                if (last == null) {
+-                    last = mLocationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+-                }
+-                if (last != null) {
+-                    sendLocationUpdate(last);
+-                }
++                // The host checks the timestamp and accuracy before using a seed.
++                if (latest != null) sendLocationUpdate(latest);
+             }
+             catch (SecurityException e) {
+-                mLocationListener = null;
++                stopLocationUpdates();
+                 MakepadNative.onLocationError(1, "location permission missing");
+             }
+             catch (Exception e) {
+-                mLocationListener = null;
++                stopLocationUpdates();
+                 MakepadNative.onLocationError(2, e.toString());
+             }
+         });
+diff --git a/widgets/src/link_label.rs b/widgets/src/link_label.rs
+index e50960bcf..d12e74076 100644
+--- a/widgets/src/link_label.rs
++++ b/widgets/src/link_label.rs
+@@ -263,15 +263,34 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+         let actions = cx.capture_actions(|cx| {
+             self.button.handle_event(cx, event, scope);
+         });
+-        if self.url.len() > 0 && self.clicked(&actions) {
+-            cx.open_url(
+-                &self.url,
+-                if self.open_in_place {
+-                    OpenUrlInPlace::Yes
+-                } else {
+-                    OpenUrlInPlace::No
+-                },
+-            );
++        if !self.url.is_empty() && self.clicked(&actions) {
++            match normalize_external_url(&self.url) {
++                Ok(url) => {
++                    let heap = self.source.heap_key();
++                    let policed = crate::splash_policy::is_enforced(heap);
++                    // External handlers can execute native apps. A contained
++                    // app's page grant only covers HTTP(S), and opening OS UI
++                    // has the same foreground authority as other prompts.
++                    if !crate::splash_host::prompts_allowed_for_heap(heap) {
++                        crate::error!("LinkLabel: external links require foreground user input");
++                    } else if policed
++                        && (!url.starts_with("https://") && !url.starts_with("http://")
++                            || !crate::splash_policy::page_allowed(heap, &url))
++                    {
++                        crate::error!("LinkLabel: external URL is not allowed by this app's page grant");
++                    } else {
++                        cx.open_url(
++                            &url,
++                            if self.open_in_place {
++                                OpenUrlInPlace::Yes
++                            } else {
++                                OpenUrlInPlace::No
++                            },
++                        );
++                    }
++                }
++                Err(error) => crate::error!("LinkLabel: {error}"),
++            }
+         }
+         cx.extend_actions(actions);
+     }
+diff --git a/widgets/src/splash_storage.rs b/widgets/src/splash_storage.rs
+index 778e6e745..e7226acc5 100644
+--- a/widgets/src/splash_storage.rs
++++ b/widgets/src/splash_storage.rs
+@@ -129,6 +129,46 @@ fn root_for_vm(vm: &ScriptVm) -> Option<PathBuf> {
+     SANDBOX_ROOTS.with(|r| r.borrow().get(&heap_key).cloned())
+ }
+ 
++/// A native host's view of a live isolate's existing jail. Never constructed
++/// from script arguments. Obtain and use this on the UI thread, where script
++/// filesystem writes are serialized, and refresh it after an asynchronous UI.
++pub struct StorageAccess {
++    root: PathBuf,
++    quota: u64,
++}
++
++pub fn storage_for_heap(heap_key: usize, app_id: &str) -> Option<StorageAccess> {
++    if crate::splash_host::app_tag_for_heap(heap_key).as_deref() != Some(app_id) { return None; }
++    Some(StorageAccess {
++        root: root_for_heap(heap_key)?,
++        quota: JAIL_QUOTAS.with(|q| q.borrow().get(&heap_key).copied()).unwrap_or(MAX_TOTAL_BYTES),
++    })
++}
++
++impl StorageAccess {
++    pub fn quota(&self) -> u64 { self.quota }
++
++    pub fn validate_path(&self, path: &str) -> Result<(), String> {
++        self.target(path).map(|_| ())
++    }
++
++    fn target(&self, path: &str) -> Result<PathBuf, String> {
++        let real = resolve_jailed(&self.root, path)?;
++        if real == self.root { return Err("cannot use the storage root as a file".into()); }
++        verify_no_symlinks(&self.root, &real)?;
++        Ok(real)
++    }
++
++    /// Single-file import never replaces an app's existing document.
++    pub fn import_new(&self, path: &str, bytes: &[u8]) -> Result<(), String> {
++        write_storage_bytes(&self.root, &self.target(path)?, self.quota, bytes, false, true)
++    }
++
++    pub fn read_bytes(&self, path: &str) -> Result<Vec<u8>, String> {
++        read_storage_bytes(&self.target(path)?)
++    }
++}
++
+ /// Resolves an app-visible path to a real path inside `root`, purely
+ /// lexically — no filesystem access. `..` that would climb above the root is
+ /// an error (not clamped: a climbing path is always an app bug or an escape
+@@ -147,6 +187,15 @@ pub fn resolve_jailed(root: &Path, virtual_path: &str) -> Result<PathBuf, String
+                 }
+             }
+             name => {
++                // A drive prefix or NTFS alternate stream is never a jail
++                // component. Refuse Windows device names on every host too.
++                let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
++                if name.contains(':') || name.ends_with([' ', '.'])
++                    || matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
++                    || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT"))
++                        && matches!(stem.as_bytes()[3], b'1'..=b'9')) {
++                    return Err("invalid path component".into());
++                }
+                 if name.len() > MAX_NAME {
+                     return Err("path component too long".to_string());
+                 }
+@@ -171,13 +220,15 @@ pub fn resolve_jailed(root: &Path, virtual_path: &str) -> Result<PathBuf, String
+ pub(crate) fn verify_no_symlinks(root: &Path, real: &Path) -> Result<(), String> {
+     let mut cursor = root.to_path_buf();
+     let rel = real.strip_prefix(root).map_err(|_| "path escapes the app's storage")?;
+-    for comp in rel.components() {
+-        cursor.push(comp);
++    for comp in std::iter::once(None).chain(rel.components().map(Some)) {
++        if let Some(comp) = comp { cursor.push(comp); }
+         match std::fs::symlink_metadata(&cursor) {
+             Ok(meta) if meta.file_type().is_symlink() => {
+                 return Err("path escapes the app's storage".to_string());
+             }
+-            _ => {}
++            Ok(_) => {}
++            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
++            Err(_) => return Err("cannot inspect storage path".into()),
+         }
+     }
+     Ok(())
+@@ -186,24 +237,93 @@ pub(crate) fn verify_no_symlinks(root: &Path, real: &Path) -> Result<(), String>
+ /// Current jail usage: (total bytes, entry count). Small trees by
+ /// construction (entry cap), so a full walk per write is fine.
+ fn jail_usage(root: &Path) -> (u64, usize) {
+-    fn walk(dir: &Path, bytes: &mut u64, entries: &mut usize) {
+-        let Ok(read) = std::fs::read_dir(dir) else { return };
++    fn walk(dir: &Path, bytes: &mut u64, entries: &mut usize, depth: usize) {
++        if depth > MAX_DEPTH { *entries = MAX_ENTRIES + 1; return; }
++        let Ok(read) = std::fs::read_dir(dir) else {
++            if dir.exists() { *entries = MAX_ENTRIES + 1; }
++            return;
++        };
+         for entry in read.flatten() {
+             *entries += 1;
+-            let Ok(meta) = entry.metadata() else { continue };
++            if *entries > MAX_ENTRIES { return; }
++            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
++                *entries = MAX_ENTRIES + 1; return;
++            };
++            if meta.file_type().is_symlink() { *entries = MAX_ENTRIES + 1; return; }
+             if meta.is_dir() {
+-                walk(&entry.path(), bytes, entries);
++                walk(&entry.path(), bytes, entries, depth + 1);
+             } else {
+-                *bytes += meta.len();
++                *bytes = bytes.saturating_add(meta.len());
+             }
+         }
+     }
+     let mut bytes = 0;
+     let mut entries = 0;
+-    walk(root, &mut bytes, &mut entries);
++    walk(root, &mut bytes, &mut entries, 0);
+     (bytes, entries)
+ }
+ 
++fn open_storage_file(real: &Path) -> Result<std::fs::File, String> {
++    // Refuse devices/FIFOs before opening: inspecting an open descriptor is too
++    // late for a FIFO, whose open could block the script/UI thread indefinitely.
++    let before = std::fs::symlink_metadata(real).map_err(|_| "file not found")?;
++    if !before.is_file() { return Err("not a regular file".into()); }
++    let file = std::fs::File::open(real).map_err(|_| "file not found")?;
++    let meta = file.metadata().map_err(|_| "cannot inspect file")?;
++    if !meta.is_file() { return Err("not a regular file".into()); }
++    Ok(file)
++}
++
++fn read_storage_bytes(real: &Path) -> Result<Vec<u8>, String> {
++    use std::io::Read;
++    let file = open_storage_file(real)?;
++    if file.metadata().map_err(|_| "cannot inspect file")?.len() > MAX_FILE_BYTES { return Err("file too large".into()); }
++    let mut bytes = Vec::new();
++    file.take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes).map_err(|_| "read failed")?;
++    if bytes.len() as u64 > MAX_FILE_BYTES { return Err("file too large".into()); }
++    Ok(bytes)
++}
++
++// Keep existing script reads compatible with native camera files: capture can
++// create a photo larger than the per-file write limit and only checks whether
++// the jail has room before capture. Applying either MAX_FILE_BYTES or the jail
++// cap here would newly make those existing images unreadable. The new transfer
++// service deliberately uses the bounded read above instead.
++fn read_script_bytes(real: &Path) -> Result<Vec<u8>, String> {
++    use std::io::Read;
++    let mut file = open_storage_file(real)?;
++    let mut bytes = Vec::new();
++    file.read_to_end(&mut bytes).map_err(|_| "read failed")?;
++    Ok(bytes)
++}
++
++fn write_storage_bytes(root: &Path, real: &Path, quota: u64, bytes: &[u8], append: bool, create_new: bool) -> Result<(), String> {
++    use std::io::Write;
++    if real == root { return Err("cannot write the storage root".into()); }
++    verify_no_symlinks(root, real)?;
++    let existing = match std::fs::symlink_metadata(real) {
++        Ok(meta) => {
++            if create_new { return Err("destination already exists".into()); }
++            if !meta.is_file() { return Err("not a regular file".into()); }
++            meta.len()
++        }
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
++        Err(_) => return Err("cannot inspect storage path".into()),
++    };
++    let new_len = (if append { existing } else { 0 }).saturating_add(bytes.len() as u64);
++    if new_len > MAX_FILE_BYTES { return Err("file too large".into()); }
++    let (total, entries) = jail_usage(root);
++    if total.saturating_sub(existing).saturating_add(new_len) > quota { return Err("app storage is full".into()); }
++    if entries.saturating_add(missing_entries(root, real)) > MAX_ENTRIES { return Err("too many files".into()); }
++    if let Some(parent) = real.parent() {
++        std::fs::create_dir_all(parent).map_err(|_| "write failed")?;
++    }
++    verify_no_symlinks(root, real)?;
++    std::fs::OpenOptions::new().write(true).create(true).create_new(create_new)
++        .append(append).truncate(!append).open(real)
++        .and_then(|mut file| file.write_all(bytes)).map_err(|_| "write failed".into())
++}
++
+ /// How many path components between `root` and `real` don't exist yet — what
+ /// `create_dir_all` would newly materialize (plus the leaf if absent). Used
+ /// to charge directory creation against the entry cap, so `mkdir` and deep
+@@ -245,7 +365,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+     vm.add_method(fs, id_lut!(read), script_args_def!(path = NIL), |vm, args| {
+         let path = script_value!(vm, args.path);
+         match target(vm, path) {
+-            Ok((_root, real)) => match std::fs::read_to_string(&real) {
++            Ok((_root, real)) => match read_script_bytes(&real).and_then(|bytes| String::from_utf8(bytes).map_err(|_| "file is not UTF-8".into())) {
+                 Ok(text) => vm.bx.heap.new_string_from_str(&text).into(),
+                 Err(_) => script_err_io!(vm.trap(), "file not found"),
+             },
+@@ -259,7 +379,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+     vm.add_method(fs, id_lut!(read_bytes), script_args_def!(path = NIL), |vm, args| {
+         let path = script_value!(vm, args.path);
+         match target(vm, path) {
+-            Ok((_root, real)) => match std::fs::read(&real) {
++            Ok((_root, real)) => match read_script_bytes(&real) {
+                 Ok(bytes) => vm.bx.heap.new_array_from_vec_u8(bytes).into(),
+                 Err(_) => script_err_io!(vm.trap(), "file not found"),
+             },
+@@ -290,39 +410,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 let Some(text) = text else {
+                     return script_err_io!(vm.trap(), "data must be a string");
+                 };
+-                // Quotas, before any bytes land.
+-                let existing = std::fs::metadata(&real).map(|m| m.len()).unwrap_or(0);
+-                let new_len = if append {
+-                    existing + text.len() as u64
+-                } else {
+-                    text.len() as u64
+-                };
+-                if new_len > MAX_FILE_BYTES {
+-                    return script_err_io!(vm.trap(), "file too large");
+-                }
+-                let cap = quota_for_vm(vm);
+-                let (total, entries) = jail_usage(&root);
+-                if total - existing.min(total) + new_len > cap {
+-                    return script_err_io!(vm.trap(), "app storage is full");
+-                }
+-                // Charge the file AND any parent dirs create_dir_all would make,
+-                // so a deep write can't overshoot the entry cap.
+-                if entries + missing_entries(&root, &real) > MAX_ENTRIES {
+-                    return script_err_io!(vm.trap(), "too many files");
+-                }
+-                if let Some(parent) = real.parent() {
+-                    let _ = std::fs::create_dir_all(parent);
+-                }
+-                let result = if append {
+-                    use std::io::Write;
+-                    std::fs::OpenOptions::new()
+-                        .create(true)
+-                        .append(true)
+-                        .open(&real)
+-                        .and_then(|mut f| f.write_all(text.as_bytes()))
+-                } else {
+-                    std::fs::write(&real, text.as_bytes())
+-                };
++                let result = write_storage_bytes(&root, &real, quota_for_vm(vm), text.as_bytes(), append, false);
+                 match result {
+                     Ok(()) => NIL,
+                     Err(_) => script_err_io!(vm.trap(), "write failed"),
+@@ -331,6 +419,25 @@ pub fn script_mod(vm: &mut ScriptVm) {
+         );
+     }
+ 
++    vm.add_method(fs, id_lut!(write_bytes), script_args_def!(path = NIL, data = NIL), |vm, args| {
++        let path = script_value!(vm, args.path);
++        let data = script_value!(vm, args.data);
++        let (root, real) = match target(vm, path) {
++            Ok(target) => target,
++            Err(e) => return script_err_io!(vm.trap(), "{}", e),
++        };
++        let Some(array) = data.as_array() else {
++            return script_err_io!(vm.trap(), "data must be a u8 byte array");
++        };
++        let ScriptArrayStorage::U8(bytes) = vm.bx.heap.array_storage(array) else {
++            return script_err_io!(vm.trap(), "data must be a u8 byte array");
++        };
++        match write_storage_bytes(&root, &real, quota_for_vm(vm), bytes, false, false) {
++            Ok(()) => NIL,
++            Err(e) => script_err_io!(vm.trap(), "{}", e),
++        }
++    });
++
+     vm.add_method(fs, id_lut!(exists), script_args_def!(path = NIL), |vm, args| {
+         let path = script_value!(vm, args.path);
+         match target(vm, path) {
+@@ -418,6 +525,64 @@ pub fn script_mod(vm: &mut ScriptVm) {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn existing_large_camera_files_remain_script_readable_but_not_exportable() {
++        let file = std::env::temp_dir().join(format!("mp-camera-read-{}", std::process::id()));
++        let bytes = vec![0x7f; MAX_FILE_BYTES as usize + 256 * 1024];
++        std::fs::write(&file, &bytes).unwrap();
++        assert_eq!(read_script_bytes(&file).unwrap(), bytes);
++        assert!(read_storage_bytes(&file).is_err(), "new interactive transfer still enforces its 1 MiB bound");
++        std::fs::remove_file(file).unwrap();
++    }
++
++    #[test]
++    fn native_import_uses_live_owner_quota_and_refuses_overwrite() {
++        let heap = 918293;
++        let dir = std::env::temp_dir().join(format!("mp-import-{}", std::process::id()));
++        let _ = std::fs::remove_dir_all(&dir);
++        set_root_for_heap(heap, Some(dir.clone()));
++        set_quota_for_heap(heap, Some(4));
++        crate::splash_host::set_tag_for_heap(heap, Some("app.one".into()));
++        assert!(storage_for_heap(heap, "app.two").is_none());
++        let storage = storage_for_heap(heap, "app.one").unwrap();
++        storage.import_new("images/a.bin", &[0, 255, 1]).unwrap();
++        assert_eq!(storage.read_bytes("images/a.bin").unwrap(), [0, 255, 1]);
++        assert!(storage.import_new("images/a.bin", &[9]).is_err());
++        assert!(storage.import_new("b", &[1, 2]).is_err());
++        assert!(storage.import_new("../../outside", &[1]).is_err());
++        assert!(storage.import_new("/", &[1]).is_err());
++        gc_roots(&[heap]);
++        assert!(storage_for_heap(heap, "app.one").is_none());
++        crate::splash_host::set_tag_for_heap(heap, None);
++        std::fs::remove_dir_all(dir).unwrap();
++    }
++
++    #[test]
++    fn native_import_rejects_file_limit_entries_and_symlinked_jail() {
++        let dir = std::env::temp_dir().join(format!("mp-import-limits-{}", std::process::id()));
++        let _ = std::fs::remove_dir_all(&dir);
++        std::fs::create_dir_all(&dir).unwrap();
++        let storage = StorageAccess { root: dir.clone(), quota: MAX_TOTAL_BYTES };
++        assert!(storage.import_new("large", &vec![0; MAX_FILE_BYTES as usize + 1]).is_err());
++        for index in 0..MAX_ENTRIES { std::fs::write(dir.join(index.to_string()), []).unwrap(); }
++        assert!(storage.import_new("too-many", &[]).is_err());
++        #[cfg(unix)] {
++            assert!(read_storage_bytes(Path::new("/dev/null")).is_err(), "never open devices as app documents");
++            let link = dir.with_extension("link");
++            let _ = std::fs::remove_file(&link);
++            std::os::unix::fs::symlink(&dir, &link).unwrap();
++            let linked = StorageAccess { root: link.clone(), quota: MAX_TOTAL_BYTES };
++            assert!(linked.import_new("outside", &[0]).is_err());
++            assert!(linked.read_bytes("0").is_err());
++            std::fs::remove_file(link).unwrap();
++            std::fs::remove_file(dir.join("0")).unwrap();
++            std::os::unix::fs::symlink(&dir, dir.join("cycle")).unwrap();
++            assert!(storage.import_new("cycle/escape", &[]).is_err());
++            assert!(storage.import_new("new", &[]).is_err());
++        }
++        std::fs::remove_dir_all(dir).unwrap();
++    }
++
+     #[test]
+     fn jail_resolution_contains_and_rejects() {
+         let root = Path::new("/jail/app");

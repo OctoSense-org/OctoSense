@@ -37,16 +37,31 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 // END shared app interface
 let origin = {lat: 37.3350 lon: -121.8850 name: "San Jose (downtown)" picked: false}
 let q = ""
-let loaded_q = ""
 let hits = []
+let search_state = ""   // "" | "loading" | "done" | "failed"
+let search_seq = 0      // the newest search: an older answer is dropped
+let list_open = false
 let place = nil
-let screen = "search"   // search | place | route | drive | origin
+let detail = {hours: "" phone: "" website: "" cuisine: ""}
+let card_seq = 0        // the open card: a lookup for an older one is dropped
+let screen = "search"   // search | place | route | drive | origin | stop
 let mode = "drive"
 let recents = []
+let saved = []
+let shown_pins = []     // the places behind the browse map's pins, in pin order
 let shown_route = ""
+let frame_next = false  // Directions frames the next route it draws: on entering it, on a new mode, and on a new start
+let frame_line = false  // a failed route's pins were framed in its place: the line still is, if one comes
 let finding = ""        // "" | "origin" | "stop": the search picks the start or a stop instead
 let stops = []          // up to two stops on the way, in order
 let view3d = true       // drive view: 3D follow camera, or the flat 2D map
+let seen = {lat: 37.3350 lon: -121.8850}   // the browse map's centre (on_viewport)
+let centered = false    // the fix moves the map no more: it went there, the person moved it, or a card opened
+let app_target = nil    // where Maps last sent the map and hasn't seen it land: that landing is not the person's move
+let locating = false    // ◎ asked for a fix that hasn't come yet
+let OVERPASS = ["overpass-api.de" "overpass.kumi.systems" "overpass.openstreetmap.fr"]
+let CACHE_DAYS = 7
+let FETCH_SECS = 15      // a request with no answer by then has failed
 
 // ADR 0004 §11: the app's data is its account folder (a system app acts for
 // the device), the folder its agent works in; what it can fetch again is
@@ -66,6 +81,419 @@ fn moved(name, path){
     return name
 }
 fn data_path(name){ return moved(name, DATA + name) }
+fn cache_path(name){ return moved(name, "cache/" + name) }
+
+// A GET that names Maps, as the free OpenStreetMap services ask: a promise
+// of the response, or of nil when the request failed. A request the runtime
+// refuses outright (a host off the manifest's list) raises instead of
+// calling on_error; uncaught, the raise would end `search_for` before its
+// await, and "Searching…" would stay on screen for good. A request with no
+// answer in FETCH_SECS fails too: Android waits for good on a server that
+// accepts and then stalls, and Apple up to two minutes, so a stalled mirror
+// would hold back the next. The promise settles once; a late answer is
+// dropped.
+fn fetch(url){
+    let p = promise()
+    let state = {done: false timer: nil}
+    let settle = |v| {
+        if state.done { return }
+        state.done = true
+        if state.timer != nil { stop_timer(state.timer) }
+        p.resolve(v)
+    }
+    let sent = try {
+        net.http_request(net.HttpRequest{url: url method: net.HttpMethod.GET headers: {"User-Agent": "OctoSense-Maps/1.0"}}) do net.HttpEvents{
+            on_response: |res| settle(res)
+            on_error: |_err| settle(nil)
+        }
+        true
+    } catch { false }
+    if !sent { settle(nil) }
+    else if !state.done { state.timer = start_timeout(FETCH_SECS, || settle(nil)) }
+    p
+}
+// A response's body as text; nil for no response, an HTTP error or no body.
+// The runtime sets every field of a response (`body` is nil when it has none).
+fn body_of(res){
+    if res == nil || res.status_code >= 400 || res.body == nil { return nil }
+    res.body.to_string()
+}
+
+// ---- Places: pure functions (crates/shell/src/maps_model_tests.rs runs them) ----
+
+// A field that may be missing. A missing key on an object reads nil, but
+// indexing what is not an object (a string, a number) raises.
+fn optional(o, key, fallback){
+    if o == nil { return fallback }
+    // Read the value inside the try: parse_json keeps a bare word (inf, NaN)
+    // as a name, and using one outside it raises "variable not found".
+    let v = try {
+        let x = o[key]
+        x
+    } catch { nil }
+    if v == nil { return fallback }
+    v
+}
+fn text_of(o, key){
+    let v = optional(o, key, nil)
+    if v == nil { return "" }
+    ("" + v).trim()
+}
+// Every `a` in `s` replaced by `b` (a string's replace changes the first only).
+fn replace_all(s, a, b){
+    let out = ""
+    for i part in s.split(a) {
+        if i > 0 { out = out + b }
+        out = out + part
+    }
+    out
+}
+// The first letter a capital. `to_chars` gives code points, not one-letter
+// strings ("a"–"z" are 97–122), and the array turns back into text.
+fn cap(s){
+    let chars = s.to_chars()
+    if chars.len() == 0 { return s }
+    if chars[0] >= 97 && chars[0] <= 122 { chars[0] = chars[0] - 32 }
+    chars.to_string()
+}
+// OpenStreetMap's key and value as a category: a road (a `highway` hit such
+// as primary, residential or a primary_link) reads "Street", while other
+// `highway` values (bus_stop, traffic_signals) read as written; a few values
+// are renamed, the rest read as written ("ice_cream" reads "Ice cream");
+// "yes" says only what the key is.
+let ROADS = {motorway: true trunk: true primary: true secondary: true tertiary: true unclassified: true
+    residential: true service: true living_street: true pedestrian: true road: true}
+let CATEGORY = {fuel: "Gas station" atm: "ATM" doctors: "Doctor" townhall: "Town hall" house: "Address"}
+fn category(key, value){
+    if key == "highway" && optional(ROADS, value.strip_suffix("_link"), nil) != nil { return "Street" }
+    let v = value
+    if v == "" || v == "yes" { v = key }
+    let named = optional(CATEGORY, v, nil)
+    if named != nil { return named }
+    cap(replace_all(v, "_", " "))
+}
+fn has_id(list, id){
+    for h in list { if h.id == id { return true } }
+    false
+}
+// Photon's GeoJSON as places {id name cat label lat lon}: nil when the answer
+// is not Photon's (an error page, an error message), [] when nothing matched.
+// `id` is OpenStreetMap's "N:123", "W:…" or "R:…", or "". The label is the
+// address parts the name does not already say, each once. A feature whose
+// coordinates are not a place (`is_a_place`) is left out.
+fn photon_hits(body){
+    let feats = optional(body.parse_json(), "features", nil)
+    if feats == nil || !feats.is_array() { return nil }
+    let out = []
+    for f in feats {
+        let p = optional(f, "properties", nil)
+        let c = optional(optional(f, "geometry", nil), "coordinates", nil)
+        if p == nil || c == nil || !c.is_array() { continue }
+        // GeoJSON's [lon, lat], each read safely: text, null or a bare `NaN`
+        // or `inf` reads nil, and a bare word read as it is would raise.
+        let lat = number_of(c, 1)
+        let lon = number_of(c, 0)
+        if !is_a_place({lat: lat lon: lon}) { continue }
+        let name = text_of(p, "name")
+        let street = text_of(p, "street")
+        let address = false
+        if name == "" && street != "" {
+            name = (text_of(p, "housenumber") + " " + street).trim()
+            address = true
+        }
+        if name == "" { name = text_of(p, "city") }
+        if name == "" { name = "Unnamed place" }
+        let label = ""
+        for k in ["street" "city" "state" "country"] {
+            let v = text_of(p, k)
+            if address && k == "street" { v = "" }
+            // Whole parts: "Kansas" is not already said by "Kansas City".
+            if v != "" && v != name && (", " + label + ", ").search(", " + v + ", ") < 0 {
+                if label != "" { label = label + ", " }
+                label = label + v
+            }
+        }
+        let id = ""
+        if text_of(p, "osm_type") != "" && text_of(p, "osm_id") != "" { id = text_of(p, "osm_type") + ":" + text_of(p, "osm_id") }
+        if id != "" && has_id(out, id) { continue }
+        out.push({id: id name: name cat: category(text_of(p, "osm_key"), text_of(p, "osm_value")) label: label lat: lat lon: lon})
+    }
+    out
+}
+
+// True for one or more digits and nothing else ("1.5", "-3", "1e3" are not).
+// `to_f64` would take "1e3" and " 12", so the code points are checked.
+fn all_digits(s){
+    let chars = s.to_chars()
+    if chars.len() == 0 { return false }
+    for c in chars { if c < 48 || c > 57 { return false } }
+    true
+}
+// The Overpass query for one place's tags, or "" for an id that isn't
+// OpenStreetMap's. A way or relation also asks for its center.
+fn overpass_query(id){
+    let parts = id.split(":")
+    if parts.len() != 2 || !all_digits(parts[1]) { return "" }
+    let kind = ""
+    if parts[0] == "N" { kind = "node" } else if parts[0] == "W" { kind = "way" } else if parts[0] == "R" { kind = "rel" }
+    if kind == "" { return "" }
+    let out = "out tags center;"
+    if kind == "node" { out = "out tags;" }
+    "[out:json][timeout:10];" + kind + "(" + parts[1] + ");" + out
+}
+// The request for a query (`overpass_query`) on one Overpass mirror. The
+// query is percent-encoded: its `[`, `;` and spaces would end or split `data`.
+fn overpass_url(host, query){
+    "https://" + host + "/api/interpreter?data=" + query.url_encode()
+}
+// The cache file for a place's details; "" for an id that isn't
+// OpenStreetMap's, so no other text from an answer reaches a file name.
+fn cache_name(id){
+    if overpass_query(id) == "" { return "" }
+    "place_" + replace_all(id, ":", "_") + ".json"
+}
+fn blank_detail(){ return {hours: "" phone: "" website: "" cuisine: ""} }
+// A `;` list as text: "pizza;italian pizza" reads "pizza, italian pizza".
+fn list_of(s){
+    let out = ""
+    for part in s.split(";") {
+        let p = part.trim()
+        if p == "" { continue }
+        if out != "" { out = out + ", " }
+        out = out + p
+    }
+    out
+}
+// The scheme in lower case ("HTTPS://" reads "https://"), the rest as written:
+// the leading letters, when a ":" follows them.
+fn lower_scheme(u){
+    let chars = u.to_chars()
+    let n = 0
+    for c in chars { if (c >= 65 && c <= 90) || (c >= 97 && c <= 122) { n = n + 1 } else { break } }
+    if n == 0 || n == chars.len() || chars[n] != 58 { return u }
+    for i c in chars { if i < n && c >= 65 && c <= 90 { chars[i] = c + 32 } }
+    chars.to_string()
+}
+// A website as the reader is handed it: the first of several, over https
+// ("http://", "https://" in any case, or "//"), or "". This settles only the
+// scheme (ftp://, javascript:, mailto:, any ":" before the first "/" give "")
+// and refuses odd characters that parsers read differently: a space or
+// control character, a backslash, or a "%" or anything but ASCII in the
+// host. Which hosts may open is the reader's policy: public https, with the
+// `web` grant.
+fn site_url(s){
+    let u = lower_scheme(s.split(";")[0].trim())
+    let rest = u.strip_prefix("https://")
+    if rest == u { rest = u.strip_prefix("http://") }
+    if rest == u { rest = u.strip_prefix("//") }
+    if rest == u {
+        let colon = u.search(":")
+        let slash = u.search("/")
+        if colon >= 0 && (slash < 0 || colon < slash) { return "" }
+    }
+    // The host runs to the first "/", "?" or "#", and must not be empty.
+    let host = 0
+    let in_host = true
+    for c in rest.to_chars() {
+        if c <= 32 || c == 127 || c == 92 { return "" }
+        if c == 47 || c == 63 || c == 35 { in_host = false }
+        if in_host {
+            // A browser decodes "%2e" in a host; the reader's gate does not.
+            if c > 127 || c == 37 { return "" }
+            host = host + 1
+        }
+    }
+    if host == 0 { return "" }
+    "https://" + rest
+}
+// Overpass's answer for one place as the card's details {hours phone website
+// cuisine}, each "" when the place has none. nil when there is nothing to
+// keep: a page that is not Overpass's (an error page), or Overpass's own
+// runtime error (a timeout, out of memory), which comes with no elements and
+// a `remark`; the caller then tries again. `phone` and `website` win over
+// their `contact:` forms; "pizza;italian_pizza" reads "pizza, italian pizza".
+fn place_details(body){
+    let o = body.parse_json()
+    let els = optional(o, "elements", nil)
+    if els == nil || !els.is_array() { return nil }
+    if els.len() == 0 && text_of(o, "remark") != "" { return nil }
+    let d = blank_detail()
+    if els.len() == 0 { return d }
+    let tags = optional(els[0], "tags", nil)
+    if tags == nil { return d }
+    d.hours = text_of(tags, "opening_hours")
+    d.phone = list_of(text_of(tags, "phone"))
+    if d.phone == "" { d.phone = list_of(text_of(tags, "contact:phone")) }
+    d.website = site_url(text_of(tags, "website"))
+    if d.website == "" { d.website = site_url(text_of(tags, "contact:website")) }
+    d.cuisine = list_of(replace_all(text_of(tags, "cuisine"), "_", " "))
+    d
+}
+// A coordinate to 4 decimals (about 11 m): 37.33501 reads 37.335. The math
+// builtins work in f32: the result has 4 decimals, but a coordinate within
+// a meter of a half step may round the other way. `+ 0` turns the -0 of a
+// value just below zero into 0.
+fn round4(x){ round(x * 10000) / 10000 + 0 }
+fn coords_text(lat, lon){ "" + round4(lat) + ", " + round4(lon) }
+// Straight-line distance (km): Directions gives the road's.
+fn distance_km(lat1, lon1, lat2, lon2){
+    let dlat = radians(lat2 - lat1)
+    let dlon = radians(lon2 - lon1)
+    let a = sin(dlat / 2) * sin(dlat / 2) + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) * sin(dlon / 2)
+    // Rounding can push `a` just past 0 or 1, where sqrt or asin gives NaN.
+    if a < 0 { a = 0 }
+    if a > 1 { a = 1 }
+    2 * 6371 * asin(sqrt(a))
+}
+// "350 m", "2.4 km", "13 km": tens of meters below 1000 m, tenths of a
+// kilometer below 10 km. The unit follows the rounded value, so 999.99 m
+// reads "1 km", not "1000 m".
+fn distance_text(km){
+    let m = round(km * 100) * 10
+    if m < 1000 { return "" + m + " m" }
+    let tenths = round(km * 10) / 10
+    if tenths < 10 { return "" + tenths + " km" }
+    "" + round(km) + " km"
+}
+// Photon's search, ranked near the visible map, and its reverse lookup
+// (the address at a point). `url_encode` leaves only letters, digits and
+// `-_.~`, so an `&` or `#` the reader typed stays inside `q`.
+fn search_url(q, lat, lon){
+    "https://photon.komoot.io/api/?q=" + q.url_encode() + "&limit=8&lang=en&lat=" + round4(lat) + "&lon=" + round4(lon)
+}
+fn reverse_url(lat, lon){
+    "https://photon.komoot.io/reverse?lat=" + round4(lat) + "&lon=" + round4(lon) + "&lang=en&limit=1"
+}
+
+// A coordinate in a place's key: "" when it isn't a number (a saved.json
+// from an older or broken build may lack one or hold text).
+fn coord_key(o, key){
+    let v = number_of(o, key)
+    if v == nil { return "" }
+    "" + round4(v)
+}
+// A field as a finite number, else nil (missing, text, NaN or infinite).
+fn number_of(o, key){
+    let v = optional(o, key, nil)
+    if !v.is_number() || v - v != 0 { return nil }
+    v
+}
+// What tells two places apart: OpenStreetMap's id, else the name at the point
+// (a dropped pin, or a recent place from before ids were kept).
+fn place_key(p){
+    let id = text_of(p, "id")
+    if id != "" { return id }
+    text_of(p, "name") + "@" + coord_key(p, "lat") + "," + coord_key(p, "lon")
+}
+// What MapView draws as a pin (makepad's `is_a_place`): finite numbers in
+// range, and not the 0,0 an unresolved endpoint reports. Stricter on text
+// ("37.3"), which MapView would read, but text never reaches `pins_text`.
+fn is_a_place(p){
+    let lat = number_of(p, "lat")
+    let lon = number_of(p, "lon")
+    if lat == nil || lon == nil { return false }
+    if !(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) { return false }
+    !(lat > -1e-9 && lat < 1e-9 && lon > -1e-9 && lon < 1e-9)
+}
+fn is_saved(list, p){
+    let k = place_key(p)
+    for s in list { if place_key(s) == k { return true } }
+    false
+}
+fn without_saved(list, p){
+    let k = place_key(p)
+    let out = []
+    for s in list { if place_key(s) != k { out.push(s) } }
+    out
+}
+fn with_saved(list, p){
+    let out = without_saved(list, p)
+    out.push(as_place(p))
+    out
+}
+// A place's own fields, each of its kind: text, or a finite number or nil.
+// An entry from an older or broken file may lack any of them.
+fn as_place(p){
+    return {id: text_of(p, "id") name: text_of(p, "name") cat: text_of(p, "cat") label: text_of(p, "label")
+        lat: number_of(p, "lat") lon: number_of(p, "lon")}
+}
+// A list kept in a file (saved.json, recents.json) from its text: [] when
+// the text holds no list. Its entries stay as written, broken ones too:
+// `places_in` keeps the ones that show.
+fn list_in(text){
+    let v = text.parse_json()
+    if v == nil || !v.is_array() { return [] }
+    v
+}
+// The entries of a Saved or Recent list that show as rows: places with a
+// name, so a row's tap (`pick`) has what it reads. A file from an older or
+// broken build may hold anything; a bare word in it (inf) raises when read
+// on its own, so entries are only ever reached through `for`.
+fn listed(list){
+    let out = []
+    if list == nil || !list.is_array() { return out }
+    for p in list { if is_a_place(p) && text_of(p, "name") != "" { out.push(p) } }
+    out
+}
+// The places a Saved or Recent file holds, as Maps keeps them: the entries
+// that show as rows (`listed`), each copied with a place's own fields
+// (`as_place`). An entry kept as read would be written back at the next
+// write, a bare word as text: a bare `NaN` name would become the name "NaN".
+fn places_in(text){
+    let out = []
+    for p in listed(list_in(text)) { out.push(as_place(p)) }
+    out
+}
+// Recent places with `p` as the newest: once by name, at most 8, oldest
+// first. Not `remove(0)`: it reads the oldest entry on its own, which raises
+// for a bare word.
+fn remembered(list, p){
+    let name = text_of(p, "name")
+    let kept = []
+    for r in list { if text_of(r, "name") != name { kept.push(r) } }
+    kept.push(p)
+    let out = []
+    for i r in kept { if i + 8 >= kept.len() { out.push(r) } }
+    out
+}
+// The browse map's pins: saved places, each once, then the open place,
+// last. Only places: MapView skips the rest and counts only the pins it
+// draws, so its `on_marker(index)` means this list's [index].
+fn pin_places(list, open){
+    let shown = is_a_place(open)
+    let k = ""
+    if shown { k = place_key(open) }
+    let out = []
+    for s in list { if is_a_place(s) && place_key(s) != k && !is_saved(out, s) { out.push(s) } }
+    if shown { out.push(open) }
+    out
+}
+// `pin_places` as MapView's `route_markers`. Kind 1 is the stop colour, 2
+// the destination's (makepad's route pins): the open place, when it could
+// be pinned.
+fn pins_text(pins, open){
+    let k = ""
+    if is_a_place(open) { k = place_key(open) }
+    let out = ""
+    for p in pins {
+        let kind = 1
+        if k != "" && place_key(p) == k { kind = 2 }
+        if out != "" { out = out + ";" }
+        out = out + text_of(p, "lat") + "," + text_of(p, "lon") + "," + kind
+    }
+    out
+}
+// Whether the browse map's reported centre is where Maps last sent it
+// (`target`, or nil). MapView reports a landing
+// through its Mercator round trip, well within 1e-12 degrees of the target;
+// a person who pans the map ends within 1e-6 degrees (about 10 cm) of it
+// only by chance.
+fn own_landing(target, lat, lon){
+    if target == nil { return false }
+    let dlat = lat - target.lat
+    let dlon = lon - target.lon
+    dlat > -1e-6 && dlat < 1e-6 && dlon > -1e-6 && dlon < 1e-6
+}
 
 fn fix_origin(){
     if origin.picked { return }
@@ -74,52 +502,56 @@ fn fix_origin(){
         location_note("")
     }
 }
+// Recent places from an older build have no `id`, and either file may hold
+// anything a broken build wrote: each list keeps only its file's places
+// (`places_in`), so the next write drops the rest from the file too.
 fn load_recents(){
-    if fs.exists(data_path("recents.json")) {
-        let v = fs.read(data_path("recents.json")).parse_json()
-        if v != nil { recents = v }
-    }
+    if fs.exists(data_path("recents.json")) { recents = places_in(fs.read(data_path("recents.json"))) }
+}
+fn load_saved(){
+    if fs.exists(data_path("saved.json")) { saved = places_in(fs.read(data_path("saved.json"))) }
 }
 fn remember(p){
-    recents.retain(|r| r.name != p.name)
-    recents.push(p)
-    if recents.len() > 8 { recents.remove(0) }
+    recents = remembered(recents, p)
     fs.write(data_path("recents.json"), recents.to_json())
 }
+// Photon's search near the visible map (`seen`), on Return. Each search
+// takes the next `search_seq`; an answer that comes back after a newer
+// search, an emptied box or a new start or stop is dropped. The answer
+// leaves the list as open or closed as the person left it meanwhile.
 fn search_for(text){
     q = ("" + text).trim()
-    loaded_q = ""
     hits = []
-    ui.results.render()
+    search_seq = search_seq + 1
+    let mine = search_seq
+    if q == "" { search_state = "" } else { search_state = "loading" }
     show_results(true)
-}
-// On the search screen the list under the search box (recent places, or the
-// last search's results) is closed until the search box is tapped or a search
-// is made, and a tap or drag on the map closes it again. It closes by hiding:
-// a render that emits nothing keeps the rows it had. The catcher below the
-// panel is there only while the list is: on a desktop it takes the mouse
-// press, so the map under it could not be dragged. Choosing a start or a stop
-// keeps its list open, with "‹ Back to route" as the way out.
-fn show_results(open){
-    let closable = screen == "search" && (q != "" || recents.len() > 0)
-    ui.results.set_visible(open || screen != "search")
-    ui.map_tap.set_visible(open && closable)
-}
-fn read_hits(){
-    if q == "" || loaded_q == q { return }
-    let n = sys.searchnum(q, 0, "count")
-    if n < 0 { return }
-    hits = []
-    for i in n {
-        if i < 6 {
-            hits.push({name: sys.search(q, i, "name") cat: sys.search(q, i, "cat") label: sys.search(q, i, "label")
-                lat: sys.searchnum(q, i, "lat") lon: sys.searchnum(q, i, "lon")})
-        }
-    }
-    loaded_q = q
+    ui.results.render()
+    if q == "" { return }
+    let body = body_of(fetch(search_url(q, seen.lat, seen.lon)).await())
+    if mine != search_seq { return }
+    let found = nil
+    if body != nil { found = photon_hits(body) }
+    if found == nil { search_state = "failed" } else { hits = found; search_state = "done" }
+    show_results(list_open)
     ui.results.render()
 }
-fn pick(p){
+// The list under the search box. On the search screen it is closed until the
+// box is tapped or a search is made, and a tap or drag on the map closes it.
+// It closes by hiding: a render that emits nothing keeps the rows it had,
+// so with the box empty it shows only when Saved or Recent has a row to
+// show. Choosing a start or a stop keeps its list open, under the way back
+// ("‹ Back to route").
+fn show_results(open){
+    list_open = open
+    let any = q != "" || listed(saved).len() > 0 || listed(recents).len() > 0
+    ui.results.set_visible((open || screen != "search") && any)
+}
+// A row's place: a search hit (`photon_hits`) or a Saved or Recent entry
+// (`listed`), so its name and coordinates are there; copied with every
+// field of a place.
+fn pick(row){
+    let p = as_place(row)
     if finding == "stop" {
         stops.push({lat: p.lat lon: p.lon name: p.name})
         finding = ""
@@ -133,10 +565,159 @@ fn pick(p){
         show("route")
         return
     }
-    place = p
-    stops = []
     remember(p)
+    open_place(p)
+}
+// A new card: whatever an older card's lookup brings is dropped, and the
+// fix no longer moves the map (the card's place is where the person looks).
+fn open_card(){
+    card_seq = card_seq + 1
+    detail = blank_detail()
+    stops = []
+    centered = true
     show("place")
+}
+// A card covers the bottom of the map, on a phone past its middle once the
+// place has details, so a card's flight puts the place CARD_RISE points
+// above the map's centre: about 30% down a phone's map, where Directions
+// frames a route. MapView is Web Mercator with 256-point tiles, so
+// CARD_WORLD points go round the world at CARD_ZOOM, and a point there spans
+// cos(lat) times as many degrees of latitude as of longitude. Maps can't
+// read the map's turn: on a map the person has turned, the rise turns too.
+let CARD_ZOOM = 16
+let CARD_RISE = 160
+let CARD_WORLD = 16777216   // 256 · 2^16
+fn card_centre(p){
+    return {lat: p.lat - CARD_RISE / CARD_WORLD * 360 * cos(radians(p.lat)) lon: p.lon}
+}
+// A place's card, from a row (`pick`) or a pin (`marker_tapped`): a place
+// with every field (`as_place`, `photon_hits`).
+fn open_place(p){
+    place = p
+    open_card()
+    let c = card_centre(p)
+    fly(c.lat, c.lon, CARD_ZOOM)
+    load_details(p, card_seq)
+}
+fn close_place(){
+    card_seq = card_seq + 1
+    place = nil
+    show("search")
+}
+// An opened place's details: one Overpass request at a time, on the three
+// declared mirrors in turn, kept for a week. Without an answer the card shows Photon's data only.
+// An answer that isn't Overpass's, or Overpass's own error, is nil: the next
+// mirror is asked and nothing is kept, so a busy page is never cached as "no
+// details". A place without an OpenStreetMap id asks nothing and touches no
+// file (`cache_path("")` would be the cache folder itself).
+fn load_details(p, mine){
+    let id = text_of(p, "id")
+    let query = overpass_query(id)
+    let name = cache_name(id)
+    if query == "" || name == "" || mine != card_seq { return }
+    let cached = cached_detail(name)
+    if cached != nil {
+        detail = cached
+        render_details()
+        return
+    }
+    for host in OVERPASS {
+        let body = body_of(fetch(overpass_url(host, query)).await())
+        if mine != card_seq { return }   // the card moved on
+        if body != nil {
+            let d = place_details(body)
+            if d != nil {
+                detail = d
+                render_details()
+                fs.write(cache_path(name), {at: time_now() detail: d}.to_json())
+                return
+            }
+        }
+    }
+}
+// A place's kept details, or nil: none kept, a week old (or from a clock
+// that has since gone back), or a file that doesn't read as one Maps wrote:
+// a number `at`, and the four details as text (a file cut short may parse in
+// part). The website goes through `site_url` again, so a file an older
+// build wrote can't open what `site_url` refuses.
+fn cached_detail(name){
+    if !fs.exists(cache_path(name)) { return nil }
+    let text = try { fs.read(cache_path(name)) } catch { nil }
+    if text == nil || !text.is_string() { return nil }
+    let v = text.parse_json()
+    let at = number_of(v, "at")
+    if at == nil { return nil }
+    let age = time_now() - at
+    if age < 0 || age > CACHE_DAYS * 86400 { return nil }
+    let d = optional(v, "detail", nil)
+    if d == nil || !d.is_object() { return nil }
+    for k in ["hours" "phone" "website" "cuisine"] {
+        let x = optional(d, k, nil)
+        if x == nil || !x.is_string() { return nil }
+    }
+    return {hours: text_of(d, "hours") phone: text_of(d, "phone") website: site_url(text_of(d, "website")) cuisine: text_of(d, "cuisine")}
+}
+fn has_details(){ detail.hours != "" || detail.phone != "" || detail.website != "" || detail.cuisine != "" }
+// Hidden when empty: a render that emits nothing keeps the last place's rows.
+// A render re-applies the view as declared once it is done, so `details`
+// declares no `visible: false`: that would hide it again after each render.
+fn render_details(){
+    ui.details.set_visible(has_details())
+    if has_details() { ui.details.render() }
+}
+fn place_distance(){
+    if sys.gps("ok") < 1 || !is_a_place(place) { return "" }
+    distance_text(distance_km(sys.gps("lat"), sys.gps("lon"), place.lat, place.lon)) + " away"
+}
+// A card line shows only with its text: an empty one would stay as a gap.
+// A dropped pin has no category, and a Saved or Recent place from an older
+// build may have no category or address.
+fn show_line(label, text){
+    label.set_text(text)
+    label.set_visible(text != "")
+}
+// The straight-line distance, shown only with a fix.
+fn show_distance(){ show_line(ui.pdist, place_distance()) }
+fn fill_place(){
+    ui.pname.set_text(place.name)
+    show_line(ui.pcat, place.cat)
+    show_line(ui.paddr, place.label)
+    show_distance()
+    sync_save()
+    render_details()
+}
+fn sync_save(){
+    if place != nil && is_saved(saved, place) { ui.save.set_text("Saved") } else { ui.save.set_text("Save") }
+}
+fn toggle_save(){
+    if place == nil { return }
+    if is_saved(saved, place) { saved = without_saved(saved, place) } else { saved = with_saved(saved, place) }
+    fs.write(data_path("saved.json"), saved.to_json())
+    sync_save()
+    show_pins()
+}
+// Saved places, and the open one, as pins on the browse map; `shown_pins`
+// is the list the pins were drawn from, so a pin's tap finds its place.
+// Directions and the drive show only the route's own pins: `route_pins` sets
+// them on entering Directions, on a new start and on a new mode, and
+// `draw_route` with each line it draws.
+fn show_pins(){
+    if screen != "search" && screen != "place" { return }
+    let open = nil
+    if screen == "place" { open = place }
+    shown_pins = pin_places(saved, open)
+    ui.browse_map.set_route_markers(pins_text(shown_pins, open))
+}
+// A place's website, over the whole app, in its reader.
+fn open_site(url){
+    ui.site_fail.set_text("")
+    ui.site_title.set_text(place.name)
+    ui.site_pane.set_visible(true)
+    ui.site.open(url)
+}
+fn close_site(){
+    ui.site.close()
+    ui.site_pane.set_visible(false)
 }
 fn location_note(message){
     ui.location_status.set_text(message)
@@ -152,6 +733,110 @@ fn use_my_location(){
     fix_origin()
     finding = ""
     show("route")
+}
+// The browse map's callbacks. A tap or a drag on the map closes the search
+// list; a place card stays until Close.
+fn map_tapped(lat, lon){
+    app_target = nil   // a press on the map ends Maps' flight
+    if screen == "search" { show_results(false) }
+}
+// MapView reports the viewport when any flight lands, Maps' own too: that
+// one is not the person's move and leaves the list as it is. A tap that
+// stops a flight reports nothing, so the target, not a one-shot flag, tells
+// the landing apart: a flag would swallow the person's next pan.
+fn viewport_moved(lat, lon, zoom){
+    seen = {lat: lat lon: lon}
+    if own_landing(app_target, lat, lon) {
+        app_target = nil
+        return
+    }
+    centered = true
+    if screen == "search" { show_results(false) }
+}
+// A long press drops a pin and asks Photon what is there. The person pressed
+// there, so the map stays put. The card keeps the pressed point, which is
+// where Directions goes, even once Photon names the nearest place or
+// address; its name, category, address and id come from Photon's answer.
+// A press that isn't a place (zoomed far out, MapView can report a
+// longitude past 180) does nothing. An answer for an older press or a card
+// that has since closed is dropped; without one the card stays "Dropped
+// pin" with the coordinates. A Save pressed before the answer saved the
+// dropped pin: the named place takes its entry, so one pin stays and the
+// card stays "Saved".
+fn map_long_pressed(lat, lon){
+    app_target = nil   // a press on the map ends Maps' flight
+    if screen != "search" && screen != "place" { return }
+    if !is_a_place({lat: lat lon: lon}) { return }
+    place = {id: "" name: "Dropped pin" cat: "" label: coords_text(lat, lon) lat: lat lon: lon}
+    open_card()
+    let mine = card_seq
+    let body = body_of(fetch(reverse_url(lat, lon)).await())
+    if mine != card_seq || body == nil { return }
+    let found = photon_hits(body)
+    if found == nil || found.len() == 0 { return }
+    let h = found[0]
+    let pressed = place
+    place = {id: h.id name: h.name cat: h.cat label: h.label lat: lat lon: lon}
+    if is_saved(saved, pressed) {
+        saved = with_saved(without_saved(saved, pressed), place)
+        fs.write(data_path("saved.json"), saved.to_json())
+    }
+    fill_place()   // its sync_save reads `saved` as just updated
+    // Directions may already be open: its "To" names the place too.
+    if screen == "route" { ui.rto.set_text(place.name) }
+    show_pins()
+    load_details(place, mine)
+}
+// A pin's tap, by its position among the drawn pins (`shown_pins`). Its card
+// gets a copy with every field of a place, as a row's does (`pick`). The
+// open place's own pin does nothing.
+fn marker_tapped(i){
+    if screen != "search" && screen != "place" { return }
+    if !i.is_number() || i - i != 0 || i < 0 || i >= shown_pins.len() || floor(i) != i { return }
+    let p = as_place(shown_pins[i])
+    if place != nil && place_key(p) == place_key(place) { return }
+    open_place(p)
+}
+// Every flight of Maps' own on the browse map goes through here, so its
+// landing is known by its target. MapView ignores a point that isn't a place.
+fn fly(lat, lon, zoom){
+    if !is_a_place({lat: lat lon: lon}) { return }
+    app_target = {lat: lat lon: lon}
+    ui.browse_map.fly_to(lat, lon, zoom)
+}
+// ◎ flies to the fix, or asks for one: asking is the person's act, so it
+// happens only here and in use_my_location; every other read is passive.
+fn locate(){
+    if sys.gps("ok") >= 1 {
+        centered = true
+        fly(sys.gps("lat"), sys.gps("lon"), 15)
+        return
+    }
+    centered = false   // center_on_fix flies there once the fix comes
+    let request = sys.request_location()
+    if request < 0 { ui.search_hint.set_text("Maps has no location access") }
+    else if request == 0 { ui.search_hint.set_text("No location here") }
+    else {
+        locating = true
+        ui.search_hint.set_text("Waiting for location…")
+    }
+}
+// Maps opens at the GPS fix when one comes before the person moves the map
+// or opens a card. A map reports its viewport only after a gesture, a zoom
+// or a flight, never at start-up, so `centered` stays false until the person
+// or ◎ moves the map, or a card opens (`open_card`).
+fn center_on_fix(){
+    if sys.gps("ok") < 1 { return }
+    // The wait ◎ announced is over, even when the person has moved the map
+    // since and it stays where they put it.
+    if locating {
+        locating = false
+        if finding == "" { ui.search_hint.set_text("Where to?") }
+    }
+    if centered || screen != "search" { return }
+    centered = true
+    if finding == "" { ui.search_hint.set_text("Where to?") }
+    fly(sys.gps("lat"), sys.gps("lon"), 14)
 }
 // The stops as the routing helpers take them: "lat,lon;lat,lon", or "".
 fn vias(){
@@ -171,6 +856,8 @@ fn find_for(what){
     finding = what
     q = ""
     hits = []
+    search_state = ""
+    search_seq = search_seq + 1   // a search still on its way was for the old list
     ui.search.set_text("")
     show(what)
 }
@@ -193,20 +880,25 @@ fn active_drive_map(){
 }
 fn show(s){
     screen = s
+    // Each screen draws its route afresh (`draw_route`): Directions and the
+    // drive draw on different maps, and Directions draws again the route
+    // that ‹ Back cleared, with the same key.
     shown_route = ""
     ui.search_panel.set_visible(s == "search" || s == "origin" || s == "stop")
     ui.place_panel.set_visible(s == "place")
     ui.route_panel.set_visible(s == "route")
-    ui.plan_box.set_visible(s != "drive")
+    ui.browse_box.set_visible(s != "drive")
+    ui.locate_box.set_visible(s == "search" && host.has("location"))
     ui.drive_box.set_visible(s == "drive")
     ui.drive_bar.set_visible(s == "drive")
-    if s == "place" {
-        ui.pname.set_text(place.name)
-        ui.pcat.set_text(place.cat)
-        ui.paddr.set_text(place.label)
-        ui.peta.set_text("")
-    }
+    // The route belongs to Directions and the drive; elsewhere the map is a
+    // map of places. clear_route leaves the route's pins: show_pins, below,
+    // puts the places' pins in their place.
+    if s == "search" || s == "place" { ui.browse_map.clear_route() }
+    if s == "place" { fill_place() }
     if s == "route" {
+        route_pins()
+        frame_next = true
         ui.rfrom.set_text(origin.name)
         ui.rto.set_text(place.name)
         ui.modes.render()
@@ -221,26 +913,67 @@ fn show(s){
         if s == "origin" { ui.search_hint.set_text("Choose a start") }
         else if s == "stop" { ui.search_hint.set_text("Add a stop") }
         else { ui.search_hint.set_text("Where to?") }
+        ui.finding_links.set_visible(s != "search")
+        ui.your_location.set_visible(s == "origin")
         ui.results.render()
     }
     show_results(s != "search")
+    show_pins()
     tick()
 }
-fn set_mode(m){ mode = m; shown_route = ""; ui.modes.render(); tick() }
+// Directions' own pins on the browse map at once, with no line under them:
+// a place's pins, or the line of the route before this start, stop or mode,
+// must not stay while the new line loads, or for good when it fails. The
+// line is framed once it comes (`draw_route`).
+fn route_pins(){
+    ui.browse_map.clear_route()
+    ui.browse_map.set_route_markers(markers())
+}
+// A new mode is framed once more. If its route fails, the framing shows its
+// pins (`route_pins`), not the line of an older start still on the map.
+fn set_mode(m){ mode = m; shown_route = ""; frame_next = true; route_pins(); ui.modes.render(); tick() }
 fn eta_field(){
     if mode == "walk" { return "walk" }
     if mode == "bike" { return "bike" }
     "min"
 }
 fn route_key(){ "" + origin.lat + "," + origin.lon + ">" + vias() + ">" + place.lat + "," + place.lon + ":" + mode }
-fn draw_route(map){
+// A route is drawn once per key: a new start or stop, or a fix that moves
+// the start, draws its own line. A new mode sets the same line again, since
+// every mode is routed on OSRM's driving profile (only the time differs).
+// On the browse map (`fit`) a route is framed once, on entering Directions,
+// a new mode or a new start (`frame_next`), and not each time the fix
+// moves: after that the camera is the person's to drag and zoom. The
+// drive's maps have their own camera.
+fn draw_route(map, fit){
     let key = route_key()
     if shown_route == key { return }
     let line = sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "polyline", vias())
+    // A failed route has no line to frame: its own pins are framed instead
+    // (they are on the map with no line, `route_pins`, and MapView frames
+    // the pins when there is no line), so the start is in sight. A line
+    // that still comes after it, for a start the fix has moved, is framed
+    // too (`frame_line`), as one that took long to load would be: the pins
+    // stood in for it. A fix that moves the start while routes still fail
+    // frames nothing.
+    if line == "n/a" && fit && frame_next {
+        map.fit_route()
+        frame_next = false
+        frame_line = true
+        return
+    }
     // "—" while the route loads, "n/a" once it failed: not a line yet.
     if line == "" || line == "—" || line == "n/a" { return }
     map.set_nav_polyline(line)
     map.set_route_markers(markers())
+    if fit && (frame_next || frame_line) {
+        // The framing's landing reads as the person's move in viewport_moved.
+        // That is harmless here: Directions has no list to close, and
+        // `centered` is already true (a card came first).
+        map.fit_route()
+        frame_next = false
+        frame_line = false
+    }
     shown_route = key
 }
 fn progress(){
@@ -253,20 +986,27 @@ fn progress(){
     sys.navsecs(km * 1000 / 15.2) * 15.2
 }
 fn tick(){
+    // The start becoming the fix (◎ Your location, or the first fix) is a
+    // new start, not a move: Directions shows its pins at once and frames
+    // its route once more. `shown_route` goes too: a fix on the old start's
+    // very point would otherwise leave `frame_next` set for the next move.
+    let start = origin.name
     fix_origin()
-    if screen == "search" || screen == "origin" || screen == "stop" { read_hits() }
-    if screen == "place" {
-        ui.peta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "min") + "  ·  " + sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km"))
-        draw_route(ui.plan_map)
+    if origin.name != start {
+        frame_next = true
+        shown_route = ""
+        if screen == "route" { route_pins() }
     }
+    center_on_fix()
+    if screen == "place" { show_distance() }
     if screen == "route" {
         ui.reta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, eta_field(), vias()))
         ui.rdist.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km", vias()))
         ui.rfrom.set_text(origin.name)
-        draw_route(ui.plan_map)
+        draw_route(ui.browse_map, true)
     }
     if screen == "drive" {
-        draw_route(active_drive_map())
+        draw_route(active_drive_map(), false)
         let d = progress()
         let v = vias()
         ui.instr.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "instr", v))
@@ -277,6 +1017,7 @@ fn tick(){
 }
 fn boot(){
     load_recents()
+    load_saved()
     fix_origin()
     show("search")
 }
@@ -294,18 +1035,30 @@ let PillOn = Pill{
 }
 let Primary = UiPrimary{width: Fill}
 let Link = UiButton{}
-let Panel = RoundedView{width: Fill max_width: 480 height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 14 bottom: 18} spacing: 8
+// A sheet over the map. A panel is a sheet that takes the presses no child
+// took: `cursor` is what makes a View claim them, touches included, and the
+// result rows (GestureViews) claim none. So a tap or drag on a card or the
+// search list neither closes the list nor moves the map under it. Like any
+// claimed press it also takes key focus, which closes the keyboard. The
+// drive bar stays a plain sheet: a drag there pans the drive map, as before.
+let Sheet = RoundedView{width: Fill max_width: 480 height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 14 bottom: 18} spacing: 8
     new_batch: true show_bg: true draw_bg.color: ui_surface draw_bg.border_radius: 18.0
 }
+let Panel = Sheet{cursor: MouseCursor.Default}
 let HitRow = GestureView{width: Fill height: Fit flow: Down padding: Inset{top: 12 bottom: 12} spacing: 6
     name := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
     label := Label{width: Fill text: "" max_lines: 1 draw_text.color: secondary draw_text.text_style.font_size: 13}
 }
 
 View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eaed
-    plan_box := View{width: Fill height: Fill
-        plan_map := MapView{width: Fill height: Fill dark_theme: !ui_light nav_mode: "plan" nav_route_width: 36.0 zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
-            center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false}
+    // No nav_mode: a plain map, so it can always be dragged and zoomed.
+    browse_box := View{width: Fill height: Fill
+        browse_map := MapView{width: Fill height: Fill dark_theme: !ui_light zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
+            center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false
+            on_tap: |lat, lon| map_tapped(lat, lon)
+            on_long_press: |lat, lon| map_long_pressed(lat, lon)
+            on_marker: |i| marker_tapped(i)
+            on_viewport: |lat, lon, zoom| viewport_moved(lat, lon, zoom)}
     }
     drive_box := View{visible: false width: Fill height: Fill flow: Overlay
         drive_3d := View{width: Fill height: Fill
@@ -328,41 +1081,70 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
                 GestureView{width: Fill height: 48 margin: 0 on_tap: |x, y| show_results(true)}
                 search := UiField{width: Fill height: 48 empty_text: "Search Maps"
                     on_return: |text| search_for(text)
+                    // An emptied box shows Saved and Recent again.
+                    on_change: |text| { if ("" + text).trim() == "" && q != "" { search_for("") } }
                     draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
                         border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
                         border_radius: 20.0}
                     draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
                 }
             }
-            results := View{width: Fill height: Fit flow: Down on_render: || {
-                if screen == "origin" { Link{text: "◎  Your location" on_click: || use_my_location()} }
-                if screen == "origin" || screen == "stop" { Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }} }
-                if q != "" && loaded_q != q { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 13} }
+            // Choosing a start or a stop: the way back, above the list so it
+            // never scrolls out of sight (the list keeps its place).
+            finding_links := View{visible: false width: Fill height: Fit flow: Down
+                your_location := Link{text: "◎  Your location" on_click: || use_my_location()}
+                Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }}
+            }
+            // A long list scrolls (Saved has no cap and sits above Recent): at
+            // most half the app's height, so the panel still fits with the way
+            // back above it. A drag on a row scrolls; a tap picks.
+            results := ScrollYView{width: Fill height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.5}} flow: Down on_render: || {
+                if search_state == "loading" { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 13} }
+                else if search_state == "failed" { Label{text: "Search isn't available right now." draw_text.color: secondary draw_text.text_style.font_size: 13} }
                 else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 13} }
-                for h in hits { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label} }
-                if q == "" && recents.len() > 0 {
-                    Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 13}
-                    for r in recents { HitRow{on_tap: |x, y| pick(r) name.text: r.name label.text: r.label} }
+                for i h in hits { if i < 6 { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label label.visible: h.label != ""} } }
+                // With the box empty: Saved above Recent, each only with a
+                // row to show. An entry that isn't a named place has none.
+                if q == "" {
+                    let saved_rows = listed(saved)
+                    if saved_rows.len() > 0 {
+                        Label{text: "Saved" draw_text.color: secondary draw_text.text_style.font_size: 13}
+                        for s in saved_rows { HitRow{on_tap: |x, y| pick(s) name.text: text_of(s, "name") label.text: text_of(s, "label") label.visible: text_of(s, "label") != ""} }
+                    }
+                    let recent_rows = listed(recents)
+                    if recent_rows.len() > 0 {
+                        Label{text: "Recent" draw_text.color: secondary draw_text.text_style.font_size: 13}
+                        for r in recent_rows { HitRow{on_tap: |x, y| pick(r) name.text: text_of(r, "name") label.text: text_of(r, "label") label.visible: text_of(r, "label") != ""} }
+                    }
                 }
             }}
         }
-        // Below the search panel only, so a tap on the panel never closes it.
-        // On a touch screen it reads the touch without taking it: the map
-        // under it still pans.
-        View{width: Fill height: Fill
-            map_tap := GestureView{visible: false width: Fill height: Fill
-                on_tap: |x, y| show_results(false)
-                on_pan: |dx, dy, phase| { if phase == 0 { show_results(false) } }}
+        // Over the map, it takes nothing but its button: the map under it
+        // closes the list itself (on_tap, on_viewport).
+        View{width: Fill height: Fill flow: Down align: Align{x: 1.0 y: 1.0}
+            locate_box := View{visible: false width: Fit height: Fit padding: Inset{bottom: 8}
+                Pill{text: "◎" on_click: || locate()}
+            }
         }
         place_panel := Panel{visible: false
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
                 pname := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 20}}
-                Link{text: "Close" on_click: || show("search")}
+                Link{text: "Close" on_click: || close_place()}
             }
             pcat := Label{width: Fill text: "" draw_text.color: #xe37400 draw_text.text_style.font_size: 13}
             paddr := Label{width: Fill text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
-            peta := Label{width: Fill text: "" draw_text.color: #x188038 draw_text.text_style.font_size: 13}
-            Primary{text: "Directions" on_click: || show("route")}
+            pdist := Label{width: Fill text: "" draw_text.color: #x188038 draw_text.text_style.font_size: 13}
+            // OpenStreetMap's details, as mapped; long opening hours wrap.
+            details := View{width: Fill height: Fit flow: Down spacing: 2 on_render: || {
+                if detail.hours != "" { Label{width: Fill flow: Flow.Right{wrap: true} text: "Hours  " + detail.hours draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.phone != "" { Label{width: Fill flow: Flow.Right{wrap: true} text: "Phone  " + detail.phone draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.cuisine != "" { Label{width: Fill flow: Flow.Right{wrap: true} text: "Cuisine  " + detail.cuisine draw_text.color: ink draw_text.text_style.font_size: 13} }
+                if detail.website != "" { Link{text: "Website" on_click: || open_site(detail.website)} }
+            }}
+            View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                Primary{text: "Directions" on_click: || show("route")}
+                save := Pill{text: "Save" on_click: || toggle_save()}
+            }
         }
         route_panel := Panel{visible: false
             modes := View{width: Fill height: Fit flow: Right spacing: 6 on_render: || {
@@ -410,7 +1192,7 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             }
         }
         View{width: Fill height: Fill}
-        Panel{flow: Right align: Align{y: 0.5} spacing: 6
+        Sheet{flow: Right align: Align{y: 0.5} spacing: 6
             remain := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
             views := View{width: Fit height: Fit flow: Right spacing: 4 on_render: || {
                 if view3d { Pill{text: "2D" on_click: || set_view(false)} PillOn{text: "3D"} }
@@ -418,5 +1200,17 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             }}
             Link{text: "End" on_click: || show("route")}
         }
+    }
+    // A place's website over everything, in the app's reader: a place's site
+    // is on no host list, so it opens with the `web` grant. Like a panel, it
+    // takes the presses its children don't, so nothing under it moves.
+    site_pane := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true cursor: MouseCursor.Default
+        show_bg: true draw_bg.color: ui_page
+        View{width: Fill height: 52 flow: Right align: Align{y: 0.5} padding: Inset{left: 4 right: 8} spacing: 4
+            Link{text: "‹ Maps" on_click: || close_site()}
+            site_title := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
+        }
+        site_fail := Label{width: Fill padding: Inset{left: 18 right: 18} text: "" draw_text.color: secondary draw_text.text_style.font_size: 13}
+        site := WebReader{width: Fill height: Fill on_error: || ui.site_fail.set_text(ui.site.error())}
     }
 }

@@ -1,0 +1,73 @@
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index b11c4151d..a210a63ed 100644
+--- a/widgets/src/video.rs
++++ b/widgets/src/video.rs
+@@ -1078,7 +1078,7 @@ fn script_call(
+         {
+             let number = args.as_object().and_then(|args| {
+                 let trap = vm.bx.threads.cur().trap.pass();
+-                vm.bx.heap.vec_value(args, 0, trap).as_f64()
++                vm.bx.heap.vec_value(args, 0, trap).as_number()
+             });
+             let Some(number) = number.filter(|v| v.is_finite()) else {
+                 return ScriptAsyncResult::Return(FALSE);
+@@ -2711,6 +2711,59 @@ fn script_controls_refuse_noops_and_failed_sources() {
+         assert_eq!(video.script_control(&mut cx, live_id!(unknown_control)), None);
+     }
+ 
++    #[test]
++    fn script_call_numeric_controls_accept_integer_literals_and_reject_invalid_arguments() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            let widget = WidgetRef::script_from_value(vm, value);
++            {
++                let mut video = widget.borrow_mut::<Video>().unwrap();
++                video.playback_state = PlaybackState::Prepared;
++                video.total_duration = 5000;
++            }
++            let call = |vm: &mut ScriptVm, method, value| {
++                let args = vm.bx.heap.new_object();
++                let trap = vm.bx.threads.cur().trap.pass();
++                vm.bx.heap.vec_push(args, NIL, value, trap);
++                match widget.script_call(vm, method, args.into()) {
++                    ScriptAsyncResult::Return(value) => value,
++                    _ => panic!("numeric controls must answer synchronously"),
++                }
++            };
++            // Use actual Splash integer literals through Widget::script_call,
++            // not the Rust control helper or pre-converted floating values.
++            let seek = crate::script_eval!(vm, {2000});
++            assert_eq!(seek.as_number(), Some(2000.0));
++            assert!(seek.as_f64().is_none(), "the regression requires the VM's integer representation");
++            assert_eq!(call(vm, live_id!(seek_to), seek), TRUE);
++            assert_eq!(widget.borrow::<Video>().unwrap().current_position_ms, 2000);
++            let zero = crate::script_eval!(vm, {0});
++            let one = crate::script_eval!(vm, {1});
++            let two = crate::script_eval!(vm, {2});
++            assert_eq!(call(vm, live_id!(set_volume), zero), TRUE);
++            assert!(widget.borrow::<Video>().unwrap().mute);
++            assert_eq!(call(vm, live_id!(set_volume), one), TRUE);
++            assert!(!widget.borrow::<Video>().unwrap().mute);
++            assert_eq!(call(vm, live_id!(set_playback_rate), one), TRUE);
++            assert_eq!(call(vm, live_id!(set_playback_rate), two), TRUE);
++            let decimal = crate::script_eval!(vm, {0.5});
++            assert_eq!(call(vm, live_id!(set_volume), decimal), TRUE);
++            let text = crate::script_eval!(vm, {"2000"});
++            for method in [live_id!(seek_to), live_id!(set_volume), live_id!(set_playback_rate)] {
++                assert_eq!(call(vm, method, text), FALSE, "strings must not be coerced to numbers");
++            }
++            let negative = crate::script_eval!(vm, {-1});
++            assert_eq!(call(vm, live_id!(seek_to), negative), FALSE);
++            assert_eq!(widget.borrow::<Video>().unwrap().current_position_ms, 2000);
++            assert_eq!(call(vm, live_id!(set_playback_rate), negative), FALSE);
++            assert_eq!(call(vm, live_id!(set_playback_rate), ScriptValue::from_f64(f64::INFINITY)), FALSE);
++            widget.borrow_mut::<Video>().unwrap().playback_state = PlaybackState::Unprepared;
++            assert_eq!(call(vm, live_id!(seek_to), seek), FALSE);
++        });
++    }
++
+     #[test]
+     fn play_then_pause_during_prepare_cannot_restart_from_late_callbacks() {
+         let mut cx = Cx::new(Box::new(|_, _| {}));

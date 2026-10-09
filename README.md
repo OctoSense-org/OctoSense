@@ -4,7 +4,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**Desktop download:** [OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) supports the current App Hub catalog, GitHub-attested app releases and shared host APIs, including the OS-facing APIs RC2 adds for installed apps (documents, binary app files, fresh location, device calendars, reviewed Mail drafts, audio sessions), each within the platform limits in [docs/host-os-api-status.md](docs/host-os-api-status.md). Choose the asset for your operating system and architecture; the release notes record prerequisites, signing status and platform validation. This desktop release does not update Android Home.
+[Host OS API status](docs/host-os-api-status.md) tracks file, location and external-link support, existing services, remaining gaps and validation limits.
+
+**Desktop download:** [OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) supports the current App Hub catalog, GitHub-attested app releases and the public host APIs declared by SDK 1.10.0. Choose the asset for your operating system and architecture; the release notes record prerequisites, signing status and platform validation. This desktop release does not update Android Home.
 
 Run the [live Mail → card → Calendar demo](docs/demos/mail-calendar/README.md) with your own mailbox: pinned source, selective policy, fictional test inputs, human draft edits and Calendar navigation.
 
@@ -46,9 +48,9 @@ Android Home supports page swipes from either side edge; apps and opened cards r
 
 To read the code in order, start with [From an app window to an agent turn](docs/architecture-walkthrough.md). The [product walkthrough](desktop/docs/code-walkthrough.md) adds how to run each product.
 
-Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** The RC1 and older beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
+Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** The RC2, RC1 and older beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
 
-App Hub in desktop RC2 (as in RC1) and this source build defaults to the GitHub-attested catalog and supports
+App Hub in desktop RC2 and this source build defaults to the GitHub-attested catalog and supports
 `publisher-github-v1` releases through app-contract 1.10.0 (RC1: 1.8.0). Developers request
 publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml).
 App Hub accepts only GitHub-attested releases, so a developer needs no publisher
@@ -371,6 +373,7 @@ A phone runs the shell, the kernel, up to a dozen app agents and their apps at t
 | [`crates/app-peers/`](crates/app-peers/README.md) | The app-agent broker, package `octosense-app-peers`: one peer per (app, account), its two lanes, its tools, `peer/input`, deadlines, purge. |
 | [`crates/l0-chat/`](crates/l0-chat/README.md) | The host side of an L0 card's in-card chat (`sys.chat`), package `octosense-l0-chat`. |
 | [`crates/toolbox/`](crates/toolbox/README.md) | The system toolbox, package `octosense-toolbox`: workflow templates and `mod.research`, offered to app agents behind the `toolbox-peers` feature. |
+| [`crates/wasm-host/`](docs/wasm.md) | The runtime for apps' own WebAssembly functions, package `octosense-wasm-host`: Wasmtime with Cranelift, the sandbox and its limits. The shell's `wasm` service runs it on macOS, Linux and Android. |
 | [`apps/`](apps/README.md) | The system apps (News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube) as script apps, their host services (`mail`, `calendar`, `news`, `llm`), `apps/reference`, and the opt-in AppCard assistant. |
 | [`native-apps.json`](native-apps.json) | Every native app: where its code comes from, how it is hosted on each platform, and its agent. `tools/native_apps.py` generates the shell's code and Cargo entries from it. |
 | `tools/` | `setup.py` (the pinned framework sources), the reviewed Makepad runtime patch (`runtime-patches/`), `kernel-artifact.py` (the octos kernel build), `check-shell-graph.sh` (dependency-graph guards). |

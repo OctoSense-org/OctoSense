@@ -1,0 +1,151 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "cad.info",
+      "description": "Inspect a drawing (DXF or DWG) in your workspace: entity counts by type, layers, blocks, layouts and the model-space extents. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "entityCount": {"type": "integer"},
+          "counts": {"type": "object"},
+          "layers": {"type": "array", "items": {"type": "object"}},
+          "extents": {"type": ["array", "null"]},
+          "blocks": {"type": "array"},
+          "layouts": {"type": "array"}
+        },
+        "required": ["file", "entityCount"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "cad.entities",
+      "description": "List the model-space entities of a drawing in your workspace, optionally only one `type` (line, circle, ...) or one `layer`, at most `limit` (default 500, at most 2000) from `offset`. Each entity has its type, layer and handle. Reads only. `path` is relative to your workspace (see cad.info).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "type": {"type": "string", "minLength": 1, "maxLength": 64},
+          "layer": {"type": "string", "minLength": 1, "maxLength": 256},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 2000},
+          "offset": {"type": "integer", "minimum": 0}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "count": {"type": "integer"},
+          "entities": {"type": "array", "items": {"type": "object"}}
+        },
+        "required": ["entities"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "cad.measure",
+      "description": "Measure in a drawing in your workspace, giving exactly one of `dist` (the distance and angle from point p1 to p2) or `area` (the area and perimeter of a polygon through `points`, or of the closed entity with that `handle`, as cad.entities reports it). Points are [x, y]. Reads only. `path` is relative to your workspace (see cad.info).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "dist": {
+            "type": "object",
+            "properties": {
+              "p1": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "number"}},
+              "p2": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "number"}}
+            },
+            "required": ["p1", "p2"],
+            "additionalProperties": false
+          },
+          "area": {
+            "type": "object",
+            "properties": {
+              "points": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 2000,
+                "items": {"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "number"}}
+              },
+              "handle": {"type": "string", "minLength": 1, "maxLength": 32}
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "dist": {"type": "object"},
+          "area": {"type": "object"}
+        }
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "cad.render",
+      "description": "Render a drawing's model space in your workspace to `out`: a .png fitted to the drawing's extents with its longest edge `max_side` pixels (default 1024), or an .svg. Both paths are relative to your workspace (see cad.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "format": {"type": "string"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "format", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "cad.convert",
+      "description": "Convert a drawing in your workspace and write it there as DXF, DWG, SVG, PNG or PDF, chosen by `format` or else by the extension of `out`. Both paths are relative to your workspace (see cad.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "format": {"type": "string", "enum": ["dxf", "dwg", "svg", "png", "pdf"]}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "format": {"type": "string"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "format", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "effect.info",
+      "description": "Summarise a motion-graphics project (.ecproj) in your workspace: its items with names, types, sizes, durations, and each composition's layer count and frame rate. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "items": {"type": "array", "items": {"type": "object"}}
+        },
+        "required": ["path", "items"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "effect.render",
+      "description": "Render one frame of a composition (`comp`: its name or id, default the project's active one) at `time` seconds of a project in your workspace, written as a PNG to `out` with its longest edge at most `max_side` pixels (default 1024); `transparent` keeps the alpha. Footage outside your workspace renders as a placeholder. Both paths are relative to your workspace (see effect.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "comp": {"type": ["string", "integer"]},
+          "time": {"type": "number", "minimum": 0},
+          "max_side": {"type": "integer", "minimum": 1, "maximum": 4096},
+          "transparent": {"type": "boolean"}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "width", "height", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "effect.export_lottie",
+      "description": "Export a composition (`comp`: its name or id) of a project in your workspace as Lottie to `out` (.json, or .lottie for dotLottie), with the engine's warnings about what Lottie cannot carry; `include_expressions` keeps expressions. Both paths are relative to your workspace (see effect.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 6, "maxLength": 512},
+          "comp": {"type": ["string", "integer"]},
+          "include_expressions": {"type": "boolean"}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "bytes": {"type": "integer"},
+          "warnings": {"type": "array"}
+        },
+        "required": ["out"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "effect.import_lottie",
+      "description": "Open a Lottie file (.json or .lottie) in your workspace as a composition and save it as a project at `out` (.ecproj); embedded images are written beside the Lottie file. All paths are relative to your workspace (see effect.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "comp": {"type": "integer"},
+          "items": {"type": "array", "items": {"type": "integer"}},
+          "warnings": {"type": "array"}
+        },
+        "required": ["out"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "effect.run",
+      "description": "Run up to 64 commands from the effect engine's own command catalog, in order, on the project at `path` in your workspace or on a new empty project, and save it to `out` when given (never over an existing file). Each command is {id, params}. Plug-in loading is refused and the engine's file access stays inside your workspace. A generic engine command door: not granted to the system agent until it is reviewed separately.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "cmds": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["cmds"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
+        },
+        "required": ["results"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

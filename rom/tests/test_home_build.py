@@ -1,5 +1,6 @@
 import configparser
 import contextlib
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import io
@@ -8,6 +9,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,6 +86,63 @@ class BuildTests(unittest.TestCase):
         plan = build.build_plan(args)
         self.assertEqual(len(plan), 3)
         self.assertEqual(plan[-1][1][0], "/tools/cargo-makepad")
+
+    def test_release_pair_receives_the_same_explicit_version(self):
+        args = self.args("--variant", "standalone", "--development", "--packager", "/tools/cargo-makepad",
+                         "--no-octos-kernel", "--version-code", "2026100908", "--version-name", "0.1.0-beta.2")
+        plan = build.build_plan(args)
+        self.assertIn("-PoctosenseVersionCode=2026100908", plan[-2][1])
+        self.assertIn("-PoctosenseVersionName=0.1.0-beta.2", plan[-2][1])
+        self.assertIn("--version-code=2026100908", plan[-1][1])
+        self.assertIn("--version-name=0.1.0-beta.2", plan[-1][1])
+
+    def test_auto_version_is_resolved_once_before_either_build(self):
+        with mock.patch.object(build, "datetime") as clock:
+            clock.now.return_value = datetime(2026, 10, 9, 8, 59, 59, tzinfo=timezone.utc)
+            args = self.args("--variant", "standalone", "--development", "--no-octos-kernel")
+            clock.now.return_value = datetime(2026, 10, 9, 9, 0, 1, tzinfo=timezone.utc)
+            plan = build.build_plan(args)
+            clock.now.assert_called_once_with(timezone.utc)
+        self.assertIn("-PoctosenseVersionCode=2026100908", plan[-2][1])
+        self.assertIn("--version-code=2026100908", plan[-1][1])
+
+    def test_version_and_certificate_arguments_reject_malformed_input(self):
+        for option, value in (("--version-name", ""), ("--version-name", 'bad"name'),
+                              ("--version-name", "bad\nname"), ("--version-code", "2100000000"),
+                              ("--expected-signer", "not-a-certificate-digest")):
+            with self.subTest(option=option, value=value), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.args("--variant", "standalone", "--development", option, value)
+
+    def test_package_metadata_comes_from_the_actual_apk(self):
+        output = "package: name='dev.makepad.octosense.bridge' versionCode='2026100908' versionName='0.1.0-beta.2' platformBuildVersionName='15'\n"
+        with mock.patch.object(build.subprocess, "check_output", return_value=output) as command:
+            result = build.apk_metadata(Path("/sdk/aapt2"), Path("/out/bridge.pending.apk"), {"LANG": "C"})
+        self.assertEqual(result, {"package_name": "dev.makepad.octosense.bridge", "version_code": 2026100908,
+                                  "version_name": "0.1.0-beta.2"})
+        command.assert_called_once_with(["/sdk/aapt2", "dump", "badging", "/out/bridge.pending.apk"],
+                                        env={"LANG": "C"}, text=True)
+        with mock.patch.object(build.subprocess, "check_output", return_value="sdkVersion:'26'\n"), self.assertRaises(RuntimeError):
+            build.apk_metadata(Path("/sdk/aapt2"), Path("/out/bridge.pending.apk"), {})
+
+    def test_stale_bridge_or_unexpected_signer_is_refused(self):
+        args = self.args("--variant", "standalone", "--development", "--version-code", "2026100908",
+                         "--version-name", "0.1.0-beta.2", "--expected-signer", "A" * 64)
+        artifacts = {
+            "OctoSenseHome.apk": {"package_name": "dev.makepad.octosense", "version_code": 2026100908,
+                                  "version_name": "0.1.0-beta.2", "certificate_sha256": "a" * 64},
+            "OctoSenseBridge.apk": {"package_name": "dev.makepad.octosense.bridge", "version_code": 2026100908,
+                                    "version_name": "0.1.0-beta.2", "certificate_sha256": "a" * 64},
+        }
+        build.verify_pair(artifacts, args)
+        for field, value in (("version_code", 1), ("version_name", "1.0.0"),
+                             ("package_name", "example.other"), ("certificate_sha256", "b" * 64)):
+            altered = {name: dict(item) for name, item in artifacts.items()}
+            altered["OctoSenseBridge.apk"][field] = value
+            with self.subTest(field=field), self.assertRaises(RuntimeError):
+                build.verify_pair(altered, args)
+        both_wrong = {name: dict(item, certificate_sha256="b" * 64) for name, item in artifacts.items()}
+        with self.assertRaises(RuntimeError):
+            build.verify_pair(both_wrong, args)
 
     def test_the_default_phone_build_bundles_the_pinned_octos_kernel(self):
         args = self.args("--variant", "standalone", "--development")
