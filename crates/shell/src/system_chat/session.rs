@@ -99,7 +99,7 @@ impl SystemHost for ShellSystemHost {
     fn declarations(&self) -> Vec<Value> {
         #[cfg(any(feature = "app-hub", native_mobile))]
         crate::host_tools::ensure_loaded("card.os.calendar");
-        let mut decls: Vec<Value> = super::grants::host_tools()
+        let granted: Vec<Value> = super::grants::host_tools()
             .into_iter()
             .filter_map(|tool| {
                 let owner = crate::host_tools::owner_of(&tool)?;
@@ -108,9 +108,27 @@ impl SystemHost for ShellSystemHost {
             .collect();
         // Which apps have an agent, and asking the person to allow one
         // (ADR 0004 §4; answered by the chat itself, `crate::agents`).
-        decls.extend(crate::agents::declarations());
-        decls
+        session_set(granted, crate::agents::declarations())
     }
+}
+
+/// The system session's host tools: the declarations of its grants, then
+/// the agents' own tools, with the engines' tools (ADR 0013) moved last and
+/// cut first when the set would pass the kernel's cap
+/// ([`super::grants::MAX_SESSION_TOOLS`]), which refuses a larger set whole
+/// and would leave the system agent with none.
+pub(crate) fn session_set(granted: Vec<Value>, agents: Vec<Value>) -> Vec<Value> {
+    let (engines, mut set): (Vec<Value>, Vec<Value>) =
+        granted.into_iter().partition(|decl| decl["name"].as_str().is_some_and(super::grants::is_engine_tool));
+    set.extend(agents);
+    set.extend(engines);
+    let cap = super::grants::MAX_SESSION_TOOLS;
+    if set.len() > cap {
+        let dropped: Vec<&str> = set[cap..].iter().filter_map(|d| d["name"].as_str()).collect();
+        makepad_widgets::log!("system chat: {} host tools pass the kernel's cap of {cap}; not offered: {dropped:?}", set.len());
+        set.truncate(cap);
+    }
+    set
 }
 
 /// What the UI asks of the driver.

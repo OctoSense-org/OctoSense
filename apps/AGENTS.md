@@ -167,6 +167,23 @@ and Camera expose notify only. AI providers declares no app agent. The native
 Sheets app declares `sheets.*`, which the shell's engine executor
 (`../crates/shell/src/host_tools/engines.rs`) runs on the sheet engine.
 
+The ten craft engines (word, deck, cad, light, sound, design, film, effect,
+vector, pdf; ADR 0013) declare their tools in `<family>/host-service/tools.json`,
+which each crate's tests load with App Hub's own loader. No app ships them, so
+the shell declares them under a virtual owner `os.<family>` (no bundle, no app
+agent, no Settings row) and runs them on the engine's service as that system
+identity. Only the system agent gets them: `ENGINE_TOOLS` in
+`../crates/shell/src/system_chat/grants.rs` grants every read tool and each
+act tool that writes only inside its engine's area, never the command doors
+`vector.run` and `effect.run` (held for their own review). No app's agent gets
+an engine tool: none is shareable. Every path is relative to the engine's own
+area, `<apps root>/.host/<family>`, which neither the files host tools nor the
+system agent's workspace reaches, so an engine sees only what its own tools
+wrote. Change a tool's schema and the service together, keep both schemas
+objects (octos takes no other), and add a new tool to `ENGINE_TOOLS` only
+after reviewing it; the shell's `host_tools` tests run every granted tool
+against its declared result.
+
 Use the [product walkthrough](../desktop/docs/code-walkthrough.md) for the data
 and notice paths. For a cross-app tool, update the owner's shareable declaration,
 requesting app's grant and App Hub admission offer together. Keep credentials in

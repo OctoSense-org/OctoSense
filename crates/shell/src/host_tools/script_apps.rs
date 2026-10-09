@@ -68,8 +68,9 @@ pub struct Loaded {
 /// kernel (octos `ToolDecl`), which gates it like a destructive tool;
 /// `auto_approvable` stays with the shell's approval router (the kernel's
 /// declaration drops it, `host_tools::declaration`); `implemented_by`,
-/// `private_data` are the shell's, not the kernel's.
-fn declaration(tool: &ToolSpec) -> Value {
+/// `private_data` are the shell's, not the kernel's. The engines' virtual
+/// owners declare theirs the same way (`engines.rs`).
+pub(crate) fn declaration(tool: &ToolSpec) -> Value {
     let mut out = json!({
         "name": tool.name,
         "description": tool.description,

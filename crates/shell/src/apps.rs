@@ -317,6 +317,12 @@ pub fn register_host_services() {
         // The pdf engine service (ADR 0013): pdfcraft behind `pdf.*`.
         #[cfg(feature = "app-hub")]
         octosense_pdf_service::register();
+        // The ten engines' agent tools (ADR 0013): each engine's
+        // `tools.json` declared under its virtual owner `os.<family>` and
+        // run on the service registered above. Only the system agent is
+        // granted them (`system_chat::grants::ENGINE_TOOLS`).
+        #[cfg(feature = "app-hub")]
+        crate::host_tools::engines::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(wasm_functions)]
         crate::wasm_service::register();
