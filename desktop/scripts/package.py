@@ -196,6 +196,13 @@ def kernel_tool():
     return module
 
 
+def appimage_tool():
+    spec = importlib.util.spec_from_file_location("appimage_receipt", DESKTOP / "scripts/appimage_receipt.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def build_kernel(env, work, offline=False):
     """The octos kernel at the workspace's revision, built for this machine
     (`kernel-artifact.py --host`'s steps) with the release environment: paths
@@ -340,17 +347,27 @@ def main(argv=None):
     # generated copy sits beside release.json (git-ignored).
     generated = PACKAGING / ".release.generated.json"
     generated.write_text(json.dumps(config, indent=2) + "\n")
-    (out / "receipt.json").write_text(json.dumps({
+    receipt_path = out / "receipt.json"
+    receipt_path.unlink(missing_ok=True)  # A failed restage must not leave an old success receipt.
+    receipt = {
         "version": version, "target": triple, "formats": formats,
         "resources": [name for name, _ in crates], "kernel": kernel_receipt,
         "makepad_package_dir": added["MAKEPAD_PACKAGE_DIR"],
-    }, indent=2) + "\n")
+    }
     print(f"==> cargo packager --formats {','.join(formats)}", flush=True)
     try:
         subprocess.run(["cargo", "packager", "--release", "--config", str(generated), "--formats", ",".join(formats)],
                        cwd=PACKAGING, env=env, check=True)
     finally:
         generated.unlink(missing_ok=True)
+    if os_name == "linux" and kernel_receipt:
+        # linuxdeploy rewrites the AppImage sidecar's RUNPATH after resources
+        # are copied. Finalize only that format; the DEB retains staged bytes.
+        receipt["kernel_scope"] = "staged_before_packaging"
+        receipt["packages"] = appimage_tool().finalize_linux(
+            out / "dist", formats, kernel_receipt,
+            (out / "kernel" / KERNEL_NAME).read_bytes())
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
     print(f"==> packages in {out / 'dist'}; receipt {out / 'receipt.json'}")
 
 

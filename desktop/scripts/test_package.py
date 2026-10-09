@@ -1,17 +1,192 @@
 """Tests for desktop/scripts/package.py (no build, no network)."""
 import hashlib
 import importlib.util
+import io
 import json
+import os
 from pathlib import Path
 import plistlib
+import shutil
+import struct
+import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 spec = importlib.util.spec_from_file_location("package", HERE / "package.py")
 package = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(package)
+appimage = package.appimage_tool()
+
+
+def synthetic_kernel(patched=False, text=b'code', rodata=b'constants'):
+    """Non-executable ELF fixture: real section/dynamic/symbol table layouts."""
+    strings = b'\0libone.so\0libtwo.so\0'
+    names = ['', '.text', '.rodata', '.dynstr', '.dynamic', '.symtab', '.strtab', '.shstrtab']
+    labels = b'\0' + b'\0'.join(name.encode() for name in names[1:]) + b'\0'
+    if patched:
+        names[1], names[2] = names[2], names[1]  # patchelf may reorder section indices
+    dynaddr = 0x7000 if patched else 0x6000
+    dynamic = [(1, 1), (1, 11), (5, dynaddr), (10, len(strings) + (len(appimage.RUNPATH) if patched else 0))]
+    if patched:
+        dynamic.append((29, len(strings)))
+    dynamic.append((0, 0))
+    contents = {'': b'', '.text': text, '.rodata': rodata,
+                '.dynstr': strings + (appimage.RUNPATH if patched else b''),
+                '.dynamic': b''.join(struct.pack('<qQ', *entry) for entry in dynamic),
+                '.symtab': (struct.pack('<IBBHQQ', 1, 2, 0, names.index('.text'), 0x4000, len(text)) +
+                            struct.pack('<IBBHQQ', 6, 0, 2, names.index('.dynamic'), 0x8000, 0)),
+                '.strtab': b'\0main\0_DYNAMIC\0', '.shstrtab': labels}
+    data, records = bytearray(64), []
+    data[:7] = b'\x7fELF\x02\x01\x01'
+    struct.pack_into('<HHIQ', data, 16, 3, 62, 1, 0x4000)
+    for name in names:
+        kind = {'.dynamic': 6, '.symtab': 2, '.strtab': 3, '.shstrtab': 3, '.dynstr': 3}.get(name, 1)
+        address = {'.text': 0x4000, '.rodata': 0x5000, '.dynstr': dynaddr,
+                   '.dynamic': 0x9000 if patched else 0x8000}.get(name, 0)
+        records.append((labels.index(name.encode() + b'\0') if name else 0, kind, 0, address,
+                        len(data), len(contents[name]), names.index('.strtab') if name == '.symtab' else 0,
+                        0, 8 if patched and name == '.dynstr' else 1, 24 if name == '.symtab' else 0))
+        data.extend(contents[name])
+    struct.pack_into('<Q', data, 40, len(data))
+    struct.pack_into('<HHHHHH', data, 52, 64, 0, 0, 64, len(names), names.index('.shstrtab'))
+    data.extend(b''.join(struct.pack('<IIQQQQIIQQ', *record) for record in records))
+    return bytes(data)
+
+
+def synthetic_deb(path, kernel, receipt):
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode='w:gz') as output:
+        for name, data in ((appimage.KERNEL, kernel), (appimage.RECEIPT, json.dumps(receipt).encode())):
+            info = tarfile.TarInfo('./' + name)
+            info.size = len(data)
+            output.addfile(info, io.BytesIO(data))
+    payload = archive.getvalue()
+    header = f"{'data.tar.gz/':<16}{0:<12}{0:<6}{0:<6}{'100644':<8}{len(payload):<10}`\n".encode()
+    path.write_bytes(b'!<arch>\n' + header + payload + (b'\n' if len(payload) % 2 else b''))
+
+
+class AppImageReceiptTests(unittest.TestCase):
+    def setUp(self):
+        self.raw = synthetic_kernel()
+        self.patched = synthetic_kernel(patched=True)
+        self.staged = {'revision': 'a' * 40, 'version': 'octos test', 'source': 'prebuilt',
+                       'sha256': appimage.sha(self.raw)}
+
+    def test_stale_appimage_receipt_is_corrected_without_changing_raw_metadata(self):
+        original = dict(self.staged)
+        corrected = appimage.updated_receipt(self.staged, self.staged, self.raw, self.patched)
+        self.assertEqual(corrected, {**original, 'sha256': appimage.sha(self.patched)})
+        self.assertNotEqual(corrected['sha256'], original['sha256'])
+        self.assertEqual(self.staged, original)
+        self.assertEqual(appimage.updated_receipt(corrected, self.staged, self.raw, self.patched), corrected)
+
+    def test_foreign_receipts_or_changed_code_are_not_blessed(self):
+        for key in ('revision', 'version', 'sha256'):
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                appimage.updated_receipt({**self.staged, key: 'wrong'}, self.staged, self.raw, self.patched)
+        for blob in (synthetic_kernel(True, text=b'changed'), synthetic_kernel(True, rodata=b'changed')):
+            with self.assertRaisesRegex(RuntimeError, 'section contents'):
+                appimage.updated_receipt(self.staged, self.staged, self.raw, blob)
+        for offset in (24, 48):
+            changed = bytearray(self.patched)
+            changed[offset] ^= 1
+            with self.assertRaisesRegex(RuntimeError, 'ELF identity'):
+                appimage.updated_receipt(self.staged, self.staged, self.raw, bytes(changed))
+        changed = self.patched.replace(appimage.RUNPATH, b'$ORIGIN/evil!\0')
+        with self.assertRaises(RuntimeError):
+            appimage.updated_receipt(self.staged, self.staged, self.raw, changed)
+
+    def test_only_exact_unchanged_hidden_dynamic_anchor_is_admitted(self):
+        anchor = struct.pack('<IBBHQQ', 6, 0, 2, 4, 0x8000, 0)
+        self.assertIn(anchor, self.patched)
+        for replacement in (struct.pack('<IBBHQQ', 6, 0, 2, 4, 0x8001, 0),
+                            struct.pack('<IBBHQQ', 6, 1, 2, 4, 0x8000, 0),
+                            struct.pack('<IBBHQQ', 6, 0, 0, 4, 0x8000, 0),
+                            struct.pack('<IBBHQQ', 6, 0, 2, 4, 0x8000, 1)):
+            with self.assertRaisesRegex(RuntimeError, 'symbol identities'):
+                appimage.verify_runpath_transform(self.raw, self.patched.replace(anchor, replacement))
+
+    def test_only_aligned_dynamic_string_relocation_can_change_alignment(self):
+        # The positive fixture has the real patchelf .dynstr alignment 1→8.
+        appimage.verify_runpath_transform(self.raw, self.patched)
+        _, ordered = appimage.elf_sections(self.patched)
+        table = int.from_bytes(self.patched[40:48], 'little')
+        for name, field_offset, value in (('.text', 48, 8), ('.dynstr', 48, 16),
+                                          ('.dynstr', 16, 0x7001)):
+            changed = bytearray(self.patched)
+            struct.pack_into('<Q', changed, table + ordered.index(name) * 64 + field_offset, value)
+            with self.assertRaisesRegex(RuntimeError, 'section alignment'):
+                appimage.verify_runpath_transform(self.raw, bytes(changed))
+
+    def test_format_bindings_keep_deb_and_appimage_kernel_hashes_distinct(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            deb, image = temp / 'current.deb', temp / 'current.AppImage'
+            synthetic_deb(deb, self.raw, self.staged)
+            image.write_bytes(b'packaged AppImage')
+            binding = {'file': image.name, 'format': 'appimage', 'sha256': appimage.sha(image.read_bytes()),
+                       'kernel': {**self.staged, 'sha256': appimage.sha(self.patched)}}
+            original_deb = deb.read_bytes()
+            with mock.patch.object(appimage, 'finalize_appimage', return_value=binding):
+                results = appimage.finalize_linux(temp, ['deb', 'appimage'], self.staged, self.raw)
+            self.assertEqual(results[0]['kernel'], self.staged)
+            self.assertEqual(results[1]['kernel'], binding['kernel'])
+            self.assertEqual(deb.read_bytes(), original_deb)
+            synthetic_deb(deb, self.patched, self.staged)
+            with self.assertRaisesRegex(RuntimeError, 'DEB kernel'):
+                appimage.deb_binding(deb, self.staged)
+
+    def test_owner_and_hardlink_checks_do_not_silently_discard_metadata(self):
+        appimage.root_owners(b'-rwxr-xr-x 0/0 12 2026-01-01 00:00 root/file\n')
+        for listing in (b'', b'-rwxr-xr-x 1000/0 12 2026-01-01 00:00 root/file\n'):
+            with self.assertRaises(RuntimeError):
+                appimage.root_owners(listing)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'one').write_bytes(b'shared')
+            os.link(root / 'one', root / 'two')
+            self.assertEqual(appimage.inventory(root)['one']['hardlinks'], ['one', 'two'])
+
+    @unittest.skipUnless(shutil.which('mksquashfs') and shutil.which('unsquashfs'), 'requires Linux squashfs-tools')
+    def test_real_squashfs_repack_changes_only_receipt_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            tree = temp / 'input'
+            for relative, content in ((appimage.KERNEL, self.patched),
+                                      (appimage.RECEIPT, json.dumps(self.staged).encode()),
+                                      ('usr/lib/fixture', b'unchanged resource')):
+                path = tree / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+            (tree / appimage.KERNEL).chmod(0o755)
+            os.link(tree / 'usr/lib/fixture', tree / 'usr/lib/hardlink')
+            (tree / 'usr/lib/symlink').symlink_to('fixture')
+            fs = temp / 'input.squashfs'
+            appimage.run([shutil.which('mksquashfs'), str(tree), str(fs), '-noappend', '-no-progress',
+                          '-processors', '2', '-all-root', '-no-xattrs', '-comp', 'gzip', '-mkfs-time', '0'])
+            runtime = bytearray(synthetic_kernel())
+            runtime[8:11] = b'AI\x02'
+            image = temp / 'test.AppImage'
+            image.write_bytes(runtime + fs.read_bytes())
+            image.chmod(0o755)
+            original = image.read_bytes()
+            binding = appimage.finalize_appimage(image, self.staged, self.raw)
+            self.assertNotEqual(image.read_bytes(), original)
+            self.assertEqual(image.read_bytes()[:len(runtime)], runtime)
+            self.assertEqual(binding['kernel']['sha256'], appimage.sha(self.patched))
+            sealed = image.read_bytes()
+            repeated = appimage.finalize_appimage(image, self.staged, self.raw)
+            self.assertEqual(repeated['kernel'], binding['kernel'])
+            self.assertEqual(repeated['sha256'], binding['sha256'])
+            self.assertFalse(repeated['finalization']['receipt_updated'])
+            self.assertEqual(image.read_bytes(), sealed)
+            invalid = {**self.staged, 'sha256': '0' * 64}
+            with self.assertRaises(RuntimeError):
+                appimage.finalize_appimage(image, invalid, self.raw)
+            self.assertEqual(image.read_bytes(), sealed, 'failed repair preserves its input')
 
 
 class VersionTests(unittest.TestCase):
