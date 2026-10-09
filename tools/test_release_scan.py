@@ -50,7 +50,8 @@ class PatternTests(unittest.TestCase):
     def test_only_proven_octoscode_placeholder_seams_are_ignored(self):
         themes = b"/home/user/src/octoscode-app/home/user/src/octosSystemSolarizedSlateClaudeCodexLight"
         folder = b"/home/user/codeUse this folderb1_br_use"
-        for known in (themes, folder):
+        pooled_folder = b"b1_br_path/home/user/codeb1_br_use"
+        for known in (themes, folder, pooled_folder):
             self.assertEqual(findings(known), [])
             for leak in (known + b"\x00/home/user/private", b"/home/user/private\x00" + known,
                          known.replace(b"/home/user/", b"/home/someone/", 1),
@@ -59,6 +60,12 @@ class PatternTests(unittest.TestCase):
             self.assertTrue(findings(known, extra=[r"/home/user/"]))
         for standalone in (b"/home/user/src/octoscode-app", b"/home/user/src/octos", b"/home/user/code"):
             self.assertTrue(findings(standalone), standalone)
+        for tampered in (
+            pooled_folder.replace(b"b1_br_path", b"another_field"),
+            pooled_folder.replace(b"b1_br_use", b"another_button"),
+            pooled_folder.replace(b"/home/user/code", b"/home/user/private"),
+        ):
+            self.assertTrue(findings(tampered), tampered)
 
     def test_exact_public_design_assets_are_not_private_build_data(self):
         fixture = ROOT / "tools/fixtures/release-scan"

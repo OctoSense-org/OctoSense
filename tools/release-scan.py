@@ -111,6 +111,9 @@ OCTOSCODE_PLACEHOLDER_SEAMS = (
     re.compile(rb"(?P<first>/home/user/)src/octoscode-app"
                rb"(?P<second>/home/user/)src/octosSystemSolarizedSlateClaudeCodexLight"),
     re.compile(rb"(?P<first>/home/user/)codeUse this folderb1_br_use"),
+    # The same browser.rs:733/737 literals can pool without the translated
+    # button label. Require both surrounding widget IDs, not the path alone.
+    re.compile(rb"b1_br_path(?P<first>/home/user/)codeb1_br_use"),
 )
 
 BASE_PATTERNS = [
