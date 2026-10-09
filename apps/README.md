@@ -4,14 +4,14 @@ English | [简体中文](README.zh-CN.md)
 
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](../desktop/docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
-> **Where this fits.** System apps run in App Hub's Card runner. News, Mail, Calendar, Photos, Maps, YouTube and Camera declare app agents; AI providers configures the host and declares none. The shell gives each enabled app/account its own peer and drives its conversations for the system agent, the “Ask <app>” panel and in-card chat. Declared tools pass through the shell's relay and approval router to a host service; the shell's shared notice service handles apps that only expose `<namespace>.notify`. See [App agents](#app-agents) for the exact tools and [architecture](../docs/architecture.md) for the two lanes and trust boundaries. Glance accepts L0 and Splash cards under the publishing app's policy.
+> **Where this fits.** System apps run in App Hub's Card runner. News, Mail, Calendar, Photos, Maps, YouTube and Camera declare app agents; AI providers configures the host and declares none, and neither does Writer. The shell gives each enabled app/account its own peer and drives its conversations for the system agent, the “Ask <app>” panel and in-card chat. Declared tools pass through the shell's relay and approval router to a host service; the shell's shared notice service handles apps that only expose `<namespace>.notify`. See [App agents](#app-agents) for the exact tools and [architecture](../docs/architecture.md) for the two lanes and trust boundaries. Glance accepts L0 and Splash cards under the publishing app's policy.
 
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
 the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube, Quick Deck and PDF Tools** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube, Quick Deck, PDF Tools and Writer** are *contained script apps*. Each is
   a Makepad Script/Splash program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under the permissions admitted from its `manifest.json`. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
@@ -27,7 +27,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
   and `news.notify` (the shell draws the notice).
-- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's own folder. No bundle yet.
+- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's own folder. Writer (`writer/bundle`, desktop only) is its app; Writer's calls work in Writer's own storage.
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
@@ -92,7 +92,7 @@ OctoSense repository into the same workspace, then run this from your App Flow c
 
 ### Shared appearance
 
-News, Photos, Mail, Calendar, Maps, AI providers, YouTube and PDF Tools share the interface
+News, Photos, Mail, Calendar, Maps, AI providers, YouTube, PDF Tools and Writer share the interface
 in [`interface.splash`](interface.splash): theme-aware page/card/field surfaces,
 readable secondary text, 44-point actions and 48-point inputs. Desktop content
 has a maximum width; narrow windows keep the same actions. Camera and media
@@ -133,6 +133,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage`, `deck` | none | [`deck`](deck/host-service): `new`, `info`, `render`, `convert`, in Quick Deck's own storage |
 | [PDF Tools](pdftools/bundle) | `os.pdftools` (desktop) | The PDFs in its own storage: a library with each first page, a document view with page thumbnails, text with find, and info; a page view; merge in three steps (choose, order, done) and split every few pages or where you choose; open a PDF from the device (up to 64 MiB) and remove one. See [its README](pdftools/README.md), with the hidden-shell journey that tests it | `storage`, `files`, `pdf` | none | the [`pdf`](pdf/host-service) engine service in the app's own storage: `pdf.info`, `pdf.render`, `pdf.text`, `pdf.merge`, `pdf.split`; the shell's `files.status` and `files.import` |
+| [Writer](writer/bundle) | `os.writer` (desktop) | A calm editor on a white page (a line starting with `#` is a heading, `-` a bullet, `>` a quote), a document list, Save as a Word document, a preview of the saved document with an outline from its headings, and export to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage` | none | [`word`](word/host-service) (`word.convert`, `word.inspect`), once App Hub admits a `word` capability |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -236,8 +237,15 @@ reaches only the hosts the manifest lists.
   for a five-slide deck, 16 s on the very first call of a session. Every
   screen and state, refusals included, is also covered in `card-host` by
   `quickdeck/tests/ui.py` with the dev fixture below.
-- Camera and AI providers ship PNG launcher artwork; YouTube and Quick Deck
-  ship SVG artwork. The shell frames bundle icons for the selected platform style.
+- **Writer** (2026-10-09, `card-host` hidden `--remote` runs, light and dark,
+  412-point and 1100×760 windows): writing, the document list, draft
+  autosave across a restart and deleting were driven with real typing. App Hub
+  does not admit a `word` capability yet, so every engine action answers
+  "Writer can't … yet" and the draft stays; Save, Preview and Export were
+  exercised against Writer's developer fixture (below), not the engine. Not
+  run in a shell yet.
+- Camera and AI providers ship PNG launcher artwork; YouTube, Quick Deck and
+  Writer ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
 ## How the shells pack them
 
@@ -461,6 +469,14 @@ and `target/quickdeck-ui/dark`. In `fixture.json`, `delay` is the seconds each
 call takes, `fail` names a call that fails (`new`, `info`, `render`, `convert`
 or `all`), and `unreadable: true` answers `render` without leaving a picture,
 so each slide shows its text.
+
+**Writer's developer fixture.** To exercise Writer's Save, Preview and Export
+screens without the `word` engine, put a `dev-fixtures.json` file in Writer's
+storage jail (`<app-data>/os.writer/` for `card-host`): `{}` is enough, and
+`{"delay": 3, "fail": ["word.convert"]}` slows the answers down or makes a
+method fail. Writer then answers `word.convert` and `word.inspect` itself, from
+the drafts, and shows a "Fixture engine" badge on every screen. Writer never
+writes that file; delete it to go back to the real engine.
 
 ## Host services and sheets
 

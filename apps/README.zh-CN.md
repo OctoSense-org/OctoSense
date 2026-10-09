@@ -4,13 +4,13 @@
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
-> **在整个系统中的位置**。系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent。Shell 为每个启用的应用/账户提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
+> **在整个系统中的位置**。系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent，Writer 也不声明。Shell 为每个启用的应用/账户提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
 
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 
-- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers、YouTube、Quick Deck 和 PDF Tools**
+- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers、YouTube、Quick Deck、PDF Tools 和 Writer**
   是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 Makepad Script/Splash
   程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限由其
   `manifest.json` 经过准入后确定，与商店应用受到的隔离完全相同。它们同时也是
@@ -25,7 +25,7 @@ OctoSense-System-Apps 仓库（已归档）。
   （`desktop/system-apps.json` 与 `phone/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
   Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
-- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方自己的文件夹内。暂无 bundle。
+- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方自己的文件夹内。它的应用是 Writer（`writer/bundle`，仅桌面端）；Writer 的调用在 Writer 自己的存储中进行。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
@@ -76,7 +76,7 @@ OctoSense-System-Apps 仓库（已归档）。
 
 ### 共用外观
 
-新闻、相册、邮件、日历、地图、AI providers、YouTube 和 PDF Tools 共用
+新闻、相册、邮件、日历、地图、AI providers、YouTube、PDF Tools 和 Writer 共用
 [`interface.splash`](interface.splash)：页面、卡片和输入框跟随主题，
 辅助文字保持可读，操作按钮高 44 点，输入框高 48 点。桌面内容限制最大宽度，
 窄窗口保留相同操作。相机和媒体查看器保留深色观看背景。应用大厅的原生模块
@@ -110,6 +110,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`、`deck` | 无 | [`deck`](deck/host-service)：`new`、`info`、`render`、`convert`，在 Quick Deck 自己的存储中运行 |
 | [PDF Tools](pdftools/bundle) | `os.pdftools`（桌面） | 管理自己存储中的 PDF：带首页预览的资料库，带页面缩略图、可查找的文字和信息的文档视图；单页视图；三步合并（选择、排序、完成），以及按固定页数或在指定页面处拆分；从设备打开 PDF（最大 64 MiB）和移除 PDF。见[它的 README](pdftools/README.zh-CN.md)，其中介绍了测试它的隐藏 Shell 流程 | `storage`、`files`、`pdf` | 无 | 在应用自己的存储中工作的 [`pdf`](pdf/host-service) 引擎服务：`pdf.info`、`pdf.render`、`pdf.text`、`pdf.merge`、`pdf.split`；Shell 的 `files.status` 和 `files.import` |
+| [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage` | 无 | [`word`](word/host-service)（`word.convert`、`word.inspect`），在 App Hub 接纳 `word` 权限之后 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -182,7 +183,11 @@ OctoSense-System-Apps 仓库（已归档）。
   （#399），所以它工作时 Shell 会停顿：五张幻灯片约 3 秒，会话中的第一次调用 16 秒。
   每个页面和状态（包括各种拒绝）也由 `quickdeck/tests/ui.py` 用下方的开发夹具在
   `card-host` 中覆盖。
-- Camera 和 AI providers 自带 PNG 启动器图案，YouTube 和 Quick Deck 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
+- **Writer**（2026-10-09，`card-host` 隐藏窗口的 `--remote` 运行，浅色与深色，
+  412 点宽与 1100×760 的窗口）：用真实输入驱动了写作、文档列表、重启后仍在的自动保存草稿
+  和删除。App Hub 尚不接纳 `word` 权限，所以每个引擎操作都回答“Writer 暂时无法……”，草稿保留；
+  保存、预览和导出是用 Writer 的开发者 fixture（见下文）而不是引擎运行的。尚未在 Shell 中运行。
+- Camera 和 AI providers 自带 PNG 启动器图案，YouTube、Quick Deck 和 Writer 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
 
@@ -384,6 +389,12 @@ python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-hos
 `target/quickdeck-ui/dark`。`fixture.json` 中，`delay` 是每次调用耗费的秒数，
 `fail` 指定失败的调用（`new`、`info`、`render`、`convert` 或 `all`），
 `unreadable: true` 让 `render` 正常应答但不留下图片，于是每张幻灯片显示其文字。
+
+**Writer 的开发者 fixture。** 要在没有 `word` 引擎的情况下验证 Writer 的保存、预览和导出界面，
+在 Writer 的存储 jail 中（`card-host` 下是 `<app-data>/os.writer/`）放一个 `dev-fixtures.json`：
+内容写 `{}` 即可，`{"delay": 3, "fail": ["word.convert"]}` 会让回答变慢或让某个方法失败。
+此时 Writer 自己根据草稿回答 `word.convert` 和 `word.inspect`，并在每个界面上显示
+“Fixture engine”标记。Writer 从不写这个文件；删除它即可回到真实引擎。
 
 ## 宿主服务与面板
 
