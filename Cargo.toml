@@ -313,9 +313,11 @@ log = "0.4"
 # Developers' own functions compiled to WebAssembly, run for their app with
 # a deadline and a memory cap (crates/wasm-host, ADR 0011). Cranelift compiles;
 # no GC or threads. Components (ADR 0014) add the component model and a WASI
-# 0.2 subset scoped to the app: `wasmtime-wasi`'s `p2` only.
+# 0.2 subset scoped to the app: `wasmtime-wasi`'s `p2` only, and outgoing
+# `wasi:http` to the app's own network hosts (rustls with ring, as the shell's).
 wasmtime = { version = "49.0.2", default-features = false, features = ["cranelift", "runtime", "std", "parallel-compilation", "component-model"] }
 wasmtime-wasi = { version = "49.0.2", default-features = false, features = ["p2"] }
+wasmtime-wasi-http = { version = "49.0.2", default-features = false, features = ["p2", "default-send-request"] }
 
 # Workspace-wide clippy policy for the crates that opt in (`[lints]
 # workspace = true`, AppCard's): lints that are real but tracked elsewhere.

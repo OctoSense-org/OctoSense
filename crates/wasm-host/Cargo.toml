@@ -8,6 +8,10 @@ publish = false
 [dependencies]
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
+wasmtime-wasi-http = { workspace = true }
+# The requests a component's `wasi:http` sends, checked against its hosts.
+http = "1"
+http-body-util = "0.1"
 serde_json = { workspace = true }
 base64 = "0.22"
 # File writes a component makes (wasmtime-wasi's streams carry `Bytes`).

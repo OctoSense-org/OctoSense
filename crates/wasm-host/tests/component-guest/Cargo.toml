@@ -3,7 +3,7 @@
 # ../fixtures. Its own workspace: none of this enters the shell's graph.
 [workspace]
 resolver = "2"
-members = ["notes", "netprobe"]
+members = ["notes", "netprobe", "fetch"]
 
 [profile.release]
 opt-level = "s"

@@ -1,0 +1,6 @@
+package octosense:fetch-spike;
+
+world fetch {
+  /// GET `url` over wasi:http: "<status> <body>", or the error.
+  export get: func(url: string) -> result<string, string>;
+}

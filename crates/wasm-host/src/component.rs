@@ -48,6 +48,7 @@ use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use crate::{trap, CallError, InvocationGuard, LoadError, Runtime, Ticker, LOG_LINE, LOG_LINES};
 
 mod files;
+mod net;
 
 /// The WASI packages a component may import. Every interface of these is
 /// linked; what each can reach is set per instance ([`Grants`]).
@@ -55,6 +56,7 @@ const ALLOWED_PACKAGES: &[&str] = &[
     "wasi:cli/",
     "wasi:clocks/",
     "wasi:filesystem/",
+    "wasi:http/",
     "wasi:io/",
     "wasi:random/",
 ];
@@ -78,6 +80,9 @@ pub struct Grants {
     pub storage_dir: Option<PathBuf>,
     /// Open the storage folder read-only (its quota is used up).
     pub read_only: bool,
+    /// The hosts its `wasi:http` requests may reach, by a script's rule
+    /// (`host`, or `host:port`). Empty: none.
+    pub http_hosts: Vec<String>,
 }
 
 /// One function an app may call, with its WIT-like signature.
@@ -130,6 +135,9 @@ struct State {
     guard: Option<Arc<InvocationGuard>>,
     /// What the running call may add to the storage folder.
     budget: files::Budget,
+    http: wasmtime_wasi_http::WasiHttpCtx,
+    /// The hosts its requests may reach, and what it was refused.
+    hosts: net::Hosts,
 }
 
 impl WasiView for State {
@@ -137,6 +145,16 @@ impl WasiView for State {
         WasiCtxView {
             ctx: &mut self.wasi,
             table: &mut self.table,
+        }
+    }
+}
+
+impl wasmtime_wasi_http::WasiHttpView for State {
+    fn http(&mut self) -> wasmtime_wasi_http::WasiHttpCtxView<'_> {
+        wasmtime_wasi_http::WasiHttpCtxView {
+            ctx: &mut self.http,
+            table: &mut self.table,
+            hooks: &mut self.hosts,
         }
     }
 }
@@ -258,10 +276,19 @@ impl Runtime {
                 Box::new(|| true) as Box<dyn Fn() -> bool + Send + Sync>,
             ),
         };
+        // A component that may reach the network waits for replies: its
+        // calls get the longer deadline.
+        let call_deadline = if grants.http_hosts.is_empty() {
+            self.limits.deadline
+        } else {
+            self.limits.network_deadline.max(self.limits.deadline)
+        };
         let guard = Arc::new(InvocationGuard {
-            deadline: deadline.min(Instant::now() + self.limits.deadline),
+            deadline: deadline.min(Instant::now() + call_deadline),
             pending,
         });
+        let mut hosts = net::Hosts::new(grants.http_hosts.clone());
+        hosts.deadline = Some(guard.deadline);
         let mut store = Store::new(
             &self.engine,
             State {
@@ -271,6 +298,8 @@ impl Runtime {
                 guard: Some(guard),
                 // Start-up code may read the folder, not grow it.
                 budget: files::Budget::default(),
+                http: wasmtime_wasi_http::WasiHttpCtx::new(),
+                hosts,
             },
         );
         store.data().budget.set(Some(0));
@@ -286,6 +315,7 @@ impl Runtime {
         store.set_epoch_deadline(1);
         let mut linker = Linker::new(&self.engine);
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
+            .and_then(|()| wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker))
             .and_then(|()| files::link(&mut linker))
             .map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
         let instance = linker
@@ -314,7 +344,7 @@ impl Runtime {
             stderr,
             read: [0, 0],
             logs: Vec::new(),
-            deadline: self.limits.deadline,
+            deadline: call_deadline,
             io_bytes: self.limits.io_bytes,
             spent: false,
             _ticker: self.ticker.clone(),
@@ -576,6 +606,7 @@ impl ComponentInstance {
         let args = arguments(&params, args).map_err(CallError::Guest)?;
         let results_ty: Vec<Type> = fty.results().collect();
         let mut results = vec![Val::Bool(false); results_ty.len()];
+        self.store.data_mut().hosts.deadline = Some(guard.deadline);
         self.store.data_mut().guard = Some(guard);
         self.store.set_epoch_deadline(1);
         let outcome = func
@@ -583,6 +614,10 @@ impl ComponentInstance {
             .map_err(trap);
         self.store.data_mut().guard = None;
         self.collect_logs();
+        for (host, why) in self.store.data_mut().hosts.take_refused() {
+            self.logs
+                .push(format!("a request to {host} was refused: {why}"));
+        }
         // A refused write reaches the guest as a full disk or, through a
         // stream, a bare I/O error: say what it was.
         let refused = self.store.data().budget.take_refused();

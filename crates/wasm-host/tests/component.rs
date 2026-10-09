@@ -11,6 +11,7 @@ use octosense_wasm_host::component::{is_component, Grants};
 use octosense_wasm_host::{CallError, Limits, LoadError, Runtime};
 use serde_json::json;
 
+const FETCH: &[u8] = include_bytes!("fixtures/fetch.component.wasm");
 const NOTES: &[u8] = include_bytes!("fixtures/notes.component.wasm");
 const NETPROBE: &[u8] = include_bytes!("fixtures/netprobe.component.wasm");
 
@@ -156,6 +157,7 @@ fn files_live_only_in_the_granted_storage_folder() {
     let grants = Grants {
         storage_dir: Some(dir.clone()),
         read_only: false,
+        http_hosts: Vec::new(),
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
     let written = instance
@@ -186,6 +188,7 @@ fn files_live_only_in_the_granted_storage_folder() {
     let read_only = Grants {
         storage_dir: Some(dir.clone()),
         read_only: true,
+        http_hosts: Vec::new(),
     };
     let mut reader = rt
         .instantiate_component(&program, &read_only, None)
@@ -227,6 +230,7 @@ fn the_storage_budget_refuses_growth_and_returns_freed_bytes() {
     let grants = Grants {
         storage_dir: Some(dir.clone()),
         read_only: false,
+        http_hosts: Vec::new(),
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
     assert_eq!(instance.storage_budget(), None);
@@ -285,6 +289,107 @@ fn the_storage_budget_refuses_growth_and_returns_freed_bytes() {
         json!(100_000)
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A local HTTP server: every connection gets `reply` (or, with `None`, an
+/// accepted connection that never answers). Its `host:port`.
+fn serve(reply: Option<&'static str>) -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in listener.incoming().flatten() {
+            let Some(body) = reply else {
+                held.push(stream);
+                continue;
+            };
+            let mut stream = stream;
+            let mut request = Vec::new();
+            let mut byte = [0u8; 1];
+            while !request.ends_with(b"\r\n\r\n") {
+                if std::io::Read::read(&mut stream, &mut byte).unwrap_or(0) == 0 {
+                    break;
+                }
+                request.push(byte[0]);
+            }
+            let answer = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = std::io::Write::write_all(&mut stream, answer.as_bytes());
+        }
+    });
+    address
+}
+
+/// `wasi:http` reaches exactly the app's hosts, by a script's rule; anything
+/// else is refused inside the component and logged.
+#[test]
+fn http_reaches_only_the_apps_hosts() {
+    let rt = runtime();
+    let program = rt.load_component(FETCH).unwrap();
+    let server = serve(Some("hello"));
+    let port = server.rsplit(':').next().unwrap().to_string();
+    let grants = Grants {
+        http_hosts: vec![server.clone()],
+        ..Grants::default()
+    };
+    let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
+    assert_eq!(
+        instance
+            .call_json("get", &json!(format!("http://{server}/hi")))
+            .unwrap(),
+        json!("200 hello")
+    );
+    // The same server under another name is another host.
+    match instance.call_json("get", &json!(format!("http://localhost:{port}/hi"))) {
+        Err(CallError::Guest(why)) => assert!(why.contains("HttpRequestDenied"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+    assert!(
+        instance.take_logs().iter().any(|l| l == &format!(
+            "a request to localhost:{port} was refused: it is not one of the app's network hosts"
+        )),
+        "the refusal is logged"
+    );
+    // No hosts, no network.
+    let mut offline = rt
+        .instantiate_component(&program, &Grants::default(), None)
+        .unwrap();
+    match offline.call_json("get", &json!(format!("http://{server}/hi"))) {
+        Err(CallError::Guest(why)) => assert!(why.contains("HttpRequestDenied"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A request waits outside the guest, where the epoch check cannot end it:
+/// its timeouts are clamped to the call's deadline, so a server that never
+/// answers ends the call instead of holding the worker.
+#[test]
+fn a_request_that_never_answers_ends_at_the_deadline() {
+    let rt = Runtime::new(
+        Limits {
+            network_deadline: Duration::from_millis(800),
+            ..Limits::default()
+        },
+        None,
+    )
+    .unwrap();
+    let program = rt.load_component(FETCH).unwrap();
+    let server = serve(None);
+    let grants = Grants {
+        http_hosts: vec![server.clone()],
+        ..Grants::default()
+    };
+    let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
+    let started = std::time::Instant::now();
+    let result = instance.call_json("get", &json!(format!("http://{server}/")));
+    assert!(result.is_err(), "{result:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "ended after {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]

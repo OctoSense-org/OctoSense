@@ -56,6 +56,9 @@ const LOG_LINES: usize = 64;
 pub struct Limits {
     /// How long one call may run.
     pub deadline: Duration,
+    /// How long one call may run when it may reach the network (a
+    /// component granted hosts): it waits for replies.
+    pub network_deadline: Duration,
     /// The most linear memory an instance may have.
     pub memory_bytes: usize,
     /// The most elements in an instance's single table (including growth).
@@ -72,6 +75,7 @@ impl Default for Limits {
     fn default() -> Self {
         Limits {
             deadline: Duration::from_secs(2),
+            network_deadline: Duration::from_secs(10),
             memory_bytes: 256 << 20,
             table_elements: 16_384,
             module_bytes: 8 << 20,

@@ -101,6 +101,7 @@ fn main() {
     let grants = Grants {
         storage_dir: Some(storage.clone()),
         read_only: false,
+        http_hosts: Vec::new(),
     };
     let with_files = median_us(50, || {
         drop(
