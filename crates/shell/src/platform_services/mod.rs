@@ -20,6 +20,7 @@ use std::{
 };
 
 mod consent;
+mod location;
 mod prompt;
 #[cfg(test)]
 mod tests;
@@ -33,6 +34,7 @@ enum Operation {
     Status,
     Request,
     Location,
+    Sample,
 }
 struct Work {
     call: ServiceCall,
@@ -43,6 +45,7 @@ struct Work {
     grant: consent::Grant,
     deadline: Instant,
     requesting: bool,
+    sample: Option<location::Sample>,
 }
 impl Work {
     fn alive(&self) -> bool {
@@ -73,6 +76,9 @@ struct State {
     reviews: HashMap<String, Review>,
     current: HashMap<(String, PathBuf, &'static str), (String, Instant)>,
     background: bool,
+    samples: Vec<Work>,
+    location_running: bool,
+    sample_timer: makepad_widgets::Timer,
 }
 fn state() -> &'static Mutex<State> {
     static STATE: OnceLock<Mutex<State>> = OnceLock::new();
@@ -104,11 +110,12 @@ fn status(work: &Work, os: &str) -> Value {
     json!({"capability": work.family, "supported": permission_supported(), "app_policy_granted": work.policy_allows(),
         "app_consent": work.current_grant().map(|g| g.allowed).unwrap_or(false), "os_permission": os,
         "location_read_supported": work.family == "location" && cfg!(target_os = "android"),
+        "location_sample_supported": work.family == "location" && permission_supported(),
         "scope": "host_api_v1_device_access", "background_permission": false})
 }
 fn queue(work: Work) {
     let mut state = state().lock().unwrap_or_else(|e| e.into_inner());
-    if state.queued.len() + state.pending.len() >= MAX_REQUESTS {
+    if state.queued.len() + state.pending.len() + state.samples.len() >= MAX_REQUESTS {
         drop(state);
         work.fail("busy", "Too many device requests are pending");
         return;
@@ -142,7 +149,7 @@ impl HostService for DeviceService {
         let output = json!({"type":"object","required":["capability","supported","app_policy_granted","app_consent","os_permission"],
             "properties":{"capability":{"type":"string"},"supported":{"type":"boolean"},"app_policy_granted":{"type":"boolean"},
                 "app_consent":{"type":"boolean"},"os_permission":{"enum":["granted","not_determined","denied","settings_required","unsupported"]},
-                "location_read_supported":{"type":"boolean"},"scope":{"const":"host_api_v1_device_access"},"background_permission":{"const":false}}});
+                "location_read_supported":{"type":"boolean"},"location_sample_supported":{"type":"boolean"},"scope":{"const":"host_api_v1_device_access"},"background_permission":{"const":false}}});
         let mut methods = vec![
             HostApiMethod::new(
                 format!("{}.permission.status", self.family),
@@ -184,6 +191,9 @@ impl HostService for DeviceService {
                     "accuracy_m":{"type":"number"},"source":{"const":"last_known"},"timestamp":{"type":"null"},"freshness":{"const":"unknown"}}}))
                 .with_platforms(&["android"]).with_agent_access(AgentAccess::Allowed));
         }
+        if self.family == "location" {
+            methods.extend(location::methods());
+        }
         methods
     }
     fn call(&mut self, call: ServiceCall, reply: Replier, host: &mut dyn ServiceHost) {
@@ -193,7 +203,8 @@ impl HostService for DeviceService {
             let mut state = state().lock().unwrap_or_else(|e| e.into_inner());
             if !call.from_sheet {
                 reply.send(Err(
-                    "invalid_review: Only the host's device permission sheet may close itself".into(),
+                    "invalid_review: Only the host's device permission sheet may close itself"
+                        .into(),
                 ));
                 return;
             }
@@ -204,7 +215,9 @@ impl HostService for DeviceService {
             if state.current.get(&key).map(|(ticket, _)| ticket.as_str()) == Some(ticket) {
                 state.current.remove(&key);
                 if let Some(review) = state.reviews.remove(ticket) {
-                    review.work.fail("cancelled", "Device consent was cancelled");
+                    review
+                        .work
+                        .fail("cancelled", "Device consent was cancelled");
                 }
             }
             drop(state);
@@ -212,7 +225,21 @@ impl HostService for DeviceService {
             reply.send(Ok(json!({"closed":true})));
             return;
         }
-        if !call.args.is_object() || call.args.as_object().is_some_and(|args| !args.is_empty()) {
+        let sample_options = if self.family == "location" && call.method() == "sample" {
+            match location::Options::parse(&call.args) {
+                Ok(options) => Some(options),
+                Err(error) => {
+                    reply.send(Err(error));
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        if sample_options.is_none()
+            && (!call.args.is_object()
+                || call.args.as_object().is_some_and(|args| !args.is_empty()))
+        {
             reply.send(Err(
                 "invalid_arguments: Device methods require an empty object".into(),
             ));
@@ -233,6 +260,21 @@ impl HostService for DeviceService {
             reply.send(Err("host_requirement_missing: Declare requires: [\"host-api-v1\"] to use device APIs with unified app consent".into()));
             return;
         }
+        if self.family == "location" && call.method() == "sample.cancel" {
+            if !permission_supported() {
+                reply.send(Err(
+                    "unsupported_platform: Location sampling is unavailable".into(),
+                ));
+                return;
+            }
+            let cancelled = location::cancel(
+                &mut state().lock().unwrap_or_else(|e| e.into_inner()),
+                &call.app_id,
+                &call.host_dir,
+            );
+            reply.send(Ok(json!({"cancelled":cancelled})));
+            return;
+        }
         let operation = match call.method() {
             "permission.status" => Operation::Status,
             "permission.request" => Operation::Request,
@@ -242,6 +284,7 @@ impl HostService for DeviceService {
                 return;
             }
             "get" if self.family == "location" => Operation::Location,
+            "sample" if self.family == "location" => Operation::Sample,
             _ => {
                 reply.send(Err(
                     "method_unavailable: This device method is not implemented".into(),
@@ -263,8 +306,12 @@ impl HostService for DeviceService {
             permission: permission(self.family).unwrap(),
             operation,
             grant,
-            deadline: Instant::now() + DEADLINE,
+            deadline: Instant::now()
+                + sample_options
+                    .map(|v| Duration::from_millis(v.timeout_ms))
+                    .unwrap_or(DEADLINE),
             requesting: false,
+            sample: sample_options.map(|options| location::Sample { options, fix: None }),
         };
         if !permission_supported() {
             if operation == Operation::Status {
@@ -277,8 +324,15 @@ impl HostService for DeviceService {
             }
             return;
         }
-        if operation == Operation::Location {
-            if !cfg!(target_os = "android") {
+        if operation == Operation::Sample && !work.call.may_prompt {
+            work.fail(
+                "authorization_required",
+                "Location sampling requires the foreground app",
+            );
+            return;
+        }
+        if matches!(operation, Operation::Location | Operation::Sample) {
+            if operation == Operation::Location && !cfg!(target_os = "android") {
                 work.fail(
                     "unsupported_platform",
                     "This host has no admitted location reader on this platform",
@@ -351,7 +405,8 @@ impl HostService for DeviceService {
                 drop(state);
                 host.open_sheet(format!(
                     "DevicePermissionPrompt {{ width: Fill height: Fill ticket: {} family: {} }}",
-                    json!(ticket), json!(self.family)
+                    json!(ticket),
+                    json!(self.family)
                 ));
                 return;
             }
@@ -363,6 +418,7 @@ impl HostService for DeviceService {
 /// Called by the host's event loop, never by a worker thread or the script VM.
 pub fn handle_event(cx: &mut Cx, event: &Event) {
     let mut state = state().lock().unwrap_or_else(|e| e.into_inner());
+    location::maintain(&mut state, cx, event);
     state
         .current
         .retain(|_, (_, created)| created.elapsed() < REVIEW_TTL);
@@ -402,6 +458,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                 .work
                 .fail("cancelled", "Device consent was interrupted");
         }
+        location::sync(&mut state, cx);
         return;
     }
     if matches!(event, Event::Resume | Event::Foreground) {
@@ -426,7 +483,13 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
             } else if !work.consent_still_valid() {
                 work.fail("permission_denied", "The app's device consent changed");
             } else if result.status == PermissionStatus::Granted {
-                if work.operation == Operation::Location {
+                if work.operation == Operation::Sample {
+                    if state.background {
+                        work.fail("cancelled", "Location sampling left the foreground");
+                    } else {
+                        location::granted(work, &mut state);
+                    }
+                } else if work.operation == Operation::Location {
                     let value = makepad_widgets::makepad_platform::gps::last_gps_fix().map(|fix| json!({"latitude":fix.lat,"longitude":fix.lon,"accuracy_m":fix.acc,"source":"last_known","timestamp":null,"freshness":"unknown"}));
                     work.reply.send(value.ok_or_else(|| {
                         "location_unavailable: No last-known device location is available".into()
@@ -445,7 +508,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                 work.requesting = true;
                 let id = cx.request_permission(work.permission);
                 state.pending.insert(id, work);
-            } else if work.operation == Operation::Location {
+            } else if matches!(work.operation, Operation::Location | Operation::Sample) {
                 work.fail(
                     "authorization_required",
                     "OS location access is not granted; open the app to continue",
@@ -461,7 +524,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
         if !work.alive() {
             continue;
         }
-        if state.background && work.operation == Operation::Request {
+        if state.background && matches!(work.operation, Operation::Request | Operation::Sample) {
             work.fail(
                 "authorization_required",
                 "Return to the foreground app to request permission",
@@ -482,4 +545,5 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
         let id = cx.check_permission(work.permission);
         state.pending.insert(id, work);
     }
+    location::sync(&mut state, cx);
 }
