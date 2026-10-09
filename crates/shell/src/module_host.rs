@@ -410,6 +410,24 @@ pub(crate) fn run_with_isolated_module_data(test: &str) -> bool {
     true
 }
 
+std::thread_local! {
+    /// How many restyles this thread has applied. A restyle runs a hosted
+    /// app's script again, so its layout state starts over while its slot
+    /// keeps its size: a module view sends the size again when this moves.
+    /// Restyles and draws both happen on the UI thread.
+    static STYLE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The current restyle generation (see `STYLE_GENERATION`).
+pub fn style_generation() -> u64 {
+    STYLE_GENERATION.with(|generation| generation.get())
+}
+
+/// A restyle happened on this thread.
+pub(crate) fn restyled() {
+    STYLE_GENERATION.with(|generation| generation.set(generation.get().wrapping_add(1)));
+}
+
 #[derive(Default)]
 pub struct ModuleHost {
     /// Whether new instances may open extra windows: the desktop shell,
@@ -713,6 +731,7 @@ impl ModuleHost {
 
     pub fn apply_style(&mut self,cx:&mut Cx,sheet:&desktop_style::StyleSheet) {
         self.style=Some(sheet.clone());
+        restyled();
         for instance in self.instances.values_mut().filter(|i| i.failed.is_none()) {
             let vm_id = instance.vm_id;
             contain_outside(cx, vm_id, "a restyle", |cx| {

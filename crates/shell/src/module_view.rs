@@ -125,8 +125,10 @@ pub struct MpModuleView {
     /// outside the draw that decided it is visible again.
     #[rust]
     wake_frame: Option<NextFrame>,
+    /// The content, slot size and restyle generation (`module_host::style_generation`)
+    /// the app last heard as `on_app_resize`.
     #[rust]
-    script_viewport: Option<(WidgetUid, Vec2d)>,
+    script_viewport: Option<(WidgetUid, Vec2d, u64)>,
     /// Previous hosted bounds, used to reveal a focused editor when the IME
     /// shrinks the app. Resize the app, then scroll its own nearest container.
     #[rust]
@@ -605,7 +607,7 @@ impl Widget for MpModuleView {
                     .filter(|splash| !splash.view.source.is_zero())
                     .map(|splash| splash.view.widget_uid());
                 if let Some(content) = content {
-                    let current = (content, rect.size);
+                    let current = (content, rect.size, crate::module_host::style_generation());
                     if *viewport != Some(current) {
                         *viewport = Some(current);
                         return card.call_script_fn(
