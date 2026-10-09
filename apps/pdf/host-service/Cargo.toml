@@ -3,7 +3,8 @@
 # pdfcraft's PDF engine behind typed `pdf.*` methods, through its own
 # headless automation layer: inspect a document, extract its text, render
 # a page to PNG, merge files and split one, with every path confined to
-# the service's own `pdf/` area inside the caller's host directory.
+# the call's area: the caller's own folder from the shell's resolver, else
+# the legacy `pdf/` corner of the caller's host directory.
 # Stateless: every call opens, acts and closes.
 [package]
 name = "octosense-pdf-service"
@@ -15,6 +16,8 @@ publish = false
 [dependencies]
 # The same App Hub rev as Mail and News: one appstore, one service registry.
 octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
 serde_json = { workspace = true }
 # The engine, pinned to one ymote/pdfcraft revision (ADR 0013); default
 # features off to leave its MCP server out of the build.
@@ -25,4 +28,6 @@ pdfcraft-automation = { workspace = true }
 octosense-skill-gen = { workspace = true }
 # Its tool manifest is checked with App Hub's own loader (tools.json).
 octosense-app-policy = { workspace = true }
+# The engine's own scripted XFA form: proof that a document's scripts stay off.
+pdfcraft-xfa = { workspace = true }
 tempfile = "3"

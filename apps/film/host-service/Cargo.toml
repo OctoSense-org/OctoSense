@@ -4,9 +4,9 @@
 # file (container, streams, duration), render one frame to PNG through the
 # engine's program renderer, transcode a range through the engine's own
 # encoders (H.264+AAC, ProRes, PCM, GIF), and inspect a project file —
-# pure Rust, headless and offline, with every path held inside the
-# caller's `<host dir>/film` area. Stateless: every call is a fresh
-# session.
+# pure Rust, headless and offline, with every path held inside the call's
+# area: the caller's own folder from the shell's resolver, else the legacy
+# `<host dir>/film`. Stateless: every call is a fresh session.
 [package]
 name = "octosense-film-service"
 version = "0.1.0"
@@ -17,6 +17,8 @@ publish = false
 [dependencies]
 # The same App Hub rev as Mail and News: one appstore, one service registry.
 octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
 serde_json = { workspace = true }
 # The engine, pinned to one ymote/filmcraft revision (ADR 0013).
 filmcraft-engine = { workspace = true }

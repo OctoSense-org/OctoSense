@@ -25,7 +25,7 @@ OctoSense-System-Apps 仓库（已归档）。
   （`desktop/system-apps.json` 与 `phone/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
   Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
-- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方宿主目录的 `word/` 区域内。暂无 bundle。
+- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方自己的文件夹内。暂无 bundle。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
@@ -33,24 +33,24 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
-- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在宿主目录自己的 `deck/` 子目录内；尚无 bundle。
-- **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在宿主自己的 `cad` 目录内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内；尚无 bundle。
+- **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
 - **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
   放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
-  批量参数化显影；仅服务系统应用，且只在调用方宿主目录的 `light/` 区域内读写。
+  批量参数化显影；仅服务系统应用，且只在调用方自己的文件夹内读写。
   暂无 bundle。
-- **`sound` 宿主服务**（`sound/host-service`）：soundcraft 音频引擎置于 `sound.*` 之后（ADR 0013），只做离线文件处理——info、convert、trim、mix 和波形峰值，数据都在宿主目录的 `sound/` 区域内；它从不打开音频或 MIDI 设备，暂时也没有应用包。
-- **`design` 宿主服务**（`design/host-service`）把 designcraft 排版引擎（ADR 0013）放在 `design.*` 后面：文档信息、页面渲染为 PNG、导出 PDF/IDML/EPUB，所有路径都限制在宿主目录自己的 `design/` 区域内；暂无应用包。
+- **`sound` 宿主服务**（`sound/host-service`）：soundcraft 音频引擎置于 `sound.*` 之后（ADR 0013），只做离线文件处理——info、convert、trim、mix 和波形峰值，数据都在调用方自己的文件夹内；它从不打开音频或 MIDI 设备，暂时也没有应用包。
+- **`design` 宿主服务**（`design/host-service`）把 designcraft 排版引擎（ADR 0013）放在 `design.*` 后面：文档信息、页面渲染为 PNG、导出 PDF/IDML/EPUB，所有路径都限制在调用方自己的文件夹内；暂无应用包。
 - **`film` 宿主服务**（`film/host-service`）是锁定版本的 filmcraft 视频引擎
   （ADR 0013），以 `film.*` 提供探测、抽帧为 PNG 和有上限的导出，全部使用其
   纯 Rust 编解码器——无界面、离线，暂无应用包。
 - **`effect` 宿主服务**（`effect/host-service`）是 effectcraft 动态图形引擎
   （ADR 0013），通过 `effect.*` 方法服务系统应用：工程信息、把合成帧渲染为
-  PNG、引擎命令目录以及 Lottie 导入/导出，所有文件都在调用方的 `effect/`
-  区域内；尚无应用包。
+  PNG、引擎命令目录以及 Lottie 导入/导出，所有文件都在调用方自己的文件夹
+  内；尚无应用包。
 - **矢量引擎服务**（`vector/host-service`，`octosense-vector-service`）以无界面方式
   运行固定版本的 vectorcraft 矢量引擎，提供 `vector.*` 方法（ADR 0013）：在调用方
-  宿主目录的 `vector/` 专属子目录内检查、转换、按引擎命令绘制并渲染矢量文档
+  自己的文件夹内检查、转换、按引擎命令绘制并渲染矢量文档
   （SVG、PDF、EPS、DXF、位图）；仅服务系统应用，暂无应用包。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
@@ -469,7 +469,7 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 | 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
 | 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.draft`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`、`mail.propose_reply`、`mail.suggest_reply`、`mail.propose_send`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
-| 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查其工作区内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | Shell 的通知卡片 |
+| 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查照片 Agent 自己文件夹内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | Shell 的通知卡片 |
 | 地图、YouTube、相机 | `agent` 块、`glance` | `maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
@@ -479,12 +479,15 @@ pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发�
 `<family>/host-service/tools.json`。Shell 以虚拟所有者 `os.<family>` 的名义声明这些
 工具，并只授予系统 Agent（[`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)
 中的 `ENGINE_TOOLS`）：每个引擎的读工具（`info`、`text`、`inspect`、`entities`、
-`measure`、`controls`、`peaks`、`project.info`），以及只在其自身区域内写入的 act 工具
+`measure`、`controls`、`peaks`、`project.info`），以及只新建文件的 act 工具
 （`new`、`convert`、`render`、`export`、`frame`、`develop`、`batch`、`trim`、`mix`、
 `merge`、`split`、`export_lottie`、`import_lottie`）。可以运行任意引擎命令的
-`vector.run` 和 `effect.run` 已声明但不授予。所有路径都相对于引擎自己的区域
-`<apps root>/.host/<family>`：目前没有工具能把文件复制进来或取出去，所以引擎只处理
-它自己的工具写出的文件（`word.new`、`deck.new` 以及各种转换）。
+`vector.run` 和 `effect.run` 已声明但不授予，Shell 也拒绝它们。引擎在调用方自己的
+文件夹里工作（ADR 0013，`../crates/shell/src/host_tools/areas.rs`）：对系统 Agent
+而言就是它的工作区，它自己的文件工具能看到引擎写出的文件，每个引擎也能打开其他引擎
+做出的文件。所有路径都相对于该文件夹并留在其中，任何调用都不会替换已有文件，写进
+应用存储的输出也受其配额限制。Sheets 的 `sheets.*` 和照片的 `photos.info` 在各自
+应用的 Agent 文件夹里工作。
 
 **引擎技能。** 每个引擎（包括 sheet 和 photo 引擎）还在 `<family>/host-service/skill/` 中为系统 Agent
 附带一个技能：手写的 `SKILL.md`（引擎能做什么、系统 Agent 用哪些工具调用它、文件规则、示例），以及按引擎固定版本

@@ -1,14 +1,22 @@
 //! `octosense-cad-service` — the `cad` host service (ADR 0013).
 //!
 //! cadcraft's drafting engine behind typed `cad.*` methods. Every call is
-//! a fresh, stateless session: the drawing is read from the caller's
-//! `<host dir>/cad` area, inspected, measured, rendered or converted
-//! through the engine, and the reply is JSON — the engine's types never
-//! cross the boundary. The service itself does all file I/O: the engine's
-//! own file commands are never installed, so nothing in the engine can
-//! touch a path this crate did not resolve.
+//! a fresh, stateless session: the drawing is read from the call's area,
+//! inspected, measured, rendered or converted through the engine, and the
+//! reply is JSON — the engine's types never cross the boundary. The service
+//! itself does all file I/O through `cadcraft_io`'s byte codecs: the
+//! engine's own file commands are never run, so nothing in the engine can
+//! touch a path this crate did not resolve. A path written inside a drawing
+//! (an XREF, an IMAGE's raster file) is dropped by the reader and never
+//! followed.
 //!
-//! Methods (all under the `cad` family; paths relative to `<host dir>/cad`):
+//! **Where a call works** (ADR 0013, 2026-10-08): the caller's own folder,
+//! the [`Area`] the shell's resolver gives it ([`set_area_resolver`]), or
+//! without one the legacy `<host dir>/cad`. A write that may not replace (an
+//! agent's) only creates new files, within the area's quota
+//! ([`Area::write`]).
+//!
+//! Methods (all under the `cad` family; paths relative to the call's area):
 //! - `info {path}` → the drawing inspected as JSON (layers, blocks,
 //!   layouts, entity counts, extents)
 //! - `entities {path, type?, layer?, limit?, offset?}` → `{count, entities}`
@@ -18,10 +26,9 @@
 //!   (by `out`'s extension), fitted to the drawing's extents
 //! - `convert {path, out, format?}` → DXF, DWG, SVG, PNG or PDF
 //!
-//! Paths never leave the `cad` area: `..`, absolute paths and symlink
-//! escapes are refused — the shared `.host` directory also holds Mail's
-//! and Calendar's data. The service serves system apps only until
-//! ADR 0013's store capability is designed.
+//! Paths never leave the area: `..`, absolute paths and symlink escapes are
+//! refused. The service serves system apps only until ADR 0013's store
+//! capability is designed.
 
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
@@ -31,6 +38,7 @@ use std::path::{Component, Path, PathBuf};
 use cadcraft_engine::doc::{Drawing, Space};
 use cadcraft_engine::Session;
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
 /// The largest drawing file the service reads, and the largest it writes.
@@ -52,6 +60,14 @@ pub fn register() {
     register_host_service(Box::new(CadService));
 }
 
+/// The shell's resolver: where each call works (`None` removes it, and
+/// calls work in the legacy `<host dir>/cad` again).
+static AREAS: Slot = Slot::new();
+
+pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
+    AREAS.set(resolver);
+}
+
 /// The `cad.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
 /// shape: the shell declares them for the virtual owner `os.cad` and grants
 /// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
@@ -64,55 +80,56 @@ impl HostService for CadService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !may_call(&call.app_id) {
-            reply.send(Err("The cad service serves system apps only.".into()));
-            return;
-        }
-        let method = call.method().to_string();
-        let args = call.args.clone();
-        let host_dir = call.host_dir.clone();
-        reply.send(dispatch(&method, &args, &host_dir));
+        reply.send(serve(&AREAS, &call));
     }
 }
 
-/// The service's own area under the caller's host directory:
-/// `<host dir>/cad`, created on first use. Everything the service reads
-/// or writes stays inside it.
-fn area(host_dir: &Path) -> Result<PathBuf, String> {
-    let area = host_dir.join("cad");
-    std::fs::create_dir_all(&area).map_err(|e| format!("cad: {e}"))?;
-    Ok(area)
+/// One call, in the area `areas` gives it.
+fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err("The cad service serves system apps only.".into());
+    }
+    let area = areas.area(call, "cad").map_err(|e| format!("cad: {e}"))?;
+    dispatch_in(call.method(), &call.args, &area)
 }
 
-fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
-    let area = area(host_dir)?;
+fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
     match method {
-        "info" => info(args, &area),
-        "entities" => entities(args, &area),
-        "measure" => measure(args, &area),
-        "render" => render(args, &area),
-        "convert" => convert(args, &area),
+        "info" => info(args, area),
+        "entities" => entities(args, area),
+        "measure" => measure(args, area),
+        "render" => render(args, area),
+        "convert" => convert(args, area),
         other => Err(format!("cad.{other} is not a method of the cad service")),
     }
+}
+
+/// [`dispatch_in`] in the legacy area `<host_dir>/cad`, as a call without
+/// the shell's resolver works.
+#[cfg(test)]
+fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+    let area = Area::legacy(host_dir, "cad");
+    std::fs::create_dir_all(&area.root).map_err(|e| format!("cad: {e}"))?;
+    dispatch_in(method, args, &area)
 }
 
 fn arg_str<'a>(ctx: &str, args: &'a Json, key: &str) -> Result<&'a str, String> {
     args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("{ctx}: `{key}` is required"))
 }
 
-/// A path strictly inside the `cad` area: relative, no `..`, no absolute
+/// A path strictly inside the call's area: relative, no `..`, no absolute
 /// component; the resolved parent must stay under the area even through
 /// symlinks.
-fn contained(ctx: &str, area: &Path, rel: &str) -> Result<PathBuf, String> {
+fn contained(ctx: &str, area: &Area, rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err(format!("{ctx}: a path is required"));
     }
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err(format!("{ctx}: `{rel}` stays inside the app's cad area"));
+        return Err(format!("{ctx}: `{rel}` stays inside this call's folder"));
     }
-    let joined = area.join(rel_path);
-    let check_root = area.canonicalize().map_err(|e| format!("{ctx}: cad area: {e}"))?;
+    let joined = area.root.join(rel_path);
+    let check_root = area.root.canonicalize().map_err(|e| format!("{ctx}: folder: {e}"))?;
     let deepest = {
         let mut p = joined.clone();
         while !p.exists() {
@@ -125,14 +142,22 @@ fn contained(ctx: &str, area: &Path, rel: &str) -> Result<PathBuf, String> {
     };
     let resolved = deepest.canonicalize().map_err(|e| format!("{ctx}: {e}"))?;
     if !resolved.starts_with(&check_root) {
-        return Err(format!("{ctx}: `{rel}` stays inside the app's cad area"));
+        return Err(format!("{ctx}: `{rel}` stays inside this call's folder"));
     }
     Ok(joined)
 }
 
+/// A contained output path the call may write, refused before the engine
+/// works when the area's rules would refuse it.
+fn out_path(ctx: &str, area: &Area, rel: &str) -> Result<PathBuf, String> {
+    let out = contained(ctx, area, rel)?;
+    area.check(&out, 0).map_err(|e| format!("{ctx}: {e}"))?;
+    Ok(out)
+}
+
 /// Read a drawing from the area through the engine's codecs (DXF ASCII or
 /// binary, DWG), with the file size capped.
-fn read_drawing(ctx: &str, area: &Path, rel: &str) -> Result<Drawing, String> {
+fn read_drawing(ctx: &str, area: &Area, rel: &str) -> Result<Drawing, String> {
     let path = contained(ctx, area, rel)?;
     let meta = std::fs::metadata(&path).map_err(|e| format!("{ctx}: {rel}: {e}"))?;
     if meta.len() > MAX_FILE_BYTES {
@@ -143,7 +168,7 @@ fn read_drawing(ctx: &str, area: &Path, rel: &str) -> Result<Drawing, String> {
 }
 
 /// A fresh session with the drawing open; the engine sees no file system.
-fn load(ctx: &str, area: &Path, rel: &str) -> Result<Session, String> {
+fn load(ctx: &str, area: &Area, rel: &str) -> Result<Session, String> {
     let d = read_drawing(ctx, area, rel)?;
     let title = Path::new(rel).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| rel.to_string());
     let mut s = Session::empty();
@@ -151,19 +176,17 @@ fn load(ctx: &str, area: &Path, rel: &str) -> Result<Session, String> {
     Ok(s)
 }
 
-/// Write produced bytes into the area, capped, creating parent directories.
-fn write_out(ctx: &str, area: &Path, rel: &str, bytes: &[u8]) -> Result<(), String> {
+/// Write produced bytes into the area, capped, under the area's rules
+/// ([`Area::write`]: no replacement unless allowed, within the quota).
+fn write_out(ctx: &str, area: &Area, rel: &str, bytes: &[u8]) -> Result<(), String> {
     if bytes.len() as u64 > MAX_FILE_BYTES {
         return Err(format!("{ctx}: the result is larger than the service writes"));
     }
     let path = contained(ctx, area, rel)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("{ctx}: {e}"))?;
-    }
-    std::fs::write(&path, bytes).map_err(|e| format!("{ctx}: {rel}: {e}"))
+    area.write(&path, bytes).map_err(|e| format!("{ctx}: {e}"))
 }
 
-fn info(args: &Json, area: &Path) -> Result<Json, String> {
+fn info(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str("cad.info", args, "path")?;
     let mut s = load("cad.info", area, path)?;
     let mut doc = s.execute("drawing.inspect", &json!({"entities": false})).map_err(|e| format!("cad.info: {e}"))?;
@@ -171,7 +194,7 @@ fn info(args: &Json, area: &Path) -> Result<Json, String> {
     Ok(doc)
 }
 
-fn entities(args: &Json, area: &Path) -> Result<Json, String> {
+fn entities(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str("cad.entities", args, "path")?;
     let mut s = load("cad.entities", area, path)?;
     let params = json!({
@@ -183,7 +206,7 @@ fn entities(args: &Json, area: &Path) -> Result<Json, String> {
     s.execute("entities", &params).map_err(|e| format!("cad.entities: {e}"))
 }
 
-fn measure(args: &Json, area: &Path) -> Result<Json, String> {
+fn measure(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str("cad.measure", args, "path")?;
     let mut s = load("cad.measure", area, path)?;
     match (args["dist"].is_object(), args["area"].is_object()) {
@@ -199,9 +222,10 @@ fn measure(args: &Json, area: &Path) -> Result<Json, String> {
     }
 }
 
-fn render(args: &Json, area: &Path) -> Result<Json, String> {
+fn render(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str("cad.render", args, "path")?;
     let out = arg_str("cad.render", args, "out")?;
+    out_path("cad.render", area, out)?;
     let side = args["max_side"].as_u64().unwrap_or(1024).clamp(16, MAX_RENDER_SIDE as u64) as u32;
     let d = read_drawing("cad.render", area, path)?;
     let ext = Path::new(out).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
@@ -224,9 +248,10 @@ fn render(args: &Json, area: &Path) -> Result<Json, String> {
     Ok(json!({"out": out, "bytes": bytes.len(), "format": ext}))
 }
 
-fn convert(args: &Json, area: &Path) -> Result<Json, String> {
+fn convert(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str("cad.convert", args, "path")?;
     let out = arg_str("cad.convert", args, "out")?;
+    out_path("cad.convert", area, out)?;
     let format = match args["format"].as_str() {
         Some(f) if !f.is_empty() => f.to_ascii_lowercase(),
         _ => Path::new(out).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default(),
@@ -374,15 +399,93 @@ mod tests {
     fn the_area_is_the_cad_subdir() {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
-        assert_eq!(area(host).unwrap(), host.join("cad"));
-        assert!(host.join("cad").is_dir(), "created on demand");
-
         let input = fixture(host);
-        dispatch("render", &json!({"path": input, "out": "p.png"}), host).unwrap();
+        serve(&Slot::new(), &service_call("render", json!({"path": input, "out": "p.png"}), host, false)).unwrap();
         let mut names: Vec<String> =
             std::fs::read_dir(host).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         names.sort();
-        assert_eq!(names, vec!["cad"], "everything the service touches lands under cad/");
+        assert_eq!(names, vec!["cad"], "without a resolver everything the service touches lands under cad/");
+        // and may replace, as it always could
+        serve(&Slot::new(), &service_call("render", json!({"path": input, "out": "p.png"}), host, false)).unwrap();
+    }
+
+    /// A call as App Hub hands it to the service.
+    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+        ServiceCall { app_id: "os.fixture".into(), service: format!("cad.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
+    }
+
+    /// A resolver shaped like the shell's: every call works in `root`, an
+    /// app's own foreground call may replace a file and an agent's may not,
+    /// within `quota`.
+    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+        let slot = Slot::new();
+        let root = root.to_path_buf();
+        slot.set(Some(std::sync::Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
+        slot
+    }
+
+    /// The fixture drawing, written straight into `root` (a caller's folder).
+    fn fixture_in(root: &Path) -> String {
+        let made = tempfile::tempdir().unwrap();
+        let name = fixture(made.path());
+        std::fs::copy(made.path().join("cad").join(&name), root.join(&name)).unwrap();
+        name
+    }
+
+    /// With the shell's resolver every path is relative to the caller's own
+    /// folder and stays inside it, through a link too.
+    #[test]
+    fn the_resolver_root_is_used_and_paths_stay_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let input = fixture_in(&root);
+        let areas = resolver(&root, None);
+        let host = dir.path().join(".host");
+        let doc = serve(&areas, &service_call("info", json!({"path": input}), &host, false)).unwrap();
+        assert_eq!(doc["entityCount"], json!(2), "{doc}");
+        serve(&areas, &service_call("convert", json!({"path": input, "out": "out/copy.dxf"}), &host, false)).unwrap();
+        assert!(root.join("out/copy.dxf").is_file() && !host.exists() && !root.join("cad").exists());
+        std::fs::write(dir.path().join("beside.dxf"), b"x").unwrap();
+        for bad in ["../beside.dxf", "/etc/hosts", "out/../../beside.dxf"] {
+            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("render", json!({"path": input, "out": bad}), &host, true)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            assert!(serve(&areas, &service_call("info", json!({"path": "up/beside.dxf"}), &host, false)).is_err());
+            assert!(serve(&areas, &service_call("render", json!({"path": input, "out": "up/p.svg"}), &host, true)).is_err());
+            assert!(!dir.path().join("p.svg").exists());
+        }
+    }
+
+    /// An agent's call never replaces a file, before the engine runs; an
+    /// app's own foreground call may.
+    #[test]
+    fn an_agent_never_replaces_a_file_and_an_app_may() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = fixture_in(dir.path());
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("p.svg"), b"keep me").unwrap();
+        for method in ["render", "convert"] {
+            let refused = serve(&areas, &service_call(method, json!({"path": input, "out": "p.svg"}), dir.path(), false)).unwrap_err();
+            assert!(refused.contains("`p.svg` already exists"), "{method}: {refused}");
+        }
+        assert_eq!(std::fs::read(dir.path().join("p.svg")).unwrap(), b"keep me");
+        serve(&areas, &service_call("render", json!({"path": input, "out": "p.svg"}), dir.path(), true)).unwrap();
+        assert!(std::fs::read_to_string(dir.path().join("p.svg")).unwrap().contains("<svg"));
+    }
+
+    /// What a call writes must fit what is left of the area's quota.
+    #[test]
+    fn output_over_the_quota_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = fixture_in(dir.path());
+        let refused = serve(&resolver(dir.path(), Some(16)), &service_call("convert", json!({"path": input, "out": "c.dxf"}), dir.path(), true)).unwrap_err();
+        assert!(refused.contains("bytes left"), "{refused}");
+        assert!(!dir.path().join("c.dxf").exists());
+        serve(&resolver(dir.path(), Some(1 << 22)), &service_call("convert", json!({"path": input, "out": "c.dxf"}), dir.path(), true)).unwrap();
     }
 
     #[test]

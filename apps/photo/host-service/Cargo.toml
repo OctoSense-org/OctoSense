@@ -3,8 +3,10 @@
 # photocraft's raster engine behind typed `photo.*` methods, through its
 # own headless automation layer: open, inspect, convert, run engine
 # commands (the 817-command catalog) and render previews, with file access
-# bound to the caller's host directory by photocraft's capability-rooted
-# AuthorizedWorkspace. Stateless: every call opens, acts and closes.
+# bound to the call's area (the caller's own folder from the shell's
+# resolver, else the legacy `photo/` corner of the caller's host directory)
+# by photocraft's capability-rooted AuthorizedWorkspace. Stateless: every
+# call opens, acts and closes.
 [package]
 name = "octosense-photo-service"
 version = "0.1.0"
@@ -15,10 +17,16 @@ publish = false
 [dependencies]
 # The same App Hub rev as Mail and News: one appstore, one service registry.
 octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
 serde_json = { workspace = true }
 # The engine, pinned to one ymote/photocraft revision (ADR 0013).
 photocraft-automation = { workspace = true }
 photocraft-io = { workspace = true }
+# The linked-file fence: a smart object's source as the engine holds it, and
+# the native format of an embedded one's contents.
+photocraft-doc = { workspace = true }
+photocraft-format = { workspace = true }
 
 [dev-dependencies]
 # Generates and checks the skill's references (tests/skill.rs).

@@ -48,6 +48,8 @@ pub mod toolbox;
 pub mod script_apps;
 #[cfg(feature = "app-hub")]
 pub mod engines;
+#[cfg(feature = "app-hub")]
+pub mod areas;
 
 #[cfg(test)]
 mod tests;
@@ -553,7 +555,7 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
 /// a script app's (`card.<id>`) manifest `storage.accounts` (Mail); else it
 /// acts for the device. The one rule every per-account decision here uses
 /// ([`account_key`]).
-fn keeps_accounts(storage: &crate::app_storage::Storage, app_id: &str) -> bool {
+pub(crate) fn keeps_accounts(storage: &crate::app_storage::Storage, app_id: &str) -> bool {
     let app = app_of_peer(app_id);
     match crate::native_apps::find(app) {
         Some(entry) => entry.accounts,

@@ -8,9 +8,13 @@
 //! opens an audio or MIDI device: no playback, no recording, no cpal, no
 //! plugin hosts. Every call reads files, computes, writes files, returns.
 //!
-//! Files live in the `sound/` area of the caller's host directory (the
-//! shared `.host` also holds Mail's and Calendar's data, which `sound.*`
-//! never touches); every path is relative and contained there.
+//! **Where a call works** (ADR 0013, 2026-10-08): in its caller's own
+//! folder, the [`Area`] the shell's resolver gives it ([`set_area_resolver`]),
+//! or without one the legacy `<host dir>/sound`. Every path is relative and
+//! contained there, through symlinks too. A write that may not replace (an
+//! agent's) only creates new files, within the area's quota
+//! ([`Area::write`]). The engine takes and gives bytes only, so a reference
+//! inside an audio file (a cue sheet's, a BWF chunk's) is never followed.
 //!
 //! Methods (all under the `sound` family; paths relative to the area):
 //! - `info {path}` → format, sample format, sample rate, channels,
@@ -31,6 +35,7 @@ pub mod skill;
 use std::path::{Component, Path, PathBuf};
 
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 use soundcraft_audio_io::{self as audio, AudioBuffer, BitDepth, EncodeOptions, FileFormat};
 
@@ -55,6 +60,14 @@ pub fn register() {
     register_host_service(Box::new(SoundService));
 }
 
+/// The shell's resolver: where each call works (`None` removes it, and
+/// calls work in the legacy `<host dir>/sound` again).
+static AREAS: Slot = Slot::new();
+
+pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
+    AREAS.set(resolver);
+}
+
 /// The `sound.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
 /// shape: the shell declares them for the virtual owner `os.sound` and grants
 /// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
@@ -67,46 +80,72 @@ impl HostService for SoundService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !may_call(&call.app_id) {
-            reply.send(Err("The sound service serves system apps only.".into()));
-            return;
-        }
-        let method = call.method().to_string();
-        let args = call.args.clone();
-        let host_dir = call.host_dir.clone();
-        reply.send(dispatch(&method, &args, &host_dir));
+        reply.send(serve(&AREAS, &call));
     }
 }
 
-/// The family's area under the host directory: everything the service
-/// reads or writes stays in `<host_dir>/sound`.
-fn area(host_dir: &Path) -> Result<PathBuf, String> {
-    let dir = host_dir.join("sound");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("sound: cannot prepare the sound area: {e}"))?;
-    Ok(dir)
+/// One call, in the area `areas` gives it.
+fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err("The sound service serves system apps only.".into());
+    }
+    let area = areas.area(call, "sound").map_err(|e| format!("sound: {e}"))?;
+    dispatch_in(call.method(), &call.args, &area)
 }
 
 /// A caller path resolved inside the area: relative, normal components
-/// only — separators are fine, but `..`, `.`, roots and prefixes are not.
-fn contained(area: &Path, path: &str) -> Result<PathBuf, String> {
+/// only — separators are fine, but `..`, `.`, roots and prefixes are not —
+/// and its deepest existing ancestor resolves under the area even through
+/// symlinks.
+fn contained(area: &Area, path: &str) -> Result<PathBuf, String> {
     let p = Path::new(path);
     let normal = p.components().all(|c| matches!(c, Component::Normal(_)));
+    let outside = || format!("sound: `{path}` must be a relative path inside this call's folder");
     if path.is_empty() || p.is_absolute() || !normal {
-        return Err(format!("sound: `{path}` must be a relative path inside the sound area"));
+        return Err(outside());
     }
-    Ok(area.join(p))
+    let joined = area.root.join(p);
+    let root = area.root.canonicalize().map_err(|e| format!("sound: folder: {e}"))?;
+    let mut deepest = joined.clone();
+    while !deepest.exists() {
+        match deepest.parent() {
+            Some(parent) => deepest = parent.to_path_buf(),
+            None => break,
+        }
+    }
+    let resolved = deepest.canonicalize().map_err(|e| format!("sound: {e}"))?;
+    if !resolved.starts_with(&root) {
+        return Err(outside());
+    }
+    Ok(joined)
 }
 
-fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
-    let area = area(host_dir)?;
+fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
     match method {
-        "info" => info(args, &area),
-        "convert" => convert(args, &area),
-        "trim" => trim(args, &area),
-        "mix" => mix(args, &area),
-        "peaks" => peaks(args, &area),
+        "info" => info(args, area),
+        "convert" => convert(args, area),
+        "trim" => trim(args, area),
+        "mix" => mix(args, area),
+        "peaks" => peaks(args, area),
         other => Err(format!("sound.{other} is not a method of the sound service")),
     }
+}
+
+/// [`dispatch_in`] in the legacy area `<host_dir>/sound`, as a call without
+/// the shell's resolver works.
+#[cfg(test)]
+fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+    let area = Area::legacy(host_dir, "sound");
+    std::fs::create_dir_all(&area.root).map_err(|e| format!("sound: cannot prepare the sound area: {e}"))?;
+    dispatch_in(method, args, &area)
+}
+
+/// A contained output path the call may write, refused before decoding
+/// when the area's rules would refuse it.
+fn out_path(area: &Area, out: &str, method: &str) -> Result<PathBuf, String> {
+    let full = contained(area, out)?;
+    area.check(&full, 0).map_err(|e| format!("sound.{method}: {e}"))?;
+    Ok(full)
 }
 
 fn arg_str<'a>(args: &'a Json, key: &str) -> Result<&'a str, String> {
@@ -115,7 +154,7 @@ fn arg_str<'a>(args: &'a Json, key: &str) -> Result<&'a str, String> {
 
 /// Read one input file inside the area, size-capped, with its extension
 /// as the engine's format hint.
-fn read_input(area: &Path, path: &str, method: &str) -> Result<(Vec<u8>, Option<String>), String> {
+fn read_input(area: &Area, path: &str, method: &str) -> Result<(Vec<u8>, Option<String>), String> {
     let full = contained(area, path)?;
     let len = std::fs::metadata(&full).map_err(|e| format!("sound.{method}: {path}: {e}")).map(|m| m.len())?;
     if len > MAX_INPUT_BYTES {
@@ -129,7 +168,7 @@ fn read_input(area: &Path, path: &str, method: &str) -> Result<(Vec<u8>, Option<
 /// Decode one input through the engine, refusing anything longer than
 /// [`MAX_SECS`] (checked on the probe when the container declares a
 /// length, and again on the decoded buffer).
-fn decode_input(area: &Path, path: &str, method: &str) -> Result<(audio::AudioInfo, AudioBuffer), String> {
+fn decode_input(area: &Area, path: &str, method: &str) -> Result<(audio::AudioInfo, AudioBuffer), String> {
     let (bytes, hint) = read_input(area, path, method)?;
     let probed = audio::probe(&bytes, hint.as_deref()).map_err(|e| format!("sound.{method}: {path}: {e}"))?;
     if probed.duration_secs() > MAX_SECS {
@@ -168,21 +207,19 @@ fn encode_options(args: &Json, out: &str, method: &str) -> Result<EncodeOptions,
     Ok(EncodeOptions { format, bit_depth, ..EncodeOptions::default() })
 }
 
-/// Encode through the engine and write inside the area.
-fn write_output(area: &Path, out: &str, buf: &AudioBuffer, opts: &EncodeOptions, method: &str) -> Result<usize, String> {
+/// Encode through the engine and write inside the area under its rules
+/// ([`Area::write`]: no replacement unless allowed, within the quota).
+fn write_output(area: &Area, out: &str, buf: &AudioBuffer, opts: &EncodeOptions, method: &str) -> Result<usize, String> {
     if buf.duration_secs() > MAX_SECS {
         return Err(format!("sound.{method}: the output would be {:.1}s long; the cap is {MAX_SECS}s", buf.duration_secs()));
     }
     let bytes = audio::encode(buf, opts).map_err(|e| format!("sound.{method}: {e}"))?;
     let full = contained(area, out)?;
-    if let Some(parent) = full.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("sound.{method}: {out}: {e}"))?;
-    }
-    std::fs::write(&full, &bytes).map_err(|e| format!("sound.{method}: {out}: {e}"))?;
+    area.write(&full, &bytes).map_err(|e| format!("sound.{method}: {e}"))?;
     Ok(bytes.len())
 }
 
-fn info(args: &Json, area: &Path) -> Result<Json, String> {
+fn info(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str(args, "path")?;
     let (bytes, hint) = read_input(area, path, "info")?;
     let probed = audio::probe(&bytes, hint.as_deref()).map_err(|e| format!("sound.info: {path}: {e}"))?;
@@ -203,9 +240,10 @@ fn info(args: &Json, area: &Path) -> Result<Json, String> {
     }))
 }
 
-fn convert(args: &Json, area: &Path) -> Result<Json, String> {
+fn convert(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str(args, "path")?;
     let out = arg_str(args, "out")?;
+    out_path(area, out, "convert")?;
     let opts = encode_options(args, out, "convert")?;
     let (_, buf) = decode_input(area, path, "convert")?;
     let bytes = write_output(area, out, &buf, &opts, "convert")?;
@@ -219,9 +257,10 @@ fn convert(args: &Json, area: &Path) -> Result<Json, String> {
     }))
 }
 
-fn trim(args: &Json, area: &Path) -> Result<Json, String> {
+fn trim(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str(args, "path")?;
     let out = arg_str(args, "out")?;
+    out_path(area, out, "trim")?;
     let start_ms = args["start_ms"].as_u64().ok_or("sound.trim: `start_ms` is required")?;
     let end_ms = args["end_ms"].as_u64().ok_or("sound.trim: `end_ms` is required")?;
     if end_ms <= start_ms {
@@ -244,8 +283,9 @@ fn trim(args: &Json, area: &Path) -> Result<Json, String> {
     Ok(json!({"out": out, "frames": cut.frames(), "sample_rate": cut.sample_rate, "bytes": bytes}))
 }
 
-fn mix(args: &Json, area: &Path) -> Result<Json, String> {
+fn mix(args: &Json, area: &Area) -> Result<Json, String> {
     let out = arg_str(args, "out")?;
+    out_path(area, out, "mix")?;
     let tracks = args["tracks"].as_array().filter(|t| !t.is_empty()).ok_or("sound.mix: `tracks` is a non-empty list of {path, gain_db?}")?;
     if tracks.len() > MAX_TRACKS {
         return Err(format!("sound.mix: at most {MAX_TRACKS} tracks per call"));
@@ -305,7 +345,7 @@ fn mix(args: &Json, area: &Path) -> Result<Json, String> {
     }))
 }
 
-fn peaks(args: &Json, area: &Path) -> Result<Json, String> {
+fn peaks(args: &Json, area: &Area) -> Result<Json, String> {
     let path = arg_str(args, "path")?;
     let cols = args["cols"].as_u64().unwrap_or(512).clamp(1, MAX_PEAK_COLS) as usize;
     let (_, buf) = decode_input(area, path, "peaks")?;
@@ -365,9 +405,87 @@ mod tests {
     #[test]
     fn area_is_the_sound_subdir_and_is_created() {
         let dir = tempfile::tempdir().unwrap();
-        let a = area(dir.path()).unwrap();
-        assert_eq!(a, dir.path().join("sound"));
-        assert!(a.is_dir());
+        let a = Slot::new().area(&service_call("info", json!({}), dir.path(), false), "sound").unwrap();
+        assert_eq!(a.root, dir.path().join("sound"));
+        assert!(a.root.is_dir());
+        assert!(a.may_replace && a.quota_left.is_none(), "without a resolver, as before");
+    }
+
+    /// A call as App Hub hands it to the service.
+    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+        ServiceCall { app_id: "os.fixture".into(), service: format!("sound.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
+    }
+
+    /// A resolver shaped like the shell's: every call works in `root`, an
+    /// app's own foreground call may replace a file and an agent's may not,
+    /// within `quota`.
+    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+        let slot = Slot::new();
+        let root = root.to_path_buf();
+        slot.set(Some(std::sync::Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
+        slot
+    }
+
+    /// With the shell's resolver every path is relative to the caller's own
+    /// folder and stays inside it, through a link too.
+    #[test]
+    fn the_resolver_root_is_used_and_paths_stay_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        let input = fixture(&root, "in.wav", 8000, 1, 800, 0.25);
+        let areas = resolver(&root, None);
+        let host = dir.path().join(".host");
+        let doc = serve(&areas, &service_call("info", json!({"path": input}), &host, false)).unwrap();
+        assert_eq!(doc["frames"], json!(800), "{doc}");
+        serve(&areas, &service_call("convert", json!({"path": input, "out": "out/in.flac"}), &host, false)).unwrap();
+        assert!(root.join("out/in.flac").is_file() && !host.exists() && !root.join("sound").exists());
+        fixture(dir.path(), "beside.wav", 8000, 1, 80, 0.25);
+        for bad in ["../beside.wav", "/etc/hosts", "out/../../beside.wav"] {
+            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("convert", json!({"path": input, "out": bad}), &host, true)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            // A link inside the folder that points out is no way out.
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            std::os::unix::fs::symlink(dir.path().join("beside.wav"), root.join("linked.wav")).unwrap();
+            assert!(serve(&areas, &service_call("info", json!({"path": "up/beside.wav"}), &host, false)).is_err());
+            assert!(serve(&areas, &service_call("info", json!({"path": "linked.wav"}), &host, false)).is_err());
+            assert!(serve(&areas, &service_call("convert", json!({"path": input, "out": "up/made.wav"}), &host, true)).is_err());
+            assert!(!dir.path().join("made.wav").exists());
+        }
+    }
+
+    /// An agent's call never replaces a file, before decoding; an app's own
+    /// foreground call may.
+    #[test]
+    fn an_agent_never_replaces_a_file_and_an_app_may() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = fixture(dir.path(), "in.wav", 8000, 1, 800, 0.25);
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("out.wav"), b"keep me").unwrap();
+        for (method, args) in [
+            ("convert", json!({"path": input, "out": "out.wav"})),
+            ("trim", json!({"path": input, "out": "out.wav", "start_ms": 10, "end_ms": 50})),
+            ("mix", json!({"tracks": [{"path": input}], "out": "out.wav"})),
+        ] {
+            let refused = serve(&areas, &service_call(method, args, dir.path(), false)).unwrap_err();
+            assert!(refused.contains("`out.wav` already exists"), "{method}: {refused}");
+        }
+        assert_eq!(std::fs::read(dir.path().join("out.wav")).unwrap(), b"keep me");
+        serve(&areas, &service_call("convert", json!({"path": input, "out": "out.wav"}), dir.path(), true)).unwrap();
+        assert!(std::fs::read(dir.path().join("out.wav")).unwrap().starts_with(b"RIFF"));
+    }
+
+    /// What a call writes must fit what is left of the area's quota.
+    #[test]
+    fn output_over_the_quota_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = fixture(dir.path(), "in.wav", 8000, 1, 800, 0.25);
+        let refused = serve(&resolver(dir.path(), Some(100)), &service_call("convert", json!({"path": input, "out": "c.wav"}), dir.path(), true)).unwrap_err();
+        assert!(refused.contains("bytes left"), "{refused}");
+        assert!(!dir.path().join("c.wav").exists());
+        serve(&resolver(dir.path(), Some(1 << 20)), &service_call("convert", json!({"path": input, "out": "c.wav"}), dir.path(), true)).unwrap();
     }
 
     #[test]

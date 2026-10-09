@@ -28,6 +28,14 @@
 //! tool queue. Closed apps fail visibly; Glance never becomes a second owner.
 //! Answers arrive on App Hub's reply queue; [`poll`] (from
 //! `host_tools::pump`) hands each back to its call.
+//!
+//! **An engine's method works in a folder the host picks** (ADR 0013): for
+//! a method of an engine's family (`areas::needs_area`), the executor
+//! resolves the call's area from its stamped identity and the tool's owner
+//! (a craft engine's tool in the calling agent's own folder, an app's own
+//! tool in that app's agent folder), grants it until the call is answered,
+//! and hands the service its root as the call's `host_dir`
+//! ([`super::areas`]).
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -227,12 +235,27 @@ pub struct HostServiceExecutor {
     pub host_dir: PathBuf,
 }
 
+/// Where an engine method's call works ([`HostServiceExecutor::run`]): the
+/// shell's areas (`None`), or a test's.
+#[cfg(feature = "app-hub")]
+pub(crate) type AreaSource = Option<Arc<dyn super::areas::AreaEnv>>;
+#[cfg(not(feature = "app-hub"))]
+pub(crate) type AreaSource = ();
+
+/// What a waiting call holds until it is answered or cancelled: the area
+/// granted to its agent.
+#[cfg(feature = "app-hub")]
+type Held = Option<super::areas::Grant>;
+#[cfg(not(feature = "app-hub"))]
+type Held = ();
+
 /// Where a call's answer goes: App Hub's reply queue, keyed by a heap key no
 /// isolate uses.
 struct Waiting {
     app: String,
     call_id: String,
     reply: ToolReply,
+    _held: Held,
 }
 
 static WAITING: Mutex<Option<HashMap<usize, Waiting>>> = Mutex::new(None);
@@ -333,6 +356,33 @@ fn check_agent_publication(method: &str, args: &Value) -> Result<(), String> {
 
 impl ToolExecutor for HostServiceExecutor {
     fn execute(&self, call: HostToolCall, reply: ToolReply) {
+        self.run(call, reply, Default::default())
+    }
+
+    fn cancel(&self, call_id: &str) {
+        // Stop waiting now, and have App Hub drop the request: the service's
+        // late answer goes nowhere, and the request no longer counts against
+        // the calls that may wait.
+        let keys: Vec<usize> = {
+            let mut waiting = WAITING.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(waiting) = waiting.as_mut() else { return };
+            let keys: Vec<usize> = waiting.iter().filter(|(_, w)| w.app == self.app && w.call_id == call_id).map(|(key, _)| *key).collect();
+            for key in &keys {
+                waiting.remove(key);
+            }
+            keys
+        };
+        for key in keys {
+            octosense_appstore::services::cancel_heap(key);
+        }
+    }
+}
+
+impl HostServiceExecutor {
+    /// Run `call` as the app's own `host.request` would, and answer it once;
+    /// an engine's method in the call's area ([`super::areas::agent_area`]),
+    /// from `areas`.
+    pub(crate) fn run(&self, call: HostToolCall, reply: ToolReply, areas: AreaSource) {
         if !reply.is_open() {
             return;
         }
@@ -399,30 +449,39 @@ impl ToolExecutor for HostServiceExecutor {
                 Err(error)=>{reply.finish(ToolOutcome::error("account_scope",error));return;}
             };
         }
+        // An engine's method works in the call's area (the calling agent's
+        // own folder, or the owning app's for an app's own tool), granted
+        // to this call until it is answered, its root the call's host
+        // directory (ADR 0013, `areas`). Paths in errors are relative to
+        // it.
+        #[cfg(feature = "app-hub")]
+        let (host_dir, reply, held) = if super::areas::needs_area(method) {
+            let env = areas.unwrap_or_else(super::areas::shell);
+            match super::areas::agent_area(&*env, &call, &self.app) {
+                Ok(area) => {
+                    let root = area.root.clone();
+                    let reply = super::areas::relative_errors(reply, &root);
+                    (root, reply, Some(super::areas::grant(area)))
+                }
+                Err((kind, message)) => {
+                    reply.finish(ToolOutcome::error(kind, message));
+                    return;
+                }
+            }
+        } else {
+            (self.host_dir.clone(), reply, None)
+        };
+        #[cfg(not(feature = "app-hub"))]
+        let (host_dir, held) = {
+            let () = areas;
+            (self.host_dir.clone(), ())
+        };
         let key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { app: self.app.clone(), call_id: call.call_id.clone(), reply });
+        WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { app: self.app.clone(), call_id: call.call_id.clone(), reply, _held: held });
         let service_call = ServiceCall { app_id: self.app.clone(), service: method.to_owned(), args, from_sheet: false,
             // A tool call has no surface for a sheet: the person is not in the app.
-            may_prompt: false, host_dir: self.host_dir.clone() };
+            may_prompt: false, host_dir };
         octosense_appstore::services::dispatch(service_call, key, 0, &mut NoSheet);
-    }
-
-    fn cancel(&self, call_id: &str) {
-        // Stop waiting now, and have App Hub drop the request: the service's
-        // late answer goes nowhere, and the request no longer counts against
-        // the calls that may wait.
-        let keys: Vec<usize> = {
-            let mut waiting = WAITING.lock().unwrap_or_else(|e| e.into_inner());
-            let Some(waiting) = waiting.as_mut() else { return };
-            let keys: Vec<usize> = waiting.iter().filter(|(_, w)| w.app == self.app && w.call_id == call_id).map(|(key, _)| *key).collect();
-            for key in &keys {
-                waiting.remove(key);
-            }
-            keys
-        };
-        for key in keys {
-            octosense_appstore::services::cancel_heap(key);
-        }
     }
 }
 

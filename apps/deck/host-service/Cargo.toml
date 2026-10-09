@@ -5,7 +5,8 @@
 # inspected, read as outline text, rendered to PNG, created from titles
 # and bullets, and converted between pptx, the native format, outline
 # text and PDF — all file I/O done by the service itself, confined to
-# the family's own `deck/` corner of the caller's host directory.
+# the call's area: the caller's own folder from the shell's resolver,
+# else the legacy `deck/` corner of the caller's host directory.
 # Headless by design: agents build and read decks with no deck UI
 # existing yet.
 [package]
@@ -18,6 +19,8 @@ publish = false
 [dependencies]
 # The same App Hub rev as Mail and News: one appstore, one service registry.
 octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
 serde_json = { workspace = true }
 # The engine, pinned as a family to one ymote/deckcraft revision (ADR 0013).
 deckcraft-engine = { workspace = true }

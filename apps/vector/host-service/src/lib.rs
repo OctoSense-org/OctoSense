@@ -4,10 +4,26 @@
 //! ([`Session::execute`] — the same door its UI, CLI and automation server
 //! go through). Every call is a fresh, stateless session. Unlike
 //! photocraft, the engine does not contain file paths itself, so the
-//! service does: every path is resolved inside the service's own
-//! `vector/` area under the caller's host directory before the engine
-//! sees it (the shared `.host` directory also holds Mail's and Calendar's
-//! data), and `run` refuses the engine's own file commands.
+//! service does: every path is resolved inside the call's area before the
+//! engine sees it, and `run` refuses the engine's own file commands.
+//!
+//! **Where a call works** (ADR 0013, 2026-10-08): the caller's own folder,
+//! the [`Area`] the shell's resolver gives it ([`set_area_resolver`]), or
+//! without one the legacy `<host dir>/vector`. A document's linked images
+//! are the engine's to read when it opens the document — an SVG's
+//! `<image href>`, a native document's links (also inside an SVG, PDF or EPS
+//! saved with its editing data) — from wherever they point, so before it
+//! opens one the service finds every file it would read and refuses the
+//! document unless each resolves inside the area ([`fence_links`]). Writes
+//! keep the area's rules (a write that may not replace, an agent's, only
+//! creates new files, within the quota): a preview through [`Area::write`],
+//! an export, which the engine writes itself (with any numbered siblings),
+//! into a staging folder inside the area first
+//! ([`octosense_engine_area::Stage`]). The generic command door `run` is
+//! held for its own review: with the shell's resolver installed it is
+//! refused outright, because the engine's wrappers (`command.batch`), its
+//! preferences (`prefs.set` of a plug-ins folder) and plug-in effects
+//! (`effect.apply` of `plugin.<id>`) reach past its list of refused ids.
 //!
 //! Methods (all under the `vector` family; paths relative to the area):
 //! - `info {path, depth?}` → the document inspected as JSON (artboards,
@@ -32,6 +48,7 @@ pub mod skill;
 use std::path::{Component, Path, PathBuf};
 
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 use vectorcraft_engine::Session;
 
@@ -54,6 +71,14 @@ pub fn register() {
     register_host_service(Box::new(VectorService));
 }
 
+/// The shell's resolver: where each call works (`None` removes it, and
+/// calls work in the legacy `<host dir>/vector` again).
+static AREAS: Slot = Slot::new();
+
+pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
+    AREAS.set(resolver);
+}
+
 /// The `vector.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
 /// shape: the shell declares them for the virtual owner `os.vector` and grants
 /// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
@@ -66,36 +91,48 @@ impl HostService for VectorService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !may_call(&call.app_id) {
-            reply.send(Err("The vector service serves system apps only.".into()));
-            return;
-        }
-        let method = call.method().to_string();
-        let args = call.args.clone();
-        let host_dir = call.host_dir.clone();
-        reply.send(dispatch(&method, &args, &host_dir));
+        reply.send(serve(&AREAS, &call));
     }
 }
 
-fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+/// One call, in the area `areas` gives it.
+fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err("The vector service serves system apps only.".into());
+    }
+    if call.method() == "commands" {
+        return commands();
+    }
+    // The command door works only without the shell's resolver (this
+    // crate's tests): in the shell it is held for its own review.
+    if call.method() == "run" && areas.is_set() {
+        return Err("vector.run is held for its own review: the engine's command door is not available in the shell".into());
+    }
+    let area = areas.area(call, "vector").map_err(|e| format!("vector: {e}"))?;
+    dispatch_in(call.method(), &call.args, &area)
+}
+
+fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
     match method {
-        "info" => info(args, host_dir),
-        "convert" => convert(args, host_dir),
-        "run" => run(args, host_dir),
+        "info" => info(args, area),
+        "convert" => convert(args, area),
+        "run" => run(args, area),
         "commands" => commands(),
-        "render" => render(args, host_dir),
+        "render" => render(args, area),
         other => Err(format!("vector.{other} is not a method of the vector service")),
     }
 }
 
-/// The service's own area under the caller's host directory:
-/// `<host_dir>/vector`, created on first use. The shared `.host` directory
-/// also holds other services' data (Mail accounts, Calendar events), so
-/// every vector path stays inside this subdirectory.
-fn area(host_dir: &Path) -> Result<PathBuf, String> {
-    let dir = host_dir.join("vector");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("vector: area: {e}"))?;
-    Ok(dir)
+/// [`dispatch_in`] in the legacy area `<host_dir>/vector`, as a call
+/// without the shell's resolver works.
+#[cfg(test)]
+fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+    if method == "commands" {
+        return commands();
+    }
+    let area = Area::legacy(host_dir, "vector");
+    std::fs::create_dir_all(&area.root).map_err(|e| format!("vector: area: {e}"))?;
+    dispatch_in(method, args, &area)
 }
 
 /// A path strictly inside the area: relative, no `..` or absolute
@@ -108,10 +145,10 @@ fn contained_path(area: &Path, rel: &str) -> Result<PathBuf, String> {
     }
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err("vector: paths stay inside the service's area of the app's host directory".into());
+        return Err("vector: paths stay inside this call's folder".into());
     }
     let joined = area.join(rel_path);
-    let check_root = area.canonicalize().map_err(|e| format!("vector: area: {e}"))?;
+    let check_root = area.canonicalize().map_err(|e| format!("vector: folder: {e}"))?;
     let deepest = {
         let mut p = joined.clone();
         while !p.exists() {
@@ -124,18 +161,95 @@ fn contained_path(area: &Path, rel: &str) -> Result<PathBuf, String> {
     };
     let resolved = deepest.canonicalize().map_err(|e| format!("vector: {e}"))?;
     if !resolved.starts_with(&check_root) {
-        return Err("vector: paths stay inside the service's area of the app's host directory".into());
+        return Err("vector: paths stay inside this call's folder".into());
     }
     Ok(joined)
 }
 
-/// A contained output path with its parent directories in place.
-fn out_path(area: &Path, rel: &str) -> Result<PathBuf, String> {
-    let path = contained_path(area, rel)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("vector: {e}"))?;
-    }
+/// A contained output path the call may write, refused before the engine
+/// works when the area's rules would refuse it.
+fn out_path(area: &Area, rel: &str) -> Result<PathBuf, String> {
+    let path = contained_path(&area.root, rel)?;
+    area.check(&path, 0).map_err(|e| format!("vector: {e}"))?;
     Ok(path)
+}
+
+/// Whether `p`, a path a document names, is a file of the area: absolute,
+/// with no `..`, its deepest existing ancestor inside the canonical root
+/// (through links). A relative one the engine would resolve against the
+/// process's working folder, which is no folder of the caller's.
+fn inside(root: &Path, p: &Path) -> bool {
+    if !p.is_absolute() || p.components().any(|c| matches!(c, Component::ParentDir)) {
+        return false;
+    }
+    let mut deepest = p.to_path_buf();
+    while !deepest.exists() {
+        match deepest.parent() {
+            Some(parent) => deepest = parent.to_path_buf(),
+            None => return false,
+        }
+    }
+    deepest.canonicalize().is_ok_and(|real| real.starts_with(root))
+}
+
+/// The files the engine looks for a document's linked images at when it
+/// opens it from `dir` (vectorcraft's `links::resolve`): each link's own
+/// path, its path relative to the document's folder, and its name there.
+fn link_files(doc: &vectorcraft_engine::doc::Document, dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    doc.visit_images(|_, image| {
+        if let Some(link) = &image.link {
+            out.push(PathBuf::from(&link.path));
+            if let Some(rel) = &link.relative {
+                out.push(dir.join(rel));
+            }
+            out.push(dir.join(link.name()));
+        }
+    });
+    out
+}
+
+/// Refuse the document at `path` (already contained) unless every file the
+/// engine would read for its linked images, opening it, is in the area. The
+/// engine reads them with no gate of its own, so they are found first, with
+/// the engine's own code and nothing read: an SVG's `<image>` links by its
+/// importer, run with a reader that records the paths it is asked for; a
+/// native document's links (one an SVG carries as its editing data
+/// included, which the engine opens instead of the SVG) from the document
+/// itself, as the engine's loader makes it for every other format.
+fn fence_links(area: &Area, path: &Path, rel: &str, method: &str) -> Result<(), String> {
+    let root = area.root.canonicalize().map_err(|e| format!("vector.{method}: folder: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("vector.{method}: {rel}: {e}"))?;
+    let name = utf8(path)?;
+    let dir = path.parent().unwrap_or(&area.root);
+    let mut wanted: Vec<PathBuf> = Vec::new();
+    let format = vectorcraft_engine::cmd::fileio::detect(name, &bytes).map(|f| f.id);
+    let postscript = bytes.starts_with(b"%!PS") || bytes.starts_with(&[0xC5, 0xD0, 0xD3, 0xC6]);
+    if matches!(format, Some("svg" | "svgz")) && !postscript {
+        let text = vectorcraft_svg::text_of(&bytes).map_err(|e| format!("vector.{method}: {rel}: {e}"))?;
+        let asked = std::cell::RefCell::new(Vec::new());
+        let record = |p: &str| {
+            asked.borrow_mut().push(PathBuf::from(p));
+            None
+        };
+        let folder = dir.to_string_lossy();
+        let _ = vectorcraft_svg::import_with(&text, &vectorcraft_svg::ImportOptions { folder: Some(&folder), read: Some(&record) });
+        wanted.extend(asked.into_inner());
+        if let Some(editing) = vectorcraft_svg::editing(&text).filter(|e| e.intact) {
+            if let Some(doc) = vectorcraft_format::base64_decode(&editing.data).and_then(|b| vectorcraft_format::load_file(&b).ok()) {
+                wanted.extend(link_files(&doc.doc, dir));
+            }
+        }
+    } else if let Ok(loaded) = vectorcraft_engine::cmd::fileio::load_with(name, &bytes, &Default::default()) {
+        wanted.extend(link_files(&loaded.doc, dir));
+    }
+    if let Some(out) = wanted.iter().find(|p| !inside(&root, p)) {
+        return Err(format!(
+            "vector.{method}: `{rel}` links `{}`, outside this call's folder: the engine would read it from there; embed the images it links",
+            out.display()
+        ));
+    }
+    Ok(())
 }
 
 fn arg_str<'a>(args: &'a Json, key: &str) -> Result<&'a str, String> {
@@ -146,24 +260,28 @@ fn utf8(path: &Path) -> Result<&str, String> {
     path.to_str().ok_or_else(|| "vector: the host directory is not UTF-8".into())
 }
 
-/// Open `rel` (contained, size-capped) into the session; the engine's
-/// result carries the import warnings.
-fn open(session: &mut Session, area: &Path, rel: &str, method: &str) -> Result<Json, String> {
-    let path = contained_path(area, rel)?;
+/// Open `rel` (contained, size-capped, its links fenced) into the session;
+/// the engine's result carries the import warnings.
+fn open(session: &mut Session, area: &Area, rel: &str, method: &str) -> Result<Json, String> {
+    let path = contained_path(&area.root, rel)?;
     let meta = std::fs::metadata(&path).map_err(|e| format!("vector.{method}: {rel}: {e}"))?;
     if meta.len() > MAX_OPEN_BYTES {
         return Err(format!("vector.{method}: the file is larger than the service opens"));
     }
+    fence_links(area, &path, rel, method)?;
     session.execute("document.open", &json!({"path": utf8(&path)?})).map_err(|e| format!("vector.{method}: {e}"))
 }
 
-/// `document.export` to a contained path, the result's own paths made
-/// relative again (a multi-artboard SVG export writes `{stem}-{n}.svg`
-/// siblings; they stay inside the area by construction).
-fn export(session: &mut Session, area: &Path, args: &Json, method: &str) -> Result<Json, String> {
+/// `document.export` to `out`, which the engine writes itself (a
+/// multi-artboard SVG export also writes `{stem}-{n}.svg` siblings): into a
+/// staging folder inside the area, then every file beside `out`, all or
+/// none, under the area's rules; the result's own paths made relative
+/// again.
+fn export(session: &mut Session, area: &Area, args: &Json, out: &Path, method: &str) -> Result<Json, String> {
     let out_rel = arg_str(args, "out")?;
-    let out = out_path(area, out_rel)?;
-    let mut params = json!({"path": utf8(&out)?});
+    let stage = area.stage().map_err(|e| format!("vector.{method}: {e}"))?;
+    let staged = stage.path(out.file_name().unwrap_or_default());
+    let mut params = json!({"path": utf8(&staged)?});
     if let Some(f) = args["format"].as_str() {
         params["format"] = json!(f);
     }
@@ -171,11 +289,15 @@ fn export(session: &mut Session, area: &Path, args: &Json, method: &str) -> Resu
         params["scale"] = json!(s.clamp(0.01, 16.0));
     }
     let saved = session.execute("document.export", &params).map_err(|e| format!("vector.{method}: {e}"))?;
+    let beside = out.parent().unwrap_or(&area.root);
+    let moves: Vec<(PathBuf, PathBuf)> = stage.files().into_iter().map(|f| (stage.path(&f), beside.join(f))).collect();
+    stage.commit(&moves).map_err(|e| format!("vector.{method}: {e}"))?;
+    let rel_dir = Path::new(out_rel).parent().unwrap_or(Path::new(""));
     let rel_files = saved["files"].as_array().map(|files| {
         files
             .iter()
             .filter_map(Json::as_str)
-            .map(|f| json!(Path::new(f).strip_prefix(area).ok().and_then(Path::to_str).unwrap_or(f)))
+            .map(|f| json!(Path::new(f).file_name().map(|n| rel_dir.join(n).to_string_lossy().into_owned()).unwrap_or_else(|| f.to_string())))
             .collect::<Vec<_>>()
     });
     let mut v = json!({"out": out_rel, "format": saved["format"], "bytes": saved["bytes"], "warnings": saved["warnings"]});
@@ -185,11 +307,10 @@ fn export(session: &mut Session, area: &Path, args: &Json, method: &str) -> Resu
     Ok(v)
 }
 
-fn info(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn info(args: &Json, area: &Area) -> Result<Json, String> {
     let rel = arg_str(args, "path")?;
-    let area = area(host_dir)?;
     let mut s = Session::new();
-    let opened = open(&mut s, &area, rel, "info")?;
+    let opened = open(&mut s, area, rel, "info")?;
     // Depth-limited so a deep document stays a summary; every sliced level
     // reports `childCount`, so truncation is never silent.
     let depth = args["depth"].as_u64().unwrap_or(2).min(8);
@@ -204,12 +325,12 @@ fn info(args: &Json, host_dir: &Path) -> Result<Json, String> {
     Ok(doc)
 }
 
-fn convert(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn convert(args: &Json, area: &Area) -> Result<Json, String> {
     let rel = arg_str(args, "path")?;
-    let area = area(host_dir)?;
+    let out = out_path(area, arg_str(args, "out")?)?;
     let mut s = Session::new();
-    let opened = open(&mut s, &area, rel, "convert")?;
-    let mut v = export(&mut s, &area, args, "convert")?;
+    let opened = open(&mut s, area, rel, "convert")?;
+    let mut v = export(&mut s, area, args, &out, "convert")?;
     v["warnings"] = json!([opened["warnings"], v["warnings"].clone()]);
     Ok(v)
 }
@@ -226,7 +347,9 @@ fn convert(args: &Json, host_dir: &Path) -> Result<Json, String> {
 /// vectorcraft's plug-in registry is process-wide and installs WebAssembly
 /// from in-band `dataBase64`, so an installed plug-in would outlive the
 /// call and serve every later caller of any app, outside the shell's `wasm`
-/// service (ADR 0011).
+/// service (ADR 0011). This list is not a fence on its own (a wrapper runs
+/// other commands past it), which is why the shell holds `run` back
+/// entirely ([`serve`]).
 fn callable(id: &str, params: &Json) -> Result<(), String> {
     if id == "plugin" || id.starts_with("plugin.") {
         return Err(format!("vector.run: `{id}` is not available through the vector service"));
@@ -253,16 +376,19 @@ fn path_key(v: &Json) -> Option<String> {
     }
 }
 
-fn run(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn run(args: &Json, area: &Area) -> Result<Json, String> {
     let cmds = args["cmds"].as_array().ok_or("vector.run: `cmds` is a list of {id, params?}")?;
     if cmds.len() > MAX_RUN_CMDS {
         return Err(format!("vector.run: at most {MAX_RUN_CMDS} commands per call"));
     }
-    let area = area(host_dir)?;
+    let out = match args["out"].as_str() {
+        Some(out) if !out.is_empty() => Some(out_path(area, out)?),
+        _ => None,
+    };
     let mut s = Session::new();
     match args["path"].as_str() {
         Some(rel) if !rel.is_empty() => {
-            open(&mut s, &area, rel, "run")?;
+            open(&mut s, area, rel, "run")?;
         }
         // No input: a fresh default document, ready to draw into.
         _ => {
@@ -277,9 +403,9 @@ fn run(args: &Json, host_dir: &Path) -> Result<Json, String> {
         let r = s.execute(id, &params).map_err(|e| format!("vector.run {id}: {e}"))?;
         results.push(json!({"id": id, "result": r}));
     }
-    let saved = match args["out"].as_str() {
-        Some(out) if !out.is_empty() => export(&mut s, &area, args, "run")?,
-        _ => Json::Null,
+    let saved = match out {
+        Some(out) => export(&mut s, area, args, &out, "run")?,
+        None => Json::Null,
     };
     Ok(json!({"results": results, "out": saved}))
 }
@@ -296,14 +422,13 @@ fn commands() -> Result<Json, String> {
     Ok(Json::Array(list))
 }
 
-fn render(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn render(args: &Json, area: &Area) -> Result<Json, String> {
     let rel = arg_str(args, "path")?;
     let out_rel = arg_str(args, "out")?;
     let max_side = args["max_side"].as_u64().unwrap_or(1024).clamp(1, MAX_RENDER_SIDE as u64) as u32;
-    let area = area(host_dir)?;
-    let out = out_path(&area, out_rel)?;
+    let out = out_path(area, out_rel)?;
     let mut s = Session::new();
-    open(&mut s, &area, rel, "render")?;
+    open(&mut s, area, rel, "render")?;
     let doc = s.doc().map_err(|e| format!("vector.render: {e}"))?.doc.clone();
     let idx = args["artboard"].as_u64().unwrap_or(0) as usize;
     let rect = doc.artboards.get(idx).map(|a| a.rect).ok_or("vector.render: no such artboard")?;
@@ -315,7 +440,7 @@ fn render(args: &Json, host_dir: &Path) -> Result<Json, String> {
     vectorcraft_render::raster_size(rect, scale).map_err(|e| format!("vector.render: {e}"))?;
     let img = vectorcraft_render::Renderer::new().render_region(&doc, rect, scale, true);
     let png = img.to_png().map_err(|e| format!("vector.render: {e}"))?;
-    std::fs::write(&out, &png).map_err(|e| format!("vector.render: {e}"))?;
+    area.write(&out, &png).map_err(|e| format!("vector.render: {e}"))?;
     Ok(json!({"out": out_rel, "width": img.width, "height": img.height, "bytes": png.len()}))
 }
 
@@ -330,9 +455,196 @@ mod tests {
     /// Writes the fixture into the service's area and returns its
     /// area-relative path.
     fn fixture(host: &Path) -> String {
-        let area = area(host).unwrap();
+        let area = host.join("vector");
+        std::fs::create_dir_all(&area).unwrap();
         std::fs::write(area.join("in.svg"), SVG).unwrap();
         "in.svg".into()
+    }
+
+    /// A call as App Hub hands it to the service.
+    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+        ServiceCall { app_id: "os.fixture".into(), service: format!("vector.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
+    }
+
+    /// A resolver shaped like the shell's: every call works in `root`, an
+    /// app's own foreground call may replace a file and an agent's may not,
+    /// within `quota`.
+    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+        let slot = Slot::new();
+        let root = root.to_path_buf();
+        slot.set(Some(std::sync::Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
+        slot
+    }
+
+    fn no_staging_left(root: &Path) -> bool {
+        std::fs::read_dir(root).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with(octosense_engine_area::STAGING_PREFIX))
+    }
+
+    /// A 12x8 RGB PNG (two colour bands).
+    fn png() -> Vec<u8> {
+        const HEX: &str = "89504e470d0a1a0a0000000d494844520000000c000000080802000000428689a60000001d49444154789c6378616383866c725ea021063a2bb279d14310d15911005b9497817c6155610000000049454e44ae426082";
+        (0..HEX.len()).step_by(2).map(|i| u8::from_str_radix(&HEX[i..i + 2], 16).unwrap()).collect()
+    }
+
+    /// With the shell's resolver every path is relative to the caller's own
+    /// folder and stays inside it, through a link too; an export the engine
+    /// writes itself lands where it was asked.
+    #[test]
+    fn the_resolver_root_is_used_and_paths_stay_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("in.svg"), SVG).unwrap();
+        let areas = resolver(&root, None);
+        let host = dir.path().join(".host");
+        let doc = serve(&areas, &service_call("info", json!({"path": "in.svg"}), &host, false)).unwrap();
+        assert_eq!(doc["path"], json!("in.svg"), "{doc}");
+        serve(&areas, &service_call("convert", json!({"path": "in.svg", "out": "out/again.svg"}), &host, false)).unwrap();
+        serve(&areas, &service_call("render", json!({"path": "in.svg", "out": "out/p.png", "max_side": 32}), &host, false)).unwrap();
+        assert!(root.join("out/again.svg").is_file() && root.join("out/p.png").is_file());
+        assert!(!host.exists() && !root.join("vector").exists() && no_staging_left(&root));
+        std::fs::write(dir.path().join("beside.svg"), SVG).unwrap();
+        for bad in ["../beside.svg", "/etc/hosts", "out/../../beside.svg"] {
+            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("convert", json!({"path": "in.svg", "out": bad}), &host, true)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            assert!(serve(&areas, &service_call("info", json!({"path": "up/beside.svg"}), &host, false)).is_err());
+            assert!(serve(&areas, &service_call("render", json!({"path": "in.svg", "out": "up/p.png"}), &host, true)).is_err());
+            assert!(serve(&areas, &service_call("convert", json!({"path": "in.svg", "out": "up/c.svg"}), &host, true)).is_err());
+            assert!(!dir.path().join("p.png").exists() && !dir.path().join("c.svg").exists());
+        }
+    }
+
+    /// With the shell's resolver installed the command door is held for its
+    /// own review: its list of refused ids is no fence, since a wrapper runs
+    /// other commands past it (`command.batch` of `plugin.install` passes
+    /// the list). Without a resolver (this crate's tests) it still runs.
+    #[test]
+    fn the_command_door_is_held_in_the_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let held = serve(&areas, &service_call("run", json!({"cmds": []}), dir.path(), true)).unwrap_err();
+        assert!(held.contains("held for its own review"), "{held}");
+        assert!(callable("plugin.install", &json!({})).is_err());
+        let wrapped = json!({"commands": [{"id": "plugin.install", "params": {"dataBase64": "AGFzbQEAAAA="}}]});
+        assert!(callable("command.batch", &wrapped).is_ok(), "a wrapper passes the list, which is why the door is held");
+        serve(&Slot::new(), &service_call("run", json!({"cmds": []}), dir.path(), true)).unwrap();
+        assert!(serve(&areas, &service_call("commands", json!({}), dir.path(), true)).is_ok(), "the catalog stays readable");
+    }
+
+    /// An agent's call never replaces a file, before the engine works; an
+    /// app's own foreground call may.
+    #[test]
+    fn an_agent_never_replaces_a_file_and_an_app_may() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.svg"), SVG).unwrap();
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("taken.png"), b"keep me").unwrap();
+        for (method, args) in [
+            ("convert", json!({"path": "in.svg", "out": "taken.png"})),
+            ("render", json!({"path": "in.svg", "out": "taken.png"})),
+            ("convert", json!({"path": "in.svg", "out": "in.svg"})),
+        ] {
+            let refused = serve(&areas, &service_call(method, args, dir.path(), false)).unwrap_err();
+            assert!(refused.contains("already exists"), "{method}: {refused}");
+        }
+        // The command door's own export keeps the same rule (past the
+        // shell's hold on it).
+        let run = json!({"path": "in.svg", "cmds": [], "out": "taken.png"});
+        let area = areas.area(&service_call("run", run.clone(), dir.path(), false), "vector").unwrap();
+        assert!(dispatch_in("run", &run, &area).unwrap_err().contains("already exists"));
+        assert_eq!(std::fs::read(dir.path().join("taken.png")).unwrap(), b"keep me");
+        assert!(no_staging_left(dir.path()));
+        serve(&areas, &service_call("convert", json!({"path": "in.svg", "out": "taken.png"}), dir.path(), true)).unwrap();
+        assert!(std::fs::read(dir.path().join("taken.png")).unwrap().starts_with(b"\x89PNG"));
+    }
+
+    /// What a call writes, the engine's own export included, must fit what
+    /// is left of the area's quota.
+    #[test]
+    fn output_over_the_quota_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.svg"), SVG).unwrap();
+        let tight = resolver(dir.path(), Some(32));
+        for (method, args) in [
+            ("convert", json!({"path": "in.svg", "out": "c.png"})),
+            ("render", json!({"path": "in.svg", "out": "r.png"})),
+        ] {
+            let refused = serve(&tight, &service_call(method, args, dir.path(), true)).unwrap_err();
+            assert!(refused.contains("bytes left"), "{method}: {refused}");
+        }
+        assert!(!dir.path().join("c.png").exists() && !dir.path().join("r.png").exists() && no_staging_left(dir.path()));
+    }
+
+    /// An SVG whose `<image>` links a picture outside the caller's folder
+    /// (an absolute path, a `file://` URL, or a relative path that climbs
+    /// out) is refused before the engine opens it; one that links a picture
+    /// beside it, inside the folder, opens.
+    #[test]
+    fn an_svg_that_links_a_file_outside_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let outside = dir.path().join("private.png");
+        std::fs::write(&outside, png()).unwrap();
+        std::fs::write(root.join("pic.png"), png()).unwrap();
+        let svg = |href: &str| format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20" viewBox="0 0 40 20"><image href="{href}" width="12" height="8"/><rect x="20" y="2" width="10" height="10" fill="#3366cc"/></svg>"##);
+        let areas = resolver(&root, None);
+        for (n, href) in [outside.display().to_string(), format!("file://{}", outside.display()), "../private.png".into()].into_iter().enumerate() {
+            let name = format!("linked{n}.svg");
+            std::fs::write(root.join(&name), svg(&href)).unwrap();
+            for (method, args) in [
+                ("info", json!({"path": name})),
+                ("convert", json!({"path": name, "out": format!("c{n}.png")})),
+                ("render", json!({"path": name, "out": format!("r{n}.png")})),
+            ] {
+                let refused = serve(&areas, &service_call(method, args, &root, false)).unwrap_err();
+                assert!(refused.contains("private.png") && refused.contains("outside"), "{href} {method}: {refused}");
+            }
+        }
+        std::fs::write(root.join("local.svg"), svg("pic.png")).unwrap();
+        let ok = serve(&areas, &service_call("info", json!({"path": "local.svg"}), &root, false)).unwrap();
+        assert_eq!(ok["path"], json!("local.svg"), "{ok}");
+        serve(&areas, &service_call("render", json!({"path": "local.svg", "out": "local.png", "max_side": 16}), &root, false)).unwrap();
+    }
+
+    /// A native document whose linked image lives outside the caller's
+    /// folder is refused before the engine opens it (the engine would read
+    /// the link from wherever it points); one whose link is inside opens.
+    #[test]
+    fn a_native_document_that_links_a_file_outside_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let outside = dir.path().join("private.png");
+        std::fs::write(&outside, png()).unwrap();
+        std::fs::write(root.join("pic.png"), png()).unwrap();
+        for (name, picture) in [("outside.vectorcraft", outside.clone()), ("inside.vectorcraft", root.join("pic.png"))] {
+            let mut s = Session::new();
+            s.execute("file.new", &json!({})).unwrap();
+            s.execute("file.place", &json!({"path": picture.to_string_lossy(), "link": true})).unwrap();
+            s.execute("document.export", &json!({"path": root.join(name).to_string_lossy()})).unwrap();
+        }
+        let areas = resolver(&root, None);
+        let refused = serve(&areas, &service_call("info", json!({"path": "outside.vectorcraft"}), &root, false)).unwrap_err();
+        assert!(refused.contains("private.png") && refused.contains("outside"), "{refused}");
+        assert!(serve(&areas, &service_call("convert", json!({"path": "outside.vectorcraft", "out": "o.svg"}), &root, false)).is_err());
+        let ok = serve(&areas, &service_call("info", json!({"path": "inside.vectorcraft"}), &root, false)).unwrap();
+        assert_eq!(ok["path"], json!("inside.vectorcraft"), "{ok}");
+        // The same document carried as an SVG's (or a PDF's) editing data,
+        // which the engine opens in place of the SVG, is refused alike.
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        s.execute("file.place", &json!({"path": outside.to_string_lossy(), "link": true})).unwrap();
+        for name in ["editing.svg", "editing.pdf"] {
+            s.execute("document.export", &json!({"path": root.join(name).to_string_lossy(), "preserveEditing": true})).unwrap();
+            let refused = serve(&areas, &service_call("info", json!({"path": name}), &root, false)).unwrap_err();
+            assert!(refused.contains("private.png") && refused.contains("outside"), "{name}: {refused}");
+        }
+        assert!(std::fs::read_to_string(root.join("editing.svg")).unwrap().contains(vectorcraft_svg::EDITING_NS), "the SVG carries its editing data");
     }
 
     #[test]
@@ -471,8 +783,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
         let input = fixture(host);
-        // Everything lands under `<host>/vector`, nothing in the shared root.
+        // Everything lands under `<host>/vector`, nothing in the shared root,
+        // and without a resolver a call may replace, as before.
         dispatch("convert", &json!({"path": input, "out": "flat.png"}), host).unwrap();
+        serve(&Slot::new(), &service_call("convert", json!({"path": input, "out": "flat.png"}), host, false)).unwrap();
         assert!(host.join("vector/flat.png").exists());
         assert!(!host.join("flat.png").exists());
         // A sibling service's file in the shared host directory is not

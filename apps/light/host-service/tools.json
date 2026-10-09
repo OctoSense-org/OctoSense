@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "light.info",
-      "description": "Inspect a photo in the light engine's workspace (RAW: DNG, CR2/CR3, NEF, ARW, RAF, ORF, RW2, PEF...; or JPEG, PNG, TIFF): its size and summary, and every EXIF/TIFF/GPS tag and XMP property. Reads only. `path` is relative to that workspace, a private folder only the light.* tools read and write; files elsewhere on the device are not in it and cannot be named.",
+      "description": "Inspect a photo in your workspace (RAW: DNG, CR2/CR3, NEF, ARW, RAF, ORF, RW2, PEF...; or JPEG, PNG, TIFF): its size and summary, and every EXIF/TIFF/GPS tag and XMP property. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -45,7 +45,7 @@
     },
     {
       "name": "light.develop",
-      "description": "Develop one photo in the light engine's workspace and export it to `out`, whose extension picks the format (.jpg, .png, .tif, .webp, .avif or .dng). `params` maps develop control ids (see light.controls) to numbers; `auto` runs auto-tone first; `long_edge` caps the output size; `quality` is 1 to 100 (default 92). Both paths are relative to that workspace; nothing is written outside it, a file already at `out` is replaced, and an original is never overwritten.",
+      "description": "Develop one photo in your workspace and export it to `out`, whose extension picks the format (.jpg, .png, .tif, .webp, .avif or .dng). `params` maps develop control ids (see light.controls) to numbers; `auto` runs auto-tone first; `long_edge` caps the output size; `quality` is 1 to 100 (default 92). Both paths are relative to your workspace (see light.info); nothing is written outside it, and no existing file is ever replaced, an original least of all: choose a new name for `out`.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -74,7 +74,7 @@
     },
     {
       "name": "light.batch",
-      "description": "Apply one develop to 1 to 16 photos in the light engine's workspace, writing each as `<out_dir>/<name>.<format>` (format jpg by default). `params`, `auto`, `long_edge` and `quality` are as for light.develop. Two inputs with the same file name are refused. All paths are relative to that workspace; nothing is written outside it, existing outputs are replaced, and an original is never overwritten.",
+      "description": "Apply one develop to 1 to 16 photos in your workspace, writing each as `<out_dir>/<name>.<format>` (format jpg by default). `params`, `auto`, `long_edge` and `quality` are as for light.develop. Two inputs with the same file name are refused. All paths are relative to your workspace (see light.info); nothing is written outside it, and no existing file is ever replaced: if any output's name is taken, nothing is written, so choose a new `out_dir`.",
       "input_schema": {
         "type": "object",
         "properties": {

@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "pdf.info",
-      "description": "Inspect a PDF in the pdf engine's workspace: page count and page sizes, metadata, outline, fonts, security and repair notes. Reads only. `path` is relative to that workspace, a private folder only the pdf.* tools read and write; files elsewhere on the device are not in it and cannot be named.",
+      "description": "Inspect a PDF in your workspace: page count and page sizes, metadata, outline, fonts, security and repair notes. Reads only. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -26,7 +26,7 @@
     },
     {
       "name": "pdf.text",
-      "description": "Extract the text of a PDF in the pdf engine's workspace in reading order, per page: all pages (documents up to 512 pages), or the 1-based `pages` listed (at most 512). Reads only. `path` is relative to that workspace (see pdf.info).",
+      "description": "Extract the text of a PDF in your workspace in reading order, per page: all pages (documents up to 512 pages), or the 1-based `pages` listed (at most 512). Reads only. `path` is relative to your workspace (see pdf.info).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -57,7 +57,7 @@
     },
     {
       "name": "pdf.render",
-      "description": "Render one page (1-based `page`) of a PDF in the pdf engine's workspace to a PNG at `out`, its longest edge about `max_side` pixels (default 1024). Both paths are relative to that workspace (see pdf.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Render one page (1-based `page`) of a PDF in your workspace to a PNG at `out`, its longest edge about `max_side` pixels (default 1024). Both paths are relative to your workspace (see pdf.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -84,7 +84,7 @@
     },
     {
       "name": "pdf.merge",
-      "description": "Combine 2 to 16 PDFs in the pdf engine's workspace, in order, into one PDF at `out` (bookmarks are kept under one entry per file). All paths are relative to that workspace (see pdf.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Combine 2 to 16 PDFs in your workspace, in order, into one PDF at `out` (bookmarks are kept under one entry per file). All paths are relative to your workspace (see pdf.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -107,7 +107,7 @@
     },
     {
       "name": "pdf.split",
-      "description": "Split a PDF in the pdf engine's workspace into files in `out_dir`, giving exactly one of `every` (pages per file) or `before` (the 1-based pages that start a new file); at most 256 files. All paths are relative to that workspace (see pdf.info); nothing is written outside it, and existing files of the same names are replaced.",
+      "description": "Split a PDF in your workspace into files in `out_dir`, giving exactly one of `every` (pages per file) or `before` (the 1-based pages that start a new file); at most 256 files. All paths are relative to your workspace (see pdf.info); nothing is written outside it, and no existing file is ever replaced: if any part name is taken, nothing is written, so choose a new `out_dir`.",
       "input_schema": {
         "type": "object",
         "properties": {

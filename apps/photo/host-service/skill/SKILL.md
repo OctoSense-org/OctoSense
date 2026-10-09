@@ -15,15 +15,18 @@ ground, not this one's.
 
 You have no photo tool of your own yet: the engine's `photo.*` methods are
 not on your list. The Photos app's agent has `photos.info` (width, height,
-layers and colour mode of a file in the photo engine's folder); ask it with
+layers and colour mode of a file in that agent's own folder); ask it with
 `agents.ask` when that is what the person needs. For an edit, say plainly
 that you cannot change images yet, and what the engine would do.
 
 ## Files
 
-The photo engine works only in a private folder of its own, relative paths
-inside it. Nothing you have puts an image there: the person's photos, the
-Photos gallery included, and your own workspace are outside it.
+The photo engine works in the folder of whoever calls it, with paths
+relative to it: for the Photos agent, that agent's own folder. It never
+replaces an existing file, and a document whose smart object links a file
+outside that folder is refused. Nothing you have puts an image there: the
+person's photos, the Photos gallery included, and your own workspace are
+outside it.
 
 ## Examples
 
@@ -31,7 +34,7 @@ Photos gallery included, and your own workspace are outside it.
    `blur` (`grep -i blur commands.md`) and tell them what the engine offers
    (`filter.blur.gaussianBlur` and its radius, the lens and surface blurs),
    and that you cannot run it for them yet.
-2. The person asks how large an image in the photo engine's folder is: ask
+2. The person asks how large an image in the Photos agent's folder is: ask
    the Photos agent with `agents.ask`, which answers with `photos.info`.
 
 ## The engine's commands

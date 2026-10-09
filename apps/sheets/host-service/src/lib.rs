@@ -1,11 +1,10 @@
 //! `octosense-sheets-service` — the `sheet` host service (ADR 0013).
 //!
 //! gridcraft's spreadsheet engine behind typed `sheet.*` methods. A
-//! workbook is a host-owned session: created empty or read from an xlsx
-//! under the caller's host directory, edited as values and formulas,
-//! recalculated on demand, and written back as xlsx into the same
-//! directory. Everything is JSON at the boundary; the engine's types never
-//! cross it.
+//! workbook is a host-owned session: created empty or read from an xlsx in
+//! the call's area, edited as values and formulas, recalculated on demand,
+//! and written back as xlsx into the same area. Everything is JSON at the
+//! boundary; the engine's types never cross it.
 //!
 //! Methods (all under the `sheet` family):
 //! - `new {}` → `{book, sheets}`
@@ -18,13 +17,18 @@
 //! - `export {book, path}` → `{path}` — xlsx under the service area
 //! - `close {book}` → `{}`
 //!
-//! Paths never leave the service's own area, `<host dir>/sheet` ([`area`]):
-//! `..`, absolute paths and symlink escapes are refused, the same stance
-//! the files host tools take, and the shared host directory's other
-//! services (Mail's vaults, Calendar's events) stay out of reach. The
-//! service serves system apps, and the native Sheets app, whose agent's
-//! `sheets.*` tools the shell routes here
-//! (`crates/shell/src/host_tools/engines.rs`).
+//! **Where a call works** (ADR 0013, 2026-10-08): in its caller's own
+//! folder, the [`Area`] the shell's resolver gives it ([`set_area_resolver`]),
+//! or without one the legacy private folder `<host dir>/sheet`. Paths never
+//! leave the area: `..`, absolute paths and symlink escapes are refused, the
+//! same stance the files host tools take. A write that may not replace (an
+//! agent's) only creates new files, within the area's quota
+//! ([`Area::write`]). A workbook belongs to the area it was created or
+//! opened in: a call from another area cannot see, change, export or close
+//! it, whatever its handle. gridcraft does no I/O of its own: a link to
+//! another workbook is refused and resolves to `#REF!`. The service serves
+//! system apps, and the native Sheets app, whose agent's `sheets.*` tools
+//! the shell routes here (`crates/shell/src/host_tools/engines.rs`).
 
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
@@ -40,6 +44,7 @@ use gridcraft_core::addr::parse_a1_prefix;
 use gridcraft_core::{CellRef, RangeRef, Value};
 use gridcraft_model::{Cell, Formula, Sheet, Workbook};
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
 /// One open workbook session.
@@ -48,6 +53,8 @@ struct Book {
     calc: Calc,
     /// `sheet.fill`'s compiled kernels, by canonical formula text.
     kernels: HashMap<String, std::sync::Arc<makepad_script_compute::kernel::Kernel>>,
+    /// The area it belongs to ([`owner`]): only calls in that area reach it.
+    owner: PathBuf,
 }
 
 #[derive(Default)]
@@ -62,8 +69,11 @@ fn books() -> &'static Mutex<Books> {
     BOOKS.get_or_init(|| Mutex::new(Books::default()))
 }
 
-/// Open workbooks across every caller; a runaway caller is bounded.
+/// Open workbooks of one area: a runaway caller is bounded, and cannot
+/// crowd out another area's workbooks.
 const MAX_OPEN_BOOKS: usize = 16;
+/// Open workbooks across every area.
+const MAX_OPEN_BOOKS_ALL: usize = 64;
 /// The largest xlsx the service reads or writes (bytes).
 const MAX_XLSX_BYTES: u64 = 64 << 20;
 
@@ -74,20 +84,19 @@ fn may_call(app_id: &str) -> bool {
     app_id == "sheets" || app_id.starts_with("os.")
 }
 
-/// The service's own area under the shared host directory. Every path a
-/// caller names is contained here, never in the host directory itself,
-/// which other services (Mail, Calendar) keep their data under.
-fn area(host_dir: &Path) -> Result<PathBuf, String> {
-    let area = host_dir.join("sheet");
-    std::fs::create_dir_all(&area).map_err(|e| format!("sheet: service area: {e}"))?;
-    Ok(area)
-}
-
 pub struct SheetsService;
 
 /// Register the `sheet` service with App Hub's host-service registry.
 pub fn register() {
     register_host_service(Box::new(SheetsService));
+}
+
+/// The shell's resolver: where each call works (`None` removes it, and
+/// calls work in the legacy `<host dir>/sheet` again).
+static AREAS: Slot = Slot::new();
+
+pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
+    AREAS.set(resolver);
 }
 
 impl HostService for SheetsService {
@@ -96,62 +105,82 @@ impl HostService for SheetsService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        if !may_call(&call.app_id) {
-            reply.send(Err("The sheet service serves system apps only.".into()));
-            return;
-        }
-        let method = call.method().to_string();
-        let args = call.args.clone();
-        reply.send(area(&call.host_dir).and_then(|area| dispatch(&method, &args, &area)));
+        reply.send(serve(&AREAS, &call));
     }
 }
 
-fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
+/// One call, in the area `areas` gives it. A plain calculation (`eval`
+/// without a workbook) reads and keeps nothing, so it needs no area.
+fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+    if !may_call(&call.app_id) {
+        return Err("The sheet service serves system apps only.".into());
+    }
+    if call.method() == "eval" && call.args["book"].is_null() {
+        return eval_adhoc(&call.args, None);
+    }
+    let area = areas.area(call, "sheet").map_err(|e| format!("sheet: {e}"))?;
+    dispatch(call.method(), &call.args, &area)
+}
+
+fn dispatch(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
     match method {
-        "new" => book_new(),
-        "open" => book_open(args, host_dir),
-        "set" => cells_set(args),
-        "get" => cells_get(args),
-        "eval" => eval_adhoc(args),
-        "recalc" => recalc(args),
-        "fill" => fill_column(args),
-        "export" => export(args, host_dir),
-        "close" => close(args),
+        "new" => book_new(area),
+        "open" => book_open(args, area),
+        "set" => cells_set(args, area),
+        "get" => cells_get(args, area),
+        "eval" => eval_adhoc(args, Some(area)),
+        "recalc" => recalc(args, area),
+        "fill" => fill_column(args, area),
+        "export" => export(args, area),
+        "close" => close(args, area),
         other => Err(format!("sheet.{other} is not a method of the sheet service")),
     }
 }
 
-fn insert(wb: Workbook) -> Result<Json, String> {
+/// Whose workbooks a call reaches: its area's root, as the file system
+/// spells it (two spellings of one folder are one owner).
+fn owner(area: &Area) -> PathBuf {
+    area.root.canonicalize().unwrap_or_else(|_| area.root.clone())
+}
+
+fn insert(wb: Workbook, area: &Area) -> Result<Json, String> {
     let names: Vec<String> = wb.sheets.iter().map(|s| s.name.clone()).collect();
+    let owner = owner(area);
     let mut books = books().lock().map_err(|_| "sheet: poisoned")?;
-    if books.open.len() >= MAX_OPEN_BOOKS {
+    if books.open.values().filter(|b| b.owner == owner).count() >= MAX_OPEN_BOOKS {
         return Err(format!("sheet: {MAX_OPEN_BOOKS} workbooks are already open; close one first"));
+    }
+    if books.open.len() >= MAX_OPEN_BOOKS_ALL {
+        return Err("sheet: the engine holds as many workbooks as it can; close one first".into());
     }
     books.next += 1;
     let id = books.next;
-    books.open.insert(id, Book { wb, calc: Calc::new(), kernels: HashMap::new() });
+    books.open.insert(id, Book { wb, calc: Calc::new(), kernels: HashMap::new(), owner });
     Ok(json!({"book": id, "sheets": names}))
 }
 
-fn book_new() -> Result<Json, String> {
-    insert(Workbook::new())
+fn book_new(area: &Area) -> Result<Json, String> {
+    insert(Workbook::new(), area)
 }
 
-fn book_open(args: &Json, host_dir: &Path) -> Result<Json, String> {
-    let path = contained_path(host_dir, args["path"].as_str().unwrap_or(""))?;
+fn book_open(args: &Json, area: &Area) -> Result<Json, String> {
+    let path = contained_path(area, args["path"].as_str().unwrap_or(""))?;
     let meta = std::fs::metadata(&path).map_err(|e| format!("sheet.open: {e}"))?;
     if meta.len() > MAX_XLSX_BYTES {
         return Err("sheet.open: the file is larger than the service reads".into());
     }
     let bytes = std::fs::read(&path).map_err(|e| format!("sheet.open: {e}"))?;
     let (wb, _report) = gridcraft_xlsx::read_xlsx(&bytes).map_err(|e| format!("sheet.open: {e:?}"))?;
-    insert(wb)
+    insert(wb, area)
 }
 
-fn with_book<T>(args: &Json, f: impl FnOnce(&mut Book) -> Result<T, String>) -> Result<T, String> {
+/// The workbook `args.book` names, when it belongs to `area`: another
+/// area's handle is answered exactly as one that does not exist.
+fn with_book<T>(args: &Json, area: &Area, f: impl FnOnce(&mut Book) -> Result<T, String>) -> Result<T, String> {
     let id = args["book"].as_u64().ok_or("sheet: `book` is required")?;
+    let owner = owner(area);
     let mut books = books().lock().map_err(|_| "sheet: poisoned")?;
-    let book = books.open.get_mut(&id).ok_or("sheet: no such workbook (opened and not closed?)")?;
+    let book = books.open.get_mut(&id).filter(|b| b.owner == owner).ok_or("sheet: no such workbook (opened and not closed?)")?;
     f(book)
 }
 
@@ -212,8 +241,8 @@ fn value_to_json(v: &Value) -> Json {
     }
 }
 
-fn cells_set(args: &Json) -> Result<Json, String> {
-    with_book(args, |book| {
+fn cells_set(args: &Json, area: &Area) -> Result<Json, String> {
+    with_book(args, area, |book| {
         let si = sheet_index(&book.wb, args)?;
         let cells = args["cells"].as_array().ok_or("sheet.set: `cells` is a list")?;
         let sheet = Arc::make_mut(&mut book.wb.sheets[si]);
@@ -234,8 +263,8 @@ fn cells_set(args: &Json) -> Result<Json, String> {
     })
 }
 
-fn cells_get(args: &Json) -> Result<Json, String> {
-    with_book(args, |book| {
+fn cells_get(args: &Json, area: &Area) -> Result<Json, String> {
+    with_book(args, area, |book| {
         let si = sheet_index(&book.wb, args)?;
         let range = parse_range(args["range"].as_str().unwrap_or(""))?;
         let sheet: &Sheet = &book.wb.sheets[si];
@@ -252,7 +281,7 @@ fn cells_get(args: &Json) -> Result<Json, String> {
     })
 }
 
-fn eval_adhoc(args: &Json) -> Result<Json, String> {
+fn eval_adhoc(args: &Json, area: Option<&Area>) -> Result<Json, String> {
     let eval = |wb: &Workbook, si: usize| -> Result<Json, String> {
         let at = match args["at"].as_str() {
             Some(s) => parse_a1(s)?,
@@ -262,12 +291,12 @@ fn eval_adhoc(args: &Json) -> Result<Json, String> {
         let v = gridcraft_calc::evaluate(wb, si, at, formula);
         Ok(json!({"value": value_to_json(&v)}))
     };
-    if args["book"].is_null() {
+    let Some(area) = area.filter(|_| !args["book"].is_null()) else {
         // A plain calculation: no workbook to open, nothing read or kept.
         let wb = Workbook::new();
         return eval(&wb, sheet_index(&wb, args)?);
-    }
-    with_book(args, |book| {
+    };
+    with_book(args, area, |book| {
         let si = sheet_index(&book.wb, args)?;
         eval(&book.wb, si)
     })
@@ -277,7 +306,7 @@ fn eval_adhoc(args: &Json) -> Result<Json, String> {
 /// `column` for `rows` rows. The numeric subset runs as one f64 compute
 /// kernel (cached per formula text on the workbook); anything else falls
 /// back to the engine's evaluator per row. Results land as values.
-fn fill_column(args: &Json) -> Result<Json, String> {
+fn fill_column(args: &Json, area: &Area) -> Result<Json, String> {
     let col_s = args["column"].as_str().ok_or("sheet.fill: `column` is a column like C")?;
     let col = gridcraft_core::letters_to_col(col_s).ok_or_else(|| format!("sheet.fill: `{col_s}` is not a column"))?;
     let rows = args["rows"].as_u64().ok_or("sheet.fill: `rows` is required")? as usize;
@@ -287,7 +316,7 @@ fn fill_column(args: &Json) -> Result<Json, String> {
     let formula = args["formula"].as_str().ok_or("sheet.fill: `formula` is required")?;
     let body = formula.strip_prefix('=').unwrap_or(formula);
     let expr = gridcraft_formula::parse(body).map_err(|e| format!("sheet.fill: {e:?}"))?;
-    with_book(args, |book| {
+    with_book(args, area, |book| {
         let si = sheet_index(&book.wb, args)?;
         match fill::lower(&expr) {
             Ok(lowered) => {
@@ -324,50 +353,50 @@ fn fill_column(args: &Json) -> Result<Json, String> {
     })
 }
 
-fn recalc(args: &Json) -> Result<Json, String> {
-    with_book(args, |book| {
+fn recalc(args: &Json, area: &Area) -> Result<Json, String> {
+    with_book(args, area, |book| {
         let Book { wb, calc, .. } = book;
         calc.recalc_all(wb);
         Ok(json!({}))
     })
 }
 
-fn export(args: &Json, host_dir: &Path) -> Result<Json, String> {
+fn export(args: &Json, area: &Area) -> Result<Json, String> {
     let rel = args["path"].as_str().unwrap_or("").to_string();
-    let path = contained_path(host_dir, &rel)?;
-    with_book(args, |book| {
-        let bytes = gridcraft_xlsx::write_xlsx(&book.wb).map_err(|e| format!("sheet.export: {e:?}"))?;
-        if bytes.len() as u64 > MAX_XLSX_BYTES {
-            return Err("sheet.export: the workbook is larger than the service writes".into());
-        }
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("sheet.export: {e}"))?;
-        }
-        std::fs::write(&path, bytes).map_err(|e| format!("sheet.export: {e}"))?;
-        Ok(json!({"path": rel}))
-    })
+    let path = contained_path(area, &rel)?;
+    area.check(&path, 0).map_err(|e| format!("sheet.export: {e}"))?;
+    let bytes = with_book(args, area, |book| gridcraft_xlsx::write_xlsx(&book.wb).map_err(|e| format!("sheet.export: {e:?}")))?;
+    if bytes.len() as u64 > MAX_XLSX_BYTES {
+        return Err("sheet.export: the workbook is larger than the service writes".into());
+    }
+    area.write(&path, &bytes).map_err(|e| format!("sheet.export: {e}"))?;
+    Ok(json!({"path": rel}))
 }
 
-fn close(args: &Json) -> Result<Json, String> {
+fn close(args: &Json, area: &Area) -> Result<Json, String> {
     let id = args["book"].as_u64().ok_or("sheet: `book` is required")?;
+    let owner = owner(area);
     let mut books = books().lock().map_err(|_| "sheet: poisoned")?;
-    books.open.remove(&id).ok_or("sheet: no such workbook")?;
+    if !books.open.get(&id).is_some_and(|b| b.owner == owner) {
+        return Err("sheet: no such workbook".into());
+    }
+    books.open.remove(&id);
     Ok(json!({}))
 }
 
-/// A path strictly inside `host_dir`: relative, no `..`, no absolute
-/// component; the resolved parent must stay under the host dir even
-/// through symlinks.
-fn contained_path(host_dir: &Path, rel: &str) -> Result<PathBuf, String> {
+/// A path strictly inside the call's area: relative, no `..`, no absolute
+/// component; the resolved parent must stay under the area even through
+/// symlinks.
+fn contained_path(area: &Area, rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err("sheet: `path` is required".into());
     }
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err("sheet: `path` stays inside the app's host directory".into());
+        return Err("sheet: `path` stays inside this call's folder".into());
     }
-    let joined = host_dir.join(rel_path);
-    let check_root = host_dir.canonicalize().map_err(|e| format!("sheet: host dir: {e}"))?;
+    let joined = area.root.join(rel_path);
+    let check_root = area.root.canonicalize().map_err(|e| format!("sheet: folder: {e}"))?;
     let deepest = {
         let mut p = joined.clone();
         while !p.exists() {
@@ -380,7 +409,7 @@ fn contained_path(host_dir: &Path, rel: &str) -> Result<PathBuf, String> {
     };
     let resolved = deepest.canonicalize().map_err(|e| format!("sheet: {e}"))?;
     if !resolved.starts_with(&check_root) {
-        return Err("sheet: `path` stays inside the app's host directory".into());
+        return Err("sheet: `path` stays inside this call's folder".into());
     }
     Ok(joined)
 }
@@ -389,8 +418,28 @@ fn contained_path(host_dir: &Path, rel: &str) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
-    fn set(book: u64, cells: Json) -> Json {
-        dispatch("set", &json!({"book": book, "cells": cells}), Path::new("/")).unwrap()
+    /// A call's area at `root`, as the legacy one or a resolver gives it.
+    fn at(root: &Path) -> Area {
+        Area::new(root, None, true)
+    }
+
+    fn set(area: &Area, book: u64, cells: Json) -> Json {
+        dispatch("set", &json!({"book": book, "cells": cells}), area).unwrap()
+    }
+
+    /// A call as App Hub hands it to the service.
+    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+        ServiceCall { app_id: "os.fixture".into(), service: format!("sheet.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
+    }
+
+    /// A resolver shaped like the shell's: every call works in `root`, an
+    /// app's own foreground call may replace a file and an agent's may not,
+    /// within `quota`.
+    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+        let slot = Slot::new();
+        let root = root.to_path_buf();
+        slot.set(Some(std::sync::Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
+        slot
     }
 
     #[test]
@@ -406,43 +455,44 @@ mod tests {
     #[test]
     fn a_workbook_computes_and_exports_and_reopens() {
         let dir = tempfile::tempdir().unwrap();
-        let host = dir.path();
+        let area = at(dir.path());
 
-        let opened = book_new().unwrap();
+        let opened = book_new(&area).unwrap();
         let book = opened["book"].as_u64().unwrap();
         assert_eq!(opened["sheets"], json!(["Sheet1"]));
 
-        set(book, json!([
+        set(&area, book, json!([
             {"at": "A1", "value": 2.0},
             {"at": "A2", "value": 3.0},
             {"at": "B1", "formula": "A1*A2+1"},
             {"at": "C1", "value": "label"},
         ]));
-        dispatch("recalc", &json!({"book": book}), host).unwrap();
-        let got = dispatch("get", &json!({"book": book, "range": "A1:C1"}), host).unwrap();
+        dispatch("recalc", &json!({"book": book}), &area).unwrap();
+        let got = dispatch("get", &json!({"book": book, "range": "A1:C1"}), &area).unwrap();
         assert_eq!(got["values"], json!([[2.0, 7.0, "label"]]));
 
-        let ev = dispatch("eval", &json!({"book": book, "formula": "SUM(A1:A2)*10"}), host).unwrap();
+        let ev = dispatch("eval", &json!({"book": book, "formula": "SUM(A1:A2)*10"}), &area).unwrap();
         assert_eq!(ev["value"], json!(50.0));
 
-        let exported = dispatch("export", &json!({"book": book, "path": "out/test.xlsx"}), host).unwrap();
+        let exported = dispatch("export", &json!({"book": book, "path": "out/test.xlsx"}), &area).unwrap();
         assert_eq!(exported["path"], json!("out/test.xlsx"));
 
-        let reopened = dispatch("open", &json!({"path": "out/test.xlsx"}), host).unwrap();
+        let reopened = dispatch("open", &json!({"path": "out/test.xlsx"}), &area).unwrap();
         let book2 = reopened["book"].as_u64().unwrap();
-        dispatch("recalc", &json!({"book": book2}), host).unwrap();
-        let got2 = dispatch("get", &json!({"book": book2, "range": "B1"}), host).unwrap();
+        dispatch("recalc", &json!({"book": book2}), &area).unwrap();
+        let got2 = dispatch("get", &json!({"book": book2, "range": "B1"}), &area).unwrap();
         assert_eq!(got2["values"], json!([[7.0]]), "the formula survives the xlsx roundtrip");
 
-        dispatch("close", &json!({"book": book}), host).unwrap();
-        dispatch("close", &json!({"book": book2}), host).unwrap();
-        assert!(dispatch("get", &json!({"book": book, "range": "A1"}), host).is_err());
+        dispatch("close", &json!({"book": book}), &area).unwrap();
+        dispatch("close", &json!({"book": book2}), &area).unwrap();
+        assert!(dispatch("get", &json!({"book": book, "range": "A1"}), &area).is_err());
     }
 
     #[test]
     fn fill_matches_the_evaluator_and_falls_back_outside_the_subset() {
-        let host = Path::new("/");
-        let book = book_new().unwrap()["book"].as_u64().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let area = at(dir.path());
+        let book = book_new(&area).unwrap()["book"].as_u64().unwrap();
         // Columns A and B: 10k rows of inputs.
         {
             let mut books = books().lock().unwrap();
@@ -454,7 +504,7 @@ mod tests {
             }
         }
         let formula = "@A:A*1.05+SIN(@B:B)*0.5+EXP(-@A:A*0.01)";
-        let done = dispatch("fill", &json!({"book": book, "column": "C", "rows": 10000, "formula": formula}), host).unwrap();
+        let done = dispatch("fill", &json!({"book": book, "column": "C", "rows": 10000, "formula": formula}), &area).unwrap();
         assert_eq!(done["accelerated"], json!(true), "{done}");
         // The kernel's column agrees with the engine's evaluator.
         let expr = gridcraft_formula::parse(formula).unwrap();
@@ -474,24 +524,24 @@ mod tests {
             }
         }
         // The second fill with the same text reuses the cached kernel.
-        let again = dispatch("fill", &json!({"book": book, "column": "D", "rows": 10000, "formula": formula}), host).unwrap();
+        let again = dispatch("fill", &json!({"book": book, "column": "D", "rows": 10000, "formula": formula}), &area).unwrap();
         assert_eq!(again["accelerated"], json!(true));
         // Outside the subset: computed anyway, honestly unaccelerated.
-        let fb = dispatch("fill", &json!({"book": book, "column": "E", "rows": 16, "formula": "CONCAT(\"r\",@A:A)"}), host);
+        let fb = dispatch("fill", &json!({"book": book, "column": "E", "rows": 16, "formula": "CONCAT(\"r\",@A:A)"}), &area);
         let fb = fb.unwrap();
         assert_eq!(fb["accelerated"], json!(false), "{fb}");
-        dispatch("close", &json!({"book": book}), host).unwrap();
+        dispatch("close", &json!({"book": book}), &area).unwrap();
     }
 
     #[test]
-    fn paths_stay_inside_the_host_dir() {
+    fn paths_stay_inside_the_area() {
         let dir = tempfile::tempdir().unwrap();
-        let host = dir.path();
+        let area = at(dir.path());
         for bad in ["../up.xlsx", "/etc/x.xlsx", "a/../../up.xlsx", ""] {
-            assert!(dispatch("open", &json!({"path": bad}), host).is_err(), "{bad}");
-            let book = book_new().unwrap()["book"].as_u64().unwrap();
-            assert!(dispatch("export", &json!({"book": book, "path": bad}), host).is_err(), "{bad}");
-            dispatch("close", &json!({"book": book}), host).unwrap();
+            assert!(dispatch("open", &json!({"path": bad}), &area).is_err(), "{bad}");
+            let book = book_new(&area).unwrap()["book"].as_u64().unwrap();
+            assert!(dispatch("export", &json!({"book": book, "path": bad}), &area).is_err(), "{bad}");
+            dispatch("close", &json!({"book": book}), &area).unwrap();
         }
     }
 
@@ -504,29 +554,122 @@ mod tests {
         assert!(!may_call(""));
     }
 
-    /// The service works in its own area under the shared host directory,
-    /// so an exported path can never land in another service's data.
+    /// Without the shell's resolver the service works in its own area
+    /// under the shared host directory, so an exported path can never land
+    /// in another service's data, and an export may replace as before.
     #[test]
-    fn the_service_area_is_a_subdirectory_of_the_host_dir() {
+    fn without_a_resolver_the_area_is_a_subdirectory_of_the_host_dir() {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
-        let a = area(host).unwrap();
-        assert_eq!(a, host.join("sheet"));
-        assert!(a.is_dir());
-        let book = book_new().unwrap()["book"].as_u64().unwrap();
-        dispatch("export", &json!({"book": book, "path": "out.xlsx"}), &a).unwrap();
-        dispatch("close", &json!({"book": book}), &a).unwrap();
+        let legacy = Slot::new();
+        let book = serve(&legacy, &service_call("new", json!({}), host, false)).unwrap()["book"].as_u64().unwrap();
+        for _ in 0..2 {
+            serve(&legacy, &service_call("export", json!({"book": book, "path": "out.xlsx"}), host, false)).unwrap();
+        }
+        serve(&legacy, &service_call("close", json!({"book": book}), host, false)).unwrap();
         assert!(host.join("sheet/out.xlsx").is_file());
         assert!(!host.join("out.xlsx").exists());
     }
 
     /// `eval` without `book` computes against an empty transient workbook:
-    /// the one read tool an agent can call with no session first.
+    /// the one read tool an agent can call with no session first, and with
+    /// no folder either.
     #[test]
     fn eval_without_a_book_is_a_plain_calculation() {
-        let v = eval_adhoc(&json!({"formula": "=1+2*3"})).unwrap();
+        let v = eval_adhoc(&json!({"formula": "=1+2*3"}), None).unwrap();
         assert_eq!(v["value"], json!(7.0), "{v}");
-        let v = eval_adhoc(&json!({"formula": "=CONCAT(\"a\",\"b\")"})).unwrap();
+        let v = eval_adhoc(&json!({"formula": "=CONCAT(\"a\",\"b\")"}), None).unwrap();
         assert_eq!(v["value"], json!("ab"), "{v}");
+        let nowhere = Slot::new();
+        nowhere.set(Some(std::sync::Arc::new(|_: &ServiceCall| Err("no folder".to_string()))));
+        let v = serve(&nowhere, &service_call("eval", json!({"formula": "=2+2"}), Path::new("/nonexistent"), false)).unwrap();
+        assert_eq!(v["value"], json!(4.0));
+        assert!(serve(&nowhere, &service_call("new", json!({}), Path::new("/nonexistent"), false)).unwrap_err().contains("no folder"));
+    }
+
+    /// With the shell's resolver every path is relative to the caller's own
+    /// folder and stays inside it, through a link too.
+    #[test]
+    fn the_resolver_root_is_used_and_paths_stay_inside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let areas = resolver(&root, None);
+        let host = dir.path().join(".host");
+        let book = serve(&areas, &service_call("new", json!({}), &host, false)).unwrap()["book"].as_u64().unwrap();
+        serve(&areas, &service_call("export", json!({"book": book, "path": "books/b.xlsx"}), &host, false)).unwrap();
+        assert!(root.join("books/b.xlsx").is_file() && !host.exists() && !root.join("sheet").exists());
+        let again = serve(&areas, &service_call("open", json!({"path": "books/b.xlsx"}), &host, false)).unwrap()["book"].as_u64().unwrap();
+        std::fs::write(dir.path().join("beside.xlsx"), b"x").unwrap();
+        for bad in ["../beside.xlsx", "/etc/hosts", "books/../../beside.xlsx"] {
+            assert!(serve(&areas, &service_call("open", json!({"path": bad}), &host, false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("export", json!({"book": book, "path": bad}), &host, true)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            assert!(serve(&areas, &service_call("open", json!({"path": "up/beside.xlsx"}), &host, false)).is_err());
+            assert!(serve(&areas, &service_call("export", json!({"book": book, "path": "up/made.xlsx"}), &host, true)).is_err());
+            assert!(!dir.path().join("made.xlsx").exists());
+        }
+        for b in [book, again] {
+            serve(&areas, &service_call("close", json!({"book": b}), &host, false)).unwrap();
+        }
+    }
+
+    /// A workbook belongs to the area it was made in: another caller's
+    /// folder sees no such workbook, even holding its handle.
+    #[test]
+    fn a_workbook_is_its_own_areas() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mine, theirs) = (dir.path().join("mine"), dir.path().join("theirs"));
+        std::fs::create_dir(&mine).unwrap();
+        std::fs::create_dir(&theirs).unwrap();
+        let (me, them) = (resolver(&mine, None), resolver(&theirs, None));
+        let book = serve(&me, &service_call("new", json!({}), dir.path(), false)).unwrap()["book"].as_u64().unwrap();
+        serve(&me, &service_call("set", json!({"book": book, "cells": [{"at": "A1", "value": "private"}]}), dir.path(), false)).unwrap();
+        for (method, args) in [
+            ("get", json!({"book": book, "range": "A1"})),
+            ("set", json!({"book": book, "cells": [{"at": "A1", "value": 1}]})),
+            ("eval", json!({"book": book, "formula": "=A1"})),
+            ("recalc", json!({"book": book})),
+            ("export", json!({"book": book, "path": "stolen.xlsx"})),
+            ("close", json!({"book": book})),
+        ] {
+            let refused = serve(&them, &service_call(method, args, dir.path(), true)).unwrap_err();
+            assert!(refused.contains("no such workbook"), "{method}: {refused}");
+        }
+        assert!(!theirs.join("stolen.xlsx").exists());
+        let got = serve(&me, &service_call("get", json!({"book": book, "range": "A1"}), dir.path(), false)).unwrap();
+        assert_eq!(got["values"], json!([["private"]]), "untouched");
+        serve(&me, &service_call("close", json!({"book": book}), dir.path(), false)).unwrap();
+    }
+
+    /// An agent's export never replaces a file; an app's own foreground
+    /// export may.
+    #[test]
+    fn an_agent_never_replaces_a_file_and_an_app_may() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let book = serve(&areas, &service_call("new", json!({}), dir.path(), false)).unwrap()["book"].as_u64().unwrap();
+        std::fs::write(dir.path().join("taken.xlsx"), b"keep me").unwrap();
+        let refused = serve(&areas, &service_call("export", json!({"book": book, "path": "taken.xlsx"}), dir.path(), false)).unwrap_err();
+        assert!(refused.contains("`taken.xlsx` already exists"), "{refused}");
+        assert_eq!(std::fs::read(dir.path().join("taken.xlsx")).unwrap(), b"keep me");
+        serve(&areas, &service_call("export", json!({"book": book, "path": "taken.xlsx"}), dir.path(), true)).unwrap();
+        assert!(std::fs::read(dir.path().join("taken.xlsx")).unwrap().starts_with(b"PK"));
+        serve(&areas, &service_call("close", json!({"book": book}), dir.path(), true)).unwrap();
+    }
+
+    /// What a call writes must fit what is left of the area's quota.
+    #[test]
+    fn output_over_the_quota_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let tight = resolver(dir.path(), Some(100));
+        let book = serve(&tight, &service_call("new", json!({}), dir.path(), true)).unwrap()["book"].as_u64().unwrap();
+        let refused = serve(&tight, &service_call("export", json!({"book": book, "path": "b.xlsx"}), dir.path(), true)).unwrap_err();
+        assert!(refused.contains("bytes left"), "{refused}");
+        assert!(!dir.path().join("b.xlsx").exists());
+        serve(&tight, &service_call("close", json!({"book": book}), dir.path(), true)).unwrap();
     }
 }

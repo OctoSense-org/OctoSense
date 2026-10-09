@@ -81,6 +81,9 @@ octosense-news-service = { workspace = true, optional = true }
 # The sheet engine service (ADR 0013): gridcraft behind `sheet.*`, desktop only.
 octosense-sheets-service = { workspace = true, optional = true }
 octosense-photo-service = { workspace = true, optional = true }
+# Where an engine works (ADR 0013): the caller's area, which the shell's
+# resolver gives every engine service (`host_tools::areas`).
+octosense-engine-area = { workspace = true, optional = true }
 octosense-word-service = { workspace = true, optional = true }
 octosense-deck-service = { workspace = true, optional = true }
 octosense-cad-service = { workspace = true, optional = true }
@@ -171,7 +174,7 @@ app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 app-terminal = ["dep:makepad-terminal"]
 app-appcard = ["dep:octosense-appcard", "octos-core"]
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-photo-service", "dep:octosense-calendar-service", "octosense-ai-host/llm"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-photo-service", "dep:octosense-engine-area", "dep:octosense-calendar-service", "octosense-ai-host/llm"]
 app-calculator = ["dep:makepad-calculator"]
 app-clock = ["dep:makepad-clock"]
 app-notes = ["dep:makepad-notes"]

@@ -11492,6 +11492,7 @@ dependencies = [
  "cadcraft-io",
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",
@@ -11517,6 +11518,7 @@ dependencies = [
  "deckcraft-model",
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",
@@ -11527,9 +11529,12 @@ name = "octosense-design-service"
 version = "0.1.0"
 dependencies = [
  "designcraft-engine",
+ "designcraft-idml",
+ "designcraft-images",
  "designcraft-render",
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",
@@ -11547,7 +11552,17 @@ dependencies = [
  "image",
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "octosense-engine-area"
+version = "0.1.0"
+dependencies = [
+ "octosense-appstore",
  "serde_json",
  "tempfile",
 ]
@@ -11562,6 +11577,7 @@ dependencies = [
  "image",
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",
@@ -11645,6 +11661,7 @@ dependencies = [
  "lightcraft-merge",
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",
@@ -11758,8 +11775,10 @@ version = "0.1.0"
 dependencies = [
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "pdfcraft-automation",
+ "pdfcraft-xfa",
  "serde_json",
  "tempfile",
 ]
@@ -11769,8 +11788,11 @@ name = "octosense-photo-service"
 version = "0.1.0"
 dependencies = [
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "photocraft-automation",
+ "photocraft-doc",
+ "photocraft-format",
  "photocraft-io",
  "serde_json",
  "tempfile",
@@ -11811,6 +11833,7 @@ dependencies = [
  "gridcraft-xlsx",
  "makepad-script-compute",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",
@@ -11858,6 +11881,7 @@ dependencies = [
  "octosense-deck-service",
  "octosense-design-service",
  "octosense-effect-service",
+ "octosense-engine-area",
  "octosense-film-service",
  "octosense-l0-chat",
  "octosense-light-service",
@@ -11897,6 +11921,7 @@ version = "0.1.0"
 dependencies = [
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "serde_json",
  "soundcraft-audio-io",
  "soundcraft-dsp",
@@ -11930,11 +11955,14 @@ version = "0.1.0"
 dependencies = [
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",
  "vectorcraft-engine",
+ "vectorcraft-format",
  "vectorcraft-render",
+ "vectorcraft-svg",
 ]
 
 [[package]]
@@ -11976,6 +12004,7 @@ version = "0.1.0"
 dependencies = [
  "octosense-app-policy",
  "octosense-appstore",
+ "octosense-engine-area",
  "octosense-skill-gen",
  "serde_json",
  "tempfile",

@@ -4,9 +4,12 @@
 # inspect, convert between its formats (SVG/SVGZ, PDF, EPS, DXF, EMF/WMF,
 # the raster formats, native .vectorcraft), run engine commands from the
 # catalog and render PNG previews. The engine does not contain file paths
-# itself, so this crate does: every path resolves inside the service's own
-# `vector/` area under the caller's host directory, and `run` refuses the
-# engine's file commands. Stateless: every call opens, acts and closes.
+# itself, so this crate does: every path resolves inside the call's area
+# (the caller's own folder from the shell's resolver, else the legacy
+# `vector/` corner of the caller's host directory), a document's linked
+# images must resolve there too before the engine opens it, and `run`
+# refuses the engine's file commands. Stateless: every call opens, acts and
+# closes.
 [package]
 name = "octosense-vector-service"
 version = "0.1.0"
@@ -17,10 +20,16 @@ publish = false
 [dependencies]
 # The same App Hub rev as Mail and News: one appstore, one service registry.
 octosense-appstore = { workspace = true }
+# Where a call works: the caller's area and its write rules (ADR 0013).
+octosense-engine-area = { workspace = true }
 serde_json = { workspace = true }
 # The engine, pinned to one ymote/vectorcraft revision (ADR 0013).
 vectorcraft-engine = { workspace = true }
 vectorcraft-render = { workspace = true }
+# The embedded-reference fence: the engine's SVG importer (its link reads
+# recorded, never made) and its native format.
+vectorcraft-svg = { workspace = true }
+vectorcraft-format = { workspace = true }
 
 [dev-dependencies]
 # Generates and checks the skill's references (tests/skill.rs).

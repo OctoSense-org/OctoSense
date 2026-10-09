@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "film.info",
-      "description": "Probe a media file in the film engine's workspace (MP4/MOV, Matroska/WebM, MXF, MPEG TS/PS, Ogg, WAV or a still image): container, video and audio streams, duration in ms, timecode and size. Reads only; offline, pure-Rust codecs. `path` is relative to that workspace, a private folder only the film.* tools read and write; files elsewhere on the device are not in it and cannot be named.",
+      "description": "Probe a media file in your workspace (MP4/MOV, Matroska/WebM, MXF, MPEG TS/PS, Ogg, WAV or a still image): container, video and audio streams, duration in ms, timecode and size. Reads only; offline, pure-Rust codecs. `path` is relative to your workspace, the folder your own file tools (list_dir, read_file) see; files outside it cannot be named.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -27,7 +27,7 @@
     },
     {
       "name": "film.project.info",
-      "description": "Open a FilmCraft project (.fcproj) in the film engine's workspace headlessly and inspect it: its bins and items, and the active sequence when it has one. Media the project points at outside that workspace stay offline. Reads only. `path` is relative to that workspace (see film.info).",
+      "description": "Open a FilmCraft project (.fcproj) in your workspace headlessly and inspect it: its bins and items, and the active sequence when it has one. Media the project points at outside your workspace stay offline. Reads only. `path` is relative to your workspace (see film.info).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -50,7 +50,7 @@
     },
     {
       "name": "film.frame",
-      "description": "Render the frame at `at_ms` (default 0) of a video in the film engine's workspace through the engine's program renderer, written as a PNG to `out` with its longest edge at most `max_side` pixels (default 1024). Both paths are relative to that workspace (see film.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Render the frame at `at_ms` (default 0) of a video in your workspace through the engine's program renderer, written as a PNG to `out` with its longest edge at most `max_side` pixels (default 1024). Both paths are relative to your workspace (see film.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -78,7 +78,7 @@
     },
     {
       "name": "film.export",
-      "description": "Transcode the range `start_ms` to `end_ms` (default the whole clip, at most 5 minutes per call) of a media file in the film engine's workspace with the engine's own encoders: H.264+AAC MP4 (h264), ProRes MOV (prores), WAV or GIF, chosen by `format` or else by the extension of `out`; `audio` false drops the sound. Offline. Both paths are relative to that workspace (see film.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "description": "Transcode the range `start_ms` to `end_ms` (default the whole clip, at most 5 minutes per call) of a media file in your workspace with the engine's own encoders: H.264+AAC MP4 (h264), ProRes MOV (prores), WAV or GIF, chosen by `format` or else by the extension of `out`; `audio` false drops the sound. Offline. Both paths are relative to your workspace (see film.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
       "input_schema": {
         "type": "object",
         "properties": {

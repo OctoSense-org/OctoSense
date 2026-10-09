@@ -191,9 +191,10 @@ pub(crate) const CALENDAR_TOOLS: &[&str] = &["calendar.events", "calendar.add_ev
 /// declared by its engine's `tools.json` under the virtual owner
 /// `os.<family>` (`host_tools::engines`). A reviewed narrow grant like
 /// [`CALENDAR_TOOLS`]: every engine's read tools, and its act tools that
-/// write only inside its own area of the apps root's `.host` (new,
-/// convert, render, export, frame, develop, batch, trim, mix, merge, split,
-/// the Lottie export and import). None is destructive or outward. Never a
+/// only create new files inside the system agent's own workspace, never
+/// replacing one (new, convert, render, export, frame, develop, batch,
+/// trim, mix, merge, split, the Lottie export and import;
+/// `host_tools::areas`). None is destructive or outward. Never a
 /// generic command door (`effect.run`, `vector.run`:
 /// `host_tools::engines::HELD_FOR_REVIEW`), which is reviewed separately.
 #[cfg(feature = "craft-engines")]

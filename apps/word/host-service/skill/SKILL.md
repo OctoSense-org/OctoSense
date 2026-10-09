@@ -22,15 +22,15 @@ The first three only read; `word.convert` and `word.new` write `out`.
 
 ## Files
 
-Every path is relative to the word engine's folder, a private workspace that
-only `word.*` tools read and write. Absolute paths, `..` and links out of it
-are refused. Your own workspace (`read_file`, `write_file`, `view_image`),
-the person's files and the other engines' folders are outside it, and what
-these tools write stays in it: a PDF that `word.convert` makes cannot be
-opened by `pdf.*` or shown from your workspace. So work on documents that
-`word.new` or an earlier call made, and pick a new name for each `out`. If
-the person names a file of their own, say that the word engine cannot reach
-it yet.
+Every path is relative to your own workspace, the folder your file tools
+(`read_file`, `write_file`, `list_dir`, `view_image`) see: the word engine
+works in it for you. Absolute paths, `..` and links out of it are refused.
+Every engine works in the same folder, so what one writes the next can open,
+and a file the person puts there is yours to use. No call ever replaces an
+existing file: pick a new name for each `out`, or the call is refused. If
+the person names a file outside your workspace, say that the word engine
+cannot reach it. A PDF that `word.convert` makes opens with `pdf.*`, and a
+PNG with `view_image`.
 
 ## Examples
 
