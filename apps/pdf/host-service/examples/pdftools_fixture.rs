@@ -1,224 +1,85 @@
-//! A developer fixture for PDF Tools (`apps/pdftools`), recorded from this
-//! service.
+//! Sample PDFs for testing PDF Tools (`apps/pdftools`).
 //!
-//! App Hub's `card-host` serves no host services, so PDF Tools cannot reach
-//! the `pdf` engine there. This example writes four sample PDFs, runs this
-//! service on them exactly as the shell would (App Hub's own dispatcher,
-//! `octosense_appstore::services::dispatch`), and saves what it answered:
-//! `info`, `text` and every page rendered at the app's two sizes, one merge
-//! and two splits. It writes a card-host app-data folder:
+//! PDF Tools reads the PDFs in its own storage, and the shell's `pdf` engine
+//! works on them there (ADR 0013). This example writes four sample PDFs and
+//! a damaged file into the app's storage under an apps root (an OctoSense
+//! home's `apps/`, or a `card-host --app-data` folder), before the app
+//! starts:
 //!
 //! ```text
-//! <app-data>/os.pdftools/accounts/device/library/*.pdf   the sample PDFs
-//! <app-data>/os.pdftools/dev/engine-replay.json          the recorded answers
-//! <app-data>/os.pdftools/dev/replay/**.png               the recorded page renders
+//! <apps root>/os.pdftools/accounts/device/library/*.pdf
 //! ```
 //!
-//! PDF Tools replays those answers only when `dev/engine-replay.json` is in
-//! its own storage and the real engine refuses it or is missing; the shells
-//! never create `dev/`. See `apps/pdftools/README.md`.
+//! With `--import-sample <file>` it writes one more PDF, a three-page garden
+//! plan, to `<file>`: what a test places in the library as `Imported PDF.pdf`,
+//! the name PDF Tools gives the first PDF it opens from the device, to drive
+//! the path an imported PDF takes without the host's file dialog. The PDFs are
+//! written by hand below, so they are the same on every run and need no
+//! files of their own. Nothing here calls the engine.
 //!
 //! ```sh
-//! cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- <new app-data dir>
-//! card-host --bundle apps/pdftools/bundle --system --app-data <new app-data dir>
+//! cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- <apps root>
+//! cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- --import-sample <file>
 //! ```
 
 use std::path::{Path, PathBuf};
 
-use octosense_appstore::services::{dispatch, take_replies_for, ServiceCall, ServiceHost};
-use serde_json::{json, Map, Value};
-
-/// The app the calls are made for.
+/// The app the samples are for.
 const APP: &str = "os.pdftools";
 /// Where PDF Tools keeps its PDFs, relative to its storage (ADR 0004 §11).
 const LIBRARY: &str = "accounts/device/library";
-/// Where the recorded renders go, relative to its storage.
-const REPLAY: &str = "dev/replay";
-/// The two render sizes PDF Tools asks for (`THUMB_SIDE`, `VIEW_SIDE` in
-/// its main.splash).
-const THUMB_SIDE: u64 = 360;
-const VIEW_SIDE: u64 = 1400;
-/// Any isolate key: the calls are answered inline.
-const HEAP: usize = 1;
 /// A file in the library that is not a PDF (a failed download).
 const DAMAGED: &str = "Damaged scan.pdf";
 const DAMAGED_BYTES: &[u8] = b"%PDF-1.7\n% this download stopped after a few bytes\n";
 
 fn main() {
-    let Some(app_data) = std::env::args().nth(1).map(PathBuf::from) else {
-        eprintln!("usage: pdftools_fixture <new card-host app-data dir>");
-        std::process::exit(2);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let written = match args.as_slice() {
+        [flag, file] if flag == "--import-sample" => write(Path::new(file), &garden_plan()).map(|_| PathBuf::from(file)),
+        [root] if !root.starts_with('-') => samples(Path::new(root)),
+        _ => Err("usage: pdftools_fixture <apps root> | --import-sample <file>".into()),
     };
-    let jail = app_data.join(APP);
-    if jail.exists() && std::fs::read_dir(&jail).map(|mut d| d.next().is_some()).unwrap_or(true) {
-        eprintln!("{} already holds data; give a new or empty app-data folder", jail.display());
-        std::process::exit(2);
+    match written {
+        Ok(path) => println!("Wrote {}", path.display()),
+        Err(e) => {
+            eprintln!("pdftools_fixture: {e}");
+            std::process::exit(2);
+        }
     }
-    if let Err(e) = record(&jail) {
-        eprintln!("pdftools_fixture: {e}");
-        std::process::exit(1);
-    }
-    println!("Wrote the PDF Tools fixture to {}", jail.display());
-    println!("Run it: card-host --bundle apps/pdftools/bundle --system --app-data {}", app_data.display());
 }
 
-/// The sample documents: file name, replay folder, pages.
-fn documents() -> Vec<(&'static str, &'static str, Vec<u8>)> {
+/// The samples: file name and bytes.
+fn documents() -> Vec<(&'static str, Vec<u8>)> {
     vec![
-        ("Quarterly report.pdf", "quarterly-report", quarterly_report()),
-        ("Board minutes.pdf", "board-minutes", board_minutes()),
-        ("Field guide.pdf", "field-guide", field_guide()),
-        ("Apartment lease.pdf", "apartment-lease", apartment_lease()),
+        ("Quarterly report.pdf", quarterly_report()),
+        ("Board minutes.pdf", board_minutes()),
+        ("Field guide.pdf", field_guide()),
+        ("Apartment lease.pdf", apartment_lease()),
+        // Not a PDF at all: the app's "Can't open this file" state, with
+        // the engine's own answer.
+        (DAMAGED, DAMAGED_BYTES.to_vec()),
     ]
 }
 
-fn record(jail: &Path) -> Result<(), String> {
-    let work = tempfile::tempdir().map_err(|e| e.to_string())?;
-    // Without the shell's area resolver the service works in
-    // `<host dir>/pdf`; laid out like the app's storage, every path it is
-    // given and every path it answers is the one PDF Tools uses.
-    let area = work.path().join("pdf");
-    let library = area.join(LIBRARY);
-    std::fs::create_dir_all(&library).map_err(|e| e.to_string())?;
-    let docs = documents();
-    for (name, _, bytes) in &docs {
-        std::fs::write(library.join(name), bytes).map_err(|e| e.to_string())?;
+/// The samples in PDF Tools' library under `root`, into a new or empty
+/// storage: nothing of a person's is ever overwritten.
+fn samples(root: &Path) -> Result<PathBuf, String> {
+    let jail = root.join(APP);
+    if jail.exists() && std::fs::read_dir(&jail).map(|mut d| d.next().is_some()).unwrap_or(true) {
+        return Err(format!("{} already holds data; give an apps root without PDF Tools' storage", jail.display()));
     }
-
-    // A file that is not a PDF at all (a download that failed): the app's
-    // error state, with the engine's own answer.
-    std::fs::write(library.join(DAMAGED), DAMAGED_BYTES).map_err(|e| e.to_string())?;
-
-    octosense_pdf_service::register();
-    let mut service = Recorder { host_dir: work.path().to_path_buf(), next: 0 };
-    let mut recorded = Map::new();
-    for (name, slug, _) in &docs {
-        let path = format!("{LIBRARY}/{name}");
-        recorded.insert(path.clone(), service.document(&path, slug)?);
+    let library = jail.join(LIBRARY);
+    for (name, bytes) in documents() {
+        write(&library.join(name), &bytes)?;
     }
-    let damaged = format!("{LIBRARY}/{DAMAGED}");
-    match service.answer("info", json!({ "path": damaged })) {
-        Err(error) => recorded.insert(damaged, json!({ "error": error })),
-        Ok(_) => return Err(format!("the engine opened {DAMAGED}, which is not a PDF")),
-    };
-
-    // One merge, the one the UI test drives: Board minutes, then the report.
-    let paths = vec![format!("{LIBRARY}/Board minutes.pdf"), format!("{LIBRARY}/Quarterly report.pdf")];
-    let out = format!("{LIBRARY}/Merged.pdf");
-    let answer = service.call("merge", json!({ "paths": paths, "out": out }))?;
-    let merged = json!({ out.clone(): service.document(&out, "merged")? });
-    let merges = vec![json!({ "paths": paths, "out": out, "answer": answer, "docs": merged })];
-
-    // Two splits of the field guide: every 2 pages, and the cover on its own.
-    let mut splits = Vec::new();
-    for (choice, folder) in [(json!({ "every": 2 }), "split-every-2"), (json!({ "before": [2] }), "split-before-2")] {
-        let mut args = json!({ "path": format!("{LIBRARY}/Field guide.pdf"), "out_dir": LIBRARY });
-        for (key, value) in choice.as_object().into_iter().flatten() {
-            args[key] = value.clone();
-        }
-        let answer = service.call("split", args.clone())?;
-        let mut parts = Map::new();
-        for file in answer["files"].as_array().into_iter().flatten() {
-            let part = file["path"].as_str().ok_or("split answered a file without a path")?.to_string();
-            let stem = Path::new(&part).file_stem().and_then(|s| s.to_str()).unwrap_or("part").to_lowercase().replace(' ', "-");
-            parts.insert(part.clone(), service.document(&part, &format!("{folder}/{stem}"))?);
-        }
-        let mut split = args;
-        split["answer"] = answer;
-        split["docs"] = Value::Object(parts);
-        splits.push(split);
-    }
-
-    // The app's storage: the four samples, the renders and the answers.
-    let jail_library = jail.join(LIBRARY);
-    std::fs::create_dir_all(&jail_library).map_err(|e| e.to_string())?;
-    for (name, _, bytes) in &docs {
-        std::fs::write(jail_library.join(name), bytes).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(jail_library.join(DAMAGED), DAMAGED_BYTES).map_err(|e| e.to_string())?;
-    copy_tree(&area.join(REPLAY), &jail.join(REPLAY))?;
-    let replay = json!({
-        "replay": 1,
-        "about": "Answers octosense-pdf-service gave for these files, recorded by its pdftools_fixture example. A developer fixture: PDF Tools uses it only when the pdf engine refuses it or is missing.",
-        "sides": { "thumb": THUMB_SIDE, "view": VIEW_SIDE },
-        "docs": recorded,
-        "merges": merges,
-        "splits": splits,
-    });
-    let text = serde_json::to_string_pretty(&replay).map_err(|e| e.to_string())?;
-    std::fs::write(jail.join("dev/engine-replay.json"), text).map_err(|e| e.to_string())
+    Ok(library)
 }
 
-struct NoSheets;
-
-impl ServiceHost for NoSheets {
-    fn open_sheet(&mut self, _body: String) {}
-    fn close_sheet(&mut self) {}
-}
-
-/// Calls the registered service as App Hub's dispatcher does for an app in
-/// the foreground.
-struct Recorder {
-    host_dir: PathBuf,
-    next: u64,
-}
-
-impl Recorder {
-    fn call(&mut self, method: &str, args: Value) -> Result<Value, String> {
-        self.answer(method, args).map_err(|e| format!("{method} failed: {e}"))
+fn write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
-
-    /// The service's answer as the app receives it: its JSON, or its error
-    /// text untouched.
-    fn answer(&mut self, method: &str, args: Value) -> Result<Value, String> {
-        self.next += 1;
-        let call = ServiceCall {
-            app_id: APP.into(),
-            service: format!("pdf.{method}"),
-            args,
-            from_sheet: false,
-            may_prompt: true,
-            host_dir: self.host_dir.clone(),
-        };
-        dispatch(call, HEAP, self.next, &mut NoSheets);
-        let (_, _, result) = take_replies_for(&[HEAP])
-            .into_iter()
-            .find(|(_, id, _)| *id == self.next)
-            .ok_or_else(|| format!("pdf.{method} did not answer"))?;
-        let json = result?;
-        serde_json::from_str(&json).map_err(|e| format!("pdf.{method}: {e}"))
-    }
-
-    /// `info`, `text` and every page at both sizes.
-    fn document(&mut self, path: &str, slug: &str) -> Result<Value, String> {
-        let info = self.call("info", json!({ "path": path }))?;
-        let text = self.call("text", json!({ "path": path }))?;
-        let pages = info["pages"].as_array().map(Vec::len).unwrap_or(0);
-        let mut renders = Map::new();
-        for page in 1..=pages {
-            let mut sizes = Map::new();
-            for (kind, side) in [("thumb", THUMB_SIDE), ("view", VIEW_SIDE)] {
-                let out = format!("{REPLAY}/{slug}/p{page}-{kind}.png");
-                sizes.insert(kind.into(), self.call("render", json!({ "path": path, "page": page, "out": out, "max_side": side }))?);
-            }
-            renders.insert(page.to_string(), Value::Object(sizes));
-        }
-        Ok(json!({ "info": info, "text": text, "renders": renders }))
-    }
-}
-
-fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(to).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let target = to.join(entry.file_name());
-        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
-            copy_tree(&entry.path(), &target)?;
-        } else {
-            std::fs::copy(entry.path(), &target).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
+    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 // ---------------------------------------------------------------- the PDFs
@@ -650,4 +511,49 @@ fn apartment_lease() -> Vec<u8> {
     }
     pages.push(page);
     pdf(&info(title, "Harbour Lane Homes", "Lease for 14 Harbour Lane, flat 3B", "lease, rental, agreement"), pages)
+}
+
+fn garden_plan() -> Vec<u8> {
+    let title = "Garden plan - spring 2027";
+    let beds = [
+        ("Bed 1: salad", 0x6a994e, "Lettuce, rocket and radishes, sown every three weeks from March for a steady supply."),
+        ("Bed 2: beans", 0xa7c957, "Runner beans on a frame along the north side, with French beans below them."),
+        ("Bed 3: roots", 0xbc6c25, "Carrots and beetroot in rows a hand's width apart, thinned in May."),
+        ("Bed 4: herbs", 0x386641, "Parsley, chives, thyme and a pot of mint sunk in the soil to keep it in place."),
+    ];
+    let mut pages = Vec::new();
+    let mut cover = Page::default();
+    cover.rect(0.0, 0.0, W, H, 0xf1f5e9);
+    cover.text(Font::Bold, 11.0, M, 770.0, 0x386641, "ALLOTMENT 14");
+    cover.text(Font::Bold, 34.0, M, 700.0, INK, "Garden plan");
+    cover.text(Font::Sans, 16.0, M, 670.0, GREY, "Spring 2027: four beds and a calendar");
+    for (i, (_, color, _)) in beds.iter().enumerate() {
+        let x = M + (i % 2) as f64 * 245.0;
+        let y = 380.0 - (i / 2) as f64 * 200.0;
+        cover.rect(x, y, 228.0, 180.0, *color);
+        cover.text(Font::Bold, 14.0, x + 14.0, y + 154.0, 0xffffff, &format!("Bed {}", i + 1));
+    }
+    pages.push(cover);
+    let mut detail = Page::default();
+    detail.running(title, 2);
+    detail.text(Font::Bold, 20.0, M, 750.0, INK, "The beds");
+    let mut y = 715.0;
+    for (name, color, text) in beds {
+        detail.rect(M, y - 4.0, 12.0, 12.0, color);
+        detail.text(Font::Bold, 13.0, M + 22.0, y, INK, name);
+        y = detail.para(Font::Serif, 12.0, (M + 22.0, y - 20.0), W - 2.0 * M - 22.0, INK, text) - 18.0;
+    }
+    pages.push(detail);
+    let mut calendar = Page::default();
+    calendar.running(title, 3);
+    calendar.text(Font::Bold, 20.0, M, 750.0, INK, "Calendar");
+    let months = [("March", "Sow salad under fleece; dig compost into beds 2 and 3."), ("April", "Sow carrots and beetroot; plant out herbs."), ("May", "Thin the roots; put up the bean frame and sow beans."), ("June", "Water in the evening; pick salad and the first beans.")];
+    let mut y = 712.0;
+    for (month, task) in months {
+        calendar.text(Font::Bold, 13.0, M, y, 0x386641, month);
+        y = calendar.para(Font::Sans, 12.0, (M + 90.0, y), W - 2.0 * M - 90.0, INK, task) - 14.0;
+        calendar.line(M, y + 6.0, W - M, y + 6.0, 0.5, RULE);
+    }
+    pages.push(calendar);
+    pdf(&info(title, "Allotment 14", "What grows where, and when to sow it", "garden, plan, allotment"), pages)
 }

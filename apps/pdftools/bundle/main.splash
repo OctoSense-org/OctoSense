@@ -42,22 +42,23 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 //
 // Storage (ADR 0004 §11): the PDFs in accounts/device/library/, an index of
 // what the engine said about them in accounts/device/library.json, and the
-// page images the engine renders in cache/. Every path given to the engine
-// is relative to this storage, the folder fs.* sees.
+// page images the engine renders in cache/. The engine works in this storage
+// (ADR 0013's per-caller areas): every path given to it is relative to the
+// folder fs.* sees, a call made while the app is open may replace a file,
+// and what it writes counts against this app's storage.
 //
-// Developer fixture: when dev/engine-replay.json is in this app's storage
-// AND the engine refuses this app or is missing, the app answers its engine
-// calls from that file (recorded from the real service by
-// octosense-pdf-service's pdftools_fixture example) instead. The shells
-// never write dev/; see apps/pdftools/README.md.
+// Opening a PDF from this device: files.import copies the file the person
+// chooses into a new library file (`Imported PDF.pdf`, `Imported PDF 2.pdf`,
+// …); the app never learns the chosen file's name or place. Then it opens
+// like any other PDF here: the same engine calls on the same relative path.
 
 let LIBRARY = "accounts/device/library"
 let INDEX = "accounts/device/library.json"
 let COVERS = "cache/covers"
 let PAGES = "cache/pages"
 let VIEW_FILE = "cache/view.png"
-let REPLAY = "dev/engine-replay.json"
-let REPLAY_PLAYED = "dev/replay-played.json"
+// What an imported PDF is called: the import names its destination first.
+let IMPORT_NAME = "Imported PDF"
 // The longest edge, in pixels, of the page images the engine renders.
 let THUMB_SIDE = 360
 let VIEW_SIDE = 1400
@@ -77,6 +78,7 @@ let ICON_DOWN = "\u{f063}"
 let ICON_REMOVE = "\u{f00d}"
 let ICON_CUT = "\u{f0c4}"
 let ICON_OPEN = "\u{f56f}"
+let ICON_TRASH = "\u{f1f8}"
 // A done mark, not text: the same green in both appearances.
 let GREEN = #x2e9d5b
 
@@ -86,9 +88,13 @@ let docs = []           // {name path title pages bytes error}
 let index = {}          // name -> {pages bytes}
 let engine_state = ""   // "" until the engine answers, then ok | missing
 let engine_note = ""    // why it is missing: the host's refusal
-let replay = nil        // the developer fixture, when it applies
-let replay_made = {}    // documents the replayed merges and splits made
-let replay_played = []  // which recorded merges and splits ran: "merge:0", "split:1"
+let space_full = false  // the engine had no room left in this app's storage
+let files_known = false // files.status answered
+let files_ok = false    // files.status: this device can copy a file in
+let max_import = 0      // the largest file it copies in, in bytes
+let importing = false   // a file is being chosen or copied in
+let lib_note = nil      // {head detail note}: why a file couldn't be added
+let confirm_remove = false
 
 let cover_src = {}      // name -> image of page 1
 let cover_failed = {}
@@ -187,7 +193,6 @@ fn escape_re(text){
     for c in specials { out = out.replace(c, "\\" + c) }
     out
 }
-fn ensure_dir(path){ if !fs.exists(path) { fs.mkdir(path) } }
 fn remove_tree(path){
     if !fs.exists(path) { return }
     for entry in fs.list(path) {
@@ -208,10 +213,6 @@ fn missing(error){
 // later turn: a refusal answers inside host.request itself, where UI calls
 // lost the rest of the callback on runtimes before #413's overlay.
 fn engine(method, args, done){
-    if replay != nil {
-        start_timeout(0.02, || done(replay_answer(method, args)))
-        return
-    }
     host.request("pdf." + method, args, fn(r){
         let answer = {is_ok: r.is_ok data: r.data error: r.error}
         start_timeout(0.01, || done(answer))
@@ -229,106 +230,31 @@ fn engine_gone(a){
     false
 }
 fn engine_headline(){
-    if engine_note.search("was not granted") >= 0 { return "PDF Tools can't use the PDF engine yet" }
+    if engine_note.search("was not granted") >= 0 { return "PDF Tools can't use the PDF engine" }
     "This device has no PDF engine"
 }
 fn engine_detail(){
-    let why = "This version of OctoSense doesn't let PDF Tools use it."
+    let why = "This OctoSense doesn't let PDF Tools use it."
     if engine_note.search("was not granted") < 0 { why = "PDF Tools needs the OctoSense desktop, which has it." }
     "Pages, merging, splitting and text all come from the engine. " + why + " Your PDFs stay safe in this app's storage."
+}
+// The storage quota or its file count refused a write: the engine's own
+// words (`… more than the N bytes left in this storage`) or the host's.
+fn storage_full(error){
+    let e = "" + error
+    e.search("bytes left in this storage") >= 0 || e.search("app storage is full") >= 0 || e.search("too many files") >= 0
 }
 // An engine error without the "pdf.text: " prefix the service adds.
 fn engine_error(error){
     if !error.is_string() { return "The PDF engine gave no reason." }
+    if storage_full(error) { return "There isn't room for it in PDF Tools' storage. Remove a PDF you no longer need, then try again." }
     error.replace(regex("^pdf\\.[a-z]+: "), "")
 }
-
-// ---- the developer fixture ----------------------------------------------
-
-// The real engine always wins: the recorded answers are used only when it
-// refuses this app or is missing.
-fn probe_replay(){
-    host.request("pdf.info", {path: REPLAY}, fn(r){
-        let answer = {is_ok: r.is_ok error: r.error}
-        start_timeout(0.01, || {
-            if !answer.is_ok && missing(answer.error) {
-                let data = fs.read(REPLAY).parse_json()
-                if data != nil && optional(data, "replay", 0) == 1 {
-                    replay = data
-                    load_played()
-                    log("PDF Tools: replaying the engine answers recorded in " + REPLAY + " (developer fixture)")
-                }
-            }
-            library_next()
-        })
-    })
-}
-fn replay_doc(path){
-    let made = optional(replay_made, path, nil)
-    if made != nil { return made }
-    optional(replay.docs, path, nil)
-}
-fn replay_miss(method, what){
-    {is_ok: false data: nil error: "pdf." + method + ": " + what + " is not in the recorded fixture (" + REPLAY + ")"}
-}
-// The engine writes these files; placeholders stand in for them, and the
-// recorded answers answer for them. Which merges and splits ran is kept in
-// dev/ too, so the library reads the same after a restart.
-fn replay_write(recorded, outs, key){
-    for out in outs { fs.write(out, "%PDF-1.4\n% PDF Tools engine replay: stands in for a file the recorded engine wrote\n") }
-    for k v in recorded.docs { replay_made[k] = v }
-    replay_played.push(key)
-    try { fs.write(REPLAY_PLAYED, {played: replay_played}.to_json()) } catch {}
-}
-fn load_played(){
-    if !fs.exists(REPLAY_PLAYED) { return }
-    let state = try { fs.read(REPLAY_PLAYED).parse_json() } catch { nil }
-    for key in optional(state, "played", []) {
-        let part = key.split(":")
-        let list = replay.splits
-        if part[0] == "merge" { list = replay.merges }
-        let n = part[1].to_f64()
-        for i recorded in list {
-            if i == n { for k v in recorded.docs { replay_made[k] = v } }
-        }
-        replay_played.push(key)
-    }
-}
-fn replay_answer(method, args){
-    if method == "merge" {
-        for i m in replay.merges {
-            if m.out == args.out && same_list(m.paths, args.paths) {
-                replay_write(m, [args.out], "merge:" + i)
-                return {is_ok: true data: m.answer error: nil}
-            }
-        }
-        return replay_miss(method, "this merge")
-    }
-    if method == "split" {
-        for i s in replay.splits {
-            let same_file = s.path == args.path && s.out_dir == args.out_dir
-            let same_cut = optional(s, "every", 0) == optional(args, "every", 0) && same_list(optional(s, "before", []), optional(args, "before", []))
-            if same_file && same_cut {
-                let outs = []
-                for f in s.answer.files { outs.push(f.path) }
-                replay_write(s, outs, "split:" + i)
-                return {is_ok: true data: s.answer error: nil}
-            }
-        }
-        return replay_miss(method, "this split")
-    }
-    let d = replay_doc(args.path)
-    if d == nil { return replay_miss(method, args.path) }
-    // The engine's recorded refusal, for a file it could not open.
-    if optional(d, "error", nil) != nil { return {is_ok: false data: nil error: d.error} }
-    if method == "info" { return {is_ok: true data: d.info error: nil} }
-    if method == "text" { return {is_ok: true data: d.text error: nil} }
-    if method == "render" {
-        let sizes = optional(d.renders, "" + args.page, nil)
-        if sizes == nil { return replay_miss(method, args.path + " page " + args.page) }
-        return {is_ok: true data: pick(args.max_side > THUMB_SIDE, sizes.view, sizes.thumb) error: nil}
-    }
-    replay_miss(method, "pdf." + method)
+// Every engine write: a refusal for room shows on the library and the pages
+// until a write succeeds or a PDF is removed.
+fn wrote(a){
+    if a.is_ok { space_full = false return }
+    if storage_full(a.error) { space_full = true }
 }
 
 // ---- the library ---------------------------------------------------------
@@ -398,17 +324,17 @@ fn read_info(d){
 }
 fn read_cover(d){
     let file = COVERS + "/" + d.name + ".png"
-    if replay == nil && fs.exists(file) {
+    if fs.exists(file) {
         cover_src[d.name] = binary_resource(fs.read_bytes(file))
         refresh()
         start_timeout(0.01, || library_next())
         return
     }
     lib_busy = true
-    if replay == nil { ensure_dir(COVERS) }
     engine("render", {path: d.path page: 1 out: file max_side: THUMB_SIDE}, fn(a){
         lib_busy = false
         if engine_gone(a) { refresh() return }
+        wrote(a)
         if a.is_ok { cover_src[d.name] = binary_resource(fs.read_bytes(a.data.out)) } else { cover_failed[d.name] = true }
         refresh()
         library_next()
@@ -430,8 +356,68 @@ fn library_caption(){
     if known { line = line + "  ·  " + size_text(total) }
     line
 }
+
+// ---- opening a PDF from this device ---------------------------------------
+
+// What the shell's files service offers, asked once without opening anything.
+fn check_files(){
+    host.request("files.status", {}, fn(r){
+        let answer = {is_ok: r.is_ok data: r.data}
+        start_timeout(0.01, || {
+            files_known = true
+            if answer.is_ok {
+                files_ok = optional(answer.data, "import_supported", false) && optional(answer.data, "storage_granted", false)
+                max_import = optional(answer.data, "max_import_bytes", 0)
+            }
+            refresh()
+        })
+    })
+}
+fn import_limit(){ pick(max_import > 0, "PDFs up to " + size_text(max_import), "") }
+// The host's refusal, said for a person; its own words go below it.
+fn import_refusal(error){
+    let e = "" + error
+    if e.search("foreground_required") >= 0 { return "Bring PDF Tools to the front, then choose the file again." }
+    if e.search("busy") >= 0 { return "Another file is still being added. Try again in a moment." }
+    if storage_full(e) { return "PDF Tools' storage is full. Remove a PDF you no longer need, then try again." }
+    if e.search("too large") >= 0 || e.search("exceeds the byte limit") >= 0 { return "That file is too big to add. " + import_limit() + " can be added." }
+    if e.search("permission_denied") >= 0 { return "OctoSense didn't let PDF Tools open files from this device." }
+    if e.search("unsupported_platform") >= 0 { return "This device can't add files to PDF Tools." }
+    if e.search("already exists") >= 0 { return "A file of the same name appeared while you chose. Try again." }
+    "OctoSense couldn't copy the file in."
+}
+// The person chooses a file in the host's own dialog; it is copied into a
+// new library file the app named first, and opens.
 fn open_from_device(){
-    banner("Opening PDFs from your device is coming in a later OctoSense update. For now, PDF Tools works on the PDFs in its own storage.")
+    if importing { return }
+    if !files_ok {
+        banner("This OctoSense can't open files from the device for PDF Tools.")
+        return
+    }
+    let name = unique_name(IMPORT_NAME) + ".pdf"
+    importing = true
+    lib_note = nil
+    refresh()
+    host.request("files.import", {path: LIBRARY + "/" + name}, fn(r){
+        let answer = {is_ok: r.is_ok data: r.data error: r.error}
+        start_timeout(0.01, || imported(name, answer))
+    })
+}
+fn imported(name, a){
+    importing = false
+    if !a.is_ok {
+        lib_note = {head: "Couldn't open a PDF from this device" detail: import_refusal(a.error) note: "" + a.error}
+        refresh()
+        return
+    }
+    if optional(a.data, "cancelled", false) { refresh() return }
+    // From here the file is one of the library's: the engine reads it on
+    // its relative path, as for any PDF the library finds.
+    forget(name)
+    scan_library()
+    let d = doc_named(name)
+    if d == nil { refresh() return }
+    if route == "library" { open_doc(d) } else { refresh() }
 }
 
 // ---- a document ----------------------------------------------------------
@@ -450,6 +436,7 @@ fn open_doc(d){
     text_note = ""
     query = ""
     shown_text = TEXT_BATCH
+    confirm_remove = false
     ui.find.set_text("")
     route = "doc"
     tab = "pages"
@@ -496,18 +483,18 @@ fn render_thumb(p){
     let g = gen
     let folder = PAGES + "/" + current.name
     let file = folder + "/p" + p + ".png"
-    if replay == nil && fs.exists(file) {
+    if fs.exists(file) {
         thumb_src["p" + p] = binary_resource(fs.read_bytes(file))
         refresh_pages()
         start_timeout(0.01, || thumbs_next())
         return
     }
     thumbs_busy = true
-    if replay == nil { ensure_dir(folder) }
     engine("render", {path: current.path page: p out: file max_side: THUMB_SIDE}, fn(a){
         thumbs_busy = false
         if g != gen { return }
         if engine_gone(a) { refresh() return }
+        wrote(a)
         if a.is_ok { thumb_src["p" + p] = binary_resource(fs.read_bytes(a.data.out)) } else { thumb_failed["p" + p] = true }
         refresh_pages()
         thumbs_next()
@@ -635,10 +622,13 @@ fn load_view(){
     let p = page_no
     view_src = nil
     view_note = ""
-    if replay == nil { ensure_dir("cache") }
+    // A new file each time: the shown picture is already decoded, and the
+    // engine then needs no leave to replace one.
+    try { if fs.exists(VIEW_FILE) { fs.remove(VIEW_FILE) } } catch {}
     engine("render", {path: current.path page: p out: VIEW_FILE max_side: VIEW_SIDE}, fn(a){
         if seq != view_seq || route != "page" { return }
         if engine_gone(a) { view_note = engine_headline() refresh() return }
+        wrote(a)
         if a.is_ok { view_src = binary_resource(fs.read_bytes(a.data.out)) } else { view_note = "Couldn't show this page: " + engine_error(a.error) }
         refresh()
     })
@@ -656,6 +646,27 @@ fn back_to_pages(){
     show(false)
 }
 
+// Removing a PDF asks once more; what was made from it stays.
+fn ask_remove(){ confirm_remove = true show(false) }
+fn keep_doc(){ confirm_remove = false show(false) }
+fn remove_doc(){
+    let d = current
+    confirm_remove = false
+    if d == nil { return }
+    try { fs.remove(d.path) } catch {}
+    if fs.exists(d.path) {
+        banner("Couldn't remove “" + d.title + "”.")
+        show(false)
+        return
+    }
+    forget(d.name)
+    // The room it held may let page pictures be saved again.
+    space_full = false
+    cover_failed = {}
+    go_library()
+    banner("Removed “" + d.title + "” from PDF Tools.")
+}
+
 // ---- merge ---------------------------------------------------------------
 
 fn start_merge(){
@@ -669,6 +680,7 @@ fn start_merge(){
     show(true)
 }
 fn toggle_pick(d){
+    if d.error != "" { banner("“" + d.title + "” can't be opened, so it can't be merged.") return }
     if has(picked, d.name) { picked.retain(|n| n != d.name) }
     else if picked.len() < MAX_MERGE { picked.push(d.name) }
     else { banner("PDF Tools merges up to " + MAX_MERGE + " PDFs at a time.") }
@@ -740,6 +752,7 @@ fn do_merge(){
     engine("merge", {paths: paths out: out}, fn(a){
         merge_busy = false
         if engine_gone(a) { merge_error = engine_headline() refresh() return }
+        wrote(a)
         if !a.is_ok { merge_error = "Couldn't merge: " + engine_error(a.error) refresh() return }
         let name = stem(merge_name) + ".pdf"
         forget(name)
@@ -836,6 +849,7 @@ fn do_split(){
     engine("split", args, fn(a){
         split_busy = false
         if engine_gone(a) { split_error = engine_headline() refresh() return }
+        wrote(a)
         if !a.is_ok { split_error = "Couldn't split: " + engine_error(a.error) refresh() return }
         let names = []
         for f in a.data.files {
@@ -919,7 +933,8 @@ fn boot(){
     load_index()
     scan_library()
     show(true)
-    if fs.exists(REPLAY) { probe_replay() } else { library_next() }
+    check_files()
+    library_next()
 }
 start_timeout(0.05, || boot())
 
@@ -935,6 +950,8 @@ let Muted = UiButton{width: Fill
     draw_text +: {color: ui_muted color_hover: ui_muted color_down: ui_muted color_focus: ui_muted}
 }
 let Primary = UiPrimary{width: Fill}
+let Danger = UiPrimary{width: Fill draw_bg +: {color: #xd23a4f color_hover: #xdc4b5f color_down: #xb52d40 color_focus: #xb52d40}}
+let Subtle = UiButton{draw_text +: {color: ui_muted color_hover: ui_ink color_down: ui_ink color_focus: ui_muted}}
 let IconAct = UiButton{width: 36 padding: 0 draw_text +: {color: ui_muted color_hover: ui_ink color_down: ui_ink text_style: theme.font_icons{font_size: 14}}}
 let List = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 14.0}}
 let Cover = RoundedView{width: 46 height: 60 align: Align{x: 0.5 y: 0.5} padding: 1 show_bg: true
@@ -987,6 +1004,13 @@ let EngineAlert = Alert{
         note := Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_code{font_size: 11}}}
     }
 }
+let SpaceAlert = Alert{
+    Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+    View{width: Fill height: Fit flow: Down spacing: 6
+        Head{text: "PDF Tools' storage is full"}
+        UiCaption{text: "Page pictures and new PDFs can't be saved until there's room. Open a PDF you no longer need and remove it."}
+    }
+}
 // One scroller per screen (and per document tab), each keeping its place.
 let Pane = ScrollYView{width: Fill height: Fill flow: Down spacing: 14 padding: Inset{left: 16 right: 16 top: 2 bottom: 24}}
 
@@ -1004,10 +1028,23 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
             if route == "doc" && current != nil {
                 View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 6 right: 10 top: 8}
                     Back{text: "‹ Library" on_click: || go_library()}
+                    View{width: Fill height: 1}
+                    if !confirm_remove { Subtle{text: "Remove" on_click: || ask_remove()} }
                 }
                 View{width: Fill height: Fit flow: Down spacing: 3 padding: Inset{left: 20 right: 20 top: 2 bottom: 12}
                     Label{width: Fill padding: 0 max_lines: 2 text: current.title draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 24 line_spacing: 1.2}}}
                     UiCaption{text: doc_meta(current)}
+                }
+                if confirm_remove {
+                    View{width: Fill height: Fit padding: Inset{left: 16 right: 16 bottom: 10}
+                        Alert{
+                            Glyph{text: ICON_TRASH draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                            View{width: Fill height: Fit flow: Down spacing: 6
+                                Head{text: "Remove this PDF from PDF Tools?"}
+                                UiCaption{text: "It is deleted from this app's storage. PDFs you made from it stay."}
+                            }
+                        }
+                    }
                 }
                 View{width: Fill height: Fit padding: Inset{left: 16 right: 16 bottom: 10}
                     Segments{
@@ -1066,17 +1103,45 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
             lib_pane := Pane{on_render: || {
                 View{width: Fill height: 1}
                 if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if lib_note != nil {
+                    Alert{
+                        Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            Head{text: lib_note.head}
+                            UiCaption{text: lib_note.detail}
+                            Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: lib_note.note draw_text +: {color: ui_muted text_style: theme.font_code{font_size: 11}}}
+                        }
+                        UiButton{text: "OK" on_click: || { lib_note = nil refresh() }}
+                    }
+                }
+                if space_full { SpaceAlert{} }
                     if docs.len() == 0 {
                         UiCard{align: Align{x: 0.5} padding: 28 spacing: 14
                             AppIcon{width: 64 height: 64 name: "pdf"}
                             Label{padding: 0 text: "No PDFs here yet" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 20}}}
                             Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} align: Align{x: 0.5}
-                                text: "This list shows the PDFs kept in PDF Tools' own storage. Opening PDFs from your device is coming in a later update."
+                                text: "Open a PDF from this device to read it, split it, merge it with others or copy its text. PDF Tools keeps its own copy."
                                 draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 14 line_spacing: 1.4}}}
-                            UiPill{text: "Open from device…" on_click: || open_from_device() draw_bg +: {color: ui_field color_hover: ui_hover color_down: ui_hover}}
+                            if files_ok { UiPrimary{text: pick(importing, "Choosing a PDF…", "Open a PDF from this device") on_click: || open_from_device()} }
+                            if files_ok && max_import > 0 { UiCaption{width: Fit text: import_limit()} }
+                            if files_known && !files_ok {
+                                Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} align: Align{x: 0.5}
+                                    text: "This OctoSense can't open files from the device for PDF Tools."
+                                    draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+                            }
                         }
                     }
                     if docs.len() > 0 {
+                        GestureView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 18 right: 16 top: 6 bottom: 6} on_tap: |x, y| open_from_device()
+                            Glyph{text: ICON_OPEN draw_text +: {color: ui_link text_style: theme.font_icons{font_size: 15}}}
+                            Label{width: Fill padding: 0 text: pick(importing, "Choosing a PDF…", "Open a PDF from this device") draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}}
+                            if files_ok && !importing && max_import > 0 { Label{padding: 0 text: import_limit() draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 12}}} }
+                            if files_known && !files_ok {
+                                RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 3 bottom: 3} show_bg: true draw_bg +: {color: ui_field border_radius: 8.0}
+                                    Label{padding: 0 text: "Not available here" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 11}}}
+                                }
+                            }
+                        }
                         List{
                             for i d in docs {
                                 GestureView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 14 padding: Inset{left: 16 right: 14 top: 10 bottom: 10} on_tap: |x, y| open_doc(d)
@@ -1091,13 +1156,6 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                                 if i < docs.len() - 1 { RowLine{} }
                             }
                         }
-                        GestureView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 18 right: 16 top: 6 bottom: 6} on_tap: |x, y| open_from_device()
-                            Glyph{text: ICON_OPEN draw_text +: {color: ui_link text_style: theme.font_icons{font_size: 15}}}
-                            Label{width: Fill padding: 0 text: "Open from this device" draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}}
-                            RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 3 bottom: 3} show_bg: true draw_bg +: {color: ui_field border_radius: 8.0}
-                                Label{padding: 0 text: "Coming soon" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 11}}}
-                            }
-                        }
                     }
             }}
         }
@@ -1105,6 +1163,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
             pages_pane := Pane{on_render: || {
                 View{width: Fill height: 1}
                 if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if space_full { SpaceAlert{} }
                 if engine_state != "missing" {
                         if doc_error != "" {
                             Alert{
@@ -1225,6 +1284,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
             merge_pane := Pane{on_render: || {
                 View{width: Fill height: 1}
                 if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if space_full { SpaceAlert{} }
                     if merge_step == 1 {
                         UiCaption{padding: Inset{left: 4} text: "Choose the PDFs to put together, in the order they should go. You can change the order next."}
                         List{
@@ -1234,8 +1294,10 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                                         if optional(cover_src, d.name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, d.name, nil)} }
                                         else { AppIcon{width: 26 height: 26 name: "file-pdf"} }
                                     }
-                                    RowText{name.text: d.title meta.text: doc_meta(d)}
-                                    if has(picked, d.name) { MarkOn{n.text: "" + (position(picked, d.name) + 1)} } else { Mark{} }
+                                    if d.error != "" { RowText{name.text: d.title meta.text: doc_meta(d) meta.draw_text.color: ui_danger} }
+                                    else { RowText{name.text: d.title meta.text: doc_meta(d)} }
+                                    if has(picked, d.name) { MarkOn{n.text: "" + (position(picked, d.name) + 1)} }
+                                    else if d.error == "" { Mark{} }
                                 }
                                 if i < docs.len() - 1 { RowLine{} }
                             }
@@ -1281,6 +1343,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
         split_box := View{visible: false width: Fill height: Fill
             split_pane := Pane{on_render: || {
                 View{width: Fill height: 1}
+                if space_full { SpaceAlert{} }
                 if current != nil && split_result == nil {
                         Segments{
                             if split_mode == "every" { SegmentOn{text: "Every few pages"} } else { Segment{text: "Every few pages" on_click: || set_split_mode("every")} }
@@ -1391,7 +1454,11 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                 if engine_state == "missing" { Muted{text: "Merge PDFs" on_click: || banner(engine_headline())} }
                 else { Primary{text: "Merge PDFs" on_click: || start_merge()} }
             }
-            if route == "doc" && tab == "pages" && current != nil {
+            if route == "doc" && current != nil && confirm_remove {
+                Quiet{text: "Keep it" on_click: || keep_doc()}
+                Danger{text: "Remove" on_click: || remove_doc()}
+            }
+            if route == "doc" && tab == "pages" && current != nil && !confirm_remove {
                 if info != nil && page_count() >= 2 { Primary{text: "Split into files" on_click: || start_split()} }
                 if engine_state == "missing" { Muted{text: "Split into files" on_click: || banner(engine_headline())} }
             }
