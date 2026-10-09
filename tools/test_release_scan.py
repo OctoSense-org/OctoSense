@@ -157,6 +157,45 @@ class PatternTests(unittest.TestCase):
         ):
             self.assertTrue(findings(leak), leak)
 
+    def test_pinned_rinx_filename_and_complete_mime_seam_is_ignored(self):
+        root = b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/"
+        for revision in (b"4b89097", b"4b89097d8791a7190d01de1c576979c93df0013d"):
+            known = root + revision + b"/src/home/room_screen.rsapplication/octet-stream"
+            self.assertEqual(findings(known), [])
+            # Optimized Rust literals need not have NUL separators.
+            self.assertEqual(findings(b"prefix" + known + b"continuation"), [])
+
+    def test_unproven_rinx_filename_mime_sequences_remain_findings(self):
+        known = (b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097"
+                 b"/src/home/room_screen.rsapplication/octet-stream")
+        for leak in (
+            b"/home/room_screen.rsapplication/octet-stream",
+            known.replace(b"/cargo/", b"/private/"),
+            known.replace(b"rinx-", b"other-"),
+            known.replace(b"4b89097", b"1234567"),
+            known.replace(b"4b89097", b"4b89097d8791a7190d01de1c576979c93df0013e"),
+            known.replace(b"4b89097", b"4b890970"),
+            known.replace(b"room_screen", b"another_screen"),
+            known.replace(b"octet-stream", b"json"),
+            known.replace(b"octet-stream", b"octet-streaM"),
+            known[:-1],
+        ):
+            self.assertTrue(findings(leak), leak)
+
+    def test_rinx_mime_exception_is_span_and_pattern_scoped(self):
+        known = (b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097"
+                 b"/src/home/room_screen.rsapplication/octet-stream")
+        apparent_home = b"/home/room_screen.rsapplication/"
+        for leak in (apparent_home + b"private", b"/home/someone/private"):
+            for combined in (leak + b"\x00" + known, known + b"\x00" + leak):
+                self.assertTrue(findings(combined), combined)
+        out = findings(known, extra=[scan.re.escape(apparent_home.decode())])
+        self.assertTrue(out, "explicit extra patterns must not be exempted")
+        identity = [("the scanning account's name", scan.re.compile(scan.re.escape(apparent_home)))]
+        out = []
+        scan.scan_bytes(known, "public", identity, out)
+        self.assertTrue(out, "identity checks must not be exempted")
+
     def test_only_the_proven_mail_literal_seam_is_ignored(self):
         prefix = b"Mail service is not "
         apparent_host = b"registeredattemptssendoctosense.local"
