@@ -234,6 +234,8 @@ pub fn register_host_services() {
                 .unwrap_or_else(|| crate::app_storage::DEVICE.into())
         ));
         crate::platform_services::register();
+        crate::files_service::register();
+        octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
         octosense_markdown_editor::register();
         crate::connected_review::register();
         octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);

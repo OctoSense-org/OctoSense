@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "6c080f31adb899611e6ebe132ccfa2eead06cf9b",
+    "tree": "18c19d6eada5c8be89487f7e04cdc42b2ccac7b4",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -29,7 +29,8 @@
       "Ordinary WebReader embeds sandboxed WebKitGTK in X11/XWayland and private WebView2 controllers on Windows, with bounded UI integration, URL policy, no app bridge and explicit engine errors. Native Wayland and Linux/Windows production embedded authentication remain unsupported.",
       "Native host-response envelope keys are interned when created, so contained apps can forward raw success, error and capability-refusal replies as bounded JSON without first naming each field in script source.",
       "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
-      "A Splash isolate entry keeps its 64 ms wall-clock budget unless MAKEPAD_SPLASH_BUDGET_MS sets another (makepad#109). Only the shell test step sets it: ~1,000 tests in one process wait on shared locks and page faults, which a wall-clock budget counts against the script."
+      "A Splash isolate entry keeps its 64 ms wall-clock budget unless MAKEPAD_SPLASH_BUDGET_MS sets another (makepad#109). Only the shell test step sets it: ~1,000 tests in one process wait on shared locks and page faults, which a wall-clock budget counts against the script.",
+      "Contained foreground document import/export and binary jail writes; bounded no-prompt fresh location with independent native/sample ownership and Android approximate permission; gated HTTP(S) external links; explicit unsupported capture errors."
     ],
     "stacked": [
       {
@@ -115,6 +116,10 @@
       {
         "patch": "tools/runtime-patches/makepad-splash-budget.patch",
         "sha256": "cebcae3327ec955a2b37eb1f3353e97160d702bd4081abb264006fee4ac17ee5"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-os-batch1.patch",
+        "sha256": "af32aa9660e483b1b39fef6e73c463ed4c7ed3153e938e4743ec99223fb3479d"
       }
     ]
   }

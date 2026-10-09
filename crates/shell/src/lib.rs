@@ -97,6 +97,8 @@ pub mod connected_review;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod platform_services;
 #[cfg(any(feature = "app-hub", native_mobile))]
+pub mod files_service;
+#[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_routes;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod connected_events;
@@ -6417,6 +6419,8 @@ impl App {
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
         #[cfg(any(feature = "app-hub", native_mobile))]
         platform_services::handle_event(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        files_service::handle_event(cx, event);
         self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
         // Whatever module panicked during this event — in its tile's event

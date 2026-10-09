@@ -19,12 +19,14 @@
 
 外部链接使用同一个规范化 URL 做策略判断和 OS 打开，拒绝控制字符及无效的绝对 URL；错误日志不包含 URL。可信的原生宿主调用仍可使用有效的绝对协议地址。本批没有新增名为 `web.open` 的宿主请求方法：补齐的是已有控件入口，与嵌入式浏览不同。Makepad 源码符号包括 `normalize_external_url`、`LinkLabel::handle_event`、各平台的 `CxOsApi::open_url`、`android_jni::to_java_open_url`、`MakepadActivity.openUrl`。固定源码及覆盖补丁由 [runtime-patches.lock.json](../runtime-patches.lock.json) 和 [native-runtime.lock.json](../native-runtime.lock.json) 定位。
 
+未实现拍照或录像的后端现在返回 `CameraCaptureResult::Failed`，不再静默忽略请求，使控件可以清除等待或录像状态。这不表示新增了视频编码器或拍摄后端。
+
 ## 已有能力与剩余 OS 工作
 
 | 领域 | 已有实现 | 仍需区分或补齐的部分 |
 | --- | --- | --- |
 | 日历 | OctoSense 系统 Calendar 管理宿主保存的事件，`calendar.*` 以 `os.calendar` 执行。Google Calendar 的 `gcalendar` 支持读取及经审阅的保存，使用该应用已获授权的连接。 | 两者都不是通用设备日历适配器。共享 Apple EventKit / Android CalendarProvider 接口、原生日历选择及权限生命周期仍待实现。第三方 manifest 声明 `calendar` 不会直接获得系统应用服务的访问权。 |
-| 相机、麦克风 | Android/macOS 已有逐应用授权及 OS 权限方法；`CameraPreview` 已有预览和录像，也会检查录音所需的麦克风路径。 | 获批权限本身不等于独立拍照或纯音频录制服务。通用、逐应用隔离的录音与播放会话 API、资源生命周期、中断处理及完整平台验收仍待补齐。 |
+| 相机、麦克风 | Android/macOS 已有逐应用授权及 OS 权限方法；`CameraPreview` 已有预览、拍照和录像入口，并检查麦克风权限。Android 已实现拍照，但明确拒绝录像；存在入口不等于后端已实现。 | 获批权限本身不等于独立拍照或纯音频录制服务。通用、逐应用隔离的录音与播放会话 API、资源生命周期、中断处理及完整平台验收仍待补齐。 |
 | 音频与生成媒体 | Makepad 已有原生音频输入、输出，语音输入链路及 `Video` 播放控件。`model.audio` 已能请求生成语音；`model.image`、视频任务、embeddings 也已实现。 | 服务商生成与 OS 录制、播放是不同环节。有这些方法不代表已通过真实服务商调用或设备播放验证。 |
 | 嵌入页面、身份认证 | `WebReader::open_on_platform` 已有 macOS、iOS、Android、Linux、Windows 适配器；宿主持有的 `auth` 服务及服务商、应用后端登录流程也已存在。 | 外部链接修复不会代替嵌入式浏览或身份认证。WebView 可用性、服务商注册、跳转策略及各平台登录验收仍分别成立；应用始终拿不到宿主凭据。 |
 | 通知、后台工作 | `glance.publish` 可请求卡片通知；`App::glance_notify` 显示 Shell toast 和 Home 通知栏通知。Mail、已连接 Gmail 有特定后台执行及持久事件、通知发件箱路径。 | 这些不是通用 OS 闹钟、推送 token 或任意关闭应用的脚本调度器。后台任务还需要明确的事件契约、应用权限和 OS 生命周期支持，通知本身不提供这些能力。 |
