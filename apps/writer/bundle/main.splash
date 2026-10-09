@@ -42,7 +42,8 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 // Writer's own storage (fs.*) is enough to keep writing:
 //   index.json          the documents, newest first
 //   drafts/<id>.txt     each draft exactly as typed
-// The engine works in the same storage (per-caller engine areas):
+// The engine works in the same storage (per-caller engine areas), with paths
+// relative to it:
 //   work/<id>.md        the draft as Markdown, written just before a save
 //   documents/<n>.docx  the saved document (word.convert)
 //   exports/<n>.<ext>   copies in other formats (word.convert)
@@ -50,10 +51,13 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 // Formatting is plain text: a line starting with # is a heading (## and ###
 // for smaller ones), - a bullet, 1. a numbered item, > a quote; **bold** and
 // *italic* work inside a line. Every line is a paragraph.
-//
-// Developer fixture: when the storage holds dev-fixtures.json, the word.*
-// calls are answered in this file, from the drafts themselves, and every
-// screen shows a "Fixture engine" badge. Writer never writes that file.
+
+// ---- text rules -------------------------------------------------------------
+// Pure functions: no storage, widgets or clock. They decide what the list
+// shows for a draft, how a draft becomes the Markdown the engine imports, what
+// the files are called and how the preview reads the engine's blocks.
+// crates/shell/src/writer_model_tests.rs runs this file up to its first
+// top-level start_timeout( in a script VM and tests them.
 
 // A field of an object, or `fallback` when the object has none (reading a
 // missing field is an error). Keys compare as text: parsed JSON has string
@@ -62,65 +66,20 @@ fn field(o, name, fallback){
     for k v in o { if "" + k == name { return v } }
     return fallback
 }
-
-// ---- state ----------------------------------------------------------------
-// Everything Writer remembers is one object kept on `mod`. Switching between
-// light and dark runs this file again to restyle it: the widgets keep what
-// they show and the runtime keeps the `mod` entries this file made, but every
-// `let` starts over. So the rerun finds `mod.writer` here and goes on with it.
-
-let st = field(mod, "writer", nil)
-if st == nil {
-    st = {
-        docs: []              // [{id title snippet created updated words rev saved_rev saved_at docx exports}]
-        doc: nil              // the open document (an entry of docs)
-        doc_is_new: false     // made with New and not stored yet
-        kept_text: ""         // the open draft as last written to storage
-        draft_timer: nil
-        next_seq: 0
-        busy: false
-        busy_at: 0            // when the running engine action started
-        fixture: nil          // dev-fixtures.json, when present
-        booted: false
-        screen: "docs"        // the pane on show: docs, editor, preview or export
-        md_job: nil           // the Markdown conversion under way
-        blocks: []            // word.inspect blocks of the previewed document
-        outline: []           // [{level text index}] headings among the blocks
-        section: -1           // the outline entry shown alone, or -1
-        shown: []             // the blocks the preview draws
-        shown_limit: 240      // how many of them it draws now ("Show more")
-        pending_delete: false
-        formats: [
-            {id: "pdf" name: "PDF" note: "For sharing and printing" state: "" text: ""}
-            {id: "md" name: "Markdown" note: "Plain text that keeps headings and lists" state: "" text: ""}
-            {id: "html" name: "Web page" note: "HTML for a browser or a website" state: "" text: ""}
-            {id: "odt" name: "OpenDocument" note: "For LibreOffice and other word processors" state: "" text: ""}
-        ]
-    }
-    mod.writer = st
-}
-let months = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
-
-// ---- small helpers -------------------------------------------------------
-
 fn plural(n, one, many){
     if n == 1 { return "1 " + one }
     return "" + n + " " + many
 }
-// How long ago `t` was, in words. Relative times need no time zone: the
-// runtime's local_time() is UTC unless the host sets an offset, and the
-// shells do not set one yet.
-fn when(t){
-    if t == nil || t == 0 { return "" }
-    let d = time_now() - t
-    if d < 60 { return "just now" }
-    if d < 3600 { return "" + floor(d / 60) + " min ago" }
-    if d < 86400 { return "" + floor(d / 3600) + " h ago" }
-    let days = floor(d / 86400)
+// How long `seconds` is, said as a time ago, up to 45 days; nil beyond that
+// (when() names the month then). A relative time needs no time zone.
+fn ago(seconds){
+    if seconds < 60 { return "just now" }
+    if seconds < 3600 { return "" + floor(seconds / 60) + " min ago" }
+    if seconds < 86400 { return "" + floor(seconds / 3600) + " h ago" }
+    let days = floor(seconds / 86400)
     if days < 2 { return "1 day ago" }
     if days < 45 { return "" + days + " days ago" }
-    let m = local_time(t)
-    return months[m.month - 1] + " " + m.year
+    return nil
 }
 fn size_text(bytes){
     if bytes < 1024 { return "" + bytes + " bytes" }
@@ -129,9 +88,11 @@ fn size_text(bytes){
 }
 fn leaf(path){ return path.replace(regex("^.*/"), "") }
 // Words as the engine counts them: a numbered item's "1." becomes the list's
-// numbering in the document, not a word.
+// numbering in the document, not a word. (Each line is matched after a
+// newline: in a global match, the runtime dropped the match `^` made at the
+// start of the text once more matches followed.)
 fn count_words(text){
-    return text.match_str(regex("\\S*\\w\\S*", "g")).len() - text.match_str(regex("(?:^|\\n)[ \\t]*\\d+[.)][ \\t]", "g")).len()
+    return text.match_str(regex("\\S*\\w\\S*", "g")).len() - ("\n" + text).match_str(regex("\\n[ \\t]*\\d+[.)][ \\t]", "g")).len()
 }
 // At most `n` characters of `s` (to_chars gives the character codes, and
 // to_string turns the shortened codes back into text).
@@ -180,8 +141,7 @@ fn shown_title(d){
     if d.title == "" { return "Untitled" }
     return d.title
 }
-fn remove_file(path){ if fs.exists(path) { fs.remove(path) } }
-fn draft_path(d){ return "drafts/" + d.id + ".txt" }
+// The list with `d` first and no other entry of the same id.
 fn front(d, list){
     let out = [d]
     for x in list { if x.id != d.id { out.push(x) } }
@@ -190,9 +150,8 @@ fn front(d, list){
 
 // The draft as the engine's Markdown: every line its own paragraph, except
 // consecutive list items and table rows, which stay together. Indentation is
-// held under four spaces so no line turns into a code block. Long drafts are
-// converted a slice per turn, inside the per-turn instruction budget; the
-// regular expressions use whole matches only.
+// held under four spaces so no line turns into a code block. The regular
+// expressions use whole matches only.
 let item_re = regex("^[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]")
 let deep_re = regex("^ *\\t|^    ")     // a tab counts as four columns
 let lead_re = regex("^[ \\t]+")
@@ -203,14 +162,15 @@ fn line_kind(line){
     if line.search(item_re) == 0 { return "item" }
     return "text"
 }
-fn to_markdown(text, done){
-    st.md_job = {lines: text.replace(regex("\\r", "g"), "").split("\n") i: 0 out: "" prev: "" done: done}
-    md_step()
+// A conversion: the lines, how far it got and what it made so far.
+fn md_job(text){
+    return {lines: text.replace(regex("\\r", "g"), "").split("\n") i: 0 out: "" prev: "" done: nil}
 }
-// Each turn joins a slice of lines in small groups: a string grows by copying,
-// so one long running concatenation would spend the script heap.
-fn md_step(){
-    let job = st.md_job
+// Converts the next slice of up to 240 lines, joined in small groups: a
+// string grows by copying, so one long running concatenation would spend
+// the script heap. True once the whole draft is converted. The app runs one
+// slice per turn, inside the per-turn instruction budget.
+fn md_slice(job){
     let end = min(job.i + 240, job.lines.len())
     let chunk = ""
     while job.i < end {
@@ -232,53 +192,171 @@ fn md_step(){
         chunk = chunk + group
     }
     job.out = job.out + chunk
-    if job.i < job.lines.len() {
-        start_timeout(0.0, || md_step())
-        return
-    }
-    st.md_job = nil
-    let done = job.done
-    done(job.out)
+    return job.i >= job.lines.len()
+}
+// A whole (short) draft at once.
+fn markdown_of(text){
+    let job = md_job(text)
+    loop { if md_slice(job) { break } }
+    return job.out
 }
 
-// A file name from the title, unique among this app's documents.
+// A file name from the title.
 fn stem_of(title){
     let s = title.replace(regex("[\\\\/:*?\"<>|]+", "g"), " ").replace(regex("\\s+", "g"), " ").trim()
     s = clip(s, 60).replace(regex("…$"), "").trim()
     if s == "" { s = "Untitled" }
     return s
 }
-fn docx_name(d){
+// Where `d` is saved: documents/<title>.docx, numbered when another of
+// `docs` already has that name.
+fn docx_name(d, docs){
     let stem = stem_of(d.title)
     let name = "documents/" + stem + ".docx"
     let n = 2
     loop {
         let taken = false
-        for x in st.docs { if x.id != d.id && x.docx == name { taken = true } }
+        for x in docs { if x.id != d.id && x.docx == name { taken = true } }
         if !taken { return name }
         name = "documents/" + stem + " " + n + ".docx"
         n = n + 1
     }
+}
+// Where the copy of `docx` in format `id` goes.
+fn export_path(docx, id){
+    return "exports/" + stem_of(leaf(docx).replace(regex("\\.docx$"), "")) + "." + id
 }
 fn export_of(d, id){
     for e in d.exports { if e.format == id { return e } }
     return nil
 }
 
+// word.inspect's blocks. It always sends type, style and (for paragraphs)
+// text; list, props and the rest only when set, so those go through field().
+fn heading_level(b){
+    if b.type != "paragraph" { return 0 }
+    let style = b.style
+    if style == "Title" || style == "Heading1" { return 1 }
+    if style == "Heading2" { return 2 }
+    if style == "Heading3" { return 3 }
+    if style == "Heading4" || style == "Heading5" || style == "Heading6" { return 4 }
+    return 0
+}
+// How the preview draws a block.
+fn kind_of(b){
+    if b.type == "table" { return "table" }
+    if b.type != "paragraph" { return "gap" }
+    let level = heading_level(b)
+    if level == 1 { return "h1" }
+    if level == 2 { return "h2" }
+    if level >= 3 { return "h3" }
+    let style = b.style
+    if style == "Quote" || style == "IntenseQuote" { return "quote" }
+    if style == "Code" { return "code" }
+    if style == "ListParagraph" { return "item" }
+    if b.text.trim() == "" {
+        if field(field(b, "props", {}), "borders", nil) != nil { return "rule" }
+        return "gap"
+    }
+    return "para"
+}
+fn list_indent(b){
+    let list = field(b, "list", nil)
+    if list == nil { return 0 }
+    return field(list, "level", 0) * 18
+}
+// The outline: the headings of levels 1 to 3 that have text, with their
+// block's index.
+fn outline_of(blocks){
+    let list = []
+    let i = 0
+    for b in blocks {
+        let level = heading_level(b)
+        if level > 0 && level <= 3 && field(b, "text", "").trim() != "" { list.push({level: level text: b.text.trim() index: i}) }
+        i = i + 1
+    }
+    return list
+}
+// The blocks under outline entry `k` of `count` blocks: from its heading up
+// to the next heading of the same or a higher level.
+fn section_of(outline, k, count){
+    let stop = count
+    let j = k + 1
+    while j < outline.len() {
+        if outline[j].level <= outline[k].level { stop = outline[j].index break }
+        j = j + 1
+    }
+    return {start: outline[k].index stop: stop}
+}
+
+// What went wrong with an engine call, in words a person can act on.
+fn engine_message(what, error){
+    let e = ""
+    if error != nil { e = error }
+    if e.search("not granted") >= 0 && e.search("word") >= 0 {
+        return "Writer can't " + what + " yet: the word engine on this device isn't open to apps. Your draft is safe in Writer."
+    }
+    if e.search("no service answers") >= 0 {
+        return "Writer can't " + what + " here: this device has no word engine. Your draft is safe in Writer."
+    }
+    return "Writer couldn't " + what + ". The engine said: " + e
+}
+
+// ---- state ----------------------------------------------------------------
+// Everything Writer remembers is one object kept on `mod`. Switching between
+// light and dark runs this file again to restyle it: the widgets keep what
+// they show and the runtime keeps the `mod` entries this file made, but every
+// `let` starts over. So the rerun finds `mod.writer` here and goes on with it.
+
+let st = field(mod, "writer", nil)
+if st == nil {
+    st = {
+        docs: []              // [{id title snippet created updated words rev saved_rev saved_at docx exports}]
+        doc: nil              // the open document (an entry of docs)
+        doc_is_new: false     // made with New and not stored yet
+        kept_text: ""         // the open draft as last written to storage
+        draft_timer: nil
+        next_seq: 0
+        busy: false
+        busy_at: 0            // when the running engine action started
+        booted: false
+        screen: "docs"        // the pane on show: docs, editor, preview or export
+        md_job: nil           // the Markdown conversion under way
+        blocks: []            // word.inspect blocks of the previewed document
+        outline: []           // [{level text index}] headings among the blocks
+        section: -1           // the outline entry shown alone, or -1
+        shown: []             // the blocks the preview draws
+        shown_limit: 240      // how many of them it draws now ("Show more")
+        pending_delete: false
+        formats: [
+            {id: "pdf" name: "PDF" note: "For sharing and printing" state: "" text: ""}
+            {id: "md" name: "Markdown" note: "Plain text that keeps headings and lists" state: "" text: ""}
+            {id: "html" name: "Web page" note: "HTML for a browser or a website" state: "" text: ""}
+            {id: "odt" name: "OpenDocument" note: "For LibreOffice and other word processors" state: "" text: ""}
+        ]
+    }
+    mod.writer = st
+}
+let months = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
+// When `t` was, in words: a time ago, or the month after 45 days.
+fn when(t){
+    if t == nil || t == 0 { return "" }
+    let text = ago(time_now() - t)
+    if text != nil { return text }
+    let m = local_time(t)
+    return months[m.month - 1] + " " + m.year
+}
+
 // ---- storage ------------------------------------------------------------
 
+fn remove_file(path){ if fs.exists(path) { fs.remove(path) } }
+fn draft_path(d){ return "drafts/" + d.id + ".txt" }
 fn store_index(){
     let data = {schema: 1 docs: st.docs}
     fs.write("index.json", data.to_json())
 }
 fn boot(){
     if st.booted { resume() return }
-    if fs.exists("dev-fixtures.json") {
-        let f = fs.read("dev-fixtures.json").parse_json()
-        if f == nil { f = {} }
-        st.fixture = f
-    }
-    for badge in [ui.dev_docs ui.dev_editor ui.dev_preview ui.dev_export] { badge.set_visible(st.fixture != nil) }
     if fs.exists("index.json") {
         let v = fs.read("index.json").parse_json()
         if v != nil { st.docs = field(v, "docs", []) }
@@ -289,7 +367,6 @@ fn boot(){
 // After a restyle (see "state" above): the same screen, its lists drawn again
 // with the new look.
 fn resume(){
-    for badge in [ui.dev_docs ui.dev_editor ui.dev_preview ui.dev_export] { badge.set_visible(st.fixture != nil) }
     pane(st.screen)
     render_docs()
     if st.doc != nil && !is_busy() { refresh_editor(ui.editor_text.text()) }
@@ -310,28 +387,11 @@ start_timeout(1.5, || { if !st.booted { boot() } })
 
 // ---- engine -------------------------------------------------------------
 
-// Every word.* call goes through here, so the developer fixture can answer
-// it. The answer always arrives on a later turn: a refused request calls back
-// at once, inside host.request, and work done in that nested call is fragile.
+// Every word.* call goes through here. The answer always arrives on a later
+// turn: a refused request calls back at once, inside host.request, and work
+// done in that nested call is fragile.
 fn engine(method, args, done){
-    if st.fixture != nil {
-        let delay = field(st.fixture, "delay", 0.4)
-        start_timeout(delay, || done(fixture_answer(method, args)))
-        return
-    }
     host.request(method, args, fn(r){ start_timeout(0.01, || done(r)) })
-}
-// What went wrong, in words a person can act on.
-fn engine_message(what, error){
-    let e = ""
-    if error != nil { e = error }
-    if e.search("not granted") >= 0 && e.search("word") >= 0 {
-        return "Writer can't " + what + " yet: the word engine on this device isn't open to apps. Your draft is safe in Writer."
-    }
-    if e.search("no service answers") >= 0 {
-        return "Writer can't " + what + " here: this device has no word engine. Your draft is safe in Writer."
-    }
-    return "Writer couldn't " + what + ". The engine said: " + e
 }
 
 // ---- screens ------------------------------------------------------------
@@ -463,6 +523,24 @@ fn flush(){
     ui.tip.set_visible(false)
 }
 
+// The draft as Markdown (see md_slice), a slice per turn, then `done(md)`.
+fn to_markdown(text, done){
+    let job = md_job(text)
+    job.done = done
+    st.md_job = job
+    md_step()
+}
+fn md_step(){
+    let job = st.md_job
+    if !md_slice(job) {
+        start_timeout(0.0, || md_step())
+        return
+    }
+    st.md_job = nil
+    let done = job.done
+    done(job.out)
+}
+
 // Save the draft as a Word document, then run `next`; `what` names the
 // action in messages ("save Word documents", "show a preview").
 // An action that never answered (a failed turn) frees the buttons again.
@@ -484,7 +562,7 @@ fn save_then(what, next){
     let d = st.doc
     let rev = d.rev
     let source = "work/" + d.id + ".md"
-    let out = docx_name(d)
+    let out = docx_name(d, st.docs)
     to_markdown(st.kept_text, fn(md){ convert_draft(what, next, d, rev, source, out, md) })
 }
 fn convert_draft(what, next, d, rev, source, out, md){
@@ -511,39 +589,6 @@ fn save_doc(){ save_then("save Word documents", || {}) }
 
 // ---- preview --------------------------------------------------------------
 
-fn heading_level(b){
-    if b.type != "paragraph" { return 0 }
-    let style = b.style
-    if style == "Title" || style == "Heading1" { return 1 }
-    if style == "Heading2" { return 2 }
-    if style == "Heading3" { return 3 }
-    if style == "Heading4" || style == "Heading5" || style == "Heading6" { return 4 }
-    return 0
-}
-// word.inspect always sends type, style and (for paragraphs) text; list,
-// props and the rest only when set, so those go through field().
-fn kind_of(b){
-    if b.type == "table" { return "table" }
-    if b.type != "paragraph" { return "gap" }
-    let level = heading_level(b)
-    if level == 1 { return "h1" }
-    if level == 2 { return "h2" }
-    if level >= 3 { return "h3" }
-    let style = b.style
-    if style == "Quote" || style == "IntenseQuote" { return "quote" }
-    if style == "Code" { return "code" }
-    if style == "ListParagraph" { return "item" }
-    if b.text.trim() == "" {
-        if field(field(b, "props", {}), "borders", nil) != nil { return "rule" }
-        return "gap"
-    }
-    return "para"
-}
-fn list_indent(b){
-    let list = field(b, "list", nil)
-    if list == nil { return 0 }
-    return field(list, "level", 0) * 18
-}
 fn open_preview(){
     if is_busy() || st.doc == nil { return }
     flush_now()
@@ -553,8 +598,7 @@ fn open_preview(){
     }
     // The engine works in Writer's own storage, so Writer can see whether the
     // saved document is still there; one that went missing is saved again.
-    // (The developer fixture writes no files.)
-    if st.fixture == nil && st.doc.docx != "" && !fs.exists(st.doc.docx) {
+    if st.doc.docx != "" && !fs.exists(st.doc.docx) {
         st.doc.docx = ""
         store_index()
     }
@@ -587,14 +631,7 @@ fn show_preview(d, info, r){
         return
     }
     st.blocks = field(r.data, "blocks", [])
-    let list = []
-    let i = 0
-    for b in st.blocks {
-        let level = heading_level(b)
-        if level > 0 && level <= 3 && field(b, "text", "").trim() != "" { list.push({level: level text: b.text.trim() index: i}) }
-        i = i + 1
-    }
-    st.outline = list
+    st.outline = outline_of(st.blocks)
     st.section = -1
     st.shown = st.blocks
     st.shown_limit = 240
@@ -609,17 +646,11 @@ fn show_preview(d, info, r){
 }
 fn show_section(k){
     st.section = k
-    let start = st.outline[k].index
-    let stop = st.blocks.len()
-    let j = k + 1
-    while j < st.outline.len() {
-        if st.outline[j].level <= st.outline[k].level { stop = st.outline[j].index break }
-        j = j + 1
-    }
+    let range = section_of(st.outline, k, st.blocks.len())
     let out = []
     let i = 0
     for b in st.blocks {
-        if i >= start && i < stop { out.push(b) }
+        if i >= range.start && i < range.stop { out.push(b) }
         i = i + 1
     }
     st.shown = out
@@ -667,7 +698,7 @@ fn export_as(f){
     f.text = ""
     ui.export_rows.render()
     let d = st.doc
-    let out = "exports/" + stem_of(leaf(d.docx).replace(regex("\\.docx$"), "")) + "." + f.id
+    let out = export_path(d.docx, f.id)
     engine("word.convert", {path: d.docx out: out format: f.id}, fn(r){
         st.busy = false
         if r.is_ok {
@@ -687,65 +718,6 @@ fn export_as(f){
     })
 }
 
-// ---- developer fixture ------------------------------------------------------
-// Answers word.* from the drafts when dev-fixtures.json exists (see the top).
-// {"delay": seconds, "fail": ["word.convert", …]} shape its answers.
-
-fn fixture_answer(method, args){
-    for m in field(st.fixture, "fail", []) {
-        if m == method { return {is_ok: false data: nil error: method + ": fixture failure (dev-fixtures.json)"} }
-    }
-    if method == "word.convert" {
-        let words = 0
-        for d in st.docs { if d.docx == args.path || "work/" + d.id + ".md" == args.path { words = d.words } }
-        return {is_ok: true data: {out: args.out format: args.format bytes: 6144 + words * 7} error: nil}
-    }
-    if method == "word.info" {
-        let words = 0
-        let paragraphs = 0
-        for d in st.docs {
-            if d.docx == args.path {
-                words = d.words
-                if fs.exists(draft_path(d)) { paragraphs = fixture_blocks(fs.read(draft_path(d))).len() }
-            }
-        }
-        return {is_ok: true data: {file: args.path pages: 1 + floor(words / 450) words: words paragraphs: paragraphs sections: 1 comments: 0 properties: {}} error: nil}
-    }
-    if method == "word.inspect" {
-        let text = ""
-        let words = 0
-        for d in st.docs {
-            if d.docx == args.path {
-                words = d.words
-                if fs.exists(draft_path(d)) { text = fs.read(draft_path(d)) }
-            }
-        }
-        return {is_ok: true data: {blocks: fixture_blocks(text) pages: 1 + floor(words / 450) words: words} error: nil}
-    }
-    return {is_ok: false data: nil error: method + ": not answered by the fixture"}
-}
-// Blocks shaped like word.inspect's, from the first 600 lines (one turn's
-// instruction budget; the engine itself sends up to 2000).
-let heading_re = regex("^#+\\s")
-let hashes_re = regex("^#+")
-fn fixture_blocks(text){
-    let out = []
-    let i = 0
-    for line in text.split("\n") {
-        if i >= 600 { break }
-        let t = line.trim()
-        let kind = "Normal"
-        if t.search(heading_re) == 0 { kind = "Heading" + min(t.match_str(hashes_re).value.len(), 6) }
-        if kind == "Normal" && t.search(item_re) == 0 { kind = "ListParagraph" }
-        if kind == "Normal" && t.search(">") == 0 { kind = "Quote" }
-        let body = clean_line(t)
-        if kind == "ListParagraph" { out.push({index: i type: "paragraph" style: kind text: body list: {num: 1 level: 0}}) }
-        if kind != "ListParagraph" && t != "" { out.push({index: i type: "paragraph" style: kind text: body}) }
-        i = i + 1
-    }
-    return out
-}
-
 // ---- look -------------------------------------------------------------------
 
 let ink = ui_ink
@@ -761,8 +733,6 @@ let Bar = UiButton{}
 let Primary = UiPrimary{}
 let Caption = UiCaption{}
 let TopBar = View{width: Fill height: 56 flow: Right align: Align{y: 0.5} padding: Inset{left: 8 right: 12} spacing: 6}
-let DevBadge = RoundedView{visible: false width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 3 bottom: 3} show_bg: true draw_bg +: {color: #xb35c00 border_radius: 7.0}
-    Label{text: "Fixture engine" draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 11}}}}
 let Notice = RoundedView{visible: false width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 14 right: 6 top: 6 bottom: 6}
     show_bg: true draw_bg +: {color: ui_field border_radius: 12.0}}
 let NoticeText = Label{width: Fill text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 13 line_spacing: 1.35}}}
@@ -787,10 +757,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                 View{width: Fill height: 1}
                 new_top := Primary{visible: false text: "New document" on_click: || new_doc()}
             }
-            View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
-                dev_docs := DevBadge{}
-                doc_count := Caption{visible: false width: Fit text: ""}
-            }
+            doc_count := Caption{visible: false width: Fit text: ""}
         }
         doc_rows := ScrollYView{width: Fill height: Fill flow: Down spacing: 10 padding: Inset{left: 14 right: 14 top: 6 bottom: 24} on_render: || {
             View{width: Fill height: 1}
@@ -845,7 +812,6 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
             }
         }
         View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{left: 12 right: 12 top: 6 bottom: 10} spacing: 8
-            dev_editor := DevBadge{}
             tip := Caption{visible: false width: Fill max_width: 760 text: "Start a line with # for a heading, - for a list or > for a quote. Writer keeps the draft as you type."}
             Paper{padding: Inset{left: 26 right: 26 top: 22 bottom: 18}
                 editor_text := TextInput{width: Fill height: Fill is_multiline: true margin: 0 padding: Inset{right: 6} empty_text: "Start writing…"
@@ -883,7 +849,6 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
         }
         ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} spacing: 12 padding: Inset{left: 12 right: 12 top: 4 bottom: 28}
             View{width: Fill max_width: 760 height: Fit flow: Down spacing: 6 padding: Inset{left: 8}
-                dev_preview := DevBadge{}
                 preview_info := Caption{text: ""}
             }
             outline_card := UiCard{visible: false max_width: 760 padding: Inset{left: 18 right: 18 top: 14 bottom: 14} spacing: 8
@@ -965,10 +930,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
         }
         ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 4 bottom: 28}
             View{width: Fill max_width: 760 height: Fit flow: Down spacing: 4 padding: Inset{left: 6 bottom: 6}
-                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10
-                    Label{padding: 0 text: "Export a copy" draw_text +: {color: ink text_style: theme.font_bold{font_size: 24}}}
-                    dev_export := DevBadge{}
-                }
+                Label{padding: 0 text: "Export a copy" draw_text +: {color: ink text_style: theme.font_bold{font_size: 24}}}
                 export_doc := Label{padding: 0 width: Fill text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 15}}}
                 Caption{text: "Writer converts the saved Word document and keeps the copy with your documents."}
             }

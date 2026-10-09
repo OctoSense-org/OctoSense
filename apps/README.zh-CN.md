@@ -189,9 +189,9 @@ OctoSense-System-Apps 仓库（已归档）。
   Markdown），在预览中重新打开（`word.info`、`word.inspect`），编辑后覆盖保存当前文档并再次打开，
   并导出为 PDF、Markdown、HTML 和 OpenDocument（`exports/`）。损坏的 DOCX 显示了引擎的拒绝信息，
   丢失的 DOCX 会在预览前重新保存。在浅色与深色之间切换后，打开的文档和它的预览都保留，
-  切换后输入的文字也被保留并保存。在 `card-host` 中（412 点宽与 1100×760 的窗口），没有引擎时的
-  各个界面回答“Writer 暂时无法……”并保留草稿；保存、预览和导出也用开发者 fixture（见下文）
-  运行过。Writer 只在桌面端，所以没有手机上的运行。
+  切换后输入的文字也被保留并保存。`card-host` 没有 `word` 服务，保存和预览在那里回答
+  “Writer can't … here: this device has no word engine”并保留草稿；`writer/tests/ui.py` 在那里以浅色和深色运行
+  每个界面（见下文的 Writer 的测试）。Writer 只在桌面端，所以没有手机上的运行。
 - Camera 和 AI providers 自带 PNG 启动器图案，YouTube、Quick Deck 和 Writer 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
@@ -251,6 +251,7 @@ pdftools/                    PDF Tools：bundle/、tests/ui.py（在隐藏的 Sh
 ../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card
 ai-providers/                `llm` 宿主服务（host-service/）和 octosense-llm-config（config/：
                              octos 模型目录与服务商注册表、profile 合并、OCTOS1/OCTOS1E 二维码）
+writer/                      Writer：bundle/、tests/ui.py（它的 card-host 界面测试）、dev-fixture/engine.splash（该测试换入的替身 word 引擎；不随应用发布）
 reference/                   reference 模块
 appcard/                     原生 AppCard 助手
   app/                       octos-app 及 store/transport/render crate（根 workspace 的成员）
@@ -395,11 +396,26 @@ python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-hos
 `fail` 指定失败的调用（`new`、`info`、`render`、`convert` 或 `all`），
 `unreadable: true` 让 `render` 正常应答但不留下图片，于是每张幻灯片显示其文字。
 
-**Writer 的开发者 fixture。** 要在没有 `word` 引擎的情况下验证 Writer 的保存、预览和导出界面，
-在 Writer 的存储 jail 中（`card-host` 下是 `<app-data>/os.writer/`）放一个 `dev-fixtures.json`：
-内容写 `{}` 即可，`{"delay": 3, "fail": ["word.convert"]}` 会让回答变慢或让某个方法失败。
-此时 Writer 自己根据草稿回答 `word.convert`、`word.info` 和 `word.inspect`，并在每个界面上显示
-“Fixture engine”标记。Writer 从不写这个文件；删除它即可回到真实引擎。
+**Writer 的测试。** 发布的应用包只有一条引擎路径 `host.request("word.*")`，不含 fixture 代码。
+它的文本规则（列表为草稿显示什么、交给引擎的 Markdown、文件名、大纲、相对时间以及拒绝时的提示）
+都是纯函数，由 `../crates/shell/src/writer_model_tests.rs` 在脚本 VM 中运行：
+
+```sh
+cargo test --locked -p octosense-shell --lib writer_model
+```
+
+`card-host` 没有 `word` 服务，所以 `writer/tests/ui.py` 在隐藏的 `card-host` 中以浅色和深色
+驱动每个界面。前几轮直接使用发布的应用包：写作、列表、重启后仍在的自动保存、删除，以及
+“Writer can't … here: this device has no word engine”的回答。其余几轮使用应用包的临时副本，其中 `engine()`
+被换成 `writer/dev-fixture/engine.splash`：一个替身引擎，在应用存储中读写每次调用给出的路径，
+设置（`delay`、`fail`）放在存储中的 `dev/fixture.json`。
+
+```sh
+python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/writer-ui
+```
+
+截图和每种外观的回执保存在 `target/writer-ui/light` 和 `target/writer-ui/dark`。
+真实引擎的流程已在 Shell 中验证（见上文的状态）。
 
 ## 宿主服务与面板
 

@@ -247,10 +247,11 @@ reaches only the hosts the manifest lists.
   (`exports/`). A damaged DOCX showed the engine's refusal, and a DOCX that
   went missing was saved again before the preview. Switching between light
   and dark kept the open document and its preview, and text typed after the
-  switch was kept and saved. In `card-host` (412-point and 1100×760
-  windows), the screens without an engine answer "Writer can't … yet" and
-  keep the draft; Save, Preview and Export also ran against the developer
-  fixture (below). Writer is desktop only, so there is no phone run.
+  switch was kept and saved. In `card-host`, which has no `word` service,
+  Save and Preview answer "Writer can't … here: this device has no word
+  engine" and keep the draft; `writer/tests/ui.py` runs every screen there,
+  light and dark (see Writer's tests, below). Writer is desktop only, so
+  there is no phone run.
 - Camera and AI providers ship PNG launcher artwork; YouTube, Quick Deck and
   Writer ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
@@ -319,6 +320,7 @@ pdftools/                    PDF Tools: bundle/, tests/ui.py (its hidden-shell j
 ../crates/shell/src/glance_notice.rs   shared notice service; ../crates/shell/resources/glance/notice.card
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
+writer/                      Writer: bundle/, tests/ui.py (its card-host UI test), dev-fixture/engine.splash (the stand-in word engine that test swaps in; never shipped)
 reference/                   the reference module
 appcard/                     the native AppCard assistant
   app/                       octos-app + store/transport/render crates (members of the root workspace)
@@ -477,13 +479,31 @@ call takes, `fail` names a call that fails (`new`, `info`, `render`, `convert`
 or `all`), and `unreadable: true` answers `render` without leaving a picture,
 so each slide shows its text.
 
-**Writer's developer fixture.** To exercise Writer's Save, Preview and Export
-screens without the `word` engine, put a `dev-fixtures.json` file in Writer's
-storage jail (`<app-data>/os.writer/` for `card-host`): `{}` is enough, and
-`{"delay": 3, "fail": ["word.convert"]}` slows the answers down or makes a
-method fail. Writer then answers `word.convert`, `word.info` and `word.inspect`
-itself, from the drafts, and shows a "Fixture engine" badge on every screen. Writer never
-writes that file; delete it to go back to the real engine.
+**Writer's tests.** The shipped bundle has one engine path,
+`host.request("word.*")`, and no fixture code. Its text rules (what the list
+shows for a draft, the Markdown it hands the engine, the file names, the
+outline, relative times and what a refusal says) are pure functions, run in a
+script VM by `../crates/shell/src/writer_model_tests.rs`:
+
+```sh
+cargo test --locked -p octosense-shell --lib writer_model
+```
+
+`card-host` has no `word` service, so `writer/tests/ui.py` drives every screen
+in a hidden `card-host`, light and dark. Its first runs use the shipped bundle
+as it is: writing, the list, autosave across a restart, deleting, and the
+"Writer can't … here" answers. The other runs use a scratch copy of the bundle
+with `writer/dev-fixture/engine.splash` in place of `engine()`: a stand-in
+that reads and writes the paths each call gives it in the app's storage, with
+its settings (`delay`, `fail`) in the storage as `dev/fixture.json`.
+
+```sh
+python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/writer-ui
+```
+
+The grabs and a receipt per appearance land in `target/writer-ui/light` and
+`target/writer-ui/dark`. The real engine's flows were checked in a shell
+(Status, above).
 
 ## Host services and sheets
 
