@@ -93,6 +93,20 @@ fn one_transfer_reservation_is_released_on_cancellation() {
     assert!(Reservation::acquire().is_err());
     drop(pending);
     assert!(Reservation::acquire().is_ok());
+
+    let pending = Arc::new(Reservation::acquire().unwrap());
+    let worker = pending.clone();
+    let guard = FileDialogAccessGuard::new(move || {
+        let _keep_slot = &worker;
+        false
+    });
+    drop(pending);
+    assert!(
+        Reservation::acquire().is_err(),
+        "a cancelled provider read still owns its slot until it returns"
+    );
+    drop(guard);
+    assert!(Reservation::acquire().is_ok());
 }
 
 #[test]

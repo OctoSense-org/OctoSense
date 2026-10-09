@@ -32,8 +32,8 @@ Imports use the existing 1 MiB per-file limit, granted whole-jail byte quota, an
 streams, and Windows device names. Import commit runs between script turns,
 sharing the existing filesystem quota writer. Native selection loading and export
 destination IO run on the existing bounded task pool. A single transfer reservation
-limits concurrent dialogs and export snapshots; a blocked export provider retains
-that reservation until its worker returns.
+limits concurrent dialogs and snapshots; a blocked import or export provider retains
+that reservation until its worker returns, even after the app closes or times out.
 
 Requests expire after five minutes. Closing an app invalidates its request, and a
 late dialog result cannot import or start an export. A native dialog already on

@@ -18,7 +18,7 @@ use std::{
     cell::RefCell,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -131,7 +131,7 @@ struct Work {
     reply: Replier,
     operation: Operation,
     manifest: Option<Value>,
-    _reservation: Reservation,
+    _reservation: Arc<Reservation>,
 }
 impl Work {
     fn authorized(&self) -> Result<(), String> {
@@ -241,7 +241,7 @@ impl HostService for FilesService {
             reply,
             operation,
             manifest: None,
-            _reservation: reservation,
+            _reservation: Arc::new(reservation),
         });
         SignalToUI::set_ui_signal();
     }
@@ -295,11 +295,16 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
             let reply = work.reply.clone();
             let app = work.call.app_id.clone();
             let manifest = work.manifest.clone();
+            // The native loader can outlive Pending: a provider read already
+            // in progress may block even after close/timeout revokes the reply.
+            // Keep its one-transfer slot until the guard/worker is dropped.
+            let reservation = work._reservation.clone();
             let dialog = FileDialog::new()
                 .set_id(id)
                 .set_multiple(false)
                 .set_persistent_access(false)
                 .set_access_guard(FileDialogAccessGuard::new(move || {
+                    let _keep_slot = &reservation;
                     check_authorization(reply.is_pending(), manifest.as_ref(), || {
                         admission(&app, true)
                     })
