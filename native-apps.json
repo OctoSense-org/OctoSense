@@ -2,6 +2,44 @@
   "schema": 1,
   "apps": [
     {
+      "id": "updater",
+      "crate": "octosense-updater-ui",
+      "source": {
+        "path": "crates/updater-ui"
+      },
+      "module": "octosense_updater_ui::UPDATER_MODULE",
+      "bin": null,
+      "default_features": true,
+      "crate_features": [],
+      "implies": [],
+      "hosting": {
+        "macos": "module",
+        "windows": "module",
+        "linux": "module",
+        "android": "module",
+        "ios": "module",
+        "ohos": "module"
+      },
+      "shells": {
+        "desktop": "default",
+        "phone": "default"
+      },
+      "native_mobile": "always",
+      "sandbox": {
+        "network": "any",
+        "processes": false
+      },
+      "storage": {
+        "accounts": false,
+        "agent_workspace": "none",
+        "external": []
+      },
+      "agent": {
+        "octos": [],
+        "tools": null
+      }
+    },
+    {
       "id": "rinx",
       "crate": "rinx",
       "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.1.0", "rev": "4b89097d8791a7190d01de1c576979c93df0013d", "local": null },

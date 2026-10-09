@@ -1,5 +1,6 @@
 """Tests for desktop/scripts/package.py (no build, no network)."""
 import hashlib
+import contextlib
 import importlib.util
 import io
 import json
@@ -232,12 +233,79 @@ class VersionTests(unittest.TestCase):
     def test_the_version_comes_from_a_desktop_tag(self):
         self.assertEqual(package.version_from_tag("desktop-v0.2.0"), "0.2.0")
         self.assertEqual(package.version_from_tag("refs/tags/desktop-v1.0.0-rc.1"), "1.0.0-rc.1")
-        for tag in ("home-v0.2.0", "rom-v20260919-j", "desktop-0.2.0", "desktop-v0.2", "desktop-vX"):
+        for tag in ("home-v0.2.0", "rom-v20260919-j", "desktop-0.2.0", "desktop-v0.2", "desktop-vX",
+                    "desktop-v01.2.3", "desktop-v1.2.3-rc..1", "desktop-v1.2.3-rc.01"):
             with self.assertRaises(ValueError, msg=tag):
                 package.version_from_tag(tag)
 
     def test_the_default_version_is_the_packages(self):
         self.assertRegex(package.cargo_version(), r"^\d+\.\d+\.\d+")
+
+    def test_release_identity_requires_explicit_consistent_release_input(self):
+        self.assertEqual(package.release_identity(), "")
+        self.assertEqual(package.release_identity("1.2.3-rc.1"), "desktop-v1.2.3-rc.1")
+        self.assertEqual(package.release_identity(tag="refs/tags/desktop-v1.2.3"), "desktop-v1.2.3")
+        for version, tag in (("1.0.0", "desktop-v2.0.0"), ("dev", None), (None, "home-v1.0.0")):
+            with self.assertRaises(ValueError):
+                package.release_identity(version, tag)
+
+    def test_reused_binary_cannot_be_relabelled_or_changed_since_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "octosense"
+            binary.write_bytes(b"synthetic executable")
+            with self.assertRaisesRegex(RuntimeError, "receipt"):
+                package.verify_release_identity(binary, "desktop-v1.0.0")
+            package.record_release_identity(binary, "desktop-v1.0.0")
+            package.verify_release_identity(binary, "desktop-v1.0.0")
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                package.verify_release_identity(binary, "desktop-v2.0.0")
+            binary.write_bytes(b"different executable")
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                package.verify_release_identity(binary, "desktop-v1.0.0")
+
+    def test_print_env_overrides_inherited_release_tag_for_development_build(self):
+        for args, expected in (([], ""), (["--version-from-tag", "desktop-v1.0.0-rc.1"], "desktop-v1.0.0-rc.1")):
+            output = io.StringIO()
+            with mock.patch.dict(os.environ, {"OCTOSENSE_RELEASE_TAG": "desktop-v99.0.0"}), contextlib.redirect_stdout(output):
+                package.main(["--print-env", *args])
+            self.assertEqual(json.loads(output.getvalue())["OCTOSENSE_RELEASE_TAG"], expected)
+
+    def test_native_layout_binds_windows_receipt_and_packaging_to_the_target(self):
+        root = Path("/build/root with spaces")
+        directory, binary, options = package.native_build_layout(root, "windows", "x86_64-pc-windows-msvc")
+        self.assertEqual(binary, directory / "octosense.exe")
+        self.assertEqual(directory, root / "target/x86_64-pc-windows-msvc/release")
+        self.assertEqual(options, ["--target", "x86_64-pc-windows-msvc", "--target-dir", str(root / "target")])
+
+    @unittest.skipUnless(shutil.which("cargo") and shutil.which("rustc"), "requires installed Rust tools")
+    def test_real_cargo_target_overrides_cannot_bless_a_stale_release_binary(self):
+        # A dependency-free Cargo fixture exercises real config/env precedence;
+        # it does not build OctoSense, download dependencies, or run an installer.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "src").mkdir()
+            (root / "Cargo.toml").write_text('[package]\nname="octosense"\nversion="0.1.0"\nedition="2021"\n[workspace]\n')
+            (root / "src/main.rs").write_text('fn main() { println!("{}", env!("OCTOSENSE_RELEASE_TAG")); }\n')
+            env = dict(os.environ, OCTOSENSE_RELEASE_TAG="desktop-v1.2.3-rc.4")
+            # An existing normal-path executable must never get the new tag.
+            stale = root / "target/release" / ("octosense.exe" if os.name == "nt" else "octosense")
+            stale.parent.mkdir(parents=True)
+            stale.write_bytes(b"old build -- must not be packaged")
+            subprocess_args = {"cwd": root, "env": env, "check": True, "capture_output": True, "text": True}
+            package.subprocess.run(["cargo", "generate-lockfile", "--offline"], **subprocess_args)
+            (root / ".cargo").mkdir()
+            (root / ".cargo/config.toml").write_text('[build]\ntarget="not-a-real-config-target"\ntarget-dir="other-config-target"\n')
+            env.update(CARGO_TARGET_DIR=str(root / "other-env-target"), CARGO_BUILD_TARGET="not-a-real-env-target")
+            directory, binary, options = package.native_build_layout(root, package.host_os(), package.host_triple())
+            package.subprocess.run(["cargo", "build", "--locked", "--offline", "--release", "-p", "octosense", *options], **subprocess_args)
+            self.assertEqual(package.subprocess.check_output([str(binary)], text=True).strip(), "desktop-v1.2.3-rc.4")
+            package.record_release_identity(binary, env["OCTOSENSE_RELEASE_TAG"])
+            package.verify_release_identity(binary, env["OCTOSENSE_RELEASE_TAG"])
+            self.assertFalse(stale.with_name(stale.name + ".release-identity.json").exists())
+            self.assertEqual(stale.read_bytes(), b"old build -- must not be packaged")
+            self.assertEqual(binary.parent, directory)
+            self.assertFalse((root / "other-env-target").exists())
+            self.assertFalse((root / "other-config-target").exists())
 
 
 class EnvironmentTests(unittest.TestCase):

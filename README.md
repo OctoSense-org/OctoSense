@@ -6,6 +6,8 @@ English | [简体中文](README.zh-CN.md)
 
 [Host OS API status](docs/host-os-api-status.md) tracks file, location and external-link support, existing services, remaining gaps and validation limits.
 
+[OctoSense Updates](docs/updater.md) checks and downloads verified host releases, then opens the OS installation flow. It ships in builds containing this change; older releases need one manual upgrade first.
+
 **Desktop download:** [OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) supports the current App Hub catalog, GitHub-attested app releases and the public host APIs declared by SDK 1.10.0. Choose the asset for your operating system and architecture; the release notes record prerequisites, signing status and platform validation. This desktop release does not update Android Home.
 
 Run the [live Mail → card → Calendar demo](docs/demos/mail-calendar/README.md) with your own mailbox: pinned source, selective policy, fictional test inputs, human draft edits and Calendar navigation.

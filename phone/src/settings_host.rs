@@ -185,10 +185,13 @@ impl App {
     /// that hosts it is linked, i.e. the launcher could open it.
     fn settings_system_app_available(&self, app: SystemApp) -> bool {
         let lookup = || crate::clients::find_app(app.launcher_id())
-            .is_some_and(|def| crate::apps::card_manifest_id(&def) == Some(app.manifest_id()))
+            .is_some_and(|def| crate::apps::card_manifest_id(&def) == app.manifest_id())
             && self.apps.hosting(app.launcher_id()) == crate::apps::Hosting::Module
             && self.apps.module(app.launcher_id()).is_some();
-        match app { SystemApp::AiProviders => *self.settings_runtime.ai_providers.get_or_init(lookup) }
+        match app {
+            SystemApp::AiProviders => *self.settings_runtime.ai_providers.get_or_init(lookup),
+            SystemApp::Updater => self.apps.module("updater").is_some() && self.apps.hosting("updater") == crate::apps::Hosting::Module,
+        }
     }
     fn settings_snapshot(&self) -> SettingsSnapshot {
         let Some(state) = &self.state else { return SettingsSnapshot::default(); };
@@ -224,6 +227,7 @@ impl App {
             sounds:self.settings_runtime.sounds.snapshot.clone(),sounds_loading:self.settings_runtime.sounds.loading(),sounds_error:self.settings_runtime.sounds.error.clone(),
             notification_history:self.settings_runtime.history.snapshot.clone(),history_loading:self.settings_runtime.history.loading(),history_error:self.settings_runtime.history.error.clone(),
             ai_providers:self.settings_system_app_available(SystemApp::AiProviders),
+            updater:self.settings_system_app_available(SystemApp::Updater),
             developer:developer_options(self.developer_options_shown()),
         }
     }
@@ -823,7 +827,7 @@ mod tests {
         // The launcher id is a registered system app backed by its App Hub bundle.
         #[cfg(feature = "app-hub")]
         assert!(crate::apps::bundled_catalog().iter().any(|app| app.id == SystemApp::AiProviders.launcher_id()
-            && crate::apps::card_manifest_id(app) == Some(SystemApp::AiProviders.manifest_id())));
+            && crate::apps::card_manifest_id(app) == SystemApp::AiProviders.manifest_id()));
     }
     fn pending(id: i64, device: bool) -> Pending {
         Pending { id, client: 3, root: WidgetUid(7), deadline: 20.0, device }
