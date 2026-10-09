@@ -2,7 +2,7 @@
 
 English | [简体中文](host-os-api-status.zh-CN.md)
 
-This page describes the **OS and public API integration** prepared for Desktop RC2 and Home beta2. It connects existing native facilities to contained apps before adding more Rust engine APIs. The new public services use the source-pinned **app-contract 1.10.0**; see the SDK’s [published versions](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/app-contract#versions-on-cratesio) and OctoSense’s [release assets](https://github.com/OctoSense-org/OctoSense/releases) for distribution status. An existing installation needs a compatible host update. Source implementation, compilation, automated tests and real-device behavior are separate evidence.
+This page describes the **OS and public API integration** in [Desktop RC2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2). It connects existing native facilities to contained apps before adding more Rust engine APIs. The public declarations are published in [**app-contract 1.10.0**](https://crates.io/crates/octosense-app-contract/1.10.0); the installed host must also implement each requested method on that platform. Updating the SDK or installing an app does not update the host. The published Android Home beta.1 does not include this batch; the isolated OnePlus acceptance APKs are not a Home release. Source implementation, compilation, automated tests and real-device behavior are separate evidence.
 
 ## What this batch adds
 

@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**Download:** [desktop 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) is the compatible release for the current App Hub catalog and GitHub-attested app bundles. Choose the package for your operating system and architecture; check its release notes and checksums. Embedded pages also need the [platform browser prerequisites](../docs/desktop-embedded-browser.md#runtime-requirements).
+**Download:** [desktop 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) supports the current App Hub catalog, GitHub-attested app bundles and SDK 1.10.0 public host APIs. Platform support and acceptance limits are listed in [Host OS API status](../docs/host-os-api-status.md). Choose the package for your operating system and architecture; check its release notes and checksums. Embedded pages also need the [platform browser prerequisites](../docs/desktop-embedded-browser.md#runtime-requirements).
 
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 

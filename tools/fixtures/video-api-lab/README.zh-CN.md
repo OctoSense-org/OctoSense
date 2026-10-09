@@ -4,7 +4,7 @@
 
 本测试使用五秒、无声的 H.264 视频，内容为三条色带和移动的白色标记，不包含私人媒体或外部素材。`tools/generate-video-fixture.swift` 使用已安装的 macOS SDK 生成该视频，生成器拒绝覆盖已有文件。
 
-尚未发布的运行时把现有原生 `Video` 播放器的控制方法开放给 Splash：
+运行时把现有原生 `Video` 播放器的控制方法开放给 Splash。SDK 1.10.0 将 `video.playback_controls@1` 声明为控件 ABI，而不是 `host.request` 方法；还需要兼容的宿主运行时。见[宿主分发状态](../../../docs/host-os-api-status.zh-CN.md)。控件方法如下：
 
 | 方法 | 返回值或参数 |
 | --- | --- |

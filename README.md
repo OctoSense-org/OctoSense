@@ -4,9 +4,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[Host OS API status](docs/host-os-api-status.md) tracks the unreleased file, location and external-link wiring, existing services, remaining gaps and validation limits.
+[Host OS API status](docs/host-os-api-status.md) tracks file, location and external-link support, existing services, remaining gaps and validation limits.
 
-**Desktop download:** [OctoSense 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) supports the current App Hub catalog, GitHub-attested app releases and shared host APIs. Choose the asset for your operating system and architecture; the release notes record prerequisites, signing status and platform validation. This desktop release does not update Android Home.
+**Desktop download:** [OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) supports the current App Hub catalog, GitHub-attested app releases and the public host APIs declared by SDK 1.10.0. Choose the asset for your operating system and architecture; the release notes record prerequisites, signing status and platform validation. This desktop release does not update Android Home.
 
 Run the [live Mail → card → Calendar demo](docs/demos/mail-calendar/README.md) with your own mailbox: pinned source, selective policy, fictional test inputs, human draft edits and Calendar navigation.
 
@@ -48,17 +48,17 @@ Android Home supports page swipes from either side edge; apps and opened cards r
 
 To read the code in order, start with [From an app window to an agent turn](docs/architecture-walkthrough.md). The [product walkthrough](desktop/docs/code-walkthrough.md) adds how to run each product.
 
-Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** The RC1 and older beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
+Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** The RC2, RC1 and older beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
 
-App Hub in desktop RC1 and this source build defaults to the GitHub-attested catalog and supports
-`publisher-github-v1` releases through app-contract 1.8.0. Developers request
+App Hub in desktop RC2 and this source build defaults to the GitHub-attested catalog and supports
+`publisher-github-v1` releases through app-contract 1.10.0. Developers request
 publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml);
 GitHub release proofs replace separate developer signing keys, while a Hub admin
 still approves admission. The first catalog fetch needs a network connection;
 an old offline catalog is not converted into a GitHub proof. Custom local test
 catalogs can explicitly select `OCTOSENSE_HUB_CATALOG=legacy` with a fresh app-data
 directory; a library with a v2 cache refuses that downgrade. Beta.2 does not
-support this publishing mode; use desktop RC1 for these app releases.
+support this publishing mode; use desktop RC2 for these app releases.
 
 ## How it fits together
 
