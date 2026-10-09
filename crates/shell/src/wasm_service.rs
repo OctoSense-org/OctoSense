@@ -78,6 +78,8 @@ fn area_env() -> Arc<dyn AreaEnv> {
 }
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
+/// Tests only: let components reach a local server (see [`Grants::http_local`]).
+static HTTP_LOCAL_FOR_TESTS: AtomicBool = AtomicBool::new(false);
 
 // ------------------------------------------------- a component's host calls
 
@@ -952,6 +954,9 @@ impl Lab {
             storage_dir: area.as_ref().map(|a| a.root.clone()),
             read_only: false,
             http_hosts: self.http_hosts.clone(),
+            // This device and its network are no app's to reach; only the
+            // service's own tests use a local server.
+            http_local: cfg!(test) && HTTP_LOCAL_FOR_TESTS.load(Ordering::Relaxed),
         };
         let app = self.app.clone();
         let host_calls = self.host_calls.clone();
@@ -2082,6 +2087,8 @@ mod tests {
         assert!(http_hosts(&manifest(false)).is_empty());
         let host_dir = root.join(".host");
         let runtime = runtime(&host_dir).unwrap();
+        // The server is on this device, which only a test may reach.
+        HTTP_LOCAL_FOR_TESTS.store(true, Ordering::Relaxed);
         let url = json!(format!("http://127.0.0.1:{port}/hi"));
         for granted in [true, false] {
             let admission = Admission {

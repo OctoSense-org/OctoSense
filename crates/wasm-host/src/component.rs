@@ -86,8 +86,12 @@ pub struct Grants {
     /// Open the storage folder read-only (its quota is used up).
     pub read_only: bool,
     /// The hosts its `wasi:http` requests may reach, by a script's rule
-    /// (`host`, or `host:port`). Empty: none.
+    /// (`host`, or `host:port`), over HTTPS. Empty: none.
     pub http_hosts: Vec<String>,
+    /// Let those requests reach this device and its local network too, over
+    /// plain HTTP as well (still only listed hosts): for tests and a
+    /// developer's runs. The shell never sets it.
+    pub http_local: bool,
 }
 
 /// One function an app may call, with its WIT-like signature.
@@ -295,7 +299,7 @@ impl Runtime {
             deadline: deadline.min(Instant::now() + call_deadline),
             pending,
         });
-        let mut hosts = net::Hosts::new(grants.http_hosts.clone());
+        let mut hosts = net::Hosts::new(grants.http_hosts.clone(), grants.http_local);
         hosts.deadline = Some(guard.deadline);
         let mut store = Store::new(
             &self.engine,

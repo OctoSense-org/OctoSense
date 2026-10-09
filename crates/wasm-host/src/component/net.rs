@@ -6,8 +6,13 @@
 //! listed `host:port` only that port. Nothing else is reachable, and with no
 //! hosts nothing at all, so a component may import `wasi:http` and still
 //! reach nothing until its app is granted hosts. The request is HTTPS, as
-//! the contract has it for an app's hosts, except to this device itself
-//! (`localhost`, `127.0.0.1`, `[::1]`), where plain HTTP is allowed too.
+//! the contract has it for an app's hosts, and it never goes to this device
+//! or its local network — loopback, private, link-local and similar
+//! addresses, `localhost` and `.local`-style or single-label names — even
+//! when the app lists one: the services there (the shell's own, a
+//! developer's) are no app's to reach. A test or a developer's run may allow
+//! them ([`super::Grants::http_local`]); the shell never does. A public name
+//! that resolves to a local address is not caught here (as for scripts).
 //!
 //! A request waits for the network outside the guest, where the deadline's
 //! epoch check cannot end it, so its timeouts (connect, first byte, between
@@ -23,6 +28,9 @@ use wasmtime_wasi_http::{Error, RequestOptions, WasiBody, WasiHttpHooks};
 #[derive(Debug, Default)]
 pub(crate) struct Hosts {
     hosts: Vec<String>,
+    /// This device and its local network too, over plain HTTP as well:
+    /// tests and developers' runs only.
+    local: bool,
     /// The running call's deadline, set for every call.
     pub(crate) deadline: Option<Instant>,
     /// The requests refused since the caller last asked: the host, and why.
@@ -30,9 +38,10 @@ pub(crate) struct Hosts {
 }
 
 impl Hosts {
-    pub(crate) fn new(hosts: Vec<String>) -> Hosts {
+    pub(crate) fn new(hosts: Vec<String>, local: bool) -> Hosts {
         Hosts {
             hosts,
+            local,
             ..Hosts::default()
         }
     }
@@ -57,11 +66,63 @@ impl Hosts {
         if !listed {
             return Err(NOT_LISTED);
         }
-        let this_device = matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]");
-        if uri.scheme() != Some(&http::uri::Scheme::HTTPS) && !this_device {
+        let local = is_local(&host);
+        if local && !self.local {
+            return Err("it is this device or its local network, which a component never reaches");
+        }
+        if uri.scheme() != Some(&http::uri::Scheme::HTTPS) && !(local && self.local) {
             return Err("it is plain HTTP; a component's requests use HTTPS");
         }
         Ok(())
+    }
+}
+
+/// Whether `host` (lowercased, as a URI writes it) names this device or its
+/// local network: makepad's `splash_policy::public_https_host`, inverted.
+fn is_local(host: &str) -> bool {
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = bare.parse::<std::net::IpAddr>() {
+        return !is_public_ip(ip);
+    }
+    // An IP in a form only some resolvers read as one (`0x7f.1`, `127.1`),
+    // or a single-label name, is not a public host either.
+    let last = host.rsplit('.').next().unwrap_or("");
+    let numeric = last.bytes().all(|b| b.is_ascii_digit()) || last.starts_with("0x");
+    numeric
+        || !host.contains('.')
+        || host.starts_with('[')
+        || host == "localhost"
+        || [".localhost", ".internal", ".local", ".lan", ".home.arpa"]
+            .iter()
+            .any(|suffix| host.ends_with(suffix))
+}
+
+fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_multicast()
+                || a == 0
+                || (a == 100 && (64..128).contains(&b)))
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+            let first = v6.segments()[0];
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80)
+        }
     }
 }
 
@@ -119,10 +180,14 @@ impl WasiHttpHooks for Hosts {
 mod tests {
     use super::*;
 
-    fn allows(hosts: &[&str], uri: &str) -> bool {
-        Hosts::new(hosts.iter().map(|h| h.to_string()).collect())
+    fn allows_with(local: bool, hosts: &[&str], uri: &str) -> bool {
+        Hosts::new(hosts.iter().map(|h| h.to_string()).collect(), local)
             .allows(&uri.parse().unwrap())
             .is_ok()
+    }
+
+    fn allows(hosts: &[&str], uri: &str) -> bool {
+        allows_with(false, hosts, uri)
     }
 
     /// A script's rule: a listed host matches any port and any case, a
@@ -134,9 +199,14 @@ mod tests {
             &["api.example.com"],
             "https://API.Example.com:8443/"
         ));
-        assert!(allows(&["127.0.0.1:8141"], "http://127.0.0.1:8141/x"));
-        assert!(!allows(&["127.0.0.1:8141"], "http://127.0.0.1:8142/x"));
-        assert!(!allows(&["127.0.0.1:8141"], "http://127.0.0.1/x"));
+        assert!(allows(
+            &["api.example.com:8443"],
+            "https://api.example.com:8443/"
+        ));
+        assert!(!allows(
+            &["api.example.com:8443"],
+            "https://api.example.com:9443/"
+        ));
         assert!(!allows(&["api.example.com"], "https://evil.example.com/"));
         assert!(!allows(&["example.com"], "https://api.example.com/"));
         assert!(!allows(
@@ -147,13 +217,41 @@ mod tests {
         assert!(!allows(&["api.example.com"], "/relative"));
     }
 
-    /// HTTPS, except to this device.
+    /// HTTPS only, and never this device or its local network, even listed.
     #[test]
-    fn plain_http_reaches_only_this_device() {
+    fn a_request_never_reaches_this_device_or_its_network() {
         assert!(!allows(&["api.example.com"], "http://api.example.com/"));
-        assert!(allows(&["localhost"], "http://localhost:8080/"));
-        assert!(allows(&["127.0.0.1"], "http://127.0.0.1:8080/"));
-        assert!(allows(&["[::1]"], "http://[::1]:8080/"));
-        assert!(!allows(&["192.168.1.2"], "http://192.168.1.2/"));
+        for (listed, url) in [
+            ("localhost", "https://localhost:8080/"),
+            ("127.0.0.1", "https://127.0.0.1:47631/"),
+            ("[::1]", "https://[::1]/"),
+            ("10.0.0.2", "https://10.0.0.2/"),
+            ("192.168.1.2", "https://192.168.1.2/"),
+            ("169.254.169.254", "https://169.254.169.254/"),
+            ("[fd00::1]", "https://[fd00::1]/"),
+            ("printer.local", "https://printer.local/"),
+            ("router.lan", "https://router.lan/"),
+            ("db.internal", "https://db.internal/"),
+            ("intranet", "https://intranet/"),
+            ("0x7f.1", "https://0x7f.1/"),
+            ("127.1", "https://127.1/"),
+        ] {
+            assert!(!allows(&[listed], url), "{url}");
+        }
+        assert!(allows(&["93.184.215.14"], "https://93.184.215.14/"));
+    }
+
+    /// A test or a developer's run may reach this device, over plain HTTP
+    /// too; still only the listed hosts.
+    #[test]
+    fn local_runs_may_reach_this_device() {
+        assert!(allows_with(true, &["127.0.0.1"], "http://127.0.0.1:8080/"));
+        assert!(allows_with(true, &["localhost"], "http://localhost:8080/"));
+        assert!(!allows_with(true, &["127.0.0.1"], "http://localhost:8080/"));
+        assert!(!allows_with(
+            true,
+            &["api.example.com"],
+            "http://api.example.com/"
+        ));
     }
 }

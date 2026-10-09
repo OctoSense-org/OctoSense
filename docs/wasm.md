@@ -87,8 +87,11 @@ two kinds apart by the file's preamble, and a bundle may carry both.
   and deleting give bytes back, so a component can free space.
 - **The network.** With the `net` capability, its `wasi:http` requests reach
   the app's `network.hosts` by a script's rule: the host listed exactly,
-  without regard to case, on any port. Requests use HTTPS, except to this
-  device itself (`localhost`, `127.0.0.1`, `[::1]`). A component that may
+  without regard to case, on any port. Requests use HTTPS, and never reach
+  this device or its local network, even when the app lists such a host:
+  not loopback, private or link-local addresses, nor `localhost`,
+  single-label or `.local`, `.lan`, `.internal` names. A public name that
+  resolves to a local address is not caught yet, as for scripts. A component that may
   reach the network gets 10 s a call instead of 2 s, and each request's
   connect, first-byte and between-bytes timeouts end with the call. A refused
   request fails inside the component (`HttpRequestDenied`), and the app's log

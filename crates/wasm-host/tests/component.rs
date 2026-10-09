@@ -160,6 +160,7 @@ fn files_live_only_in_the_granted_storage_folder() {
         storage_dir: Some(dir.clone()),
         read_only: false,
         http_hosts: Vec::new(),
+        http_local: false,
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
     let written = instance
@@ -191,6 +192,7 @@ fn files_live_only_in_the_granted_storage_folder() {
         storage_dir: Some(dir.clone()),
         read_only: true,
         http_hosts: Vec::new(),
+        http_local: false,
     };
     let mut reader = rt
         .instantiate_component(&program, &read_only, None)
@@ -233,6 +235,7 @@ fn the_storage_budget_refuses_growth_and_returns_freed_bytes() {
         storage_dir: Some(dir.clone()),
         read_only: false,
         http_hosts: Vec::new(),
+        http_local: false,
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
     assert_eq!(instance.storage_budget(), None);
@@ -334,6 +337,8 @@ fn http_reaches_only_the_apps_hosts() {
     let port = server.rsplit(':').next().unwrap().to_string();
     let grants = Grants {
         http_hosts: vec![server.clone()],
+        // A local test server: this device, which only a test may reach.
+        http_local: true,
         ..Grants::default()
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
@@ -382,6 +387,8 @@ fn a_request_that_never_answers_ends_at_the_deadline() {
     let server = serve(None);
     let grants = Grants {
         http_hosts: vec![server.clone()],
+        // A local test server: this device, which only a test may reach.
+        http_local: true,
         ..Grants::default()
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();

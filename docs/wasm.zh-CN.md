@@ -67,8 +67,10 @@ Rust crate 构建。服务按文件头区分两者，一个应用包可以同时
   流写入都报告为 I/O 错误。这时请求的错误以 "a write was refused: the storage budget is
   used up" 结尾。改写、截断和删除会归还字节，因此组件可以自己腾出空间。
 - **网络。** 应用有 `net` 能力时，组件的 `wasi:http` 请求按脚本的规则访问应用的
-  `network.hosts`：主机必须完全列出，不区分大小写，端口不限。请求使用 HTTPS，只有访问设备本身
-  （`localhost`、`127.0.0.1`、`[::1]`）时才允许普通 HTTP。可以访问网络的组件每次调用有 10 秒，
+  `network.hosts`：主机必须完全列出，不区分大小写，端口不限。请求使用 HTTPS，并且即使应用列出了
+  这样的主机，也绝不访问设备本身或其本地网络：不访问环回、私有或链路本地地址，也不访问
+  `localhost`、单标签名称或 `.local`、`.lan`、`.internal` 名称。解析为本地地址的公共名称目前还
+  检查不到，脚本也是如此。可以访问网络的组件每次调用有 10 秒，
   而不是 2 秒；每个请求的连接、首字节和字节间超时都随调用结束。被拒绝的请求在组件内部失败
   （`HttpRequestDenied`），应用的日志会说明原因："a request to … was refused: it is not one
   of the app's network hosts"。

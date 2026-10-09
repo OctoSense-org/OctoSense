@@ -89,7 +89,9 @@ component reaches only what its app may already reach.
      of the folder a call.
    - **`wasi:http` outgoing, phase 3:** only to the hosts in the manifest's
      `network.hosts` under `net`, by a script's rule (the host listed exactly,
-     any case, any port), over HTTPS except to the device itself. A request
+     any case, any port), over HTTPS, and never to the device itself or its
+     local network, even listed (stricter than a script's rule, which lets a
+     listed `127.0.0.1` reach every local service). A request
      waits outside the guest, where the epoch check cannot end it, so its
      timeouts are clamped to the call's deadline, which is 10 s for a
      component that may reach the network.

@@ -102,6 +102,7 @@ fn main() {
         storage_dir: Some(storage.clone()),
         read_only: false,
         http_hosts: Vec::new(),
+        http_local: false,
     };
     let with_files = median_us(50, || {
         drop(
