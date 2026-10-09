@@ -258,6 +258,14 @@ pub fn register_host_services() {
                 },
             })
         }));
+        // Provider sign-in sheets name the app from its admitted manifest and
+        // show GitHub's one-time code in a host-held panel (ADR 0010).
+        octosense_oauth_service::sign_in_code::register();
+        octosense_oauth_service::host::set_app_names(std::sync::Arc::new(|app| {
+            let (_, bundle) = crate::host_tools::script_apps::admitted_bundle(app).ok()?;
+            let loaded = crate::host_tools::script_apps::from_bundle(&bundle).ok()?;
+            loaded.manifest["name"].as_str().map(str::to_owned)
+        }));
         octosense_oauth_service::host_api::register_with_review_hook(
             crate::connected_review::connector_sheet,
         );
