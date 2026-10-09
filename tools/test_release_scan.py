@@ -50,7 +50,8 @@ class PatternTests(unittest.TestCase):
     def test_only_proven_octoscode_placeholder_seams_are_ignored(self):
         themes = b"/home/user/src/octoscode-app/home/user/src/octosSystemSolarizedSlateClaudeCodexLight"
         folder = b"/home/user/codeUse this folderb1_br_use"
-        for known in (themes, folder):
+        pooled_folder = b"b1_br_path/home/user/codeb1_br_use"
+        for known in (themes, folder, pooled_folder):
             self.assertEqual(findings(known), [])
             for leak in (known + b"\x00/home/user/private", b"/home/user/private\x00" + known,
                          known.replace(b"/home/user/", b"/home/someone/", 1),
@@ -59,6 +60,12 @@ class PatternTests(unittest.TestCase):
             self.assertTrue(findings(known, extra=[r"/home/user/"]))
         for standalone in (b"/home/user/src/octoscode-app", b"/home/user/src/octos", b"/home/user/code"):
             self.assertTrue(findings(standalone), standalone)
+        for tampered in (
+            pooled_folder.replace(b"b1_br_path", b"another_field"),
+            pooled_folder.replace(b"b1_br_use", b"another_button"),
+            pooled_folder.replace(b"/home/user/code", b"/home/user/private"),
+        ):
+            self.assertTrue(findings(tampered), tampered)
 
     def test_exact_public_design_assets_are_not_private_build_data(self):
         fixture = ROOT / "tools/fixtures/release-scan"
@@ -149,6 +156,45 @@ class PatternTests(unittest.TestCase):
             first + second + b"\x00/home/main_desktop_ui.rs/private",
         ):
             self.assertTrue(findings(leak), leak)
+
+    def test_pinned_rinx_filename_and_complete_mime_seam_is_ignored(self):
+        root = b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/"
+        for revision in (b"4b89097", b"4b89097d8791a7190d01de1c576979c93df0013d"):
+            known = root + revision + b"/src/home/room_screen.rsapplication/octet-stream"
+            self.assertEqual(findings(known), [])
+            # Optimized Rust literals need not have NUL separators.
+            self.assertEqual(findings(b"prefix" + known + b"continuation"), [])
+
+    def test_unproven_rinx_filename_mime_sequences_remain_findings(self):
+        known = (b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097"
+                 b"/src/home/room_screen.rsapplication/octet-stream")
+        for leak in (
+            b"/home/room_screen.rsapplication/octet-stream",
+            known.replace(b"/cargo/", b"/private/"),
+            known.replace(b"rinx-", b"other-"),
+            known.replace(b"4b89097", b"1234567"),
+            known.replace(b"4b89097", b"4b89097d8791a7190d01de1c576979c93df0013e"),
+            known.replace(b"4b89097", b"4b890970"),
+            known.replace(b"room_screen", b"another_screen"),
+            known.replace(b"octet-stream", b"json"),
+            known.replace(b"octet-stream", b"octet-streaM"),
+            known[:-1],
+        ):
+            self.assertTrue(findings(leak), leak)
+
+    def test_rinx_mime_exception_is_span_and_pattern_scoped(self):
+        known = (b"/cargo/git/checkouts/rinx-cf0dcd4e7b4d3fa8/4b89097"
+                 b"/src/home/room_screen.rsapplication/octet-stream")
+        apparent_home = b"/home/room_screen.rsapplication/"
+        for leak in (apparent_home + b"private", b"/home/someone/private"):
+            for combined in (leak + b"\x00" + known, known + b"\x00" + leak):
+                self.assertTrue(findings(combined), combined)
+        out = findings(known, extra=[scan.re.escape(apparent_home.decode())])
+        self.assertTrue(out, "explicit extra patterns must not be exempted")
+        identity = [("the scanning account's name", scan.re.compile(scan.re.escape(apparent_home)))]
+        out = []
+        scan.scan_bytes(known, "public", identity, out)
+        self.assertTrue(out, "identity checks must not be exempted")
 
     def test_only_the_proven_mail_literal_seam_is_ignored(self):
         prefix = b"Mail service is not "
