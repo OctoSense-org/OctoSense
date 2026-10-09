@@ -10,7 +10,7 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 
 | 位置 | 谁的模块 | 运行时 | 构建 | 状态 |
 | --- | --- | --- | --- | --- |
-| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 应用自己的应用包，`fns/*.wasm`，需要 `wasm` 能力 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`） | macOS、Linux 和 Android 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`）；Windows、iOS 和 OpenHarmony 不包含 | 已接受，有限支持。测试在 macOS 和 Linux 上通过；一部 OnePlus 6 通过了手机验收。尚无发布版本包含它 |
+| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 应用自己的应用包，`fns/*.wasm`，需要 `wasm` 能力 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`）；组件的 WASI 0.2 来自 `wasmtime-wasi` | macOS、Linux 和 Android 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`）；Windows、iOS 和 OpenHarmony 不包含 | 已接受，有限支持。测试在 macOS 和 Linux 上通过；一部 OnePlus 6 通过了手机验收。尚无发布版本包含它 |
 | 引擎插件：`photo` 背后的 photocraft、`vector` 背后的 vectorcraft（[ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | 无：两个服务都拒绝所有 `plugin.*` 命令（#398、#405） | wasmi 2，解释器 | 链接进所有带 App Hub 的构建 | 已关闭：任何调用方都不能安装或运行插件 |
 | Splash 的数学编译器（makepad） | makepad 根据 Splash 代码生成 | makepad-stitch，解释器 | 链接进所有构建 | 未使用：OctoSense 没有链接任何调用它的代码 |
 | 浏览器中的外壳 | 外壳本身，为 `wasm32-unknown-unknown` 构建 | 浏览器 | 无 | 无法构建 |
@@ -23,8 +23,8 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 
 ### 模块
 
-模块是放在 `fns/<name>.wasm` 的核心 WebAssembly，每个应用包最多 8 个。不使用组件模型，
-也不使用 WASI。
+模块是放在 `fns/<name>.wasm` 的核心 WebAssembly，每个应用包最多 8 个，不使用 WASI。
+那里的文件也可以是[组件](#组件)，组件两者都有。
 
 - 它导出 `memory`、`octo_alloc(len) -> ptr` 和 `octo_free(ptr, len)`。
 - 其余类型为 `(i32, i32) -> i64` 的导出都是函数：在 `(ptr, len)` 处取输入，返回
@@ -37,10 +37,38 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 [`apps/wasmlab/guest/octosense-guest`](../apps/wasmlab/guest/octosense-guest/src/lib.rs)
 生成这一切：`export!` 用于 `fn(&[u8]) -> Result<Vec<u8>, String>`，`export_json!`
 用于 serde 类型，另有 `log`。把 crate 构建成面向 `wasm32-unknown-unknown` 的
-`cdylib`。面向 `wasm32-wasip1` 的构建、wasm-bindgen 的输出以及组件都会导入外壳不提供的
-函数，因此无法加载。应用开发者请从 App Flow 的
+`cdylib`。面向 `wasm32-wasip1` 的构建和 wasm-bindgen 的输出会导入外壳不提供的函数，
+因此无法加载；面向 `wasm32-wasip2` 的构建是[组件](#组件)，即服务运行的另一种文件。应用开发者请从 App Flow 的
 [Run your own Rust code](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/RUST.md)
 开始。
+
+### 组件
+
+[ADR 0014](adr/0014-app-components-in-webassembly.zh-CN.md)（提议）增加了第二种
+`fns/<name>.wasm`：WebAssembly 组件，用 `cargo build --target wasm32-wasip2` 从普通的
+Rust crate 构建。服务按文件头区分两者，一个应用包可以同时携带两种。
+
+- **无需胶水代码。** 组件导出的每个函数都是 `wasm.<function>`，名称用 snake_case：
+  `save-html` 即 `wasm.save_html`，两种写法都接受。参数可以是按参数名作键的对象、按参数
+  顺序排列的数组；只有一个参数时也可以直接传值。记录返回为对象，枚举返回为其名称，
+  `list<u8>` 返回为 base64，`result<T, E>` 返回为其值，或作为这次请求的错误。
+  `wasm.functions` 列出每个导出及其 WIT 签名；接收或返回资源的函数会被列为已跳过，并附原因。
+- **状态。** 每个组件的实例在调用之间留在应用的工作线程里，因此可以保存已解析的文档或缓存。
+  陷阱或超时会使实例作废，下一次调用得到新实例；更新、授权变化、撤回或工作线程退出（一分钟
+  没有调用）都会结束它。
+- **能接触什么。** 时钟和随机数。它的 stdout 和 stderr 成为应用的日志行，没有环境变量、
+  参数和 stdin。导入 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:io` 和
+  `wasi:random` 以外任何东西（例如套接字或 HTTP）的组件在加载时被拒绝。
+- **文件。** 应用有 `storage` 能力（有账户的应用还需已登录账户）时，应用自己的存储文件夹，
+  即其脚本的 `fs.*` 看到的那个，就是组件的 `/`。设备上的其他东西一概不可见；没有这个能力
+  时没有文件系统。
+- **存储配额。** 一次调用可以写入的量，是调用开始时应用配额的剩余部分。超出的写入会在组件
+  内部失败：`ftruncate` 报告磁盘已满，普通写入报告 I/O 错误，因为 wasi-libc 把任何失败的
+  流写入都报告为 I/O 错误。这时请求的错误以 "a write was refused: the storage budget is
+  used up" 结尾。改写、截断和删除会归还字节，因此组件可以自己腾出空间。
+
+ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 毫秒完成编译，从缓存加载
+约 4 毫秒；它的 Markdown 函数比原生 Rust 慢约 2.6 倍，与同一段代码作为模块时接近。
 
 ### 模块如何到达设备
 
@@ -65,16 +93,17 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 
 - `wasm.functions`：应用的模块导出了哪些函数，每个模块如何加载（编译，还是取自缓存，
   用了多久），以及每个函数的运行情况。
-- `wasm.<function>`：一次调用。字符串参数按原文传入，其他参数按 JSON 传入。JSON 输出
-  作为数据返回，其他输出返回为 `{"text": …}`。函数自己返回的错误、陷阱或超时都是这次
-  请求的错误。
+- `wasm.<function>`：一次调用。对模块而言，字符串参数按原文传入，其他参数按 JSON 传入；
+  JSON 输出作为数据返回，其他输出返回为 `{"text": …}`。组件的参数和结果带类型
+  （见[组件](#组件)）。函数自己返回的错误、陷阱或超时都是这次请求的错误。
 
 代码总是来自发起调用的应用自己的、已准入且摘要校验过的应用包，绝不来自参数；任何应用都
 接触不到别的应用的函数。Card runner 的审核和工具执行器都要求 `wasm` 能力，服务在加载任何
 东西之前还会再次检查已准入清单中的授权。
 
-每次调用都使用全新的实例：一次调用的内存、全局变量、表和日志行都不会进入下一次调用，成功
-调用或函数自己返回错误之后也一样。只有编译后的代码会被复用：保存在应用的工作线程里，以及
+每次调用模块都使用全新的实例：一次调用的内存、全局变量、表和日志行都不会进入下一次调用，
+成功调用或函数自己返回错误之后也一样。组件则在调用之间保留一个实例（见[组件](#组件)）。
+只有编译后的代码会被复用：保存在应用的工作线程里，以及
 磁盘缓存中（宿主目录下的 `wasm-cache`，以模块的 SHA-256 和引擎兼容性哈希为键）。调用
 运行之前、答复交付之前，服务都会再次检查准入。更新、授权变化或签名撤回会丢弃这次答复和
 编译后的代码。编译过程无法中断，但已过期或已取消的请求不会继续运行。
@@ -86,14 +115,14 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 | 表元素 | 16,384 个 |
 | wasm 栈 | 512 KiB |
 | 模块 | 8 MiB |
-| 一次调用的输入或输出 | 运行时 16 MiB；服务中序列化后的输入 1 MiB |
+| 一次调用的输入或输出 | 运行时 16 MiB；服务中序列化后的输入 8 MiB |
 | 日志 | 每次调用 64 行，每行 1 KiB |
 | 每个应用的模块 | 8 个 |
 | 同时运行函数的应用 | 4 个工作线程，每个应用一个 |
 | 排队的请求 | 每个应用 4 个 |
-| 所有应用缓冲的输入 | 16 MiB |
+| 所有应用缓冲的输入 | 32 MiB |
 | 一个请求（包括排队和加载） | 10 秒 |
-| 空闲的工作线程 | 5 秒后退出 |
+| 空闲的工作线程 | 5 秒后退出；持有组件实例时 60 秒后退出 |
 
 队列已满或没有空闲的工作线程时，请求会立即失败，不会等待。
 
@@ -101,7 +130,8 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 
 应用的 `tools.json` 可以用 `"host_method": "wasm.<function>"` 把一个工具映射到自己的
 某个函数。这需要 `wasm` 能力。与共享宿主方法不同，它没有最低风险等级，也不需要
-`"private_data": true`，因为函数只能看到传给它的参数。Wasm Lab 把 `wasmlab.find_slots`、
+`"private_data": true`：模块只能看到传给它的参数，组件还能看到自己应用的文件夹，与应用的
+脚本相同。两者都接触不到共享数据。Wasm Lab 把 `wasmlab.find_slots`、
 `wasmlab.rank` 和 `wasmlab.diff` 映射到 `wasm.find_slots`、`wasm.fuzzy_rank` 和
 `wasm.text_diff`，风险等级都是 `read`。
 
@@ -160,8 +190,19 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
   并发写入、取消。
 - `crates/wasm-host/tests/guest.rs` 运行 Wasm Lab 的模块，把每个函数的结果与同一段 Rust
   原生运行的结果比较，然后逐一运行 `rogue` 的各种模式。
+- `crates/wasm-host/tests/component.rs` 运行两个由 `crates/wasm-host/tests/component-guest`
+  构建的组件：以 JSON 调用未作修改的 crate（pulldown-cmark）、记录与 snake_case 名称、
+  同一实例保留状态、时钟、随机数与字节、只能访问授予的文件夹（也包括只读）、存储预算、
+  超时与内存上限，以及拒绝导入套接字的组件。
 - 服务测试覆盖工具映射、输入上限、每次调用使用全新实例、更新或授权变化或撤回之后的撤销、
-  取消和队列上限，以及应用自己的函数回答它的工具和脚本。
+  取消和队列上限，以及应用自己的函数回答它的工具和脚本。对组件，测试覆盖带类型的调用、
+  实例的状态、应用的存储文件夹及其配额，以及没有存储能力的应用。
+- `cargo run --release -p octosense-wasm-host --example measure_component` 打印组件
+  相对于模块和原生 Rust 的耗时。
+
+测试组件可以逐字节重建：用 rustc 1.97.1，`crates/wasm-host/tests/component-guest/build.sh`
+写出相同的 `notes.component.wasm`（SHA-256 `963c965b…`）和 `netprobe.component.wasm`
+（`98b2402a…`）。只需添加一次目标：`rustup target add wasm32-wasip2`。
 
 `phone.yml` 运行第一条命令，服务的测试则作为 Home 测试的一部分运行（`mobile-apps` 包含
 `wasm-functions`）；`tools/ci-local.sh --linux-host --offload` 在 Linux 构建主机上运行
@@ -187,8 +228,10 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
 - Windows、iOS（Pulley）和 OpenHarmony。
 - 应用之间的 CPU 公平调度，以及磁盘缓存的上限：目前没有任何东西会清理它。
 - 在安装时（商店应用）或构建时（系统应用）编译，省掉手机上的第一次编译。
-- 用类型化接口（组件模型和 WIT）代替 JSON。`octo.log` 以外的任何导入，例如时钟或随机数，
-  都将是新的能力。
+- 手机上的组件：Android 构建链接同一个运行时，但还没有组件在设备上运行过（**未验证**）。
+- 组件的网络（受清单 `network.hosts` 约束的 `wasi:http`）和宿主服务（`octosense:host`）：
+  ADR 0014 的第 3 阶段。
+- 经 JSON 传字节很慢：1 MiB 的 `list<u8>` 以 base64 往返约需 18 毫秒。
 
 ## 引擎插件：`photo` 和 `vector` 服务
 

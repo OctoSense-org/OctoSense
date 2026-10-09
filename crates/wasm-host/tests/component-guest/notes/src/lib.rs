@@ -84,6 +84,43 @@ impl Guest for Notes {
     fn echo_bytes(data: Vec<u8>) -> Vec<u8> {
         data
     }
+
+    fn append_text(path: String, text: String) -> Result<u64, String> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)
+            .map_err(|e| e.to_string())?;
+        file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        Ok(file.metadata().map_err(|e| e.to_string())?.len())
+    }
+
+    fn set_len(path: String, len: u64) -> Result<(), String> {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_len(len))
+            .map_err(|e| e.to_string())
+    }
+
+    fn delete_file(path: String) -> Result<(), String> {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())
+    }
+
+    fn file_info(path: String) -> Result<FileInfo, String> {
+        let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+        Ok(FileInfo {
+            byte_count: meta.len(),
+            kind: if meta.is_file() {
+                EntryKind::RegularFile
+            } else if meta.is_dir() {
+                EntryKind::Directory
+            } else {
+                EntryKind::Other
+            },
+        })
+    }
 }
 
 export!(Notes);

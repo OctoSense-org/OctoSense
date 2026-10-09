@@ -3,8 +3,10 @@
 English | [简体中文](0014-app-components-in-webassembly.zh-CN.md)
 
 Status: Proposed (9 Oct 2026). Phase 1, the runtime spike, is in
-`crates/wasm-host` (`src/component.rs`, `tests/component.rs`). Phases 2–4 below
-are the plan. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
+`crates/wasm-host` (`src/component.rs`, `tests/component.rs`). Phase 2's
+runtime and service parts are in `crates/wasm-host/src/component/files.rs` and
+`crates/shell/src/wasm_service.rs`, with the measurements below; its App Hub
+and App Flow parts, and phases 3–4, are the plan. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
 core modules keep working as they do. How WebAssembly runs on `main`:
 [WebAssembly in OctoSense](../wasm.md).
 
@@ -60,16 +62,27 @@ component reaches only what its app may already reach.
      They're listed as skipped, with the reason.
 3. **Instances keep their state.** One instance per component lives for as long
    as the app's worker, so a component can hold a document, a cache or a model.
-   A trap or a deadline spends it; the next call gets a fresh one. An update, a
-   grant change or a withdrawal discards it, as for modules.
+   A worker holding one waits a minute for the next call, not five seconds. A
+   trap or a deadline spends the instance; the next call gets a fresh one. An
+   update, a grant change or a withdrawal discards it, as for modules.
 4. **WASI scoped to the app's grants.**
    - **Always:** `wasi:clocks`, `wasi:random`, `wasi:io` and `wasi:cli`.
      stdout and stderr become the app's log lines (bounded). The environment,
      arguments and stdin are empty.
-   - **`wasi:filesystem`:** only with the app's `storage` capability. Its
-     storage folder is preopened as `/`, read-write, and nothing else of the
-     host's filesystem is visible. Without the capability there are no
-     preopens.
+   - **`wasi:filesystem`:** only with the app's `storage` capability (and a
+     signed-in account, for an app with accounts), decided per call by the
+     rules an engine's folder follows. Its storage folder is preopened as `/`,
+     read-write, and nothing else of the host's filesystem is visible. Without
+     the capability there are no preopens.
+   - **The storage quota, per write.** A call may add what is left of the
+     app's quota when it starts. The runtime replaces the WASI calls that
+     grow a file (`write`, `set-size`, and the streams `write-via-stream` and
+     `append-via-stream` hand out) with ones that charge the growth, and the
+     calls that free bytes (`open-at` truncating, `unlink-file-at`) with ones
+     that give them back. Past the budget a write fails inside the component,
+     and the call's error says why. A check after each call instead was
+     rejected: a call could write gigabytes before it, and it costs two walks
+     of the folder a call.
    - **`wasi:http` outgoing, phase 3:** only to the hosts in the manifest's
      `network.hosts`, through the shell's network policy.
    - **Never:** `wasi:sockets`, and any import outside these WASI packages. A
@@ -132,14 +145,40 @@ component reaches only what its app may already reach.
   and randomness are new to Wasm but available to every script.
 - **Persistent instances use memory for longer.** The per-app worker cap
   (`MAX_WORKERS`) and the memory cap bound it, and idle workers exit as today.
-- **Spike sizes:** `notes` (with `pulldown-cmark` and `getrandom`) is 310 KB;
-  the sockets probe is 123 KB. Timings are not measured yet; phase 2 records
-  them as ADR 0011 did.
+- **Spike sizes:** `notes` (with `pulldown-cmark` and `getrandom`) is 313 KiB;
+  the sockets probe is 120 KiB.
+- **A full disk looks like an I/O error.** wasi-libc reports any failed stream
+  write as `EIO`, whatever error the host gives, so most refused writes reach
+  the guest as an I/O error rather than `ENOSPC`. The runtime adds the reason
+  to the call's error and to the app's log.
+
+## Measurements
+
+`cargo run --release -p octosense-wasm-host --example measure_component`, on
+an Apple M5 Max with macOS 26.6.2 (9 October 2026). Each figure is a median
+of 200 calls unless the row says otherwise. The module is Wasm Lab's
+(ADR 0011), which runs the same `pulldown-cmark`.
+
+| | Component | Module | Native |
+| --- | --- | --- | --- |
+| Compile with Cranelift, first load | 37.5 ms (313 KiB) | | |
+| Load from the cache | 3.6 ms | | |
+| Instantiate (with the storage folder) | 0.09 ms (0.10 ms) | | |
+| Markdown to HTML, 32 KiB | 468 µs | 400 µs | 183 µs |
+| Render and write 49 KiB to a new file | 678 µs | | 156 µs (the write) |
+| Write a 12-byte file | 143 µs | | |
+| Read 49 KiB back | 59 µs | | |
+| 1 MiB of `list<u8>`, there and back as base64 | 18.4 ms | | |
+| The smallest call | 0.2 µs | 0.3 µs | |
+
+The quota needs what the folder holds when a call starts: one walk of it, as
+for an engine's call. That took 0.12 ms for 10 files, 2.0 ms for 1,000 and
+23.8 ms for 10,000 (a median of 50). Rewriting one file over and over is
+slow on APFS, natively too (a median of about 6 ms a rewrite), so the
+example writes a new file each time.
 
 ## Open questions
 
-- Quota for component writes: account each write (by wrapping the filesystem
-  host) or check after each call. Phase 2 decides by measuring.
 - Whether a component may call host services that open sheets (sign-in,
   review). Probably only through the script, never from a component's call.
 - Async functions (WASI 0.3) and streaming bodies: after phase 3.

@@ -23,6 +23,19 @@
 //! Admission, cancellation and deadline are checked before execution and delivery;
 //! an update or withdrawal invalidates loaded Programs. Workers exit when idle.
 //! The host-only disk cache holds compiled code keyed by module digest, not data.
+//!
+//! **Components** (ADR 0014). A `fns/*.wasm` may also be a WebAssembly
+//! component, built with plain `cargo build --target wasm32-wasip2`. Each of
+//! its exported functions is callable as `wasm.<name>` with JSON (snake_case
+//! names; `octosense_wasm_host::component` maps the values). Unlike a
+//! module's, a component's instance lives on in the worker between calls,
+//! so it can keep a document or a cache; a trap, a deadline, a changed grant
+//! or the worker's exit (a minute without calls) ends it. Its filesystem is
+//! the app's storage, the jail its script's `fs.*` sees, decided per call by
+//! the same rules as an engine's ([`crate::host_tools::areas::app_area`]):
+//! none without the `storage` capability or a signed-in account, and what
+//! is left of the quota is what a call may add (a write past it fails inside
+//! the component, as a full disk).
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
@@ -33,18 +46,34 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
+use octosense_wasm_host::component::{self, ComponentInstance, ComponentProgram, Grants};
 use octosense_wasm_host::{Limits, Program, Runtime};
 use serde_json::{json, Value};
 
+use crate::host_tools::areas::{self, AreaEnv};
 use crate::host_tools::script_apps;
 
 const MAX_MODULES: usize = 8;
 const MAX_WORKERS: usize = 4;
 const MAX_QUEUED_PER_APP: usize = 4;
-const MAX_INPUT_BYTES: usize = 1 << 20;
-const MAX_BUFFERED_BYTES: usize = 16 << 20;
+const MAX_INPUT_BYTES: usize = 8 << 20;
+const MAX_BUFFERED_BYTES: usize = 32 << 20;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const WORKER_IDLE: Duration = Duration::from_secs(5);
+/// How long a worker that holds a component's live instance waits for the
+/// next call before it exits (and the instance with it).
+const COMPONENT_IDLE: Duration = Duration::from_secs(60);
+
+/// Where an app's component works: the shell's own rules, or a test's.
+static AREA_ENV: Mutex<Option<Arc<dyn AreaEnv>>> = Mutex::new(None);
+
+fn area_env() -> Arc<dyn AreaEnv> {
+    AREA_ENV
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(areas::shell)
+        .clone()
+}
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 static WORKERS: Mutex<Option<HashMap<String, Worker>>> = Mutex::new(None);
@@ -136,6 +165,8 @@ impl Admission {
 struct Job {
     method: String,
     input: Vec<u8>,
+    /// The request's arguments were a JSON string, and `input` is its text.
+    text: bool,
     host_dir: PathBuf,
     admission: Arc<AdmissionEpoch>,
     deadline: Instant,
@@ -189,7 +220,10 @@ fn input_bytes(args: &Value) -> Result<Vec<u8>, String> {
     impl Write for Bounded {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
             if bytes.len() > MAX_INPUT_BYTES.saturating_sub(self.0.len()) {
-                return Err(std::io::Error::other("wasm input exceeds 1 MiB"));
+                return Err(std::io::Error::other(format!(
+                    "wasm input exceeds {} MiB",
+                    MAX_INPUT_BYTES >> 20
+                )));
             }
             self.0.extend_from_slice(bytes);
             Ok(bytes.len())
@@ -200,7 +234,7 @@ fn input_bytes(args: &Value) -> Result<Vec<u8>, String> {
     }
     if let Value::String(text) = args {
         if text.len() > MAX_INPUT_BYTES {
-            return Err("wasm input exceeds 1 MiB".into());
+            return Err(format!("wasm input exceeds {} MiB", MAX_INPUT_BYTES >> 20));
         }
         return Ok(text.as_bytes().to_vec());
     }
@@ -241,6 +275,7 @@ impl HostService for WasmService {
         let app = call.app_id.clone();
         let mut job = Job {
             method: call.method().to_string(),
+            text: matches!(call.args, Value::String(_)),
             host_dir: call.host_dir,
             input,
             admission: Arc::default(),
@@ -354,7 +389,14 @@ pub fn register() {
 fn work(app: String, jobs: Receiver<Job>, retired: &Arc<AtomicBool>) {
     let mut lab: Option<Lab> = None;
     loop {
-        let job = match jobs.recv_timeout(WORKER_IDLE) {
+        // A component's live instance keeps its state: give the app longer
+        // to come back before it is dropped.
+        let idle = if lab.as_ref().is_some_and(Lab::holds_instances) {
+            COMPONENT_IDLE
+        } else {
+            WORKER_IDLE
+        };
+        let job = match jobs.recv_timeout(idle) {
             Ok(job) => job,
             Err(_) => {
                 // Serialize idle retirement with enqueue. A sender that won
@@ -412,10 +454,13 @@ fn process_checked(
         *lab = None;
         return Err(error);
     }
-    let result =
-        lab.as_mut()
-            .unwrap()
-            .answer(&job.method, &job.input, job.deadline, job.reply.clone());
+    let result = lab.as_mut().unwrap().answer(
+        &job.method,
+        &job.input,
+        job.text,
+        job.deadline,
+        job.reply.clone(),
+    );
     before_delivery();
     // A withdrawal, changed grant, update or tamper while code runs vetoes
     // its result and releases the old compiled-module references.
@@ -449,10 +494,22 @@ struct Module {
     bytes: usize,
     load_ms: f64,
     from_cache: bool,
-    program: Program,
+    code: Code,
     /// Diagnostic high-water mark only: guest memory is never retained.
     memory_bytes: usize,
     invocations: u64,
+}
+
+enum Code {
+    /// A core module (ADR 0011): a fresh instance for every call.
+    Module(Program),
+    /// A component (ADR 0014): one instance, kept between calls, and the
+    /// grants it was made with.
+    Component {
+        program: ComponentProgram,
+        live: Option<(ComponentInstance, Grants)>,
+        instances: u64,
+    },
 }
 
 /// How one function has run: in the worker, from input to output.
@@ -466,9 +523,20 @@ struct Stats {
 
 impl Lab {
     fn load(app: &str, job: &Job) -> Result<Lab, String> {
-        let admission = job.check(app)?;
-        let bundle = &admission.bundle;
+        let admission = job.check(app)?.clone();
         let runtime = runtime(&job.host_dir)?;
+        Lab::from_bundle(app, runtime, admission, || job.check(app).map(drop))
+    }
+
+    /// The admitted bundle's `fns/*.wasm`, loaded; `check` ends it early (a
+    /// cancelled request, a changed admission).
+    fn from_bundle(
+        app: &str,
+        runtime: &'static Runtime,
+        admission: Admission,
+        check: impl Fn() -> Result<(), String>,
+    ) -> Result<Lab, String> {
+        let bundle = &admission.bundle;
         let mut files: Vec<PathBuf> = std::fs::read_dir(bundle.join("fns"))
             .map_err(|_| format!("{app}'s bundle has no fns directory"))?
             .flatten()
@@ -493,7 +561,7 @@ impl Lab {
             admission: admission.clone(),
         };
         for path in files {
-            job.check(app)?;
+            check()?;
             let file = path
                 .file_name()
                 .unwrap_or_default()
@@ -506,9 +574,29 @@ impl Lab {
             }
             let bytes = std::fs::read(&path).map_err(|e| format!("{file}: {e}"))?;
             let started = Instant::now();
-            let program = runtime.load(&bytes).map_err(|e| format!("{file}: {e}"))?;
+            let (code, functions, from_cache) = if component::is_component(&bytes) {
+                let program = runtime
+                    .load_component(&bytes)
+                    .map_err(|e| format!("{file}: {e}"))?;
+                let names: Vec<String> = program.exports().iter().map(|e| e.name.clone()).collect();
+                let from_cache = program.from_cache();
+                (
+                    Code::Component {
+                        program,
+                        live: None,
+                        instances: 0,
+                    },
+                    names,
+                    from_cache,
+                )
+            } else {
+                let program = runtime.load(&bytes).map_err(|e| format!("{file}: {e}"))?;
+                let names = program.functions().to_vec();
+                let from_cache = program.from_cache();
+                (Code::Module(program), names, from_cache)
+            };
             let load_ms = started.elapsed().as_secs_f64() * 1e3;
-            for function in program.functions() {
+            for function in &functions {
                 if lab
                     .owner
                     .insert(function.clone(), lab.modules.len())
@@ -519,23 +607,27 @@ impl Lab {
                     ));
                 }
             }
-            let from_cache = program.from_cache();
             makepad_widgets::log!(
-                "wasm {app}: {file} ({} KiB) {} in {load_ms:.1} ms: {}",
+                "wasm {app}: {file} ({} KiB{}) {} in {load_ms:.1} ms: {}",
                 bytes.len() / 1024,
+                if matches!(code, Code::Component { .. }) {
+                    ", a component"
+                } else {
+                    ""
+                },
                 if from_cache {
                     "loaded from the cache"
                 } else {
                     "compiled"
                 },
-                program.functions().join(", ")
+                functions.join(", ")
             );
             lab.modules.push(Module {
                 file,
                 bytes: bytes.len(),
                 load_ms,
                 from_cache,
-                program,
+                code,
                 memory_bytes: 0,
                 invocations: 0,
             });
@@ -543,10 +635,18 @@ impl Lab {
         Ok(lab)
     }
 
+    /// Whether a component's instance is alive (its state worth keeping).
+    fn holds_instances(&self) -> bool {
+        self.modules
+            .iter()
+            .any(|m| matches!(&m.code, Code::Component { live: Some(_), .. }))
+    }
+
     fn answer(
         &mut self,
         method: &str,
         input: &[u8],
+        text: bool,
         deadline: Instant,
         reply: Replier,
     ) -> Result<Value, String> {
@@ -557,14 +657,25 @@ impl Lab {
             makepad_widgets::log!("wasm {}: {described}", self.app);
             return Ok(described);
         }
-        let Some(&index) = self.owner.get(method) else {
+        let name = if self.owner.contains_key(method) {
+            method.to_string()
+        } else {
+            component::snake(method)
+        };
+        let Some(&index) = self.owner.get(&name) else {
             return Err(format!("{} has no function {method:?}", self.app));
         };
         let module = &mut self.modules[index];
+        let program = match &mut module.code {
+            Code::Module(program) => program,
+            Code::Component { .. } => {
+                return self.answer_component(index, &name, input, text, deadline, reply)
+            }
+        };
         let started = Instant::now();
         let mut instance = self
             .runtime
-            .instantiate_guarded(&module.program, deadline, move || reply.is_pending())
+            .instantiate_guarded(program, deadline, move || reply.is_pending())
             .map_err(|error| error.to_string())?;
         module.invocations += 1;
         let result = instance.call(method, input);
@@ -588,13 +699,97 @@ impl Lab {
             .unwrap_or_else(|_| json!({"text": String::from_utf8_lossy(&output)})))
     }
 
+    /// One call to a component's function, on its live instance (made, or
+    /// remade, when there is none, it was spent, or its grants changed).
+    fn answer_component(
+        &mut self,
+        index: usize,
+        name: &str,
+        input: &[u8],
+        text: bool,
+        deadline: Instant,
+        reply: Replier,
+    ) -> Result<Value, String> {
+        let args: Value = if text {
+            Value::String(String::from_utf8_lossy(input).into_owned())
+        } else if input.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_slice(input).map_err(|e| format!("the arguments are not JSON: {e}"))?
+        };
+        // Decided for every call: a sign-out or a revoked grant applies to
+        // the next call, and the quota is what is left of it now.
+        let area = areas::app_area(&*area_env(), &self.app, true).ok();
+        let grants = Grants {
+            storage_dir: area.as_ref().map(|a| a.root.clone()),
+            read_only: false,
+        };
+        let app = self.app.clone();
+        let module = &mut self.modules[index];
+        let Code::Component {
+            program,
+            live,
+            instances,
+        } = &mut module.code
+        else {
+            unreachable!("answer_component is called for components");
+        };
+        let started = Instant::now();
+        if live
+            .as_ref()
+            .is_some_and(|(instance, made)| instance.spent() || *made != grants)
+        {
+            *live = None;
+        }
+        if live.is_none() {
+            let pending = reply.clone();
+            let instance = self
+                .runtime
+                .instantiate_component(
+                    program,
+                    &grants,
+                    Some((deadline, Box::new(move || pending.is_pending()))),
+                )
+                .map_err(|error| error.to_string())?;
+            *instances += 1;
+            *live = Some((instance, grants.clone()));
+        }
+        let (instance, _) = live.as_mut().expect("made above");
+        module.invocations += 1;
+        // A write past the quota fails inside the component, as a full disk.
+        instance.set_storage_budget(area.and_then(|a| a.quota_left));
+        let result = instance.call_json_guarded(name, &args, deadline, move || reply.is_pending());
+        let us = started.elapsed().as_secs_f64() * 1e6;
+        for line in instance.take_logs() {
+            makepad_widgets::log!("wasm {app}: {line}");
+        }
+        if instance.spent() {
+            *live = None;
+        }
+        let stats = self.stats.entry(name.to_string()).or_default();
+        stats.calls += 1;
+        stats.total_us += us;
+        stats.max_us = stats.max_us.max(us);
+        result.map_err(|error| {
+            stats.errors += 1;
+            error.to_string()
+        })
+    }
+
     fn describe(&self) -> Value {
         let modules: Vec<Value> = self
             .modules
             .iter()
-            .map(|m| {
-                json!({"file": m.file, "bytes": m.bytes, "load_ms": round(m.load_ms),
-                    "from_cache": m.from_cache, "memory_bytes": m.memory_bytes, "invocations": m.invocations, "renewed": m.invocations.saturating_sub(1), "instance_policy": "fresh-per-call"})
+            .map(|m| match &m.code {
+                Code::Module(_) => json!({"file": m.file, "kind": "module", "bytes": m.bytes, "load_ms": round(m.load_ms),
+                    "from_cache": m.from_cache, "memory_bytes": m.memory_bytes, "invocations": m.invocations, "renewed": m.invocations.saturating_sub(1), "instance_policy": "fresh-per-call"}),
+                Code::Component { program, live, instances } => json!({"file": m.file, "kind": "component", "bytes": m.bytes, "load_ms": round(m.load_ms),
+                    "from_cache": m.from_cache, "invocations": m.invocations, "instances": instances, "instance_policy": "kept-between-calls",
+                    "live": live.is_some(), "storage": live.as_ref().map(|(_, g)| if g.storage_dir.is_some() { "app folder" } else { "none" }),
+                    "storage_left": live.as_ref().and_then(|(i, _)| i.storage_budget()),
+                    "exports": program.exports().iter().map(|e| json!({"name": e.name, "wit": e.wit_name,
+                        "params": e.params.iter().map(|(n, t)| json!([n, t])).collect::<Vec<_>>(), "result": e.result})).collect::<Vec<_>>(),
+                    "skipped": program.skipped().iter().map(|(n, why)| json!({"name": n, "why": why})).collect::<Vec<_>>()}),
             })
             .collect();
         let stats: serde_json::Map<String, Value> = self
@@ -738,7 +933,8 @@ mod tests {
         });
     }
 
-    fn captured_job(app: &str, method: &str, host_dir: &Path) -> (usize, Job) {
+    /// A pending reply to `app`'s request, as dispatch hands a service one.
+    fn pending_reply(app: &str, host_dir: &Path) -> (usize, Replier) {
         struct Capture(Arc<Mutex<Option<Replier>>>);
         impl HostService for Capture {
             fn family(&self) -> &'static str {
@@ -765,11 +961,17 @@ mod tests {
             &mut NoSheet,
         );
         let reply = captured.lock().unwrap().take().unwrap();
+        (heap, reply)
+    }
+
+    fn captured_job(app: &str, method: &str, host_dir: &Path) -> (usize, Job) {
+        let (heap, reply) = pending_reply(app, host_dir);
         (
             heap,
             Job {
                 method: method.into(),
                 input: Vec::new(),
+                text: false,
                 host_dir: host_dir.into(),
                 admission: Arc::new(AdmissionEpoch {
                     admitted: OnceLock::from(Ok(Admission::current(app).unwrap())),
@@ -1309,6 +1511,211 @@ mod tests {
             .pop()
             .unwrap();
         assert!(answer.unwrap_err().contains("no sheet"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The spike's component (ADR 0014): `pulldown-cmark` and friends, built
+    /// with plain cargo for `wasm32-wasip2`.
+    const NOTES_COMPONENT: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../wasm-host/tests/fixtures/notes.component.wasm"
+    );
+
+    /// A component's functions, in a process of its own (the area env and
+    /// the registries are process-wide): they answer with typed JSON under
+    /// either spelling of their names; one instance keeps its state between
+    /// calls until a trap spends it; and its files are the app's own
+    /// storage, under what is left of its quota, and absent without the
+    /// storage capability.
+    #[test]
+    fn a_components_instance_keeps_state_and_its_files_stay_in_the_apps_storage() {
+        const CHILD: &str = "OCTOSENSE_TEST_WASM_COMPONENT";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wasm_service::tests::a_components_instance_keeps_state_and_its_files_stay_in_the_apps_storage",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        const APP: &str = "os.wasmnotes";
+        const PLAIN: &str = "os.wasmplain";
+        let root =
+            std::env::temp_dir().join(format!("octosense-wasm-component-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bundle = root.join("bundle");
+        std::fs::create_dir_all(bundle.join("fns")).unwrap();
+        std::fs::copy(NOTES_COMPONENT, bundle.join("fns/notes.wasm")).unwrap();
+        // The apps' storage as the shell keeps it: a 4 KiB ceiling for one,
+        // no storage capability for the other.
+        let storage = crate::app_storage::Storage::with_file_secrets(
+            crate::app_storage::Layout::new(&root.join("home")).unwrap(),
+        );
+        let mut env = areas::FixedEnv {
+            storage: Some(storage.clone()),
+            ..areas::FixedEnv::default()
+        };
+        env.quotas.insert(
+            APP.into(),
+            areas::JailQuota {
+                bytes: Some(4096),
+                storage: true,
+            },
+        );
+        env.quotas.insert(
+            PLAIN.into(),
+            areas::JailQuota {
+                bytes: None,
+                storage: false,
+            },
+        );
+        *AREA_ENV.lock().unwrap() = Some(Arc::new(env));
+        let host_dir = root.join(".host");
+        let runtime = runtime(&host_dir).unwrap();
+        let admission = Admission {
+            root: root.clone(),
+            bundle,
+            manifest: json!({}),
+        };
+        let mut lab = Lab::from_bundle(APP, runtime, admission.clone(), || Ok(())).unwrap();
+        let (_, reply) = pending_reply(APP, &host_dir);
+        // What the app's script gets from `host.request("wasm." + method, args)`.
+        let call = |lab: &mut Lab, method: &str, args: Value| {
+            let text = matches!(args, Value::String(_));
+            let input = input_bytes(&args).unwrap();
+            lab.answer(
+                method,
+                &input,
+                text,
+                Instant::now() + REQUEST_TIMEOUT,
+                reply.clone(),
+            )
+        };
+
+        // Typed JSON: a bare value for one parameter, an object by name or
+        // an array in order; a record comes back as an object.
+        assert_eq!(
+            call(&mut lab, "to_html", json!("# Hi")).unwrap(),
+            "<h1>Hi</h1>\n"
+        );
+        assert_eq!(
+            call(&mut lab, "to-html", json!({"markdown": "*a*"})).unwrap(),
+            "<p><em>a</em></p>\n"
+        );
+        assert_eq!(
+            call(&mut lab, "analyze", json!(["# One\n\ntwo words"])).unwrap(),
+            json!({"words": 4, "lines": 3, "headings": ["One"]})
+        );
+        let error = call(&mut lab, "nothing", json!({})).unwrap_err();
+        assert!(error.contains("no function"), "{error}");
+
+        // One instance, kept between calls, until a trap spends it.
+        assert_eq!(call(&mut lab, "count", json!({})).unwrap(), 1);
+        assert_eq!(call(&mut lab, "count", Value::Null).unwrap(), 2);
+        let error = lab
+            .answer(
+                "spin",
+                b"{}",
+                false,
+                Instant::now() + Duration::from_millis(100),
+                reply.clone(),
+            )
+            .unwrap_err();
+        assert!(error.contains("deadline"), "{error}");
+        assert_eq!(call(&mut lab, "count", json!({})).unwrap(), 1);
+        let described = lab.describe();
+        let notes = &described["modules"][0];
+        assert_eq!(notes["kind"], "component", "{described}");
+        assert_eq!(notes["instance_policy"], "kept-between-calls");
+        assert_eq!(notes["instances"], 2);
+        assert_eq!(notes["storage"], "app folder");
+        assert!(
+            notes["exports"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["name"] == "save_html" && e["wit"] == "save-html"),
+            "{described}"
+        );
+        assert!(described["functions"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("echo_bytes")));
+        assert_eq!(described["stats"]["spin"]["errors"], 1);
+
+        // Its files are the app's own storage, the folder its script's fs.*
+        // sees, and nothing outside it.
+        let jail = storage.layout().app(APP).unwrap().jail;
+        let saved = json!({"markdown": "# Hi", "path": "a.html"});
+        assert_eq!(call(&mut lab, "save_html", saved.clone()).unwrap(), 12);
+        assert_eq!(
+            std::fs::read_to_string(jail.join("a.html")).unwrap(),
+            "<h1>Hi</h1>\n"
+        );
+        assert_eq!(
+            call(&mut lab, "read_file", json!("a.html")).unwrap(),
+            "<h1>Hi</h1>\n"
+        );
+        std::fs::write(root.join("outside.txt"), "host").unwrap();
+        for outside in ["../outside.txt", root.join("outside.txt").to_str().unwrap()] {
+            assert!(
+                call(&mut lab, "read_file", json!(outside)).is_err(),
+                "{outside}"
+            );
+        }
+
+        // The quota (4 KiB here): what is left of it is what a call may add.
+        // A write past it fails inside the component, which keeps its
+        // instance and state; a smaller one still goes in.
+        let before = call(&mut lab, "count", json!({}))
+            .unwrap()
+            .as_u64()
+            .unwrap();
+        let big = json!({"markdown": "x".repeat(5000), "path": "big.html"});
+        let error = call(&mut lab, "save_html", big).unwrap_err();
+        assert!(error.ends_with("the storage budget is used up"), "{error}");
+        assert_eq!(std::fs::metadata(jail.join("big.html")).unwrap().len(), 0);
+        let small = json!({"markdown": "# Hi", "path": "b.html"});
+        assert_eq!(call(&mut lab, "save_html", small).unwrap(), 12);
+        // What the app writes otherwise counts too, from the next call on.
+        std::fs::write(jail.join("filler"), vec![0u8; 4096 - 24]).unwrap();
+        let error = call(
+            &mut lab,
+            "save_html",
+            json!({"markdown": "# Hi", "path": "c.html"}),
+        )
+        .unwrap_err();
+        assert!(error.ends_with("the storage budget is used up"), "{error}");
+        assert_eq!(call(&mut lab, "count", json!({})).unwrap(), before + 1);
+        let described = lab.describe();
+        assert_eq!(described["modules"][0]["storage"], "app folder");
+        assert_eq!(described["modules"][0]["storage_left"], 0);
+        assert_eq!(described["modules"][0]["instances"], 2);
+
+        // Without the storage capability, no folder at all.
+        let mut plain = Lab::from_bundle(PLAIN, runtime, admission, || Ok(())).unwrap();
+        let (_, plain_reply) = pending_reply(PLAIN, &host_dir);
+        let error = plain
+            .answer(
+                "save_html",
+                saved.to_string().as_bytes(),
+                false,
+                Instant::now() + REQUEST_TIMEOUT,
+                plain_reply.clone(),
+            )
+            .unwrap_err();
+        assert!(!error.is_empty());
+        assert_eq!(plain.describe()["modules"][0]["storage"], "none");
         let _ = std::fs::remove_dir_all(root);
     }
 }

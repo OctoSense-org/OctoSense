@@ -10,6 +10,8 @@ wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 serde_json = { workspace = true }
 base64 = "0.22"
+# File writes a component makes (wasmtime-wasi's streams carry `Bytes`).
+bytes = "1"
 sha2 = "0.10"
 # Not used directly: Wasmtime reads a trap's registers through libc's
 # ucontext_t, and before 0.2.190 Android aarch64's lacked the kernel's
