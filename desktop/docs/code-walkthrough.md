@@ -29,6 +29,8 @@ appear in this product; follow the loading path for the artifact you are editing
 
 ## 2. Run Reference and follow native hosting
 
+Agent catalog lookups on the UI use a background snapshot (`apps::start_agent_catalog`); authorization callbacks retain their existing validation path. `GlanceTiles::open` defers card evaluation until its admission worker completes. Consent uses one ordered, bounded writer per file, and normal quit waits without blocking the event loop. The macOS status worker reads CoreAudio directly and unchanged bar snapshots do not repaint.
+
 From the repository root, after setup:
 
 ```sh

@@ -209,6 +209,7 @@ pub fn pump(revoked: &[String]) {
     for app in revoked {
         set_prepared(app, None);
     }
+    if !crate::apps::agent_catalog_ready() { return; }
     let allowed = crate::approvals::take_allowed();
     if allowed.is_empty() {
         return;

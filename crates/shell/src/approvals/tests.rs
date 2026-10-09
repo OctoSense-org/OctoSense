@@ -17,6 +17,12 @@ use std::sync::{Arc, Mutex};
 const T0: u64 = 1_790_000_000; // a fixed "now", mid-day UTC
 const MAIL: &str = "os.mail";
 
+/// Consent persistence fixtures use the same test-only gesture boundary as
+/// the rest of these approval tests.
+pub(super) fn allow_consent_for_test(store: &mut ConsentStore, app: &str, now: u64) {
+    store.set(&ApprovalGesture::sheet_tap(), app, true, now);
+}
+
 fn router_with(dev: FixedDevMode) -> (Router, RecordingRelay) {
     let relay = RecordingRelay::default();
     let r = router_with_contacts(dev, relay.clone(), true);

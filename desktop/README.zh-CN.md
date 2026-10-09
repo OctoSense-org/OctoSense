@@ -61,6 +61,8 @@ python3 tools/setup.py --check --cargo  # verify: one Makepad, App Hub, octos an
 
 ## 构建与运行
 
+外壳在后台发现应用助手元数据并准备 Glance 权限；卡片通过现有准入检查后才运行。助手授权选择立即生效并异步保存，正常退出会等待待保存的选择，写入失败会在界面提示。选择主题时仍会重新加载自定义图标。
+
 准备完成后，在仓库根目录先把 octos 内核放到 Shell 旁边，再构建并运行：
 
 ```sh

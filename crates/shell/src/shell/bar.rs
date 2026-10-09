@@ -24,6 +24,10 @@
 
 use makepad_widgets::*;
 
+#[cfg(target_os = "macos")]
+#[path = "macos_audio.rs"]
+mod macos_audio;
+
 use super::ui::{contains, rect, DrawShellFill, Ico, ShellDraw};
 use super::{alpha, fade, MaterialTokens, ShellTokens};
 
@@ -64,7 +68,7 @@ pub enum BarModule {
 }
 
 /// One workspace pill.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WorkspaceCell {
     pub label: String,
     pub occupied: bool,
@@ -74,7 +78,7 @@ pub struct WorkspaceCell {
 /// A bar indicator (`plugins/bar/indicators/`): one glyph with an active
 /// and an inactive reading. Inactive ones are hidden until the pointer is
 /// over the indicator block, then shown at α .45.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Indicator {
     pub icon: Ico,
     pub active_icon: Ico,
@@ -84,7 +88,7 @@ pub struct Indicator {
 
 /// What the bar shows. The WM fills it from real state; the gallery fills
 /// it with fixtures. Nothing in here is sampled by the widget itself.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct BarData {
     pub style: crate::desktop::DesktopStyle,
     pub dark: bool,
@@ -119,7 +123,7 @@ pub struct BarData {
     pub glance: Option<(usize, usize)>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Battery {
     pub percent: u32,
     pub charging: bool,
@@ -272,16 +276,10 @@ pub fn local_time(fmt: &std::ffi::CStr) -> String {
     }
 }
 
-/// Everything the bar reads from the OS, gathered OFF the main thread.
-///
-/// Every sampler below is a `fork+exec+wait` (`osascript`, `date`, `pmset`,
-/// `route`, `defaults`) that can take hundreds of milliseconds under load.
-/// Running them on the main thread's 1s status timer blocked the whole
-/// event loop ~0.5s every second — which starved the 8ms Ticks that drive
-/// every hosted tile, freezing all child apps in visible hiccups (the
-/// "0.5s of nothing while dragging" report; a `sample` showed 614/1646
-/// main-thread samples inside update_status, 326 in sample_volume).
-#[derive(Clone, Default)]
+/// Everything the bar reads from the OS, gathered off the main thread.
+/// CoreAudio and clock formatting are in-process; the remaining platform
+/// helpers may wait on subprocesses. Only changed snapshots wake the UI.
+#[derive(Clone, Default, PartialEq)]
 pub struct SampledStatus {
     pub volume: Option<u32>,
     pub muted: bool,
@@ -305,13 +303,14 @@ pub fn start_status_sampler(
     makepad_widgets::makepad_platform::thread::SpawnError,
 > {
     use makepad_widgets::makepad_platform::thread::{CancellationToken, SignalToUI, ThreadOptions};
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
     let worker = spawner.spawn_worker(
         ThreadOptions {
             name: Some("wm-status".into()),
             ..Default::default()
         },
         move || {
+            let mut delivered = None;
             let mut round: u32 = 0;
             let mut status = SampledStatus::default();
             let wait = CancellationToken::new();
@@ -326,10 +325,14 @@ pub fn start_status_sampler(
                     status.network = sample_network();
                     status.bluetooth = sample_bluetooth();
                 }
-                if tx.send(status.clone()).is_err() {
-                    break;
+                match tx.try_send(status.clone()) {
+                    Ok(()) => {
+                        if delivered.as_ref() != Some(&status) { SignalToUI::set_ui_signal(); }
+                        delivered = Some(status.clone());
+                    }
+                    Err(std::sync::mpsc::TrySendError::Full(_)) => {},
+                    Err(std::sync::mpsc::TrySendError::Disconnected(_)) => break,
                 }
-                SignalToUI::set_ui_signal();
                 round = round.wrapping_add(1);
                 let _ = wait.wait_until(makepad_widgets::Cx::monotonic_now() + 1.0);
             }
@@ -342,15 +345,7 @@ pub fn start_status_sampler(
 pub fn sample_volume() -> (Option<u32>, bool) {
     #[cfg(target_os = "macos")]
     {
-        let level = run(
-            "osascript",
-            &["-e", "output volume of (get volume settings)"],
-        )
-        .and_then(|s| s.trim().parse::<u32>().ok());
-        let muted = run("osascript", &["-e", "output muted of (get volume settings)"])
-            .map(|s| s.trim() == "true")
-            .unwrap_or(false);
-        (level, muted)
+        macos_audio::sample_volume()
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -565,8 +560,10 @@ pub struct ShellBar {
 
 impl ShellBar {
     pub fn set_data(&mut self, cx: &mut Cx, data: BarData) {
-        self.data = data;
-        self.redraw(cx);
+        if self.data != data {
+            self.data = data;
+            self.redraw(cx);
+        }
     }
 
     fn icon_slot(&self) -> f64 {
