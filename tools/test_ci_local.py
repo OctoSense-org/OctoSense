@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import tempfile
 from types import SimpleNamespace
@@ -24,6 +25,63 @@ merge = load("ci_local_merge", "tools/ci_local_merge.py")
 
 
 class WorkflowReader(unittest.TestCase):
+    def test_phone_prebuilds_each_test_graph_and_keeps_execution_bounded(self):
+        # Regression: the old execution step compiled four additional
+        # feature graphs and exhausted its timeout after successful tests.
+        job = ci.load_workflow("phone.yml")["jobs"]["home"]
+        built = set()
+        covered = set()
+        craft_graphs = set()
+        for step in job["steps"]:
+            phases = set()
+            for line in step.get("run", "").splitlines():
+                args = shlex.split(line, comments=True)
+                if args[:2] != ["cargo", "test"]:
+                    continue
+                self.assertIn("--locked", args)
+                packages, features, filters = [], [], []
+                options = iter(args[2:])
+                for option in options:
+                    if option == "--":
+                        break
+                    if option == "-p":
+                        packages.append(next(options))
+                    elif option == "--features":
+                        features.extend(next(options).split(","))
+                    elif not option.startswith("-"):
+                        filters.append(option)
+                graph = (step.get("working-directory", "."),
+                         tuple(sorted(packages)), tuple(sorted(features)))
+                if "--no-run" in args:
+                    phases.add("build")
+                    built.add(graph)
+                    self.assertLessEqual(step["timeout-minutes"], 60)
+                else:
+                    phases.add("test")
+                    self.assertIn(graph, built, f"unprepared test graph: {line}")
+                    self.assertLessEqual(step["timeout-minutes"], 15)
+                    if "host_tools::scenario_tests" in filters:
+                        self.assertIn("OCTOS_SCENARIO_TEST_KERNEL", step["env"])
+                    else:
+                        self.assertIn("OCTOS_SHELL_TEST_KERNEL", step["env"])
+                        self.assertEqual(step["env"]["MAKEPAD_SPLASH_BUDGET_MS"], "10000")
+                    covered.add((tuple(sorted(packages)), tuple(filters)))
+                    if "craft-engines" in features:
+                        craft_graphs.add(graph)
+            self.assertLessEqual(len(phases), 1, "build and execution need separate limits")
+        self.assertEqual(len(craft_graphs), 1, "reuse one craft graph for both filters")
+        shell = ("octosense-shell",)
+        for name in ("appcard", "host_tools", "system_chat", "terminal"):
+            self.assertIn((shell, (name,)), covered)
+        for package, pattern in (("octosense-wasm-host", ()),
+                                 ("makepad-widgets", ("splash_policy",)),
+                                 ("makepad-script-std", ("gate::tests",))):
+            self.assertIn(((package,), pattern), covered)
+        baseline = tuple(sorted(("octosense-shell", "octosense-home", "octosense-app-policy",
+                                 "octosense-app-hub", "octosense-appcard", "octosense-ai-host")))
+        self.assertIn((baseline, ()), covered)
+        self.assertIn((baseline, ("host_tools::scenario_tests",)), covered)
+
     def test_release_token_is_scoped_to_github_cli_steps(self):
         workflow = ci.load_workflow("release-desktop.yml")
         self.assertNotIn("GH_TOKEN", workflow.get("env", {}))
