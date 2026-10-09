@@ -34,7 +34,7 @@ cargo run --release -p octosense-home --features mobile-only
 | `MAKEPAD_APP_CONFIG='{"mail_demo":true}'` | 用演示邮箱提供 Mail（密码为 `demo`） |
 | `OCTOSENSE_HOME=<dir>` | 把状态数据保存在 `~/.octosense` 以外的位置 |
 
-**Android 版本要求。** 当前 Home 与 System Bridge 构建要求 ARM64 设备运行 Android 13（API 33）或更新版本。Home 打包的 octos 内核以 API 33 为编译目标；两个 APK 清单使用相同的最低版本，让 Android 拒绝在旧系统上安装，避免出现启动器可安装但内核无法运行的情况。这是安装兼容性的下限，不代表所有设备或功能均已验证。`--octos-kernel` 与 `--no-octos-kernel` 只改变内核内容，不会降低此最低版本，也不改变 OpenHarmony/iOS 的要求。
+**Android 版本要求。** 当前 Home 与 System Bridge 构建要求 ARM64 设备运行 Android 13（API 33）或更新版本。Home 打包的 octos 内核以 API 33 为编译目标；两个 APK 清单都采用同一受支持的最低版本，而不继承打包器较旧的默认值。这是保守的安装兼容性下限，不证明所有旧系统都无法运行，也不代表所有设备或功能均已验证。`--octos-kernel` 与 `--no-octos-kernel` 只改变内核内容，不会降低此最低版本，也不改变 OpenHarmony/iOS 的要求。
 
 **Android APK。** `rom/scripts/build-home.sh`（`build-home.py` 的包装脚本）构建 Home APK 及其 System Bridge APK，一起签名，把 octos 内核作为 `liboctos.so` 打包进去，并写出 `OctoSenseHome.apk`、`OctoSenseBridge.apk` 和一份 `build.json` 回执。构建脚本会读取两个已签名 APK 的实际最低/目标 SDK 版本，写入各自的产物条目；如果最低版本不是 API 33，会在替换输出文件前拒绝该组合。它从不安装或刷机。在仓库根目录构建一对使用 Makepad 开发密钥签名的独立开发版：
 
