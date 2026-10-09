@@ -54,7 +54,7 @@ impl DesktopStyle {
 pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     if style != DesktopStyle::OctoSense {
         let mut sheet = StyleSheet::load_with_appearance(style.framework(), dark);
-        sheet.icons = icon_assets(style.framework());
+        sheet.icons = overlay_icon_assets(style.framework(), sheet.icons);
         return sheet;
     }
     let read = |name: &str, bundled: &str| {
@@ -89,13 +89,16 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
 /// The framework's artwork for a style with this shell's own laid over it:
 /// News as redrawn here, and OctosMap, which the framework has no art for.
 pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
+    overlay_icon_assets(style, app_icon::load_assets(style))
+}
+
+fn overlay_icon_assets(style: UpstreamStyle, mut assets: Vec<app_icon::IconAsset>) -> Vec<app_icon::IconAsset> {
     fn wear(assets: &mut Vec<app_icon::IconAsset>, name: &str, svg: String) {
         match assets.iter_mut().find(|asset| asset.name == name) {
             Some(asset) => asset.svg = svg,
             None => assets.push(app_icon::IconAsset { name: name.into(), svg }),
         }
     }
-    let mut assets = app_icon::load_assets(style);
     match own_artwork(style) {
         Some([news, maps]) => {
             wear(&mut assets, "news", news.into());

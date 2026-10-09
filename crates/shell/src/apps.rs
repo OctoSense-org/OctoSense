@@ -475,7 +475,12 @@ pub fn agent_apps() -> Vec<AgentApp> {
 /// The `octos.*` services script app `app_id`'s manifest declares (`None`:
 /// no such app here). The contained `octos` service grants only these.
 pub fn declared_octos(app_id: &str) -> Option<std::collections::BTreeSet<String>> {
-    script_agent_apps().into_iter().find(|a| a.id == app_id).map(|a| a.octos.into_iter().collect())
+    // Authorization retains its existing validated lookup, never a partial UI listing.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    let apps = worker_script_agent_apps();
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    let apps = Vec::<AgentApp>::new();
+    apps.into_iter().find(|a| a.id == app_id).map(|a| a.octos.into_iter().collect())
 }
 
 fn octos_of(capabilities: &serde_json::Value) -> Vec<String> {
@@ -483,7 +488,102 @@ fn octos_of(capabilities: &serde_json::Value) -> Vec<String> {
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
+mod ui_agent_catalog {
+    use super::*;
+    use makepad_widgets::makepad_platform::thread::{Lane, TaskHandle, TaskPool};
+    type Key = (std::path::PathBuf, u64);
+    pub(super) struct Catalog {
+        pool: TaskPool,
+        key: Option<Key>,
+        apps: Vec<AgentApp>,
+        ready: bool,
+        pending: Option<(Key, TaskHandle<Vec<AgentApp>>)>,
+    }
+    thread_local! {
+        pub(super) static UI: std::cell::RefCell<Option<Catalog>> = const { std::cell::RefCell::new(None) };
+    }
+    pub(super) fn start(cx: &makepad_widgets::Cx) {
+        UI.with(|slot| *slot.borrow_mut() = Some(Catalog {
+            pool: cx.task_pool(), key: None, apps: Vec::new(), ready: false, pending: None,
+        }));
+    }
+    impl Catalog {
+        pub(super) fn refresh(&mut self) -> bool {
+            let key = octosense_app_hub_app::data_root_if_set()
+                .map(|root| (root, octosense_app_hub_app::icons::generation()));
+            let mut changed = false;
+            if self.key != key {
+                self.key = key;
+                self.apps.clear();
+                self.ready = false;
+                changed = true;
+            }
+            if let Some((pending_key, task)) = &mut self.pending {
+                if let Some(result) = task.try_take() {
+                    if self.key.as_ref() == Some(pending_key) {
+                        match result {
+                            Ok(apps) => { self.apps = apps; self.ready = true; changed = true; }
+                            Err(e) => makepad_widgets::log!("agent catalog: {e}"),
+                        }
+                    }
+                    self.pending = None;
+                }
+            }
+            if !self.ready && self.pending.is_none() {
+                if let Some(key) = &self.key {
+                    let root = key.0.clone();
+                    if let Ok(task) = self.pool.submit_named(Lane::Heavy, "shell agent catalog", move || {
+                        read_script_agent_apps(&root)
+                    }) { self.pending = Some((key.clone(), task)); }
+                }
+            }
+            changed
+        }
+    }
+    pub(super) fn snapshot() -> Option<Vec<AgentApp>> {
+        UI.with(|slot| slot.borrow_mut().as_mut().map(|cache| {
+            cache.refresh();
+            cache.apps.clone()
+        }))
+    }
+    pub(super) fn ready() -> bool {
+        UI.with(|slot| slot.borrow_mut().as_mut().map(|cache| {
+            cache.refresh(); cache.ready
+        }).unwrap_or(true))
+    }
+    pub(super) fn pump() -> bool {
+        UI.with(|slot| slot.borrow_mut().as_mut().is_some_and(Catalog::refresh))
+    }
+}
+
+/// UI listings use a worker-produced snapshot. Authorization retains its
+/// existing synchronous lookup, never this presentation cache.
+pub fn start_agent_catalog(cx: &makepad_widgets::Cx) {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    ui_agent_catalog::start(cx);
+    let _ = cx;
+}
+pub fn pump_agent_catalog() -> bool {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    return ui_agent_catalog::pump();
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    false
+}
+pub fn agent_catalog_ready() -> bool {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    return ui_agent_catalog::ready();
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    true
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
 fn script_agent_apps() -> Vec<AgentApp> {
+    if let Some(apps) = ui_agent_catalog::snapshot() { return apps; }
+    worker_script_agent_apps()
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn worker_script_agent_apps() -> Vec<AgentApp> {
     // Read once per data root and App Hub generation (an install or update
     // bumps it): the contained service asks on every call.
     type Cache = Option<((std::path::PathBuf, u64), Vec<AgentApp>)>;

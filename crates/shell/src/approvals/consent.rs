@@ -94,7 +94,7 @@ struct Record {
     at: u64,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct ConsentFile {
     schema: u32,
     apps: BTreeMap<String, Record>,
@@ -102,6 +102,7 @@ struct ConsentFile {
 
 #[derive(Debug)]
 pub struct ConsentStore {
+    writer: Option<ConsentWriter>,
     path: Option<PathBuf>,
     decided: BTreeMap<String, Record>,
     /// Every app with an agent the shell knows of (for Settings).
@@ -119,12 +120,31 @@ pub struct ConsentStore {
 
 impl ConsentStore {
     pub fn memory() -> ConsentStore {
-        ConsentStore { path: None, decided: BTreeMap::new(), known: BTreeMap::new(), asking: Vec::new(), revoked: Vec::new(), allowed: Vec::new(), generation: 0 }
+        ConsentStore { writer: None, path: None, decided: BTreeMap::new(), known: BTreeMap::new(), asking: Vec::new(), revoked: Vec::new(), allowed: Vec::new(), generation: 0 }
     }
     pub fn in_home(home: &Path) -> ConsentStore {
         let path = home.join(CONSENT_FILE);
         let file: ConsentFile = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         ConsentStore { path: Some(path), decided: file.apps, ..ConsentStore::memory() }
+    }
+    pub(crate) fn enable_writer(&mut self, pool: makepad_widgets::makepad_platform::thread::TaskPool) {
+        if self.writer.is_none() {
+            if let Some(path) = &self.path { self.writer = Some(ConsentWriter::new(path.clone(), pool)); }
+        }
+    }
+    pub(crate) fn persistence_busy(&self) -> bool {
+        self.writer.as_ref().is_some_and(|w| {
+            w.start();
+            w.shared.running.load(std::sync::atomic::Ordering::Acquire)
+                || !w.shared.pending.is_empty() || !w.shared.errors.is_empty()
+        })
+    }
+    pub(crate) fn persistence_errors(&self) -> Vec<String> {
+        let Some(writer) = &self.writer else { return Vec::new() };
+        writer.start();
+        let mut errors = Vec::new();
+        while let Some(error) = writer.shared.errors.pop() { errors.push(error); }
+        errors
     }
     pub fn generation(&self) -> u64 {
         self.generation
@@ -223,6 +243,11 @@ impl ConsentStore {
     fn save(&self) {
         let Some(path) = &self.path else { return };
         let file = ConsentFile { schema: 1, apps: self.decided.clone() };
+        if let Some(writer) = &self.writer {
+            writer.shared.pending.force_push(file);
+            writer.start();
+            return;
+        }
         if let Ok(bytes) = serde_json::to_vec_pretty(&file) {
             if let Err(e) = super::write_private(path, &bytes) {
                 eprintln!("approvals: could not save consent: {e}");
@@ -240,4 +265,130 @@ pub fn granted(app: &str) -> bool {
 /// An app asks for its agent; the first-use sheet shows if undecided.
 pub fn ask(summary: AgentSummary) -> State {
     super::consent_ask(summary)
+}
+
+/// One ordered writer per consent file. A newer complete snapshot supersedes a
+/// queued one; the worker never holds Approvals' mutex during disk I/O. The UI
+/// retries pool admission on its maintenance tick and surfaces write failures.
+#[derive(Debug)]
+struct ConsentWriter {
+    pool: makepad_widgets::makepad_platform::thread::TaskPool,
+    shared: std::sync::Arc<ConsentWrites>,
+}
+#[derive(Debug)]
+struct ConsentWrites {
+    path: PathBuf,
+    pending: crossbeam_queue::ArrayQueue<ConsentFile>,
+    errors: crossbeam_queue::ArrayQueue<String>,
+    running: std::sync::atomic::AtomicBool,
+}
+impl ConsentWriter {
+    fn new(path: PathBuf, pool: makepad_widgets::makepad_platform::thread::TaskPool) -> Self {
+        Self { pool, shared: std::sync::Arc::new(ConsentWrites {
+            path, pending: crossbeam_queue::ArrayQueue::new(1),
+            errors: crossbeam_queue::ArrayQueue::new(4), running: false.into(),
+        }) }
+    }
+    fn start(&self) {
+        use std::sync::atomic::Ordering;
+        use makepad_widgets::makepad_platform::thread::Lane;
+        if self.shared.pending.is_empty() || self.shared.running.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() { return; }
+        let shared = self.shared.clone();
+        match self.pool.submit_named(Lane::Heavy, "save agent consent", move || shared.drain()) {
+            Ok(task) => task.detach(),
+            Err(error) => {
+                if error == makepad_widgets::makepad_platform::thread::SubmitError::Closed {
+                    self.shared.pending.pop();
+                    self.shared.errors.force_push("Your agent choice could not be saved: background writer unavailable".into());
+                }
+                self.shared.running.store(false, Ordering::Release);
+            }
+        }
+    }
+}
+impl ConsentWrites {
+    fn drain(&self) {
+        use std::sync::atomic::Ordering;
+        loop {
+            while let Some(file) = self.pending.pop() {
+                let result = serde_json::to_vec_pretty(&file).map_err(|e| e.to_string())
+                    .and_then(|bytes| super::write_private(&self.path, &bytes).map_err(|e| e.to_string()));
+                if let Err(e) = result {
+                    self.errors.force_push(format!("Your agent choice could not be saved: {e}"));
+                }
+            }
+            self.running.store(false, Ordering::Release);
+            // A producer can publish just before we relinquish the writer. It
+            // either starts the successor or this worker picks up that snapshot.
+            if self.pending.is_empty() || self.running.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() { break; }
+        }
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    use makepad_widgets::makepad_platform::thread::TaskPool;
+
+    fn fixture() -> (ConsentStore, PathBuf) {
+        let root = std::env::temp_dir().join(format!("consent-writer-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let path = root.join(CONSENT_FILE);
+        let store = ConsentStore { path: Some(path), ..ConsentStore::memory() };
+        (store, root)
+    }
+
+    #[test]
+    fn queued_revocation_supersedes_allow_and_remains_private() {
+        let (mut store, root) = fixture();
+        let writer = ConsentWriter::new(root.join(CONSENT_FILE), TaskPool::closed());
+        store.path = None;
+        store.set(&ApprovalGesture::sheet_tap(), "os.mail", true, 1);
+        writer.shared.pending.force_push(ConsentFile { schema: 1, apps: store.decided.clone() });
+        store.turn_off("os.mail", 2);
+        writer.shared.pending.force_push(ConsentFile { schema: 1, apps: store.decided.clone() });
+        assert!(!store.granted("os.mail", false));
+        assert!(store.take_allowed().is_empty());
+        assert_eq!(store.take_revoked(), ["os.mail"]);
+        assert!(!root.join(CONSENT_FILE).exists(), "UI must not write to disk");
+        writer.shared.drain();
+        let restored = ConsentStore::in_home(&root);
+        assert_eq!(restored.state("os.mail"), State::Denied);
+        assert_eq!(restored.decided["os.mail"].at, 2);
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(root.join(CONSENT_FILE)).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_write_is_visible_and_does_not_undo_current_revocation() {
+        let (mut store, root) = fixture();
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("approvals"), "not a directory").unwrap();
+        store.path = None;
+        store.turn_off("os.mail", 3);
+        let writer = ConsentWriter::new(root.join(CONSENT_FILE), TaskPool::closed());
+        writer.shared.pending.force_push(ConsentFile { schema: 1, apps: store.decided.clone() });
+        writer.shared.drain();
+        store.writer = Some(writer);
+        assert!(!store.granted("os.mail", false));
+        assert!(store.persistence_busy(), "quit must let the UI report the error");
+        assert_eq!(store.persistence_errors().len(), 1);
+        assert!(store.persistence_errors().is_empty());
+        assert!(!store.persistence_busy());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn unavailable_writer_reports_failure_instead_of_holding_quit_forever() {
+        let (mut store, root) = fixture();
+        store.enable_writer(TaskPool::closed());
+        store.turn_off("os.mail", 4);
+        assert!(store.persistence_busy());
+        assert_eq!(store.persistence_errors().len(), 1);
+        assert!(!store.persistence_busy());
+        assert!(!root.join(CONSENT_FILE).exists());
+    }
+
 }

@@ -61,6 +61,8 @@ Details, `--update` and `--cache`: [root README](../README.md#set-up).
 
 ## Build and run
 
+The shell discovers agent metadata and prepares Glance permissions on background workers. Cards run only after their existing admission checks finish. Agent choices take effect immediately and save asynchronously; normal quit waits for pending consent writes, and a write failure is shown in the shell. Theme selection still reloads custom artwork.
+
 From the repository root, after setup: stage the octos kernel beside the shell, then build and run it.
 
 ```sh

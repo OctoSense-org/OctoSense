@@ -1,0 +1,30 @@
+diff --git a/widgets/src/text_input.rs b/widgets/src/text_input.rs
+index 410f54d6a..6f35bc561 100644
+--- a/widgets/src/text_input.rs
++++ b/widgets/src/text_input.rs
+@@ -378,13 +378,13 @@
+             blink: {
+                 default: @off
+                 off: AnimatorState{
+-                    from: {all: Forward {duration: 0.05}}
++                    from: {all: Snap}
+                     apply: {
+                         draw_cursor: {blink: 0.0}
+                     }
+                 }
+                 on: AnimatorState{
+-                    from: {all: Forward {duration: 0.05}}
++                    from: {all: Snap}
+                     apply: {
+                         draw_cursor: {blink: 1.0}
+                     }
+@@ -916,6 +916,9 @@ pub fn display_text(&self) -> String {
+     }
+ 
+     pub fn set_empty_text(&mut self, cx: &mut Cx, empty_text: String) {
++        if self.empty_text == empty_text {
++            return;
++        }
+         self.empty_text = empty_text;
+         if self.text.is_empty() {
+             self.draw_bg.redraw(cx);

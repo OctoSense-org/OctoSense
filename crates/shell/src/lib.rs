@@ -462,6 +462,8 @@ pub struct App {
     /// the last refusal), so it expires (process_close `quit_expired`).
     #[rust]
     pub quit_waiting_since: Option<f64>,
+    #[rust]
+    consent_quit_waiting: bool,
     /// The notifications cards asked for (`glance.publish` with `notify`):
     /// the desktop toasts' ids and the card each opens, and the phone
     /// shade's ids and the exact card each opens.
@@ -1955,6 +1957,10 @@ impl App {
         }
         if refused.is_empty() && self.process_close.idle() {
             self.process_close.abandon_quit();
+            if approvals::with(|a| a.consent.persistence_busy()).unwrap_or(false) {
+                self.consent_quit_waiting = true;
+                return false;
+            }
             return true;
         }
         log!(
@@ -3974,6 +3980,10 @@ impl App {
     /// must be told (every automatic approval among it).
     fn approvals_tick(&mut self, cx: &mut Cx) {
         approvals::tick();
+        for error in approvals::with(|a| a.consent.persistence_errors()).unwrap_or_default() {
+            self.consent_quit_waiting = false;
+            self.notify(cx, "Agent choice not saved", &error);
+        }
         peer_link::tick();
         self.approvals_changed(cx);
         self.system_chat_changed(cx);
@@ -4373,6 +4383,13 @@ impl App {
     /// (`shell/bar.rs` does the sampling — cheap things every second, the
     /// expensive ones every fifth).
     fn update_bar(&mut self, cx: &mut Cx) {
+        self.refresh_bar(cx, true);
+    }
+
+    /// Maintenance samples repaint only changed chrome. Explicit WM actions
+    /// still redraw the scene, including layout changes that leave bar data
+    /// identical (for example, moving a window with the same focused title).
+    fn refresh_bar(&mut self, cx: &mut Cx, force_scene: bool) {
         if let Some(clock)=self.bar_sample.clock.split_whitespace().find(|s|s.contains(':')).map(str::to_string) {
             self.state_mut().phone.clock=clock;
         }
@@ -4427,15 +4444,20 @@ impl App {
         // The middle window control reads "restore" while maximized.
         data.maximized = self.ui.window(cx, ids!(main_window)).is_fullscreen(cx);
         let bar = self.ui.widget(cx, ids!(shell_bar));
+        let mut changed = false;
         {
             let mut borrowed = bar.borrow_mut::<shell::bar::ShellBar>();
             if let Some(b) = borrowed.as_mut() {
-                b.data = data;
                 // Where the platform draws no caption buttons, the bar does.
-                b.window_controls = shell::bar::window_controls_default();
+                let controls = shell::bar::window_controls_default();
+                changed = b.data != data || b.window_controls != controls;
+                b.window_controls = controls;
+                b.set_data(cx, data);
             }
         }
-        self.redraw_all(cx);
+        if force_scene || changed || self.state_mut().style.target.mobile() {
+            self.redraw_all(cx);
+        }
     }
 
     /// The bar's window controls: the same three calls the stock caption
@@ -4522,9 +4544,8 @@ impl App {
         self.redraw_all(cx);
     }
 
-    /// The status modules. Volume every tick (it is one `osascript` and
-    /// the user changes it constantly); battery, network and bluetooth
-    /// every fifth, because they cost a process each.
+    /// Apply the background sampler's latest status snapshot. The one-second
+    /// maintenance timer stays independent of whether the bar needs repainting.
     fn update_status(&mut self, cx: &mut Cx) {
         // The samplers fork subprocesses that can take hundreds of ms; on
         // this thread that starved the hosted tiles' 8ms Ticks (visible
@@ -5917,7 +5938,9 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        apps::start_agent_catalog(cx);
         runtime_host::init(cx.get_data_dir(), None);
+        approvals::with(|a| a.consent.enable_writer(cx.task_pool()));
         self.dev_generation = dev_mode::generation();
         // An agent for every app that declares one (ADR 0004 §4): the ones
         // the person already allowed get their peer now, so the system
@@ -6446,8 +6469,10 @@ impl App {
         self.module_host.pump_peer_links(cx);
         // A quit that waited on instances asking the person goes ahead once
         // the last of them confirmed (or failed and has nothing left to ask).
-        if self.take_quit_ready() {
-            log!("wm: every instance and app confirmed; quitting");
+        if self.take_quit_ready() { self.consent_quit_waiting = true; }
+        if self.consent_quit_waiting && !approvals::with(|a| a.consent.persistence_busy()).unwrap_or(false) {
+            self.consent_quit_waiting = false;
+            log!("wm: every instance and app confirmed and consent saved; quitting");
             cx.quit();
         }
     }
@@ -6834,7 +6859,7 @@ impl App {
                 self.drain_client_lines(cx);
                 self.explain_first_exec_scan(cx);
                 self.update_status(cx);
-                self.update_bar(cx);
+                self.refresh_bar(cx, false);
                 self.phone_tick(cx);
                 dev_mode::tick();
                 self.dev_mode_changed(cx);
@@ -6874,6 +6899,11 @@ impl App {
                 self.host_tools_pump(cx);
                 return;
             }
+        }
+        if matches!(event, Event::Signal | Event::Timer(_)) && apps::pump_agent_catalog() && self.state.is_some() {
+            if approvals::with(|a| a.settings_open).unwrap_or(false) { approvals::open_settings(); }
+            self.update_bar(cx);
+            self.redraw_all(cx);
         }
         if let Event::Signal = event {
             if self.state.is_some() {

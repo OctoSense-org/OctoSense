@@ -780,14 +780,29 @@ struct LiveCard {
     session: L0Session,
     body: std::sync::Arc<str>,
     lowered: bool,
+    metadata_checked: bool,
 }
 
 impl LiveCards {
     /// A host-owned pane needs the publication's session, not a generated
     /// layout. Defer lowering until an actual generated tile asks for it.
     pub(crate) fn prepare_native(&mut self, tile: &str, card: &crate::glance::GlanceCard) {
-        if self.cards.get(tile).is_some_and(|live| live.published == *card) { return; }
+        if let Some(live) = self.cards.get_mut(tile).filter(|live| live.published == *card) {
+            // Resolve late catalog metadata once without cloning the full
+            // catalog on each draw, and retain the card's current draft.
+            if !live.metadata_checked && crate::apps::agent_catalog_ready() {
+                live.metadata_checked = true;
+                if let Some(account) = card.account.clone() {
+                    if live.session.workspace_chat.is_none() && live.session.mail.is_none()
+                        && !live.session.reads_chat && crate::agents::all().iter().any(|agent| agent.id == card.app) {
+                        live.session.workspace_chat = Some(WorkspaceChat::new(card, account));
+                    }
+                }
+            }
+            return;
+        }
         self.cards.insert(tile.to_string(), LiveCard {
+            metadata_checked: crate::apps::agent_catalog_ready(),
             key: card.key(), published: card.clone(), session: L0Session::for_card(card),
             body: card.body.clone(), lowered: false,
         });
@@ -946,7 +961,29 @@ script_mod! {
     }
 }
 
+#[cfg(any(feature = "app-hub", native_mobile))]
+struct Admission {
+    root: std::path::PathBuf,
+    generation: u64,
+    task: makepad_platform::thread::TaskHandle<Result<(octosense_app_policy::IsolateSettings, bool), String>>,
+    ready: Option<Result<(octosense_app_policy::IsolateSettings, bool), String>>,
+}
+#[cfg(any(feature = "app-hub", native_mobile))]
+impl Admission {
+    fn poll(&mut self) -> bool {
+        if self.ready.is_none() {
+            if let Some(result) = self.task.try_take() {
+                self.ready = Some(result.unwrap_or_else(|e| Err(e.to_string())));
+                return true;
+            }
+        }
+        false
+    }
+}
+
 struct Tile {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    admission: Option<Admission>,
     frame: WidgetRef,
     card: SplashRef,
     sheet: SplashRef,
@@ -1106,6 +1143,7 @@ impl GlanceTiles {
         ensure_vocabulary(cx);
         let splash = self.open(cx, key, app, contained, body);
         let Some(tile) = self.tiles.get_mut(key) else { return };
+        if tile.frame.is_empty() { return; }
         if !self.scroll {
             tile.frame.as_view().set_scroll_pos(cx, dvec2(0.0, scroll.max(0.0)));
         }
@@ -1154,8 +1192,38 @@ impl GlanceTiles {
 
     /// The tile for `key`, made and seated on first use, running `body`.
     pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
-        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), card: SplashRef::default(), sheet: SplashRef::default(), body: "".into(), app: app.to_string(), contained, workspace: self.viewport_layout, admitted_prompts: false, style_revision: 0, viewport: None, focused: None });
+        let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile {
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            admission: None,
+            frame: WidgetRef::empty(), card: SplashRef::default(), sheet: SplashRef::default(), body: "".into(), app: app.to_string(), contained, workspace: self.viewport_layout, admitted_prompts: false, style_revision: 0, viewport: None, focused: None });
         if tile.frame.is_empty() {
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            let admitted = if contained {
+                let root = octosense_appstore::data_root(cx);
+                let generation = octosense_app_hub_app::icons::generation();
+                if tile.admission.as_ref().is_some_and(|a| a.root != root || a.generation != generation) {
+                    tile.admission = None;
+                }
+                if tile.admission.is_none() {
+                    let worker_root = root.clone();
+                    let app = app.to_string();
+                    match cx.task_pool().submit_named(makepad_platform::thread::Lane::Heavy, "Glance admission", move || {
+                        let settings = admitted_app_isolate_at(&worker_root, &app)?;
+                        let consent = crate::host_tools::script_apps::guidance(&app)
+                            .map(|loaded| loaded.manifest["requires"].as_array().is_some_and(|features|
+                                features.iter().any(|feature| feature.as_str() == Some("host-api-v1"))))
+                            .unwrap_or(true);
+                        Ok((settings, consent))
+                    }) {
+                        Ok(task) => tile.admission = Some(Admission { root, generation, task, ready: None }),
+                        Err(e) => { log!("glance: admission queue unavailable: {e}"); return SplashRef::default(); }
+                    }
+                }
+                match tile.admission.as_mut().and_then(|a| { a.poll(); a.ready.take() }) {
+                    Some(result) => result,
+                    None => return SplashRef::default(),
+                }
+            } else { Err("native card".into()) };
             let scroll = self.scroll;
             let viewport = self.viewport_layout;
             tile.frame = cx.with_vm(|vm| {
@@ -1169,7 +1237,10 @@ impl GlanceTiles {
             tile.card = tile.frame.splash(cx, ids!(card));
             if tile.workspace { tile.sheet = tile.frame.splash(cx, ids!(sheet)); }
             let splash = tile.card.clone();
-            tile.admitted_prompts = seat(cx, &splash, app, contained);
+            tile.admitted_prompts = seat(cx, &splash, app, contained,
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                admitted,
+            );
             if tile.workspace { splash.set_host_prompts(cx, self.foreground && tile.admitted_prompts); }
         }
         let (revision, sheet) = crate::glance_style::current(cx);
@@ -1202,7 +1273,18 @@ impl GlanceTiles {
     /// answers come back to it. A surface calls this for every event while
     /// it has tiles; pointer events only while the tiles are on screen.
     pub fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        for tile in self.tiles.values() {
+        for tile in self.tiles.values_mut() {
+            if tile.frame.is_empty() {
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if matches!(event, Event::Signal | Event::Timer(_)) {
+                    // Retain completion while hidden; wake drawing only once.
+                    if tile.admission.as_mut().is_some_and(Admission::poll)
+                        || tile.admission.is_none() && matches!(event, Event::Timer(_)) {
+                        cx.redraw_all();
+                    }
+                }
+                continue;
+            }
             let splash = tile.card.clone();
             let sheet = tile.sheet.clone();
             let modal = sheet.borrow().is_some_and(|s| s.view.visible);
@@ -1306,17 +1388,14 @@ fn isolate_of(cx: &mut Cx, splash: &SplashRef) -> Option<widget_async::SplashVmI
 
 /// Seat a new tile's isolate before its body runs: the publishing app's
 /// policy for a contained app, none for a native module (module docs).
-fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
+fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool,
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    admitted: Result<(octosense_app_policy::IsolateSettings, bool), String>,
+) -> bool {
     #[cfg(any(feature = "app-hub", native_mobile))]
     if contained {
-        match admitted_app_isolate(cx, app) {
-            Ok(mut settings) => {
-                // Glance is a separate isolate: apply the same opt-in device
-                // consent gate as the full app before evaluating its source.
-                let requires_consent = crate::host_tools::script_apps::guidance(app)
-                    .map(|loaded| loaded.manifest["requires"].as_array().is_some_and(|features|
-                        features.iter().any(|feature| feature.as_str() == Some("host-api-v1"))))
-                    .unwrap_or(true);
+        match admitted {
+            Ok((mut settings, requires_consent)) => {
                 splash.set_device_consent(cx, requires_consent);
                 let admitted_prompts = settings.host_prompts;
                 settings.host_prompts = false;
@@ -1346,7 +1425,11 @@ pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSe
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn admitted_app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
-    let root = octosense_appstore::data_root(cx);
+    admitted_app_isolate_at(&octosense_appstore::data_root(cx), app)
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn admitted_app_isolate_at(root: &std::path::Path, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
     let policy = match octosense_appstore::system::system_app(app) {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.1,
         None => {
@@ -1455,6 +1538,19 @@ mod tests {
         crate::apps::test_system_apps::register(octosense_appstore::system::SystemApp { id, name: "Glance test", pack: Box::leak(pack.into_boxed_str()), assets: &[] });
     }
 
+    #[cfg(feature = "app-hub")]
+    impl GlanceTiles {
+        fn open_ready(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                let splash = self.open(cx, key, app, contained, body);
+                if splash.borrow().is_some() { return splash; }
+                assert!(std::time::Instant::now() < deadline, "admission did not finish for {app}");
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+    }
+
     /// A Cx with the widgets and the tile frame registered, for driving
     /// tiles without a window.
     #[cfg(feature = "app-hub")]
@@ -1505,7 +1601,7 @@ mod tests {
         for dark in [false, true, false] {
             let sheet = desktop_style::StyleSheet::load_with_appearance(desktop_style::DesktopStyle::Android, dark);
             crate::glance_style::select(&mut cx, &sheet);
-            let card = tiles.open(&mut cx, "style-event", "test.style", false, &body);
+            let card = tiles.open_ready(&mut cx, "style-event", "test.style", false, &body);
             draw(&mut cx, &mut tiles); draw(&mut cx, &mut tiles);
             let vm_id = isolate_of(&mut cx, &card).unwrap();
             let draft = card.text_input(&cx, ids!(draft));
@@ -1548,11 +1644,11 @@ mod tests {
         register_test_app("os.glancetile");
         let mut cx = tile_cx();
         let mut tiles = GlanceTiles::default();
-        let app = tiles.open(&mut cx, "os.glancetile/c", "os.glancetile", true, &"View{}".into());
+        let app = tiles.open_ready(&mut cx, "os.glancetile/c", "os.glancetile", true, &"View{}".into());
         let heap = heap_of(&mut cx, &app);
         assert!(service_allowed(heap, "glance.list").is_ok(), "the app's grant");
         assert!(service_allowed(heap, "mail.send").is_err(), "not granted to the app");
-        let native = tiles.open(&mut cx, "news/c", "news", false, &"View{}".into());
+        let native = tiles.open_ready(&mut cx, "news/c", "news", false, &"View{}".into());
         let heap = heap_of(&mut cx, &native);
         assert!(service_allowed(heap, "glance.list").is_err(), "a native module's tile has no grants");
     }
@@ -1616,8 +1712,8 @@ mod tests {
         let mut tiles = GlanceTiles::scrolling();
         tiles.viewport_layout = true;
         tiles.set_foreground(&mut cx, true);
-        tiles.open(&mut cx, "auth", "os.glanceauthhandoff", true, &"View{}".into());
-        tiles.open(&mut cx, "other", "os.glanceauthhandoff", true, &"View{}".into());
+        tiles.open_ready(&mut cx, "auth", "os.glanceauthhandoff", true, &"View{}".into());
+        tiles.open_ready(&mut cx, "other", "os.glanceauthhandoff", true, &"View{}".into());
         let sheet = tiles.tiles["auth"].sheet.clone();
         let other = tiles.tiles["other"].sheet.clone();
         sheet.set_text(&mut cx, "View{reader := WebReader{}}");
@@ -1699,7 +1795,7 @@ mod tests {
         let body: std::sync::Arc<str> = r#"GlanceInputProbe { width: Fill height: Fill
             draft := TextInput { text: "Unsent local draft — 保留" }
         }"#.into();
-        let app = tiles.open(&mut cx, "workspace", "os.glancedraw", true, &body);
+        let app = tiles.open_ready(&mut cx, "workspace", "os.glancedraw", true, &body);
         let app_heap = heap_of(&mut cx, &app);
         let sheet = tiles.tiles["workspace"].sheet.clone();
         let pass = DrawPass::new(&mut cx);
@@ -1754,7 +1850,7 @@ mod tests {
         });
         let mut cx = tile_cx();
         let mut tiles = GlanceTiles::default();
-        tiles.open(&mut cx, "os.glanceinput/draft", "os.glanceinput", true, &"probe := GlanceInputProbe{}".into());
+        tiles.open_ready(&mut cx, "os.glanceinput/draft", "os.glanceinput", true, &"probe := GlanceInputProbe{}".into());
         tiles.handle_event(&mut cx, &Event::TextInput(TextInputEvent { input: "hello".into(), ..Default::default() }));
         assert_eq!(TYPED.with(|t| t.borrow().clone()), "hello", "the typed text reached the card");
         // The request the card queued goes out on the next event.
@@ -2035,8 +2131,8 @@ mod tests {
         let mut live = LiveCards::default();
         let body = live.body(&key, &card, "glance panel");
         assert!(body.contains("Reply") && body.contains("Ask") && !body.contains("Net 30."), "{body}");
-        tiles.open(&mut cx, &key, "os.mail", false, &"View{}".into());
-        tiles.open(&mut cx, "os.other/c", "os.other", false, &"View{}".into());
+        tiles.open_ready(&mut cx, &key, "os.mail", false, &"View{}".into());
+        tiles.open_ready(&mut cx, "os.other/c", "os.other", false, &"View{}".into());
         let heap = tiles.heap_key(&mut cx, &key).unwrap();
         let other = tiles.heap_key(&mut cx, "os.other/c").unwrap();
         assert_ne!(heap, other);
@@ -2094,7 +2190,7 @@ mod tests {
         let mut tiles = GlanceTiles::default();
         let mut live = LiveCards::default();
         let body = live.body(&card.key(), &card, "glance panel");
-        tiles.open(&mut cx, &card.key(), &card.app, true, &"View{}".into());
+        tiles.open_ready(&mut cx, &card.key(), &card.app, true, &"View{}".into());
         let heap = tiles.heap_key(&mut cx, &card.key()).unwrap();
         queue_tap(Tap { heap, target: target_for(&body, "track"), typed: None });
         assert!(live.dispatch(&mut cx, &tiles, "glance panel"));
@@ -2158,7 +2254,7 @@ mod tests {
         register_host_service(Box::new(Holds(held.clone())));
         let mut cx = tile_cx();
         let mut tiles = GlanceTiles::default();
-        let splash = tiles.open(&mut cx, "os.glancesweep/c", "os.glancesweep", true, &"View{}".into());
+        let splash = tiles.open_ready(&mut cx, "os.glancesweep/c", "os.glancesweep", true, &"View{}".into());
         let heap = heap_of(&mut cx, &splash);
         let call = ServiceCall { app_id: "os.glancesweep".into(), service: "glancetilehold.wait".into(), args: serde_json::Value::Null,
             from_sheet: false, may_prompt: false, host_dir: std::env::temp_dir() };
@@ -2221,7 +2317,7 @@ mod tests {
             composer := TextInput { width: Fill height: 46 text: "A draft question" }
             ask := Button { width: Fill height: 48 text: "Ask" }
         }"#.into();
-        let splash = tiles.open(&mut cx, "resize/editor", "mail", false, &body);
+        let splash = tiles.open_ready(&mut cx, "resize/editor", "mail", false, &body);
         let frame = tiles.tiles["resize/editor"].frame.clone();
         let pass = DrawPass::new(&mut cx);
         let mut list = DrawList2d::new(&mut cx);
