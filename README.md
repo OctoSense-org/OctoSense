@@ -369,6 +369,7 @@ A phone runs the shell, the kernel, up to a dozen app agents and their apps at t
 | [`crates/app-peers/`](crates/app-peers/README.md) | The app-agent broker, package `octosense-app-peers`: one peer per (app, account), its two lanes, its tools, `peer/input`, deadlines, purge. |
 | [`crates/l0-chat/`](crates/l0-chat/README.md) | The host side of an L0 card's in-card chat (`sys.chat`), package `octosense-l0-chat`. |
 | [`crates/toolbox/`](crates/toolbox/README.md) | The system toolbox, package `octosense-toolbox`: workflow templates and `mod.research`, offered to app agents behind the `toolbox-peers` feature. |
+| [`crates/wasm-host/`](docs/wasm.md) | The runtime for apps' own WebAssembly functions, package `octosense-wasm-host`: Wasmtime with Cranelift, the sandbox and its limits. The shell's `wasm` service runs it on macOS, Linux and Android. |
 | [`apps/`](apps/README.md) | The system apps (News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube) as script apps, their host services (`mail`, `calendar`, `news`, `llm`), `apps/reference`, and the opt-in AppCard assistant. |
 | [`native-apps.json`](native-apps.json) | Every native app: where its code comes from, how it is hosted on each platform, and its agent. `tools/native_apps.py` generates the shell's code and Cargo entries from it. |
 | `tools/` | `setup.py` (the pinned framework sources), the reviewed Makepad runtime patch (`runtime-patches/`), `kernel-artifact.py` (the octos kernel build), `check-shell-graph.sh` (dependency-graph guards). |

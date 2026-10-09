@@ -2,10 +2,12 @@
 
 [English](0011-apps-own-functions-in-webassembly.md) | 简体中文
 
-状态：提议中。在外壳的 `wasm-lab` 特性（默认关闭）之后实现，契约部分在 App Hub #140
-（app-contract 1.7.0）。已在 macOS 的隐藏桌面外壳中，以及一部
-Android 手机（Redmi Note 12）上单独打包的 Home 中验证；iOS 和 OpenHarmony 尚未尝试。
-`main` 上的实现方式、限制和检查见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
+状态：已接受（2026-10-08），有限支持。外壳的 `wasm-functions` 特性（原名 `wasm-lab`）在每个
+标准桌面版和 Home 构建中开启，服务在 macOS、Linux 和 Android 上运行。Windows（尚未检查）、
+iOS（应用不允许生成代码）和 OpenHarmony（策略未知）不包含这个运行时。契约部分在 App Hub #140
+（app-contract 1.7.0）。已在 macOS 的隐藏桌面外壳中、Linux 的无头桌面中，以及 Android 手机上
+验证：单独打包的 Home 中的 Redmi Note 12，以及手机验收中的 OnePlus 6。iOS 和 OpenHarmony 尚未
+尝试。`main` 上的实现方式、限制和检查见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
 
 ## 背景
 
@@ -30,7 +32,7 @@ Rust 写：解析器、排序或排程算法、差异比较、格式转换，或
    （2 秒，按实际经过的时间做 epoch 中断）；内存（256 MiB）、表元素（16,384 个）、wasm 栈（512 KiB）、模块
    （8 MiB）以及输入输出（16 MiB）都有上限。陷阱或超时只让这次调用出错，绝不结束进程，
    并作废这个实例：下次调用会得到新实例，因为 Rust 客体的栈指针和分配器可能只更新了一半。
-3. **`wasm` 宿主服务**（外壳特性 `wasm-lab`）。`wasm.<function>` 调用发起请求的应用自己的
+3. **`wasm` 宿主服务**（外壳特性 `wasm-functions`，原名 `wasm-lab`）。`wasm.<function>` 调用发起请求的应用自己的
    函数；`wasm.functions` 列出这些函数、加载情况和运行统计。字符串参数按文本传入，
    其他参数按 JSON 传入；JSON 输出作为数据返回，其他输出返回 `{"text": …}`。
    模块只来自调用应用自己通过准入、经过摘要检查的应用包，而不是请求参数指定的文件。
@@ -124,6 +126,8 @@ Cranelift 与 LLVM 的代码生成，而不是向量化。Wasmtime 和 Cranelift
 
 - 对这些工作负载，第三方 Rust 在 OctoSense 应用中的运行时间是原生的 1.4–2.2 倍，不引入
   新的信任，默认构建不变。
+  *2026-10-08：以有限支持的方式接受。macOS、Linux 和 Android 上的标准构建现在包含这个服务及其
+  运行时，约 7.5 MiB 代码。*
 - Android APK 增加 3.5 MiB（从 209.1 MB 到 212.8 MB，含 Wasm Lab 自己的应用包）；运行时
   约为 7.5 MiB 代码。
 - 在中端手机上，每个模块编译约 0.4 秒（Home 启动期间 0.67 秒）。有了缓存，之后的加载只要

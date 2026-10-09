@@ -93,13 +93,14 @@ cargo run --release -p octosense
 | --- | --- | --- |
 | `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）；Mail、News、Calendar 和 AI providers 宿主服务；已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）；以及 GitHub Notes 使用的 Markdown 编辑器（`octosense-markdown-editor`）。没有它，构建中既没有 App Hub 也没有系统应用。 |
 | `octos-core` | 开 | octos 内核服务（`octosense-kernel`，来自 `../crates/kernel`）和应用与 Agent 之间的代理（`octosense-app-peers`）：AppCard、Rinx 等使用方共享的唯一内核，由 AI 提供商配置。Android 和 iOS 上始终开启。用 `--no-default-features --features app-hub`（再加上需要的其他 feature）可以去掉它。 |
+| `wasm-functions` | 开 | `wasm` 宿主服务：应用自带的 WebAssembly 函数（[ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.zh-CN.md)、[OctoSense 中的 WebAssembly](../docs/wasm.zh-CN.md)），由 `../crates/wasm-host` 运行（Wasmtime，由 Cranelift 编译）。在 macOS 和 Linux 上运行；Windows 构建不包含这个运行时。`wasm-lab` 是它以前的名字。 |
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
 | `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell。在 macOS 和 Windows 上它作为独立进程运行（`terminal`，由 Shell 在 OctoSense 检出中用 `cargo build` 构建后自己启动，否则使用 `octosense` 旁边的二进制文件），因此它崩溃不会影响 Shell；在 Linux 上只有 Vulkan 构建且处于 Wayland 会话时才如此。无法启动进程时（没有检出也没有二进制文件：发布包只附带 `octosense` 和内核），它在进程内打开；在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Module` 或 `terminal: Process` 可覆盖默认值。无论哪种托管方式，AI 面板都能读取它（`read_screen`、`read_scrollback`），但只有 Terminal 作为独立进程运行时才能输入命令（`run`）；在进程内，Terminal 只提供读取工具（ADR 0004 §10）。在开发者模式之外，每条命令都要等待用户在宿主面板上批准（`native-apps.json` 中为 `confirm: host`、`auto_approvable: false`），超过 4 KiB 的命令会被拒绝。在 macOS 上进程内运行时，Shell 的 PTY 辅助程序就是 `octosense` 本身。 |
 | `app-appcard` | 关 | 链接 AppCard 助手模块（`../apps/appcard/module`）；隐含 `octos-core`。在所有目标平台（包括手机）上都需显式启用；目前不随产品发布。 |
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
-| `mobile-apps` | 关 | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
+| `mobile-apps` | 关 | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core` + `wasm-functions`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
 
 已链接的原生应用按照 `native-apps.json` 中该平台的 `hosting` 托管：App Hub、Rinx、AppCard、Reference 和 Sheets 在所有平台上都在进程内运行，Terminal 在 macOS 和 Windows 上（以及 Vulkan 构建且处于 Wayland 会话的 Linux 上）作为独立进程运行，没有模块的 Task 只作为独立进程运行，在没有进程的平台上不提供。用 `--module <id>`（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）可改为在进程内打开：
 
