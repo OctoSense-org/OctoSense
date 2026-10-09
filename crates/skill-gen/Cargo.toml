@@ -1,0 +1,18 @@
+# octosense-skill-gen — the generated references of a craft engine's skill
+# (ADR 0013): `commands.md` (the engine's command catalog, one line per id)
+# and `safety.json` (every id's safety class), made from the engine's live
+# catalog at the pinned revision and checked against the files in
+# `apps/<family>/host-service/skill/`. A dev-dependency of the engine
+# services' `tests/skill.rs`; nothing ships it.
+[package]
+name = "octosense-skill-gen"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

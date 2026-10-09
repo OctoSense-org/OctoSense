@@ -565,6 +565,22 @@ not granted. Every path is relative to the engine's own area,
 engine works on what its own tools wrote (`word.new`, `deck.new`, the
 conversions).
 
+**Engine skills.** Each engine, the sheet and photo engines included, also
+ships a skill for the system agent in `<family>/host-service/skill/`: a
+hand-written `SKILL.md` (what the engine does, the tools the system agent has
+for it, the file rules, worked examples) and references generated from the
+engine at its pin: `commands.md` (its command catalog, one line per id,
+tagged by what each command reaches), light's `controls.md` and sheet's
+`functions.md`. Beside them, `safety.json` (every command id's class, for a
+reviewed command door) stays in the repository. The kernel service installs
+the linked engines' skills into the `_main` profile's skills dir before every
+start ([`../crates/kernel/README.md`](../crates/kernel/README.md#the-system-agents-skills));
+octos lists their one-line descriptions in the system agent's prompt, and the
+agent reads a skill when it needs that engine. Each service's
+`tests/skill.rs` fails when a reference drifts from the pinned engine;
+`OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
+regenerates it.
+
 **Mail card reply modes.** The system agent can provision automatic drafts for replyable important mail and Compose reply on request for automated/no-reply mail. The host adds Compose reply to informational incoming-email cards, verifies the original message and asks the Mail agent to create a draft. The same card becomes Email/Chat with saved editing and host review. See [Mail events](../docs/mail-agent-events.md).
 
 **A service API is not automatically an agent tool.** Mail explicitly declares

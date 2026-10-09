@@ -26,4 +26,8 @@ gridcraft-xlsx = { workspace = true }
 makepad-script-compute = { workspace = true }
 
 [dev-dependencies]
+# Generates and checks the skill's references (tests/skill.rs).
+octosense-skill-gen = { workspace = true }
+# The worksheet-function catalog skill/functions.md is generated from.
+gridcraft-functions = { workspace = true }
 tempfile = "3"

@@ -22,6 +22,8 @@ serde_json = { workspace = true }
 lightcraft-engine = { workspace = true }
 
 [dev-dependencies]
+# Generates and checks the skill's references (tests/skill.rs).
+octosense-skill-gen = { workspace = true }
 # Its tool manifest is checked with App Hub's own loader (tools.json).
 octosense-app-policy = { workspace = true }
 # Test-only: the engine's own synthetic-DNG generator — a real RAW fixture

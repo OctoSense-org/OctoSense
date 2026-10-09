@@ -27,6 +27,9 @@
 //! engine and area, and `photos.notify` through the shell's notice hook
 //! ([`on_notify`]), so the notice service never stands in for Photos.
 
+/// The system agent's skill for this engine (ADR 0013).
+pub mod skill;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 

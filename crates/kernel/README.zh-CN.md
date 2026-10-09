@@ -166,6 +166,26 @@ Shell 把授权交给本 crate（`system_tools::set_grants`）；每次内核启
 该策略只写入 OctoSense 自己的 core 目录，且只覆盖 OctoSense 写入的策略（`"owner": "octosense"`）：遇到外来策略或用户自己的
 `$HOME/octos-home/.octos` 时拒绝并发出警告。
 
+## 系统智能体的技能
+
+[ADR 0013](../../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)：系统智能体通过 octos 技能了解构建中链接的每个 craft 引擎，
+请求用到某个引擎时才读取它的说明，而不必在每个回合都带上每个引擎方法的工具 schema。Shell 在启动时注册一次这些技能
+（`skills::set_managed`，来自 `crates/shell/src/system_chat/skills.rs`）；每次内核启动前，`launch::prepare` 把它们同步
+（`skills::sync`）到 octos 为 `_main` profile 读取的技能目录：
+
+- **位置。** `<core_dir>/profiles/_main/data/skills/<name>/`：即该 profile 的数据目录；若 `_main.json` 指定了绝对路径的
+  `data_dir`，则为 `<data_dir>/skills`，与 octos 的 `ProfileStore::resolve_data_dir` 一致。profile 运行时启动时，octos 把每个技能的
+  名称、描述和 `SKILL.md` 位置列入该 profile 的系统提示词（`## Available Skills`），所以从这次启动起，`_main` 的每个会话（包括应用
+  Agent 的会话）都能看到这份摘要。该目录也是每个会话文件工具的只读区域，因此必须在启动前就存在。
+- **受管理，从不动用户的技能。** 每个受管理的技能都带有 `.octosense-managed`。同步时写入缺失或已变化的技能（在旁边构建，再用重命名换入），
+  删除不再注册的受管理技能；没有该标记的技能，即使名称与注册的技能相同，也从不写入、移动或删除（那个注册的技能会被报告为未安装）。
+  Shell 注册技能集之前什么都不做，也从不写入用户自己的 `$HOME/octos-home/.octos`。
+- **失败时放行。** 技能是指引，不是边界：无法安装的技能会记入日志（`octos-core: managed skills in <dir>: ...`），内核照常启动。
+  只有工具策略在失败时阻止启动。
+- **校验。** `skills::validate` 拒绝 octos 会误读的技能：名称不在 `[a-z0-9-]` 之内、文件路径出了技能目录、`SKILL.md` 的
+  frontmatter 写的是另一个技能、描述缺失、超过 200 字节、带引号，或含有 `#`（octos 会在此截断）或 `<`、`>`、`&`
+  （其摘要是未转义的 XML），以及 `always: true`（会把整个正文加载进每个回合）。
+
 ## 测试
 
 在仓库根目录：

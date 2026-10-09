@@ -1,0 +1,268 @@
+{
+  "engine": "deckcraft",
+  "method": "Read the run fn of every spec in crates/engine/src/cmd/*.rs (16 spec files) plus lib.rs, recovery.rs and guard.rs, and rg'd the engine for std::fs, env, UiRequest pushes, nested s.execute calls and clipboard use; for the UiRequest stubs (media.play/pause/toggle/stop/seek, show.fromStart/fromCurrent, the PickFile fallback of file.save*) I read what the egui host does with them in crates/ui-egui. Verified: every nested execute uses a fixed inner id (no caller-chosen command ever runs, so nothing is `code`), the clipboard is the engine's own Session.clipboard (the OS clipboard's text only arrives as edit.paste's `text` param), and the pptx/format importers record external link targets as strings without reading files or URLs. Not counted per command: guard.rs writes AutoRecover files for every open document when any command panics and the host set recovery_dir, and text layout lazily scans the OS font folders (deckcraft-fonts FontDb::load_system_fonts), both host-controlled and never caller-chosen. Classes are for the pinned revision d0e57d7; a headless session (OctoSense deck host-service) has recovery_dir unset and nobody draining ui_requests, so the device rules and the PickFile branch are stubs there.",
+  "rules": [
+    {
+      "prefix": "file.",
+      "class": "file",
+      "why": "file.open reads `path` with std::fs::read and opens it as a deck; file.export renders PNG/JPEG per slide (multiple slides become `<stem>N.<ext>` siblings), PDF, PPTX, outline or native bytes and writes each to `path` through write_file (std::fs::write to `<path>.saving`, then std::fs::rename).",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:86-93 open(): std::fs::read(path), add_opened",
+        "crates/engine/src/cmd/file.rs:171-176 write_file(): std::fs::write tmp + std::fs::rename",
+        "crates/engine/src/cmd/file.rs:226-273 export(): write_file per output (png/jpeg loop, pdf, save_bytes formats)"
+      ]
+    },
+    {
+      "prefix": "file.recovery.",
+      "class": "file",
+      "why": "AutoRecover in the host-set Session.recovery_dir (default ~/Library/Application Support/DeckCraft/Recovery, %APPDATA%\\DeckCraft\\Recovery or $XDG_DATA_HOME/deckcraft/recovery): save create_dir_all's it and writes `<uid>.deckcraft` + `<uid>.json`; list read_dir's it and reads each JSON; open std::fs::read's every entry into a new document (taking its stored `path`) and deletes the entry; discard remove_file's one or all entries.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:325-365 recovery_dir()/recovery_save/list/open/discard",
+        "crates/engine/src/recovery.rs:44-48 discard(): std::fs::remove_file x2",
+        "crates/engine/src/recovery.rs:52-70 save(): create_dir_all, std::fs::write + rename, meta JSON",
+        "crates/engine/src/recovery.rs:73-113 list(): read_dir/read_to_string; open(): std::fs::read, DocState with recovered path"
+      ]
+    },
+    {
+      "ids": ["file.new", "file.openBytes", "file.saveBytes", "file.render", "file.properties", "file.revert"],
+      "class": "safe",
+      "why": "Naming trap: these file.* ids never touch a path. file.new builds a deck from a built-in theme, file.openBytes decodes base64 `data` (pptx external links stay strings), file.saveBytes returns the encoded deck as base64, file.render returns a slide PNG as base64, file.properties edits doc.props, and file.revert restores the in-memory saved snapshot (DocState.saved_doc) without re-reading the file.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:43-55 new(): defaults::blank_presentation",
+        "crates/engine/src/cmd/file.rs:99-105 open_bytes(): base64_decode + open_presentation",
+        "crates/engine/src/cmd/file.rs:203-224 save_bytes_cmd()/render(): base64 results only",
+        "crates/engine/src/cmd/file.rs:282-313 properties()/revert(): s.edit on doc.props; st.doc = st.saved_doc",
+        "crates/pptx/src/opc.rs:106-108 external relationship targets kept as strings"
+      ]
+    },
+    {
+      "ids": ["file.save", "file.saveAs", "file.saveTemplate"],
+      "class": "host",
+      "why": "With `path`, or the document's stored DocState.path (which file.open, file.saveAs and file.recovery.open set), they encode the deck and write it through write_file like file.export. With neither they only return needsPath and queue UiRequest::PickFile, which the egui host turns into a native Save dialog (services.pick_save) before calling file.saveAs (a stub when headless). host is stricter than file. A door that always passes a caller-folder `path` could treat them as file, but must remember that a missing `path` falls back to the stored path.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:182-201 save()/save_as(): path param or d.path, else UiRequest::PickFile",
+        "crates/engine/src/cmd/file.rs:156-168 mark_saved(): also recovery::discard of the entry",
+        "crates/ui-egui/src/lib.rs:457-461 drain_requests: PickFile saveAs -> save_as_dialog",
+        "crates/ui-egui/src/lib.rs:395-409 save_as_dialog(): services.pick_save then file.saveAs {path}"
+      ]
+    },
+    {
+      "ids": ["file.close"],
+      "class": "file",
+      "why": "Closes the active document in memory, but Session::close_document then calls recovery::discard, which std::fs::remove_file's that document's `<uid>.deckcraft`/`<uid>.json` AutoRecover entry whenever the host set recovery_dir (None headless, where it touches nothing).",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs:275-280 close(): s.close_document(i)",
+        "crates/engine/src/lib.rs:373-381 close_document(): recovery::discard(dir, d.uid) when recovery_dir is set",
+        "crates/engine/src/recovery.rs:44-48 discard(): std::fs::remove_file"
+      ]
+    },
+    {
+      "prefix": "window.",
+      "class": "safe",
+      "why": "Naming trap: window.next only changes which open document of the session is active (Session::set_active); no OS window or panel is involved.",
+      "evidence": ["crates/engine/src/cmd/file.rs:315-323 next_window(): s.set_active(i)"]
+    },
+    {
+      "prefix": "edit.",
+      "class": "safe",
+      "why": "Undo/redo swap Arc snapshots of the deck; cut/copy/paste use the engine's own Session.clipboard (edit.copy returns the text for the host to place on the OS clipboard, and edit.paste/pasteText take the OS clipboard's text as the caller's `text` param); duplicate/delete/select edit the deck. Nested calls are fixed ids (insert.textBox, slide.delete, text.selectAll).",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs:27-44 restore(): history Arc swap",
+        "crates/engine/src/cmd/edit.rs:69-115 copy_inner(): s.clipboard = Clipboard{..}",
+        "crates/engine/src/cmd/edit.rs:158-245 paste()/paste_text(): `text` param or s.clipboard; fixed insert.textBox",
+        "crates/engine/src/lib.rs:279-290 Clipboard: in-app clipboard struct"
+      ]
+    },
+    {
+      "prefix": "slide.",
+      "class": "safe",
+      "why": "Slide list, layout, notes, hide, rename, editor navigation (slide.go/next/previous/first/last move Selection.slide, not a slideshow) and slide selection edit the open deck; slide.fromOutline parses its `text` param; slide.inspect returns JSON.",
+      "evidence": [
+        "crates/engine/src/cmd/slide.rs:573-586 from_outline(): outline_to_slides on `text`",
+        "crates/engine/src/cmd/inspect.rs:112-135 slide(): JSON summary"
+      ]
+    },
+    {
+      "prefix": "section.",
+      "class": "safe",
+      "why": "Add, rename, remove and move sections in doc.sections of the open deck.",
+      "evidence": ["crates/engine/src/cmd/slide.rs:37-49 section.* specs; 488-571 section_add..section_move: s.edit on doc.sections"]
+    },
+    {
+      "prefix": "shape.",
+      "class": "safe",
+      "why": "Geometry, outline, effects, quick styles, names, alt text, visibility, lock, connectors and freeforms (fixed shape.insert), shape.merge boolean ops, the preset gallery, connection sites and shape.inspect JSON all act on the deck; shape.setDefault keeps the look in Session.default_look.",
+      "evidence": [
+        "crates/engine/src/cmd/shape.rs:113-218 move/resize/rotate/flip/adjust/change via edit_shapes",
+        "crates/engine/src/cmd/shape.rs:581-594 set_default(): s.default_look",
+        "crates/engine/src/cmd/shape.rs:717-838 connect()/freeform(): fixed s.execute(shape.insert)",
+        "crates/engine/src/cmd/merge.rs: shape.merge geometry only"
+      ]
+    },
+    {
+      "ids": ["shape.fill", "design.background"],
+      "class": "file",
+      "why": "Naming trap: the params advertise `picture?: base64`, but both pass `picture` to insert::media_bytes as `data` via with_param, which keeps every other caller key. A non-string `picture` (e.g. null) leaves `data` unreadable, so media_bytes falls through to an undocumented `path` and std::fs::read's that file into the deck as a picture fill or background.",
+      "evidence": [
+        "crates/engine/src/cmd/shape.rs:276-280 fill(): p.get(picture).is_some() -> media_bytes(&with_param(p, data, picture))",
+        "crates/engine/src/cmd/design.rs:177-181 background(): same media_bytes(with_param(..)) call",
+        "crates/engine/src/cmd/mod.rs:186-190 with_param(): clones all params, inserts `data`",
+        "crates/engine/src/cmd/insert.rs:212-224 media_bytes(): `data` string else std::fs::read(path)"
+      ]
+    },
+    {
+      "prefix": "insert.",
+      "class": "safe",
+      "why": "Text boxes, tables, charts, WordArt, SmartArt (fixed arrange.group + shape.rename), symbols, action buttons and slide-number/date fields (fixed design.headerFooter) edit the deck. insert.hyperlink only stores the URL or slide target as a click action (Action::Url); nothing in the engine fetches it.",
+      "evidence": [
+        "crates/engine/src/cmd/insert.rs:545-560 field_run(): fixed s.execute(design.headerFooter)",
+        "crates/engine/src/cmd/insert.rs:570-589 hyperlink(): Action::Url { url } stored on the run or shape",
+        "crates/engine/src/cmd/insert.rs:702-789 smart_art(): fixed arrange.group, shape.rename"
+      ]
+    },
+    {
+      "ids": ["insert.picture", "insert.audio", "insert.video", "picture.change"],
+      "class": "file",
+      "why": "Besides base64 `data`, all four accept `path`, and insert::media_bytes std::fs::read's it (any file the process can read) and embeds the bytes in the deck. insert.audio/video also queue an unplayable-codec warning as a UiRequest::Message status line, which I did not count as host.",
+      "evidence": [
+        "crates/engine/src/cmd/insert.rs:212-224 media_bytes(): std::fs::read(path)",
+        "crates/engine/src/cmd/insert.rs:295-296 picture(): media_bytes",
+        "crates/engine/src/cmd/insert.rs:445-447 media(): media_bytes (audio/video)",
+        "crates/engine/src/cmd/shape.rs:650-661 picture_change(): media_bytes(p, ..)"
+      ]
+    },
+    {
+      "prefix": "chart.",
+      "class": "safe",
+      "why": "Change chart type, data and elements on a chart shape in the deck.",
+      "evidence": ["crates/engine/src/cmd/insert.rs:625-699 with_chart(): edit_shapes on ShapeKind::Chart"]
+    },
+    {
+      "prefix": "picture.",
+      "class": "safe",
+      "why": "Crop, corrections and reset edit the picture fill of shapes in the deck.",
+      "evidence": ["crates/engine/src/cmd/shape.rs:596-648 crop()/picture_adjust()/picture_reset(): edit_shapes"]
+    },
+    {
+      "prefix": "media.",
+      "class": "device",
+      "why": "media.play/pause/toggle/stop/seek only push UiRequest::Media for the UI host (a stub when headless, since nothing drains ui_requests); the egui host plays the clip through deckcraft-media's Player with the cpal audio output and video feeds.",
+      "evidence": [
+        "crates/engine/src/cmd/media.rs:59-84 request(): s.ui_requests.push(UiRequest::Media)",
+        "crates/ui-egui/src/lib.rs:462-467 drain_requests: Media -> self.media.request",
+        "crates/ui-egui/src/media.rs:1-2,51 MediaHost: Player (audio out + clocks), cpal AudioOut injected"
+      ]
+    },
+    {
+      "ids": ["media.options", "media.info", "media.posterFrame"],
+      "class": "safe",
+      "why": "media.options sets playback fields on the MediaClip in the deck; media.info probes the embedded media bytes and returns the host-reported Session.media_status; media.posterFrame decodes a frame of the embedded video in memory and stores it as the poster.",
+      "evidence": [
+        "crates/engine/src/cmd/shape.rs:663-704 media_options(): edit_shapes on ShapeKind::Media",
+        "crates/engine/src/cmd/media.rs:96-119 info(): deckcraft_media::probe(&item.data)",
+        "crates/engine/src/cmd/media.rs:132-149 poster_frame(): poster_png from embedded bytes"
+      ]
+    },
+    {
+      "prefix": "arrange.",
+      "class": "safe",
+      "why": "Z-order, group/ungroup/regroup, align, distribute, rotate, flip and nudge on the deck (rotate/flip/nudge delegate to fixed shape.rotate/flip/move).",
+      "evidence": ["crates/engine/src/cmd/arrange.rs:39-47,202 fixed s.execute(shape.rotate|shape.flip|shape.move|arrange.group)"]
+    },
+    {
+      "prefix": "text.",
+      "class": "safe",
+      "why": "In-place text editing, caret and selection, set/get text on shapes, table cells and notes (smart quotes and autocorrect read Session.prefs).",
+      "evidence": ["crates/engine/src/cmd/text.rs:14 specs(): text.* run fns use s.edit / s.select only (no fs, no ui_requests)"]
+    },
+    {
+      "prefix": "format.",
+      "class": "safe",
+      "why": "Character and paragraph formatting on the selection (font is a family name stored in the run); the Format Painter keeps its copied formatting in Session.painter; format.state is a query.",
+      "evidence": [
+        "crates/engine/src/cmd/format.rs:230-232 font(): r.font = family",
+        "crates/engine/src/cmd/format.rs:547-600 painter_pick()/painter_apply(): s.painter"
+      ]
+    },
+    {
+      "prefix": "design.",
+      "class": "safe",
+      "why": "Themes, colour and font schemes come from built-ins (or names/hex values in params); slide size, header/footer and hide-background-graphics edit the deck.",
+      "evidence": [
+        "crates/engine/src/cmd/design.rs:66-149 theme()/themes()/colors()/fonts(): builtin_themes/schemes",
+        "crates/engine/src/cmd/design.rs:242-382 slide_size()/header_footer(): s.edit"
+      ]
+    },
+    {
+      "prefix": "view.",
+      "class": "safe",
+      "why": "view.slideMaster/closeMaster switch Selection.target, i.e. which shape tree (slides, a master or a layout) later commands edit; engine editing state, not a UI-only view.",
+      "evidence": ["crates/engine/src/cmd/design.rs:413-437 master_view()/close_master(): s.select sets sel.target"]
+    },
+    {
+      "prefix": "master.",
+      "class": "safe",
+      "why": "Insert, rename and delete layouts and insert placeholders in the deck's slide masters.",
+      "evidence": ["crates/engine/src/cmd/design.rs:439-537 insert_layout/rename_layout/delete_layout/insert_placeholder"]
+    },
+    {
+      "prefix": "transition.",
+      "class": "safe",
+      "why": "Set, time, apply-to-all and list slide transitions stored in the deck.",
+      "evidence": ["crates/engine/src/cmd/transition.rs:12 specs(): s.edit on slide.transition"]
+    },
+    {
+      "prefix": "animation.",
+      "class": "safe",
+      "why": "Add, remove, reorder, time and list shape animations stored on the slides.",
+      "evidence": ["crates/engine/src/cmd/animation.rs:11 specs(): s.edit on slide.animations"]
+    },
+    {
+      "prefix": "table.",
+      "class": "safe",
+      "why": "Rows, columns, merges, styles, shading, sizes and cell selection on table shapes in the deck.",
+      "evidence": ["crates/engine/src/cmd/table.rs:9 specs(): edit_shapes / s.select on ShapeKind::Table"]
+    },
+    {
+      "prefix": "comment.",
+      "class": "safe",
+      "why": "Comments and replies stored on the slides (author from Session.prefs, date from the system clock).",
+      "evidence": ["crates/engine/src/cmd/review.rs:60-124 add/reply/delete/resolve/list on sl.comments"]
+    },
+    {
+      "prefix": "review.",
+      "class": "safe",
+      "why": "Read-only checks of the deck: missing titles/alt text and contrast, and spelling against a small built-in word list (no dictionary files).",
+      "evidence": ["crates/engine/src/cmd/review.rs:126-215 accessibility()/spelling(): const COMMON list"]
+    },
+    {
+      "prefix": "show.",
+      "class": "device",
+      "why": "show.fromStart/fromCurrent only push UiRequest::StartShow (a stub when headless). The egui host then starts the slide show full screen (ViewportCommand::Fullscreen), opens the presenter window when presenter view is on, and autoplays slide media through the audio output.",
+      "evidence": [
+        "crates/engine/src/cmd/review.rs:217-220 start(): s.ui_requests.push(UiRequest::StartShow)",
+        "crates/ui-egui/src/lib.rs:350-355,455 start_show() from drain_requests",
+        "crates/ui-egui/src/show.rs:220,523-524 ViewportCommand::Fullscreen(true), presenter_window",
+        "crates/ui-egui/src/show.rs:548-571 show_media(): autoplay via app.media.play"
+      ]
+    },
+    {
+      "ids": ["show.setup", "show.customShow"],
+      "class": "safe",
+      "why": "Store slide-show settings (doc.show) and named custom shows (doc.custom_shows) in the deck; nothing starts.",
+      "evidence": ["crates/engine/src/cmd/review.rs:222-266 setup()/custom_show(): s.edit"]
+    },
+    {
+      "prefix": "document.",
+      "class": "safe",
+      "why": "document.inspect returns the deck summary as JSON (its stored path is reported, never opened).",
+      "evidence": ["crates/engine/src/cmd/inspect.rs:19-47 document(): JSON from DocState"]
+    },
+    {
+      "prefix": "commands.",
+      "class": "safe",
+      "why": "commands.list returns the registry (Session::commands) filtered by a substring; it runs nothing.",
+      "evidence": ["crates/engine/src/cmd/inspect.rs:145-154 commands(): s.commands() filter only"]
+    }
+  ]
+}

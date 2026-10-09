@@ -27,6 +27,10 @@
 //!   `network`), a restart brings the server straight back, and it does not
 //!   stop when native consumers leave.
 //! - **Shutdown.** [`shutdown`] stops it and waits.
+//! - **The system agent's skills.** Before every start the kernel installs
+//!   the skills the shell registered ([`skills::set_managed`], one per
+//!   linked craft engine) into the skills dir octos reads for the `_main`
+//!   profile ([`skills`]).
 //!
 //! Where it runs: see [`launch`]. The kernel and this crate's frame pump run
 //! on a runtime of their own (8 MiB worker stacks: the embedded core's
@@ -47,6 +51,7 @@ mod port;
 pub use port::{Deliver, PortEvent, PortHandle};
 mod router;
 pub use router::{Scope, SCOPE_DENIED};
+pub mod skills;
 pub mod system_tools;
 
 pub use dirs::{kernel_home, profile_path, resolve_core_dir};
@@ -360,7 +365,13 @@ impl Core {
             }
             // A tool policy that could not be enforced starts nothing
             // (fails closed): the generation ends at once with the reason.
-            let refused = launch::prepare(&launch, &core_dir).err();
+            let refused = match launch::prepare(&launch, &core_dir) {
+                Ok(notes) => {
+                    notes.iter().for_each(|note| (log)(note));
+                    None
+                }
+                Err(why) => Some(why),
+            };
             let ended = move || {
                 if let Some(inner) = weak.upgrade() {
                     let mut st = inner.state.lock().unwrap();
