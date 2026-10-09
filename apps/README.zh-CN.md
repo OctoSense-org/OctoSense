@@ -10,7 +10,7 @@
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 
-- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers 和 YouTube**
+- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers、YouTube 和 Quick Deck**
   是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 Makepad Script/Splash
   程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限由其
   `manifest.json` 经过准入后确定，与商店应用受到的隔离完全相同。它们同时也是
@@ -33,7 +33,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
-- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内；尚无 bundle。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。
 - **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
 - **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
   放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
@@ -108,6 +108,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`（App Hub 支持声明后加上 `deck`） | 无 | [`deck`](deck/host-service)：`new`、`render`、`convert` |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -171,7 +172,12 @@ OctoSense-System-Apps 仓库（已归档）。
 - **日历**（2026-10-01，桌面端，隐藏窗口的 `--remote` 运行，接真实模型）：系统 Agent
   请日历的 Agent 放一张卡片；首次使用面板弹出，Agent 添加了一个日程，它的卡片打开了
   glance 面板。手机上没有打包。它的宿主服务测试还不在 `apps.yml` 中。
-- Camera 和 AI providers 自带 PNG 启动器图案，YouTube 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
+- **Quick Deck**（2026-10-09，macOS 上的 `card-host`，隐藏窗口 `--remote`，浅色与深色）：
+  每个页面和状态都已操作并截图。它的引擎调用暂时无法运行：App Hub 还不能声明 `deck`，
+  所以 `host.request("deck.*")` 会被拒绝（应用会说明原因并保留大纲）；在引擎调用改为在
+  调用方自己的存储中运行之前，应用读不到引擎生成的 PNG（此时每张幻灯片显示其文字）。
+  尚未在 Shell 中运行；`card-host` 不调用 `on_app_resize`，所以宽窗口下 3–4 列的网格**未验证**。
+- Camera 和 AI providers 自带 PNG 启动器图案，YouTube 和 Quick Deck 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
 
@@ -354,6 +360,25 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 ```
 
 演示邮箱的密码存放在文件中，因此不会弹出钥匙串提示。
+
+**Quick Deck 的开发夹具。** `card-host` 没有 `deck` 服务，所以 Quick Deck 带有
+一个仅供开发使用的夹具：它用预设结果回答应用的 `deck.*` 调用，并用真实的引擎
+渲染图代替图片。`quickdeck/dev-fixture/` 中的渲染图由固定版本的 deckcraft
+（d0e57d7e）根据 `dev-fixture/outline.txt` 生成。只有当应用存储中存在
+`dev/fixture.json` 时夹具才会启用；应用从不写入 `dev/`，所以用户永远看不到它，
+而且 Shell 只打包 `bundle/`。
+
+```sh
+mkdir -p <app-data>/os.quickdeck
+cp -R apps/quickdeck/dev-fixture <app-data>/os.quickdeck/dev
+MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port> card-host --bundle apps/quickdeck/bundle --system --app-data <app-data>
+```
+
+此时演示文稿列表页会显示 DEV FIXTURE 标签。`fixture.json` 中，`delay` 是每次调用
+耗费的秒数，`fail` 指定失败的调用（`new`、`render`、`convert` 或 `all`），
+`unreadable: true` 会生成演示文稿但让图片保持不可读，就像引擎调用在改为在调用方
+自己的存储中运行之前那样。输入 `outline.txt` 中的大纲即可得到对应的图片。加上
+`MAKEPAD_WIDGET_STYLE=macos-dark` 可查看深色外观。
 
 ## 宿主服务与面板
 

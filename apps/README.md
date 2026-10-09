@@ -11,7 +11,7 @@ the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail, Calendar, AI providers and YouTube** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube and Quick Deck** are *contained script apps*. Each is
   a Makepad Script/Splash program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under the permissions admitted from its `manifest.json`. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
@@ -38,7 +38,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   speech, embedding and asynchronous video requests. Apps declare `model` and
   exact host API versions; provider entitlement is checked when used. See the
   [media contract and validation limits](ai-providers/host-service/MEDIA.md).
-- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder; no bundle yet.
+- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder. Its app is Quick Deck (`quickdeck/bundle`), whose calls work in Quick Deck's own storage.
 - **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the caller's own folder.
 - **The `light` engine service** (`light/host-service`) is lightcraft's RAW
   develop engine behind `light.*` (ADR 0013): EXIF/XMP metadata, the develop
@@ -131,6 +131,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage` (`deck` once App Hub can declare it) | none | [`deck`](deck/host-service): `new`, `render`, `convert` |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -222,8 +223,15 @@ reaches only the hosts the manifest lists.
   sheet came up, the agent added an event and its card opened the glance
   panel. Not packed on the phone. Its host service's tests are not in
   `apps.yml` yet.
-- Camera and AI providers ship PNG launcher artwork; YouTube ships SVG
-  artwork. The shell frames bundle icons for the selected platform style.
+- **Quick Deck** (2026-10-09, `card-host` on macOS, hidden `--remote`, light
+  and dark): every screen and state was driven and grabbed. Its engine calls
+  cannot run yet: App Hub cannot declare `deck`, so `host.request("deck.*")`
+  is refused (the app says so and keeps the outline), and until engine calls
+  run in the caller's storage the engine's PNGs are out of the app's reach
+  (each slide then shows its text). Not run in a shell; `card-host` calls no
+  `on_app_resize`, so the 3–4 column grid of a wide window is **unverified**.
+- Camera and AI providers ship PNG launcher artwork; YouTube and Quick Deck
+  ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
 ## How the shells pack them
 
@@ -425,6 +433,27 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 ```
 
 The demo keeps its password in a file, so no keychain prompt appears.
+
+**Quick Deck's dev fixture.** `card-host` has no `deck` service, so Quick
+Deck carries a development-only fixture: it answers the app's `deck.*` calls
+with canned results and stands real engine renders in for the pictures. The
+renders in `quickdeck/dev-fixture/` were made by the pinned deckcraft
+(d0e57d7e) from `dev-fixture/outline.txt`. The fixture is on only while the
+app's storage holds `dev/fixture.json`; the app never writes `dev/`, so a
+person never sees it, and the shells pack only `bundle/`.
+
+```sh
+mkdir -p <app-data>/os.quickdeck
+cp -R apps/quickdeck/dev-fixture <app-data>/os.quickdeck/dev
+MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port> card-host --bundle apps/quickdeck/bundle --system --app-data <app-data>
+```
+
+The Decks screen then shows a DEV FIXTURE tag. In `fixture.json`, `delay` is
+the seconds each call takes, `fail` names a call that fails (`new`, `render`,
+`convert` or `all`), and `unreadable: true` makes the deck while keeping its
+pictures out of reach, as engine calls do until they run in the caller's
+storage. Type the outline in `outline.txt` to get matching pictures. Add
+`MAKEPAD_WIDGET_STYLE=macos-dark` for the dark appearance.
 
 ## Host services and sheets
 

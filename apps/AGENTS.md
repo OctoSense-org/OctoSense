@@ -51,7 +51,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `apps/photo/host-service` and `cargo test --locked -p octosense-photo-service`.
   The word engine's (wordcraft behind `word.*`, same ADR, no bundle yet):
   `apps/word/host-service` and `cargo test --locked -p octosense-word-service`.
-  The deck engine's (deckcraft behind `deck.*`, same ADR, no bundle yet):
+  The deck engine's (deckcraft behind `deck.*`, same ADR; its app is Quick
+  Deck, `apps/quickdeck/bundle`, desktop only, which cannot reach the engine
+  until App Hub can declare `deck`; its dev fixture is in apps/README.md):
   `apps/deck/host-service` and `cargo test --locked -p octosense-deck-service`.
   The cad engine's (cadcraft behind `cad.*`, same ADR, no bundle yet):
   `apps/cad/host-service` and `cargo test --locked -p octosense-cad-service`.
