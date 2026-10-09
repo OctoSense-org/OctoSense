@@ -21,7 +21,7 @@
 
 ## 公共日历与邮件检查（测试应用 0.4）
 
-当前版本增加公共 `device_calendar` 和 `mail` API，要求宿主固定到尚未发布的契约 1.10 源码，并保留之前的 `files` 能力。新增十一项检查涵盖四个方法描述、原生日历权限状态、未获应用同意时拒绝列出日历、拒绝后台权限申请/日历选择/事件修改，以及无账户时拒绝准备邮件和拒绝后台发送。测试邮件服务使用合成传输，无法投递真实邮件。
+当前版本增加公共 `device_calendar` 和 `mail` API，需要已发布的 [app-contract 1.10.0](https://crates.io/crates/octosense-app-contract/1.10.0) 声明及兼容的宿主实现，并保留之前的 `files` 能力。仅安装 SDK 不会提供这些宿主实现。新增十一项检查涵盖四个方法描述、原生日历权限状态、未获应用同意时拒绝列出日历、拒绝后台权限申请/日历选择/事件修改，以及无账户时拒绝准备邮件和拒绝后台发送。测试邮件服务使用合成传输，无法投递真实邮件。
 
 另外九项检查发现照片选择、文字分享、播放、录音 API 和 Video 控制运行时 ABI，并验证后台媒体请求和未声明麦克风能力的录音请求被拒绝。文字分享仅在 Android 上声明可用，不打开任何媒体设备。共二十项检查补充下文的十项 OS API 检查，不证明真实日历读写、亲手批准或 SMTP 投递。[Mac 回执](evidence/public-api-v0.4/macos.json)记录全部 30 项检查通过；[OnePlus 6 回执](evidence/public-api-v0.4/oneplus6.json)记录全部 44 项 Android 检查通过，其中包含原有 14 项。这些记录绑定各自列出的源码和运行时摘要；此前 14 项和 24 项记录继续作为历史证据保留。
 
@@ -64,7 +64,7 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 
 0.4 的 release 模式 Mac 运行在源码 `53bab40f`、运行时 `fc938badf` 上通过 **30/30 项具名 OS 和公共服务检查**，以及签名工具完成、实时 UI 更新和原生按钮操作。三张原生截图均已审视，两个测试宿主进程均正常退出。[Mac 回执](evidence/public-api-v0.4/macos.json)用源码、运行时和二进制摘要绑定结果。[OnePlus 6 运行](evidence/public-api-v0.4/oneplus6.json)在 **Android 15 上通过 44/44 项检查**，APK 使用生产源码 `13e3b21a` 和相同运行时；构建期间的 `53bab40f` 改动仅影响测试代码，不包含在该 APK 中。完成后已强制停止独立测试包。
 
-单独的[回归回执](evidence/public-api-v0.4/regression.json)记录 `53bab40f` 上 **1,051/1,051 项共享 Shell 测试通过，失败和忽略项均为零**，同时通过三个打包检查（桌面默认／mobile、Home mobile）及原生测试应用构建。这些回执不验证之后的 Android Video Java 改动，也不验证真实账户或硬件操作。contract 1.10 仍未发布，用户已下载的桌面版和 Home 没有更新。
+单独的[回归回执](evidence/public-api-v0.4/regression.json)记录 `53bab40f` 上 **1,051/1,051 项共享 Shell 测试通过，失败和忽略项均为零**，同时通过三个打包检查（桌面默认／mobile、Home mobile）及原生测试应用构建。这些回执不验证之后的 Android Video Java 改动，也不验证真实账户或硬件操作。SDK 1.10.0 已发布；[宿主分发状态](../../../docs/host-os-api-status.zh-CN.md)单独记录。这些历史回执不验证最终 Desktop RC2 发行包，也不会更新已发布的 Home beta.1。
 
 [早先批次记录](evidence/os-api-batch1/receipt.json)记录源码 `807f2bc8` 的十项 OS 检查；`evidence/android/` 保留原始 14 项手机记录。这些历史结果不能验证当前源码。
 

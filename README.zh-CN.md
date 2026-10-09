@@ -4,9 +4,9 @@
 
 [English](README.md) | 简体中文
 
-[宿主 OS API 状态](docs/host-os-api-status.zh-CN.md)记录尚未发布的文件、定位、外链接线，以及已有服务、剩余缺口和验证范围。
+[宿主 OS API 状态](docs/host-os-api-status.zh-CN.md)记录文件、定位和外部链接支持，以及已有服务、剩余缺口和验证范围。
 
-**桌面版下载：**[OctoSense 0.1.0-rc.1](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.1) 支持当前 App Hub 目录、带 GitHub 证明的应用发布包及共享宿主 API。请选择与操作系统和架构对应的文件；运行前置条件、签名状态和各平台验收范围见发布说明。此桌面版本不会更新 Android Home。
+**桌面版下载：**[OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前 App Hub 目录、带 GitHub 证明的应用发布包及 SDK 1.10.0 声明的公共宿主 API。请选择与操作系统和架构对应的文件；运行前置条件、签名状态和各平台验收范围见发布说明。此桌面版本不会更新 Android Home。
 
 用自己的邮箱[复现真实邮件 → 卡片 → Calendar 演示](docs/demos/mail-calendar/README.zh-CN.md)：固定源码版本、重要邮件策略、虚构测试输入、人工修改草稿和日历跳转。
 
@@ -46,14 +46,14 @@ Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使
 
 想按顺序读源码，请从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充了各个产品的运行方式。
 
-连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC1 和较早的 beta.2 下载包均未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
+连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC2、RC1 和较早的 beta.2 下载包均未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
 
-桌面版 RC1 和此源码构建中的 App Hub 默认使用带 GitHub 证明的目录，并通过应用契约 1.8.0 支持
+桌面版 RC2 和此源码构建中的 App Hub 默认使用带 GitHub 证明的目录，并通过应用契约 1.10.0 支持
 `publisher-github-v1` 发布包。开发者通过[提交 App Hub issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)
 申请发布；GitHub 发布证明取代单独的开发者签名密钥，仍须由 Hub 管理员批准准入。
 首次获取目录需要网络连接，旧的离线目录不会被转换成 GitHub 证明。自定义本地测试
 目录可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2
-缓存的应用库会拒绝这种降级。beta.2 不支持此发布模式；请用桌面版 RC1 安装这类应用发布包。
+缓存的应用库会拒绝这种降级。beta.2 不支持此发布模式；请用桌面版 RC2 安装这类应用发布包。
 
 ## 整体如何运作
 

@@ -2,7 +2,7 @@
 
 [English](host-os-api-status.md) | 简体中文
 
-本文记录为 Desktop RC2 和 Home beta2 准备的 **OS 与公共 API 集成**。本批先把已有原生设施接入受限应用，再扩展 Rust 引擎 API。新增公共服务使用源码固定的 **app-contract 1.10.0**；分发状态见 SDK 的[已发布版本](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/main/crates/app-contract#versions-on-cratesio)和 OctoSense 的[发行版文件](https://github.com/OctoSense-org/OctoSense/releases)。现有安装需要更新到兼容宿主。源码实现、编译、自动化测试和真机行为分别记录，不能互相替代。
+本文记录 [Desktop RC2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 中的 **OS 与公共 API 集成**。本批先把已有原生设施接入受限应用，再扩展 Rust 引擎 API。公共声明已发布在 [**app-contract 1.10.0**](https://crates.io/crates/octosense-app-contract/1.10.0) 中；已安装的宿主还必须在对应平台实现所请求的方法。更新 SDK 或安装应用不会更新宿主。已发布的 Android Home beta.1 不包含本批新增能力；用于 OnePlus 验收的隔离测试 APK 不是 Home 发行包。源码实现、编译、自动化测试和真机行为分别记录，不能互相替代。
 
 ## 本批新增内容
 

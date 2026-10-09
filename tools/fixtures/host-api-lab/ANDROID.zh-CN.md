@@ -4,7 +4,7 @@
 
 **公共 API 批次（测试应用 0.4）：**[OnePlus 6／Android 15 验收](evidence/public-api-v0.4/oneplus6.json)已通过 **44/44 项检查**：原有 14 项、十项 OS 检查及二十项日历／邮件／媒体发现和拒绝检查。[Mac 运行](evidence/public-api-v0.4/macos.json)通过全部 30 项桌面检查。手机 APK 使用生产源码 `13e3b21a`、运行时 `fc938badf`，SHA-256 为 `2ad38099b4115bfa3b4c556cf181b7093ca1e672db73c48ea38d041b705f4dd1`。构建结束时源码为 `53bab40f`；期间改动仅影响测试代码，不包含在 APK 中。回执记录完整源码、运行时、SDK、适配器及产物摘要。这些结果不验证之后的 Android Video Java 改动。
 
-单独的[回归记录](evidence/public-api-v0.4/regression.json)在 `53bab40f` 上通过 1,051 项共享 Shell 测试、三个打包检查及原生测试应用构建。contract 1.10 仍未发布，用户已下载的桌面版和 Home 没有更新。早先的 [24 项批次记录](evidence/os-api-batch1/receipt.json)保留其当时待执行的真机状态，下文原始 14 项记录也继续保留。
+单独的[回归记录](evidence/public-api-v0.4/regression.json)在 `53bab40f` 上通过 1,051 项共享 Shell 测试、三个打包检查及原生测试应用构建。SDK 1.10.0 已发布；[宿主分发状态](../../../docs/host-os-api-status.zh-CN.md)单独记录。这些历史回执不验证最终 Desktop RC2 发行包，也不会更新已发布的 Home beta.1。早先的 [24 项批次记录](evidence/os-api-batch1/receipt.json)保留其当时待执行的真机状态，下文原始 14 项记录也继续保留。
 
 历史[验收记录](evidence/android/receipt.json)确认：**OnePlus 6、Android 15，14 项检查全部通过**。[原生结果](evidence/android/native-result.json)来自实际手机进程。普通签名应用调用自己的 Splash 工具，通过生产环境宿主服务发现 API 并读取 Android 摄像头权限状态。测试同时验证跨账户调用、未声明的能力和工具、无效参数、未编译进宿主的 Rust 函数、后台权限弹窗以及工具关闭后的调用都会被拒绝。
 

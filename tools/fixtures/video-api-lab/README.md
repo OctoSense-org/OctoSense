@@ -7,7 +7,10 @@ moving white marker. It contains no personal media or external footage.
 `tools/generate-video-fixture.swift` generated it with the installed macOS SDK.
 The generator refuses to overwrite its output.
 
-The unreleased runtime exposes the existing native `Video` player to Splash:
+The runtime exposes the existing native `Video` player to Splash. SDK 1.10.0 declares
+`video.playback_controls@1` as a widget ABI, not a `host.request` method; a compatible
+host runtime is also required. See [host distribution status](../../../docs/host-os-api-status.md).
+The widget methods are:
 
 | Method | Result / argument |
 | --- | --- |

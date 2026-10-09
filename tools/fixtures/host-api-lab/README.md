@@ -22,8 +22,9 @@ The test host puts the call straight into the queue of authorized tool calls. A 
 ## Public Calendar and Mail checks (fixture 0.4)
 
 The current fixture adds the public `device_calendar` and `mail` APIs. It
-requires the host's unpublished contract 1.10 source pin, including the earlier `files`
-capability. It checks four method descriptions, native Calendar permission
+requires the published [app-contract 1.10.0](https://crates.io/crates/octosense-app-contract/1.10.0)
+declarations and a compatible host implementation, including the earlier `files`
+capability. SDK installation alone does not provide that implementation. It checks four method descriptions, native Calendar permission
 status, refusal to list calendar choices without this app's consent, refusal
 of background permission/selection/event-write requests, and refusal of Mail
 composition without an account and background sending. Mail uses a synthetic
@@ -75,7 +76,7 @@ The native location check proves refusal **without app consent**; it does not re
 
 The 0.4 release-mode Mac run passed **30/30 named OS and public-service checks**, signed tool completion, live UI updates and native button interaction at source `53bab40f`, runtime `fc938badf`. All three native captures were inspected; both owned host processes exited cleanly. The [Mac receipt](evidence/public-api-v0.4/macos.json) binds the result to source, runtime and binary hashes. The [OnePlus 6 run](evidence/public-api-v0.4/oneplus6.json) passed **44/44 checks on Android 15**, using an APK built from production source `13e3b21a` with the same runtime; the intervening `53bab40f` change is test-only and excluded from that APK. Its isolated package was force-stopped afterward.
 
-The separate [regression receipt](evidence/public-api-v0.4/regression.json) records **1,051/1,051 shared-shell tests, zero failures or ignored tests**, three packaging checks (desktop default/mobile and Home mobile), and the native fixture build at `53bab40f`. These receipts do not validate later Android Video Java changes or real-account/hardware actions. Contract 1.10 remains unpublished and downloaded desktop/Home releases are unchanged.
+The separate [regression receipt](evidence/public-api-v0.4/regression.json) records **1,051/1,051 shared-shell tests, zero failures or ignored tests**, three packaging checks (desktop default/mobile and Home mobile), and the native fixture build at `53bab40f`. These receipts do not validate later Android Video Java changes or real-account/hardware actions. SDK 1.10.0 is published; [host distribution status](../../../docs/host-os-api-status.md) is separate. These historical receipts do not validate final Desktop RC2 packages or update the published Home beta.1.
 
 The [earlier batch receipt](evidence/os-api-batch1/receipt.json) records ten OS checks at source `807f2bc8`; `evidence/android/` retains the original 14-check phone record. These historical results do not validate the current source.
 
