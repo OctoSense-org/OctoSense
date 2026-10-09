@@ -11485,6 +11485,7 @@ version = "0.1.0"
 dependencies = [
  "cadcraft-engine",
  "cadcraft-io",
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",
@@ -11508,6 +11509,7 @@ dependencies = [
  "deckcraft-engine",
  "deckcraft-format",
  "deckcraft-model",
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",
@@ -11519,6 +11521,7 @@ version = "0.1.0"
 dependencies = [
  "designcraft-engine",
  "designcraft-render",
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",
@@ -11534,6 +11537,7 @@ dependencies = [
  "effectcraft-media",
  "effectcraft-model",
  "image",
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",
@@ -11547,6 +11551,7 @@ dependencies = [
  "filmcraft-engine",
  "filmcraft-media 0.4.0",
  "image",
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",
@@ -11627,6 +11632,7 @@ version = "0.1.0"
 dependencies = [
  "lightcraft-engine",
  "lightcraft-merge",
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",
@@ -11738,6 +11744,7 @@ dependencies = [
 name = "octosense-pdf-service"
 version = "0.1.0"
 dependencies = [
+ "octosense-app-policy",
  "octosense-appstore",
  "pdfcraft-automation",
  "serde_json",
@@ -11860,6 +11867,7 @@ dependencies = [
 name = "octosense-sound-service"
 version = "0.1.0"
 dependencies = [
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "soundcraft-audio-io",
@@ -11892,6 +11900,7 @@ dependencies = [
 name = "octosense-vector-service"
 version = "0.1.0"
 dependencies = [
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",
@@ -11928,6 +11937,7 @@ dependencies = [
 name = "octosense-word-service"
 version = "0.1.0"
 dependencies = [
+ "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
  "tempfile",

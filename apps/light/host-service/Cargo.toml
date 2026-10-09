@@ -22,6 +22,8 @@ serde_json = { workspace = true }
 lightcraft-engine = { workspace = true }
 
 [dev-dependencies]
+# Its tool manifest is checked with App Hub's own loader (tools.json).
+octosense-app-policy = { workspace = true }
 # Test-only: the engine's own synthetic-DNG generator — a real RAW fixture
 # rendered procedurally, so the suite checks in no media files.
 lightcraft-merge = { workspace = true }

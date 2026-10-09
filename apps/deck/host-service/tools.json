@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "deck.info",
+      "description": "Inspect a presentation in the deck engine's workspace (.pptx, .deckcraft or outline text): its slides with titles, layouts and shape counts, sections and theme. Reads only. `path` is relative to that workspace, a private folder only the deck.* tools read and write; files elsewhere on the device are not in it, so name a file deck.new or an earlier conversion wrote there.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "slides": {"type": "array", "items": {"type": "object"}}
+        },
+        "required": ["file", "slides"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "deck.text",
+      "description": "Read a presentation in the deck engine's workspace as outline text: slide titles unindented, bullets tab-indented by level, and the slide count. Reads only. `path` is relative to that workspace (see deck.info).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "outline": {"type": "string"},
+          "slides": {"type": "integer"}
+        },
+        "required": ["outline", "slides"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "deck.render",
+      "description": "Render one slide (0-based `slide`, default 0) of a presentation in the deck engine's workspace to a PNG at `out` (a .png path), its longest edge `max_side` pixels (default 1024). Both paths are relative to that workspace (see deck.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "slide": {"type": "integer", "minimum": 0},
+          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "slide": {"type": "integer"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "slide", "width", "height", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "deck.new",
+      "description": "Write a new presentation into the deck engine's workspace from slide titles and flat bullet lists (1 to 200 slides, at most 64 bullets each). `out` ends in .pptx or .deckcraft and is relative to that workspace (see deck.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string", "minLength": 6, "maxLength": 512},
+          "slides": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {"type": "string", "minLength": 1, "maxLength": 2000},
+                "bullets": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 2000}}
+              },
+              "required": ["title"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["out", "slides"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "slides": {"type": "integer"},
+          "format": {"type": "string"}
+        },
+        "required": ["out", "slides", "format"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "deck.convert",
+      "description": "Convert a presentation in the deck engine's workspace and write it there, in the format the extension of `out` names: .pptx, .deckcraft, outline .txt or .pdf. Both paths are relative to that workspace (see deck.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "format": {"type": "string"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "format", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "tools": [
+    {
+      "name": "design.info",
+      "description": "Inspect a page-layout document in the design engine's workspace (.designcraft or .idml): page count, page settings, spreads, stories (with overset), styles and swatches. Reads only. `path` is relative to that workspace, a private folder only the design.* tools read and write; files elsewhere on the device are not in it and cannot be named.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512}
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "pageCount": {"type": "integer"},
+          "settings": {"type": "object"},
+          "stories": {"type": "array", "items": {"type": "object"}},
+          "warnings": {"type": ["array", "null"]}
+        },
+        "required": ["file", "pageCount"]
+      },
+      "risk": "read",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "design.render",
+      "description": "Render one page (0-based `page`, default 0) of a document in the design engine's workspace to a PNG at `out` (a .png path), its longest edge `max_side` pixels (default 1024). Both paths are relative to that workspace (see design.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "page": {"type": "integer", "minimum": 0},
+          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "page": {"type": "integer"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"},
+          "bytes": {"type": "integer"}
+        },
+        "required": ["out", "page", "width", "height", "bytes"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    },
+    {
+      "name": "design.export",
+      "description": "Export a document in the design engine's workspace in the format the extension of `out` names: .pdf, .idml, .epub or .designcraft. For a PDF, `pdf` takes the engine's export options (a page range, spreads, bleed and marks, a PDF/X standard, view settings). Both paths are relative to that workspace (see design.info); nothing is written outside it, and a file already at `out` is replaced.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "out": {"type": "string", "minLength": 5, "maxLength": 512},
+          "pdf": {
+            "type": "object",
+            "properties": {
+              "pages": {"type": ["string", "integer", "array"], "description": "A range such as \"2-3\", one 1-based page, or a list of them", "items": {"type": "integer", "minimum": 1}},
+              "spreads": {"type": "boolean"},
+              "bleed": {"type": "boolean"},
+              "marks": {"type": ["boolean", "object"]},
+              "standard": {"type": "string", "enum": ["none", "x4", "a2b"]},
+              "compressImages": {"type": "boolean"},
+              "title": {"type": "string", "maxLength": 512},
+              "author": {"type": "string", "maxLength": 512},
+              "tagged": {"type": "boolean"},
+              "media": {"type": "boolean"},
+              "flatten": {"type": ["string", "number", "boolean"]},
+              "fullScreen": {"type": "boolean"},
+              "bookmarksPanel": {"type": "boolean"},
+              "pageLayout": {"type": "string", "enum": ["single", "continuous", "twoUp", "twoUpCover", "twoUpContinuous"]},
+              "view": {"type": "string", "enum": ["fitPage", "fitWidth", "actual"]},
+              "advanceSeconds": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["path", "out"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "out": {"type": "string"},
+          "pages": {"type": "integer"},
+          "bytes": {"type": "integer"},
+          "warnings": {"type": "array"}
+        },
+        "required": ["out"]
+      },
+      "risk": "act",
+      "implemented_by": "host-service"
+    }
+  ]
+}

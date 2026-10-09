@@ -47,6 +47,12 @@ pub fn register() {
     register_host_service(Box::new(DesignService));
 }
 
+/// The `design.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
+/// shape: the shell declares them for the virtual owner `os.design` and grants
+/// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
+/// `crates/shell/src/system_chat/grants.rs` `ENGINE_TOOLS`).
+pub const TOOLS_JSON: &str = include_str!("../tools.json");
+
 impl HostService for DesignService {
     fn family(&self) -> &'static str {
         "design"
@@ -289,6 +295,37 @@ mod tests {
         assert!(dispatch("export", &json!({"path": path, "out": "mag.docx"}), host).is_err(), "unknown format");
     }
 
+    /// What `tools.json` promises each answer carries, on a real document:
+    /// the shell's relay checks every agent call's answer against it, and
+    /// no agent tool can write a layout document for the shell's own check.
+    #[test]
+    fn answers_carry_what_the_tools_declare() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = dir.path();
+        let path = fixture(host);
+        let doc = dispatch("info", &json!({"path": path}), host).unwrap();
+        assert!(doc["file"].is_string() && doc["pageCount"].is_u64() && doc["settings"].is_object() && doc["stories"].is_array(), "{doc}");
+        assert!(doc["warnings"].is_array() || doc["warnings"].is_null(), "{doc}");
+        let r = dispatch("render", &json!({"path": path, "out": "p.png", "max_side": 64}), host).unwrap();
+        assert!(r["out"].is_string() && ["page", "width", "height", "bytes"].iter().all(|k| r[*k].is_u64()), "{r}");
+        for out in ["x.pdf", "x.idml", "x.epub", "x.designcraft"] {
+            let e = dispatch("export", &json!({"path": path, "out": out}), host).unwrap();
+            assert!(e["out"].is_string(), "{out}: {e}");
+            assert!(["pages", "bytes"].iter().all(|k| e[*k].is_null() || e[*k].is_u64()), "{out}: {e}");
+            assert!(e["warnings"].is_null() || e["warnings"].is_array(), "{out}: {e}");
+        }
+        let idml = dispatch("info", &json!({"path": "x.idml"}), host).unwrap();
+        assert!(idml["pageCount"].is_u64() && (idml["warnings"].is_array() || idml["warnings"].is_null()), "{idml}");
+        // Export options as the tool declares them reach the engine.
+        let pdf = dispatch(
+            "export",
+            &json!({"path": path, "out": "one.pdf", "pdf": {"pages": "1", "bleed": true, "standard": "none", "view": "fitPage", "pageLayout": "single"}}),
+            host,
+        )
+        .unwrap();
+        assert_eq!(pdf["pages"], json!(1), "{pdf}");
+    }
+
     #[test]
     fn commands_lists_the_engine_catalog() {
         let cat = commands().unwrap();
@@ -326,5 +363,28 @@ mod tests {
         assert!(may_call("os.design"));
         assert!(!may_call("org.example.anything"));
         assert!(!may_call(""));
+    }
+
+    /// The agent tools (`tools.json`) pass App Hub's own loader, as the shell
+    /// reads them, keep the object schemas octos takes both ways, and name
+    /// only methods this service dispatches.
+    #[test]
+    fn the_agent_tools_pass_app_hubs_loader_and_name_real_methods() {
+        use octosense_app_policy::{ImplementedBy, ToolHost, ToolManifest};
+        let (manifest, _) = ToolManifest::load(TOOLS_JSON, "design", ToolHost::Contained, false).unwrap();
+        assert!(!manifest.tools.is_empty());
+        let dir = tempfile::tempdir().unwrap();
+        for tool in &manifest.tools {
+            assert_eq!(tool.implemented_by, ImplementedBy::HostService, "{}", tool.name);
+            assert!(tool.host_method.is_none(), "{}: the shell routes each tool to the method of its own name", tool.name);
+            for schema in [&tool.input_schema, &tool.output_schema] {
+                assert_eq!(schema["type"], json!("object"), "{}: octos takes object schemas only", tool.name);
+            }
+            assert!(tool.description.is_ascii(), "{}: descriptions stay within octos's byte limit", tool.name);
+            let method = tool.name.strip_prefix("design.").unwrap();
+            if let Err(e) = dispatch(method, &json!({}), dir.path()) {
+                assert!(!e.contains("is not a method"), "{}: {e}", tool.name);
+            }
+        }
     }
 }
