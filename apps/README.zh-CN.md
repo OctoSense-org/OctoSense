@@ -538,7 +538,9 @@ vector）提供 `<family>.info`（read）和 `<family>.run`：经过审查的命
 [`../crates/engine-area/src/door.rs`](../crates/engine-area/src/door.rs)）构建的允许列表
 检查调用中的每一条命令：只在打开的文档内部起作用的命令可以运行，服务审查过的、读取调用方
 文件夹内文件的命令也可以；触及其他文件、代码、网络、设备或应用的 id 一律拒绝，分类中没有的
-id、批处理或宏、应用级设置项以及插件效果同样拒绝。sound（没有命令目录）、design（按决定不设
+id、批处理或宏、应用级设置项以及插件效果同样拒绝。引擎工作在 Shell 的 UI 线程上运行，因此每个入口还
+限制一次调用能要求的工作量：数量、尺寸、帧范围、在一次调用内相乘的复制，每条命令之后文档的大小，以及
+它自己的输出。sound（没有命令目录）、design（按决定不设
 入口）和 pdf（只有几个固定操作）保留固定工具：`sound.info`、`peaks`、`convert`、`trim`、
 `mix`；`design.info`、`render`、`export`；`pdf.info`、`text`、`render`、`merge`、`split`。
 ADR 0013 记录了每个引擎的工具面。引擎在调用方自己的

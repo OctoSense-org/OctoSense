@@ -285,6 +285,13 @@ App Hub 的 card-host）。
   `perspective.draw {command}`）会让被指名的 id 连同其参数再次经过准入，最多
   嵌套四层。指名效果的命令（`effect.apply`、vector 的 `appearance.addEffect`）
   只运行引擎内置的效果，因此效果插件（`plugin.<id>`）绝不会经由入口运行。
+- **上限（2026 年 10 月 9 日决定）。** 在 #399 之前，引擎工作都在 Shell 的 UI 线程上运行，
+  因此任何单次调用都不能无限放大工作量或内存。每个服务都审查了会放大工作量的参数（阵列和
+  复制的数量、行数和列数、画布、页面和渲染尺寸、帧范围和帧率、迭代次数，以及会成倍增加绘制
+  工作的小比例和小间距），并为每个参数设一个 `Limit`：对单个参数或若干参数乘积的上限，理由
+  写在旁边，由门禁在任何命令运行之前检查，内层命令也不例外。复制在一次调用内相乘（阵列再
+  阵列），受每次调用的预算约束。每个服务还在每条命令之后把文档保持在尺寸上限以内（这能拦住
+  没有数量参数的复制粘贴循环），并限制自己的 `out`（渲染的像素、导出的帧数）。
 - **每条命令之后的围栏。** 命令可能写进文档、之后又会被后续命令、渲染或 `out`
   读取的内容，会在每条命令之后检查，不通过则调用在写出任何东西之前失败：
   vector 的链接图片；effect 的素材、LUT、OCIO 和 mocha 参数（包括 Essential
@@ -301,29 +308,30 @@ App Hub 的 card-host）。
 
 每个引擎的工具面：
 
-| 引擎 | 系统代理的工具 | 入口在 `safe` id 之外还运行什么 |
-| --- | --- | --- |
-| word | `word.info`、`word.run` | 389 个 id 中的 328 个。读取：`insert.picture`、`picture.change`（`path`）。 |
-| deck | `deck.info`、`deck.run` | 222 个中的 203 个。读取：`insert.picture`、`insert.audio`、`insert.video`、`picture.change`（`path`）。 |
-| cad | `cad.info`、`cad.run` | 295 个中的 288 个。`setvar` 被拒绝：它按名称设置变量，而没有任何名称经过审查。 |
-| light | `light.info`、`light.run` | 239 个中的 189 个。没有其他。 |
-| film | `film.info`、`film.run` | 675 个中的 525 个。读取：`captions.import`（`path`）。只运行内置项：`effects.apply`、两个转场命令、`effects.setDefaultTransition`、`mixer.addInsert`、`presets.apply`、`lumetri.applyPreset`、`essentialSound.applyPreset`。 |
-| effect | `effect.info`、`effect.run` | 665 个中的 474 个。只运行内置项：`effect.apply`。 |
-| vector | `vector.info`、`vector.run` | 679 个中的 574 个。只运行内置项：`effect.apply` 和 `appearance.addEffect`（经 `effect` 或 `id`）；`perspective.draw` 只运行 `shape.*` 命令，每条再经过准入。 |
-| sound | `sound.info`、`peaks`、`convert`、`trim`、`mix` | 没有入口：soundcraft 没有命令目录。 |
-| design | `design.info`、`render`、`export` | 按决定不设入口（#418）。 |
-| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。 |
-| photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 |
-| sheet | 无（Sheets 应用自己的 `sheets.*`） | 没有入口：公式求值。 |
+| 引擎 | 系统代理的工具 | 入口在 `safe` id 之外还运行什么 | 上限（单次调用） |
+| --- | --- | --- | --- |
+| word | `word.info`、`word.run` | 389 个 id 中的 328 个。读取：`insert.picture`、`picture.change`（`path`）。 | 表格 ≤ 10,000 个单元格；页面每边 72–1584 pt；一次替换使文本最多增长 1,000 倍（连续替换合计 ≤ 10,000 倍）；文档 ≤ 500,000 个字符、50,000 个段落、128 MiB 图片；PDF ≤ 10,000 页。 |
+| deck | `deck.info`、`deck.run` | 222 个中的 203 个。读取：`insert.picture`、`insert.audio`、`insert.video`、`picture.change`（`path`）。 | 表格 ≤ 5,625 个单元格；图表 ≤ 10,000 个数据点；单张幻灯片面积 ≤ 1920 × 1080 pt；演示文稿 ≤ 500 张幻灯片、20,000 个形状、1,000,000 个字符；每次调用的栅格化 ≤ 160 MP，每张 ≤ 4096²。 |
+| cad | `cad.info`、`cad.run` | 295 个中的 288 个。`setvar` 被拒绝：它按名称设置变量，而没有任何名称经过审查。 | 阵列和复制 ≤ 10,000 份，一次调用内相乘 ≤ 10,000；多边形 ≤ 1,024 条边；样条拟合点 ≤ 2,000；填充和线型比例 ≥ 0.0001；图形 ≤ 200,000 个对象；渲染约 ≤ 一秒的绘制工作量，先估算再绘制。 |
+| light | `light.info`、`light.run` | 239 个中的 189 个。没有其他。 | 原图 ≤ 64 MP；导出 ≤ 16 MP（AVIF ≤ 4）；≤ 16 张照片（含虚拟副本）；≤ 16 个蒙版、256 笔画笔、64 个污点；裁剪每边 ≥ 1%。 |
+| film | `film.info`、`film.run` | 675 个中的 525 个。读取：`captions.import`（`path`）。只运行内置项：`effects.apply`、两个转场命令、`effects.setDefaultTransition`、`mixer.addInsert`、`presets.apply`、`lumetri.applyPreset`、`essentialSound.applyPreset`。 | 序列每边 ≤ 4096 且 ≤ 9.4 MP，≤ 120 fps，≤ 96 kHz；速度 1%–10,000%；时长 ≤ 24 小时；一次调用最多添加 5,000 个元素；分析 ≤ 18,000 帧；导出 ≤ 18,000 帧。 |
+| effect | `effect.info`、`effect.run` | 665 个中的 460 个。只运行内置项：`effect.apply`。 | 合成 ≤ 8.85 MP（4096 × 2160）、≤ 36,000 帧、1–240 fps；中继器副本 ≤ 1,000（每次调用 ≤ 10,000）；约 120 个效果参数设了上限；项目 ≤ 5,000 个项目、图层和效果。表达式归为 `code`：含表达式的项目只保存，不渲染。 |
+| vector | `vector.info`、`vector.run` | 679 个中的 574 个。只运行内置项：`effect.apply` 和 `appearance.addEffect`（经 `effect` 或 `id`）；`perspective.draw` 只运行 `shape.*` 命令，每条再经过准入。 | 形状 ≤ 1,000 个点；混合 ≤ 1,000 步；重复、马赛克和网格 ≤ 10,000 份（每次调用 ≤ 10,000）；变换效果 ≤ 1,000 份；文档按绘制计 ≤ 20,000 个节点、100,000 个对象；栅格 `out` 每边 ≤ 8192 px 且 ≤ 16 MP。 |
+| sound | `sound.info`、`peaks`、`convert`、`trim`、`mix` | 没有入口：soundcraft 没有命令目录。 | — |
+| design | `design.info`、`render`、`export` | 按决定不设入口（#418）。 | — |
+| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。 | — |
+| photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 | 尚未设上限（只供应用自己的请求使用）。 |
+| sheet | 无（Sheets 应用自己的 `sheets.*`） | 没有入口：公式求值。 | — |
 
-这次审查重新归类了五个 id：word 的 `review.readAloud`（`code` 改为 `device`），vector 的
+这次审查重新归类了这些 id：word 的 `review.readAloud`（`code` 改为 `device`），vector 的
 `effect.apply` 和 `appearance.addEffect`（`code` 改为 `safe`，并检查其效果），effect 的两个
-媒体浏览器收藏命令（`safe` 改为 `host`），以及 photo 的 `layer.smartFilter.setParams`（`safe`
-改为 `file`：它可能写入一个 Color Lookup 文件路径）。审查还堵上了两条 id 检查看不到的路径：
+媒体浏览器收藏命令（`safe` 改为 `host`），effect 中设置或链接表达式的 14 个命令（`safe` 改为
+`code`：effectcraft 运行表达式时没有时间、步数或内存预算），以及 photo 的
+`layer.smartFilter.setParams`（`safe` 改为 `file`：它可能写入一个 Color Lookup 文件路径）。审查还堵上了两条 id 检查看不到的路径：
 预合成中通过 Essential Graphics 取值设置效果的 LUT 文件（effect），以及指名文件的 Color Lookup
-智能滤镜（photo）；两个服务的围栏现在都会在打开时和每条命令之后拦下它们。一次入口调用除了
-64 条命令上限和服务自己的文件上限之外，没有时间或内存预算，这与之前按方法划分的工具相同
-（见上文“长调用”）。
+智能滤镜（photo）；两个服务的围栏现在都会在打开时和每条命令之后拦下它们。即使在上限之内，
+一次调用仍可能占用 UI 线程数秒（一次 4K 导出、一组参数都在上限内的重型效果）；把引擎工作
+移到带超时的工作线程上是 #399 的事。
 
 只能由应用自己的 `host.request` 调用的 `photo.run` 现在也经过同一个门禁。每个
 有入口的引擎的 `SKILL.md` 都列出 `info` 和 `run`，说明入口的规则，并用示例教

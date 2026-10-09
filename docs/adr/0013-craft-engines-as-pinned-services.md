@@ -354,6 +354,18 @@ each, instead of a curated tool per method (#418).
   effect (`effect.apply`, vector's `appearance.addEffect`) runs only an
   effect the engine builds in, so an effect plug-in (`plugin.<id>`) never
   runs through a door.
+- **Caps (decided 9 Oct 2026).** Engine work runs on the shell's UI
+  thread until #399, so no single call may multiply work or memory
+  without bound. Each service reviews the parameters that do (array and
+  copy counts, rows and columns, canvas, page and render sizes, frame
+  ranges and rates, iteration counts, and the small scales and spacings
+  that multiply drawing work) and gives each a `Limit`: a ceiling on one
+  parameter or on a product, with its reason beside it, checked by the
+  gate before anything runs, inner commands included. Copies multiply
+  across a call (an array of an array), within a per-call budget. Each
+  service also keeps the document within a size ceiling after every
+  command (which stops a copy-and-paste loop that has no count) and bounds
+  its own `out` (a render's pixels, an export's frames).
 - **Fences after every command.** What a command can write into the
   document, and a later command, render or `out` would then read, is
   checked after each command, and the call fails before anything is
@@ -373,32 +385,34 @@ each, instead of a curated tool per method (#418).
 
 Each engine's surface:
 
-| Engine | The system agent's tools | What its door runs beyond `safe` ids |
-| --- | --- | --- |
-| word | `word.info`, `word.run` | 328 of 389 ids. Reads: `insert.picture`, `picture.change` (`path`). |
-| deck | `deck.info`, `deck.run` | 203 of 222. Reads: `insert.picture`, `insert.audio`, `insert.video`, `picture.change` (`path`). |
-| cad | `cad.info`, `cad.run` | 288 of 295. `setvar` is refused: it sets variables by name, and no name is reviewed. |
-| light | `light.info`, `light.run` | 189 of 239. Nothing more. |
-| film | `film.info`, `film.run` | 525 of 675. Read: `captions.import` (`path`). Built-ins only: `effects.apply`, both transition commands, `effects.setDefaultTransition`, `mixer.addInsert`, `presets.apply`, `lumetri.applyPreset`, `essentialSound.applyPreset`. |
-| effect | `effect.info`, `effect.run` | 474 of 665. Built-ins only: `effect.apply`. |
-| vector | `vector.info`, `vector.run` | 574 of 679. Built-ins only: `effect.apply` and `appearance.addEffect` (by `effect` or `id`); `perspective.draw` runs only `shape.*` commands, each admitted in turn. |
-| sound | `sound.info`, `peaks`, `convert`, `trim`, `mix` | No door: soundcraft has no command catalog. |
-| design | `design.info`, `render`, `export` | No door, by decision (#418). |
-| pdf | `pdf.info`, `text`, `render`, `merge`, `split` | No door: a few fixed operations. |
-| photo | none (Photos' own `photos.info`) | `photo.run`, for apps' own requests only: 692 of 817 ids, each also passing photocraft's own workspace check. |
-| sheet | none (the Sheets app's own `sheets.*`) | No door: formula evaluation. |
+| Engine | The system agent's tools | What its door runs beyond `safe` ids | Caps (one call) |
+| --- | --- | --- | --- |
+| word | `word.info`, `word.run` | 328 of 389 ids. Reads: `insert.picture`, `picture.change` (`path`). | Tables ≤ 10,000 cells; pages 72–1584 pt a side; a replacement grows the text ≤ 1,000× (chained, ≤ 10,000×); the document ≤ 500,000 characters, 50,000 paragraphs and 128 MiB of pictures; a PDF ≤ 10,000 pages. |
+| deck | `deck.info`, `deck.run` | 203 of 222. Reads: `insert.picture`, `insert.audio`, `insert.video`, `picture.change` (`path`). | Tables ≤ 5,625 cells; charts ≤ 10,000 points; a slide ≤ 1920 × 1080 pt of area; the presentations ≤ 500 slides, 20,000 shapes and 1,000,000 characters; rasters ≤ 160 MP a call, 4096² each. |
+| cad | `cad.info`, `cad.run` | 288 of 295. `setvar` is refused: it sets variables by name, and no name is reviewed. | Arrays and copies ≤ 10,000 copies, multiplied across the call ≤ 10,000; polygons ≤ 1,024 sides; spline fit points ≤ 2,000; hatch and linetype scale ≥ 0.0001; drawings ≤ 200,000 objects; a render ≤ about a second of drawing work, estimated first. |
+| light | `light.info`, `light.run` | 189 of 239. Nothing more. | Originals ≤ 64 MP; exports ≤ 16 MP (AVIF ≤ 4); ≤ 16 photos (virtual copies included); ≤ 16 masks, 256 strokes and 64 spots; a crop ≥ 1% a side. |
+| film | `film.info`, `film.run` | 525 of 675. Read: `captions.import` (`path`). Built-ins only: `effects.apply`, both transition commands, `effects.setDefaultTransition`, `mixer.addInsert`, `presets.apply`, `lumetri.applyPreset`, `essentialSound.applyPreset`. | Sequences ≤ 4096 a side and 9.4 MP, ≤ 120 fps, ≤ 96 kHz; speed 1–10,000%; durations ≤ 24 h; a call adds ≤ 5,000 elements; analyses ≤ 18,000 frames; exports ≤ 18,000 frames. |
+| effect | `effect.info`, `effect.run` | 460 of 665. Built-ins only: `effect.apply`. | Comps ≤ 8.85 MP (4096 × 2160), ≤ 36,000 frames, 1–240 fps; repeater copies ≤ 1,000 (≤ 10,000 a call); about 120 effect parameters capped; the project ≤ 5,000 items, layers and effects. Expressions are `code`: a project holding one is saved, never rendered. |
+| vector | `vector.info`, `vector.run` | 574 of 679. Built-ins only: `effect.apply` and `appearance.addEffect` (by `effect` or `id`); `perspective.draw` runs only `shape.*` commands, each admitted in turn. | Shapes ≤ 1,000 points; blends ≤ 1,000 steps; repeats, mosaics and grids ≤ 10,000 copies (≤ 10,000 a call); Transform effects ≤ 1,000 copies; the document ≤ 20,000 nodes and 100,000 objects as drawn; a raster `out` ≤ 8192 px a side and 16 MP. |
+| sound | `sound.info`, `peaks`, `convert`, `trim`, `mix` | No door: soundcraft has no command catalog. | — |
+| design | `design.info`, `render`, `export` | No door, by decision (#418). | — |
+| pdf | `pdf.info`, `text`, `render`, `merge`, `split` | No door: a few fixed operations. | — |
+| photo | none (Photos' own `photos.info`) | `photo.run`, for apps' own requests only: 692 of 817 ids, each also passing photocraft's own workspace check. | Not yet capped (apps' own requests only). |
+| sheet | none (the Sheets app's own `sheets.*`) | No door: formula evaluation. | — |
 
-The review reclassified five ids: word's `review.readAloud` (`code` to
+The review reclassified these ids: word's `review.readAloud` (`code` to
 `device`), vector's `effect.apply` and `appearance.addEffect` (`code` to
 `safe`, with their effect checked), effect's two Media Browser favourites
-(`safe` to `host`) and photo's `layer.smartFilter.setParams` (`safe` to
+(`safe` to `host`), effect's 14 commands that set or link expressions
+(`safe` to `code`: effectcraft runs an expression with no time, step or
+memory budget) and photo's `layer.smartFilter.setParams` (`safe` to
 `file`: it could plant a Color Lookup file path). It also closed two routes
 that no id check sees: Essential Graphics values that set an effect's LUT
 file inside a precomp (effect), and a Color Lookup smart filter naming a
 file (photo); both services' fences now catch them, at open and after
-every command. A door call has no time or memory budget beyond its 64
-commands and the services' file caps, like the per-method tools before it
-(see "Long calls" above).
+every command. Within its caps a call can still hold the UI thread for
+seconds (a 4K export, a heavy stack of effects at their caps); moving
+engine work to a worker with timeouts is #399.
 
 `photo.run`, reached only by an app's own `host.request`, now goes through
 the same gate. Each door engine's `SKILL.md` lists `info` and `run`,

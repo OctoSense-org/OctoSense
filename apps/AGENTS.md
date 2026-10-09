@@ -204,12 +204,16 @@ against its declared result.
 A command door is an allowlist, never a deny-list. Its service builds the
 gate from `skill/safety.json` with `octosense_engine_area::door::Door` and
 its own `REVIEWED` settlements (the `file` commands that only read a file
-named in their parameters, the setters and their reviewed keys, and the
+named in their parameters, the setters and their reviewed keys, the
 commands that name another command or an effect, whose inner id the gate
-checks in turn), admits every command of a call before running any, and
-fences what a command could plant in the document after each one (vector's
-linked images, effect's LUT and colour files, film's media and effect
-paths, photo's linked smart objects). Only `safe` ids and reviewed reads
+checks in turn, and the limits on parameters that multiply work: counts,
+rows and columns, sizes, frame ranges, with copies multiplying across a
+call), admits every command of a call before running any, and fences what
+a command could plant in the document after each one (vector's linked
+images, effect's LUT and colour files, film's media and effect paths,
+photo's linked smart objects). Engine work runs on the shell's UI thread,
+so every door caps what one call may ask for: give a new multiplying
+parameter a `Limit`, with its reason beside it. Only `safe` ids and reviewed reads
 run; an unclassified id fails the skill drift test, and an id the gate does
 not know is refused. Classify a new id from its implementation, never
 widen a class to make a command run, and keep a door's hostile fixtures
