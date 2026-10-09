@@ -1,0 +1,26 @@
+# octosense-vector-service — the `vector` host service (ADR 0013).
+#
+# vectorcraft's vector engine behind typed `vector.*` methods: open and
+# inspect, convert between its formats (SVG/SVGZ, PDF, EPS, DXF, EMF/WMF,
+# the raster formats, native .vectorcraft), run engine commands from the
+# catalog and render PNG previews. The engine does not contain file paths
+# itself, so this crate does: every path resolves inside the service's own
+# `vector/` area under the caller's host directory, and `run` refuses the
+# engine's file commands. Stateless: every call opens, acts and closes.
+[package]
+name = "octosense-vector-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and News: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
+# The engine, pinned to one ymote/vectorcraft revision (ADR 0013).
+vectorcraft-engine = { workspace = true }
+vectorcraft-render = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

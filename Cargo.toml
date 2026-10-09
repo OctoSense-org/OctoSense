@@ -46,6 +46,7 @@ members = [
     "apps/design/host-service",
     "apps/film/host-service",
     "apps/effect/host-service",
+    "apps/vector/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
     "apps/ai-providers/config",
@@ -210,6 +211,7 @@ octosense-sound-service = { path = "apps/sound/host-service" }
 octosense-design-service = { path = "apps/design/host-service" }
 octosense-film-service = { path = "apps/film/host-service" }
 octosense-effect-service = { path = "apps/effect/host-service" }
+octosense-vector-service = { path = "apps/vector/host-service" }
 # The wordcraft document engine (ADR 0013): the pinned ymote fork, one revision.
 wordcraft-engine = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
 wordcraft-doc = { git = "https://github.com/ymote/wordcraft.git", rev = "7584b9b2930ffddfe7db96b6eba977262e55135c" }
@@ -245,6 +247,9 @@ effectcraft-automation = { git = "https://github.com/ymote/effectcraft.git", rev
 effectcraft-media = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
 effectcraft-expr = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
 effectcraft-model = { git = "https://github.com/ymote/effectcraft.git", rev = "d60cb71e297a4bb76851b27b48c0014b56ccab69" }
+# The vectorcraft vector engine (ADR 0013): the pinned ymote fork, one revision.
+vectorcraft-engine = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
+vectorcraft-render = { git = "https://github.com/ymote/vectorcraft.git", rev = "85dcb28e411db4271f3b726d6502b78e1375cbba" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }

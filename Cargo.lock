@@ -4961,6 +4961,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "fontdb"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2660c5e9157bf76d2db1294e4a9feba604ef610819a3b591088d0d8392a3290f"
+dependencies = [
+ "fontconfig-parser",
+ "log",
+ "memmap2",
+ "slotmap",
+ "tinyvec",
+]
+
+[[package]]
 name = "fontique"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7109,6 +7122,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
 
 [[package]]
+name = "imagesize"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65b27460c2c92b037f3f94c538ed9a3342f3fdf923606781629ccb35f82d042a"
+
+[[package]]
 name = "imara-diff"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7752,7 +7771,7 @@ dependencies = [
  "gif",
  "hayro-write",
  "image-webp",
- "imagesize",
+ "imagesize 0.14.0",
  "indexmap 2.14.2",
  "pdf-writer",
  "png 0.18.1",
@@ -7775,7 +7794,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1237d7c37b16ca9fbc2e72dde13a10d321f9a44aceee35c062bc0a43bfc7ce16"
 dependencies = [
  "flate2",
- "fontdb",
+ "fontdb 0.23.0",
  "krilla",
  "resvg 0.47.0",
  "skrifa 0.42.1",
@@ -9704,7 +9723,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cb5b469222ce6b9896edf0a969cf68464f5a028ef394fd6643f00bd943df117"
 dependencies = [
  "anyhow",
- "fontdb",
+ "fontdb 0.23.0",
  "json5",
  "once_cell 1.21.4",
  "regex",
@@ -11638,6 +11657,7 @@ dependencies = [
  "octosense-reference",
  "octosense-sheets-service",
  "octosense-sound-service",
+ "octosense-vector-service",
  "octosense-wasm-host",
  "octosense-word-service",
  "rinx",
@@ -11680,6 +11700,17 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.24.0",
  "url",
+]
+
+[[package]]
+name = "octosense-vector-service"
+version = "0.1.0"
+dependencies = [
+ "octosense-appstore",
+ "serde_json",
+ "tempfile",
+ "vectorcraft-engine",
+ "vectorcraft-render",
 ]
 
 [[package]]
@@ -16896,6 +16927,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce61d488bcdc9bc8b5d1772c404828b17fc481c0a582b5581e95fb233aef503e"
 
 [[package]]
+name = "unicode-general-category"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b993bddc193ae5bd0d623b49ec06ac3e9312875fdae725a975c51db1cc1677f"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.22"
 
@@ -17076,8 +17113,8 @@ dependencies = [
  "base64 0.22.1",
  "data-url",
  "flate2",
- "fontdb",
- "imagesize",
+ "fontdb 0.23.0",
+ "imagesize 0.14.0",
  "kurbo",
  "log",
  "pico-args",
@@ -17103,8 +17140,8 @@ dependencies = [
  "base64 0.22.1",
  "data-url",
  "flate2",
- "fontdb",
- "imagesize",
+ "fontdb 0.23.0",
+ "imagesize 0.14.0",
  "kurbo",
  "log",
  "pico-args",
@@ -17116,6 +17153,34 @@ dependencies = [
  "svgtypes",
  "tiny-skia-path 0.12.0",
  "ttf-parser 0.25.1",
+ "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-script 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-vo",
+ "xmlwriter",
+]
+
+[[package]]
+name = "usvg"
+version = "0.48.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "977d0a4abdef933f424a99fe09f95576e089b90aebc6f016a3bc813762493e91"
+dependencies = [
+ "base64 0.23.1",
+ "data-url",
+ "flate2",
+ "fontdb 0.24.0",
+ "harfrust 0.12.0",
+ "imagesize 0.15.0",
+ "kurbo",
+ "log",
+ "pico-args",
+ "roxmltree 0.21.1",
+ "simplecss",
+ "siphasher",
+ "skrifa 0.44.0",
+ "strict-num",
+ "svgtypes",
+ "tiny-skia-path 0.12.0",
  "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "unicode-script 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "unicode-vo",
@@ -17186,6 +17251,303 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "vectorcraft-brush"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "kurbo",
+ "serde",
+ "serde_json",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-geom",
+]
+
+[[package]]
+name = "vectorcraft-cad"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "image",
+ "kurbo",
+ "vectorcraft-brush",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-effects",
+ "vectorcraft-geom",
+ "vectorcraft-pathops",
+ "vectorcraft-text",
+]
+
+[[package]]
+name = "vectorcraft-color"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "kurbo",
+ "moxcms 0.8.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vectorcraft-doc"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "image",
+ "kurbo",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tiff",
+ "vectorcraft-color",
+ "vectorcraft-geom",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "vectorcraft-effects"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "kurbo",
+ "serde_json",
+ "vectorcraft-doc",
+ "vectorcraft-geom",
+ "vectorcraft-pathops",
+ "vectorcraft-plugins",
+ "vectorcraft-text",
+]
+
+[[package]]
+name = "vectorcraft-engine"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "flate2",
+ "image",
+ "kurbo",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "vectorcraft-brush",
+ "vectorcraft-cad",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-eps",
+ "vectorcraft-format",
+ "vectorcraft-geom",
+ "vectorcraft-metafile",
+ "vectorcraft-pathops",
+ "vectorcraft-pdf",
+ "vectorcraft-plugins",
+ "vectorcraft-render",
+ "vectorcraft-svg",
+ "vectorcraft-text",
+ "vectorcraft-tools",
+ "vectorcraft-trace",
+]
+
+[[package]]
+name = "vectorcraft-eps"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "flate2",
+ "image",
+ "kurbo",
+ "vectorcraft-brush",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-effects",
+ "vectorcraft-geom",
+ "vectorcraft-metafile",
+ "vectorcraft-render",
+ "vectorcraft-text",
+]
+
+[[package]]
+name = "vectorcraft-format"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "flate2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "vectorcraft-doc",
+]
+
+[[package]]
+name = "vectorcraft-geom"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "kurbo",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vectorcraft-metafile"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "image",
+ "kurbo",
+ "vectorcraft-brush",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-effects",
+ "vectorcraft-geom",
+ "vectorcraft-text",
+]
+
+[[package]]
+name = "vectorcraft-pathops"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "kurbo",
+ "linesweeper",
+ "thiserror 2.0.20",
+ "vectorcraft-geom",
+]
+
+[[package]]
+name = "vectorcraft-pdf"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "aes 0.8.4",
+ "flate2",
+ "hayro-interpret",
+ "hayro-syntax",
+ "image",
+ "jpeg-encoder 0.6.1",
+ "krilla",
+ "kurbo",
+ "log",
+ "md-5",
+ "serde",
+ "sha2 0.10.9",
+ "skrifa 0.47.0",
+ "smallvec 1.16.1",
+ "thiserror 2.0.20",
+ "vectorcraft-brush",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-effects",
+ "vectorcraft-geom",
+ "vectorcraft-text",
+]
+
+[[package]]
+name = "vectorcraft-plugins"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-geom",
+ "wasmi",
+]
+
+[[package]]
+name = "vectorcraft-render"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "flate2",
+ "gif",
+ "image",
+ "jpeg-encoder 0.6.1",
+ "log",
+ "vectorcraft-brush",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-effects",
+ "vectorcraft-geom",
+ "vectorcraft-text",
+ "vello_common 0.2.0",
+ "vello_cpu 0.2.0",
+ "weezl 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "vectorcraft-svg"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "flate2",
+ "image",
+ "kurbo",
+ "serde",
+ "serde_json",
+ "svgtypes",
+ "thiserror 2.0.20",
+ "usvg 0.48.1",
+ "vectorcraft-brush",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-effects",
+ "vectorcraft-geom",
+ "vectorcraft-text",
+]
+
+[[package]]
+name = "vectorcraft-text"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "harfrust 0.13.3",
+ "kurbo",
+ "log",
+ "skrifa 0.47.0",
+ "subsetter",
+ "unicode-bidi 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-general-category",
+ "unicode-script 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vectorcraft-doc",
+ "vectorcraft-geom",
+ "windows-registry",
+]
+
+[[package]]
+name = "vectorcraft-tools"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "kurbo",
+ "serde",
+ "serde_json",
+ "vectorcraft-color",
+ "vectorcraft-doc",
+ "vectorcraft-geom",
+ "vectorcraft-pathops",
+ "vectorcraft-text",
+]
+
+[[package]]
+name = "vectorcraft-trace"
+version = "0.6.0"
+source = "git+https://github.com/ymote/vectorcraft.git?rev=85dcb28e411db4271f3b726d6502b78e1375cbba#85dcb28e411db4271f3b726d6502b78e1375cbba"
+dependencies = [
+ "image",
+ "kurbo",
+ "serde",
+ "thiserror 2.0.20",
+ "vectorcraft-geom",
+ "vectorcraft-pathops",
+]
 
 [[package]]
 name = "vello_common"

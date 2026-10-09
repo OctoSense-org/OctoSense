@@ -48,6 +48,10 @@ OctoSense-System-Apps 仓库（已归档）。
   （ADR 0013），通过 `effect.*` 方法服务系统应用：工程信息、把合成帧渲染为
   PNG、引擎命令目录以及 Lottie 导入/导出，所有文件都在调用方的 `effect/`
   区域内；尚无应用包。
+- **矢量引擎服务**（`vector/host-service`，`octosense-vector-service`）以无界面方式
+  运行固定版本的 vectorcraft 矢量引擎，提供 `vector.*` 方法（ADR 0013）：在调用方
+  宿主目录的 `vector/` 专属子目录内检查、转换、按引擎命令绘制并渲染矢量文档
+  （SVG、PDF、EPS、DXF、位图）；仅服务系统应用，暂无应用包。
 - **AppCard**（`appcard`）是可选的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`

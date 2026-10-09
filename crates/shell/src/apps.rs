@@ -311,6 +311,9 @@ pub fn register_host_services() {
         // The effect engine service (ADR 0013): effectcraft behind `effect.*`.
         #[cfg(feature = "app-hub")]
         octosense_effect_service::register();
+        // The vector engine service (ADR 0013): vectorcraft behind `vector.*`.
+        #[cfg(feature = "app-hub")]
+        octosense_vector_service::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(wasm_functions)]
         crate::wasm_service::register();
