@@ -473,4 +473,35 @@ fn location_sampling_broker_lifecycle() {
         .unwrap_err()
         .starts_with("location_unavailable:"));
     assert!(!state().lock().unwrap().location_running);
+    // Deterministically cross the deadline between sample maintenance and
+    // the generic broker boundary. Both boundaries used to silently drop the
+    // request here, leaving it waiting for the much longer App Hub timeout.
+    for (request, native_pending) in [(11, false), (12, true)] {
+        call("os.locationone", 80101, request, "sample", json!({}), true);
+        if native_pending {
+            handle_event(&mut cx, &Event::Signal);
+        }
+        {
+            let mut state = state().lock().unwrap();
+            location::maintain(&mut state, &mut cx, &Event::Signal);
+            if native_pending {
+                state.pending.values_mut().next().unwrap().deadline = Instant::now();
+                state.pending.retain(|_, work| work.alive());
+                assert!(state.pending.is_empty());
+            } else {
+                let mut work = state.queued.pop_front().unwrap();
+                work.deadline = Instant::now();
+                assert!(!work.alive());
+            }
+            location::sync(&mut state, &mut cx);
+            assert_eq!(state.sample_timer.0, 0);
+        }
+        let out = replies(80101);
+        assert_eq!(
+            out.len(),
+            1,
+            "deadline must answer once before dropping work"
+        );
+        assert_eq!(out[0].2.as_ref().unwrap_err(), location::TIMEOUT_ERROR);
+    }
 }

@@ -6,6 +6,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+pub(super) const TIMEOUT_ERROR: &str = "location_timeout: No location meeting the requested age and accuracy arrived before the deadline";
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Options {
     pub timeout_ms: u64,
@@ -107,12 +109,10 @@ fn is_sample(work: &Work) -> bool {
     work.operation == Operation::Sample
 }
 fn keep(work: &Work, check_authority: bool) -> bool {
-    if !work.reply.is_pending() {
+    if !work.alive() {
         return false;
     }
-    let failure = if Instant::now() >= work.deadline {
-        Some("location_timeout: No location meeting the requested age and accuracy arrived before the deadline")
-    } else if check_authority && (!work.policy_allows() || !work.consent_still_valid()) {
+    let failure = if check_authority && (!work.policy_allows() || !work.consent_still_valid()) {
         Some("permission_denied: Location consent or the app's capability changed")
     } else {
         None

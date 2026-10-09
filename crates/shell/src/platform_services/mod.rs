@@ -49,7 +49,19 @@ struct Work {
 }
 impl Work {
     fn alive(&self) -> bool {
-        self.reply.is_pending() && Instant::now() < self.deadline
+        if !self.reply.is_pending() {
+            return false;
+        }
+        if Instant::now() >= self.deadline {
+            // A deadline can cross after the sample maintenance pass but before
+            // generic dequeue/pending cleanup. Reply before that cleanup drops
+            // the final owner, otherwise the caller waits the broker's timeout.
+            if self.operation == Operation::Sample {
+                self.reply.clone().send(Err(location::TIMEOUT_ERROR.into()));
+            }
+            return false;
+        }
+        true
     }
     fn policy_allows(&self) -> bool {
         crate::host_tools::script_apps::grants(&self.call.app_id, self.family)
