@@ -176,12 +176,19 @@ def apk_metadata(aapt, apk, env):
     match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']*)'", badging, re.MULTILINE)
     if not match:
         raise RuntimeError(f"No package/version metadata for {apk.name}")
-    minimum = re.search(r"^sdkVersion:'([0-9]+)'$", badging, re.MULTILINE)
-    target = re.search(r"^targetSdkVersion:'([0-9]+)'$", badging, re.MULTILINE)
-    if not minimum or not target or not 0 < int(minimum[1]) <= int(target[1]):
+    # aapt and aapt2 use different minimum labels. Require exactly one value
+    # across both aliases; duplicate or malformed lines must not hide a conflict.
+    levels = []
+    for names in ("(?:minSdkVersion|sdkVersion)", "targetSdkVersion"):
+        fields = re.findall(rf"^{names}:(.*)$", badging, re.MULTILINE)
+        value = re.fullmatch(r"'([0-9]+)'", fields[0]) if len(fields) == 1 else None
+        if value is None:
+            raise RuntimeError(f"Missing or invalid Android SDK metadata for {apk.name}")
+        levels.append(int(value[1]))
+    if not 0 < levels[0] <= levels[1]:
         raise RuntimeError(f"Missing or invalid Android SDK metadata for {apk.name}")
     return {"package_name": match[1], "version_code": int(match[2]), "version_name": match[3],
-            "min_sdk_version": int(minimum[1]), "target_sdk_version": int(target[1])}
+            "min_sdk_version": levels[0], "target_sdk_version": levels[1]}
 
 
 def verify_pair(artifacts, args):

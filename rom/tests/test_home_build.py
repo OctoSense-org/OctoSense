@@ -146,6 +146,28 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             build.verify_pair(both_wrong, args)
 
+    def test_aapt2_minimum_spelling_matches_actual_bridge_badging(self):
+        # aapt2 35.0.0 uses minSdkVersion; older aapt uses sdkVersion.
+        output = ("package: name='dev.makepad.octosense.bridge' versionCode='2026100918' "
+                  "versionName='0.1.0-beta.2' platformBuildVersionName='15' platformBuildVersionCode='35' "
+                  "compileSdkVersion='35' compileSdkVersionCodename='15'\n"
+                  "minSdkVersion:'33'\ntargetSdkVersion:'35'\n")
+        with mock.patch.object(build.subprocess, "check_output", return_value=output):
+            result = build.apk_metadata(Path("/sdk/aapt2"), Path("/out/bridge.pending.apk"), {})
+        self.assertEqual(result["min_sdk_version"], 33)
+        self.assertEqual(result["target_sdk_version"], 35)
+        self.assertEqual(result["version_code"], 2026100918)
+
+    def test_duplicate_or_conflicting_sdk_metadata_is_refused(self):
+        output = ("package: name='dev.makepad.octosense.bridge' versionCode='1' versionName='test'\n"
+                  "minSdkVersion:'33'\ntargetSdkVersion:'35'\n")
+        for duplicate in ("minSdkVersion:'33'", "minSdkVersion:'26'", "sdkVersion:'33'", "sdkVersion:'26'",
+                          "sdkVersion:'Preview'", "minSdkVersion:", "targetSdkVersion:'35'",
+                          "targetSdkVersion:'32'", "targetSdkVersion:'Preview'"):
+            with self.subTest(duplicate=duplicate), mock.patch.object(build.subprocess, "check_output", return_value=output + duplicate + "\n"):
+                with self.assertRaises(RuntimeError):
+                    build.apk_metadata(Path("/sdk/aapt2"), Path("/out/bridge.pending.apk"), {})
+
     def test_apk_metadata_requires_numeric_sdk_levels_and_valid_order(self):
         package = "package: name='dev.makepad.octosense' versionCode='1' versionName='test'\n"
         for sdk in ("", "sdkVersion:'33'\n", "targetSdkVersion:'35'\n",
