@@ -3,7 +3,6 @@ use crate::{
     authorize::{exchange_google, identity, DevicePoll, GithubDeviceAttempt},
     oauth::{GoogleAttempt, Tokens, AUTH_LIFETIME},
     providers::{ClientRegistration, Provider},
-    transport::HttpsTransport,
     Connections, CredentialStore,
 };
 use octosense_appstore::services::{self, HostService, Replier, ServiceCall, ServiceHost};
@@ -289,6 +288,8 @@ pub(crate) fn unix_now() -> u64 {
 }
 
 struct Pending {
+    /// The sheet's ticket: the key of the code it may show (`sign_in_code`).
+    ticket: String,
     app: String,
     root: PathBuf,
     provider: Provider,
@@ -531,6 +532,7 @@ impl HostService for AuthService {
                 let ticket = Uuid::new_v4().to_string();
                 let (callback_tx, callback_rx) = std::sync::mpsc::sync_channel(1);
                 let pending = Arc::new(Pending {
+                    ticket: ticket.clone(),
                     app: call.app_id,
                     root: call.host_dir,
                     provider,
@@ -604,7 +606,16 @@ impl HostService for AuthService {
             }
             "sheet.status" => match self.pending(&call) {
                 Ok(p) => {
-                    let status = p.status.lock().unwrap().clone();
+                    let mut status = p.status.lock().unwrap().clone();
+                    if status["phase"] == "browser" {
+                        // The sheet's countdown: the request's deadline, not
+                        // the provider's longer code lifetime.
+                        let left = p
+                            .deadline
+                            .saturating_duration_since(Instant::now())
+                            .as_secs();
+                        status["remaining"] = json!(format!("{}:{:02}", left / 60, left % 60));
+                    }
                     // Only the current ticket's own visible sheet may close
                     // itself. A late worker must not dismiss a newer review.
                     if status["phase"] == "connected" {
@@ -617,6 +628,7 @@ impl HostService for AuthService {
             },
             "sheet.cancel" => {
                 if let Ok(p) = self.pending(&call) {
+                    crate::sign_in_code::retire(&p.ticket);
                     p.cancelled.store(true, Ordering::SeqCst);
                     p.original.clone().send(Err("Sign-in cancelled".into()));
                 }
@@ -653,13 +665,15 @@ fn complete_pending(pending: Arc<Pending>) {
     // authorize checks cancellation around the store commit and rolls back a
     // cancelled write. Once it returns Ok the connection is committed; a later
     // sheet close must not relabel that durable success as a failed sign-in.
+    crate::sign_in_code::retire(&pending.ticket);
     match result {
         Ok(connection) => {
             *pending.status.lock().unwrap() = json!({"phase":"connected"});
             pending.original.clone().send(Ok(json!(connection)));
         }
         Err(error) => {
-            *pending.status.lock().unwrap() = json!({"phase":"error","message":error});
+            *pending.status.lock().unwrap() =
+                json!({"phase":"error","message":sheet_failure(pending.provider, &error)});
             // Replier discards duplicates/stale isolates. A live replaced app
             // must still receive cancellation even if no native event arrives.
             pending.original.clone().send(Err(error));
@@ -681,7 +695,10 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
     let registration = ClientRegistration {
         client_id: client.client_id,
     };
-    let transport = HttpsTransport::new()?;
+    // The provider's transport: HTTPS, or a marked acceptance profile's
+    // synthetic provider (acceptance-fixtures builds only).
+    let transport = provider_transport(&p.root)?;
+    let transport = transport.as_ref();
     let scopes: Vec<String> = p.scopes.iter().cloned().collect();
     let tokens: Tokens = match p.provider {
         Provider::Backend => return Err("Backend registration is unavailable".into()),
@@ -690,17 +707,18 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
                 &p.app,
                 &registration,
                 &scopes,
-                &transport,
+                transport,
                 Instant::now(),
             )?;
             *p.status.lock().unwrap() =
                 json!({"phase":"browser","url":attempt.verification_uri,"code":attempt.user_code});
+            crate::sign_in_code::publish(&p.ticket, &attempt.user_code, &attempt.verification_uri);
             loop {
                 if p.cancelled.load(Ordering::SeqCst) || Instant::now() >= p.deadline {
                     attempt.cancel();
                     return Err("Sign-in cancelled or expired".into());
                 }
-                match attempt.poll(&p.app, &transport, Instant::now(), unix_now())? {
+                match attempt.poll(&p.app, transport, Instant::now(), unix_now())? {
                     DevicePoll::Wait(wait) => {
                         std::thread::sleep(wait.min(Duration::from_millis(250)))
                     }
@@ -726,6 +744,7 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
                 GoogleAttempt::desktop(&p.app, &registration, &scopes, port, Instant::now())?;
             *p.status.lock().unwrap() =
                 json!({"phase":"browser","url":attempt.authorization_url().as_str(),"code":""});
+            crate::sign_in_code::publish(&p.ticket, "", attempt.authorization_url().as_str());
             let code = loop {
                 if p.cancelled.load(Ordering::SeqCst) || Instant::now() >= p.deadline {
                     attempt.cancel();
@@ -781,12 +800,12 @@ fn authorize(p: &Pending) -> Result<crate::Connection, String> {
                 client.client_secret.as_deref(),
                 code,
                 &p.scopes,
-                &transport,
+                transport,
                 unix_now(),
             )?
         }
     };
-    let (subject, label) = identity(p.provider, &tokens, &transport)?;
+    let (subject, label) = identity(p.provider, &tokens, transport)?;
     let operation = operation_lock(&p.root, &p.app);
     let operation_guard = operation.lock().unwrap_or_else(|e| e.into_inner());
     let _guard = STORE_LOCK.lock().unwrap();
@@ -838,6 +857,10 @@ fn consent_sheet(ticket: &str, p: &Pending) -> String {
     if p.embedded {
         return embedded_sheet(ticket, p);
     }
+    if p.provider != Provider::Backend {
+        return provider_sheet(ticket, p.provider, &p.app, &p.scopes);
+    }
+    // An app backend's browser sign-in.
     // All variable text enters as a JSON string literal, never executable Splash.
     let ticket = json!(ticket).to_string();
     let title = json!(format!(
@@ -919,6 +942,219 @@ let content = SolidView {{width: Fill height: Fill flow: Down padding: 20 spacin
     oauth_status := Label {{width: Fill text: "Continue to authorize this connection." draw_text.color: #444}}
     Button {{width: Fill height: 48 text: "Continue" on_click: || begin()}}
     ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || host_dismiss()}}
+}}
+start_timeout(0.0, || bind_lifetime())
+content
+"#
+    )
+}
+
+/// The installed app's display name, from its admitted manifest: the shell
+/// registers the lookup. A sign-in sheet shows it above the app's id.
+pub type AppNames = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+static APP_NAMES: Mutex<Option<AppNames>> = Mutex::new(None);
+
+/// Register the lookup [`AppNames`] describes.
+pub fn set_app_names(names: AppNames) {
+    *APP_NAMES.lock().unwrap_or_else(|e| e.into_inner()) = Some(names);
+}
+
+fn app_name(app: &str) -> Option<String> {
+    let names = APP_NAMES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()?;
+    names(app).filter(|name| !name.trim().is_empty() && name.len() <= 80)
+}
+
+/// The sheet's words for a provider sign-in that ended without a connection.
+/// The app still receives the original error.
+fn sheet_failure(provider: Provider, error: &str) -> String {
+    let name = match provider {
+        Provider::Github => "GitHub",
+        Provider::Google => "Google",
+        Provider::Backend => return error.to_string(),
+    };
+    if error.contains("declined") {
+        format!("You declined on {name}, so nothing was connected. Connect again from the app if you change your mind.")
+    } else if error.contains("authorization expired") {
+        "The code expired before it was approved. Close this and connect again for a new one."
+            .into()
+    } else if error == "Sign-in cancelled or expired" {
+        "This sign-in timed out. Close this and connect again to start over.".into()
+    } else if error.contains("connection failed") || error.contains("check the network") {
+        format!("Couldn't reach {name}. Check your connection, then connect again.")
+    } else {
+        error.to_string()
+    }
+}
+
+/// GitHub's (device code) and Google's (browser) sign-in sheet: who asks and
+/// for what, one action to go on, then the code with Copy and Open, a visible
+/// wait, and failures in plain words.
+fn provider_sheet(
+    ticket: &str,
+    provider: Provider,
+    app_id: &str,
+    scopes: &BTreeSet<String>,
+) -> String {
+    let (name, site, has_code) = match provider {
+        Provider::Github => ("GitHub", "github.com", true),
+        _ => ("Google", "accounts.google.com", false),
+    };
+    let app = app_name(app_id).unwrap_or_else(|| app_id.to_string());
+    let lit = |text: String| json!(text).to_string();
+    let ticket = lit(ticket.to_string());
+    let title = lit(format!("Connect {name}"));
+    let subtitle = lit(format!("{app} wants to use your {name} account."));
+    let app_id = lit(app_id.to_string());
+    let rows: String = scopes
+        .iter()
+        .map(|scope| {
+            format!(
+                r#"View {{width: Fill height: Fit flow: Right spacing: 10 align: Align{{y: 0.0}}
+                    RoundedView {{width: 7 height: 7 margin: Inset{{top: 10}} draw_bg +: {{color: #x1a7f37 border_radius: 3.5}}}}
+                    Label {{width: Fill text: {} draw_text.wrap: Words draw_text.color: #x172336 draw_text.text_style.font_size: 13}}
+                }}
+                "#,
+                lit(crate::providers::scope_words(scope).to_string())
+            )
+        })
+        .collect();
+    let trust = lit(format!(
+        "You approve this on {site}{}. OctoSense keeps the connection; {app} never sees your password or token. You can disconnect it at any time.",
+        if has_code { " with a one-time code" } else { "" }
+    ));
+    let preparing = lit(if has_code {
+        "Getting a one-time code from GitHub…".to_string()
+    } else {
+        "Opening Google sign-in…".to_string()
+    });
+    let step_title = lit(if has_code {
+        "Enter this code on GitHub".to_string()
+    } else {
+        "Continue in your browser".to_string()
+    });
+    let step_help = lit(if has_code {
+        "Open GitHub copies the code. Paste it on github.com/login/device, then choose Authorize."
+            .to_string()
+    } else {
+        "Sign in to Google, allow access, then come back here.".to_string()
+    });
+    let waiting = lit(format!("Waiting for you to approve on {name}"));
+    let minutes = AUTH_LIFETIME.as_secs() / 60;
+    let (expiry, expires_in) = if has_code {
+        (
+            format!("The code works for {minutes} minutes."),
+            "Code expires in ",
+        )
+    } else {
+        (
+            format!("This sign-in stays open for {minutes} minutes."),
+            "This sign-in expires in ",
+        )
+    };
+    let expiry = lit(expiry);
+    let expires_in = lit(expires_in.to_string());
+    let open_label = lit(format!("Open {name}"));
+    let continue_label = lit(format!("Continue to {name}"));
+    format!(
+        r#"
+let ticket = {ticket}
+let watching = false
+let phase = "intro"
+let dots = 0
+fn host_dismiss() {{
+    watching = false
+    host.request("auth.sheet.cancel", {{ticket: ticket}}, fn(r) {{}})
+}}
+fn show(next) {{
+    phase = next
+    ui.intro.set_visible(next == "intro")
+    ui.preparing.set_visible(next == "starting")
+    ui.step.set_visible(next == "code")
+    ui.failed.set_visible(next == "error")
+    ui.oauth_continue.set_visible(next == "intro")
+    if next == "error" {{ ui.oauth_cancel.set_text("Close") }}
+}}
+fn tick() {{
+    if dots >= 3 {{ dots = 0 }} else {{ dots = dots + 1 }}
+    let trail = ""
+    for i in dots {{ trail = trail + "." }}
+    ui.waiting.set_text({waiting} + trail)
+}}
+fn poll() {{
+    if !watching {{ return }}
+    host.request("auth.sheet.status", {{ticket: ticket}}, fn(r) {{
+        if r.is_ok {{
+            if r.data.phase == "browser" && phase != "code" {{
+                if ui.device_code.bind(ticket, {open_label}) {{ show("code") }}
+            }}
+            if r.data.phase == "browser" && r.data.remaining != nil {{
+                ui.expiry.set_text({expires_in} + r.data.remaining)
+            }}
+            if r.data.phase == "error" {{
+                ui.failure.set_text(r.data.message)
+                show("error")
+                watching = false
+            }}
+        }} else {{ watching = false }}
+        if watching {{
+            if phase == "code" {{ tick() }}
+            start_timeout(0.5, || poll())
+        }}
+    }})
+}}
+fn bind_lifetime() {{ return ui.oauth_lifetime.bind_auth_lifetime(ticket) }}
+fn begin() {{
+    if !bind_lifetime() {{ host_dismiss() return }}
+    show("starting")
+    host.request("auth.sheet.start", {{ticket: ticket}}, fn(r) {{
+        if r.is_ok {{ watching = true poll() }} else {{ ui.failure.set_text(r.error) show("error") }}
+    }})
+}}
+let content = SolidView {{width: Fill height: Fill flow: Down align: Align{{x: 0.5}} padding: Inset{{left: 24 right: 24 top: 28 bottom: 20}} draw_bg.color: #fff
+    // A readable column on a wide window; the full width on a phone.
+    View {{width: Fill max_width: 560 height: Fill flow: Down
+        oauth_title := Label {{width: Fill text: {title} draw_text.color: #x172336 draw_text.text_style: theme.font_bold{{font_size: 22}}}}
+        View {{width: Fill height: 6}}
+        oauth_subtitle := Label {{width: Fill text: {subtitle} draw_text.wrap: Words draw_text.color: #x3b4a5e draw_text.text_style.font_size: 14}}
+        Label {{width: Fill text: {app_id} draw_text.color: #x8a96a8 draw_text.text_style.font_size: 11}}
+        View {{width: Fill height: 20}}
+        ScrollYView {{width: Fill height: Fill flow: Down spacing: 16
+            intro := View {{width: Fill height: Fit flow: Down spacing: 12
+                Label {{width: Fill text: "It will be able to:" draw_text.color: #x172336 draw_text.text_style: theme.font_bold{{font_size: 14}}}}
+                RoundedView {{width: Fill height: Fit flow: Down padding: 14 spacing: 10 draw_bg +: {{color: #xf3f6f9 border_radius: 10.0}}
+                    {rows}
+                }}
+                Label {{width: Fill text: {trust} draw_text.wrap: Words draw_text.color: #x526071 draw_text.text_style.font_size: 13}}
+            }}
+            preparing := View {{visible: false width: Fill height: Fit
+                Label {{width: Fill text: {preparing} draw_text.color: #x3b4a5e draw_text.text_style.font_size: 14}}
+            }}
+            step := View {{visible: false width: Fill height: Fit flow: Down spacing: 14
+                Label {{width: Fill text: {step_title} draw_text.color: #x172336 draw_text.text_style: theme.font_bold{{font_size: 16}}}}
+                device_code := SignInCode {{}}
+                Label {{width: Fill text: {step_help} draw_text.wrap: Words draw_text.color: #x526071 draw_text.text_style.font_size: 13}}
+                waiting := Label {{width: Fill text: {waiting} draw_text.color: #x172336 draw_text.text_style.font_size: 13}}
+                expiry := Label {{width: Fill text: {expiry} draw_text.color: #x8a96a8 draw_text.text_style.font_size: 11}}
+            }}
+            failed := View {{visible: false width: Fill height: Fit flow: Down spacing: 8
+                Label {{width: Fill text: "Not connected" draw_text.color: #xb42318 draw_text.text_style: theme.font_bold{{font_size: 16}}}}
+                failure := Label {{width: Fill text: "" draw_text.wrap: Words draw_text.color: #x172336 draw_text.text_style.font_size: 13}}
+            }}
+        }}
+        oauth_lifetime := WebReader {{width: 0 height: 0 visible: false}}
+        View {{width: Fill height: 12}}
+        oauth_continue := Button {{width: Fill height: 48 text: {continue_label} on_click: || begin()
+            draw_bg +: {{color: #x1f2937 color_hover: #x111827 color_down: #x0b1220 color_focus: #x1f2937 border_size: 0.0 border_radius: 8.0}}
+            draw_text +: {{color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff text_style: theme.font_bold{{font_size: 13}}}}
+        }}
+        View {{width: Fill height: 8}}
+        oauth_cancel := ButtonFlat {{width: Fill height: 44 text: "Cancel" on_click: || host_dismiss()
+            draw_text +: {{color: #x3b4a5e color_hover: #x172336 color_down: #x172336 text_style: theme.font_regular{{font_size: 13}}}}
+        }}
+    }}
 }}
 start_timeout(0.0, || bind_lifetime())
 content
@@ -1054,3 +1290,7 @@ mod host_lifetime_tests;
 #[cfg(test)]
 #[path = "host_operation_tests.rs"]
 mod host_operation_tests;
+
+#[cfg(test)]
+#[path = "host_sheet_tests.rs"]
+mod host_sheet_tests;

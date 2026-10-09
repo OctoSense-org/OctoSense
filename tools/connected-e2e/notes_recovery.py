@@ -61,7 +61,7 @@ def run():
             assert newest()['content'] == large
             ui.capture('01-rejected-draft-retained')
             receipt['checks'].append('Rejected reload routes to recovery/settings; Back cannot expose blank editor; original draft remains exact')
-            ui.click('Refresh repositories'); ui.click('fixture-author/notes')
+            ui.click('Refresh'); ui.click('fixture-author/notes')
             ui.click('docs'); ui.click('docs/second-note.md')
             ui.click('Keep current draft')
             assert newest()['content'] == large

@@ -107,8 +107,8 @@ def run():
             with urllib.request.urlopen(ui.endpoint+'/',timeout=10) as response:
                 (output/'instrument-protocol.txt').write_bytes(response.read())
             ui.click('Repository')
-            ui.wait(lambda: ui.find(text='Selected · Fixture GitHub · synthetic provider'))
-            ui.click('Refresh repositories'); ui.label('Choose a repository')
+            ui.wait(lambda: ui.find(text='Fixture GitHub · synthetic provider', kind='Label'))
+            ui.click('Refresh'); ui.label('Choose a repository')
             ui.click('fixture-author/notes'); ui.click('docs'); ui.click('docs/second-note.md')
             ui.label('Opened docs/second-note.md'); ui.tab('Markdown')
             receipt['rss_before_cycles_kib'] = rss()

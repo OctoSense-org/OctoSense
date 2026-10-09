@@ -76,7 +76,12 @@ pub fn validate_root(root: &Path) -> Result<PathBuf, String> {
             return Err("Fixture OAuth directory cannot be a symlink".into());
         }
         let clients = oauth.join("clients.json");
-        if clients.exists() && read(&clients)? != serde_json::json!({}) {
+        // Empty, or exactly the signed-out GitHub fixture's synthetic client.
+        if clients.exists() && {
+            let value = read(&clients)?;
+            value != serde_json::json!({})
+                && value != crate::acceptance_github::sign_in_registration()
+        } {
             return Err("Refusing a profile with provider registrations".into());
         }
         let connections = oauth.join("connections.json");
@@ -90,7 +95,9 @@ pub fn validate_root(root: &Path) -> Result<PathBuf, String> {
                     .as_str()
                     .is_some_and(|s| s.starts_with("org.octosense.samples."))
                     || !c["subject"].as_str().is_some_and(|s| {
-                        s.starts_with("synthetic-") || s.ends_with("@example.test")
+                        s.starts_with("synthetic-")
+                            || s.ends_with("@example.test")
+                            || s == crate::acceptance_github::SIGN_IN_SUBJECT
                     })
             }) {
                 return Err("Refusing a non-synthetic connected account".into());
@@ -156,6 +163,24 @@ mod tests {
             r#"{"google":{"client_id":"fictional-live-registration"}}"#,
         )
         .unwrap();
+        assert!(validate_root(&host).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn the_signed_out_github_fixture_admits_only_its_own_synthetic_client() {
+        let root = std::env::temp_dir().join(format!("connected-fixture-{}", uuid::Uuid::new_v4()));
+        let host = root.join(".host");
+        std::fs::create_dir_all(host.join("oauth")).unwrap();
+        std::fs::write(
+            root.join(".connected-e2e.json"),
+            r#"{"fixture":"connected-e2e","schema":1}"#,
+        )
+        .unwrap();
+        let clients = host.join("oauth/clients.json");
+        let synthetic = crate::acceptance_github::sign_in_registration().to_string();
+        std::fs::write(&clients, synthetic).unwrap();
+        assert!(validate_root(&host).is_ok());
+        std::fs::write(&clients, r#"{"github":{"client_id":"Iv1.another-client"}}"#).unwrap();
         assert!(validate_root(&host).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }

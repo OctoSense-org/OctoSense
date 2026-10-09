@@ -5,9 +5,13 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import time
 import urllib.parse
 import urllib.request
+
+# Select-all is Cmd+A on macOS and Ctrl+A elsewhere.
+SELECT_ALL = {'cmd': 1} if sys.platform == 'darwin' else {'ctrl': 1}
 
 
 class Native:
@@ -99,7 +103,7 @@ class Native:
 
     def field(self, identifier, value):
         self.click_row(self.reachable(identifier=identifier, kind='TextInput'))
-        self.call('k', k='press', c='KeyA', cmd=1, wait=1)
+        self.call('k', k='press', c='KeyA', wait=1, **SELECT_ALL)
         self.call('t', t=value, wait=1)
         self.wait(lambda: (self.find(identifier=identifier, kind='TextInput') or {}).get('t') == value)
         self.actions.append({'edit': identifier, 'characters': len(value)})

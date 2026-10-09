@@ -70,6 +70,14 @@ access, and complete sign-in in your browser. You do not need a developer
 account, a Google Cloud project, or a JSON configuration file. Your own tokens
 remain in the host's platform credential store, bound to the requesting app.
 
+The sign-in sheet names the app, from its installed manifest, above its id and
+lists the access in plain words. For GitHub it then shows a one-time code:
+**Open GitHub** copies the code and opens github.com/login/device, where you
+paste it and choose **Authorize**. The sheet shows how long the code stays
+valid and closes by itself once you approve. If you decline, or the code
+expires, the sheet says so in plain words; the app still receives the original
+error.
+
 If this build has no registration for the provider, its sign-in sheet explains
 that sign-in is unavailable and directs you to the distributor or an update.
 Adding this resolver does not register OctoSense with either provider: a release

@@ -2,7 +2,7 @@
 //! admission or signed Store installation. No agent kernel or approval bypass.
 //! --bundle=<bundle> or --installed-app=<id> or --install-bundle=<bundle>
 //! --app-data=<isolated directory> --remote
-//! A separate acceptance-fixtures build may add --provider-fixture=github|calendar.
+//! A separate acceptance-fixtures build may add --provider-fixture=github|github-sign-in|calendar.
 use makepad_widgets::*;
 use std::{path::PathBuf, sync::Arc};
 mod connected_support;
@@ -111,6 +111,9 @@ impl MatchEvent for App {
                     "github" => {
                         octosense_oauth_service::acceptance_github::install(&self.root, &self.app)
                     }
+                    "github-sign-in" => octosense_oauth_service::acceptance_github::install_sign_in(
+                        &self.root, &self.app,
+                    ),
                     "calendar" => {
                         octosense_oauth_service::acceptance_calendar::install(&self.root, &self.app)
                     }
@@ -208,6 +211,15 @@ impl MatchEvent for App {
                     },
                 })
         }));
+        // The sheet names the app as the shell does: from its admitted manifest.
+        let name = std::fs::read(bundle.join("manifest.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|manifest| manifest["name"].as_str().map(str::to_owned));
+        let named = self.app.clone();
+        octosense_oauth_service::host::set_app_names(Arc::new(move |app| {
+            (app == named).then(|| name.clone()).flatten()
+        }));
         octosense_oauth_service::host_api::register_with_review_hook(
             octosense_shell::connected_review::connector_sheet,
         );
@@ -238,6 +250,7 @@ impl AppMain for App {
         makepad_widgets::widgets_mod(vm);
         widget_async::set_splash_theme(widget_async::SplashTheme::Light);
         octosense_markdown_editor::register();
+        octosense_oauth_service::sign_in_code::register();
         octosense_shell::connected_review::register();
         self::script_mod(vm)
     }

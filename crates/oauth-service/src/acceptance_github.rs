@@ -21,6 +21,17 @@ use std::{
 const APP: &str = "org.octosense.samples.githubnotes";
 const SUBJECT: &str = "synthetic-github-acceptance";
 const TOKEN: &str = "synthetic-provider-credential-not-valid-on-github";
+// The signed-out profile's device flow (`install_sign_in`).
+const CLIENT_ID: &str = "Iv1.synthetic-fixture-client";
+const DEVICE_CODE: &str = "synthetic-device-code";
+const USER_CODE: &str = "WDJB-MJHT";
+/// The subject the device flow's fictional identity gets.
+pub(crate) const SIGN_IN_SUBJECT: &str = "0";
+
+/// The synthetic registration a signed-out profile carries.
+pub(crate) fn sign_in_registration() -> Value {
+    json!({"github": {"client_id": CLIENT_ID}})
+}
 #[derive(Default)]
 struct Vault(Mutex<BTreeMap<String, String>>);
 impl CredentialStore for Vault {
@@ -62,9 +73,77 @@ fn read(path: &Path) -> Result<Value, String> {
 struct Github {
     directory: PathBuf,
     lock: Mutex<()>,
+    /// Answer GitHub's device flow too: the profile starts signed out.
+    sign_in: bool,
 }
 impl Github {
+    /// GitHub's device flow for a profile installed with [`install_sign_in`]:
+    /// one fixed code, then whatever `github-sign-in.json` decides
+    /// (`{"decision": "pending" | "approve" | "deny" | "expire"}`, pending
+    /// when absent), and a fictional identity. Nothing leaves the process.
+    fn sign_in_response(&self, request: &Request) -> Result<Option<Response>, String> {
+        let ok = |body: Value| {
+            Ok(Some(Response {
+                status: 200,
+                body,
+                etag: None,
+            }))
+        };
+        let (host, path) = (request.url.host_str(), request.url.path());
+        if request.url.scheme() != "https" {
+            return Ok(None);
+        }
+        if request.method == "POST" && host == Some("github.com") && path == "/login/device/code" {
+            return ok(json!({"device_code": DEVICE_CODE, "user_code": USER_CODE,
+                "verification_uri": "https://github.com/login/device", "expires_in": 900, "interval": 5}));
+        }
+        if request.method == "POST"
+            && host == Some("github.com")
+            && path == "/login/oauth/access_token"
+        {
+            let Body::Form(fields) = &request.body else {
+                return Err("Synthetic GitHub expected a form".into());
+            };
+            if !fields
+                .iter()
+                .any(|(k, v)| k == "device_code" && v == DEVICE_CODE)
+            {
+                return Err("Synthetic GitHub refused an unknown device code".into());
+            }
+            let decision_path = self.directory.join("github-sign-in.json");
+            let decision = if decision_path.exists() {
+                read(&decision_path)?["decision"]
+                    .as_str()
+                    .unwrap_or("pending")
+                    .to_string()
+            } else {
+                "pending".to_string()
+            };
+            return ok(match decision.as_str() {
+                "approve" => {
+                    json!({"access_token": TOKEN, "token_type": "bearer", "scope": "read:user,public_repo,repo"})
+                }
+                "deny" => json!({"error": "access_denied"}),
+                "expire" => json!({"error": "expired_token"}),
+                _ => json!({"error": "authorization_pending"}),
+            });
+        }
+        if request.method == "GET"
+            && host == Some("api.github.com")
+            && path == "/user"
+            && request.bearer.as_deref() == Some(TOKEN)
+        {
+            // GitHub never issues user id 0: the account is unmistakably fictional.
+            return ok(json!({"id": 0, "login": "fixture-writer", "name": "Fixture Writer"}));
+        }
+        Ok(None)
+    }
     fn respond(&self, request: Request) -> Result<Response, String> {
+        if self.sign_in {
+            if let Some(response) = self.sign_in_response(&request)? {
+                return Ok(response);
+            }
+        }
         if request.url.scheme() != "https"
             || request.url.host_str() != Some("api.github.com")
             || request.bearer.as_deref() != Some(TOKEN)
@@ -209,6 +288,17 @@ impl Transport for Github {
 
 /// Seed a clearly fictional account and provider only inside a signed fixture.
 pub fn install(root: &Path, app: &str) -> Result<Value, String> {
+    install_profile(root, app, false)
+}
+
+/// Like [`install`], but the profile starts signed out: the synthetic
+/// provider answers GitHub's device flow (see `Github::sign_in_response`), so
+/// the host's sign-in sheet runs end to end against a fictional account.
+pub fn install_sign_in(root: &Path, app: &str) -> Result<Value, String> {
+    install_profile(root, app, true)
+}
+
+fn install_profile(root: &Path, app: &str, sign_in: bool) -> Result<Value, String> {
     acceptance_fixtures::validate_root(root)?;
     let parent = root.parent().ok_or("Missing isolated apps root")?;
     if app != APP
@@ -219,9 +309,16 @@ pub fn install(root: &Path, app: &str) -> Result<Value, String> {
     }
     fs::create_dir_all(root.join("oauth")).map_err(|e| e.to_string())?;
     let clients = root.join("oauth/clients.json");
-    if clients.exists() && read(&clients)? != json!({}) {
+    let registration = if sign_in {
+        sign_in_registration()
+    } else {
+        json!({})
+    };
+    if clients.exists() && ![json!({}), registration.clone()].contains(&read(&clients)?) {
         return Err("Refusing to replace real OAuth provider registrations".into());
     }
+    // The device flow's fictional identity (`/user`, id 0).
+    let subjects = [SUBJECT, SIGN_IN_SUBJECT];
     let metadata = root.join("oauth/connections.json");
     if metadata.exists()
         && read(&metadata)?["entries"]
@@ -229,7 +326,7 @@ pub fn install(root: &Path, app: &str) -> Result<Value, String> {
             .is_none_or(|entries| {
                 entries
                     .values()
-                    .any(|c| c["app_id"] != APP || c["subject"] != SUBJECT)
+                    .any(|c| c["app_id"] != APP || !subjects.iter().any(|s| c["subject"] == *s))
             })
     {
         return Err("Refusing a profile containing nonfixture account metadata".into());
@@ -239,32 +336,16 @@ pub fn install(root: &Path, app: &str) -> Result<Value, String> {
     if connections
         .list(APP)
         .iter()
-        .any(|c| c.subject != SUBJECT || c.provider != Provider::Github)
+        .any(|c| !subjects.contains(&c.subject.as_str()) || c.provider != Provider::Github)
     {
         return Err("Refusing to reuse real GitHub account metadata".into());
     }
-    let scopes: BTreeSet<String> = ["read:user", "public_repo"]
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-    let tokens = Tokens::from_response(
-        &json!({"access_token":TOKEN,"token_type":"bearer"}),
-        &scopes,
-        0,
-    )?;
-    let connection = if let Some(c) = connections.active(APP) {
-        connections.replace_tokens(APP, &c.handle, tokens)?;
-        c
+    let connection = if sign_in {
+        None
     } else {
-        connections.connect(
-            APP,
-            Provider::Github,
-            SUBJECT,
-            "Fixture GitHub · synthetic provider",
-            tokens,
-        )?
+        Some(seed(&mut connections)?)
     };
-    save(&clients, &json!({}))?;
+    save(&clients, &registration)?;
     let directory = root.join("fixtures");
     fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     let state = directory.join("github-state.json");
@@ -288,8 +369,39 @@ pub fn install(root: &Path, app: &str) -> Result<Value, String> {
             transport: Arc::new(Github {
                 directory,
                 lock: Mutex::new(()),
+                sign_in,
             }),
         },
     )?;
-    Ok(json!({"fixture":"github","connection":connection.handle,"live_provider":false}))
+    Ok(match connection {
+        Some(connection) => {
+            json!({"fixture":"github","connection":connection.handle,"live_provider":false})
+        }
+        None => json!({"fixture":"github-sign-in","live_provider":false}),
+    })
+}
+
+/// The pre-connected account of [`install`].
+fn seed(connections: &mut Connections) -> Result<crate::store::Connection, String> {
+    let scopes: BTreeSet<String> = ["read:user", "public_repo"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let tokens = Tokens::from_response(
+        &json!({"access_token":TOKEN,"token_type":"bearer"}),
+        &scopes,
+        0,
+    )?;
+    Ok(if let Some(c) = connections.active(APP) {
+        connections.replace_tokens(APP, &c.handle, tokens)?;
+        c
+    } else {
+        connections.connect(
+            APP,
+            Provider::Github,
+            SUBJECT,
+            "Fixture GitHub · synthetic provider",
+            tokens,
+        )?
+    })
 }
