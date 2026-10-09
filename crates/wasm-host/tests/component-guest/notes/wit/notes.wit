@@ -1,0 +1,28 @@
+package octosense:notes-spike;
+
+world notes {
+  record stats {
+    words: u32,
+    lines: u32,
+    headings: list<string>,
+  }
+
+  /// Markdown to HTML, with the pulldown-cmark crate.
+  export to-html: func(markdown: string) -> string;
+  /// Counts and headings: a record result.
+  export analyze: func(markdown: string) -> stats;
+  /// Writes HTML into the app's storage (WASI filesystem).
+  export save-html: func(markdown: string, path: string) -> result<u64, string>;
+  export read-file: func(path: string) -> result<string, string>;
+  /// WASI clocks and randomness.
+  export now-ms: func() -> u64;
+  export random-u64: func() -> u64;
+  /// State that lives across calls on one instance.
+  export count: func() -> u32;
+  /// Never returns: the deadline ends it.
+  export spin: func();
+  /// Allocates `megabytes`: the memory cap ends it.
+  export grow: func(megabytes: u32) -> u32;
+  /// Bytes in, bytes out.
+  export echo-bytes: func(data: list<u8>) -> list<u8>;
+}

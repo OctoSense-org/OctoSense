@@ -1,0 +1,109 @@
+# ADR 0014：以 WebAssembly 组件运行应用自带的 Rust crate
+
+[English](0014-app-components-in-webassembly.md) | 简体中文
+
+状态：提议（2026 年 10 月 9 日）。第 1 阶段（运行时验证原型）位于
+`crates/wasm-host`（`src/component.rs`、`tests/component.rs`）；第 2–4 阶段是下文的计划。
+本 ADR 扩展 [ADR 0011](0011-apps-own-functions-in-webassembly.zh-CN.md)：核心模块照旧可用。
+`main` 上 WebAssembly 的运行方式见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
+
+## 背景
+
+ADR 0011 允许应用以 WebAssembly 核心模块的形式携带 Rust 函数。它们由 Cranelift
+编译，速度很快，但与外界隔绝：
+- 唯一的导入是 `octo.log`，因此无法访问时钟、随机数、文件或网络；
+- 每次调用都使用全新实例，调用之间不保留状态；
+- 输入输出都是字节或 JSON，经由手写的 ABI 传递；
+- 开发者要从 OctoSense 复制一份 guest crate 才能编写。
+
+crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时钟、随机数、文件），
+要么需要在调用之间保留状态，例如已解析的文档、缓存或模型。因此能直接使用的 crate 很少。
+
+浏览器解决过同样的问题：其中的 WebAssembly 经 JavaScript 导入平台 API，保留自身状态，
+并由 `wasm-bindgen` 生成带类型的胶水代码。浏览器之外的标准做法是 WebAssembly
+**组件模型**：带类型的接口（WIT）与 **WASI 0.2** 系统接口。Rust 自 1.82 起可直接构建组件
+（`--target wasm32-wasip2`，Tier 2），我们已在发行版中链接的 Wasmtime 也实现了这两者
+（`wasmtime-wasi` 49）。
+
+我们希望开发者拿一个普通的 crate，用一条命令构建，就能在应用脚本中调用其函数，
+无需胶水代码，也不引入新的信任：组件能访问的，只是其应用本来就能访问的东西。
+
+## 决定
+
+1. **组件与模块并存。** 应用包的 `fns/*.wasm` 可以是组件，也可以是核心模块。运行时按文件头区分
+   （`component::is_component`）。模块沿用 ADR 0011 的约定。组件用普通的
+   `cargo build --target wasm32-wasip2` 构建。
+2. **带类型的函数，以 JSON 调用。** 组件导出的每个函数都能在应用脚本中直接调用，无需胶水代码：
+   - world 自身的函数以 `wasm.<function>` 调用，导出接口中的函数以
+     `wasm.<interface>.<function>` 调用。
+   - `wasm.functions` 列出每个函数及其 WIT 签名。
+   - 参数可以是按参数名作键的对象、按参数顺序排列的数组；只有一个参数时也可以直接传值。
+   - WIT 类型与 JSON 的对应：
+     - 记录（record）是对象，元组是数组；
+     - 变体是 `"case"` 或 `{"case": 值}`，枚举是其名称，标志（flags）是名称列表；
+     - 可选值是 `null` 或该值，`char` 是单个字符，数字会检查范围，`list<u8>`
+       是 base64 文本（也接受数字数组）。
+   - 函数返回 `result<T, E>` 时，结果为其值，或以 `E` 作为调用的错误。
+   - 接收或返回资源（resource）的函数不能从脚本调用，会被列为已跳过并附原因。
+3. **实例保留状态。** 每个组件一个实例，在应用的 worker 存活期间一直存在，因此组件可以保存文档、
+   缓存或模型。陷阱（trap）或超时会使实例作废，下一次调用会得到新实例。应用更新、授权变更或撤回
+   时实例会被丢弃，与模块相同。
+4. **WASI 的范围与应用授权一致。**
+   - **始终提供：** `wasi:clocks`、`wasi:random`、`wasi:io` 和 `wasi:cli`。stdout 与 stderr
+     成为应用的日志行（有上限）。环境变量、参数和 stdin 都为空。
+   - **`wasi:filesystem`：** 仅在应用有 `storage` 能力时提供。其存储文件夹以读写方式预打开为 `/`，
+     主机文件系统的其余部分一概不可见。没有该能力时不预打开任何目录。
+   - **`wasi:http` 出站（第 3 阶段）：** 只能访问清单 `network.hosts` 中的主机，并经过 shell 的网络策略。
+   - **从不提供：** `wasi:sockets`，以及上述 WASI 包以外的任何导入。请求这些导入的组件在加载时被拒绝
+     （`LoadError::Import`），App Hub 的审核闸门也会拒绝。
+5. **无需编写 WIT。**
+   - **Guest SDK（第 2 阶段）：** guest crate `octosense-component` 提供
+     `#[octosense_component::export]` 属性，从普通的 Rust 签名推导 WIT world。支持的类型包括数字、
+     `String`、`Vec<T>`、`Vec<u8>`、`Option`、`Result<T, String>`，以及标记为导出的结构体和枚举。
+   - **工具（第 2 阶段）：** App Flow 的 `octo` 新增：
+     - `octo wasm new`：生成 crate 模板；
+     - `octo wasm build`：构建 crate、对照清单检查其导入，并写入 `fns/`；
+     - `octo wasm doctor`：指出无法为 `wasm32-wasip2` 构建的依赖（`openssl-sys`、`libsqlite3-sys`
+       等 C 库、线程、多线程运行时）并建议替代方案。
+   - **分发：** SDK 发布到 crates.io（需维护者批准）；发布前使用 git 依赖。
+6. **审核能看到组件的访问范围。** App Hub 的闸门读取每个组件的导入：
+   - 拒绝允许集合以外的导入；
+   - `wasi:filesystem` 需要 `storage` 能力，`wasi:http` 需要 `network.hosts`；
+   - 告诉审核者组件能访问什么，例如“其应用文件夹中的文件；访问 api.example.com 的 HTTPS”。
+   组件需要新的应用合约版本。
+
+## 阶段
+
+| 阶段 | 范围 |
+| --- | --- |
+| 1. 运行时验证原型（本 PR） | `crates/wasm-host::component`：加载、检查导入、列出导出及其 WIT 签名、长期存活的实例、JSON 调用、上述 WASI 子集与存储预打开、超时、内存上限和日志。测试运行一个用普通 cargo 构建的、未作修改的 crate（`pulldown-cmark`），并拒绝导入 `wasi:sockets` 的组件。 |
+| 2. 开发者可用 | shell 的 `wasm` 服务：从 `fns/` 加载组件、`wasm.<function>` 调用、按应用的实例、来自清单的存储授权，以及组件写入的存储配额计量。提高组件的输入上限。guest SDK 及其宏；`octo wasm new/build/doctor`；App Hub 闸门检查与合约版本；文档与示例应用。 |
+| 3. 访问能力与平台 | 受 `network.hosts` 约束的 `wasi:http` 出站；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；iOS 使用 Pulley（Wasmtime 的解释器），OpenHarmony 在其 JIT 策略明确前也使用 Pulley；Windows 待其 CI 运行运行时测试后开启。 |
+| 4. 共享组件 | App Hub 目录中经过审核、带版本的组件，应用可以像 npm 包一样依赖它们。安装器负责校验，每个应用仍有自己的实例和授权。 |
+
+## 考虑过的替代方案
+
+- **继续使用核心模块与 JSON（维持 ADR 0011 现状）：** 保持安全，但能直接运行的 crate 很少，
+  所有类型都要手工编码。
+- **自定义的 WASI 0.1（preview 1）模块 ABI：** 能提供文件和时钟，但没有带类型的接口，也用不上组件工具链。
+  Rust 的 `wasm32-wasip2` 默认构建组件。
+- **把原生 Rust 加载进 shell**（动态库，或 makepad 的 Relax 这类 JIT 编译的 Rust）：速度快、功能完整，
+  但代码在 shell 进程中以其权限运行。Relax 作为实验跟进，第三方代码需要先有隔离。
+- **自研 Wasm 运行时，或 wasmi：** Wasmtime 已经链接在内，以 Cranelift 编译，并实现了 WASI 0.2 与组件模型。
+
+## 影响
+
+- **shell 的依赖图变大。** 新增 `wasmtime-wasi` 49.0.2（仅 `p2`）和 `component-model` 特性，
+  链接在 `wasm-host` 已链接的地方（特性 `wasm-functions`）。
+- **组件只能访问其应用本来就能访问的东西：** 自身的存储文件夹（需 `storage`），第 3 阶段起还有声明过的主机。
+  时钟和随机数对 Wasm 是新增的，但每个脚本本来就能使用。
+- **常驻实例会更长时间占用内存。** 每应用 worker 上限（`MAX_WORKERS`）与内存上限约束其用量，
+  空闲的 worker 照旧退出。
+- **验证原型的大小：** `notes`（含 `pulldown-cmark` 与 `getrandom`）为 310 KB，sockets 探测组件为 123 KB。
+  耗时尚未测量；第 2 阶段会像 ADR 0011 一样记录。
+
+## 待定问题
+
+- 组件写入的配额：逐次计量（包装文件系统宿主实现），还是在每次调用后检查。第 2 阶段通过测量决定。
+- 组件能否调用会打开面板（登录、审阅）的主机服务。很可能只允许经由脚本，绝不允许在组件的调用中进行。
+- 异步函数（WASI 0.3）和流式内容：第 3 阶段之后。
