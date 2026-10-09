@@ -2,8 +2,9 @@
 """Bind unsigned type-2 AppImages to their final kernel bytes, without executing them.
 
 linuxdeploy adds RUNPATH to the kernel after package.py stages its receipt.
-Only that proven ELF transformation is admitted here. The original staged/DEB
-receipt is never changed. The caller must scan the resulting package normally.
+Only that proven ELF transformation is admitted here. Host Wayland libraries
+are excluded so an old bundled copy cannot override the host's Mesa driver ABI.
+The original staged/DEB receipt is never changed. Scan the resulting package normally.
 """
 import hashlib
 import importlib.util
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 KERNEL = 'usr/bin/octos-kernel'
 RECEIPT = 'usr/lib/octosense/octos-kernel.json'
 RUNPATH = b'$ORIGIN/../lib\0'
+HOST_WAYLAND = re.compile(r'libwayland-(?:client|cursor|egl|server)\.so(?:\.\d+)*')
 
 
 def scanner():
@@ -189,11 +191,33 @@ def regular(root, relative):
     return path
 
 
+def exclude_host_wayland(root, before):
+    """Remove only the host graphics stack's Wayland files from usr/lib.
+
+    AppRun prepends this directory to LD_LIBRARY_PATH. Mesa remains a host
+    library, so its matching Wayland libraries must also come from the host.
+    Links are unlinked, never followed; other directory metadata is retained.
+    """
+    directory = root / 'usr/lib'
+    require(directory.is_dir() and not directory.is_symlink() and
+            root.resolve() in directory.resolve().parents, 'non-contained AppImage library directory')
+    candidates = sorted(p for p in directory.iterdir() if HOST_WAYLAND.fullmatch(p.name))
+    require(all(p.is_symlink() or p.is_file() for p in candidates), 'unexpected Wayland library entry')
+    removed = {p.relative_to(root).as_posix(): before[p.relative_to(root).as_posix()] for p in candidates}
+    if candidates:
+        meta = directory.stat()
+        for path in candidates:
+            path.unlink()
+        os.utime(directory, ns=(meta.st_atime_ns, meta.st_mtime_ns))
+    return removed
+
+
 def finalize_appimage(path, staged, original):
     """Atomically repair a freshly packaged unsigned AppImage; return its binding.
 
     The input runtime and payload are never executed. Failures leave the input
-    unchanged. Re-extraction verifies that only receipt bytes changed.
+    unchanged. Re-extraction permits only the receipt update and removal of
+    host Wayland libraries; every other payload byte and metadata entry stays.
     """
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'AppImage must be a regular file')
@@ -223,14 +247,17 @@ def finalize_appimage(path, staged, original):
         kernel = regular(tree, KERNEL).read_bytes()
         embedded = json.loads(receipt.read_text())
         corrected = updated_receipt(embedded, staged, original, kernel)
-        expected = before
+        removed = exclude_host_wayland(tree, before)
         if embedded != corrected:
             meta = receipt.stat()
             receipt.write_text(json.dumps(corrected, indent=2) + '\n')
             os.utime(receipt, ns=(meta.st_atime_ns, meta.st_mtime_ns))
-            expected = inventory(tree)
-            require({k: v for k, v in before.items() if k != RECEIPT} ==
-                    {k: v for k, v in expected.items() if k != RECEIPT}, 'unexpected payload mutation')
+        expected = inventory(tree)
+        allowed = {*removed, RECEIPT}
+        require({k: v for k, v in before.items() if k not in allowed} ==
+                {k: v for k, v in expected.items() if k not in allowed}, 'unexpected payload mutation')
+        require(not set(removed) & set(expected), 'host Wayland library exclusion failed')
+        if embedded != corrected or removed:
             fs = temp / 'filesystem.squashfs'
             run([builder, str(tree), str(fs), '-noappend', '-no-progress', '-processors', '2',
                  '-all-root', '-no-xattrs', '-comp', compressor, '-b', str(int.from_bytes(superblock[12:16], 'little')),
@@ -252,6 +279,7 @@ def finalize_appimage(path, staged, original):
     return {'file': path.name, 'format': 'appimage', 'sha256': sha(path.read_bytes()), 'kernel': corrected,
             'finalization': {'input_sha256': sha(data), 'runtime_prefix_sha256': sha(data[:offset]),
                              'receipt_updated': embedded != corrected, 'artifact_executed': False,
+                             'excluded_host_libraries': removed,
                              'payload_before_sha256': sha(json.dumps(before, sort_keys=True).encode()),
                              'payload_after_sha256': sha(json.dumps(expected, sort_keys=True).encode())}}
 
