@@ -572,7 +572,7 @@ index 1e42638f4..5f00c2d45 100644
      }
  }
 diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
-index 226a23c85..2893bc752 100644
+index 226a23c85..e77a763d8 100644
 --- a/platform/src/os/linux/android/android_jni.rs
 +++ b/platform/src/os/linux/android/android_jni.rs
 @@ -1776,13 +1776,17 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
@@ -633,37 +633,136 @@ index 226a23c85..2893bc752 100644
      );
  
      (**env).DeleteLocalRef.unwrap()(env, file_name_jstr);
-@@ -2626,12 +2633,39 @@ pub unsafe fn to_java_open_file_dialog(
+@@ -2626,12 +2633,138 @@ pub unsafe fn to_java_open_file_dialog(
      (**env).DeleteLocalRef.unwrap()(env, mime_jstr);
  }
  
++/// File IO runs on reusable native workers. Scope references and exceptions to
++/// one transfer, and detach only when this transfer attached the worker.
++struct FileDialogJni {
++    env: *mut jni_sys::JNIEnv,
++    vm: *mut jni_sys::JavaVM,
++    attached: bool,
++    frame: bool,
++}
++
++impl FileDialogJni {
++    unsafe fn enter() -> Result<Self, String> {
++        let vm = get_java_vm();
++        if vm.is_null() { return Err("Android VM is unavailable".into()); }
++        let mut raw_env = std::ptr::null_mut();
++        let status = (**vm).GetEnv.unwrap()(vm, &mut raw_env, jni_sys::JNI_VERSION_1_6);
++        let mut env = raw_env.cast::<jni_sys::JNIEnv>();
++        let attached = match status {
++            0 => false,
++            -2 => { // JNI_EDETACHED: only this case needs a new attachment.
++                if (**vm).AttachCurrentThread.unwrap()(vm, &mut env, std::ptr::null_mut()) != 0 {
++                    return Err("cannot attach Android file worker".into());
++                }
++                true
++            }
++            _ => return Err("cannot access Android file worker".into()),
++        };
++        if env.is_null() {
++            if attached { (**vm).DetachCurrentThread.unwrap()(vm); }
++            return Err("Android file worker has no JNI environment".into());
++        }
++        let mut scope = Self { env, vm, attached, frame: false };
++        scope.check_exception()?;
++        let status = (**env).PushLocalFrame.unwrap()(env, 8);
++        scope.frame = status == 0;
++        scope.check_exception()?;
++        if !scope.frame { return Err("cannot allocate Android file references".into()); }
++        Ok(scope)
++    }
++
++    unsafe fn check_exception(&self) -> Result<(), String> {
++        if (**self.env).ExceptionCheck.unwrap()(self.env) != 0 {
++            (**self.env).ExceptionClear.unwrap()(self.env);
++            return Err("Android file transfer failed".into());
++        }
++        Ok(())
++    }
++
++    unsafe fn method(&self, name: &[u8], signature: &[u8]) -> Result<(jni_sys::jobject, jni_sys::jmethodID), String> {
++        let activity = get_activity();
++        if activity.is_null() { return Err("Android activity is unavailable".into()); }
++        let class = (**self.env).GetObjectClass.unwrap()(self.env, activity);
++        self.check_exception()?;
++        if class.is_null() { return Err("Android activity class is unavailable".into()); }
++        let method = (**self.env).GetMethodID.unwrap()(self.env, class, name.as_ptr().cast(), signature.as_ptr().cast());
++        self.check_exception()?;
++        if method.is_null() { return Err("Android file transfer method is unavailable".into()); }
++        Ok((activity, method))
++    }
++
++    unsafe fn string(&self, value: &str) -> Result<jni_sys::jstring, String> {
++        let length = value.encode_utf16().count();
++        let length = jni_sys::jsize::try_from(length).map_err(|_| "Android document URI is too long")?;
++        let mut chars = Vec::new();
++        chars.try_reserve_exact(length as usize).map_err(|_| "cannot allocate Android document URI")?;
++        chars.extend(value.encode_utf16());
++        let string = (**self.env).NewString.unwrap()(self.env, chars.as_ptr(), length);
++        self.check_exception()?;
++        if string.is_null() { return Err("cannot allocate Android document URI".into()); }
++        Ok(string)
++    }
++}
++
++impl Drop for FileDialogJni {
++    fn drop(&mut self) {
++        unsafe {
++            // Never leave an exception or a local reference on a pooled thread,
++            // including early returns after failed lookup, allocation or IO.
++            if (**self.env).ExceptionCheck.unwrap()(self.env) != 0 {
++                (**self.env).ExceptionClear.unwrap()(self.env);
++            }
++            if self.frame { (**self.env).PopLocalFrame.unwrap()(self.env, std::ptr::null_mut()); }
++            if (**self.env).ExceptionCheck.unwrap()(self.env) != 0 {
++                (**self.env).ExceptionClear.unwrap()(self.env);
++            }
++            if self.attached { (**self.vm).DetachCurrentThread.unwrap()(self.vm); }
++        }
++    }
++}
++
 +/// Blocking ContentResolver IO, called only on the platform task pool.
 +pub unsafe fn read_file_dialog_uri(uri: &str, limit: u64) -> Result<Vec<u8>, String> {
-+    let env = attach_jni_env();
-+    let uri = new_java_string(env, uri);
-+    let data = ndk_utils::call_object_method!(env, get_activity(), "readFileDialogUri", "(Ljava/lang/String;I)[B",
-+        uri, limit.min(i32::MAX as u64) as jni_sys::jint);
-+    (**env).DeleteLocalRef.unwrap()(env, uri);
++    let scope = FileDialogJni::enter()?;
++    let env = scope.env;
++    let (activity, method) = scope.method(b"readFileDialogUri\0", b"(Ljava/lang/String;I)[B\0")?;
++    let uri = scope.string(uri)?;
++    let data = (**env).CallObjectMethod.unwrap()(env, activity, method, uri, limit.min(i32::MAX as u64) as jni_sys::jint);
++    scope.check_exception()?;
 +    if data.is_null() { return Err("selected document cannot be read within its byte limit".into()); }
-+    let bytes = java_byte_array_to_vec(env, data);
-+    (**env).DeleteLocalRef.unwrap()(env, data);
-+    if bytes.len() as u64 > limit { return Err("selected document exceeds its byte limit".into()); }
++    let length = (**env).GetArrayLength.unwrap()(env, data);
++    scope.check_exception()?;
++    if length < 0 || length as u64 > limit { return Err("selected document exceeds its byte limit".into()); }
++    let mut bytes = Vec::new();
++    bytes.try_reserve_exact(length as usize).map_err(|_| "cannot allocate selected document")?;
++    bytes.resize(length as usize, 0u8);
++    if length != 0 {
++        (**env).GetByteArrayRegion.unwrap()(env, data, 0, length, bytes.as_mut_ptr().cast());
++        scope.check_exception()?;
++    }
 +    Ok(bytes)
 +}
 +
 +pub unsafe fn write_file_dialog_uri(uri: &str, bytes: &[u8]) -> Result<(), String> {
 +    if bytes.len() > i32::MAX as usize { return Err("export exceeds the byte limit".into()); }
-+    let env = attach_jni_env();
-+    let uri = new_java_string(env, uri);
++    let scope = FileDialogJni::enter()?;
++    let env = scope.env;
++    let (activity, method) = scope.method(b"writeFileDialogUri\0", b"(Ljava/lang/String;[B)Z\0")?;
++    let uri = scope.string(uri)?;
 +    let data = (**env).NewByteArray.unwrap()(env, bytes.len() as jni_sys::jsize);
-+    if data.is_null() {
-+        (**env).DeleteLocalRef.unwrap()(env, uri);
-+        return Err("cannot allocate export".into());
++    scope.check_exception()?;
++    if data.is_null() { return Err("cannot allocate export".into()); }
++    if !bytes.is_empty() {
++        (**env).SetByteArrayRegion.unwrap()(env, data, 0, bytes.len() as jni_sys::jsize, bytes.as_ptr().cast());
++        scope.check_exception()?;
 +    }
-+    (**env).SetByteArrayRegion.unwrap()(env, data, 0, bytes.len() as jni_sys::jsize, bytes.as_ptr().cast());
-+    let ok = ndk_utils::call_bool_method!(env, get_activity(), "writeFileDialogUri", "(Ljava/lang/String;[B)Z", uri, data) != 0;
-+    (**env).DeleteLocalRef.unwrap()(env, data);
-+    (**env).DeleteLocalRef.unwrap()(env, uri);
++    let ok = (**env).CallBooleanMethod.unwrap()(env, activity, method, uri, data) != 0;
++    scope.check_exception()?;
 +    if ok { Ok(()) } else { Err("cannot write selected document".into()) }
 +}
 +
@@ -678,7 +777,7 @@ index 226a23c85..2893bc752 100644
  }
  
  unsafe fn new_java_string_array(
-@@ -3039,6 +3073,22 @@ fn decode_qr_luma(luma: &[u8], w: usize, h: usize) -> Option<String> {
+@@ -3039,6 +3172,22 @@ fn decode_qr_luma(luma: &[u8], w: usize, h: usize) -> Option<String> {
  // Outbound: calls into the buildtool's octos Java (MakepadActivity).
  // ===========================================================================
  
