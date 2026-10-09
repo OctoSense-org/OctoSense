@@ -19,7 +19,8 @@ android {
     buildToolsVersion '35.0.0'
     defaultConfig {
         applicationId 'dev.makepad.octosense.bridge'
-        minSdk 26
+        // Match standard Home and its bundled API33 kernel.
+        minSdk 33
         targetSdk 35
         versionCode requestedVersionCode.toInteger()
         versionName requestedVersionName
