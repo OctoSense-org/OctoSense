@@ -56,6 +56,14 @@ on:
         description: Build, sign (from main) and scan only; attach nothing to the tag's release
         type: boolean
         default: true
+      linux_diagnostic:
+        description: RC2 only; build Linux without signing/releasing and encrypt bounded failed-scan evidence
+        type: boolean
+        default: false
+      diagnostic_recipient_cert:
+        description: Public X.509 encryption certificate only; never a private key
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -74,6 +82,8 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       sign: ${{ steps.plan.outputs.sign }}
       release: ${{ steps.plan.outputs.release }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      linux_diagnostic: ${{ steps.plan.outputs.linux_diagnostic }}
     steps:
       - name: What to build, sign and release
         id: plan
@@ -84,6 +94,7 @@ jobs:
           SHA: ${{ github.sha }}
           INPUT_TAG: ${{ inputs.tag }}
           DRY_RUN: ${{ inputs.dry_run }}
+          LINUX_DIAGNOSTIC: ${{ inputs.linux_diagnostic }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
@@ -112,12 +123,27 @@ jobs:
           if [ -n "$tag" ] && [ "$sign" = true ] && { [ "$EVENT" = push ] || [ "$DRY_RUN" = false ]; }; then
             release=true
           fi
+          diagnostic=false
+          matrix='{"include":[{"os":"macos-14","platform":"macos-arm64"},{"os":"windows-2022","platform":"windows-x64"},{"os":"ubuntu-22.04","platform":"linux-x64"}]}'
+          if [ "$LINUX_DIAGNOSTIC" = true ]; then
+            [ "$EVENT" = workflow_dispatch ] && [ "$DRY_RUN" = true ] &&
+              [ "$tag" = desktop-v0.1.0-rc.2 ] &&
+              [ "$commit" = 4ccf8e068399b1da139771a9ed94cef05fa6ae60 ] || {
+                echo "::error::diagnostic requires the immutable RC2 tag and dry_run=true"; exit 1;
+              }
+            diagnostic=true
+            sign=false
+            release=false
+            matrix='{"include":[{"os":"ubuntu-22.04","platform":"linux-x64"}]}'
+          fi
           {
             echo "ref=$ref"
             echo "commit=$commit"
             echo "tag=$tag"
             echo "sign=$sign"
             echo "release=$release"
+            echo "matrix=$matrix"
+            echo "linux_diagnostic=$diagnostic"
           } | tee -a "$GITHUB_OUTPUT"
 
   package:
@@ -125,14 +151,7 @@ jobs:
     needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            platform: macos-arm64
-          - os: windows-2022
-            platform: windows-x64
-          - os: ubuntu-22.04
-            platform: linux-x64
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
     permissions:
@@ -162,6 +181,30 @@ jobs:
         run: |
           head=$(git rev-parse HEAD)
           [ "$head" = "$WANT" ] || { echo "::error::checked out $head, planned $WANT"; exit 1; }
+      - name: Validate public diagnostic recipient before building
+        if: needs.plan.outputs.linux_diagnostic == 'true'
+        env:
+          DIAGNOSTIC_RECIPIENT_CERT: ${{ inputs.diagnostic_recipient_cert }}
+        run: |
+          python3 - <<'PY_CERT'
+          import os, re, subprocess, tempfile
+          from pathlib import Path
+          cert = os.environ["DIAGNOSTIC_RECIPIENT_CERT"].strip()
+          if len(cert) > 16384 or not re.fullmatch(
+              r"-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----", cert
+          ):
+              raise SystemExit("Expected one public X.509 certificate, never a private key")
+          with tempfile.TemporaryDirectory(dir=os.environ["RUNNER_TEMP"]) as directory:
+              root = Path(directory)
+              (root / "recipient.pem").write_text(cert + "\n")
+              subprocess.run(["openssl", "x509", "-in", str(root / "recipient.pem"),
+                              "-noout", "-checkend", "3600"], check=True, capture_output=True)
+              subprocess.run(["openssl", "cms", "-encrypt", "-binary", "-aes-256-cbc",
+                              "-outform", "DER", "-out", str(root / "check.cms"),
+                              str(root / "recipient.pem")], input=b"public recipient validation",
+                             check=True, capture_output=True)
+          print("Public diagnostic recipient validated; no private key is present on runner")
+          PY_CERT
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
@@ -231,6 +274,7 @@ jobs:
           cp receipt.json "upload/packages/OctoSense_${version}_${{ matrix.platform }}.receipt.json"
           ls -la upload/packages
       - name: Refuse private paths and names (the packages and their payloads)
+        id: scan
         run: |
           cd "$SRC/target/octosense-package"
           # The packages (inside .dmg, .deb, .AppImage, .zip, the NSIS
@@ -238,7 +282,99 @@ jobs:
           # the staged resources.
           exe=octosense; [ "$RUNNER_OS" = Windows ] && exe=octosense.exe
           python "$SRC/tools/release-scan.py" upload/packages/* resources kernel "$SRC/target/release/$exe"
+      - name: Encrypt bounded Linux scan evidence after refusal
+        id: encrypt_diagnostic
+        if: failure() && needs.plan.outputs.linux_diagnostic == 'true' && steps.scan.outcome == 'failure' && runner.os == 'Linux'
+        env:
+          DIAGNOSTIC_RECIPIENT_CERT: ${{ inputs.diagnostic_recipient_cert }}
+          EXPECTED_PRODUCT_COMMIT: ${{ needs.plan.outputs.commit }}
+        run: |
+          python3 - <<'PY_DIAGNOSTIC'
+          import base64, hashlib, importlib.util, json, mmap, os, re, subprocess, tempfile
+          from pathlib import Path
+
+          # The failed RC2 scanner reports a 32-character Linux-home match.
+          # Capture only that class, at most eight unique matches and 224 context
+          # bytes per match. No ELF/package or plaintext is uploaded or printed.
+          source = Path(os.environ["SRC"])
+          commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+          if commit != os.environ["EXPECTED_PRODUCT_COMMIT"] or commit != "4ccf8e068399b1da139771a9ed94cef05fa6ae60":
+              raise SystemExit("Diagnostic product revision mismatch")
+          binary = source / "target/release/octosense"
+          if binary.is_symlink() or not binary.resolve().is_relative_to(source.resolve()):
+              raise SystemExit("Diagnostic expects an app-owned regular build artifact")
+          spec = importlib.util.spec_from_file_location("original_release_scan", source / "tools/release-scan.py")
+          scanner = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(scanner)
+          matches = []
+          seen = set()
+          truncated = False
+          with binary.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
+              if data[:4] != b"\x7fELF":
+                  raise SystemExit("Diagnostic expects the raw Linux host ELF")
+              binary_digest = hashlib.sha256(data).hexdigest()
+              # Retain the original scanner's exact public-source exceptions.
+              source_seams = {
+                  (seam.start("next") - len(b"/home/main_desktop_ui.rs"), seam.start("next") + 1)
+                  for seam in scanner.RINX_SOURCE_SEAM.finditer(data)
+              }
+              source_seams.update(seam.span(group)
+                                  for pattern in scanner.OCTOSCODE_PLACEHOLDER_SEAMS
+                                  for seam in pattern.finditer(data) for group in seam.groupdict())
+              verified_assets = {}
+              for match in re.finditer(rb"/home/(?!runner/)[a-z_][a-z0-9_.-]*/", data):
+                  value = match.group()
+                  if len(value) != 32 or value in seen:
+                      continue
+                  if (match.start(), match.end()) in source_seams or scanner.is_public_asset_match(
+                      data, "Linux home directory", match, verified_assets
+                  ):
+                      continue
+                  if len(matches) == 8:
+                      truncated = True
+                      break
+                  seen.add(value)
+                  start, end = max(0, match.start() - 64), min(len(data), match.end() + 128)
+                  matches.append({"offset": match.start(), "match_b64": base64.b64encode(value).decode(),
+                                  "context_offset": start, "context_b64": base64.b64encode(data[start:end]).decode()})
+          payload = json.dumps({"schema": 1, "product_commit": commit,
+                                "tag": "desktop-v0.1.0-rc.2", "run_id": os.environ["GITHUB_RUN_ID"],
+                                "workflow_commit": os.environ["GITHUB_SHA"],
+                                "binary_sha256": binary_digest,
+                                "scanner_sha256": hashlib.sha256((source / "tools/release-scan.py").read_bytes()).hexdigest(),
+                                "matches": matches, "truncated": truncated}, separators=(",", ":")).encode()
+          if len(payload) > 16384:
+              raise SystemExit("Diagnostic payload exceeds bound")
+          destination = Path(os.environ["RUNNER_TEMP"]) / "octosense-linux-diagnostic"
+          destination.mkdir(mode=0o700, exist_ok=False)
+          cipher = destination / "diagnostic.cms"
+          with tempfile.TemporaryDirectory(prefix="octosense-diagnostic-", dir=os.environ["RUNNER_TEMP"]) as directory:
+              temporary = Path(directory)
+              plain = temporary / "evidence.json"
+              cert = temporary / "recipient.pem"
+              try:
+                  with plain.open("xb") as out:
+                      os.chmod(plain, 0o600)
+                      out.write(payload)
+                  cert.write_text(os.environ["DIAGNOSTIC_RECIPIENT_CERT"].strip() + "\n")
+                  subprocess.run(["openssl", "cms", "-encrypt", "-binary", "-aes-256-cbc",
+                                  "-in", str(plain), "-outform", "DER", "-out", str(cipher), str(cert)],
+                                 check=True, capture_output=True)
+              finally:
+                  plain.unlink(missing_ok=True)
+                  cert.unlink(missing_ok=True)
+          print("Bounded scan evidence encrypted; only ciphertext is eligible for upload")
+          PY_DIAGNOSTIC
+      - name: Upload encrypted diagnostic only
+        if: always() && needs.plan.outputs.linux_diagnostic == 'true' && steps.encrypt_diagnostic.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rc2-linux-scan-encrypted-${{ github.run_id }}
+          path: ${{ runner.temp }}/octosense-linux-diagnostic/diagnostic.cms
+          if-no-files-found: error
+          retention-days: 1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: needs.plan.outputs.linux_diagnostic != 'true'
         with:
           name: octosense-desktop-unsigned-${{ matrix.platform }}
           path: ${{ env.SRC }}/target/octosense-package/upload
