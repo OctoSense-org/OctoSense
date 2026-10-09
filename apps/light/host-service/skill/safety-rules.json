@@ -1,0 +1,388 @@
+{
+  "engine": "lightcraft",
+  "method": "Read the run fn of every spec in crates/engine/src/cmd/*.rs (24 files) and the helpers they call (lib.rs run_command and undo, library.rs persist/save_prefs, sidecar.rs, files.rs, media.rs, rename.rs, import*.rs, smart.rs, originals.rs, devices.rs, memory.rs, segment/), with rg for std::fs, threads, processes, env, save_prefs and nested execute. Verified: nested execute calls use only fixed ids (nothing is `code`); develop.sync/paste/autoSync copy settings JSON; the develop and metadata clipboards are Session fields; and segment.model.download is the only network path (lightcraft-fetch HTTPS). Not counted per command (all are no-ops for OctoSense's in-memory Session::new().with_fs()): Session::execute appending ops to a host-opened library's catalog.log/presets.json, and save_prefs() rewriting its prefs.json; decoding a catalogued photo's original through the with_fs loader to render or analyse that photo; reading the installed SAM 3 weights; Session::new's one-time /usr/sbin/sysctl call on macOS (memory.rs total_ram); and XMP auto-write, which (once library.xmpPreferences/toggleAutoWriteXmp turns it on) makes every catalog-changing command write sidecars next to originals. A command is `file` when it itself reads, writes, renames, deletes or stats caller paths, originals, sidecars, folders, or the library's Originals/, Profiles/, thumbs/ or Smart Previews/ stores.",
+  "rules": [
+    {
+      "prefix": "edit.",
+      "class": "file",
+      "why": "Naming trap: undo/redo go through Session::apply_with_files, which first renames the step's folder back on disk (rename_folder_on_disk, for folder.rename/folder.move steps) and moves photo files for the SetFile ops photo.rename produced (rename::move_all with RealFs: hard_link, rename, copy, remove_file) before applying the catalog op.",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs:7-11 undo_step()/redo_step()",
+        "crates/engine/src/lib.rs:417-482 undo_step/redo_step -> apply_with_files(): rename_folder_on_disk, rename::move_all(&RealFs, ..)",
+        "crates/engine/src/rename.rs:735-753 file_moves(): Op::SetFile path changes",
+        "crates/engine/src/rename.rs:328-387 RealFs: symlink_metadata, hard_link, rename, copy, remove_file"
+      ]
+    },
+    {
+      "prefix": "library.",
+      "class": "safe",
+      "why": "Library view state on the Session (source, filter, sort, shuffle seed, selection, next/previous) and session queries (library.groups, library.state, library.previewProgress); library.cancelPreviews only sets the running build's cancel flag; library.findSimilar compares signatures of catalogued photos' decoded thumbnails and filters the view. None opens a path of its own.",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:249-393,431-446 source/filter/clearFilter/sort/shuffle/groups/select/selectAll/selectBy/selectNone/next/previous",
+        "crates/engine/src/cmd/query.rs:83-99 library.state",
+        "crates/engine/src/cmd/previews.rs:352-360 previewProgress/cancelPreviews: PreviewBuild atomics",
+        "crates/engine/src/cmd/cull.rs:88-118 find_similar(): source_now + signatures, s.filter.only"
+      ]
+    },
+    {
+      "ids": ["library.import", "library.importPreview", "library.autoImportScan", "library.browse"],
+      "class": "file",
+      "why": "Read caller-given files and folders recursively. library.importPreview probes them (import::scan); library.import adds them in place or copies them into the library's Originals/ or a `destination`, and mode move then deletes each source and its XMP sidecars after a verified copy. library.autoImportScan read_dir's the watched folder and runs the fixed library.import; library.browse read_dir's `path` and probes its photos in place as Local records.",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:937-978 library.importPreview (import::scan), library.import (import::import_with)",
+        "crates/engine/src/import_move.rs:129-305 create_dir_all, hard_link/copy, remove_file of the source and sidecars",
+        "crates/engine/src/cmd/library.rs:12-22,857-918 list_auto_import_folder(): std::fs::read_dir; fixed s.execute(library.import)",
+        "crates/engine/src/cmd/browse.rs:20-48 browse(): std::fs::read_dir, import_with(.., local: true)"
+      ]
+    },
+    {
+      "ids": ["library.compact", "library.forgetLocal", "library.clearPreviews", "library.buildPreviews", "library.smartPreviews"],
+      "class": "file",
+      "why": "Maintain the library's on-disk stores. library.compact (Session::compact_library) rewrites the catalog snapshot; library.forgetLocal drops untouched Local records, stats their Smart Previews/ files, then compact_soon()s; library.clearPreviews clears the thumbs/ disk cache (DiskCache::clear remove_file's every cached JPEG); library.buildPreviews renders originals into that cache on a background thread; library.smartPreviews writes or deletes .lcsp proxies in the smart-previews folder.",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:1031-1039 compact_library(); s.media.rendered.clear()",
+        "crates/engine/src/library.rs:581-606 compact_soon()/compact_library(): journal snapshot",
+        "crates/engine/src/cmd/browse.rs:101-148 forget_local(): smart_dir.join(..).exists(), compact_soon()",
+        "crates/preview/src/lib.rs:127-137 + crates/preview/src/disk.rs:168-173 clear(): std::fs::remove_file per cached file",
+        "crates/engine/src/cmd/previews.rs:79-108 build(): thread renders into the preview cache",
+        "crates/engine/src/cmd/previews.rs:132-240 smart_run()/smart(): create_dir_all, remove_file, write_atomic"
+      ]
+    },
+    {
+      "ids": ["library.missing", "library.findMissing", "photo.relink", "photo.smartPreview"],
+      "class": "file",
+      "why": "Probe files on disk. library.missing Path::exists-checks every library photo's original and returns the paths; library.findMissing walks a caller `folder` recursively, stats and hashes candidates (std::fs::read) and relinks the matches; photo.relink checks and probes the caller's `path` and points the photo at it; photo.smartPreview stats the original and opens its .lcsp proxy header.",
+      "evidence": [
+        "crates/engine/src/cmd/missing.rs:40-45 missing(): Path::exists",
+        "crates/engine/src/cmd/missing.rs:94-96,215-250 file_hash(): std::fs::read; plan_find_missing(): expand(folder), metadata",
+        "crates/engine/src/cmd/missing.rs:59-86 relink(): absolute(path).is_file(), probe_paths",
+        "crates/engine/src/cmd/previews.rs:305-342 photo.smartPreview: Path::exists, smart::is_valid (File::open)"
+      ]
+    },
+    {
+      "ids": ["library.autoImport", "library.preferences", "library.xmpPreferences", "library.toggleAutoWriteXmp", "library.smartPreviewsLocation"],
+      "class": "host",
+      "why": "Library preferences, persisted to its prefs.json through save_prefs, that change later disk behaviour. library.autoImport sets a watched folder (is_dir on the caller's path) that the app scans every few seconds. library.preferences sets import develop defaults, forget-local days and the thumbs/ disk-cache budget (set_cache_mb). library.xmpPreferences/toggleAutoWriteXmp turn on XMP auto-write, after which every catalog-changing command writes sidecars next to originals. library.smartPreviewsLocation with `path` creates and write-tests that folder, then moves or deletes the existing .lcsp files.",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:831-856 library.autoImport: Path::is_dir, import_defaults.auto_folder, save_prefs",
+        "crates/engine/src/cmd/prefs.rs:33-102 prefs(): import_defaults, forget_local_days, set_cache_mb, save_prefs",
+        "crates/engine/src/cmd/xmp.rs:54-69,100-103 prefs(): s.xmp.auto_write/naming, save_prefs",
+        "crates/engine/src/lib.rs:320-325 run_command(): auto_write_sidecars after every catalog-changing command",
+        "crates/engine/src/cmd/previews.rs:261-303 smart_location(): check_writable, smart::migrate, save_prefs"
+      ]
+    },
+    {
+      "ids": ["library.info", "library.memory"],
+      "class": "host",
+      "why": "Report host/app state rather than the catalog. library.info returns the library folder path, journal and persistence stats, settings warnings and cache usage, sizing the thumbs/ folder with DiskCache::size (a directory scan). library.memory returns process-wide cache, GPU and work-gate memory accounting (crate::memory).",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:980-1030 library.info: lib.dir, journal stats, s.media.rendered.disk().size()",
+        "crates/preview/src/disk.rs:163-166 size(): scan() of the cache directory",
+        "crates/engine/src/cmd/query.rs:201-203 library.memory -> memory.rs:275-293 memory_report(): budget(), gpu_usage(), work_gate()"
+      ]
+    },
+    {
+      "ids": ["library.devices"],
+      "class": "device",
+      "why": "Enumerates attached cameras and memory cards: devices::devices_now read_dir's the mount roots (/Volumes on macOS; /media/$USER, /run/media/$USER and /media on Linux; drive letters D: to Z: on Windows; or LIGHTCRAFT_DEVICE_ROOTS) for volumes holding a DCIM folder and returns their paths.",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:394-396 library.devices -> devices::devices_now()",
+        "crates/engine/src/devices.rs:31-46 mount_parents(): /Volumes, /media/$USER, /run/media/$USER, /media",
+        "crates/engine/src/devices.rs:152-177 scan()/devices_in(): std::fs::read_dir per mount root"
+      ]
+    },
+    {
+      "prefix": "photo.",
+      "class": "safe",
+      "why": "Catalog-only photo edits and queries: rating, flag and label; rotate/flip (develop orientation and crop flags); face regions; delete, restore and deletePermanently (catalog records only: delete_permanently_ops never touches the file); setMeta; setCaptureTime (catalog only, no EXIF rewrite); virtualCopy (a catalog entry sharing the file); addToLibrary; copy/pasteMetadata (Session.meta_clipboard, fixed photo.setMeta); renameTokens help; inspect; and analyze (decoded thumbnails of catalogued photos).",
+      "evidence": [
+        "crates/engine/src/cmd/library.rs:397-653 copy/pasteMetadata, rate/flag/label, rotate/flip, regions, delete/restore/deletePermanently, setMeta: s.commit(Op::..)",
+        "crates/catalog/src/lib.rs:603-613 delete_permanently_ops(): album/stack/RemovePhoto ops only",
+        "crates/engine/src/cmd/manage.rs:177-224 photo.setCaptureTime: s.commit(Op::Batch) only",
+        "crates/engine/src/cmd/cull.rs:22-84 analyze(): source_now(Thumb), SetAnalysis/SetFlag ops"
+      ]
+    },
+    {
+      "ids": ["photo.rename", "photo.renamePreview"],
+      "class": "file",
+      "why": "photo.rename renames originals and their XMP sidecars on disk (Session::apply_rename via RealFs; a taken name gets -1, -2). photo.renamePreview only plans the rename, but plan_rename stats the destination names on disk (symlink_metadata/metadata) to pick free ones. Its catalog text wrongly says it renames files.",
+      "evidence": [
+        "crates/engine/src/cmd/manage.rs:158-176 renamePreview: s.plan_rename; rename: plan_rename + apply_rename",
+        "crates/engine/src/rename.rs:634-649 plan_rename(): fs.exists / fs.same_file; apply_rename()",
+        "crates/engine/src/rename.rs:328-387 RealFs: symlink_metadata, rename, remove_file"
+      ]
+    },
+    {
+      "ids": ["photo.convertToDng", "photo.duplicate", "photo.editExternal"],
+      "class": "file",
+      "why": "Write new files next to originals. convertToDng reads the raw (std::fs::read), writes a verified `<stem>.dng` (safe_file::write_new_unique) and relinks the photo to it. duplicate std::fs::copy's the original to `<stem>-copy`. editExternal renders a 16-bit `<name>-Edit.tif` beside the original (or into `dir` for demo photos) with export::write_file_durable and runs the fixed library.import and stack.group; the host app, not the engine, then launches the external editor.",
+      "evidence": [
+        "crates/engine/src/cmd/convert.rs:33-57 write_dng_with(): std::fs::read, write_new_unique",
+        "crates/engine/src/cmd/convert.rs:259-301 duplicate(): std::fs::copy",
+        "crates/engine/src/cmd/convert.rs:125-166 edit_external(): write_file_durable, fixed library.import + stack.group"
+      ]
+    },
+    {
+      "ids": ["photo.saveMetadataToFile", "photo.readMetadataFromFile", "photo.allMetadata", "photo.reload"],
+      "class": "file",
+      "why": "Read or write the files behind photos. saveMetadataToFile writes or merges XMP sidecars next to originals, backing up unreadable ones; readMetadataFromFile reads sidecars or embedded XMP into the catalog; allMetadata std::fs::read's the original for its EXIF and reads its sidecar; reload re-probes originals from disk (import::probe_paths).",
+      "evidence": [
+        "crates/engine/src/cmd/xmp.rs:10-52 save(): save_sidecar_with; read(): read_sidecar_op",
+        "crates/engine/src/cmd/query.rs:100-122 photo.allMetadata: std::fs::read(path), sidecar::read_packet",
+        "crates/engine/src/cmd/convert.rs:215-255 reload(): import::probe_paths"
+      ]
+    },
+    {
+      "ids": ["photo.autoTagTracklog", "curve.importPresets", "preset.import", "profile.import"],
+      "class": "file",
+      "why": "Read caller-given files. autoTagTracklog std::fs::read_to_string's a GPX `path` and matches it offline (no geocoding; inline `gpx` text is also accepted). curve.importPresets reads .lccurve files. preset.import reads .lcpreset, XMP, .lrtemplate, DNG/JPEG/TIFF and Luminar files, folders and .zip bundles. profile.import reads .cube files, folders and zips, writes a copy into the library's Profiles/ folder (or the OS temp dir for an in-memory session) and registers the LUT process-wide.",
+      "evidence": [
+        "crates/engine/src/cmd/manage.rs:64-73 auto_tag_tracklog(): std::fs::read_to_string(path)",
+        "crates/engine/src/cmd/curves.rs:303-334 import_presets(): std::fs::read",
+        "crates/engine/src/cmd/preset_files.rs:14-49 import(): expand_preset_paths, std::fs::read",
+        "crates/engine/src/cmd/lut_profiles.rs:38-134 cube_files(): read_dir/read; import(): std::fs::write to Profiles/ or temp_dir, lut::register"
+      ]
+    },
+    {
+      "ids": ["curve.exportPresets", "preset.export"],
+      "class": "file",
+      "why": "create_dir_all and std::fs::write a .lccurve or .lcpreset JSON file at the caller's `path`.",
+      "evidence": [
+        "crates/engine/src/cmd/curves.rs:336-357 export_presets(): create_dir_all, std::fs::write",
+        "crates/engine/src/cmd/preset_files.rs:51-77 export(): create_dir_all, std::fs::write"
+      ]
+    },
+    {
+      "ids": ["profile.deleteImported"],
+      "class": "file",
+      "why": "Removes an imported LUT profile and std::fs::remove_file's its copy when that copy is inside the library's Profiles/ folder; it also unregisters the LUT process-wide.",
+      "evidence": ["crates/engine/src/cmd/lut_profiles.rs:147-159 remove_file(&gone.file) under profiles_dir, lut::unregister"]
+    },
+    {
+      "ids": ["export.checkTarget"],
+      "class": "file",
+      "why": "Read-only probe of a caller path: stats `path` (symlink_metadata) and compares its file identity with every photo's original and sidecar (Session::check_write_target).",
+      "evidence": [
+        "crates/engine/src/cmd/export.rs:99-111 checkTarget -> check_write_target(path)",
+        "crates/engine/src/originals.rs:89-95 check_write_target(): std::fs::symlink_metadata, original_guard().check"
+      ]
+    },
+    {
+      "prefix": "folder.",
+      "class": "file",
+      "why": "folder.rename/folder.move rename or move a caller-given folder on disk (create_dir_all + std::fs::rename via rename_folder_on_disk; they refuse to overwrite or to move the library's own folders) and relink the photos inside.",
+      "evidence": [
+        "crates/engine/src/cmd/browse.rs:164-197 folder.rename/folder.move -> move_folder",
+        "crates/engine/src/cmd/browse.rs:223-301 rename_folder_on_disk(): create_dir_all, std::fs::rename; move_folder(): Op::Relink"
+      ]
+    },
+    {
+      "prefix": "merge.",
+      "class": "file",
+      "why": "HDR and panorama merges read the source originals' bytes (std::fs::read, or the host's file_bytes reader) and write the merged linear DNG next to the first source (safe_file::write_new_unique); preview mode with `previewPath` writes a PNG to that caller path.",
+      "evidence": [
+        "crates/engine/src/cmd/merge.rs:21-41 run(): previewPath -> export::write_file",
+        "crates/engine/src/merge.rs:357-369 std::fs::read sources, write_new_unique(output_names(..))"
+      ]
+    },
+    {
+      "prefix": "album.",
+      "class": "safe",
+      "why": "Albums, album folders, smart-album rules, the target album and the Quick Collection are catalog records (an album `folder` is a catalog folder, not a disk folder).",
+      "evidence": ["crates/engine/src/cmd/library.rs:655-830,919-935 album.*: s.commit(Op::AddAlbum|SetAlbumPhotos|..), s.target_album"]
+    },
+    {
+      "prefix": "albums.",
+      "class": "safe",
+      "why": "albums.list returns the catalog's album tree as JSON.",
+      "evidence": ["crates/engine/src/cmd/query.rs:123-126 albums.list"]
+    },
+    {
+      "prefix": "develop.",
+      "class": "safe",
+      "why": "Develop settings on catalog photos: set/adjust/merge (partial JSON), auto, white balance, curves, profiles, copy/paste through Session.clipboard, sync/autoSync/quickAdjust/matchExposure applying settings JSON to other photos, interactions, and get/controls queries. auto, autoBwMix, wbPick and targeted decode the active photo's pixels; DevelopSettings holds no paths.",
+      "evidence": [
+        "crates/engine/src/cmd/develop.rs:226-300 auto/autoBwMix/wb/wbPick: s.source_now(id, Thumb)",
+        "crates/engine/src/cmd/develop.rs:637-660 develop.sync: extract_groups + apply_partial (data, not commands)",
+        "crates/engine/src/lib.rs:502-514 set_develop(): catalog op + history"
+      ]
+    },
+    {
+      "prefix": "profile.",
+      "class": "safe",
+      "why": "profile.favorite toggles a profile id in Session.profile_favorites (saved with the library's presets.json).",
+      "evidence": ["crates/engine/src/cmd/develop.rs:345-358 profile.favorite: Session.profile_favorites toggle"]
+    },
+    {
+      "prefix": "profiles.",
+      "class": "safe",
+      "why": "List built-in profiles and the favourites/recent menu from session state.",
+      "evidence": ["crates/engine/src/cmd/query.rs:172-180 profiles.list/profiles.menu"]
+    },
+    {
+      "prefix": "crop.",
+      "class": "safe",
+      "why": "Crop rectangle, angle and aspect in the develop settings; crop.autoStraighten decodes the active photo and runs the fixed crop.straighten.",
+      "evidence": ["crates/engine/src/cmd/develop.rs:380-508 crop.set..crop.reset: edit(); 428-437 autoStraighten: source_now(Preview) + fixed s.execute(crop.straighten)"]
+    },
+    {
+      "prefix": "geometry.",
+      "class": "safe",
+      "why": "Upright and guided-upright corrections computed from the active photo's pixels and stored in its develop settings.",
+      "evidence": ["crates/engine/src/cmd/develop.rs:510-565 geometry.upright/guides: source_now(Preview), edit()"]
+    },
+    {
+      "prefix": "preset.",
+      "class": "safe",
+      "why": "Apply, create, delete, favourite, rename, move and update develop presets held in Session.presets (persisted with the library's presets.json).",
+      "evidence": ["crates/engine/src/cmd/develop.rs:754-828 preset.apply..preset.update: s.presets / set_develop"]
+    },
+    {
+      "prefix": "presets.",
+      "class": "safe",
+      "why": "presets.list returns Session.presets.",
+      "evidence": ["crates/engine/src/cmd/query.rs:169-171 presets.list"]
+    },
+    {
+      "prefix": "version.",
+      "class": "safe",
+      "why": "Named versions of a photo's settings stored in the catalog.",
+      "evidence": ["crates/engine/src/cmd/develop.rs:829-863 version.create/restore/delete/rename/update: catalog ops on the photo's versions"]
+    },
+    {
+      "prefix": "history.",
+      "class": "safe",
+      "why": "A photo's edit history in the catalog: clear, go to a step, list.",
+      "evidence": ["crates/engine/src/cmd/develop.rs:864-880 history.clear/restore", "crates/engine/src/cmd/query.rs:181-188 history.list"]
+    },
+    {
+      "prefix": "pointColor.",
+      "class": "safe",
+      "why": "Point Color samples: pointColor.pick decodes the active photo to sample a colour; samples are stored in its develop settings.",
+      "evidence": ["crates/engine/src/cmd/color.rs:28 source_now(Thumb) in the sampling helper", "crates/engine/src/cmd/color.rs:164-205 pointColor.pick/pointColor.delete specs"]
+    },
+    {
+      "prefix": "curve.",
+      "class": "safe",
+      "why": "Reset the tone curve, list built-in and user curve presets, apply one, or save and delete user presets in Session.curve_presets (re-serialised into the library's prefs.json by save_prefs).",
+      "evidence": ["crates/engine/src/cmd/curves.rs:237-278 apply_preset/save_preset/delete_preset: s.curve_presets, save_prefs"]
+    },
+    {
+      "prefix": "mask.",
+      "class": "safe",
+      "why": "Mask shapes, brush strokes, colour samples, refinement, adjustments, selection and ordering in the photo's develop settings. AI kinds (object/prompt clicks, objectPoint, refineDetail) run the already-installed SAM 3 model from the host-set Segmenter.dir on the active photo and never start a download; with no model folder set they fail.",
+      "evidence": [
+        "crates/engine/src/cmd/masks.rs:81-116 resolve_ai(): segmenter.model_dir()? then segment_clicks/segment_text",
+        "crates/engine/src/segment/mod.rs:228-249 model_dir(): errors unless installed"
+      ]
+    },
+    {
+      "prefix": "segment.",
+      "class": "safe",
+      "why": "segment.prepare loads the installed SAM 3 model and analyses the active photo in the background so later object clicks are instant; it never downloads.",
+      "evidence": ["crates/engine/src/cmd/masks.rs:409-421 segment.prepare -> segment_prepare(): model_dir()?"]
+    },
+    {
+      "prefix": "segment.model.",
+      "class": "host",
+      "why": "Model management state of the host. segment.model.status reports whether this build has AI masks, the model's install state and folder (is_model_dir stats it), the mirror list from LIGHTCRAFT_SAM3_MIRRORS or the app's mirrors file, and download progress. segment.model.cancel sets the download thread's cancel flag. Neither touches the network itself.",
+      "evidence": [
+        "crates/engine/src/cmd/masks.rs:422-445 status; 470-477 cancel",
+        "crates/engine/src/segment/mod.rs:161-166,218-226 installed(): is_model_dir; mirrors(): env var + mirrors_file"
+      ]
+    },
+    {
+      "ids": ["segment.model.download"],
+      "class": "network",
+      "why": "Starts a background thread running lightcraft-fetch's HTTPS client (rustls) to download the ~3.4 GB SAM 3 weights from the mirrors (LIGHTCRAFT_SAM3_MIRRORS, then the app's mirrors file; DEFAULT_MIRRORS is empty at this revision) into the model folder, resuming .part files. It requires `acknowledged: true` and a host-set model folder.",
+      "evidence": [
+        "crates/engine/src/cmd/masks.rs:446-469 segment.model.download -> segmenter.start_download()",
+        "crates/engine/src/segment/mod.rs:251-273 start_download(): mirrors(), download.start(SAM3_FILES, mirrors, dir)",
+        "crates/engine/src/segment/download.rs:97-145 thread: fetch::download",
+        "crates/fetch/src/lib.rs:1-6 HTTPS client (rustls), mirrors, resume; crates/segment/src/fetch/mod.rs:42-46 DEFAULT_MIRRORS empty, MIRRORS_ENV"
+      ]
+    },
+    {
+      "prefix": "spot.",
+      "class": "safe",
+      "why": "Spot removal (heal/clone) in the develop settings; findDust and the automatic source search read the active photo's decoded pixels.",
+      "evidence": ["crates/engine/src/cmd/masks.rs:657-820 spot.findDust/add/select/update/refreshSource/delete: source_now, spots_edit"]
+    },
+    {
+      "prefix": "redeye.",
+      "class": "safe",
+      "why": "Red-eye and pet-eye corrections stored in the develop settings.",
+      "evidence": ["crates/engine/src/cmd/masks.rs:822-885 redeye.add/catchlight/delete: develop red_eye edits"]
+    },
+    {
+      "prefix": "stack.",
+      "class": "safe",
+      "why": "Stacks (group, ungroup, reorder, collapse, auto-stack by capture time) are catalog records.",
+      "evidence": ["crates/engine/src/cmd/organize.rs:104-231 photo.virtualCopy and stack.* specs: commit_ops on catalog stacks"]
+    },
+    {
+      "prefix": "keyword.",
+      "class": "safe",
+      "why": "Keyword tree queries and catalog-wide keyword rename/delete/merge; keyword sets and recent keywords live in the Session (re-serialised into prefs.json by save_prefs); toggleFromSet runs the fixed photo.setMeta.",
+      "evidence": [
+        "crates/engine/src/cmd/keywords.rs:73 specs(); 44-56 note_recent(): session list + save_prefs",
+        "crates/engine/src/cmd/keywords.rs:140-165 toggleFromSet: fixed s.execute(photo.setMeta)"
+      ]
+    },
+    {
+      "prefix": "label.",
+      "class": "safe",
+      "why": "Colour-label names are catalog ops (SetLabelName); label sets live in Session.label_sets (re-serialised into prefs.json by save_prefs).",
+      "evidence": ["crates/engine/src/cmd/manage.rs:240-310 label.setNames/applySet: Op::SetLabelName; saveSet/deleteSet: s.label_sets, save_prefs"]
+    },
+    {
+      "prefix": "catalog.",
+      "class": "safe",
+      "why": "catalog.query and catalog.stats read the in-memory catalog.",
+      "evidence": ["crates/engine/src/cmd/query.rs:57-82 catalog.query/catalog.stats"]
+    },
+    {
+      "prefix": "app.",
+      "class": "host",
+      "why": "Process-wide app settings. app.gpu flips the global GPU switch (lightcraft_gpu::set_enabled, a static AtomicBool) and reports the adapter; app.memoryBudget sets the process memory budget (memory::set_budget, which also resizes the decode gate and GPU pool) and this session's cache share.",
+      "evidence": [
+        "crates/engine/src/cmd/query.rs:189-212 app.gpu, app.memoryBudget",
+        "crates/gpu/src/lib.rs:40,139-141 static ENABLED; set_enabled()",
+        "crates/engine/src/memory.rs:73-80 set_budget(): BUDGET for the process, apply()"
+      ]
+    },
+    {
+      "prefix": "journal.",
+      "class": "safe",
+      "why": "journal.list returns the session's in-memory command journal; it replays nothing.",
+      "evidence": ["crates/engine/src/cmd/query.rs:213-217 journal.list: s.journal slice"]
+    },
+    {
+      "prefix": "metadata.",
+      "class": "safe",
+      "why": "Metadata presets in Session.metadata_presets (re-serialised into prefs.json by save_prefs); applyPreset runs the fixed photo.setMeta on catalog photos.",
+      "evidence": ["crates/engine/src/cmd/metadata.rs:73-158 save/delete: s.metadata_presets, save_prefs; apply: fixed s.execute(photo.setMeta)"]
+    },
+    {
+      "prefix": "filter.",
+      "class": "safe",
+      "why": "Filter presets in Session.filter_presets (re-serialised into prefs.json by save_prefs); applyPreset sets Session.filter.",
+      "evidence": ["crates/engine/src/cmd/filters.rs:21-54 save/apply/delete"]
+    },
+    {
+      "prefix": "export.",
+      "class": "safe",
+      "why": "export.presets/savePreset/deletePreset manage Session.export_presets (re-serialised into prefs.json by save_prefs). No export runs here: app.export is not in this catalog.",
+      "evidence": ["crates/engine/src/cmd/export.rs:43-98 save()/delete()/list()"]
+    },
+    {
+      "prefix": "beforeAfter.",
+      "class": "safe",
+      "why": "Engine session state, not a window or panel: setBefore, copyAfterToBefore and resetBefore store the before-side settings in Session.before (used to render the comparison), while copyBeforeToAfter and swap commit develop settings to the catalog (undoable).",
+      "evidence": [
+        "crates/engine/src/cmd/before.rs:33-55 set_before(): s.before.insert/remove",
+        "crates/engine/src/cmd/before.rs:59-70 before_to_after(): s.set_develop"
+      ]
+    }
+  ]
+}

@@ -26,6 +26,9 @@
 //! `sheets.*` tools the shell routes here
 //! (`crates/shell/src/host_tools/engines.rs`).
 
+/// The system agent's skill for this engine (ADR 0013).
+pub mod skill;
+
 use std::collections::HashMap;
 
 mod fill;

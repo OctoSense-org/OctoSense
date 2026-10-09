@@ -1,0 +1,501 @@
+{
+  "engine": "pdfcraft",
+  "method": "I read the tool table (crates/automation/src/tools.rs), Automation::call (lib.rs) and every handler module, following each into the engine (engine/src/lib.rs Session::open/apply/run_edit, js.rs, xfa.rs, actions.rs, ocr.rs), print::spool, sign (keychain, windows, pdf) and the js crate, and mapped every self.resolve, std::fs and write_atomic call to its tool; greps for std::net, HTTP/TLS clients and std::process found no network client (FormCalc get/post/put are refused) and only lpstat/lp in print::spool. PDF JavaScript/FormCalc execution counts as code although pdfcraft-js is a sandbox: it is on by default and runs on doc_open/doc_open_revision of laid-out XFA forms, on form_fill/form_reset/form_set_script edits, and in the fresh JavaScript-on sessions that action_run and ocr_recognize_files create; tools that install script text which the engine or other viewers run later are code too. Root confinement and the table's read_only/destructive flags were ignored (printers, sign_keychain_ids and ocr_status are flagged read_only). With JavaScript forced off and js_enabled denied, doc_open would drop to file and form_fill, form_reset and doc_open_revision to safe.",
+  "rules": [
+    {
+      "ids": [
+        "js_run"
+      ],
+      "class": "code",
+      "why": "Session::run_javascript runs the caller's `script` in pdfcraft-js (boa) with the document's field model and document-level scripts, or with `field` on a laid-out XFA form runs that button's XFA click script (Edit::XfaEvent); field changes and resetForm are applied as an edit. The interpreter is a sandbox (no file, network or timers; bounded loops) and print/launchURL/submitForm only come back as requests, but this is caller-supplied code execution.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: js_run -> session.run_javascript",
+        "crates/engine/src/js.rs: run_javascript (pdfcraft_js::run, Edit::XfaEvent, Edit::ApplyScriptChanges/ResetForm)",
+        "crates/js/src/lib.rs: sandbox note; Request::{Print, LaunchUrl, Submit} are returned, never performed"
+      ]
+    },
+    {
+      "ids": [
+        "form_set_script"
+      ],
+      "class": "code",
+      "why": "Edit::SetFieldScript stores the caller's JavaScript as the field's keystroke, format, validate, calculate or mouse-up action and, because uses_scripts() is true for it, immediately recalculates with a JsRunner, so calculate scripts (the new one included) execute during this call.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: form_set_script",
+        "crates/engine/src/lib.rs: uses_scripts(); run_edit SetFieldScript -> pdfcraft_forms::recalculate_with(doc, js)"
+      ]
+    },
+    {
+      "ids": [
+        "js_set_document_script"
+      ],
+      "class": "code",
+      "why": "Installs code without running it: Edit::SetDocumentScript writes a document-level JavaScript. JsRunner::new later loads every document script and pdfcraft_js::run evaluates them before each field script in form_fill, form_set_script and js_run, and other PDF viewers run them when the saved file opens, so a deny-list keyed on those later ids cannot see this code.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: js_set_document_script",
+        "crates/engine/src/lib.rs: run_edit SetDocumentScript -> pdfcraft_forms::set_document_script",
+        "crates/engine/src/js.rs: JsRunner { doc_scripts } passed to pdfcraft_js::run"
+      ]
+    },
+    {
+      "ids": [
+        "form_set_actions"
+      ],
+      "class": "code",
+      "why": "Installs actions without running them: SetFieldProps.actions writes JavaScript, URL, submit-URL, reset, menu, page and show/hide actions on mouse up/down/enter/exit and focus/blur triggers. No automation tool fires these triggers, but viewers run the JavaScript and follow the URL and submit actions (submit posts the form data to the URL), so it installs code and network actions into the file.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: form_set_actions (FieldAction::JavaScript, Uri, Submit)",
+        "crates/forms/src/actions.rs: field actions written to the widget's /A and /AA"
+      ]
+    },
+    {
+      "ids": [
+        "form_set_props"
+      ],
+      "class": "code",
+      "why": "Besides plain field properties it writes Acrobat AF JavaScript actions (/AA F, K, V, C) for format, validate and calculate. Arguments are escaped by af::js_str except `calculate.notation`, which calculate_js pastes raw into `/** BVCALC {expr} EVCALC **/ event.value = AFMakeNumber(0);`, so a notation containing `*/` installs arbitrary JavaScript that Acrobat-class viewers run on every recalculation (pdfcraft itself parses the notation and evaluates it natively). Code-installing until that is escaped upstream.",
+      "evidence": [
+        "crates/automation/src/forms.rs: form_set_props, calculate_arg (notation taken verbatim)",
+        "crates/forms/src/af.rs: calculate_js Notation arm (unescaped), js_str",
+        "crates/forms/src/author.rs: set_props writes /AA F/K/V/C JavaScript actions"
+      ]
+    },
+    {
+      "ids": [
+        "form_fill",
+        "form_reset"
+      ],
+      "class": "code",
+      "why": "They run the document's own scripts while JavaScript is on (the default): SetFieldValue edits get a JsRunner (uses_scripts), so form_fill runs the fields' keystroke, validate, format and calculate JavaScript in pdfcraft-js; on laid-out XFA forms Session::apply also runs xfa::on_changes after SetFieldValue (form_fill) and ResetForm (form_reset), i.e. exit/validate scripts and every calculation, in JavaScript or FormCalc. AcroForm resets run natively. With js_enabled false both are plain document edits (safe).",
+      "evidence": [
+        "crates/automation/src/forms.rs: form_fill (Edit::SetFieldValue), form_reset (Edit::ResetForm)",
+        "crates/engine/src/lib.rs: uses_scripts(); Session::apply (cx.js = JsRunner when !js_off; xfa::on_changes for SetFieldValue/ResetForm)",
+        "crates/engine/src/xfa.rs: on_changes"
+      ]
+    },
+    {
+      "ids": [
+        "doc_open",
+        "doc_open_revision"
+      ],
+      "class": "code",
+      "why": "doc_open reads `path` (std::fs::read), and Session::open lays out a dynamic XFA form and runs its initialize/docReady and calculate scripts (xfa::on_open, JavaScript or FormCalc) while JavaScript is on, the default, so opening an untrusted form executes its code; AcroForm files run nothing on open (there is no OpenAction support). doc_open_revision reopens a saved revision's bytes through the same Session::open. With js_enabled false, doc_open is file and doc_open_revision safe.",
+      "evidence": [
+        "crates/automation/src/lib.rs: doc_open (resolve, std::fs::read, session.open); doc_open_revision arm (session.open_revision)",
+        "crates/engine/src/lib.rs: open_unguarded (xfa_layout, then xfa::on_open when !self.js_off); open_revision -> open",
+        "crates/engine/src/xfa.rs: on_open (initialize/docReady, then calculations)"
+      ]
+    },
+    {
+      "ids": [
+        "action_run"
+      ],
+      "class": "code",
+      "why": "A batch of other operations: for each path it std::fs::reads the file, actions::run_on opens it in a fresh Session::new() (JavaScript on whatever js_enabled says, so XFA open scripts run), applies the built-in or caller-listed steps (OCR, reduce, sanitize, remove hidden info, flatten, watermark/header/footer, set title, detect fields, and run_javascript with caller-supplied code) and write_atomic's the result into `folder`. A deny-list on action_run cannot see the inner steps.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: action_run",
+        "crates/engine/src/actions.rs: Step::RunJavaScript, apply_step (s.run_javascript), run_on (Session::new, s.open)"
+      ]
+    },
+    {
+      "ids": [
+        "ocr_recognize_files"
+      ],
+      "class": "code",
+      "why": "For each path it std::fs::reads the PDF and ocr::recognize_file opens it in a fresh Session::new(), where JavaScript is on regardless of js_enabled, so a laid-out XFA form's open scripts run; it then OCRs the pages with the models from the fixed search directories and write_atomic's the searchable copy into `folder`. Without that open-time script execution it would be file.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: ocr_recognize_files",
+        "crates/engine/src/ocr.rs: recognize_file (Session::new, s.open)",
+        "crates/engine/src/lib.rs: open_unguarded runs xfa::on_open"
+      ]
+    },
+    {
+      "ids": [
+        "js_enabled"
+      ],
+      "class": "code",
+      "why": "Session::set_javascript flips js_off, the switch Session::open and Session::apply check before running XFA and field scripts and run_javascript checks before running anything; it lives in session memory only. Turning it on is what makes doc_open, doc_open_revision, form_fill, form_reset and form_set_script execute document code, so a door that relies on JavaScript being off must deny it (action_run and ocr_recognize_files ignore it because they build fresh sessions).",
+      "evidence": [
+        "crates/automation/src/a11y.rs: js_enabled -> session.set_javascript",
+        "crates/engine/src/js.rs: set_javascript, javascript, run_javascript js_off check",
+        "crates/engine/src/lib.rs: Session { js_off } (default false = JavaScript on), checks in apply and open_unguarded"
+      ]
+    },
+    {
+      "ids": [
+        "printers"
+      ],
+      "class": "device",
+      "why": "spool::printers spawns `lpstat -p -d` (CUPS, looked up on PATH) and parses the system's printer queues and default; empty when there is no spooler. The tool table marks it read_only, but it queries the print system.",
+      "evidence": [
+        "crates/automation/src/printing.rs: printers",
+        "crates/print/src/spool.rs: lpstat_command, printers"
+      ]
+    },
+    {
+      "ids": [
+        "doc_print"
+      ],
+      "class": "device",
+      "why": "Lays out print-ready sheets (session.print_pdf), then with `printer` spool::submit writes a temporary PDF under std::env::temp_dir() and spawns `lp -d <printer> -n <copies> ... -- <file>` (CUPS; the queue may be a network/IPP printer) with collation, duplex and colour options; with `path` it writes the PDF (write_atomic) instead.",
+      "evidence": [
+        "crates/automation/src/printing.rs: doc_print (write_atomic or spool::submit)",
+        "crates/print/src/spool.rs: submit, lp_args"
+      ]
+    },
+    {
+      "ids": [
+        "sign_keychain_ids"
+      ],
+      "class": "host",
+      "why": "On macOS it enumerates every signing identity in the user's keychains through the Security framework (identity search with private-key references) and returns certificate details (names, emails, fingerprints); other platforms return an empty list. Flagged read_only in the table.",
+      "evidence": [
+        "crates/automation/src/lib.rs: sign_keychain_ids arm (cfg target_os = macos)",
+        "crates/sign/src/keychain.rs: identities (ItemSearchOptions, ItemClass::identity)"
+      ]
+    },
+    {
+      "ids": [
+        "sign_windows_ids"
+      ],
+      "class": "host",
+      "why": "On Windows it opens the Current User Personal (\"My\") certificate store through rustls-cng/CNG and lists the identities whose keys can sign; on macOS and Linux builds it is a stub that returns an empty list.",
+      "evidence": [
+        "crates/automation/src/lib.rs: sign_windows_ids arm (cfg target_os = windows)",
+        "crates/sign/src/windows.rs: identities (CertStore::open(CurrentUser, \"My\"))"
+      ]
+    },
+    {
+      "ids": [
+        "sign_document"
+      ],
+      "class": "host",
+      "why": "Signs with a digital ID from a .p12/.pfx path (std::fs::read), the macOS Keychain (`keychain:...`; the private key stays in the Keychain and macOS may prompt the user) or the Windows store (`windows:...`; Windows may prompt or ask for a PIN), then write_atomic's the signed file to `out` and re-points the document at it. No timestamp or revocation fetch (PAdES B-B; SignOptions has no TSA). OS key store plus file I/O: host is the stricter class.",
+      "evidence": [
+        "crates/automation/src/signing.rs: open_id, sign_document",
+        "crates/sign/src/keychain.rs: find, KeychainKey::sign",
+        "crates/sign/src/pdf.rs: SignOptions (no TSA field); sign_with_timestamp needs a caller transport and automation never calls it"
+      ]
+    },
+    {
+      "ids": [
+        "ocr_status"
+      ],
+      "class": "host",
+      "why": "Reports whether the OCR models are installed and the directories searched ($PDFCRAFT_MODELS, models/ beside the running executable via current_exe, the macOS bundle's Resources/models and the build machine's source tree) as absolute host paths, by stat-ing the model files. That is host install and environment state, nothing about a document.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: ocr_status",
+        "crates/ocr/src/lib.rs: Models::search_dirs, Models::in_dir",
+        "crates/engine/src/ocr.rs: available"
+      ]
+    },
+    {
+      "ids": [
+        "doc_save"
+      ],
+      "class": "file",
+      "why": "write_atomic writes `.<name>.pdfcraft-tmp` beside the target and renames it over `path`, or over the path the document was opened from when `path` is omitted (an incremental update by default).",
+      "evidence": [
+        "crates/automation/src/lib.rs: doc_save, write_atomic"
+      ]
+    },
+    {
+      "ids": [
+        "page_insert_file",
+        "page_replace",
+        "stamp_custom",
+        "form_set_image",
+        "page_add_image",
+        "content_update",
+        "image_edit",
+        "comment_add",
+        "doc_watermark",
+        "doc_background",
+        "doc_import_data"
+      ],
+      "class": "file",
+      "why": "Each std::fs::reads a caller path and embeds it in the open document: PDF pages (page_insert_file, page_replace), an image or PDF page (stamp_custom, form_set_image, page_add_image, content_update `image`, image_edit `replace`, doc_watermark/doc_background `file`), a file attachment (comment_add type `attachment`) or XFDF/FDF/XML/CSV/text field data (doc_import_data, applied natively without scripts). Without those arguments they are plain document edits.",
+      "evidence": [
+        "crates/automation/src/lib.rs: page_replace arm, insert_file, form_set_image arm, image_edit replace, mark_file",
+        "crates/automation/src/comments.rs: comment_add attachment, stamp_custom",
+        "crates/automation/src/content.rs: page_add_image, content_update (image)",
+        "crates/automation/src/forms.rs: doc_import_data; crates/engine/src/lib.rs: run_edit ImportData -> pdfcraft_xfdf::import"
+      ]
+    },
+    {
+      "ids": [
+        "doc_combine",
+        "doc_create"
+      ],
+      "class": "file",
+      "why": "doc_combine std::fs::reads every PDF in `paths` (parsed with open_source, not Session::open) and writes the result to `out` or opens it as a new document; doc_create reads image files, or a text file when `path` is given, into a new unsaved document (from: blank touches no file).",
+      "evidence": [
+        "crates/automation/src/lib.rs: doc_combine, deliver, doc_create",
+        "crates/engine/src/lib.rs: combine_ranges (open_source)"
+      ]
+    },
+    {
+      "ids": [
+        "page_extract",
+        "doc_split",
+        "comments_summarize",
+        "doc_export_data",
+        "doc_export_images",
+        "doc_export_all_images",
+        "doc_export_text",
+        "doc_export_office",
+        "accessibility_report",
+        "doc_compare_report",
+        "measure_export",
+        "doc_reduce",
+        "doc_optimize",
+        "image_save"
+      ],
+      "class": "file",
+      "why": "Each writes caller-named output with write_atomic (folders made with create_dir_all; per-page names derived from the document go through child(), which strips separators): extracted pages and split parts, a comment summary PDF, FDF/XFDF/XML/CSV/TXT data, page images, embedded images, text, DOCX/HTML/RTF, an HTML accessibility report, a compare report PDF, measurement CSV, reduced or optimised copies and one page image. page_extract and comments_summarize open the result in memory instead when no `out` is given.",
+      "evidence": [
+        "crates/automation/src/lib.rs: page_extract, doc_split, export, doc_reduce arm, doc_optimize, image_save arm, child, write_atomic",
+        "crates/automation/src/comments.rs: comments_summarize -> deliver",
+        "crates/automation/src/forms.rs: doc_export_data",
+        "crates/automation/src/a11y.rs: a11y_report, doc_export_office, doc_compare_report",
+        "crates/automation/src/measure.rs: measurement_export"
+      ]
+    },
+    {
+      "ids": [
+        "form_merge_data"
+      ],
+      "class": "file",
+      "why": "std::fs::reads every FDF, XFDF or filled-in PDF in `paths` (values parsed by pdfcraft_xfdf::data_values, no session open, no scripts) and writes one CSV to `path`.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: form_merge_data",
+        "crates/engine/src/lib.rs: merge_data_files"
+      ]
+    },
+    {
+      "ids": [
+        "sign_id_create",
+        "sign_trust"
+      ],
+      "class": "file",
+      "why": "sign_id_create generates an RSA or P-256 key and a self-signed certificate in memory and writes a password-protected .p12 to `path`; sign_trust std::fs::reads .cer/.crt/.pem/.der files (or a .p12 with its password) and replaces the session's in-memory trusted-certificate list (never persisted), revalidating open signatures offline.",
+      "evidence": [
+        "crates/automation/src/signing.rs: sign_id_create (pkcs12::write, write_atomic), sign_trust (std::fs::read, set_trusted_certificates)",
+        "crates/engine/src/lib.rs: set_trusted_certificates"
+      ]
+    },
+    {
+      "ids": [
+        "doc_list",
+        "doc_info",
+        "doc_close",
+        "page_render",
+        "text_extract",
+        "text_find",
+        "text_lines",
+        "text_paragraphs",
+        "page_images",
+        "doc_audit_space",
+        "doc_revisions",
+        "doc_hidden_info",
+        "command_list",
+        "edit_undo",
+        "edit_redo"
+      ],
+      "class": "safe",
+      "why": "They read the open documents or the static command registry, close a document in the session, or move along the session's undo stacks; page_render returns PNG bytes and the text tools return text, nothing is written (doc_revisions only reads although the table does not flag it read_only).",
+      "evidence": [
+        "crates/automation/src/lib.rs: Automation::call arms for doc_list, doc_info (info()), page_render, text_extract, text_find, text_lines, text_paragraphs, page_images, doc_audit_space, edit_undo, edit_redo; doc_close, doc_revisions, command_list",
+        "crates/automation/src/redact.rs: doc_hidden_info",
+        "crates/engine/src/commands.rs: is_enabled reads only session state"
+      ]
+    },
+    {
+      "ids": [
+        "page_rotate",
+        "page_delete",
+        "page_move",
+        "page_insert_blank",
+        "page_duplicate",
+        "page_set_box",
+        "page_number",
+        "doc_set_info",
+        "doc_initial_view",
+        "doc_header_footer",
+        "doc_remove_marks",
+        "doc_flatten",
+        "doc_protect",
+        "doc_unprotect",
+        "text_edit",
+        "page_add_text",
+        "content_list",
+        "content_delete"
+      ],
+      "class": "safe",
+      "why": "Undoable edits of the open document through Session::apply (pages, page boxes, labels, metadata, the initial view and viewer preferences stored in the file, header/footer text, flattening, encryption settings applied by the next save, text edits in built-in fonts) or listings of added content. None reads or writes a path or runs scripts.",
+      "evidence": [
+        "crates/automation/src/lib.rs: arms for page_rotate, page_delete, page_move, insert_blank, page_duplicate, page_set_box, page_number, doc_set_info, doc_initial_view, marks() (doc_header_footer, doc_remove_marks), doc_flatten, doc_protect, doc_unprotect, text_edit",
+        "crates/automation/src/content.rs: content_list, page_add_text, content_delete"
+      ]
+    },
+    {
+      "ids": [
+        "bookmark_list",
+        "bookmark_add",
+        "bookmark_rename",
+        "bookmark_delete",
+        "bookmark_move",
+        "bookmark_set_page"
+      ],
+      "class": "safe",
+      "why": "Bookmark (outline) tree listing and edits in the open document.",
+      "evidence": [
+        "crates/automation/src/lib.rs: bookmark_* arms (Edit::AddBookmark, RenameBookmark, DeleteBookmark, MoveBookmark, SetBookmarkPage)"
+      ]
+    },
+    {
+      "ids": [
+        "form_fields",
+        "form_add_field",
+        "form_tab_order",
+        "form_delete_field",
+        "form_detect_fields",
+        "form_actions",
+        "js_document_scripts"
+      ],
+      "class": "safe",
+      "why": "They list fields, field actions and document scripts (as text), or add, delete and reorder fields. form_add_field writes only Acrobat's fixed AFDate_FormatEx(\"mm/dd/yyyy\") actions for date fields; form_detect_fields renders page text to find blanks and adds plain text and check-box fields. None of these edits is a SetFieldValue/SetFieldScript edit, so no script runs.",
+      "evidence": [
+        "crates/automation/src/forms.rs: form_fields, form_add_field, form_tab_order, form_delete_field",
+        "crates/automation/src/a11y.rs: form_detect_fields, form_actions, js_document_scripts",
+        "crates/forms/src/author.rs: NewField::Date writes fixed AFDate scripts",
+        "crates/engine/src/lib.rs: uses_scripts()"
+      ]
+    },
+    {
+      "ids": [
+        "redact_mark",
+        "redact_apply",
+        "redact_clear",
+        "doc_remove_hidden",
+        "pdfa_verify",
+        "pdfa_convert"
+      ],
+      "class": "safe",
+      "why": "Redaction marks and their application, hidden-information removal and PDF/A verification or conversion are checks or undoable edits of the open document (pdfa_convert and doc_remove_hidden remove JavaScript rather than run it).",
+      "evidence": [
+        "crates/automation/src/redact.rs: redact_mark, redact_apply, redact_clear, doc_remove_hidden",
+        "crates/automation/src/a11y.rs: pdfa_verify, pdfa_convert (Edit::ConvertPdfA)"
+      ]
+    },
+    {
+      "ids": [
+        "link_list",
+        "link_add",
+        "link_edit",
+        "link_delete",
+        "links_from_urls",
+        "links_remove"
+      ],
+      "class": "safe",
+      "why": "Link annotations in the open document. link_add and link_edit store the given URL verbatim as a URI action (no scheme check, so javascript: or file: URIs are accepted) and links_from_urls turns http/https/www text into links; the engine never opens or fetches a URL, only a viewer following the saved link would.",
+      "evidence": [
+        "crates/automation/src/links.rs: link_action (LinkAction::Uri(u)), link_add, link_edit, link_delete, links_from_urls (session.find_urls), links_remove"
+      ]
+    },
+    {
+      "ids": [
+        "measure_distance",
+        "measure_perimeter",
+        "measure_area",
+        "measure_info",
+        "measure_list",
+        "measure_scale",
+        "measure_snap"
+      ],
+      "class": "safe",
+      "why": "Measurement annotations, scales, live measurements and vertex snapping computed on the open document (measure_export, which writes CSV, is in a file rule).",
+      "evidence": [
+        "crates/automation/src/measure.rs: measurement_add, measurement_info, measurement_list, measurement_scale, measurement_snap"
+      ]
+    },
+    {
+      "ids": [
+        "comment_list",
+        "comment_reply",
+        "comment_set_status",
+        "comment_mark",
+        "comment_lock",
+        "comments_hide",
+        "comment_edit",
+        "comment_delete",
+        "fill_sign_add"
+      ],
+      "class": "safe",
+      "why": "Comment annotations and Fill & Sign marks in the open document (typed signatures use the script font baked in at build time); comments_hide only sets a per-document view flag in the session. comment_add (attachments from a path) and comments_summarize (writes a PDF) are in file rules.",
+      "evidence": [
+        "crates/automation/src/comments.rs: comment_list, comment_reply, comment_set_status, comment_mark, comment_lock, comments_hide (session.set_hide_comments), comment_edit, comment_delete, fill_sign_add",
+        "crates/fonts/build.rs: fonts are embedded at build time"
+      ]
+    },
+    {
+      "ids": [
+        "sign_list"
+      ],
+      "class": "safe",
+      "why": "Lists the signature fields and their validation, computed offline against the session's in-memory trusted certificates; pdfcraft-sign has no OCSP, CRL or timestamp client (revocation evidence is only what the file embeds).",
+      "evidence": [
+        "crates/automation/src/signing.rs: sign_list, sig_json",
+        "crates/engine/src/lib.rs: signatures_of -> pdfcraft_sign::pdf::list_cached",
+        "crates/sign/src/dss.rs: revocation evidence is caller-supplied DER"
+      ]
+    },
+    {
+      "ids": [
+        "accessibility_check",
+        "accessibility_fix",
+        "accessibility_figures",
+        "accessibility_set_alt"
+      ],
+      "class": "safe",
+      "why": "The accessibility check, its automatic fixes (language, title, tab order), the figure list and alternate text are reads or undoable edits of the open document (accessibility_report, which writes HTML, is in a file rule).",
+      "evidence": [
+        "crates/automation/src/a11y.rs: a11y_check, a11y_fix, accessibility_figures, accessibility_set_alt"
+      ]
+    },
+    {
+      "ids": [
+        "doc_compare",
+        "doc_compare_mark"
+      ],
+      "class": "safe",
+      "why": "Compare the text (and optionally the rendered pages) of two open documents and return the changes, or add them to the newer one as comments (doc_compare_report, which writes a PDF, is in a file rule).",
+      "evidence": [
+        "crates/automation/src/a11y.rs: doc_compare, doc_compare_mark"
+      ]
+    },
+    {
+      "ids": [
+        "ocr_recognize"
+      ],
+      "class": "safe",
+      "why": "Renders the open document's pages and adds an invisible OCR text layer as one undoable edit; the ocrs/rten models are loaded once per process from fixed search directories ($PDFCRAFT_MODELS, beside the executable, the build's source tree), never from a caller path, and run in process.",
+      "evidence": [
+        "crates/automation/src/a11y.rs: ocr_recognize",
+        "crates/engine/src/ocr.rs: engine(), recognize_text",
+        "crates/ocr/src/lib.rs: Models::search_dirs, Ocr::load (rten::Model::load_file)"
+      ]
+    },
+    {
+      "ids": [
+        "action_list"
+      ],
+      "class": "safe",
+      "why": "Returns the built-in Action Wizard actions and the step ids from a static table; running them is action_run (code).",
+      "evidence": [
+        "crates/automation/src/a11y.rs: action_list",
+        "crates/engine/src/actions.rs: builtin, Step::all"
+      ]
+    }
+  ]
+}

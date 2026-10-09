@@ -23,6 +23,9 @@
 //! and Calendar's data. The service serves system apps only until
 //! ADR 0013's store capability is designed.
 
+/// The system agent's skill for this engine (ADR 0013).
+pub mod skill;
+
 use std::path::{Component, Path, PathBuf};
 
 use cadcraft_engine::doc::{Drawing, Space};

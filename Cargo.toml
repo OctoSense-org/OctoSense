@@ -34,6 +34,7 @@ members = [
     "crates/browser-smoke",
     "crates/host-api-smoke",
     "crates/wasm-host",
+    "crates/skill-gen",
     "apps/reference",
     "apps/news/host-service",
     "apps/sheets/host-service",
@@ -186,6 +187,9 @@ octosense-l0-chat = { path = "crates/l0-chat" }
 octosense-oauth-service = { path = "crates/oauth-service" }
 octosense-markdown-editor = { path = "crates/markdown-editor" }
 octosense-wasm-host = { path = "crates/wasm-host" }
+# The craft engines' skill references (ADR 0013): the engine services'
+# tests generate and check `commands.md` and `safety.json` with it.
+octosense-skill-gen = { path = "crates/skill-gen" }
 article-core = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 article-makepad = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.1.0" }
 octosense-llm-config = { path = "apps/ai-providers/config" }

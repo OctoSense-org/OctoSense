@@ -1,0 +1,529 @@
+{
+  "engine": "cadcraft",
+  "method": "I mapped all 295 catalog ids to their CommandSpec run functions in crates/engine/src/cmd/*.rs (the gc*/dc* ids come from the gc!/dc! macros in constraints.rs) and read each, then grepped the engine and the crates it calls (doc, geom, render, fonts, constraints, io, dwg, dxf) for std::fs, std::env, std::process, std::net, clipboard crates and nested Session::execute/cmdline/script calls. Only run_open, save_to (qsave/saveas), run_wblock and run_plot (plot/exportpdf) touch paths; every nested execute targets a fixed safe command (explode, properties.set, dist, area, layout.set); nothing persists Session.settings, uses the OS clipboard, a device or the network, or runs scripts (Session::script and Session::cmdline, which run arbitrary commands, are reached only by the MCP `script` tool and the CLI, outside this catalog). File commands are classified as if the host's IoHooks were installed, which OctoSense's cad service never does (open {path} still reads the file before noticing). Known limit: text-style replies and text rendering read installed system fonts by family name from fixed font folders, which I kept safe because no caller path is involved.",
+  "rules": [
+    {
+      "ids": [
+        "open"
+      ],
+      "class": "file",
+      "why": "run_open reads `path` with std::fs::read and only then hands the bytes to open_bytes, which needs the host's IoHooks.read (cadcraft_io::read: DXF, or DWG through acadrust). So even in OctoSense's cad service, which installs no hooks, `open {path}` reads any readable file and its error says whether the path exists; `{data, name}` takes base64 bytes and touches no path.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs: run_open calls std::fs::read(path) before open_bytes checks io()",
+        "crates/engine/src/cmd/file.rs: IoHooks/set_io, installed only by apps/cadcraft, apps/cadcraft-cli and apps/cadcraft-web",
+        "crates/io/src/lib.rs: read() parses bytes only (DWG via cadcraft_dwg/acadrust, in process)"
+      ]
+    },
+    {
+      "ids": [
+        "qsave",
+        "saveas"
+      ],
+      "class": "file",
+      "why": "save_to serialises with the host's IoHooks.write (cadcraft_io::write picks DXF, DWG, SVG, PNG or PDF by the path's extension and DXF when there is none, so an extensionless path such as a dotfile gets DXF text), writes `<path>.cadcraft-tmp` with std::fs::write and renames it over `path`; qsave without `path` writes back to the path the drawing was opened from. Without hooks both fail before writing.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs: save_to (io() check, std::fs::write of the tmp file, std::fs::rename), run_save, run_saveas",
+        "crates/io/src/lib.rs: write() and ext() (an empty extension means DXF)"
+      ]
+    },
+    {
+      "ids": [
+        "wblock"
+      ],
+      "class": "file",
+      "why": "run_wblock copies a block or the selected entities into a new drawing, serialises it with IoHooks.write and writes `path` directly with std::fs::write (not atomic, overwrites whatever is there).",
+      "evidence": [
+        "crates/engine/src/cmd/blocks.rs: run_wblock (io() check, then std::fs::write(&path, &bytes))"
+      ]
+    },
+    {
+      "ids": [
+        "plot",
+        "exportpdf"
+      ],
+      "class": "file",
+      "why": "Both run run_plot: the host's IoHooks.plot (cadcraft_io::plot) renders the layout to PDF bytes in memory, which go to `path` (std::fs::write of `<path>.cadcraft-tmp`, then rename) or come back as base64 `data`. Naming trap: PLOT never reaches a printer, plotter or spooler here; without the plot hook it reports that plotting is not available.",
+      "evidence": [
+        "crates/engine/src/cmd/layout.rs: run_plot (io().and_then(|h| h.plot), std::fs::write + std::fs::rename when `path` is given)",
+        "crates/io/src/pdf.rs: plot builds the PDF in memory"
+      ]
+    },
+    {
+      "ids": [
+        "new",
+        "close",
+        "closeall",
+        "document.switch"
+      ],
+      "class": "safe",
+      "why": "Only Session.docs and Session.active change: new pushes a fresh in-memory Drawing, close/closeall drop open drawings without saving (unsaved edits are lost), document.switch changes the active index.",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs: run_new, run_close, run_closeall, run_switch",
+        "crates/engine/src/lib.rs: Session::new_drawing"
+      ]
+    },
+    {
+      "ids": [
+        "document.bytes"
+      ],
+      "class": "safe",
+      "why": "Serialises the open drawing with IoHooks.write into memory and returns it as base64; no path is read or written (it fails without the hook). The png/pdf/svg formats render through cadcraft_render, whose text layout may load installed system fonts by family name (see the text-style rule).",
+      "evidence": [
+        "crates/engine/src/cmd/file.rs: run_bytes (hooks.write(doc, \"drawing.<format>\"), base64_encode)",
+        "crates/io/src/lib.rs: write() returns Vec<u8>"
+      ]
+    },
+    {
+      "ids": [
+        "cutclip",
+        "copyclip",
+        "copybase",
+        "pasteclip",
+        "pasteorig"
+      ],
+      "class": "safe",
+      "why": "The clipboard is engine-internal: copy_to_clip stores cloned entities in Session.clipboard (Vec<Entity>) with clipboard_base, paste/pasteorig add copies of them to the current space, cutclip also removes the originals. The OS clipboard is never touched (no clipboard crate in the engine or its dependencies).",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs: copy_to_clip, run_cut, paste, run_paste, run_pasteorig",
+        "crates/engine/src/lib.rs: Session { clipboard: Vec<Entity>, clipboard_base }"
+      ]
+    },
+    {
+      "ids": [
+        "undo",
+        "redo",
+        "erase.selection",
+        "selectall",
+        "select",
+        "qselect",
+        "qselect.info"
+      ],
+      "class": "safe",
+      "why": "Undo/redo swap Arc<Drawing> snapshots on DocState.undo/redo; the selection commands and quick select only change DocState.selection or query entities; erase.selection removes the selected entities from the drawing.",
+      "evidence": [
+        "crates/engine/src/cmd/edit.rs: run_undo, run_redo, run_clear, run_selectall, run_select",
+        "crates/engine/src/cmd/qselect.rs: run_qselect, run_info",
+        "crates/engine/src/lib.rs: Session::undo, Session::redo"
+      ]
+    },
+    {
+      "ids": [
+        "zoom",
+        "zoom.previous",
+        "zoom.window",
+        "zoom.in",
+        "zoom.out",
+        "zoom.all",
+        "zoom.extents",
+        "zoom.object",
+        "pan",
+        "pan.left",
+        "pan.right",
+        "pan.up",
+        "pan.down",
+        "regen",
+        "regenall",
+        "redraw",
+        "view.set",
+        "view.get",
+        "layout.set"
+      ],
+      "class": "safe",
+      "why": "View state is session or drawing data, not UI: zoom and pan call DocState::set_view, which keeps the view in DocState.views/view_history (session memory) or, inside an MSPACE viewport, in that Viewport entity's view_center/view_height; regen, regenall and redraw only call Session::touch (revision += 1); view.get reads the view and the viewport size the UI reported; layout.set switches DocState.space. Nothing reaches a window or the OS.",
+      "evidence": [
+        "crates/engine/src/cmd/view.rs: zoom, fit, pan_frac, run_pan, run_view_set, run_layout_set, the regen/regenall/redraw closures calling s.touch()",
+        "crates/engine/src/lib.rs: DocState::set_view/store_view, Session::touch, Session::zoom_extents"
+      ]
+    },
+    {
+      "ids": [
+        "line",
+        "pline",
+        "circle",
+        "arc",
+        "rectang",
+        "polygon",
+        "ellipse",
+        "point",
+        "point.multiple",
+        "xline",
+        "ray",
+        "spline",
+        "donut",
+        "text",
+        "mtext",
+        "arc.sce",
+        "arc.sca",
+        "arc.scl",
+        "arc.sea",
+        "arc.sed",
+        "arc.ser",
+        "arc.cse",
+        "arc.csa",
+        "arc.csl",
+        "arc.continue",
+        "circle.cd",
+        "circle.2p",
+        "circle.3p",
+        "circle.ttr",
+        "circle.ttt",
+        "ellipse.axis",
+        "ellipse.arc",
+        "divide",
+        "measure",
+        "revcloud",
+        "revcloud.polygonal",
+        "revcloud.freehand",
+        "wipeout",
+        "3dpoly",
+        "mline",
+        "helix",
+        "spline.cv",
+        "centermark",
+        "centerline"
+      ],
+      "class": "safe",
+      "why": "Each builds entities from its JSON parameters and adds them to the current space (Session::add_entity); divide and measure place points or references to the drawing's own blocks. No I/O: the only std::fs calls in crates/engine are in file.rs, blocks.rs (wblock) and layout.rs (plot).",
+      "evidence": [
+        "crates/engine/src/cmd/draw.rs: run_line ... run_mtext",
+        "crates/engine/src/cmd/draw2.rs: run_arc_variant, run_circle_variant, run_circle_ttr/ttt, run_ellipse_axis/arc, run_divide, run_measure, run_revcloud, run_wipeout, run_3dpoly, run_mline, run_helix, run_spline_cv, run_centermark, run_centerline"
+      ]
+    },
+    {
+      "ids": [
+        "dimlinear",
+        "dimaligned",
+        "dimradius",
+        "dimdiameter",
+        "dimangular",
+        "dimarc",
+        "dimordinate",
+        "dimcontinue",
+        "dimbaseline",
+        "qdim",
+        "dim",
+        "mleader",
+        "leader",
+        "dimstyle.update",
+        "dimoverride",
+        "dimreassociate",
+        "dimdisassociate",
+        "dimtedit.home",
+        "dimtedit.angle",
+        "dimtedit.left",
+        "dimtedit.center",
+        "dimtedit.right",
+        "dimtedit",
+        "dimspace"
+      ],
+      "class": "safe",
+      "why": "Dimensions, leaders, their overrides, association and text placement are entities and DimStyle data in the drawing; dimension geometry comes from cadcraft_render::dimension_geometry in memory.",
+      "evidence": [
+        "crates/engine/src/cmd/annotate.rs: run_linear, run_aligned, run_radius, run_diameter, run_angular, run_arclen, run_ordinate, run_continue, run_baseline, run_qdim, run_mleader, run_leader, run_update, run_override, run_reassociate, run_disassociate, run_tedit, run_dimtedit, run_dimspace"
+      ]
+    },
+    {
+      "ids": [
+        "hatch",
+        "gradient",
+        "boundary",
+        "region",
+        "hatchedit"
+      ],
+      "class": "safe",
+      "why": "Hatch patterns come from the built-in table (cadcraft_doc::library::pattern), never a .pat file; boundaries and regions are computed from drawing entities; hatchedit forwards to the fixed properties.set command.",
+      "evidence": [
+        "crates/engine/src/cmd/hatch.rs: run_hatch, run_gradient, run_boundary, run_region, run_hatchedit (s.execute(\"properties.set\", ...))",
+        "crates/doc/src/library.rs: standard_patterns, pattern"
+      ]
+    },
+    {
+      "ids": [
+        "block",
+        "insert",
+        "attdef",
+        "attedit",
+        "base",
+        "purge",
+        "blocks.list",
+        "battman"
+      ],
+      "class": "safe",
+      "why": "Naming trap: insert places a reference to a block from the drawing's own block table (s.doc().block(name)) and never reads a DWG/DXF file the way AutoCAD's INSERT can; `explode: true` runs only the fixed explode command. block, attdef, attedit, base, purge, blocks.list and battman edit or list drawing tables.",
+      "evidence": [
+        "crates/engine/src/cmd/blocks.rs: insert, run_insert (s.execute(\"explode\", ...)), make_block, run_attdef, run_attedit, run_base, run_purge, run_list, run_battman"
+      ]
+    },
+    {
+      "ids": [
+        "erase",
+        "move",
+        "copy",
+        "rotate",
+        "scale",
+        "mirror",
+        "stretch",
+        "offset",
+        "trim",
+        "extend",
+        "fillet",
+        "chamfer",
+        "explode",
+        "arrayrect",
+        "arraypolar",
+        "draworder.front",
+        "draworder.back",
+        "break",
+        "breakatpoint",
+        "join",
+        "overkill",
+        "pedit",
+        "splinedit",
+        "lengthen",
+        "align",
+        "blend",
+        "reverse",
+        "ncopy",
+        "chspace",
+        "flatten",
+        "arraypath",
+        "textedit",
+        "grip.move",
+        "grip.stretch",
+        "grip.rotate",
+        "grip.scale",
+        "grip.mirror"
+      ],
+      "class": "safe",
+      "why": "Geometric edits of existing entities in the drawing (transforms, trim/extend, fillet/chamfer, arrays, polyline and spline edits, grip edits); copy and ncopy duplicate entities inside the drawing, not to any clipboard.",
+      "evidence": [
+        "crates/engine/src/cmd/modify.rs: run_erase ... run_overkill",
+        "crates/engine/src/cmd/modify2.rs: run_pedit, run_splinedit, run_lengthen, run_align, run_blend, run_reverse, run_ncopy, run_chspace, run_flatten, run_arraypath, run_textedit",
+        "crates/engine/src/cmd/gripcmds.rs: run_grip_move/stretch/rotate/scale/mirror"
+      ]
+    },
+    {
+      "ids": [
+        "layer",
+        "layer.new",
+        "layer.set",
+        "layer.current",
+        "layer.delete",
+        "laymcur",
+        "laymch",
+        "laycur",
+        "layiso",
+        "layuniso",
+        "layfrz",
+        "layoff",
+        "laylck",
+        "layulk",
+        "layon",
+        "laythw",
+        "layerp",
+        "layerstate.save",
+        "layerstate.restore",
+        "layerstate.list",
+        "layerstate.delete",
+        "layerstate.rename"
+      ],
+      "class": "safe",
+      "why": "Layer table edits; layer states are kept in the drawing (Drawing.layer_states) and the LAYERP/LAYISO snapshots in CADCRAFT_* header variables, so nothing is imported from or exported to .las files.",
+      "evidence": [
+        "crates/engine/src/cmd/layer.rs: run_state_save/restore/list/delete/rename (d.layer_states), run_layerp, run_layiso, run_layuniso (header CADCRAFT_LAYERP, CADCRAFT_LAYISO)"
+      ]
+    },
+    {
+      "ids": [
+        "layout",
+        "layout.new",
+        "layout.delete",
+        "layout.rename",
+        "layout.copy",
+        "layout.list",
+        "mview",
+        "vports",
+        "vports.1",
+        "vports.2",
+        "vports.3",
+        "vports.4",
+        "viewport.set",
+        "vplayer",
+        "pagesetup",
+        "mspace",
+        "pspace"
+      ],
+      "class": "safe",
+      "why": "Layouts and paper-space viewports are drawing data and mspace/pspace set DocState.mspace; pagesetup stores page settings on the layout and keeps plotStyleTable as a plain string (no .ctb/.stb is ever loaded); layout dispatches to the fixed layout.* functions.",
+      "evidence": [
+        "crates/engine/src/cmd/layout.rs: run_layout (find_command(\"layout.set\")), run_new, run_delete, run_rename, run_copy, run_list, run_mview, run_mview_n, run_viewport_set, run_pagesetup, run_mspace, run_pspace",
+        "crates/doc/src/tables.rs: PageSetup.plot_style_table is only stored"
+      ]
+    },
+    {
+      "ids": [
+        "properties",
+        "properties.set",
+        "matchprop",
+        "color",
+        "linetype",
+        "lweight",
+        "ltscale",
+        "units",
+        "limits",
+        "style.current",
+        "dimstyle",
+        "dimstyle.dimension",
+        "dimstyle.list",
+        "dimstyle.rename",
+        "dimstyle.delete",
+        "dimstyle.current",
+        "dimstyle.override",
+        "tablestyle",
+        "mleaderstyle",
+        "ddptype",
+        "rename"
+      ],
+      "class": "safe",
+      "why": "Entity properties, current-property header variables and style tables in the drawing; linetype `load` copies from the built-in cadcraft_doc::library::standard_linetypes, never a .lin file.",
+      "evidence": [
+        "crates/engine/src/cmd/props.rs: run_get, run_set, run_matchprop, run_color, run_linetype, run_lweight, run_ltscale, run_units, run_limits, run_style_current, run_dimstyle*, dim_override, run_tablestyle, run_mleaderstyle, run_ptype, run_rename",
+        "crates/doc/src/library.rs: standard_linetypes"
+      ]
+    },
+    {
+      "ids": [
+        "style",
+        "style.list",
+        "style.rename",
+        "style.delete"
+      ],
+      "class": "safe",
+      "why": "They edit or list Drawing.text_styles. Their reply's `trueType` flag calls cadcraft_fonts::TextFont::resolve, whose ttf::find scans fixed system font folders (/System/Library/Fonts, /Library/Fonts, ~/Library/Fonts; /usr/share/fonts, ~/.fonts, ~/.local/share/fonts; C:\\Windows\\Fonts) once per process and reads the matching .ttf/.otf by family name. The `font` value is a name key, never a path, so there is no caller path to confine; it only reveals which fonts are installed.",
+      "evidence": [
+        "crates/engine/src/cmd/props.rs: style_json (TextFont::resolve(&st.font).is_outline()), styles_json returned by run_style, run_style_list, run_style_rename, run_style_delete",
+        "crates/fonts/src/ttf.rs: scan() (read_dir of the fixed font folders), find() (std::fs::read of the matched file)",
+        "crates/fonts/src/lib.rs: TextFont::resolve"
+      ]
+    },
+    {
+      "ids": [
+        "dist",
+        "id",
+        "list",
+        "area",
+        "time",
+        "status",
+        "drawing.inspect",
+        "entities",
+        "count"
+      ],
+      "class": "safe",
+      "why": "Read-only queries of the drawing and session (distances, areas, entity listings, counts, a drawing summary with its title and path); time reports the revision counter, not a clock; id sets LASTPOINT in the session.",
+      "evidence": [
+        "crates/engine/src/cmd/inquiry.rs: run_dist, run_id, run_list, run_area, run_time, run_status, run_inspect, run_entities, run_count"
+      ]
+    },
+    {
+      "ids": [
+        "ortho",
+        "grid",
+        "snap",
+        "polar",
+        "otrack",
+        "dynmode",
+        "lwdisplay",
+        "isodraft",
+        "transparencydisplay",
+        "qpmode",
+        "selectioncycling",
+        "osnap",
+        "dsettings",
+        "setvar",
+        "getvar",
+        "sysvars"
+      ],
+      "class": "safe",
+      "why": "Drafting toggles and SETVAR change Session.settings (osmode, orthomode, gridmode ... qpmode) or Drawing.header variables, and getvar/sysvars read them. Settings live in session memory and neither the engine nor any cadcraft host persists them (no config writes anywhere), so this is in-memory session state, not an app preference; it would become host if a host started saving Session.settings.",
+      "evidence": [
+        "crates/engine/src/cmd/settings.rs: toggle, run_osnap, run_dsettings, run_setvar, run_getvar",
+        "crates/engine/src/sysvars.rs: get, set, list (SESSION_VARS or the drawing header)",
+        "crates/engine/src/lib.rs: Settings is a plain field of Session"
+      ]
+    },
+    {
+      "ids": [
+        "cal",
+        "find",
+        "massprop",
+        "measuregeom",
+        "radius.measure",
+        "angle.measure"
+      ],
+      "class": "safe",
+      "why": "cal evaluates arithmetic with the engine's own bounded parser (10,000-character cap, depth limit, finite results), not a script interpreter; find/replace edits text entities in the current space; massprop and the measures compute geometry; measuregeom dispatches only to the fixed dist and area commands.",
+      "evidence": [
+        "crates/engine/src/cmd/utility.rs: eval/Parser, run_cal, run_find, run_massprop, run_measuregeom (s.execute(\"dist\" | \"area\")), run_radius, run_angle"
+      ]
+    },
+    {
+      "ids": [
+        "table",
+        "table.set",
+        "table.insertrow",
+        "table.deleterow",
+        "table.insertcol",
+        "table.deletecol",
+        "table.merge",
+        "table.unmerge"
+      ],
+      "class": "safe",
+      "why": "Table entities and their cells in the drawing.",
+      "evidence": [
+        "crates/engine/src/cmd/table.rs: run_table, run_set, run_insert_row, run_delete_row, run_insert_col, run_delete_col, run_merge, run_unmerge"
+      ]
+    },
+    {
+      "ids": [
+        "geomconstraint",
+        "gccoincident",
+        "gcperpendicular",
+        "gcparallel",
+        "gctangent",
+        "gchorizontal",
+        "gcvertical",
+        "gccollinear",
+        "gcconcentric",
+        "gcsmooth",
+        "gcsymmetric",
+        "gcequal",
+        "gcfix",
+        "autoconstrain",
+        "constraintbar",
+        "constraintbar.showall",
+        "constraintbar.hideall",
+        "dimconstraint",
+        "dcaligned",
+        "dchorizontal",
+        "dcvertical",
+        "dcangular",
+        "dcradius",
+        "dcdiameter",
+        "dclinear",
+        "dcdisplay",
+        "dcdisplay.showall",
+        "dcdisplay.hideall",
+        "delconstraint",
+        "parameters",
+        "constraintsettings",
+        "constraints.inspect"
+      ],
+      "class": "safe",
+      "why": "Geometric and dimensional constraints, user parameters and their display settings live in Drawing.constraints/Drawing.parametric and are solved in process by cadcraft-constraints; `expr` values go through its arithmetic expression evaluator; constraint bars and dynamic dimensions are display flags stored in the drawing. The gc* and dc* ids are generated by the gc!/dc! macros.",
+      "evidence": [
+        "crates/engine/src/cmd/constraints.rs: gc!/dc! macros, run_gc, run_dc, run_geomconstraint, run_dimconstraint, run_autoconstrain, set_bars, bar_cmd, run_delconstraint, run_parameters, run_constraintsettings, run_inspect",
+        "crates/constraints/src/expr.rs: Env::eval"
+      ]
+    }
+  ]
+}

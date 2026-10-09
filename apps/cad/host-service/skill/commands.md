@@ -1,0 +1,302 @@
+# cad engine commands
+
+The cadcraft engine's command catalog at revision 59631c8d4f9f: 295 commands, one per line as `id` label: params.
+Generated from the engine by `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-cad-service --test skill`; do not edit.
+
+A tag after the id marks a command that reaches past the open document (safety.json has every id's class): [file] reads or writes a path, [code] installs or runs code or other commands, [network] uses the network, [device] uses hardware, [host] changes windows, views, preferences, the clipboard or other app state. An untagged command works on the open document only.
+
+- `3dpoly` 3D Polyline: {points: [[x,y,z?],...], closed?}
+- `align` Align: {handles?, s1, d1, s2?, d2?, scale?: bool}
+- `angle.measure` Angle: {vertex, p1, p2} | {h1, h2}
+- `arc` Arc: {p1, p2, p3} | {center, radius, start, end (degrees)} | {start, center, end}
+- `arc.continue` Continue: {end} (tangent from the last line/arc) | {start, direction, end}
+- `arc.csa` Center, Start, Angle: {center, start, angle (degrees)}
+- `arc.cse` Center, Start, End: {center, start, end}
+- `arc.csl` Center, Start, Length: {center, start, length (chord)}
+- `arc.sca` Start, Center, Angle: {start, center, angle (degrees, + = CCW)}
+- `arc.sce` Start, Center, End: {start, center, end}
+- `arc.scl` Start, Center, Length: {start, center, length (chord; negative = major arc)}
+- `arc.sea` Start, End, Angle: {start, end, angle (degrees, + = CCW)}
+- `arc.sed` Start, End, Direction: {start, end, direction (degrees | [dx,dy])}
+- `arc.ser` Start, End, Radius: {start, end, radius (negative = major arc)}
+- `area` Area: {points: [[x,y],...]} | {handle}
+- `arraypath` Path Array: {handles?, path (handle), count? (default 6) | spacing?, align?: bool (default true)}
+- `arraypolar` Polar Array: {handles?, center, count, angle? (degrees, default 360), rotate?: bool}
+- `arrayrect` Rectangular Array: {handles?, rows, cols, rowSpacing, colSpacing}
+- `attdef` Define Attributes...: {tag, prompt?, default?, at, height?, invisible?}
+- `attedit` Single...: {handle, values: {TAG: value}}
+- `autoconstrain` AutoConstrain: {handles?, tolerance?, angleTolerance? (degrees), types?: [names]}
+- `base` Base: {at: [x,y]}
+- `battman` Block Attribute Manager...: {name}
+- `blend` Blend: {h1, p1, h2, p2, continuity?: tangent|smooth}
+- `block` Make...: {name, base: [x,y], handles?, keep?: "convert"|"retain"|"delete", description?}
+- `blocks.list` List Blocks
+- `boundary` Boundary...: {points: [[x,y]]}
+- `break` Break: {handle, p1, p2}
+- `breakatpoint` Break At Point: {handle, at}
+- `cal` QuickCalc: {expr: "(3+4)*2^2", vars?: {x: 1}}
+- `centerline` Center Line: {h1, h2} (two lines)
+- `centermark` Center Mark: {handle | handles} (circles/arcs; lines on the CENTER linetype)
+- `chamfer` Chamfer: {h1, p1, h2, p2, d1?, d2?}
+- `chspace` Change Space: {handles?, to?: "model" | layout name, viewport?: handle}
+- `circle` Circle: {center, radius} | {center, diameter} | {p1, p2} | {p1, p2, p3}
+- `circle.2p` 2 Points: {p1, p2}
+- `circle.3p` 3 Points: {p1, p2, p3}
+- `circle.cd` Center, Diameter: {center, diameter}
+- `circle.ttr` Tan, Tan, Radius: {h1, p1, h2, p2, radius} (lines, circles, arcs, polyline segments; nearest solution to the picks)
+- `circle.ttt` Tan, Tan, Tan: {h1, p1, h2, p2, h3, p3}
+- `close` Close: {index?}
+- `closeall` Close All
+- `color` Color...: {color: "ByLayer" | "red" | 1..255 | "r,g,b"}
+- `constraintbar` Constraint Bars: {mode?: show|hide|showall|hideall, handles?}
+- `constraintbar.hideall` Hide All Constraint Bars
+- `constraintbar.showall` Show All Constraint Bars
+- `constraints.inspect` Inspect Constraints: {} → constraints, glyph anchors, parameters, settings
+- `constraintsettings` Constraint Settings: {infer?, distanceTolerance?, angleTolerance?, autoTypes?: [names], barsVisible?, barTransparency?, dimsVisible?}
+- `copy` Copy: {handles?, delta: [dx,dy] | from,to, count?: n}
+- `copybase` Copy with Base Point: {handles?, base: [x,y]}
+- `copyclip` Copy: {handles?}
+- `count` Count: {block?}
+- `cutclip` Cut: {handles?}
+- `dcaligned` Aligned: {h1, p1?, h2?, p2?, expr? | value?, name?}
+- `dcangular` Angular: {h1, p1?, h2?, p2?, expr? | value?, name?}
+- `dcdiameter` Diameter: {h1, p1?, h2?, p2?, expr? | value?, name?}
+- `dcdisplay` Dynamic Dimensions: {mode?: show|hide|showall|hideall, handles?}
+- `dcdisplay.hideall` Hide All Dynamic Dimensions
+- `dcdisplay.showall` Show All Dynamic Dimensions
+- `dchorizontal` Horizontal: {h1, p1?, h2?, p2?, expr? | value?, name?}
+- `dclinear` Linear: {h1, p1?, h2?, p2?, expr? | value?, name?}
+- `dcradius` Radius: {h1, p1?, h2?, p2?, expr? | value?, name?}
+- `dcvertical` Vertical: {h1, p1?, h2?, p2?, expr? | value?, name?}
+- `ddptype` Point Style...: {pdmode, pdsize}
+- `delconstraint` Delete Constraints: {handles? | ids?: [n]}
+- `dim` Dimension: {p1, p2, at}
+- `dimaligned` Aligned: {p1, p2, at, text?}
+- `dimangular` Angular: {vertex, p1, p2, at} | {lines: [hex, hex], at} | {arc: hex, at} (associative)
+- `dimarc` Arc Length: {handle, at}
+- `dimbaseline` Baseline: {points: [[x,y]...]} (baseline from the last linear dimension)
+- `dimconstraint` Dimensional Constraint: {type: linear|aligned|horizontal|vertical|angular|radius|diameter, h1, p1?, h2?, p2?, expr? | value?, name?}
+- `dimcontinue` Continue: {points: [[x,y]...]} (continues the last linear dimension)
+- `dimdiameter` Diameter: {handle, at?} | {center, point}
+- `dimdisassociate` Disassociate Dimensions: {handles?}
+- `dimlinear` Linear: {p1, p2, at, rotation? (degrees; default: horizontal/vertical from `at`), text?} | {object: hex, at} (associative)
+- `dimordinate` Ordinate: {feature, leader, xtype?: bool}
+- `dimoverride` Override: {handles?, <DimStyle fields or DIM* variables: values>, clear?: bool, text?: override text}
+- `dimradius` Radius: {handle, at?} | {center, point}
+- `dimreassociate` Reassociate Dimensions: {handles?} (dimensions; attaches their definition points to the objects under them)
+- `dimspace` Dimension Space: {base: hex, handles: [hex], spacing?: number (default DIMDLI)}
+- `dimstyle` Dimension Style...: {name, current?, <style fields or DIM* variables, e.g. arrowSize / DIMASZ, DIMTSZ, DIMBLK, DIMTAD, DIMLUNIT…>} → styles
+- `dimstyle.current` Set Current Dimension Style: {name}
+- `dimstyle.delete` Delete Dimension Style: {name} (not Standard, the current style or one in use)
+- `dimstyle.dimension` Dimension Style...: same as `dimstyle`
+- `dimstyle.list` List Dimension Styles: {name?} → styles (with all variables for `name`)
+- `dimstyle.override` Dimension Style Override: {handles?, <style fields or DIM* variables: values>, clear?: bool} (per-dimension overrides)
+- `dimstyle.rename` Rename Dimension Style: {from, to}
+- `dimstyle.update` Update: {handles?}
+- `dimtedit` Dimension Text Edit: {handles?, at?: [x,y], mode?: home|angle|left|center|right, angle?}
+- `dimtedit.angle` Angle: {handles?, angle: degrees}
+- `dimtedit.center` Center: {handles?}
+- `dimtedit.home` Home: {handles?}
+- `dimtedit.left` Left: {handles?}
+- `dimtedit.right` Right: {handles?}
+- `dist` Distance: {p1, p2}
+- `divide` Divide: {handle, segments, block?, align?: bool}
+- `document.bytes` Drawing as bytes: {format?: dxf} → {data: base64}
+- `document.switch` Switch Drawing: {index}
+- `donut` Donut: {center, inside, outside}
+- `drawing.inspect` Inspect Drawing: {entities?: bool, limit?: n}
+- `draworder.back` Send to Back: {handles?}
+- `draworder.front` Bring to Front: {handles?}
+- `dsettings` Drafting Settings...: {snapunit?: [x,y], gridunit?: [x,y], polarang? (degrees), gridmajor?}
+- `dynmode` Dynamic Input: {on?: bool}
+- `ellipse` Ellipse: {center, major: [dx,dy], ratio, start?, end? (degrees)}
+- `ellipse.arc` Elliptical Arc: {center, major: [dx,dy], ratio, start, end (degrees)} | {p1, p2, distance, start, end}
+- `ellipse.axis` Axis, End: {p1, p2, distance} | {p1, p2, p3} (axis endpoints, then half the other axis)
+- `entities` Query Entities: {type?, layer?, window?: [[x,y],[x,y]], limit?, offset?}
+- `erase` Erase: {handles?: [hex]} (default: selection)
+- `erase.selection` Clear: {}
+- `explode` Explode: {handles?}
+- `exportpdf` [file] Export to PDF...: {path? (else returns base64 `data`), layout?, paper?, landscape?, fit?, lineweights?}
+- `extend` Extend: {handle, pick: [x,y], edges?: [hex]}
+- `fillet` Fillet: {h1, p1, h2, p2, radius?} (lines, arcs, circles) | {handle, polyline: true, radius?}
+- `find` Find...: {find, replace?, matchCase?: bool, wholeWord?: bool}
+- `flatten` Flatten Objects: {handles?} (z = 0, 3D polylines become polylines)
+- `gccoincident` Coincident: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gccollinear` Collinear: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcconcentric` Concentric: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcequal` Equal: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcfix` Fix: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gchorizontal` Horizontal: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcparallel` Parallel: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcperpendicular` Perpendicular: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcsmooth` Smooth: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcsymmetric` Symmetric: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gctangent` Tangent: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `gcvertical` Vertical: {h1, p1?, h2?, p2?, h3?, p3?} (h = handle; p = "start"/"end"/"mid"/"center"/"v<i>"/"seg<i>"/"object" or a pick point [x, y])
+- `geomconstraint` Geometric Constraint: {type: coincident|collinear|concentric|fix|parallel|perpendicular|horizontal|vertical|tangent|smooth|symmetric|equal, h1, p1?, h2?, p2?, h3?, p3?}
+- `getvar` Get Variable: {name}
+- `gradient` Gradient...: {points? | handles?, color1?, color2?, angle?}
+- `grid` Grid Display: {on?: bool}
+- `grip.mirror` Grip Mirror: {handles?, base | baseHandle+index, to (second mirror point), copy?}
+- `grip.move` Grip Stretch: {handle, index, to} (stretch the grip) | {handles?, index, baseHandle?, to, mode: "move", copy?} (move about the grip)
+- `grip.rotate` Grip Rotate: {handles?, base | baseHandle+index, angle (degrees) | to, copy?}
+- `grip.scale` Grip Scale: {handles?, base | baseHandle+index, factor | to, copy?}
+- `grip.stretch` Grip Stretch: {handle, index, to}
+- `hatch` Hatch...: {points?: [[x,y]] (internal points) | handles?: [hex] (closed objects), pattern?: "ANSI31", scale?, angle? (degrees), associative?}
+- `hatchedit` Hatch Edit: {handles?, pattern?, scale?, angle?}
+- `helix` Helix: {center, baseRadius, topRadius?, height?, turns?, ccw?} (3D polyline approximation)
+- `id` ID Point: {at}
+- `insert` Block...: {name, at: [x,y], scale?, rotation? (degrees), attribs?: {TAG: value}, explode?: bool}
+- `isodraft` Isometric Drafting: {on?: bool}
+- `join` Join: {handles?}
+- `laycur` Change to Current Layer: {handles?}
+- `layer` Layers
+- `layer.current` Make Current: {name}
+- `layer.delete` Delete Layer: {name}
+- `layer.new` New Layer: {name, color?, linetype?, lineweight? (mm), current?: bool}
+- `layer.set` Set Layer Properties: {name, on?, frozen?, locked?, plot?, color?, linetype?, lineweight?, transparency?, description?, newVpFreeze?, newName?}
+- `layerp` Previous Layer
+- `layerstate.delete` Delete Layer State: {name}
+- `layerstate.list` List Layer States: {} → states
+- `layerstate.rename` Rename Layer State: {from, to}
+- `layerstate.restore` Restore Layer State: {name}
+- `layerstate.save` Save Layer State: {name}
+- `layfrz` Freeze Layer: {handles?}
+- `layiso` Isolate Layer: {handles?}
+- `laylck` Lock Layer: {handles?}
+- `laymch` Layer Match: {handles?, layer}
+- `laymcur` Make Object's Layer Current: {handles?}
+- `layoff` Layer Off: {handles?}
+- `layon` Turn All Layers On
+- `layout` Layout: {option: new|copy|delete|rename|set|list, name?, to?}
+- `layout.copy` Copy Layout: {from, to?}
+- `layout.delete` Delete Layout: {name}
+- `layout.list` List Layouts: → [{name, tabOrder, page, viewports}]
+- `layout.new` New Layout: {name?, viewport?: bool (default true)} → {name, viewport}
+- `layout.rename` Rename Layout: {from?: current layout, to}
+- `layout.set` Switch Layout: {name: "Model" | layout name}
+- `laythw` Thaw All Layers
+- `layulk` Unlock Layer: {handles?}
+- `layuniso` Unisolate Layer
+- `leader` Leader: {points: [[x,y]...], text?}
+- `lengthen` Lengthen: {handle, pick?: [x,y] (end), delta? | deltaAngle? (deg) | percent? | total? | totalAngle? (deg) | to?: [x,y]} ({handle} alone measures)
+- `limits` Drawing Limits: {min: [x,y], max: [x,y]}
+- `line` Line: {points: [[x,y],...], closed?: bool}
+- `linetype` Linetype...: {current?: name, load?: name | "*"}
+- `list` List: {handles?}
+- `ltscale` Linetype Scale: {scale}
+- `lwdisplay` Show/Hide Lineweight: {on?: bool}
+- `lweight` Lineweight...: {lineweight: mm | ByLayer}
+- `massprop` Region/Mass Properties: {handles?}
+- `matchprop` Match Properties: {source, targets: [hex]}
+- `measure` Measure: {handle, length, block?, align?: bool, from?: [x,y] (end to start at)}
+- `measuregeom` Measure Geometry: {mode: distance|radius|angle|area, ...}
+- `mirror` Mirror: {handles?, p1, p2, erase?: bool}
+- `mleader` Multileader: {points: [[arrow], ..., [landing]], text}
+- `mleaderstyle` Multileader Style...: {name, arrowSize?, textHeight?, landingGap?, dogleg?, textStyle?, current?} → styles
+- `mline` Multiline: {points, scale?, justification?: top|zero|bottom, closed?} (two offset polylines)
+- `move` Move: {handles?, from?: [x,y], to?: [x,y] | delta: [dx,dy]}
+- `mspace` Model Space (in viewport): {handle?: viewport, at?: [x,y] paper point inside a viewport} (default: the last active or first viewport)
+- `mtext` Multiline Text: {at, text, height?, width?, attach?: 1..9, rotation?}
+- `mview` Viewports: {p1?, p2? (default: printable area), count?: 1-4, arrangement?: vertical|horizontal|left|right|above|below, layout?}
+- `ncopy` Copy Nested Objects: {handle (block reference), pick?: [x,y] (nearest nested object; default all), delta? | from,to}
+- `new` New Drawing...: {metric?: bool}
+- `offset` Offset: {handle, distance, side: [x,y]}
+- `open` [file] Open...: {path} | {data: base64, name}
+- `ortho` Ortho Mode: {on?: bool}
+- `osnap` Object Snap: {on?: bool, modes?: ["end","mid",...] | osmode?: n}
+- `otrack` Object Snap Tracking: {on?: bool}
+- `overkill` Delete Duplicate Objects: {handles?}
+- `pagesetup` Page Setup Manager...: {layout?: current, paper?: "A4"|"A3"|"Letter"|"ANSI B"|…, width?, height? (mm), landscape?, margins?: [l,b,r,t] mm, lineweights?, plotArea?, scale?, scaleToFit?, center?, plotStyleTable?}
+- `pan` Pan: {delta: [dx,dy]} | {from, to} | {center}
+- `pan.down` Pan Down
+- `pan.left` Pan Left
+- `pan.right` Pan Right
+- `pan.up` Pan Up
+- `parameters` Parameters Manager: {} lists; {name, expr | value, description?} sets (new name = user parameter) and re-solves; {delete: name}
+- `pasteclip` Paste: {at?: [x,y]} (default: same offset as copied)
+- `pasteorig` Paste to Original Coordinates: {}
+- `pedit` Polyline: {handle | handles, option: close|open|join|width|fit|spline|decurve|reverse|ltypegen|vertex, width?, handles2? (join), fuzz?, action?: move|insert|straighten|width, index?, to?, startWidth?, endWidth?, convert?: bool}
+- `pline` Polyline: {vertices: [[x,y] | {p:[x,y], bulge, startWidth, endWidth}], closed?, width?}
+- `plot` [file] Print...: {path? (else returns base64 `data`), layout?: current|"Model", paper?, landscape?, fit?: bool, scale?, lineweights?: bool}
+- `point` Point: {at: [x,y]} | {points: [...]}
+- `point.multiple` Multiple Point: {points: [...]}
+- `polar` Polar Tracking: {on?: bool}
+- `polygon` Polygon: {sides, center, radius, inscribed?: bool, angle?} | {sides, edge: [[x,y],[x,y]]}
+- `properties` Properties: {handles?} → properties of the selection
+- `properties.set` Set Properties: {handles?, layer?, color?, linetype?, lineweight?, ltscale?, transparency?, visible?, <geometry fields: radius, center, start, end, text, height, rotation…>}
+- `pspace` Paper Space
+- `purge` Purge: {} (unused blocks, layers, linetypes, styles)
+- `qdim` Quick Dimension: {handles?, at: [x,y], vertical?: bool}
+- `qpmode` Quick Properties: {on?: bool}
+- `qsave` [file] Save: {path?}
+- `qselect` Quick Select...: {type?: "Line"|"Circle"|..., property?, operator?: "="|"!="|">"|"<"|"*" (wildcard), value?, mode?: new|append|exclude, applyTo?: drawing|selection, layer?, color?} → selected handles
+- `qselect.info` Quick Select Properties: {applyTo?: drawing|selection, type?} → object types with counts and the properties available for `type`
+- `radius.measure` Radius: {handle}
+- `ray` Ray: {base, through}
+- `rectang` Rectangle: {p1, p2 | dimensions: [l, w] (p2 picks the quadrant) | area + length|breadth, rotation? (deg), fillet?, chamfer?: [d1, d2], width?, elevation?, thickness?}
+- `redo` Redo: {count?: n}
+- `redraw` Redraw
+- `regen` Regen
+- `regenall` Regen All
+- `region` Region: {handles?}
+- `rename` Rename...: {table: layer|linetype|style|dimstyle|block, from, to}
+- `revcloud` Rectangular: {p1, p2} | {points: [...]} | {freehand: [...]} | {handle}, arcLength?, style?: normal|calligraphy, reverse?
+- `revcloud.freehand` Freehand: {freehand: [[x,y],...], arcLength?}
+- `revcloud.polygonal` Polygonal: {points: [[x,y],...], arcLength?}
+- `reverse` Reverse: {handles?} (lines, polylines, 3D polylines, splines)
+- `rotate` Rotate: {handles?, base: [x,y], angle (degrees), copy?: bool}
+- `saveas` [file] Save As...: {path, format?: dxf|dwg}
+- `scale` Scale: {handles?, base: [x,y], factor, copy?: bool}
+- `select` Select: {handles: [hex]} | {window: [[x,y],[x,y]], crossing?: bool} | {at: [x,y]} | {clear: true} | {add?: bool}
+- `selectall` Select All
+- `selectioncycling` Selection Cycling: {on?: bool}
+- `setvar` Set Variable: {name, value}
+- `snap` Snap Mode: {on?: bool}
+- `spline` Spline: {fit: [[x,y],...]} | {control: [...], degree?}
+- `spline.cv` Control Vertices: {control: [[x,y],...], degree?: 1..10 (default 3), closed?}
+- `splinedit` Spline: {handle, option: close|open|reverse|refit|purge|polyline|move, fit?, index?, to?, precision?}
+- `status` Status
+- `stretch` Stretch: {window: [[x,y],[x,y]], delta: [dx,dy]}
+- `style` Text Style...: {name, font?, bigFont?, height?, widthFactor?, oblique? (degrees), backwards?, upsideDown?, vertical?, annotative?, current?} → styles
+- `style.current` Set Current Text Style: {name}
+- `style.delete` Delete Text Style: {name} (not Standard, the current style or one in use)
+- `style.list` List Text Styles: {} → text styles
+- `style.rename` Rename Text Style: {from, to}
+- `sysvars` List System Variables
+- `table` Table...: {at: [x,y], rows (data rows), cols, rowHeight?, colWidth?, cells?: [[text]], title?: text, header?: [text]}
+- `table.deletecol` Delete Column: {handle, col}
+- `table.deleterow` Delete Row: {handle, row}
+- `table.insertcol` Insert Column: {handle, col? (insert before; default: append), width?}
+- `table.insertrow` Insert Row: {handle, row? (insert before; default: append), height?}
+- `table.merge` Merge Cells: {handle, row, col, rows, cols}
+- `table.set` Set Table Cell: {handle, row, col, text}
+- `table.unmerge` Unmerge Cells: {handle, row, col}
+- `tablestyle` Table Style...: {name, textHeight?, margin?, title?, header?, current?} → styles
+- `text` Single Line Text: {at, text, height?, rotation? (degrees), justify?: L|C|R|M|TL|TC|TR|ML|MC|MR|BL|BC|BR}
+- `textedit` Edit Text...: {handle, text} (text, mtext, attribute definitions, dimension text override)
+- `time` Time
+- `transparencydisplay` Show/Hide Transparency: {on?: bool}
+- `trim` Trim: {handle, pick: [x,y], edges?: [hex]}
+- `undo` Undo: {count?: n}
+- `units` Units...: {lunits?: 1..5, luprec?: 0..8, aunits?: 0..4, auprec?: 0..8, insunits?}
+- `view.get` Get View
+- `view.set` Set View: {center: [x,y], height}
+- `viewport.set` Viewport Properties: {handle? (default: selected viewports), scale?: paper units per model unit | "1:50", viewHeight?, center?: [x,y], locked?, freeze?: [layer], thaw?: [layer], colors?: {layer: color | null}}
+- `vplayer` Viewport Layer Freeze: {handle?, freeze?: [layer], thaw?: [layer], colors?: {layer: color ("red" | 1..255 | "r,g,b") | null to clear}}
+- `vports` New Viewports...: {count?: 1-4, arrangement?, p1?, p2?, layout?}
+- `vports.1` 1 Viewport: {p1?, p2?, layout?}
+- `vports.2` 2 Viewports: {p1?, p2?, arrangement?: vertical|horizontal, layout?}
+- `vports.3` 3 Viewports: {p1?, p2?, arrangement?: right|left|above|below|vertical|horizontal, layout?}
+- `vports.4` 4 Viewports: {p1?, p2?, layout?}
+- `wblock` [file] Write Block: {path, name? | handles?, base?}
+- `wipeout` Wipeout: {points: [[x,y],...]} | {handle (closed polyline), erase?: bool} | {frames: on|off|display}
+- `xline` Construction Line: {base, through} | {base, angle (degrees)} | {base, hor|ver: true} | {vertex, start, end} (bisect) | {handle, distance, side} | {handle, through} (offset)
+- `zoom` Zoom: {mode: extents|all|window|previous|in|out|center|scale|object, p1?, p2?, center?, height?, factor?}
+- `zoom.all` Zoom All
+- `zoom.extents` Zoom Extents
+- `zoom.in` Zoom In
+- `zoom.object` Zoom Object: {handles?}
+- `zoom.out` Zoom Out
+- `zoom.previous` Zoom Previous
+- `zoom.window` Zoom Window: {p1, p2}

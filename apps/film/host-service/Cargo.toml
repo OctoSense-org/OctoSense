@@ -26,6 +26,8 @@ filmcraft-media = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
+# Generates and checks the skill's references (tests/skill.rs).
+octosense-skill-gen = { workspace = true }
 # Its tool manifest is checked with App Hub's own loader (tools.json).
 octosense-app-policy = { workspace = true }
 tempfile = "3"
