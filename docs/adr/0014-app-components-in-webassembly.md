@@ -5,8 +5,12 @@ English | [简体中文](0014-app-components-in-webassembly.zh-CN.md)
 Status: Proposed (9 Oct 2026). Phase 1, the runtime spike, is in
 `crates/wasm-host` (`src/component.rs`, `tests/component.rs`). Phase 2's
 runtime and service parts are in `crates/wasm-host/src/component/files.rs` and
-`crates/shell/src/wasm_service.rs`, with the measurements below; its App Hub
-and App Flow parts, and phases 3–4, are the plan. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
+`crates/shell/src/wasm_service.rs`, with the measurements below. Phase 3's are
+`component/net.rs` (`wasi:http`), `component/host.rs` with
+`wit/octosense-host.wit` (`octosense:host`), `Runtime::precompile` with
+`wasm_service::warm` (compiling at install), and Pulley on OpenHarmony and in
+tests; Windows runs the service, its tests in CI. App Hub's and App Flow's
+parts are in review, and iOS and phase 4 are the plan. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
 core modules keep working as they do. How WebAssembly runs on `main`:
 [WebAssembly in OctoSense](../wasm.md).
 
@@ -84,8 +88,16 @@ component reaches only what its app may already reach.
      rejected: a call could write gigabytes before it, and it costs two walks
      of the folder a call.
    - **`wasi:http` outgoing, phase 3:** only to the hosts in the manifest's
-     `network.hosts`, through the shell's network policy.
-   - **Never:** `wasi:sockets`, and any import outside these WASI packages. A
+     `network.hosts` under `net`, by a script's rule (the host listed exactly,
+     any case, any port), over HTTPS except to the device itself. A request
+     waits outside the guest, where the epoch check cannot end it, so its
+     timeouts are clamped to the call's deadline, which is 10 s for a
+     component that may reach the network.
+   - **`octosense:host`, phase 3:** `request(service, args)` reaches the host
+     services the app is granted, dispatched on the UI thread as the app's
+     script's `host.request` is, but with no sheet and no prompt (only
+     methods a background surface may call), and never `wasm.*`.
+   - **Never:** `wasi:sockets`, and any import outside these packages. A
      component that asks for one is refused when it loads
      (`LoadError::Import`) and by App Hub's gate.
 5. **No WIT to write.**
@@ -171,6 +183,11 @@ of 200 calls unless the row says otherwise. The module is Wasm Lab's
 | 1 MiB of `list<u8>`, there and back as base64 | 18.4 ms | | |
 | The smallest call | 0.2 µs | 0.3 µs | |
 
+In Pulley (`OCTOSENSE_WASM_PULLEY=1`, `--features pulley`, same machine), the
+Markdown function takes 15.1 ms as a component and 14.1 ms as a module: about
+32 times Cranelift's code. The smallest component call is 0.4 µs. OpenHarmony
+runs this until its code-generation policy is known.
+
 The quota needs what the folder holds when a call starts: one walk of it, as
 for an engine's call. That took 0.12 ms for 10 files, 2.0 ms for 1,000 and
 23.8 ms for 10,000 (a median of 50). Rewriting one file over and over is
@@ -179,6 +196,9 @@ example writes a new file each time.
 
 ## Open questions
 
-- Whether a component may call host services that open sheets (sign-in,
-  review). Probably only through the script, never from a component's call.
+Settled in phase 3: a component never calls a host service that opens a
+sheet or asks the person; such a call belongs to the script.
+
 - Async functions (WASI 0.3) and streaming bodies: after phase 3.
+- iOS: a Home build with the service in Pulley; the Rust target is not
+  installed on the build machine yet.

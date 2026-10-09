@@ -219,6 +219,11 @@ impl Runtime {
         // Components (ADR 0014) share the engine, its epoch and its cache.
         config.wasm_component_model(true);
         config.max_wasm_stack(limits.stack_bytes);
+        if Runtime::interpreted() {
+            config
+                .target("pulley64")
+                .map_err(|e| format!("Pulley: {e:#}"))?;
+        }
         let engine = Engine::new(&config).map_err(|e| format!("{e:#}"))?;
         let ticker = Arc::new(Ticker::start(engine.clone()));
         Ok(Runtime {
@@ -231,6 +236,18 @@ impl Runtime {
 
     pub fn limits(&self) -> &Limits {
         &self.limits
+    }
+
+    /// Whether code runs in Pulley, Wasmtime's interpreter, rather than as
+    /// native code Cranelift generates (ADR 0014 phase 3): on iOS, where an
+    /// app may not generate code, and on OpenHarmony, until its policy is
+    /// known. With the `pulley` feature, `OCTOSENSE_WASM_PULLEY` selects it
+    /// on any host, so that its tests run anywhere. Cranelift then compiles
+    /// to Pulley's bytecode, and the cache keeps it apart (the engine's
+    /// compatibility hash differs).
+    pub fn interpreted() -> bool {
+        cfg!(any(target_os = "ios", target_env = "ohos"))
+            || (cfg!(feature = "pulley") && std::env::var_os("OCTOSENSE_WASM_PULLEY").is_some())
     }
 
     /// Checks and compiles `bytes`, or takes its compiled code from the cache.

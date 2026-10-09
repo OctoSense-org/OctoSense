@@ -8,7 +8,8 @@
 //! `cfg!(native_mobile)`, never as the feature or the targets directly.
 //!
 //! `wasm_functions` marks a build that runs the `wasm` service (ADR 0011):
-//! feature `wasm-functions` on macOS, Linux or Android, the targets
+//! feature `wasm-functions` on macOS, Windows, Linux, Android or OpenHarmony
+//! (there in Pulley, Wasmtime's interpreter: ADR 0014), the targets
 //! Cargo.toml links its runtime for. Code reads `#[cfg(wasm_functions)]`.
 //!
 //! `dev_mode` marks a development build (ADR 0004 §13, `src/dev_mode.rs`):
@@ -35,7 +36,7 @@ fn main() {
         println!("cargo:rustc-cfg=mobile_only");
     }
     println!("cargo:rustc-check-cfg=cfg(wasm_functions)");
-    let wasm_target = target_os == "macos" || target_os == "android" || (target_os == "linux" && target_env != "ohos");
+    let wasm_target = matches!(target_os.as_str(), "macos" | "windows" | "android" | "linux");
     if wasm_target && std::env::var_os("CARGO_FEATURE_WASM_FUNCTIONS").is_some() {
         println!("cargo:rustc-cfg=wasm_functions");
     }

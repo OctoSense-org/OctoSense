@@ -23,6 +23,16 @@ sha2 = "0.10"
 # recognised as wasm and every trap ended the app.
 libc = "0.2.190"
 
+# Pulley, Wasmtime's interpreter (ADR 0014 phase 3): how code runs on iOS,
+# where an app may not generate code, and on OpenHarmony, until its policy is
+# known. Elsewhere only for its tests (OCTOSENSE_WASM_PULLEY with this
+# feature); desktop and Android builds leave it out.
+[features]
+pulley = ["wasmtime/pulley"]
+
+[target.'cfg(any(target_os = "ios", target_env = "ohos"))'.dependencies]
+wasmtime = { workspace = true, features = ["pulley"] }
+
 [dev-dependencies]
 wat = "1"
 # The sample functions natively, to check the module against them.

@@ -34,8 +34,21 @@ use super::State;
 /// imports resolve to it.
 const TYPES: &str = "wasi:filesystem/types@0.2.12";
 
-/// `ENOSPC` on Linux, Android and macOS: a full disk, to the guest.
-const ENOSPC: i32 = 28;
+/// A full disk, to the guest: `ENOSPC` where WASI maps it (Linux, Android,
+/// macOS, iOS); elsewhere an error of that kind.
+fn full() -> std::io::Error {
+    #[cfg(unix)]
+    {
+        std::io::Error::from_raw_os_error(28)
+    }
+    #[cfg(not(unix))]
+    {
+        std::io::Error::new(
+            std::io::ErrorKind::StorageFull,
+            "the storage budget is used up",
+        )
+    }
+}
 
 /// What an instance may still add to its storage folder (`None`: no
 /// ceiling), shared with the file streams it has open.
@@ -73,7 +86,7 @@ impl Budget {
         match ledger.left {
             Some(n) if bytes > n => {
                 ledger.refused = true;
-                Err(std::io::Error::from_raw_os_error(ENOSPC))
+                Err(full())
             }
             Some(n) => {
                 ledger.left = Some(n - bytes);

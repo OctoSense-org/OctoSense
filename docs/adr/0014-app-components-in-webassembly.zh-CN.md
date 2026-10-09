@@ -5,7 +5,10 @@
 状态：提议（2026 年 10 月 9 日）。第 1 阶段（运行时验证原型）位于
 `crates/wasm-host`（`src/component.rs`、`tests/component.rs`）。第 2 阶段的运行时和服务
 部分位于 `crates/wasm-host/src/component/files.rs` 和 `crates/shell/src/wasm_service.rs`，
-测量结果见下文；其 App Hub 与 App Flow 部分以及第 3–4 阶段是计划。
+测量结果见下文。第 3 阶段的部分是 `component/net.rs`（`wasi:http`）、`component/host.rs` 与
+`wit/octosense-host.wit`（`octosense:host`）、`Runtime::precompile` 与 `wasm_service::warm`
+（安装时编译），以及 OpenHarmony 上和测试中的 Pulley；Windows 运行这个服务，其测试在 CI 中运行。
+App Hub 与 App Flow 的部分正在审阅，iOS 和第 4 阶段是计划。
 本 ADR 扩展 [ADR 0011](0011-apps-own-functions-in-webassembly.zh-CN.md)：核心模块照旧可用。
 `main` 上 WebAssembly 的运行方式见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
 
@@ -61,8 +64,14 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
      的流）替换为计量增长的版本，把释放字节的调用（截断的 `open-at`、`unlink-file-at`）替换为
      归还字节的版本。超出预算的写入在组件内部失败，调用的错误会说明原因。我们没有采用"每次调用后
      检查"：一次调用在检查之前就可能写入数 GB，而且每次调用要遍历文件夹两次。
-   - **`wasi:http` 出站（第 3 阶段）：** 只能访问清单 `network.hosts` 中的主机，并经过 shell 的网络策略。
-   - **从不提供：** `wasi:sockets`，以及上述 WASI 包以外的任何导入。请求这些导入的组件在加载时被拒绝
+   - **`wasi:http` 出站（第 3 阶段）：** 只能在有 `net` 时访问清单 `network.hosts` 中的主机，规则与
+     脚本相同（主机完全列出，不区分大小写，端口不限），并使用 HTTPS，只有访问设备本身时例外。请求在客体
+     之外等待，epoch 检查无法结束它，因此请求的超时被限制在调用的截止时间内；可以访问网络的组件
+     每次调用有 10 秒。
+   - **`octosense:host`（第 3 阶段）：** `request(service, args)` 可以调用应用已获授权的宿主服务，
+     像应用脚本的 `host.request` 一样在 UI 线程上分派，但不打开面板、不询问用户（只能调用后台界面
+     可以调用的方法），并且绝不调用 `wasm.*`。
+   - **从不提供：** `wasi:sockets`，以及上述包以外的任何导入。请求这些导入的组件在加载时被拒绝
      （`LoadError::Import`），App Hub 的审核闸门也会拒绝。
 5. **无需编写 WIT。**
    - **Guest SDK（第 2 阶段）：** guest crate `octosense-component` 提供
@@ -131,11 +140,17 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 | 1 MiB 的 `list<u8>`，以 base64 往返 | 18.4 毫秒 | | |
 | 最小的调用 | 0.2 微秒 | 0.3 微秒 | |
 
+在 Pulley 中（`OCTOSENSE_WASM_PULLEY=1`、`--features pulley`，同一台机器），Markdown 函数作为组件
+耗时 15.1 毫秒，作为模块耗时 14.1 毫秒，约为 Cranelift 代码的 32 倍；最小的组件调用为 0.4 微秒。
+在 OpenHarmony 的代码生成策略明确之前，OpenHarmony 以这种方式运行。
+
 计量配额需要知道调用开始时文件夹里有多少数据：遍历一次文件夹，与引擎的调用相同。10 个文件耗时
 0.12 毫秒，1,000 个 2.0 毫秒，10,000 个 23.8 毫秒（50 次的中位数）。在 APFS 上反复改写同一个
 文件很慢，原生代码也一样（每次改写的中位数约 6 毫秒），因此示例每次都写入新文件。
 
 ## 待定问题
 
-- 组件能否调用会打开面板（登录、审阅）的主机服务。很可能只允许经由脚本，绝不允许在组件的调用中进行。
+第 3 阶段已定：组件绝不调用会打开面板或询问用户的宿主服务，这类调用属于脚本。
+
 - 异步函数（WASI 0.3）和流式内容：第 3 阶段之后。
+- iOS：在 Pulley 中带这个服务构建 Home；构建机器上还没有安装 Rust 的 iOS 目标。

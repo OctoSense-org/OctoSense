@@ -10,7 +10,7 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 
 | 位置 | 谁的模块 | 运行时 | 构建 | 状态 |
 | --- | --- | --- | --- | --- |
-| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 应用自己的应用包，`fns/*.wasm`，需要 `wasm` 能力 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`）；组件的 WASI 0.2 来自 `wasmtime-wasi` | macOS、Linux 和 Android 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`）；Windows、iOS 和 OpenHarmony 不包含 | 已接受，有限支持。测试在 macOS 和 Linux 上通过；一部 OnePlus 6 通过了手机验收。尚无发布版本包含它 |
+| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 应用自己的应用包，`fns/*.wasm`，需要 `wasm` 能力 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`）；组件的 WASI 0.2 来自 `wasmtime-wasi` | macOS、Windows、Linux、Android 和 OpenHarmony 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`；OpenHarmony 上在 Wasmtime 的解释器 Pulley 中运行）；iOS 不包含 | 已接受，有限支持。测试在 macOS 和 Linux 上通过；一部 OnePlus 6 通过了手机验收。尚无发布版本包含它 |
 | 引擎插件：`photo` 背后的 photocraft、`vector` 背后的 vectorcraft（[ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | 无：两个服务都拒绝所有 `plugin.*` 命令（#398、#405） | wasmi 2，解释器 | 链接进所有带 App Hub 的构建 | 已关闭：任何调用方都不能安装或运行插件 |
 | Splash 的数学编译器（makepad） | makepad 根据 Splash 代码生成 | makepad-stitch，解释器 | 链接进所有构建 | 未使用：OctoSense 没有链接任何调用它的代码 |
 | 浏览器中的外壳 | 外壳本身，为 `wasm32-unknown-unknown` 构建 | 浏览器 | 无 | 无法构建 |
@@ -57,8 +57,8 @@ Rust crate 构建。服务按文件头区分两者，一个应用包可以同时
   陷阱或超时会使实例作废，下一次调用得到新实例；更新、授权变化、撤回或工作线程退出（一分钟
   没有调用）都会结束它。
 - **能接触什么。** 时钟和随机数。它的 stdout 和 stderr 成为应用的日志行，没有环境变量、
-  参数和 stdin。导入 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:io` 和
-  `wasi:random` 以外任何东西（例如套接字或 HTTP）的组件在加载时被拒绝。
+  参数和 stdin。导入 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:http`、`wasi:io`、
+  `wasi:random` 和 `octosense:host` 以外任何东西（例如套接字）的组件在加载时被拒绝。
 - **文件。** 应用有 `storage` 能力（有账户的应用还需已登录账户）时，应用自己的存储文件夹，
   即其脚本的 `fs.*` 看到的那个，就是组件的 `/`。设备上的其他东西一概不可见；没有这个能力
   时没有文件系统。
@@ -66,9 +66,21 @@ Rust crate 构建。服务按文件头区分两者，一个应用包可以同时
   内部失败：`ftruncate` 报告磁盘已满，普通写入报告 I/O 错误，因为 wasi-libc 把任何失败的
   流写入都报告为 I/O 错误。这时请求的错误以 "a write was refused: the storage budget is
   used up" 结尾。改写、截断和删除会归还字节，因此组件可以自己腾出空间。
+- **网络。** 应用有 `net` 能力时，组件的 `wasi:http` 请求按脚本的规则访问应用的
+  `network.hosts`：主机必须完全列出，不区分大小写，端口不限。请求使用 HTTPS，只有访问设备本身
+  （`localhost`、`127.0.0.1`、`[::1]`）时才允许普通 HTTP。可以访问网络的组件每次调用有 10 秒，
+  而不是 2 秒；每个请求的连接、首字节和字节间超时都随调用结束。被拒绝的请求在组件内部失败
+  （`HttpRequestDenied`），应用的日志会说明原因："a request to … was refused: it is not one
+  of the app's network hosts"。
+- **宿主服务。** 通过 `octosense:host`
+  （[`crates/wasm-host/wit/octosense-host.wit`](../crates/wasm-host/wit/octosense-host.wit)），
+  组件可以用 `request(service, args)` 调用应用已获授权的宿主服务，与应用的脚本相同：同样的服务族，
+  在 UI 线程上分派，但绝不打开面板、不询问用户，因此只能调用后台界面可以调用的方法。`wasm.*`
+  被拒绝，因为应用的工作线程正忙于这次调用；调用的截止时间限制等待时长。
 
 ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 毫秒完成编译，从缓存加载
-约 4 毫秒；它的 Markdown 函数比原生 Rust 慢约 2.6 倍，与同一段代码作为模块时接近。
+约 4 毫秒；它的 Markdown 函数比原生 Rust 慢约 2.6 倍，与同一段代码作为模块时接近。在 Pulley
+中还要再慢约 32 倍。
 
 ### 模块如何到达设备
 
@@ -126,6 +138,10 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
 
 队列已满或没有空闲的工作线程时，请求会立即失败，不会等待。
 
+App Hub 安装或更新应用时，外壳会在后台把它的函数编译进缓存（`wasm_service::warm`）：一次一个
+应用，在单独的线程上，只编译已准入的应用包，并且只在应用有 `wasm` 授权时进行。这样应用的第一次
+调用就从缓存加载，不必等待 Cranelift 编译。
+
 ### Agent 工具
 
 应用的 `tools.json` 可以用 `"host_method": "wasm.<function>"` 把一个工具映射到自己的
@@ -142,9 +158,9 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
 | macOS | 运行。已在隐藏的桌面外壳中验证（ADR 0011）。Wasmtime 在这里用 Mach 异常端口而不是信号捕获陷阱。 |
 | Linux | 运行。运行时和服务的测试在 x86_64 上通过，陷阱由信号捕获；Wasm Lab 在无头桌面中运行过（2026 年 10 月 8 日）。 |
 | Android | 在 Home 的默认构建中运行。需要 libc 0.2.190 或更高版本，`crates/wasm-host` 已要求这一点：在 0.2.189 下，每个陷阱都会结束进程。已在 Redmi Note 12 上验证（ADR 0011），并在一部 OnePlus 6 上通过[手机验收](#手机验收)。运行时增加约 7.5 MiB 代码；在 Snapdragon 685 上编译一个 433 KiB 的模块约需 0.4 秒，从缓存加载需 5–11 毫秒。 |
-| Windows | 不包含。在 Windows 上检查过之前，运行时不进入构建。 |
-| iOS | 不包含。那里的应用不允许 JIT；可选方案是 Wasmtime 的解释器 Pulley，比 Cranelift 慢约 17 倍。 |
-| OpenHarmony | 不包含。其 JIT 策略**未验证**。 |
+| Windows | 包含（ADR 0014）。[`wasm-windows.yml`](../.github/workflows/wasm-windows.yml) 在 GitHub 的 `windows-2022` 上运行运行时的测试，并编译带这个服务的外壳。在 Windows 上运行桌面版**未验证**。 |
+| iOS | 不包含。那里的应用不能生成代码，所以运行时会像在 OpenHarmony 上一样使用 Pulley；但还没有编译过带这个服务的 iOS 构建。 |
+| OpenHarmony | 包含，在 OpenHarmony 的代码生成策略明确之前于 Wasmtime 的解释器 Pulley 中运行：Cranelift 编译为 Pulley 字节码，没有任何东西以原生代码运行。Home 的 OpenHarmony 发布构建已带着这个服务编译通过（2026 年 10 月 9 日，`cargo-makepad makepad ohos … deveco -p octosense-home --release`）；还没有在设备上运行过（**未验证**）。Pulley 比 Cranelift 慢约 32 倍（ADR 0014）。 |
 
 在受管理的 Mac 上，Microsoft Defender 会把新写入的缓存文件的第一次打开拦住约一秒；具体
 测量见 ADR 0011。
@@ -190,19 +206,24 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
   并发写入、取消。
 - `crates/wasm-host/tests/guest.rs` 运行 Wasm Lab 的模块，把每个函数的结果与同一段 Rust
   原生运行的结果比较，然后逐一运行 `rogue` 的各种模式。
-- `crates/wasm-host/tests/component.rs` 运行两个由 `crates/wasm-host/tests/component-guest`
+- `crates/wasm-host/tests/component.rs` 运行四个由 `crates/wasm-host/tests/component-guest`
   构建的组件：以 JSON 调用未作修改的 crate（pulldown-cmark）、记录与 snake_case 名称、
   同一实例保留状态、时钟、随机数与字节、只能访问授予的文件夹（也包括只读）、存储预算、
-  超时与内存上限，以及拒绝导入套接字的组件。
+  超时与内存上限；`fetch`，它的 `wasi:http` 只有在主机获准时才能访问本地服务器，向从不应答的
+  服务器发出的请求在截止时间结束；`hostcall`，它通过嵌入方调用宿主服务；以及拒绝导入套接字的组件。
 - 服务测试覆盖工具映射、输入上限、每次调用使用全新实例、更新或授权变化或撤回之后的撤销、
   取消和队列上限，以及应用自己的函数回答它的工具和脚本。对组件，测试覆盖带类型的调用、
-  实例的状态、应用的存储文件夹及其配额，以及没有存储能力的应用。
+  实例的状态、应用的存储文件夹及其配额、没有存储能力的应用、作为系统应用经 App Hub 准入发布的
+  组件、只能访问应用主机的请求、只能到达已授权服务的宿主调用，以及已安装应用的第一次调用从缓存加载。
 - `cargo run --release -p octosense-wasm-host --example measure_component` 打印组件
   相对于模块和原生 Rust 的耗时。
+- `OCTOSENSE_WASM_PULLEY=1 cargo test --locked -p octosense-wasm-host --features pulley`
+  在 Pulley 中运行同样的测试，与 OpenHarmony 的运行方式相同；`phone.yml` 也运行它。
 
 测试组件可以逐字节重建：用 rustc 1.97.1，`crates/wasm-host/tests/component-guest/build.sh`
-写出相同的 `notes.component.wasm`（SHA-256 `963c965b…`）和 `netprobe.component.wasm`
-（`98b2402a…`）。只需添加一次目标：`rustup target add wasm32-wasip2`。
+写出相同的 `notes.component.wasm`（SHA-256 `963c965b…`）、`netprobe.component.wasm`
+（`98b2402a…`）、`fetch.component.wasm`（`6eaf6ac8…`）和 `hostcall.component.wasm`
+（`d39f2a8e…`）。只需添加一次目标：`rustup target add wasm32-wasip2`。
 
 `phone.yml` 运行第一条命令，服务的测试则作为 Home 测试的一部分运行（`mobile-apps` 包含
 `wasm-functions`）；`tools/ci-local.sh --linux-host --offload` 在 Linux 构建主机上运行
@@ -225,12 +246,10 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
 
 - 还没有任何发布版本包含这个服务：#400 之后从 `main` 构建的第一个桌面版和 Home 发布版
   将会包含。
-- Windows、iOS（Pulley）和 OpenHarmony。
+- iOS：带这个服务（在 Pulley 中）构建 Home。
 - 应用之间的 CPU 公平调度，以及磁盘缓存的上限：目前没有任何东西会清理它。
-- 在安装时（商店应用）或构建时（系统应用）编译，省掉手机上的第一次编译。
-- 手机上的组件：Android 构建链接同一个运行时，但还没有组件在设备上运行过（**未验证**）。
-- 组件的网络（受清单 `network.hosts` 约束的 `wasi:http`）和宿主服务（`octosense:host`）：
-  ADR 0014 的第 3 阶段。
+- 提前编译系统应用的函数：已安装应用的函数在安装时编译，系统应用的函数在第一次调用时编译。
+- 手机上的组件：Android 和 OpenHarmony 构建链接了运行时，但还没有组件在设备上运行过（**未验证**）。
 - 经 JSON 传字节很慢：1 MiB 的 `list<u8>` 以 base64 往返约需 18 毫秒。
 
 ## 引擎插件：`photo` 和 `vector` 服务

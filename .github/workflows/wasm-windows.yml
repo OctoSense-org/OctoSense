@@ -1,0 +1,50 @@
+name: WebAssembly on Windows
+
+# Apps' own functions on Windows (ADR 0014): the runtime's tests
+# (crates/wasm-host) and the shell compiled with the `wasm` service, which
+# Windows desktop builds include. ci-local cannot run these (tools/ci_local.py,
+# NOT_LOCAL), so a pull request that touches them merges on this run.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'crates/wasm-host/**'
+      - 'crates/shell/src/wasm_service.rs'
+      - 'crates/shell/build.rs'
+      - 'crates/shell/Cargo.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/wasm-windows.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wasm-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 55
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Preserve runtime patch bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm-windows
+          cache-on-failure: true
+      - name: The runtime's tests
+        run: cargo test --locked -p octosense-wasm-host
+      - name: The shell with the wasm service
+        run: cargo check --locked -p octosense-shell --features wasm-functions
