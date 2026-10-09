@@ -33,8 +33,8 @@ Google adapters. It does not introduce an OctoSense user account. Provider
 registrations and credentials belong to the host. Store apps receive opaque,
 app-bound connection handles and authorized business results, never tokens.
 
-The first consumers are three ordinary App Hub bundles maintained in App
-Design Flow: GitHub Notes, Inbox Assistant and Google Calendar. Their identities
+The first consumers are three ordinary App Hub bundles maintained in OctoSense
+App Flow (formerly Design Flow): GitHub Notes, Inbox Assistant and Google Calendar. Their identities
 are not `os.*`, and installation must not require the system Mail or Calendar UI.
 
 ## Authentication boundary
@@ -113,7 +113,7 @@ recurring events expanded, and a call to `gcalendar.sync` is refused.
 ## Delivery and acceptance
 
 Platform work belongs in OctoSense, capability/admission changes in App Hub,
-and sample bundles and onboarding in App Design Flow. Reuse Rinx components
+and sample bundles and onboarding in App Flow. Reuse Rinx components
 through a compatible, pinned dependency graph instead of copying its entire
 messenger or introducing a second Makepad revision.
 

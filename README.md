@@ -24,7 +24,7 @@ saved state and actual interaction; phone-size previews remain separate from dev
 | **OctoSense Home** | The phone shell, an ordinary Home app for any Android phone (also OpenHarmony and the iOS simulator) | [`phone/`](phone/README.md) |
 | **OctoSense ROM** | LineageOS 22.2 for the OnePlus 6 with Home, the privileged system bridge, Quickstep and SystemUI preinstalled | [`rom/`](rom/README.md) |
 
-> **Building an app?** You don't need this repository to build, check or publish one. Start with [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (`AGENTS.md`, then `docs/QUICKSTART.md`) and [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). The system apps in [`apps/`](apps/README.md) are complete examples. Build the desktop shell from here only to try your app in a shell before you publish it ([PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)).
+> **Building an app?** You don't need this repository to build, check or publish one. Start with [OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (formerly Design Flow; read `AGENTS.md`, then `docs/QUICKSTART.md`) and [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). The system apps in [`apps/`](apps/README.md) are complete examples. Build the desktop shell from here only to try your app in a shell before you publish it ([PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)).
 
 Android Home supports page swipes from either side edge; apps and opened cards retain Back. See [phone gestures](phone/README.md#gestures).
 
@@ -51,10 +51,12 @@ To read the code in order, start with [From an app window to an agent turn](docs
 Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** The RC2, RC1 and older beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
 
 App Hub in desktop RC2 and this source build defaults to the GitHub-attested catalog and supports
-`publisher-github-v1` releases through app-contract 1.10.0. Developers request
-publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml);
-GitHub release proofs replace separate developer signing keys, while a Hub admin
-still approves admission. The first catalog fetch needs a network connection;
+`publisher-github-v1` releases through app-contract 1.10.0 (RC1: 1.8.0). Developers request
+publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml).
+App Hub accepts only GitHub-attested releases, so a developer needs no publisher
+key: the app's public repository is its publisher identity
+([App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.md)).
+A Hub admin still approves admission. The first catalog fetch needs a network connection;
 an old offline catalog is not converted into a GitHub proof. Custom local test
 catalogs can explicitly select `OCTOSENSE_HUB_CATALOG=legacy` with a fresh app-data
 directory; a library with a v2 cache refuses that downgrade. Beta.2 does not
@@ -270,7 +272,7 @@ fn ask(){
 }
 ```
 
-In a shell with a kernel, the first call asks the person to allow the app's agent. Treat "unavailable" as a normal state: the device may have no kernel (iOS) or no provider, or the person may have said no. This example and the rest of the API are in Design Flow's [AI-SERVICES guide](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md#a-minimal-call-and-handling-unavailable).
+In a shell with a kernel, the first call asks the person to allow the app's agent. Treat "unavailable" as a normal state: the device may have no kernel (iOS) or no provider, or the person may have said no. This example and the rest of the API are in App Flow's [AI-SERVICES guide](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md#a-minimal-call-and-handling-unavailable).
 
 ### What an app gives its agent
 
@@ -278,7 +280,7 @@ An agent can only work with what its app hands it. A script app declares all of 
 
 - **A declaration.** The manifest's `agent` block names the kernel tools the agent may use (the system apps ask only for `ask_user_question`), the model features it needs (`tool_calling`) and, optionally, an `AGENT.md` with instructions and skills, which the shell sends with every turn. A native app's entry also says which of its tools its own agent may call (`own_tools`) and which the system agent may call (`system_tools`).
 - **Tools.** `tools.json` describes each tool, named `<app>.<tool>`: its input schema, its `risk` (`read`, `act` or `destructive`), who confirms it (`confirm: host` for a shell sheet, `app` for the app's own sheet) and whether other apps' agents may use it (`shareable`).
-- **Something to run the tools.** A declared tool needs an executor: the app's host service (Mail, Calendar, News), the shell's notice service (`<app>.notify` for the other system apps) or a native app's open window. A store app has no host service of its own, but `host_method` can map one of its tools to a reviewed method of a shared service (`inbox.message` → `gmail.message`); the tool then runs on that service as the app ([architecture.md §4](docs/architecture.md#the-relay)). In desktop RC1, a tool marked `implemented_by: "app"` runs in the app's own Splash code while the app is open, with `requires: ["script-tools-v1"]`; a closed app returns `app_not_running`. The older `desktop-v0.1.0-beta.2` refuses such a call with `app_tool_unavailable`.
+- **Something to run the tools.** A declared tool needs an executor: the app's host service (Mail, Calendar, News), the shell's notice service (`<app>.notify` for the other system apps) or a native app's open window. A store app has no host service of its own, but `host_method` can map one of its tools to a reviewed method of a shared service (`inbox.message` → `gmail.message`); the tool then runs on that service as the app ([architecture.md §4](docs/architecture.md#the-relay)). Since desktop RC1, a tool marked `implemented_by: "app"` runs in the app's own Splash code while the app is open, with `requires: ["script-tools-v1"]`; a closed app returns `app_not_running`. The older `desktop-v0.1.0-beta.2` refuses such a call with `app_tool_unavailable`.
 - **Data.** The agent works in its account's folder, `apps/<app id>/accounts/<account hash>/` (a single `device` folder for an app without accounts), and reads it with the host's read-only `files.list`, `files.read` and `files.search` (on Unix). A script app can declare `storage.agent_workspace: "none"` to give its agent no folder, so it sees only what its tools return; a native app's agent gets its folder either way. No agent sees another account's folder.
 - **Memory.** Each agent has its own memory namespace, `app/<app>/acct-<hash>`, erased with the account.
 - **A way to reach the person.** With the `glance` permission, its tools can publish cards.
@@ -380,9 +382,7 @@ A phone runs the shell, the kernel, up to a dozen app agents and their apps at t
 
 The shell exists once, in `crates/shell` ([ADR 0001](docs/adr/0001-one-octosense-repository.md)): desktop and phone differ by target and features, not by copies of the source. CI fails if a shell source file appears in two crates.
 
-Desktop source builds also include [embedded web readers](docs/desktop-embedded-browser.md)
-for Linux X11/XWayland and Windows, with separate engine requirements and native
-acceptance gates. This does not change provider sign-in or native approval support.
+Since desktop 0.1.0-rc.1, the desktop shell also shows web pages inside apps on Linux (under X11 or XWayland) and on Windows, using the system's WebKitGTK or WebView2 engine. [Desktop embedded browser](docs/desktop-embedded-browser.md) lists what each platform needs. This does not change sign-in or approval support on these platforms.
 
 ## What it depends on
 
@@ -397,7 +397,7 @@ Pinned exactly once, in the root `Cargo.toml` and the runtime locks:
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, hosted as a native module. |
 | [OctosCode](https://github.com/octos-org/octoscode-app) | The coding client of the person's assistant, hosted as a native module that reaches the kernel through its port in the coding scope (ADR 0003, item 9). |
 
-Related, not build inputs: [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
+Related, not build inputs: [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
 
 ## Set up
 

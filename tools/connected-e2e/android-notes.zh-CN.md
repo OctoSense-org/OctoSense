@@ -40,7 +40,7 @@ MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=$NOTES_KERNEL" \
 ```sh
 target/release/examples/connected-install \
   --keep-profile="$NOTES_LAB/apps" \
-  ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
+  ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle
 python3 tools/connected-e2e/android_notes.py \
   --apk phone/target/android/makepad-android-apk/octosense_home/apk/octo_sense_notes_test.apk \
   --profile "$NOTES_LAB/apps" \

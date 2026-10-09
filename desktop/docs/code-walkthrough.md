@@ -109,7 +109,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 ```
 
 The demo account uses password `demo`; sends stay in the demo. Develop new store
-apps in OctoScript-App-Design-Flow and use App Hub's admission/publishing flow.
+apps in OctoSense App Flow (formerly Design Flow) and use App Hub's admission/publishing flow.
 The [local-catalog recipe](../README.md#try-your-own-app-before-it-is-published)
 tests installation into the shell before publication.
 

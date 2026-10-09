@@ -515,8 +515,8 @@ Tests use deterministic transports and synthetic accounts. They cover scope
 and app isolation, revocation, callback replay, refresh, GitHub conflicts,
 Calendar bounded-window paging/rollover/recurrence/ETags/DST, cross-app availability and refresh-commit races, draft revisions, injected approval refusal,
 send ambiguity, event retries and durable decisions. Native sample evidence
-and authoring instructions live in Design Flow's
-[connected-apps examples](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/main/examples/connected-apps).
+and authoring instructions live in OctoSense App Flow (formerly Design Flow):
+see its [connected-apps examples](https://github.com/OctoSense-org/OctoSense-App-Flow/tree/main/examples/connected-apps).
 
 Do not treat `card-host` admission as a running provider service: plain
 `card-host` has no OAuth, Gmail, Calendar or octos host. The separate

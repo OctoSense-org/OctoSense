@@ -81,11 +81,10 @@ Rules for agents working here are in [AGENTS.md](AGENTS.md) and
 
 **Building your own app?** You do not need to build or change this
 repository. Start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s
-reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then
-`docs/QUICKSTART.md`), and read the bundles here as worked examples
+reading list: the `AGENTS.md` of OctoSense App Flow (formerly Design Flow),
+then its `docs/QUICKSTART.md`. Read the bundles here as worked examples
 (`apps/<name>/bundle/main.splash`). To run one next to your app, clone the
-OctoSense repository into the same workspace and, from
-OctoScript-App-Design-Flow:
+OctoSense repository into the same workspace, then run this from your App Flow checkout:
 `tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`
 (`--no-stamp` leaves the checkout unmodified; Mail needs a shell, see below).
 
@@ -336,7 +335,7 @@ A system app has the same shape as a store app, with these differences:
 Everything else is identical: the same isolate, the same capability checks,
 the same network allowlist. How to write such an app (language, APIs, the
 `octo` CLI) is in
-[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
+[App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)
 (`docs/QUICKSTART.md`, `docs/SCRIPT-API.md`).
 
 ## Launcher icon artwork
@@ -763,7 +762,7 @@ from the original repository and does not run.
 ## Changing an app
 
 1. Edit `apps/<name>/bundle/`. Use only APIs documented in
-   OctoScript-App-Design-Flow's `docs/SCRIPT-API.md` or already used by
+   App Flow's `docs/SCRIPT-API.md` or already used by
    another app here; check the runtime source before using anything else.
 2. Ask only for what the app uses. A new network host goes in
    `network.hosts`; a new capability must exist in App Hub's
@@ -797,8 +796,8 @@ plus an entry in each shell's `system-apps.json`.
 | Repository | Role |
 | --- | --- |
 | [OctoSense](../README.md) (this repository) | the shells that ship these apps: [`desktop/`](../desktop/README.md) and Home in [`phone/`](../phone/README.md) (standalone launcher or preinstalled by the [`rom/`](../rom/README.md) image); the shell services in `crates/` |
-| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `sign-manifest`, `publish`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
-| [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | how to design, build, check and publish an app |
+| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `publisher-verify`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
+| [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | how to design, build, check and publish an app |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript), [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [makepad](https://github.com/OctoSense-org/makepad) | the language and runtime |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, a native module; reaches the assistant through `crates/app-peers` |
 | [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/kernel`, configured by AI providers, used by AppCard and other consumers (one revision selected by the root `Cargo.toml`) |
@@ -813,10 +812,10 @@ plus an entry in each shell's `system-apps.json`.
 
 This directory was the OctoSense-System-Apps repository until 2026-09-27,
 imported here with its history. The bundles and the Mail service were first
-written in OctoSense-mobile (archived) and OctoScript-App-Design-Flow (formerly Octoscript-AppCard),
-where their history remains. AppCard came from
-OctoSense-org/OctoSense-AppCard (`d0a836b8`), split from
-OctoScript-App-Design-Flow's `app/` at `cbbda4da`.
+written in OctoSense-mobile (archived) and OctoSense-App-Flow (first named
+Octoscript-AppCard, then OctoScript-App-Design-Flow), where their history
+remains. AppCard came from OctoSense-org/OctoSense-AppCard (`d0a836b8`), split
+from App Flow's `app/` at `cbbda4da`.
 
 Apache-2.0 ([LICENSE](LICENSE)). Third-party components are listed in
 [NOTICE](NOTICE).

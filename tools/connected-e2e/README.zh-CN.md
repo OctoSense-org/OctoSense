@@ -14,8 +14,8 @@ cargo build --locked --release -p octosense-shell \
   --example connected-app-host --example connected-install \
   --example connected-inbox-e2e
 python3 tools/connected-e2e/notes.py \
-  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
-python3 ../OctoScript-App-Design-Flow/examples/connected-apps/google-calendar/scripts/verify-installed.py \
+  --bundle ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle
+python3 ../OctoSense-App-Flow/examples/connected-apps/google-calendar/scripts/verify-installed.py \
   --host target/release/examples/connected-app-host
 ```
 
@@ -45,7 +45,7 @@ review pending`。macOS 上的运行**未验证**。
 ```sh
 target/release/examples/connected-install \
   --keep-profile=/absolute/new-empty-test-root/apps \
-  ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
+  ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle
 MAKEPAD_HIDE_WINDOWS=1 target/release/examples/connected-app-host \
   --installed-app=org.octosense.samples.githubnotes \
   --app-data=/absolute/new-empty-test-root/apps --provider-fixture=github --remote
@@ -92,7 +92,7 @@ Android/Windows/Linux 原生界面、公开目录发布或亲手点按的批准�
 
 ```sh
 python3 tools/connected-e2e/notes_soak.py \
-  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle \
+  --bundle ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle \
   --cycles 36 --duration-seconds 600
 ```
 
@@ -109,12 +109,7 @@ p50/p95/最大值。这里计量的是包含原生帧等待和状态轮询的 Ma
 [2026-10-06 Notes 浸泡记录](evidence/notes-soak-20261006/README.zh-CN.md)通过十分钟
 36 轮及独立 120 轮密集测试，保留精确草稿、原生截图检查、耗时边界与内存增长记录。
 
-Calendar 和 Inbox 的独立驱动及证据位于 App Design Flow：
-[Calendar（英文）](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)
-及 [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/inbox/README.zh-CN.md)。
-两者主机不同：Calendar 使用提供商主机，Inbox 使用完整 Shell 并实际调用 DeepSeek，
-不能将耗时与内存数值合成同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)
-包含修正监控状态后的 Inbox 包，三者均通过重开和篡改拒绝，未修改公开目录。
+Calendar 和 Inbox 各自的可复用浸泡测试及证据位于 OctoSense App Flow（原 Design Flow）：[Calendar（英文）](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)及 [Inbox](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/inbox/README.zh-CN.md)。两者使用的宿主不同：Calendar 使用提供商宿主，Inbox 使用完整 Shell 并实际调用 DeepSeek，因此不要把两者的耗时与内存数值合并为同一基准。最新的[三包签名安装检查](evidence/signed-install-after-soak.json)包含修正了监控状态的 Inbox 包；三个包都通过了重新打开和篡改拒绝两项检查，整个检查没有修改公开签名目录。
 
 ## Rinx 编辑器与无法加载的草稿
 
@@ -124,7 +119,7 @@ Rinx 真实文章编辑器与复用组件。新增编辑器移除 Notes 外层�
 
 ```sh
 python3 tools/connected-e2e/notes_recovery.py \
-  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
+  --bundle ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle
 ```
 
 该原生测试在签名安装内放入超出 Rinx 解析上限的虚构草稿，验证重新打开时不会

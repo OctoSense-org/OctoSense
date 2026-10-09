@@ -2,7 +2,7 @@
 
 [English](ai-services.md) | 简体中文
 
-本文介绍 Shell 中助手的各个组成部分：octos 内核服务、AI providers 与密钥的存放位置、应用调用的服务（`octos`、`model`、`glance`）以及系统工具箱。文中说明信任模型，最后介绍如何在本地运行和测试这一切。本文以 README 的[关键概念](../README.zh-CN.md#关键概念)为基础。内部实现见 [architecture.zh-CN.md](architecture.zh-CN.md)；应用开发者只需读 Design Flow 的 [AI-SERVICES 指南](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md)。
+本文介绍 Shell 中助手的各个组成部分：octos 内核服务、AI 提供商与密钥的存放位置、应用调用的服务（`octos`、`model`、`glance`）以及系统工具箱。文中说明信任模型，最后介绍如何在本地运行和测试这一切。本文以 README 的[关键概念](../README.zh-CN.md#关键概念)为基础。内部实现见 [architecture.zh-CN.md](architecture.zh-CN.md)；应用开发者只需读 OctoSense App Flow（原 Design Flow）的 [AI-SERVICES 指南](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.zh-CN.md)。
 
 ## 各个组成部分
 
@@ -143,7 +143,7 @@ flowchart TB
 
 `trigger` 说明这一轮由什么发起：`person`（应用声称是用户发起的）、`app`、`schedule` 或 `background`（应用自己的运行），或者带 `from` 的 `incoming`（别人发来的内容）。不填时，这一轮记为 `unknown`，最不受信任（`crates/app-peers/src/contract.rs` 中的 `TurnTrigger`）。对话记录会把 `person` 的回合标为用户的话，但审批规则把它当作应用自己的运行：只有 Shell 的 “Ask &lt;app&gt;” 面板能为用户作证。卡片里的对话虽然由 Shell 绘制，也算作应用自己的运行。常设规则会跳过 `incoming` 和 `unknown` 的运行，除非某条规则明确选择包含它们。
 
-每个应用同一时间只运行一轮，一轮超过 180 秒会被代理中断。脚本应用收不到推送的事件，所以它读取 `octos.session.history`，其中也包含系统 Agent 的回合。没有任何参数能携带审批决定。Design Flow 的指南中有[最小调用示例](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#最小调用示例与不可用状态)。
+每个应用同一时间只运行一轮，一轮超过 180 秒，代理就会中断它。脚本应用收不到推送的事件，所以它读取 `octos.session.history`，其中也包含系统 Agent 的回合。没有任何参数能携带审批决定。App Flow 的指南中有[最小调用示例](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#最小调用示例与不可用状态)。
 
 ### 错误
 
@@ -158,7 +158,7 @@ flowchart TB
 | `This app already has an assistant turn running` | 上一轮还在运行时又发起了一轮。 |
 | `no octos kernel: …` | 桌面端没有内核二进制（[见下文](#本地运行与测试)）。 |
 
-Design Flow 的[错误](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#错误)一表说明了应用对每种情况应当显示什么。
+App Flow 的[错误](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#错误)一表说明了应用对每种情况应当显示什么。
 
 ## 一次性模型调用：`model` 服务
 
@@ -170,7 +170,7 @@ Design Flow 的[错误](https://github.com/OctoSense-org/OctoScript-App-Design-F
 - 每个应用的预算默认为每分钟 6 次调用，每个 UTC 日 100 次调用和 100,000 个 token，记录在 `<apps root>/.host/model/ledger.json` 中，位于所有应用的 jail 之外。
 - 拒绝的形式是 `<code>: <sentence>`，`code` 为 `capability`、`no_provider`、`rate`、`budget`、`bad_request`、`invalid_output`、`too_large` 或 `provider` 之一。
 
-Design Flow 的[一次性模型调用](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#一次性模型调用model)给出了调用示例。
+App Flow 的[一次性模型调用](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#一次性模型调用model)给出了调用示例。
 
 ## 系统工具箱
 

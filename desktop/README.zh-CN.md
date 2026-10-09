@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-**下载：**[桌面版 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前 App Hub 目录、带 GitHub 证明的应用包及 SDK 1.10.0 公共宿主 API。各平台支持范围与验收限制见[宿主 OS API 状态](../docs/host-os-api-status.zh-CN.md)。请选择与操作系统和架构对应的文件，并核对发布说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
+**下载**：[桌面版 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前的 App Hub 签名目录、带 GitHub 证明的应用包及 SDK 1.10.0 公开宿主 API。各平台支持范围与验收限制见[宿主 OS API 状态](../docs/host-os-api-status.zh-CN.md)。请选择与操作系统和架构对应的文件，并核对发行说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
@@ -10,7 +10,7 @@
 
 > **在整个系统中的位置**。桌面端是一个 Shell 进程，octos 内核是它的子进程（随附的 `octos-kernel`，或 `OCTOS_APP_CORE_BIN`）。App Hub、运行脚本应用的 Card runner 和 Rinx 在进程内运行；Terminal 作为独立进程运行，在 macOS 和 Linux 上运行在系统沙箱中（Windows 上尚未实现），通过 Shell 的 hub 连接。在 macOS 上，该沙箱中 `~/.cargo`、`~/.rustup` 和 OctoSense 源码目录是只读的，因此 `cargo install`、`rustup update` 以及构建 OctoSense 本身都要在其他终端里运行。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
-**要开发 OctoSense 应用？** 构建、检查和发布应用都不需要本仓库：请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始（先读 OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`）。只有想在发布前在桌面 Shell 中看到自己的应用时，才需要构建本 Shell（见[发布前试用自己的应用](#发布前试用自己的应用)）。
+**要开发 OctoSense 应用？** 构建、检查和发布应用都不需要本仓库。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：先读 OctoSense App Flow（原 Design Flow）的 `AGENTS.md`，再读它的 `docs/QUICKSTART.md`。只有想在发布前在桌面 Shell 中看到自己的应用时，才需要构建本 Shell（见[发布前试用自己的应用](#发布前试用自己的应用)）。
 
 ## 在仓库体系中的位置
 
@@ -20,7 +20,7 @@
 | [`../apps/`](../apps/README.zh-CN.md) | 新闻、相册、地图、相机、邮件、日历、AI 提供商和 YouTube 的应用包，邮件、日历与 `llm` 宿主服务，AppCard 助手（`octos-app`，需显式启用，默认不随产品发布），以及 Reference。 |
 | [`../crates/`](../crates/) | Shell 本身（`crates/shell`，包名 `octosense-shell`，本包包装它）、它的 AI 服务（`crates/ai-host`）、octos 内核服务（`crates/kernel`，包名 `octosense-kernel`）和应用与 Agent 之间的代理（`crates/app-peers`）。 |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店和 Card 运行器。以 Git crate `octosense-app-hub-app` 链接。 |
-| [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 设计、构建应用并发布到 App Hub 的地方。 |
+| [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | 设计、构建应用并发布到 App Hub 的地方。 |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | 固定 Makepad 与 OctoScript 版本的运行时发布。检出在 `.sources/` 中。 |
 | [makepad（OctoSense 分支）](https://github.com/OctoSense-org/makepad) | 框架。检出在 `.sources/makepad` 中。 |
 | [octos](https://github.com/octos-org/octos) | Agent 内核，一项 Shell 服务（`octos-core`，默认开启）：AI 提供商配置它，AppCard、Rinx 等使用方连接它。只有一个版本，固定在根目录 `Cargo.toml` 中；内核本身是单独的二进制（桌面：Shell 旁随附的 `octos-kernel`，见[构建与运行](#构建与运行)，或 `OCTOS_APP_CORE_BIN`；Android：打包的 `liboctos.so`）。 |
@@ -131,26 +131,15 @@ App Hub 的模块没有进程形态，总是在进程内打开。
 | `OCTOSENSE_REDUCE_MOTION=1` | 一览面板及其 toast 不再滑入滑出，保持静止（见[一览面板](#一览面板)）。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
-Linux X11/XWayland 和 Windows 的嵌入页面使用原生 WebKitGTK/WebView2 子视图。
-见[运行条件与验收](../docs/desktop-embedded-browser.zh-CN.md)；引擎缺失或原生 Wayland
-会明确报错。
+从桌面版 0.1.0-rc.1 起，应用可以在 X11 或 XWayland 下的 Linux 以及 Windows 上显示网页。Shell 嵌入系统的 WebKitGTK 或 WebView2 引擎；缺少引擎或处于原生 Wayland 会话时，`WebReader` 会报错。各平台的运行条件见[桌面嵌入式浏览器](../docs/desktop-embedded-browser.zh-CN.md)。
 
 ## 应用图标
 
-`octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。
-工作区的 Cargo 环境配置会为普通 `cargo run`/`cargo build` 嵌入桌面图标。
-两个包也都提供锁定版本 `cargo-makepad desktop` 自动发现的 PNG、ICO 和
-ICNS 文件，用于 macOS 应用包、Windows 可执行文件资源和 Linux 桌面入口。
-发布包继续使用 `packaging/icons/`。
+`octosense` 与 `octosense-home` 都使用 OctoSense 的绿色八瓣标识。工作区的 Cargo 环境配置会为普通 `cargo run`/`cargo build` 嵌入桌面图标。两个包还都提供各尺寸的 PNG 以及 ICO 和 ICNS 文件，供锁定版本的 `cargo-makepad desktop` 自动发现，用于 macOS 应用包、Windows 可执行文件资源和 Linux 桌面入口。发行包继续使用 `packaging/icons/`。
 
-两个包的 Android 构建都包含各密度的传统图标、自适应图标和 Android 13
-主题图标，并提供不透明、尺寸正确的 iPhone/iPad 图标资源目录。
-Home 的 OpenHarmony 构建脚本还会替换框架的应用、分层启动器和启动窗口图标。
-这些资源不会改变各应用目标当前能否成功构建。
+两个包的 Android 构建都包含各密度的传统图标、自适应图标和 Android 13 主题图标。两个包都提供不透明、尺寸正确的 iPhone/iPad 图标资源目录；Home 的 OpenHarmony 构建脚本还会替换框架的应用、分层启动器和启动窗口图标。各应用目标目前能否构建成功，不受这些资源影响。
 
-源几何形状及颜色位于 `packaging/make_icons.py` 和
-`packaging/icons/icon.svg`。生成文件已提交，构建应用不需要图像渲染工具。
-在仓库根目录运行：
+源几何形状及颜色位于 `packaging/make_icons.py` 和 `packaging/icons/icon.svg`。生成的文件已 commit 到仓库，构建应用不需要图像渲染工具。在仓库根目录运行：
 
 ```sh
 python3 desktop/packaging/make_icons.py
@@ -158,10 +147,7 @@ python3 desktop/packaging/make_icons.py --check
 python3 -m unittest discover -s tools -p test_app_icons.py
 ```
 
-已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。
-Home 已在 Pixel 7 Pro / Android 17 上全新安装，应用信息页显示品牌图标，
-应用也能正常启动。其他平台安装后的外观、Android 主题图标模式及
-Windows/Linux 桌面集成仍**未经验证**。
+已在本机检查 Android 资源编译、iOS 资源目录编译和 macOS ICNS 解码。Home 已在 Pixel 7 Pro / Android 17 上全新安装，应用信息页显示品牌图标，应用也能正常启动。其他平台安装后的外观、Android 主题图标模式及 Windows/Linux 桌面集成仍**未验证**。
 
 ## 发布构建
 
@@ -257,15 +243,15 @@ AI 提供商（`os.ai-providers`）通过 `llm` 服务（`octosense-llm-service`
 
 ### 商店应用（App Hub）
 
-App Hub 默认开启。从 launcher 打开 **App Hub**，浏览签名目录并安装应用；安装后的应用无需重启就会出现在 launcher 中。目录来源默认是 App Hub 仓库，可以用 `OCTOSENSE_HUB` 指向其他位置。要构建和发布应用，从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
+App Hub 默认开启。从启动器打开 **App Hub**，浏览签名目录并安装应用；安装后的应用无需重启就会出现在启动器中。签名目录的来源默认是 App Hub 仓库，可以用 `OCTOSENSE_HUB` 指向其他位置。要构建和发布应用，从 [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) 开始。
 
 #### 发布前试用自己的应用
 
-正式分发时，先创建 [App Hub 投稿 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)，准备好后再补充 GitHub 发布证据。常规 [GitHub 发布流程](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md)不要求开发者单独管理发布者密钥；创建标签或 Release 不等于获得 Hub 批准。
+正式分发时，按 App Hub [提交指南](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SUBMITTING.zh-CN.md#5-生成最终字节)使用 GitHub Release 工作流：用 App Flow 的 `tools/octo publish-github <app-directory>` 安装工作流，把工作流与测试通过的应用一起 commit 到应用的公开仓库，再推送新的 `v<manifest.version>` 标签。然后把 Release 证据补充到 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 中；如果还没有这个 issue，请先创建。App Hub 只接受带 GitHub 证明的 Release，因此你无需发布者密钥：应用的 GitHub 仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。仅有标签或 Release 不等于获得 Hub 批准。
 
-下文是**可选的本地旧版目录演练**。Design Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)说明其兼容包与一次性目录密钥（`hub keygen`/`certify`/`publish`）；它们不是常规 GitHub 发布的前置要求。不要为这个旧流程重新写入已附加 GitHub 证明的发布包摘要。
+下文是**可选的本地演练**。演练使用旧格式的测试签名目录，由你用一次性的签名目录密钥（`hub keygen`、`certify`、`publish`）签名；整个演练不会向 App Hub 发布任何内容。演练不需要发布者密钥：请使用 Release 工作流构建的 Release pack，绝不要为带 GitHub 证明的 Release 重新写入摘要。具体步骤见 App Flow 的 [PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)。从这种签名目录安装带 GitHub 证明的 Release 尚**未验证**。
 
-准备好镜像后，替换下方两个带引号的值。始终使用全新的配置目录：已经缓存 v2 目录的库会拒绝降级到旧版目录。**这份修订后的启动配方已经过源码核对，但尚未在新兼容 Shell 二进制上运行。**
+准备好镜像后，替换下方两个带引号的值。始终使用全新的配置目录：已经缓存 v2 签名目录的应用库会拒绝降级到旧格式的签名目录。**这份修订后的启动配方已经过源码核对，但尚未在新兼容 Shell 二进制上运行。**
 
 ```sh
 REHEARSAL_MIRROR='/absolute/path/to/your/test-mirror'

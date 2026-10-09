@@ -2,7 +2,7 @@
 
 English | [简体中文](ai-services.zh-CN.md)
 
-This guide covers the assistant's moving parts in the shell: the octos kernel service, AI providers and where keys live, the services apps call (`octos`, `model`, `glance`) and the system toolbox. It sets out the trust model and ends with how to run and test it all locally. It builds on the README's [key concepts](../README.md#key-concepts). [architecture.md](architecture.md) has the internals, and an app developer needs only Design Flow's [AI-SERVICES guide](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md).
+This guide covers the assistant's moving parts in the shell: the octos kernel service, AI providers and where keys live, the services apps call (`octos`, `model`, `glance`) and the system toolbox. It sets out the trust model and ends with how to run and test it all locally. It builds on the README's [key concepts](../README.md#key-concepts). [architecture.md](architecture.md) has the internals, and an app developer needs only the [AI-SERVICES guide](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md) of OctoSense App Flow (formerly Design Flow).
 
 ## The moving parts
 
@@ -143,7 +143,7 @@ An app may call only the `octos.*` names its manifest declares: the Card runner'
 
 `trigger` says what started the turn: `person` (the app says the person asked), `app`, `schedule` or `background` (its own run), or `incoming` with `from` (content someone else sent). Left out, the turn is `unknown`, the least trusted (`TurnTrigger` in `crates/app-peers/src/contract.rs`). The transcript labels a `person` turn as the person's, but approval rules treat it as the app's own run: only the shell's "Ask &lt;app&gt;" panel vouches for the person. Chat in a card counts as the app's run too, although the shell draws it. Standing rules skip incoming and unknown runs unless a rule opts in.
 
-An app runs one turn at a time, and the broker interrupts a turn after 180 seconds. A script app gets no pushed events, so it reads `octos.session.history`, which includes the system agent's turns. No argument carries an approval decision. Design Flow's guide has [a minimal call](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md#a-minimal-call-and-handling-unavailable).
+An app runs one turn at a time, and the broker interrupts a turn after 180 seconds. A script app gets no pushed events, so it reads `octos.session.history`, which includes the system agent's turns. No argument carries an approval decision. App Flow's guide has [a minimal call](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md#a-minimal-call-and-handling-unavailable).
 
 ### Errors
 
@@ -158,7 +158,7 @@ An app runs one turn at a time, and the broker interrupts a turn after 180 secon
 | `This app already has an assistant turn running` | A second turn while one runs. |
 | `no octos kernel: …` | A desktop without a kernel binary ([below](#run-and-test-locally)). |
 
-Design Flow's [Errors](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md#errors) table says what an app should show for each.
+App Flow's [Errors](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md#errors) table says what an app should show for each.
 
 ## One-shot model calls: the `model` service
 
@@ -170,7 +170,7 @@ Some jobs need one bounded answer rather than an agent; Photos uses one to group
 - Each app's budget is by default 6 calls a minute, and 100 calls and 100,000 tokens a UTC day, kept in `<apps root>/.host/model/ledger.json`, outside every app's jail.
 - A refusal reads `<code>: <sentence>`, with `code` one of `capability`, `no_provider`, `rate`, `budget`, `bad_request`, `invalid_output`, `too_large` or `provider`.
 
-Design Flow's [One-shot model calls](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md#one-shot-model-calls-model) shows a call.
+App Flow's [One-shot model calls](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md#one-shot-model-calls-model) shows a call.
 
 ## The system toolbox
 

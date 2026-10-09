@@ -23,7 +23,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 
-这些记录写于 OctoSense-ROM（已停用，并入本仓库）的 `home/docs/adr/`，现作为历史保存在 [`home/`](home/) 下；2026-09-28 Home 0002 和 0004 增加了注明日期的修订，Home 0004 的实施状态行和最后一条 Consequences 也已更新；2026-10-04 Home 0001 和 0002 增加了注明日期的说明。引用时写作“Home ADR 0004”；文中的“ADR 000N”指 Home ADR，2026-09-28 增补内容中的除外（指本仓库 ADR 0004）。路径相对于原 `home/` 目录或属于其他仓库：`src/` → `crates/shell/src/`（设置应用在 `phone/src/`），`resources/`、`android/` → `phone/resources/`、`phone/android/`，`octosense-rom/` → `rom/`，OctoSense-System-Apps 的 `apps/` → `apps/`（见 ADR 0001）；`crates/app-policy`、`crates/app-hub-app` 属于 App Hub；`apps/calendar/cards/` 曾属于 Octoscript-AppCard。状态为当时记录的状态。
+这些记录写于 OctoSense-ROM（已停用，并入本仓库）的 `home/docs/adr/`，现作为历史保存在 [`home/`](home/) 下；2026-09-28 Home 0002 和 0004 增加了注明日期的修订，Home 0004 的实施状态行和最后一条 Consequences 也已更新；2026-10-04 Home 0001 和 0002 增加了注明日期的说明，2026-10-08 Home 0003 也增加了注明日期的说明。引用时写作“Home ADR 0004”；文中的“ADR 000N”指 Home ADR，2026-09-28 增补内容中的除外（指本仓库 ADR 0004）。路径相对于原 `home/` 目录或属于其他仓库：`src/` → `crates/shell/src/`（设置应用在 `phone/src/`），`resources/`、`android/` → `phone/resources/`、`phone/android/`，`octosense-rom/` → `rom/`，OctoSense-System-Apps 的 `apps/` → `apps/`（见 ADR 0001）；`crates/app-policy`、`crates/app-hub-app` 属于 App Hub；`apps/calendar/cards/` 曾属于 Octoscript-AppCard。状态为当时记录的状态。
 
 | Home ADR | 标题 | 日期 | 状态 |
 | --- | --- | --- | --- |
@@ -41,4 +41,5 @@ OnePlus 6 镜像及其交付方式的记录位于 [`rom/docs/adr/`](../../rom/do
 ## 其他位置
 
 - 应用与 Agent 之间的代理（`crates/app-peers`）遵循 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)（由宿主持有的 octos 应用 peer）。
-- App Hub、目录与准入检查：[OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。
+- App Hub、签名目录与准入检查：[OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。
+- 应用的发布者身份：App Hub [ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)（通过 GitHub 证明发布者身份）。来自应用公开仓库、带 GitHub 证明的 Release 确立其发布者身份，取代 [Home ADR 0003（英文）](home/0003-app-hub-and-store.md)中的发布者密钥。

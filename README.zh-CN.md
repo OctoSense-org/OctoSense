@@ -6,7 +6,7 @@
 
 [宿主 OS API 状态](docs/host-os-api-status.zh-CN.md)记录文件、定位和外部链接支持，以及已有服务、剩余缺口和验证范围。
 
-**桌面版下载：**[OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前 App Hub 目录、带 GitHub 证明的应用发布包及 SDK 1.10.0 声明的公共宿主 API。请选择与操作系统和架构对应的文件；运行前置条件、签名状态和各平台验收范围见发布说明。此桌面版本不会更新 Android Home。
+**桌面版下载**：[OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前的 App Hub 签名目录、带 GitHub 证明的应用 Release 及 SDK 1.10.0 声明的公开宿主 API。请选择与操作系统和架构对应的文件；运行前置条件、签名状态和各平台验收范围见发行说明。此桌面版本不会更新 Android Home。
 
 用自己的邮箱[复现真实邮件 → 卡片 → Calendar 演示](docs/demos/mail-calendar/README.zh-CN.md)：固定源码版本、重要邮件策略、虚构测试输入、人工修改草稿和日历跳转。
 
@@ -18,11 +18,11 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 | 产品 | 是什么 | 位置 |
 | --- | --- | --- |
-| **OctoSense 桌面端** | 在 macOS、Windows 或 Linux 上作为一个 Makepad 窗口运行的 Shell；各平台要求和验收范围见发布说明 | [`desktop/`](desktop/README.zh-CN.md) |
+| **OctoSense 桌面端** | 在 macOS、Windows 或 Linux 上作为一个 Makepad 窗口运行的 Shell；各平台要求和验收范围见发行说明 | [`desktop/`](desktop/README.zh-CN.md) |
 | **OctoSense Home** | 手机 Shell，可作为普通 Home 应用安装在任意 Android 手机上（也支持 OpenHarmony 和 iOS 模拟器） | [`phone/`](phone/README.zh-CN.md) |
 | **OctoSense ROM** | 面向 OnePlus 6 的 LineageOS 22.2，预装 Home、具有系统权限的系统桥、Quickstep 和 SystemUI | [`rom/`](rom/README.zh-CN.md) |
 
-> **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) 开始。[`apps/`](apps/README.zh-CN.md) 中的系统应用就是完整的示例。只有想在发布前先在 Shell 里试用自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)）。
+> **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（原 Design Flow；先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) 开始。[`apps/`](apps/README.zh-CN.md) 中的系统应用就是完整的示例。只有想在发布前先在 Shell 里试用自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)）。
 
 Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使用返回手势。参见[手机手势说明](phone/README.zh-CN.md#手势)。
 
@@ -46,14 +46,9 @@ Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使
 
 想按顺序读源码，请从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充了各个产品的运行方式。
 
-连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC2、RC1 和较早的 beta.2 下载包均未包含这些信息；运维者须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
+连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC1 和较早的 beta.2 下载包均未包含这些信息；运维人员须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
 
-桌面版 RC2 和此源码构建中的 App Hub 默认使用带 GitHub 证明的目录，并通过应用契约 1.10.0 支持
-`publisher-github-v1` 发布包。开发者通过[提交 App Hub issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml)
-申请发布；GitHub 发布证明取代单独的开发者签名密钥，仍须由 Hub 管理员批准准入。
-首次获取目录需要网络连接，旧的离线目录不会被转换成 GitHub 证明。自定义本地测试
-目录可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2
-缓存的应用库会拒绝这种降级。beta.2 不支持此发布模式；请用桌面版 RC2 安装这类应用发布包。
+桌面版 RC2 和此源码构建中的 App Hub 默认使用带 GitHub 证明的签名目录，并通过应用契约 1.10.0（RC1 为 1.8.0）支持 `publisher-github-v1` 的 Release。开发者通过 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 申请发布。App Hub 只接受带 GitHub 证明的 Release，因此开发者无需发布者密钥：应用的公开仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。准入仍须由 Hub 管理员批准。首次获取签名目录需要网络连接，旧的离线签名目录不会转换成 GitHub 证明。使用自定义的本地测试签名目录时，可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2 缓存的应用库会拒绝这种降级。beta.2 不支持这种发布方式，这类 Release 请用桌面版 RC2 安装。
 
 ## 整体如何运作
 
@@ -265,7 +260,7 @@ fn ask(){
 }
 ```
 
-在托管了内核的 Shell 中，第一次调用会请用户允许这个应用的 Agent。请把“不可用”当作正常状态处理：设备可能没有内核（iOS）或没有配置提供方，用户也可能拒绝了。这个示例和完整接口见 Design Flow 的 [AI-SERVICES 指南](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#最小调用示例与不可用状态)。
+在托管了内核的 Shell 中，第一次调用会请用户允许这个应用的 Agent。请把“不可用”当作正常状态处理：设备可能没有内核（iOS）或没有配置提供商，用户也可能拒绝了。这个示例和完整接口见 App Flow 的 [AI-SERVICES 指南](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#最小调用示例与不可用状态)。
 
 ### 应用要给 Agent 提供什么
 
@@ -273,7 +268,7 @@ Agent 能做什么，取决于应用交给它什么。脚本应用把这些都�
 
 - **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
-- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。在桌面版 RC1 中，声明了 `requires: ["script-tools-v1"]` 的应用打开期间，标为 `implemented_by: "app"` 的工具由应用自己的 Splash 代码执行；应用关闭时返回 `app_not_running`。较早的 `desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝这类调用。
+- **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。自桌面版 RC1 起，声明了 `requires: ["script-tools-v1"]` 的应用打开期间，标为 `implemented_by: "app"` 的工具由应用自己的 Splash 代码执行；应用关闭时返回 `app_not_running`。较早的 `desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝这类调用。
 - **数据。** Agent 在它所属账户的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账户的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账户的文件夹。
 - **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账户一起清除。
 - **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。
@@ -375,8 +370,7 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 
 Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md)）：桌面端与手机端以目标平台和 feature 区分，而不是各持一份源码副本。若某个 Shell 源文件同时出现在两个 crate 中，CI 会失败。
 
-桌面源码构建新增 Linux X11/XWayland 和 Windows 的[嵌入式网页阅读器](docs/desktop-embedded-browser.zh-CN.md)，
-引擎运行条件与原生验收独立说明；不改变提供方登录和原生审批支持范围。
+从桌面版 0.1.0-rc.1 起，桌面 Shell 在 X11 或 XWayland 下的 Linux 以及 Windows 上也能在应用内显示网页，分别使用系统的 WebKitGTK 和 WebView2 引擎。各平台的运行条件见[桌面嵌入式浏览器](docs/desktop-embedded-browser.zh-CN.md)。这不改变这两个平台对登录和审批的支持范围。
 
 ## 依赖
 
@@ -391,7 +385,7 @@ Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/000
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，作为原生模块托管。 |
 | [OctosCode](https://github.com/octos-org/octoscode-app) | 用户助手的编码客户端，作为原生模块托管，经由编码范围内的内核端口访问内核（ADR 0003 第 9 条）。 |
 
-相关但不参与构建：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（如何构建和发布应用）、[OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) 和 [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH)（其他渲染后端）、[OctoSense 网站](https://github.com/OctoSense-org/octosense-org.github.io)。
+相关但不参与构建：[OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（如何构建和发布应用）、[OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) 和 [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH)（其他渲染后端）、[OctoSense 网站](https://github.com/OctoSense-org/octosense-org.github.io)。
 
 ## 环境准备
 

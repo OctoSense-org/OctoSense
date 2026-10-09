@@ -67,7 +67,7 @@ These have their own users, upstreams or release cycles and are consumed by pin:
 | octos-org/octos | separate project and organisation |
 | OctoScript, OctoScript-Makepad, OctoScript-Android, OctoScript-OH | the language and its runtimes, used beyond OctoSense |
 | OctoSense-App-Hub | the public store: catalog, gate, `hub`, `card-host`, submission issues |
-| OctoScript-App-Design-Flow | the contestant harness; must stay small to clone and link-stable during the contest |
+| OctoSense-App-Flow (formerly OctoScript-App-Design-Flow) | the contestant harness; must stay small to clone and link-stable during the contest |
 | websites (OctoSense-website, OctoScript-website, octosense-org.github.io) | separate deploys |
 | hagency-org/Rinx | separate project, hosted as a module |
 
@@ -97,7 +97,7 @@ System apps (`os.*` ids) are packed into the shell build, admitted by digest and
 
 ### 7. Contestant and link stability
 
-The hackathon is running (preliminary deadline 2026-10-04, finals 2026-10-12). Contestant-facing entry points do not move: App-Design-Flow and App Hub stay where they are. Every moved path keeps a pointer: archived repositories' READMEs and descriptions, redirects via GitHub's rename for OctoSense-Desktop → OctoSense, and updated links in the org profile, READMEs, AGENTS.md and the websites (English and Chinese). No contestant-visible move happens before 2026-10-12 unless the links are verified the same day.
+The hackathon is running (preliminary deadline 2026-10-04, finals 2026-10-12). Contestant-facing entry points do not move: App Flow and App Hub stay where they are. Every moved path keeps a pointer: archived repositories' READMEs and descriptions, redirects via GitHub's rename for OctoSense-Desktop → OctoSense, and updated links in the org profile, READMEs, AGENTS.md and the websites (English and Chinese). No contestant-visible move happens before 2026-10-12 unless the links are verified the same day. *(2026-10-08: the App Flow repository was renamed from OctoScript-App-Design-Flow to OctoSense-App-Flow. GitHub redirects its old URLs; the redirects were verified the same day, and this repository now links to the new name.)*
 
 ## Migration
 
@@ -118,7 +118,7 @@ Estimated effort: phases 0–2 about one week, phase 3 one to two weeks (the sha
 - One PR per product change; no pin-only PRs between the shell, services and apps.
 - The shell exists once; desktop and phone differences are explicit targets and features.
 - App Hub, octos and the runtime are pinned once, so the one-source rules hold by construction.
-- The repository is larger (ROM image pieces, patches, web installer); desktop-only contributors clone more. Contestants are unaffected (they use App-Design-Flow and App Hub).
+- The repository is larger (ROM image pieces, patches, web installer); desktop-only contributors clone more. Contestants are unaffected (they use App Flow and App Hub).
 - CI must be path-filtered to keep desktop changes fast.
 - System apps and their host services are versioned with the shell. App builders still read them as examples, now under `octosense/apps/`.
 
@@ -126,7 +126,7 @@ Estimated effort: phases 0–2 about one week, phase 3 one to two weeks (the sha
 
 - **Status quo (three repositories).** Keeps today's duplication and pin chains.
 - **A separate OctoSense-Core repository** for the kernel service, broker, glue and a shared shell crate, with Desktop and ROM as thin packaging repositories. Removes duplication but keeps pins between four repositories; Desktop would shrink to little more than a `main.rs`.
-- **Also moving App Hub and App-Design-Flow in.** Rejected: they are the public store and the contestant harness, with their own users, issues and release cadence.
+- **Also moving App Hub and App Flow in.** Rejected: they are the public store and the contestant harness, with their own users, issues and release cadence.
 
 ## Risks
 

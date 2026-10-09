@@ -167,7 +167,7 @@ sequenceDiagram
 | OctoSense：共享 shell、`crates/l0-chat`、AI host/broker 适配器 | 发布绑定、共享草稿订阅、编辑器适配、带上下文的聊天、宿主审核 UI 和可信审批路由。不在 desktop/phone 中复制源码。 |
 | Octoscript | 在 L0 目录/检查器中定义并验证新增的 Mail/操作源和事件契约。保留模型文本来源标记和已有组合语法。 |
 | Octoscript-Makepad | 已检查组件和宿主审核边界所需的共享输入/渲染钩子；不负责 Mail 授权。 |
-| OctoScript-App-Design-Flow/a2app 示例 | 基于已实现契约提供可复用区块、生成指导和模型评估案例。 |
+| OctoSense App Flow（原 Design Flow）/a2app 示例 | 基于已实现契约提供可复用区块、生成指导和模型评估案例。 |
 | OctoSense-App-Hub | 只在新增能力声明有需要时修改准入/schema；拒绝不支持的能力版本。 |
 | octos | 保持已有共享内核/peer 模型。本决策无需为每张卡片新增内核，也无需改变 agent 拓扑。 |
 

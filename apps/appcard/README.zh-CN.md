@@ -121,7 +121,4 @@ OpenHarmony 构建的使用方也要像根目录 `Cargo.toml` 那样 patch `nix`
 
 ## 来源
 
-2026-09-27 之前属于 OctoSense-System-Apps 仓库，之后连同历史导入 OctoSense。它从 OctoSense-org/OctoSense-AppCard
-的 `d0a836b8` 迁移而来，该仓库又是从
-[OctoSense-org/OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
-（`app/`，提交 `cbbda4da`）拆分出来的。这些文件的完整历史保留在那里。
+2026-09-27 之前属于 OctoSense-System-Apps 仓库，之后连同历史导入 OctoSense。它从 OctoSense-org/OctoSense-AppCard 的 `d0a836b8` 迁移而来，该仓库又是从 [OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（原 Design Flow；`app/`，commit `cbbda4da`）拆分出来的。这些文件的完整历史保留在那里。

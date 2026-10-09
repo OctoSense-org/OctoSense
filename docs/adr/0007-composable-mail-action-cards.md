@@ -167,7 +167,7 @@ The incoming event runs through Mail's opt-in dispatcher and host-provisioned in
 | OctoSense: shared shell, `crates/l0-chat`, AI host/broker adapters | Publication binding, shared draft subscriptions, editor adapter, contextual chat, host review UI and trusted approval routing. No desktop/phone source copies. |
 | Octoscript | Define and validate any new Mail/action source and event contracts in the L0 catalog/checker. Preserve model-text provenance and existing composition grammar. |
 | Octoscript-Makepad | Shared input/render hooks needed by the checked components and host review boundary; it does not own Mail authorization. |
-| OctoScript-App-Design-Flow / a2app examples | Reusable sections, generation guidance and model evaluation cases using implemented contracts. |
+| OctoSense App Flow (formerly Design Flow) / a2app examples | Reusable sections, generation guidance and model evaluation cases using implemented contracts. |
 | OctoSense-App-Hub | Admission/schema changes only where the new declared capability requires them; reject unsupported capability versions. |
 | octos | Keep the existing shared-kernel/peer model. This decision needs no new kernel per card or new agent topology. |
 

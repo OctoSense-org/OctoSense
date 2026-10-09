@@ -70,13 +70,7 @@ OctoSense-System-Apps 仓库（已归档）。
 [appcard/AGENTS.md](appcard/AGENTS.md)，它们在仓库根目录的
 [AGENTS.md](../AGENTS.md) 基础上补充。
 
-**要开发自己的应用？** 不需要构建或修改本仓库。请从
-[OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始（先读
-OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），把这里的
-应用包当作完整示例来读（`apps/<name>/bundle/main.splash`）。想在自己的应用旁边运行
-其中一个：把 OctoSense 仓库克隆到同一个工作区，然后在 OctoScript-App-Design-Flow 中执行
-`tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`
-（`--no-stamp` 不会改动检出；Mail 需要在 Shell 中运行，见下文）。
+**要开发自己的应用？** 不需要构建或修改本仓库。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：先读 OctoSense App Flow（原 Design Flow）的 `AGENTS.md`，再读它的 `docs/QUICKSTART.md`。把这里的应用包当作完整示例来读（`apps/<name>/bundle/main.splash`）。想在自己的应用旁边运行其中一个：把 OctoSense 仓库克隆到同一个工作区，然后在 App Flow 检出目录中执行 `tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`（`--no-stamp` 不会改动检出目录；Mail 需要在 Shell 中运行，见下文）。
 
 ## 应用一览
 
@@ -278,10 +272,7 @@ bundle 的源地址（Photos：`let assets = "{{assets}}"`，然后
 | 上限 | `HostLimits::system()`：64 MB 存储、128 MB 内存、更大的指令预算，因为应用在打开期间一直存活 | `HostLimits::default()`：按卡片规模设定 |
 | 额外文件 | Shell 可以把目录挂载到 `{{assets}}` | 只有 bundle 内的文件 |
 
-其余完全一致：同样的 isolate、同样的权限检查、同样的网络白名单。如何编写这类
-应用（语言、API、`octo` 命令行）见
-[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
-（`docs/QUICKSTART.md`、`docs/SCRIPT-API.md`）。
+其余完全一致：同样的 isolate、同样的权限检查、同样的网络白名单。如何编写这类应用（语言、API、`octo` 命令行）见 [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（`docs/QUICKSTART.md`、`docs/SCRIPT-API.md`）。
 
 ## 启动器图标规范
 
@@ -626,9 +617,7 @@ crate 的 clippy（这一步会编译整个应用）、AppCard 的 transport 与
 
 ## 修改应用
 
-1. 编辑 `apps/<name>/bundle/`。只使用 OctoScript-App-Design-Flow 的
-   `docs/SCRIPT-API.md` 中有文档的 API，或本仓库其他应用已经在用的 API；
-   用其他东西之前先查运行时源码。
+1. 编辑 `apps/<name>/bundle/`。只使用 App Flow 的 `docs/SCRIPT-API.md` 中有文档的 API，或本仓库其他应用已经在用的 API；用其他东西之前先查运行时源码。
 2. 只申请应用实际用到的权限。新的网络主机写进 `network.hosts`；新的权限必须
    已存在于 App Hub 的 `KNOWN_CAPABILITIES` 中。
 3. 绝不添加密码或验证码输入框。应用需要密钥时，由宿主服务及其面板处理。
@@ -657,8 +646,8 @@ Shell 的 `system-apps.json` 中加入它。
 | 仓库 | 作用 |
 | --- | --- |
 | [OctoSense](../README.zh-CN.md)（本仓库） | 内置这些应用的 Shell：[`desktop/`](../desktop/README.zh-CN.md) 和 [`phone/`](../phone/README.zh-CN.md) 中的 Home（独立启动器，或由 [`rom/`](../rom/README.zh-CN.md) 镜像预装）；`crates/` 中的 Shell 服务 |
-| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 目录、准入检查（`hub stamp`、`check`、`scan`、`sign-manifest`、`publish`）、`card-host`、Card runner 与宿主服务注册表，以及每个 Shell 都链接的 `octosense-app-hub-app` |
-| [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何设计、构建、检查和发布应用 |
+| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、准入检查（`hub stamp`、`check`、`scan`、`publisher-verify`）、`card-host`、Card runner 与宿主服务注册表，以及每个 Shell 都链接的 `octosense-app-hub-app` |
+| [OctoSense-App-Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) | 如何设计、构建、检查和发布应用 |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript)、[OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad)、[makepad](https://github.com/OctoSense-org/makepad) | 语言与运行时 |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，原生模块；通过 `crates/app-peers` 访问助手 |
 | [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/kernel` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（统一使用根 `Cargo.toml` 选定的版本） |
@@ -671,10 +660,6 @@ Shell 的 `system-apps.json` 中加入它。
 
 ## 历史与许可
 
-本目录在 2026-09-27 之前是 OctoSense-System-Apps 仓库，已连同历史导入这里。
-这些 bundle 和 Mail 服务最初写在 OctoSense-mobile（已归档）和
-OctoScript-App-Design-Flow（原名 Octoscript-AppCard）中，历史记录保留在那里。
-AppCard 来自 OctoSense-org/OctoSense-AppCard（`d0a836b8`），它是从
-OctoScript-App-Design-Flow 的 `app/` 在 `cbbda4da` 拆分出来的。
+本目录在 2026-09-27 之前是 OctoSense-System-Apps 仓库，已连同历史导入这里。这些 bundle 和 Mail 服务最初写在 OctoSense-mobile（已归档）和 OctoSense-App-Flow（最初名为 Octoscript-AppCard，后来改名 OctoScript-App-Design-Flow）中，历史记录保留在那里。AppCard 来自 OctoSense-org/OctoSense-AppCard（`d0a836b8`），它是在 commit `cbbda4da` 时从 App Flow 的 `app/` 拆分出来的。
 
 Apache-2.0（[LICENSE](LICENSE)）。第三方组件见 [NOTICE](NOTICE)。

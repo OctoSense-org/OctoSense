@@ -2,13 +2,9 @@
 
 [English](README.md) | 简体中文
 
-使用你自己的邮箱和模型账号。新邮件触发 Mail Agent，由模型判断是否生成卡片。
-你可以在卡片内聊天、修改已保存的回复、审阅，并选择是否发送。明确在 Chat 中要求
-预约后，Mail 会调用 Calendar 的工具，保存本地事件并发布 Calendar 自己的卡片。
-卡片内的 **Open Calendar** 打开真实 Calendar 应用中的同一条事件。
+使用你自己的邮箱和模型账户。新邮件触发 Mail Agent，由模型判断是否生成卡片。你可以在卡片内聊天、修改已保存的回复、审阅，并选择是否发送。明确在 Chat 中要求预约后，Mail 会调用 Calendar 的工具，保存本地事件并发布 Calendar 自己的卡片。卡片内的 **Open Calendar** 打开真实 Calendar 应用中的同一条事件。
 
-这是系统应用的真实流程。Design Flow 的黑客松示例使用虚构的本地发件箱和日历，
-不能代替 Gmail 收信测试。
+这是系统应用的真实流程。OctoSense App Flow（原 Design Flow）中的黑客松示例使用虚构的本地发件箱和日历，不会重现 Gmail 的真实投递。
 
 ## 1. 获取完整源码
 
@@ -34,10 +30,7 @@ python3 tools/setup.py --check --cargo
 python3 tools/native_apps.py --check
 ```
 
-已有依赖仓库时，先按 [Set up](../../../README.md#set-up) 配置 source hub。
-setup 会准备固定版本的工作树并应用已提交补丁，不依赖开发者未提交的依赖修改。
-Cargo 会取得 App Hub 和内核版本；真实演示不需要额外检出旧 AppCard、
-OctoSense-mobile 或 Design Flow 仓库。
+已有依赖仓库时，先按[环境准备](../../../README.zh-CN.md#环境准备)配置 source hub。环境准备脚本会创建固定版本的工作树并打上仓库跟踪的补丁，不依赖任何开发者本地未 commit 的依赖改动。Cargo 会取得 App Hub 和内核版本；真实演示不需要额外检出旧 AppCard、OctoSense-mobile 或 App Flow 仓库。
 
 ## 2. 构建包含内核的 Android 安装包
 
@@ -76,29 +69,27 @@ PY
   -n dev.makepad.octosense.mailcaldemo/.MakepadApp
 ```
 
-这些可移植命令按仓库脚本整理；**尚未用这个新包名和全新账号重跑手机全流程**。
+这些可移植命令按仓库脚本整理；**尚未用这个新包名和全新账户重跑手机全流程**。
 已有真实测试使用 OnePlus 6 的正常 Home，源码和 APK 哈希见
 [日期记录](../../testing/mail-medical-calendar-2026-10-06.zh-CN.md)。不同签名会改变 APK 哈希。
 
 ## 3. 在同一个安装包中配置
 
-1. 在 **AI providers** 配置自己的模型账号。医疗预约演示使用 DeepSeek
-   `deepseek-v4-flash`。必须具备真实模型服务；独立 `card-host` 不能代替 Agent。
-   MiniMax 验证过较早的邮件/卡片流程，但最新医疗邮件到 Calendar 的流程只验证了 DeepSeek。
+1. 在 **AI providers** 配置自己的模型账户。医疗预约演示使用 DeepSeek `deepseek-v4-flash`。必须具备真实模型服务；独立 `card-host` 不能代替 Agent。MiniMax 验证过较早的邮件/卡片流程，但最新医疗邮件到 Calendar 的流程只验证了 DeepSeek。
 2. 打开 **Mail**，在宿主登录界面输入自己的 IMAP/SMTP 凭据；Gmail 表单支持应用密码。
    不要把密码放到聊天、脚本、Git 或生成的输入中。关闭演示邮箱模式。
 3. 在提示时允许 Mail Agent。打开 **Assistant**，要求用下方准确的
    `agents.provision` 参数开启自动处理。配置策略不能绕过用户授权。
 4. 允许此安装包及 Mail 通知频道的 Android 通知，并保持联网。首次测试保持 OctoSense 打开。
 
-**账号、授权、策略和 Glance 数据均按安装包隔离。** 在测试 APK 登录后，应打开
+**账户、授权、策略和 Glance 数据均按安装包隔离。** 在测试 APK 登录后，应打开
 该 APK 的 Home/Glance 查看卡片；手机默认桌面不会显示另一个包的数据。要测试系统
 桌面右滑，可自行在 Android 设置中将测试包选为 Home，无需刷 ROM。
 正常 `dev.makepad.octosense` 包在完成自身配置后也支持此流程。
 
 ## 4. 配置重要邮件筛选并等待首次同步
 
-选择未来日期，生成五个虚构输入文件；命令不会发送邮件或读取账号：
+选择未来日期，生成五个虚构输入文件；命令不会发送邮件或读取账户：
 
 ```sh
 python3 tools/mail-calendar-demo.py --date 2026-11-12 \
@@ -118,11 +109,11 @@ python3 tools/mail-calendar-demo.py --date 2026-11-12 \
 
 ## 5. 发送新邮件并检验模型判断
 
-使用自己的第二个邮箱或 AgentMail 发件账号，把 `appointment.txt` 中的主题和正文
+使用自己的第二个邮箱或 AgentMail 发件账户，把 `appointment.txt` 中的主题和正文
 发送到 OctoSense 内已连接的邮箱。文件不包含收件地址，请私下填写自己的地址。
-AgentMail 只是可选的真实发件服务，不是运行时依赖；选择它时使用自己的账号和密钥。
+AgentMail 只是可选的真实发件服务，不是运行时依赖；选择它时使用自己的账户和密钥。
 另发 `quiet-newsletter.txt` 作为不应打扰的对照。保留每次唯一的演示编号，并使用
-自己控制、可以回复的发件账号。
+自己控制、可以回复的发件账户。
 
 不要要求 Assistant 为这些邮件造卡片。前台轮询为 30 秒，还需要模型处理及排队时间。
 Mail 应读取预约邮件、保存草稿并生成相关卡片及通知；普通资讯应被安静跳过。
@@ -159,7 +150,7 @@ Android 提醒。重启应用后检查事件和草稿仍在。Glance 卡片过�
 | 现象 | 检查 |
 | --- | --- |
 | Mail 能看到邮件但没卡片 | 是否首次基线、已授权、已开启策略；队列、模型错误或主动跳过 |
-| 测试包内有卡片但正常 Home 没有 | 是否处于不同安装包、账号或 Glance 数据库 |
+| 测试包内有卡片但正常 Home 没有 | 是否处于不同安装包、账户或 Glance 数据库 |
 | 有卡片但没有 Android 通知 | `notify`、通知权限/频道、安静重试、过期 |
 | Chat 说已修改但 Email 没变 | 实际草稿版本和 `mail.suggest_reply`；`applied:false` 不算成功 |
 | Calendar 权限错误 | App Hub 固定版本、Mail 跨应用授权、工具注册；不要任意扩大权限 |
@@ -185,8 +176,8 @@ cargo test --locked --features mobile-apps \
 
 2026-10-06 再次检查：**1,002 项测试通过**，两个可选 Mail 测试未运行；依赖图及
 版本、原生应用目录、虚构输入生成、变更 Markdown 链接均通过，Android 内核构建
-计划已检查。本次文档变更未重新构建安装 APK、登录全新账号或重跑真实模型/SMTP。
+计划已检查。本次文档变更未重新构建安装 APK、登录全新账户或重跑真实模型/SMTP。
 
-公开报告只保留脱敏统计、通过/失败结论和源码哈希。不要提交账号/模型配置、真实
+公开报告只保留脱敏统计、通过/失败结论和源码哈希。不要提交账户/模型配置、真实
 邮件/草稿/聊天、原始状态、日志、截图、设备编号或签名密钥。公开输入使用本工具
 生成的虚构样例，其中没有邮箱地址或凭据。

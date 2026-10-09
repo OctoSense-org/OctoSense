@@ -16,8 +16,8 @@ cargo build --locked --release -p octosense-shell \
   --example connected-app-host --example connected-install \
   --example connected-inbox-e2e
 python3 tools/connected-e2e/notes.py \
-  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
-python3 ../OctoScript-App-Design-Flow/examples/connected-apps/google-calendar/scripts/verify-installed.py \
+  --bundle ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle
+python3 ../OctoSense-App-Flow/examples/connected-apps/google-calendar/scripts/verify-installed.py \
   --host target/release/examples/connected-app-host
 ```
 
@@ -49,7 +49,7 @@ A manual isolated launch uses:
 ```sh
 target/release/examples/connected-install \
   --keep-profile=/absolute/new-empty-test-root/apps \
-  ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
+  ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle
 MAKEPAD_HIDE_WINDOWS=1 target/release/examples/connected-app-host \
   --installed-app=org.octosense.samples.githubnotes \
   --app-data=/absolute/new-empty-test-root/apps --provider-fixture=github --remote
@@ -108,7 +108,7 @@ Do not export raw shell logs or model profiles as public evidence.
 
 ```sh
 python3 tools/connected-e2e/notes_soak.py \
-  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle \
+  --bundle ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle \
   --cycles 36 --duration-seconds 600
 ```
 
@@ -133,9 +133,9 @@ The [2026-10-06 recorded Notes soak](evidence/notes-soak-20261006/README.md)
 passed 36 cycles over ten minutes and a separate 120-cycle burst. It records
 exact draft retention, native pixel review, timing boundaries and memory growth.
 
-Calendar and Inbox have their own reusable soaks and evidence in App Design
-Flow: [Calendar](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)
-and [Inbox](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/examples/connected-apps/inbox/README.md).
+Calendar and Inbox have their own reusable soaks and evidence in OctoSense App
+Flow (formerly Design Flow): [Calendar](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/google-calendar/ACCEPTANCE.md)
+and [Inbox](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/examples/connected-apps/inbox/README.md).
 They exercise different hosts: Calendar's provider host and Inbox's full Shell
 with actual DeepSeek turns. Do not combine their latency or memory figures into
 a single benchmark. The latest [three-bundle signed installation check](evidence/signed-install-after-soak.json)
@@ -151,7 +151,7 @@ icons call repository settings and exact host review. All provider gates remain.
 
 ```sh
 python3 tools/connected-e2e/notes_recovery.py \
-  --bundle ../OctoScript-App-Design-Flow/examples/connected-apps/github-notes/bundle
+  --bundle ../OctoSense-App-Flow/examples/connected-apps/github-notes/bundle
 ```
 
 This native test seeds a fictional saved draft exceeding the Rinx parser limit,

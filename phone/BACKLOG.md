@@ -300,6 +300,11 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   adopt the revision through the normal sync workflow, and verify a News
   headline reaches the system browser on all three.
 
+  Update on 2026-10-08: "no web view there" no longer holds for Linux under
+  X11 or XWayland. Since desktop 0.1.0-rc.1, `WebReader` embeds WebKitGTK
+  there and WebView2 on Windows; see NEWS-04. Native Wayland still has no
+  embedded web view.
+
 - [x] **NEWS-02 — P3: Edit user feeds in the app.**
 
   Done in phase 3 (2026-09-16): the Following page lists every source with a
@@ -345,6 +350,13 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   Acceptance: a Linux web view in the framework fork, `has_webview` true for
   it in `OpenPolicy::for_platform`, and a headline opening in the reader on a
   Linux desktop.
+
+  Update on 2026-10-08: desktop 0.1.0-rc.1 gives Linux a reader. Under X11 or
+  XWayland, `WebReader` embeds WebKitGTK, and on Windows it embeds WebView2
+  ([Desktop embedded browser](../docs/desktop-embedded-browser.md)); native
+  Wayland is still unsupported. News is now a script app whose reader is
+  `WebReader`, and the `OpenPolicy` code named above no longer exists. A News
+  headline opening in the reader on a Linux desktop is **unverified**.
 
 - [x] **NEWS-05 — P2: Check the web view plumbing on an Android device, and on iOS.**
 
@@ -696,8 +708,8 @@ Found in the review of the second sync from mobile on 2026-09-25
 - [x] **CAL-01 — P2: Host the Calendar module from mobile PR #11.**
 
   Everything else in PR #11 (`feat/calendar-module`) is present; Calendar
-  module hosting is not. Its source is in OctoScript-App-Design-Flow
-  (formerly Octoscript-AppCard) at [`apps/calendar/native`](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/cbbda4da0a9d0fbf13497335dd3342b71f35e71f/apps/calendar/native). Planned separately (Task 14 of
+  module hosting is not. Its source is in OctoSense App Flow (formerly Design
+  Flow, and Octoscript-AppCard before that) at [`apps/calendar/native`](https://github.com/OctoSense-org/OctoSense-App-Flow/tree/cbbda4da0a9d0fbf13497335dd3342b71f35e71f/apps/calendar/native). Planned separately (Task 14 of
   `docs/plans/2026-09-25-sync-mobile-into-home.md`).
 
   Closed on 2026-09-30 as obsolete: first-party apps ship as contained

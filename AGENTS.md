@@ -2,7 +2,7 @@
 
 > **Any coding agent, or none.** These instructions work the same for Codex, Claude Code, Cursor, Gemini CLI, GitHub Copilot or a person at a terminal: every step is a shell command or a file edit, and nothing here needs a particular agent, model or vendor. `AGENTS.md` is the one source of truth; `CLAUDE.md` and `GEMINI.md` only import it for agents that look for those names. Directories with their own rules (`apps/AGENTS.md`, `apps/appcard/AGENTS.md`) add to these.
 
-**Building a new OctoSense app?** You are in the wrong repository. Follow OctoScript-App-Design-Flow's [AGENTS.md](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/AGENTS.md) and publish through [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). Read the system apps here (`apps/<name>/bundle/`) only as examples.
+**Building a new OctoSense app?** You are in the wrong repository. Follow [AGENTS.md](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/AGENTS.md) in OctoSense App Flow (formerly Design Flow), and publish through [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). Read the system apps here (`apps/<name>/bundle/`) only as examples.
 
 ## Where things live
 
