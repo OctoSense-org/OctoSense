@@ -27,6 +27,8 @@ Home 应用本身（也可作为普通 Home 应用安装在任意 Android 手机
 
 ## 前提条件
 
+当前 Home 和 System Bridge APK 要求 Android 13（API 33）或更新版本，与默认打包内核的 API 33 编译目标一致。构建脚本会验证每个已签名 APK 的最低 SDK，并在 `build.json` 中记录最低/目标 SDK；使用自定义内核或不打包内核都不会降低此安装要求。详见 [Home 构建契约（英文）](docs/home-build.md#android-builds)。设备实测是独立于该声明下限的验收步骤。
+
 - Home APK 所需的一切（[phone/README.zh-CN.md](../phone/README.zh-CN.md#构建与运行)）：已准备好的框架源码（在仓库根目录运行 `python3 tools/setup.py`）、固定版本的 `cargo-makepad`、Android SDK/NDK、完整的 JDK 17+ 和 Gradle 8.11.1。
 - 面向 `enchilada` 的 LineageOS 22.2 源码树、OnePlus 厂商二进制文件、内核源码和 ROM 签名密钥，均在本仓库之外。
 - 用于系统构建的 Linux 构建主机（Ubuntu 24.04 chroot）。
