@@ -119,7 +119,7 @@
       "bin": null,
       "default_features": true,
       "crate_features": [],
-      "implies": ["dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-photo-service", "dep:octosense-calendar-service", "octosense-ai-host/llm", "dep:octosense-word-service", "dep:octosense-deck-service", "dep:octosense-cad-service", "dep:octosense-light-service", "dep:octosense-sound-service", "dep:octosense-design-service", "dep:octosense-film-service", "dep:octosense-effect-service", "dep:octosense-vector-service"],
+      "implies": ["dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-photo-service", "dep:octosense-calendar-service", "octosense-ai-host/llm", "dep:octosense-word-service", "dep:octosense-deck-service", "dep:octosense-cad-service", "dep:octosense-light-service", "dep:octosense-sound-service", "dep:octosense-design-service", "dep:octosense-film-service", "dep:octosense-effect-service", "dep:octosense-vector-service", "dep:octosense-pdf-service"],
       "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
       "shells": { "desktop": "default", "phone": "default" },
       "native_mobile": "always",

@@ -224,6 +224,7 @@ mail/host-service/           octosense-mail-service，`mail` 宿主服务（Rust
 mail/docs/                   邮件的计划（邮件操作卡片）
 calendar/host-service/       octosense-calendar-service，`calendar` 宿主服务；resources/event.card、agenda.card
 news/host-service/           octosense-news-service，`news` 宿主服务（新闻的数据服务）
+pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013；尚无应用包）
 <name>/bundle/tools.json     新闻、邮件、日历、相册、地图、YouTube、相机的 Agent 工具
 ../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card
 ai-providers/                `llm` 宿主服务（host-service/）和 octosense-llm-config（config/：
