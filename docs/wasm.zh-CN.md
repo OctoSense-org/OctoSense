@@ -3,15 +3,15 @@
 [English](wasm.md) | 简体中文
 
 OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己的代码而设计：应用自带的
-函数，标准构建在 macOS、Linux 和 Android 上运行它们，属于有限支持。`photo` 服务背后的
-photocraft 插件已经关闭：`photo.run` 拒绝所有插件命令。另外两处是 makepad 的内部实现，以及
+函数，标准构建在 macOS、Linux 和 Android 上运行它们，属于有限支持。两个引擎的插件已经关闭：
+`photo` 背后的 photocraft 和 `vector` 背后的 vectorcraft，这两个服务都拒绝所有插件命令。另外两处是 makepad 的内部实现，以及
 一个无法编译的浏览器构建。本页逐一说明：运行的是谁的模块、它能接触什么、哪些构建包含它、
 如何检查过。内容对应 #400 之后的 `main`（2026 年 10 月 8 日）。
 
 | 位置 | 谁的模块 | 运行时 | 构建 | 状态 |
 | --- | --- | --- | --- | --- |
 | 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 应用自己的应用包，`fns/*.wasm`，需要 `wasm` 能力 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`） | macOS、Linux 和 Android 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`）；Windows、iOS 和 OpenHarmony 不包含 | 已接受，有限支持。测试在 macOS 和 Linux 上通过；一部 OnePlus 6 通过了手机验收。尚无发布版本包含它 |
-| photocraft 插件：`photo` 服务（[ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | 无：`photo.run` 拒绝所有 `plugin.*` 命令（#398） | wasmi 2，解释器 | 链接进所有带 App Hub 的构建 | 已关闭：任何调用方都不能安装或运行插件 |
+| 引擎插件：`photo` 背后的 photocraft、`vector` 背后的 vectorcraft（[ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | 无：两个服务都拒绝所有 `plugin.*` 命令（#398、#405） | wasmi 2，解释器 | 链接进所有带 App Hub 的构建 | 已关闭：任何调用方都不能安装或运行插件 |
 | Splash 的数学编译器（makepad） | makepad 根据 Splash 代码生成 | makepad-stitch，解释器 | 链接进所有构建 | 未使用：OctoSense 没有链接任何调用它的代码 |
 | 浏览器中的外壳 | 外壳本身，为 `wasm32-unknown-unknown` 构建 | 浏览器 | 无 | 无法构建 |
 
@@ -140,12 +140,9 @@ MAKEPAD_HIDE_WINDOWS=1 target/debug/octosense --remote=47631 --test-action launc
 以错误结束，外壳一直在运行：无限循环在 2,039 毫秒后因截止时间结束，无限分配在 340 毫秒后
 撞到内存上限，panic 和无限递归各在 37 毫秒后结束（均为脚本测得的时间）。
 
-看界面时需要知道两点：
-
-- Wasm Lab 打开时同时发出五个请求，而服务为每个应用最多排队四个请求，所以 Markdown 卡片
-  会显示 "wasm app queue is full; try again later"。
-- `wasm.functions` 统计的是应用的工作线程启动以来的调用。工作线程空闲五秒后退出，下一个
-  工作线程重新开始计数。
+Wasm Lab 打开时先发出四个调用，等它们都有了答复再请求 `wasm.functions`：服务为每个应用
+最多排队四个请求。`wasm.functions` 统计的是应用的工作线程启动以来的调用；工作线程空闲五秒
+后退出，下一个工作线程重新开始计数。
 
 已提交的模块可以逐字节重建：使用 rustc 1.97.1 时，`apps/wasmlab/guest/build.sh` 写出
 完全相同的 `bundle/fns/wasmlab.wasm`（SHA-256 `f4a69c32…`）。首次需要安装目标：
@@ -188,18 +185,24 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
 - 还没有任何发布版本包含这个服务：#400 之后从 `main` 构建的第一个桌面版和 Home 发布版
   将会包含。
 - Windows、iOS（Pulley）和 OpenHarmony。
-- Wasm Lab 打开时的请求会超出每个应用的队列（见上文）。
 - 应用之间的 CPU 公平调度，以及磁盘缓存的上限：目前没有任何东西会清理它。
 - 在安装时（商店应用）或构建时（系统应用）编译，省掉手机上的第一次编译。
 - 用类型化接口（组件模型和 WIT）代替 JSON。`octo.log` 以外的任何导入，例如时钟或随机数，
   都将是新的能力。
 
-## photocraft 插件：`photo` 服务
+## 引擎插件：`photo` 和 `vector` 服务
 
-`photo` 宿主服务（`apps/photo/host-service`，ADR 0013）运行 photocraft，一个固定在
-ymote/photocraft 某个版本的光栅引擎。photocraft 运行用 WebAssembly 写的滤镜插件，运行在
-纯 Rust 解释器 wasmi 中，有自己的限制：没有导入，每个模块 32 MiB，每个实例 512 MiB 内存，
-每次调用 5,000 万条指令，每次运行 60 秒。
+ADR 0013 的两个引擎各自托管 WebAssembly 插件，运行在纯 Rust 解释器 wasmi 中，插件注册表
+属于进程而不属于某次调用：
+
+- photocraft，`photo` 服务（`apps/photo/host-service`）背后的光栅引擎：滤镜插件，没有导入，
+  每个模块 32 MiB，每个实例 512 MiB 内存，每次调用 5,000 万条指令，每次运行 60 秒。
+- vectorcraft，`vector` 服务（`apps/vector/host-service`）背后的矢量引擎：对象滤镜和实时
+  效果，没有导入，有指令预算和内存上限，每次运行使用全新实例。
+
+`effect` 背后的 effectcraft 也有 WebAssembly 插件，但位于一个可选特性之后；OctoSense 没有
+链接它的插件 crate。vectorcraft 的桌面 UI crate 还有第二个安装命令 `ui.installPlugin`；
+OctoSense 也没有链接这个 crate。
 
 **自 #398 起关闭。** `photo.run` 在引擎看到命令之前就拒绝所有 `plugin.*` 命令，
 `photo.commands` 也不再列出它们。在 #398 之前，调用方可以用 base64 `data` 安装插件；插件
@@ -209,7 +212,15 @@ ymote/photocraft 某个版本的光栅引擎。photocraft 运行用 WebAssembly 
 下一次调用列出了它，另一个系统应用 `os.notes` 在文档上运行了它。有了 #398，这些调用都被拒绝：
 ``photo.run: `plugin.install` is not available through the photo service``。
 
-引擎仍然链接 wasmi，服务也仍然只回答系统应用（`os.*`）。
+**`vector` 中由 #405 关闭。** `vector.run` 原先拒绝文件、文档、`app.*` 命令组以及类似路径的
+参数，但没有拒绝 `plugin.*`，而 vectorcraft 的引擎可以用 base64 `dataBase64` 安装插件。同一个
+临时程序在 #405 之前的 `main` 上验证了这一点：`os.notes` 安装了 vectorcraft 的示例插件，下一次
+调用列出了它，另一个系统应用 `os.maps` 也看得到它，而 `vector.commands` 还提供
+`plugin.install`。现在 `vector.run` 在引擎看到命令之前就拒绝所有 `plugin.*` id
+（``vector.run: `plugin.install` is not available through the vector service``），
+`vector.commands` 也不再列出它们。
+
+两个引擎仍然链接 wasmi，两个服务也仍然只回答系统应用（`os.*`）。
 
 **UI 线程。** `photo` 服务和其他引擎服务一样，在请求之内完成工作。App Hub 在 UI 线程上
 分派脚本的 `host.request`，并在持有服务注册表锁的同时调用服务（`services::dispatch`）。所以
