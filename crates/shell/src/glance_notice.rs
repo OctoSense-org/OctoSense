@@ -244,12 +244,14 @@ mod tests {
         assert!(ask("os.maps", "photos.notify", json!({"title": "x", "body": "y"})).unwrap_err().contains("serves os.photos only"));
         assert!(ask("os.photos", "photos.list", json!({})).unwrap_err().contains("no method"));
         // Photos' namespace is its own service now (ADR 0013): `photos.info`
-        // reaches the photo engine, which answers for the named file, not
-        // a notice service's "no method".
+        // reaches the photos service, not a notice service's "no method".
+        // That service answers first for the folder: this call names none the
+        // host handed out, so it is refused before the engine opens anything.
         #[cfg(feature = "app-hub")]
         {
-            let missing = ask("os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
-            assert!(missing.contains("photo.info"), "{missing}");
+            let refused = ask("os.photos", "photos.info", json!({"path": "nothing.png"})).unwrap_err();
+            assert!(!refused.contains("no method"), "{refused}");
+            assert!(refused.starts_with("photos") || refused.contains("photo.info"), "{refused}");
         }
         // Its own app reaches the notice (a blank title is refused there,
         // before anything is published).
