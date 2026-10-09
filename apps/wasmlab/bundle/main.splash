@@ -67,6 +67,8 @@ let md_head = ""
 let rogue_note = ""
 let runtime = nil
 let runtime_note = ""
+// Start-up reads the runtime only after its first four calls have answered.
+let booting = true
 
 // Milliseconds to one decimal.
 fn ms(t0){ "" + floor((time_now() - t0) * 10000.0 + 0.5) / 10 + " ms" }
@@ -117,6 +119,9 @@ fn render_md(copies){
             md_head = r.data.text.split("\n")[0]
         } else { md_note = r.error md_head = "" }
         ui.md_view.render()
+        // The service queues at most four requests per app: the runtime card
+        // asks once the start-up calls have answered, and then shows them.
+        if booting { booting = false load_runtime() }
     })
 }
 
@@ -162,7 +167,6 @@ fn stats_line(name){
 }
 
 fn boot(){
-    load_runtime()
     rank("cal")
     find_slots(30)
     compare()
