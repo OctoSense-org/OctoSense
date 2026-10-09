@@ -571,7 +571,7 @@ A tag after the id marks a command that reaches past the open document (safety.j
 - `layer.smartFilter.disableFilterMask` Disable Filter Mask: {"layer":id?,"enabled":bool? (default: toggle)}
 - `layer.smartFilter.disableSmartFilters` Disable Smart Filters: {"layer":id?,"enabled":bool? (default: toggle)}
 - `layer.smartFilter.move` Move Smart Filter: {"layer":id?,"index":u32?,"to":u32}
-- `layer.smartFilter.setParams` Edit Smart Filter: {"layer":id?,"index":u32?,"params":{…} (merged)}
+- `layer.smartFilter.setParams` [file] Edit Smart Filter: {"layer":id?,"index":u32?,"params":{…} (merged)}
 - `layer.smartFilter.setVisible` Show/Hide Smart Filter: {"layer":id?,"index":u32?,"visible":bool? (default: toggle)}
 - `layer.smartObjects.convertToEmbedded` [file] Convert to Embedded: {"layer":id?}
 - `layer.smartObjects.convertToLayers` [file] Convert to Layers: {"layer":id?} (contents unpacked at the placement: one layer, or a group named after the smart object; smart filters are discarded)

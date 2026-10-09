@@ -30,6 +30,17 @@
 //! - `batch {paths, out_dir, format?, params?, auto?, long_edge?,
 //!   quality?}` → `{files: […]}` — the same develop applied to each file,
 //!   written as `<out_dir>/<stem>.<format>`
+//! - `run {path, cmds: [{id, params?}], out?, quality?, long_edge?}` →
+//!   `{results: [{id, result}], out, width?, height?, sidecars?}` — the
+//!   command door (ADR 0013, #418): import the original at `path` as
+//!   `develop` does, run commands of lightcraft's registry on it in order,
+//!   then write the active photo to `out` as `develop` writes it (`out`'s
+//!   extension picks the format; `quality`, `long_edge` as `develop`'s).
+//!   Only what the door's allowlist admits runs ([`door`]): the commands the
+//!   reviewed classification (`skill/safety.json`) classes `safe`; every
+//!   other id is refused before any command runs. `develop.set {values:
+//!   {control: number}}` sets develop controls, `develop.auto` runs
+//!   auto-tone and `develop.controls` lists the controls with their ranges.
 //!
 //! `params` is a `{control: number}` map of the engine's own control ids
 //! (`light.exposure`, `color.vibrance`, `wb.temp`…; `light.controls`
@@ -41,11 +52,13 @@
 pub mod skill;
 
 use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 
 use lightcraft_engine::catalog::PhotoId;
 use lightcraft_engine::export::{export_photo, ExportFormat, ExportOptions};
 use lightcraft_engine::Session;
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::door::{Door, Reviewed};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
@@ -55,6 +68,40 @@ const MAX_BATCH_FILES: usize = 16;
 const MAX_INPUT_BYTES: u64 = 256 << 20;
 /// The longest output edge `long_edge` may ask for (the engine's own cap).
 const MAX_LONG_EDGE: u64 = 16_384;
+
+/// What the light engine's reviewer settled for the door beyond the classes:
+/// nothing, read in the engine at the pinned revision.
+///
+/// - No reviewed read: the call's only original is its `path`, which the
+///   service contains and imports itself, as `develop` does.
+/// - No setter: no `safe` command sets an app-wide variable. `develop.set`
+///   takes develop-control ids as keys, the active photo's own settings; the
+///   app-wide switches (`app.gpu`, `app.memoryBudget`) and the library
+///   preferences that change later disk behaviour (`library.xmpPreferences`
+///   and `library.toggleAutoWriteXmp`, which make every catalog change write
+///   an XMP sidecar beside its original) are `host`.
+/// - No inner id: the `safe` commands that run another command use fixed ids
+///   (`crop.autoStraighten` runs `crop.straighten`; `keyword.toggleFromSet`,
+///   `metadata.applyPreset` and `photo.pasteMetadata` run `photo.setMeta`);
+///   the presets they name (`preset.apply`, `curve.applyPreset`,
+///   `filter.applyPreset`) are develop settings, curve points or a library
+///   filter held in the session, and a profile id resolves in memory (the
+///   LUT registry is filled only by `profile.import`, a `file` command).
+///
+/// In the in-memory `with_fs` session no `safe` command writes a file: the
+/// catalog journal, `prefs.json` and the thumbnail disk cache exist only for
+/// a library on disk, and XMP auto-write is off unless a refused `host`
+/// command turns it on. What `safe` commands read are the catalogued photos'
+/// originals, only the one the service imported (a virtual copy shares it).
+static REVIEWED: Reviewed = Reviewed::NONE;
+
+/// The command door's gate: lightcraft's reviewed classification
+/// (`skill/safety.json`, generated and drift-checked by `tests/skill.rs`)
+/// and [`REVIEWED`].
+pub fn door() -> Result<&'static Door, String> {
+    static DOOR: OnceLock<Result<Door, String>> = OnceLock::new();
+    DOOR.get_or_init(|| Door::new("light", include_str!("../skill/safety.json"), &REVIEWED)).as_ref().map_err(Clone::clone)
+}
 
 /// Which apps may call the service: system apps, as News and Sheets.
 fn may_call(app_id: &str) -> bool {
@@ -76,10 +123,12 @@ pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
     AREAS.set(resolver);
 }
 
-/// The `light.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
-/// shape: the shell declares them for the virtual owner `os.light` and grants
-/// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
-/// `crates/shell/src/system_chat/grants.rs` `ENGINE_TOOLS`).
+/// The `light.*` agent tools (ADR 0013), in App Hub's `tools.json` shape:
+/// `light.info` and the command door `light.run`. The shell declares them for
+/// the virtual owner `os.light` and grants them to the system agent
+/// (`crates/shell/src/host_tools/engines.rs`,
+/// `crates/shell/src/system_chat/grants.rs` `ENGINE_TOOLS`); the other
+/// methods (`controls`, `develop`, `batch`) stay for apps' own requests.
 pub const TOOLS_JSON: &str = include_str!("../tools.json");
 
 impl HostService for LightService {
@@ -112,6 +161,7 @@ fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
         "controls" => controls(),
         "develop" => develop(args, area),
         "batch" => batch(args, area),
+        "run" => run(args, area),
         other => Err(format!("light.{other} is not a method of the light service")),
     }
 }
@@ -342,6 +392,49 @@ fn batch(args: &Json, area: &Area) -> Result<Json, String> {
         files.push(one);
     }
     Ok(json!({"files": files}))
+}
+
+/// The command door: every command admitted by [`door`] before the engine
+/// runs any (a refused one refuses the whole call, with nothing read or
+/// written), then the original at `path` imported into a fresh session as
+/// `develop` imports it, each command run on it in order, and the active
+/// photo written to `out` as `develop` writes it ([`export_one`]: `quality`,
+/// `long_edge`, never over an original, under the area's rules).
+fn run(args: &Json, area: &Area) -> Result<Json, String> {
+    let dir = &area.root;
+    let rel = arg_str(args, "path", "run")?;
+    // Admit every command first: one refused id refuses the whole call, with
+    // nothing imported and nothing written.
+    let admitted = door()?.admit_all(&args["cmds"], area)?;
+    let input = original(dir, rel, "run")?;
+    // A name the call may not write, or a format the door does not write,
+    // is refused before the engine works. The door writes rendered files and
+    // DNGs, never the engine's `original` export, whose XMP sidecar is named
+    // after `out` and could land beside an original as its sidecar.
+    let out = match args["out"].as_str().filter(|o| !o.is_empty()) {
+        Some(out_rel) => {
+            let out = contained_path(dir, out_rel, "run")?;
+            let ext = out.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+            ExportFormat::parse(&ext)
+                .filter(|f| *f != ExportFormat::Original)
+                .ok_or_else(|| format!("light.run: `{out_rel}`: unknown extension (use .jpg, .png, .tif, .webp, .avif or .dng)"))?;
+            area.check(&out, 0).map_err(|e| format!("light.run: {e}"))?;
+            Some((out_rel, out))
+        }
+        None => None,
+    };
+    let mut s = Session::new().with_fs();
+    import(&mut s, &input, rel, "run")?;
+    let mut results = Vec::with_capacity(admitted.len());
+    for (id, params) in admitted {
+        let r = s.execute(&id, &params).map_err(|e| format!("light.run {id}: {e}"))?;
+        results.push(json!({"id": id, "result": r}));
+    }
+    let Some((out_rel, out)) = out else { return Ok(json!({"results": results, "out": Json::Null})) };
+    let active = s.active().ok_or("light.run: no photo is active to write to `out`")?;
+    let mut written = export_one(&mut s, area, active, &out, out_rel, args, "run")?;
+    written["results"] = Json::Array(results);
+    Ok(written)
 }
 
 #[cfg(test)]
@@ -626,6 +719,222 @@ mod tests {
         assert!(!may_call(""));
     }
 
+    /// The names in `dir`, sorted.
+    fn names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+        names.sort();
+        names
+    }
+
+    /// The door imports the original and runs allowlisted commands on it:
+    /// `develop.controls` lists the controls with their ranges,
+    /// `develop.auto` runs auto-tone and `develop.set` sets controls, and
+    /// the active photo is written to `out` with `quality` and `long_edge`,
+    /// byte for byte what `develop` writes for the same edit. A query
+    /// without `out` writes nothing, and nothing lands beside the original.
+    #[test]
+    fn the_door_runs_allowlisted_commands_and_writes_out() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("shot.dng"), dng_bytes()).unwrap();
+        let areas = resolver(dir.path(), None);
+        let ran = serve(
+            &areas,
+            &service_call(
+                "run",
+                json!({"path": "shot.dng", "cmds": [
+                    {"id": "develop.controls", "params": {"section": "light"}},
+                    {"id": "develop.auto"},
+                    {"id": "develop.set", "params": {"values": {"light.exposure": 0.5}}},
+                    {"id": "develop.get"}
+                ], "out": "out/shot.jpg", "quality": 80, "long_edge": 48}),
+                dir.path(),
+                false,
+            ),
+        )
+        .unwrap();
+        assert_eq!(ran["out"], json!("out/shot.jpg"), "{ran}");
+        let results = ran["results"].as_array().unwrap();
+        assert_eq!(results.iter().map(|r| r["id"].as_str().unwrap()).collect::<Vec<_>>(), ["develop.controls", "develop.auto", "develop.set", "develop.get"]);
+        let exposure = results[0]["result"].as_array().unwrap().iter().find(|c| c["id"] == json!("light.exposure")).expect("light.exposure");
+        assert!(exposure["min"].is_number() && exposure["max"].is_number() && exposure["default"].is_number(), "{exposure}");
+        assert!(results[1]["result"]["exposure"].is_number(), "auto-tone answers what it set: {}", results[1]["result"]);
+        assert_eq!(results[3]["result"]["light"]["exposure"], json!(0.5), "{}", results[3]["result"]);
+        assert!(ran["width"].as_u64().unwrap() <= 48 && ran["height"].as_u64().unwrap() <= 48, "long_edge caps the output: {ran}");
+        assert!(ran["sidecars"].as_array().is_some_and(|s| s.is_empty()), "{ran}");
+        let by_run = std::fs::read(dir.path().join("out/shot.jpg")).unwrap();
+        assert!(by_run.starts_with(&[0xFF, 0xD8]), "a JPEG");
+        let developed = serve(
+            &areas,
+            &service_call(
+                "develop",
+                json!({"path": "shot.dng", "out": "out/developed.jpg", "auto": true, "params": {"light.exposure": 0.5}, "quality": 80, "long_edge": 48}),
+                dir.path(),
+                false,
+            ),
+        )
+        .unwrap();
+        assert_eq!((&developed["width"], &developed["height"]), (&ran["width"], &ran["height"]));
+        assert_eq!(std::fs::read(dir.path().join("out/developed.jpg")).unwrap(), by_run, "run covers develop: the same edit, the same bytes");
+        let query = serve(&areas, &service_call("run", json!({"path": "shot.dng", "cmds": [{"id": "photo.inspect"}]}), dir.path(), false)).unwrap();
+        assert!(query["out"].is_null() && query["results"][0]["result"]["width"] == json!(96), "{query}");
+        assert_eq!(query["results"][0]["result"]["source"]["path"], json!("shot.dng"), "host paths read relative: {query}");
+        assert_eq!(names(dir.path()), ["out", "shot.dng"], "nothing beside the original");
+        assert_eq!(names(&dir.path().join("out")), ["developed.jpg", "shot.jpg"]);
+    }
+
+    /// Every class but `safe` is refused (lightcraft has no `code` id), and
+    /// so is an id the classification does not know, before any command
+    /// runs: a refused id anywhere in the list writes nothing.
+    #[test]
+    fn the_door_refuses_every_other_class_and_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.png"), png_bytes()).unwrap();
+        let areas = resolver(dir.path(), None);
+        let run = |cmds: Json| serve(&areas, &service_call("run", json!({"path": "in.png", "cmds": cmds, "out": "x.jpg"}), dir.path(), true));
+        for (id, class) in [
+            ("segment.model.download", "network"),
+            ("library.devices", "device"),
+            ("app.gpu", "host"),
+            ("app.memoryBudget", "host"),
+            ("library.preferences", "host"),
+            ("library.autoImport", "host"),
+            ("library.smartPreviewsLocation", "host"),
+        ] {
+            let e = run(json!([{"id": "develop.auto"}, {"id": id}])).unwrap_err();
+            assert!(e.contains(&format!("`{id}` is classed {class}")) && e.contains("never runs it"), "{id}: {e}");
+        }
+        for id in ["edit.undo", "edit.redo", "library.import", "photo.saveMetadataToFile", "photo.convertToDng", "photo.rename", "profile.import", "export.checkTarget"] {
+            let e = run(json!([{"id": "develop.auto"}, {"id": id}])).unwrap_err();
+            assert!(e.contains(&format!("`{id}` reads or writes files")) && e.contains("not reviewed to run through it"), "{id}: {e}");
+        }
+        let e = run(json!([{"id": "light.secret"}])).unwrap_err();
+        assert!(e.contains("`light.secret` is not a reviewed light command"), "{e}");
+        assert!(run(json!([{"id": ""}])).unwrap_err().contains("each command has an `id`"));
+        assert!(run(json!([{"id": "develop.set", "params": [1]}])).unwrap_err().contains("`params` is an object"));
+        let too_many: Vec<Json> = (0..65).map(|_| json!({"id": "develop.get"})).collect();
+        assert!(run(Json::Array(too_many)).unwrap_err().contains("at most 64"));
+        assert!(serve(&areas, &service_call("run", json!({"cmds": []}), dir.path(), true)).unwrap_err().contains("`path` is required"));
+        assert!(serve(&areas, &service_call("run", json!({"path": "in.png"}), dir.path(), true)).unwrap_err().contains("`cmds` is a list"));
+        assert_eq!(names(dir.path()), ["in.png"], "nothing written");
+    }
+
+    /// `library.xmpPreferences` turns on XMP auto-write, after which the
+    /// engine writes a sidecar beside the original on every catalog change.
+    /// The fixture is live on the engine itself; through the door both
+    /// switches are refused before anything runs, so no `.xmp` appears
+    /// beside the caller's original.
+    #[test]
+    fn xmp_auto_write_is_refused_and_nothing_lands_beside_the_original() {
+        let live = tempfile::tempdir().unwrap();
+        let original = live.path().join("in.png");
+        std::fs::write(&original, png_bytes()).unwrap();
+        let mut engine = Session::new().with_fs();
+        import(&mut engine, &original, "in.png", "test").unwrap();
+        engine.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+        engine.execute("develop.set", &json!({"values": {"light.exposure": 1.0}})).unwrap();
+        assert!(live.path().join("in.xmp").is_file(), "the fixture is live: the engine writes a sidecar beside the original");
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("in.png"), png_bytes()).unwrap();
+        let areas = resolver(dir.path(), None);
+        for switch in [json!({"id": "library.xmpPreferences", "params": {"autoWrite": true}}), json!({"id": "library.toggleAutoWriteXmp"})] {
+            let cmds = json!([switch, {"id": "develop.set", "params": {"values": {"light.exposure": 1.0}}}, {"id": "photo.rate", "params": {"rating": 5}}]);
+            for out in [json!("o.jpg"), Json::Null] {
+                let e = serve(&areas, &service_call("run", json!({"path": "in.png", "cmds": cmds, "out": out}), dir.path(), true)).unwrap_err();
+                assert!(e.contains("is classed host") && e.contains("never runs it"), "{e}");
+            }
+        }
+        // The same edit without the switch runs, and still writes no sidecar.
+        serve(
+            &areas,
+            &service_call(
+                "run",
+                json!({"path": "in.png", "cmds": [{"id": "develop.set", "params": {"values": {"light.exposure": 1.0}}}, {"id": "photo.rate", "params": {"rating": 5}}], "out": "o.jpg"}),
+                dir.path(),
+                true,
+            ),
+        )
+        .unwrap();
+        assert_eq!(names(dir.path()), ["in.png", "o.jpg"], "no `.xmp` beside the original");
+    }
+
+    /// The door's paths keep the area's rules: commands that read or write
+    /// paths of their own are refused (`library.import` of an outside file,
+    /// `edit.undo`, which moves files on disk); `path` and `out` stay inside
+    /// the folder, through links too; `out` never replaces an existing file
+    /// in an agent's call, never an original in any call, and keeps to the
+    /// quota; an unknown format is refused before anything runs.
+    #[test]
+    fn the_doors_paths_keep_the_areas_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("in.png"), png_bytes()).unwrap();
+        std::fs::write(dir.path().join("outside.png"), png_bytes()).unwrap();
+        let areas = resolver(&root, None);
+        let call = |args: Json, may_prompt: bool| serve(&areas, &service_call("run", args, &root, may_prompt));
+        let outside = dir.path().join("outside.png").to_string_lossy().into_owned();
+        for paths in [json!([outside.clone()]), json!(["../outside.png"]), json!([dir.path().to_string_lossy()])] {
+            let e = call(json!({"path": "in.png", "cmds": [{"id": "library.import", "params": {"paths": paths}}], "out": "o.jpg"}), true).unwrap_err();
+            assert!(e.contains("`library.import` reads or writes files") && e.contains("not reviewed"), "{e}");
+        }
+        let e = call(json!({"path": "in.png", "cmds": [{"id": "develop.set", "params": {"values": {"light.exposure": 1.0}}}, {"id": "edit.undo"}]}), true).unwrap_err();
+        assert!(e.contains("`edit.undo` reads or writes files"), "{e}");
+        // An agent's `out` never replaces a file, before the engine works.
+        std::fs::write(root.join("taken.jpg"), b"keep me").unwrap();
+        let e = call(json!({"path": "in.png", "cmds": [{"id": "develop.auto"}], "out": "taken.jpg"}), false).unwrap_err();
+        assert!(e.contains("`taken.jpg` already exists"), "{e}");
+        assert_eq!(std::fs::read(root.join("taken.jpg")).unwrap(), b"keep me");
+        // An app's own call may replace, but never the original itself.
+        let e = call(json!({"path": "in.png", "cmds": [{"id": "develop.auto"}], "out": "in.png"}), true).unwrap_err();
+        assert!(e.contains("never writes over an original"), "{e}");
+        assert_eq!(std::fs::read(root.join("in.png")).unwrap(), png_bytes());
+        call(json!({"path": "in.png", "cmds": [{"id": "develop.auto"}], "out": "taken.jpg"}), true).unwrap();
+        assert_ne!(std::fs::read(root.join("taken.jpg")).unwrap(), b"keep me");
+        for out in ["o.gif", "in.original"] {
+            let e = call(json!({"path": "in.png", "cmds": [], "out": out}), true).unwrap_err();
+            assert!(e.contains("unknown extension"), "{out}: {e}");
+        }
+        let tight = resolver(&root, Some(32));
+        let e = serve(&tight, &service_call("run", json!({"path": "in.png", "cmds": [], "out": "big.jpg"}), &root, true)).unwrap_err();
+        assert!(e.contains("bytes left"), "{e}");
+        for bad in ["../outside.png", "/etc/hosts", "a/../../outside.png", ""] {
+            assert!(call(json!({"path": bad, "cmds": [], "out": "o.jpg"}), true).is_err(), "{bad}");
+        }
+        for bad in ["../o.jpg", "/tmp/o.jpg", "a/../../o.jpg"] {
+            assert!(call(json!({"path": "in.png", "cmds": [], "out": bad}), true).is_err(), "{bad}");
+        }
+        let mut left = vec!["in.png", "taken.jpg"];
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            std::os::unix::fs::symlink(dir.path().join("outside.png"), root.join("linked.png")).unwrap();
+            assert!(call(json!({"path": "up/outside.png", "cmds": [], "out": "o.jpg"}), true).is_err());
+            assert!(call(json!({"path": "linked.png", "cmds": [], "out": "o.jpg"}), true).is_err());
+            assert!(call(json!({"path": "in.png", "cmds": [], "out": "up/o.jpg"}), true).is_err());
+            left.extend(["linked.png", "up"]);
+        }
+        left.sort();
+        assert_eq!(names(&root), left, "nothing else written in the folder");
+        assert_eq!(names(dir.path()), ["outside.png", "workspace"], "nothing written beside the folder");
+    }
+
+    /// The door's gate is built from the generated classification: it runs
+    /// every `safe` id, the develop commands among them, and nothing else.
+    #[test]
+    fn the_door_is_built_from_the_reviewed_classification() {
+        let door = door().unwrap();
+        for id in ["develop.set", "develop.auto", "develop.controls", "develop.get", "library.select", "photo.inspect", "preset.apply"] {
+            assert!(door.runs(id), "{id}");
+        }
+        for id in ["edit.undo", "library.import", "library.xmpPreferences", "library.toggleAutoWriteXmp", "segment.model.download", "library.devices", "light.secret"] {
+            assert!(!door.runs(id), "{id}");
+        }
+        let safety: Json = serde_json::from_str(include_str!("../skill/safety.json")).unwrap();
+        let safe = safety["commands"].as_object().unwrap().values().filter(|c| *c == "safe").count();
+        assert_eq!(door.runnable().len(), safe);
+    }
+
     /// The agent tools (`tools.json`) pass App Hub's own loader, as the shell
     /// reads them, keep the object schemas octos takes both ways, and name
     /// only methods this service dispatches.
@@ -647,5 +956,33 @@ mod tests {
                 assert!(!e.contains("is not a method"), "{}: {e}", tool.name);
             }
         }
+    }
+
+    /// Every `light.run` call the skill's examples show runs, in order,
+    /// in one area as the system agent's (with the files they name placed
+    /// there first), and writes its `out`: the skill teaches commands that
+    /// work.
+    #[test]
+    fn the_skill_examples_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("IMG_0042.dng"), dng_bytes()).unwrap();
+        let body = include_str!("../skill/SKILL.md");
+        let examples = body.split("\n## Examples").nth(1).and_then(|rest| rest.split("\n## ").next()).unwrap();
+        let mut ran = 0;
+        for span in examples.split('`').skip(1).step_by(2) {
+            let Some(args) = span.strip_prefix("light.run ") else { continue };
+            let args: Json = serde_json::from_str(args).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            let got = serve(&areas, &service_call("run", args.clone(), dir.path(), false)).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            assert_eq!(got["results"].as_array().map(Vec::len), args["cmds"].as_array().map(Vec::len), "{got}");
+            if let Some(out) = args["out"].as_str() {
+                assert!(dir.path().join(out).is_file(), "`{span}` wrote no {out}");
+            }
+            ran += 1;
+        }
+        assert!(ran >= 3, "{ran} examples");
+        let controls = serve(&areas, &service_call("run", json!({"path": "IMG_0042.dng", "cmds": [{"id": "develop.controls", "params": {"section": "color"}}]}), dir.path(), false)).unwrap();
+        assert!(controls["results"][0]["result"].to_string().contains("color.vibrance"), "{controls}");
+        assert!(!dir.path().join("IMG_0042.xmp").exists(), "nothing beside the original");
     }
 }

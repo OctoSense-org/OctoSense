@@ -19,11 +19,17 @@
 //! creates new files, within the quota): a preview through [`Area::write`],
 //! an export, which the engine writes itself (with any numbered siblings),
 //! into a staging folder inside the area first
-//! ([`octosense_engine_area::Stage`]). The generic command door `run` is
-//! held for its own review: with the shell's resolver installed it is
-//! refused outright, because the engine's wrappers (`command.batch`), its
-//! preferences (`prefs.set` of a plug-ins folder) and plug-in effects
-//! (`effect.apply` of `plugin.<id>`) reach past its list of refused ids.
+//! ([`octosense_engine_area::Stage`]). The generic command door `run` runs
+//! through the shared gate ([`door`], ADR 0013 #418): an allowlist built
+//! from the reviewed classification `skill/safety.json`. Only `safe` ids
+//! run; `code` (the wrappers `command.batch`, the plug-in system, and
+//! `prefs.set`, which can load a plug-ins folder), `file`, `host` and
+//! unknown ids are refused. Two reviewed inner ids are checked by the gate:
+//! `perspective.draw`'s named `shape.*` command passes the gate itself, and
+//! `effect.apply` / `appearance.addEffect` admit only an effect the engine
+//! builds in, never an effect plug-in `plugin.<id>`. After every command
+//! the service re-fences the live document's image links, so a command
+//! cannot plant a link the export would then read from outside the area.
 //!
 //! Methods (all under the `vector` family; paths relative to the area):
 //! - `info {path, depth?}` → the document inspected as JSON (artboards,
@@ -32,11 +38,12 @@
 //!   warnings}` — export in the format the extension (or `format`) picks:
 //!   SVG/SVGZ, PDF, EPS, DXF, EMF/WMF, PNG/JPG/WebP/GIF/TIFF/BMP/TGA/PSD,
 //!   native `.vectorcraft`
-//! - `run {path?, cmds: [{id, params?}], out?, format?}` → command
-//!   results, exporting when `out` is given (the engine's drawing and
-//!   editing catalog: `vector.commands` lists it; file commands are the
-//!   service's and are refused)
-//! - `commands {}` → the callable command catalog
+//! - `run {path?, cmds: [{id, params?}], out?, format?, scale?}` → `{results,
+//!   out: "<rel>" | null, format, bytes, warnings, files?}` — the command
+//!   door: every id admitted by [`door`] before the engine runs any (a
+//!   refused id refuses the whole call, nothing written), run in order on
+//!   the document at `path` or a fresh one, then exported to `out`
+//! - `commands {}` → the ids the door runs, from the engine's catalog
 //! - `render {path, out, max_side?, artboard?}` → a PNG written to `out`
 //!
 //! The service serves system apps only until ADR 0013's store capability
@@ -45,9 +52,12 @@
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
 
+use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::door::{Door, Inner, InnerRule, Reviewed};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 use vectorcraft_engine::Session;
@@ -56,8 +66,65 @@ use vectorcraft_engine::Session;
 const MAX_RENDER_SIDE: u32 = 4096;
 /// The largest file the service opens (bytes).
 const MAX_OPEN_BYTES: u64 = 64 << 20;
-/// The most commands one `run` call executes.
-const MAX_RUN_CMDS: usize = 64;
+
+/// What the vector engine's reviewer settled for the door beyond the classes
+/// (ADR 0013, #418). No reviewed file read (a `file` command reaches paths
+/// the service's own `path`/`out` do not cover, so none runs through the
+/// door) and no setter (no `safe` vector command sets an app-wide preference
+/// by key; every preference write is `host`, and `prefs.set` is `code`).
+///
+/// Inner ids:
+/// - `perspective.draw {command}` runs a named `shape.*` command, which
+///   passes the gate itself with its own `params`.
+/// - `effect.apply` / `appearance.addEffect` append a live effect by id; the
+///   gate admits only an effect the engine builds in ([`builtin_effect`]),
+///   never an effect plug-in `plugin.<id>`. The engine's `apply` reads the
+///   id from `effect` or, as an alias, `id`, so both keys are gated (the
+///   door skips a key a call omits); a call that names a plug-in under
+///   either is refused.
+static REVIEWED: Reviewed = Reviewed {
+    file_reads: &[],
+    setters: &[],
+    inner: &[
+        Inner { id: "perspective.draw", param: "command", rule: InnerRule::Command { prefix: "shape.", params: "params" } },
+        Inner { id: "effect.apply", param: "effect", rule: InnerRule::Effect { builtin: builtin_effect } },
+        Inner { id: "effect.apply", param: "id", rule: InnerRule::Effect { builtin: builtin_effect } },
+        Inner { id: "appearance.addEffect", param: "effect", rule: InnerRule::Effect { builtin: builtin_effect } },
+        Inner { id: "appearance.addEffect", param: "id", rule: InnerRule::Effect { builtin: builtin_effect } },
+    ],
+};
+
+/// The command door's gate: vectorcraft's reviewed classification
+/// (`skill/safety.json`, generated and drift-checked by `tests/skill.rs`)
+/// and [`REVIEWED`].
+pub fn door() -> Result<&'static Door, String> {
+    static DOOR: OnceLock<Result<Door, String>> = OnceLock::new();
+    DOOR.get_or_init(|| Door::new("vector", include_str!("../skill/safety.json"), &REVIEWED)).as_ref().map_err(Clone::clone)
+}
+
+/// The ids of the effects the engine builds in, computed once from a fresh
+/// session's `effect.list` catalog, with any `plugin.<id>` excluded. A fresh
+/// session installs no plug-ins, so this is exactly the built-in catalogue.
+fn builtin_effects() -> &'static BTreeSet<String> {
+    static SET: OnceLock<BTreeSet<String>> = OnceLock::new();
+    SET.get_or_init(|| {
+        let listed = Session::new().execute("effect.list", &json!({})).unwrap_or(Json::Null);
+        listed["catalog"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e["id"].as_str())
+            .filter(|id| !id.starts_with("plugin."))
+            .map(str::to_string)
+            .collect()
+    })
+}
+
+/// Whether `name` is an effect the engine builds in (never an installed
+/// effect plug-in `plugin.<id>`).
+fn builtin_effect(name: &str) -> bool {
+    builtin_effects().contains(name)
+}
 
 /// Which apps may call the service: system apps, as News and Sheets.
 fn may_call(app_id: &str) -> bool {
@@ -102,11 +169,6 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     }
     if call.method() == "commands" {
         return commands();
-    }
-    // The command door works only without the shell's resolver (this
-    // crate's tests): in the shell it is held for its own review.
-    if call.method() == "run" && areas.is_set() {
-        return Err("vector.run is held for its own review: the engine's command door is not available in the shell".into());
     }
     let area = areas.area(call, "vector").map_err(|e| format!("vector: {e}"))?;
     dispatch_in(call.method(), &call.args, &area)
@@ -290,6 +352,10 @@ fn export(session: &mut Session, area: &Area, args: &Json, out: &Path, method: &
     if let Some(s) = args["scale"].as_f64() {
         params["scale"] = json!(s.clamp(0.01, 16.0));
     }
+    // A raster export writes one artboard: this one (0-based, default 0).
+    if let Some(a) = args["artboard"].as_u64() {
+        params["artboard"] = json!(a);
+    }
     let saved = session.execute("document.export", &params).map_err(|e| format!("vector.{method}: {e}"))?;
     let beside = out.parent().unwrap_or(&area.root);
     let moves: Vec<(PathBuf, PathBuf)> = stage.files().into_iter().map(|f| (stage.path(&f), beside.join(f))).collect();
@@ -337,88 +403,78 @@ fn convert(args: &Json, area: &Area) -> Result<Json, String> {
     Ok(v)
 }
 
-/// Commands `run` executes: the engine's drawing and editing catalog,
-/// minus everything that touches files. The service owns all file access
-/// (its `path` and `out` arguments), so the engine's own file commands —
-/// `file.*` (new-from-template, recovery), `document.*` (open, save,
-/// export, place), the `app.*` host group and the swatch libraries — are
-/// refused, except the read-only document queries. As a second fence,
-/// parameters carrying path-like keys are refused wholesale.
-///
-/// Every `plugin.*` id is refused too, as `photo.run` refuses photocraft's:
-/// vectorcraft's plug-in registry is process-wide and installs WebAssembly
-/// from in-band `dataBase64`, so an installed plug-in would outlive the
-/// call and serve every later caller of any app, outside the shell's `wasm`
-/// service (ADR 0011). This list is not a fence on its own (a wrapper runs
-/// other commands past it), which is why the shell holds `run` back
-/// entirely ([`serve`]).
-fn callable(id: &str, params: &Json) -> Result<(), String> {
-    if id == "plugin" || id.starts_with("plugin.") {
-        return Err(format!("vector.run: `{id}` is not available through the vector service"));
-    }
-    const READ_ONLY: &[&str] = &["document.inspect", "document.node", "document.json", "document.find"];
-    if !READ_ONLY.contains(&id) && ["file.", "document.", "app.", "swatch.library."].iter().any(|p| id.starts_with(p)) {
-        return Err(format!("vector.run: `{id}` is the host's; file access goes through the service's `path` and `out`"));
-    }
-    if let Some(key) = path_key(params) {
-        return Err(format!("vector.run {id}: `{key}` parameters are the host's; file access goes through the service's `path` and `out`"));
+/// After a command runs, refuse the call if any file the engine would read
+/// for the live document's linked images is outside the area. The open-time
+/// [`fence_links`] checks the file on disk; this checks the document a
+/// command just changed, so a command cannot plant a link the export would
+/// then read from elsewhere (e.g. `clipboard.importSvg` of an `<image href>`
+/// that points out, then `edit.pasteInPlace`). Reuses the open-time fence's
+/// [`link_files`] and [`inside`] on the session's current document; relative
+/// links resolve against `dir` (the opened document's folder, else the area
+/// root), and `inside` refuses any that is not an existing file in the area.
+fn fence_live_links(area: &Area, s: &Session, dir: &Path, method: &str) -> Result<(), String> {
+    let Ok(st) = s.doc() else { return Ok(()) };
+    let root = area.root.canonicalize().map_err(|e| format!("vector.{method}: folder: {e}"))?;
+    if let Some(out) = link_files(&st.doc, dir).iter().find(|p| !inside(&root, p)) {
+        return Err(format!(
+            "vector.{method}: a command set an image link `{}`, outside this call's folder: the engine would read it from there; embed the images instead",
+            out.display()
+        ));
     }
     Ok(())
 }
 
-/// The first path-like key anywhere in `v`.
-fn path_key(v: &Json) -> Option<String> {
-    const KEYS: &[&str] = &["path", "paths", "file", "files", "folder", "dir", "url", "href"];
-    match v {
-        Json::Object(m) => m.iter().find_map(|(k, val)| {
-            if KEYS.contains(&k.as_str()) { Some(k.clone()) } else { path_key(val) }
-        }),
-        Json::Array(a) => a.iter().find_map(path_key),
-        _ => None,
-    }
-}
-
 fn run(args: &Json, area: &Area) -> Result<Json, String> {
-    let cmds = args["cmds"].as_array().ok_or("vector.run: `cmds` is a list of {id, params?}")?;
-    if cmds.len() > MAX_RUN_CMDS {
-        return Err(format!("vector.run: at most {MAX_RUN_CMDS} commands per call"));
-    }
-    let out = match args["out"].as_str() {
-        Some(out) if !out.is_empty() => Some(out_path(area, out)?),
-        _ => None,
+    // Admit every command first: one refused id refuses the whole call, with
+    // nothing opened and nothing written.
+    let admitted = door()?.admit_all(&args["cmds"], area)?;
+    // A name the call may not write is refused before the engine works.
+    let out = match args["out"].as_str().filter(|o| !o.is_empty()) {
+        Some(rel) => Some(out_path(area, rel)?),
+        None => None,
     };
     let mut s = Session::new();
-    match args["path"].as_str() {
-        Some(rel) if !rel.is_empty() => {
+    // The folder relative links resolve against: the opened document's (its
+    // own links were fenced at open), else the area root for a fresh one.
+    let dir = match args["path"].as_str().filter(|p| !p.is_empty()) {
+        Some(rel) => {
             open(&mut s, area, rel, "run")?;
+            contained_path(&area.root, rel).ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_else(|| area.root.clone())
         }
         // No input: a fresh default document, ready to draw into.
-        _ => {
+        None => {
             s.execute("file.new", &json!({})).map_err(|e| format!("vector.run: {e}"))?;
+            area.root.clone()
         }
-    }
-    let mut results = Vec::new();
-    for c in cmds {
-        let id = c["id"].as_str().ok_or("vector.run: each command has an `id`")?;
-        let params = if c["params"].is_null() { json!({}) } else { c["params"].clone() };
-        callable(id, &params)?;
-        let r = s.execute(id, &params).map_err(|e| format!("vector.run {id}: {e}"))?;
+    };
+    let mut results = Vec::with_capacity(admitted.len());
+    for (id, params) in &admitted {
+        let r = s.execute(id, params).map_err(|e| format!("vector.run {id}: {e}"))?;
+        // No command may plant a link the export would read from outside.
+        fence_live_links(area, &s, &dir, "run")?;
         results.push(json!({"id": id, "result": r}));
     }
-    let saved = match out {
-        Some(out) => export(&mut s, area, args, &out, "run")?,
-        None => Json::Null,
-    };
-    Ok(json!({"results": results, "out": saved}))
+    match out {
+        // The staged export's fields, flat, with the command results.
+        Some(out) => {
+            let mut v = export(&mut s, area, args, &out, "run")?;
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("results".into(), Json::Array(results));
+            }
+            Ok(v)
+        }
+        None => Ok(json!({"results": results, "out": Json::Null})),
+    }
 }
 
-/// The catalog `run` accepts: the engine's own, minus the file commands
-/// the service refuses.
+/// The ids `run` accepts: the engine's catalog filtered to what the door
+/// runs (every `safe` id; no `file`, `code`, `host` or unknown id).
 fn commands() -> Result<Json, String> {
+    let door = door()?;
     let list: Vec<Json> = Session::new()
         .commands()
         .iter()
-        .filter(|c| callable(c.id, &Json::Null).is_ok())
+        .filter(|c| door.runs(c.id))
         .map(|c| serde_json::to_value(c).unwrap_or_default())
         .collect();
     Ok(Json::Array(list))
@@ -520,21 +576,197 @@ mod tests {
         }
     }
 
-    /// With the shell's resolver installed the command door is held for its
-    /// own review: its list of refused ids is no fence, since a wrapper runs
-    /// other commands past it (`command.batch` of `plugin.install` passes
-    /// the list). Without a resolver (this crate's tests) it still runs.
+    /// The ids a fresh engine session reports as installed plug-ins (empty
+    /// unless a plug-in got installed), read through the engine's own
+    /// `plugin.list`, never through the door.
+    fn installed_plugins() -> Vec<String> {
+        let listed = Session::new().execute("plugin.list", &json!({})).unwrap();
+        listed["plugins"].as_array().unwrap().iter().filter_map(|p| p["id"].as_str().map(str::to_string)).collect()
+    }
+
+    /// With the shell's resolver installed the door now runs: an allowlisted
+    /// run draws shapes on a fresh document, applies a built-in effect with
+    /// `effect.apply`, and exports to `out`, the file landing inside the
+    /// area; a run on an existing SVG works too.
     #[test]
-    fn the_command_door_is_held_in_the_shell() {
+    fn the_door_runs_allowlisted_commands_in_its_area() {
         let dir = tempfile::tempdir().unwrap();
         let areas = resolver(dir.path(), None);
-        let held = serve(&areas, &service_call("run", json!({"cmds": []}), dir.path(), true)).unwrap_err();
-        assert!(held.contains("held for its own review"), "{held}");
-        assert!(callable("plugin.install", &json!({})).is_err());
-        let wrapped = json!({"commands": [{"id": "plugin.install", "params": {"dataBase64": "AGFzbQEAAAA="}}]});
-        assert!(callable("command.batch", &wrapped).is_ok(), "a wrapper passes the list, which is why the door is held");
-        serve(&Slot::new(), &service_call("run", json!({"cmds": []}), dir.path(), true)).unwrap();
-        assert!(serve(&areas, &service_call("commands", json!({}), dir.path(), true)).is_ok(), "the catalog stays readable");
+        let made = serve(
+            &areas,
+            &service_call(
+                "run",
+                json!({"cmds": [
+                    {"id": "shape.rectangle", "params": {"x": 4.0, "y": 4.0, "width": 24.0, "height": 16.0}},
+                    {"id": "effect.apply", "params": {"effect": "stylize.dropShadow"}},
+                    {"id": "shape.ellipse", "params": {"x": 30.0, "y": 8.0, "width": 16.0, "height": 16.0}},
+                    {"id": "document.inspect", "params": {"depth": 0}}
+                ], "out": "art/drawn.svg"}),
+                dir.path(),
+                false,
+            ),
+        )
+        .unwrap();
+        assert_eq!(made["out"], json!("art/drawn.svg"), "{made}");
+        assert_eq!(made["format"], json!("svg"));
+        assert_eq!(made["results"].as_array().unwrap().len(), 4);
+        assert_eq!(made["results"][1]["id"], json!("effect.apply"), "{made}");
+        assert!(made["results"][3]["result"]["objects"].as_u64().unwrap() >= 2, "{made}");
+        assert!(dir.path().join("art/drawn.svg").is_file() && no_staging_left(dir.path()));
+        // An existing SVG, edited and rasterised to PNG beside it.
+        std::fs::write(dir.path().join("in.svg"), SVG).unwrap();
+        let edited = serve(
+            &areas,
+            &service_call("run", json!({"path": "in.svg", "cmds": [{"id": "shape.rectangle", "params": {"x": 1.0, "y": 1.0, "width": 8.0, "height": 8.0}}], "out": "out.png"}), dir.path(), false),
+        )
+        .unwrap();
+        assert_eq!(edited["format"], json!("png"), "{edited}");
+        assert!(std::fs::read(dir.path().join("out.png")).unwrap().starts_with(b"\x89PNG"));
+        // A query with no `out` writes nothing and reports a null `out`.
+        let query = serve(&areas, &service_call("run", json!({"path": "in.svg", "cmds": [{"id": "document.inspect", "params": {"depth": 0}}]}), dir.path(), false)).unwrap();
+        assert!(query["out"].is_null() && query["results"][0]["result"]["objects"].as_u64().is_some(), "{query}");
+    }
+
+    /// Every class but `safe` present in vector's classification is refused,
+    /// and so is an id the classification does not know, before any command
+    /// runs: a refused id anywhere in the list writes nothing.
+    #[test]
+    fn the_door_refuses_every_other_class_and_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        // A representative of each refused class in safety.json.
+        for (id, class) in [
+            ("document.open", "file"),       // file, not reviewed
+            ("swatch.library.save", "file"), // file, not reviewed
+            ("command.batch", "code"),       // runs other commands
+            ("prefs.set", "code"),           // can load a plug-ins folder
+            ("plugin.install", "code"),      // installs WebAssembly
+            ("view.proofSetup", "host"),     // process-wide render proof
+            ("file.new", "host"),            // records a recent-size preference
+        ] {
+            let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "shape.rectangle", "params": {"x": 0.0, "y": 0.0, "width": 4.0, "height": 4.0}}, {"id": id}], "out": "x.svg"}), dir.path(), false)).unwrap_err();
+            if class == "file" {
+                assert!(e.contains("not reviewed to run through it"), "{id}: {e}");
+            } else {
+                assert!(e.contains(&format!("`{id}` is classed {class}")), "{id}: {e}");
+            }
+        }
+        let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "vector.secret"}]}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("not a reviewed vector command"), "{e}");
+        assert!(!dir.path().join("x.svg").exists(), "a refused id anywhere wrote nothing");
+        let too_many: Vec<Json> = (0..65).map(|_| json!({"id": "shape.rectangle", "params": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0}})).collect();
+        assert!(serve(&areas, &service_call("run", json!({"cmds": too_many}), dir.path(), false)).unwrap_err().contains("at most 64"));
+    }
+
+    /// #418's three routes past the old deny-list are all refused by the
+    /// gate, and none installs a plug-in: (a) `command.batch` wrapping
+    /// `plugin.install`; (b) `prefs.set` of a plug-ins folder; (c)
+    /// `effect.apply` / `appearance.addEffect` of a `plugin.<id>` effect.
+    #[test]
+    fn the_door_refuses_418s_three_hostile_fixtures() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        // A folder with a .wasm, for the prefs.set fixture.
+        let plugins = dir.path().join("plugins");
+        std::fs::create_dir(&plugins).unwrap();
+        std::fs::write(plugins.join("evil.wasm"), b"\x00asm\x01\x00\x00\x00").unwrap();
+        let fixtures = [
+            // (a) a batch wrapping an install of a tiny valid module header.
+            json!({"id": "command.batch", "params": {"commands": [{"command": "plugin.install", "params": {"dataBase64": "AGFzbQEAAAA="}}]}}),
+            // (b) the Additional Plug-ins Folder preference.
+            json!({"id": "prefs.set", "params": {"key": "pluginsFolder", "value": plugins.to_string_lossy()}}),
+            // (c) an effect plug-in, through either command and key.
+            json!({"id": "effect.apply", "params": {"effect": "plugin.anything"}}),
+            json!({"id": "effect.apply", "params": {"id": "plugin.anything"}}),
+            json!({"id": "appearance.addEffect", "params": {"effect": "plugin.anything"}}),
+            json!({"id": "appearance.addEffect", "params": {"id": "plugin.anything"}}),
+        ];
+        for cmd in fixtures {
+            let label = cmd.to_string();
+            let refused = serve(&areas, &service_call("run", json!({"cmds": [cmd], "out": "x.svg"}), dir.path(), false)).unwrap_err();
+            assert!(refused.contains("classed code") || refused.contains("is not an effect the engine builds in"), "{label}: {refused}");
+            assert!(!dir.path().join("x.svg").exists(), "{label}: wrote nothing");
+            assert!(installed_plugins().is_empty(), "{label}: no plug-in installed");
+        }
+    }
+
+    /// `perspective.draw` admits only a named `shape.*` command, which passes
+    /// the gate itself (its own params admitted); any other inner id is
+    /// refused before the engine runs. (Whether the engine then attaches the
+    /// shape to the grid is its own perspective geometry, not the gate's.)
+    #[test]
+    fn perspective_draw_runs_only_shape_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let area = Area::new(dir.path(), None, false);
+        let door = door().unwrap();
+        // The named shape command passes the gate, so its params are admitted
+        // and handed back under `params` for the engine to run.
+        let ok = door.admit("perspective.draw", &json!({"command": "shape.rectangle", "params": {"x": 2.0, "y": 2.0, "width": 10.0, "height": 10.0}}), &area).unwrap();
+        assert_eq!(ok["command"], json!("shape.rectangle"), "{ok}");
+        assert_eq!(ok["params"]["width"], json!(10.0), "{ok}");
+        // Any other inner id is refused, whatever its own class.
+        let areas = resolver(dir.path(), None);
+        for inner in ["plugin.install", "document.open", "command.batch", "file.new", "object.group"] {
+            let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "perspective.draw", "params": {"command": inner, "params": {}}}]}), dir.path(), false)).unwrap_err();
+            assert!(e.contains("runs only `shape.*` commands"), "{inner}: {e}");
+        }
+    }
+
+    /// The post-command link fence: a `safe` command can plant an image link
+    /// pointing outside the area (`clipboard.importSvg` of an `<image href>`
+    /// that climbs out, then `edit.pasteInPlace`); the call is refused after
+    /// that command, before any export reads the link.
+    #[test]
+    fn a_command_that_plants_an_outside_link_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let outside = dir.path().join("private.png");
+        std::fs::write(&outside, png()).unwrap();
+        let areas = resolver(&root, None);
+        let svg = format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20" viewBox="0 0 40 20"><image href="{}" width="12" height="8"/></svg>"##,
+            outside.display()
+        );
+        let refused = serve(
+            &areas,
+            &service_call(
+                "run",
+                json!({"cmds": [
+                    {"id": "clipboard.importSvg", "params": {"svg": svg}},
+                    {"id": "edit.pasteInPlace"}
+                ], "out": "c.svg"}),
+                &root,
+                false,
+            ),
+        )
+        .unwrap_err();
+        assert!(refused.contains("private.png") && refused.contains("outside this call's folder"), "{refused}");
+        assert!(!root.join("c.svg").exists() && no_staging_left(&root), "nothing written");
+        // The same objects whose images are embedded (a data: URL) pass:
+        // no link is planted.
+        let data_svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10" viewBox="0 0 20 10"><rect x="2" y="2" width="8" height="6" fill="#3366cc"/></svg>"##;
+        serve(&areas, &service_call("run", json!({"cmds": [{"id": "clipboard.importSvg", "params": {"svg": data_svg}}, {"id": "edit.pasteInPlace"}], "out": "ok.svg"}), &root, false)).unwrap();
+        assert!(root.join("ok.svg").is_file());
+    }
+
+    /// The door's gate is built from the generated classification and the
+    /// reviewed inner ids; it runs every `safe` id and no other, and the
+    /// built-in effect catalogue it admits is the engine's own.
+    #[test]
+    fn the_door_is_built_from_the_reviewed_classification() {
+        let door = door().unwrap();
+        assert!(door.runs("shape.rectangle") && door.runs("effect.apply") && door.runs("appearance.addEffect") && door.runs("perspective.draw"));
+        assert!(door.runs("document.inspect") && door.runs("edit.pasteInPlace") && door.runs("clipboard.importSvg"));
+        assert!(!door.runs("document.open") && !door.runs("command.batch") && !door.runs("prefs.set") && !door.runs("plugin.install"));
+        assert!(!door.runs("view.proofSetup") && !door.runs("file.new") && !door.runs("vector.secret"));
+        assert!(door.runnable().len() > 500, "{}", door.runnable().len());
+        // The built-in effect catalogue the inner rule admits, computed from
+        // a fresh session's effect.list, holds real built-ins and no plug-in.
+        let effects = builtin_effects();
+        assert!(effects.len() >= 34, "{} built-in effects", effects.len());
+        assert!(builtin_effect("stylize.dropShadow") && builtin_effect("warp.arc") && builtin_effect("blur.gaussian"));
+        assert!(!builtin_effect("plugin.anything") && !builtin_effect(""));
     }
 
     /// An agent's call never replaces a file, before the engine works; an
@@ -700,38 +932,44 @@ mod tests {
         let fresh = dispatch("run", &json!({"cmds": [{"id": "document.inspect", "params": {"depth": 0}}]}), host).unwrap();
         assert!(fresh["results"][0]["result"]["artboards"].as_array().is_some_and(|a| !a.is_empty()), "{fresh}");
 
-        // The engine's file commands are the host's.
+        // The engine's file commands are the host's: the gate refuses them
+        // (every one is classed `file` or `host`, none reviewed).
         for refused in [
             json!({"id": "document.open", "params": {}}),
             json!({"id": "document.export", "params": {}}),
             json!({"id": "file.recovery.list"}),
             json!({"id": "swatch.library.save", "params": {"name": "x"}}),
-            // A path-like parameter smuggled into a drawing command.
-            json!({"id": "shape.rectangle", "params": {"x": 0.0, "y": 0.0, "width": 5.0, "height": 5.0, "path": "up.svg"}}),
         ] {
             let r = dispatch("run", &json!({"path": input, "cmds": [refused]}), host);
             assert!(r.is_err(), "{refused}");
         }
+        // A `safe` drawing command carrying an extra path-like key is a
+        // harmless no-op: the engine ignores the key, the door needs no
+        // path fence because a `safe` command touches no file.
+        let ok = dispatch("run", &json!({"path": input, "cmds": [{"id": "shape.rectangle", "params": {"x": 0.0, "y": 0.0, "width": 5.0, "height": 5.0, "path": "up.svg"}}]}), host).unwrap();
+        assert_eq!(ok["results"][0]["id"], json!("shape.rectangle"), "{ok}");
+        assert!(ok["out"].is_null(), "no out: {ok}");
     }
 
     /// The plug-in registry is process-wide and installs WebAssembly from
-    /// in-band data: `run` refuses every `plugin.*` id before the engine
-    /// sees it, and the catalog offer matches.
+    /// in-band data: the gate refuses every `plugin.*` id (classed `code`)
+    /// before the engine sees it, and the bare `plugin` id is unknown. The
+    /// catalog offer matches.
     #[test]
     fn run_refuses_plugin_commands_and_the_catalog_omits_them() {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
-        for cmd in [
+        for (cmd, needle) in [
             // A core module's header: refused before anything parses it.
-            json!({"id": "plugin.install", "params": {"dataBase64": "AGFzbQEAAAA="}}),
-            json!({"id": "plugin.list"}),
-            json!({"id": "plugin.remove", "params": {"id": "org.vectorcraft.example.desaturate"}}),
-            json!({"id": "plugin.reload"}),
-            json!({"id": "plugin"}),
+            (json!({"id": "plugin.install", "params": {"dataBase64": "AGFzbQEAAAA="}}), "classed code"),
+            (json!({"id": "plugin.list"}), "classed code"),
+            (json!({"id": "plugin.remove", "params": {"id": "org.vectorcraft.example.desaturate"}}), "classed code"),
+            (json!({"id": "plugin.reload"}), "classed code"),
+            (json!({"id": "plugin"}), "not a reviewed vector command"),
         ] {
             let r = dispatch("run", &json!({"cmds": [cmd.clone()]}), host);
             let e = r.expect_err(&cmd.to_string());
-            assert!(e.contains("is not available through the vector service"), "{cmd}: {e}");
+            assert!(e.contains(needle), "{cmd}: {e}");
         }
         let cat = commands().unwrap();
         let ids: Vec<&str> = cat.as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
@@ -739,14 +977,21 @@ mod tests {
     }
 
     #[test]
-    fn commands_catalog_is_real_and_file_free() {
+    fn commands_catalog_is_real_and_only_runnable_ids() {
         let cat = commands().unwrap();
         let cat = cat.as_array().unwrap();
         assert!(cat.len() > 200, "a real catalog, {} commands", cat.len());
         let ids: Vec<&str> = cat.iter().filter_map(|c| c["id"].as_str()).collect();
-        assert!(ids.contains(&"document.inspect"));
-        assert!(ids.iter().all(|id| !id.starts_with("file.") && !id.starts_with("app.")), "no file commands offered");
+        assert!(ids.contains(&"document.inspect") && ids.contains(&"shape.rectangle") && ids.contains(&"effect.apply"));
+        // A `safe`, session-only `file.*` command is offered; the `file`-class
+        // access commands and the plug-in system are not.
+        assert!(ids.contains(&"file.close"), "a session-only file command is offered");
+        assert!(!ids.contains(&"file.saveAs") && !ids.contains(&"file.place"), "file access is not offered");
         assert!(!ids.contains(&"document.open") && !ids.contains(&"document.export"));
+        assert!(ids.iter().all(|id| !id.starts_with("plugin.")), "no plug-in commands offered");
+        // Every offered id is one the door actually runs.
+        let door = door().unwrap();
+        assert!(ids.iter().all(|id| door.runs(id)), "only runnable ids are offered");
     }
 
     #[test]
@@ -825,5 +1070,48 @@ mod tests {
                 assert!(!e.contains("is not a method"), "{}: {e}", tool.name);
             }
         }
+    }
+
+    /// A raster `out` is one artboard: `artboard` picks which (0-based),
+    /// at `scale` pixels per point.
+    #[test]
+    fn the_door_exports_the_artboard_it_is_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let cmds = json!([{"id": "artboard.new", "params": {"width": 100, "height": 50}}]);
+        let second = serve(&areas, &service_call("run", json!({"cmds": cmds, "out": "second.png", "artboard": 1, "scale": 2}), dir.path(), false)).unwrap();
+        assert_eq!(second["out"], json!("second.png"), "{second}");
+        let png = std::fs::read(dir.path().join("second.png")).unwrap();
+        let size = (u32::from_be_bytes(png[16..20].try_into().unwrap()), u32::from_be_bytes(png[20..24].try_into().unwrap()));
+        assert_eq!(size, (200, 100), "the new 100x50 pt artboard at 2 px/pt");
+    }
+
+    /// Every `vector.run` call the skill's examples show runs, in order,
+    /// in one area as the system agent's (with the files they name placed
+    /// there first), and writes its `out`: the skill teaches commands that
+    /// work.
+    #[test]
+    fn the_skill_examples_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("logo.svg"), br##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40"><rect x="4" y="4" width="32" height="20" fill="#3366cc"/><circle cx="48" cy="20" r="10" fill="#cc3333"/></svg>"##).unwrap();
+        let body = include_str!("../skill/SKILL.md");
+        let examples = body.split("\n## Examples").nth(1).and_then(|rest| rest.split("\n## ").next()).unwrap();
+        let mut ran = 0;
+        for span in examples.split('`').skip(1).step_by(2) {
+            let Some(args) = span.strip_prefix("vector.run ") else { continue };
+            let args: Json = serde_json::from_str(args).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            let got = serve(&areas, &service_call("run", args.clone(), dir.path(), false)).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            assert_eq!(got["results"].as_array().map(Vec::len), args["cmds"].as_array().map(Vec::len), "{got}");
+            if let Some(out) = args["out"].as_str() {
+                assert!(dir.path().join(out).is_file(), "`{span}` wrote no {out}");
+            }
+            ran += 1;
+        }
+        assert!(ran >= 4, "{ran} examples");
+        let png = std::fs::read(dir.path().join("logo@4x.png")).unwrap();
+        assert_eq!((u32::from_be_bytes(png[16..20].try_into().unwrap()), u32::from_be_bytes(png[20..24].try_into().unwrap())), (256, 160), "4x the 64x40 artboard");
+        let badge = std::fs::read_to_string(dir.path().join("badge.svg")).unwrap();
+        assert!(badge.contains("Beta") && badge.contains("3366cc"), "{badge}");
     }
 }

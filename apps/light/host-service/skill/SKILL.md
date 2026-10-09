@@ -1,6 +1,6 @@
 ---
 name: light-engine
-description: RAW photo develop (DNG, CR3, NEF, ARW, RAF; also JPEG, PNG, TIFF): read EXIF and XMP, develop with exposure and colour controls, batch export. Read before using light.* tools.
+description: RAW photo develop (DNG, CR3, NEF, ARW, RAF; also JPEG, PNG, TIFF): read EXIF and XMP, develop with the engine's commands (exposure, colour, auto-tone), export. Read before using light.* tools.
 ---
 
 # Light engine
@@ -15,12 +15,24 @@ photo engine's ground, not this one's.
 
 ## Tools
 
-- `light.info {path}`: the photo's size and summary, and every EXIF/TIFF/GPS tag and XMP property.
-- `light.controls {}`: the develop controls (id, label, range, default): the valid keys of `params`.
-- `light.develop {path, out, params?, auto?, long_edge?, quality?}`: develop one photo and export it; the extension of `out` picks the format (.jpg, .png, .tif, .webp, .avif, .dng). `params` maps control ids to numbers, `auto` runs auto-tone first, `long_edge` caps the size, `quality` is 1 to 100 (default 92).
-- `light.batch {paths, out_dir, format?, params?, auto?, long_edge?, quality?}`: the same develop on 1 to 16 photos, each written as `<out_dir>/<name>.<format>` (jpg by default); two inputs with the same file name are refused.
+- `light.info {path}`: the photo's size and summary, and every EXIF/TIFF/GPS tag and XMP property. Reads only.
+- `light.run {path, cmds, out?, quality?, long_edge?}`: up to 64 of the engine's commands, run in order on the photo at `path`, then the developed photo exported to `out` when given; its extension picks the format (`.jpg`, `.png`, `.tif`, `.webp`, `.avif` or `.dng`), `long_edge` caps the size and `quality` is 1 to 100 (default 92). Each command is `{"id": ..., "params": {...}}`. The answer has each command's result in `results`, so query commands read without writing anything; `"cmds": []` with an `out` exports the photo as it is.
 
-`light.info` and `light.controls` only read; the others write.
+## How `light.run` works
+
+The door checks every command of a call before it runs any. A command that
+`commands.md` lists untagged works on the open photo only, and runs. Every
+tagged id ([file], [network], [device], [host]) and any id that is not in
+`commands.md` refuse the whole call, and nothing is written.
+
+The develop commands: `develop.set {values: {control: number}}` sets
+controls (or `{control, value}` for one), `develop.adjust {control, delta}`
+nudges one, `develop.auto {}` runs auto-tone and `develop.reset {}` clears
+the edit. `develop.controls {section?}` lists the controls with their
+ranges, defaults and current values; `develop.get {}` gives the photo's
+whole develop state. To develop several photos alike, make one call per
+photo with the same commands. The original is never changed: write the
+result to a new `out`.
 
 ## Files
 
@@ -39,16 +51,18 @@ be inside your workspace too.
 1. Where and with what a photo was taken: `light.info {"path": "IMG_0042.dng"}`
    (camera, lens, exposure, GPS when the file has it).
 2. Half a stop brighter, white balance at 7200 K, as a JPEG at most 2048 pixels long:
-   `light.develop {"path": "IMG_0042.dng", "out": "IMG_0042-edit.jpg", "params": {"light.exposure": 0.5, "wb.temp": 7200}, "long_edge": 2048}`.
-3. Auto-tone a set into WebP: `light.batch {"paths": ["a.dng", "b.dng"], "out_dir": "web", "format": "webp", "auto": true}`.
+   `light.run {"path": "IMG_0042.dng", "cmds": [{"id": "develop.set", "params": {"values": {"light.exposure": 0.5, "wb.temp": 7200}}}], "out": "IMG_0042-edit.jpg", "long_edge": 2048}`.
+3. Auto-tone, then a little more vibrance, as WebP:
+   `light.run {"path": "IMG_0042.dng", "cmds": [{"id": "develop.auto"}, {"id": "develop.adjust", "params": {"control": "color.vibrance", "delta": 15}}], "out": "IMG_0042-auto.webp", "quality": 85}`.
+4. The colour controls and their ranges, without writing anything:
+   `light.run {"path": "IMG_0042.dng", "cmds": [{"id": "develop.controls", "params": {"section": "color"}}]}`.
 
 ## References
 
 - `controls.md` in this skill's folder lists every develop control, one line
   each (id, label, range, default), by section. Grep it for a key before
-  you put it in `params` (`grep -i vibrance controls.md`); `light.controls`
-  gives the same list live.
+  you set it (`grep -i vibrance controls.md`); `develop.controls` gives
+  the same list live, with the photo's current values.
 - `commands.md` lists every lightcraft command, one line each, with a tag on
-  those that reach past the open photo (its library, files, the app). No
-  tool on your list runs these ids: they show the engine's reach, not what
-  you can call.
+  those that reach past the open photo (its library, files, the app).
+  `light.run` runs the untagged ones, and refuses the rest.

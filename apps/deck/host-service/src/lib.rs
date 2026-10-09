@@ -23,6 +23,18 @@
 //!   a deck written as `.pptx` or `.deckcraft`
 //! - `convert {path, out}` → `{out, format, bytes}` — `.pptx`,
 //!   `.deckcraft`, outline `.txt` or `.pdf`, by `out`'s extension
+//! - `run {path?, cmds: [{id, params?}], out?, slide?, max_side?}` →
+//!   `{results, out, format?, bytes?, slide?, width?, height?}` — the
+//!   command door (ADR 0013, #418): run commands of deckcraft's registry on
+//!   the deck at `path`, or on a new blank one, then write it to `out` as
+//!   `convert` does (`.pptx`, `.deckcraft`, outline `.txt`, `.pdf`) or one
+//!   slide as `render` does (`.png`). Only what the door's allowlist admits
+//!   runs ([`door`]): commands the reviewed classification
+//!   (`skill/safety.json`) classes `safe`, and the four reviewed media reads,
+//!   whose `path` must name a file inside the area; every other id is
+//!   refused before any command runs. Those reads are the one place the
+//!   engine opens a file itself: the door hands it the file's resolved
+//!   absolute path, and caps what one call's reads may total.
 //!
 //! The service serves system apps only until ADR 0013's store capability
 //! is designed.
@@ -31,16 +43,21 @@
 pub mod skill;
 
 use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 
 use deckcraft_engine::cmd::file as engine_file;
 use deckcraft_engine::Session;
+use deckcraft_model::Presentation;
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::door::{Door, FileRead, Reviewed};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
 /// The longest preview edge `render` produces.
 const MAX_RENDER_SIDE: u64 = 4096;
-/// The largest file the service reads or writes (bytes).
+/// The largest file the service reads or writes (bytes). (What one `run`
+/// call's reviewed reads may total is the gate's: the same 64 MiB,
+/// `octosense_engine_area::door::MAX_READ_BYTES`.)
 const MAX_DECK_BYTES: u64 = 64 << 20;
 /// `new` builds at most this many slides per call.
 const MAX_NEW_SLIDES: usize = 200;
@@ -48,6 +65,44 @@ const MAX_NEW_SLIDES: usize = 200;
 const MAX_BULLETS: usize = 64;
 /// `new` takes titles and bullets of at most this many characters.
 const MAX_LINE_CHARS: usize = 2000;
+
+/// What `convert` writes, by `out`'s extension.
+const CONVERT_OUT: &[(&str, &str)] = &[(".pptx", "pptx"), (".deckcraft", "deckcraft"), (".txt", "outline"), (".pdf", "pdf")];
+/// What `run` writes: `convert`'s formats, and one slide as `render` draws it.
+const RUN_OUT: &[(&str, &str)] = &[(".pptx", "pptx"), (".deckcraft", "deckcraft"), (".txt", "outline"), (".pdf", "pdf"), (".png", "png")];
+
+/// What the deck engine's reviewer settled for the door beyond the classes:
+/// four `file` commands that only read the file their `path` names (whole,
+/// with `std::fs::read`) and embed its bytes in the deck, or take it inline
+/// as base64 `data`, which wins when both are given. All four go through
+/// `insert::media_bytes` (`cmd/insert.rs` 212-224), their only file access:
+/// `insert.picture` (`picture`, 295-365: decoded and sized in memory),
+/// `insert.audio` and `insert.video` (`media`, 445-508: probed and given a
+/// poster frame in memory; the unplayable-codec status line they queue is
+/// never drained headless) and `picture.change` (`cmd/shape.rs` 650-661).
+/// `shape.fill` and `design.background` are deliberately not listed: a
+/// non-string `picture` makes them read an undocumented `path`. No setter
+/// or inner id: no `safe` deck command sets an app-wide variable by key or
+/// names another command (every nested `execute` in the engine runs a fixed
+/// id), and animation effects are built-in presets, never plug-ins.
+static REVIEWED: Reviewed = Reviewed {
+    file_reads: &[
+        FileRead { id: "insert.picture", params: &["path"] },
+        FileRead { id: "insert.audio", params: &["path"] },
+        FileRead { id: "insert.video", params: &["path"] },
+        FileRead { id: "picture.change", params: &["path"] },
+    ],
+    setters: &[],
+    inner: &[],
+};
+
+/// The command door's gate: deckcraft's reviewed classification
+/// (`skill/safety.json`, generated and drift-checked by `tests/skill.rs`)
+/// and [`REVIEWED`].
+pub fn door() -> Result<&'static Door, String> {
+    static DOOR: OnceLock<Result<Door, String>> = OnceLock::new();
+    DOOR.get_or_init(|| Door::new("deck", include_str!("../skill/safety.json"), &REVIEWED)).as_ref().map_err(Clone::clone)
+}
 
 /// Which apps may call the service: system apps, as News and Sheets.
 fn may_call(app_id: &str) -> bool {
@@ -109,6 +164,7 @@ fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
         "render" => render(args, area),
         "new" => new_deck(args, area),
         "convert" => convert(args, area),
+        "run" => run(args, area),
         other => Err(format!("deck.{other} is not a method of the deck service")),
     }
 }
@@ -188,6 +244,30 @@ fn write_out(area: &Area, path: &Path, bytes: &[u8], method: &str) -> Result<(),
     area.write(path, bytes).map_err(|e| format!("deck.{method}: {e}"))
 }
 
+/// Write `doc` to `out` encoded as `format` (`new`, `convert`, `run`):
+/// the bytes written.
+fn write_deck(area: &Area, out: &Path, doc: &Presentation, format: &str, method: &str) -> Result<usize, String> {
+    let bytes = engine_file::save_bytes(doc, format).map_err(|e| format!("deck.{method}: {e}"))?;
+    write_out(area, out, &bytes, method)?;
+    Ok(bytes.len())
+}
+
+/// Write slide `args.slide` (0-based, default 0) of `doc` to `out` as a
+/// PNG whose longest edge is `args.max_side` (default 1024, 16..=4096)
+/// (`render`, `run`): `{slide, width, height, bytes}`.
+fn write_slide(area: &Area, out: &Path, doc: &Presentation, args: &Json, method: &str) -> Result<Json, String> {
+    let slide = args["slide"].as_u64().unwrap_or(0) as usize;
+    let max_side = args["max_side"].as_u64().unwrap_or(1024).clamp(16, MAX_RENDER_SIDE) as f64;
+    let n = doc.slides.len();
+    if slide >= n {
+        return Err(format!("deck.{method}: no slide {slide} (the deck has {n})"));
+    }
+    let longest = doc.slide_size.width.max(doc.slide_size.height).max(1.0);
+    let (png, width, height) = engine_file::render_png(doc, slide, max_side / longest, false);
+    write_out(area, out, &png, method)?;
+    Ok(json!({"slide": slide, "width": width, "height": height, "bytes": png.len()}))
+}
+
 /// The output format `rel`'s extension names, confined to `allowed`
 /// `(extension, engine format)` pairs — never the engine's silent
 /// default.
@@ -226,18 +306,11 @@ fn render(args: &Json, area: &Area) -> Result<Json, String> {
         return Err("deck.render: `out` is a .png path".into());
     }
     let out = out_path(area, out_rel, "render")?;
-    let slide = args["slide"].as_u64().unwrap_or(0) as usize;
-    let max_side = args["max_side"].as_u64().unwrap_or(1024).clamp(16, MAX_RENDER_SIDE) as f64;
     let (s, _rel) = read_deck(args, area, "render")?;
     let st = s.doc().map_err(|e| format!("deck.render: {e}"))?;
-    let n = st.doc.slides.len();
-    if slide >= n {
-        return Err(format!("deck.render: no slide {slide} (the deck has {n})"));
-    }
-    let longest = st.doc.slide_size.width.max(st.doc.slide_size.height).max(1.0);
-    let (png, width, height) = engine_file::render_png(&st.doc, slide, max_side / longest, false);
-    write_out(area, &out, &png, "render")?;
-    Ok(json!({"out": out_rel, "slide": slide, "width": width, "height": height, "bytes": png.len()}))
+    let mut answer = write_slide(area, &out, &st.doc, args, "render")?;
+    answer["out"] = json!(out_rel);
+    Ok(answer)
 }
 
 /// `new {out, slides: [{title, bullets?}]}` — a deck built from titles
@@ -286,8 +359,7 @@ fn new_deck(args: &Json, area: &Area) -> Result<Json, String> {
     }
     let mut p = deckcraft_model::defaults::blank_presentation(deckcraft_model::defaults::WIDE, Default::default(), false);
     let made = deckcraft_format::outline_to_slides(&mut p, &outline);
-    let bytes = engine_file::save_bytes(&p, format).map_err(|e| format!("deck.new: {e}"))?;
-    write_out(area, &out, &bytes, "new")?;
+    write_deck(area, &out, &p, format, "new")?;
     Ok(json!({"out": out_rel, "slides": made, "format": format}))
 }
 
@@ -295,17 +367,55 @@ fn new_deck(args: &Json, area: &Area) -> Result<Json, String> {
 /// `.pptx`, `.deckcraft`, outline `.txt` or `.pdf`.
 fn convert(args: &Json, area: &Area) -> Result<Json, String> {
     let out_rel = args["out"].as_str().unwrap_or("");
-    let format = out_format(
-        out_rel,
-        "convert",
-        &[(".pptx", "pptx"), (".deckcraft", "deckcraft"), (".txt", "outline"), (".pdf", "pdf")],
-    )?;
+    let format = out_format(out_rel, "convert", CONVERT_OUT)?;
     let out = out_path(area, out_rel, "convert")?;
     let (s, _rel) = read_deck(args, area, "convert")?;
     let st = s.doc().map_err(|e| format!("deck.convert: {e}"))?;
-    let bytes = engine_file::save_bytes(&st.doc, format).map_err(|e| format!("deck.convert: {e}"))?;
-    write_out(area, &out, &bytes, "convert")?;
-    Ok(json!({"out": out_rel, "format": format, "bytes": bytes.len()}))
+    let bytes = write_deck(area, &out, &st.doc, format, "convert")?;
+    Ok(json!({"out": out_rel, "format": format, "bytes": bytes}))
+}
+
+/// The command door: every command admitted by [`door`] before the engine
+/// runs any (a refused one refuses the whole call, with nothing written),
+/// run in order on one session over the deck at `path` or a new blank one
+/// (the engine's own `file.new {blank: true}`: 16:9, the default theme, no
+/// slides), whose active deck is then written to `out` under the area's
+/// rules: by `out`'s extension as `convert` writes it, or one slide as
+/// `render` draws it (`.png`, with `slide` and `max_side`).
+fn run(args: &Json, area: &Area) -> Result<Json, String> {
+    // Admit every command first: one refused id refuses the whole call, with
+    // nothing opened and nothing written.
+    let admitted = door()?.admit_all(&args["cmds"], area)?;
+    let out = match args["out"].as_str().filter(|o| !o.is_empty()) {
+        Some(rel) => {
+            let format = out_format(rel, "run", RUN_OUT)?;
+            Some((rel, out_path(area, rel, "run")?, format))
+        }
+        None => None,
+    };
+    let mut s = match args["path"].as_str().filter(|p| !p.is_empty()) {
+        Some(_) => read_deck(args, area, "run")?.0,
+        None => {
+            let mut s = Session::new();
+            s.execute("file.new", &json!({"blank": true})).map_err(|e| format!("deck.run: {e}"))?;
+            s
+        }
+    };
+    let mut results = Vec::with_capacity(admitted.len());
+    for (id, params) in admitted {
+        let r = s.execute(&id, &params).map_err(|e| format!("deck.run {id}: {e}"))?;
+        results.push(json!({"id": id, "result": r}));
+    }
+    let Some((out_rel, out, format)) = out else { return Ok(json!({"results": results, "out": Json::Null})) };
+    let st = s.doc().map_err(|e| format!("deck.run: {e}"))?;
+    let mut answer = match format {
+        "png" => write_slide(area, &out, &st.doc, args, "run")?,
+        _ => json!({"bytes": write_deck(area, &out, &st.doc, format, "run")?}),
+    };
+    answer["results"] = json!(results);
+    answer["out"] = json!(out_rel);
+    answer["format"] = json!(format);
+    Ok(answer)
 }
 
 #[cfg(test)]
@@ -540,5 +650,284 @@ mod tests {
                 assert!(!e.contains("is not a method"), "{}: {e}", tool.name);
             }
         }
+    }
+
+    /// A 12x8 RGB PNG (two colour bands), as the photo service's tests use.
+    fn png() -> Vec<u8> {
+        const PNG: &str = "89504e470d0a1a0a0000000d494844520000000c000000080802000000428689a60000001d49444154789c6378616383866c725ea021063a2bb279d14310d15911005b9497817c6155610000000049454e44ae426082";
+        (0..PNG.len()).step_by(2).map(|i| u8::from_str_radix(&PNG[i..i + 2], 16).unwrap()).collect()
+    }
+
+    /// Half a second of 8 kHz mono PCM as a WAV, as the engine's media tests build it.
+    fn wav() -> Vec<u8> {
+        let rate = 8000u32;
+        let data: Vec<u8> = (0..rate / 2).flat_map(|i| (((i as f32 * 0.3).sin() * 3000.0) as i16).to_le_bytes()).collect();
+        let mut b = b"RIFF".to_vec();
+        b.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&rate.to_le_bytes());
+        b.extend_from_slice(&(rate * 2).to_le_bytes());
+        b.extend_from_slice(&2u16.to_le_bytes());
+        b.extend_from_slice(&16u16.to_le_bytes());
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        b.extend_from_slice(&data);
+        b
+    }
+
+    /// The door runs allowlisted commands in a temporary area and writes a
+    /// new deck: `safe` commands build it from a blank one, and nothing
+    /// outside the area is touched.
+    #[test]
+    fn the_door_runs_allowlisted_commands_in_its_area() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let made = serve(
+            &areas,
+            &service_call(
+                "run",
+                json!({"cmds": [
+                    {"id": "slide.new", "params": {"layout": "title", "title": "Quarterly review"}},
+                    {"id": "slide.new", "params": {"title": "Revenue", "body": "Grew twelve percent"}},
+                    {"id": "document.inspect"}
+                ], "out": "review.pptx"}),
+                dir.path(),
+                false,
+            ),
+        )
+        .unwrap();
+        assert_eq!(made["out"], json!("review.pptx"), "{made}");
+        assert_eq!(made["format"], json!("pptx"));
+        assert_eq!(made["results"].as_array().unwrap().len(), 3);
+        assert_eq!(made["results"][2]["result"]["slides"].as_array().unwrap().len(), 2, "a blank deck gained two slides: {made}");
+        let back = serve(&areas, &service_call("text", json!({"path": "review.pptx"}), dir.path(), false)).unwrap();
+        assert_eq!(back["outline"], json!("Quarterly review\nRevenue\n\tGrew twelve percent\n"), "{back}");
+        // An existing deck, edited and written beside itself as outline
+        // text; a query without `out` writes nothing.
+        let edited = serve(
+            &areas,
+            &service_call("run", json!({"path": "review.pptx", "cmds": [{"id": "slide.last"}, {"id": "slide.new", "params": {"title": "Costs"}}], "out": "review-2.txt"}), dir.path(), false),
+        )
+        .unwrap();
+        assert_eq!(edited["format"], json!("outline"), "{edited}");
+        assert!(std::fs::read_to_string(dir.path().join("review-2.txt")).unwrap().ends_with("Costs\n"));
+        let query = serve(&areas, &service_call("run", json!({"path": "review.pptx", "cmds": [{"id": "slide.inspect", "params": {"index": 1}}]}), dir.path(), false)).unwrap();
+        assert!(query["out"].is_null() && query["results"][0]["result"]["title"] == json!("Revenue"), "{query}");
+        let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names.len(), 2, "only the two outputs: {names:?}");
+    }
+
+    /// Every kind of `out` the door writes: the deck as `convert` writes it
+    /// (`.pptx`, `.deckcraft`, outline `.txt`, `.pdf`), one slide as `render`
+    /// draws it (`.png`), each from the session after the commands.
+    #[test]
+    fn the_door_writes_every_out_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        serve(&areas, &service_call("new", json!({"out": "talk.pptx", "slides": slides()}), dir.path(), false)).unwrap();
+        let run = |out: &str, extra: Json| {
+            let mut args = json!({"path": "talk.pptx", "cmds": [{"id": "slide.last"}, {"id": "slide.new", "params": {"title": "Questions"}}], "out": out});
+            for (k, v) in extra.as_object().unwrap() {
+                args[k] = v.clone();
+            }
+            serve(&areas, &service_call("run", args, dir.path(), false))
+        };
+        for (out, format) in [("k.pptx", "pptx"), ("k.deckcraft", "deckcraft")] {
+            let v = run(out, json!({})).unwrap();
+            assert_eq!((v["out"].as_str(), v["format"].as_str()), (Some(out), Some(format)), "{v}");
+            assert_eq!(v["bytes"].as_u64().unwrap(), std::fs::metadata(dir.path().join(out)).unwrap().len());
+            let info = serve(&areas, &service_call("info", json!({"path": out}), dir.path(), false)).unwrap();
+            assert_eq!(info["slides"].as_array().unwrap().len(), 3, "{out}: {info}");
+        }
+        let txt = run("k.txt", json!({})).unwrap();
+        assert_eq!(txt["format"], json!("outline"), "{txt}");
+        assert_eq!(std::fs::read_to_string(dir.path().join("k.txt")).unwrap(), "Why decks\n\tOne engine\nHow it ports\nQuestions\n");
+        let pdf = run("k.pdf", json!({})).unwrap();
+        assert_eq!(pdf["format"], json!("pdf"), "{pdf}");
+        assert!(std::fs::read(dir.path().join("k.pdf")).unwrap().starts_with(b"%PDF"));
+        let png = run("k.png", json!({"slide": 2, "max_side": 256})).unwrap();
+        assert_eq!((png["format"].as_str(), png["slide"].as_u64()), (Some("png"), Some(2)), "{png}");
+        let (w, h) = (png["width"].as_u64().unwrap(), png["height"].as_u64().unwrap());
+        assert_eq!(w.max(h), 256, "{png}");
+        let bytes = std::fs::read(dir.path().join("k.png")).unwrap();
+        assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']) && png["bytes"].as_u64().unwrap() == bytes.len() as u64);
+        let default = run("first.png", json!({})).unwrap();
+        assert_eq!((default["slide"].as_u64(), default["width"].as_u64().unwrap().max(default["height"].as_u64().unwrap())), (Some(0), 1024), "{default}");
+        // A slide the deck does not have, or an extension the door does not
+        // write, writes nothing.
+        assert!(run("none.png", json!({"slide": 9})).unwrap_err().contains("no slide 9 (the deck has 3)"));
+        assert!(run("k.jpg", json!({})).unwrap_err().contains("`out` ends in one of"));
+        assert!(!dir.path().join("none.png").exists() && !dir.path().join("k.jpg").exists());
+    }
+
+    /// Every class but `safe` (and the reviewed reads) is refused, and so is
+    /// an id the classification does not know, before any command runs: a
+    /// refused id anywhere in the list writes nothing. (deckcraft has no
+    /// `code` or `network` command.)
+    #[test]
+    fn the_door_refuses_every_other_class_and_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let refused = |id: &str, params: Json| {
+            let cmds = json!([{"id": "slide.new", "params": {"title": "x"}}, {"id": id, "params": params}]);
+            serve(&areas, &service_call("run", json!({"cmds": cmds, "out": "x.pptx"}), dir.path(), false)).unwrap_err()
+        };
+        for (id, class) in [
+            ("media.play", "device"),
+            ("media.toggle", "device"),
+            ("media.seek", "device"),
+            ("show.fromStart", "device"),
+            ("show.fromCurrent", "device"),
+            ("file.save", "host"),
+            ("file.saveAs", "host"),
+            ("file.saveTemplate", "host"),
+        ] {
+            let e = refused(id, json!({"path": "x.pptx"}));
+            assert!(e.contains(&format!("`{id}` is classed {class}")), "{id}: {e}");
+        }
+        for id in ["file.open", "file.export", "file.close", "file.recovery.save", "file.recovery.list", "file.recovery.open", "file.recovery.discard", "shape.fill", "design.background"] {
+            let e = refused(id, json!({"path": "elsewhere.pptx"}));
+            assert!(e.contains(&format!("`{id}` reads or writes files")) && e.contains("not reviewed to run through it"), "{id}: {e}");
+        }
+        assert!(refused("deck.secret", json!({})).contains("not a reviewed deck command"));
+        assert!(refused("Slide.New", json!({})).contains("not a reviewed deck command"), "ids match exactly");
+        assert!(!dir.path().join("x.pptx").exists(), "nothing written");
+        let too_many: Vec<Json> = (0..65).map(|_| json!({"id": "slide.new"})).collect();
+        assert!(serve(&areas, &service_call("run", json!({"cmds": too_many}), dir.path(), false)).unwrap_err().contains("at most 64"));
+        assert!(serve(&areas, &service_call("run", json!({"cmds": [{"params": {}}]}), dir.path(), false)).unwrap_err().contains("each command has an `id`"));
+        assert!(serve(&areas, &service_call("run", json!({"out": "y.pptx"}), dir.path(), false)).unwrap_err().contains("`cmds` is a list"));
+    }
+
+    /// The reviewed media reads take a file inside the area only and embed
+    /// it; the `file` commands with an undocumented read, and `file.close`,
+    /// stay refused; the door never writes over an existing `out`, and keeps
+    /// to the quota and to the area.
+    #[test]
+    fn the_doors_file_reads_and_writes_keep_the_areas_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        std::fs::create_dir(dir.path().join("pics")).unwrap();
+        std::fs::write(dir.path().join("pics/dot.png"), png()).unwrap();
+        std::fs::create_dir(dir.path().join("sound")).unwrap();
+        std::fs::write(dir.path().join("sound/tone.wav"), wav()).unwrap();
+        let made = serve(
+            &areas,
+            &service_call(
+                "run",
+                json!({"cmds": [
+                    {"id": "slide.new", "params": {"layout": "blank"}},
+                    {"id": "insert.picture", "params": {"path": "pics/dot.png"}},
+                    {"id": "picture.change", "params": {"path": "pics/dot.png"}},
+                    {"id": "insert.audio", "params": {"path": "sound/tone.wav"}}
+                ], "out": "media.pptx"}),
+                dir.path(),
+                false,
+            ),
+        )
+        .unwrap();
+        assert_eq!(made["out"], json!("media.pptx"), "{made}");
+        let info = serve(&areas, &service_call("info", json!({"path": "media.pptx"}), dir.path(), false)).unwrap();
+        let types: Vec<&str> = info["media"].as_array().unwrap().iter().filter_map(|m| m["type"].as_str()).collect();
+        assert!(types.contains(&"image/png") && types.contains(&"audio/wav"), "the files were embedded: {info}");
+        // Only a file inside the area, for every reviewed read.
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.png"), png()).unwrap();
+        let secret = outside.path().join("secret.png").to_string_lossy().into_owned();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path().join("secret.png"), dir.path().join("link.png")).unwrap();
+        for id in ["insert.picture", "insert.audio", "insert.video", "picture.change"] {
+            for bad in [secret.as_str(), "../secret.png", "pics/../../secret.png", "link.png", "pics", "missing.png"] {
+                let cmds = json!([{"id": "slide.new"}, {"id": id, "params": {"path": bad}}]);
+                let e = serve(&areas, &service_call("run", json!({"cmds": cmds, "out": "leak.pptx"}), dir.path(), false)).unwrap_err();
+                assert!(e.contains(&format!("deck.run: `{id}`: `path`: ")), "{id} {bad}: the reviewed read's own check: {e}");
+                assert!(!e.contains(outside.path().to_string_lossy().as_ref()), "{id} {bad}: an error never spells a host path: {e}");
+            }
+        }
+        // A non-string `picture` makes these read `path`: refused whatever
+        // it names, inside the area or out; and so is `file.close`.
+        for (id, params) in [
+            ("shape.fill", json!({"picture": null, "path": secret})),
+            ("shape.fill", json!({"picture": null, "path": "pics/dot.png"})),
+            ("design.background", json!({"picture": null, "path": secret})),
+            ("design.background", json!({"picture": 0, "path": "pics/dot.png"})),
+            ("file.close", json!({})),
+        ] {
+            let cmds = json!([{"id": "slide.new"}, {"id": "shape.insert", "params": {"preset": "rect"}}, {"id": id, "params": params}]);
+            let e = serve(&areas, &service_call("run", json!({"cmds": cmds, "out": "leak.pptx"}), dir.path(), false)).unwrap_err();
+            assert!(e.contains(&format!("`{id}` reads or writes files")), "{id}: {e}");
+        }
+        assert!(!dir.path().join("leak.pptx").exists(), "nothing written");
+        // What one call's reads may total is capped before the engine reads.
+        let big = std::fs::File::create(dir.path().join("pics/big.png")).unwrap();
+        big.set_len(MAX_DECK_BYTES + 1).unwrap();
+        let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "slide.new"}, {"id": "insert.picture", "params": {"path": "pics/big.png"}}]}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("the files this call reads total more than 67108864 bytes"), "{e}");
+        // Never over an existing file, within the quota, inside the area.
+        std::fs::write(dir.path().join("taken.pptx"), b"keep").unwrap();
+        let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "slide.new"}], "out": "taken.pptx"}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("`taken.pptx` already exists"), "{e}");
+        assert_eq!(std::fs::read(dir.path().join("taken.pptx")).unwrap(), b"keep");
+        let e = serve(&resolver(dir.path(), Some(64)), &service_call("run", json!({"cmds": [{"id": "slide.new"}], "out": "big.pptx"}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("bytes left"), "{e}");
+        assert!(!dir.path().join("big.pptx").exists());
+        for bad in ["../up.pptx", "/etc/x.pptx", "pics/../../up.pptx"] {
+            assert!(serve(&areas, &service_call("run", json!({"cmds": [], "out": bad}), dir.path(), false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("run", json!({"cmds": [], "path": bad}), dir.path(), false)).is_err(), "{bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(outside.path(), dir.path().join("up")).unwrap();
+            assert!(serve(&areas, &service_call("run", json!({"cmds": [{"id": "slide.new"}], "out": "up/made.pptx"}), dir.path(), false)).is_err());
+            assert!(!outside.path().join("made.pptx").exists());
+        }
+    }
+
+    /// The door's gate is built from the generated classification and the
+    /// reviewed reads, which must be `file` commands of the catalog: every
+    /// `safe` id and the four reads run, nothing else.
+    #[test]
+    fn the_door_is_built_from_the_reviewed_classification() {
+        let door = door().unwrap();
+        for id in ["slide.new", "text.set", "document.inspect", "slide.inspect", "file.new", "file.saveBytes", "insert.picture", "insert.audio", "insert.video", "picture.change"] {
+            assert!(door.runs(id), "{id}");
+        }
+        for id in ["file.open", "file.export", "file.close", "file.save", "file.recovery.open", "shape.fill", "design.background", "media.play", "show.fromStart"] {
+            assert!(!door.runs(id), "{id}");
+        }
+        let safety: Json = serde_json::from_str(include_str!("../skill/safety.json")).unwrap();
+        let safe = safety["commands"].as_object().unwrap().values().filter(|c| *c == "safe").count();
+        assert_eq!(door.runnable().len(), safe + REVIEWED.file_reads.len());
+    }
+
+    /// Every `deck.run` call the skill's examples show runs, in order,
+    /// in one area as the system agent's (with the files they name placed
+    /// there first), and writes its `out`: the skill teaches commands that
+    /// work.
+    #[test]
+    fn the_skill_examples_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("chart.png"), png()).unwrap();
+        let body = include_str!("../skill/SKILL.md");
+        let examples = body.split("\n## Examples").nth(1).and_then(|rest| rest.split("\n## ").next()).unwrap();
+        let mut ran = 0;
+        for span in examples.split('`').skip(1).step_by(2) {
+            let Some(args) = span.strip_prefix("deck.run ") else { continue };
+            let args: Json = serde_json::from_str(args).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            let got = serve(&areas, &service_call("run", args.clone(), dir.path(), false)).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            assert_eq!(got["results"].as_array().map(Vec::len), args["cmds"].as_array().map(Vec::len), "{got}");
+            if let Some(out) = args["out"].as_str() {
+                assert!(dir.path().join(out).is_file(), "`{span}` wrote no {out}");
+            }
+            ran += 1;
+        }
+        assert!(ran >= 6, "{ran} examples");
+        let outline = std::fs::read_to_string(dir.path().join("launch.txt")).unwrap();
+        assert_eq!(outline, "Launch plan\nGoals\n\tShip in May\n\tTwo pilots\nNext steps\n\tBudget\n\tHiring\n");
+        let info = serve(&areas, &service_call("info", json!({"path": "launch-2.pptx"}), dir.path(), false)).unwrap();
+        assert_eq!(info["slides"].as_array().unwrap().len(), 4, "{info}");
     }
 }

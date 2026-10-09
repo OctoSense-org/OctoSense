@@ -4,12 +4,12 @@
   "regenerate": "OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-effect-service --test skill",
   "rules": "safety-rules.json",
   "classes": {
-    "safe": {"count": 476, "meaning": "pure document or pixel operations inside the session"},
+    "safe": {"count": 474, "meaning": "pure document or pixel operations inside the session"},
     "file": {"count": 64, "meaning": "reads or writes a path (a door may allow it only inside the caller's area)"},
     "code": {"count": 12, "meaning": "installs or runs code: plug-ins, scripts, expressions with I/O, or other commands (macros, actions, batches)"},
     "network": {"count": 10, "meaning": "uses the network"},
     "device": {"count": 2, "meaning": "uses hardware: audio, MIDI, cameras, scanners, printers, tablets"},
-    "host": {"count": 101, "meaning": "host, app or UI state outside the document: windows, panels, views, preferences, shortcuts, the clipboard"}
+    "host": {"count": 103, "meaning": "host, app or UI state outside the document: windows, panels, views, preferences, shortcuts, the clipboard"}
   },
   "commands": {
     "anim.addKeyframe": "safe",
@@ -419,12 +419,12 @@
     "material.revealSource": "safe",
     "material.set": "safe",
     "mediaBrowser.action": "file",
-    "mediaBrowser.addFavorite": "safe",
+    "mediaBrowser.addFavorite": "host",
     "mediaBrowser.fileInfo": "file",
     "mediaBrowser.go": "file",
     "mediaBrowser.import": "file",
     "mediaBrowser.list": "file",
-    "mediaBrowser.removeFavorite": "safe",
+    "mediaBrowser.removeFavorite": "host",
     "motion.sketch": "safe",
     "paint.brushPreset": "safe",
     "paint.options": "safe",

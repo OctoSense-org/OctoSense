@@ -18,6 +18,14 @@
 //!   `format` overrides `out`'s extension
 //! - `new {out, text?, title?}` → `{out, words, paragraphs}` — write a
 //!   minimal new document (format by `out`'s extension, usually docx)
+//! - `run {path?, cmds: [{id, params?}], out?, format?}` → `{results, out,
+//!   format?, bytes?}` — the command door (ADR 0013, #418): run commands of
+//!   wordcraft's registry on the document at `path`, or on a new empty one,
+//!   then write it to `out` (format by `format`, else `out`'s extension).
+//!   Only what the door's allowlist admits runs ([`door`]): commands the
+//!   reviewed classification (`skill/safety.json`) classes `safe`, and the
+//!   two reviewed picture reads, whose `path` must name a file inside the
+//!   area; every other id is refused before any command runs.
 //!
 //! **Where a call works** (ADR 0013, 2026-10-08): in its caller's own
 //! folder, the [`Area`] the shell's resolver gives it ([`set_area_resolver`]):
@@ -27,7 +35,8 @@
 //! area: `..`, absolute paths and symlink escapes are refused. A write that
 //! may not replace (an agent's) only ever creates a new file, and what a
 //! call writes stays within the area's quota ([`Area::write`]). wordcraft
-//! reads only the bytes the service hands it, so nothing written inside a
+//! reads only the bytes the service hands it, and through the door a
+//! picture the gate found inside the area, so nothing written inside a
 //! document reaches another file. The service serves system apps only until
 //! ADR 0013's store capability is designed.
 
@@ -36,7 +45,10 @@ pub mod skill;
 
 use std::path::{Component, Path, PathBuf};
 
+use std::sync::OnceLock;
+
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::door::{Door, FileRead, Reviewed};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 use wordcraft_doc::{Document, StoryRef};
@@ -46,6 +58,26 @@ use wordcraft_engine::Session;
 const MAX_DOC_BYTES: u64 = 64 << 20;
 /// The most text `new` accepts (bytes).
 const MAX_NEW_TEXT_BYTES: usize = 4 << 20;
+
+/// What the word engine's reviewer settled for the door beyond the classes:
+/// two `file` commands that only read the picture their `path` names (whole,
+/// with `std::fs::read`) and embed its bytes, or take it inline as `data`
+/// (`cmd/insert.rs` `picture`, `cmd/objects.rs` `picture.change`). No
+/// setter or inner id: no `safe` word command sets an app-wide variable or
+/// names another command.
+static REVIEWED: Reviewed = Reviewed {
+    file_reads: &[FileRead { id: "insert.picture", params: &["path"] }, FileRead { id: "picture.change", params: &["path"] }],
+    setters: &[],
+    inner: &[],
+};
+
+/// The command door's gate: wordcraft's reviewed classification
+/// (`skill/safety.json`, generated and drift-checked by `tests/skill.rs`)
+/// and [`REVIEWED`].
+pub fn door() -> Result<&'static Door, String> {
+    static DOOR: OnceLock<Result<Door, String>> = OnceLock::new();
+    DOOR.get_or_init(|| Door::new("word", include_str!("../skill/safety.json"), &REVIEWED)).as_ref().map_err(Clone::clone)
+}
 
 /// Which apps may call the service: system apps, as News and Sheets.
 fn may_call(app_id: &str) -> bool {
@@ -73,10 +105,12 @@ pub fn set_area_resolver(resolver: Option<octosense_engine_area::Resolver>) {
     AREAS.set(resolver);
 }
 
-/// The `word.*` agent tools (ADR 0013, wave 2), in App Hub's `tools.json`
-/// shape: the shell declares them for the virtual owner `os.word` and grants
-/// the system agent its reviewed share (`crates/shell/src/host_tools/engines.rs`,
-/// `crates/shell/src/system_chat/grants.rs` `ENGINE_TOOLS`).
+/// The `word.*` agent tools (ADR 0013), in App Hub's `tools.json` shape:
+/// `word.info` and the command door `word.run`. The shell declares them for
+/// the virtual owner `os.word` and grants them to the system agent
+/// (`crates/shell/src/host_tools/engines.rs`,
+/// `crates/shell/src/system_chat/grants.rs` `ENGINE_TOOLS`); the other
+/// methods stay for apps' own requests.
 pub const TOOLS_JSON: &str = include_str!("../tools.json");
 
 impl HostService for WordService {
@@ -107,6 +141,7 @@ fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
         "inspect" => inspect(args, area),
         "convert" => convert(args, area),
         "new" => new(args, area),
+        "run" => run(args, area),
         other => Err(format!("word.{other} is not a method of the word service")),
     }
 }
@@ -236,6 +271,42 @@ fn new(args: &Json, area: &Area) -> Result<Json, String> {
     }
     write(&doc, out_rel, &out, area).map_err(|e| format!("word.new: {e}"))?;
     Ok(json!({"out": out_rel, "words": doc.word_count(), "paragraphs": doc.paragraph_count()}))
+}
+
+/// The command door: every command admitted by [`door`] before the engine
+/// runs any (a refused one refuses the whole call, with nothing written),
+/// run in order on one session over the document at `path` or a new empty
+/// one, which is then written to `out` under the area's rules.
+fn run(args: &Json, area: &Area) -> Result<Json, String> {
+    // Admit every command first: one refused id refuses the whole call, with
+    // nothing opened and nothing written.
+    let admitted = door()?.admit_all(&args["cmds"], area)?;
+    let out = match args["out"].as_str().filter(|o| !o.is_empty()) {
+        Some(rel) => {
+            let path = contained(area, "out", rel).map_err(|e| format!("word.run: {e}"))?;
+            area.check(&path, 0).map_err(|e| format!("word.run: {e}"))?;
+            Some((rel, path))
+        }
+        None => None,
+    };
+    let doc = match args["path"].as_str().filter(|p| !p.is_empty()) {
+        Some(_) => open(args, area).map_err(|e| format!("word.run: {e}"))?.0,
+        None => Document::new(),
+    };
+    let mut s = Session::new(doc);
+    let mut results = Vec::with_capacity(admitted.len());
+    for (id, params) in admitted {
+        let r = s.run(&id, &params).map_err(|e| format!("word.run {id}: {e}"))?;
+        results.push(json!({"id": id, "result": r}));
+    }
+    let Some((out_rel, out)) = out else { return Ok(json!({"results": results, "out": Json::Null})) };
+    let name = match args["format"].as_str().map(|f| f.trim_start_matches('.')).filter(|f| !f.is_empty()) {
+        Some(fmt) => format!("out.{fmt}"),
+        None => out_rel.to_string(),
+    };
+    let bytes = write(&s.doc, &name, &out, area).map_err(|e| format!("word.run: {e}"))?;
+    let format = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    Ok(json!({"results": results, "out": out_rel, "format": format, "bytes": bytes}))
 }
 
 #[cfg(test)]
@@ -445,6 +516,155 @@ mod tests {
         assert!(may_call("os.notes"));
         assert!(!may_call("org.example.anything"));
         assert!(!may_call(""));
+    }
+
+    /// The door runs an allowlisted command in a temporary area and writes
+    /// a new document: `safe` commands build it, and nothing outside the
+    /// area is touched.
+    #[test]
+    fn the_door_runs_allowlisted_commands_in_its_area() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let made = serve(
+            &areas,
+            &service_call(
+                "run",
+                json!({"cmds": [
+                    {"id": "text.insert", "params": {"text": "Quarterly report"}},
+                    {"id": "para.style", "params": {"style": "Heading 1"}},
+                    {"id": "text.newParagraph"},
+                    {"id": "text.insert", "params": {"text": "Revenue grew."}},
+                    {"id": "document.text"}
+                ], "out": "report.docx"}),
+                dir.path(),
+                false,
+            ),
+        )
+        .unwrap();
+        assert_eq!(made["out"], json!("report.docx"), "{made}");
+        assert_eq!(made["format"], json!("docx"));
+        assert_eq!(made["results"].as_array().unwrap().len(), 5);
+        let back = serve(&areas, &service_call("text", json!({"path": "report.docx"}), dir.path(), false)).unwrap();
+        assert!(back["text"].as_str().unwrap().contains("Quarterly report\nRevenue grew."), "{back}");
+        // An existing document, edited and written beside itself; a query
+        // without `out` writes nothing.
+        let edited = serve(
+            &areas,
+            &service_call("run", json!({"path": "report.docx", "cmds": [{"id": "caret.docEnd"}, {"id": "text.insert", "params": {"text": " Costs fell."}}], "out": "report-2.md"}), dir.path(), false),
+        )
+        .unwrap();
+        assert_eq!(edited["format"], json!("md"), "{edited}");
+        assert!(std::fs::read_to_string(dir.path().join("report-2.md")).unwrap().contains("Costs fell."));
+        let query = serve(&areas, &service_call("run", json!({"path": "report.docx", "cmds": [{"id": "document.inspect", "params": {"text": false}}]}), dir.path(), false)).unwrap();
+        assert!(query["out"].is_null() && query["results"][0]["result"]["blocks"].is_array(), "{query}");
+    }
+
+    /// Every class but `safe` (and the reviewed reads) is refused, and so is
+    /// an id the classification does not know, before any command runs: a
+    /// refused id anywhere in the list writes nothing.
+    #[test]
+    fn the_door_refuses_every_other_class_and_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        for (id, class) in [
+            ("tools.macros", "code"),
+            ("tools.recordMacro", "code"),
+            ("edit.repeat", "code"),
+            ("references.researcher", "network"),
+            ("review.readAloud", "device"),
+            ("file.print", "host"),
+            ("view.zoom", "host"),
+        ] {
+            let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "text.insert", "params": {"text": "x"}}, {"id": id}], "out": "x.docx"}), dir.path(), false)).unwrap_err();
+            assert!(e.contains(&format!("`{id}` is classed {class}")), "{id}: {e}");
+        }
+        let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "file.saveAs", "params": {"path": "elsewhere.docx"}}]}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("not reviewed to run through it"), "{e}");
+        let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "word.secret"}]}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("not a reviewed word command"), "{e}");
+        // A macro that wraps an allowed command is still the macro: refused.
+        let e = serve(
+            &areas,
+            &service_call("run", json!({"cmds": [{"id": "tools.macros", "params": {"define": {"name": "m", "steps": [{"command": "text.insert", "params": {"text": "x"}}]}}}]}), dir.path(), false),
+        )
+        .unwrap_err();
+        assert!(e.contains("classed code"), "{e}");
+        assert!(!dir.path().join("x.docx").exists(), "nothing written");
+        let too_many: Vec<Json> = (0..65).map(|_| json!({"id": "text.newParagraph"})).collect();
+        assert!(serve(&areas, &service_call("run", json!({"cmds": too_many}), dir.path(), false)).unwrap_err().contains("at most 64"));
+    }
+
+    /// The reviewed picture reads take a file inside the area only; the door
+    /// never writes over an existing `out`, and keeps to the quota.
+    #[test]
+    fn the_doors_file_reads_and_writes_keep_the_areas_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let png = png();
+        std::fs::create_dir(dir.path().join("pics")).unwrap();
+        std::fs::write(dir.path().join("pics/dot.png"), &png).unwrap();
+        let made = serve(&areas, &service_call("run", json!({"cmds": [{"id": "insert.picture", "params": {"path": "pics/dot.png"}}], "out": "with-picture.docx"}), dir.path(), false)).unwrap();
+        assert_eq!(made["out"], json!("with-picture.docx"), "{made}");
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.png"), &png).unwrap();
+        let secret = outside.path().join("secret.png").to_string_lossy().into_owned();
+        for bad in [secret.as_str(), "../secret.png", "pics/../../secret.png"] {
+            let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "insert.picture", "params": {"path": bad}}]}), dir.path(), false)).unwrap_err();
+            assert!(e.starts_with("word.run: `insert.picture`: `path`: "), "{bad}: {e}");
+        }
+        std::fs::write(dir.path().join("taken.docx"), b"keep").unwrap();
+        let e = serve(&areas, &service_call("run", json!({"cmds": [{"id": "text.insert", "params": {"text": "x"}}], "out": "taken.docx"}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("`taken.docx` already exists"), "{e}");
+        assert_eq!(std::fs::read(dir.path().join("taken.docx")).unwrap(), b"keep");
+        let e = serve(&resolver(dir.path(), Some(16)), &service_call("run", json!({"cmds": [{"id": "text.insert", "params": {"text": "x"}}], "out": "big.docx"}), dir.path(), false)).unwrap_err();
+        assert!(e.contains("bytes left"), "{e}");
+        for bad in ["../up.docx", "/etc/x.docx"] {
+            assert!(serve(&areas, &service_call("run", json!({"cmds": [], "out": bad}), dir.path(), false)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("run", json!({"cmds": [], "path": bad}), dir.path(), false)).is_err(), "{bad}");
+        }
+    }
+
+    /// A 12x8 RGB PNG (two colour bands), as the photo service's tests use.
+    fn png() -> Vec<u8> {
+        const PNG: &str = "89504e470d0a1a0a0000000d494844520000000c000000080802000000428689a60000001d49444154789c6378616383866c725ea021063a2bb279d14310d15911005b9497817c6155610000000049454e44ae426082";
+        (0..PNG.len()).step_by(2).map(|i| u8::from_str_radix(&PNG[i..i + 2], 16).unwrap()).collect()
+    }
+
+    /// Every `word.run` call the skill's examples show runs, in order, in
+    /// one area as the system agent's (with the picture it names placed
+    /// there), and writes its `out`: the skill teaches commands that work.
+    #[test]
+    fn the_skill_examples_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        std::fs::write(dir.path().join("chart.png"), png()).unwrap();
+        let body = include_str!("../skill/SKILL.md");
+        let examples = body.split("\n## Examples").nth(1).and_then(|rest| rest.split("\n## ").next()).unwrap();
+        let mut ran = 0;
+        for span in examples.split('`').skip(1).step_by(2) {
+            let Some(args) = span.strip_prefix("word.run ") else { continue };
+            let args: Json = serde_json::from_str(args).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            let got = serve(&areas, &service_call("run", args.clone(), dir.path(), false)).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            assert_eq!(got["results"].as_array().map(Vec::len), args["cmds"].as_array().map(Vec::len), "{got}");
+            if let Some(out) = args["out"].as_str() {
+                assert!(dir.path().join(out).is_file(), "`{span}` wrote no {out}");
+            }
+            ran += 1;
+        }
+        assert!(ran >= 5, "{ran} examples");
+        let memo = serve(&areas, &service_call("inspect", json!({"path": "memo.docx"}), dir.path(), false)).unwrap();
+        assert_eq!((memo["blocks"][0]["style"].as_str(), memo["blocks"][1]["style"].as_str()), (Some("Heading1"), Some("Normal")), "{memo}");
+        assert!(std::fs::read_to_string(dir.path().join("memo-v2.md")).unwrap().contains("Turnover grew"));
+    }
+
+    /// The door's gate is built from the generated classification and the
+    /// reviewed reads, which must be `file` commands of the catalog.
+    #[test]
+    fn the_door_is_built_from_the_reviewed_classification() {
+        let door = door().unwrap();
+        assert!(door.runs("text.insert") && door.runs("insert.picture") && door.runs("picture.change"));
+        assert!(!door.runs("file.save") && !door.runs("tools.macros") && !door.runs("review.readAloud"));
+        assert!(door.runnable().len() > 300, "{}", door.runnable().len());
     }
 
     /// The agent tools (`tools.json`) pass App Hub's own loader, as the shell

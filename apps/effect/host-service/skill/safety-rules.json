@@ -470,10 +470,10 @@
         "effect.plugins.load"
       ],
       "class": "code",
-      "why": "Loads a WebAssembly effect plug-in into the process-wide effect registry through the host plug-in loader (effect.run already refuses effect.plugins.* except list).",
+      "why": "Loads a WebAssembly effect plug-in into the process-wide effect registry through the host plug-in loader; a registered plug-in is then applied by id like a built-in, and by display name ahead of a built-in it shadows.",
       "evidence": [
         "crates/engine/src/commands/effect.rs:34-72: plugins_load reads the .wasm (or every .wasm in a folder via std::fs::read_dir) and calls the plugin_loader",
-        "crates/engine/src/apps/effect/host-service/src/lib.rs:324-329: callable() refuses effect.plugins.* except list"
+        "crates/effects/src/plugin.rs:276-296: register_plugin adds the spec to the process-wide registry; crates/effects/src/lib.rs:486-535: find/lookup resolve plug-ins too"
       ]
     },
     {
@@ -830,15 +830,25 @@
         "file.scripts.list",
         "app.capabilities",
         "render.backend",
-        "mediaBrowser.addFavorite",
-        "mediaBrowser.removeFavorite",
         "effect.plugins.list"
       ],
       "class": "safe",
-      "why": "Project-only / query exceptions to their file/host namespace defaults: build placeholders/solids/comps, consolidate/remove-unused/reduce, interpret footage (uses project media), close, project settings, formats list, proxy switches, script list; app.capabilities and render.backend are queries/project settings; media-browser favourites are session state.",
+      "why": "Project-only / query exceptions to their file/host namespace defaults: build placeholders/solids/comps, consolidate/remove-unused/reduce, interpret footage (uses project media), close, project settings, formats list, proxy switches, script list; app.capabilities and render.backend are queries/project settings.",
       "evidence": [
         "crates/engine/src/commands/file.rs (projectSettings/cycleBitDepth), crates/engine/src/commands/file_more.rs:114-326 (placeholders/solids/newCompFromSelection/consolidate/reduce/interpret), crates/engine/src/commands/proxy.rs:76-139 (setProxyNone/useProxy/interpretProxy)",
-        "crates/engine/src/commands/scripts.rs:102-104 (file.scripts.list), crates/engine/src/commands/query.rs (app.capabilities), crates/engine/src/commands/panels_cmds.rs:84-93 (favourites in EditorState)"
+        "crates/engine/src/commands/scripts.rs:102-104 (file.scripts.list), crates/engine/src/commands/query.rs (app.capabilities)"
+      ]
+    },
+    {
+      "ids": [
+        "mediaBrowser.addFavorite",
+        "mediaBrowser.removeFavorite"
+      ],
+      "class": "host",
+      "why": "Media Browser panel state outside the document: a favourite folder kept in the session's EditorState. Without a `path` the favourite is the browser's home folder, the HOME environment variable, which the answer lists.",
+      "evidence": [
+        "crates/engine/src/commands/panels_cmds.rs:84-93: browser_favorite edits s.state.media_browser.favorites and returns the list; browser_dir falls back to b.home()",
+        "crates/engine/src/media_browser.rs:84-86,224-226: media_browser() is the file-system browser when the host sets none; home() reads HOME / USERPROFILE"
       ]
     },
     {

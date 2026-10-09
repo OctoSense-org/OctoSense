@@ -24,112 +24,39 @@
       "implemented_by": "host-service"
     },
     {
-      "name": "deck.text",
-      "description": "Read a presentation in your workspace as outline text: slide titles unindented, bullets tab-indented by level, and the slide count. Reads only. `path` is relative to your workspace (see deck.info).",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {"type": "string", "minLength": 1, "maxLength": 512}
-        },
-        "required": ["path"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "outline": {"type": "string"},
-          "slides": {"type": "integer"}
-        },
-        "required": ["outline", "slides"]
-      },
-      "risk": "read",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "deck.render",
-      "description": "Render one slide (0-based `slide`, default 0) of a presentation in your workspace to a PNG at `out` (a .png path), its longest edge `max_side` pixels (default 1024). Both paths are relative to your workspace (see deck.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
+      "name": "deck.run",
+      "description": "Run up to 64 commands from the deck engine's catalog, in order, on the presentation at `path` in your workspace, or on a new empty presentation, then write it as .pptx, .deckcraft, outline .txt or .pdf, or one slide (`slide`, 0-based) as a .png at most `max_side` pixels long to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document), and the picture, audio and video commands that read a file from your workspace; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the deck-engine skill first.",
       "input_schema": {
         "type": "object",
         "properties": {
           "path": {"type": "string", "minLength": 1, "maxLength": 512},
-          "out": {"type": "string", "minLength": 5, "maxLength": 512},
-          "slide": {"type": "integer", "minimum": 0},
-          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
-        },
-        "required": ["path", "out"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string"},
-          "slide": {"type": "integer"},
-          "width": {"type": "integer"},
-          "height": {"type": "integer"},
-          "bytes": {"type": "integer"}
-        },
-        "required": ["out", "slide", "width", "height", "bytes"]
-      },
-      "risk": "act",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "deck.new",
-      "description": "Write a new presentation into your workspace from slide titles and flat bullet lists (1 to 200 slides, at most 64 bullets each). `out` ends in .pptx or .deckcraft and is relative to your workspace (see deck.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string", "minLength": 6, "maxLength": 512},
-          "slides": {
+          "cmds": {
             "type": "array",
-            "minItems": 1,
-            "maxItems": 200,
+            "maxItems": 64,
             "items": {
               "type": "object",
               "properties": {
-                "title": {"type": "string", "minLength": 1, "maxLength": 2000},
-                "bullets": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 2000}}
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
               },
-              "required": ["title"],
+              "required": ["id"],
               "additionalProperties": false
             }
-          }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "slide": {"type": "integer", "minimum": 0},
+          "max_side": {"type": "integer", "minimum": 16, "maximum": 4096}
         },
-        "required": ["out", "slides"],
+        "required": ["cmds"],
         "additionalProperties": false
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "out": {"type": "string"},
-          "slides": {"type": "integer"},
-          "format": {"type": "string"}
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
         },
-        "required": ["out", "slides", "format"]
-      },
-      "risk": "act",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "deck.convert",
-      "description": "Convert a presentation in your workspace and write it there, in the format the extension of `out` names: .pptx, .deckcraft, outline .txt or .pdf. Both paths are relative to your workspace (see deck.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {"type": "string", "minLength": 1, "maxLength": 512},
-          "out": {"type": "string", "minLength": 5, "maxLength": 512}
-        },
-        "required": ["path", "out"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string"},
-          "format": {"type": "string"},
-          "bytes": {"type": "integer"}
-        },
-        "required": ["out", "format", "bytes"]
+        "required": ["results"]
       },
       "risk": "act",
       "implemented_by": "host-service"

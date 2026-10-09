@@ -206,8 +206,8 @@
     },
     {
       "ids": ["review.readAloud"],
-      "class": "code",
-      "why": "Spawns an OS process to speak up to 20,000 characters of document text: say on macOS, powershell -NoProfile -Command on Windows, spd-say or espeak on other Unix (audio output too). The text is one argv element with no --, so a paragraph starting with '-' reaches those tools as options.",
+      "class": "device",
+      "why": "Starts an OS text-to-speech program that speaks up to 20,000 characters of document text out loud: say on macOS, powershell -NoProfile -Command on Windows, spd-say or espeak on other Unix. The text is one argv element with no --, so a paragraph starting with '-' reaches those programs as options. An audio device and a program the engine starts: never through a door.",
       "evidence": [
         "crates/engine/src/cmd/tools.rs:376, 781-826 read_aloud(): std::process::Command::new(say | powershell | spd-say | espeak)"
       ]

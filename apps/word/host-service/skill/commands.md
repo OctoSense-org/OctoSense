@@ -328,7 +328,7 @@ A tag after the id marks a command that reaches past the open document (safety.j
 - `review.previousChange` Previous Change: {}
 - `review.previousComment` Previous: {}
 - `review.proofing` [host] Check Spelling as You Type: {}
-- `review.readAloud` [code] Read Aloud: {}
+- `review.readAloud` [device] Read Aloud: {}
 - `review.reject` Reject: {}
 - `review.rejectAll` Reject All Changes: {}
 - `review.reply` Reply: {"id": n, "text": string}

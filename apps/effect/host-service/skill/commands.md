@@ -495,12 +495,12 @@ A tag after the id marks a command that reaches past the open document (safety.j
 ## mediaBrowser
 
 - `mediaBrowser.action` [file] Media Browser Action: {action}: an action from mediaBrowser.list's `actions` (web: openFolder, addFiles, uploadFolder)
-- `mediaBrowser.addFavorite` Add to Favorites: {path?}
+- `mediaBrowser.addFavorite` [host] Add to Favorites: {path?}
 - `mediaBrowser.fileInfo` [file] File Info: {path}
 - `mediaBrowser.go` [file] Go to Folder: {path?: folder | "..", importableOnly?}
 - `mediaBrowser.import` [file] Import: {paths, addToComp?, time?, index?, position? (where the layers go, as in layer.addItem)}
 - `mediaBrowser.list` [file] List Folder: {path?, importableOnly?}
-- `mediaBrowser.removeFavorite` Remove from Favorites: {path?}
+- `mediaBrowser.removeFavorite` [host] Remove from Favorites: {path?}
 
 ## motion
 

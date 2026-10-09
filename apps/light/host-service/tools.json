@@ -26,86 +26,39 @@
       "implemented_by": "host-service"
     },
     {
-      "name": "light.controls",
-      "description": "List the light engine's develop controls (id, label, range, default): the valid keys of `params` for light.develop and light.batch, such as light.exposure, light.contrast, color.vibrance or wb.temp. Reads only.",
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "controls": {"type": "array", "items": {"type": "object"}}
-        },
-        "required": ["controls"]
-      },
-      "risk": "read",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "light.develop",
-      "description": "Develop one photo in your workspace and export it to `out`, whose extension picks the format (.jpg, .png, .tif, .webp, .avif or .dng). `params` maps develop control ids (see light.controls) to numbers; `auto` runs auto-tone first; `long_edge` caps the output size; `quality` is 1 to 100 (default 92). Both paths are relative to your workspace (see light.info); nothing is written outside it, and no existing file is ever replaced, an original least of all: choose a new name for `out`.",
+      "name": "light.run",
+      "description": "Run up to 64 commands from the light engine's catalog, in order, on the photo at `path` in your workspace, then write the developed photo (.jpg, .png, .tif, .webp, .avif or .dng by the extension of `out`; `quality` 1 to 100, `long_edge` caps its size) to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document); anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the light-engine skill first.",
       "input_schema": {
         "type": "object",
         "properties": {
           "path": {"type": "string", "minLength": 1, "maxLength": 512},
-          "out": {"type": "string", "minLength": 5, "maxLength": 512},
-          "params": {"type": "object", "additionalProperties": {"type": "number"}},
-          "auto": {"type": "boolean"},
-          "long_edge": {"type": "integer", "minimum": 16, "maximum": 16384},
-          "quality": {"type": "integer", "minimum": 1, "maximum": 100}
-        },
-        "required": ["path", "out"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string"},
-          "width": {"type": "integer"},
-          "height": {"type": "integer"},
-          "sidecars": {"type": "array", "items": {"type": "string"}}
-        },
-        "required": ["out", "width", "height", "sidecars"]
-      },
-      "risk": "act",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "light.batch",
-      "description": "Apply one develop to 1 to 16 photos in your workspace, writing each as `<out_dir>/<name>.<format>` (format jpg by default). `params`, `auto`, `long_edge` and `quality` are as for light.develop. Two inputs with the same file name are refused. All paths are relative to your workspace (see light.info); nothing is written outside it, and no existing file is ever replaced: if any output's name is taken, nothing is written, so choose a new `out_dir`.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "paths": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "string", "minLength": 1, "maxLength": 512}},
-          "out_dir": {"type": "string", "minLength": 1, "maxLength": 512},
-          "format": {"type": "string", "enum": ["jpg", "jpeg", "png", "tif", "tiff", "webp", "avif", "dng"]},
-          "params": {"type": "object", "additionalProperties": {"type": "number"}},
-          "auto": {"type": "boolean"},
-          "long_edge": {"type": "integer", "minimum": 16, "maximum": 16384},
-          "quality": {"type": "integer", "minimum": 1, "maximum": 100}
-        },
-        "required": ["paths", "out_dir"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "files": {
+          "cmds": {
             "type": "array",
+            "maxItems": 64,
             "items": {
               "type": "object",
               "properties": {
-                "path": {"type": "string"},
-                "out": {"type": "string"},
-                "width": {"type": "integer"},
-                "height": {"type": "integer"}
-              }
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
+              },
+              "required": ["id"],
+              "additionalProperties": false
             }
-          }
+          },
+          "out": {"type": "string", "minLength": 1, "maxLength": 512},
+          "quality": {"type": "integer", "minimum": 1, "maximum": 100},
+          "long_edge": {"type": "integer", "minimum": 16, "maximum": 16384}
         },
-        "required": ["files"]
+        "required": ["path", "cmds"],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
+        },
+        "required": ["results"]
       },
       "risk": "act",
       "implemented_by": "host-service"

@@ -9,11 +9,22 @@
 //! Methods (all under the `effect` family; paths relative to the call's
 //! area):
 //! - `info {path}` → the project summarised (items, comps, sizes, rates)
+//! - `run {path?, cmds: [{id, params?}], out?, comp?, time?, max_side?,
+//!   transparent?, include_expressions?}` → `{results, out, format, …}` —
+//!   the command door (ADR 0013, #418): run commands of effectcraft's
+//!   registry on the project at `path` (an `.ecproj`, or a Lottie `.json` /
+//!   `.lottie` opened as a new composition, as `import_lottie` does, with
+//!   what it made under `imported`), or on a new empty project, then write
+//!   `out` by its extension: `.ecproj` the project; `.json` / `.lottie` a
+//!   composition as Lottie (`comp`, `include_expressions`; with its `bytes`
+//!   and the engine's `warnings`), as `export_lottie` does; `.png` one frame
+//!   (`comp`, `time`, `max_side`, `transparent`; with `bytes`, `width`,
+//!   `height`), as `render` does. Only what the door's allowlist admits runs
+//!   ([`door`]), and every command is admitted before any runs: one refused
+//!   command refuses the call, with nothing written.
+//! - `commands {filter?}` → the engine's catalog entries the door runs
 //! - `render {path, comp?, time?, out, max_side?, transparent?}` → one comp
 //!   frame written to `out` as PNG
-//! - `run {path?, cmds: [{id, params?}], out?}` → command results, saving
-//!   the project when `out` is given (`effect.commands` lists the catalog)
-//! - `commands {filter?}` → the engine's command catalog
 //! - `export_lottie {path, comp?, out, include_expressions?}` → a comp as
 //!   Lottie `.json`/`.lottie`, with the engine's warnings list
 //! - `import_lottie {path, out}` → a Lottie file opened as a composition
@@ -32,39 +43,102 @@
 //! the model, with no gate of its own. Effect parameters that the engine
 //! reads as a file by their own path, past those gates (a LUT, an OCIO
 //! file transform or config, a mocha shape file), refuse the project unless
-//! they hold the file's text inline ([`fence_effect_files`]). What the
-//! engine writes keeps the area's rules ([`Area::write`]: a write that may
-//! not replace, an agent's, only creates new files, within the quota). The
-//! generic command door `run` is held for its own review: with the shell's
-//! resolver installed it is refused outright, because the engine's command
-//! wrappers (`engine.batch`, `file.runScript`, whose scripts reach the
-//! file system directly) and `prefs.set` slip past any list of refused ids.
-//! The service serves system apps only until ADR 0013's store capability is
-//! designed.
+//! they hold the file's text inline, and so does an Essential Graphics value
+//! that sets one inside a precomp, and an effect plug-in
+//! ([`fence_effect_files`]). What the engine writes keeps the area's rules
+//! ([`Area::write`]: a write that may not replace, an agent's, only creates
+//! new files, within the quota).
+//!
+//! **The command door** `run` runs only the commands the reviewed
+//! classification (`skill/safety.json`) classes `safe`: never a `file`,
+//! `code`, `network`, `device` or `host` command, nor an id the
+//! classification does not know, so the engine's command wrappers
+//! (`engine.batch`, `file.runScript`, `learn.step`), its scripts, plug-in
+//! loading and preferences stay out whatever list they arrive in; and
+//! `effect.apply` only of an effect the engine builds in. What a command
+//! plants in the project is fenced after every command, before a later one
+//! or the write could draw it. The service serves system apps only until
+//! ADR 0013's store capability is designed.
 
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
 
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use effectcraft_automation::Backend;
+use effectcraft_engine::effects::EffectSpec;
 use effectcraft_engine::project::{Footage, ItemId};
 use effectcraft_engine::raster::{AuxChannels, Image};
 use effectcraft_engine::render::FootageSource;
 use effectcraft_engine::time::Tick;
 use effectcraft_engine::{Importer, Services, Session};
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
+use octosense_engine_area::door::{Door, Inner, InnerRule, Reviewed};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
 /// The longest frame edge `render` produces.
 const MAX_RENDER_SIDE: u32 = 4096;
-/// The most commands one `run` call executes.
-const MAX_CMDS: usize = 64;
 /// The largest file the engine's guarded I/O reads or writes (bytes):
 /// projects and Lottie files are JSON, and frames are written by `render`.
 const MAX_FILE_BYTES: u64 = 64 << 20;
+
+/// What the effect engine's reviewer settled for the door beyond the
+/// classes. `effect.apply` names its effect by id, display name or alias,
+/// which the engine resolves with `lookup` over the built-in effects and
+/// every registered plug-in: it must name a built-in no plug-in shadows
+/// ([`builtin_effect`]). It is the only `safe` command that names an effect,
+/// preset or command by a caller's string and could reach past the
+/// built-ins: `effect.applyLast` re-applies the id `effect.apply` recorded;
+/// ease presets (`keys.easePreset.apply`), text animation presets
+/// (`layer.applyTextPreset`) and brush presets (`paint.brushPreset`) are
+/// built-in data (and, for ease presets, the session's own list, empty
+/// without a config store); the VR builders run fixed command ids. No `file`
+/// command is reviewed to run: the door's files are its own `path` and
+/// `out`. No `safe` command sets an app-wide variable by key (`prefs.*` are
+/// `host`; `layer.setText`'s `font` only notes a recent font, which a
+/// session without a config store never keeps).
+static REVIEWED: Reviewed = Reviewed {
+    file_reads: &[],
+    setters: &[],
+    inner: &[Inner { id: "effect.apply", param: "effect", rule: InnerRule::Effect { builtin: builtin_effect } }],
+};
+
+/// The command door's gate: effectcraft's reviewed classification
+/// (`skill/safety.json`, generated and drift-checked by `tests/skill.rs`)
+/// and [`REVIEWED`].
+pub fn door() -> Result<&'static Door, String> {
+    static DOOR: OnceLock<Result<Door, String>> = OnceLock::new();
+    DOOR.get_or_init(|| Door::new("effect", include_str!("../skill/safety.json"), &REVIEWED)).as_ref().map_err(Clone::clone)
+}
+
+/// Whether `spec` is one of the effects the engine builds in, not a
+/// registered plug-in.
+fn is_builtin_spec(spec: &EffectSpec) -> bool {
+    effectcraft_engine::effects::registry().iter().any(|s| std::ptr::eq(s, spec))
+}
+
+/// Whether `name` (an id, a display name in any case, or an alias, as
+/// `effect.apply` takes it) names an effect the engine builds in: it
+/// resolves among the built-ins alone, the way the engine's `lookup` does,
+/// and `lookup` itself — which also sees every registered plug-in, by id
+/// ahead of any built-in's display name, and by display name in its sorted
+/// list — lands on that same built-in, so no plug-in shadows it.
+fn builtin_effect(name: &str) -> bool {
+    use effectcraft_engine::effects as fx;
+    let builtins = fx::registry();
+    let by_id = |id: &str| builtins.iter().find(|s| s.id == id);
+    let own = by_id(name)
+        .or_else(|| builtins.iter().find(|s| s.name.eq_ignore_ascii_case(name)))
+        .or_else(|| builtins.iter().find(|s| fx::aliases(s.id).iter().any(|a| a.eq_ignore_ascii_case(name))))
+        .or_else(|| fx::migrate::EFFECT_NAME_ALIASES.iter().find(|(old, _)| old.eq_ignore_ascii_case(name)).and_then(|(_, id)| by_id(id)));
+    match (own, fx::lookup(name)) {
+        (Some(own), Some(found)) => std::ptr::eq(own, found),
+        _ => false,
+    }
+}
 
 /// Which apps may call the service: system apps, as Sheets and Photo.
 fn may_call(app_id: &str) -> bool {
@@ -102,15 +176,10 @@ impl HostService for EffectService {
     }
 }
 
-/// One call, in the area `areas` gives it. The command door `run` works
-/// only without the shell's resolver (this crate's tests): in the shell it
-/// is held for its own review ([`callable`]).
+/// One call, in the area `areas` gives it.
 fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     if !may_call(&call.app_id) {
         return Err("The effect service serves system apps only.".into());
-    }
-    if call.method() == "run" && areas.is_set() {
-        return Err("effect.run is held for its own review: the engine's command door is not available in the shell".into());
     }
     let area = Arc::new(areas.area(call, "effect").map_err(|e| format!("effect: {e}"))?);
     dispatch_in(call.method(), &call.args, &area)
@@ -231,6 +300,11 @@ impl Services for Guard {
         if data.len() as u64 > MAX_FILE_BYTES {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "the file is larger than the effect service writes"));
         }
+        // `missing/../..` resolves inside the area only until the write
+        // creates `missing`: no write path climbs.
+        if Path::new(path).components().any(|c| matches!(c, Component::ParentDir)) {
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "the path is outside the call's effect area"));
+        }
         let p = self.allowed(path)?;
         self.rules.write(&p, data).map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))
     }
@@ -333,7 +407,9 @@ impl FootageSource for ContainedFootage {
 /// A fresh headless session whose file I/O, media probing and footage
 /// decoding are all bound to the area. No exporter (the render queue's
 /// encoders write wherever their output modules point, so `run` cannot
-/// start one), no scripting, no plug-ins, no model downloads.
+/// start one), no scripting, no plug-in loader, no config store (nothing a
+/// command sets in the app's settings persists), no models folder, no
+/// media browser of its own.
 fn session(area: &Arc<Area>) -> Result<Backend, String> {
     let guard = Arc::new(Guard::new(area).map_err(|e| format!("effect: {e}"))?);
     let s = Session {
@@ -355,6 +431,17 @@ fn open(b: &mut Backend, area: &Area, args: &Json, method: &str) -> Result<Strin
     b.exec("file.open", json!({"path": abs.to_string_lossy()})).map_err(|e| format!("effect.{method}: {e}"))?;
     fence_effect_files(b, method)?;
     Ok(rel)
+}
+
+/// Open the Lottie file at `lottie` (already contained in the area) as a
+/// new composition of the session's project, made the active one: the
+/// engine reads it through the [`Guard`] (inside the area, size-capped) and
+/// writes its embedded images beside it under the area's rules. Its effects
+/// are fenced like an opened project's.
+fn import(b: &mut Backend, lottie: &Path, method: &str) -> Result<Json, String> {
+    let r = b.exec("file.importLottie", json!({"path": lottie.to_string_lossy()})).map_err(|e| format!("effect.{method}: {e}"))?;
+    fence_effect_files(b, method)?;
+    Ok(json!({"comp": r["comp"], "items": r["items"], "warnings": r["warnings"]}))
 }
 
 /// How the engine reads an effect parameter that may name a file: each
@@ -403,54 +490,194 @@ impl FileParam {
     }
 }
 
-/// Refuse a project whose effects would make the engine read a file by its
-/// own path: a LUT, OCIO file or config, or mocha shape parameter holding
-/// a path (in its value or any keyframe), or driven by an expression,
-/// which could produce one when the frame renders. The engine reads those
-/// with `std::fs`, outside the session's gated services, so no area check
-/// could stop the read; the file's text inline is drawn as before.
+/// Refuse a project the engine would draw by reading a file by its own
+/// path, or with an effect plug-in:
+///
+/// - a LUT, OCIO file or config, or mocha shape parameter holding a path
+///   (in its value or any keyframe), or driven by an expression, which
+///   could produce one when the frame renders;
+/// - an Essential Properties value of a precomp layer whose control sets
+///   such a parameter inside the precomp — directly, through a mirror or a
+///   link, or through the Essential Properties of precomps nested deeper:
+///   the renderer puts the instance's value into the parameter
+///   (`essential::with_overrides`), so it is fenced as the parameter is;
+/// - an effect instance whose id resolves to a registered plug-in rather
+///   than a built-in effect (the renderer finds effects by id among both).
+///
+/// The engine reads those files with `std::fs`, outside the session's gated
+/// services, so no area check could stop the read; the file's text inline
+/// is drawn as before. It walks the session's project as it is now, so
+/// `run` calls it after every command and before it writes.
 fn fence_effect_files(b: &mut Backend, method: &str) -> Result<(), String> {
-    use effectcraft_engine::project::{ItemKind, Node, PropGroup, Value};
-    fn walk(g: &PropGroup, prefix: &str, effect: &str, layer: &str, method: &str) -> Result<(), String> {
+    use effectcraft_engine::project::{essential, GroupKind, ItemKind, LayerId, LayerSource, Node, PropGroup, Property, Uid, Value};
+
+    /// Why the engine would read `p` as a file by its own path, if it would.
+    fn reads_a_file(p: &Property, kind: FileParam) -> Option<&'static str> {
+        if p.has_expression() {
+            return Some("has an expression");
+        }
+        let named = std::iter::once(&p.value).chain(p.keys.iter().map(|k| &k.value)).any(|v| matches!(v, Value::Str(text) if !kind.inline(text)));
+        named.then_some("names a file")
+    }
+    /// The file parameters of one effect instance: (match path, property, how it is read).
+    fn file_params<'a>(g: &'a PropGroup, prefix: &str, out: &mut Vec<(String, &'a Property, FileParam)>) {
         for node in &g.children {
             match node {
-                Node::Group(sub) => walk(sub, &format!("{prefix}{}/", sub.match_id), effect, layer, method)?,
+                Node::Group(sub) => file_params(sub, &format!("{prefix}{}/", sub.match_id), out),
                 Node::Prop(p) => {
                     let key = format!("{prefix}{}", p.match_id);
-                    let Some(kind) = FileParam::of(&key).or_else(|| FileParam::of(&p.match_id)) else { continue };
-                    let refused = |why: &str| {
-                        Err(format!(
-                            "effect.{method}: the {effect} effect on layer `{layer}` {why} for `{key}`: the engine would read a file by its own path, outside this call's folder; put the file's text in the parameter instead"
-                        ))
-                    };
-                    if p.has_expression() {
-                        return refused("has an expression");
-                    }
-                    for value in std::iter::once(&p.value).chain(p.keys.iter().map(|k| &k.value)) {
-                        if let Value::Str(text) = value {
-                            if !kind.inline(text) {
-                                return refused("names a file");
-                            }
-                        }
+                    if let Some(kind) = FileParam::of(&key).or_else(|| FileParam::of(&p.match_id)) {
+                        out.push((key, p, kind));
                     }
                 }
             }
         }
-        Ok(())
     }
+    /// An Essential Properties value of a precomp layer, and the properties
+    /// inside the precomp its control sets when the layer renders.
+    struct Instance<'a> {
+        at: (ItemId, LayerId, Uid),
+        layer: &'a str,
+        prop: &'a Property,
+        inner: ItemId,
+        targets: Vec<(LayerId, Uid)>,
+    }
+    const READS: &str = "the engine would read a file by its own path, outside this call's folder; put the file's text in the parameter instead";
+
     let Some(session) = b.session() else { return Ok(()) };
-    for item in session.project.items.values() {
-        let ItemKind::Comp(comp) = &item.kind else { continue };
+    let project = &session.project;
+    let comps = || {
+        project.items.iter().filter_map(|(id, item)| match &item.kind {
+            ItemKind::Comp(comp) => Some((*id, comp.as_ref())),
+            _ => None,
+        })
+    };
+    // Every property whose value reaches a file loader when a frame renders,
+    // with what it feeds: (how the loader reads it, its key, the effect).
+    let mut feeds: BTreeMap<(ItemId, LayerId, Uid), (FileParam, String, String)> = BTreeMap::new();
+    for (cid, comp) in comps() {
         for layer in &comp.layers {
             let Some(effects) = layer.effects() else { continue };
-            for node in &effects.children {
-                if let Node::Group(effect) = node {
-                    walk(effect, "", &effect.match_id, &layer.name, method)?;
+            for effect in effects.groups() {
+                if let GroupKind::Effect { effect: id } = &effect.kind {
+                    if effectcraft_engine::effects::find(id).is_some_and(|spec| !is_builtin_spec(spec)) {
+                        return Err(format!(
+                            "effect.{method}: the effect `{id}` on layer `{}` is an effect plug-in, and no plug-in runs through the effect service",
+                            layer.name
+                        ));
+                    }
+                }
+                let mut params = vec![];
+                file_params(effect, "", &mut params);
+                for (key, p, kind) in params {
+                    if let Some(why) = reads_a_file(p, kind) {
+                        return Err(format!("effect.{method}: the {} effect on layer `{}` {why} for `{key}`: {READS}", effect.match_id, layer.name));
+                    }
+                    feeds.insert((cid, layer.id, p.uid), (kind, key, effect.match_id.clone()));
                 }
             }
+        }
+    }
+    let mut instances = vec![];
+    for (cid, comp) in comps() {
+        for layer in &comp.layers {
+            let LayerSource::Comp { item: inner } = layer.source else { continue };
+            let Some(group) = essential::group(layer) else { continue };
+            let Some(eg) = project.comp(inner).and_then(|c| c.essential.as_ref()) else { continue };
+            group.walk("", &mut |_, p| {
+                if let Some(control) = essential::control_of(&p.match_id).and_then(|c| eg.resolve(c)) {
+                    instances.push(Instance { at: (cid, layer.id, p.uid), layer: &layer.name, prop: p, inner, targets: control.kind.targets() });
+                }
+            });
+        }
+    }
+    // An instance value feeds what its control's targets feed; a target may
+    // itself be an instance value one precomp further in.
+    loop {
+        let mut grew = false;
+        for i in &instances {
+            if feeds.contains_key(&i.at) {
+                continue;
+            }
+            let Some(fed) = i.targets.iter().find_map(|(l, u)| feeds.get(&(i.inner, *l, *u))).cloned() else { continue };
+            if let Some(why) = reads_a_file(i.prop, fed.0) {
+                return Err(format!(
+                    "effect.{method}: the Essential Property `{}` on layer `{}` {why} for `{}` of the {} effect it sets inside its composition: {READS}",
+                    i.prop.name, i.layer, fed.1, fed.2
+                ));
+            }
+            feeds.insert(i.at, fed);
+            grew = true;
+        }
+        if !grew {
+            break;
         }
     }
     Ok(())
+}
+
+/// What a write to `out` makes, by `out`'s extension.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutKind {
+    /// `.ecproj`: the project, as `file.saveAs` writes it.
+    Project,
+    /// `.json` / `.lottie`: a composition as Lottie, as `export_lottie` writes it.
+    Lottie,
+    /// `.png`: one frame of a composition, as `render` writes it.
+    Frame,
+}
+
+impl OutKind {
+    fn of(rel: &str) -> Option<OutKind> {
+        match extension(rel).as_str() {
+            "ecproj" => Some(OutKind::Project),
+            "json" | "lottie" => Some(OutKind::Lottie),
+            "png" => Some(OutKind::Frame),
+            _ => None,
+        }
+    }
+}
+
+/// `rel`'s extension, lowercase.
+fn extension(rel: &str) -> String {
+    Path::new(rel).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
+}
+
+/// Write the session's project to `out` (contained, and admitted by the
+/// area's rules) as `kind`, fenced once more first: the project itself
+/// through the [`Guard`], a composition as Lottie (`comp`,
+/// `include_expressions`) through the [`Guard`], or one frame (`comp`,
+/// `time`, `max_side`, `transparent`) as PNG under the area's rules. Returns
+/// the writer's own answer fields.
+fn write_out(b: &mut Backend, area: &Area, out: &Path, kind: OutKind, args: &Json, method: &str) -> Result<Json, String> {
+    fence_effect_files(b, method)?;
+    let comp = args.get("comp").filter(|c| !c.is_null());
+    match kind {
+        OutKind::Project => {
+            let r = b.exec("file.saveAs", json!({"path": out.to_string_lossy()})).map_err(|e| format!("effect.{method}: {e}"))?;
+            Ok(json!({"bytes": r["bytes"]}))
+        }
+        OutKind::Lottie => {
+            let mut p = json!({"path": out.to_string_lossy(), "includeExpressions": args["include_expressions"].as_bool().unwrap_or(false)});
+            if let Some(comp) = comp {
+                p["comp"] = comp.clone();
+            }
+            let r = b.exec("file.exportLottie", p).map_err(|e| format!("effect.{method}: {e}"))?;
+            Ok(json!({"bytes": r["bytes"], "warnings": r["warnings"]}))
+        }
+        OutKind::Frame => {
+            let requested = args["max_side"].as_u64().unwrap_or(1024);
+            let max_side = if requested == 0 { MAX_RENDER_SIDE } else { requested.min(MAX_RENDER_SIDE as u64) as u32 };
+            let transparent = args["transparent"].as_bool().unwrap_or(false);
+            let frame = b.render_with(comp, args["time"].as_f64(), max_side, transparent).map_err(|e| format!("effect.{method}: {e}"))?;
+            area.write(out, &frame.png).map_err(|e| format!("effect.{method}: {e}"))?;
+            Ok(json!({
+                "bytes": frame.png.len(),
+                "width": frame.width, "height": frame.height,
+                "comp": frame.comp, "time": frame.time,
+            }))
+        }
+    }
 }
 
 fn info(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
@@ -464,79 +691,72 @@ fn info(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
 fn render(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
     let out_rel = args["out"].as_str().unwrap_or("");
     let out = out_path(area, out_rel)?;
-    let requested = args["max_side"].as_u64().unwrap_or(1024);
-    let max_side = if requested == 0 { MAX_RENDER_SIDE } else { requested.min(MAX_RENDER_SIDE as u64) as u32 };
     let mut b = session(area)?;
     open(&mut b, area, args, "render")?;
-    let comp = args.get("comp").filter(|c| !c.is_null());
-    let transparent = args["transparent"].as_bool().unwrap_or(false);
-    let frame = b.render_with(comp, args["time"].as_f64(), max_side, transparent).map_err(|e| format!("effect.render: {e}"))?;
-    area.write(&out, &frame.png).map_err(|e| format!("effect.render: {e}"))?;
-    Ok(json!({
-        "out": out_rel, "bytes": frame.png.len(),
-        "width": frame.width, "height": frame.height,
-        "comp": frame.comp, "time": frame.time,
-    }))
+    let mut r = write_out(&mut b, area, &out, OutKind::Frame, args, "render")?;
+    r["out"] = json!(out_rel);
+    Ok(r)
 }
 
-/// Engine command ids `run` refuses. Plug-in loading changes a
-/// process-wide registry from caller-named input and runs WebAssembly
-/// under the engine's own budgets, outside the shell's `wasm` service
-/// (ADR 0011) — the same boundary `photo.run` draws against photocraft's
-/// `plugin.*`. Listing installed plug-ins stays readable. The media
-/// browser, watch folders, Collect Files and logging reach the file system
-/// directly, outside the session's gated services, so they are refused too.
-/// This list is not a fence on its own: the engine's command wrappers run
-/// other commands past it, which is why the shell holds `run` back
-/// entirely ([`serve`]).
-fn callable(id: &str) -> Result<(), String> {
-    let ambient = id.starts_with("mediaBrowser.")
-        || id.starts_with("file.watchFolder")
-        || id == "file.collectFiles"
-        || id.starts_with("help.enableLogging");
-    if (id.starts_with("effect.plugins.") && id != "effect.plugins.list") || ambient {
-        return Err(format!("effect.run: `{id}` is not available through the effect service"));
-    }
-    Ok(())
-}
-
+/// The command door: every command admitted by [`door`] before the engine
+/// runs any (a refused one refuses the whole call, with nothing written),
+/// run in order on one session over the project or Lottie file at `path`, or
+/// a new empty project, the project fenced after each; then `out` written by
+/// its extension under the area's rules ([`write_out`]).
 fn run(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
-    let cmds = args["cmds"].as_array().ok_or("effect.run: `cmds` is a list of {id, params?}")?;
-    if cmds.len() > MAX_CMDS {
-        return Err(format!("effect.run: at most {MAX_CMDS} commands per call"));
-    }
-    let out_abs = match args["out"].as_str() {
-        Some(out) if !out.is_empty() => Some(out_path(area, out)?),
-        _ => None,
+    let admitted = door()?.admit_all(&args["cmds"], area)?;
+    let out = match args["out"].as_str().filter(|o| !o.is_empty()) {
+        Some(rel) => {
+            let kind = OutKind::of(rel)
+                .ok_or_else(|| format!("effect.run: `out` is a project (.ecproj), a Lottie file (.json or .lottie) or a frame (.png), not `{rel}`"))?;
+            Some((rel, out_path(area, rel)?, kind))
+        }
+        None => None,
     };
     let mut b = session(area)?;
     // Without `path`, commands build on a fresh empty project (comp.new …).
-    if args["path"].as_str().is_some_and(|p| !p.is_empty()) {
-        open(&mut b, area, args, "run")?;
-    }
-    let mut results = Vec::new();
-    for c in cmds {
-        let id = c["id"].as_str().ok_or("effect.run: each command has an `id`")?;
-        callable(id)?;
-        let params = if c["params"].is_null() { json!({}) } else { c["params"].clone() };
-        let r = b.exec(id, params).map_err(|e| format!("effect.run {id}: {e}"))?;
-        // Before a later command could draw it.
+    let imported = match args["path"].as_str().filter(|p| !p.is_empty()) {
+        Some(rel) if matches!(extension(rel).as_str(), "json" | "lottie") => {
+            let lottie = contained(area, "path", rel)?;
+            Some(import(&mut b, &lottie, "run")?)
+        }
+        Some(_) => {
+            open(&mut b, area, args, "run")?;
+            None
+        }
+        None => None,
+    };
+    let mut results = Vec::with_capacity(admitted.len());
+    for (id, params) in admitted {
+        let r = b.exec(&id, params).map_err(|e| format!("effect.run {id}: {e}"))?;
+        // What the command planted, before a later command or the write
+        // could draw it.
         fence_effect_files(&mut b, "run")?;
         results.push(json!({"id": id, "result": r}));
     }
-    let saved = match (args["out"].as_str(), out_abs) {
-        (Some(out), Some(abs)) => {
-            b.exec("file.saveAs", json!({"path": abs.to_string_lossy()})).map_err(|e| format!("effect.run: {e}"))?;
-            json!(out)
+    let mut answer = json!({"results": results, "out": Json::Null, "format": Json::Null});
+    if let Some(imported) = imported {
+        answer["imported"] = imported;
+    }
+    if let Some((rel, abs, kind)) = out {
+        if let Json::Object(fields) = write_out(&mut b, area, &abs, kind, args, "run")? {
+            for (key, value) in fields {
+                answer[key.as_str()] = value;
+            }
         }
-        _ => Json::Null,
-    };
-    Ok(json!({"results": results, "out": saved}))
+        answer["out"] = json!(rel);
+        answer["format"] = json!(extension(rel));
+    }
+    Ok(answer)
 }
 
+/// The engine's catalog entries of the commands the door runs.
 fn commands(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
+    let door = door()?;
     let mut b = session(area)?;
-    b.exec("command.list", json!({"filter": args["filter"]})).map_err(|e| format!("effect.commands: {e}"))
+    let list = b.exec("command.list", json!({"filter": args["filter"]})).map_err(|e| format!("effect.commands: {e}"))?;
+    let runs = |c: &&Json| c["id"].as_str().is_some_and(|id| door.runs(id));
+    Ok(Json::Array(list.as_array().map(|all| all.iter().filter(runs).cloned().collect()).unwrap_or_default()))
 }
 
 fn export_lottie(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
@@ -544,14 +764,9 @@ fn export_lottie(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
     let out = out_path(area, out_rel)?;
     let mut b = session(area)?;
     open(&mut b, area, args, "export_lottie")?;
-    let include = args["include_expressions"].as_bool().unwrap_or(false);
-    let r = b
-        .exec(
-            "file.exportLottie",
-            json!({"comp": args["comp"], "path": out.to_string_lossy(), "includeExpressions": include}),
-        )
-        .map_err(|e| format!("effect.export_lottie: {e}"))?;
-    Ok(json!({"out": out_rel, "bytes": r["bytes"], "warnings": r["warnings"]}))
+    let mut r = write_out(&mut b, area, &out, OutKind::Lottie, args, "export_lottie")?;
+    r["out"] = json!(out_rel);
+    Ok(r)
 }
 
 fn import_lottie(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
@@ -560,11 +775,10 @@ fn import_lottie(args: &Json, area: &Arc<Area>) -> Result<Json, String> {
     let out_rel = args["out"].as_str().unwrap_or("");
     let out = out_path(area, out_rel)?;
     let mut b = session(area)?;
-    let r = b
-        .exec("file.importLottie", json!({"path": lottie.to_string_lossy()}))
-        .map_err(|e| format!("effect.import_lottie: {e}"))?;
-    b.exec("file.saveAs", json!({"path": out.to_string_lossy()})).map_err(|e| format!("effect.import_lottie: {e}"))?;
-    Ok(json!({"out": out_rel, "comp": r["comp"], "items": r["items"], "warnings": r["warnings"]}))
+    let mut r = import(&mut b, &lottie, "import_lottie")?;
+    write_out(&mut b, area, &out, OutKind::Project, args, "import_lottie")?;
+    r["out"] = json!(out_rel);
+    Ok(r)
 }
 
 #[cfg(test)]
@@ -614,12 +828,10 @@ mod tests {
         slot
     }
 
-    /// The command door in the area `areas` gives the call, past
-    /// [`serve`]'s hold on it: how these tests build their fixtures, and
-    /// check the door's own write rules.
+    /// The command door as the shell calls it, in the area `areas` gives
+    /// the call.
     fn run_in(areas: &Slot, args: Json, host_dir: &Path, may_prompt: bool) -> Result<Json, String> {
-        let area = areas.area(&service_call("run", args.clone(), host_dir, may_prompt), "effect")?;
-        dispatch_in("run", &args, &Arc::new(area))
+        serve(areas, &service_call("run", args, host_dir, may_prompt))
     }
 
     /// The fixture project, built straight into a caller's folder `root`.
@@ -634,6 +846,12 @@ mod tests {
             true,
         )
         .unwrap()
+    }
+
+    /// The centre pixel of a PNG.
+    fn centre(png: &[u8]) -> [u8; 4] {
+        let img = image::load_from_memory(png).unwrap().to_rgba8();
+        img.get_pixel(img.width() / 2, img.height() / 2).0
     }
 
     /// With the shell's resolver every path is relative to the caller's own
@@ -693,9 +911,9 @@ mod tests {
         for name in ["taken.png", "taken.json", "taken.ecproj"] {
             assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), b"keep me", "{name}");
         }
-        // Not even a command that saves on its own may replace one.
+        // Nor a command that saves on its own: the door never runs one.
         let saves = run_in(&areas, json!({"path": "main.ecproj", "cmds": [{"id": "file.saveAs", "params": {"path": dir.path().join("taken.ecproj").to_string_lossy()}}]}), dir.path(), false);
-        assert!(saves.is_err(), "{saves:?}");
+        assert!(saves.as_ref().is_err_and(|e| e.contains("not reviewed to run through it")), "{saves:?}");
         assert_eq!(std::fs::read(dir.path().join("taken.ecproj")).unwrap(), b"keep me");
         serve(&areas, &service_call("render", json!({"path": "main.ecproj", "out": "taken.png", "max_side": 8}), dir.path(), true)).unwrap();
         assert!(std::fs::read(dir.path().join("taken.png")).unwrap().starts_with(&[0x89, b'P', b'N', b'G']));
@@ -769,26 +987,26 @@ mod tests {
         assert!(source.model(ItemId(3), &model).is_none());
     }
 
-    /// With the shell's resolver installed the command door is held for its
-    /// own review: its list of refused ids is no fence, since the engine's
-    /// wrappers run other commands past it (`engine.batch` here runs the
-    /// refused media browser). Without a resolver (this crate's tests) it
-    /// still runs.
+    /// The engine's writes never climb out of the area through a folder the
+    /// write itself would create: `missing/../../x` resolves inside until
+    /// `missing` exists, so the Guard refuses any `..` in a write path.
     #[test]
-    fn the_command_door_is_held_in_the_shell() {
+    fn the_guard_never_writes_through_a_parent_step() {
         let dir = tempfile::tempdir().unwrap();
-        let areas = resolver(dir.path(), None);
-        let held = serve(&areas, &service_call("run", json!({"cmds": [{"id": "comp.new"}]}), dir.path(), true)).unwrap_err();
-        assert!(held.contains("held for its own review"), "{held}");
-        assert!(callable("mediaBrowser.list").is_err());
-        assert!(callable("engine.batch").is_ok(), "a wrapper's own id passes the list, which is why the door is held");
-        let legacy = Slot::new();
-        serve(&legacy, &service_call("run", json!({"cmds": [{"id": "comp.new"}]}), dir.path(), true)).unwrap();
-        assert!(serve(&areas, &service_call("commands", json!({}), dir.path(), true)).is_ok(), "the catalog stays readable");
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let guard = Guard::new(&Arc::new(Area::new(&root, None, true))).unwrap();
+        let climb = root.join("missing/../../escape.txt");
+        assert!(guard.write_file(&climb.to_string_lossy(), b"x").is_err());
+        assert!(!dir.path().join("escape.txt").exists(), "nothing lands beside the area");
+        guard.write_file(&root.join("made/ok.txt").to_string_lossy(), b"x").unwrap();
+        assert_eq!(std::fs::read(root.join("made/ok.txt")).unwrap(), b"x");
     }
 
     /// A 2x2x2 `.cube` LUT that turns every colour pure green.
     const GREEN_LUT: &str = "LUT_3D_SIZE 2\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n0 1 0\n";
+    /// The same, pure blue.
+    const BLUE_LUT: &str = "LUT_3D_SIZE 2\n0 0 1\n0 0 1\n0 0 1\n0 0 1\n0 0 1\n0 0 1\n0 0 1\n0 0 1\n";
 
     /// Effect parameters that the engine reads as a file by their own path,
     /// with `std::fs` past every gate, refuse the project. The hostile
@@ -867,31 +1085,16 @@ mod tests {
         }
     }
 
-    /// `effect.run` refuses the commands that reach the file system outside
-    /// the session's gated services.
+    /// The commands that reach the file system outside the session's gated
+    /// services (the media browser, watch folders, Collect Files, logging)
+    /// are classed `file` or `host`, so the door refuses them.
     #[test]
     fn run_refuses_ambient_file_commands() {
         let dir = tempfile::tempdir().unwrap();
         for id in ["mediaBrowser.list", "mediaBrowser.go", "mediaBrowser.fileInfo", "file.watchFolder", "file.watchFolder.poll", "file.collectFiles", "help.enableLogging"] {
             let e = dispatch("run", &json!({"cmds": [{"id": id, "params": {"path": "/"}}]}), dir.path()).unwrap_err();
-            assert!(e.contains("not available"), "{id}: {e}");
+            assert!(e.contains("not reviewed to run through it") || e.contains("is classed host"), "{id}: {e}");
         }
-    }
-
-    /// Plug-in loading mutates a process-wide registry with WebAssembly:
-    /// `run` refuses every `effect.plugins.*` mutator before the engine
-    /// sees it; only the read-only list stays.
-    #[test]
-    fn run_refuses_plugin_mutators() {
-        let dir = tempfile::tempdir().unwrap();
-        let area = Arc::new(Area::new(dir.path(), None, true));
-        for id in ["effect.plugins.load", "effect.plugins.unload", "effect.plugins.reload"] {
-            let r = run(&json!({"cmds": [{"id": id, "params": {"path": "x.wasm"}}]}), &area);
-            let e = r.unwrap_err();
-            assert!(e.contains("not available"), "{id}: {e}");
-        }
-        assert!(callable("effect.plugins.list").is_ok());
-        assert!(callable("comp.new").is_ok());
     }
 
     #[test]
@@ -940,16 +1143,24 @@ mod tests {
         }
     }
 
+    /// `effect.commands` lists the catalog entries of exactly the commands
+    /// the door runs.
     #[test]
-    fn commands_lists_the_engine_catalog() {
+    fn commands_lists_what_the_door_runs() {
         let dir = tempfile::tempdir().unwrap();
         let host = dir.path();
         let cat = dispatch("commands", &json!({}), host).unwrap();
         let list = cat.as_array().unwrap();
+        assert_eq!(list.len(), door().unwrap().runnable().len(), "every command the door runs, and only those");
         assert!(list.len() > 300, "a real catalog, not a stub ({})", list.len());
-        assert!(list.iter().any(|c| c["id"] == json!("comp.new")));
-        let filtered = dispatch("commands", &json!({"filter": "lottie"}), host).unwrap();
-        assert!(filtered.as_array().unwrap().iter().any(|c| c["id"] == json!("file.exportLottie")));
+        let has = |list: &[Json], id: &str| list.iter().any(|c| c["id"] == json!(id));
+        assert!(has(list, "comp.new") && has(list, "effect.apply") && has(list, "effect.plugins.list"));
+        for refused in ["engine.batch", "file.exportLottie", "file.saveAs", "prefs.set", "effect.plugins.load", "playback.toggle", "help.website"] {
+            assert!(!has(list, refused), "{refused}");
+        }
+        let filtered = dispatch("commands", &json!({"filter": "effect.p"}), host).unwrap();
+        let filtered = filtered.as_array().unwrap();
+        assert!(has(filtered, "effect.plugins.list") && has(filtered, "effect.pickColor") && !has(filtered, "effect.plugins.load"), "{filtered:?}");
     }
 
     #[test]
@@ -988,8 +1199,9 @@ mod tests {
             assert!(dispatch("render", &json!({"path": "main.ecproj", "out": bad}), host).is_err(), "{bad}");
             assert!(dispatch("import_lottie", &json!({"path": bad, "out": "a.ecproj"}), host).is_err(), "{bad}");
         }
-        // The engine side is gated too: commands that name a path outside
-        // the area are refused by the session's guarded file services.
+        // Commands that name a path of their own never run through the
+        // door (and the session's guarded file services would refuse one
+        // outside the area anyway).
         let escape = dispatch(
             "run",
             &json!({"cmds": [
@@ -1010,6 +1222,465 @@ mod tests {
         assert!(may_call("os.app-studio"));
         assert!(!may_call("org.example.app"));
         assert!(!may_call(""));
+    }
+
+    /// The door runs allowlisted commands in a temporary area with the
+    /// shell's resolver installed, as an agent's call: a comp, a solid and a
+    /// built-in effect make a new project inside the area, which
+    /// `effect.info` and a query read back.
+    #[test]
+    fn the_door_runs_allowlisted_commands_in_its_area() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let areas = resolver(&root, None);
+        let made = run_in(
+            &areas,
+            json!({"cmds": [
+                {"id": "comp.new", "params": {"name": "Main", "width": 64, "height": 36, "frameRate": 24, "duration": 1.0}},
+                {"id": "layer.newSolid", "params": {"name": "Red", "color": "#cc3344"}},
+                {"id": "effect.apply", "params": {"effect": "Gaussian Blur"}},
+                {"id": "prop.set", "params": {"path": "effects/#1/blurriness", "value": 12.0}},
+            ], "out": "blurred.ecproj"}),
+            &root,
+            false,
+        )
+        .unwrap();
+        assert_eq!(made["out"], json!("blurred.ecproj"), "{made}");
+        assert_eq!(made["format"], json!("ecproj"));
+        assert!(made["bytes"].as_u64().is_some_and(|n| n > 0), "{made}");
+        assert_eq!(made["results"].as_array().unwrap().len(), 4);
+        assert_eq!(made["results"][2]["result"]["effect"], json!("ec.blur.gaussian"));
+        assert!(root.join("blurred.ecproj").is_file() && !dir.path().join("blurred.ecproj").exists());
+        let sum = serve(&areas, &service_call("info", json!({"path": "blurred.ecproj"}), &root, false)).unwrap();
+        let comp = sum["items"].as_array().unwrap().iter().find(|i| i["name"] == json!("Main")).cloned().unwrap();
+        assert_eq!((comp["size"].clone(), comp["layers"].clone()), (json!([64, 36]), json!(1)), "{sum}");
+        // A query writes nothing, and reads the effect back.
+        let query = run_in(
+            &areas,
+            json!({"path": "blurred.ecproj", "cmds": [{"id": "prop.get", "params": {"comp": "Main", "layer": "Red", "path": "effects/#1/blurriness"}}]}),
+            &root,
+            false,
+        )
+        .unwrap();
+        assert!(query["out"].is_null() && query["format"].is_null(), "{query}");
+        assert_eq!(query["results"][0]["result"]["value"], json!(12.0), "{query}");
+    }
+
+    /// Every class but `safe` is refused, and so is an id the
+    /// classification does not know, before any command runs: a refused id
+    /// anywhere in the list writes nothing. Checked over the whole
+    /// classification, then through the service for each class.
+    #[test]
+    fn the_door_refuses_every_other_class_and_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let areas = resolver(&root, None);
+        let door = door().unwrap();
+        let safety: Json = serde_json::from_str(include_str!("../skill/safety.json")).unwrap();
+        let area = Area::new(&root, None, false);
+        let mut refused_classes = std::collections::BTreeSet::new();
+        for (id, class) in safety["commands"].as_object().unwrap() {
+            let admitted = door.admit(id, &json!({}), &area);
+            match class.as_str().unwrap() {
+                "safe" => assert!(door.runs(id) && admitted.is_ok(), "{id}: {admitted:?}"),
+                other => {
+                    assert!(!door.runs(id) && admitted.is_err(), "{id} is classed {other}");
+                    refused_classes.insert(other.to_string());
+                }
+            }
+        }
+        assert_eq!(refused_classes.into_iter().collect::<Vec<_>>(), ["code", "device", "file", "host", "network"]);
+        let start = json!({"id": "comp.new", "params": {"name": "Main", "width": 16, "height": 16}});
+        for (id, params, class) in [
+            ("engine.batch", json!({"steps": []}), "code"),
+            ("file.runScript", json!({"path": "evil.jsx"}), "code"),
+            ("script.run", json!({"code": "1"}), "code"),
+            ("scriptui.click", json!({}), "code"),
+            ("file.executeFile", json!({"path": "/bin/sh"}), "code"),
+            ("help.website", json!({}), "network"),
+            ("roto.model.download", json!({}), "network"),
+            ("playback.toggle", json!({}), "device"),
+            ("prefs.set", json!({"key": "pluginsFolder", "value": "/tmp/evil"}), "host"),
+            ("view.zoomIn", json!({}), "host"),
+            ("edit.purge", json!({}), "host"),
+            ("roto.model.select", json!({"id": "x"}), "host"),
+            ("mediaBrowser.addFavorite", json!({}), "host"),
+        ] {
+            let e = run_in(&areas, json!({"cmds": [start, {"id": id, "params": params}], "out": "x.ecproj"}), &root, false).unwrap_err();
+            assert!(e.contains(&format!("`{id}` is classed {class}")) && e.contains("never runs it"), "{id}: {e}");
+        }
+        for (id, params) in [
+            ("file.saveAs", json!({"path": "elsewhere.ecproj"})),
+            ("file.open", json!({"path": "/etc/hosts"})),
+            ("file.import", json!({"path": "/etc/hosts"})),
+            ("mediaBrowser.list", json!({"path": "/"})),
+            ("renderQueue.render", json!({})),
+            ("comp.saveFrameAs", json!({"path": "f.png"})),
+            ("templates.create", json!({"id": "lower-third"})),
+            ("roto.model.install", json!({"path": "/etc/hosts"})),
+        ] {
+            let e = run_in(&areas, json!({"cmds": [start, {"id": id, "params": params}], "out": "x.ecproj"}), &root, false).unwrap_err();
+            assert!(e.contains(&format!("`{id}` reads or writes files")) && e.contains("not reviewed to run through it"), "{id}: {e}");
+        }
+        let e = run_in(&areas, json!({"cmds": [start, {"id": "effect.secret"}], "out": "x.ecproj"}), &root, false).unwrap_err();
+        assert!(e.contains("`effect.secret` is not a reviewed effect command"), "{e}");
+        assert!(run_in(&areas, json!({"cmds": [start, {"id": ""}]}), &root, false).unwrap_err().contains("has an `id`"));
+        assert!(run_in(&areas, json!({"cmds": [{"id": "comp.new", "params": [1]}]}), &root, false).unwrap_err().contains("`params` is an object"));
+        let too_many: Vec<Json> = (0..65).map(|_| json!({"id": "time.start"})).collect();
+        assert!(run_in(&areas, json!({"cmds": too_many}), &root, false).unwrap_err().contains("at most 64"));
+        assert!(!root.join("x.ecproj").exists(), "nothing written");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "nothing at all");
+    }
+
+    /// Composite commands run other commands that no check on their own id
+    /// sees: a batch is refused even when it wraps only an allowed command,
+    /// and when it wraps a plug-in install; so are scripts and the tutorial
+    /// step that runs its own command list.
+    #[test]
+    fn the_door_refuses_composites() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        for c in [
+            json!({"id": "engine.batch", "params": {"steps": [{"command": "comp.new", "params": {"name": "C"}}]}}),
+            json!({"id": "engine.batch", "params": {"steps": [{"command": "effect.plugins.load", "params": {"path": "evil.wasm"}}]}}),
+            json!({"id": "file.runScript", "params": {"path": "evil.jsx"}}),
+            json!({"id": "learn.step", "params": {"action": "showMe"}}),
+        ] {
+            let id = c["id"].as_str().unwrap().to_string();
+            let cmds = json!([{"id": "learn.start", "params": {"id": "nope"}}, {"id": "comp.new", "params": {"name": "C"}}, c]);
+            let e = run_in(&areas, json!({"cmds": cmds, "out": "c.ecproj"}), dir.path(), false).unwrap_err();
+            assert!(e.contains(&format!("`{id}` is classed code")), "{id}: {e}");
+            assert!(!e.contains("unknown tutorial"), "refused before the first command ran: {e}");
+        }
+        assert!(!dir.path().join("c.ecproj").exists());
+    }
+
+    /// Plug-in loading changes a process-wide registry and runs
+    /// WebAssembly: `effect.plugins.load` is classed code and the other
+    /// would-be mutators are ids the classification does not know, so the
+    /// door refuses them all; listing the registry is `safe` and runs.
+    #[test]
+    fn the_door_refuses_plugin_mutators_and_lists_plugins() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        let e = run_in(&areas, json!({"cmds": [{"id": "effect.plugins.load", "params": {"path": "x.wasm"}}]}), dir.path(), false).unwrap_err();
+        assert!(e.contains("`effect.plugins.load` is classed code"), "{e}");
+        for id in ["effect.plugins.install", "effect.plugins.reload", "effect.plugins.remove", "effect.plugins.unload"] {
+            let e = run_in(&areas, json!({"cmds": [{"id": id, "params": {"path": "x.wasm"}}]}), dir.path(), false).unwrap_err();
+            assert!(e.contains(&format!("`{id}` is not a reviewed effect command")), "{id}: {e}");
+        }
+        let listed = run_in(&areas, json!({"cmds": [{"id": "effect.plugins.list"}]}), dir.path(), false).unwrap();
+        let r = &listed["results"][0]["result"];
+        assert!(r["plugins"].is_array() && r["wasm"] == json!(false), "no plug-in loader in the service's session: {listed}");
+        assert!(listed["out"].is_null());
+    }
+
+    /// A plug-in for the tests: it shadows a built-in in the engine's
+    /// `lookup` and never draws.
+    struct Shadow(effectcraft_engine::effects::plugin::PluginManifest);
+
+    impl effectcraft_engine::effects::plugin::EffectPlugin for Shadow {
+        fn manifest(&self) -> &effectcraft_engine::effects::plugin::PluginManifest {
+            &self.0
+        }
+
+        fn render(
+            &self,
+            _: &mut effectcraft_engine::effects::plugin::PluginFrame,
+            _: &effectcraft_engine::effects::plugin::PluginParams,
+            _: f64,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    /// Register, once per test process, two plug-ins that shadow built-ins
+    /// in the engine's `lookup`: one under Mosaic's display name in a
+    /// category sorted before Stylize, one whose id is Emboss's display
+    /// name. No other test names Mosaic or Emboss.
+    fn shadow_builtins() {
+        use effectcraft_engine::effects::plugin::{register_plugin, PLUGIN_API_VERSION};
+        static DONE: OnceLock<()> = OnceLock::new();
+        DONE.get_or_init(|| {
+            for (id, name) in [("octosense.test.mosaic", "Mosaic"), ("Emboss", "OctoSense Test Emboss")] {
+                let manifest = serde_json::from_value(json!({"api": PLUGIN_API_VERSION, "id": id, "name": name, "category": "AAA OctoSense Test"})).unwrap();
+                register_plugin(Arc::new(Shadow(manifest))).unwrap();
+            }
+        });
+    }
+
+    /// `effect.apply` runs only an effect the engine builds in, by id,
+    /// display name (any case) or alias; a name that is no built-in, a
+    /// plug-in's id, or a built-in's name a registered plug-in shadows in
+    /// the engine's own lookup is refused before any command runs. A project
+    /// whose effect instance names a plug-in is refused by the fence.
+    #[test]
+    fn the_door_applies_only_built_in_effects() {
+        use effectcraft_engine::effects::lookup;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let areas = resolver(&root, None);
+        for name in ["Gaussian Blur", "gaussian BLUR", "ec.blur.gaussian", "Apply Color LUT", "Keylight (1.2)", "mocha shape"] {
+            assert!(builtin_effect(name), "{name}");
+        }
+        for name in ["", "Totally Not An Effect", "org.example.evil", "plugin.evil", "ec.blur"] {
+            assert!(!builtin_effect(name), "{name}");
+        }
+        let apply = |effect: Json| {
+            json!({"cmds": [
+                {"id": "comp.new", "params": {"name": "Main", "width": 16, "height": 16}},
+                {"id": "layer.newSolid", "params": {"name": "Red", "color": "#cc3344"}},
+                {"id": "effect.apply", "params": {"effect": effect}},
+            ], "out": "fx.ecproj"})
+        };
+        for name in ["Totally Not An Effect", "plugin.evil", ""] {
+            let e = run_in(&areas, apply(json!(name)), &root, false).unwrap_err();
+            assert!(e.contains(&format!("`{name}` is not an effect the engine builds in")), "{name}: {e}");
+        }
+        assert!(run_in(&areas, apply(json!(7)), &root, false).unwrap_err().contains("is not an effect the engine builds in"));
+        assert!(run_in(&areas, apply(json!(["Gaussian Blur", "plugin.evil"])), &root, false).unwrap_err().contains("`plugin.evil`"));
+        assert!(!root.join("fx.ecproj").exists());
+        // Registered plug-ins that shadow built-ins: the engine's lookup
+        // lands on them, so the door refuses those names.
+        shadow_builtins();
+        assert_eq!(lookup("Mosaic").map(|s| s.id), Some("octosense.test.mosaic"), "the shadow is live");
+        assert_eq!(lookup("Emboss").map(|s| s.id), Some("Emboss"), "the shadow is live");
+        for name in ["Mosaic", "MOSAIC", "Emboss", "octosense.test.mosaic", "OctoSense Test Emboss"] {
+            assert!(!builtin_effect(name), "{name}");
+            let e = run_in(&areas, apply(json!(name)), &root, false).unwrap_err();
+            assert!(e.contains("is not an effect the engine builds in"), "{name}: {e}");
+        }
+        assert!(!root.join("fx.ecproj").exists());
+        // The built-ins themselves, by id, still apply.
+        let mut cmds = apply(json!("ec.stylize.mosaic"));
+        cmds["cmds"].as_array_mut().unwrap().push(json!({"id": "effect.apply", "params": {"effect": "ec.stylize.emboss"}}));
+        cmds["cmds"].as_array_mut().unwrap().push(json!({"id": "effect.plugins.list"}));
+        let made = run_in(&areas, cmds, &root, false).unwrap();
+        assert_eq!((made["results"][2]["result"]["effect"].clone(), made["results"][3]["result"]["effect"].clone()), (json!("ec.stylize.mosaic"), json!("ec.stylize.emboss")));
+        let ids: Vec<&str> = made["results"][4]["result"]["plugins"].as_array().unwrap().iter().filter_map(|p| p["id"].as_str()).collect();
+        assert!(ids.contains(&"octosense.test.mosaic") && ids.contains(&"Emboss"), "{ids:?}");
+        // A project whose effect instance names the plug-in: refused by every
+        // method that opens it.
+        let text = std::fs::read_to_string(root.join("fx.ecproj")).unwrap();
+        let hostile = text.replace("\"ec.stylize.mosaic\"", "\"octosense.test.mosaic\"");
+        assert_ne!(hostile, text);
+        std::fs::write(root.join("plugin.ecproj"), hostile).unwrap();
+        for (method, args) in [
+            ("info", json!({"path": "plugin.ecproj"})),
+            ("run", json!({"path": "plugin.ecproj", "cmds": [], "out": "plugin.png"})),
+            ("render", json!({"path": "plugin.ecproj", "out": "plugin2.png"})),
+        ] {
+            let e = serve(&areas, &service_call(method, args, &root, false)).unwrap_err();
+            assert!(e.contains("`octosense.test.mosaic`") && e.contains("is an effect plug-in"), "{method}: {e}");
+        }
+        assert!(!root.join("plugin.png").exists() && !root.join("plugin2.png").exists());
+    }
+
+    /// #419's LUT fence stays closed through the door, as the shell calls
+    /// it: Apply Color LUT's `lut` set to a `.cube` outside the area is
+    /// refused right after the command that sets it, for every kind of
+    /// `out`, with nothing written; the LUT's text inline is drawn. The same
+    /// holds when the path arrives through Essential Graphics: an OCIO File
+    /// Transform's `file` exposed as a control and given the path as a
+    /// precomp layer's value (the renderer puts it into the parameter), in
+    /// one precomp or through two. Each hostile fixture is live: the engine's
+    /// own session reads the outside file.
+    #[test]
+    fn the_door_keeps_the_lut_fence_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let secret = dir.path().join("secret.cube");
+        std::fs::write(&secret, GREEN_LUT).unwrap();
+        let secret = secret.to_string_lossy().into_owned();
+        let areas = resolver(&root, None);
+        let lut = |value: &str| {
+            json!([
+                {"id": "comp.new", "params": {"name": "Main", "width": 16, "height": 16, "frameRate": 24, "duration": 1.0}},
+                {"id": "layer.newSolid", "params": {"name": "Red", "color": "#cc3344"}},
+                {"id": "effect.apply", "params": {"effect": "Apply Color LUT"}},
+                {"id": "prop.set", "params": {"path": "effects/#1/lut", "value": value}},
+                {"id": "effect.pickColor", "params": {"param": "missing", "x": 1, "y": 1}},
+            ])
+        };
+        for out in ["lut.ecproj", "lut.png", "lut.json"] {
+            let e = run_in(&areas, json!({"cmds": lut(&secret), "out": out}), &root, false).unwrap_err();
+            assert!(e.contains("names a file") && e.contains("`lut`") && !e.contains("pickColor"), "{out}: {e}");
+            assert!(!root.join(out).exists(), "{out}");
+        }
+        let mut inline = lut(GREEN_LUT);
+        inline.as_array_mut().unwrap().pop();
+        let drawn = run_in(&areas, json!({"cmds": inline, "out": "inline.png", "max_side": 16}), &root, false).unwrap();
+        assert_eq!(drawn["format"], json!("png"), "{drawn}");
+        assert_eq!(centre(&std::fs::read(root.join("inline.png")).unwrap())[..3], [0, 255, 0], "the inline LUT is drawn");
+
+        // Through Essential Graphics: Inner's OCIO `file` is a control, and
+        // Main's layer of Inner gives it a value.
+        let exposed = |value: &str| {
+            vec![
+                json!({"id": "comp.new", "params": {"name": "Inner", "width": 16, "height": 16, "frameRate": 24, "duration": 1.0}}),
+                json!({"id": "layer.newSolid", "params": {"name": "Lit", "color": "#cc3344"}}),
+                json!({"id": "effect.apply", "params": {"effect": "OCIO File Transform"}}),
+                json!({"id": "essential.addProperty", "params": {"comp": "Inner", "layer": "Lit", "path": "effects/#1/file"}}),
+                json!({"id": "comp.new", "params": {"name": "Main", "width": 16, "height": 16, "frameRate": 24, "duration": 1.0}}),
+                json!({"id": "layer.addItem", "params": {"comp": "Main", "item": "Inner"}}),
+                json!({"id": "essential.set", "params": {"comp": "Main", "layer": "Inner", "control": "File", "value": value}}),
+            ]
+        };
+        // Then Top's layer of Main gives Main's control of that value
+        // another one (without one, Main's own value shows).
+        let nested = |control: u64, value: Option<&str>| {
+            let mut cmds = vec![
+                json!({"id": "essential.addProperty", "params": {"comp": "Main", "layer": "Inner", "path": format!("essential/eg{control}"), "name": "Look"}}),
+                json!({"id": "comp.new", "params": {"name": "Top", "width": 16, "height": 16, "frameRate": 24, "duration": 1.0}}),
+                json!({"id": "layer.addItem", "params": {"comp": "Top", "item": "Main"}}),
+            ];
+            if let Some(value) = value {
+                cmds.push(json!({"id": "essential.set", "params": {"comp": "Top", "layer": "Main", "control": "Look", "value": value}}));
+            }
+            cmds
+        };
+        // The engine's own session, unfenced, reads the outside file both
+        // ways.
+        let engine = |cmds: Vec<Json>, comp: &str| {
+            let mut b = Backend::headless(Session::default());
+            let mut control = 0;
+            for c in cmds {
+                let r = b.exec(c["id"].as_str().unwrap(), c["params"].clone()).unwrap();
+                control = r["controls"][0].as_u64().unwrap_or(control);
+            }
+            (centre(&b.render_with(Some(&json!(comp)), Some(0.0), 16, false).unwrap().png), control)
+        };
+        assert_eq!(engine(exposed(""), "Main").0[..3], [0xcc, 0x33, 0x44], "no value: the solid as it is");
+        assert_eq!(engine(exposed(&secret), "Main").0[..3], [0, 255, 0], "the fixture is live: the engine reads the outside LUT");
+        let (blue, control) = engine(exposed(BLUE_LUT), "Main");
+        assert_eq!(blue[..3], [0, 0, 255], "a value inline is drawn");
+        let chain = |value: Option<&str>| exposed(BLUE_LUT).into_iter().chain(nested(control, value)).collect::<Vec<Json>>();
+        assert_eq!(engine(chain(None), "Top").0[..3], [0, 0, 255], "Main's own value");
+        assert_eq!(engine(chain(Some(&secret)), "Top").0[..3], [0, 255, 0], "the nested fixture is live too");
+        // The door refuses both, right after the value is set.
+        let e = run_in(&areas, json!({"cmds": exposed(&secret), "out": "exposed.png", "max_side": 16}), &root, false).unwrap_err();
+        assert!(e.contains("Essential Property `File`") && e.contains("names a file") && e.contains("`file`"), "{e}");
+        let first = run_in(&areas, json!({"cmds": exposed(BLUE_LUT), "out": "chain.ecproj"}), &root, false).unwrap();
+        assert_eq!(first["results"][3]["result"]["controls"][0].as_u64(), Some(control), "{first}");
+        let e = run_in(&areas, json!({"path": "chain.ecproj", "cmds": nested(control, Some(&secret)), "out": "chain.png", "max_side": 16}), &root, false).unwrap_err();
+        assert!(e.contains("Essential Property `Look`") && e.contains("names a file") && e.contains("`file`"), "{e}");
+        assert!(!root.join("exposed.png").exists() && !root.join("chain.png").exists());
+        // The file's text inline, as a value, is drawn.
+        run_in(&areas, json!({"path": "chain.ecproj", "cmds": nested(control, Some(GREEN_LUT)), "out": "chain-inline.png", "comp": "Top", "max_side": 16}), &root, false).unwrap();
+        assert_eq!(centre(&std::fs::read(root.join("chain-inline.png")).unwrap())[..3], [0, 255, 0]);
+        // A project file carrying such a value is refused when opened.
+        let text = std::fs::read_to_string(root.join("chain.ecproj")).unwrap();
+        let quoted = |v: &str| serde_json::to_string(v).unwrap();
+        let hostile = text.replace(&quoted(BLUE_LUT), &quoted(&secret));
+        assert_ne!(hostile, text);
+        std::fs::write(root.join("hostile.ecproj"), hostile).unwrap();
+        let e = serve(&areas, &service_call("info", json!({"path": "hostile.ecproj"}), &root, false)).unwrap_err();
+        assert!(e.contains("Essential Property `File`") && e.contains("names a file"), "{e}");
+    }
+
+    /// `run` writes each kind of `out` by its extension: the project
+    /// (.ecproj), a composition as Lottie (.json, .lottie) with its
+    /// warnings, one frame (.png) with its size; a Lottie `path` opens as a
+    /// composition the commands then edit. Another extension is refused
+    /// before the engine works.
+    #[test]
+    fn the_door_writes_each_kind_of_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let areas = resolver(&root, None);
+        let project = fixture_in(&areas, &root);
+        assert_eq!((project["format"].clone(), project["out"].clone()), (json!("ecproj"), json!("main.ecproj")), "{project}");
+        assert!(project["bytes"].as_u64().is_some_and(|n| n > 0), "{project}");
+        let lottie = run_in(&areas, json!({"path": "main.ecproj", "cmds": [], "out": "main.json", "comp": "Main"}), &root, false).unwrap();
+        assert_eq!(lottie["format"], json!("json"), "{lottie}");
+        assert!(lottie["warnings"].is_array() && lottie["bytes"].as_u64().is_some_and(|n| n > 0), "{lottie}");
+        let parsed: Json = serde_json::from_slice(&std::fs::read(root.join("main.json")).unwrap()).unwrap();
+        assert!(parsed["layers"].is_array(), "{parsed}");
+        let dot = run_in(&areas, json!({"path": "main.ecproj", "cmds": [], "out": "main.lottie"}), &root, false).unwrap();
+        assert_eq!(dot["format"], json!("lottie"), "{dot}");
+        assert!(std::fs::read(root.join("main.lottie")).unwrap().starts_with(b"PK"), "a dotLottie archive");
+        let frame = run_in(
+            &areas,
+            json!({"path": "main.ecproj", "cmds": [{"id": "layer.newSolid", "params": {"name": "Blue", "color": "#2244cc"}}], "out": "frame.png", "time": 0.0, "max_side": 32}),
+            &root,
+            false,
+        )
+        .unwrap();
+        assert_eq!((frame["format"].clone(), frame["width"].clone(), frame["height"].clone()), (json!("png"), json!(32), json!(18)), "{frame}");
+        let png = std::fs::read(root.join("frame.png")).unwrap();
+        assert!(png.starts_with(&[0x89, b'P', b'N', b'G']));
+        assert_eq!(centre(&png)[..3], [0x22, 0x44, 0xcc], "the command ran before the frame was drawn");
+        let back = run_in(
+            &areas,
+            json!({"path": "main.json", "cmds": [{"id": "layer.newSolid", "params": {"name": "Blue", "color": "#2244cc"}}], "out": "from-lottie.ecproj"}),
+            &root,
+            false,
+        )
+        .unwrap();
+        assert!(back["imported"]["comp"].is_number() && back["imported"]["warnings"].is_array(), "{back}");
+        let sum = serve(&areas, &service_call("info", json!({"path": "from-lottie.ecproj"}), &root, false)).unwrap();
+        let comp = sum["items"].as_array().unwrap().iter().find(|i| i["type"] == json!("Composition") && i["size"] == json!([64, 36])).cloned();
+        assert_eq!(comp.map(|c| c["layers"].clone()), Some(json!(2)), "the Lottie comp, with the new solid: {sum}");
+        let e = run_in(&areas, json!({"cmds": [{"id": "comp.new"}], "out": "movie.mp4"}), &root, false).unwrap_err();
+        assert!(e.contains("`out` is a project (.ecproj)"), "{e}");
+        assert!(!root.join("movie.mp4").exists());
+    }
+
+    /// Whatever `run` writes keeps the area's rules: an agent's `out` never
+    /// replaces a file, for any kind; the result fits the quota; `out` and
+    /// `path` stay inside the area; an app's own call may replace.
+    #[test]
+    fn the_doors_writes_keep_the_areas_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let areas = resolver(&root, None);
+        fixture_in(&areas, &root);
+        for name in ["taken.ecproj", "taken.json", "taken.png"] {
+            std::fs::write(root.join(name), b"keep me").unwrap();
+            let e = run_in(&areas, json!({"path": "main.ecproj", "cmds": [], "out": name}), &root, false).unwrap_err();
+            assert!(e.contains("already exists"), "{name}: {e}");
+            assert_eq!(std::fs::read(root.join(name)).unwrap(), b"keep me", "{name}");
+        }
+        let tight = resolver(&root, Some(8));
+        for name in ["q.ecproj", "q.json", "q.png"] {
+            let e = run_in(&tight, json!({"path": "main.ecproj", "cmds": [], "out": name}), &root, true).unwrap_err();
+            assert!(e.contains("bytes left"), "{name}: {e}");
+            assert!(!root.join(name).exists(), "{name}");
+        }
+        std::fs::write(dir.path().join("up.json"), b"{}").unwrap();
+        for bad in ["../up.ecproj", "/etc/x.png", "a/../../up.json"] {
+            assert!(run_in(&areas, json!({"cmds": [], "out": bad}), &root, true).is_err(), "out {bad}");
+            assert!(run_in(&areas, json!({"cmds": [], "path": bad}), &root, true).is_err(), "path {bad}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
+            assert!(run_in(&areas, json!({"cmds": [], "path": "up/up.json"}), &root, true).is_err());
+            assert!(run_in(&areas, json!({"path": "main.ecproj", "cmds": [], "out": "up/f.png"}), &root, true).is_err());
+            assert!(!dir.path().join("f.png").exists());
+        }
+        run_in(&areas, json!({"path": "main.ecproj", "cmds": [], "out": "taken.png", "max_side": 8}), &root, true).unwrap();
+        assert!(std::fs::read(root.join("taken.png")).unwrap().starts_with(&[0x89, b'P', b'N', b'G']), "an app's own call may replace");
+    }
+
+    /// The door's gate is built from the generated classification: it runs
+    /// exactly the `safe` ids.
+    #[test]
+    fn the_door_is_built_from_the_reviewed_classification() {
+        let door = door().unwrap();
+        let safety: Json = serde_json::from_str(include_str!("../skill/safety.json")).unwrap();
+        let safe = safety["commands"].as_object().unwrap().values().filter(|c| *c == "safe").count();
+        assert_eq!(door.runnable().len(), safe);
+        assert!(door.runs("comp.new") && door.runs("effect.apply") && door.runs("prop.set") && door.runs("effect.plugins.list") && door.runs("essential.set"));
+        for refused in ["engine.batch", "file.saveAs", "prefs.set", "effect.plugins.load", "mediaBrowser.addFavorite", "learn.step", "nope"] {
+            assert!(!door.runs(refused), "{refused}");
+        }
     }
 
     /// The agent tools (`tools.json`) pass App Hub's own loader, as the shell
@@ -1033,5 +1704,35 @@ mod tests {
                 assert!(!e.contains("is not a method"), "{}: {e}", tool.name);
             }
         }
+    }
+
+    /// Every `effect.run` call the skill's examples show runs, in order,
+    /// in one area as the system agent's (with the files they name placed
+    /// there first), and writes its `out`: the skill teaches commands that
+    /// work.
+    #[test]
+    fn the_skill_examples_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let areas = resolver(dir.path(), None);
+        // The Lottie animation the examples open: one red solid layer.
+        std::fs::write(dir.path().join("intro.json"), br##"{"v":"5.7.0","fr":24,"ip":0,"op":24,"w":32,"h":18,"nm":"Main","ddd":0,"assets":[],"layers":[{"ddd":0,"ind":1,"ty":1,"nm":"Red","sr":1,"ks":{"o":{"a":0,"k":100},"r":{"a":0,"k":0},"p":{"a":0,"k":[16,9,0]},"a":{"a":0,"k":[16,9,0]},"s":{"a":0,"k":[100,100,100]}},"ao":0,"sw":32,"sh":18,"sc":"#cc3344","ip":0,"op":24,"st":0,"bm":0}]}"##).unwrap();
+        let body = include_str!("../skill/SKILL.md");
+        let examples = body.split("\n## Examples").nth(1).and_then(|rest| rest.split("\n## ").next()).unwrap();
+        let mut ran = 0;
+        for span in examples.split('`').skip(1).step_by(2) {
+            let Some(args) = span.strip_prefix("effect.run ") else { continue };
+            let args: Json = serde_json::from_str(args).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            let got = serve(&areas, &service_call("run", args.clone(), dir.path(), false)).unwrap_or_else(|e| panic!("`{span}`: {e}"));
+            assert_eq!(got["results"].as_array().map(Vec::len), args["cmds"].as_array().map(Vec::len), "{got}");
+            if let Some(out) = args["out"].as_str() {
+                assert!(dir.path().join(out).is_file(), "`{span}` wrote no {out}");
+            }
+            ran += 1;
+        }
+        assert!(ran >= 4, "{ran} examples");
+        let info = serve(&areas, &service_call("info", json!({"path": "title.ecproj"}), dir.path(), false)).unwrap();
+        assert!(info.to_string().contains("Title"), "{info}");
+        let blurred = String::from_utf8_lossy(&std::fs::read(dir.path().join("intro.ecproj")).unwrap()).to_lowercase();
+        assert!(blurred.contains("gaussian"), "the blur is in the saved project");
     }
 }
