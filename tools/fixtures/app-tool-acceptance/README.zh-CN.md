@@ -48,5 +48,8 @@ cargo build --locked --offline --release -p octosense-shell \
 保留失败日志与结果，捕获真实像素，只清理自己的进程。除 JSON 外还应检查截图，
 控件文本无法证明不存在重绘或裁剪问题。
 
-**验证状态：** 本变更的构建与原生夹具执行尚待完成。
-不覆盖手机、提供商、OS 批准或外部业务操作。
+**macOS 已验证：** release 构建通过；Script Tool State 通过签名准入、真实工具/UI
+修改、中英手动编辑、精确重启恢复和拒绝检查。API Migration Lab 通过原生编辑、
+重启和服务缺失路径。七张原生 Metal 图均已检查。两个私有变异版本按预期拒绝：
+旧回调名称和缺少运行时标记。二进制/源码身份、精确结果与范围见
+[validation.json](validation.json)。不覆盖手机、提供商、OS 批准、代理同意、公开安装或外部操作。

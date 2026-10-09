@@ -57,5 +57,11 @@ system-font fallback, retains failure receipts/logs, captures real native
 pixels, and terminates only the process it owns. Review screenshots as well as
 JSON; widget text alone can miss a repaint or clipping failure.
 
-**Validation:** build and native fixture execution pending in this change.
-Phone, provider, OS approval and external service actions are not covered.
+**Validated on macOS:** the release build passed; Script Tool State passed
+signed admission, live tool/UI mutation, manual Unicode editing, exact restart
+persistence and refusal checks. The API Migration Lab passed its native edit,
+restart and missing-service paths. All seven native Metal captures were
+inspected. Two private mutations were correctly rejected: the old callback
+name and a missing runtime marker. See [validation.json](validation.json) for
+binary/source identity, exact results and scope. Phone, provider, OS approval,
+agent consent, public installation and external actions are not covered.
