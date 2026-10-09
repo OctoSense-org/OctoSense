@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 cargo build --locked --target wasm32-wasip2 --release
 mkdir -p ../fixtures
-for c in notes netprobe fetch; do
+for c in notes netprobe fetch hostcall; do
   cp "target/wasm32-wasip2/release/$c.wasm" "../fixtures/$c.component.wasm"
 done
 ls -l ../fixtures/*.component.wasm

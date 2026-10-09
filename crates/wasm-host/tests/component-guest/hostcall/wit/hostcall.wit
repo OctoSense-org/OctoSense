@@ -1,0 +1,7 @@
+package octosense:hostcall-spike;
+
+world hostcall {
+  import octosense:host/services@0.1.0;
+  /// Forwards to the app's host services.
+  export call: func(service: string, args: string) -> result<string, string>;
+}

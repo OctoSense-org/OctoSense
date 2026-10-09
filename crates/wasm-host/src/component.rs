@@ -48,7 +48,10 @@ use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use crate::{trap, CallError, InvocationGuard, LoadError, Runtime, Ticker, LOG_LINE, LOG_LINES};
 
 mod files;
+mod host;
 mod net;
+
+pub use host::HostCalls;
 
 /// The WASI packages a component may import. Every interface of these is
 /// linked; what each can reach is set per instance ([`Grants`]).
@@ -59,6 +62,8 @@ const ALLOWED_PACKAGES: &[&str] = &[
     "wasi:http/",
     "wasi:io/",
     "wasi:random/",
+    // The app's host services, as its script reaches them (`host`).
+    "octosense:host/",
 ];
 
 /// What a call that had a write refused logs, and adds to its error.
@@ -138,6 +143,9 @@ struct State {
     http: wasmtime_wasi_http::WasiHttpCtx,
     /// The hosts its requests may reach, and what it was refused.
     hosts: net::Hosts,
+    /// Its app's host services (`octosense:host`), when the embedder gives
+    /// them.
+    host_calls: host::Calls,
 }
 
 impl WasiView for State {
@@ -300,6 +308,7 @@ impl Runtime {
                 budget: files::Budget::default(),
                 http: wasmtime_wasi_http::WasiHttpCtx::new(),
                 hosts,
+                host_calls: None,
             },
         );
         store.data().budget.set(Some(0));
@@ -317,6 +326,7 @@ impl Runtime {
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
             .and_then(|()| wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker))
             .and_then(|()| files::link(&mut linker))
+            .and_then(|()| host::link(&mut linker))
             .map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
         let instance = linker
             .instantiate(&mut store, &program.component)
@@ -565,6 +575,12 @@ impl ComponentInstance {
     /// What is left of the storage budget.
     pub fn storage_budget(&self) -> Option<u64> {
         self.store.data().budget.left()
+    }
+
+    /// The app's host services its `octosense:host` calls reach (`None`,
+    /// the default: none).
+    pub fn set_host_calls(&mut self, calls: Option<Arc<dyn HostCalls>>) {
+        self.store.data_mut().host_calls = calls;
     }
 
     /// Calls `name` with JSON arguments; returns its JSON result. A

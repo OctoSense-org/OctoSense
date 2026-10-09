@@ -37,7 +37,7 @@
 //! is left of the quota is what a call may add (a write past it fails inside
 //! the component, as a full disk).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -46,7 +46,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
-use octosense_wasm_host::component::{self, ComponentInstance, ComponentProgram, Grants};
+use octosense_wasm_host::component::{
+    self, ComponentInstance, ComponentProgram, Grants, HostCalls,
+};
 use octosense_wasm_host::{Limits, Program, Runtime};
 use serde_json::{json, Value};
 
@@ -76,6 +78,130 @@ fn area_env() -> Arc<dyn AreaEnv> {
 }
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
+
+// ------------------------------------------------- a component's host calls
+
+/// A component's call to one of its app's host services (`octosense:host`),
+/// waiting for the UI thread ([`pump_host_calls`]), where its app's script
+/// would make it.
+struct HostCall {
+    call: ServiceCall,
+    deadline: Instant,
+    done: SyncSender<Result<String, String>>,
+}
+
+static HOST_CALLS: Mutex<Vec<HostCall>> = Mutex::new(Vec::new());
+/// Dispatched calls by their request key, until answered or past their
+/// deadline.
+type Waiting = HashMap<usize, (SyncSender<Result<String, String>>, Instant)>;
+static HOST_WAITING: Mutex<Option<Waiting>> = Mutex::new(None);
+/// Component calls are dispatched under keys of their own, apart from any
+/// isolate's.
+static NEXT_HOST_KEY: AtomicUsize = AtomicUsize::new(1 << 50);
+
+/// An app's host services as its components reach them: the families its
+/// admitted manifest grants (a system app's own namespace too), dispatched
+/// on the UI thread as its script's `host.request` would be, but never with
+/// a sheet or a prompt, so only the methods a background surface may call.
+struct AppHostCalls {
+    app: String,
+    host_dir: PathBuf,
+    families: BTreeSet<String>,
+}
+
+impl HostCalls for AppHostCalls {
+    fn request(&self, service: &str, args: &str, deadline: Instant) -> Result<String, String> {
+        let family = service.split('.').next().unwrap_or("");
+        // The app's worker is busy running this very call.
+        if family == "wasm" {
+            return Err(
+                "a component cannot call wasm.*: its app's functions are already running it".into(),
+            );
+        }
+        let own = self
+            .app
+            .strip_prefix(octosense_appstore::system::SYSTEM_ID_PREFIX)
+            == Some(family);
+        if !self.families.contains(family) && !own {
+            return Err(format!(
+                "{} was not granted the {family} service, which {service} needs",
+                self.app
+            ));
+        }
+        let args: Value = serde_json::from_str(args)
+            .map_err(|e| format!("{service}: the arguments are not JSON: {e}"))?;
+        let (done, answer) = sync_channel(1);
+        HOST_CALLS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(HostCall {
+                call: ServiceCall {
+                    app_id: self.app.clone(),
+                    service: service.to_string(),
+                    args,
+                    from_sheet: false,
+                    may_prompt: false,
+                    host_dir: self.host_dir.clone(),
+                },
+                deadline,
+                done,
+            });
+        makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
+        answer
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or_else(|_| {
+                Err(format!(
+                    "{service} did not answer before the call's deadline"
+                ))
+            })
+    }
+}
+
+/// Dispatch the components' queued host calls and deliver their answers;
+/// on the UI thread ([`crate::host_tools::pump`]).
+pub fn pump_host_calls() {
+    struct NoSheets;
+    impl ServiceHost for NoSheets {
+        fn open_sheet(&mut self, _body: String) {}
+        fn close_sheet(&mut self) {}
+    }
+    let queued = std::mem::take(&mut *HOST_CALLS.lock().unwrap_or_else(|e| e.into_inner()));
+    let mut waiting = HOST_WAITING.lock().unwrap_or_else(|e| e.into_inner());
+    let waiting = waiting.get_or_insert_with(HashMap::new);
+    for HostCall {
+        call,
+        deadline,
+        done,
+    } in queued
+    {
+        if Instant::now() >= deadline {
+            continue;
+        }
+        let key = NEXT_HOST_KEY.fetch_add(1, Ordering::Relaxed);
+        waiting.insert(key, (done, deadline));
+        octosense_appstore::services::dispatch(call, key, 1, &mut NoSheets);
+    }
+    if waiting.is_empty() {
+        return;
+    }
+    let keys: Vec<usize> = waiting.keys().copied().collect();
+    for (key, _, result) in octosense_appstore::services::take_replies_for(&keys) {
+        if let Some((done, _)) = waiting.remove(&key) {
+            let _ = done.try_send(result);
+        }
+    }
+    // A call whose component stopped waiting goes nowhere.
+    let now = Instant::now();
+    let expired: Vec<usize> = waiting
+        .iter()
+        .filter(|(_, (_, deadline))| *deadline <= now)
+        .map(|(key, _)| *key)
+        .collect();
+    for key in expired {
+        waiting.remove(&key);
+        octosense_appstore::services::cancel_heap(key);
+    }
+}
 static WORKERS: Mutex<Option<HashMap<String, Worker>>> = Mutex::new(None);
 static BUFFERED_BYTES: AtomicUsize = AtomicUsize::new(0);
 
@@ -490,6 +616,8 @@ struct Lab {
     /// The hosts its components' `wasi:http` may reach: the admitted
     /// policy's network hosts, granted `net`.
     http_hosts: Vec<String>,
+    /// Its host services, as its components reach them (`octosense:host`).
+    host_calls: Arc<dyn HostCalls>,
 }
 
 /// The hosts an app's components may reach over HTTP(S): its policy's
@@ -579,6 +707,16 @@ impl Lab {
             owner: BTreeMap::new(),
             stats: BTreeMap::new(),
             http_hosts: http_hosts(&admission.manifest),
+            host_calls: Arc::new(AppHostCalls {
+                app: app.to_string(),
+                host_dir: admission.root.join(".host"),
+                families: admission.manifest["capabilities"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|c| c.as_str().map(str::to_string))
+                    .collect(),
+            }),
             admission: admission.clone(),
         };
         for path in files {
@@ -747,6 +885,7 @@ impl Lab {
             http_hosts: self.http_hosts.clone(),
         };
         let app = self.app.clone();
+        let host_calls = self.host_calls.clone();
         let module = &mut self.modules[index];
         let Code::Component {
             program,
@@ -773,6 +912,8 @@ impl Lab {
                     Some((deadline, Box::new(move || pending.is_pending()))),
                 )
                 .map_err(|error| error.to_string())?;
+            let mut instance = instance;
+            instance.set_host_calls(Some(host_calls));
             *instances += 1;
             *live = Some((instance, grants.clone()));
         }
@@ -1899,6 +2040,92 @@ mod tests {
                 assert!(error.contains("HttpRequestDenied"), "{error}");
             }
         }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A component's `octosense:host` calls reach its app's granted host
+    /// services, dispatched on the UI thread as its script's would be (a
+    /// thread here plays the UI's part); nothing else, and never `wasm.*`.
+    #[test]
+    fn a_components_host_calls_reach_only_its_apps_granted_services() {
+        struct Echo;
+        impl HostService for Echo {
+            fn family(&self) -> &'static str {
+                "wasmhostecho"
+            }
+            fn call(&mut self, call: ServiceCall, reply: Replier, _: &mut dyn ServiceHost) {
+                reply.send(Ok(json!({"app": call.app_id, "method": call.method(), "args": call.args, "may_prompt": call.may_prompt})));
+            }
+        }
+        octosense_appstore::services::register_host_service(Box::new(Echo));
+        let stop = Arc::new(AtomicBool::new(false));
+        let pumping = stop.clone();
+        let pump = std::thread::spawn(move || {
+            while !pumping.load(Ordering::Relaxed) {
+                pump_host_calls();
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        });
+        let root = std::env::temp_dir().join(format!(
+            "octosense-wasm-component-host-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let bundle = root.join("bundle");
+        std::fs::create_dir_all(bundle.join("fns")).unwrap();
+        std::fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../wasm-host/tests/fixtures/hostcall.component.wasm"
+            ),
+            bundle.join("fns/hostcall.wasm"),
+        )
+        .unwrap();
+        let host_dir = root.join(".host");
+        let admission = Admission {
+            root: root.clone(),
+            bundle,
+            manifest: json!({"capabilities": ["wasm", "wasmhostecho"]}),
+        };
+        let mut lab = Lab::from_bundle(
+            "org.example.hostcalls",
+            runtime(&host_dir).unwrap(),
+            admission,
+            || Ok(()),
+        )
+        .unwrap();
+        let mut call = |service: &str, args: &str| {
+            let (_, reply) = pending_reply("org.example.hostcalls", &host_dir);
+            lab.answer(
+                "call",
+                json!([service, args]).to_string().as_bytes(),
+                false,
+                Instant::now() + REQUEST_TIMEOUT,
+                reply,
+            )
+        };
+        let answer: Value = serde_json::from_str(
+            call("wasmhostecho.get", r#"{"id":1}"#)
+                .unwrap()
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            answer,
+            json!({"app": "org.example.hostcalls", "method": "get", "args": {"id": 1}, "may_prompt": false})
+        );
+        let error = call("mail.list", "{}").unwrap_err();
+        assert!(
+            error.contains("was not granted the mail service"),
+            "{error}"
+        );
+        let error = call("wasm.functions", "{}").unwrap_err();
+        assert!(error.contains("cannot call wasm.*"), "{error}");
+        let error = call("wasmhostecho.get", "not json").unwrap_err();
+        assert!(error.contains("not JSON"), "{error}");
+        stop.store(true, Ordering::Relaxed);
+        pump.join().unwrap();
         let _ = std::fs::remove_dir_all(root);
     }
 }

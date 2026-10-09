@@ -5,12 +5,14 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use octosense_wasm_host::component::{is_component, Grants};
+use octosense_wasm_host::component::{is_component, Grants, HostCalls};
 use octosense_wasm_host::{CallError, Limits, LoadError, Runtime};
 use serde_json::json;
 
+const HOSTCALL: &[u8] = include_bytes!("fixtures/hostcall.component.wasm");
 const FETCH: &[u8] = include_bytes!("fixtures/fetch.component.wasm");
 const NOTES: &[u8] = include_bytes!("fixtures/notes.component.wasm");
 const NETPROBE: &[u8] = include_bytes!("fixtures/netprobe.component.wasm");
@@ -347,7 +349,8 @@ fn http_reaches_only_the_apps_hosts() {
         other => panic!("{other:?}"),
     }
     assert!(
-        instance.take_logs().iter().any(|l| l == &format!(
+        instance.take_logs().iter().any(|l| l
+            == &format!(
             "a request to localhost:{port} was refused: it is not one of the app's network hosts"
         )),
         "the refusal is logged"
@@ -390,6 +393,64 @@ fn a_request_that_never_answers_ends_at_the_deadline() {
         "ended after {:?}",
         started.elapsed()
     );
+}
+
+/// An embedder's host services for the `hostcall` component: it records
+/// each call, answers `notes.get`, refuses the rest, and makes `slow.wait`
+/// wait out the call's deadline.
+#[derive(Default)]
+struct Services(std::sync::Mutex<Vec<(String, String)>>);
+
+impl HostCalls for Services {
+    fn request(&self, service: &str, args: &str, deadline: Instant) -> Result<String, String> {
+        self.0.lock().unwrap().push((service.into(), args.into()));
+        match service {
+            "notes.get" => Ok(format!(r#"{{"echo":{args}}}"#)),
+            "slow.wait" => {
+                std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+                Err("past the call's deadline".into())
+            }
+            _ => Err(format!("this app was not granted {service}")),
+        }
+    }
+}
+
+/// `octosense:host`: a component calls its app's host services through the
+/// embedder, which decides what it may call; without one it reaches none,
+/// and a call's deadline reaches the embedder.
+#[test]
+fn a_component_calls_its_apps_host_services_through_the_embedder() {
+    let rt = runtime();
+    let program = rt.load_component(HOSTCALL).unwrap();
+    let mut instance = rt
+        .instantiate_component(&program, &Grants::default(), None)
+        .unwrap();
+    match instance.call_json("call", &json!(["notes.get", "{}"])) {
+        Err(CallError::Guest(why)) => assert!(why.contains("no host services"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+    let services = Arc::new(Services::default());
+    instance.set_host_calls(Some(services.clone()));
+    assert_eq!(
+        instance
+            .call_json("call", &json!(["notes.get", r#"{"id":1}"#]))
+            .unwrap(),
+        json!(r#"{"echo":{"id":1}}"#)
+    );
+    match instance.call_json("call", &json!(["mail.send", "{}"])) {
+        Err(CallError::Guest(why)) => assert!(why.contains("not granted mail.send"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+    let started = Instant::now();
+    assert!(instance
+        .call_json("call", &json!(["slow.wait", "{}"]))
+        .is_err());
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(services.0.lock().unwrap().len(), 3);
 }
 
 #[test]
