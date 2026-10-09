@@ -151,19 +151,22 @@ class AppImageReceiptTests(unittest.TestCase):
             self.assertEqual(appimage.inventory(root)['one']['hardlinks'], ['one', 'two'])
 
     @unittest.skipUnless(shutil.which('mksquashfs') and shutil.which('unsquashfs'), 'requires Linux squashfs-tools')
-    def test_real_squashfs_repack_changes_only_receipt_and_is_idempotent(self):
+    def test_real_squashfs_repack_excludes_wayland_binds_kernel_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)
             tree = temp / 'input'
             for relative, content in ((appimage.KERNEL, self.patched),
                                       (appimage.RECEIPT, json.dumps(self.staged).encode()),
-                                      ('usr/lib/fixture', b'unchanged resource')):
+                                      ('usr/lib/fixture', b'unchanged resource'),
+                                      ('usr/lib/libwayland-client.so.0', b'old client ABI'),
+                                      ('usr/lib/libwayland-egl.so.1', b'old EGL ABI')):
                 path = tree / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
             (tree / appimage.KERNEL).chmod(0o755)
             os.link(tree / 'usr/lib/fixture', tree / 'usr/lib/hardlink')
             (tree / 'usr/lib/symlink').symlink_to('fixture')
+            (tree / 'usr/lib/libwayland-client.so').symlink_to('libwayland-client.so.0')
             fs = temp / 'input.squashfs'
             appimage.run([shutil.which('mksquashfs'), str(tree), str(fs), '-noappend', '-no-progress',
                           '-processors', '2', '-all-root', '-no-xattrs', '-comp', 'gzip', '-mkfs-time', '0'])
@@ -177,16 +180,52 @@ class AppImageReceiptTests(unittest.TestCase):
             self.assertNotEqual(image.read_bytes(), original)
             self.assertEqual(image.read_bytes()[:len(runtime)], runtime)
             self.assertEqual(binding['kernel']['sha256'], appimage.sha(self.patched))
+            self.assertEqual(set(binding['finalization']['excluded_host_libraries']), {
+                'usr/lib/libwayland-client.so', 'usr/lib/libwayland-client.so.0', 'usr/lib/libwayland-egl.so.1'})
             sealed = image.read_bytes()
             repeated = appimage.finalize_appimage(image, self.staged, self.raw)
             self.assertEqual(repeated['kernel'], binding['kernel'])
             self.assertEqual(repeated['sha256'], binding['sha256'])
             self.assertFalse(repeated['finalization']['receipt_updated'])
+            self.assertEqual(repeated['finalization']['excluded_host_libraries'], {})
             self.assertEqual(image.read_bytes(), sealed)
             invalid = {**self.staged, 'sha256': '0' * 64}
             with self.assertRaises(RuntimeError):
                 appimage.finalize_appimage(image, invalid, self.raw)
             self.assertEqual(image.read_bytes(), sealed, 'failed repair preserves its input')
+
+    def test_wayland_exclusion_preserves_unrelated_files_metadata_and_link_targets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            root = temp / 'payload'
+            libs = root / 'usr/lib'
+            libs.mkdir(parents=True)
+            outside = temp / 'outside'
+            outside.write_bytes(b'not part of the package')
+            (libs / 'libwayland-client.so.0').symlink_to(outside)
+            for name in ('libwayland-egl.so.1', 'libwayland-client.so.backup', 'libEGL.so.1'):
+                (libs / name).write_bytes(name.encode())
+            (libs / 'nested').mkdir()
+            (libs / 'nested/libwayland-client.so.0').write_bytes(b'unrelated nested file')
+            before = appimage.inventory(root)
+            removed = appimage.exclude_host_wayland(root, before)
+            after = appimage.inventory(root)
+            self.assertEqual(set(removed), {'usr/lib/libwayland-client.so.0', 'usr/lib/libwayland-egl.so.1'})
+            self.assertEqual({k: v for k, v in before.items() if k not in removed}, after)
+            self.assertEqual(outside.read_bytes(), b'not part of the package')
+
+    def test_wayland_exclusion_refuses_a_linked_library_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            root = temp / 'payload'
+            (root / 'usr').mkdir(parents=True)
+            outside = temp / 'outside'
+            outside.mkdir()
+            (outside / 'libwayland-client.so.0').write_bytes(b'keep')
+            (root / 'usr/lib').symlink_to(outside)
+            with self.assertRaisesRegex(RuntimeError, 'non-contained'):
+                appimage.exclude_host_wayland(root, appimage.inventory(root))
+            self.assertEqual((outside / 'libwayland-client.so.0').read_bytes(), b'keep')
 
 
 class VersionTests(unittest.TestCase):
