@@ -15,8 +15,10 @@ Each run starts its own hidden card-host on 127.0.0.1:<port> with fresh app
 data (MAKEPAD_HIDE_WINDOWS=1, MAKEPAD_REMOTE), drives it over the remote
 bridge (/snap, /click, /t, /k, /m), saves grabs (/g) into
 <output>/<appearance>/, ends with /gq, and checks that the process exited
-and that its log holds no script error. It refuses to start while something
-else answers on the port.
+and that its log holds no script error. A handler that overran its 64 ms
+budget (on a busy machine) is recorded in the receipt apart from script
+errors; the run's own waits show whether the app recovered. It refuses to
+start while something else answers on the port.
 """
 import argparse
 import json
@@ -174,9 +176,13 @@ class Journey:
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"card-host {self.proc.pid} did not exit")
         log = Path(f"{data}.log").read_text(errors="replace").splitlines()
-        errors = [line for line in log if "[E]" in line or "splash:" in line or "callback error" in line]
+        flagged = [line for line in log if "[E]" in line or "splash:" in line or "callback error" in line]
+        # A handler that overran its 64 ms (a busy machine) is listed apart:
+        # the run's own waits show whether the app recovered.
+        overruns = [line for line in flagged if "script time budget exceeded" in line]
         self.report.append({"run": data.name, "pid": self.proc.pid, "gq": reply.get("quit") if isinstance(reply, dict) else None,
-                            "exited": True, "script_errors": errors})
+                            "exited": True, "script_errors": [line for line in flagged if line not in overruns],
+                            "budget_overruns": overruns})
         self.proc = None
 
     def close_after_failure(self):

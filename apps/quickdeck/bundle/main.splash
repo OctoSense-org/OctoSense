@@ -51,7 +51,8 @@ let ENTRY_LIMIT = 240
 let STEPS = [{n: "1" name: "Outline" note: "One card per slide: a title and its points."}, {n: "2" name: "Generate" note: "The deck engine lays out every slide."}, {n: "3" name: "Review" note: "Look through every slide."}, {n: "4" name: "Export" note: "Save it as PowerPoint or PDF."}]
 let FORMATS = [{id: "pptx" name: "PowerPoint" ext: ".pptx" note: "Keep editing it in PowerPoint, Keynote or Google Slides."}, {id: "pdf" name: "PDF" ext: ".pdf" note: "Share or print it exactly as it looks here."}]
 
-let booted = false
+let booted = false      // the stored decks are read
+let shown = false       // boot() has run to its end
 let decks = []          // every deck, newest first (decks.json)
 let cur = nil           // the deck on screen
 let screen = "decks"
@@ -361,11 +362,17 @@ fn recall(){
     app_height = kept.app_height
     true
 }
+// The stored decks, read once (a host restyle recalls them instead), then
+// the first screen.
 fn boot(){
     if !booted {
-        booted = true
         if !recall() { load() }
+        booted = true
     }
+    show_screen()
+    shown = true
+}
+fn show_screen(){
     // A host restyle runs the body again: show the screen the person was on.
     if cur == nil || screen == "decks" { show_decks() return }
     if screen == "outline" { open_outline() return }
@@ -375,7 +382,15 @@ fn boot(){
     if screen == "export" { open_export() return }
     open_review()
 }
-start_timeout(0.05, || boot())
+// A handler that overruns its 64 ms stops where it is, and on a busy
+// machine the first boot can. Each try sets up the next before it boots,
+// until one boot has run to its end.
+fn boot_try(left){
+    if shown { return }
+    if left > 1 { start_timeout(0.5, || boot_try(left - 1)) }
+    boot()
+}
+start_timeout(0.05, || boot_try(8))
 
 fn show_decks(){
     // A deck nobody wrote a word in is not kept.
