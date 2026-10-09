@@ -48,7 +48,7 @@ def synthetic_kernel(patched=False, text=b'code', rodata=b'constants'):
                    '.dynamic': 0x9000 if patched else 0x8000}.get(name, 0)
         records.append((labels.index(name.encode() + b'\0') if name else 0, kind, 0, address,
                         len(data), len(contents[name]), names.index('.strtab') if name == '.symtab' else 0,
-                        0, 1, 24 if name == '.symtab' else 0))
+                        0, 8 if patched and name == '.dynstr' else 1, 24 if name == '.symtab' else 0))
         data.extend(contents[name])
     struct.pack_into('<Q', data, 40, len(data))
     struct.pack_into('<HHHHHH', data, 52, 64, 0, 0, 64, len(names), names.index('.shstrtab'))
@@ -108,6 +108,18 @@ class AppImageReceiptTests(unittest.TestCase):
                             struct.pack('<IBBHQQ', 6, 0, 2, 4, 0x8000, 1)):
             with self.assertRaisesRegex(RuntimeError, 'symbol identities'):
                 appimage.verify_runpath_transform(self.raw, self.patched.replace(anchor, replacement))
+
+    def test_only_aligned_dynamic_string_relocation_can_change_alignment(self):
+        # The positive fixture has the real patchelf .dynstr alignment 1→8.
+        appimage.verify_runpath_transform(self.raw, self.patched)
+        _, ordered = appimage.elf_sections(self.patched)
+        table = int.from_bytes(self.patched[40:48], 'little')
+        for name, field_offset, value in (('.text', 48, 8), ('.dynstr', 48, 16),
+                                          ('.dynstr', 16, 0x7001)):
+            changed = bytearray(self.patched)
+            struct.pack_into('<Q', changed, table + ordered.index(name) * 64 + field_offset, value)
+            with self.assertRaisesRegex(RuntimeError, 'section alignment'):
+                appimage.verify_runpath_transform(self.raw, bytes(changed))
 
     def test_format_bindings_keep_deb_and_appimage_kernel_hashes_distinct(self):
         with tempfile.TemporaryDirectory() as temp:

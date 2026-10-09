@@ -109,7 +109,12 @@ def verify_runpath_transform(original, packaged):
     require('.dynstr' in before and '.dynamic' in before, 'kernel dynamic sections missing')
     for name in before:
         a, b = before[name], after[name]
-        require(all(a[key] == b[key] for key in ('kind', 'flags', 'align', 'entry')), 'kernel section attributes changed')
+        require(all(a[key] == b[key] for key in ('kind', 'flags', 'entry')), 'kernel section attributes changed')
+        # patchelf relocates its extended dynamic string table to an
+        # eight-byte-aligned address. No other alignment change is expected.
+        require(a['align'] == b['align'] or
+                (name == '.dynstr' and a['align'] == 1 and b['align'] == 8 and b['address'] % 8 == 0),
+                'kernel section alignment changed')
         if name == '.symtab':
             anchor = before['.dynamic']['address']
             require(symbol_identity(a, before, before_order, anchor) == symbol_identity(b, after, after_order, anchor),
