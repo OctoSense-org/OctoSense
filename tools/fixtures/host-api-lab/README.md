@@ -47,11 +47,14 @@ The script copies the fixture, captures its native preview as the listing screen
 - The tool's asynchronous host callback cannot open a permission sheet.
 - File status/import/export and location sampling are discoverable; binary storage is advertised as a runtime ABI, not a `host.request` method.
 - The live contained VM round-trips bytes `0, 127, 128, 255` through `fs.write_bytes` / `fs.read_bytes` and removes its temporary app file.
-- File status reports the storage grant and byte limit; background import, export and location sampling are refused before native UI or sensor work.
+- File status reports the storage grant and byte limit; background import and export are refused before opening native UI.
+- Without app consent, location sampling returns the exact `authorization_required` refusal from the runtime's consent gate. Its API descriptor also declares it foreground-only.
 - Calls for the wrong account, for an undeclared tool or with invalid input are refused.
 - After the app that owns the tool closes, a call fails with `app_not_running`.
 
 From a host callback, which keeps the tool's background provenance, the tool deliberately calls `camera.permission.request` to prove that App Hub refuses it; nothing in the fixture can approve a permission. The capability, the app's consent and the OS permission stay separate checks. The Mac may already have granted OctoSense the camera permission, but the new profile must still report `app_consent: false`.
+
+The native location check proves refusal **without app consent**; it does not reach the host's foreground gate. The separate `platform_services::tests::location_sampling_broker_lifecycle` regression creates app consent in an isolated test store, dispatches a background sampling request through the real service broker, and requires the exact background refusal, with no queued request, permission check, consent review or running location sampler. That regression uses simulated permission results for its later lifecycle checks; it does not prove physical permission approval or a live location fix.
 
 The native receipt includes ten additional boolean `checks`; both drivers require the complete set and every value to pass. Android retains its original 14 checks, for 24 checks total. The added checks are **unverified until the expanded native run completes**. They do not exercise interactive file selection, provider writes or a live location fix. Historical receipts under `evidence/android/` remain the original 14-check record.
 

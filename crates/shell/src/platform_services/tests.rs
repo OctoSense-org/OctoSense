@@ -335,11 +335,20 @@ fn location_sampling_broker_lifecycle() {
     // Foreground gate precedes native work; even a granted app cannot sample
     // from an agent/background surface.
     call("os.locationone", 80101, 1, "sample", json!({}), false);
-    assert!(replies(80101)[0]
-        .2
-        .as_ref()
-        .unwrap_err()
-        .contains("background"));
+    let refused = replies(80101);
+    assert_eq!(refused.len(), 1);
+    assert_eq!(
+        refused[0].2.as_ref().unwrap_err(),
+        "location.sample is unavailable to agents/background surfaces"
+    );
+    {
+        let state = state().lock().unwrap();
+        assert!(state.queued.is_empty());
+        assert!(state.pending.is_empty());
+        assert!(state.samples.is_empty());
+        assert!(state.reviews.is_empty());
+        assert!(!state.location_running);
+    }
     // Two native permission checks bracket the actual fix delivery.
     call("os.locationone", 80101, 2, "sample", json!({}), true);
     handle_event(&mut cx, &Event::Signal);

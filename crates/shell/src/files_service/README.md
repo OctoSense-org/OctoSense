@@ -56,10 +56,12 @@ The App Hub contract must know `files` and provide `Replier::isolate_key`; Makep
 must include the corresponding storage/dialog adapter. Runtime discovery can
 advertise `storage.binary_write@1` for the native `fs.write_bytes` method.
 
-Validation: five native storage unit tests passed, covering ownership, quotas,
-overwrite refusal, traversal, entry limits, and symlinks. Five native dialog tests and the Android-target Makepad platform Rust check also
-passed. Existing unrelated compiler warnings remain. Host-service
-tests require the aggregate shell integration. Interactive dialogs and Android
-provider/device behavior remain **unverified**; the local JDK was
-repaired; combined Android Java template compilation passed with 23 existing
-deprecation warnings.
+Validation: six native storage tests passed, covering ownership, quotas,
+overwrite refusal, traversal, entry limits, symlinks and preserving legacy camera
+reads above the transfer limit. Five native dialog tests, four integrated
+file-service tests and the Android-target Makepad platform Rust check also passed.
+JNI transfer failures now use checked allocations and bounded copies, clear Java
+exceptions and release their worker references/attachment on every return path.
+Existing unrelated compiler warnings remain. Interactive dialogs and Android
+provider/device behavior remain **unverified**. All 16 combined Android Java
+templates compiled with 23 existing deprecation warnings.

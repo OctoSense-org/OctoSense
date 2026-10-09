@@ -273,9 +273,11 @@ fn os_batch_checks(reply: &Result<Value, String>) -> Value {
             && batch["files_status"]["storage_granted"] == true
             && batch["files_status"]["foreground_required"] == true
             && batch["files_status"]["max_file_bytes"] == makepad_widgets::splash_storage::MAX_FILE_BYTES,
-        "location_sample_discovery": described("location_discovery", "location.sample"),
+        "location_sample_discovery": described("location_discovery", "location.sample")
+            && batch["location_discovery"]["descriptor"]["agent_access"] == "foreground-only",
         "background_import_refused": denied("background_import_allowed", "background_import_error"),
         "background_export_refused": denied("background_export_allowed", "background_export_error"),
-        "background_location_sample_refused": denied("background_location_allowed", "background_location_error"),
+        "location_without_consent_refused": batch["background_location_allowed"] == false
+            && batch["background_location_error"] == "authorization_required: request location.permission.request from the foreground app",
     })
 }

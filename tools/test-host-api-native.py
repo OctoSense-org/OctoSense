@@ -29,7 +29,7 @@ OS_BATCH_CHECKS = (
     "location_sample_discovery",
     "background_import_refused",
     "background_export_refused",
-    "background_location_sample_refused",
+    "location_without_consent_refused",
 )
 
 
@@ -148,7 +148,7 @@ def main():
                         (root / "ui-snapshot.json").write_text(json.dumps(updated, indent=2))
                         shutil.copyfile(get("g?scale=1")["png"], root / "ui.png")
                         result["bundle_digest"] = native["bundle_digest"]
-                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "undeclared capability refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal", "file and location API discovery", "contained binary storage round trip", "file status metadata", "background import/export/location refusal"]
+                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "undeclared capability refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal", "file and location API discovery", "contained binary storage round trip", "file status metadata", "background import/export refusal", "location refusal without app consent"]
                 finally:
                     if process.poll() is None:
                         try:

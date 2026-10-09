@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "025b17f16d8fa3ab1cde7a21d3d85c501a54c843",
+    "tree": "9121e900f18d5d6f22840ed330c1d7931231509a",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -30,7 +30,8 @@
       "Native host-response envelope keys are interned when created, so contained apps can forward raw success, error and capability-refusal replies as bounded JSON without first naming each field in script source.",
       "WebReader refuses unsupported Linux/Windows platforms before queuing native browser operations instead of reporting success for an invisible view; this does not add embedded browser support.",
       "A Splash isolate entry keeps its 64 ms wall-clock budget unless MAKEPAD_SPLASH_BUDGET_MS sets another (makepad#109). Only the shell test step sets it: ~1,000 tests in one process wait on shared locks and page faults, which a wall-clock budget counts against the script.",
-      "Contained foreground document import/export and binary jail writes; bounded no-prompt fresh location with independent native/sample ownership and Android approximate permission; gated HTTP(S) external links; explicit unsupported capture errors."
+      "Contained foreground document import/export and binary jail writes; bounded no-prompt fresh location with independent native/sample ownership and Android approximate permission; gated HTTP(S) external links; explicit unsupported capture errors.",
+      "Typed numeric arrays retain integer literal values. Reentrant native-to-script callbacks preserve yielded widget continuations on bounded reusable threads, retain nonprompting authority, and share instruction fuel with their caller."
     ],
     "stacked": [
       {
@@ -120,6 +121,10 @@
       {
         "patch": "tools/runtime-patches/makepad-host-os-batch1.patch",
         "sha256": "e336290797373331285ae16c2a6414c20b5674eb550b7219ba1132e4743c0141"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-host-api-runtime-fixes.patch",
+        "sha256": "89459d67c66ec1bea55987b89d4ae0b080324f873ddd17883d6f698f8e7a4343"
       }
     ]
   }

@@ -27,7 +27,7 @@ OS_BATCH_CHECKS = (
     "location_sample_discovery",
     "background_import_refused",
     "background_export_refused",
-    "background_location_sample_refused",
+    "location_without_consent_refused",
 )
 
 
