@@ -60,6 +60,10 @@ on:
         description: RC2 only; build Linux without signing/releasing and encrypt bounded failed-scan evidence
         type: boolean
         default: false
+      encrypted_build_quarantine:
+        description: Diagnostic only; encrypt exact failed Linux packages and scan inputs for private re-scan
+        type: boolean
+        default: false
       diagnostic_recipient_cert:
         description: Public X.509 encryption certificate only; never a private key
         type: string
@@ -95,6 +99,7 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           DRY_RUN: ${{ inputs.dry_run }}
           LINUX_DIAGNOSTIC: ${{ inputs.linux_diagnostic }}
+          BUILD_QUARANTINE: ${{ inputs.encrypted_build_quarantine }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
@@ -135,6 +140,9 @@ jobs:
             sign=false
             release=false
             matrix='{"include":[{"os":"ubuntu-22.04","platform":"linux-x64"}]}'
+          fi
+          if [ "${BUILD_QUARANTINE:-false}" = true ] && [ "$diagnostic" != true ]; then
+            echo "::error::encrypted build quarantine requires the manual diagnostic gate"; exit 1
           fi
           {
             echo "ref=$ref"
@@ -371,6 +379,106 @@ jobs:
         with:
           name: rc2-linux-scan-encrypted-${{ github.run_id }}
           path: ${{ runner.temp }}/octosense-linux-diagnostic/diagnostic.cms
+          if-no-files-found: error
+          retention-days: 1
+      - name: Encrypt failed Linux build for private quarantine
+        id: encrypt_quarantine
+        if: failure() && needs.plan.outputs.linux_diagnostic == 'true' && inputs.encrypted_build_quarantine && steps.scan.outcome == 'failure' && runner.os == 'Linux'
+        env:
+          DIAGNOSTIC_RECIPIENT_CERT: ${{ inputs.diagnostic_recipient_cert }}
+          EXPECTED_PRODUCT_COMMIT: ${{ needs.plan.outputs.commit }}
+        run: |
+          python3 - <<'PY_QUARANTINE'
+          import hashlib, io, json, os, subprocess, tarfile, tempfile
+          from pathlib import Path
+
+          source = Path(os.environ["SRC"]).resolve()
+          commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+          if commit != os.environ["EXPECTED_PRODUCT_COMMIT"] or commit != "4ccf8e068399b1da139771a9ed94cef05fa6ae60":
+              raise SystemExit("Quarantine product revision mismatch")
+          package = source / "target/octosense-package"
+          inputs = [source / "target/release/octosense"]
+          for root in [package / "upload/packages", package / "resources", package / "kernel"]:
+              if root.is_symlink() or not root.exists():
+                  raise SystemExit("Expected app-owned completed scan inputs")
+              inputs.extend(sorted(root.rglob("*")) if root.is_dir() else [root])
+          files = []
+          total = 0
+          for path in inputs:
+              if path.is_symlink() or not path.resolve().is_relative_to(source):
+                  raise SystemExit("Quarantine refuses symlink or escaped inputs")
+              if path.is_dir():
+                  continue
+              if not path.is_file():
+                  raise SystemExit("Quarantine accepts regular build files only")
+              size = path.stat().st_size
+              total += size
+              if len(files) >= 10000 or total > 20 * 1024**3:
+                  raise SystemExit("Quarantine inputs exceed file or byte bound")
+              with path.open("rb") as stream:
+                  hasher = hashlib.sha256()
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      hasher.update(chunk)
+                  digest = hasher.hexdigest()
+              files.append({"path": path.relative_to(source).as_posix(), "size": size, "sha256": digest})
+          if not any(item["path"].endswith(".deb") for item in files) or not any(item["path"].endswith(".AppImage") for item in files):
+              raise SystemExit("Quarantine requires both completed Linux packages")
+          source_hashes = {}
+          for name in ["Cargo.lock", "native-runtime.lock.json", "runtime-patches.lock.json", "tools/release-scan.py", "tools/release-scan-public-assets.json", "desktop/scripts/package.py"]:
+              source_hashes[name] = hashlib.sha256((source / name).read_bytes()).hexdigest()
+          manifest = json.dumps({"schema": 1, "product_commit": commit, "tag": "desktop-v0.1.0-rc.2",
+                                 "run_id": os.environ["GITHUB_RUN_ID"], "workflow_commit": os.environ["GITHUB_SHA"],
+                                 "original_scan": "failed", "source_sha256": source_hashes, "files": files},
+                                separators=(",", ":")).encode()
+          destination = Path(os.environ["RUNNER_TEMP"]) / "octosense-linux-quarantine"
+          destination.mkdir(mode=0o700, exist_ok=False)
+          cipher = destination / "build.cms"
+          complete = False
+          process = None
+          with tempfile.TemporaryDirectory(prefix="octosense-quarantine-", dir=os.environ["RUNNER_TEMP"]) as directory:
+              cert = Path(directory) / "recipient.pem"
+              try:
+                  cert.write_text(os.environ["DIAGNOSTIC_RECIPIENT_CERT"].strip() + "\n")
+                  # Tar bytes flow directly into CMS: no plaintext archive exists.
+                  process = subprocess.Popen(["openssl", "cms", "-encrypt", "-binary", "-stream", "-aes-256-cbc",
+                                              "-outform", "DER", "-out", str(cipher), str(cert)],
+                                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                  with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
+                      def add(name, size, stream):
+                          info = tarfile.TarInfo(name)
+                          info.size, info.mode, info.mtime = size, 0o600, 0
+                          archive.addfile(info, stream)
+                      add("manifest.json", len(manifest), io.BytesIO(manifest))
+                      for item in files:
+                          path = source / item["path"]
+                          with path.open("rb") as stream:
+                              if path.stat().st_size != item["size"]:
+                                  raise RuntimeError("Build input changed during quarantine")
+                              add(item["path"], item["size"], stream)
+                  process.stdin.close()
+                  if process.wait(timeout=300) != 0:
+                      raise RuntimeError("CMS encryption failed; no artifact is eligible")
+                  complete = True
+              finally:
+                  if process is not None:
+                      if process.poll() is None:
+                          process.kill()
+                      process.wait()
+                      if process.stdin is not None:
+                          process.stdin.close()
+                      if process.stderr is not None:
+                          process.stderr.close()
+                  cert.unlink(missing_ok=True)
+                  if not complete:
+                      cipher.unlink(missing_ok=True)
+          print("Failed scan inputs encrypted for private quarantine; no plaintext artifact is uploaded")
+          PY_QUARANTINE
+      - name: Upload encrypted build quarantine only
+        if: always() && needs.plan.outputs.linux_diagnostic == 'true' && inputs.encrypted_build_quarantine && steps.encrypt_quarantine.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rc2-linux-build-encrypted-${{ github.run_id }}
+          path: ${{ runner.temp }}/octosense-linux-quarantine/build.cms
           if-no-files-found: error
           retention-days: 1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
