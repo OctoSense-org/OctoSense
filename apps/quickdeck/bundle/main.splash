@@ -996,10 +996,14 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                     }
                 }
             }}
-            delete_btn := Danger{text: "Delete deck" on_click: || delete_deck()}
         }
         Rule{}
-        Bar{UiPrimary{width: Fill text: "Export" on_click: || open_export()}}
+        // Delete stays in the pinned bar, under the one primary: at the end of
+        // the scroll content a short window cut it in half at the fold.
+        Bar{
+            UiPrimary{width: Fill text: "Export" on_click: || open_export()}
+            delete_btn := Danger{width: Fill text: "Delete deck" on_click: || delete_deck()}
+        }
     }
 
     // ---- the slide view ----
