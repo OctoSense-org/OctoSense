@@ -1561,6 +1561,18 @@ fn every_command_door_refuses_what_its_review_does_not_admit() {
         ("vector.run", json!({"cmds": [{"id": "prefs.set", "params": {"key": "pluginsFolder", "value": "/tmp/evil"}}], "out": "v.svg"}), "`prefs.set` is classed code"),
         ("vector.run", json!({"cmds": [{"id": "effect.apply", "params": {"effect": "plugin.evil"}}], "out": "v.svg"}), "`plugin.evil` is not an effect the engine builds in"),
         ("vector.run", json!({"cmds": [{"id": "plugin.install", "params": {"path": "evil.wasm"}}], "out": "v.svg"}), "`plugin.install` is classed code"),
+        // Caps: no single call may multiply work without bound (the engine
+        // runs on the UI thread). An array of a million, an array of an
+        // array, a huge canvas, a huge frame range, and an over-cap shape
+        // hidden in an inner command.
+        ("cad.run", json!({"cmds": [{"id": "line", "params": {"points": [[0, 0], [1, 0]]}}, {"id": "selectall"}, {"id": "arrayrect", "params": {"rows": 1000, "cols": 1000}}], "out": "c.dxf"}), "the door allows in one command"),
+        ("cad.run", json!({"cmds": [{"id": "line", "params": {"points": [[0, 0], [1, 0]]}}, {"id": "selectall"}, {"id": "arrayrect", "params": {"rows": 100, "cols": 100}}, {"id": "selectall"}, {"id": "arrayrect", "params": {"rows": 100, "cols": 100}}], "out": "c.dxf"}), "the copies this call makes multiply to"),
+        ("effect.run", json!({"cmds": [{"id": "comp.new", "params": {"width": 30000, "height": 30000}}], "out": "e.ecproj"}), "the door allows in one command"),
+        ("effect.run", json!({"cmds": [{"id": "comp.new", "params": {"duration": 100000, "frameRate": 240}}], "out": "e.ecproj"}), "the door allows in one command"),
+        ("film.run", json!({"path": "photo.png", "cmds": [{"id": "sequence.settings", "params": {"width": 16384, "height": 16384}}], "out": "f.png"}), "the door allows in one command"),
+        ("vector.run", json!({"cmds": [{"id": "perspective.draw", "params": {"command": "shape.star", "params": {"cx": 0, "cy": 0, "radius1": 10, "radius2": 5, "points": 1000000000}}}], "out": "v.svg"}), "the door allows in one command"),
+        ("word.run", json!({"cmds": [{"id": "insert.table", "params": {"rows": 1000000, "cols": 1000000}}], "out": "w.docx"}), "the door allows in one command"),
+        ("deck.run", json!({"cmds": [{"id": "slide.new"}, {"id": "insert.table", "params": {"rows": 1000, "cols": 1000}}], "out": "d.pptx"}), "the door allows in one command"),
     ];
     let mut families = BTreeSet::new();
     for (n, (door, args, why)) in cases.into_iter().enumerate() {
