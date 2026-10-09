@@ -7,7 +7,7 @@ Splash 文件系统；导出会保存已有应用文件的快照。应用只收�
 
 | 方法 | 参数 | 返回值 |
 | --- | --- | --- |
-| `files.status` | `{}` | `import_supported`、`export_supported`、`storage_granted`、`max_file_bytes`、`foreground_required` |
+| `files.status` | `{}` | `import_supported`、`export_supported`、`storage_granted`、`max_file_bytes`、`max_import_bytes`、`foreground_required` |
 | `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123}` |
 | `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}` | 相同的成功字段；可选的 `name` 是建议给系统对话框的文件名，不含目录 |
 
@@ -16,6 +16,8 @@ Splash 文件系统；导出会保存已有应用文件的快照。应用只收�
 `fs.read_bytes(path)` 读取导入内容，将字节数组传给图像组件，或通过
 `fs.write_bytes(other_path, fs.read_bytes(path))` 复制文件。
 `fs.write_bytes` 接受 U8 类型数组，使用与文本写入相同的限制。
+超过 1 MiB 的文档应交给原生读取它的宿主服务（例如引擎）：`fs.read_bytes`
+会把整个文件载入应用堆，`fs.write_bytes` 会拒绝复制它。
 
 传输要求清单同时声明 `files` 和 `storage`；状态查询只要求 `files`。导入与导出
 仅限前台，代理工具包装调用也不能绕过此限制。显示对话框前和收到结果后都会检查
@@ -27,11 +29,16 @@ Splash 文件系统；导出会保存已有应用文件的快照。应用只收�
 均不来自脚本参数。原生加载在读取前和交付字节前再次检查授权；导出在桌面
 重命名提交前及回复前再次检查授权。
 
-导入沿用每文件 1 MiB、已授予的全应用字节配额及 256 个目录项限制，拒绝目录逃逸、
-符号链接、盘符、备用数据流和 Windows 设备名。导入提交与脚本执行串行，复用现有
-配额写入器。读取所选文档和写出到系统目标由已有的有界任务池执行。同一时刻只
-保留一次传输及其快照；导入或导出提供器阻塞时，即使应用已关闭或请求超时，
-仍会持续占用这个名额，直到工作线程返回。
+一次导入一个文档，上限为 64 MiB（Android 为 16 MiB），且不超过已授予的全应用
+字节配额，同时计入 256 个目录项限制；`files.status` 以 `max_import_bytes` 报告
+该上限。原生加载最多读取这么多字节。随后由工作线程把字节暂存在应用存储旁、应用
+无法访问的位置，再由 UI 线程在脚本轮次之间把文件链接进应用存储，链接前重新检查
+存活的存储、当前配额以及目标仍是新文件。字节不经过脚本堆。Android 文档加载器会
+先把所选文档放入 Java 堆，再复制一份到原生内存，因此上限较小。图片选择、导出和
+脚本写入仍使用每文件 1 MiB 上限（`max_file_bytes`）。路径拒绝目录逃逸、符号链接、
+盘符、备用数据流和 Windows 设备名。读取所选文档、暂存导入和写出到系统目标由已有的
+有界任务池执行。同一时刻只保留一次传输及其暂存文件和快照；导入或导出提供器阻塞时，
+即使应用已关闭或请求超时，仍会持续占用这个名额，直到工作线程返回。
 
 请求五分钟后超时。关闭应用会使请求失效，迟到的对话框结果不能导入或开始导出。
 已经显示的系统对话框可能仍需手动关闭。原生导出写入一旦开始，关闭应用不能撤销
