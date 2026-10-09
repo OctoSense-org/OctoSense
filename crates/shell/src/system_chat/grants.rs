@@ -179,7 +179,7 @@ pub fn host_tools() -> std::collections::BTreeSet<String> {
         // shareable tool. Keep this check pure: the relay calls it while locked.
         tools.extend(CALENDAR_TOOLS.iter().map(|tool| tool.to_string()));
     }
-    #[cfg(feature = "app-hub")]
+    #[cfg(feature = "craft-engines")]
     tools.extend(ENGINE_TOOLS.iter().map(|tool| tool.to_string()));
     tools
 }
@@ -196,7 +196,7 @@ pub(crate) const CALENDAR_TOOLS: &[&str] = &["calendar.events", "calendar.add_ev
 /// the Lottie export and import). None is destructive or outward. Never a
 /// generic command door (`effect.run`, `vector.run`:
 /// `host_tools::engines::HELD_FOR_REVIEW`), which is reviewed separately.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 pub(crate) const ENGINE_TOOLS: &[&str] = &[
     "word.info", "word.text", "word.inspect", "word.convert", "word.new",
     "deck.info", "deck.text", "deck.render", "deck.new", "deck.convert",
@@ -213,9 +213,9 @@ pub(crate) const ENGINE_TOOLS: &[&str] = &[
 /// Whether `tool` is one of [`ENGINE_TOOLS`]: the system session's set
 /// gives these up first when it would pass [`MAX_SESSION_TOOLS`].
 pub fn is_engine_tool(tool: &str) -> bool {
-    #[cfg(feature = "app-hub")]
+    #[cfg(feature = "craft-engines")]
     return ENGINE_TOOLS.contains(&tool);
-    #[cfg(not(feature = "app-hub"))]
+    #[cfg(not(feature = "craft-engines"))]
     {
         let _ = tool;
         false

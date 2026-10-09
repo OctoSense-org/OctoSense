@@ -16,7 +16,7 @@ pub(crate) fn check(app: &str) -> Result<(), String> {
     }
     // An engine's virtual owner (ADR 0013, `engines.rs`): the shell's own
     // compiled-in service, with no catalog entry or bundle to withdraw.
-    #[cfg(feature = "app-hub")]
+    #[cfg(feature = "craft-engines")]
     if super::engines::is_virtual_owner(app) {
         return Ok(());
     }

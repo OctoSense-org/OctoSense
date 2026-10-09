@@ -18,6 +18,8 @@
 # - AppCard's UI (octosense-appcard) is NOT linked without `app-appcard`;
 # - hosted Rinx is the library module only (feature "octosense-module"),
 #   never its standalone entry or a kernel of its own (Rinx ADR 0007);
+# - the ten ADR 0013 engine services are desktop only: in desktop's graph
+#   (its `craft-engines` default), never in Home's;
 # - the wasm service's runtime (octosense-wasm-host, ADR 0011) is linked
 #   exactly where the service runs: macOS, Linux and Android, and never for
 #   Windows, iOS or OpenHarmony;
@@ -55,6 +57,12 @@ wasm_runs_on() {
   esac
 }
 host_triple=$(rustc -vV | sed -n 's/^host: //p')
+
+# The ten ADR 0013 engines behind the system agent (`craft-engines`).
+craft_engines=(octosense-word-service octosense-deck-service octosense-cad-service
+  octosense-light-service octosense-sound-service octosense-design-service
+  octosense-film-service octosense-effect-service octosense-vector-service
+  octosense-pdf-service)
 
 # Whether package $1 is in the graph (0), absent (1).
 linked() {
@@ -109,6 +117,16 @@ for features in "${feature_sets[@]}"; do
     elif linked octosense-wasm-host "${args[@]}"; then
       fail "octosense-wasm-host is linked where the wasm service does not run ($where)"
     fi
+    case "${package[1]:-}" in
+      octosense-home)
+        for pkg in "${craft_engines[@]}"; do
+          if linked "$pkg" "${args[@]}"; then fail "$pkg is linked into Home; the craft engines are desktop only ($where)"; fi
+        done ;;
+      octosense)
+        for pkg in "${craft_engines[@]}"; do
+          linked "$pkg" "${args[@]}" || fail "$pkg is missing from the desktop build ($where)"
+        done ;;
+    esac
     if [[ ",$features," != *",app-appcard,"* ]] && linked octosense-appcard "${args[@]}"; then
       fail "octosense-appcard is linked without app-appcard ($where)"
     fi

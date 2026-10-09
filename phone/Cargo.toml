@@ -103,5 +103,7 @@ dev-mode = ["octosense-shell/dev-mode"]
 # runs on macOS, Linux and Android. `wasm-lab` is the feature's former name.
 wasm-functions = ["octosense-shell/wasm-functions"]
 wasm-lab = ["wasm-functions"]
+# The ten ADR 0013 engines: a desktop default; on the phone only for tests.
+craft-engines = ["octosense-shell/craft-engines"]
 # The system toolbox offered to app agents (off by default; ADR 0002 §6).
 toolbox-peers = ["octosense-shell/toolbox-peers"]
