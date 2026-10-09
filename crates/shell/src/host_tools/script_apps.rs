@@ -265,6 +265,30 @@ fn scoped_args(app: &str, call: &HostToolCall) -> Result<Value, String> {
     Ok(Value::Object(args))
 }
 
+fn public_mail_args(
+    app: &str,
+    call: &HostToolCall,
+    account: &str,
+    mut args: Value,
+) -> Result<Value, String> {
+    if super::relay::app_of_peer(&call.calling_app) == app
+        && call.account.as_deref() != Some(account)
+    {
+        return Err("The app Mail account changed; reopen its conversation".into());
+    }
+    let object = args
+        .as_object_mut()
+        .ok_or("Mail tool arguments must be an object")?;
+    if object
+        .get("account")
+        .is_some_and(|value| value.as_str() != Some(account))
+    {
+        return Err("Mail tools cannot access another account".into());
+    }
+    object.insert("account".into(), json!(account));
+    Ok(args)
+}
+
 fn connected_args(app: &str, call: &HostToolCall, connection: &str, mut args: Value) -> Result<Value, String> {
     if super::relay::app_of_peer(&call.calling_app) == app && call.account.as_deref() != Some(connection) {
         return Err("The app account changed; reopen its conversation".into());
@@ -347,6 +371,23 @@ impl ToolExecutor for HostServiceExecutor {
                 return;
             }
         };
+        if matches!(method, "mail.compose" | "mail.compose_status") && self.app != "os.mail" {
+            let Some(account) = octosense_mail_service::active_account(&self.host_dir, &self.app)
+            else {
+                reply.finish(ToolOutcome::error(
+                    "account_scope",
+                    "Connect this app's Mail account first",
+                ));
+                return;
+            };
+            args = match public_mail_args(&self.app, &call, &account, args) {
+                Ok(args) => args,
+                Err(error) => {
+                    reply.finish(ToolOutcome::error("account_scope", error));
+                    return;
+                }
+            };
+        }
         if matches!(family, "gmail" | "gcalendar" | "github")
             || matches!(method, "auth.backend.me" | "auth.backend.request") {
             let Some(connection) = octosense_oauth_service::host::active_connection(&self.host_dir, &self.app) else {
@@ -775,6 +816,31 @@ pub(crate) mod tests {
 
     fn call(name: &str) -> HostToolCall {
         HostToolCall::parse(&json!({"peer": "p", "session_id": "s", "turn_id": "t", "call_id": format!("c-{name}"), "name": name, "args": {"q": 1}})).unwrap()
+    }
+
+    #[test]
+    fn public_mail_tool_aliases_bind_the_owners_live_account() {
+        let mut request = call("contestant.compose_reply");
+        request.calling_app = "card.sample.mail".into();
+        request.account = Some("one".into());
+        assert_eq!(
+            public_mail_args("sample.mail", &request, "one", json!({"body":"draft"})).unwrap()
+                ["account"],
+            "one"
+        );
+        assert!(
+            public_mail_args("sample.mail", &request, "one", json!({"account":"two"})).is_err()
+        );
+        request.account = Some("old".into());
+        assert!(public_mail_args("sample.mail", &request, "one", json!({}))
+            .unwrap_err()
+            .contains("changed"));
+        request.calling_app = "card.other.app".into();
+        assert_eq!(
+            public_mail_args("sample.mail", &request, "one", json!({})).unwrap()["account"],
+            "one",
+            "an already admitted cross-app call still uses the owning app account"
+        );
     }
 
     #[test]

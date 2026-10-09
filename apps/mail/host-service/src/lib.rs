@@ -21,7 +21,9 @@
 //! | `mail.suggest_reply` | `{account, draft_id, expected_revision, body, edit_token?}` | proposal by default; native chat's single-use token saves the requested body at that revision; never sends |
 //! | `mail.propose_send` | `{account, draft_id, expected_revision}` | immutable pending attempt; no approval or SMTP |
 //! | `mail.review_send` | `{account, to, subject, body, compose_id?, expected_revision?, folder?, message?}` | foreground UI only: durable composer and host review, never approval |
-//! | `mail.send` | any | `approval_required`; use the host's review route |
+//! | `mail.compose` | `{account, to, subject, body, compose_id?, expected_revision?, folder?, message?}` | app/account-bound saved composer; never approval or SMTP |
+//! | `mail.compose_status` | `{account, compose_id}` | app/account-bound draft and attempt receipt |
+//! | `mail.send` | composer fields | third-party foreground native review; os.mail retains its legacy refusal |
 //! | `mail.notify` | `{title, body, card_id?, priority?}` | `{card_id, replaced, expires_at}` once the shell put Mail's notice card on the glance screen, with a notification ([`on_notify`]) |
 //!
 //! The app never sees a password or a socket. `mail.add_account` raises the
@@ -66,6 +68,7 @@ pub mod vault;
 mod html;
 mod imap;
 mod incoming;
+pub mod public_review;
 pub use incoming::{acknowledge_event, collect_inbox, event_resolved, pending_events, pending_events_try, resolve_and_ack_try, source_for_card, CollectReport, IncomingEvent};
 
 use vault::Vault;
@@ -669,6 +672,9 @@ fn work(f: impl FnOnce() + Send + 'static) {
 }
 
 impl HostService for MailService {
+    fn api_methods(&self) -> Vec<octosense_appstore::services::HostApiMethod> {
+        public_review::api_methods()
+    }
     fn family(&self) -> &'static str {
         "mail"
     }
@@ -788,6 +794,9 @@ impl HostService for MailService {
                         store.forget(id);
                     }
                     let saved = store.save_accounts(&accounts);
+                    if removed && saved.is_ok() {
+                        drafts::forget_composers(&store, &call.app_id, &account_arg);
+                    }
                     drop(_draft_guard);
                     if removed && saved.is_ok() {
                         account_event(AccountEvent::Removed { app_id: call.app_id.clone(), account: account_arg.clone() });
@@ -835,6 +844,39 @@ impl HostService for MailService {
             "publish_card" => work(move || reply.send(publish_card(&store, &call.app_id, &call.args))),
             "propose_reply" | "draft" | "suggest_reply" | "propose_send" => {
                 work(move || reply.send(drafts::agent_call(&store, &call.app_id, call.method(), &call.args)));
+            }
+            "compose" | "compose_status" => {
+                let rejected = reply.clone();
+                if let Err(error) = public_review::work(move || {
+                    if !reply.is_pending() {
+                        return;
+                    }
+                    if !call.may_prompt
+                        && active_account(&call.host_dir, &call.app_id).as_deref()
+                            != Some(account_arg.as_str())
+                    {
+                        return reply
+                            .send(Err("The app agent must use its active Mail account".into()));
+                    }
+                    let result = if call.method() == "compose" {
+                        drafts::compose_draft(&store, &call.app_id, &call.args)
+                    } else {
+                        drafts::composer_status(&store, &call.app_id, &call.args)
+                    };
+                    reply.send(result.map(|d| drafts::composer_result(&d, call.may_prompt)));
+                }) {
+                    rejected.send(Err(error));
+                }
+            }
+            "sheet.review_close" => {
+                if !call.from_sheet {
+                    return reply.send(Err("Only the host review can close its sheet".into()));
+                }
+                host.close_sheet();
+                reply.send(Ok(Value::Null));
+            }
+            "review_send" if call.app_id != "os.mail" => {
+                public_review::open(&store, &call, reply, host)
             }
             "review_send" => {
                 if !call.may_prompt { return reply.send(Err("Open Mail to review a composed message".into())); }
@@ -896,6 +938,7 @@ impl HostService for MailService {
                     }
                 });
             }
+            "send" if call.app_id != "os.mail" => public_review::open(&store, &call, reply, host),
             "send" => {
                 reply.send(Err("approval_required: use mail.review_send with Mail open, or open the reply card, then use the host's Approve & Send control. mail.send cannot authorize delivery.".into()));
             }
@@ -1233,6 +1276,173 @@ mod tests {
         // The approval rules' contacts: the account and whom it wrote to, no password.
         assert_eq!(contacts::known_addresses(&dir), ["me@example.com"]);
         assert!(!dir.join("mail").join(contacts::SENT_TO_FILE).exists());
+
+        // Contestant compatibility path: a normal app's mail.send mounts a
+        // native review. No app/synthetic event can approve it.
+        #[cfg(any(target_os = "macos", target_os = "android"))]
+        {
+            let store = Store::at(&dir, Arc::new(vault::FileVault));
+            let original = store.accounts();
+            let mut accounts = original.clone();
+            accounts[0]["apps"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("sample.mail"));
+            store.save_accounts(&accounts).unwrap();
+            let pending: Arc<Mutex<Option<public_review::ReviewRequest>>> = Arc::default();
+            let observed = pending.clone();
+            public_review::on_review(Some(Arc::new(move |request| {
+                *observed.lock().unwrap() = Some(request);
+                Ok("native review fixture".into())
+            })));
+            let args = json!({"account":id,"to":"recipient@example.com","subject":"Exact review","body":"Reviewed body"});
+            let staged = ask(
+                &dir,
+                "sample.mail",
+                "mail.compose",
+                args.clone(),
+                false,
+                &mut host,
+            )
+            .unwrap();
+            assert_eq!(staged["status"], "draft");
+            assert!(fake.sent.lock().unwrap().is_empty());
+            let mut review_args = args.clone();
+            review_args["compose_id"] = staged["compose_id"].clone();
+            review_args["expected_revision"] = json!(1);
+            // Holding the draft I/O lock must not block opening/polling the
+            // native preparation surface on the dispatch/UI thread.
+            let held_draft_io = drafts::lock();
+            let (opened_tx, opened_rx) = std::sync::mpsc::sync_channel(1);
+            let request_dir = dir.clone();
+            let request_args = review_args.clone();
+            let dispatch = std::thread::spawn(move || {
+                let mut surface = Host::default();
+                let heap = send(
+                    &request_dir,
+                    "sample.mail",
+                    "mail.send",
+                    request_args,
+                    false,
+                    &mut surface,
+                );
+                opened_tx.send((heap, surface)).unwrap();
+            });
+            let opened = opened_rx.recv_timeout(std::time::Duration::from_secs(2));
+            if opened.is_ok() {
+                let mut request = pending.lock().unwrap();
+                let request = request.as_mut().unwrap();
+                assert!(request.is_preparing());
+                assert!(request.result().is_none());
+                assert!(!request.can_approve());
+            }
+            drop(held_draft_io);
+            dispatch.join().unwrap();
+            let (heap, surface) = opened.expect("native review dispatch waited for draft I/O");
+            host = surface;
+            assert!(host
+                .sheet
+                .as_ref()
+                .is_some_and(|s| s.as_deref() == Some("native review fixture")));
+            assert!(
+                octosense_appstore::services::take_replies_for(&[heap]).is_empty(),
+                "staging is never reported as sent"
+            );
+            let mut review = pending.lock().unwrap().take().unwrap();
+            assert!(
+                !review.can_approve(),
+                "preparation is never an approval-ready snapshot"
+            );
+            for _ in 0..1000 {
+                let _ = review.result();
+                if !review.is_preparing() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert!(review.can_approve());
+            assert_eq!(review.snapshot()["publisher"], "sample.mail");
+            assert_eq!(review.snapshot()["payload"]["body"], "Reviewed body");
+            assert!(review
+                .approve(false, true)
+                .unwrap_err()
+                .contains("physical"));
+            assert!(review
+                .approve(true, false)
+                .unwrap_err()
+                .contains("physical"));
+            assert!(fake.sent.lock().unwrap().is_empty());
+            review.approve(true, true).unwrap(); // Synthetic native test only, no real transport.
+            let receipt = wait(heap).unwrap();
+            assert_eq!(receipt["accepted"], true);
+            assert_eq!(receipt["status"], "accepted");
+            assert!(receipt["id"].as_str().is_some_and(|s| s.starts_with('<')));
+            assert!(review.approve(true, true).is_err());
+            assert_eq!(fake.sent.lock().unwrap().len(), 1);
+            let saved = ask(
+                &dir,
+                "sample.mail",
+                "mail.compose_status",
+                json!({"account":id,"compose_id":staged["compose_id"]}),
+                false,
+                &mut host,
+            )
+            .unwrap();
+            assert_eq!(saved["status"], "accepted");
+            assert!(ask(
+                &dir,
+                "os.other",
+                "mail.compose_status",
+                json!({"account":id,"compose_id":staged["compose_id"]}),
+                false,
+                &mut host
+            )
+            .is_err());
+            assert!(ask(
+                &dir,
+                "sample.mail",
+                "mail.sheet.review_close",
+                json!({}),
+                false,
+                &mut host
+            )
+            .is_err());
+            let background = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            octosense_appstore::services::dispatch(
+                ServiceCall {
+                    app_id: "sample.mail".into(),
+                    service: "mail.send".into(),
+                    args: args.clone(),
+                    from_sheet: false,
+                    may_prompt: false,
+                    host_dir: dir.clone(),
+                },
+                background,
+                1,
+                &mut host,
+            );
+            assert!(wait(background).unwrap_err().contains("agents/background"));
+            assert!(pending.lock().unwrap().is_none());
+            let cancelled = send(
+                &dir,
+                "sample.mail",
+                "mail.send",
+                args.clone(),
+                false,
+                &mut host,
+            );
+            pending.lock().unwrap().take().unwrap().cancel().unwrap();
+            assert!(wait(cancelled).unwrap_err().contains("cancelled"));
+            assert_eq!(fake.sent.lock().unwrap().len(), 1);
+            let closed = send(&dir, "sample.mail", "mail.send", args, false, &mut host);
+            let mut orphan = pending.lock().unwrap().take().unwrap();
+            octosense_appstore::services::cancel_heap(closed);
+            assert!(orphan.approve(true, true).is_err());
+            orphan.cancel().unwrap();
+            assert_eq!(fake.sent.lock().unwrap().len(), 1);
+            public_review::on_review(None);
+            store.save_accounts(&original).unwrap();
+        }
 
         // An app that never had the account removes nothing.
         ask(&dir, "os.other", "mail.remove_account", json!({"account": id}), false, &mut host).unwrap();

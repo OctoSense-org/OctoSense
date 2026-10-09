@@ -1,0 +1,19 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/VideoPlayer.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/VideoPlayer.java
+index 7d3d39bca..cf9293484 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/VideoPlayer.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/VideoPlayer.java
+@@ -210,7 +210,13 @@ public class VideoPlayer {
+ 
+     public void seekToPosition(long positionMs) {
+         if (mMediaPlayer != null) {
+-            mMediaPlayer.seekTo((int) positionMs);
++            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
++                // The legacy overload seeks to the previous keyframe, which
++                // can land well before the time requested by the app.
++                mMediaPlayer.seekTo(positionMs, MediaPlayer.SEEK_CLOSEST);
++            } else {
++                mMediaPlayer.seekTo((int) Math.min(Integer.MAX_VALUE, Math.max(0L, positionMs)));
++            }
+         }
+     }
+ 

@@ -97,6 +97,12 @@ pub mod connected_review;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod platform_services;
 #[cfg(any(feature = "app-hub", native_mobile))]
+pub mod files_service;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod device_calendar;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod audio_service;
+#[cfg(any(feature = "app-hub", native_mobile))]
 pub mod glance_routes;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod connected_events;
@@ -6416,9 +6422,19 @@ impl App {
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
         #[cfg(any(feature = "app-hub", native_mobile))]
+        self.audio_session_event(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
         platform_services::handle_event(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        files_service::handle_event(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        device_calendar::handle_event(cx, event);
         self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
+        // A switch or Home action must stop device access in this event, not
+        // wait for the newly focused app's next draw.
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        self.audio_session_event(cx, event);
         // Whatever module panicked during this event — in its tile's event
         // or draw, or in a call the shell made — is contained by now; show
         // it closed and free it before the next event (module_host.rs).
@@ -6432,6 +6448,38 @@ impl App {
             log!("wm: every instance and app confirmed; quitting");
             cx.quit();
         }
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    fn audio_session_event(&mut self, cx: &mut Cx, event: &Event) {
+        let glance = self
+            .ui
+            .widget(cx, ids!(shell_glance_sheet))
+            .borrow::<glance_sheet::ShellGlanceSheet>()
+            .and_then(|sheet| {
+                sheet
+                    .open_key()
+                    .and_then(|key| key.split_once('/'))
+                    .map(|(app, _)| app.to_owned())
+            });
+        let focused = self.state.as_ref().and_then(|state| {
+            let client = if state.style.target.mobile() {
+                if state.phone.screen != mobile::PhoneScreen::App {
+                    return None;
+                }
+                state.phone.client?
+            } else {
+                state.layout.focused_client()?
+            };
+            let app = &state.clients.get(&client)?.app;
+            // Hosted Hub previews have no dedicated client identity. They
+            // must open the installed app before requesting native audio.
+            app.strip_prefix("hub:").map(str::to_owned)
+        });
+        let foreground = glance.or(focused);
+        files_service::set_foreground_app(foreground.clone());
+        audio_service::set_foreground_app(foreground);
+        audio_service::handle_event(cx, event);
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {

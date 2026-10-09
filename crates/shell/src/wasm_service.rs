@@ -810,6 +810,9 @@ mod tests {
         }
         let root = std::env::temp_dir().join(format!("wasm-isolation-{}", uuid::Uuid::new_v4()));
         let host_dir = root.join(".host");
+        // This exact test runs alone in its child process. Keep the env
+        // override and registered root identical even under an isolated suite.
+        std::env::set_var("OCTOSENSE_APP_DATA", &root);
         octosense_appstore::set_data_root(root.clone());
         ship_state("os.wasmstate", "1.0.0", true);
         register();
@@ -1159,6 +1162,9 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("octosense-wasm-service-{}", std::process::id()));
         let host_dir = root.join(".host");
+        // This exact test runs alone in its child process. Keep the env
+        // override and registered root identical even under an isolated suite.
+        std::env::set_var("OCTOSENSE_APP_DATA", &root);
         octosense_appstore::set_data_root(root.clone());
         ship("os.wasmlab", "service", |_, _| {});
         // The same bundle without the capability (and so without its tools).

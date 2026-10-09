@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "result": "pass",
+  "platform": "macos",
+  "fixture_version": "0.4.0",
+  "named_checks_passed": 30,
+  "named_checks_total": 30,
+  "checks": {
+    "audio_playback_discovery": true,
+    "background_audio_playback_refused": true,
+    "background_calendar_permission_refused": true,
+    "background_calendar_selection_refused": true,
+    "background_calendar_write_refused": true,
+    "background_export_refused": true,
+    "background_import_refused": true,
+    "background_mail_send_refused": true,
+    "background_photo_picker_refused": true,
+    "background_text_share_refused": true,
+    "calendar_choices_without_consent_refused": true,
+    "calendar_status_without_data_access": true,
+    "contained_binary_roundtrip": true,
+    "files_export_discovery": true,
+    "files_import_discovery": true,
+    "files_status_discovery": true,
+    "files_status_truthful": true,
+    "location_sample_discovery": true,
+    "location_without_consent_refused": true,
+    "mail_compose_without_account_refused": true,
+    "microphone_recording_discovery": true,
+    "photo_picker_discovery": true,
+    "public_calendar_read_discovery": true,
+    "public_calendar_write_discovery": true,
+    "public_mail_compose_discovery": true,
+    "public_mail_send_discovery": true,
+    "storage_binary_write_discovery": true,
+    "text_share_discovery_truthful": true,
+    "undeclared_microphone_recording_refused": true,
+    "video_controls_discovery": true
+  },
+  "verified": [
+    "signed admission and launch",
+    "own Splash tool completion",
+    "native OS permission status",
+    "live app UI update",
+    "native UI button host call",
+    "API discovery and missing-function fallback",
+    "undeclared capability refusal",
+    "background callback prompt refusal",
+    "cross-account and schema refusal",
+    "closed-app refusal",
+    "file and location API discovery",
+    "contained binary storage round trip",
+    "file status metadata",
+    "background import/export refusal",
+    "location refusal without app consent",
+    "public Calendar/Mail discovery",
+    "Calendar status and consent refusal",
+    "background Calendar/Mail mutation refusal",
+    "Mail refusal without connected account"
+  ],
+  "source_revision_observed_at_run": "53bab40fbdf2071cde5c7d5ca935e866373539e7",
+  "fixture_fix_revision": "7499f9c4",
+  "runtime_tree": "fc938badf98eade0732384bfc94e37ca497ddadf",
+  "sdk_revision": "67810fa5ce8486c285c141018834dd5ba04a46f7",
+  "host_sha256": "a9d990d3d9535a9fc418c1c7e843cf8694736921425e09312c729032b0f91775",
+  "hub_sha256": "c634ca38c03bb51d9a93f81a5d53ae0d3c641d09d6adfc6adb1691ca3c028220",
+  "admitted_bundle_digest": "2b27a33bd54193ad7cfcc555097e388ce28be86ae297b94f427fd4de28c87a5f",
+  "source_sha256": {
+    "crates/shell/examples/host-api-lab.rs": "323699158ebeeccf8d2f61c9b67e8728bdc6fd289d4a9a34ce2d15d557cce36c",
+    "tools/test-host-api-native.py": "17715d63e4364e499d3c218dfa459b7de3e81bb76e3130d8f57ca296a9e5f269",
+    "tools/fixtures/host-api-lab/bundle/main.splash": "32782833ae0806ed158a3a1097081349c3a0c81446394b604ea797942f1e2d54",
+    "tools/fixtures/host-api-lab/bundle/manifest.json": "36a14cfe8c969caf661191a755ee7cf72e00abef7ce8675a5efef50de1b1c213",
+    "runtime-patches.lock.json": "adb6da9d83ef420927b85391af448c7abd8eca91707699e510276858fbfde8d5",
+    "crates/shell/src/device_calendar/prompt.rs": "04954e3d76d8a10a59f84ade4bbce05e1370050e7efa743aaa44af9cab616e49",
+    "crates/shell/src/dev_mode.rs": "44678f8f0c12c9ca776bec9f13308933f6d70d537bcf21ba785dc6960bb75bf2",
+    "crates/shell/src/shell/menu.rs": "77a935bacbd409737fc7ceb31e016c7b34bc9ea4fda927d4165505558abdb339"
+  },
+  "evidence_sha256": {
+    "result.json": "4537783aae2baa63100ebfa1001cc2fbe476372311b9b8dfc33ba9c446d59d80",
+    "native-result.json": "39738a8998f05fb8499275a82440a6887e4aa9c7f7b52bd72931db70fb499677",
+    "preview.png": "c5078d4f9cef252be12df14ac21b33845a9525178d2efa26b5d39b8ceffb2e75",
+    "signed.png": "5a1f42dd6c36b7f600ff9902534e0a068500509f19d89f0d9c1afb80d9a01172",
+    "ui.png": "3c100ae8927f80a80bf86dac41738b91bd647fdde9d4da65b90ae2d37c54a990"
+  },
+  "visual_review": {
+    "result": "pass",
+    "images": [
+      "preview.png",
+      "signed.png",
+      "ui.png"
+    ],
+    "observations": [
+      "Rendered text and controls are readable and complete",
+      "Preview shows completed query count 0",
+      "Signed tool updates completed query count to 1",
+      "Native button updates completed query count to 2",
+      "App consent remains false; no native approval sheet displayed"
+    ]
+  },
+  "profiles": "isolated",
+  "personal_accounts_used": false,
+  "model_started": false,
+  "permission_approved": false,
+  "media_device_opened": false,
+  "owned_process_cleanup": "Both preview and signed hosts exited 0; the driver waits for each owned host and fails on a nonzero exit.",
+  "not_verified": [
+    "model reasoning and peer consent",
+    "physical permission approval",
+    "camera capture",
+    "interactive file selection/export",
+    "live location sampling",
+    "native external-browser launch",
+    "Calendar permission approval and event reads/writes",
+    "SMTP delivery",
+    "live audio recording/playback and photo/share choosers",
+    "Android runtime",
+    "Linux and Windows device services",
+    "public host release",
+    "Video playback (separate fixture; this run checks discovery only)"
+  ],
+  "source_revision_build": "53bab40fbdf2071cde5c7d5ca935e866373539e7",
+  "source_binding_note": "The five-stage validation and final native rebuild used the recorded source revision; the worktree remained clean through acceptance.",
+  "preceding_validation": {
+    "source_revision": "53bab40fbdf2071cde5c7d5ca935e866373539e7",
+    "shell_tests_passed": 1051,
+    "shell_tests_failed": 0,
+    "stages": [
+      {
+        "name": "shell-tests",
+        "exit_code": 0
+      },
+      {
+        "name": "desktop-default",
+        "exit_code": 0
+      },
+      {
+        "name": "desktop-mobile",
+        "exit_code": 0
+      },
+      {
+        "name": "home-mobile",
+        "exit_code": 0
+      },
+      {
+        "name": "host-api-native-build",
+        "exit_code": 0
+      }
+    ],
+    "results_sha256": "96fb09e738e17cbfc8d842beac897772184390f4b63c3ed558c019604e8ae3d9",
+    "binding_sha256": "2d269cd1feba2c4d39fea0492671635cae907a43d695726d38ca8ce3f03cff59"
+  }
+}

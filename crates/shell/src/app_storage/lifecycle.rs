@@ -415,13 +415,29 @@ pub fn install(storage: &'static Arc<Storage>) {
 }
 
 /// Last check inside the Mail service's atomic send claim. It deliberately
-/// reads storage and account metadata only: no broker locks, draft calls, UI
-/// callbacks or networking. Account metadata writers hold the claim lock too.
+/// rechecks local admission, grants and account metadata: no broker locks,
+/// draft calls, UI callbacks or networking. Account metadata writers hold the claim lock too.
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn mail_claim_allowed(storage: &Storage, host_dir: &Path, app: &str, account: &str) -> Result<(), String> {
-    if app != "os.mail" || host_dir != storage.layout().apps_root().join(".host") {
+    if host_dir != storage.layout().apps_root().join(".host") {
         return Err("The review does not belong to this Mail host".into());
     }
+    if app != "os.mail" {
+        crate::host_tools::admission::check(app)?;
+        if !crate::host_tools::script_apps::grants(app, "mail") {
+            return Err("This app no longer has the Mail capability".into());
+        }
+    }
+    mail_account_claim_allowed(storage, host_dir, app, account)
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn mail_account_claim_allowed(
+    storage: &Storage,
+    host_dir: &Path,
+    app: &str,
+    account: &str,
+) -> Result<(), String> {
     if storage.is_signed_out(app, Some(account)) {
         return Err("The Mail account is signed out; review is no longer valid".into());
     }

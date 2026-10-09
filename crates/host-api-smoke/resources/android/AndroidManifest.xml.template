@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="{package_id}" android:versionCode="{version_code}" android:versionName="{version_name}">
+    <uses-sdk android:minSdkVersion="{min_sdk_version}" android:targetSdkVersion="{target_sdk_version}" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <application android:label="{label}" android:allowBackup="false"
+        android:hardwareAccelerated="true" android:debuggable="{debuggable}"
+        android:usesCleartextTraffic="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <meta-data android:name="dev.makepad.android.APPLICATION_EXTENSION"
+            android:value="dev.makepad.octosense.HostApiLabExtension" />
+        <activity android:name=".{class_name}" android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|density"
+            android:windowSoftInputMode="adjustNothing|stateUnchanged">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

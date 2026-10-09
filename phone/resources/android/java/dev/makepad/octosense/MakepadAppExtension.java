@@ -57,6 +57,7 @@ import org.json.JSONObject;
 /** Public launcher client and asynchronous bridge adapter in the Home process. */
 public final class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
     private final MakepadActivity activity;
+    private final DeviceCalendarClient deviceCalendar;
     private Runnable unregisterSystemBack;
     private final ObscuredTouchGuard touchGuard=new ObscuredTouchGuard();
     @Override public boolean filterTouchEvent(android.view.MotionEvent event) {return touchGuard.accept(event);}
@@ -143,6 +144,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
 
     public MakepadAppExtension(MakepadActivity activity) {
         this.activity=activity;
+        deviceCalendar=new DeviceCalendarClient(activity,(channel,value) -> {offer(() -> emit(channel,value));},() -> resumed&&windowFocused&&!destroyed);
         // Home also hosts trusted Settings, theme controls and native overlays.
         // Protect its window before an external Settings intent can be handled.
         if(android.os.Build.VERSION.SDK_INT>=31) activity.getWindow().setHideOverlayWindows(true);
@@ -406,7 +408,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(data.getBytes(StandardCharsets.UTF_8).length>Protocol.MAX_PACKET_BYTES) { resyncNeeded=true; scheduleFlush(); return; }
         if(outbound.isEmpty() && MakepadNative.onAndroidIntegrationEvent(channel,data)) return;
         String key=channel;
-        if(channel.endsWith(".result")) key+=":"+payload.optLong("id",0);
+        if(channel.equals("device_calendar.result")) key+=":"+payload.optString("id","");
+        else if(channel.endsWith(".result")) key+=":"+payload.optLong("id",0);
         if(channel.equals("launcher.catalog")) key+=":"+payload.optLong("chunk",0);
         outbound.put(key,new String[]{channel,data});
         if(outbound.size()>192) {
@@ -488,6 +491,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         main.post(() -> replyComposer.updateTargets(current));
     }
     @Override public void command(String channel,String payload) {
+        if("device_calendar.probe".equals(channel)){offer(() -> emit("device_calendar.ready",new JSONObject()));return;}
+        if("device_calendar.command".equals(channel)){deviceCalendar.command(payload);return;}
         if(validationBuild&&"validation.ui".equals(channel)) {
             try {observedNotificationRenderer=new JSONObject(payload);} catch(JSONException ignored) {}
             return;
@@ -1628,6 +1633,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(intent!=null && intent.hasCategory(Intent.CATEGORY_HOME)) {replyComposer.close();widgets.hide();homeGeometry.invalidate();}
     }
     @Override public void onDestroy() {
+        deviceCalendar.close();
         homeGestureEdges.close();
         if(unregisterSystemBack!=null) {unregisterSystemBack.run();unregisterSystemBack=null;}
         QrImagePickActivity.setListener(null);

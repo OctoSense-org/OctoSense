@@ -17,6 +17,33 @@ import tarfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+OS_BATCH_CHECKS = (
+    "files_status_discovery",
+    "files_import_discovery",
+    "files_export_discovery",
+    "storage_binary_write_discovery",
+    "contained_binary_roundtrip",
+    "files_status_truthful",
+    "location_sample_discovery",
+    "background_import_refused",
+    "background_export_refused",
+    "location_without_consent_refused",
+    "public_calendar_read_discovery", "public_calendar_write_discovery",
+    "public_mail_compose_discovery", "public_mail_send_discovery",
+    "calendar_status_without_data_access", "calendar_choices_without_consent_refused",
+    "background_calendar_permission_refused", "background_calendar_selection_refused",
+    "background_calendar_write_refused", "mail_compose_without_account_refused",
+    "background_mail_send_refused",
+    "photo_picker_discovery",
+    "text_share_discovery_truthful",
+    "background_photo_picker_refused",
+    "background_text_share_refused",
+    "video_controls_discovery",
+    "audio_playback_discovery",
+    "microphone_recording_discovery",
+    "background_audio_playback_refused",
+    "undeclared_microphone_recording_refused",
+)
 
 
 def main():
@@ -106,7 +133,12 @@ def main():
         require('undeclared_tool_refused', bool(native['refusals']['undeclared_tool']))
         require('invalid_arguments_refused', bool(native['refusals']['invalid_arguments']))
         require('closed_tool_endpoint_refused', bool(native['closed_app']))
-        receipt['passed'] = True
+        batch = native.get('checks', {})
+        if set(batch) != set(OS_BATCH_CHECKS):
+            raise AssertionError('Incomplete native OS API batch checks')
+        for name in OS_BATCH_CHECKS:
+            require(name, batch[name] is True)
+        receipt['passed'] = all(checks.values())
         receipt['not_verified'] = native['not_verified']
     except Exception as error:
         receipt['passed'] = False

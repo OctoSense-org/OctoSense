@@ -500,6 +500,7 @@ impl AgentFixture {
             .args(["--exact", test, "--nocapture"])
             .env("OCTOSENSE_CHAT_FIXTURE_CHILD", test)
             .env("OCTOSENSE_CHAT_FIXTURE_ROOT", &root)
+            .env("OCTOSENSE_APP_DATA", &root)
             .env("OCTOSENSE_HUB_ANCHOR", anchor.public_hex())
             .env("OCTOSENSE_HUB_CATALOG", "legacy")
             .output();

@@ -358,6 +358,58 @@ impl AppInstance {
 #[cfg(test)]
 pub static RINX_INSTANCE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Native modules cache their data paths for the process. Run their real
+/// creation tests in a child with fresh storage before any module initializes,
+/// so ordinary `cargo test` cannot restore the person's saved account.
+#[cfg(test)]
+pub(crate) fn run_with_isolated_module_data(test: &str) -> bool {
+    const CHILD: &str = "OCTOSENSE_MODULE_TEST_CHILD";
+    const ROOT: &str = "OCTOSENSE_MODULE_TEST_ROOT";
+    const DIRS: &[(&str, &str)] = &[
+        ("RINX_DATA_DIR", "rinx"),
+        ("ROBRIX_DATA_DIR", "rinx"),
+        ("OCTOSENSE_HOME", "shell"),
+        ("OCTOS_APP_CORE_DIR", "kernel/.octos"),
+        ("OCTOSENSE_APP_DATA", "apps"),
+        ("XDG_CONFIG_HOME", "config"),
+        ("XDG_DATA_HOME", "data"),
+        ("XDG_CACHE_HOME", "cache"),
+    ];
+    if std::env::var(CHILD).as_deref() == Ok(test) {
+        let root = std::path::PathBuf::from(std::env::var_os(ROOT).expect("isolated module test root"));
+        assert!(root.is_absolute(), "module test storage must be absolute");
+        for (key, leaf) in DIRS {
+            assert_eq!(std::env::var_os(key), Some(root.join(leaf).into_os_string()), "isolated {key}");
+        }
+        #[cfg(feature = "app-rinx")]
+        {
+            assert_eq!(rinx::app_data_dir(), root.join("rinx").as_path());
+            assert_eq!(rinx::cache_dir(), root.join("rinx/cache").as_path());
+        }
+        return false;
+    }
+    let root = std::env::temp_dir().join(format!("octosense-module-test-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).expect("create fresh module test root");
+    let mut child = std::process::Command::new(std::env::current_exe().expect("shell test executable"));
+    child.args(["--exact", test, "--nocapture"])
+        .env(CHILD, test)
+        .env(ROOT, &root)
+        .env("MAKEPAD_HIDE_WINDOWS", "1");
+    for (key, leaf) in DIRS {
+        let path = root.join(leaf);
+        std::fs::create_dir_all(&path).expect("create isolated module data directory");
+        child.env(key, path);
+    }
+    let output = child.output();
+    let _ = std::fs::remove_dir_all(&root);
+    let output = output.expect("start isolated module test");
+    assert!(output.status.success(), "{}\n{}",
+        String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed;"),
+        "the exact isolated module test must run");
+    true
+}
+
 #[derive(Default)]
 pub struct ModuleHost {
     /// Whether new instances may open extra windows: the desktop shell,
@@ -1373,6 +1425,7 @@ mod assistant_tests {
     #[cfg(feature = "app-rinx")]
     #[test]
     fn rinx_is_hosted_with_the_shells_service_and_starts_no_kernel() {
+        if super::run_with_isolated_module_data("module_host::assistant_tests::rinx_is_hosted_with_the_shells_service_and_starts_no_kernel") { return; }
         let _one_rinx = super::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);

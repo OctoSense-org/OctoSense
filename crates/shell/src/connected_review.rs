@@ -4,30 +4,38 @@ use octosense_oauth_service::{host_api, host_inbox};
 
 enum ReviewRequest {
     Mail(host_inbox::ReviewRequest),
+    Smtp(octosense_mail_service::public_review::ReviewRequest),
     Save(host_api::ReviewRequest),
 }
 impl ReviewRequest {
     fn approve(&mut self, down: bool, up: bool) -> Result<(), String> {
         match self {
             Self::Mail(r) => r.approve(down, up),
+            Self::Smtp(r) => r.approve(down, up),
             Self::Save(r) => r.approve(down, up),
         }
     }
-    fn result(&self) -> Option<Result<serde_json::Value, String>> {
+    fn result(&mut self) -> Option<Result<serde_json::Value, String>> {
         match self {
             Self::Mail(r) => r.result(),
+            Self::Smtp(r) => r.result(),
             Self::Save(r) => r.result(),
         }
     }
     fn cancel(&mut self) -> Result<(), String> {
         match self {
             Self::Mail(r) => r.cancel(),
+            Self::Smtp(r) => r.cancel(),
             Self::Save(r) => r.cancel(),
         }
+    }
+    fn is_preparing(&self) -> bool {
+        matches!(self, Self::Smtp(request) if request.is_preparing())
     }
     fn close_request(&self) -> (String, String) {
         match self {
             Self::Mail(_) => ("gmail.sheet.close".into(), String::new()),
+            Self::Smtp(_) => ("mail.sheet.review_close".into(), String::new()),
             Self::Save(r) => r.close_request(),
         }
     }
@@ -54,6 +62,11 @@ pub fn register() {
 /// The owning service mounts this source in its host sheet, outside the app.
 pub fn sheet(request: host_inbox::ReviewRequest) -> Result<String, String> {
     mount(ReviewRequest::Mail(request))
+}
+pub fn smtp_sheet(
+    request: octosense_mail_service::public_review::ReviewRequest,
+) -> Result<String, String> {
+    mount(ReviewRequest::Smtp(request))
 }
 pub fn connector_sheet(request: host_api::ReviewRequest) -> Result<String, String> {
     mount(ReviewRequest::Save(request))
@@ -136,7 +149,10 @@ impl ConnectedReplyReview {
         // be resident in its ordinary window or another Glance workspace.
         if !matches!(
             self.close_service.as_str(),
-            "gmail.sheet.close" | "github.sheet.cancel" | "gcalendar.sheet.cancel"
+            "gmail.sheet.close"
+                | "mail.sheet.review_close"
+                | "github.sheet.cancel"
+                | "gcalendar.sheet.cancel"
         ) {
             return;
         }
@@ -173,7 +189,11 @@ impl ConnectedReplyReview {
             .remove(&self.ticket)
             .filter(|(when, _)| when.elapsed().as_secs() < 600)
             .map(|(_, r)| r);
-        if let Some(request) = &self.request {
+        self.refresh_snapshot(cx);
+    }
+    fn refresh_snapshot(&mut self, cx: &mut Cx) {
+        if let Some(request) = &mut self.request {
+            let _ = request.result();
             (self.close_service, self.close_ticket) = request.close_request();
             let text = |value: &serde_json::Value| value.as_str().unwrap_or("").to_owned();
             let (heading, account, details, subject, body) = match request {
@@ -186,6 +206,33 @@ impl ConnectedReplyReview {
                         format!("To: {}", text(&reply["to"])),
                         text(&reply["subject"]),
                         text(&reply["body"]),
+                    )
+                }
+                ReviewRequest::Smtp(request) => {
+                    self.view
+                        .button(cx, ids!(approve))
+                        .set_enabled(cx, request.can_approve());
+                    self.view.label(cx, ids!(status)).set_text(
+                        cx,
+                        if request.is_preparing() {
+                            "Preparing the complete message for review…"
+                        } else {
+                            "Check the recipient and the complete message before sending."
+                        },
+                    );
+                    let snapshot = request.snapshot();
+                    let payload = &snapshot["payload"];
+                    (
+                        "Review message".to_owned(),
+                        format!(
+                            "{}\nAccount: {}\nFrom: {}",
+                            text(&snapshot["publisher"]),
+                            text(&snapshot["account"]),
+                            text(&payload["from"])
+                        ),
+                        format!("To: {}", text(&payload["to"])),
+                        text(&payload["subject"]),
+                        text(&payload["body"]),
                     )
                 }
                 ReviewRequest::Save(request) => {
@@ -235,6 +282,13 @@ impl Widget for ConnectedReplyReview {
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.initialize(cx);
+        if self
+            .request
+            .as_ref()
+            .is_some_and(ReviewRequest::is_preparing)
+        {
+            self.refresh_snapshot(cx);
+        }
         if matches!(event, Event::Pause | Event::Background) {
             self.trusted_down = false;
             if let Some(mut request) = self.request.take() {
@@ -243,14 +297,14 @@ impl Widget for ConnectedReplyReview {
             return;
         }
         if !self.finished {
-            if let Some(result) = self.request.as_ref().and_then(ReviewRequest::result) {
+            if let Some(result) = self.request.as_mut().and_then(ReviewRequest::result) {
                 self.finished = true;
                 let message = match result {
                     Ok(_) if self.is_save => {
                         "The reviewed change was saved. Return to the app.".to_owned()
                     }
                     Ok(value) if value["status"] == "accepted" => {
-                        "Gmail accepted the reply. Return to your Inbox.".to_owned()
+                        "The mail provider accepted the message. Return to the app.".to_owned()
                     }
                     Ok(value) => format!(
                         "Submission status: {}. Check the saved receipt before trying again.",
@@ -262,14 +316,7 @@ impl Widget for ConnectedReplyReview {
                 self.view.button(cx, ids!(approve)).set_enabled(cx, false);
                 let cancel = self.view.button(cx, ids!(cancel));
                 cancel.set_enabled(cx, true);
-                cancel.set_text(
-                    cx,
-                    if self.is_save {
-                        "Return to app"
-                    } else {
-                        "Return to Inbox"
-                    },
-                );
+                cancel.set_text(cx, "Return to app");
             }
         }
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
@@ -314,54 +361,61 @@ mod tests {
 
     #[test]
     fn native_review_close_is_scoped_and_contained_copies_cannot_use_it() {
+        // The real shell owns one Cx. Keep its isolate registry alive across
+        // both routes instead of reusing allocator heap addresses while the
+        // runtime's thread-local policy records await isolate collection.
         let mut cx = Cx::new(Box::new(|_, _| {}));
         register();
-        let mut make = |contained| {
-            let mut splash = cx.with_vm(|vm| {
-                makepad_widgets::script_mod(vm);
-                script_mod(vm);
-                let value = vm.eval(script! { use mod.widgets.* Splash {} });
-                Splash::script_from_value(vm, value)
-            });
-            if contained {
-                splash.set_policy(&mut cx, Some(vec![]), None);
-            }
-            splash.set_text(
-                &mut cx,
-                r#"review := ConnectedReplyReview {
+        for service in ["github.sheet.cancel", "mail.sheet.review_close"] {
+            let mut make = |contained| {
+                let mut splash = cx.with_vm(|vm| {
+                    makepad_widgets::script_mod(vm);
+                    script_mod(vm);
+                    let value = vm.eval(script! { use mod.widgets.* Splash {} });
+                    Splash::script_from_value(vm, value)
+                });
+                if contained {
+                    splash.set_policy(&mut cx, Some(vec![]), None);
+                }
+                splash.set_text(
+                    &mut cx,
+                    &r#"review := ConnectedReplyReview {
                 ticket: "missing-native-capability"
                 close_service: "github.sheet.cancel"
                 close_ticket: "synthetic-ticket"
-            }"#,
-            );
-            splash
-        };
-        let host = make(false);
-        let app = make(true);
-        for (splash, contained) in [(&host, false), (&app, true)] {
-            let widget = splash
-                .view
-                .children
-                .iter()
-                .find(|(id, _)| *id == id!(review))
-                .unwrap()
-                .1
-                .clone();
-            let mut review = widget.borrow_mut::<ConnectedReplyReview>().unwrap();
-            review.initialize(&mut cx);
-            assert!(
-                review.request.is_none(),
-                "live fields cannot forge a native capability"
-            );
-            review.close_sheet(&mut cx);
-            let requests = makepad_widgets::splash_host::take_splash_host_requests_for(&[review
-                .source
-                .heap_key()]);
-            if contained {
-                assert!(requests.is_empty());
-            } else {
-                assert_eq!(requests.len(), 1);
-                assert_eq!(requests[0].service, "github.sheet.cancel");
+            }"#
+                    .replace("github.sheet.cancel", service),
+                );
+                splash
+            };
+            let host = make(false);
+            let app = make(true);
+            for (splash, contained) in [(&host, false), (&app, true)] {
+                let widget = splash
+                    .view
+                    .children
+                    .iter()
+                    .find(|(id, _)| *id == id!(review))
+                    .unwrap()
+                    .1
+                    .clone();
+                let mut review = widget.borrow_mut::<ConnectedReplyReview>().unwrap();
+                review.initialize(&mut cx);
+                assert!(
+                    review.request.is_none(),
+                    "live fields cannot forge a native capability"
+                );
+                review.close_sheet(&mut cx);
+                let requests =
+                    makepad_widgets::splash_host::take_splash_host_requests_for(&[review
+                        .source
+                        .heap_key()]);
+                if contained {
+                    assert!(requests.is_empty());
+                } else {
+                    assert_eq!(requests.len(), 1, "native close route {service}");
+                    assert_eq!(requests[0].service, service);
+                }
             }
         }
     }

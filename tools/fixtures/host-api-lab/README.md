@@ -2,9 +2,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[Android reproduction and OnePlus 6 results](ANDROID.md): the same native host completed all 14 phone checks, without a model, account login or permission approval.
+[Android reproduction and OnePlus 6 results](ANDROID.md): fixture 0.4 passed all **44 checks on OnePlus 6 / Android 15**, without a model, account login or permission approval. The original 14-check record remains historical evidence.
 
-This development fixture shows an app's own Splash tool calling Rust code that is already compiled into OctoSense. The tool reads the real macOS camera permission status, updates the app's screen and returns a structured answer to its native caller. It never captures media and never approves device access. It is not an App Hub submission, and it is not a way to load arbitrary Rust libraries.
+This development fixture shows an app's own Splash tool calling Rust code that is already compiled into OctoSense. The tool reads the real macOS camera permission status, updates the app's screen and returns a structured answer to its native caller. It also discovers the file/location APIs, writes and reads four synthetic bytes in its own storage jail, and verifies background refusals. It never captures media, starts location sampling, opens a file picker or approves device access. It is not an App Hub submission, and it is not a way to load arbitrary Rust libraries.
 
 A call takes this path:
 
@@ -18,6 +18,23 @@ temporary signed catalog → Store install / prepared launch
 ```
 
 The test host puts the call straight into the queue of authorized tool calls. A real agent's call must first pass the shell's relay, which checks the person's consent to the app's agent and the account and tool grants; this test does **not** exercise that model and peer path. It does exercise the real signed-bundle checks, the Splash isolate and the [device service](../../../crates/shell/src/platform_services/README.md).
+
+## Public Calendar and Mail checks (fixture 0.4)
+
+The current fixture adds the public `device_calendar` and `mail` APIs. It
+requires the host's unpublished contract 1.10 source pin, including the earlier `files`
+capability. It checks four method descriptions, native Calendar permission
+status, refusal to list calendar choices without this app's consent, refusal
+of background permission/selection/event-write requests, and refusal of Mail
+composition without an account and background sending. Mail uses a synthetic
+transport in this fixture. It cannot deliver a message.
+
+Nine further checks discover photo selection, text sharing, playback, recording and the Video controls runtime ABI,
+then refuse background media requests and recording without the microphone
+capability. Sharing is advertised only on Android. No media device is opened.
+Together, these twenty checks supplement the ten OS batch checks below. They do not
+prove reading or writing real calendars, physical approval, or SMTP delivery.
+The [Mac receipt](evidence/public-api-v0.4/macos.json) records all 30 checks passing; the [OnePlus 6 receipt](evidence/public-api-v0.4/oneplus6.json) records all 44 Android checks passing, including the original 14 checks. These records bind the source and runtime hashes they name. The previous 14- and 24-check receipts remain historical records.
 
 ## Run it on macOS
 
@@ -45,14 +62,26 @@ The script copies the fixture, captures its native preview as the listing screen
 - `runtime.describe` finds a compiled API, and reports a custom function that the host lacks as unavailable, without running anything.
 - Without the `microphone` capability, the app cannot read the microphone status.
 - The tool's asynchronous host callback cannot open a permission sheet.
+- File status/import/export and location sampling are discoverable; binary storage is advertised as a runtime ABI, not a `host.request` method.
+- The live contained VM round-trips bytes `0, 127, 128, 255` through `fs.write_bytes` / `fs.read_bytes` and removes its temporary app file.
+- File status reports the storage grant and byte limit; background import and export are refused before opening native UI.
+- Without app consent, location sampling returns the exact `authorization_required` refusal from the runtime's consent gate. Its API descriptor also declares it foreground-only.
 - Calls for the wrong account, for an undeclared tool or with invalid input are refused.
 - After the app that owns the tool closes, a call fails with `app_not_running`.
 
 From a host callback, which keeps the tool's background provenance, the tool deliberately calls `camera.permission.request` to prove that App Hub refuses it; nothing in the fixture can approve a permission. The capability, the app's consent and the OS permission stay separate checks. The Mac may already have granted OctoSense the camera permission, but the new profile must still report `app_consent: false`.
 
-**Verified:** the `native-host-api` job of `.github/workflows/desktop.yml` ran these commands on a GitHub `macos-14` runner for the change that added this fixture, adding `--output` for its evidence directory, and they passed.
+The native location check proves refusal **without app consent**; it does not reach the host's foreground gate. The separate `platform_services::tests::location_sampling_broker_lifecycle` regression creates app consent in an isolated test store, dispatches a background sampling request through the real service broker, and requires the exact background refusal, with no queued request, permission check, consent review or running location sampler. That regression uses simulated permission results for its later lifecycle checks; it does not prove physical permission approval or a live location fix.
 
-**Not covered by this macOS run:** real model reasoning, approving a permission with a physical press, camera capture, Android, the unsupported-platform answers on Linux and Windows, and publishing a compatible host binary. Android has its [separate OnePlus 6 acceptance record](ANDROID.md). Separate runtime regression tests on the real Splash VM cover detached timers, paused tasks, HTTP and WebSocket callbacks, and the gates in the native device helpers; this fixture covers chained host callbacks.
+The 0.4 release-mode Mac run passed **30/30 named OS and public-service checks**, signed tool completion, live UI updates and native button interaction at source `53bab40f`, runtime `fc938badf`. All three native captures were inspected; both owned host processes exited cleanly. The [Mac receipt](evidence/public-api-v0.4/macos.json) binds the result to source, runtime and binary hashes. The [OnePlus 6 run](evidence/public-api-v0.4/oneplus6.json) passed **44/44 checks on Android 15**, using an APK built from production source `13e3b21a` with the same runtime; the intervening `53bab40f` change is test-only and excluded from that APK. Its isolated package was force-stopped afterward.
+
+The separate [regression receipt](evidence/public-api-v0.4/regression.json) records **1,051/1,051 shared-shell tests, zero failures or ignored tests**, three packaging checks (desktop default/mobile and Home mobile), and the native fixture build at `53bab40f`. These receipts do not validate later Android Video Java changes or real-account/hardware actions. Contract 1.10 remains unpublished and downloaded desktop/Home releases are unchanged.
+
+The [earlier batch receipt](evidence/os-api-batch1/receipt.json) records ten OS checks at source `807f2bc8`; `evidence/android/` retains the original 14-check phone record. These historical results do not validate the current source.
+
+**Previously verified:** the `native-host-api` job of `.github/workflows/desktop.yml` ran these commands on a GitHub `macos-14` runner for the change that added this fixture, adding `--output` for its evidence directory, and they passed.
+
+**Not covered by this macOS run:** real model reasoning, physical permission approval, camera capture, interactive file/photo/share choosers, live location sampling, native browser launch, Calendar event reads/writes, SMTP delivery, audio recording/playback, Android, Linux and Windows device services, and publishing a compatible host binary. Android has its [separate OnePlus 6 acceptance record](ANDROID.md). Separate runtime regression tests on the real Splash VM cover detached timers, paused tasks, HTTP and WebSocket callbacks, and the gates in the native device helpers; this fixture covers chained host callbacks.
 
 ## Reuse the pattern
 

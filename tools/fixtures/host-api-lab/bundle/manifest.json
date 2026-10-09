@@ -13,7 +13,13 @@
   },
   "capabilities": [
     "runtime",
-    "camera"
+    "camera",
+    "files",
+    "storage",
+    "location",
+    "device_calendar",
+    "mail",
+    "audio"
   ],
   "host_api": {
     "optional": {
@@ -21,13 +27,25 @@
     },
     "required": {
       "app_tools.dispatch": 1,
+      "audio.play": 1,
       "camera.permission.status": 1,
-      "runtime.describe": 1
+      "device_calendar.events.list": 1,
+      "device_calendar.permission.status": 1,
+      "files.export": 1,
+      "files.import": 1,
+      "files.pick_photo": 1,
+      "files.status": 1,
+      "location.sample": 1,
+      "mail.compose": 1,
+      "mail.review_send": 1,
+      "runtime.describe": 1,
+      "storage.binary_write": 1,
+      "video.playback_controls": 1
     }
   },
   "id": "org.octosense.samples.apilab",
   "integrity": {
-    "bundle_blake3": "00678e08c5a3f4f3726184d379a10ce83760d98423364e711329a4f1706252ea"
+    "bundle_blake3": "2b27a33bd54193ad7cfcc555097e388ce28be86ae297b94f427fd4de28c87a5f"
   },
   "name": "Host API Lab",
   "requires": [
@@ -35,5 +53,5 @@
     "script-tools-v1"
   ],
   "schema": 1,
-  "version": "0.1.0"
+  "version": "0.4.0"
 }
