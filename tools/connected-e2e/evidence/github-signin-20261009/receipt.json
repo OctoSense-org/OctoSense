@@ -1,0 +1,155 @@
+{
+  "result": "pass",
+  "scope": "signed installed UI and actual host sign-in service with synthetic GitHub I/O",
+  "live_provider": false,
+  "binary_sha256": "43a4bc8b3a6707f970dd60885aa723f17f85d723f280be5fca464608cc787dc4",
+  "installer_sha256": "b75af6adaf749758f5ae5975616d492f7ed4e2fba30e19bf331fd664892cfb39",
+  "source_sha256": {
+    "wasm-docs/tools/connected-e2e/notes_signin.py": "bd73e445978a47266e5fc50f7f0240d12531c2dd6fcdc97dfebe572e0fea90eb",
+    "wasm-docs/tools/connected-e2e/native.py": "3ed36f6c78149e30eca3f8e8deed00652103dbc4afdbafe977e14b7d3c4fd630",
+    "wasm-docs/tools/connected-e2e/notes_native.py": "54bcfed56b2540069dcdc81d2379b84a9d4d47a3cef9b815abb689ae2adeefbc",
+    "wasm-docs/crates/shell/examples/connected-app-host.rs": "ef24314f96a5936c49939f1e36926ed5f1bfb38d8ba03589c9137bc5dbbd9cd5",
+    "wasm-docs/crates/oauth-service/src/acceptance_github.rs": "360b6461ed6b52f2d33cace8dd57fbb2eed4119bdbef7d93d0520a4cb3c8a042",
+    "wasm-docs/crates/oauth-service/src/host.rs": "04b2716150d65436dfa45ff8df6ddc8d55dbefc14aa3227205ed0f365cfd473a",
+    "wasm-docs/crates/oauth-service/src/sign_in_code.rs": "66e87eb9f726d435250551229162dcce55f487342d60a7985fa89b6cdf2ad672",
+    "notes022/main.splash": "bf499b341bb6da0a5bcf3b95c735943b4c7858afdf848b75005c4338eb49ae85",
+    "notes022/manifest.json": "e85f9620ef82db3725b1e1a7e3ef77250f0654688060c39c13cd48ddc63abbd2"
+  },
+  "checks": [
+    "Sheet names the app, lists access, then shows the code with Copy, Open GitHub and the time left",
+    "Approval closes the sheet; the card names the account and access, and repositories load",
+    "Disconnect asks first; Keep connected keeps it; confirming disconnects and says the note stays",
+    "A decline reads as plain words in the sheet and the card, which offers Try again",
+    "Cancelling in the sheet leaves a neutral note and Connect GitHub"
+  ],
+  "visual_review": "pending",
+  "actions": [
+    {
+      "click": "repository_button",
+      "rect": [
+        8,
+        33,
+        36,
+        44
+      ]
+    },
+    {
+      "click": "Connect GitHub",
+      "rect": [
+        32,
+        559,
+        366,
+        48
+      ]
+    },
+    {
+      "click": "Continue to GitHub",
+      "rect": [
+        24,
+        721,
+        382,
+        48
+      ]
+    },
+    {
+      "click": "Copy code",
+      "rect": [
+        24,
+        374,
+        186,
+        48
+      ]
+    },
+    {
+      "click": "Disconnect",
+      "rect": [
+        283,
+        234,
+        115,
+        44
+      ]
+    },
+    {
+      "click": "Keep connected",
+      "rect": [
+        44,
+        314,
+        167,
+        44
+      ]
+    },
+    {
+      "click": "Disconnect",
+      "rect": [
+        283,
+        234,
+        115,
+        44
+      ]
+    },
+    {
+      "click": "Disconnect",
+      "rect": [
+        219,
+        314,
+        167,
+        44
+      ]
+    },
+    {
+      "click": "Connect GitHub",
+      "rect": [
+        32,
+        650,
+        366,
+        48
+      ]
+    },
+    {
+      "click": "Continue to GitHub",
+      "rect": [
+        24,
+        721,
+        382,
+        48
+      ]
+    },
+    {
+      "click": "Close",
+      "rect": [
+        24,
+        783,
+        382,
+        44
+      ]
+    },
+    {
+      "click": "Try again",
+      "rect": [
+        32,
+        690,
+        366,
+        48
+      ]
+    },
+    {
+      "click": "Cancel",
+      "rect": [
+        24,
+        783,
+        382,
+        44
+      ]
+    }
+  ],
+  "captures": {
+    "07-app-declined.png": "0810e7deb4cc1a42026755b4ee0cde931929276a9838992c0ec18af04f10832a",
+    "03-code.png": "56388cd3d800c9992d7d18d17ce941698c69e61bf4b4db5adbe2a05aa8d82057",
+    "01-connect-card.png": "2ee3f36ab7ae0b1947ece0273ff874cd9ce2d57ced3db0c98f38dfa5d6b32779",
+    "05-disconnected.png": "87fb9c1804c4a2ab1bf2cc7e6351b44d944fca2c4481fb18edab1be721739585",
+    "04-connected.png": "a09c5b987616bde5aec838bdd26e3a2c87e8141403cd4cd233be3a94a70b4873",
+    "02-consent.png": "37408ed3028af26a745a09715c5f3c037367aafd3bd4b6fdf9ea9697198a9f24",
+    "08-cancelled.png": "037e75147f37ed09a8c3c64e4025e2e1a1c6b7ccf8626d679844cd267e681649",
+    "06-sheet-declined.png": "c00b58d9b3403a28a7b467faec2051463f04fb0d4a197736f6cd0a6005b57289"
+  }
+}
