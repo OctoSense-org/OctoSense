@@ -108,7 +108,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
 | [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；自己的 `photos` 服务：`photos.notify` 经 Shell 的通知回调、`photos.info` 在照片引擎上（原图使用资源挂载） |
-| [Maps](maps/bundle) | `os.maps` | 随时可拖动和缩放的 `MapView` 地点地图：按可见区域搜索、带 OpenStreetMap 详情（营业时间、电话、网站、菜系）的地点卡片、以图钉显示的收藏地点、长按查看“这里是什么”、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；浏览地图使用 makepad 预先烘焙的世界地图（`makepad.nl`），驾驶地图和地点详情通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`web`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
+| [Maps](maps/bundle) | `os.maps` | 随时可拖动和缩放的 `MapView` 地点地图：按可见区域搜索、带 OpenStreetMap 详情（营业时间、电话、网站、菜系）的地点卡片、以图钉显示的收藏地点、长按查看“这里是什么”、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；所有地图都使用 makepad 预先烘焙的世界地图（`makepad.nl`），3D 驾驶视图中的建筑是立体的；地点详情通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`web`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
 | [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
@@ -157,8 +157,10 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **Maps**：在 Pixel 7 Pro 上（2026-10-08，深色模式）地点地图运行正常：打开时位于
   GPS 定位处，◎ 能飞回该处；地图可拖动，也可双指缩放；按可见地图搜索、收藏与最近、
   带 OpenStreetMap 详情的地点卡片及其网站阅读器、收藏与图钉、长按、路线只取景一次
-  之后由使用者掌控、‹ Back 和 Close 移除路线，以及驾驶视图和 End 都正常。3D 驾驶
-  视图在路线附近画出了地图瓦片，30 秒后仍有部分缺失。改为地点地图之前，在 OnePlus 6
+  之后由使用者掌控、‹ Back 和 Close 移除路线，以及驾驶视图和 End 都正常。驾驶地图
+  改用同一份预先烘焙的地图后，3D 驾驶视图约 20 秒内铺满屏幕，并画出带墙面和屋顶的建筑；
+  2D 驾驶视图第一次打开时约 5 秒是空白的，之后正常显示。此前驾驶地图通过 Overpass 读取时，
+  3D 驾驶视图只在路线附近画出地图瓦片，30 秒后仍有部分缺失。改为地点地图之前，在 OnePlus 6
   上（2026-09-27）搜索、地点详情、路线、添加和移除途经点、逐向导航驾驶以及 2D 视图
   都正常；3D 驾驶视图会画出路线但没有地图瓦片，手机和桌面上都是如此，途经点改动前后
   一样。OnePlus 6T、iOS 和 OpenHarmony **未验证**。
