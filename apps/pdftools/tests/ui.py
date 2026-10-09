@@ -120,9 +120,18 @@ class Driver:
                     raise
                 time.sleep(0.5)
 
-    def area(self):
+    def area(self, timeout=60.0):
         """The app's surface: its window in a shell, the whole window in card-host."""
-        snap = self.remote("snap")["s"]
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                snap = self.remote("snap")["s"]
+                break
+            except (OSError, URLError, AssertionError):
+                # A busy UI thread (an engine call, a first load) answers late.
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.5)
         views = [w["r"] for w in snap if w["ty"] == "MpModuleView"]
         if views:
             return max(views, key=lambda r: r[2] * r[3])
@@ -645,21 +654,22 @@ def shell_runs(args, runs):
             session("empty", home, both)
 
 
-def card_host_runs(args):
+def card_host_runs(args, runs):
     binary = args.card_host.resolve()
     assert binary.is_file(), f"build App Hub's card-host first: {binary}"
     assert port_free(args.port), f"port {args.port} is taken"
-    with tempfile.TemporaryDirectory(prefix="pdftools-card-host-", dir=args.work) as scratch:
-        data = Path(scratch)
-        fixture(data)
-        out = args.output / "missing"
-        out.mkdir(parents=True, exist_ok=True)
-        app = CardHost(binary, data, args.port, "macos", out / "card-host.log")
-        try:
-            missing(app, out)
-        finally:
-            app.quit()
-        check_log(out / "card-host.log")
+    if "missing" in runs:
+        with tempfile.TemporaryDirectory(prefix="pdftools-card-host-", dir=args.work) as scratch:
+            data = Path(scratch)
+            fixture(data)
+            out = args.output / "missing"
+            out.mkdir(parents=True, exist_ok=True)
+            app = CardHost(binary, data, args.port, "macos", out / "card-host.log")
+            try:
+                missing(app, out)
+            finally:
+                app.quit()
+            check_log(out / "card-host.log")
 
 
 def main():
@@ -675,16 +685,17 @@ def main():
     parser.add_argument("--grab-scale", type=float, default=1.0, help="the grabs' scale (the bridge's /g scale)")
     args = parser.parse_args()
     Driver.scale = args.grab_scale
-    runs = args.only or (["shell", "restart", "full", "empty"] if args.shell else []) + (["missing"] if args.card_host else [])
+    card_host_only = ("missing",)
+    runs = args.only or (["shell", "restart", "full", "empty"] if args.shell else []) + (list(card_host_only) if args.card_host else [])
     assert runs, "give --shell, --card-host or both"
-    if any(run != "missing" for run in runs):
+    if any(run not in card_host_only for run in runs):
         assert args.shell, "these runs need --shell"
         args.port = args.port or 8915
         shell_runs(args, runs)
-    if "missing" in runs:
+    if any(run in card_host_only for run in runs):
         assert args.card_host, "the missing run needs --card-host"
         args.port = 8911 if args.port in (0, 8915) else args.port
-        card_host_runs(args)
+        card_host_runs(args, runs)
     print("all journeys passed; grabs in", args.output)
 
 

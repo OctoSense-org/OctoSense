@@ -49,8 +49,10 @@ let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_tex
 //
 // Opening a PDF from this device: files.import copies the file the person
 // chooses into a new library file (`Imported PDF.pdf`, `Imported PDF 2.pdf`,
-// …); the app never learns the chosen file's name or place. Then it opens
-// like any other PDF here: the same engine calls on the same relative path.
+// …) and reports the chosen file's name, which becomes its title (kept in
+// the index: app storage has no rename); without one the title is the file
+// name. Then it opens like any other PDF here: the same engine calls on the
+// same relative path.
 
 let LIBRARY = "accounts/device/library"
 let INDEX = "accounts/device/library.json"
@@ -267,11 +269,57 @@ fn load_index(){
 fn save_index(){
     try { fs.write(INDEX, {version: 1 docs: index}.to_json()) } catch {}
 }
-fn doc_of(name){
+// ---- the library's rules: pure functions, tested from Rust by
+// crates/shell/src/pdftools_model_tests.rs ------------------------------------
+
+// A library row: the file, and what the index kept about it (`known`, or
+// nil): its pages and size, and its title, which is otherwise its name.
+fn doc_from(name, known){
     let d = {name: name path: LIBRARY + "/" + name title: stem(name) pages: nil bytes: nil error: ""}
-    let known = optional(index, name, nil)
-    if known != nil { d.pages = known.pages d.bytes = known.bytes }
+    if known != nil {
+        d.pages = optional(known, "pages", nil)
+        d.bytes = optional(known, "bytes", nil)
+        d.title = optional(known, "title", d.title)
+    }
     d
+}
+// What the index keeps about a file: what the engine said (pages, size), and
+// its title when that is not the file's own name.
+fn index_entry(pages, bytes, title, name){
+    pick(title == stem(name), {pages: pages bytes: bytes}, {pages: pages bytes: bytes title: title})
+}
+// The title of a PDF opened from the device: the chosen file's name as
+// files.import reports it (`shown`), without ".pdf" and unlike every title
+// in `taken`, else the name the file is stored under ("Imported PDF 2").
+fn title_for_import(shown, name, taken){
+    if shown == nil { return stem(name) }
+    let t = ("" + shown).trim().replace(regex("\\.pdf$", "i"), "").trim()
+    if t == "" { return stem(name) }
+    if !has(taken, t) { return t }
+    let n = 2
+    loop {
+        let candidate = t + " (" + n + ")"
+        if !has(taken, candidate) { return candidate }
+        n = n + 1
+    }
+}
+// The title of a part the engine split from a PDF (`part`, named after the
+// file: "Imported PDF-part2.pdf"): after the PDF's title ("Lease
+// 2026-part2"), or nil when the PDF shows its file name, as the part then does.
+fn title_for_part(title, name, part){
+    if title == stem(name) { return nil }
+    title + stem(part).replace(stem(name), "")
+}
+
+fn doc_of(name){ doc_from(name, optional(index, name, nil)) }
+fn remember(d){
+    index[d.name] = index_entry(d.pages, d.bytes, d.title, d.name)
+    save_index()
+}
+fn title_of(name){
+    let d = doc_named(name)
+    if d == nil { return stem(name) }
+    d.title
 }
 fn scan_library(){
     let out = []
@@ -315,8 +363,7 @@ fn read_info(d){
         if a.is_ok {
             d.pages = a.data.pages.len()
             d.bytes = optional(a.data, "file_size", nil)
-            index[d.name] = {pages: d.pages bytes: d.bytes}
-            save_index()
+            remember(d)
         } else { d.error = engine_error(a.error) }
         refresh()
         library_next()
@@ -412,14 +459,21 @@ fn imported(name, a){
     }
     if optional(a.data, "cancelled", false) { refresh() return }
     // From here the file is one of the library's: the engine reads it on
-    // its relative path, as for any PDF the library finds.
+    // its relative path, as for any PDF the library finds. It keeps the
+    // name the app gave it, and shows the chosen file's.
     forget(name)
+    let taken = []
+    for d in docs { taken.push(d.title) }
+    let title = title_for_import(optional(a.data, "name", nil), name, taken)
+    if title != stem(name) {
+        index[name] = {title: title}
+        save_index()
+    }
     scan_library()
     let d = doc_named(name)
     if d == nil { refresh() return }
     if route == "library" { open_doc(d) } else { refresh() }
 }
-
 // ---- a document ----------------------------------------------------------
 
 fn open_doc(d){
@@ -455,8 +509,7 @@ fn open_doc(d){
         info = a.data
         d.pages = info.pages.len()
         d.bytes = optional(info, "file_size", d.bytes)
-        index[d.name] = {pages: d.pages bytes: d.bytes}
-        save_index()
+        remember(d)
         refresh()
         thumbs_next()
     })
@@ -828,6 +881,8 @@ fn split_ranges(){
     out
 }
 fn part_name(k){ stem(current.name) + "-part" + k + ".pdf" }
+// What part k is called on screen: after the document's title.
+fn part_title(k){ current.title + "-part" + k }
 fn split_step(){ pick(split_result == nil, 1, 2) }
 fn range_text(r){
     if r[0] == r[1] { return "Page " + r[0] }
@@ -846,6 +901,7 @@ fn do_split(){
     split_busy = true
     split_error = ""
     refresh()
+    let source = current
     engine("split", args, fn(a){
         split_busy = false
         if engine_gone(a) { split_error = engine_headline() refresh() return }
@@ -857,15 +913,22 @@ fn do_split(){
             names.push({name: parts[parts.len() - 1] first: f.first_page last: f.last_page})
         }
         split_result = names
-        finish_split(names, 0)
+        finish_split(source, names, 0)
     })
 }
 // One written file per turn (each forget writes the index), then the rescan
-// and the next screen: one handler has a 64 ms budget.
-fn finish_split(names, i){
+// and the next screen: one handler has a 64 ms budget. A part of a PDF with
+// a title of its own is titled after it ("Lease-part2").
+fn finish_split(source, names, i){
     if i < names.len() {
-        forget(names[i].name)
-        start_timeout(0.01, || finish_split(names, i + 1))
+        let part = names[i].name
+        forget(part)
+        let title = title_for_part(source.title, source.name, part)
+        if title != nil {
+            index[part] = {title: title}
+            save_index()
+        }
+        start_timeout(0.01, || finish_split(source, names, i + 1))
         return
     }
     scan_library()
@@ -1313,7 +1376,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                                         if optional(cover_src, name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, name, nil)} }
                                         else { AppIcon{width: 26 height: 26 name: "file-pdf"} }
                                     }
-                                    RowText{name.text: stem(name) meta.text: doc_meta(doc_named(name))}
+                                    RowText{name.text: title_of(name) meta.text: doc_meta(doc_named(name))}
                                     View{width: Fit height: Fit flow: Right spacing: 0
                                         if i > 0 { IconAct{text: ICON_UP on_click: || move_pick(i, -1)} } else { View{width: 36 height: 1} }
                                         if i < picked.len() - 1 { IconAct{text: ICON_DOWN on_click: || move_pick(i, 1)} } else { View{width: 36 height: 1} }
@@ -1395,7 +1458,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                             }
                             for k r in split_ranges() {
                                 View{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{left: 18 right: 18 top: 8 bottom: 8}
-                                    Label{width: Fill padding: 0 max_lines: 1 text: part_name(k + 1) draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 14}}}
+                                    Label{width: Fill padding: 0 max_lines: 1 text: part_title(k + 1) + ".pdf" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 14}}}
                                     Label{padding: 0 text: range_text(r) draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13}}}
                                 }
                             }
@@ -1416,7 +1479,7 @@ SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.co
                                         if optional(cover_src, f.name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, f.name, nil)} }
                                         else { AppIcon{width: 26 height: 26 name: "file-pdf"} }
                                     }
-                                    RowText{name.text: stem(f.name) meta.text: range_text([f.first, f.last])}
+                                    RowText{name.text: title_of(f.name) meta.text: range_text([f.first, f.last])}
                                     Glyph{text: ICON_NEXT}
                                 }
                                 if i < split_result.len() - 1 { RowLine{} }

@@ -34,11 +34,20 @@ of this version.
 "Open a PDF from this device" asks the shell's files service to copy one
 file the person chooses in the host's own dialog into the library. The app
 names the new file first, because `files.import` takes its destination
-before the dialog opens and never reports the chosen file's name or place:
-`Imported PDF.pdf`, then `Imported PDF 2.pdf` and so on (the import refuses
-an existing destination). The copy then opens like any other PDF here: the
-engine's `info`, `render` and `text` on the same relative path. The jail has
-no rename, so an imported PDF keeps that name.
+before the dialog opens: `Imported PDF.pdf`, then `Imported PDF 2.pdf` and so
+on (the import refuses an existing destination). The copy then opens like
+any other PDF here: the engine's `info`, `render` and `text` on the same
+relative path.
+
+The host also reports the chosen file's display name (`name`, cleaned of
+folders, control characters and direction marks), and that becomes the
+PDF's title, without `.pdf`: "Lease 2026", or "Lease 2026 (2)" when another
+PDF here already has that title. The file keeps the name the app gave it
+(app storage has no rename), and the title lives in `library.json`. Without
+`name` (on Android, or when nothing was left of it after cleaning) the title
+is the file name, "Imported PDF 2". Parts split from a titled PDF are titled
+after it ("Lease 2026-part2"). The library lists files in their storage
+order.
 
 `files.status` (asked once, without opening anything) gives the largest file
 an import takes, 64 MiB on the desktop, which the library shows; free storage
@@ -57,7 +66,7 @@ and what the engine writes counts against the app's storage.
 | Path | Holds |
 | --- | --- |
 | `accounts/device/library/*.pdf` | The PDFs (ADR 0004 §11: a system app's data is its `device` account folder), including imported ones and what merge and split write |
-| `accounts/device/library.json` | What the engine said about each file: pages and size |
+| `accounts/device/library.json` | What the engine said about each file (pages and size), and its title when that is not its file name |
 | `cache/covers/<name>.png` | Each file's first page (evictable) |
 | `cache/pages/<name>/p<n>.png` | The open document's thumbnails; other documents' are removed when one opens, since app storage holds at most 256 entries |
 | `cache/view.png` | The page view's image |
@@ -70,7 +79,7 @@ and what the engine writes counts against the app's storage.
 | `pdf.merge` | Merge | `{paths, out}` |
 | `pdf.split` | Split | `{path, out_dir, every}` or `{path, out_dir, before}` |
 | `files.status` | the app starts | `{}` |
-| `files.import` | Open a PDF from this device | `{path: "accounts/device/library/Imported PDF.pdf"}` |
+| `files.import` | Open a PDF from this device | `{path: "accounts/device/library/Imported PDF.pdf"}`; the result's `name`, when present, is the title |
 
 The app never reads `pdf.info`'s `document.path`: until #434 it is the
 engine's absolute host path, and every path the app uses is its own relative
@@ -137,13 +146,23 @@ python3 apps/pdftools/tests/ui.py --card-host <App Hub>/target/release/card-host
 | `full` | Storage filled to 8 KB short of its 64 MiB: the engine's refusal on the library and on a merge, then a removal |
 | `empty` | No PDFs: the empty library and its Open button, in light and dark |
 | `missing` | App Hub's `card-host`, which serves no host services: no engine and no files service |
+The library's rules are pure functions in `main.splash`, tested from Rust by
+evaluating the bundle's functions in a script VM
+(`crates/shell/src/pdftools_model_tests.rs`, as Maps' and Photos' are): an
+imported PDF's title with a name, without one, for a name another PDF
+already shows, and when nothing is left of the name; a split part's title;
+and what the library index keeps across a restart.
+
+```sh
+cargo test --locked -p octosense-shell --lib pdftools_model
+```
 
 The host's dialog cannot be driven in a hidden shell, and a hidden window
 never has focus, so the files service refuses `files.import` there before the
 dialog opens (`foreground_required: …`); the runs check that the app shows
-that refusal. What happens after an import is the path the `restart` run
-takes: a library file the index has never seen, which the engine reads and
-the app opens.
+that refusal. What follows an import: the title rules above, and the `restart`
+run, which takes a library file the index has never seen, read by the real
+engine and opened by the app.
 
 ## Status
 
@@ -152,10 +171,13 @@ the app opens.
   storage with a PDF placed as an import leaves one, full storage, the empty
   library, and `card-host` without host services. The grabs, digests and
   checks are in [tests/evidence/shell-20261009](tests/evidence/shell-20261009/README.md).
-- **Not verified**: the host's file dialog and what follows a real import
-  (`imported()` in the script), the import's other refusals, window sizes
-  other than the shell's default, Linux, Windows, phones.
+  The titles of imported PDFs are verified by the Rust tests of the library's
+  rules above.
+- **Not verified**: the host's file dialog and a real import through it
+  (`imported()` in the script, which applies the tested title rule), the
+  import's other refusals, window sizes other than the shell's default,
+  Linux, Windows, phones.
 - **Known**: a light/dark switch runs the script again (the runtime's style
-  reapply), so the app returns to its library, and its page grid keeps two
-  columns until the window's size changes, because the shell does not call
-  `on_app_resize` again.
+  reapply), so the app returns to its library. The shell evidence's dark
+  frames keep two columns of pages: they were made before the shell sent
+  hosted apps their size again after a restyle (9d7a386e).

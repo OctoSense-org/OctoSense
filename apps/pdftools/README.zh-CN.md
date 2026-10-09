@@ -31,10 +31,16 @@ App Hub 的系统上限 64 MiB。
 
 “Open a PDF from this device”请 Shell 的文件服务把用户在宿主自己的对话框中选择的
 一个文件复制到资料库中。应用要先为新文件命名，因为 `files.import` 在对话框打开前
-就接收目标路径，并且从不告诉应用所选文件的名称或位置：依次为 `Imported PDF.pdf`、
-`Imported PDF 2.pdf` 等（目标已存在时导入会被拒绝）。复制进来的文件随后像这里的其他
-PDF 一样打开：引擎在同一个相对路径上执行 `info`、`render` 和 `text`。存储隔离区不
-支持重命名，所以导入的 PDF 保留这个名字。
+就接收目标路径：依次为 `Imported PDF.pdf`、`Imported PDF 2.pdf` 等（目标已存在时
+导入会被拒绝）。复制进来的文件随后像这里的其他 PDF 一样打开：引擎在同一个相对路径上
+执行 `info`、`render` 和 `text`。
+
+宿主还会报告所选文件的显示名称（`name`，已去掉文件夹、控制字符和方向标记），它会成为
+这个 PDF 的标题，并去掉 `.pdf`：例如“Lease 2026”；如果这里已有同名标题，则为
+“Lease 2026 (2)”。文件本身保留应用为它取的名字（应用存储不支持重命名），标题记录在
+`library.json` 中。没有 `name` 时（在 Android 上，或清理后什么都不剩），标题就是
+文件名，例如“Imported PDF 2”。从有标题的 PDF 拆分出的部分按它的标题命名
+（“Lease 2026-part2”）。资料库按存储中的顺序列出文件。
 
 `files.status`（只问一次，不打开任何东西）给出一次导入可接受的最大文件：桌面上是
 64 MiB，资料库会显示这个值；剩余存储空间同样会限制导入。导入被拒绝时，资料库顶部
@@ -50,7 +56,7 @@ PDF 一样打开：引擎在同一个相对路径上执行 `info`、`render` 和
 | 路径 | 内容 |
 | --- | --- |
 | `accounts/device/library/*.pdf` | PDF 文件（ADR 0004 §11：系统应用的数据位于其 `device` 账户目录），包括导入的文件以及合并和拆分写入的文件 |
-| `accounts/device/library.json` | 引擎对每个文件给出的信息：页数和大小 |
+| `accounts/device/library.json` | 引擎对每个文件给出的信息（页数和大小），以及与文件名不同时的标题 |
 | `cache/covers/<name>.png` | 每个文件的首页（可清除） |
 | `cache/pages/<name>/p<n>.png` | 当前打开文档的缩略图；打开一个文档时会删除其他文档的缩略图，因为应用存储最多容纳 256 个条目 |
 | `cache/view.png` | 单页视图的图片 |
@@ -63,7 +69,7 @@ PDF 一样打开：引擎在同一个相对路径上执行 `info`、`render` 和
 | `pdf.merge` | 合并 | `{paths, out}` |
 | `pdf.split` | 拆分 | `{path, out_dir, every}` 或 `{path, out_dir, before}` |
 | `files.status` | 应用启动时 | `{}` |
-| `files.import` | Open a PDF from this device | `{path: "accounts/device/library/Imported PDF.pdf"}` |
+| `files.import` | Open a PDF from this device | `{path: "accounts/device/library/Imported PDF.pdf"}`；结果中的 `name`（如有）就是标题 |
 
 应用从不读取 `pdf.info` 的 `document.path`：在 #434 之前，它是引擎在宿主上的绝对
 路径，而应用使用的每个路径都是它自己的相对路径。
@@ -121,11 +127,19 @@ python3 apps/pdftools/tests/ui.py --card-host <App Hub>/target/release/card-host
 | `full` | 存储被填到距 64 MiB 上限只差 8 KB：资料库和一次合并上显示引擎的拒绝，然后移除一个文件 |
 | `empty` | 没有 PDF：空资料库及其 Open 按钮，浅色和深色各一次 |
 | `missing` | App Hub 的 `card-host`，它不提供任何宿主服务：没有引擎，也没有文件服务 |
+资料库的规则是 `main.splash` 中的纯函数，由 Rust 在脚本虚拟机中求值应用包的函数
+来测试（`crates/shell/src/pdftools_model_tests.rs`，与 Maps 和 Photos 的做法相同）：
+导入的 PDF 在有名称、没有名称、名称已被其他 PDF 使用、名称清理后什么都不剩时的标题；
+拆分部分的标题；以及资料库索引在重启后保留的内容。
+
+```sh
+cargo test --locked -p octosense-shell --lib pdftools_model
+```
 
 隐藏的 Shell 无法驱动宿主的对话框，而且隐藏窗口从不获得焦点，因此文件服务会在
 对话框打开前拒绝 `files.import`（`foreground_required: …`）；这些运行会检查应用
-显示了这个拒绝。导入之后发生的事情就是 `restart` 运行所走的路径：一个索引从未见过
-的资料库文件，由引擎读取，再由应用打开。
+显示了这个拒绝。导入之后的流程：上面的标题规则，以及 `restart` 运行——它走的是一个
+索引从未见过的资料库文件，由真实引擎读取，再由应用打开。
 
 ## 状态
 
@@ -133,8 +147,10 @@ python3 apps/pdftools/tests/ui.py --card-host <App Hub>/target/release/card-host
   每个界面（浅色和深色）、在同一存储上重启并按导入留下文件的方式放入一个 PDF、
   存储已满、空资料库，以及不提供宿主服务的 `card-host`。截图、摘要和检查记录在
   [tests/evidence/shell-20261009](tests/evidence/shell-20261009/README.zh-CN.md)。
-- **未验证**：宿主的文件对话框以及一次真实导入之后的流程（脚本中的 `imported()`）、
-  导入的其他拒绝情况、Shell 默认尺寸以外的窗口尺寸、Linux、Windows 和手机。
+  导入的 PDF 的标题由上面资料库规则的 Rust 测试验证。
+- **未验证**：宿主的文件对话框以及通过它进行的真实导入（脚本中的 `imported()`，它
+  使用经过测试的标题规则）、导入的其他拒绝情况、Shell 默认尺寸以外的窗口尺寸、Linux、
+  Windows 和手机。
 - **已知问题**：切换浅色和深色会重新运行脚本（运行时的样式重新应用），所以应用会
-  回到资料库；页面网格在窗口尺寸改变之前保持两列，因为 Shell 不会再次调用
-  `on_app_resize`。
+  回到资料库。Shell 证据中的深色截图页面网格保持两列：它们是在 Shell 于样式切换后
+  重新向托管应用发送尺寸（9d7a386e）之前生成的。
