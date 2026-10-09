@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-On OctoSense `main`, not yet in any release, an installed script app can ask the host for camera, microphone and location access. Three separate checks decide whether an app can use a device:
+An installed script app can ask a compatible OctoSense host for camera, microphone and location access. Query API discovery on the actual host; fresh location sampling described here belongs to the unreleased OS wiring batch. Three separate checks decide whether an app can use a device:
 
 - **Capability.** The app's manifest declares `camera`, `microphone` or `location`. This is the most the app can ever get.
 - **App consent.** The person allows this app on a native host sheet. Consent covers this app on all of its accounts, and no other app.

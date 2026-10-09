@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "tested_source": "807f2bc8a07693db37ff843e560840e07c4980dd",
+  "runtime_tree": "9121e900f18d5d6f22840ed330c1d7931231509a",
+  "app_hub_revision": "66287539cd63aab96964360a37f15fc5e583eb14",
+  "personal_profiles_used": false,
+  "model_started": false,
+  "native_macos": {
+    "result": "pass",
+    "signed_install": true,
+    "own_script_tool_completed": true,
+    "os_batch_checks": {
+      "background_export_refused": true,
+      "background_import_refused": true,
+      "contained_binary_roundtrip": true,
+      "files_export_discovery": true,
+      "files_import_discovery": true,
+      "files_status_discovery": true,
+      "files_status_truthful": true,
+      "location_sample_discovery": true,
+      "location_without_consent_refused": true,
+      "storage_binary_write_discovery": true
+    },
+    "verified": [
+      "signed admission and launch",
+      "own Splash tool completion",
+      "native OS permission status",
+      "live app UI update",
+      "native UI button host call",
+      "API discovery and missing-function fallback",
+      "undeclared capability refusal",
+      "background callback prompt refusal",
+      "cross-account and schema refusal",
+      "closed-app refusal",
+      "file and location API discovery",
+      "contained binary storage round trip",
+      "file status metadata",
+      "background import/export refusal",
+      "location refusal without app consent"
+    ]
+  },
+  "shared_shell": {
+    "passed": 1027,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0,
+    "fresh_profiles": true,
+    "live_kernel_configured": false
+  },
+  "runtime_regressions": {
+    "passed": 127,
+    "failed": 0,
+    "callback_regression_failed_on_previous_runtime": true
+  },
+  "platform_compilation": {
+    "macos_release_fixture": "passed",
+    "windows_platform": "passed",
+    "linux_platform": "passed",
+    "android_release_apk": "passed",
+    "existing_warnings_remain": true
+  },
+  "android": {
+    "status": "pending_device_connection",
+    "expected_checks": 24,
+    "package": "dev.makepad.octosense.hostapilab.osbatch1",
+    "apk_sha256": "44e365e32b27e6381722c330f1a3728b29ca6f9e3d9c788c95a50ceb14a4329f",
+    "apk_bytes": 61322106,
+    "installed": false
+  },
+  "not_verified": [
+    "Android execution of this expanded fixture",
+    "model reasoning or live peer relay consent",
+    "physical OS permission approval",
+    "camera capture",
+    "interactive document selection or provider writes",
+    "live location fix",
+    "native external-browser launch",
+    "iOS execution",
+    "public compatible host release"
+  ]
+}

@@ -56,7 +56,7 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 
 原生定位检查证明的是**没有应用授权时拒绝调用**，调用尚未到达宿主的前台限制检查。独立的 `platform_services::tests::location_sampling_broker_lifecycle` 回归测试会在隔离的测试存储中建立应用授权，再通过真实的服务代理发起后台采样请求。它要求返回确切的后台拒绝错误，而且没有排队请求、权限检查、授权审阅或正在运行的定位采样。该回归测试后续使用模拟权限结果检查生命周期，并不证明实际批准了权限或获得了真实定位。
 
-原生回执新增十项布尔 `checks`；两个驱动都要求完整集合且每一项通过。Android 保留原来的 14 项，总计 24 项。新增检查在扩展后的原生运行完成前仍为**未验证**；它们不验证交互式文件选择、提供方写入或真实定位。`evidence/android/` 下的历史回执仍保留原始 14 项记录。
+原生回执新增十项布尔 `checks`；两个驱动都要求完整集合且每一项通过。源码 `807f2bc8` 的 release 模式 Mac 运行已通过全部十项，同时验证签名应用工具完成、实时 UI 更新及原生按钮操作，详见[本批验收记录](evidence/os-api-batch1/receipt.json)。Android 保留原来的 14 项，总计 24 项；新 APK 已构建，但真机执行仍**等待获准测试的 OnePlus 6 连接**。这些检查不验证交互式文件选择、提供方写入或真实定位。`evidence/android/` 下的历史回执仍保留原始 14 项记录。
 
 **此前已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
 

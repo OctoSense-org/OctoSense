@@ -2,6 +2,8 @@
 
 English | [简体中文](ANDROID.zh-CN.md)
 
+**Current OS batch:** the fixture now requires 24 checks. The APK at source `807f2bc8` built successfully, but the assigned OnePlus 6 was unavailable to ADB when its final test was reached. Device execution remains **pending**, as recorded in the [current batch receipt](evidence/os-api-batch1/receipt.json). The following 14-check results are historical and do not validate the added file/location checks or the new runtime fixes.
+
 The [receipt](evidence/android/receipt.json) records **14/14 checks on a OnePlus 6 running Android 15**. The [native result](evidence/android/native-result.json) comes from the actual phone process. A signed ordinary bundle calls its own Splash tool, which discovers a host API and reads Android's camera permission status through the production service. The fixture rejects cross-account calls, undeclared capabilities/tools, invalid arguments, uncompiled Rust functions, background permission prompts and calls after the tool endpoint closes.
 
 This proves the native app/tool/service path. It does not start a model or peer agent, capture a camera image, approve a permission, log in to a provider, or establish physical approval. The test package was stopped after completion. Normal Home and personal profiles were not changed.
