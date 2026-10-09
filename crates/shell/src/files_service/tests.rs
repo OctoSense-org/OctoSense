@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn authorization_rejects_revocation_replacement_and_closed_requests_at_each_boundary() {
+    let original = json!({"capabilities":["files","storage"],"version":"1"});
+    assert!(check_authorization(true, Some(&original), || Ok(original.clone())).is_ok());
+    assert!(
+        check_authorization(true, Some(&original), || Err("permission_denied".into())).is_err()
+    );
+    assert!(check_authorization(true, Some(&original), || Ok(
+        json!({"capabilities":["files"],"version":"1"})
+    ))
+    .is_err());
+    assert!(check_authorization(true, Some(&original), || Ok(
+        json!({"capabilities":["files","storage"],"version":"2"})
+    ))
+    .is_err());
+    assert!(check_authorization(false, Some(&original), || panic!(
+        "closed requests must not perform admission IO"
+    ))
+    .is_err());
+}
+
+#[test]
 fn import_and_export_accept_only_app_relative_file_arguments() {
     assert_eq!(
         parse_operation("import", &json!({"path":"/photos/a.png"})).unwrap(),
@@ -63,6 +84,7 @@ fn import_and_export_accept_only_app_relative_file_arguments() {
         assert!(parse_operation("import", &args).is_err());
     }
     assert!(parse_operation("export", &json!({"path":"a","name":null})).is_err());
+    assert!(parse_operation("export", &json!({"path":"a","name":"x".repeat(129)})).is_err());
 }
 
 #[test]

@@ -3,7 +3,7 @@
 //! the script boundary. See README.md for the public contract and integration.
 use makepad_widgets::{
     makepad_platform::{
-        file_dialogs::{self, FileDialog, FileDialogAction},
+        file_dialogs::{self, FileDialog, FileDialogAccessGuard, FileDialogAction},
         thread::Lane,
         SignalToUI,
     },
@@ -89,7 +89,12 @@ fn parse_operation(method: &str, args: &Value) -> Result<Operation, String> {
             .ok_or("invalid_arguments: name must be a basename")?,
         None => path.rsplit(['/', '\\']).next().unwrap_or(""),
     };
-    if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+    if name.is_empty()
+        || name.len() > 128
+        || name.contains(['/', '\\'])
+        || name == "."
+        || name == ".."
+    {
         return Err("invalid_arguments: name must be a basename".into());
     }
     splash_storage::resolve_jailed(root, name)?;
@@ -106,6 +111,21 @@ fn admission(app: &str, storage: bool) -> Result<Value, String> {
     Ok(loaded.manifest)
 }
 
+fn check_authorization(
+    pending: bool,
+    expected: Option<&Value>,
+    current: impl FnOnce() -> Result<Value, String>,
+) -> Result<(), String> {
+    if !pending {
+        return Err("cancelled: App closed or request expired".into());
+    }
+    let manifest = current()?;
+    if expected.is_some_and(|original| original != &manifest) {
+        return Err("permission_denied: App admission changed during file selection".into());
+    }
+    Ok(())
+}
+
 struct Work {
     call: ServiceCall,
     reply: Replier,
@@ -114,18 +134,13 @@ struct Work {
     _reservation: Reservation,
 }
 impl Work {
+    fn authorized(&self) -> Result<(), String> {
+        check_authorization(self.reply.is_pending(), self.manifest.as_ref(), || {
+            admission(&self.call.app_id, true)
+        })
+    }
     fn storage(&self) -> Result<StorageAccess, String> {
-        if !self.reply.is_pending() {
-            return Err("cancelled: App closed or request expired".into());
-        }
-        let manifest = admission(&self.call.app_id, true)?;
-        if self
-            .manifest
-            .as_ref()
-            .is_some_and(|original| original != &manifest)
-        {
-            return Err("permission_denied: App admission changed during file selection".into());
-        }
+        self.authorized()?;
         splash_storage::storage_for_heap(self.reply.isolate_key(), &self.call.app_id)
             .ok_or("storage_unavailable: This request has no live app storage".into())
     }
@@ -277,10 +292,19 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                 }
             };
             let id = LiveId::unique();
+            let reply = work.reply.clone();
+            let app = work.call.app_id.clone();
+            let manifest = work.manifest.clone();
             let dialog = FileDialog::new()
                 .set_id(id)
                 .set_multiple(false)
-                .set_persistent_access(false);
+                .set_persistent_access(false)
+                .set_access_guard(FileDialogAccessGuard::new(move || {
+                    check_authorization(reply.is_pending(), manifest.as_ref(), || {
+                        admission(&app, true)
+                    })
+                    .is_ok()
+                }));
             let export = match &work.operation {
                 Operation::Import { path } => {
                     if let Err(e) = storage.validate_path(path) {
@@ -322,6 +346,13 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
 
 fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
     let Pending { work, export, .. } = pending;
+    if matches!(
+        action,
+        FileDialogAction::FileCancelled { .. } | FileDialogAction::SaveFileCancelled { .. }
+    ) {
+        work.reply.send(Ok(json!({"cancelled":true})));
+        return;
+    }
     let storage = match work.storage() {
         Ok(s) => s,
         Err(e) => {
@@ -330,10 +361,6 @@ fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
         }
     };
     match (&work.operation, action) {
-        (
-            _,
-            FileDialogAction::FileCancelled { .. } | FileDialogAction::SaveFileCancelled { .. },
-        ) => work.reply.send(Ok(json!({"cancelled":true}))),
         (Operation::Import { path }, FileDialogAction::FileLoaded { files, .. })
             if files.len() == 1 =>
         {
@@ -362,23 +389,22 @@ fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
             let failed = work.reply.clone();
             // The task owns the reservation, bounding provider IO and snapshots.
             let submitted = cx.task_pool().submit(Lane::Heavy, move || {
-                let _reservation = work._reservation;
-                if !work.reply.is_pending() {
-                    return;
-                }
-                let result = admission(&work.call.app_id, true).and_then(|manifest| {
-                    if work.manifest.as_ref() != Some(&manifest) {
-                        return Err("permission_denied: App admission changed".into());
-                    }
-                    if !work.reply.is_pending() {
-                        return Err("cancelled: App closed or request expired".into());
-                    }
+                let result = (|| {
+                    work.authorized()?;
                     #[cfg(not(target_arch = "wasm32"))]
-                    file_dialogs::write_selected_file(&destination, &bytes)?;
+                    {
+                        file_dialogs::write_selected_file_guarded(&destination, &bytes, || {
+                            work.authorized().is_ok()
+                        })?;
+                        work.authorized()?;
+                        Ok(json!({"cancelled":false,"path":path,"bytes":bytes.len()}))
+                    }
                     #[cfg(target_arch = "wasm32")]
-                    return Err("unsupported_platform: File export is unavailable".into());
-                    Ok(json!({"cancelled":false,"path":path,"bytes":bytes.len()}))
-                });
+                    {
+                        let _ = (&destination, &bytes, &path);
+                        Err("unsupported_platform: File export is unavailable".into())
+                    }
+                })();
                 work.reply.send(result);
             });
             match submitted {

@@ -22,7 +22,8 @@ widget, or copy it with `fs.write_bytes(other_path, fs.read_bytes(path))`.
 The manifest must request `files` and `storage` for transfer; status only needs
 `files`. Import/export are foreground-only, including through agent tool wrappers.
 Both the admitted manifest and the request's live isolate are checked before the
-dialog and again on completion. Native code obtains the jail by the authenticated
+dialog and again on completion. Native loading checks authorization before IO and
+before delivering bytes; export checks it before desktop rename and before replying. Native code obtains the jail by the authenticated
 request's isolate key and verifies its host-assigned app tag. Neither the app id,
 jail root, quota, native destination, nor URI is taken from request arguments.
 
@@ -59,5 +60,6 @@ Validation: five native storage unit tests passed, covering ownership, quotas,
 overwrite refusal, traversal, entry limits, and symlinks. Five native dialog tests and the Android-target Makepad platform Rust check also
 passed. Existing unrelated compiler warnings remain. Host-service
 tests require the aggregate shell integration. Interactive dialogs and Android
-provider/device behavior remain **unverified**; the available local JDK is
-incomplete, so Java compilation has not passed.
+provider/device behavior remain **unverified**; the local JDK was
+repaired; combined Android Java template compilation passed with 23 existing
+deprecation warnings.
