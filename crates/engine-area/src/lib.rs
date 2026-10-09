@@ -27,6 +27,8 @@
 //! never races one into place, no write goes through a symbolic link, and
 //! the bytes one call adds stay within its quota.
 
+pub mod door;
+
 use std::collections::HashSet;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -169,6 +171,11 @@ impl Area {
     /// would free. An existing entry is refused unless the call may replace
     /// it; a folder is never replaced.
     fn admit(&self, path: &Path, len: u64) -> Result<u64, String> {
+        // Contained already; a `..` step would still create the folders
+        // before it and climb out of them, so none is written through.
+        if path.components().any(|c| c == std::path::Component::ParentDir) {
+            return Err(format!("`{}`: a path stays inside this call's folder, with no `..`", self.shown(path)));
+        }
         let replaced = match std::fs::symlink_metadata(path) {
             Ok(meta) => {
                 if !self.may_replace {
@@ -660,5 +667,22 @@ mod tests {
         let area = Area::new(dir.path(), None, false);
         let text = format!("{}/a.pdf and {}/b.pdf", dir.path().display(), resolved.display());
         assert_eq!(area.relative_text(&text), "a.pdf and b.pdf");
+    }
+
+    /// A write never goes through a `..` step, even on a path a caller
+    /// failed to contain: `missing/../../x` would make `missing` and land
+    /// one level above the area.
+    #[test]
+    fn no_write_goes_through_a_parent_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("area");
+        std::fs::create_dir(&root).unwrap();
+        for may_replace in [false, true] {
+            let area = Area::new(&root, None, may_replace);
+            let climbing = root.join("missing/../../x.txt");
+            assert!(area.write(&climbing, b"x").unwrap_err().contains("no `..`"));
+            assert!(area.check(&climbing, 1).is_err());
+            assert!(!dir.path().join("x.txt").exists() && !root.join("missing").exists());
+        }
     }
 }
