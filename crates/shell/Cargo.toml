@@ -33,6 +33,10 @@ name = "host-api-lab"
 required-features = ["acceptance-fixtures"]
 
 [[example]]
+name = "app-tool-acceptance"
+required-features = ["acceptance-fixtures"]
+
+[[example]]
 name = "connected-install"
 required-features = ["app-hub"]
 
