@@ -128,7 +128,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
 | [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine (full-size photos use the asset mount) |
-| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the search and route map draws makepad's pre-baked world map (`makepad.nl`), the drive maps still read OpenStreetMap through Overpass | `storage`, `net`, `location`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
+| [Maps](maps/bundle) | `os.maps` | `MapView` map of places that can always be dragged and zoomed: search near the visible area, place cards with OpenStreetMap details (hours, phone, website, cuisine), saved places as pins, a long press for "What's here", directions with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the browse map draws makepad's pre-baked world map (`makepad.nl`), the drive maps and the place details read OpenStreetMap through Overpass | `storage`, `net`, `location`, `web`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
@@ -193,10 +193,18 @@ reaches only the hosts the manifest lists.
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
   no full-size image there. The viewer keeps a thumbnail fallback visible.
   Memories on physical phones and with a live AI provider are **unverified**.
-- **Maps**: on the OnePlus 6 (2026-09-27) search, place, route, adding and
-  removing a stop, driving with turn-by-turn and the 2D view worked. The 3D
-  drive view draws the route but no map tiles, on the phone and on the
-  desktop, before and after the stops change.
+- **Maps**: on the Pixel 7 Pro (2026-10-08, dark mode) the place map
+  worked: it opened at the GPS fix and ◎ flew back to it; the map dragged
+  and zoomed with two fingers; search near the visible map, Saved and
+  Recent, a place card with OpenStreetMap details and its Website reader,
+  Save and pins, a long press, Directions framed once and then left to the
+  person, ‹ Back and Close removing the route, and the drive view with End.
+  The 3D drive view drew map tiles near the route, some still missing after
+  30 seconds. Before the place map, on the OnePlus 6 (2026-09-27), search,
+  place, route, adding and removing a stop, driving with turn-by-turn and
+  the 2D view worked; the 3D drive view drew the route but no map tiles, on
+  the phone and on the desktop, before and after the stops changed. The
+  OnePlus 6T, iOS and OpenHarmony are **unverified**.
 - **News**: runs in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.

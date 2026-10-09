@@ -677,10 +677,12 @@ pub(crate) mod tests {
     /// Maps, YouTube and Camera each give their agent one tool,
     /// `<namespace>.notify`, on their own namespace: no service of their
     /// own answers it, so the shell's notice service does
-    /// (glance_notice.rs). Each is granted `glance`, and nothing else new.
+    /// (glance_notice.rs). Each is granted `glance`, and nothing else new
+    /// (Maps' `web` is for a place's website in its reader, not for the
+    /// agent).
     #[test]
     fn maps_youtube_and_camera_offer_notify_from_their_bundles() {
-        for (app, kept) in [("maps", &["storage", "net", "location"][..]), ("youtube", &["storage", "net"]), ("camera", &["storage", "camera", "microphone", "library"])] {
+        for (app, kept) in [("maps", &["storage", "net", "location", "web"][..]), ("youtube", &["storage", "net"]), ("camera", &["storage", "camera", "microphone", "library"])] {
             let dir = stamped_bundle(app, "notify", |_, _| {});
             let loaded = from_bundle(&dir).unwrap();
             let _ = std::fs::remove_dir_all(dir);

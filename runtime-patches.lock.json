@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "7c859055c2ab8a1841e86b58fef0fb7b4eec4ad6",
+    "tree": "57c39f13da044cf1d42631d943b776d331b4dac8",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -44,7 +44,8 @@
       "Video controls report accepted transitions, pending cancellation retires native IDs before retry, decoder errors release ownership without losing the error, and rejected sources return observable errors.",
       "CameraPreview correlates native events before the child retires its player generation; cancelling preparation permits an explicit retry without waiting for a stale release callback.",
       "Video numeric controls accept both integer and floating Splash arguments while refusing nonnumeric, nonfinite and out-of-range values; native acceptance exposed the integer-seek regression.",
-      "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback."
+      "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback.",
+      "A script can move a plain map and hear it (makepad#113, branch octosense/map-script-api): fly_to, fit_route and clear_route, and the on_tap, on_long_press, on_marker and on_viewport callbacks on MapView. A script's fly_to and a pending fit give way to the person's drag; clear_route also drops a script route, its vehicle and a pending fit. On any map, a wheel that a scroll view over or around it already used no longer zooms it. Maps' route preview stays draggable; the plan, follow and drive cameras are unchanged."
     ],
     "stacked": [
       {
@@ -170,6 +171,10 @@
       {
         "patch": "tools/runtime-patches/makepad-android-video-seek.patch",
         "sha256": "e52e281cd375d25105dbaa285354c970148ab07442400c3cda6a712c460b01e9"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-map-script-api.patch",
+        "sha256": "f0626c970bb5362eb10fddd7eb22421e457ec428062a4bcefdd4c59c8505eb50"
       }
     ]
   }

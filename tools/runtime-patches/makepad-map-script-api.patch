@@ -1,0 +1,831 @@
+diff --git a/widgets/src/map/nav.rs b/widgets/src/map/nav.rs
+index 3f1c917b0..31ef7b1fd 100644
+--- a/widgets/src/map/nav.rs
++++ b/widgets/src/map/nav.rs
+@@ -6,7 +6,14 @@
+ //!   `route_markers` (`"lat,lon,kind;…"`, kind 0 origin / 1 stop / 2
+ //!   destination), `route_badge`, and the `nav_*` tuning numbers;
+ //! * script methods — `ui.<map>.set_nav_polyline(s)`, `set_route_markers(s)`,
+-//!   `set_nav_recenter(_)`, `nav_zoom_by(delta)`, `nav_center_origin()`.
++//!   `set_nav_recenter(_)`, `nav_zoom_by(delta)`, `nav_center_origin()`;
++//! * for a plain map only (no `nav_mode`; with one the nav camera owns the
++//!   view and these do nothing) — `fly_to(lat, lon, zoom)` (zoom optional)
++//!   and `fit_route()` (frame the route once, as `"plan"` does, then leave
++//!   the camera alone);
++//! * on any map — `clear_route()` (the route and any pending fit; the pins
++//!   stay) and the callbacks `on_tap`, `on_long_press`, `on_marker`,
++//!   `on_viewport` (see `MapView`).
+ //!
+ //! It renders through the map's own overlay (route ribbon, puck, pins) and
+ //! camera (center / rotation / tilt / zoom) rather than the dedicated pinhole
+@@ -184,6 +191,13 @@ pub fn adopt(&mut self, polyline: &str, markers: &str) -> bool {
+         changed
+     }
+ 
++    /// Drop the route as adopting an empty polyline would, now rather than
++    /// at the next draw.
++    pub fn forget_route(&mut self) {
++        self.poly_seen.clear();
++        self.set_route_coords(Vec::new());
++    }
++
+     /// `(lat, lon)` route -> resampled normalized points + cumulative metres.
+     fn set_route_coords(&mut self, coords0: Vec<(f64, f64)>) {
+         self.pts.clear();
+diff --git a/widgets/src/map/view.rs b/widgets/src/map/view.rs
+index 566940e86..8e08d6af8 100644
+--- a/widgets/src/map/view.rs
++++ b/widgets/src/map/view.rs
+@@ -1,5 +1,6 @@
+ use super::archive::*;
+-use crate::widget_async::ScriptAsyncResult;
++use crate::makepad_script::ScriptFnRef;
++use crate::widget_async::{CxWidgetToScriptCallExt, ScriptAsyncResult};
+ use super::nav::*;
+ use super::geometry::*;
+ use super::icons::icon_mesh_by_slot;
+@@ -3072,6 +3073,43 @@ pub enum MapViewAction {
+     None,
+ }
+ 
++/// What a script hears of a map action, latitude first as scripts read
++/// places. The callbacks grant nothing: a tap reports the spot touched, and
++/// the device's own position still comes only from `sys.gps`.
++#[derive(Clone, Copy, Debug, PartialEq)]
++enum MapScriptEvent {
++    Tap { lat: f64, lon: f64 },
++    LongPress { lat: f64, lon: f64 },
++    /// The pin's position among the pins drawn from `route_markers` (see
++    /// `on_marker` on `MapView`).
++    Marker { index: u64 },
++    Viewport { lat: f64, lon: f64, zoom: f64 },
++}
++
++impl MapScriptEvent {
++    fn args(&self) -> Vec<f64> {
++        match *self {
++            MapScriptEvent::Tap { lat, lon } | MapScriptEvent::LongPress { lat, lon } => vec![lat, lon],
++            MapScriptEvent::Marker { index } => vec![index as f64],
++            MapScriptEvent::Viewport { lat, lon, zoom } => vec![lat, lon, zoom],
++        }
++    }
++}
++
++fn map_script_event(action: &MapViewAction) -> Option<MapScriptEvent> {
++    match action {
++        MapViewAction::Tapped { lon, lat, .. } => Some(MapScriptEvent::Tap { lat: *lat, lon: *lon }),
++        MapViewAction::LongPressed { lon, lat, .. } => Some(MapScriptEvent::LongPress { lat: *lat, lon: *lon }),
++        // A route pin's id is its 1-based position among the pins drawn from
++        // `route_markers`; a host's `set_markers` ids pass through as id - 1.
++        MapViewAction::MarkerClicked { id } if *id > 0 => Some(MapScriptEvent::Marker { index: *id - 1 }),
++        MapViewAction::ViewportChanged { lon, lat, zoom } => {
++            Some(MapScriptEvent::Viewport { lat: *lat, lon: *lon, zoom: *zoom })
++        }
++        _ => None,
++    }
++}
++
+ /// Animated camera flight (zoom-out-then-in arc when the target is far).
+ #[derive(Clone, Copy)]
+ struct FlyTo {
+@@ -4433,6 +4471,35 @@ pub struct MapView {
+     /// Accepted for card compatibility; not drawn by this layer yet.
+     #[live]
+     route_badge: ArcStringMut,
++    /// Script callbacks, all optional; a map without them behaves as before.
++    /// They work with or without a `nav_mode`.
++    ///
++    /// * `on_tap: |lat, lon|`: a tap on the map, not on a pin.
++    /// * `on_long_press: |lat, lon|`: a long press (a double click with a
++    ///   mouse).
++    /// * `on_marker: |index|`: a tap on a pin, by the pin's position among
++    ///   the pins drawn from `route_markers`; entries without a readable
++    ///   lat,lon, out-of-range ones and 0,0 are skipped and not counted. Pins
++    ///   a Rust host placed with `set_markers` report their id - 1, so don't
++    ///   mix them with `on_marker`.
++    /// * `on_viewport: |lat, lon, zoom|`: the centre and zoom once the camera
++    ///   settles after a gesture or a zoom, when any flight lands (the
++    ///   script's own `fly_to` too), and on a host's `set_center` or
++    ///   `set_map_zoom`. Nothing fires on the first draw (a script seeds its
++    ///   own centre), nor while a nav camera follows the vehicle. A tap or
++    ///   long press that stops a flight reports no viewport: the camera stays
++    ///   where the flight left it, unheard, until something else moves it.
++    ///
++    /// A tap on a tile pin (a charger, `PinTapped` to a Rust host) reaches
++    /// neither `on_tap` nor `on_marker`.
++    #[live]
++    on_tap: ScriptFnRef,
++    #[live]
++    on_long_press: ScriptFnRef,
++    #[live]
++    on_marker: ScriptFnRef,
++    #[live]
++    on_viewport: ScriptFnRef,
+     /// Sim-clock period (s) a card's DSL overlays cycle on; kept in the DSL
+     /// surface so nav cards apply unchanged.
+     #[live(92.0)]
+@@ -4464,6 +4531,10 @@ pub struct MapView {
+     nav_route_width: f64,
+     #[rust]
+     nav: NavState,
++    /// `fit_route()` was called: the next draw that has an area and something
++    /// to frame frames it once.
++    #[rust]
++    fit_route_pending: bool,
+     /// Active theme: 0 = light, 1 = dark, 2 = circuit city. `dark_theme`
+     /// stays as the boolean shorthand for 0/1.
+     #[live(0)]
+@@ -5284,7 +5355,7 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                 self.drag_start_abs = None;
+                 self.touch_gesture = TouchGesture::None;
+                 let (lon, lat) = self.screen_to_lon_lat(lp.abs);
+-                cx.widget_action(self.uid, MapViewAction::LongPressed { lon, lat, abs: lp.abs });
++                self.send_action(cx, MapViewAction::LongPressed { lon, lat, abs: lp.abs });
+             }
+             Hit::FingerUp(fe) => {
+                 self.note_shimmer_activity(cx);
+@@ -5315,18 +5386,15 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                         // Double-click acts as the long-press (mouse holds
+                         // don't synthesize FingerLongPress on desktop).
+                         let (lon, lat) = self.screen_to_lon_lat(fe.abs);
+-                        cx.widget_action(
+-                            self.uid,
+-                            MapViewAction::LongPressed { lon, lat, abs: fe.abs },
+-                        );
++                        self.send_action(cx, MapViewAction::LongPressed { lon, lat, abs: fe.abs });
+                     } else if let Some((lon, lat, info)) = self.pin_at(fe.abs) {
+                         cx.widget_action(self.uid, MapViewAction::PinTapped { lon, lat, info });
+                     } else if let Some(id) = self.overlay.marker_at(&self.overlay_camera(), fe.abs)
+                     {
+-                        cx.widget_action(self.uid, MapViewAction::MarkerClicked { id });
++                        self.send_action(cx, MapViewAction::MarkerClicked { id });
+                     } else {
+                         let (lon, lat) = self.screen_to_lon_lat(fe.abs);
+-                        cx.widget_action(self.uid, MapViewAction::Tapped { lon, lat, abs: fe.abs });
++                        self.send_action(cx, MapViewAction::Tapped { lon, lat, abs: fe.abs });
+                     }
+                 } else if self.gesture_panned {
+                     self.gesture_panned = false;
+@@ -5337,7 +5405,11 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+             Hit::FingerHoverIn(_) => {
+                 cx.set_cursor(MouseCursor::Grab);
+             }
+-            Hit::FingerScroll(fs) => {
++            // A wheel a scroll view already used is not the map's: one drawn
++            // over the map (a list in a floating panel), or one the map sits
++            // in (a feed), while it can still scroll. A wheel's hits ignore
++            // claims, so this flag is all that tells.
++            Hit::FingerScroll(fs) if !scroll_taken(event) => {
+                 let scroll = if fs.scroll.y.abs() > f64::EPSILON {
+                     fs.scroll.y
+                 } else {
+@@ -5351,9 +5423,14 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+         }
+     }
+ 
+-    /// The nav-card methods: `ui.<map>.set_nav_polyline(s)`,
+-    /// `set_route_markers(s)`, `set_nav_recenter(_)`, `nav_zoom_by(delta)`,
+-    /// `nav_center_origin()` — see map/nav.rs.
++    /// The script methods: `ui.<map>.set_nav_polyline(s)`,
++    /// `set_route_markers(s)` (nav cards and plain maps), and for nav cards
++    /// `set_nav_recenter(_)`, `nav_zoom_by(delta)`, `nav_center_origin()` —
++    /// see map/nav.rs. A plain map (no `nav_mode`): `fly_to(lat, lon, zoom)`
++    /// (zoom optional; 0,0 and out-of-range points are ignored, and so is a
++    /// call while the person is moving the map), `fit_route()`,
++    /// `clear_route()`. On a map with a `nav_mode`, `fly_to` and `fit_route`
++    /// do nothing: the nav camera owns the view.
+     fn script_call(
+         &mut self,
+         vm: &mut ScriptVm,
+@@ -5369,6 +5446,13 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
+             }
+             vm.bx.heap.cast_to_owned_string(value, "nav method argument")
+         }
++        // `vec_value_if_exist`, not `vec_value`: a left-out optional argument
++        // must not raise an out-of-bounds error on the calling script.
++        fn number_arg(vm: &mut ScriptVm, args: ScriptValue, index: usize) -> Option<f64> {
++            let args_obj = args.as_object()?;
++            let value = vm.bx.heap.vec_value_if_exist(args_obj, index)?;
++            value.as_number().filter(|n| n.is_finite())
++        }
+         if method == live_id!(set_nav_polyline) {
+             if let Some(s) = first_string_arg(vm, args) {
+                 if !s.trim().is_empty() && s.as_str() != self.nav_polyline.as_ref() {
+@@ -5427,6 +5511,35 @@ fn first_string_arg(vm: &mut ScriptVm, args: ScriptValue) -> Option<String> {
+             }
+             return ScriptAsyncResult::Return(NIL);
+         }
++        if method == live_id!(fly_to) {
++            // The nav camera owns a nav-mode map's view (as in fit_route), and
++            // the person a map they are moving: a flight started mid-drag
++            // would land after the release and undo it.
++            if nav_kind(self.nav_mode.as_ref().trim()) != NavKind::Off || self.gesturing() {
++                return ScriptAsyncResult::Return(NIL);
++            }
++            // Latitude first, as scripts read places; zoom optional. Without
++            // one, mid-flight, keep the zoom the camera is heading to, not
++            // the zoom-out arc's it is passing through.
++            let lat = number_arg(vm, args, 0);
++            let lon = number_arg(vm, args, 1);
++            let zoom = number_arg(vm, args, 2)
++                .unwrap_or_else(|| self.fly.map_or_else(|| self.view_zoom(), |f| f.to_zoom));
++            if let (Some(lat), Some(lon)) = (lat, lon) {
++                if is_a_place(lat, lon) {
++                    vm.with_cx_mut(|cx| self.fly_to(cx, lon, lat, zoom));
++                }
++            }
++            return ScriptAsyncResult::Return(NIL);
++        }
++        if method == live_id!(fit_route) {
++            vm.with_cx_mut(|cx| self.fit_route(cx));
++            return ScriptAsyncResult::Return(NIL);
++        }
++        if method == live_id!(clear_route) {
++            vm.with_cx_mut(|cx| self.clear_route(cx));
++            return ScriptAsyncResult::Return(NIL);
++        }
+         ScriptAsyncResult::MethodNotFound
+     }
+ 
+@@ -8579,6 +8692,15 @@ fn touch_world_rel(&self, abs: Vec2d) -> Vec2d {
+         }
+     }
+ 
++    /// A finger or the mouse is down moving the camera. Each move recomputes
++    /// the camera from where the gesture started, so a flight now would be
++    /// undone by the next move.
++    fn gesturing(&self) -> bool {
++        self.drag_start_abs.is_some()
++            || self.rotate_drag.is_some()
++            || !matches!(self.touch_gesture, TouchGesture::None)
++    }
++
+     fn begin_two_finger_gesture(&mut self, pair: TouchPair) {
+         self.fly = None;
+         self.drag_start_abs = None;
+@@ -8655,10 +8777,10 @@ fn handle_touch_tap(&mut self, cx: &mut Cx, abs: Vec2d, tap_count: u32) {
+         } else if let Some((lon, lat, info)) = self.pin_at(abs) {
+             cx.widget_action(self.uid, MapViewAction::PinTapped { lon, lat, info });
+         } else if let Some(id) = self.overlay.marker_at(&self.overlay_camera(), abs) {
+-            cx.widget_action(self.uid, MapViewAction::MarkerClicked { id });
++            self.send_action(cx, MapViewAction::MarkerClicked { id });
+         } else {
+             let (lon, lat) = self.screen_to_lon_lat(abs);
+-            cx.widget_action(self.uid, MapViewAction::Tapped { lon, lat, abs });
++            self.send_action(cx, MapViewAction::Tapped { lon, lat, abs });
+         }
+     }
+ 
+@@ -11184,14 +11306,32 @@ fn sync_camera_fields(&mut self) {
+     }
+ 
+     fn emit_viewport_changed(&mut self, cx: &mut Cx) {
+-        cx.widget_action(
+-            self.uid,
+-            MapViewAction::ViewportChanged {
+-                lon: self.center_lon,
+-                lat: self.center_lat,
+-                zoom: self.view_zoom(),
+-            },
+-        );
++        let action = MapViewAction::ViewportChanged {
++            lon: self.center_lon,
++            lat: self.center_lat,
++            zoom: self.view_zoom(),
++        };
++        self.send_action(cx, action);
++    }
++
++    fn script_callback(&self, event: MapScriptEvent) -> Option<(ScriptFnRef, Vec<f64>)> {
++        let script_fn = match event {
++            MapScriptEvent::Tap { .. } => &self.on_tap,
++            MapScriptEvent::LongPress { .. } => &self.on_long_press,
++            MapScriptEvent::Marker { .. } => &self.on_marker,
++            MapScriptEvent::Viewport { .. } => &self.on_viewport,
++        };
++        (script_fn.as_object() != ScriptObject::ZERO).then(|| (script_fn.clone(), event.args()))
++    }
++
++    /// Every action a script can hear goes out here: the script's callback,
++    /// when it set one, is queued; then the widget action, as before.
++    fn send_action(&mut self, cx: &mut Cx, action: MapViewAction) {
++        if let Some((script_fn, args)) = map_script_event(&action).and_then(|e| self.script_callback(e)) {
++            let args: Vec<ScriptValue> = args.into_iter().map(ScriptValue::from_f64).collect();
++            cx.widget_to_script_call(self.uid, NIL, self.source.clone(), script_fn, &args);
++        }
++        cx.widget_action(self.uid, action);
+     }
+ 
+     /// Screen point → map coordinate: the exact inverse of the camera that
+@@ -12003,8 +12143,10 @@ pub fn set_map_zoom(&mut self, cx: &mut Cx, zoom: f64) {
+ 
+     /// Animated camera flight; far targets get a zoom-out-then-in arc so
+     /// tiles stay loadable mid-flight and the motion reads like every
+-    /// mapping app.
++    /// mapping app. A `fly_to` drops a `fit_route()` that hasn't fired yet.
+     pub fn fly_to(&mut self, cx: &mut Cx, lon: f64, lat: f64, zoom: f64) {
++        // nav_update clears the flag itself before its own fit calls this.
++        self.fit_route_pending = false;
+         let min_zoom = self.min_zoom.max(0.0);
+         let max_zoom = self.max_zoom.max(min_zoom);
+         let to_zoom = zoom.clamp(min_zoom, max_zoom);
+@@ -12090,8 +12232,17 @@ pub fn set_route(&mut self, cx: &mut Cx, points: &[(f64, f64)]) {
+         self.redraw(cx);
+     }
+ 
++    /// Remove the route line, whether a Rust host set it (`set_route`) or a
++    /// script (`set_nav_polyline`), and any `fit_route()` still pending. The
++    /// nav vehicle goes with the route. The pins stay: `set_route_markers("")`
++    /// clears those. A framing flight already under way finishes; `fly_to`
++    /// replaces it.
+     pub fn clear_route(&mut self, cx: &mut Cx) {
+         self.overlay.route = None;
++        self.nav_polyline.set("");
++        self.nav.forget_route();
++        self.nav.release_puck(&mut self.overlay.puck);
++        self.fit_route_pending = false;
+         self.redraw(cx);
+     }
+ 
+@@ -12112,6 +12263,25 @@ pub fn set_puck(&mut self, cx: &mut Cx, puck: Option<MapPuck>) {
+         self.nav.owns_puck = false;
+         self.redraw(cx);
+     }
++
++    /// Frame the route once (or the pins, when there is no route) as plan mode
++    /// would, then leave the camera to the person. Takes effect on the next
++    /// draw that has an area and something to frame, after the map has
++    /// adopted the route a script just set. The framing is plan mode's, so it
++    /// turns the map north-up and flat (rotation and tilt 0) before flying,
++    /// but it zooms out as far as the map goes, so a long route fits whole.
++    /// A fit that arrives while the person is moving the map is dropped: the
++    /// camera is already theirs. A later `fly_to` drops a fit that hasn't
++    /// fired.
++    /// A plain map only: with a `nav_mode` the nav camera owns the view, so
++    /// this does nothing (and leaves no fit to fire later).
++    pub fn fit_route(&mut self, cx: &mut Cx) {
++        if nav_kind(self.nav_mode.as_ref().trim()) != NavKind::Off {
++            return;
++        }
++        self.fit_route_pending = true;
++        self.redraw(cx);
++    }
+ }
+ 
+ impl MapViewRef {
+@@ -12416,6 +12586,12 @@ fn label_class_color(color_class: u8, default_color: Vec4f, dark_theme: bool) ->
+     }
+ }
+ 
++/// Whether a scroll view the event reached first (one drawn over the map,
++/// or one the map sits in) already used this wheel.
++fn scroll_taken(event: &Event) -> bool {
++    matches!(event, Event::Scroll(e) if e.handled_x.get() || e.handled_y.get())
++}
++
+ #[cfg(test)]
+ // Native map tests use wall-clock values only to make temporary paths unique.
+ #[allow(clippy::disallowed_types, clippy::disallowed_methods)]
+@@ -13601,6 +13777,339 @@ fn http_archive_waiting_for_dispatch_has_no_enqueue_watchdog() {
+         assert!(map.local_requested_tiles.contains_key(&key));
+         assert!(map.archive_pending_tiles.contains_key(&key));
+     }
++
++    fn bounds_of(a: Vec2d, b: Vec2d) -> (Vec2d, Vec2d) {
++        (dvec2(a.x.min(b.x), a.y.min(b.y)), dvec2(a.x.max(b.x), a.y.max(b.y)))
++    }
++
++    #[test]
++    fn plan_framing_fits_the_route_into_the_band_above_the_sheet() {
++        let size = dvec2(400.0, 800.0);
++        let bounds = bounds_of(
++            lon_lat_to_normalized(-121.97, 37.376),
++            lon_lat_to_normalized(-121.96, 37.370),
++        );
++        let zoom = plan_fit_zoom(bounds, size, 3.0, 18.0, 10.0);
++        let world = tile_world_size_zoom(zoom);
++        let px = |d: f64| d * world;
++        assert!((px(bounds.1.x - bounds.0.x) - size.x * 0.80).abs() < 1e-6);
++        assert!(px(bounds.1.y - bounds.0.y) <= size.y * 0.50 + 1e-6);
++        // A north-south route is height-limited: 0.6h - 104 = 376 px at 800, not half.
++        let tall = bounds_of(lon_lat_to_normalized(-121.965, 37.39), lon_lat_to_normalized(-121.965, 37.37));
++        let z = plan_fit_zoom(tall, size, 3.0, 18.0, 10.0);
++        assert!(((tall.1.y - tall.0.y) * tile_world_size_zoom(z) - 376.0).abs() < 1e-6);
++        // A single point zooms no closer than 15.5; a continent no further than 10.
++        let spot = lon_lat_to_normalized(-121.96, 37.37);
++        assert_eq!(plan_fit_zoom((spot, spot), size, 3.0, 18.0, 10.0), 15.5);
++        let wide = bounds_of(lon_lat_to_normalized(-125.0, 49.0), lon_lat_to_normalized(-70.0, 25.0));
++        assert_eq!(plan_fit_zoom(wide, size, 3.0, 18.0, 10.0), 10.0);
++        // The route's centre sits at 30% of the height: the camera is below it.
++        let c = (bounds.0 + bounds.1) * 0.5;
++        let camera = plan_center(c, size.y, world);
++        assert!(((camera.y - c.y) * world - 0.20 * size.y).abs() < 1e-6);
++        assert_eq!(camera.x, c.x);
++    }
++
++    fn l_route() -> String {
++        super::super::encode_polyline5_for_test(&[
++            (37.3700, -121.9700),
++            (37.3700, -121.9600),
++            (37.3760, -121.9600),
++        ])
++    }
++
++    #[test]
++    fn fit_route_frames_the_route_once_like_plan_mode() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut map = test_map(&mut cx);
++        let rect = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 800.0) };
++        // The zoom fit_route flies to: plan mode's fit down to the map's own
++        // limit, clamped as fly_to clamps.
++        let fitted = |map: &MapView, bounds: (Vec2d, Vec2d)| {
++            let min = map.min_zoom.max(0.0);
++            plan_fit_zoom(bounds, rect.size, map.min_zoom, map.max_zoom, map.min_zoom.max(3.0))
++                .clamp(min, map.max_zoom.max(min))
++        };
++        map.rotation = 30.0;
++        map.tilt = 20.0;
++        map.nav_polyline.as_mut_empty().push_str(&l_route());
++        // A nav-mode map's camera owns the view: no fit is left to fire later.
++        map.nav_mode.set("plan");
++        map.fit_route(&mut cx);
++        assert!(!map.fit_route_pending, "fit_route on a nav-mode map");
++        map.nav_mode.set("");
++        map.fit_route(&mut cx);
++        // A draw with no area leaves the fit for a real one.
++        map.nav_update(&mut cx, Rect::default());
++        assert!(map.fly.is_none() && map.fit_route_pending, "fit_route framed an empty view");
++        map.nav_update(&mut cx, rect);
++        let fly = map.fly.expect("fit_route starts a flight");
++        let bounds = map.nav.bounds().unwrap();
++        let zoom = fitted(&map, bounds);
++        assert_eq!(fly.to_zoom, zoom);
++        let expected = plan_center((bounds.0 + bounds.1) * 0.5, rect.size.y, tile_world_size_zoom(zoom));
++        assert!((fly.to_center - expected).length() < 1e-9);
++        // The framing is north-up and flat, as plan mode's.
++        assert_eq!((map.rotation, map.tilt), (0.0, 0.0));
++        // Once: the next frame leaves the camera alone.
++        map.fly = None;
++        map.nav_update(&mut cx, rect);
++        assert!(map.fly.is_none(), "fit_route framed the route again");
++        // A route set just before the call is adopted first: the fit frames
++        // the new route (a walk to the same corner), not the last one.
++        let walk = [(37.3730, -121.9650), (37.3760, -121.9600)];
++        map.nav_polyline.set(&super::super::encode_polyline5_for_test(&walk));
++        map.fit_route(&mut cx);
++        map.nav_update(&mut cx, rect);
++        let fly = map.fly.expect("a re-fit starts a flight");
++        let walk_bounds = bounds_of(
++            lon_lat_to_normalized(walk[0].1, walk[0].0),
++            lon_lat_to_normalized(walk[1].1, walk[1].0),
++        );
++        let zoom = fitted(&map, walk_bounds);
++        assert!((fly.to_zoom - zoom).abs() < 1e-9, "{} != {zoom}", fly.to_zoom);
++        let expected = plan_center((walk_bounds.0 + walk_bounds.1) * 0.5, rect.size.y, tile_world_size_zoom(zoom));
++        assert!((fly.to_center - expected).length() < 1e-9);
++        // A fit that arrives mid-gesture is dropped: the camera is the person's.
++        map.fly = None;
++        map.drag_start_abs = Some(dvec2(200.0, 400.0));
++        map.fit_route(&mut cx);
++        map.nav_update(&mut cx, rect);
++        assert!(map.fly.is_none() && !map.fit_route_pending, "fit_route flew during a drag");
++    }
++
++    #[test]
++    fn fit_route_frames_a_long_route_whole() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut map = test_map(&mut cx);
++        // test_map stops at zoom 11; this route needs about 8.4 on a phone.
++        map.min_zoom = 3.0;
++        let rect = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 800.0) };
++        // San Jose to Sacramento by way of Stockton, ~150 km: past plan
++        // mode's zoom-10 floor.
++        map.nav_polyline.set(&super::super::encode_polyline5_for_test(&[
++            (37.3382, -121.8863),
++            (37.9577, -121.2908),
++            (38.5816, -121.4944),
++        ]));
++        map.fit_route(&mut cx);
++        map.nav_update(&mut cx, rect);
++        let fly = map.fly.expect("fit_route starts a flight");
++        assert!(fly.to_zoom < 10.0, "zoom {}", fly.to_zoom);
++        // The whole route fits the band: 80% of the width, and 376 px
++        // (0.6h - 104) of an 800 px height.
++        let (min, max) = map.nav.bounds().unwrap();
++        let world = tile_world_size_zoom(fly.to_zoom);
++        assert!((max.x - min.x) * world <= rect.size.x * 0.80 + 1e-6);
++        assert!((max.y - min.y) * world <= 376.0 + 1e-6);
++    }
++
++    #[test]
++    fn clear_route_removes_the_line_and_keeps_the_pins() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut map = test_map(&mut cx);
++        let rect = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 800.0) };
++        map.nav_polyline.as_mut_empty().push_str(&l_route());
++        map.route_markers.as_mut_empty().push_str("37.37,-121.97,0;37.376,-121.96,2");
++        map.nav_update(&mut cx, rect);
++        assert!(map.overlay.route.is_some());
++        map.fit_route(&mut cx);
++        map.clear_route(&mut cx);
++        map.nav_update(&mut cx, rect);
++        assert!(map.overlay.route.is_none(), "the route is still drawn");
++        assert_eq!(map.overlay.markers.len(), 2, "the pins went with it");
++        assert!(map.fly.is_none(), "a cleared route was still framed");
++        // New pins don't bring the cleared route back.
++        map.route_markers.set("37.37,-121.97,0");
++        map.nav_update(&mut cx, rect);
++        assert!(map.overlay.route.is_none(), "new pins brought the route back");
++        assert_eq!(map.overlay.markers.len(), 1);
++        // A new route draws again.
++        map.nav_polyline.as_mut_empty().push_str(&l_route());
++        map.nav_update(&mut cx, rect);
++        assert!(map.overlay.route.is_some());
++    }
++
++    #[test]
++    fn clear_route_then_the_same_route_draws_it_again() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut map = test_map(&mut cx);
++        let rect = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 800.0) };
++        map.nav_polyline.set(&l_route());
++        map.nav_update(&mut cx, rect);
++        map.clear_route(&mut cx);
++        // Set again before the map draws.
++        map.nav_polyline.set(&l_route());
++        map.nav_update(&mut cx, rect);
++        assert!(map.overlay.route.is_some(), "the same route set again is not drawn");
++    }
++
++    #[test]
++    fn clear_route_still_clears_a_host_route() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut map = test_map(&mut cx);
++        let rect = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 800.0) };
++        map.set_route(&mut cx, &[(-121.97, 37.37), (-121.96, 37.37)]);
++        map.set_markers(&mut cx, vec![
++            MapMarker::new(1, -121.97, 37.37, marker_color(0)),
++            MapMarker::new(2, -121.96, 37.37, marker_color(2)),
++        ]);
++        map.nav_update(&mut cx, rect);
++        // No script route: the navigation layer leaves the host's alone.
++        assert!(map.overlay.route.is_some(), "the host route was dropped");
++        map.clear_route(&mut cx);
++        map.nav_update(&mut cx, rect);
++        assert!(map.overlay.route.is_none(), "the host route is still drawn");
++        assert_eq!(map.overlay.markers.len(), 2, "the host's pins went with it");
++    }
++
++    #[test]
++    fn a_script_flies_the_map_lat_first() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut map = test_map(&mut cx);
++        let call = |cx: &mut Cx, map: &mut MapView, values: &[ScriptValue]| {
++            cx.with_vm(|vm| {
++                let args = vm.bx.heap.new_object();
++                vm.bx.heap.set_object_storage_vec2(args);
++                vm.bx.heap.clear_object_deep(args);
++                // Only this call's errors: setup can leave its own on the
++                // trap. Cleared before the pushes, so a failed push shows.
++                vm.bx.threads.cur().trap.err_clear();
++                let trap = vm.bx.threads.cur().trap.pass();
++                for v in values {
++                    vm.bx.heap.vec_push(args, NIL, *v, trap);
++                }
++                map.script_call(vm, live_id!(fly_to), args.into());
++                assert!(vm.bx.threads.cur().trap.err_is_empty(), "the call raised a script error");
++            });
++        };
++        let n = ScriptValue::from_f64;
++        call(&mut cx, &mut map, &[n(0.0), n(0.0), n(15.0)]);
++        assert!(map.fly.is_none(), "0,0 is no place");
++        call(&mut cx, &mut map, &[n(-121.9486002), n(37.3209796), n(15.0)]);
++        assert!(map.fly.is_none(), "longitude first flew the map");
++        call(&mut cx, &mut map, &[n(37.3209796), n(-121.9486002), n(15.0)]);
++        let fly = map.fly.expect("a flight");
++        assert_eq!(fly.to_zoom, 15.0);
++        let (lon, lat) = normalized_to_lon_lat(fly.to_center);
++        assert!((lat - 37.3209796).abs() < 1e-6 && (lon + 121.9486002).abs() < 1e-6, "{lat},{lon}");
++        // No zoom mid-flight: the zoom the camera is heading to, not the
++        // dip's it is passing through.
++        map.zoom = 12.5;
++        call(&mut cx, &mut map, &[n(37.33), n(-121.88)]);
++        assert_eq!(map.fly.expect("a flight without a zoom").to_zoom, 15.0);
++        // No zoom, no flight: the current zoom.
++        map.fly = None;
++        call(&mut cx, &mut map, &[n(37.33), n(-121.88)]);
++        let fly = map.fly.expect("a flight without a zoom");
++        assert_eq!(fly.to_zoom, map.view_zoom());
++        assert_ne!(fly.to_zoom, 15.0);
++        // Past the map's limit: clamped.
++        call(&mut cx, &mut map, &[n(37.33), n(-121.88), n(30.0)]);
++        assert_eq!(map.fly.expect("a flight to zoom 30").to_zoom, map.max_zoom);
++        // A latitude that is not a number: no flight.
++        map.fly = None;
++        call(&mut cx, &mut map, &[NIL, n(-121.88), n(15.0)]);
++        assert!(map.fly.is_none(), "a non-number latitude flew the map");
++        // A nav-mode map's camera owns the view.
++        map.nav_mode.set("follow");
++        call(&mut cx, &mut map, &[n(37.33), n(-121.88), n(15.0)]);
++        assert!(map.fly.is_none(), "fly_to on a nav-mode map");
++        map.nav_mode.set("");
++        // While the person moves the map, the camera is theirs: a flight
++        // would carry on after the release and undo the drag.
++        map.drag_start_abs = Some(dvec2(200.0, 400.0));
++        call(&mut cx, &mut map, &[n(37.33), n(-121.88), n(15.0)]);
++        assert!(map.fly.is_none(), "fly_to during a drag");
++        map.drag_start_abs = None;
++        // A later fly_to drops a fit still pending: the fit doesn't override
++        // it.
++        let rect = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 800.0) };
++        map.nav_polyline.set(&l_route());
++        map.fit_route(&mut cx);
++        call(&mut cx, &mut map, &[n(37.33), n(-121.88), n(15.0)]);
++        map.nav_update(&mut cx, rect);
++        assert_eq!(map.fly.expect("a flight").to_zoom, 15.0, "a pending fit overrode a later fly_to");
++    }
++
++    #[test]
++    fn a_wheel_a_list_over_the_map_took_does_not_zoom_it() {
++        use crate::makepad_platform::event::{ScrollEvent, ScrollPhase};
++        use std::cell::Cell;
++        let wheel = |handled_y: bool| {
++            Event::Scroll(ScrollEvent {
++                window_id: WindowId(1, 1),
++                scroll: dvec2(0.0, 40.0),
++                abs: dvec2(100.0, 100.0),
++                modifiers: KeyModifiers::default(),
++                handled_x: Cell::new(false),
++                handled_y: Cell::new(handled_y),
++                is_mouse: true,
++                time: 0.0,
++                phase: ScrollPhase::None,
++            })
++        };
++        assert!(!scroll_taken(&wheel(false)), "a free wheel is the map's");
++        assert!(scroll_taken(&wheel(true)), "a wheel a list scrolled is not");
++    }
++
++    #[test]
++    fn map_actions_reach_a_script_lat_first() {
++        let tap = MapViewAction::Tapped { lon: -121.9, lat: 37.3, abs: dvec2(5.0, 6.0) };
++        assert_eq!(map_script_event(&tap).map(|e| e.args()), Some(vec![37.3, -121.9]));
++        let press = MapViewAction::LongPressed { lon: -121.9, lat: 37.3, abs: dvec2(5.0, 6.0) };
++        assert_eq!(map_script_event(&press), Some(MapScriptEvent::LongPress { lat: 37.3, lon: -121.9 }));
++        // A route pin's id is its 1-based position among the pins drawn;
++        // scripts get the 0-based index.
++        let pin = MapViewAction::MarkerClicked { id: 3 };
++        assert_eq!(map_script_event(&pin).map(|e| e.args()), Some(vec![2.0]));
++        assert_eq!(map_script_event(&MapViewAction::MarkerClicked { id: 0 }), None);
++        let moved = MapViewAction::ViewportChanged { lon: -121.9, lat: 37.3, zoom: 14.5 };
++        assert_eq!(map_script_event(&moved).map(|e| e.args()), Some(vec![37.3, -121.9, 14.5]));
++        assert_eq!(map_script_event(&MapViewAction::TiltChanged { tilt: 30.0 }), None);
++        let charger = MapViewAction::PinTapped { lon: -121.9, lat: 37.3, info: vec![] };
++        assert_eq!(map_script_event(&charger), None);
++    }
++
++    #[test]
++    fn a_map_without_callbacks_queues_nothing() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let mut map = test_map(&mut cx);
++        for event in [
++            MapScriptEvent::Tap { lat: 37.3, lon: -121.9 },
++            MapScriptEvent::LongPress { lat: 37.3, lon: -121.9 },
++            MapScriptEvent::Marker { index: 0 },
++            MapScriptEvent::Viewport { lat: 37.3, lon: -121.9, zoom: 14.0 },
++        ] {
++            assert!(map.script_callback(event).is_none(), "{event:?}");
++        }
++        // Rust hosts still hear the map.
++        let tap = MapViewAction::Tapped { lon: -121.9, lat: 37.3, abs: dvec2(5.0, 6.0) };
++        let actions = cx.capture_actions(|cx| map.send_action(cx, tap.clone()));
++        assert_eq!(actions.find_widget_action_cast::<MapViewAction>(map.uid), tap);
++    }
++
++    #[test]
++    fn a_map_with_a_callback_calls_it_and_hosts_still_hear() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.init_cx_os();
++        let mut map = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let v = vm.eval(crate::makepad_script::script! {
++                use mod.prelude.widgets.*
++                MapView{on_tap: |lat, lon| lat}
++            });
++            MapView::script_from_value(vm, v)
++        });
++        let tap = MapScriptEvent::Tap { lat: 37.3, lon: -121.9 };
++        assert_eq!(map.script_callback(tap).map(|(_, args)| args), Some(vec![37.3, -121.9]));
++        // Only the callback it set.
++        assert!(map.script_callback(MapScriptEvent::LongPress { lat: 37.3, lon: -121.9 }).is_none());
++        // Queuing the script call leaves the widget action to Rust hosts.
++        let tap = MapViewAction::Tapped { lon: -121.9, lat: 37.3, abs: dvec2(5.0, 6.0) };
++        let actions = cx.capture_actions(|cx| map.send_action(cx, tap.clone()));
++        assert_eq!(actions.find_widget_action_cast::<MapViewAction>(map.uid), tap);
++    }
+ }
+ 
+ 
+@@ -13627,13 +14136,37 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
+                 .map(|(i, &(lat, lon, k))| MapMarker::new(i as u64 + 1, lon, lat, marker_color(k)))
+                 .collect();
+         }
++        // A draw with no area (not laid out yet) would fit to nothing: wait.
++        if self.fit_route_pending && kind == NavKind::Off && rect.size.x > 0.0 && rect.size.y > 0.0 {
++            if self.gesturing() {
++                // The person is moving the map: the camera is already theirs.
++                self.fit_route_pending = false;
++            } else if let Some(bounds) = self.nav.bounds() {
++                self.fit_route_pending = false;
++                // Out as far as the map goes, not plan mode's 10, so a long
++                // route is framed whole. Clamped as fly_to clamps, so the
++                // centre is computed for the zoom actually flown to (plan
++                // mode's uses view_zoom()).
++                let min_zoom = self.min_zoom.max(0.0);
++                let zoom = plan_fit_zoom(bounds, rect.size, self.min_zoom, self.max_zoom, self.min_zoom.max(3.0))
++                    .clamp(min_zoom, self.max_zoom.max(min_zoom));
++                let world = tile_world_size_zoom(zoom);
++                let (lon, lat) = normalized_to_lon_lat(plan_center((bounds.0 + bounds.1) * 0.5, rect.size.y, world));
++                // plan_center frames a north-up, untilted view.
++                self.set_rotation(cx, 0.0);
++                self.set_tilt(cx, 0.0);
++                self.fly_to(cx, lon, lat, zoom);
++            }
++        }
+         if kind == NavKind::Off {
+             self.nav.release_puck(&mut self.overlay.puck);
+             self.nav.next_frame = NextFrame::default();
+             return;
+         }
+-        // The nav camera owns center/rotation/tilt: no flight may fight it.
++        // The nav camera owns center/rotation/tilt: no flight may fight it,
++        // and no fit may fire once the map is plain again.
+         self.fly = None;
++        self.fit_route_pending = false;
+         if self.nav.home_zoom <= 0.0 {
+             self.nav.home_zoom = self.zoom;
+         }
+@@ -13713,32 +14246,47 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
+     /// PLAN route-preview camera: static, north-up, fit to the WHOLE route,
+     /// framed into the top band above the card's summary sheet.
+     fn nav_plan_camera(&mut self, rect: Rect) {
+-        let Some((min, max)) = self.nav.bounds() else {
++        let Some(bounds) = self.nav.bounds() else {
+             return; // nothing to frame — keep the current centre (no NaN)
+         };
+-        let c = (min + max) * 0.5;
++        let c = (bounds.0 + bounds.1) * 0.5;
+         if !self.nav.user_adjusted {
+-            let dx = (max.x - min.x).max(1e-9);
+-            let dy = (max.y - min.y).max(1e-9);
+-            let fitw = rect.size.x * 0.80;
+-            let fith = (rect.size.y * 0.50)
+-                .min(2.0 * (rect.size.y * 0.30 - 52.0))
+-                .max(1.0);
+-            let zx = (fitw / (dx * TILE_SIZE)).log2();
+-            let zy = (fith / (dy * TILE_SIZE)).log2();
+-            let zmin = self.min_zoom.max(3.0);
+-            let zmax = self.max_zoom.max(zmin);
+-            self.zoom = zx.min(zy).clamp(zmin, zmax).clamp(10.0, 15.5);
++            self.zoom = plan_fit_zoom(bounds, rect.size, self.min_zoom, self.max_zoom, 10.0);
+             self.nav.home_zoom = self.zoom;
+         }
+         self.nav.car = c;
+-        // Route centre at 30% of the height: the camera centre sits below it.
+         let world = tile_world_size_zoom(self.view_zoom());
+-        let down = dvec2(0.0, (0.5 - 0.30) * rect.size.y / world);
+-        self.center_norm = c + down + self.nav.pan;
++        self.center_norm = plan_center(c, rect.size.y, world) + self.nav.pan;
+         self.wrap_and_clamp_center();
+         self.rotation = 0.0;
+         self.tilt = 0.0;
+         self.nav.release_puck(&mut self.overlay.puck);
+     }
+ }
++
++/// The plan camera's zoom: `bounds` (normalized) fitted into the band a plan
++/// card leaves above its summary sheet: 80% of the width, and vertically a
++/// band centred 30% down (where `plan_center` puts it) that stays 52 px clear
++/// of the top edge, at most half the height. Never closer than zoom 15.5, nor
++/// farther out than `farthest`: plan mode passes 10, `fit_route()` the map's
++/// own limit, so a long route is framed whole.
++/// Plan mode reads it every frame, `fit_route()` once.
++fn plan_fit_zoom(bounds: (Vec2d, Vec2d), size: Vec2d, min_zoom: f64, max_zoom: f64, farthest: f64) -> f64 {
++    let (min, max) = bounds;
++    let dx = (max.x - min.x).max(1e-9);
++    let dy = (max.y - min.y).max(1e-9);
++    let fitw = size.x * 0.80;
++    let fith = (size.y * 0.50).min(2.0 * (size.y * 0.30 - 52.0)).max(1.0);
++    let zx = (fitw / (dx * TILE_SIZE)).log2();
++    let zy = (fith / (dy * TILE_SIZE)).log2();
++    let zmin = min_zoom.max(3.0);
++    let zmax = max_zoom.max(zmin);
++    // `.min(15.5)`: clamp() panics on crossed bounds (a min_zoom past 15.5);
++    // the caller's own zoom clamp lifts the result to that min_zoom.
++    zx.min(zy).clamp(zmin, zmax).clamp(farthest.min(15.5), 15.5)
++}
++
++/// The camera centre that puts `route_center` at 30% of the view's height.
++fn plan_center(route_center: Vec2d, height: f64, world_size: f64) -> Vec2d {
++    route_center + dvec2(0.0, (0.5 - 0.30) * height / world_size)
++}
