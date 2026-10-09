@@ -2,9 +2,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[Android reproduction and OnePlus 6 results](ANDROID.md): the same native host completed all 14 phone checks, without a model, account login or permission approval.
+[Android reproduction and OnePlus 6 results](ANDROID.md): the original fixture completed all 14 phone checks, without a model, account login or permission approval.
 
-This development fixture shows an app's own Splash tool calling Rust code that is already compiled into OctoSense. The tool reads the real macOS camera permission status, updates the app's screen and returns a structured answer to its native caller. It never captures media and never approves device access. It is not an App Hub submission, and it is not a way to load arbitrary Rust libraries.
+This development fixture shows an app's own Splash tool calling Rust code that is already compiled into OctoSense. The tool reads the real macOS camera permission status, updates the app's screen and returns a structured answer to its native caller. It also discovers the file/location APIs, writes and reads four synthetic bytes in its own storage jail, and verifies background refusals. It never captures media, starts location sampling, opens a file picker or approves device access. It is not an App Hub submission, and it is not a way to load arbitrary Rust libraries.
 
 A call takes this path:
 
@@ -45,12 +45,17 @@ The script copies the fixture, captures its native preview as the listing screen
 - `runtime.describe` finds a compiled API, and reports a custom function that the host lacks as unavailable, without running anything.
 - Without the `microphone` capability, the app cannot read the microphone status.
 - The tool's asynchronous host callback cannot open a permission sheet.
+- File status/import/export and location sampling are discoverable; binary storage is advertised as a runtime ABI, not a `host.request` method.
+- The live contained VM round-trips bytes `0, 127, 128, 255` through `fs.write_bytes` / `fs.read_bytes` and removes its temporary app file.
+- File status reports the storage grant and byte limit; background import, export and location sampling are refused before native UI or sensor work.
 - Calls for the wrong account, for an undeclared tool or with invalid input are refused.
 - After the app that owns the tool closes, a call fails with `app_not_running`.
 
 From a host callback, which keeps the tool's background provenance, the tool deliberately calls `camera.permission.request` to prove that App Hub refuses it; nothing in the fixture can approve a permission. The capability, the app's consent and the OS permission stay separate checks. The Mac may already have granted OctoSense the camera permission, but the new profile must still report `app_consent: false`.
 
-**Verified:** the `native-host-api` job of `.github/workflows/desktop.yml` ran these commands on a GitHub `macos-14` runner for the change that added this fixture, adding `--output` for its evidence directory, and they passed.
+The native receipt includes ten additional boolean `checks`; both drivers require the complete set and every value to pass. Android retains its original 14 checks, for 24 checks total. The added checks are **unverified until the expanded native run completes**. They do not exercise interactive file selection, provider writes or a live location fix. Historical receipts under `evidence/android/` remain the original 14-check record.
+
+**Previously verified:** the `native-host-api` job of `.github/workflows/desktop.yml` ran these commands on a GitHub `macos-14` runner for the change that added this fixture, adding `--output` for its evidence directory, and they passed.
 
 **Not covered by this macOS run:** real model reasoning, approving a permission with a physical press, camera capture, Android, the unsupported-platform answers on Linux and Windows, and publishing a compatible host binary. Android has its [separate OnePlus 6 acceptance record](ANDROID.md). Separate runtime regression tests on the real Splash VM cover detached timers, paused tasks, HTTP and WebSocket callbacks, and the gates in the native device helpers; this fixture covers chained host callbacks.
 

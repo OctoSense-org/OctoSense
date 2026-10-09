@@ -13,7 +13,10 @@
   },
   "capabilities": [
     "runtime",
-    "camera"
+    "camera",
+    "files",
+    "storage",
+    "location"
   ],
   "host_api": {
     "optional": {
@@ -22,12 +25,17 @@
     "required": {
       "app_tools.dispatch": 1,
       "camera.permission.status": 1,
-      "runtime.describe": 1
+      "files.export": 1,
+      "files.import": 1,
+      "files.status": 1,
+      "location.sample": 1,
+      "runtime.describe": 1,
+      "storage.binary_write": 1
     }
   },
   "id": "org.octosense.samples.apilab",
   "integrity": {
-    "bundle_blake3": "00678e08c5a3f4f3726184d379a10ce83760d98423364e711329a4f1706252ea"
+    "bundle_blake3": "50b55cd14af705691e77bb74af6f9ef32960591dfd71c4a7d4fb93b274398701"
   },
   "name": "Host API Lab",
   "requires": [
@@ -35,5 +43,5 @@
     "script-tools-v1"
   ],
   "schema": 1,
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

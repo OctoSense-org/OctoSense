@@ -19,6 +19,18 @@ import time
 import urllib.request
 
 REPO = Path(__file__).resolve().parents[1]
+OS_BATCH_CHECKS = (
+    "files_status_discovery",
+    "files_import_discovery",
+    "files_export_discovery",
+    "storage_binary_write_discovery",
+    "contained_binary_roundtrip",
+    "files_status_truthful",
+    "location_sample_discovery",
+    "background_import_refused",
+    "background_export_refused",
+    "background_location_sample_refused",
+)
 
 
 def require(condition, message):
@@ -106,6 +118,12 @@ def main():
                         require("tool_not_declared" in native["refusals"]["undeclared_tool"], "Undeclared tool accepted")
                         require("invalid_arguments" in native["refusals"]["invalid_arguments"], "Invalid tool input accepted")
                         require("app_not_running" in native["closed_app"], "Closed app retained its tool endpoint")
+                        checks = native.get("checks", {})
+                        require(set(checks) == set(OS_BATCH_CHECKS), "Incomplete native OS API batch checks")
+                        for name in OS_BATCH_CHECKS:
+                            require(checks[name] is True, "Native OS API check failed: " + name)
+                        require(all(checks.values()), "Native OS API batch failed")
+                        result["checks"] = checks
                         require(any(w.get("ty") == "Label" and w.get("t") == "Completed native queries: 1" for w in snapshot.get("s", [])), "Tool did not update live app state")
                         button = next(w for w in snapshot["s"] if w.get("ty") == "Button" and w.get("t") == "Read permission status")
                         x, y, width, height = button["r"]
@@ -121,7 +139,7 @@ def main():
                         (root / "ui-snapshot.json").write_text(json.dumps(updated, indent=2))
                         shutil.copyfile(get("g?scale=1")["png"], root / "ui.png")
                         result["bundle_digest"] = native["bundle_digest"]
-                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "undeclared capability refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal"]
+                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "undeclared capability refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal", "file and location API discovery", "contained binary storage round trip", "file status metadata", "background import/export/location refusal"]
                 finally:
                     if process.poll() is None:
                         try:
