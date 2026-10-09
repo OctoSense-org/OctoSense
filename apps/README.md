@@ -640,13 +640,23 @@ The ten craft engines (word, deck, cad, light, sound, design, film, effect,
 vector, pdf) have no app and no app agent; their tools ship with their
 services, in `<family>/host-service/tools.json`. The shell declares them under
 a virtual owner `os.<family>` and grants them to the system agent alone
-(`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)):
-each engine's read tools (`info`, `text`, `inspect`, `entities`, `measure`,
-`controls`, `peaks`, `project.info`) and its act tools that only create new
-files (`new`, `convert`, `render`, `export`, `frame`, `develop`, `batch`,
-`trim`, `mix`, `merge`, `split`, `export_lottie`, `import_lottie`).
-`vector.run` and `effect.run`, which run any engine command, are declared but
-not granted, and the shell refuses them. An engine works in its caller's own
+(`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)),
+27 tools in all. Seven engines (word, deck, cad, light, film, effect,
+vector) offer `<family>.info` (read) and `<family>.run`, a reviewed command
+door: it runs up to 64 commands of the engine's catalog on one document and
+writes the result to a new file. Each service admits every command of a
+call before it runs any, through an allowlist built from the engine's
+reviewed classification (`skill/safety.json`;
+[`../crates/engine-area/src/door.rs`](../crates/engine-area/src/door.rs)):
+a command that works inside the open document runs, and so does a read of a
+file inside the caller's folder that the service reviewed; an id that
+reaches other files, code, the network, a device or the app is refused, and
+so is an id the classification does not know, a batch or macro, an
+app-wide setter and a plug-in effect. Sound (no command catalog), design
+(no door, by decision) and pdf (a few fixed operations) keep fixed tools:
+`sound.info`, `peaks`, `convert`, `trim`, `mix`; `design.info`, `render`,
+`export`; `pdf.info`, `text`, `render`, `merge`, `split`. ADR 0013 records
+each engine's surface. An engine works in its caller's own
 folder (ADR 0013, `../crates/shell/src/host_tools/areas.rs`): for the system
 agent, its workspace, where its own file tools see what the engines wrote and
 every engine opens what the others made. Every path is relative to that
@@ -660,8 +670,8 @@ hand-written `SKILL.md` (what the engine does, the tools the system agent has
 for it, the file rules, worked examples) and references generated from the
 engine at its pin: `commands.md` (its command catalog, one line per id,
 tagged by what each command reaches), light's `controls.md` and sheet's
-`functions.md`. Beside them, `safety.json` (every command id's class, for a
-reviewed command door) stays in the repository. The kernel service installs
+`functions.md`. Beside them, `safety.json` (every command id's class, from
+which each command door builds its allowlist) stays in the repository. The kernel service installs
 the linked engines' skills into the `_main` profile's skills dir before every
 start ([`../crates/kernel/README.md`](../crates/kernel/README.md#the-system-agents-skills));
 octos lists their one-line descriptions in the system agent's prompt, and the

@@ -100,7 +100,9 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   的窄授权：共 43 个工具，包括每个读工具，以及只在其引擎自己区域内写入
   的每个 act 工具。没有一个是 destructive、outward 或 shareable 的，因此
   任何应用的代理都无法被授予。通用命令入口 `vector.run` 和 `effect.run`
-  已声明，但留待单独审查，暂不授予。design、effect 与 vector 的
+  已声明，但留待单独审查，暂不授予。（自 2026 年 10 月 9 日起，这份授权是
+  27 个工具：七个引擎各一个 `info` 加一个经过审查的 `run` 入口，见下文的
+  “命令入口”。）design、effect 与 vector 的
   `commands` 目录没有声明，因为它们返回 JSON 数组，而 octos 只接受对象
   结果。
 - **文件仍是缺口**（已于 2026 年 10 月 9 日补上，见下文）。决定 5 预期文件
@@ -112,7 +114,7 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   会这样解析链接图片；在这一点被收敛之前，暂存路径不得把外部文档交给
   这两个引擎。
 - **内核的上限。** octos 一次注册最多接受 64 个宿主工具，超出则整组拒绝。
-  加上引擎工具后，系统会话可能的最大集合为 63 个。Shell 把引擎工具放在
+  加上引擎工具后，系统会话可能的最大集合为 63 个（有了命令入口后为 47 个）。Shell 把引擎工具放在
   最后，超限时最先舍去，并有测试保证整份授权不超过上限。
 - **长调用。** 引擎调用在派发它的线程上运行（工具调用时是 Shell 的 UI
   线程），运行期间占用 App Hub 的服务注册表，应用调用这些引擎时一直如此。
@@ -155,9 +157,9 @@ vector、pdf）现已有代理工具，系统代理可以调用：
 - **安全类别。** 每个目录 id 都依据其实现归入 `safe`、`file`、`code`（插件、
   脚本、会运行其他命令的命令）、`network`、`device` 或 `host`（窗口、视图、
   偏好设置、剪贴板）。每份 `safety.json` 都有该引擎的统计。
-- **下一步（尚未完成）。** 按调用方划分的区域落地后，`<family>.info` 加上每个
-  有目录的引擎一个经过审查的 `<family>.run` 入口，将取代这 43 个按方法划分的
-  工具。每个入口拒绝调用方区域之外的 `file`，以及所有 `code`、`network`、
+- **下一步**（已于 2026 年 10 月 9 日完成，见下文的“命令入口”）。按调用方划分的
+  区域落地后，`<family>.info` 加上每个有目录的引擎一个经过审查的 `<family>.run`
+  入口，将取代这 43 个按方法划分的工具。每个入口拒绝调用方区域之外的 `file`，以及所有 `code`、`network`、
   `device` 和 `host` id。无法加以围栏的引擎保留其精选工具。
 
 ## 引擎在调用方自己的文件夹里工作（2026 年 10 月 9 日）
@@ -237,12 +239,13 @@ App Hub 的 card-host）。
     其 XMP 附属文件必须在区域内。
   - **word、deck、cad、sound、sheet：** 只进出字节，引擎不打开任何其他文件。
     word、deck 和 cad 按字体族名使用系统字体，gridcraft 拒绝指向其他工作簿
-    的链接，sound 从不打开音频或 MIDI 设备。word 服务只运行 `file.info` 和
-    `document.inspect` 两个引擎命令，因此 wordcraft 的 `review.readAloud`
-    （会启动语音程序）够不着。
+    的链接，sound 从不打开音频或 MIDI 设备。有了命令入口后，`word.run` 会运行
+    wordcraft 的命令，而 `review.readAloud`（会启动语音程序）归为 `device`，
+    任何入口都不运行它。
 
   十二个引擎全部受到限制，没有一个留在私有文件夹里。
-- **命令入口暂不开放。** `vector.run` 和 `effect.run` 从未授予，它们拒绝的
+- **命令入口暂不开放**（直到 2026 年 10 月 9 日，见下文的“命令入口”）。
+  `vector.run` 和 `effect.run` 从未授予，它们拒绝的
   id 列表也算不上围栏：包装命令（`command.batch`、`engine.batch`、
   `file.runScript`）、偏好设置（用 `prefs.set` 设置插件文件夹）或插件效果都能
   绕过去。装上 Shell 的解析器后，这两个服务直接拒绝 `run`，因此在审查之前这两
@@ -251,6 +254,81 @@ App Hub 的 card-host）。
 - **工作簿。** Sheets 工作簿属于创建或打开它的区域。来自其他区域的调用看不
   到、改不了、导不出也关不掉它。每个区域最多 16 个打开的工作簿，所有区域
   合计最多 64 个。
+
+## 命令入口（2026 年 10 月 9 日）
+
+系统代理现在通过每个引擎一个经过审查的命令入口来驱动七个引擎，不再为每个方法
+单独精选一个工具（#418）。
+
+- **工具面。** word、deck、cad、light、film、effect 和 vector 各给系统代理两个
+  工具：`<family>.info`（读）和 `<family>.run`：在 `path` 指向的文档（或一份新
+  文档）上依次运行引擎目录中最多 64 条命令，再把结果写到 `out`，即调用方文件夹
+  中的一个新文件。写出什么由 `out` 的扩展名决定，因此一个入口就涵盖了原先按方法
+  划分的工具所做的事（转换、渲染、帧、导出、Lottie 导入与导出、显影）。sound、
+  design 和 pdf 保留固定工具。引擎授权从 43 个工具减为 27 个，系统会话的最大
+  集合从 63 个减为 47 个（octos 的上限为 64，octos #2737 加上重新固定版本后为
+  96）。按方法划分的服务方法仍然保留，供应用自己的请求（`host.request`）使用，
+  命令入口不改变它们。
+- **允许列表，绝不用拒绝列表。** 每个服务用引擎生成的分类 `skill/safety.json`
+  和自己的 `REVIEWED` 审查结论构建门禁（`crates/engine-area/src/door.rs`，
+  `Door`）。一次调用中的每条命令都在任何命令运行之前先经过准入。只有归为
+  `safe` 的 id 可以运行，另外还有审查者确认只读取其参数所指文件的 `file`
+  命令：门禁在调用方的文件夹内解析该路径（相对路径、不含 `..`、跟随链接、
+  必须是已有文件），再把绝对路径交给引擎。写入只经过入口自己的 `out`
+  （`Area::write`：代理的写入从不覆盖已有文件，并受配额限制）。其他 id
+  一律拒绝：`code`、`network`、`device` 和 `host`，未经审查的 `file` 命令，
+  以及分类中没有的 id（只要引擎还有 id 没有类别，技能漂移测试就会失败）。
+- **组合命令与间接命令。** 批处理、宏和脚本（`command.batch`、`engine.batch`、
+  `tools.macros`、`file.runScript`）归为 `code`，整条拒绝。按键名修改应用级
+  状态的设置命令，只有使用其服务审查过的键名时才能运行；目前没有任何键名
+  经过审查，所以 cad 的 `setvar` 被拒绝。指名另一条命令的命令（vector 的
+  `perspective.draw {command}`）会让被指名的 id 连同其参数再次经过准入，最多
+  嵌套四层。指名效果的命令（`effect.apply`、vector 的 `appearance.addEffect`）
+  只运行引擎内置的效果，因此效果插件（`plugin.<id>`）绝不会经由入口运行。
+- **每条命令之后的围栏。** 命令可能写进文档、之后又会被后续命令、渲染或 `out`
+  读取的内容，会在每条命令之后检查，不通过则调用在写出任何东西之前失败：
+  vector 的链接图片；effect 的素材、LUT、OCIO 和 mocha 参数（包括 Essential
+  Graphics 取值）以及效果插件；film 的效果参数、暂存盘、采集文件夹和排队的导出
+  （区域外的媒体照旧保持离线）；photo 的链接智能对象和 Color Lookup 文件。
+- **#418 的几条路径。** 包装 `plugin.install` 的批处理、用 `prefs.set` 设置插件
+  文件夹（vector：`code`；effect 和 film：`host`），以及
+  `effect.apply {effect: "plugin.<id>"}` 都会被拒绝，每条都在其服务的测试中有
+  恶意样例，并在 Shell 的中继里再验证一次
+  （`every_command_door_refuses_what_its_review_does_not_admit`）。#419 的围栏
+  保持不变：design 的 IDML 链接和 pdf 的脚本（两者都没有入口），effect 的 LUT
+  与色彩文件以及 photo 的 `.psd` 链接（每条命令之后都检查），以及 word 的
+  `review.readAloud`（现归为 `device`）。
+
+每个引擎的工具面：
+
+| 引擎 | 系统代理的工具 | 入口在 `safe` id 之外还运行什么 |
+| --- | --- | --- |
+| word | `word.info`、`word.run` | 389 个 id 中的 328 个。读取：`insert.picture`、`picture.change`（`path`）。 |
+| deck | `deck.info`、`deck.run` | 222 个中的 203 个。读取：`insert.picture`、`insert.audio`、`insert.video`、`picture.change`（`path`）。 |
+| cad | `cad.info`、`cad.run` | 295 个中的 288 个。`setvar` 被拒绝：它按名称设置变量，而没有任何名称经过审查。 |
+| light | `light.info`、`light.run` | 239 个中的 189 个。没有其他。 |
+| film | `film.info`、`film.run` | 675 个中的 525 个。读取：`captions.import`（`path`）。只运行内置项：`effects.apply`、两个转场命令、`effects.setDefaultTransition`、`mixer.addInsert`、`presets.apply`、`lumetri.applyPreset`、`essentialSound.applyPreset`。 |
+| effect | `effect.info`、`effect.run` | 665 个中的 474 个。只运行内置项：`effect.apply`。 |
+| vector | `vector.info`、`vector.run` | 679 个中的 574 个。只运行内置项：`effect.apply` 和 `appearance.addEffect`（经 `effect` 或 `id`）；`perspective.draw` 只运行 `shape.*` 命令，每条再经过准入。 |
+| sound | `sound.info`、`peaks`、`convert`、`trim`、`mix` | 没有入口：soundcraft 没有命令目录。 |
+| design | `design.info`、`render`、`export` | 按决定不设入口（#418）。 |
+| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。 |
+| photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 |
+| sheet | 无（Sheets 应用自己的 `sheets.*`） | 没有入口：公式求值。 |
+
+这次审查重新归类了五个 id：word 的 `review.readAloud`（`code` 改为 `device`），vector 的
+`effect.apply` 和 `appearance.addEffect`（`code` 改为 `safe`，并检查其效果），effect 的两个
+媒体浏览器收藏命令（`safe` 改为 `host`），以及 photo 的 `layer.smartFilter.setParams`（`safe`
+改为 `file`：它可能写入一个 Color Lookup 文件路径）。审查还堵上了两条 id 检查看不到的路径：
+预合成中通过 Essential Graphics 取值设置效果的 LUT 文件（effect），以及指名文件的 Color Lookup
+智能滤镜（photo）；两个服务的围栏现在都会在打开时和每条命令之后拦下它们。一次入口调用除了
+64 条命令上限和服务自己的文件上限之外，没有时间或内存预算，这与之前按方法划分的工具相同
+（见上文“长调用”）。
+
+只能由应用自己的 `host.request` 调用的 `photo.run` 现在也经过同一个门禁。每个
+有入口的引擎的 `SKILL.md` 都列出 `info` 和 `run`，说明入口的规则，并用示例教
+命令；其服务的测试会运行每个示例（`the_skill_examples_run`），Shell 则对照工具
+的 schema 检查它们。
 
 ## 待决问题
 

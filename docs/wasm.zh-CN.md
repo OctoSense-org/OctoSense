@@ -209,16 +209,18 @@ OctoSense 也没有链接这个 crate。
 进入 photocraft 的进程级注册表，在调用结束后仍然存在，并为之后的每个调用方服务，限制也远比
 `wasm` 服务宽松。一个像脚本的 `host.request` 那样调用服务的临时程序在 Linux 构建主机上验证了
 这两种情况（2026 年 10 月 8 日）。在 #398 之前，`os.photos` 安装了 photocraft 的示例插件，
-下一次调用列出了它，另一个系统应用 `os.notes` 在文档上运行了它。有了 #398，这些调用都被拒绝：
-``photo.run: `plugin.install` is not available through the photo service``。
+下一次调用列出了它，另一个系统应用 `os.notes` 在文档上运行了它。有了 #398，这些调用都被拒绝。
+自命令入口（#418，ADR 0013）起，拒绝来自允许列表门禁，它把每个 `plugin.*` id 都归为 `code`：
+``photo.run: `plugin.install` is classed code: it installs or runs code, or runs other commands, so the door never runs it``。
 
 **`vector` 中由 #405 关闭。** `vector.run` 原先拒绝文件、文档、`app.*` 命令组以及类似路径的
 参数，但没有拒绝 `plugin.*`，而 vectorcraft 的引擎可以用 base64 `dataBase64` 安装插件。同一个
 临时程序在 #405 之前的 `main` 上验证了这一点：`os.notes` 安装了 vectorcraft 的示例插件，下一次
 调用列出了它，另一个系统应用 `os.maps` 也看得到它，而 `vector.commands` 还提供
 `plugin.install`。现在 `vector.run` 在引擎看到命令之前就拒绝所有 `plugin.*` id
-（``vector.run: `plugin.install` is not available through the vector service``），
-`vector.commands` 也不再列出它们。
+（自 #418 起由允许列表门禁拒绝：``vector.run: `plugin.install` is classed code: it installs or runs code, or runs other commands, so the door never runs it``），
+`vector.commands` 也不再列出它们。经由内置效果命令指名的效果插件
+（`effect.apply {effect: "plugin.<id>"}`）同样被拒绝。
 
 两个引擎仍然链接 wasmi，两个服务也仍然只回答系统应用（`os.*`）。
 
