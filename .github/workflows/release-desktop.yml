@@ -57,11 +57,16 @@ on:
         type: boolean
         default: true
       linux_diagnostic:
-        description: RC2 only; build Linux without signing/releasing and encrypt bounded failed-scan evidence
+        description: RC2 only; build one platform without signing/releasing and encrypt bounded failed-scan evidence
         type: boolean
         default: false
+      diagnostic_platform:
+        description: One diagnostic platform; no other matrix jobs are started
+        type: choice
+        options: [linux-x64, windows-x64]
+        default: linux-x64
       encrypted_build_quarantine:
-        description: Diagnostic only; encrypt exact failed Linux packages and scan inputs for private re-scan
+        description: Diagnostic only; encrypt exact failed packages and scan inputs for private re-scan
         type: boolean
         default: false
       diagnostic_recipient_cert:
@@ -73,7 +78,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-desktop-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tag }}
+  group: release-desktop-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.diagnostic_platform }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -100,6 +105,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           LINUX_DIAGNOSTIC: ${{ inputs.linux_diagnostic }}
           BUILD_QUARANTINE: ${{ inputs.encrypted_build_quarantine }}
+          DIAGNOSTIC_PLATFORM: ${{ inputs.diagnostic_platform }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
@@ -139,7 +145,11 @@ jobs:
             diagnostic=true
             sign=false
             release=false
-            matrix='{"include":[{"os":"ubuntu-22.04","platform":"linux-x64"}]}'
+            case "${DIAGNOSTIC_PLATFORM:-linux-x64}" in
+              linux-x64) matrix='{"include":[{"os":"ubuntu-22.04","platform":"linux-x64"}]}' ;;
+              windows-x64) matrix='{"include":[{"os":"windows-2022","platform":"windows-x64"}]}' ;;
+              *) echo "::error::unsupported diagnostic platform"; exit 1 ;;
+            esac
           fi
           if [ "${BUILD_QUARANTINE:-false}" = true ] && [ "$diagnostic" != true ]; then
             echo "::error::encrypted build quarantine requires the manual diagnostic gate"; exit 1
@@ -161,7 +171,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 150
+    timeout-minutes: 180
     permissions:
       contents: read
     defaults:
@@ -189,6 +199,9 @@ jobs:
         run: |
           head=$(git rev-parse HEAD)
           [ "$head" = "$WANT" ] || { echo "::error::checked out $head, planned $WANT"; exit 1; }
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
       - name: Validate public diagnostic recipient before building
         if: needs.plan.outputs.linux_diagnostic == 'true'
         env:
@@ -213,9 +226,6 @@ jobs:
                              check=True, capture_output=True)
           print("Public diagnostic recipient validated; no private key is present on runner")
           PY_CERT
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: '3.12'
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09-12
         with:
           toolchain: 1.97.1
@@ -290,9 +300,9 @@ jobs:
           # the staged resources.
           exe=octosense; [ "$RUNNER_OS" = Windows ] && exe=octosense.exe
           python "$SRC/tools/release-scan.py" upload/packages/* resources kernel "$SRC/target/release/$exe"
-      - name: Encrypt bounded Linux scan evidence after refusal
+      - name: Encrypt bounded platform scan evidence after refusal
         id: encrypt_diagnostic
-        if: failure() && needs.plan.outputs.linux_diagnostic == 'true' && steps.scan.outcome == 'failure' && runner.os == 'Linux'
+        if: failure() && needs.plan.outputs.linux_diagnostic == 'true' && steps.scan.outcome == 'failure' && (runner.os == 'Linux' || runner.os == 'Windows')
         env:
           DIAGNOSTIC_RECIPIENT_CERT: ${{ inputs.diagnostic_recipient_cert }}
           EXPECTED_PRODUCT_COMMIT: ${{ needs.plan.outputs.commit }}
@@ -301,14 +311,15 @@ jobs:
           import base64, hashlib, importlib.util, json, mmap, os, re, subprocess, tempfile
           from pathlib import Path
 
-          # The failed RC2 scanner reports a 32-character Linux-home match.
-          # Capture only that class, at most eight unique matches and 224 context
-          # bytes per match. No ELF/package or plaintext is uploaded or printed.
+          # Capture only the original scanner's reported class/length: Linux
+          # home (32 bytes) or Windows mDNS (29 bytes). At most eight matches
+          # and 224 context bytes each; no raw binary/plaintext is published.
           source = Path(os.environ["SRC"])
           commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
           if commit != os.environ["EXPECTED_PRODUCT_COMMIT"] or commit != "4ccf8e068399b1da139771a9ed94cef05fa6ae60":
               raise SystemExit("Diagnostic product revision mismatch")
-          binary = source / "target/release/octosense"
+          windows = os.environ.get("RUNNER_OS") == "Windows"
+          binary = source / ("target/release/octosense.exe" if windows else "target/release/octosense")
           if binary.is_symlink() or not binary.resolve().is_relative_to(source.resolve()):
               raise SystemExit("Diagnostic expects an app-owned regular build artifact")
           spec = importlib.util.spec_from_file_location("original_release_scan", source / "tools/release-scan.py")
@@ -318,8 +329,8 @@ jobs:
           seen = set()
           truncated = False
           with binary.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
-              if data[:4] != b"\x7fELF":
-                  raise SystemExit("Diagnostic expects the raw Linux host ELF")
+              if (windows and data[:2] != b"MZ") or (not windows and data[:4] != b"\x7fELF"):
+                  raise SystemExit("Diagnostic expects the selected platform's raw host binary")
               binary_digest = hashlib.sha256(data).hexdigest()
               # Retain the original scanner's exact public-source exceptions.
               source_seams = {
@@ -329,23 +340,28 @@ jobs:
               source_seams.update(seam.span(group)
                                   for pattern in scanner.OCTOSCODE_PLACEHOLDER_SEAMS
                                   for seam in pattern.finditer(data) for group in seam.groupdict())
+              label = "mDNS .local host name" if windows else "Linux home directory"
+              pattern = next(pattern for name, pattern in scanner.BASE_PATTERNS if name == label)
+              if windows:
+                  source_seams = {seam.span("host") for seam in scanner.MAIL_LITERAL_SEAM.finditer(data)}
               verified_assets = {}
-              for match in re.finditer(rb"/home/(?!runner/)[a-z_][a-z0-9_.-]*/", data):
+              for match in re.finditer(pattern, data):
                   value = match.group()
-                  if len(value) != 32 or value in seen:
+                  if len(value) != (29 if windows else 32) or value in seen:
                       continue
                   if (match.start(), match.end()) in source_seams or scanner.is_public_asset_match(
-                      data, "Linux home directory", match, verified_assets
+                      data, label, match, verified_assets
                   ):
                       continue
                   if len(matches) == 8:
                       truncated = True
                       break
                   seen.add(value)
-                  start, end = max(0, match.start() - 64), min(len(data), match.end() + 128)
+                  start, end = max(0, match.start() - 64), min(len(data), match.start() + 160)
                   matches.append({"offset": match.start(), "match_b64": base64.b64encode(value).decode(),
                                   "context_offset": start, "context_b64": base64.b64encode(data[start:end]).decode()})
-          payload = json.dumps({"schema": 1, "product_commit": commit,
+          payload = json.dumps({"schema": 1, "product_commit": commit, "platform": "windows-x64" if windows else "linux-x64",
+                                "finding_class": label,
                                 "tag": "desktop-v0.1.0-rc.2", "run_id": os.environ["GITHUB_RUN_ID"],
                                 "workflow_commit": os.environ["GITHUB_SHA"],
                                 "binary_sha256": binary_digest,
@@ -377,13 +393,14 @@ jobs:
         if: always() && needs.plan.outputs.linux_diagnostic == 'true' && steps.encrypt_diagnostic.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: rc2-linux-scan-encrypted-${{ github.run_id }}
+          name: rc2-${{ runner.os == 'Windows' && 'windows' || 'linux' }}-scan-encrypted-${{ github.run_id }}
           path: ${{ runner.temp }}/octosense-linux-diagnostic/diagnostic.cms
           if-no-files-found: error
           retention-days: 1
-      - name: Encrypt failed Linux build for private quarantine
+          compression-level: 0
+      - name: Encrypt failed platform build for private quarantine
         id: encrypt_quarantine
-        if: failure() && needs.plan.outputs.linux_diagnostic == 'true' && inputs.encrypted_build_quarantine && steps.scan.outcome == 'failure' && runner.os == 'Linux'
+        if: failure() && needs.plan.outputs.linux_diagnostic == 'true' && inputs.encrypted_build_quarantine && steps.scan.outcome == 'failure' && (runner.os == 'Linux' || runner.os == 'Windows')
         env:
           DIAGNOSTIC_RECIPIENT_CERT: ${{ inputs.diagnostic_recipient_cert }}
           EXPECTED_PRODUCT_COMMIT: ${{ needs.plan.outputs.commit }}
@@ -397,7 +414,8 @@ jobs:
           if commit != os.environ["EXPECTED_PRODUCT_COMMIT"] or commit != "4ccf8e068399b1da139771a9ed94cef05fa6ae60":
               raise SystemExit("Quarantine product revision mismatch")
           package = source / "target/octosense-package"
-          inputs = [source / "target/release/octosense"]
+          windows = os.environ.get("RUNNER_OS") == "Windows"
+          inputs = [source / ("target/release/octosense.exe" if windows else "target/release/octosense")]
           for root in [package / "upload/packages", package / "resources", package / "kernel"]:
               if root.is_symlink() or not root.exists():
                   raise SystemExit("Expected app-owned completed scan inputs")
@@ -421,12 +439,16 @@ jobs:
                       hasher.update(chunk)
                   digest = hasher.hexdigest()
               files.append({"path": path.relative_to(source).as_posix(), "size": size, "sha256": digest})
-          if not any(item["path"].endswith(".deb") for item in files) or not any(item["path"].endswith(".AppImage") for item in files):
+          if windows:
+              if not any(item["path"].endswith("-setup.exe") for item in files):
+                  raise SystemExit("Quarantine requires the completed Windows installer")
+          elif not any(item["path"].endswith(".deb") for item in files) or not any(item["path"].endswith(".AppImage") for item in files):
               raise SystemExit("Quarantine requires both completed Linux packages")
           source_hashes = {}
           for name in ["Cargo.lock", "native-runtime.lock.json", "runtime-patches.lock.json", "tools/release-scan.py", "tools/release-scan-public-assets.json", "desktop/scripts/package.py"]:
               source_hashes[name] = hashlib.sha256((source / name).read_bytes()).hexdigest()
           manifest = json.dumps({"schema": 1, "product_commit": commit, "tag": "desktop-v0.1.0-rc.2",
+                                 "platform": "windows-x64" if windows else "linux-x64",
                                  "run_id": os.environ["GITHUB_RUN_ID"], "workflow_commit": os.environ["GITHUB_SHA"],
                                  "original_scan": "failed", "source_sha256": source_hashes, "files": files},
                                 separators=(",", ":")).encode()
@@ -477,10 +499,11 @@ jobs:
         if: always() && needs.plan.outputs.linux_diagnostic == 'true' && inputs.encrypted_build_quarantine && steps.encrypt_quarantine.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: rc2-linux-build-encrypted-${{ github.run_id }}
+          name: rc2-${{ runner.os == 'Windows' && 'windows' || 'linux' }}-build-encrypted-${{ github.run_id }}
           path: ${{ runner.temp }}/octosense-linux-quarantine/build.cms
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: needs.plan.outputs.linux_diagnostic != 'true'
         with:
