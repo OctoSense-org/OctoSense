@@ -124,4 +124,9 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   `apps/<name>/host-service`）。
 - soundcraft 的引擎（以及我们 makepad fork 尚未收录的 `audio_aot`）是
   否足以支撑本季度的可脚本化音效线。
-- 手机打包：哪些引擎（若有）进入 Home 而非仅桌面。
+- 手机打包。自 2026 年 10 月 9 日起，系统 Agent 背后的十个引擎（word、deck、
+  cad、light、sound、design、film、effect、vector、pdf）仅限桌面：由桌面默认
+  特性 `craft-engines` 引入，若其中任一进入 Home 的依赖图，
+  `tools/check-shell-graph.sh` 即报错。sheet 与 photo 引擎仍随 Home 发布，因为
+  原生 Sheets 应用和 Photos 的 Agent 工具在手机上依赖它们。是保留它们（二进制
+  成本尚未评估），还是同样改为仅限桌面（并在手机上撤下这些工具），仍待决定。

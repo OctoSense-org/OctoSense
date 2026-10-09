@@ -1115,7 +1115,7 @@ fn the_system_agents_whole_grant_fits_the_kernels_cap() {
     most.extend(grants::native_system_tools_given(|_| true));
     #[cfg(any(feature = "app-hub", native_mobile))]
     most.extend(grants::CALENDAR_TOOLS.iter().map(|tool| tool.to_string()));
-    #[cfg(feature = "app-hub")]
+    #[cfg(feature = "craft-engines")]
     most.extend(grants::ENGINE_TOOLS.iter().map(|tool| tool.to_string()));
     let total = most.len() + crate::agents::declarations().len();
     assert!(total <= grants::MAX_SESSION_TOOLS, "{total} host tools pass the kernel's cap of {}", grants::MAX_SESSION_TOOLS);
@@ -1123,7 +1123,7 @@ fn the_system_agents_whole_grant_fits_the_kernels_cap() {
 
 /// Past the cap, the engines' tools give way first, whatever order the
 /// grants came in, and the rest keeps its order; under it nothing goes.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 #[test]
 fn over_the_kernels_cap_the_engines_tools_give_way_first() {
     let decl = |name: &str| json!({"name": name, "description": "d", "input_schema": {"type": "object"}, "risk": "read"});

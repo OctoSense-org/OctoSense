@@ -40,8 +40,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+#[cfg(feature = "craft-engines")]
 use std::sync::Arc;
 
+#[cfg(feature = "craft-engines")]
 use octosense_app_policy::{ImplementedBy, ToolHost, ToolManifest, ToolSpec};
 use serde_json::Value;
 
@@ -51,6 +53,7 @@ use super::script_apps::HostServiceExecutor;
 
 /// One engine whose host service the system agent reaches through a
 /// virtual owner.
+#[cfg(feature = "craft-engines")]
 pub struct Engine {
     /// Its service family (`word`): its tools' namespace, and its area's
     /// name under the apps root's `.host`.
@@ -61,6 +64,7 @@ pub struct Engine {
 
 /// The ten engines, in the order their services register
 /// (`apps::register_host_services`).
+#[cfg(feature = "craft-engines")]
 pub const ENGINES: &[Engine] = &[
     Engine { family: "word", tools_json: octosense_word_service::TOOLS_JSON },
     Engine { family: "deck", tools_json: octosense_deck_service::TOOLS_JSON },
@@ -78,8 +82,10 @@ pub const ENGINES: &[Engine] = &[
 /// doors, which run any command of an engine's catalog. Their services
 /// fence file access, but what a command can do is the whole engine's
 /// surface, so they are reviewed separately before anyone is granted one.
+#[cfg(feature = "craft-engines")]
 pub const HELD_FOR_REVIEW: &[&str] = &["effect.run", "vector.run"];
 
+#[cfg(feature = "craft-engines")]
 impl Engine {
     /// Its virtual owner, `os.<family>`.
     pub fn owner(&self) -> String {
@@ -98,6 +104,7 @@ impl Engine {
 }
 
 /// Whether `app` is an engine's virtual owner (`os.word`).
+#[cfg(feature = "craft-engines")]
 pub fn is_virtual_owner(app: &str) -> bool {
     app.strip_prefix(octosense_appstore::system::SYSTEM_ID_PREFIX)
         .is_some_and(|family| ENGINES.iter().any(|engine| engine.family == family))
@@ -106,12 +113,14 @@ pub fn is_virtual_owner(app: &str) -> bool {
 /// At startup, once the engines' services are registered: every engine's
 /// tools declared under its virtual owner, with its executor. An engine
 /// whose manifest App Hub's loader refuses is left out, and says why.
+#[cfg(feature = "craft-engines")]
 pub fn register() {
     super::with_relay(|relay| install(relay, None));
 }
 
 /// [`register`] into `relay`: `host_dir` fixes the host directory (tests);
 /// `None` resolves the apps root's `.host` at every call.
+#[cfg(feature = "craft-engines")]
 pub(crate) fn install(relay: &mut super::Relay, host_dir: Option<PathBuf>) {
     for engine in ENGINES {
         let owner = engine.owner();
@@ -157,6 +166,7 @@ impl EngineExecutor {
     }
 
     /// An engine's, as its virtual owner: each tool on its own method.
+    #[cfg(feature = "craft-engines")]
     fn engine(engine: &Engine, tools: &[ToolSpec], host_dir: Option<PathBuf>) -> Self {
         let methods = tools.iter().map(|tool| (tool.name.clone(), tool.service_method().to_string())).collect();
         EngineExecutor { app: engine.owner(), family: engine.family.into(), methods, host_dir, relative_errors: true }
@@ -251,6 +261,7 @@ mod tests {
     /// Each engine's tools load with App Hub's loader and route, as
     /// `os.<family>`, to the method of their own name on their own family:
     /// the service sees a system app's identity, never the caller's.
+    #[cfg(feature = "craft-engines")]
     #[test]
     fn each_engine_routes_its_tools_as_its_virtual_owner_on_its_own_family() {
         assert_eq!(ENGINES.len(), 10);
@@ -278,6 +289,7 @@ mod tests {
     /// tool but the held command doors, each a read or an act (an act
     /// writes only inside its engine's own area: each service's tests); none
     /// is destructive or outward, and no door reaches the grant.
+    #[cfg(feature = "craft-engines")]
     #[test]
     fn the_system_grant_is_every_engine_tool_but_the_held_doors() {
         use octosense_app_policy::Risk;
@@ -306,6 +318,7 @@ mod tests {
 
     /// The command doors are declared by their engines, so the relay can
     /// refuse them by name (`not_granted`) rather than as unknown tools.
+    #[cfg(feature = "craft-engines")]
     #[test]
     fn the_held_doors_are_declared_tools() {
         for door in HELD_FOR_REVIEW {
@@ -318,6 +331,7 @@ mod tests {
     /// No engine ships as an app yet. When one does, its bundle's
     /// `tools.json` owns the namespace: retire its virtual owner then,
     /// rather than let both declare `os.<family>`.
+    #[cfg(feature = "craft-engines")]
     #[test]
     fn no_shipped_app_takes_an_engines_virtual_owner() {
         let apps = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps");

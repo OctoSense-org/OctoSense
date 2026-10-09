@@ -73,7 +73,7 @@ SHELL_LINKS = ("default", "mobile-apps", "opt-in", "off")
 BASE_DEFAULT = ["octos-core", "wasm-functions"]
 # Features on by default in one shell only: the phone offers app agents the
 # system toolbox (ADR 0002 §6), reading pages in its own WebView.
-SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"]}
+SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"], "desktop": ["craft-engines"]}
 APP_KEYS = {"id", "feature", "crate", "source", "module", "bin", "bin_features", "default_features", "crate_features",
             "implies", "hosting", "shells", "native_mobile", "sandbox", "storage", "agent", "kernel"}
 REQUIRED_KEYS = APP_KEYS - {"feature", "bin_features", "kernel"}

@@ -1376,7 +1376,7 @@ fn a_cancelled_confirm_app_call_is_withdrawn_from_the_apps_sheet() {
 
 /// The engines' services, registered as `apps::register_host_services`
 /// does (App Hub's registry replaces a family registered twice).
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 fn register_engine_services() {
     octosense_word_service::register();
     octosense_deck_service::register();
@@ -1393,7 +1393,7 @@ fn register_engine_services() {
 /// A relay with the engines' virtual owners on `host` (a fixed host
 /// directory instead of the apps root's `.host`), and the system agent's
 /// real grant.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 fn engine_world(host: &std::path::Path) -> (Relay, World) {
     register_engine_services();
     let mut relay = Relay::default();
@@ -1405,7 +1405,7 @@ fn engine_world(host: &std::path::Path) -> (Relay, World) {
 
 /// The system agent's call to `tool`, owned as its session names it (the
 /// registered declaration's app), in a turn of its own.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 fn system_engine_call(relay: &Relay, id: &str, tool: &str, args: Value) -> HostToolCall {
     let mut c = call(id, tool, super::relay::SYSTEM);
     c.app = relay.catalog.owner_of(tool).unwrap();
@@ -1419,7 +1419,7 @@ fn system_engine_call(relay: &Relay, id: &str, tool: &str, args: Value) -> HostT
 }
 
 /// The answer to `call`, once its service replied (`script_apps::poll`).
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 fn answer(relay: &mut Relay, world: &mut World, call: HostToolCall) -> Value {
     let (r, sent) = reply(&call.call_id.clone());
     relay.handle(Event::Call { call, reply: r }, world);
@@ -1434,7 +1434,7 @@ fn answer(relay: &mut Relay, world: &mut World, call: HostToolCall) -> Value {
 }
 
 /// The system agent's call to `tool`, answered.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 fn ask(relay: &mut Relay, world: &mut World, id: &str, tool: &str, args: Value) -> Value {
     let call = system_engine_call(relay, id, tool, args);
     answer(relay, world, call)
@@ -1447,7 +1447,7 @@ fn ask(relay: &mut Relay, world: &mut World, id: &str, tool: &str, args: Value) 
 /// the call routed, naming the file relative to the engine's area. The
 /// command doors are declared but never granted, and no app's agent may
 /// call an engine tool (none is shareable).
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 #[test]
 fn the_system_agent_reaches_the_engines_by_its_grant_and_never_their_doors() {
     let host = std::env::temp_dir().join(format!("engine-grant-{}", uuid::Uuid::new_v4()));
@@ -1491,7 +1491,7 @@ fn the_system_agent_reaches_the_engines_by_its_grant_and_never_their_doors() {
 /// Every engine's service serves system apps only: a store app's identity
 /// is refused by the service itself, even through an executor that routes
 /// it there.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 #[test]
 fn every_engine_service_refuses_a_store_apps_identity() {
     use super::script_apps::HostServiceExecutor;
@@ -1529,7 +1529,7 @@ fn every_engine_service_refuses_a_store_apps_identity() {
 /// skips an owner the catalog knows, and a load that fails (App Hub
 /// installing or updating an app of that id, or an app asking for one of
 /// its tools) changes nothing before it has an admitted bundle.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 #[test]
 fn a_failed_bundle_load_never_clobbers_an_engines_virtual_owner() {
     super::engines::register();
@@ -1560,7 +1560,7 @@ fn a_failed_bundle_load_never_clobbers_an_engines_virtual_owner() {
 
 /// What the person sees in Settings, and who may ask an agent: a virtual
 /// owner is no app, so it is no agent app and has no agent of its own.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 #[test]
 fn an_engines_virtual_owner_is_no_agent_app() {
     super::engines::register();
@@ -1580,7 +1580,7 @@ fn an_engines_virtual_owner_is_no_agent_app() {
 /// moves between areas only here, as a test (no tool stages one).
 /// `film.project.info` (no tool writes a project) and Design's tools (no
 /// tool writes a layout document) are checked in their crates.
-#[cfg(feature = "app-hub")]
+#[cfg(feature = "craft-engines")]
 #[test]
 fn every_granted_engine_tool_answers_within_its_declared_result() {
     let host = std::env::temp_dir().join(format!("engine-answers-{}", uuid::Uuid::new_v4()));

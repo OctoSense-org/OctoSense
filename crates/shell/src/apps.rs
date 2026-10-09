@@ -265,8 +265,10 @@ pub fn register_host_services() {
         // published the same way.
         register_calendar_services();
         register_news();
-        // The sheet engine service (ADR 0013): gridcraft behind `sheet.*`,
-        // desktop only until its binary cost is weighed for the phone.
+        // The sheet engine service (ADR 0013): gridcraft behind `sheet.*`.
+        // With the photo engine it still ships on the phone, where the
+        // native Sheets app's and Photos' agent tools use them; the ten
+        // engines below are desktop only (`craft-engines`).
         #[cfg(feature = "app-hub")]
         octosense_sheets_service::register();
         // The native Sheets app's agent tools (`sheets.*`) run on that
@@ -286,42 +288,42 @@ pub fn register_host_services() {
             octosense_photo_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));
         }
         // The word engine service (ADR 0013): wordcraft behind `word.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_word_service::register();
         // The deck engine service (ADR 0013): deckcraft behind `deck.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_deck_service::register();
         // The cad engine service (ADR 0013): cadcraft behind `cad.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_cad_service::register();
         // The light engine service (ADR 0013): lightcraft behind `light.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_light_service::register();
         // The sound engine service (ADR 0013): soundcraft behind `sound.*`,
         // offline only — it never opens an audio device.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_sound_service::register();
         // The design engine service (ADR 0013): designcraft behind `design.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_design_service::register();
         // The film engine service (ADR 0013): filmcraft behind `film.*`,
         // offline only.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_film_service::register();
         // The effect engine service (ADR 0013): effectcraft behind `effect.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_effect_service::register();
         // The vector engine service (ADR 0013): vectorcraft behind `vector.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_vector_service::register();
         // The pdf engine service (ADR 0013): pdfcraft behind `pdf.*`.
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         octosense_pdf_service::register();
         // The ten engines' agent tools (ADR 0013): each engine's
         // `tools.json` declared under its virtual owner `os.<family>` and
         // run on the service registered above. Only the system agent is
         // granted them (`system_chat::grants::ENGINE_TOOLS`).
-        #[cfg(feature = "app-hub")]
+        #[cfg(feature = "craft-engines")]
         crate::host_tools::engines::register();
         // Apps' own WebAssembly functions (ADR 0011).
         #[cfg(wasm_functions)]

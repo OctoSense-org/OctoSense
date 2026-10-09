@@ -127,7 +127,10 @@ jobs:
           cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-appcard -p octosense-ai-host
           # The opt-in AppCard build: its module registers into the shell.
           cargo test --locked --features mobile-apps,app-appcard -p octosense-shell appcard
-          cargo test --locked --features mobile-apps,toolbox-peers -p octosense-shell host_tools
+          # The ten ADR 0013 engines are desktop only (`craft-engines`, off in
+          # Home's build), so their relay, grant and kernel-cap tests run with it.
+          cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell host_tools
+          cargo test --locked --features mobile-apps,craft-engines -p octosense-shell system_chat
           # The linked Terminal (the desktop's default): its AI tools reach
           # the live emulator behind the module's TermTabs root.
           cargo test --locked --features mobile-apps,app-terminal -p octosense-shell terminal

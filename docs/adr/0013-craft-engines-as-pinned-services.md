@@ -149,5 +149,11 @@ them:
   `apps/<name>/host-service`) once the first one is written.
 - Whether soundcraft's engine (and `audio_aot`, not yet vendored in our
   makepad fork) justifies a scriptable-effects lane this quarter.
-- Phone packaging: which engines, if any, ship in Home rather than
-  desktop-only.
+- Phone packaging. Since 9 Oct 2026 the ten engines behind the system
+  agent (word, deck, cad, light, sound, design, film, effect, vector, pdf)
+  are desktop only: the desktop-default feature `craft-engines` owns them,
+  and `tools/check-shell-graph.sh` fails if one reaches Home's graph. The
+  sheet and photo engines still ship in Home, because the native Sheets
+  app's and Photos' agent tools run on them there. Whether to keep them
+  (their binary cost, not yet weighed) or move them desktop-only too (and
+  withdraw those tools on the phone) is still open.
