@@ -1,0 +1,92 @@
+{
+  "result": "pass",
+  "date": "2026-10-09",
+  "scope": "The PDF Tools bundle in App Hub's card-host with hidden windows on macOS (Apple silicon), on its developer fixture: the sample PDFs plus the answers octosense-pdf-service gave for them, recorded by its pdftools_fixture example. card-host serves no host services, so no call reached a live engine.",
+  "live_engine": false,
+  "card_host": {
+    "app_hub_revision": "95e4831afca7227b640f075b252c04355bb63865",
+    "runtime": "the root's .sources: makepad 32d6415f with runtime-patches tree 7c859055, Octoscript-Makepad 33dea2f1, Octoscript 2e37d9e6",
+    "binary_sha256": "b5fdc6cd894f1045c781184a2975be3163bd04e47ed99340a322d7a32c5b9cae",
+    "admitted": "card-host: os.pdftools 0.1.0 admitted — capabilities {\"storage\"}, hosts {}, storage 67108864 bytes, agent none"
+  },
+  "bundle_blake3": "0c562ccb968e000ba169f82e5737dc16cc0412d499b7beeff520af0262e0fb2a",
+  "source_sha256": {
+    "apps/pdftools/bundle/main.splash": "4720030ae186695e944055f020c362442f93d93e1ac4cdaf6ed611027b65089b",
+    "apps/pdftools/bundle/manifest.json": "b6504504ca9bc3c4657535980b75eda2f462a456c756148cc765ccd77408a0ee",
+    "apps/pdftools/bundle/icon.svg": "653adc67f464a4472a907d511dc5d7de646db1a39d29002b9e48d673a858a7bc",
+    "apps/pdftools/tests/ui.py": "5cd93fce28620510731b72620d7962bfce9310254a2aaf408596786cc2292830",
+    "apps/pdf/host-service/examples/pdftools_fixture.rs": "83b6458d18f14b0ab581b9f4f484ec805441b857fc787b3b3d81e9b8fe9380fe"
+  },
+  "commands": [
+    "cargo run --locked -p octosense-pdf-service --example pdftools_fixture -- target/pdftools-fixture",
+    "python3 apps/pdftools/tests/ui.py --card-host <App Hub>/target/release/card-host --fixture target/pdftools-fixture --output target/pdftools-ui --port 8911"
+  ],
+  "runs": {
+    "light": "MAKEPAD_WIDGET_STYLE=macos, fixture; then a restart on the same storage",
+    "dark": "MAKEPAD_WIDGET_STYLE=macos-dark, fixture",
+    "missing": "MAKEPAD_WIDGET_STYLE=macos, the sample PDFs without the fixture: the host refuses pdf.*",
+    "empty": "MAKEPAD_WIDGET_STYLE=macos, nothing in storage"
+  },
+  "checks": [
+    "Library lists the samples with first pages and '4 pages  ·  9 KB'; Open from this device says it is coming",
+    "Field guide opens on its page grid; a page opens large; Next goes to page 3",
+    "Text shows 'PAGE 1'; finding 'wren' reports '2 pages contain “wren”.'",
+    "Info shows 'A4, 210 × 297 mm', 'Not protected' and the four fonts",
+    "Split every 2 pages previews 'Makes 4 files'; Where I choose marks 'File 2 starts here' and offers 'Split into 2 files'",
+    "Light splits at page 2 (2 files, Pages 2–7); dark splits every 2 pages (4 files, Page 7)",
+    "Merge: choose Quarterly report and Board minutes, move Board minutes up, merge into 'Merged': '6 pages  ·  13 KB', opens",
+    "Damaged scan reads 'Couldn't open this PDF' with the engine's message",
+    "After a restart the library still lists Merged with '6 pages  ·  13 KB' and it opens",
+    "Without the fixture the host's refusal is shown and Merge PDFs explains itself",
+    "An empty library says no PDFs are there and that opening from the device is coming",
+    "No [E], on_render or callback error lines in any card-host log"
+  ],
+  "grabs": [
+    "dark/01-library.png",
+    "dark/02-open-from-device.png",
+    "dark/03-pages.png",
+    "dark/04-page.png",
+    "dark/05-page-next.png",
+    "dark/06-text.png",
+    "dark/07-text-find.png",
+    "dark/08-info.png",
+    "dark/08b-info-end.png",
+    "dark/09-split-every.png",
+    "dark/10-split-where.png",
+    "dark/11-split-done.png",
+    "dark/12-merge-choose.png",
+    "dark/13-merge-order.png",
+    "dark/14-merge-done.png",
+    "dark/15-merged-pages.png",
+    "dark/16-damaged.png",
+    "empty/22-empty.png",
+    "light/01-library.png",
+    "light/02-open-from-device.png",
+    "light/03-pages.png",
+    "light/04-page.png",
+    "light/05-page-next.png",
+    "light/06-text.png",
+    "light/07-text-find.png",
+    "light/08-info.png",
+    "light/08b-info-end.png",
+    "light/09-split-every.png",
+    "light/10-split-where.png",
+    "light/11-split-done.png",
+    "light/12-merge-choose.png",
+    "light/13-merge-order.png",
+    "light/14-merge-done.png",
+    "light/15-merged-pages.png",
+    "light/16-damaged.png",
+    "light/17-restart-library.png",
+    "light/18-restart-merged.png",
+    "missing/19-engine-missing-library.png",
+    "missing/20-engine-missing-document.png",
+    "missing/21-engine-missing-merge.png"
+  ],
+  "visual_review": "every frame inspected; original /g?raw=1 PNGs, not cropped or repainted",
+  "not_verified": [
+    "the live pdf engine through this app in a shell (needs the pdf capability in App Hub and the per-caller engine areas)",
+    "the desktop shell's window sizes and on_app_resize column changes",
+    "Linux, Windows and phones (PDF Tools ships in the desktop shell only)"
+  ]
+}
