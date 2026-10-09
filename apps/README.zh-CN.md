@@ -108,7 +108,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
-| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`（App Hub 支持声明后加上 `deck`） | 无 | [`deck`](deck/host-service)：`new`、`render`、`convert` |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`、`deck` | 无 | [`deck`](deck/host-service)：`new`、`info`、`render`、`convert`，在 Quick Deck 自己的存储中运行 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -172,11 +172,14 @@ OctoSense-System-Apps 仓库（已归档）。
 - **日历**（2026-10-01，桌面端，隐藏窗口的 `--remote` 运行，接真实模型）：系统 Agent
   请日历的 Agent 放一张卡片；首次使用面板弹出，Agent 添加了一个日程，它的卡片打开了
   glance 面板。手机上没有打包。它的宿主服务测试还不在 `apps.yml` 中。
-- **Quick Deck**（2026-10-09，macOS 上的 `card-host`，隐藏窗口 `--remote`，浅色与深色）：
-  每个页面和状态都已操作并截图。它的引擎调用暂时无法运行：App Hub 还不能声明 `deck`，
-  所以 `host.request("deck.*")` 会被拒绝（应用会说明原因并保留大纲）；在引擎调用改为在
-  调用方自己的存储中运行之前，应用读不到引擎生成的 PNG（此时每张幻灯片显示其文字）。
-  尚未在 Shell 中运行；`card-host` 不调用 `on_app_resize`，所以宽窗口下 3–4 列的网格**未验证**。
+- **Quick Deck**（2026-10-09，macOS，隐藏窗口，浅色与深色）：在用其分支构建的桌面
+  Shell 中端到端运行。输入的大纲通过 `deck.new`、`deck.info` 和每张幻灯片一次
+  `deck.render` 变成演示文稿，全部写入 Quick Deck 自己的存储（`decks/<id>/g<n>/`）；
+  检查网格和单张视图显示引擎生成的 PNG，PowerPoint 和 PDF 导出也保存在旁边。
+  拒绝都会在应用中显示：存储几乎已满、引擎无法读取的演示文稿文件、存储之外的路径。
+  切换浅色或深色时，应用停留在用户所在的页面。`deck` 服务运行在 Shell 的 UI 线程上
+  （#399），所以它工作时 Shell 会停顿：五张幻灯片约 3 秒，会话中的第一次调用 16 秒。
+  不涉及引擎的每个状态（包括各种拒绝）也用下方的开发夹具在 `card-host` 中覆盖。
 - Camera 和 AI providers 自带 PNG 启动器图案，YouTube 和 Quick Deck 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
@@ -362,7 +365,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 演示邮箱的密码存放在文件中，因此不会弹出钥匙串提示。
 
 **Quick Deck 的开发夹具。** `card-host` 没有 `deck` 服务，所以 Quick Deck 带有
-一个仅供开发使用的夹具：它用预设结果回答应用的 `deck.*` 调用，并用真实的引擎
+一个仅供开发和 UI 测试使用的夹具：它用预设结果回答应用的 `deck.*` 调用，并用真实的引擎
 渲染图代替图片。`quickdeck/dev-fixture/` 中的渲染图由固定版本的 deckcraft
 （d0e57d7e）根据 `dev-fixture/outline.txt` 生成。只有当应用存储中存在
 `dev/fixture.json` 时夹具才会启用；应用从不写入 `dev/`，所以用户永远看不到它，
@@ -376,7 +379,7 @@ MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port> card-host --bundle apps/quickdeck/b
 
 此时演示文稿列表页会显示 DEV FIXTURE 标签。`fixture.json` 中，`delay` 是每次调用
 耗费的秒数，`fail` 指定失败的调用（`new`、`render`、`convert` 或 `all`），
-`unreadable: true` 会生成演示文稿但让图片保持不可读，就像引擎调用在改为在调用方
+`unreadable: true` 会生成演示文稿但让图片保持不可读，就像引擎调用改为在调用方
 自己的存储中运行之前那样。输入 `outline.txt` 中的大纲即可得到对应的图片。加上
 `MAKEPAD_WIDGET_STYLE=macos-dark` 可查看深色外观。
 

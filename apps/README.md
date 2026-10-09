@@ -131,7 +131,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
-| [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage` (`deck` once App Hub can declare it) | none | [`deck`](deck/host-service): `new`, `render`, `convert` |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage`, `deck` | none | [`deck`](deck/host-service): `new`, `info`, `render`, `convert`, in Quick Deck's own storage |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -223,13 +223,18 @@ reaches only the hosts the manifest lists.
   sheet came up, the agent added an event and its card opened the glance
   panel. Not packed on the phone. Its host service's tests are not in
   `apps.yml` yet.
-- **Quick Deck** (2026-10-09, `card-host` on macOS, hidden `--remote`, light
-  and dark): every screen and state was driven and grabbed. Its engine calls
-  cannot run yet: App Hub cannot declare `deck`, so `host.request("deck.*")`
-  is refused (the app says so and keeps the outline), and until engine calls
-  run in the caller's storage the engine's PNGs are out of the app's reach
-  (each slide then shows its text). Not run in a shell; `card-host` calls no
-  `on_app_resize`, so the 3–4 column grid of a wide window is **unverified**.
+- **Quick Deck** (2026-10-09, macOS, hidden windows, light and dark): run end
+  to end in a desktop shell built from its branch. A typed outline became a
+  deck through `deck.new`, `deck.info` and one `deck.render` per slide, all
+  writing into Quick Deck's own storage (`decks/<id>/g<n>/`); the review grid
+  and the slide view show the engine's PNGs, and the PowerPoint and PDF
+  exports land beside them. Refusals show in the app: a nearly full storage,
+  a deck file the engine can't read, and a path outside the storage. A light
+  or dark switch keeps the screen the person is on. The `deck` service runs on
+  the shell's UI thread (#399), so the shell pauses while it works: about 3 s
+  for a five-slide deck, 16 s on the very first call of a session. Every
+  state without the engine, refusals included, is also covered in `card-host`
+  with the dev fixture below.
 - Camera and AI providers ship PNG launcher artwork; YouTube and Quick Deck
   ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
@@ -435,7 +440,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 The demo keeps its password in a file, so no keychain prompt appears.
 
 **Quick Deck's dev fixture.** `card-host` has no `deck` service, so Quick
-Deck carries a development-only fixture: it answers the app's `deck.*` calls
+Deck carries a development-only fixture for its UI tests: it answers the app's `deck.*` calls
 with canned results and stands real engine renders in for the pictures. The
 renders in `quickdeck/dev-fixture/` were made by the pinned deckcraft
 (d0e57d7e) from `dev-fixture/outline.txt`. The fixture is on only while the
@@ -451,7 +456,7 @@ MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port> card-host --bundle apps/quickdeck/b
 The Decks screen then shows a DEV FIXTURE tag. In `fixture.json`, `delay` is
 the seconds each call takes, `fail` names a call that fails (`new`, `render`,
 `convert` or `all`), and `unreadable: true` makes the deck while keeping its
-pictures out of reach, as engine calls do until they run in the caller's
+pictures out of reach, as engine calls did before they ran in the caller's
 storage. Type the outline in `outline.txt` to get matching pictures. Add
 `MAKEPAD_WIDGET_STYLE=macos-dark` for the dark appearance.
 
