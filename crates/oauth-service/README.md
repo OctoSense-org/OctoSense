@@ -543,3 +543,7 @@ on request.
 
 **Unverified:** a physical approval, the journey through a rendered installed
 app, a live backend service, and Android, Windows and Linux.
+
+## HTTPS trust for backend development
+
+Backend OAuth uses Rustls with the platform certificate roots as well as the bundled public roots. A local HTTPS backend must present a valid certificate for its declared hostname, signed by a CA the user has explicitly trusted in the operating system. The host-owned login WebView and the code-exchange client can therefore use the same system trust. No app supplies a CA or disables certificate/hostname verification. An untrusted local CA still requires the operator to establish trust; HTTP and nonstandard backend ports remain refused.
