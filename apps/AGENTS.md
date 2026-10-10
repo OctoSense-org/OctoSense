@@ -93,7 +93,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   Mail/News/Photos install `on_notify` callbacks; the shell's `NoticeService`
   serves Maps, YouTube and Camera. The fixed notice template lives in
   `../crates/shell/resources/glance/notice.card`; Calendar keeps its own event
-  and agenda templates. Grant `glance` in the manifest and publish as the app.
+  and agenda templates. Declare `glance` usage in the manifest and publish as
+  the admitted app; preserve publisher/account identity and actual consent.
+  The declaration itself does not grant or deny publication.
 - For richer app-owned cards, use `glance.publish` with either L0 `source` and
   optional `data`, or a Splash `script`. Preserve app attribution, policy and
   the distinction between app UI actions and agent tool calls. See

@@ -2,8 +2,8 @@
 
 [English](README.md) | 简体中文
 
-获得 `mail` 能力的普通 App Hub 应用可以通过宿主登录面板连接自己的邮箱，
-读取邮件、撰写草稿并请求原生发送审阅。密码和 SMTP 连接始终由本服务持有；
+已准入的 App Hub 应用可以通过宿主登录面板连接自己的邮箱，读取邮件、撰写草稿
+并请求原生发送审阅。`mail` 声明只说明用途；仍需实际应用/账户访问权和原生审阅。密码和 SMTP 连接始终由本服务持有；
 模型或应用不能批准发送。
 
 ## 公共撰写接口
@@ -74,7 +74,7 @@ fn review_reply(account, to, subject, body){
 }
 ```
 
-声明 `mail` 能力。新应用可声明精确主版本要求：
+声明 `mail` 说明用途，省略声明不会拒绝调用。新应用可声明精确主版本要求：
 `host_api.required: {"mail.compose": 1, "mail.compose_status": 1,
 "mail.review_send": 1}`。消费端契约支持时，Agent 工具可以映射到
 `mail.compose` 和 `mail.compose_status`。需要账户的 Agent 声明
@@ -87,7 +87,7 @@ fn review_reply(account, to, subject, body){
 公共草稿 ID 的宿主派生包含应用和账户，记录位于应用沙箱之外。多个应用共享
 邮箱访问授权也不共享草稿。历史 `mail.propose_reply`、`mail.draft`、
 `mail.suggest_reply`、`mail.propose_send` 及 Mail 原有卡片/编辑器仍专属于
-`os.mail`。发送认领时，Shell 重新检查应用准入、`mail` 授权、账户选择和暂停
+`os.mail`。发送认领时，Shell 重新检查应用准入、账户选择和暂停
 状态；服务重新检查账户权限、版本、完整内容、发件人及一次性提交状态。
 原始应用隔离实例关闭后，未提交的审阅失效。审阅凭据十分钟后过期，不会序列化
 或暴露给脚本。

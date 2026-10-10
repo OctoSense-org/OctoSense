@@ -2,8 +2,12 @@
 
 [English](capabilities.md) | 简体中文
 
-本文描述当前源码中“能力仅用于声明”的实现，不表示下载的发行版已经包含这些更改。
-桌面版 0.1.0-rc.2 早于组件模型及本策略。
+能力声明描述应用的预期用途。公开调用遵守已验证的应用身份、私有存储边界、
+账户范围及真实用户同意；清单中的服务族和目的地列表用于披露用途。
+
+这项策略已随[桌面 RC4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4)
+发布，源码为 `9266b008`。[源码与归档包验收](../tools/fixtures/wasm-phone-lab/README.zh-CN.md#rc4-发布证据)
+分别记录。RC2 和 Home beta.2 早于此策略；独立手机测试不会升级已安装的 Home。
 
 ## 声明用于说明用途
 
@@ -45,6 +49,14 @@
 验收矩阵成对测试“已声明”和“未声明”的调用，再独立测试拒绝设备同意、外部
 配置目录、旧账户、未经批准的写操作、存储越界及配额耗尽。组件验收还检查实际
 商店解析、别名调用、实例状态隔离和撤回。
+
+源码 `8b09e05d` 的完整桌面 App Hub/组件演练通过 11/11 项检查，原生 Host API Lab
+通过 31/31 项。在指定的 OnePlus 6 上，共享组件通过 28/28 项原生断言和 13/13 项驱动
+检查；Host API Lab 通过 31/31 项原生断言及全部 45 项驱动检查。详见
+[组件证据](../tools/fixtures/wasm-phone-lab/README.zh-CN.md#最终源码验收)和
+[Host API 证据](../tools/fixtures/host-api-lab/README.zh-CN.md#最终源码验收)。
+手机使用独立测试包，已安装的 Home 保持不变。真实模型行为与 OpenHarmony 设备执行
+仍**未验证**。
 
 单元测试、模拟连接器、平台测试、实体设备测试和发布产物必须分别记录。
 构建成功或 PR 合并不代表设备验收通过。组件支持见 [WebAssembly 说明](wasm.zh-CN.md)，

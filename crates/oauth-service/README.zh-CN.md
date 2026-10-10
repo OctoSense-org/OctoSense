@@ -15,7 +15,7 @@ Rust 授权协议、连接器、原生审阅、账户生命周期和示例界面
 | Linux | 已在 Linux 通过协议测试和主机编译；浏览器登录和 GUI 未验证 | 需要解锁 Secret Service，不回退到明文；构建主机的凭据库未解锁或不可用，原生测试遭到拒绝 | 不支持，明确拒绝 |
 | Android | GitHub 流程存在但未验证；**Google 原生适配器完成前拒绝连接** | Mail 的 Android 凭据库，独立命名空间 | 现有的亲手点按来源校验；本示例未验证 |
 
-`desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本；Home（手机）还没有能安装连接账户应用的发布版本。beta.2 的 `auth` 没有后端登录，提供商注册也只来自 `clients.json`（见[高级运维覆盖配置](#高级运维覆盖配置)）。beta.2 也早于此后合入 OctoSense `main` 的改动，这些改动还没有进入任何发布版本。所以在 beta.2 上，只有 Gmail 发信检查是否亲手点按，GitHub 和 Calendar 保存使用的宿主面板不做这项检查；Agent 的 `glance.publish` 仍接受 `script` 卡片；Calendar 用 `gcalendar.sync` 和同步 token 同步全部日程历史，而不是下文的有限日期窗口。更早的 `desktop-v0.1.0-beta.1` 和 `home-v0.1.0-beta.1` 使用应用契约 1.1.0，这一版没有 `auth` 能力：它们的商店会列出声明了 `auth` 的应用，但拒绝安装。这些服务不取代也不迁移内置 Mail、Calendar 应用。
+`desktop-v0.1.0-beta.2` 是第一个包含已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）的发布版本。下文比较描述这些历史构建；当前宿主验证与发布状态[单独记录](../../docs/capabilities.zh-CN.md#验证与发布)。beta.2 的 `auth` 没有后端登录，提供商注册也只来自 `clients.json`（见[高级运维覆盖配置](#高级运维覆盖配置)）。beta.2 也早于下文所述的后端与审阅改动。在 beta.2 上，只有 Gmail 发信检查是否亲手点按，GitHub 和 Calendar 保存使用的宿主面板不做这项检查；Agent 的 `glance.publish` 仍接受 `script` 卡片；Calendar 用 `gcalendar.sync` 和同步 token 同步全部日程历史，而不是下文的有限日期窗口。更早的 `desktop-v0.1.0-beta.1` 和 `home-v0.1.0-beta.1` 使用应用契约 1.1.0，这一版没有 `auth` 能力：它们的商店会列出声明了 `auth` 的应用，但拒绝安装。这些服务不取代也不迁移内置 Mail、Calendar 应用。
 
 ## 用户登录
 
@@ -33,9 +33,9 @@ Rust 授权协议、连接器、原生审阅、账户生命周期和示例界面
 
 | 用途 | 当前接口约定 |
 | --- | --- |
-| 在应用内识别 GitHub 用户 | 授予 `auth` 并请求 `read:user`。宿主验证 GitHub 数字用户 ID 和登录名，返回绑定该应用的句柄，以及 `app_id`、`provider`、`subject`、`label`、`scopes` 和可选 `expires_at`。不需要仓库访问权限；也不提供已验证的邮箱地址。 |
-| 在应用内识别 Google 用户 | `auth` 也允许仅用于身份的 `openid`、`email`、`profile` 权限，无需 Gmail 或 Calendar 能力。宿主验证提供商的 subject，并仅在 Google 确认邮箱已验证时将邮箱作为标签。同样受平台授权支持范围限制。 |
-| 访问提供商数据 | GitHub 仓库另外需要 `github` 能力及仓库权限。Google Gmail、Calendar 分别需要 `gmail` / `gcalendar` 能力和相应权限，与应用选择哪种登录身份无关。 |
+| 在应用内识别 GitHub 用户 | 以已准入应用身份调用 `auth.connect` 并请求 `read:user`。宿主验证 GitHub 数字用户 ID 和登录名，返回绑定该应用的句柄，以及 `app_id`、`provider`、`subject`、`label`、`scopes` 和可选 `expires_at`。不需要仓库访问权限；也不提供已验证的邮箱地址。 |
+| 在应用内识别 Google 用户 | `auth` 也允许仅用于身份的 `openid`、`email`、`profile` 权限，无需 Gmail 或 Calendar 数据 scope。宿主验证提供商的 subject，并仅在 Google 确认邮箱已验证时将邮箱作为标签。同样受平台授权支持范围限制。 |
+| 访问提供商数据 | GitHub 仓库需要仓库 scope，Google Gmail、Calendar 需要各自的提供商 scope，连接必须属于当前已准入应用。服务族能力声明说明用途，不授予提供商数据访问权；这与应用选择哪种登录身份无关。 |
 | 注册或登录应用自己的后端 | 在 macOS 和 Android 9 及以上版本上，宿主持有的登录 WebView 使用应用的后端注册信息、PKCE 代码交换及后端的受保护身份端点。在桌面上，仍可选择外部浏览器。注册信息来自应用签名清单中的 `backend` 块；清单中没有这个块时，来自运维人员的配置（见[开发者后端接口约定](#开发者后端接口约定)）。 |
 
 后端流程由开发者的 HTTPS 登录页面提供自己的注册和登录。若桌面后端页面也提供 GitHub 登录，应使用外部浏览器模式，以便访问提供商来源。后端负责验证身份并签发自身会话，宿主为该应用保存独立的后端会话。共享连接器的 GitHub 或 Google 令牌不会导出给应用后端。开发者后端可以通过自身 OAuth 流程，取得用户另行授权的 GitHub 令牌。现有网络访问能力不会让本地 GitHub 资料变成远程后端可信的身份证明。应用自身不得收集密码或提供商秘密凭据。
@@ -51,11 +51,11 @@ iOS 后端登录仍不可用。兼容源码宿主为普通 `WebReader` 新增 Li
 
 ## 开发者后端接口约定
 
-声明 `auth` 和 `storage.accounts: true`。调用 `auth.connect` 时传入 `{"provider":"backend","scopes":["app.session"]}`，并复用普通的 `auth.accounts`、`auth.active`、`auth.select`、`auth.disconnect` 生命周期。macOS/Android 默认使用嵌入页面。传入 `"presentation":"webview"` 可要求该模式，`"presentation":"browser"` 选择桌面外部浏览器；不支持的组合会明确拒绝。`auth.backend.me` 接收本应用当前选中的 `connection` 句柄，返回 `{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`，其中包含后端验证过的身份。`auth.backend.request` 调用注册信息中声明的操作（见[调用声明的操作](#调用声明的操作)）。
+披露 `auth` 用途并设置 `storage.accounts: true`；服务族名称不是授权门槛。调用 `auth.connect` 时传入 `{"provider":"backend","scopes":["app.session"]}`，并复用普通的 `auth.accounts`、`auth.active`、`auth.select`、`auth.disconnect` 生命周期。macOS/Android 默认使用嵌入页面。传入 `"presentation":"webview"` 可要求该模式，`"presentation":"browser"` 选择桌面外部浏览器；不支持的组合会明确拒绝。`auth.backend.me` 接收本应用当前选中的 `connection` 句柄，返回 `{"connection":"…","backend_id":"…","identity":{"sub":"…","label":"…"}}`，其中包含后端验证过的身份。`auth.backend.request` 调用注册信息中声明的操作（见[调用声明的操作](#调用声明的操作)）。
 
 ### 注册信息从哪里来
 
-在 OctoSense `main`（尚未进入任何发布版本）上，应用在签名清单的 `backend` 块中声明自己的后端。清单还必须要求 `backend-api-v1`、申请 `auth`，并设置 `storage.accounts: true`。`backend` 块的 JSON 格式与下文运维人员的注册对象相同，只是不含 `app_id`：应用身份始终来自已准入的应用包。各字段的规则见 App Hub 的[登录自己的后端](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.zh-CN.md#登录自己的后端)。只有实现了 `auth.backend.request@1` 的宿主才会安装这类应用；在 `main` 上即 macOS 和 Android。
+应用在签名清单的 `backend` 块中声明自己的后端。清单必须要求 `backend-api-v1` 并设置 `storage.accounts: true`；`auth` 描述用途，不授予访问权限。`backend` 块的 JSON 格式与下文运维人员的注册对象相同，只是不含 `app_id`：应用身份始终来自已准入的应用包。各字段的规则见 App Hub 的[登录自己的后端](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.zh-CN.md#登录自己的后端)。安装需要宿主提供 `auth.backend.request@1`，但这个标记不承诺支持所有登录或写入界面。macOS/Android 支持嵌入式登录，桌面平台支持外部浏览器流程，Windows/Linux 的受保护写操作仍不支持。平台及验收范围见[桌面浏览器指南](../../docs/desktop-embedded-browser.zh-CN.md)和[当前验证记录](../../docs/capabilities.zh-CN.md#验证与发布)。
 
 Shell 通过自己的签名目录和经过摘要校验的应用包读取器读取声明（`crates/shell/src/connected_backends.rs`），再通过 `host::set_backend_resolver` 交给本 crate。宿主每次使用凭据时都会重新解析声明。如果无法解析应用包，例如应用已撤回或摘要不再匹配，调用就会失败，绝不会退回运维人员的配置文件。没有 `backend` 块的应用继续使用运维人员的注册。
 
@@ -169,7 +169,7 @@ Shell 通过自己的签名目录和经过摘要校验的应用包读取器读�
 | `gcalendar` | `calendars`、`cached`、`refresh`、`get`、`prepare`、`review_save` |
 | `gmail` | `labels`、`messages`、`message`、`draft.open/get/edit/review`、`events.status`、`event.status/decide` |
 
-`auth.connect` 接收 provider 和 scopes。GitHub scopes 为 `read:user`、`public_repo` 或 `repo`；Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`、`mail.read`、`mail.send`；后端登录使用 `app.session`。这些提供商权限与 App Hub 能力分别校验。句柄不是 token；选中一个 Google 账户也不会自动让其他应用读取它。
+`auth.connect` 接收 provider 和 scopes。GitHub scopes 为 `read:user`、`public_repo` 或 `repo`；Google 为 `openid`、`email`、`profile`、`calendar.list`、`calendar.events`、`mail.read`、`mail.send`；后端登录使用 `app.session`。这些提供商 scope 依据实际绑定该应用的连接校验；App Hub 能力声明只说明用途，不授予或拒绝这些 scope。句柄不是 token；选中一个 Google 账户也不会自动让其他应用读取它。
 
 Calendar 请求的写法如下（专用测试账户的 Calendar 授权已验证，面向公众的 Google 生产审批仍未验证）：
 
@@ -192,15 +192,15 @@ GitHub 保存冻结仓库、分支、路径、内容及原 blob SHA。Calendar �
 
 ## Agent 如何调用共享服务
 
-普通应用声明自己的工具名，例如 `inbox.message`，并在 `tools.json` 显式映射 `host_method: "gmail.message"`。App Hub 只准入经过审查的方法，并校验最低风险等级、私有数据标记和服务能力。凭据管理、审批和远程写入不开放为工具别名。
+普通应用声明自己的工具名，例如 `inbox.message`，并在 `tools.json` 显式映射 `host_method: "gmail.message"`。App Hub 只准入经过审查的方法，并校验最低风险等级及私有数据标记，不要求匹配的服务族能力声明。凭据管理、审批和远程写入不开放为工具别名。
 
 Shell 从摘要校验后的包读取声明，通过 `HostServiceExecutor` 路由；检查目标服务，注入工具所属应用当前连接，拒绝过期 peer 或模型选择的其他账户。服务再次校验应用、提供商及 scope。跨应用访问仍须工具所有者声明 shareable、调用方获得授权；三个示例默认不共享私有读取工具。
 
 ## 新邮件与 Glance
 
-桌面脚本卡片先显示标题和概要，打开模板卡片后提供有界应用视口，让编辑器及滚动区域获得实际高度。模板工作区自己提供 Email/Reply/Chat 导航，宿主不重复添加 Chat 标签。原有未选择视口模式的脚本卡片继续按内容测量并由外层滚动。前台发布的卡片可以在用户同意 Agent 之前恢复；撤销 `glance` 授权、明确拒绝 Agent、退出账户和切换账户仍会阻止恢复。
+桌面脚本卡片先显示标题和概要，打开模板卡片后提供有界应用视口，让编辑器及滚动区域获得实际高度。模板工作区自己提供 Email/Reply/Chat 导航，宿主不重复添加 Chat 标签。原有未选择视口模式的脚本卡片继续按内容测量并由外层滚动。前台发布的卡片可以在用户同意 Agent 之前恢复；准入失效、明确拒绝 Agent、退出账户和切换账户仍会阻止恢复；删除 `glance` 用途声明不等于撤销授权。
 
-`connected_events.rs` 发现声明 Gmail/auth、已获 Agent 同意、允许后台且声明 `<应用短名>.new_message`（应用短名即应用 id 的最后一段）的已安装应用。采集器先建立只面向未来的 Gmail history 基线，允许运行时通常每五分钟轮询。登录并允许应用 Agent 后刷新，等 `gmail.events.status` 显示 `baseline_ready: true` **再发测试邮件**。历史收件箱不会一次性变成通知。history 失效时使用有边界的恢复扫描。
+`connected_events.rs` 发现已准入、当前 Google 连接具备 `mail.read` scope、已获 Agent 同意、`agent.background: true` 且声明 `<应用短名>.new_message`（应用短名即应用 id 的最后一段）的已安装应用。采集器先建立只面向未来的 Gmail history 基线，允许运行时通常每五分钟轮询。登录并允许应用 Agent 后刷新，等 `gmail.events.status` 显示 `baseline_ready: true` **再发测试邮件**。历史收件箱不会一次性变成通知。history 失效时使用有边界的恢复扫描。
 
 新事件进入该账户的 peer，携带已准入的 AGENT.md/技能及“不可信邮件数据”边界。模型读取邮件，决定静默或重要。重要邮件可选用包内的 `glance-workspace.splash` 模板并提供消息数据；宿主注入当前连接并保留展开后的源码，模型无需重写 Reply/Chat 编辑器。
 

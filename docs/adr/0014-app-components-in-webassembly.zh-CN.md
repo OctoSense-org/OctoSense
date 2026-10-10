@@ -15,8 +15,19 @@ App Hub（#186、#188、#189、#190）和 App Flow（#180、#181）。第 1 阶�
 桌面 rc.2 和 Home beta.2 仅包含核心模块。
 [共享组件验收](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#真实-github-共享组件验收)
 现已记录真实发布者证明、带管理员证明的私有试运行目录，以及 macOS 和 OnePlus 6 上的实际商店安装和 Splash 工具执行。
-在干净源码 `c5f0c5c1` 上，两端原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13 通过。
-公开目录保持不变。组件及新策略的发行验收仍待完成；不声称真实模型、性能或 OpenHarmony 设备已经通过。当前行为见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)及
+较早的 `c5f0c5c1` 回执记录两端原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13。
+最终源码 `8b09e05d`（以相同树合并为 `40ca21da`）的完整 macOS 桌面通过 11/11 项
+App Hub 检查；OnePlus 6 通过 28/28 项组件断言和 13/13 项驱动检查。独立 Host API Lab
+在 macOS 和 OnePlus 6 上均通过 31/31 项原生检查，手机驱动全部 45 项也通过。详见
+[最终组件证据](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#最终源码验收)和
+[Host API 证据](../../tools/fixtures/host-api-lab/README.zh-CN.md#最终源码验收)。
+公开目录和已安装的 Home 保持不变。[桌面 RC4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4)
+已从 `9266b008` 发布，Mac 归档包通过 11/11 项检查，
+[验收已绑定最终文件](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#rc4-发布证据)。开发二进制和独立手机测试不证明发行 Home 升级、真实模型行为、性能或
+OpenHarmony 设备执行。后续 [Windows 验证](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#windows-缓存验证)
+在 `a8e170d4` 通过 42/42 项测试及 Shell 编译检查，以 `af205d9c` 合并。
+该修复仅改测试，生产源码不变；它不属于 RC4 tag，也不证明 RC4 归档包验收。
+当前行为见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)及
 [应用能力与执行边界](../capabilities.zh-CN.md)。
 
 ## 背景

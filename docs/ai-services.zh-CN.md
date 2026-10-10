@@ -102,17 +102,17 @@ flowchart TB
 | | Rinx | 其他原生应用 | 系统脚本应用 | 商店脚本应用 |
 | --- | --- | --- | --- | --- |
 | 用户允许后拥有 Agent | 可用，在 Rinx 打开且已登录期间 | 可用，在应用打开期间 | 可用，获准后即准备，此后每次启动时也会准备 | 可用，前提是应用包声明了 Agent（`octos.*`、`agent` 块或 `tools.json`）；获准后即准备，此后每次启动时也会准备 |
-| 应用自己的界面与 Agent 对话 | 部分可用：`OctosAppService` 只用于小程序的私有上下文；用户在 “Ask Rinx” 面板中对话 | 可用：`OctosPeer`，但随附的应用只用它提供工具 | –（都没有声明 `octos.*`） | 可用：[`octos` 服务](#脚本应用与-octos-服务) |
-| Agent 使用应用自己的工具 | 尚未支持：它的工具只服务于 AI 面板 | 可用：只读工具，在已打开的窗口中运行 | 可用：在应用的宿主服务或 Shell 的通知服务上运行 | 部分可用：只有用 `host_method` 映射到共享服务的工具能运行，并在该服务上执行（见 [architecture.zh-CN.md 第 4 节](architecture.zh-CN.md#中转)） |
+| 应用自己的界面与 Agent 对话 | 部分可用：`OctosAppService` 只用于小程序的私有上下文；用户在 “Ask Rinx” 面板中对话 | 可用：`OctosPeer`，但随附的应用只用它提供工具 | 应用声明 Agent 且用户同意后可用；具体 UI 接入各不相同 | 可用：[`octos` 服务](#脚本应用与-octos-服务) |
+| Agent 使用应用自己的工具 | 尚未支持：它的工具只服务于 AI 面板 | 可用：只读工具，在已打开的窗口中运行 | 可用：在应用的宿主服务或 Shell 的通知服务上运行 | `host_method` 路由到经审阅的宿主服务。声明 `requires: ["script-tools-v1"]` 后，`implemented_by: "app"` 在已打开的完整应用 VM 中调用 `app_tool(name, call_id)`；应用关闭时返回 `app_not_running`（见[分派导读](architecture-walkthrough.zh-CN.md#7-把工具追到-rust-代码)） |
 | 每一轮都附带 `AGENT.md` 和技能 | – | – | 可用（邮件两者都附带，日历只附带 `AGENT.md`） | 可用 |
-| 由事件启动 Agent | 尚未支持 | 尚未支持 | 部分可用：只有邮件的新邮件触发器 | 部分可用：新的 Gmail 邮件，前提是应用声明了 `auth` 和 `gmail`，它的 `agent` 块设置了 `background: true` 并列出 `<应用短名>.new_message`；应用短名是应用 id 的最后一段，所以 Inbox Assistant 列出的是 `inbox.new_message`（见[导读第 6 节](architecture-walkthrough.zh-CN.md#6-用户在哪里对话)） |
-| glance 屏幕上的卡片 | 尚未支持 | 尚未支持 | 可用，需 `glance` 权限；邮件的卡片可以带回复草稿 | 可用，需 `glance` 权限 |
+| 由事件启动 Agent | 尚未支持 | 尚未支持 | 部分可用：只有邮件的新邮件触发器 | 部分可用：新的 Gmail 邮件，前提是应用已准入、当前 Google 连接有 `mail.read` scope、已获 Agent 同意，且 `agent` 块设置了 `background: true` 并列出 `<应用短名>.new_message`；应用短名是应用 id 的最后一段，所以 Inbox Assistant 列出的是 `inbox.new_message`（见[导读第 6 节](architecture-walkthrough.zh-CN.md#6-用户在哪里对话)） |
+| glance 屏幕上的卡片 | 尚未支持 | 尚未支持 | 以已准入发布者的身份可用；邮件的卡片可以带回复草稿 | 以已准入发布者的身份可用 |
 | 就自己的卡片与 Agent 对话 | 尚未支持 | 尚未支持 | 可用：Card / Chat（邮件回复为 Email / Chat） | 可用：Card / Chat |
-| 一次性模型调用 | – | – | 可用，需 `model` 权限（相册在用） | 可用，需 `model` 权限 |
-| 系统工具箱 | 未使用¹ | 未使用¹ | 未使用¹ | 尚未支持 |
+| 一次性模型调用 | – | – | 可用，检查应用/账户作用域与预算（相册在用） | 可用，检查应用/账户作用域与预算 |
+| 系统工具箱 | 未使用¹ | 未使用¹ | 宿主提供相应工具后，按 `agent.tools` 的精确名称选择¹ | 默认商店工具列表不提供¹ |
 | 为 Agent 选择模型 | 尚未支持² | 尚未支持² | 尚未支持² | 尚未支持² |
 
-¹ 只在带 `toolbox-peers` feature 的构建中提供，而且目前还没有应用声明 `research` 或 `crawl`。
+¹ 只在带 `toolbox-peers` feature 的构建中提供，仍需 Agent 同意和工具授权。脚本应用在 `agent.tools` 中选择精确工具名，但准入还要求宿主提供该名称。默认商店工具列表不含工具箱工具；写入名称不能绕过准入。`research`/`crawl` 能力声明不授予工具。
 
 ² 每个 Agent 都使用 AI providers 中设置的提供方；Shell 不读取 manifest 的 `model.needs`。
 
@@ -132,7 +132,7 @@ flowchart TB
 
 ### 调用
 
-应用只能调用 manifest 中声明了的 `octos.*` 名称：Card runner 的隔离环境会拒绝其余的调用，服务还会再检查一次（`contained::declared`）。这些调用作用于应用的对话，也就是它的 peer 上用户的通道（[一个应用 Agent，两条通道](../README.zh-CN.md#一个应用-agent两条通道)）：
+已准入应用声明 Agent 并获用户同意后，可以使用下列四个公开 `octos.*` 方法。`capabilities` 中省略某个方法不会拒绝它；`contained::declared` 检查应用是否选择启用 Agent，代理拒绝未知方法。账户及宿主配置目录检查仍然有效。这些调用作用于应用的对话，也就是它的 peer 上用户的通道（[一个应用 Agent，两条通道](../README.zh-CN.md#一个应用-agent两条通道)）：
 
 | 调用 | 参数 | 返回（`r.data`） |
 | --- | --- | --- |
@@ -149,7 +149,7 @@ flowchart TB
 
 | `r.error` | 原因 |
 | --- | --- |
-| `this app was not granted "octos", which "<service>" needs` | manifest 中没有这个名称；隔离环境立即返回。 |
+| `This app has not opted in to an assistant` | 已准入应用未选择启用 Agent；公开 API 的存在不会为应用自动创建 Agent。 |
 | `no service answers "octos" on this device` | Shell 没有托管内核（iOS）。 |
 | `Waiting for the person to allow this app's agent (OctoSense asks the first time)` | 用户尚未同意，或已拒绝。 |
 | `The assistant is turned off for apps on this device` | 闸门为 `Off`。 |
@@ -162,7 +162,7 @@ App Flow 的[错误](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/ma
 
 ## 一次性模型调用：`model` 服务
 
-有些工作只需要一个有边界的回答，而不是一个 Agent；相册就用它把照片归成回忆。获得 `model` 权限的应用调用 `model.complete {task, input, schema, class?, allow_urls?}`，或者用 `model.budget` 查看自己的预算（[`complete/`](../apps/ai-providers/host-service/src/complete/mod.rs)）：
+有些工作只需要一个有边界的回答，而不是一个 Agent；相册就用它把照片归成回忆。已准入应用调用 `model.complete {task, input, schema, class?, allow_urls?}`，或者用 `model.budget` 查看自己的预算（[`complete/`](../apps/ai-providers/host-service/src/complete/mod.rs)）：
 
 - 它绕过内核：服务读取同一份配置文件和密钥，自己调用提供方。模型只看到固定的指令、任务、schema 和输入。
 - `class` 为 `fast`（默认）或 `strong`。宿主按用户设定的顺序尝试提供方，同类的优先。应用只知道回答的是哪一类，从不知道提供方、模型或密钥。
@@ -170,19 +170,23 @@ App Flow 的[错误](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/ma
 - 每个应用的预算默认为每分钟 6 次调用，每个 UTC 日 100 次调用和 100,000 个 token，记录在 `<apps root>/.host/model/ledger.json` 中，位于所有应用的 jail 之外。
 - 拒绝的形式是 `<code>: <sentence>`，`code` 为 `capability`、`no_provider`、`rate`、`budget`、`bad_request`、`invalid_output`、`too_large` 或 `provider` 之一。
 
+`model` 声明说明用途；调用仍检查准入、账户作用域和预算。保留的 `capability` 错误码表示调用方未准入，不表示缺少声明。
+
 App Flow 的[一次性模型调用](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.zh-CN.md#一次性模型调用model)给出了调用示例。
 
 ## 系统工具箱
 
 系统工具箱（[`crates/toolbox`](../crates/toolbox/README.md)）让应用 Agent 做有边界的调研，而不是自己操作浏览器：它提供固定的 OctoScript 工作流模板，以及搜索、读取网页和抓取的工具，Shell 把它们作为归属于 `toolbox` 的宿主工具提供（[`toolbox_peers.rs`](../crates/ai-host/src/toolbox_peers.rs)）。
 
-- **各项权限授予什么。** `research` 授予 `workflow.run`、`workflow.fork`、`toolbox.search` 和 `toolbox.web_read`；`crawl` 授予 `toolbox.deep_crawl`。
-- **何时提供。** 只有带 `toolbox-peers` feature 的构建才有（手机端的默认构建有，桌面端没有），而且要在用户同意之后；脚本应用中目前只提供给系统应用。系统 Agent 一个也拿不到。
+- **选择哪些工具。** 脚本应用在 `agent.tools` 中写出精确名称：`workflow.run`、`workflow.fork`、`toolbox.search`、`toolbox.web_read` 或 `toolbox.deep_crawl`。顶层 `research` 对象限制资源范围；爬取还要求 `max_depth` 和 `max_pages` 为正数。能力声明既不授予这些工具，也不会拒绝已选择的工具。原生模块保留单独审阅的工具选择。
+- **何时提供。** 只有带 `toolbox-peers` feature 的构建才有（手机端的默认构建有，桌面端没有），仍需 Agent 同意与工具授权。准入先检查每个请求名称是否在宿主提供的工具列表中。默认商店列表不含工具箱工具；Shell 可为特定的经审核系统应用扩展列表。通过准入的脚本应用共用精确选择的执行路径，但准入时可申请的工具列表不同。系统 Agent 一个也拿不到。
 - **预算与结果。** 模板经由 `model` 服务调用模型，因此与应用共用预算；结果写入 `<apps root>/.host/toolbox/<app>`，应用无法伪造。
+
+准入边界由 App Hub 的 [`HostLimits::default().offered_tools`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/app-contract/src/policy.rs#L47) 和 [`resolve_agent`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/app-policy/src/policy.rs#L84) 实现。[`set_agent_tool_offer`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/appstore/src/system.rs#L50) 只扩展随宿主发布的系统应用列表。准入之后，[`grant_manifest`](../crates/shell/src/host_tools/toolbox.rs) 调用 [`ToolboxGrant::for_manifest`](../crates/ai-host/src/toolbox_peers.rs) 保留精确选择和范围；同意与共享仍由中继检查。
 
 ## glance 卡片
 
-拥有 `glance` 权限的应用通过 `glance` 服务（[`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)）把卡片发布到 glance 面板（桌面端）或 glance 页面（手机端）：`glance.publish`、`glance.withdraw` 和 `glance.list`。Shell 从调用方取得发布者，从不读取参数中的发布者；它把卡片绑定到发布时的账户，每个应用每分钟最多发布 6 次。信息流可滚动浏览所有保留卡片，不再按每个应用的卡片数量设限。源码、data 与降级后 UI 内容按负载字节预算保留：每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，同时接收新的发布。系统应用的 Agent 通过自己的工具发布卡片：`<app>.notify` 用模型写的文字填充固定的卡片模板；邮件的 `mail.publish_card` 检查模型编写的卡片，并在提供 `draft_id` 时把它绑定到宿主保存的回复草稿。
+已准入应用通过 `glance` 服务（[`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)）把卡片发布到 glance 面板（桌面端）或 glance 页面（手机端）：`glance.publish`、`glance.withdraw` 和 `glance.list`。Shell 从调用方取得发布者，从不读取参数中的发布者；它把卡片绑定到发布时的账户，每个应用每分钟最多发布 6 次。信息流可滚动浏览所有保留卡片，不再按每个应用的卡片数量设限。源码、data 与降级后 UI 内容按负载字节预算保留：每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，同时接收新的发布。系统应用的 Agent 通过自己的工具发布卡片：`<app>.notify` 用模型写的文字填充固定的卡片模板；邮件的 `mail.publish_card` 检查模型编写的卡片，并在提供 `draft_id` 时把它绑定到宿主保存的回复草稿。
 
 手机上的 glance 列表只显示摘要，不运行生成的界面。打开卡片会显示它的工作区，再次打开时状态依旧：手机上全屏，桌面端居中。发布者有 Agent 时，工作区有 Card / Chat 标签页，即使卡片没有声明 `sys.chat`；邮件回复则是 Email / Chat，共用一份保存的草稿。工作区见 README 的[卡片与提问](../README.zh-CN.md#卡片与提问)；邮件的草稿、审阅和测试见[可组合的邮件卡片](mail-composable-cards.zh-CN.md)。
 

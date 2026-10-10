@@ -102,17 +102,17 @@ Four kinds of app have agents: Rinx, through the injected service; the other nat
 | | Rinx | Other native apps | System script apps | Store script apps |
 | --- | --- | --- | --- | --- |
 | An agent, once the person allows it | Works, while Rinx is open and signed in | Works, while the app is open | Works, prepared once allowed and at each startup | Works, if its bundle declares one (`octos.*`, an `agent` block or `tools.json`); prepared once allowed and at each startup |
-| Its own UI talks to its agent | Partly: `OctosAppService`, only for its mini apps' private contexts; the person uses the "Ask Rinx" panel | Works: `OctosPeer`, though the shipped apps only serve tools over it | – (none declares `octos.*`) | Works: [the `octos` service](#script-apps-and-the-octos-service) |
-| Tools of its own for its agent | Not yet: its tools serve only the AI pane | Works: read tools, run in the open window | Works: run on its host service or the shell's notice service | Partly: only tools mapped with `host_method` run, on the shared service they name ([architecture.md §4](architecture.md#the-relay)) |
+| Its own UI talks to its agent | Partly: `OctosAppService`, only for its mini apps' private contexts; the person uses the "Ask Rinx" panel | Works: `OctosPeer`, though the shipped apps only serve tools over it | Available after agent opt-in and consent; UI integration varies | Works: [the `octos` service](#script-apps-and-the-octos-service) |
+| Tools of its own for its agent | Not yet: its tools serve only the AI pane | Works: read tools, run in the open window | Works: run on its host service or the shell's notice service | `host_method` routes to a reviewed host service. With `requires: ["script-tools-v1"]`, `implemented_by: "app"` runs `app_tool(name, call_id)` in the open full-app VM; a closed app returns `app_not_running` ([dispatch walkthrough](architecture-walkthrough.md#7-trace-a-tool-to-rust-code)) |
 | `AGENT.md` and skills sent with every turn | – | – | Works (Mail ships both, Calendar only an `AGENT.md`) | Works |
-| Events that start its agent | Not yet | Not yet | Partly: Mail's new-mail trigger only | Partly: new Gmail messages, for an app that declares `auth` and `gmail` and whose `agent` block sets `background: true` and lists `<app namespace>.new_message`; the app namespace is the last segment of the app id, so Inbox Assistant lists `inbox.new_message` ([walkthrough §6](architecture-walkthrough.md#6-where-the-person-talks)) |
-| Cards on the glance screen | Not yet | Not yet | Works, with `glance`; Mail's can carry a reply draft | Works, with `glance` |
+| Events that start its agent | Not yet | Not yet | Partly: Mail's new-mail trigger only | Partly: new Gmail messages, for an admitted app with an active Google connection carrying `mail.read`, agent consent, and an `agent` block that sets `background: true` and lists `<app namespace>.new_message`; the app namespace is the last segment of the app id, so Inbox Assistant lists `inbox.new_message` ([walkthrough §6](architecture-walkthrough.md#6-where-the-person-talks)) |
+| Cards on the glance screen | Not yet | Not yet | Works as the admitted publisher; Mail's can carry a reply draft | Works as the admitted publisher |
 | Chat about one of its cards | Not yet | Not yet | Works: Card / Chat (Email / Chat for a Mail reply) | Works: Card / Chat |
-| One-shot model calls | – | – | Works, with `model` (Photos) | Works, with `model` |
-| The system toolbox | Unused¹ | Unused¹ | Unused¹ | Not yet |
+| One-shot model calls | – | – | Works under app/account scope and budget (Photos) | Works under app/account scope and budget |
+| The system toolbox | Unused¹ | Unused¹ | Matching host offer and exact `agent.tools` selection¹ | Excluded from the default store offer¹ |
 | A model chosen for its agent | Not yet² | Not yet² | Not yet² | Not yet² |
 
-¹ Only in builds with the `toolbox-peers` feature, and no app declares `research` or `crawl` yet.
+¹ Only in builds with the `toolbox-peers` feature, after agent consent and tool authorization. Script apps select exact names in `agent.tools`, but admission also requires the host to offer them. The default store offer excludes toolbox tools; listing a name does not bypass admission. `research`/`crawl` capability declarations do not grant tools.
 
 ² Every agent runs on the providers set in AI providers; the shell does not read a manifest's `model.needs`.
 
@@ -132,7 +132,7 @@ Settings lists every app's agent with an off switch. Turning one off releases it
 
 ### The calls
 
-An app may call only the `octos.*` names its manifest declares: the Card runner's isolate refuses the rest, and the service checks again (`contained::declared`). The calls work on the app's conversation, the person's lane of its peer ([One app agent, two lanes](../README.md#one-app-agent-two-lanes)):
+An admitted app with an opted-in, consented agent can use the four public `octos.*` methods below. Omitting a method from `capabilities` does not deny it; `contained::declared` checks agent opt-in, and the broker rejects unknown methods. Account and host-profile checks still apply. The calls work on the app's conversation, the person's lane of its peer ([One app agent, two lanes](../README.md#one-app-agent-two-lanes)):
 
 | Call | Arguments | Answer (`r.data`) |
 | --- | --- | --- |
@@ -149,7 +149,7 @@ An app runs one turn at a time, and the broker interrupts a turn after 180 secon
 
 | `r.error` | Cause |
 | --- | --- |
-| `this app was not granted "octos", which "<service>" needs` | The manifest lacks that name; the isolate answers at once. |
+| `This app has not opted in to an assistant` | The admitted app has no agent opt-in; exposing the API does not create an agent. |
 | `no service answers "octos" on this device` | The shell hosts no kernel (iOS). |
 | `Waiting for the person to allow this app's agent (OctoSense asks the first time)` | No consent yet, or the person denied it. |
 | `The assistant is turned off for apps on this device` | The gate is `Off`. |
@@ -162,7 +162,7 @@ App Flow's [Errors](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/mai
 
 ## One-shot model calls: the `model` service
 
-Some jobs need one bounded answer rather than an agent; Photos uses one to group photos into memories. An app granted the `model` capability calls `model.complete {task, input, schema, class?, allow_urls?}`, or `model.budget` for its budget ([`complete/`](../apps/ai-providers/host-service/src/complete/mod.rs)):
+Some jobs need one bounded answer rather than an agent; Photos uses one to group photos into memories. An admitted app calls `model.complete {task, input, schema, class?, allow_urls?}`, or `model.budget` for its budget ([`complete/`](../apps/ai-providers/host-service/src/complete/mod.rs)):
 
 - It bypasses the kernel: the service reads the same profile and keys and calls the provider itself. The model sees only fixed instructions, the task, the schema and the input.
 - `class` is `fast` (the default) or `strong`. The host tries the person's providers in order, that class first. The app learns which class answered, never the provider, model or key.
@@ -170,19 +170,23 @@ Some jobs need one bounded answer rather than an agent; Photos uses one to group
 - Each app's budget is by default 6 calls a minute, and 100 calls and 100,000 tokens a UTC day, kept in `<apps root>/.host/model/ledger.json`, outside every app's jail.
 - A refusal reads `<code>: <sentence>`, with `code` one of `capability`, `no_provider`, `rate`, `budget`, `bad_request`, `invalid_output`, `too_large` or `provider`.
 
+The `model` declaration describes usage; admission, account scope and budgets still control calls. The `capability` error code is retained for an unadmitted caller, not an omitted declaration.
+
 App Flow's [One-shot model calls](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/AI-SERVICES.md#one-shot-model-calls-model) shows a call.
 
 ## The system toolbox
 
 The system toolbox ([`crates/toolbox`](../crates/toolbox/README.md)) gives app agents bounded research instead of a browser: fixed OctoScript workflow templates, plus search, page-reading and crawl tools, which the shell offers as host tools owned by `toolbox` ([`toolbox_peers.rs`](../crates/ai-host/src/toolbox_peers.rs)).
 
-- **What each capability grants.** `research` grants `workflow.run`, `workflow.fork`, `toolbox.search` and `toolbox.web_read`; `crawl` grants `toolbox.deep_crawl`.
-- **When they are offered.** Only in builds with the `toolbox-peers` feature (the phone's default build, not the desktop's), only after consent; among script apps, for now only to system apps. The system agent gets none.
+- **Which tools are selected.** A script app requests exact names in `agent.tools`: `workflow.run`, `workflow.fork`, `toolbox.search`, `toolbox.web_read` or `toolbox.deep_crawl`. Its top-level `research` object limits the resource scope; crawling also needs positive `max_depth` and `max_pages`. Capability declarations neither grant these tools nor deny a selected tool. Native modules keep their separate, reviewed tool selection.
+- **When they are offered.** Only in builds with the `toolbox-peers` feature (the phone's default build, not the desktop's), after agent consent and tool authorization. Admission must first find each requested name in the host's offered tools. The default store offer excludes toolbox tools; the shell can extend the offer for a particular reviewed system app. Accepted script apps use the same exact-selection execution path, but their admission offers differ. The system agent gets none.
 - **Budget and results.** Templates call the model through the `model` service, so they share the app's budget, and write results to `<apps root>/.host/toolbox/<app>`, where the app cannot forge them.
+
+The admission boundary is App Hub's [`HostLimits::default().offered_tools`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/app-contract/src/policy.rs#L47) and [`resolve_agent`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/app-policy/src/policy.rs#L84). [`set_agent_tool_offer`](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/8347a489141c0e24cab564883db7c4592935a8b2/crates/appstore/src/system.rs#L50) extends only a shipped system app's offer. After admission, [`grant_manifest`](../crates/shell/src/host_tools/toolbox.rs) calls [`ToolboxGrant::for_manifest`](../crates/ai-host/src/toolbox_peers.rs) to retain the exact selection and scope; consent and sharing remain relay checks.
 
 ## Glance cards
 
-An app with the `glance` capability publishes cards to the glance panel (desktop) or glance page (phone) through the `glance` service ([`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)): `glance.publish`, `glance.withdraw` and `glance.list`. The shell takes the publisher from the caller, never from the arguments, binds the card to the account it was published under, and lets each app publish 6 times a minute. The feed scrolls all retained cards, without a per-app card-count quota. Source/data/lowered-body retention uses payload budgets of 8 MiB per app and 32 MiB overall; pressure retires lower-priority older cards while admitting the new publication. System apps' agents publish through their own tools: `<app>.notify` fills a fixed card template with the model's text, and Mail's `mail.publish_card` checks a card the model wrote and, given a `draft_id`, binds it to a host-owned reply draft.
+An admitted app publishes cards to the glance panel (desktop) or glance page (phone) through the `glance` service ([`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs)): `glance.publish`, `glance.withdraw` and `glance.list`. The shell takes the publisher from the caller, never from the arguments, binds the card to the account it was published under, and lets each app publish 6 times a minute. The feed scrolls all retained cards, without a per-app card-count quota. Source/data/lowered-body retention uses payload budgets of 8 MiB per app and 32 MiB overall; pressure retires lower-priority older cards while admitting the new publication. System apps' agents publish through their own tools: `<app>.notify` fills a fixed card template with the model's text, and Mail's `mail.publish_card` checks a card the model wrote and, given a `draft_id`, binds it to a host-owned reply draft.
 
 The phone's feed shows only summaries and runs no generated UI. Opening a card shows its workspace, which keeps its state between openings: full screen on the phone, centred on the desktop. It has Card / Chat tabs when the publisher has an agent, even without `sys.chat`, and Email / Chat over one saved draft for a Mail reply. The README's [Cards and questions](../README.md#cards-and-questions) covers the workspace; [Composed Mail cards](mail-composable-cards.md) covers Mail's drafts, review and tests.
 

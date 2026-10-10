@@ -8,7 +8,7 @@
 
 [能力声明与执行边界](docs/capabilities.zh-CN.md)说明声明式 API、用户同意、账户和应用隔离。
 
-**桌面版下载**：[OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前的 App Hub 签名目录、带 GitHub 证明的应用 Release 及 SDK 1.10.0 声明的公开宿主 API。请选择与操作系统和架构对应的文件；运行前置条件、签名状态和各平台验收范围见发行说明。此桌面版本不会更新 Android Home。
+**桌面预发布版下载**：[OctoSense 0.1.0-rc.4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4) 包含应用契约 1.11.0、共享 Wasm 组件、GitHub 证明应用安装，以及“能力仅用于声明”的公开 API 策略。请选择与操作系统和架构对应的文件；签名、前置条件及各平台验收限制见发行说明。此桌面版本不会更新 Android Home。
 
 用自己的邮箱[复现真实邮件 → 卡片 → Calendar 演示](docs/demos/mail-calendar/README.zh-CN.md)：固定源码版本、重要邮件策略、虚构测试输入、人工修改草稿和日历跳转。
 
@@ -48,9 +48,9 @@ Android 桌面支持从左右边缘滑动翻页；应用和已展开卡片仍使
 
 想按顺序读源码，请从[从应用窗口到 Agent 回合](docs/architecture-walkthrough.zh-CN.md)开始。[产品导读](desktop/docs/code-walkthrough.zh-CN.md)补充了各个产品的运行方式。
 
-连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC1 和较早的 beta.2 下载包均未包含这些信息；运维人员须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
+连接账户的 App Hub 示例共用宿主持有的 GitHub/Google OAuth 服务，无需创建 OctoSense 账户。请从[服务与示例指南](crates/oauth-service/README.zh-CN.md)和 [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.zh-CN.md)开始。GitHub Notes 复用 Rinx 的 Markdown 编辑器；Inbox Assistant 和 Google Calendar 都是普通应用包。**服务商登录需要发行方提供 OAuth 客户端注册信息。** RC2、RC1 和较早的 beta.2 下载包均未包含这些信息；RC4 发布工作流也未提供服务商注册信息。运维人员须提供私有宿主 `oauth/clients.json` 配置，或按[注册设置](crates/oauth-service/README.zh-CN.md#配置发行版本维护者)构建。从 App Hub 安装应用不会自动配置其服务商登录。普通应用用户应拿到已配置的发行包。真实 GitHub 和 Google 账户的登录已在 macOS 上通过，[macOS 测试账户的 Calendar 登录与保存](tools/connected-e2e/evidence/calendar-login-20261007.json)也已在收据记录的构建上通过，但这不代表 Google 已完成公开验证。GitHub 写入和 Gmail 发信仍未验证，Android 上的 Google 登录还需要原生授权适配器。
 
-桌面版 RC2 和此源码构建中的 App Hub 默认使用带 GitHub 证明的签名目录，并通过应用契约 1.10.0（RC1 为 1.8.0）支持 `publisher-github-v1` 的 Release。开发者通过 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 申请发布。App Hub 只接受带 GitHub 证明的 Release，因此开发者无需发布者密钥：应用的公开仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。准入仍须由 Hub 管理员批准。首次获取签名目录需要网络连接，旧的离线签名目录不会转换成 GitHub 证明。使用自定义的本地测试签名目录时，可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2 缓存的应用库会拒绝这种降级。beta.2 不支持这种发布方式，这类 Release 请用桌面版 RC2 安装。
+此源码构建中的 App Hub 默认使用带 GitHub 证明的签名目录，并通过应用契约 1.11.0（桌面 RC2 为 1.10.0，RC1 为 1.8.0）支持 `publisher-github-v1` 的 Release。开发者通过 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 申请发布。App Hub 只接受带 GitHub 证明的 Release，因此开发者无需发布者密钥：应用的公开仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。准入仍须由 Hub 管理员批准。首次获取签名目录需要网络连接，旧的离线签名目录不会转换成 GitHub 证明。使用自定义的本地测试签名目录时，可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2 缓存的应用库会拒绝这种降级。beta.2 不支持这种发布方式。RC2 可以安装与其兼容的 GitHub 证明应用；要求共享组件或更新宿主 API 的应用需要兼容的新宿主，详见[能力与发布状态](docs/capabilities.zh-CN.md)。
 
 ## 整体如何运作
 
@@ -175,7 +175,7 @@ sequenceDiagram
 
 </details>
 
-`<app>.notify` 工具填充固定的卡片模板（[`notice.card`](crates/shell/resources/glance/notice.card)，或日历的[日程与议程卡片](apps/calendar/host-service/resources)），模型只负责文字。邮件另有 `mail.publish_card`，它接收模型编写的卡片，检查后再发布。无论哪种方式，Shell 都以应用的身份发布，并要求应用拥有 `glance` 权限。
+`<app>.notify` 工具填充固定的卡片模板（[`notice.card`](crates/shell/resources/glance/notice.card)，或日历的[日程与议程卡片](apps/calendar/host-service/resources)），模型只负责文字。邮件另有 `mail.publish_card`，它接收模型编写的卡片，检查后再发布。无论哪种方式，Shell 都以已准入应用的身份发布；`glance` 声明描述用途，卡片验证和调用方检查仍然有效。
 
 邮件的 Agent 也可以自己启动。用户登录、允许邮件的 Agent，并请系统 Agent 打开新邮件处理（`agents.provision`）之后，宿主会独立于模型回合在后台同步收件箱，把每封新邮件排入队列交给 Agent。Agent 用绑定账户的工具读取邮件，自己判断要不要发卡片。内置路径详见[邮件事件导读](docs/mail-agent-events.zh-CN.md)。独立安装的 Gmail 应用也能通过已连接账户服务收到同类事件：它们声明绑定账户的触发器 `<应用短名>.new_message`，其中应用短名是应用 id 的最后一段（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md)）。
 
@@ -234,11 +234,11 @@ flowchart TB
 
 | 应用类型 | 接口 | 谁在用 |
 | --- | --- | --- |
-| 脚本应用 | `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")`，限于 manifest 声明的名称 | 商店应用。系统应用都没有声明：它们的 Agent 由 Shell 驱动。 |
+| 脚本应用 | `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")`，要求应用已准入、确实提供助手且得到用户同意 | 商店应用；Shell 也会驱动系统应用的 Agent。 |
 | 原生应用（在 Shell 内或作为进程） | Makepad 的 `OctosPeer` 客户端，经由 peer link：先打开链接，再用 `serve_tools` 应答 Agent 对应用自身工具的调用。同一份代码在两种托管方式下都能用。 | App Hub、Calculator、Clock、Notes、Reminders、Weather、Terminal |
 | 使用注入服务的原生应用 | `OctosAppService`：`open_conversation` 打开用户的通道，`open_context` 打开私有上下文 | Rinx，目前只用 `open_context`，供它的小程序使用 |
 
-对脚本应用来说，最小可用的接入只需要在 manifest 中申请两个能力：
+脚本应用先通过 `agent`/工具元数据提供助手。能力列表可以说明要使用的接口，但不会创建助手，也不代表用户授权：
 
 ```json
 "capabilities": ["octos.session.open", "octos.turn.start"]
@@ -268,13 +268,13 @@ fn ask(){
 
 Agent 能做什么，取决于应用交给它什么。脚本应用把这些都声明在应用包里；原生应用则声明在 `native-apps.json` 的条目里。
 
-- **声明。** manifest 的 `agent` 块列出 Agent 可用的内核工具（系统应用只申请了 `ask_user_question`）、需要的模型能力（`tool_calling`），以及可选的、写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
+- **声明。** manifest 的 `agent` 块从宿主准入时提供的工具中选择工具，列出需要的模型能力（`tool_calling`），还可提供写有指令的 `AGENT.md` 和技能，Shell 会随每一轮发送它们。工具箱工具是宿主拥有的共享工具；列出名称不会把它们加入商店默认提供的工具列表。原生应用的条目还会说明它自己的 Agent 可以调用它的哪些工具（`own_tools`），系统 Agent 又可以调用哪些（`system_tools`）。
 - **工具。** `tools.json` 描述每个工具（命名为 `<app>.<tool>`）：输入 schema、`risk`（`read`、`act` 或 `destructive`）、由谁确认（`confirm: host` 用 Shell 面板，`app` 用应用自己的面板），以及其他应用的 Agent 能否使用（`shareable`）。
 - **执行工具的地方。** 声明了的工具还需要执行者：应用的宿主服务（邮件、日历、新闻）、Shell 的通知服务（其他系统应用的 `<app>.notify`），或原生应用已打开的窗口。商店应用没有自己的宿主服务，但 `host_method` 可以把它的某个工具映射到某个共享服务中经过审查的方法（`inbox.message` → `gmail.message`），然后该工具以应用的身份在那个服务上运行（见 [architecture.zh-CN.md 第 4 节](docs/architecture.zh-CN.md#中转)）。自桌面版 RC1 起，声明了 `requires: ["script-tools-v1"]` 的应用打开期间，标为 `implemented_by: "app"` 的工具由应用自己的 Splash 代码执行；应用关闭时返回 `app_not_running`。较早的 `desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝这类调用。
 - **数据。** Agent 在它所属账户的文件夹 `apps/<app id>/accounts/<account hash>/` 中工作（不区分账户的应用只有一个 `device` 文件夹），并用宿主的只读工具 `files.list`、`files.read` 和 `files.search`（Unix 上）读取它。脚本应用可以声明 `storage.agent_workspace: "none"`，让 Agent 没有文件夹，只能看到自己的工具返回的内容；原生应用的 Agent 无论怎样声明都会得到自己的文件夹。任何 Agent 都看不到别的账户的文件夹。
 - **记忆。** 每个 Agent 有自己的记忆命名空间 `app/<app>/acct-<hash>`，随账户一起清除。
-- **联系用户的方式。** 有了 `glance` 权限，它的工具就能发布卡片。
-- **事件**（目前只有新邮件）。一个 `triggers.events` 条目让 Agent 不等人开口就能行动。邮件的 Agent 处理新邮件，由它的 `AGENT.md` 和一项分拣技能指导。已安装的应用可以从它的 Gmail 连接收到新邮件事件：应用必须声明 `auth` 和 `gmail`，并在 `agent` 块中设置 `background: true`、列出 `<应用短名>.new_message`，例如 `inbox.new_message`（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md#新邮件与-glance)）。
+- **联系用户的方式。** 工具可使用应用的已验证身份发布获准的 Glance 模板或 L0 卡片；`glance` 声明说明这种用途，不是绕过审核的权限。
+- **事件**（目前只有新邮件）。一个 `triggers.events` 条目让 Agent 不等人开口就能行动。邮件的 Agent 处理新邮件，由它的 `AGENT.md` 和一项分拣技能指导。已安装的应用可以从它的 Gmail 连接收到新邮件事件：应用需要自己有效的连接及用户允许的 Agent，并在 `agent` 块中设置 `background: true`、列出 `<应用短名>.new_message`，例如 `inbox.new_message`（见 [OAuth 指南](crates/oauth-service/README.zh-CN.md#新邮件与-glance)）。
 
 新增一个工具的步骤（manifest、`tools.json`、授权、处理代码、审批路径）见 [AGENTS.md（英文）](AGENTS.md#architecture-documentation-and-code-walkthroughs)，设计见 [ADR 0002（英文）](docs/adr/0002-event-driven-app-agents.md)。
 
@@ -323,7 +323,7 @@ sequenceDiagram
 
 ### 卡片与提问
 
-拥有 `glance` 权限的应用以自己的身份发布卡片（`glance.publish`、`glance.withdraw`、`glance.list`）；Shell 从调用方取得发布者，从不读取参数中的发布者。卡片在应用自己的权限下运行，所以在卡片上按下按钮是应用自己的操作，不是 Agent 的工具调用。卡片显示在桌面端的[一览面板](desktop/README.zh-CN.md#一览面板)中，桌面端 README 对它有详细说明。在手机上，卡片的通知会打开那张卡片的工作区；卡片已不存在时打开 glance 页面。
+已准入应用以自己的身份发布卡片（`glance.publish`、`glance.withdraw`、`glance.list`）；Shell 从调用方取得发布者，从不读取参数中的发布者。卡片在应用自己的权限下运行，所以在卡片上按下按钮是应用自己的操作，不是 Agent 的工具调用。卡片显示在桌面端的[一览面板](desktop/README.zh-CN.md#一览面板)中，桌面端 README 对它有详细说明。在手机上，卡片的通知会打开那张卡片的工作区；卡片已不存在时打开 glance 页面。
 
 #### 卡内对话
 
@@ -362,8 +362,8 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 | [`crates/kernel/`](crates/kernel/README.zh-CN.md) | 作为 Shell 服务的 octos 内核，package `octosense-kernel`：每个进程一个，由 AI providers 配置，供所有使用方共享；以及系统 Agent 的精确工具列表。 |
 | [`crates/app-peers/`](crates/app-peers/README.md) | 应用 Agent 的代理，package `octosense-app-peers`：每个（应用，账户）一个 peer，它的两条通道、工具、`peer/input`、时限和清除。 |
 | [`crates/l0-chat/`](crates/l0-chat/README.zh-CN.md) | L0 卡片卡内对话（`sys.chat`）的宿主一侧，package `octosense-l0-chat`。 |
-| [`crates/toolbox/`](crates/toolbox/README.md) | 系统工具箱，package `octosense-toolbox`：工作流模板和 `mod.research`，在 `toolbox-peers` 特性下提供给应用 Agent。 |
-| [`crates/wasm-host/`](docs/wasm.zh-CN.md) | 应用自带 WebAssembly 函数的运行时，package `octosense-wasm-host`：Wasmtime 加 Cranelift、沙箱及其限制。Shell 的 `wasm` 服务在 macOS、Linux 和 Android 上运行它。 |
+| [`crates/toolbox/`](crates/toolbox/README.md) | 系统工具箱，package `octosense-toolbox`：工作流模板和 `mod.research`，需要 `toolbox-peers` 特性，并受宿主工具列表、Agent 同意及研究范围约束。 |
+| [`crates/wasm-host/`](docs/wasm.zh-CN.md) | 应用自带 WebAssembly 函数的运行时，package `octosense-wasm-host`：Wasmtime、沙箱及其限制。当前 macOS、Windows、Linux、Android 和 OpenHarmony（Pulley）构建包含 `wasm` 服务；各平台的验收状态见链接中的指南。 |
 | [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、日历、AI providers、YouTube、Quick Deck、PDF Tools、Writer），均为脚本应用；它们的宿主服务（`mail`、`calendar`、`news`、`llm`）；`apps/reference`；以及需显式启用的 AppCard 助手。 |
 | [`native-apps.json`](native-apps.json) | 所有原生应用：代码来自哪里、在各平台上如何托管，以及它的 Agent。`tools/native_apps.py` 据此生成 Shell 的代码和 Cargo 条目。 |
 | `tools/` | `setup.py`（锁定版本的框架源码）、经审查的 Makepad 运行时补丁（`runtime-patches/`）、`kernel-artifact.py`（构建 octos 内核）、`check-shell-graph.sh`（依赖图检查）。 |

@@ -294,7 +294,7 @@ Rinx 在其锁定的版本中，只把注入的服务用于小程序的上下文
 4. **确认** `confirm: app` 调用：先向内核确认收到，再交给所属应用的面板（见[第 5 节](#5-审批)）。
 5. **只回答一次**，结果要符合 `output_schema`（最多 256 KiB）；取消之后什么都不再运行。每次调用都会连同参数摘要记录到 `logs/tool-calls.jsonl`。
 
-脚本应用中 `implemented_by: "host-service"` 的工具，以已准入应用的身份运行解析出的宿主方法。中转检查工具归属和共享；服务保留应用与账户作用域、实际同意、审核和可用性检查。遗漏服务族声明不会拒绝执行。Shell 的 `NoticeService` 为相册、地图、YouTube 和相机应答 `<app>.notify`。脚本应用中 `implemented_by: "app"` 的工具在应用自身中运行：`ScriptAppExecutor`（`host_tools/script_apps.rs`）把调用排入 App Hub 的脚本工具运行器，由运行器在应用已打开的完整应用 VM 中调用它的 `app_tool(name, call_id)` 钩子。应用包必须要求 `script-tools-v1`。应用关闭时返回 `app_not_running`；对标为 `confirm: app` 的脚本工具发起的破坏性或对外调用，会以 `app_confirmation_unavailable` 遭到拒绝（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）。这项能力已在 `main` 上，但尚未进入任何发布版本：`desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝对这类工具的所有调用。
+脚本应用中 `implemented_by: "host-service"` 的工具，以已准入应用的身份运行解析出的宿主方法。中转检查工具归属和共享；服务保留应用与账户作用域、实际同意、审核和可用性检查。遗漏服务族声明不会拒绝执行。Shell 的 `NoticeService` 为相册、地图、YouTube 和相机应答 `<app>.notify`。脚本应用中 `implemented_by: "app"` 的工具在应用自身中运行：`ScriptAppExecutor`（`host_tools/script_apps.rs`）把调用排入 App Hub 的脚本工具运行器，由运行器在应用已打开的完整应用 VM 中调用它的 `app_tool(name, call_id)` 钩子。应用包必须要求 `script-tools-v1`。应用关闭时返回 `app_not_running`；对标为 `confirm: app` 的脚本工具发起的破坏性或对外调用，会以 `app_confirmation_unavailable` 遭到拒绝（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）。当前宿主验收见[能力与发布状态](capabilities.zh-CN.md#验证与发布)。较旧的 `desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝对这类工具的所有调用。
 
 商店应用的工具也可以用 `host_method` 映射到共享服务，例如 Inbox Assistant 的 `inbox.message` 映射到 `gmail.message`。App Hub 只准入经审查的列表 `SHARED_HOST_METHODS` 中的方法，包括GitHub、Gmail 和 Google Calendar 的读取，Gmail 草稿编辑和新邮件事件处理，以及 `glance.*`。每个方法保留列表规定的最低风险与隐私要求，执行不要求匹配的服务族披露。对 `github`、`gmail` 和 `gcalendar`，执行器会注入应用当前的连接（`host_tools/script_apps.rs`），并继续检查其提供商 scope 和归属。列表中没有任何方法会打开宿主面板，所以任何工具都不能登录、提交、保存日程或发送（见[已连接账户](#已连接账户)）。
 
@@ -317,7 +317,7 @@ glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在
 - **披露与同意**。应用描述 `auth` 及数据服务族（`github`、`gmail`、`gcalendar`），并配置 `storage.accounts: true`。这些名称不授权访问提供商。`register_host_services` 检查当前应用准入与提供商 scope 是否有效；用户通过提供商授权所请求的 scope。仅身份连接（GitHub 的 `read:user`；Google 的 `openid`、`email`、`profile`）不会因声明某个服务族就获得邮件、日历或仓库 scope。每次数据调用仍检查真实连接和 scope。
 - **身份**。应用只看到不透明的连接句柄。它的 peer 以它当前的连接行事（`app_storage/lifecycle.rs`），所以每个已连接账户都有自己的 Agent。
 - **配置**。OAuth 客户端注册归宿主所有，从不由应用提供。发行方在构建时通过构建变量（例如 `OCTOSENSE_GITHUB_CLIENT_ID`）把注册编译进宿主（`crates/oauth-service/src/registration.rs`）；`desktop-v0.1.0-beta.2` 的下载包不含任何注册。运维人员可以用 App Hub 宿主目录中的 `clients.json`（`<apps root>/.host/oauth/clients.json`，其中 `<apps root>` 即 `<octosense home>/apps`，见[第 6 节](#6-存储与机密)）替换整套注册；文件中没有列出的提供商随之停用。缺少某个提供商的注册时，登录会失败并提示“GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.”（Google 的提示相同，只是换成 Google）。在 beta.2 上，缺少 `clients.json` 时提示的则是“OAuth is not configured”。
-- **应用自己的后端**。`auth.connect` 带上 `{"provider":"backend","scopes":["app.session"]}`，就能让用户登录应用自己的服务器；`auth.backend.me` 返回该服务器验证过的身份（`crates/oauth-service/src/host_backend.rs`）。在 `main` 上（尚未进入任何发布版本），应用的签名应用包可以声明自己的后端和命名操作，应用用 `auth.backend.request` 调用这些操作（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）；没有这项声明的应用使用运维人员在 `<apps root>/.host/oauth/backends.json` 中的注册。`desktop-v0.1.0-beta.2` 没有后端登录。在 macOS 和 Android 9 及以上版本上，服务器的登录页面显示在宿主拥有的 WebView 中；在 Windows 和 Linux 上，或在 macOS 上指定 `"presentation":"browser"` 时，改在浏览器中打开（见 `host.rs` 中的 `presentation`）。iOS 不支持后端登录。
+- **应用自己的后端**。`auth.connect` 带上 `{"provider":"backend","scopes":["app.session"]}`，就能让用户登录应用自己的服务器；`auth.backend.me` 返回该服务器验证过的身份（`crates/oauth-service/src/host_backend.rs`）。应用的签名应用包可以声明自己的后端和命名操作，应用用 `auth.backend.request` 调用这些操作（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）；没有这项声明的应用使用运维人员在 `<apps root>/.host/oauth/backends.json` 中的注册。`desktop-v0.1.0-beta.2` 没有后端登录。在 macOS 和 Android 9 及以上版本上，服务器的登录页面显示在宿主拥有的 WebView 中；在 Windows 和 Linux 上，或在 macOS 上指定 `"presentation":"browser"` 时，改在浏览器中打开（见 `host.rs` 中的 `presentation`）。iOS 不支持后端登录。
 - **事件**。新邮件到达时，`connected_events.rs` 启动已安装 Gmail 应用的 Agent（见[代码导读第 6 节](architecture-walkthrough.zh-CN.md#6-用户在哪里对话)）。
 
 写入和发送都要经过宿主面板或审阅界面（见[第 5 节](#5-审批)），OAuth token 保存在平台的凭据库中（见[第 6 节](#6-存储与机密)）。
@@ -483,7 +483,7 @@ sequenceDiagram
 - ADR 0004 让审批路由决定每次发送，所以像“收件人都在我的联系人中”这样的常设规则可以批准它，否则每封邀请各有一个面板。ADR 0007 为邮件取代了这一做法：不论谁提议发送，最终都进入宿主对确切邮件的审阅（见[第 5 节](#5-审批)）。邮件的 Agent 只能提议发送（`mail.propose_send`）。
 - 邮件的宿主服务用用户登录的账户发送；密码永远不会到达 Agent。它的 `mail.send` 方法现在只会回答 `approval_required`。
 - 结果未知的发送绝不会自动重发；重试需要重新审阅并批准。
-- **尚未实现**：日历的窗口还不能列出日程；`calendar.notify` 可以把日程放到 glance 屏幕上。
+- 日历窗口通过 `calendar.view` 显示月份网格和所选日期的日程，可以打开、编辑或删除已保存的日程。`calendar.notify` 将同一日程发布为 Glance 卡片；卡片没有另一套日历存储。
 
 ## 代码与 ADR 不一致之处
 

@@ -2,7 +2,9 @@
 
 [English](README.md) | 简体中文
 
-**下载**：[桌面版 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前的 App Hub 签名目录、带 GitHub 证明的应用包及 SDK 1.10.0 公开宿主 API。各平台支持范围与验收限制见[宿主 OS API 状态](../docs/host-os-api-status.zh-CN.md)。请选择与操作系统和架构对应的文件，并核对发行说明及校验和。内嵌网页还需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
+**预发布版下载**：[桌面版 0.1.0-rc.4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4) 包含应用契约 1.11.0、共享 Wasm 组件及“能力仅用于声明”的公开 API 策略。请选择与操作系统和架构对应的文件，并核对发行说明及校验和。平台限制见[宿主 OS API 状态](../docs/host-os-api-status.zh-CN.md)；内嵌网页需要满足[各平台浏览器前置条件](../docs/desktop-embedded-browser.zh-CN.md#运行条件)。
+
+**服务商登录**：GitHub 和 Google 登录仍需[发行方提供注册信息](../crates/oauth-service/README.zh-CN.md#配置发行版本维护者)。发布工作流未配置这些信息；从 App Hub 安装连接账户的应用也不会补上。
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
@@ -93,7 +95,7 @@ cargo run --release -p octosense
 | --- | --- | --- |
 | `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）；Mail、News、Calendar 和 AI providers 宿主服务；已连接账户服务（`auth`、`github`、`gmail`、`gcalendar`）；以及 GitHub Notes 使用的 Markdown 编辑器（`octosense-markdown-editor`）。没有它，构建中既没有 App Hub 也没有系统应用。 |
 | `octos-core` | 开 | octos 内核服务（`octosense-kernel`，来自 `../crates/kernel`）和应用与 Agent 之间的代理（`octosense-app-peers`）：AppCard、Rinx 等使用方共享的唯一内核，由 AI 提供商配置。Android 和 iOS 上始终开启。用 `--no-default-features --features app-hub`（再加上需要的其他 feature）可以去掉它。 |
-| `wasm-functions` | 开 | `wasm` 宿主服务：应用自带的 WebAssembly 函数（[ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.zh-CN.md)、[OctoSense 中的 WebAssembly](../docs/wasm.zh-CN.md)），由 `../crates/wasm-host` 运行（Wasmtime，由 Cranelift 编译）。在 macOS 和 Linux 上运行；Windows 构建不包含这个运行时。`wasm-lab` 是它以前的名字。 |
+| `wasm-functions` | 开 | `wasm` 宿主服务：应用自带的 WebAssembly 函数（[ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.zh-CN.md)、[OctoSense 中的 WebAssembly](../docs/wasm.zh-CN.md)），由 `../crates/wasm-host` 运行（Wasmtime，由 Cranelift 编译）。当前源码在 macOS、Windows、Linux 以及 Android 和 OpenHarmony Home 构建中包含此运行时（OpenHarmony 使用 Pulley）；OpenHarmony 真机执行仍未验证，平台验收与编译分别记录。`wasm-lab` 是它以前的名字。 |
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
@@ -194,7 +196,7 @@ python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private
 
 ### 签名
 
-没有密钥时，签名任务会把包原样以**未签名**状态传下去并给出警告：macOS Gatekeeper 首次打开时要求确认（右键 → 打开），Windows SmartScreen 会提示警告。要签名，请创建名为 `release` 的 GitHub 环境（**Settings → Environments**），限制为 `main` 和 `desktop-v*` 标签（需要时添加必需的审批人），并把下面这些作为该环境的密钥添加，而不是仓库密钥：
+没有密钥时，签名任务会把包原样以**未签名**状态传下去并给出警告。macOS Gatekeeper 可能阻止首次启动；核对下载来源和校验和后，若决定运行，可按 [Apple 的说明](https://support.apple.com/102445)使用仅针对该应用的**系统设置 → 隐私与安全性 → 仍要打开**。Windows SmartScreen 会提示警告。要签名，请创建名为 `release` 的 GitHub 环境（**Settings → Environments**），限制为 `main` 和 `desktop-v*` 标签（需要时添加必需的审批人），并把下面这些作为该环境的密钥添加，而不是仓库密钥：
 
 | 密钥 | 用途 |
 | --- | --- |
@@ -212,7 +214,7 @@ launcher 把四类应用列在一起：
 
 | 类别 | 来源 | 运行方式 | Launcher id |
 | --- | --- | --- | --- |
-| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube、Quick Deck、PDF Tools 和 Writer（三者均仅桌面：它们使用的 `deck`、`pdf` 和 `word` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
+| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube、Quick Deck、PDF Tools 和 Writer（三者均仅桌面：它们使用的 `deck`、`pdf` 和 `word` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，绑定已验证的应用身份、独立存储及宿主同意边界 | `<name>`（清单 id `os.<name>`） |
 | **商店应用** | 签名的 App Hub 目录，从商店（`apphub`）安装 | 同一个 Card 运行器。每次打开都会对照目录检查；更新会关闭旧实例。 | `hub:<manifest-id>` |
 | **原生模块** | 链接进本二进制的 Rust crate | 进程内的 `AppModule`。只允许受信任的代码：App Hub、AppCard、Rinx、Reference 以及各 `app-*` feature。 | 模块 id |
 | **开发者程序** | `config/apps.json` | tile 中的独立进程，通过 Makepad 的 `--stdin-loop` 托管协议运行，首次启动时构建 | 目录 `id` |
@@ -221,11 +223,11 @@ launcher 把四类应用列在一起：
 
 ### 隔离与权限
 
-隔离运行的应用是一个包：`manifest.json`（id、版本、能力）加上 `main.splash`。Card 运行器只授予清单中列出的能力（邮件申请 `storage` 和 `mail`）。固定的 Makepad（[makepad#30](https://github.com/OctoSense-org/makepad/pull/30)）在 isolate 的每个出口执行这一约束：网络请求和 web socket 受应用的主机列表约束，原始 socket 和服务端被拒绝，文件访问限制在应用的存储沙箱内，密码和一次性验证码输入框在受约束的 isolate 中不起作用。
+隔离运行的应用是一个包：`manifest.json`（id、版本、能力）加上 `main.splash`。能力家族与 `network.hosts` 说明用途，不授予或拒绝公开 API。Card 运行器在执行源码前绑定已准入的应用身份。文件仍限制在应用/账户存储隔离目录及配额内；设备调用仍需用户同意和 OS 权限；私密写操作仍需可信宿主审核。密码及一次性验证码输入框在隔离应用中仍不起作用，所需宿主 ABI 版本仍用于兼容性检查。详见[能力声明与执行边界](../docs/capabilities.zh-CN.md)。
 
 ### 宿主服务与宿主自有面板
 
-密钥属于宿主。需要账户的应用通过 `host.request` 调用**宿主服务**；服务在 Shell 中持有凭据运行，应用永远拿不到 socket，也拿不到密码。
+密钥属于宿主。需要账户的应用通过 `host.request` 调用**宿主服务**；服务在 Shell 中持有凭据运行，应用不会得到该账户的密码。
 
 邮件是完整的示例（`octosense-mail-service`，来自 [`../apps/mail/host-service`](../apps/mail/host-service)）：
 

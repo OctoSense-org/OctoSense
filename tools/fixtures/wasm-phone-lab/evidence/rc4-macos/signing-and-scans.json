@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "tag": "desktop-v0.1.0-rc.4",
+  "workflow_run": 38065627444,
+  "macos": {
+    "package_job": 114252575704,
+    "package_scan": {
+      "artifacts": 6,
+      "files": 1153,
+      "patterns": 7,
+      "passed": true
+    },
+    "sign_job": 114280076963,
+    "sign_job_conclusion": "success",
+    "publisher_signed": false,
+    "notarized": false,
+    "basis": "Completed job warning annotation: no Apple signing secrets; unsigned passthrough. Actual candidate binary has a linker ad-hoc signature."
+  },
+  "windows": {
+    "package_job": 114252575696,
+    "package_scan": {
+      "artifacts": 5,
+      "files": 1156,
+      "patterns": 6,
+      "passed": true,
+      "installer_unpacked": true
+    },
+    "sign_job": 114280077064,
+    "sign_job_conclusion": "success",
+    "publisher_signed": false,
+    "basis": "Completed signing job log warning: no Windows signing secrets; installer stays unsigned.",
+    "actual_pe_security_directory": {
+      "offset": 0,
+      "size": 0,
+      "authenticode_certificate_present": false
+    }
+  },
+  "linux": {
+    "package_job": 114252575600,
+    "package_scan": {
+      "artifacts": 6,
+      "files": 1193,
+      "patterns": 6,
+      "passed": true
+    }
+  },
+  "final_release_scan": {
+    "job": 114280261000,
+    "job_conclusion": "success",
+    "artifacts": 9,
+    "files": 1205,
+    "patterns": 6,
+    "passed": true,
+    "dmg_contents_basis": "separate exact-archive mounted scan on macOS; final Linux scan checks DMG bytes only"
+  }
+}
