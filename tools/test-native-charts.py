@@ -22,8 +22,10 @@ def main():
     args.out.mkdir(parents=True, exist_ok=False)
     profile = args.out / 'profile'
     profile.mkdir()
-    env = {k: v for k, v in os.environ.items() if k in ('PATH', 'TMPDIR', 'LANG')}
-    env.update(HOME=str(profile), OCTOSENSE_HOME=str(profile), OCTOSENSE_SECRETS='file', MAKEPAD_REMOTE='0')
+    env = {k: v for k, v in os.environ.items() if k in ('PATH', 'HOME', 'TMPDIR', 'LANG')}
+    env.update(OCTOSENSE_HOME=str(profile), OCTOSENSE_SECRETS='file', MAKEPAD_REMOTE='0',
+               XDG_CONFIG_HOME=str(profile / 'config'), XDG_DATA_HOME=str(profile / 'data'),
+               XDG_CACHE_HOME=str(profile / 'cache'))
     digest = hashlib.sha256()
     with binary.open('rb') as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b''):
