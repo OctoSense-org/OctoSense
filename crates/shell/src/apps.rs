@@ -245,6 +245,7 @@ pub fn register_host_services() {
         // App Hub admits bundles before the first CardModule is opened. The
         // linked card runner already supports app tools at that point, so its
         // ABI must not depend on a card's lazy VM registration.
+        octosense_appstore::register_policy_runtime_features();
         octosense_appstore::host_api::register_runtime_feature("app_tools.dispatch", 1);
         octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
         octosense_appstore::host_api::register_runtime_feature("video.playback_controls", 1);
@@ -874,6 +875,28 @@ pub(crate) fn installed_bundle(root: &Path, app_id: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    /// A fresh host must accept a compatible app before either App Hub or
+    /// CardModule creates its first VM. Otherwise installs or cold launches
+    /// fail until another app happens to register the same runtime ABI.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn cold_host_advertises_the_installed_card_contract() {
+        if crate::module_host::run_with_isolated_module_data(
+            "apps::tests::cold_host_advertises_the_installed_card_contract",
+        ) {
+            return;
+        }
+        let manifest = octosense_app_policy::AppManifest::parse(&serde_json::json!({
+            "schema": 1, "id": "org.example.coldcard", "name": "Cold card", "version": "1.0.0",
+            "capabilities": [], "requires": ["host-api-v1", "script-tools-v1"],
+            "host_api": {"required": {"app_tools.dispatch": 1, "runtime.describe": 1}}
+        }).to_string()).unwrap();
+        assert!(octosense_appstore::host_api::check_manifest(&manifest).is_err());
+        register_host_services();
+        octosense_appstore::host_api::check_manifest(&manifest)
+            .expect("compatible card installs and reopens without warming a module first");
+    }
+
     #[test]
     fn script_agent_discovery_requires_matching_identity_and_genuine_opt_in() {
         let root = std::env::temp_dir().join(format!("shell-agent-discovery-{}", std::process::id()));
