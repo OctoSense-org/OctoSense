@@ -184,6 +184,7 @@ jobs:
         timeout-minutes: 60
         run: |
           cargo test --locked -p octosense-wasm-host --no-run
+          cargo test --locked -p octosense-wasm-host --features pulley --no-run
           cargo test --locked -p makepad-widgets --no-run
           cargo test --locked -p makepad-script-std --no-run
       - name: Test Wasm and runtime policy
@@ -196,7 +197,9 @@ jobs:
           # Apps' WebAssembly functions: the runtime's own tests. The `wasm`
           # service's (fresh state per call; resource, cancellation and
           # admission bounds) run with the shell's above: `mobile-apps`
-          # includes `wasm-functions`.
+          # includes `wasm-functions`. Then the same tests in Pulley, the
+          # interpreter OpenHarmony and iOS use (ADR 0014).
           cargo test --locked -p octosense-wasm-host
+          OCTOSENSE_WASM_PULLEY=1 cargo test --locked -p octosense-wasm-host --features pulley
           cargo test --locked -p makepad-widgets splash_policy
           cargo test --locked -p makepad-script-std gate::tests

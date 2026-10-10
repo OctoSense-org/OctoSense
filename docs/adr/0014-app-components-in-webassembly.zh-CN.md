@@ -3,7 +3,12 @@
 [English](0014-app-components-in-webassembly.md) | 简体中文
 
 状态：提议（2026 年 10 月 9 日）。第 1 阶段（运行时验证原型）位于
-`crates/wasm-host`（`src/component.rs`、`tests/component.rs`）；第 2–4 阶段是下文的计划。
+`crates/wasm-host`（`src/component.rs`、`tests/component.rs`）。第 2 阶段的运行时和服务
+部分位于 `crates/wasm-host/src/component/files.rs` 和 `crates/shell/src/wasm_service.rs`，
+测量结果见下文。第 3 阶段的部分是 `component/net.rs`（`wasi:http`）、`component/host.rs` 与
+`wit/octosense-host.wit`（`octosense:host`）、`Runtime::precompile` 与 `wasm_service::warm`
+（安装时编译），以及 OpenHarmony 上和测试中的 Pulley；Windows 运行这个服务，其测试在 CI 中运行。
+App Hub 与 App Flow 的部分正在审阅，iOS 和第 4 阶段是计划。
 本 ADR 扩展 [ADR 0011](0011-apps-own-functions-in-webassembly.zh-CN.md)：核心模块照旧可用。
 `main` 上 WebAssembly 的运行方式见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
 
@@ -46,15 +51,28 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
    - 函数返回 `result<T, E>` 时，结果为其值，或以 `E` 作为调用的错误。
    - 接收或返回资源（resource）的函数不能从脚本调用，会被列为已跳过并附原因。
 3. **实例保留状态。** 每个组件一个实例，在应用的 worker 存活期间一直存在，因此组件可以保存文档、
-   缓存或模型。陷阱（trap）或超时会使实例作废，下一次调用会得到新实例。应用更新、授权变更或撤回
-   时实例会被丢弃，与模块相同。
+   缓存或模型。持有实例的 worker 等待下一次调用一分钟，而不是五秒。陷阱（trap）或超时会使实例
+   作废，下一次调用会得到新实例。应用更新、授权变更或撤回时实例会被丢弃，与模块相同。
 4. **WASI 的范围与应用授权一致。**
    - **始终提供：** `wasi:clocks`、`wasi:random`、`wasi:io` 和 `wasi:cli`。stdout 与 stderr
      成为应用的日志行（有上限）。环境变量、参数和 stdin 都为空。
-   - **`wasi:filesystem`：** 仅在应用有 `storage` 能力时提供。其存储文件夹以读写方式预打开为 `/`，
+   - **`wasi:filesystem`：** 仅在应用有 `storage` 能力（有账户的应用还需已登录账户）时提供，
+     每次调用都按引擎文件夹所遵循的规则决定。其存储文件夹以读写方式预打开为 `/`，
      主机文件系统的其余部分一概不可见。没有该能力时不预打开任何目录。
-   - **`wasi:http` 出站（第 3 阶段）：** 只能访问清单 `network.hosts` 中的主机，并经过 shell 的网络策略。
-   - **从不提供：** `wasi:sockets`，以及上述 WASI 包以外的任何导入。请求这些导入的组件在加载时被拒绝
+   - **存储配额逐次写入计量。** 一次调用可以写入的量，是调用开始时应用配额的剩余部分。运行时把使文件
+     变大的 WASI 调用（`write`、`set-size`，以及 `write-via-stream` 与 `append-via-stream` 返回
+     的流）替换为计量增长的版本，把释放字节的调用（截断的 `open-at`、`unlink-file-at`）替换为
+     归还字节的版本。超出预算的写入在组件内部失败，调用的错误会说明原因。我们没有采用"每次调用后
+     检查"：一次调用在检查之前就可能写入数 GB，而且每次调用要遍历文件夹两次。
+   - **`wasi:http` 出站（第 3 阶段）：** 可以访问任何主机。应用声明 `net`，让安装界面说明它会使用
+     网络，但运行时既不强制 `net`，也不强制 `network.hosts`：2026 年 10 月 8 日的裁定取消了按应用的
+     运行时闸门，边界是操作系统和宿主的 API 表面。把组件限制在应用的 `network.hosts` 内、后来又限制
+     为公共 HTTPS 主机的做法，都已按该裁定否决。请求在客体之外等待，epoch 检查无法结束它，因此
+     请求的超时被限制在调用的截止时间内；导入 `wasi:http` 的组件每次调用有 10 秒。
+   - **`octosense:host`（第 3 阶段）：** `request(service, args)` 可以调用应用已获授权的宿主服务，
+     像应用脚本的 `host.request` 一样在 UI 线程上分派，但不打开面板、不询问用户（只能调用后台界面
+     可以调用的方法），并且绝不调用 `wasm.*`。
+   - **从不提供：** `wasi:sockets`，以及上述包以外的任何导入。请求这些导入的组件在加载时被拒绝
      （`LoadError::Import`），App Hub 的审核闸门也会拒绝。
 5. **无需编写 WIT。**
    - **Guest SDK（第 2 阶段）：** guest crate `octosense-component` 提供
@@ -68,8 +86,8 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
    - **分发：** SDK 发布到 crates.io（需维护者批准）；发布前使用 git 依赖。
 6. **审核能看到组件的访问范围。** App Hub 的闸门读取每个组件的导入：
    - 拒绝允许集合以外的导入；
-   - `wasi:filesystem` 需要 `storage` 能力，`wasi:http` 需要 `network.hosts`；
-   - 告诉审核者组件能访问什么，例如“其应用文件夹中的文件；访问 api.example.com 的 HTTPS”。
+   - `wasi:filesystem` 需要 `storage` 能力，`wasi:http` 需要 `net` 能力，以便安装界面展示它们；
+   - 告诉审核者组件能访问什么，例如“其应用文件夹中的文件；网络”。
    组件需要新的应用合约版本。
 
 ## 阶段
@@ -78,7 +96,7 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 | --- | --- |
 | 1. 运行时验证原型（本 PR） | `crates/wasm-host::component`：加载、检查导入、列出导出及其 WIT 签名、长期存活的实例、JSON 调用、上述 WASI 子集与存储预打开、超时、内存上限和日志。测试运行一个用普通 cargo 构建的、未作修改的 crate（`pulldown-cmark`），并拒绝导入 `wasi:sockets` 的组件。 |
 | 2. 开发者可用 | shell 的 `wasm` 服务：从 `fns/` 加载组件、`wasm.<function>` 调用、按应用的实例、来自清单的存储授权，以及组件写入的存储配额计量。提高组件的输入上限。guest SDK 及其宏；`octo wasm new/build/doctor`；App Hub 闸门检查与合约版本；文档与示例应用。 |
-| 3. 访问能力与平台 | 受 `network.hosts` 约束的 `wasi:http` 出站；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；iOS 使用 Pulley（Wasmtime 的解释器），OpenHarmony 在其 JIT 策略明确前也使用 Pulley；Windows 待其 CI 运行运行时测试后开启。 |
+| 3. 访问能力与平台 | 可访问任何主机的 `wasi:http` 出站（以 `net` 声明，不在运行时强制）；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；iOS 使用 Pulley（Wasmtime 的解释器），OpenHarmony 在其 JIT 策略明确前也使用 Pulley；Windows 待其 CI 运行运行时测试后开启。 |
 | 4. 共享组件 | App Hub 目录中经过审核、带版本的组件，应用可以像 npm 包一样依赖它们。安装器负责校验，每个应用仍有自己的实例和授权。 |
 
 ## 考虑过的替代方案
@@ -99,11 +117,41 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
   时钟和随机数对 Wasm 是新增的，但每个脚本本来就能使用。
 - **常驻实例会更长时间占用内存。** 每应用 worker 上限（`MAX_WORKERS`）与内存上限约束其用量，
   空闲的 worker 照旧退出。
-- **验证原型的大小：** `notes`（含 `pulldown-cmark` 与 `getrandom`）为 310 KB，sockets 探测组件为 123 KB。
-  耗时尚未测量；第 2 阶段会像 ADR 0011 一样记录。
+- **验证原型的大小：** `notes`（含 `pulldown-cmark` 与 `getrandom`）为 313 KiB，sockets 探测组件为 120 KiB。
+- **磁盘已满看起来像 I/O 错误。** 无论宿主给出什么错误，wasi-libc 都把失败的流写入报告为 `EIO`，
+  因此大多数被拒绝的写入在客体中表现为 I/O 错误，而不是 `ENOSPC`。运行时会把原因加到调用的错误
+  和应用的日志中。
+
+## 测量
+
+在 Apple M5 Max、macOS 26.6.2 上运行
+`cargo run --release -p octosense-wasm-host --example measure_component`（2026 年 10 月 9 日）。
+除非该行另有说明，每个数字都是 200 次调用的中位数。模块是 Wasm Lab 的（ADR 0011），运行同一个
+`pulldown-cmark`。
+
+| | 组件 | 模块 | 原生 |
+| --- | --- | --- | --- |
+| Cranelift 编译（首次加载） | 37.5 毫秒（313 KiB） | | |
+| 从缓存加载 | 3.6 毫秒 | | |
+| 实例化（带存储文件夹） | 0.09 毫秒（0.10 毫秒） | | |
+| Markdown 转 HTML，32 KiB | 468 微秒 | 400 微秒 | 183 微秒 |
+| 渲染并写入一个 49 KiB 的新文件 | 678 微秒 | | 156 微秒（仅写入） |
+| 写入一个 12 字节的文件 | 143 微秒 | | |
+| 读回 49 KiB | 59 微秒 | | |
+| 1 MiB 的 `list<u8>`，以 base64 往返 | 18.4 毫秒 | | |
+| 最小的调用 | 0.2 微秒 | 0.3 微秒 | |
+
+在 Pulley 中（`OCTOSENSE_WASM_PULLEY=1`、`--features pulley`，同一台机器），Markdown 函数作为组件
+耗时 15.1 毫秒，作为模块耗时 14.1 毫秒，约为 Cranelift 代码的 32 倍；最小的组件调用为 0.4 微秒。
+在 OpenHarmony 的代码生成策略明确之前，OpenHarmony 以这种方式运行。
+
+计量配额需要知道调用开始时文件夹里有多少数据：遍历一次文件夹，与引擎的调用相同。10 个文件耗时
+0.12 毫秒，1,000 个 2.0 毫秒，10,000 个 23.8 毫秒（50 次的中位数）。在 APFS 上反复改写同一个
+文件很慢，原生代码也一样（每次改写的中位数约 6 毫秒），因此示例每次都写入新文件。
 
 ## 待定问题
 
-- 组件写入的配额：逐次计量（包装文件系统宿主实现），还是在每次调用后检查。第 2 阶段通过测量决定。
-- 组件能否调用会打开面板（登录、审阅）的主机服务。很可能只允许经由脚本，绝不允许在组件的调用中进行。
+第 3 阶段已定：组件绝不调用会打开面板或询问用户的宿主服务，这类调用属于脚本。
+
 - 异步函数（WASI 0.3）和流式内容：第 3 阶段之后。
+- iOS：在 Pulley 中带这个服务构建 Home；构建机器上还没有安装 Rust 的 iOS 目标。

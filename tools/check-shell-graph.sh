@@ -55,7 +55,7 @@ fail() { echo "::error::$*"; exit 1; }
 # The targets the `wasm` service runs on (crates/shell/Cargo.toml, build.rs).
 wasm_runs_on() {
   case $1 in
-    *-apple-darwin | *-linux-android* | *-unknown-linux-gnu* | *-unknown-linux-musl*) return 0 ;;
+    *-apple-darwin | *-pc-windows-* | *-linux-android* | *-unknown-linux-gnu* | *-unknown-linux-musl* | *-unknown-linux-ohos*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -149,12 +149,12 @@ for features in "${feature_sets[@]}"; do
 done
 
 # Where the wasm service does not run, its runtime is not even built.
-for target in aarch64-apple-ios aarch64-unknown-linux-ohos x86_64-pc-windows-msvc; do
+for target in aarch64-apple-ios; do
   if linked octosense-wasm-host --locked ${manifest[@]+"${manifest[@]}"} ${package[@]+"${package[@]}"} --target "$target"; then
     fail "octosense-wasm-host is linked for $target, where the wasm service does not run"
   fi
 done
-echo "ok: no wasm runtime for iOS, OpenHarmony or Windows"
+echo "ok: no wasm runtime for iOS"
 
 # One octos: every octos-* crate in the lock from one octos-org/octos rev
 # (the `nix` patch taken from the octos repo is not an octos crate).

@@ -3,8 +3,14 @@
 English | [简体中文](0014-app-components-in-webassembly.zh-CN.md)
 
 Status: Proposed (9 Oct 2026). Phase 1, the runtime spike, is in
-`crates/wasm-host` (`src/component.rs`, `tests/component.rs`). Phases 2–4 below
-are the plan. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
+`crates/wasm-host` (`src/component.rs`, `tests/component.rs`). Phase 2's
+runtime and service parts are in `crates/wasm-host/src/component/files.rs` and
+`crates/shell/src/wasm_service.rs`, with the measurements below. Phase 3's are
+`component/net.rs` (`wasi:http`), `component/host.rs` with
+`wit/octosense-host.wit` (`octosense:host`), `Runtime::precompile` with
+`wasm_service::warm` (compiling at install), and Pulley on OpenHarmony and in
+tests; Windows runs the service, its tests in CI. App Hub's and App Flow's
+parts are in review, and iOS and phase 4 are the plan. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
 core modules keep working as they do. How WebAssembly runs on `main`:
 [WebAssembly in OctoSense](../wasm.md).
 
@@ -60,19 +66,41 @@ component reaches only what its app may already reach.
      They're listed as skipped, with the reason.
 3. **Instances keep their state.** One instance per component lives for as long
    as the app's worker, so a component can hold a document, a cache or a model.
-   A trap or a deadline spends it; the next call gets a fresh one. An update, a
-   grant change or a withdrawal discards it, as for modules.
+   A worker holding one waits a minute for the next call, not five seconds. A
+   trap or a deadline spends the instance; the next call gets a fresh one. An
+   update, a grant change or a withdrawal discards it, as for modules.
 4. **WASI scoped to the app's grants.**
    - **Always:** `wasi:clocks`, `wasi:random`, `wasi:io` and `wasi:cli`.
      stdout and stderr become the app's log lines (bounded). The environment,
      arguments and stdin are empty.
-   - **`wasi:filesystem`:** only with the app's `storage` capability. Its
-     storage folder is preopened as `/`, read-write, and nothing else of the
-     host's filesystem is visible. Without the capability there are no
-     preopens.
-   - **`wasi:http` outgoing, phase 3:** only to the hosts in the manifest's
-     `network.hosts`, through the shell's network policy.
-   - **Never:** `wasi:sockets`, and any import outside these WASI packages. A
+   - **`wasi:filesystem`:** only with the app's `storage` capability (and a
+     signed-in account, for an app with accounts), decided per call by the
+     rules an engine's folder follows. Its storage folder is preopened as `/`,
+     read-write, and nothing else of the host's filesystem is visible. Without
+     the capability there are no preopens.
+   - **The storage quota, per write.** A call may add what is left of the
+     app's quota when it starts. The runtime replaces the WASI calls that
+     grow a file (`write`, `set-size`, and the streams `write-via-stream` and
+     `append-via-stream` hand out) with ones that charge the growth, and the
+     calls that free bytes (`open-at` truncating, `unlink-file-at`) with ones
+     that give them back. Past the budget a write fails inside the component,
+     and the call's error says why. A check after each call instead was
+     rejected: a call could write gigabytes before it, and it costs two walks
+     of the folder a call.
+   - **`wasi:http` outgoing, phase 3:** to any host. The app declares `net`,
+     so that its install sheet says it uses the network, but neither that
+     nor `network.hosts` is enforced while it runs: the ruling of
+     8 October 2026 removed the per-app runtime gates, and the OS and the
+     host's API surface are the boundary. Holding a component to its app's
+     `network.hosts`, and then to public HTTPS hosts, was rejected under that
+     ruling. A request waits outside the guest, where the epoch check cannot
+     end it, so its timeouts are clamped to the call's deadline, which is
+     10 s for a component that imports `wasi:http`.
+   - **`octosense:host`, phase 3:** `request(service, args)` reaches the host
+     services the app is granted, dispatched on the UI thread as the app's
+     script's `host.request` is, but with no sheet and no prompt (only
+     methods a background surface may call), and never `wasm.*`.
+   - **Never:** `wasi:sockets`, and any import outside these packages. A
      component that asks for one is refused when it loads
      (`LoadError::Import`) and by App Hub's gate.
 5. **No WIT to write.**
@@ -93,10 +121,10 @@ component reaches only what its app may already reach.
 6. **Admission sees what a component reaches.** App Hub's gate reads each
    component's imports:
    - it refuses any outside the allowed set;
-   - it requires `storage` for `wasi:filesystem` and `network.hosts` for
-     `wasi:http`;
+   - it requires `storage` for `wasi:filesystem` and `net` for `wasi:http`,
+     so that the install sheet shows them;
    - it tells reviewers what the component reaches, for example "files in its
-     app folder; HTTPS to api.example.com".
+     app folder; the network".
    Components need a new app contract version.
 
 ## Phases
@@ -105,7 +133,7 @@ component reaches only what its app may already reach.
 | --- | --- |
 | 1. Runtime spike (done here) | `crates/wasm-host::component`: load, check imports, list exports with WIT signatures, long-lived instances, JSON calls, the WASI subset above with the storage preopen, the deadline, the memory cap and logs. Tests run an unmodified crate (`pulldown-cmark`) built with plain cargo, and refuse a component that imports `wasi:sockets`. |
 | 2. Usable by developers | The shell's `wasm` service: loading components from `fns/`, `wasm.<function>` calls, per-app instances, the storage grant from the manifest, and storage quota accounting for component writes. A larger input limit for components. The guest SDK and its macro; `octo wasm new/build/doctor`; App Hub's gate check and contract version; docs and an example app. |
-| 3. Reach and platforms | `wasi:http` outgoing under `network.hosts`; an `octosense:host` import for host services under the same checks as `host.request`; compiling at install time, so a phone skips the first compile; Pulley (Wasmtime's interpreter) on iOS and, until its JIT policy is known, OpenHarmony; Windows once its CI runs the runtime's tests. |
+| 3. Reach and platforms | `wasi:http` outgoing to any host (declared with `net`, not enforced); an `octosense:host` import for host services under the same checks as `host.request`; compiling at install time, so a phone skips the first compile; Pulley (Wasmtime's interpreter) on iOS and, until its JIT policy is known, OpenHarmony; Windows once its CI runs the runtime's tests. |
 | 4. Shared components | Reviewed, versioned components in App Hub's catalog that apps depend on, like npm packages. The installer verifies them, and every app still gets its own instance and grants. |
 
 ## Alternatives considered
@@ -132,14 +160,48 @@ component reaches only what its app may already reach.
   and randomness are new to Wasm but available to every script.
 - **Persistent instances use memory for longer.** The per-app worker cap
   (`MAX_WORKERS`) and the memory cap bound it, and idle workers exit as today.
-- **Spike sizes:** `notes` (with `pulldown-cmark` and `getrandom`) is 310 KB;
-  the sockets probe is 123 KB. Timings are not measured yet; phase 2 records
-  them as ADR 0011 did.
+- **Spike sizes:** `notes` (with `pulldown-cmark` and `getrandom`) is 313 KiB;
+  the sockets probe is 120 KiB.
+- **A full disk looks like an I/O error.** wasi-libc reports any failed stream
+  write as `EIO`, whatever error the host gives, so most refused writes reach
+  the guest as an I/O error rather than `ENOSPC`. The runtime adds the reason
+  to the call's error and to the app's log.
+
+## Measurements
+
+`cargo run --release -p octosense-wasm-host --example measure_component`, on
+an Apple M5 Max with macOS 26.6.2 (9 October 2026). Each figure is a median
+of 200 calls unless the row says otherwise. The module is Wasm Lab's
+(ADR 0011), which runs the same `pulldown-cmark`.
+
+| | Component | Module | Native |
+| --- | --- | --- | --- |
+| Compile with Cranelift, first load | 37.5 ms (313 KiB) | | |
+| Load from the cache | 3.6 ms | | |
+| Instantiate (with the storage folder) | 0.09 ms (0.10 ms) | | |
+| Markdown to HTML, 32 KiB | 468 µs | 400 µs | 183 µs |
+| Render and write 49 KiB to a new file | 678 µs | | 156 µs (the write) |
+| Write a 12-byte file | 143 µs | | |
+| Read 49 KiB back | 59 µs | | |
+| 1 MiB of `list<u8>`, there and back as base64 | 18.4 ms | | |
+| The smallest call | 0.2 µs | 0.3 µs | |
+
+In Pulley (`OCTOSENSE_WASM_PULLEY=1`, `--features pulley`, same machine), the
+Markdown function takes 15.1 ms as a component and 14.1 ms as a module: about
+32 times Cranelift's code. The smallest component call is 0.4 µs. OpenHarmony
+runs this until its code-generation policy is known.
+
+The quota needs what the folder holds when a call starts: one walk of it, as
+for an engine's call. That took 0.12 ms for 10 files, 2.0 ms for 1,000 and
+23.8 ms for 10,000 (a median of 50). Rewriting one file over and over is
+slow on APFS, natively too (a median of about 6 ms a rewrite), so the
+example writes a new file each time.
 
 ## Open questions
 
-- Quota for component writes: account each write (by wrapping the filesystem
-  host) or check after each call. Phase 2 decides by measuring.
-- Whether a component may call host services that open sheets (sign-in,
-  review). Probably only through the script, never from a component's call.
+Settled in phase 3: a component never calls a host service that opens a
+sheet or asks the person; such a call belongs to the script.
+
 - Async functions (WASI 0.3) and streaming bodies: after phase 3.
+- iOS: a Home build with the service in Pulley; the Rust target is not
+  installed on the build machine yet.

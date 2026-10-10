@@ -23,6 +23,11 @@
 //! options are `null` or the value, `list<u8>` is base64 text, and a
 //! function's `result<T, E>` is its value or its error.
 //!
+//! Names face a script in snake_case: WIT's `to-html` is called as
+//! `to_html`, and a record's `word-count` comes back as `word_count`, so a
+//! script reads `r.data.word_count`. Either spelling is accepted on the
+//! way in.
+//!
 //! Unlike a core module's, an instance keeps its state between calls: a
 //! component may hold a parsed document, a cache or a model. A trap or a
 //! deadline spends it, as with modules.
@@ -30,7 +35,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use serde_json::{json, Map, Value as Json};
@@ -40,9 +45,13 @@ use wasmtime::{Store, StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::p2::pipe::MemoryOutputPipe;
 use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
-use crate::{
-    trap, CallError, InvocationGuard, LoadError, Runtime, Ticker, LOG_LINE, LOG_LINES, TICK,
-};
+use crate::{trap, CallError, InvocationGuard, LoadError, Runtime, Ticker, LOG_LINE, LOG_LINES};
+
+mod files;
+mod host;
+mod net;
+
+pub use host::HostCalls;
 
 /// The WASI packages a component may import. Every interface of these is
 /// linked; what each can reach is set per instance ([`Grants`]).
@@ -50,9 +59,15 @@ const ALLOWED_PACKAGES: &[&str] = &[
     "wasi:cli/",
     "wasi:clocks/",
     "wasi:filesystem/",
+    "wasi:http/",
     "wasi:io/",
     "wasi:random/",
+    // The app's host services, as its script reaches them (`host`).
+    "octosense:host/",
 ];
+
+/// What a call that had a write refused logs, and adds to its error.
+const REFUSED: &str = "a write was refused: the storage budget is used up";
 
 /// How much one stream (stdout or stderr) buffers between reads.
 const PIPE_BYTES: usize = 64 << 10;
@@ -64,18 +79,22 @@ pub fn is_component(bytes: &[u8]) -> bool {
 }
 
 /// What an instance of a component may reach beyond clocks and randomness.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grants {
     /// The app's storage folder, preopened as `/`. `None`: no filesystem.
     pub storage_dir: Option<PathBuf>,
+    /// Open the storage folder read-only (its quota is used up).
+    pub read_only: bool,
 }
 
 /// One function an app may call, with its WIT-like signature.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Export {
-    /// `name` for a world's own function, `interface.name` for one in an
-    /// exported interface.
+    /// The name a script calls it by, in snake_case: `name` for a world's
+    /// own function, `interface.name` for one in an exported interface.
     pub name: String,
+    /// The same as WIT spells it (`to-html`, `markdown.to-html`).
+    pub wit_name: String,
     /// Parameter names and their types, as WIT writes them.
     pub params: Vec<(String, String)>,
     /// The result's type, as WIT writes it, if any.
@@ -91,6 +110,8 @@ pub struct ComponentProgram {
     /// the reason, so `wasm.functions` can say why they are missing.
     skipped: Vec<(String, String)>,
     from_cache: bool,
+    /// It imports `wasi:http`, so its calls may wait for the network.
+    uses_network: bool,
 }
 
 impl ComponentProgram {
@@ -108,12 +129,28 @@ impl ComponentProgram {
     pub fn from_cache(&self) -> bool {
         self.from_cache
     }
+
+    /// Whether it imports `wasi:http`: it may reach any host, and its calls
+    /// get the network deadline.
+    pub fn uses_network(&self) -> bool {
+        self.uses_network
+    }
 }
 
 struct State {
     wasi: WasiCtx,
     table: ResourceTable,
     limits: StoreLimits,
+    /// The running call's deadline and cancellation, read every epoch.
+    guard: Option<Arc<InvocationGuard>>,
+    /// What the running call may add to the storage folder.
+    budget: files::Budget,
+    http: wasmtime_wasi_http::WasiHttpCtx,
+    /// The running call's deadline, for the requests it sends.
+    network: net::Network,
+    /// Its app's host services (`octosense:host`), when the embedder gives
+    /// them.
+    host_calls: host::Calls,
 }
 
 impl WasiView for State {
@@ -121,6 +158,16 @@ impl WasiView for State {
         WasiCtxView {
             ctx: &mut self.wasi,
             table: &mut self.table,
+        }
+    }
+}
+
+impl wasmtime_wasi_http::WasiHttpView for State {
+    fn http(&mut self) -> wasmtime_wasi_http::WasiHttpCtxView<'_> {
+        wasmtime_wasi_http::WasiHttpCtxView {
+            ctx: &mut self.http,
+            table: &mut self.table,
+            hooks: &mut self.network,
         }
     }
 }
@@ -135,10 +182,9 @@ pub struct ComponentInstance {
     /// Bytes of stdout and stderr already turned into log lines.
     read: [usize; 2],
     logs: Vec<String>,
-    deadline_ticks: u64,
+    deadline: Duration,
     io_bytes: usize,
     spent: bool,
-    guard: Option<Arc<InvocationGuard>>,
     _ticker: Arc<Ticker>,
 }
 
@@ -165,11 +211,16 @@ impl Runtime {
             None => self.compile_component(bytes, cached.as_ref())?,
         };
         let (exports, skipped) = check_component(&self.engine, &component)?;
+        let uses_network = component
+            .component_type()
+            .imports(&self.engine)
+            .any(|(name, _)| name.starts_with("wasi:http/"));
         Ok(ComponentProgram {
             component,
             exports,
             skipped,
             from_cache,
+            uses_network,
         })
     }
 
@@ -212,57 +263,91 @@ impl Runtime {
             .stderr(stderr.clone())
             .allow_tcp(false)
             .allow_udp(false)
-            .allow_ip_name_lookup(false);
+            .allow_ip_name_lookup(false)
+            // Calls run on their app's own worker thread, synchronously: a
+            // file operation blocks it directly rather than round-tripping
+            // through a thread pool.
+            .allow_blocking_current_thread(true);
         if let Some(dir) = &grants.storage_dir {
-            wasi.preopened_dir(dir, "/", FsPerms::ReadWrite)
-                .map_err(|e| LoadError::Invalid(format!("the app's storage: {e:#}")))?;
+            wasi.preopened_dir(
+                dir,
+                "/",
+                if grants.read_only {
+                    FsPerms::ReadOnly
+                } else {
+                    FsPerms::ReadWrite
+                },
+            )
+            .map_err(|e| LoadError::Invalid(format!("the app's storage: {e:#}")))?;
         }
         let limits = StoreLimitsBuilder::new()
             .memory_size(self.limits.memory_bytes)
             .table_elements(self.limits.table_elements)
             .trap_on_grow_failure(true)
             .build();
+        // Instantiation runs the component's start-up code: it gets the
+        // same deadline as a call, and the caller's cancellation if any.
+        let (deadline, pending) = match guard {
+            Some((deadline, pending)) => (deadline, pending),
+            None => (
+                Instant::now() + self.limits.deadline,
+                Box::new(|| true) as Box<dyn Fn() -> bool + Send + Sync>,
+            ),
+        };
+        // A component that imports wasi:http waits for replies: its calls
+        // get the longer deadline.
+        let call_deadline = if program.uses_network {
+            self.limits.network_deadline.max(self.limits.deadline)
+        } else {
+            self.limits.deadline
+        };
+        let guard = Arc::new(InvocationGuard {
+            deadline: deadline.min(Instant::now() + call_deadline),
+            pending,
+        });
+        let network = net::Network {
+            deadline: Some(guard.deadline),
+        };
         let mut store = Store::new(
             &self.engine,
             State {
                 wasi: wasi.build(),
                 table: ResourceTable::new(),
                 limits,
+                guard: Some(guard),
+                // Start-up code may read the folder, not grow it.
+                budget: files::Budget::default(),
+                http: wasmtime_wasi_http::WasiHttpCtx::new(),
+                network,
+                host_calls: None,
             },
         );
+        store.data().budget.set(Some(0));
         store.limiter(|state| &mut state.limits);
-        let guard = guard.map(|(deadline, pending)| {
-            let deadline = deadline.min(Instant::now() + self.limits.deadline);
-            Arc::new(InvocationGuard { deadline, pending })
+        // Every epoch, the running call's guard decides: a call never runs
+        // without one, so none outlives its deadline.
+        store.epoch_deadline_callback(|ctx| {
+            Ok(match &ctx.data().guard {
+                Some(guard) if guard.live() => wasmtime::UpdateDeadline::Continue(1),
+                _ => wasmtime::UpdateDeadline::Interrupt,
+            })
         });
-        if let Some(guard) = guard.clone() {
-            store.epoch_deadline_callback(move |_| {
-                Ok(if !guard.live() {
-                    wasmtime::UpdateDeadline::Interrupt
-                } else {
-                    wasmtime::UpdateDeadline::Continue(1)
-                })
-            });
-        } else {
-            store.epoch_deadline_trap();
-        }
-        let deadline_ticks = self
-            .limits
-            .deadline
-            .as_millis()
-            .div_ceil(TICK.as_millis())
-            .max(1) as u64;
-        store.set_epoch_deadline(if guard.is_some() { 1 } else { deadline_ticks });
+        store.set_epoch_deadline(1);
         let mut linker = Linker::new(&self.engine);
         wasmtime_wasi::p2::add_to_linker_sync(&mut linker)
+            .and_then(|()| wasmtime_wasi_http::p2::add_only_http_to_linker_sync(&mut linker))
+            .and_then(|()| files::link(&mut linker))
+            .and_then(|()| host::link(&mut linker))
             .map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
         let instance = linker
             .instantiate(&mut store, &program.component)
             .map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
+        store.data_mut().guard = None;
+        store.data().budget.set(None);
         let mut funcs = HashMap::new();
         for export in &program.exports {
-            let func = match export.name.split_once('.') {
-                None => instance.get_func(&mut store, &export.name),
+            let func = match export.wit_name.split_once('.') {
+                None => instance.get_func(&mut store, &export.wit_name),
                 Some((iface, name)) => {
                     let full = interface_export(&program.component, &self.engine, iface);
                     full.and_then(|full| instance.get_export_index(&mut store, None, &full))
@@ -280,10 +365,9 @@ impl Runtime {
             stderr,
             read: [0, 0],
             logs: Vec::new(),
-            deadline_ticks,
+            deadline: call_deadline,
             io_bytes: self.limits.io_bytes,
             spent: false,
-            guard,
             _ticker: self.ticker.clone(),
         })
     }
@@ -303,6 +387,11 @@ fn interface_export(
             matches!(ext.ty, ComponentItem::ComponentInstance(_)) && short_name(name) == short
         })
         .map(|(name, _)| name.to_string())
+}
+
+/// WIT's kebab-case as a script spells it: `word-count` → `word_count`.
+pub fn snake(name: &str) -> String {
+    name.replace('-', "_")
 }
 
 /// `my:pkg/markdown@0.1.0` → `markdown`.
@@ -367,8 +456,9 @@ fn add_export(
         return;
     }
     exports.push(Export {
-        name,
-        params: params.iter().map(|(n, t)| (n.clone(), wit(t))).collect(),
+        name: snake(&name),
+        wit_name: name,
+        params: params.iter().map(|(n, t)| (snake(n), wit(t))).collect(),
         result: match results.len() {
             0 => None,
             1 => Some(wit(&results[0])),
@@ -486,19 +576,53 @@ impl ComponentInstance {
         self.spent
     }
 
+    /// What the next calls may add to the storage folder (`None`, the
+    /// default: no ceiling). A write past it fails in the guest as a full
+    /// disk; overwriting, truncating and deleting give bytes back.
+    pub fn set_storage_budget(&mut self, left: Option<u64>) {
+        self.store.data().budget.set(left);
+    }
+
+    /// What is left of the storage budget.
+    pub fn storage_budget(&self) -> Option<u64> {
+        self.store.data().budget.left()
+    }
+
+    /// The app's host services its `octosense:host` calls reach (`None`,
+    /// the default: none).
+    pub fn set_host_calls(&mut self, calls: Option<Arc<dyn HostCalls>>) {
+        self.store.data_mut().host_calls = calls;
+    }
+
     /// Calls `name` with JSON arguments; returns its JSON result. A
     /// `result<T, E>` return is `T`, or [`CallError::Guest`] with `E`.
     pub fn call_json(&mut self, name: &str, args: &Json) -> Result<Json, CallError> {
+        self.call_json_guarded(name, args, Instant::now() + self.deadline, || true)
+    }
+
+    /// [`ComponentInstance::call_json`], ended at `deadline` (no later than
+    /// the runtime's) or as soon as `pending` answers false.
+    pub fn call_json_guarded(
+        &mut self,
+        name: &str,
+        args: &Json,
+        deadline: Instant,
+        pending: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Result<Json, CallError> {
         if self.spent {
             return Err(CallError::Spent);
         }
-        if self.guard.as_ref().is_some_and(|guard| !guard.live()) {
-            self.spent = true;
+        let guard = Arc::new(InvocationGuard {
+            deadline: deadline.min(Instant::now() + self.deadline),
+            pending: Box::new(pending),
+        });
+        if !guard.live() {
             return Err(CallError::Deadline);
         }
         let func = *self
             .funcs
             .get(name)
+            .or_else(|| self.funcs.get(&snake(name)))
             .ok_or_else(|| CallError::NoSuchFunction(name.into()))?;
         let size = serde_json::to_vec(args).map(|v| v.len()).unwrap_or(0);
         if size > self.io_bytes {
@@ -509,15 +633,20 @@ impl ComponentInstance {
         let args = arguments(&params, args).map_err(CallError::Guest)?;
         let results_ty: Vec<Type> = fty.results().collect();
         let mut results = vec![Val::Bool(false); results_ty.len()];
-        self.store.set_epoch_deadline(if self.guard.is_some() {
-            1
-        } else {
-            self.deadline_ticks
-        });
+        self.store.data_mut().network.deadline = Some(guard.deadline);
+        self.store.data_mut().guard = Some(guard);
+        self.store.set_epoch_deadline(1);
         let outcome = func
             .call(&mut self.store, &args, &mut results)
             .map_err(trap);
+        self.store.data_mut().guard = None;
         self.collect_logs();
+        // A refused write reaches the guest as a full disk or, through a
+        // stream, a bare I/O error: say what it was.
+        let refused = self.store.data().budget.take_refused();
+        if refused {
+            self.logs.push(REFUSED.into());
+        }
         if let Err(error) = outcome {
             if matches!(error, CallError::Deadline | CallError::Trap(_)) {
                 self.spent = true;
@@ -532,13 +661,16 @@ impl ComponentInstance {
                 .map(|(v, t)| from_val(&t, v))
                 .unwrap_or(Json::Null),
             ([Type::Result(res)], [Val::Result(Err(err))]) => {
-                return Err(CallError::Guest(
-                    match err.as_deref().zip(res.err()).map(|(v, t)| from_val(&t, v)) {
-                        Some(Json::String(text)) => text,
-                        Some(other) => other.to_string(),
-                        None => "the function failed".into(),
-                    },
-                ))
+                let why = match err.as_deref().zip(res.err()).map(|(v, t)| from_val(&t, v)) {
+                    Some(Json::String(text)) => text,
+                    Some(other) => other.to_string(),
+                    None => "the function failed".into(),
+                };
+                return Err(CallError::Guest(if refused {
+                    format!("{why}; {REFUSED}")
+                } else {
+                    why
+                }));
             }
             ([ty], [one]) => from_val(ty, one),
             (types, many) => Json::Array(
@@ -588,34 +720,48 @@ fn arguments(params: &[(String, Type)], args: &Json) -> Result<Vec<Val>, String>
     let named = |map: &Map<String, Json>| -> Result<Vec<Val>, String> {
         params
             .iter()
-            .map(|(n, t)| to_val(t, &map[n]).map_err(|e| format!("{n}: {e}")))
+            .map(|(n, t)| {
+                let value = field(map, n).unwrap_or(&Json::Null);
+                to_val(t, value).map_err(|e| format!("{}: {e}", snake(n)))
+            })
             .collect()
+    };
+    let has_all = |map: &Map<String, Json>| {
+        map.len() == params.len() && params.iter().all(|(n, _)| field(map, n).is_some())
     };
     match (params, args) {
         ([], Json::Null) => Ok(Vec::new()),
         ([], Json::Object(map)) if map.is_empty() => Ok(Vec::new()),
         ([], Json::Array(items)) if items.is_empty() => Ok(Vec::new()),
-        ([(name, _)], Json::Object(map)) if map.len() == 1 && map.contains_key(name) => named(map),
-        ([(name, ty)], value) => Ok(vec![to_val(ty, value).map_err(|e| format!("{name}: {e}"))?]),
-        (_, Json::Object(map))
-            if map.len() == params.len() && params.iter().all(|(n, _)| map.contains_key(n)) =>
-        {
-            named(map)
-        }
+        ([_], Json::Object(map)) if has_all(map) => named(map),
+        // The value itself or, when it is not one, a one-item array of it.
+        ([(name, ty)], value) => match (to_val(ty, value), value) {
+            (Ok(one), _) => Ok(vec![one]),
+            (Err(_), Json::Array(items)) if items.len() == 1 => Ok(vec![
+                to_val(ty, &items[0]).map_err(|e| format!("{}: {e}", snake(name)))?
+            ]),
+            (Err(e), _) => Err(format!("{}: {e}", snake(name))),
+        },
+        (_, Json::Object(map)) if has_all(map) => named(map),
         (_, Json::Array(items)) if items.len() == params.len() => params
             .iter()
             .zip(items)
-            .map(|((n, t), v)| to_val(t, v).map_err(|e| format!("{n}: {e}")))
+            .map(|((n, t), v)| to_val(t, v).map_err(|e| format!("{}: {e}", snake(n))))
             .collect(),
         _ => Err(format!(
             "takes {}: pass an object with those names",
             params
                 .iter()
-                .map(|(n, _)| n.as_str())
+                .map(|(n, _)| snake(n))
                 .collect::<Vec<_>>()
                 .join(", ")
         )),
     }
+}
+
+/// The value under a WIT name, spelled either way.
+fn field<'a>(map: &'a Map<String, Json>, wit_name: &str) -> Option<&'a Json> {
+    map.get(wit_name).or_else(|| map.get(&snake(wit_name)))
 }
 
 /// JSON to a WIT value of type `ty`.
@@ -686,7 +832,7 @@ pub fn to_val(ty: &Type, v: &Json) -> Result<Val, String> {
                 record
                     .fields()
                     .map(|f| {
-                        let value = map.get(f.name).unwrap_or(&Json::Null);
+                        let value = field(map, f.name).unwrap_or(&Json::Null);
                         to_val(&f.ty, value)
                             .map(|val| (f.name.to_string(), val))
                             .map_err(|e| format!("{}: {e}", f.name))
@@ -725,23 +871,24 @@ pub fn to_val(ty: &Type, v: &Json) -> Result<Val, String> {
             };
             let found = variant
                 .cases()
-                .find(|c| c.name == case)
+                .find(|c| c.name == case || snake(c.name) == case)
                 .ok_or_else(|| format!("no case {case}"))?;
             let payload = match (&found.ty, payload) {
                 (Some(t), Some(p)) => Some(Box::new(to_val(t, p)?)),
                 (Some(_), None) => return Err(format!("case {case} takes a value")),
                 (None, _) => None,
             };
-            Val::Variant(case.to_string(), payload)
+            Val::Variant(found.name.to_string(), payload)
         }
         Type::Enum(e) => {
             let name = v
                 .as_str()
                 .ok_or_else(|| format!("expected a name, got {v}"))?;
-            if !e.names().any(|n| n == name) {
-                return Err(format!("no case {name}"));
-            }
-            Val::Enum(name.to_string())
+            let wit_name = e
+                .names()
+                .find(|n| *n == name || snake(n) == name)
+                .ok_or_else(|| format!("no case {name}"))?;
+            Val::Enum(wit_name.to_string())
         }
         Type::Option(opt) => match v {
             Json::Null => Val::Option(None),
@@ -773,10 +920,11 @@ pub fn to_val(ty: &Type, v: &Json) -> Result<Val, String> {
                 let name = item
                     .as_str()
                     .ok_or_else(|| format!("expected a name, got {item}"))?;
-                if !f.names().any(|n| n == name) {
-                    return Err(format!("no flag {name}"));
-                }
-                out.push(name.to_string());
+                let wit_name = f
+                    .names()
+                    .find(|n| *n == name || snake(n) == name)
+                    .ok_or_else(|| format!("no flag {name}"))?;
+                out.push(wit_name.to_string());
             }
             Val::Flags(out)
         }
@@ -816,7 +964,7 @@ pub fn from_val(ty: &Type, v: &Val) -> Json {
         (Type::Record(record), Val::Record(fields)) => {
             let mut map = Map::new();
             for (f, (k, val)) in record.fields().zip(fields) {
-                map.insert(k.clone(), from_val(&f.ty, val));
+                map.insert(snake(k), from_val(&f.ty, val));
             }
             Json::Object(map)
         }
@@ -830,11 +978,11 @@ pub fn from_val(ty: &Type, v: &Val) -> Json {
         (Type::Variant(variant), Val::Variant(case, payload)) => {
             let ty = variant.cases().find(|c| c.name == case).and_then(|c| c.ty);
             match (ty, payload) {
-                (Some(t), Some(p)) => json!({ case.clone(): from_val(&t, p) }),
-                _ => json!(case),
+                (Some(t), Some(p)) => json!({ snake(case): from_val(&t, p) }),
+                _ => json!(snake(case)),
             }
         }
-        (_, Val::Enum(name)) => json!(name),
+        (_, Val::Enum(name)) => json!(snake(name)),
         (Type::Option(opt), Val::Option(o)) => o
             .as_deref()
             .map(|v| from_val(&opt.ty(), v))
@@ -843,7 +991,7 @@ pub fn from_val(ty: &Type, v: &Val) -> Json {
             Ok(v) => json!({"ok": v.as_deref().zip(res.ok()).map(|(v, t)| from_val(&t, v))}),
             Err(e) => json!({"err": e.as_deref().zip(res.err()).map(|(v, t)| from_val(&t, v))}),
         },
-        (_, Val::Flags(names)) => json!(names),
+        (_, Val::Flags(names)) => json!(names.iter().map(|n| snake(n)).collect::<Vec<_>>()),
         _ => Json::Null,
     }
 }

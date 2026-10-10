@@ -151,11 +151,12 @@ octosense-calendar-service = { workspace = true }
 octosense-ai-host = { workspace = true, features = ["llm"] }
 
 # Apps' own WebAssembly functions (the `wasm` service, ADR 0011), compiled by
-# Cranelift: only where an app may generate code and the runtime has been
-# checked. Windows (not yet checked), iOS (no code generation for apps),
-# OpenHarmony (its policy is unknown) and the browser leave it out; build.rs
-# sets `wasm_functions` for the same targets.
-[target.'cfg(any(target_os = "macos", target_os = "android", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
+# Cranelift where an app may generate code, and on OpenHarmony, until its
+# policy is known, run in Pulley, Wasmtime's interpreter (ADR 0014; the
+# runtime selects it there). Windows runs its tests in CI
+# (.github/workflows/wasm-windows.yml). iOS (not yet built with it) and the
+# browser leave it out; build.rs sets `wasm_functions` for the same targets.
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "android", target_os = "linux"))'.dependencies]
 octosense-wasm-host = { workspace = true, optional = true }
 
 [features]
@@ -195,7 +196,7 @@ dev-mode = []
 # The `wasm` host service (ADR 0011), which runs an app's own
 # WebAssembly functions (crates/wasm-host). On in every standard shell
 # build (tools/native_apps.py's BASE_DEFAULT); it runs where build.rs sets
-# `wasm_functions`: macOS, Linux and Android.
+# `wasm_functions`: macOS, Windows, Linux, Android and OpenHarmony.
 wasm-functions = ["app-hub", "dep:octosense-wasm-host"]
 # The feature's former name.
 wasm-lab = ["wasm-functions"]

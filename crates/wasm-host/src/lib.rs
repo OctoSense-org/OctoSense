@@ -56,6 +56,9 @@ const LOG_LINES: usize = 64;
 pub struct Limits {
     /// How long one call may run.
     pub deadline: Duration,
+    /// How long one call may run when it may wait for the network (a
+    /// component that imports `wasi:http`).
+    pub network_deadline: Duration,
     /// The most linear memory an instance may have.
     pub memory_bytes: usize,
     /// The most elements in an instance's single table (including growth).
@@ -72,6 +75,7 @@ impl Default for Limits {
     fn default() -> Self {
         Limits {
             deadline: Duration::from_secs(2),
+            network_deadline: Duration::from_secs(10),
             memory_bytes: 256 << 20,
             table_elements: 16_384,
             module_bytes: 8 << 20,
@@ -215,6 +219,11 @@ impl Runtime {
         // Components (ADR 0014) share the engine, its epoch and its cache.
         config.wasm_component_model(true);
         config.max_wasm_stack(limits.stack_bytes);
+        if Runtime::interpreted() {
+            config
+                .target("pulley64")
+                .map_err(|e| format!("Pulley: {e:#}"))?;
+        }
         let engine = Engine::new(&config).map_err(|e| format!("{e:#}"))?;
         let ticker = Arc::new(Ticker::start(engine.clone()));
         Ok(Runtime {
@@ -227,6 +236,18 @@ impl Runtime {
 
     pub fn limits(&self) -> &Limits {
         &self.limits
+    }
+
+    /// Whether code runs in Pulley, Wasmtime's interpreter, rather than as
+    /// native code Cranelift generates (ADR 0014 phase 3): on iOS, where an
+    /// app may not generate code, and on OpenHarmony, until its policy is
+    /// known. With the `pulley` feature, `OCTOSENSE_WASM_PULLEY` selects it
+    /// on any host, so that its tests run anywhere. Cranelift then compiles
+    /// to Pulley's bytecode, and the cache keeps it apart (the engine's
+    /// compatibility hash differs).
+    pub fn interpreted() -> bool {
+        cfg!(any(target_os = "ios", target_env = "ohos"))
+            || (cfg!(feature = "pulley") && std::env::var_os("OCTOSENSE_WASM_PULLEY").is_some())
     }
 
     /// Checks and compiles `bytes`, or takes its compiled code from the cache.
@@ -255,6 +276,22 @@ impl Runtime {
             functions,
             from_cache,
         })
+    }
+
+    /// Compiles `bytes`, a module or a component, into the cache unless it
+    /// is there already; whether it compiled. An app's install calls this so
+    /// that its first call loads from the cache instead of waiting for
+    /// Cranelift (ADR 0014 phase 3). Without a cache it only checks.
+    pub fn precompile(&self, bytes: &[u8]) -> Result<bool, LoadError> {
+        if self.cache_path(bytes).is_some_and(|path| path.is_file()) {
+            return Ok(false);
+        }
+        if component::is_component(bytes) {
+            self.load_component(bytes)
+                .map(|program| !program.from_cache())
+        } else {
+            self.load(bytes).map(|program| !program.from_cache())
+        }
     }
 
     fn compile(&self, bytes: &[u8], cache: Option<&PathBuf>) -> Result<Module, LoadError> {

@@ -25,4 +25,19 @@ world notes {
   export grow: func(megabytes: u32) -> u32;
   /// Bytes in, bytes out.
   export echo-bytes: func(data: list<u8>) -> list<u8>;
+
+  /// Appends to a file (append-via-stream); its new length.
+  export append-text: func(path: string, text: string) -> result<u64, string>;
+  /// Sets a file's length (set-size).
+  export set-len: func(path: string, len: u64) -> result<_, string>;
+  /// Deletes a file (unlink-file-at).
+  export delete-file: func(path: string) -> result<_, string>;
+
+  enum entry-kind { regular-file, directory, other }
+  record file-info {
+    byte-count: u64,
+    kind: entry-kind,
+  }
+  /// Hyphenated names, which scripts read in snake_case.
+  export file-info: func(path: string) -> result<file-info, string>;
 }

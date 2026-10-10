@@ -82,6 +82,8 @@ NOT_LOCAL = {
                           "compilation or another OS is not native account evidence",
     "embedded-browser.yml": "native Windows WebView2 acceptance needs a Windows desktop and installed engine; "
                             "ci-local-merge requires a successful GitHub run on the exact PR head",
+    "wasm-windows.yml": "apps' WebAssembly functions on Windows need a Windows runner; "
+                        "ci-local-merge requires a successful GitHub run on the exact PR head",
     "release-desktop.yml": "a release workflow (tag push or manual run): signed packages for three OSes, "
                            "with a matrix, environments, secrets and artifacts; nothing a pull request merges "
                            "on depends on it, and its packaging scripts' tests run in desktop.yml",

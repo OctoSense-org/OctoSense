@@ -11383,7 +11383,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-contract"
 version = "1.10.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=28745c0f6fd71986820e9835183a3045f61baefc#28745c0f6fd71986820e9835183a3045f61baefc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339#371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339"
 dependencies = [
  "blake3",
  "serde",
@@ -11394,7 +11394,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=28745c0f6fd71986820e9835183a3045f61baefc#28745c0f6fd71986820e9835183a3045f61baefc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339#371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -11414,12 +11414,13 @@ dependencies = [
  "sigstore-types",
  "sigstore-verify",
  "ureq 3.4.2",
+ "wasmparser 0.258.3",
 ]
 
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=28745c0f6fd71986820e9835183a3045f61baefc#28745c0f6fd71986820e9835183a3045f61baefc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339#371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -11447,7 +11448,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=28745c0f6fd71986820e9835183a3045f61baefc#28745c0f6fd71986820e9835183a3045f61baefc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339#371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339"
 dependencies = [
  "makepad-widgets",
  "octosense-app-contract",
@@ -11469,7 +11470,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=28745c0f6fd71986820e9835183a3045f61baefc#28745c0f6fd71986820e9835183a3045f61baefc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339#371f51aeb6ba90e9a214c5ddb6ccfc40a2e2a339"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -11984,12 +11985,16 @@ name = "octosense-wasm-host"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
+ "http",
+ "http-body-util",
  "libc",
  "serde_json",
  "sha2 0.10.9",
  "wasmlab-functions",
  "wasmtime",
  "wasmtime-wasi",
+ "wasmtime-wasi-http",
  "wat",
 ]
 
@@ -19035,6 +19040,30 @@ dependencies = [
  "wasmtime-wasi-io",
  "windows-sys 0.61.2",
  "winx",
+]
+
+[[package]]
+name = "wasmtime-wasi-http"
+version = "49.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f4cd327c70de1309b0c04d49df3633a2ffeae9b29b526d421320b565e198175"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "pin-project-lite",
+ "rustls",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "wasmtime",
+ "wasmtime-wasi",
+ "wasmtime-wasi-io",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]

@@ -1,0 +1,13 @@
+[package]
+name = "fetch"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.62"
+# WASI 0.2's own bindings: the HTTP client a component uses.
+wasi = "0.14.7"

@@ -121,6 +121,9 @@ pub fn pump() {
     let Ok(_pump) = PUMP.try_lock() else { return };
     #[cfg(any(feature = "app-hub", native_mobile))]
     script_apps::poll();
+    // Components' calls to their apps' host services (ADR 0014).
+    #[cfg(wasm_functions)]
+    crate::wasm_service::pump_host_calls();
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
         if events.is_empty() {
