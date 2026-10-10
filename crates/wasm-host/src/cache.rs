@@ -20,6 +20,10 @@ pub(super) enum ReadResult {
 #[derive(Default)]
 pub(super) struct Readers {
     active: AtomicUsize,
+    // Only strict cache-format tests use this per-runtime seam. Production
+    // always takes the bounded worker path, including integration tests.
+    #[cfg(test)]
+    synchronous_for_test: bool,
 }
 
 struct Slot(Arc<Readers>);
@@ -37,6 +41,14 @@ impl Readers {
     }
 
     pub(super) fn read(self: &Arc<Self>, path: PathBuf) -> ReadResult {
+        #[cfg(test)]
+        if self.synchronous_for_test {
+            return match read_file(path) {
+                Ok(bytes) => ReadResult::Hit(bytes),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => ReadResult::Missing,
+                Err(_) => ReadResult::Unavailable,
+            };
+        }
         self.read_with(move || read_file(path), READ_WAIT)
     }
 
@@ -193,6 +205,138 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    fn format_test_runtime(dir: &std::path::Path) -> Runtime {
+        let mut runtime = Runtime::new(Limits::default(), Some(dir.into())).unwrap();
+        runtime.cache_readers = Arc::new(Readers {
+            synchronous_for_test: true,
+            ..Readers::default()
+        });
+        runtime
+    }
+
+    fn echo_module() -> Vec<u8> {
+        wat::parse_str(
+            r#"(module
+            (memory (export "memory") 1)
+            (data (i32.const 0) "\00ok")
+            (func (export "octo_alloc") (param i32) (result i32) i32.const 32)
+            (func (export "octo_free") (param i32 i32))
+            (func (export "echo") (param i32 i32) (result i64) i64.const 3))"#,
+        )
+        .unwrap()
+    }
+
+    // The returned hit flag belongs to the program actually invoked, not a
+    // separate successful probe. This exercises Wasmtime deserialization.
+    fn execute(runtime: &Runtime, bytes: &[u8]) -> bool {
+        if crate::component::is_component(bytes) {
+            let program = runtime.load_component(bytes).unwrap();
+            let mut instance = runtime
+                .instantiate_component(&program, &Grants::default(), None)
+                .unwrap();
+            assert_eq!(
+                instance
+                    .call_json("to_html", &serde_json::json!("# Cached"))
+                    .unwrap(),
+                serde_json::json!("<h1>Cached</h1>\n")
+            );
+            program.from_cache()
+        } else {
+            let program = runtime.load(bytes).unwrap();
+            assert_eq!(
+                runtime
+                    .instantiate(&program)
+                    .unwrap()
+                    .call("echo", b"")
+                    .unwrap(),
+                b"ok"
+            );
+            program.from_cache()
+        }
+    }
+
+    #[test]
+    fn module_and_component_cache_hits_execute_after_restart_and_corruption_repairs() {
+        let component = include_bytes!("../tests/fixtures/notes.component.wasm").to_vec();
+        for (name, bytes) in [
+            ("module-format", echo_module()),
+            ("component-format", component),
+        ] {
+            let dir = cache_dir(name);
+            let first = format_test_runtime(&dir);
+            assert!(first.precompile(&bytes).unwrap());
+            let path = first.cache_path(&bytes).unwrap();
+            assert!(path.is_file(), "a true cache-miss must publish an artifact");
+            let original = read_file(path.clone()).unwrap();
+            assert!(!original.is_empty());
+            drop(first);
+
+            let second = format_test_runtime(&dir);
+            assert!(!second.precompile(&bytes).unwrap());
+            assert!(
+                execute(&second, &bytes),
+                "the invoked program must deserialize from cache"
+            );
+            assert_eq!(read_file(path.clone()).unwrap(), original);
+
+            std::fs::write(&path, b"invalid compiled artifact").unwrap();
+            assert!(
+                !execute(&second, &bytes),
+                "corruption must fall back to source compilation"
+            );
+            let repaired = read_file(path.clone()).unwrap();
+            assert!(!repaired.is_empty());
+            assert_ne!(repaired, b"invalid compiled artifact");
+            assert!(
+                execute(&second, &bytes),
+                "the repaired artifact must deserialize and execute"
+            );
+            std::fs::remove_file(path).unwrap();
+            assert!(
+                !execute(&second, &bytes),
+                "a removed artifact is a genuine miss"
+            );
+            assert!(
+                execute(&second, &bytes),
+                "the newly published artifact must execute"
+            );
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn concurrent_publication_produces_a_real_deserializable_cache_entry() {
+        let dir = cache_dir("concurrent-format");
+        let runtime = Arc::new(format_test_runtime(&dir));
+        let bytes = Arc::new(echo_module());
+        let start = Arc::new(std::sync::Barrier::new(4));
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let (runtime, bytes, start) = (runtime.clone(), bytes.clone(), start.clone());
+                std::thread::spawn(move || {
+                    start.wait();
+                    execute(&runtime, &bytes);
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        let path = runtime.cache_path(&bytes).unwrap();
+        assert!(path.is_file());
+        assert!(!read_file(path).unwrap().is_empty());
+        drop(runtime);
+        let restarted = format_test_runtime(&dir);
+        assert!(execute(&restarted, &bytes));
+        let entries: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
+        assert_eq!(entries.len(), 1, "no staging files may remain");
+        assert_eq!(
+            entries[0].as_ref().unwrap().path().extension().unwrap(),
+            "cwasm"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
