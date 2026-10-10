@@ -6,7 +6,7 @@
 App Hub's Search → Get → Install screens and its normal installed-app launcher.
 It installs `org.ymote.componentdemo.first` and `.second` from the genuine
 GitHub-attested rehearsal catalog, then restarts the shell for each app and
-checks two component calls, counter state and the app's synthetic HTML note.
+checks two runs of its component checks, counter state and synthetic HTML note.
 One app declares no capabilities; the other declares `wasm` and `storage`.
 Neither app uses an account or model. The public catalog is not modified.
 
@@ -48,7 +48,18 @@ The released-shell test does not establish live-model behavior or an OS upgrade.
    untouched. It uses a fresh `OCTOSENSE_HOME`, a separate kernel directory,
    file vaults, the real GitHub catalog channel and hidden Makepad instrument
    windows. It records hashes, assertions, logs and frames, then closes each
-   owned process. Inspect the frames as well as the JSON receipt.
+   owned process. Its cleanup record checks observed child processes too;
+   only descendants whose process identity still matches can be terminated.
+   Inspect the frames as well as the JSON receipt.
+
+   The optional App Hub agent prompt uses custom-drawn controls. The driver
+   pauses at `apphub-agent-consent.png`: inspect that actual frame, then put
+   the observed **Don't allow** button's window-local layout coordinates in
+   `refuse-apphub-agent.json`, for example `{"x": 526, "y": 620}` only if that
+   point matches the captured window. The driver records the instrument click
+   and verifies the resulting refusal before proceeding. Do not select Allow
+   or prepopulate approval files. This tests a local app, without enabling an
+   agent or configuring a provider.
 5. Review all platform artifacts and their distinct test limits. Publish the
    reviewed draft explicitly as a **prerelease** for an RC tag; the workflow
    itself does not set the prerelease flag. No Windows/Linux installation or
