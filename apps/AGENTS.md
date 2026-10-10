@@ -213,7 +213,9 @@ a command could plant in the document after each one (vector's linked
 images, effect's LUT and colour files, film's media and effect paths,
 photo's linked smart objects). Engine work runs on the shell's UI thread,
 so every door caps what one call may ask for: give a new multiplying
-parameter a `Limit`, with its reason beside it. Only `safe` ids and reviewed reads
+parameter a `Limit`, with its reason beside it. A command the engine
+cannot yet do safely on hostile data (deck's media and zip parsing, #448)
+is `Held`: the door refuses it, saying why, until the engine is fixed. Only `safe` ids and reviewed reads
 run; an unclassified id fails the skill drift test, and an id the gate does
 not know is refused. Classify a new id from its implementation, never
 widen a class to make a command run, and keep a door's hostile fixtures

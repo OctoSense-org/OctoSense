@@ -53,7 +53,7 @@ use deckcraft_engine::cmd::file as engine_file;
 use deckcraft_engine::Session;
 use deckcraft_model::{Presentation, Shape, ShapeKind, TextBody};
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
-use octosense_engine_area::door::{Door, FileRead, Limit, Measure, Reviewed};
+use octosense_engine_area::door::{Door, FileRead, Held as HeldBack, Limit, Measure, Reviewed};
 use octosense_engine_area::{Area, Slot};
 use serde_json::{json, Value as Json};
 
@@ -76,14 +76,20 @@ const CONVERT_OUT: &[(&str, &str)] = &[(".pptx", "pptx"), (".deckcraft", "deckcr
 const RUN_OUT: &[(&str, &str)] = &[(".pptx", "pptx"), (".deckcraft", "deckcraft"), (".txt", "outline"), (".pdf", "pdf"), (".png", "png")];
 
 /// What the deck engine's reviewer settled for the door beyond the classes:
-/// four `file` commands that only read the file their `path` names (whole,
+/// two `file` commands that only read the picture their `path` names (whole,
 /// with `std::fs::read`) and embed its bytes in the deck, or take it inline
-/// as base64 `data`, which wins when both are given. All four go through
+/// as base64 `data`, which wins when both are given. Both go through
 /// `insert::media_bytes` (`cmd/insert.rs` 212-224), their only file access:
-/// `insert.picture` (`picture`, 295-365: decoded and sized in memory),
-/// `insert.audio` and `insert.video` (`media`, 445-508: probed and given a
-/// poster frame in memory; the unplayable-codec status line they queue is
-/// never drained headless) and `picture.change` (`cmd/shape.rs` 650-661).
+/// `insert.picture` (`picture`, 295-365: decoded and sized in memory) and
+/// `picture.change` (`cmd/shape.rs` 650-661).
+///
+/// Held back ([`HELD_BACK`], #448): `insert.audio` and `insert.video` read a file
+/// the same way, but they and `media.info` and `media.posterFrame` probe and
+/// decode video and audio, and `file.openBytes` unzips a presentation from
+/// inline bytes. deckcraft sizes frames, sample tables, decoded audio and
+/// zip entries from the data's own headers, so hostile data can make it
+/// allocate gigabytes and abort the shell process. The door refuses them
+/// until deckcraft bounds that.
 /// `shape.fill` and `design.background` are deliberately not listed: a
 /// non-string `picture` makes them read an undocumented `path`. No setter
 /// or inner id: no `safe` deck command sets an app-wide variable by key or
@@ -100,12 +106,7 @@ const RUN_OUT: &[(&str, &str)] = &[(".pptx", "pptx"), (".deckcraft", "deckcraft"
 /// duplicate, copy and paste) is bounded by the service's ceilings on the
 /// session after every command ([`RunBudget`]).
 static REVIEWED: Reviewed = Reviewed {
-    file_reads: &[
-        FileRead { id: "insert.picture", params: &["path"] },
-        FileRead { id: "insert.audio", params: &["path"] },
-        FileRead { id: "insert.video", params: &["path"] },
-        FileRead { id: "picture.change", params: &["path"] },
-    ],
+    file_reads: &[FileRead { id: "insert.picture", params: &["path"] }, FileRead { id: "picture.change", params: &["path"] }],
     setters: &[],
     inner: &[],
     limits: &[
@@ -127,8 +128,6 @@ static REVIEWED: Reviewed = Reviewed {
         extent("shape.insert"),
         extent("insert.textBox"),
         extent("insert.picture"),
-        extent("insert.audio"),
-        extent("insert.video"),
         extent("insert.table"),
         extent("insert.chart"),
         extent("insert.actionButton"),
@@ -140,7 +139,22 @@ static REVIEWED: Reviewed = Reviewed {
         extent("shape.freeform"),
     ],
     copies_per_call: 1.0,
+    held: HELD_BACK,
 };
+
+/// Why deckcraft's media and zip commands are held back (#448).
+const MEDIA: &str = "deckcraft can abort the shell process on hostile video or audio data (#448), so the door does not run it until the engine bounds that";
+const ZIP: &str = "deckcraft can abort the shell process on a hostile zip (#448), so the door does not run it until the engine bounds that";
+
+/// The commands the door holds back although their review would let them
+/// run ([`REVIEWED`]).
+static HELD_BACK: &[HeldBack] = &[
+    HeldBack { id: "insert.audio", why: MEDIA },
+    HeldBack { id: "insert.video", why: MEDIA },
+    HeldBack { id: "media.info", why: MEDIA },
+    HeldBack { id: "media.posterFrame", why: MEDIA },
+    HeldBack { id: "file.openBytes", why: ZIP },
+];
 
 /// `insert.table {rows, cols}`: rows × cols cells, each a text body every
 /// render draws (unclipped). The engine's own clamp, 75 × 75 = 5,625 cells:
@@ -1330,10 +1344,11 @@ mod tests {
         assert!(serve(&areas, &service_call("run", json!({"out": "y.pptx"}), dir.path(), false)).unwrap_err().contains("`cmds` is a list"));
     }
 
-    /// The reviewed media reads take a file inside the area only and embed
-    /// it; the `file` commands with an undocumented read, and `file.close`,
-    /// stay refused; the door never writes over an existing `out`, and keeps
-    /// to the quota and to the area.
+    /// The reviewed picture reads take a file inside the area only and embed
+    /// it; the media and zip commands are held back (#448), from a file or
+    /// inline data alike; the `file` commands with an undocumented read, and
+    /// `file.close`, stay refused; the door never writes over an existing
+    /// `out`, and keeps to the quota and to the area.
     #[test]
     fn the_doors_file_reads_and_writes_keep_the_areas_rules() {
         let dir = tempfile::tempdir().unwrap();
@@ -1349,8 +1364,7 @@ mod tests {
                 json!({"cmds": [
                     {"id": "slide.new", "params": {"layout": "blank"}},
                     {"id": "insert.picture", "params": {"path": "pics/dot.png"}},
-                    {"id": "picture.change", "params": {"path": "pics/dot.png"}},
-                    {"id": "insert.audio", "params": {"path": "sound/tone.wav"}}
+                    {"id": "picture.change", "params": {"path": "pics/dot.png"}}
                 ], "out": "media.pptx"}),
                 dir.path(),
                 false,
@@ -1360,14 +1374,34 @@ mod tests {
         assert_eq!(made["out"], json!("media.pptx"), "{made}");
         let info = serve(&areas, &service_call("info", json!({"path": "media.pptx"}), dir.path(), false)).unwrap();
         let types: Vec<&str> = info["media"].as_array().unwrap().iter().filter_map(|m| m["type"].as_str()).collect();
-        assert!(types.contains(&"image/png") && types.contains(&"audio/wav"), "the files were embedded: {info}");
+        assert!(types.contains(&"image/png"), "the picture was embedded: {info}");
+        // Hostile media and zips: deckcraft sizes what it allocates from the
+        // data's own headers (#448), so the door refuses every route to its
+        // media and zip parsers, from a file in the area or inline data,
+        // before the engine sees a byte.
+        // The refusal comes before any byte is decoded, so a stub will do.
+        let clip = "UklGRiQAAABXQVZF";
+        for (id, params) in [
+            ("insert.audio", json!({"path": "sound/tone.wav"})),
+            ("insert.audio", json!({"data": clip, "name": "tone.wav"})),
+            ("insert.video", json!({"path": "sound/tone.wav"})),
+            ("insert.video", json!({"data": clip, "name": "clip.mp4"})),
+            ("media.info", json!({})),
+            ("media.posterFrame", json!({"ms": 0})),
+            ("file.openBytes", json!({"name": "bomb.deckcraft", "data": clip})),
+        ] {
+            let cmds = json!([{"id": "slide.new"}, {"id": id, "params": params}]);
+            let e = serve(&areas, &service_call("run", json!({"cmds": cmds, "out": "held.pptx"}), dir.path(), false)).unwrap_err();
+            assert!(e.starts_with(&format!("deck.run: `{id}` is held back from the door: deckcraft can abort the shell process")) && e.contains("(#448)"), "{id}: {e}");
+        }
+        assert!(!dir.path().join("held.pptx").exists(), "nothing written");
         // Only a file inside the area, for every reviewed read.
         let outside = tempfile::tempdir().unwrap();
         std::fs::write(outside.path().join("secret.png"), png()).unwrap();
         let secret = outside.path().join("secret.png").to_string_lossy().into_owned();
         #[cfg(unix)]
         std::os::unix::fs::symlink(outside.path().join("secret.png"), dir.path().join("link.png")).unwrap();
-        for id in ["insert.picture", "insert.audio", "insert.video", "picture.change"] {
+        for id in ["insert.picture", "picture.change"] {
             for bad in [secret.as_str(), "../secret.png", "pics/../../secret.png", "link.png", "pics", "missing.png"] {
                 let cmds = json!([{"id": "slide.new"}, {"id": id, "params": {"path": bad}}]);
                 let e = serve(&areas, &service_call("run", json!({"cmds": cmds, "out": "leak.pptx"}), dir.path(), false)).unwrap_err();
@@ -1416,19 +1450,25 @@ mod tests {
 
     /// The door's gate is built from the generated classification and the
     /// reviewed reads, which must be `file` commands of the catalog: every
-    /// `safe` id and the four reads run, nothing else.
+    /// `safe` id and the two picture reads run, but for the media and zip
+    /// commands held back (#448), and nothing else.
     #[test]
     fn the_door_is_built_from_the_reviewed_classification() {
         let door = door().unwrap();
-        for id in ["slide.new", "text.set", "document.inspect", "slide.inspect", "file.new", "file.saveBytes", "insert.picture", "insert.audio", "insert.video", "picture.change"] {
+        for id in ["slide.new", "text.set", "document.inspect", "slide.inspect", "file.new", "file.saveBytes", "insert.picture", "picture.change"] {
             assert!(door.runs(id), "{id}");
         }
         for id in ["file.open", "file.export", "file.close", "file.save", "file.recovery.open", "shape.fill", "design.background", "media.play", "show.fromStart"] {
             assert!(!door.runs(id), "{id}");
         }
+        for held in REVIEWED.held {
+            assert!(!door.runs(held.id), "{} is held back", held.id);
+        }
         let safety: Json = serde_json::from_str(include_str!("../skill/safety.json")).unwrap();
-        let safe = safety["commands"].as_object().unwrap().values().filter(|c| *c == "safe").count();
-        assert_eq!(door.runnable().len(), safe + REVIEWED.file_reads.len());
+        let classes = safety["commands"].as_object().unwrap();
+        let safe = classes.values().filter(|c| *c == "safe").count();
+        let held_safe = REVIEWED.held.iter().filter(|h| classes[h.id] == "safe").count();
+        assert_eq!(door.runnable().len(), safe - held_safe + REVIEWED.file_reads.len());
     }
 
     /// Every `deck.run` call the skill's examples show runs, in order,
@@ -1495,7 +1535,7 @@ mod tests {
             cases.push((id, breaks(1000), breaks(1001), "asks for 1001 line breaks, more than the 1000".into()));
         }
         let rect = |n: f64| json!({"rect": [0.0, 0.0, n, 10.0]});
-        for id in ["shape.insert", "insert.textBox", "insert.picture", "insert.audio", "insert.video", "insert.table", "insert.chart", "insert.actionButton", "master.insertPlaceholder"] {
+        for id in ["shape.insert", "insert.textBox", "insert.picture", "insert.table", "insert.chart", "insert.actionButton", "master.insertPlaceholder"] {
             cases.push((id, rect(100_000.0), rect(100_001.0), "asks for 100001 points of position or size, more than the 100000".into()));
         }
         for (id, at, over) in [
@@ -1646,15 +1686,15 @@ mod tests {
     #[test]
     fn the_results_of_a_call_share_a_budget() {
         let dir = tempfile::tempdir().unwrap();
-        // 12 MB of noise as a WAV: media no zip compresses.
-        let mut wav = wav();
+        // 12 MB of noise as a picture's bytes: data no zip compresses.
+        let mut noise = png();
         let mut x = 7u32;
-        wav.extend((0..12_000_000).map(|_| {
+        noise.extend((0..12_000_000).map(|_| {
             x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             (x >> 24) as u8
         }));
-        std::fs::write(dir.path().join("noise.wav"), wav).unwrap();
-        let mut cmds = vec![json!({"id": "slide.new", "params": {"layout": "blank"}}), json!({"id": "insert.audio", "params": {"path": "noise.wav"}})];
+        std::fs::write(dir.path().join("noise.png"), noise).unwrap();
+        let mut cmds = vec![json!({"id": "slide.new", "params": {"layout": "blank"}}), json!({"id": "insert.picture", "params": {"path": "noise.png"}})];
         cmds.extend((0..5).map(|_| json!({"id": "file.saveBytes", "params": {"format": "pptx"}})));
         let e = run_in(dir.path(), json!({"cmds": cmds})).unwrap_err();
         assert!(e.contains("`file.saveBytes`: the results of this call total") && e.contains("more than the 67108864 the door returns"), "{e}");

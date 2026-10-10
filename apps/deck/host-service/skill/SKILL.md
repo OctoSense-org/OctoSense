@@ -19,11 +19,17 @@ charts.
 
 The door checks every command of a call before it runs any. A command that
 `commands.md` lists untagged works on the open presentation only, and runs.
-So do `insert.picture`, `insert.audio`, `insert.video` and
-`picture.change`, whose `path` must name a file in your workspace (at most
-64 MB read in one call). Every other tagged id ([file], [device], [host])
-and any id that is not in `commands.md` refuse the whole call, and nothing
-is written.
+So do `insert.picture` and `picture.change`, whose `path` must name an
+image in your workspace (at most 64 MB read in one call). Every other
+tagged id ([file], [device], [host]) and any id that is not in
+`commands.md` refuse the whole call, and nothing is written.
+
+Audio and video are held back for now: hostile media can crash the deck
+engine, and with it the device's shell, so the door refuses
+`insert.audio`, `insert.video`, `media.info` and `media.posterFrame`, and
+`file.openBytes` (which unzips a presentation from inline data), until the
+engine is fixed. Tell the person that you cannot add sound or video to a
+slide yet.
 
 The commands act like the app's own menus on one open presentation with a
 current slide. `slide.new {layout?, title?, body?}` adds a slide after the
@@ -70,5 +76,6 @@ slide it renders shows with `view_image`.
 `commands.md` in this skill's folder lists every deckcraft command, one line
 each (id, label, parameters), with a tag on those that reach past the open
 deck. Grep it (`grep -i chart commands.md`) for the ids and parameters a
-request needs: `deck.run` runs the untagged ones and the four media reads
-above, and refuses the rest.
+request needs: `deck.run` runs the untagged ones (but for the media and
+zip commands held back above) and the two picture reads, and refuses the
+rest.

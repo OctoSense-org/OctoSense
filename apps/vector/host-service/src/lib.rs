@@ -109,6 +109,7 @@ static REVIEWED: Reviewed = Reviewed {
     ],
     limits: LIMITS,
     copies_per_call: COPIES_PER_CALL,
+    held: &[],
 };
 
 /// The most the copy limits of one call may multiply to: two arrays of a

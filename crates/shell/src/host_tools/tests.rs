@@ -1536,6 +1536,10 @@ fn every_command_door_refuses_what_its_review_does_not_admit() {
         ("deck.run", json!({"cmds": [{"id": "file.save"}], "out": "d.pptx"}), "`file.save` is classed host"),
         ("deck.run", json!({"cmds": [{"id": "file.close"}], "out": "d.pptx"}), "`file.close` reads or writes files"),
         ("deck.run", json!({"cmds": [{"id": "shape.fill", "params": {"picture": null, "path": "../outside.png"}}], "out": "d.pptx"}), "`shape.fill` reads or writes files"),
+        // deckcraft can abort the process on hostile media or zips (#448):
+        // held back, from a file or inline data alike.
+        ("deck.run", json!({"cmds": [{"id": "slide.new"}, {"id": "insert.video", "params": {"path": "photo.png"}}], "out": "d.pptx"}), "`insert.video` is held back from the door"),
+        ("deck.run", json!({"cmds": [{"id": "file.openBytes", "params": {"name": "x.deckcraft", "data": "UEsDBA=="}}], "out": "d.pptx"}), "`file.openBytes` is held back from the door"),
         // cad
         ("cad.run", json!({"cmds": [{"id": "open", "params": {"path": "../outside.dxf"}}], "out": "c.dxf"}), "`open` reads or writes files"),
         ("cad.run", json!({"cmds": [{"id": "qsave"}], "out": "c.dxf"}), "`qsave` reads or writes files"),

@@ -134,6 +134,7 @@ static REVIEWED: Reviewed = Reviewed {
         PROPERTIES_TEXT_OVERRIDE,
     ],
     copies_per_call: COPIES_PER_CALL,
+    held: &[],
 };
 
 /// The variable one `setvar` call sets, as the engine spells it.

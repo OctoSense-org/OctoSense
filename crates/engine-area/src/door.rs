@@ -38,6 +38,10 @@
 //!   its ceiling is refused, and the copies one call makes (an array of an
 //!   array) multiply together within [`Reviewed::copies_per_call`].
 //!
+//! A reviewer may also hold a command back ([`Held`]) that its class would
+//! let run, when the engine cannot do it safely yet: the door refuses it,
+//! saying why, until the engine is fixed.
+//!
 //! A service admits a whole call with [`Door::admit_all`] before its engine
 //! runs any command, so one refused id refuses the call with nothing done.
 //! What the commands then do to the open document is the service's to fence
@@ -167,6 +171,15 @@ pub struct Limit {
     pub copies: bool,
 }
 
+/// A command the door holds back although its class or review would let it
+/// run: the engine cannot do it safely yet (hostile data can abort or stall
+/// the shell), so the door refuses it, saying why, until the engine is fixed.
+pub struct Held {
+    pub id: &'static str,
+    /// Why, for the refusal: what goes wrong, and where it is tracked.
+    pub why: &'static str,
+}
+
 /// What an engine's reviewer settled beyond the classes.
 pub struct Reviewed {
     pub file_reads: &'static [FileRead],
@@ -175,10 +188,11 @@ pub struct Reviewed {
     pub limits: &'static [Limit],
     /// The most the copy limits' amounts may multiply to in one call.
     pub copies_per_call: f64,
+    pub held: &'static [Held],
 }
 
 impl Reviewed {
-    pub const NONE: Reviewed = Reviewed { file_reads: &[], setters: &[], inner: &[], limits: &[], copies_per_call: 1.0 };
+    pub const NONE: Reviewed = Reviewed { file_reads: &[], setters: &[], inner: &[], limits: &[], copies_per_call: 1.0, held: &[] };
 }
 
 /// What one call has asked for so far.
@@ -299,6 +313,11 @@ impl Door {
         if reviewed.copies_per_call.is_nan() || reviewed.copies_per_call < 1.0 {
             return Err(format!("{family}: `copies_per_call` is at least 1"));
         }
+        for held in reviewed.held {
+            if !matches!(door.classes.get(held.id), Some(Class::Safe | Class::File)) {
+                return Err(format!("{family}: `{}` is held back, but the door would not run it anyway", held.id));
+            }
+        }
         Ok(door)
     }
 
@@ -319,6 +338,9 @@ impl Door {
     /// per call): a `safe` id that is no setter without keys, or a reviewed
     /// `file` read.
     pub fn runs(&self, id: &str) -> bool {
+        if self.reviewed.held.iter().any(|h| h.id == id) {
+            return false;
+        }
         match self.class(id) {
             Some(Class::Safe) => !self.reviewed.setters.iter().any(|s| s.id == id && s.keys.is_empty()),
             Some(Class::File) => self.reviewed.file_reads.iter().any(|r| r.id == id),
@@ -381,6 +403,9 @@ impl Door {
             return Err(format!("{family}.run: `{id}`: commands nest too deep"));
         }
         let class = self.class(id).ok_or_else(|| format!("{family}.run: `{id}` is not a reviewed {family} command, so the door does not run it"))?;
+        if let Some(held) = self.reviewed.held.iter().find(|h| h.id == id) {
+            return Err(format!("{family}.run: `{id}` is held back from the door: {}", held.why));
+        }
         let mut params = if params.is_null() { Value::Object(Default::default()) } else { params.clone() };
         if !params.is_object() {
             return Err(format!("{family}.run: `{id}`: `params` is an object"));
@@ -536,6 +561,7 @@ mod tests {
             Limit { id: "effect.setParam", what: "samples", measure: Measure::Custom(samples), max: 64.0, copies: false },
         ],
         copies_per_call: 1000.0,
+        held: &[Held { id: "shape.ellipse", why: "the engine can abort on a huge one (#0)" }],
     };
 
     fn door() -> Door {
@@ -617,7 +643,7 @@ mod tests {
         let d = door();
         assert_eq!(
             d.runnable(),
-            ["canvas.new", "edit.undo", "effect.apply", "effect.setParam", "insert.picture", "perspective.draw", "setvar", "shape.array", "shape.ellipse", "shape.rect"]
+            ["canvas.new", "edit.undo", "effect.apply", "effect.setParam", "insert.picture", "perspective.draw", "setvar", "shape.array", "shape.rect"]
         );
         assert!(!d.runs("file.saveAs") && !d.runs("command.batch") && !d.runs("nope"));
         static WRONG: Reviewed = Reviewed { file_reads: &[FileRead { id: "shape.rect", params: &["path"] }], ..Reviewed::NONE };
@@ -721,5 +747,18 @@ mod tests {
         assert_eq!(d.copies("shape.array", &json!({"rows": 4, "columns": 5})), 20.0);
         assert_eq!(d.copies("shape.rect", &json!({})), 1.0);
         assert_eq!(d.copies("canvas.new", &json!({"size": [10, 10]})), 1.0, "not a copy");
+    }
+
+    #[test]
+    fn a_held_command_is_refused_with_its_reason_wherever_it_is_named() {
+        let (_dir, area) = area();
+        let d = door();
+        assert!(!d.runs("shape.ellipse"), "held: not runnable");
+        let e = d.admit("shape.ellipse", &json!({}), &area).unwrap_err();
+        assert_eq!(e, "demo.run: `shape.ellipse` is held back from the door: the engine can abort on a huge one (#0)");
+        let e = d.admit("perspective.draw", &json!({"command": "shape.ellipse", "params": {}}), &area).unwrap_err();
+        assert!(e.contains("`shape.ellipse` is held back"), "through an inner command too: {e}");
+        static NOT_RUN: Reviewed = Reviewed { held: &[Held { id: "plugin.install", why: "x" }], ..Reviewed::NONE };
+        assert!(Door::new("demo", SAFETY, &NOT_RUN).unwrap_err().contains("would not run it anyway"));
     }
 }

@@ -278,6 +278,8 @@ App Hub 的 card-host）。
   （`Area::write`：代理的写入从不覆盖已有文件，并受配额限制）。其他 id
   一律拒绝：`code`、`network`、`device` 和 `host`，未经审查的 `file` 命令，
   以及分类中没有的 id（只要引擎还有 id 没有类别，技能漂移测试就会失败）。
+  审查者还可以暂缓开放一条按类别本可运行的命令（`Held`），当引擎还不能安全地执行它时：
+  入口拒绝它并说明原因，直到引擎修好。
 - **组合命令与间接命令。** 批处理、宏和脚本（`command.batch`、`engine.batch`、
   `tools.macros`、`file.runScript`）归为 `code`，整条拒绝。按键名修改应用级
   状态的设置命令，只有使用其服务审查过的键名时才能运行；目前没有任何键名
@@ -311,7 +313,7 @@ App Hub 的 card-host）。
 | 引擎 | 系统代理的工具 | 入口在 `safe` id 之外还运行什么 | 上限（单次调用） |
 | --- | --- | --- | --- |
 | word | `word.info`、`word.run` | 389 个 id 中的 328 个。读取：`insert.picture`、`picture.change`（`path`）。 | 表格 ≤ 10,000 个单元格；页面每边 72–1584 pt；一次替换使文本最多增长 1,000 倍（连续替换合计 ≤ 10,000 倍）；文档 ≤ 500,000 个字符、50,000 个段落、128 MiB 图片；PDF ≤ 10,000 页。 |
-| deck | `deck.info`、`deck.run` | 222 个中的 203 个。读取：`insert.picture`、`insert.audio`、`insert.video`、`picture.change`（`path`）。 | 表格 ≤ 5,625 个单元格；图表 ≤ 10,000 个数据点；单张幻灯片面积 ≤ 1920 × 1080 pt；演示文稿 ≤ 500 张幻灯片、20,000 个形状、1,000,000 个字符；每次调用的栅格化 ≤ 160 MP，每张 ≤ 4096²。 |
+| deck | `deck.info`、`deck.run` | 222 个中的 198 个。读取：`insert.picture`、`picture.change`（`path`）。在 deckcraft 限制其媒体和 zip 解析之前暂缓开放（恶意数据可能让 Shell 进程中止，#448）：`insert.audio`、`insert.video`、`media.info`、`media.posterFrame`、`file.openBytes`。 | 表格 ≤ 5,625 个单元格；图表 ≤ 10,000 个数据点；单张幻灯片面积 ≤ 1920 × 1080 pt；演示文稿 ≤ 500 张幻灯片、20,000 个形状、1,000,000 个字符；每次调用的栅格化 ≤ 160 MP，每张 ≤ 4096²。 |
 | cad | `cad.info`、`cad.run` | 295 个中的 288 个。`setvar` 被拒绝：它按名称设置变量，而没有任何名称经过审查。 | 阵列和复制 ≤ 10,000 份，一次调用内相乘 ≤ 10,000；多边形 ≤ 1,024 条边；样条拟合点 ≤ 2,000；填充和线型比例 ≥ 0.0001；图形 ≤ 200,000 个对象；渲染约 ≤ 一秒的绘制工作量，先估算再绘制。 |
 | light | `light.info`、`light.run` | 239 个中的 189 个。没有其他。 | 原图 ≤ 64 MP；导出 ≤ 16 MP（AVIF ≤ 4）；≤ 16 张照片（含虚拟副本）；≤ 16 个蒙版、256 笔画笔、64 个污点；裁剪每边 ≥ 1%。 |
 | film | `film.info`、`film.run` | 675 个中的 525 个。读取：`captions.import`（`path`）。只运行内置项：`effects.apply`、两个转场命令、`effects.setDefaultTransition`、`mixer.addInsert`、`presets.apply`、`lumetri.applyPreset`、`essentialSound.applyPreset`。 | 序列每边 ≤ 4096 且 ≤ 9.4 MP，≤ 120 fps，≤ 96 kHz；速度 1%–10,000%；时长 ≤ 24 小时；一次调用最多添加 5,000 个元素；分析 ≤ 18,000 帧；导出 ≤ 18,000 帧。 |

@@ -141,6 +141,7 @@ static REVIEWED: Reviewed = Reviewed {
     inner: &[Inner { id: "effect.apply", param: "effect", rule: InnerRule::Effect { builtin: builtin_effect } }],
     limits: LIMITS,
     copies_per_call: MAX_SHAPE_COPIES,
+    held: &[],
 };
 
 // ------------------------------------------------------------------ caps

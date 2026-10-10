@@ -25,7 +25,7 @@
     },
     {
       "name": "deck.run",
-      "description": "Run up to 64 commands from the deck engine's catalog, in order, on the presentation at `path` in your workspace, or on a new empty presentation, then write it as .pptx, .deckcraft, outline .txt or .pdf, or one slide (`slide`, 0-based) as a .png at most `max_side` pixels long to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document), and the picture, audio and video commands that read a file from your workspace; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the deck-engine skill first.",
+      "description": "Run up to 64 commands from the deck engine's catalog, in order, on the presentation at `path` in your workspace, or on a new empty presentation, then write it as .pptx, .deckcraft, outline .txt or .pdf, or one slide (`slide`, 0-based) as a .png at most `max_side` pixels long to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document), and the picture commands that read an image from your workspace; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the deck-engine skill first.",
       "input_schema": {
         "type": "object",
         "properties": {

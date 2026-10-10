@@ -344,6 +344,9 @@ each, instead of a curated tool per method (#418).
   the quota). Every other id is refused: `code`, `network`, `device` and
   `host`, an unreviewed `file` command, and an id the classification does
   not have (the skill drift test fails while any engine id lacks a class).
+  A reviewer can also hold back a command that its class would let run,
+  when the engine cannot do it safely yet (`Held`): the door refuses it,
+  saying why, until the engine is fixed.
 - **Composite and indirect commands.** Batches, macros and scripts
   (`command.batch`, `engine.batch`, `tools.macros`, `file.runScript`) are
   classed `code` and refused whole. A setter that changes app-wide state by
@@ -388,7 +391,7 @@ Each engine's surface:
 | Engine | The system agent's tools | What its door runs beyond `safe` ids | Caps (one call) |
 | --- | --- | --- | --- |
 | word | `word.info`, `word.run` | 328 of 389 ids. Reads: `insert.picture`, `picture.change` (`path`). | Tables ≤ 10,000 cells; pages 72–1584 pt a side; a replacement grows the text ≤ 1,000× (chained, ≤ 10,000×); the document ≤ 500,000 characters, 50,000 paragraphs and 128 MiB of pictures; a PDF ≤ 10,000 pages. |
-| deck | `deck.info`, `deck.run` | 203 of 222. Reads: `insert.picture`, `insert.audio`, `insert.video`, `picture.change` (`path`). | Tables ≤ 5,625 cells; charts ≤ 10,000 points; a slide ≤ 1920 × 1080 pt of area; the presentations ≤ 500 slides, 20,000 shapes and 1,000,000 characters; rasters ≤ 160 MP a call, 4096² each. |
+| deck | `deck.info`, `deck.run` | 198 of 222. Reads: `insert.picture`, `picture.change` (`path`). Held back until deckcraft bounds its media and zip parsing (hostile data can abort the shell, #448): `insert.audio`, `insert.video`, `media.info`, `media.posterFrame`, `file.openBytes`. | Tables ≤ 5,625 cells; charts ≤ 10,000 points; a slide ≤ 1920 × 1080 pt of area; the presentations ≤ 500 slides, 20,000 shapes and 1,000,000 characters; rasters ≤ 160 MP a call, 4096² each. |
 | cad | `cad.info`, `cad.run` | 288 of 295. `setvar` is refused: it sets variables by name, and no name is reviewed. | Arrays and copies ≤ 10,000 copies, multiplied across the call ≤ 10,000; polygons ≤ 1,024 sides; spline fit points ≤ 2,000; hatch and linetype scale ≥ 0.0001; drawings ≤ 200,000 objects; a render ≤ about a second of drawing work, estimated first. |
 | light | `light.info`, `light.run` | 189 of 239. Nothing more. | Originals ≤ 64 MP; exports ≤ 16 MP (AVIF ≤ 4); ≤ 16 photos (virtual copies included); ≤ 16 masks, 256 strokes and 64 spots; a crop ≥ 1% a side. |
 | film | `film.info`, `film.run` | 525 of 675. Read: `captions.import` (`path`). Built-ins only: `effects.apply`, both transition commands, `effects.setDefaultTransition`, `mixer.addInsert`, `presets.apply`, `lumetri.applyPreset`, `essentialSound.applyPreset`. | Sequences ≤ 4096 a side and 9.4 MP, ≤ 120 fps, ≤ 96 kHz; speed 1–10,000%; durations ≤ 24 h; a call adds ≤ 5,000 elements; analyses ≤ 18,000 frames; exports ≤ 18,000 frames. |

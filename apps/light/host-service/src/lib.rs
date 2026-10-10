@@ -162,6 +162,7 @@ static REVIEWED: Reviewed = Reviewed {
         ids("stack.ungroup"),
     ],
     copies_per_call: 1.0,
+    held: &[],
 };
 
 /// A command's `ids`: the engine runs it once for every entry, repeats

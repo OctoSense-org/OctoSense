@@ -84,6 +84,7 @@ static REVIEWED: Reviewed = Reviewed {
     inner: &[],
     limits: &[TABLE_CELLS, SPREADSHEET_CELLS, SPLIT_COLUMNS, PAGE_SIDE_LIMIT, REPLACE_COPIES],
     copies_per_call: COPIES_PER_CALL,
+    held: &[],
 };
 
 /// `insert.table {rows, cols}`: rows × cols cells, each a paragraph the
