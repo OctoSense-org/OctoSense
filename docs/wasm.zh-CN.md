@@ -82,6 +82,25 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
 约 4 毫秒；它的 Markdown 函数比原生 Rust 慢约 2.6 倍，与同一段代码作为模块时接近。在 Pulley
 中还要再慢约 32 倍。
 
+### 共享组件
+
+应用还可以调用 App Hub 单独发布的组件（App Hub ADR 0003，OctoSense ADR 0014 第 4 阶段）：清单在
+`components` 中按别名、id、确切版本和 BLAKE3 摘要固定它，并在 `requires` 中声明
+`wasm-shared-components-v1`。`wasm` 服务把每个固定的组件和应用的 `fns/` 一起加载，并以
+`wasm.<别名>.<函数>` 路由它的函数：固定为 `{"as": "md", "id": "org.example.markdown", …}` 时，
+`wasm.md.to_html` 调用该组件的 `to-html`。应用得到一个属于自己的实例，使用自己的授权，与 `fns/` 中的
+组件相同；应用也可以完全没有 `fns/`，只调用共享组件。`wasm.functions` 带别名列出这些函数，并说明每个
+函数来自哪个组件（`"shared": {"alias", "id", "version", "blake3"}`）。
+
+服务每次加载时都向 App Hub 查找这些文件（`octosense_appstore::components::resolved_in`）：系统应用的
+在其应用包的 `components/<blake3>.wasm`，已安装应用的在共享的只读存储
+`<apps root>/.components/<blake3>.wasm`；每个文件都要对照已验证的目录（它必须仍以该版本提供）和自己的
+摘要检查。这里不会下载任何东西：App Hub 的安装程序会先于应用本身下载它固定的组件。组件缺失、被修改或
+被撤回时，应用无法启动。
+
+`wasm_service::tests::a_pinned_shared_component_answers_as_alias_and_function` 用替代的解析器运行这条
+路径。目前还没有目录发布过组件，因此安装固定了组件的应用并在 Shell 中调用它属于**未验证**。
+
 ### 模块如何到达设备
 
 - **商店应用。** App Hub 的审核（应用契约 1.7.0）只接受放在 `fns/<name>.wasm` 的
@@ -250,6 +269,7 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
 - 应用之间的 CPU 公平调度，以及磁盘缓存的上限：目前没有任何东西会清理它。
 - 提前编译系统应用的函数：已安装应用的函数在安装时编译，系统应用的函数在第一次调用时编译。
 - 手机上的组件：Android 和 OpenHarmony 构建链接了运行时，但还没有组件在设备上运行过（**未验证**）。
+- 共享组件的完整流程：还没有 App Hub 目录发布过共享组件，因此还没有已安装的应用固定过它（**未验证**）。
 - 经 JSON 传字节很慢：1 MiB 的 `list<u8>` 以 base64 往返约需 18 毫秒。
 
 ## 引擎插件：`photo` 和 `vector` 服务
