@@ -39,6 +39,7 @@ pub mod mobile_back;
 pub mod mobile_tiles;
 pub mod mobile_shade;
 pub mod mobile_pages;
+mod mobile_motion;
 pub mod mobile_island;
 pub mod mobile_octopus;
 pub mod mobile_groups;

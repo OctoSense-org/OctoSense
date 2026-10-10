@@ -5,7 +5,7 @@ use crate::mobile_shade::ShadeContentCache;
 use crate::mobile_pages::GlanceCards;
 use crate::octosense::style::AppIconDraw;
 mod search;
-use search::SearchResults;
+use search::{SearchResults, SearchSnapshot};
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -388,6 +388,10 @@ pub struct PhoneSurface {
     #[live] pub shade_glass: GaussRoundedView,
     /// The shade's glyphs were rasterized ahead of its first pull.
     #[rust] shade_warm: bool,
+    /// Appearance and feed whose first-use navigation resources are ready.
+    #[rust] navigation_warm: Option<(DesktopStyle, bool, f64, f64, u64, u64)>,
+    #[rust] navigation_warm_step: usize,
+    #[rust] search_snapshot: SearchSnapshot,
     // The sheet's content recorded once per state, shown as one quad while
     // the sheet moves (mobile_shade.rs).
     #[rust] shade_content: ShadeContentCache,
@@ -433,6 +437,7 @@ impl PhoneSurface {
         if self.palette == palette { return false; }
         self.palette = palette;
         self.search_style = None;
+        self.search_snapshot.invalidate();
         self.d.set_palette(palette.map(|p| p.shell()));
         true
     }
@@ -777,8 +782,13 @@ impl PhoneSurface {
         let ids: std::sync::Arc<Vec<(String,String)>>=if phone.android.rows.is_empty() {
             std::sync::Arc::new(apps.iter().map(|a|(a.id.trim_start_matches("apps.").to_string(),a.label.clone())).collect())
         } else {phone.android.rows.clone()};
-        if phone.screen==PhoneScreen::Drawer {
+        let search_layer = phone.searching() || phone.search_reveal > 0.0;
+        if phone.screen==PhoneScreen::Drawer && !search_layer {
             if ios {self.draw_app_library(cx,state,screen,&ids);} else {self.draw_android_drawer(cx,state,screen,&ids);}
+            return;
+        }
+        if search_layer && phone.search_reveal >= 1.0 {
+            self.draw_search_layer(cx,state,screen,&ids);
             return;
         }
         let dark=state.style.dark;
@@ -841,6 +851,10 @@ impl PhoneSurface {
             for (index,id) in phone.pages.page_ids(k).iter().enumerate() {
                 let label=ids.iter().find(|(i,_)|i==id).map(|(_,l)|l.as_str()).unwrap_or("Unavailable app");
                 let r=rect(page.favorites.pos.x+dx+(index%page.columns)as f64*cell,page.favorites.pos.y+(index/page.columns)as f64*page.row_height,cell,page.row_height);
+                // A settling spring can expose a sliver of the next page.
+                // Its cells are still entirely outside the viewport; do not
+                // decode all its icons and rasterize its labels on that frame.
+                if !crate::mobile_pages::intersects_screen(r, screen) { continue; }
                 if phone.drag.as_ref().is_some_and(|d|d.app==*id) {
                     // The lifted icon's slot: a faint ring where it came from.
                     self.rounded(cx,rect(r.pos.x+(cell-size)*0.5,r.pos.y,size,size),(size*0.5) as f32,alpha(ink,0.12*opacity));
@@ -853,7 +867,10 @@ impl PhoneSurface {
         }
         // Glance is a reading and editing surface. Home's pinned apps and
         // page dots must not cover its cards, especially above a native IME.
-        if phone.pages.on_glance() { return; }
+        if phone.pages.on_glance() {
+            if search_layer { self.draw_search_layer(cx,state,screen,&ids); }
+            return;
+        }
         let dock=Self::home_dock(screen);
         if ios {self.glass.draw_surface_with_backdrop(cx,dock,backdrop,opacity);}
         let cell=dock.size.x/4.0;
@@ -867,7 +884,8 @@ impl PhoneSurface {
         // The page indicator: the glance glyph, a dot per apps page, the
         // library glyph; tapping one jumps there (the library dot opens it).
         self.draw_page_indicator(cx,phone,dock,screen,ink,opacity,home);
-        if home {self.draw_home_pull(cx,state,screen,dark,ink,opacity);}
+        if search_layer {self.draw_search_layer(cx,state,screen,&ids);}
+        else if home {self.draw_home_pull(cx,state,screen,dark,ink,opacity);}
         if let Some(drag)=phone.drag.as_ref().filter(|_|home) {
             // The dragged icon rides under the finger, a little larger, over
             // everything else on the page; the dock lights up when it can
@@ -889,21 +907,6 @@ impl PhoneSurface {
         let phone=&state.phone;
         let pill_w=(screen.size.x-48.0).min(420.0);
         let x=screen.pos.x+(screen.size.x-pill_w)*0.5;
-        if let Some(crate::mobile_gestures::ShellGesture::HomeSearch{progress})=phone.gesture_out {
-            if progress<=0.0 {return;}
-            let p=progress as f32;
-            // Eased: most of the motion happens early, like the finger.
-            let eased=1.0-(1.0-p)*(1.0-p);
-            self.rounded(cx,screen,0.0,alpha(rgb(0,0,0),0.28*eased*opacity));
-            let y=screen.pos.y+screen.size.y-56.0-(eased as f64)*52.0;
-            let pill=rect(x,y,pill_w,48.0);
-            let face=self.theme_face(if dark {rgb(44,46,60)} else {rgb(255,255,255)});
-            self.rounded(cx,pill,24.0,alpha(face,(0.35+0.65*eased)*opacity));
-            let text_ink=self.theme_ink(if dark {rgb(255,255,255)} else {rgb(60,60,70)});
-            self.d.icon_centered(cx,Ico::Search,rect(pill.pos.x+14.0,pill.pos.y,28.0,48.0),18.0,alpha(text_ink,eased*opacity));
-            self.d.label(cx,rect(pill.pos.x+48.0,pill.pos.y,pill_w-60.0,48.0),false,15.0,alpha(text_ink,eased*opacity),HAlign::Left,if progress>=0.4 {"Release for your apps"} else {"Pull for your apps"});
-            return;
-        }
         if phone.gesture_out.is_some() || phone.pages.current()!=0 || phone.shade.open>0.001 || phone.overview>0.001 {return;}
         let Some((_,text))=phone.hints.pending(crate::mobile_shade::ShadeReach::of(phone.android.system_panel)) else {return};
         // Keep the hint below the dock icons and above the swipe chevron (the
@@ -913,6 +916,69 @@ impl PhoneSurface {
         let pill=rect(x,screen.pos.y+screen.size.y-lift,pill_w,24.0);
         self.rounded(cx,pill,12.0,alpha(if dark {rgb(255,255,255)} else {rgb(20,18,30)},0.12*opacity));
         self.d.label(cx,pill,false,12.0,alpha(ink,0.85*opacity),HAlign::Center,text);
+    }
+    /// Use the actual drawing paths while Home is still, before the first
+    /// swipe needs new glyphs, atlas space and the editor's shader. This is
+    /// bounded to the first four Glance summaries; no card app is executed.
+    /// Keep all hit regions and editor geometry from the visible scene.
+    pub(super) fn prewarm_navigation(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect) {
+        let phone = &state.phone;
+        if phone.screen != PhoneScreen::Home || phone.draw_active || phone.gesture.is_some()
+            || phone.search_reveal != 0.0 || phone.openness != 0.0 || phone.overview != 0.0
+            || phone.shade.open != 0.0 || phone.card_open || phone.pages.position() != 0.0 {
+            return;
+        }
+        let key = (state.style.target, state.style.dark, cx.current_dpi_factor(),
+            phone.android.font_scale, crate::glance::generation(), phone.android.catalog_revision);
+        if self.navigation_warm != Some(key) {
+            self.navigation_warm = Some(key);
+            self.navigation_warm_step = 0;
+        }
+        if self.navigation_warm_step == usize::MAX { return; }
+        let timing = crate::mobile_perf::work_start();
+        self.use_fonts(state.style.target == DesktopStyle::Ios);
+        self.d.set_text_scale(phone.android.font_scale);
+        let hidden = rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, screen.size.x, screen.size.y);
+        let hit_count = self.hits.len();
+        let search_rect = self.search_rect;
+        let cards = std::mem::take(&mut self.glance_cards);
+        let ink = self.theme_ink(if state.style.dark { rgb(255,255,255) } else { rgb(31,27,38) });
+        // One editor, header, summary or eight catalog characters per quiet
+        // frame. A touch suspends this work instead of waiting for the whole
+        // catalog to warm. Keep drawing until the bounded preparation ends.
+        let more = match self.navigation_warm_step {
+            0 => { self.draw_search(cx, state, hidden, ink); true }
+            step @ 1..=5 => {
+                self.prewarm_glance(cx, phone, hidden, state.style.target, step - 1);
+                true
+            }
+            step => self.prewarm_search_labels(cx, state, hidden, step - 6),
+        };
+        self.navigation_warm_step = if more { self.navigation_warm_step + 1 } else { usize::MAX };
+        if more { cx.redraw_all(); }
+        self.hits.truncate(hit_count);
+        self.search_rect = search_rect;
+        self.glance_cards = cards;
+        crate::mobile_perf::work_end("navigation.prepare", timing);
+    }
+
+    /// The same surface follows a pull, completes opening and returns Home.
+    /// Only the transition composites Home; settled search is one opaque fill.
+    fn draw_search_layer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
+        if self.present_search_dismissal(cx, state, screen) { return; }
+        let recording = self.begin_search_snapshot(cx, state, screen);
+        let p = state.phone.search_reveal.clamp(0.0, 1.0) as f32;
+        self.hits.clear();
+        let ground = self.theme_ground(if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
+        let ink = self.theme_ink(if state.style.dark {rgb(255,255,255)}else{rgb(31,27,38)});
+        self.d.solid(cx,screen,alpha(ground,p));
+        let pill = self.draw_search(cx,state,screen,ink);
+        if state.phone.searching() { self.draw_search_results(cx,state,screen,pill,ids,ink); }
+        if !state.phone.searching() || state.phone.search_closing {
+            self.hits.clear();
+            self.search_rect=Rect::default();
+        }
+        self.end_search_snapshot(cx, screen, pill.pos.y - 10.0, recording);
     }
     /// Android's app drawer: a sheet with every launchable app on one grid.
     fn draw_android_drawer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
