@@ -1,0 +1,1566 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
+// PDF Tools: the PDFs in this app's own storage, a viewer with page
+// thumbnails, merge, split and text extraction. The shell's `pdf` engine
+// service (pdfcraft, ADR 0013) does the work through host.request; this
+// script never reads a PDF itself.
+//
+// Storage (ADR 0004 §11): the PDFs in accounts/device/library/, an index of
+// what the engine said about them in accounts/device/library.json, and the
+// page images the engine renders in cache/. The engine works in this storage
+// (ADR 0013's per-caller areas): every path given to it is relative to the
+// folder fs.* sees, a call made while the app is open may replace a file,
+// and what it writes counts against this app's storage.
+//
+// Opening a PDF from this device: files.import copies the file the person
+// chooses into a new library file (`Imported PDF.pdf`, `Imported PDF 2.pdf`,
+// …) and reports the chosen file's name, which becomes its title (kept in
+// the index: app storage has no rename); without one the title is the file
+// name. Then it opens like any other PDF here: the same engine calls on the
+// same relative path.
+
+let LIBRARY = "accounts/device/library"
+let INDEX = "accounts/device/library.json"
+let COVERS = "cache/covers"
+let PAGES = "cache/pages"
+let VIEW_FILE = "cache/view.png"
+// What an imported PDF is called: the import names its destination first.
+let IMPORT_NAME = "Imported PDF"
+// The longest edge, in pixels, of the page images the engine renders.
+let THUMB_SIDE = 360
+let VIEW_SIDE = 1400
+// What the pdf service accepts: 2 to 16 files per merge; text of at most
+// 512 pages per call.
+let MAX_MERGE = 16
+let MAX_TEXT = 512
+let PAGE_BATCH = 24
+let TEXT_BATCH = 8
+
+// Icons from the theme's icon font (Font Awesome solid).
+let ICON_NEXT = "\u{f054}"
+let ICON_WARN = "\u{f071}"
+let ICON_DONE = "\u{f058}"
+let ICON_UP = "\u{f062}"
+let ICON_DOWN = "\u{f063}"
+let ICON_REMOVE = "\u{f00d}"
+let ICON_CUT = "\u{f0c4}"
+let ICON_OPEN = "\u{f56f}"
+let ICON_TRASH = "\u{f1f8}"
+// A done mark, not text: the same green in both appearances.
+let GREEN = #x2e9d5b
+
+let route = "library"   // library | doc | page | merge | split
+let tab = "pages"       // the document's: pages | text | info
+let docs = []           // {name path title pages bytes error}
+let index = {}          // name -> {pages bytes}
+let engine_state = ""   // "" until the engine answers, then ok | missing
+let engine_note = ""    // why it is missing: the host's refusal
+let space_full = false  // the engine had no room left in this app's storage
+let files_known = false // files.status answered
+let files_ok = false    // files.status: this device can copy a file in
+let max_import = 0      // the largest file it copies in, in bytes
+let importing = false   // a file is being chosen or copied in
+let lib_note = nil      // {head detail note}: why a file couldn't be added
+let confirm_remove = false
+
+let cover_src = {}      // name -> image of page 1
+let cover_failed = {}
+let lib_busy = false
+
+let current = nil       // the open document
+let info = nil          // pdf.info's answer for it
+let doc_error = ""
+let gen = 0             // bumped when a document opens or closes
+let thumb_src = {}      // "p<n>" -> image
+let thumb_failed = {}
+let thumbs_busy = false
+let shown_pages = PAGE_BATCH
+let columns = 2
+let tile_w = 184
+let page_no = 1
+let view_src = nil
+let view_note = ""
+let view_seq = 0
+let text_pages = nil    // [{page text}]
+let text_state = ""     // "" | loading | error
+let text_note = ""
+let query = ""
+let shown_text = TEXT_BATCH
+
+let merge_step = 1      // 1 choose, 2 order, 3 done
+let picked = []         // names, in merge order
+let merge_name = ""
+let merge_busy = false
+let merge_error = ""
+let merge_result = nil  // the merged document
+
+let split_mode = "every" // every | at
+let split_every = 2
+let split_cuts = []     // pages that start a new file, ascending
+let split_busy = false
+let split_error = ""
+let split_result = nil  // [document]
+
+let banner_n = 0
+
+// ---- small helpers -----------------------------------------------------
+
+// A missing key reads as `fallback` (as News, Photos and Wasm Lab do it).
+fn optional(it, key, fallback){
+    let value = try { it[key] } catch { nil }
+    if value == nil { return fallback }
+    value
+}
+fn pick(c, a, b){ if c { return a } b }
+fn plural(n, one, many){ if n == 1 { return "1 " + one } "" + n + " " + many }
+fn is_pdf(name){ regex("\\.pdf$", "i").test(name) }
+fn stem(name){ name.replace(regex("\\.pdf$", "i"), "") }
+fn size_text(bytes){
+    if bytes == nil { return "" }
+    if bytes < 1024 { return plural(bytes, "byte", "bytes") }
+    if bytes < 1048576 { return "" + round(bytes / 1024) + " KB" }
+    "" + floor(bytes / 104857.6) / 10 + " MB"
+}
+fn has(list, x){
+    for v in list { if v == x { return true } }
+    false
+}
+fn position(list, x){
+    for i v in list { if v == x { return i } }
+    -1
+}
+fn same_list(a, b){
+    if a.len() != b.len() { return false }
+    for i v in a { if v != b[i] { return false } }
+    true
+}
+fn rows_of(items, n){
+    let rows = []
+    let row = []
+    for it in items {
+        row.push(it)
+        if row.len() == n { rows.push(row) row = [] }
+    }
+    if row.len() > 0 { rows.push(row) }
+    rows
+}
+fn first_n(items, n){
+    let out = []
+    for it in items { if out.len() < n { out.push(it) } }
+    out
+}
+fn range_list(n){
+    let out = []
+    for i in n { out.push(i + 1) }
+    out
+}
+let specials = ["\\" "." "*" "+" "?" "(" ")" "[" "]" "{" "}" "|" "^" "$"]
+fn escape_re(text){
+    let out = text
+    for c in specials { out = out.replace(c, "\\" + c) }
+    out
+}
+fn remove_tree(path){
+    if !fs.exists(path) { return }
+    for entry in fs.list(path) {
+        let child = path + "/" + entry.replace("/", "")
+        if entry.search("/") >= 0 { remove_tree(child) } else { fs.remove(child) }
+    }
+    fs.remove(path)
+}
+
+// ---- the engine ----------------------------------------------------------
+
+fn missing(error){
+    if !error.is_string() { return false }
+    error.search("was not granted") >= 0 || error.search("no service answers") >= 0
+}
+
+// One call to the pdf engine. `done` gets {is_ok data error}, always on a
+// later turn: a refusal answers inside host.request itself, where UI calls
+// lost the rest of the callback on runtimes before #413's overlay.
+fn engine(method, args, done){
+    host.request("pdf." + method, args, fn(r){
+        let answer = {is_ok: r.is_ok data: r.data error: r.error}
+        start_timeout(0.01, || done(answer))
+    })
+}
+
+// True when `a` failed because the engine is not there for this app.
+fn engine_gone(a){
+    if a.is_ok { engine_state = "ok" return false }
+    if missing(a.error) {
+        engine_state = "missing"
+        engine_note = a.error
+        return true
+    }
+    false
+}
+fn engine_headline(){
+    if engine_note.search("was not granted") >= 0 { return "PDF Tools can't use the PDF engine" }
+    "This device has no PDF engine"
+}
+fn engine_detail(){
+    let why = "This OctoSense doesn't let PDF Tools use it."
+    if engine_note.search("was not granted") < 0 { why = "PDF Tools needs the OctoSense desktop, which has it." }
+    "Pages, merging, splitting and text all come from the engine. " + why + " Your PDFs stay safe in this app's storage."
+}
+// The storage quota or its file count refused a write: the engine's own
+// words (`… more than the N bytes left in this storage`) or the host's.
+fn storage_full(error){
+    let e = "" + error
+    e.search("bytes left in this storage") >= 0 || e.search("app storage is full") >= 0 || e.search("too many files") >= 0
+}
+// An engine error without the "pdf.text: " prefix the service adds.
+fn engine_error(error){
+    if !error.is_string() { return "The PDF engine gave no reason." }
+    if storage_full(error) { return "There isn't room for it in PDF Tools' storage. Remove a PDF you no longer need, then try again." }
+    error.replace(regex("^pdf\\.[a-z]+: "), "")
+}
+// Every engine write: a refusal for room shows on the library and the pages
+// until a write succeeds or a PDF is removed.
+fn wrote(a){
+    if a.is_ok { space_full = false return }
+    if storage_full(a.error) { space_full = true }
+}
+
+// ---- the library ---------------------------------------------------------
+
+fn load_index(){
+    if !fs.exists(INDEX) { return }
+    let v = try { fs.read(INDEX).parse_json() } catch { nil }
+    if v != nil && optional(v, "version", 0) == 1 { index = optional(v, "docs", {}) }
+}
+fn save_index(){
+    try { fs.write(INDEX, {version: 1 docs: index}.to_json()) } catch {}
+}
+// ---- the library's rules: pure functions, tested from Rust by
+// crates/shell/src/pdftools_model_tests.rs ------------------------------------
+
+// A library row: the file, and what the index kept about it (`known`, or
+// nil): its pages and size, and its title, which is otherwise its name.
+fn doc_from(name, known){
+    let d = {name: name path: LIBRARY + "/" + name title: stem(name) pages: nil bytes: nil error: ""}
+    if known != nil {
+        d.pages = optional(known, "pages", nil)
+        d.bytes = optional(known, "bytes", nil)
+        d.title = optional(known, "title", d.title)
+    }
+    d
+}
+// What the index keeps about a file: what the engine said (pages, size), and
+// its title when that is not the file's own name.
+fn index_entry(pages, bytes, title, name){
+    pick(title == stem(name), {pages: pages bytes: bytes}, {pages: pages bytes: bytes title: title})
+}
+// The title of a PDF opened from the device: the chosen file's name as
+// files.import reports it (`shown`), without ".pdf" and unlike every title
+// in `taken`, else the name the file is stored under ("Imported PDF 2").
+fn title_for_import(shown, name, taken){
+    if shown == nil { return stem(name) }
+    let t = ("" + shown).trim().replace(regex("\\.pdf$", "i"), "").trim()
+    if t == "" { return stem(name) }
+    if !has(taken, t) { return t }
+    let n = 2
+    loop {
+        let candidate = t + " (" + n + ")"
+        if !has(taken, candidate) { return candidate }
+        n = n + 1
+    }
+}
+// The title of a part the engine split from a PDF (`part`, named after the
+// file: "Imported PDF-part2.pdf"): after the PDF's title ("Lease
+// 2026-part2"), or nil when the PDF shows its file name, as the part then does.
+fn title_for_part(title, name, part){
+    if title == stem(name) { return nil }
+    title + stem(part).replace(stem(name), "")
+}
+
+fn doc_of(name){ doc_from(name, optional(index, name, nil)) }
+fn remember(d){
+    index[d.name] = index_entry(d.pages, d.bytes, d.title, d.name)
+    save_index()
+}
+fn title_of(name){
+    let d = doc_named(name)
+    if d == nil { return stem(name) }
+    d.title
+}
+fn scan_library(){
+    let out = []
+    if fs.exists(LIBRARY) {
+        for name in fs.list(LIBRARY) { if is_pdf(name) { out.push(doc_of(name)) } }
+    }
+    docs = out
+}
+fn doc_named(name){
+    for d in docs { if d.name == name { return d } }
+    nil
+}
+// Forget what the engine said about a file that was just written again.
+fn forget(name){
+    let kept = {}
+    for k v in index { if k != name { kept[k] = v } }
+    index = kept
+    save_index()
+    let cover = COVERS + "/" + name + ".png"
+    if fs.exists(cover) { fs.remove(cover) }
+    remove_tree(PAGES + "/" + name)
+    cover_src[name] = nil
+    cover_failed[name] = nil
+}
+
+// Read, one file at a time, each PDF's page count and its first page.
+fn library_next(){
+    if lib_busy || engine_state == "missing" { return }
+    for d in docs {
+        if d.pages == nil && d.error == "" { read_info(d) return }
+    }
+    for d in docs {
+        if d.pages != nil && optional(cover_src, d.name, nil) == nil && optional(cover_failed, d.name, nil) == nil { read_cover(d) return }
+    }
+}
+fn read_info(d){
+    lib_busy = true
+    engine("info", {path: d.path}, fn(a){
+        lib_busy = false
+        if engine_gone(a) { refresh() return }
+        if a.is_ok {
+            d.pages = a.data.pages.len()
+            d.bytes = optional(a.data, "file_size", nil)
+            remember(d)
+        } else { d.error = engine_error(a.error) }
+        refresh()
+        library_next()
+    })
+}
+fn read_cover(d){
+    let file = COVERS + "/" + d.name + ".png"
+    if fs.exists(file) {
+        cover_src[d.name] = binary_resource(fs.read_bytes(file))
+        refresh()
+        start_timeout(0.01, || library_next())
+        return
+    }
+    lib_busy = true
+    engine("render", {path: d.path page: 1 out: file max_side: THUMB_SIDE}, fn(a){
+        lib_busy = false
+        if engine_gone(a) { refresh() return }
+        wrote(a)
+        if a.is_ok { cover_src[d.name] = binary_resource(fs.read_bytes(a.data.out)) } else { cover_failed[d.name] = true }
+        refresh()
+        library_next()
+    })
+}
+fn doc_meta(d){
+    if d.error != "" { return "Can't open this file" }
+    if d.pages == nil { return pick(engine_state == "missing", "PDF", "Reading…") }
+    let line = plural(d.pages, "page", "pages")
+    if d.bytes != nil { line = line + "  ·  " + size_text(d.bytes) }
+    line
+}
+fn library_caption(){
+    if docs.len() == 0 { return "Your PDFs live in this app's storage." }
+    let total = 0
+    let known = true
+    for d in docs { if d.bytes == nil { known = false } else { total = total + d.bytes } }
+    let line = plural(docs.len(), "PDF", "PDFs")
+    if known { line = line + "  ·  " + size_text(total) }
+    line
+}
+
+// ---- opening a PDF from this device ---------------------------------------
+
+// What the shell's files service offers, asked once without opening anything.
+fn check_files(){
+    host.request("files.status", {}, fn(r){
+        let answer = {is_ok: r.is_ok data: r.data}
+        start_timeout(0.01, || {
+            files_known = true
+            if answer.is_ok {
+                files_ok = optional(answer.data, "import_supported", false) && optional(answer.data, "storage_granted", false)
+                max_import = optional(answer.data, "max_import_bytes", 0)
+            }
+            refresh()
+        })
+    })
+}
+fn import_limit(){ pick(max_import > 0, "PDFs up to " + size_text(max_import), "") }
+// The host's refusal, said for a person; its own words go below it.
+fn import_refusal(error){
+    let e = "" + error
+    if e.search("foreground_required") >= 0 { return "Bring PDF Tools to the front, then choose the file again." }
+    if e.search("busy") >= 0 { return "Another file is still being added. Try again in a moment." }
+    if storage_full(e) { return "PDF Tools' storage is full. Remove a PDF you no longer need, then try again." }
+    if e.search("too large") >= 0 || e.search("exceeds the byte limit") >= 0 { return "That file is too big to add. " + import_limit() + " can be added." }
+    if e.search("permission_denied") >= 0 { return "OctoSense didn't let PDF Tools open files from this device." }
+    if e.search("unsupported_platform") >= 0 { return "This device can't add files to PDF Tools." }
+    if e.search("already exists") >= 0 { return "A file of the same name appeared while you chose. Try again." }
+    "OctoSense couldn't copy the file in."
+}
+// The person chooses a file in the host's own dialog; it is copied into a
+// new library file the app named first, and opens.
+fn open_from_device(){
+    if importing { return }
+    if !files_ok {
+        banner("This OctoSense can't open files from the device for PDF Tools.")
+        return
+    }
+    let name = unique_name(IMPORT_NAME) + ".pdf"
+    importing = true
+    lib_note = nil
+    refresh()
+    host.request("files.import", {path: LIBRARY + "/" + name}, fn(r){
+        let answer = {is_ok: r.is_ok data: r.data error: r.error}
+        start_timeout(0.01, || imported(name, answer))
+    })
+}
+fn imported(name, a){
+    importing = false
+    if !a.is_ok {
+        lib_note = {head: "Couldn't open a PDF from this device" detail: import_refusal(a.error) note: "" + a.error}
+        refresh()
+        return
+    }
+    if optional(a.data, "cancelled", false) { refresh() return }
+    // From here the file is one of the library's: the engine reads it on
+    // its relative path, as for any PDF the library finds. It keeps the
+    // name the app gave it, and shows the chosen file's.
+    forget(name)
+    let taken = []
+    for d in docs { taken.push(d.title) }
+    let title = title_for_import(optional(a.data, "name", nil), name, taken)
+    if title != stem(name) {
+        index[name] = {title: title}
+        save_index()
+    }
+    scan_library()
+    let d = doc_named(name)
+    if d == nil { refresh() return }
+    if route == "library" { open_doc(d) } else { refresh() }
+}
+// ---- a document ----------------------------------------------------------
+
+fn open_doc(d){
+    gen = gen + 1
+    current = d
+    info = nil
+    doc_error = ""
+    thumb_src = {}
+    thumb_failed = {}
+    thumbs_busy = false
+    shown_pages = PAGE_BATCH
+    text_pages = nil
+    text_state = ""
+    text_note = ""
+    query = ""
+    shown_text = TEXT_BATCH
+    confirm_remove = false
+    ui.find.set_text("")
+    route = "doc"
+    tab = "pages"
+    // Keep only this document's page images (storage holds 256 entries).
+    if fs.exists(PAGES) {
+        for entry in fs.list(PAGES) {
+            if entry.replace("/", "") != d.name { remove_tree(PAGES + "/" + entry.replace("/", "")) }
+        }
+    }
+    show(true)
+    let g = gen
+    engine("info", {path: d.path}, fn(a){
+        if g != gen { return }
+        if engine_gone(a) { refresh() return }
+        if !a.is_ok { doc_error = engine_error(a.error) refresh() return }
+        info = a.data
+        d.pages = info.pages.len()
+        d.bytes = optional(info, "file_size", d.bytes)
+        remember(d)
+        refresh()
+        thumbs_next()
+    })
+}
+fn page_count(){ if info == nil { return 0 } info.pages.len() }
+fn page_label(p){
+    if info == nil { return "" + p }
+    let label = optional(info.pages[p - 1], "label", "")
+    if label == "" || label == "" + p { return "" + p }
+    label + " (" + p + ")"
+}
+fn thumb_of(p){ optional(thumb_src, "p" + p, nil) }
+
+// Render, one page at a time, the thumbnails of the pages on screen.
+fn thumbs_next(){
+    if thumbs_busy || current == nil || info == nil || engine_state == "missing" { return }
+    let want = pick(route == "split", page_count(), min(page_count(), shown_pages))
+    for i in want {
+        let p = i + 1
+        if thumb_of(p) == nil && optional(thumb_failed, "p" + p, nil) == nil { render_thumb(p) return }
+    }
+}
+fn render_thumb(p){
+    let g = gen
+    let folder = PAGES + "/" + current.name
+    let file = folder + "/p" + p + ".png"
+    if fs.exists(file) {
+        thumb_src["p" + p] = binary_resource(fs.read_bytes(file))
+        refresh_pages()
+        start_timeout(0.01, || thumbs_next())
+        return
+    }
+    thumbs_busy = true
+    engine("render", {path: current.path page: p out: file max_side: THUMB_SIDE}, fn(a){
+        thumbs_busy = false
+        if g != gen { return }
+        if engine_gone(a) { refresh() return }
+        wrote(a)
+        if a.is_ok { thumb_src["p" + p] = binary_resource(fs.read_bytes(a.data.out)) } else { thumb_failed["p" + p] = true }
+        refresh_pages()
+        thumbs_next()
+    })
+}
+fn refresh_pages(){ if route == "doc" || route == "split" || route == "page" { refresh() } }
+fn more_pages(){
+    shown_pages = shown_pages + PAGE_BATCH
+    refresh()
+    thumbs_next()
+}
+fn tile_h(){ floor(tile_w * 1.3) }
+// The shell calls this when the app's window changes size (Photos does too).
+fn on_app_resize(width, height){
+    if width <= 0 { return }
+    let w = min(width, 880) - 32
+    let n = max(2, min(5, floor((w + 12) / 170)))
+    tile_w = floor((w - (n - 1) * 12) / n)
+    if n != columns {
+        columns = n
+        // Called from the shell's draw pass: render on the next turn.
+        if route == "doc" || route == "split" { start_timeout(0.01, || refresh()) }
+    }
+}
+
+fn set_tab(t){
+    tab = t
+    if t == "text" && text_pages == nil && text_state == "" { load_text() }
+    show(true)
+}
+fn load_text(){
+    let g = gen
+    text_state = "loading"
+    let args = {path: current.path}
+    if page_count() > MAX_TEXT {
+        let pages = []
+        for i in MAX_TEXT { pages.push(i + 1) }
+        args = {path: current.path pages: pages}
+    }
+    engine("text", args, fn(a){
+        if g != gen { return }
+        if engine_gone(a) { text_state = "" show(false) return }
+        if a.is_ok {
+            text_pages = a.data.pages
+            text_state = ""
+        } else {
+            text_state = "error"
+            text_note = engine_error(a.error)
+        }
+        show(false)
+    })
+}
+fn text_hits(){
+    if text_pages == nil { return [] }
+    if query == "" { return text_pages }
+    let re = regex(escape_re(query), "i")
+    let out = []
+    for t in text_pages { if re.test(t.text) { out.push(t) } }
+    out
+}
+fn text_is_empty(){
+    if text_pages == nil { return false }
+    for t in text_pages { if t.text.trim() != "" { return false } }
+    true
+}
+fn set_query(text){
+    query = ("" + text).trim()
+    shown_text = TEXT_BATCH
+    refresh()
+}
+
+fn paper_name(w, h){
+    let a = min(w, h)
+    let b = max(w, h)
+    if abs(a - 595) < 3 && abs(b - 842) < 3 { return "A4" }
+    if abs(a - 612) < 3 && abs(b - 792) < 3 { return "Letter" }
+    if abs(a - 612) < 3 && abs(b - 1008) < 3 { return "Legal" }
+    if abs(a - 420) < 3 && abs(b - 595) < 3 { return "A5" }
+    ""
+}
+fn page_size_text(){
+    let first = info.pages[0]
+    for p in info.pages {
+        if abs(p.width - first.width) > 1 || abs(p.height - first.height) > 1 { return "Mixed sizes" }
+    }
+    let mm = "" + round(first.width * 0.3528) + " × " + round(first.height * 0.3528) + " mm"
+    let name = paper_name(first.width, first.height)
+    if name == "" { return mm }
+    name + ", " + mm
+}
+fn info_rows(){
+    // Commas between the pairs: `] [` would read as indexing.
+    let rows = [["File", current.name], ["Pages", "" + page_count()], ["Page size", page_size_text()]]
+    let bytes = optional(info, "file_size", nil)
+    if bytes != nil { rows.push(["File size", size_text(bytes)]) }
+    for pair in [["Title", "title"], ["Author", "author"], ["Subject", "subject"], ["Keywords", "keywords"], ["Made with", "creator"], ["Produced by", "producer"]] {
+        let value = optional(info, pair[1], "")
+        if value.is_string() && value.trim() != "" { rows.push([pair[0], value.trim()]) }
+    }
+    let version = optional(info, "pdf_version", "")
+    if version != "" { rows.push(["PDF version", "" + version]) }
+    let protected = optional(optional(info, "security", {}), "protected", false)
+    rows.push(["Security", pick(protected, "Protected", "Not protected")])
+    let fonts = optional(info, "fonts", [])
+    if fonts.len() > 0 {
+        let names = ""
+        for f in first_n(fonts, 6) { names = names + pick(names == "", "", ", ") + f.name }
+        if fonts.len() > 6 { names = names + " and " + (fonts.len() - 6) + " more" }
+        rows.push(["Fonts", names])
+    }
+    let outline = optional(info, "outline", [])
+    if outline.len() > 0 { rows.push(["Bookmarks", "" + outline.len()]) }
+    rows
+}
+
+fn open_page(p){
+    page_no = p
+    route = "page"
+    show(true)
+    load_view()
+}
+fn load_view(){
+    view_seq = view_seq + 1
+    let seq = view_seq
+    let p = page_no
+    view_src = nil
+    view_note = ""
+    // A new file each time: the shown picture is already decoded, and the
+    // engine then needs no leave to replace one.
+    try { if fs.exists(VIEW_FILE) { fs.remove(VIEW_FILE) } } catch {}
+    engine("render", {path: current.path page: p out: VIEW_FILE max_side: VIEW_SIDE}, fn(a){
+        if seq != view_seq || route != "page" { return }
+        if engine_gone(a) { view_note = engine_headline() refresh() return }
+        wrote(a)
+        if a.is_ok { view_src = binary_resource(fs.read_bytes(a.data.out)) } else { view_note = "Couldn't show this page: " + engine_error(a.error) }
+        refresh()
+    })
+}
+fn step_page(d){
+    let p = page_no + d
+    if p < 1 || p > page_count() { return }
+    page_no = p
+    refresh()
+    load_view()
+}
+fn back_to_pages(){
+    view_seq = view_seq + 1
+    route = "doc"
+    show(false)
+}
+
+// Removing a PDF asks once more; what was made from it stays.
+fn ask_remove(){ confirm_remove = true show(false) }
+fn keep_doc(){ confirm_remove = false show(false) }
+fn remove_doc(){
+    let d = current
+    confirm_remove = false
+    if d == nil { return }
+    try { fs.remove(d.path) } catch {}
+    if fs.exists(d.path) {
+        banner("Couldn't remove “" + d.title + "”.")
+        show(false)
+        return
+    }
+    forget(d.name)
+    // The room it held may let page pictures be saved again.
+    space_full = false
+    cover_failed = {}
+    go_library()
+    banner("Removed “" + d.title + "” from PDF Tools.")
+}
+
+// ---- merge ---------------------------------------------------------------
+
+fn start_merge(){
+    if docs.len() < 2 { return }
+    route = "merge"
+    merge_step = 1
+    picked = []
+    merge_busy = false
+    merge_error = ""
+    merge_result = nil
+    show(true)
+}
+fn toggle_pick(d){
+    if d.error != "" { banner("“" + d.title + "” can't be opened, so it can't be merged.") return }
+    if has(picked, d.name) { picked.retain(|n| n != d.name) }
+    else if picked.len() < MAX_MERGE { picked.push(d.name) }
+    else { banner("PDF Tools merges up to " + MAX_MERGE + " PDFs at a time.") }
+    refresh()
+}
+fn unique_name(base){
+    if !fs.exists(LIBRARY + "/" + base + ".pdf") { return base }
+    let n = 2
+    loop {
+        if !fs.exists(LIBRARY + "/" + base + " " + n + ".pdf") { return base + " " + n }
+        n = n + 1
+    }
+}
+fn merge_next(){
+    if picked.len() < 2 { return }
+    merge_step = 2
+    merge_error = ""
+    merge_name = unique_name("Merged")
+    ui.merge_field.set_text(merge_name)
+    update_name_note()
+    show(true)
+}
+fn set_merge_name(text){
+    merge_name = ("" + text).trim()
+    update_name_note()
+}
+fn merge_file(){ LIBRARY + "/" + stem(merge_name) + ".pdf" }
+fn update_name_note(){
+    let note = ""
+    if merge_name == "" { note = "Give the merged PDF a name." }
+    else if merge_name.search("/") >= 0 { note = "A name can't contain “/”." }
+    else if fs.exists(merge_file()) { note = "A PDF with this name is in your library; merging replaces it." }
+    ui.name_note.set_text(note)
+    ui.name_note.set_visible(note != "")
+}
+fn move_pick(i, d){
+    let j = i + d
+    if j < 0 || j >= picked.len() { return }
+    let out = []
+    for k v in picked {
+        if k == i { out.push(picked[j]) } else if k == j { out.push(picked[i]) } else { out.push(v) }
+    }
+    picked = out
+    refresh()
+}
+fn remove_pick(name){
+    picked.retain(|n| n != name)
+    if picked.len() < 2 { merge_step = 1 show(true) return }
+    refresh()
+}
+fn merge_pages(){
+    let total = 0
+    for name in picked {
+        let d = doc_named(name)
+        if d == nil || d.pages == nil { return nil }
+        total = total + d.pages
+    }
+    total
+}
+fn do_merge(){
+    if merge_busy || picked.len() < 2 { return }
+    if merge_name == "" || merge_name.search("/") >= 0 { update_name_note() return }
+    let out = merge_file()
+    let paths = []
+    for name in picked { paths.push(LIBRARY + "/" + name) }
+    merge_busy = true
+    merge_error = ""
+    refresh()
+    engine("merge", {paths: paths out: out}, fn(a){
+        merge_busy = false
+        if engine_gone(a) { merge_error = engine_headline() refresh() return }
+        wrote(a)
+        if !a.is_ok { merge_error = "Couldn't merge: " + engine_error(a.error) refresh() return }
+        let name = stem(merge_name) + ".pdf"
+        forget(name)
+        // The rescan and the next screen on a later turn: one handler has a
+        // 64 ms budget. Someone who left the flow stays where they are.
+        start_timeout(0.01, || {
+            scan_library()
+            merge_result = doc_named(name)
+            if route == "merge" { merge_step = 3 show(true) } else { refresh() }
+            start_timeout(0.01, || library_next())
+        })
+    })
+}
+
+// ---- split ---------------------------------------------------------------
+
+fn start_split(){
+    if info == nil || page_count() < 2 { return }
+    route = "split"
+    split_mode = "every"
+    split_every = pick(page_count() > 2, 2, 1)
+    split_cuts = []
+    split_busy = false
+    split_error = ""
+    split_result = nil
+    show(true)
+    thumbs_next()
+}
+fn set_split_mode(m){
+    split_mode = m
+    show(true)
+    thumbs_next()
+}
+fn set_every(n){
+    if n < 1 || n >= page_count() { return }
+    split_every = n
+    refresh()
+}
+fn toggle_cut(p){
+    if p < 2 { banner("Page 1 always starts the first file. Tap another page to start a new file there.") return }
+    let out = []
+    let found = false
+    for c in split_cuts { if c == p { found = true } else { out.push(c) } }
+    if !found {
+        out = []
+        let placed = false
+        for c in split_cuts {
+            if !placed && p < c { out.push(p) placed = true }
+            out.push(c)
+        }
+        if !placed { out.push(p) }
+    }
+    split_cuts = out
+    refresh()
+}
+// The files a split makes: [first last] page ranges, as the engine cuts them.
+fn split_ranges(){
+    let total = page_count()
+    let out = []
+    let start = 1
+    if split_mode == "every" {
+        while start <= total {
+            let end = min(start + split_every - 1, total)
+            out.push([start, end])
+            start = end + 1
+        }
+        return out
+    }
+    for c in split_cuts {
+        if c > start && c <= total { out.push([start, c - 1]) start = c }
+    }
+    out.push([start, total])
+    out
+}
+fn part_name(k){ stem(current.name) + "-part" + k + ".pdf" }
+// What part k is called on screen: after the document's title.
+fn part_title(k){ current.title + "-part" + k }
+fn split_step(){ pick(split_result == nil, 1, 2) }
+fn range_text(r){
+    if r[0] == r[1] { return "Page " + r[0] }
+    "Pages " + r[0] + "–" + r[1]
+}
+fn split_replaces(){
+    let n = 0
+    for k in split_ranges().len() { if fs.exists(LIBRARY + "/" + part_name(k + 1)) { n = n + 1 } }
+    n
+}
+fn do_split(){
+    let parts = split_ranges()
+    if split_busy || parts.len() < 2 { return }
+    let args = {path: current.path out_dir: LIBRARY every: split_every}
+    if split_mode == "at" { args = {path: current.path out_dir: LIBRARY before: split_cuts} }
+    split_busy = true
+    split_error = ""
+    refresh()
+    let source = current
+    engine("split", args, fn(a){
+        split_busy = false
+        if engine_gone(a) { split_error = engine_headline() refresh() return }
+        wrote(a)
+        if !a.is_ok { split_error = "Couldn't split: " + engine_error(a.error) refresh() return }
+        let names = []
+        for f in a.data.files {
+            let parts = f.path.split("/")
+            names.push({name: parts[parts.len() - 1] first: f.first_page last: f.last_page})
+        }
+        split_result = names
+        finish_split(source, names, 0)
+    })
+}
+// One written file per turn (each forget writes the index), then the rescan
+// and the next screen: one handler has a 64 ms budget. A part of a PDF with
+// a title of its own is titled after it ("Lease-part2").
+fn finish_split(source, names, i){
+    if i < names.len() {
+        let part = names[i].name
+        forget(part)
+        let title = title_for_part(source.title, source.name, part)
+        if title != nil {
+            index[part] = {title: title}
+            save_index()
+        }
+        start_timeout(0.01, || finish_split(source, names, i + 1))
+        return
+    }
+    scan_library()
+    if route == "split" { show(true) } else { refresh() }
+    start_timeout(0.01, || library_next())
+}
+
+// ---- screens -------------------------------------------------------------
+
+fn banner(text){
+    banner_n = banner_n + 1
+    let n = banner_n
+    ui.banner_text.set_text(text)
+    ui.banner.set_visible(text != "")
+    if text != "" { start_timeout(8, || { if n == banner_n { ui.banner.set_visible(false) } }) }
+}
+fn go_library(){
+    gen = gen + 1
+    view_seq = view_seq + 1
+    current = nil
+    route = "library"
+    scan_library()
+    show(true)
+    library_next()
+}
+fn back_from_split(){
+    route = "doc"
+    show(true)
+}
+
+// Each screen has its own scroller, shown here and always filled by an
+// explicit render: a scroller made in another view's on_render came out
+// empty with stored page images. `fresh` marks a new screen.
+fn show(fresh){
+    ui.top.render()
+    ui.findbar.set_visible(route == "doc" && tab == "text" && text_pages != nil)
+    ui.namebar.set_visible(route == "merge" && merge_step == 2)
+    ui.lib_box.set_visible(route == "library")
+    ui.pages_box.set_visible(route == "doc" && tab == "pages")
+    ui.text_box.set_visible(route == "doc" && tab == "text")
+    ui.info_box.set_visible(route == "doc" && tab == "info")
+    ui.merge_box.set_visible(route == "merge")
+    ui.split_box.set_visible(route == "split")
+    ui.stage_box.set_visible(route == "page")
+    render_screen()
+    ui.bottom.render()
+}
+fn render_screen(){
+    if route == "library" { ui.lib_pane.render() }
+    if route == "doc" && tab == "pages" { ui.pages_pane.render() }
+    if route == "doc" && tab == "text" { ui.text_pane.render() }
+    if route == "doc" && tab == "info" { ui.info_pane.render() }
+    if route == "merge" { ui.merge_pane.render() }
+    if route == "split" { ui.split_pane.render() }
+    if route == "page" { ui.stage.render() }
+}
+// The same screen with new data, in place.
+fn refresh(){
+    ui.top.render()
+    render_screen()
+    ui.bottom.render()
+}
+
+fn boot(){
+    load_index()
+    scan_library()
+    show(true)
+    check_files()
+    library_next()
+}
+start_timeout(0.05, || boot())
+
+// ---- widgets -------------------------------------------------------------
+
+let Head = Label{width: Fill padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 16}}}
+let Body = Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 14 line_spacing: 1.4}}}
+let Glyph = Label{padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_icons{font_size: 12}}}
+let Back = UiButton{padding: Inset{left: 10 right: 14}}
+let Quiet = UiPill{width: Fill}
+let Muted = UiButton{width: Fill
+    draw_bg +: {color: ui_field color_hover: ui_field color_down: ui_field color_focus: ui_field}
+    draw_text +: {color: ui_muted color_hover: ui_muted color_down: ui_muted color_focus: ui_muted}
+}
+let Primary = UiPrimary{width: Fill}
+let Danger = UiPrimary{width: Fill draw_bg +: {color: #xd23a4f color_hover: #xdc4b5f color_down: #xb52d40 color_focus: #xb52d40}}
+let Subtle = UiButton{draw_text +: {color: ui_muted color_hover: ui_ink color_down: ui_ink color_focus: ui_muted}}
+let IconAct = UiButton{width: 36 padding: 0 draw_text +: {color: ui_muted color_hover: ui_ink color_down: ui_ink text_style: theme.font_icons{font_size: 14}}}
+let List = RoundedView{width: Fill height: Fit flow: Down show_bg: true draw_bg +: {color: ui_surface border_radius: 14.0}}
+let Cover = RoundedView{width: 46 height: 60 align: Align{x: 0.5 y: 0.5} padding: 1 show_bg: true
+    draw_bg +: {color: #xffffff border_size: 1.0 border_color: ui_border border_radius: 3.0}}
+let RowText = View{width: Fill height: Fit flow: Down spacing: 3
+    name := Label{width: Fill padding: 0 max_lines: 1 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 15}}}
+    meta := Label{width: Fill padding: 0 max_lines: 1 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13}}}
+}
+// A plain View paints no background in the contained host: lines are SolidViews.
+let RowLine = SolidView{width: Fill height: 1 margin: Inset{left: 76} draw_bg.color: ui_border}
+let InfoLine = SolidView{width: Fill height: 1 margin: Inset{left: 18} draw_bg.color: ui_border}
+let StepLine = SolidView{width: 18 height: 1 draw_bg.color: ui_border}
+let Mark = RoundedView{width: 26 height: 26 align: Align{x: 0.5 y: 0.5} show_bg: true
+    draw_bg +: {color: #x00000000 border_size: 2.0 border_color: ui_border border_radius: 13.0}
+    n := Label{padding: 0 text: "" draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 12}}}
+}
+let MarkOn = Mark{draw_bg +: {color: ui_primary border_color: ui_primary}}
+let Segment = UiButton{width: Fill height: 36 padding: 4
+    draw_bg +: {color: #x00000000 color_hover: ui_hover color_down: ui_hover color_focus: ui_hover border_radius: 10.0}
+    draw_text +: {color: ui_muted color_hover: ui_ink color_down: ui_ink color_focus: ui_ink text_style: theme.font_bold{font_size: 13}}
+}
+// The selected segment: white on the light track, a lighter grey on the dark one.
+let ui_selected = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.22) }
+let SegmentOn = Segment{
+    draw_bg +: {color: ui_selected color_hover: ui_selected color_down: ui_selected color_focus: ui_selected}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}
+}
+let Segments = RoundedView{width: Fill height: Fit flow: Right padding: 3 spacing: 3 show_bg: true
+    draw_bg +: {color: ui_field border_radius: 12.0}}
+let Dot = RoundedView{width: 22 height: 22 align: Align{x: 0.5 y: 0.5} show_bg: true
+    draw_bg +: {color: ui_field border_radius: 11.0}
+    n := Label{padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 11}}}
+}
+let DotOn = RoundedView{width: 22 height: 22 align: Align{x: 0.5 y: 0.5} show_bg: true
+    draw_bg +: {color: ui_primary border_radius: 11.0}
+    n := Label{padding: 0 text: "" draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 11}}}
+}
+let StepName = Label{padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13}}}
+let StepNameOn = Label{padding: 0 text: "" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 13}}}
+let Tile = RoundedView{width: Fill height: 230 align: Align{x: 0.5 y: 0.5} padding: 8 show_bg: true
+    draw_bg +: {color: ui_field border_radius: 8.0}}
+let TileCut = Tile{draw_bg +: {border_size: 2.5 border_color: ui_primary}}
+let TileLabel = Label{padding: 0 text: "" draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 12}}}
+let Alert = UiCard{flow: Right spacing: 14 align: Align{y: 0.0}}
+let EngineAlert = Alert{
+    Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+    text := View{width: Fill height: Fit flow: Down spacing: 6
+        head := Head{}
+        detail := UiCaption{text: ""}
+        note := Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: ui_muted text_style: theme.font_code{font_size: 11}}}
+    }
+}
+let SpaceAlert = Alert{
+    Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+    View{width: Fill height: Fit flow: Down spacing: 6
+        Head{text: "PDF Tools' storage is full"}
+        UiCaption{text: "Page pictures and new PDFs can't be saved until there's room. Open a PDF you no longer need and remove it."}
+    }
+}
+// One scroller per screen (and per document tab), each keeping its place.
+let Pane = ScrollYView{width: Fill height: Fill flow: Down spacing: 14 padding: Inset{left: 16 right: 16 top: 2 bottom: 24}}
+
+SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.color: ui_page
+    main := View{width: Fill max_width: 880 height: Fill flow: Down
+
+        top := View{width: Fill height: Fit flow: Down on_render: || {
+            View{width: Fill height: 1}
+            if route == "library" {
+                View{width: Fill height: Fit flow: Down spacing: 4 padding: Inset{left: 20 right: 20 top: 20 bottom: 12}
+                    UiTitle{text: "PDF Tools"}
+                    UiCaption{text: library_caption()}
+                }
+            }
+            if route == "doc" && current != nil {
+                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 6 right: 10 top: 8}
+                    Back{text: "‹ Library" on_click: || go_library()}
+                    View{width: Fill height: 1}
+                    if !confirm_remove { Subtle{text: "Remove" on_click: || ask_remove()} }
+                }
+                View{width: Fill height: Fit flow: Down spacing: 3 padding: Inset{left: 20 right: 20 top: 2 bottom: 12}
+                    Label{width: Fill padding: 0 max_lines: 2 text: current.title draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 24 line_spacing: 1.2}}}
+                    UiCaption{text: doc_meta(current)}
+                }
+                if confirm_remove {
+                    View{width: Fill height: Fit padding: Inset{left: 16 right: 16 bottom: 10}
+                        Alert{
+                            Glyph{text: ICON_TRASH draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                            View{width: Fill height: Fit flow: Down spacing: 6
+                                Head{text: "Remove this PDF from PDF Tools?"}
+                                UiCaption{text: "It is deleted from this app's storage. PDFs you made from it stay."}
+                            }
+                        }
+                    }
+                }
+                View{width: Fill height: Fit padding: Inset{left: 16 right: 16 bottom: 10}
+                    Segments{
+                        if tab == "pages" { SegmentOn{text: "Pages"} } else { Segment{text: "Pages" on_click: || set_tab("pages")} }
+                        if tab == "text" { SegmentOn{text: "Text"} } else { Segment{text: "Text" on_click: || set_tab("text")} }
+                        if tab == "info" { SegmentOn{text: "Info"} } else { Segment{text: "Info" on_click: || set_tab("info")} }
+                    }
+                }
+            }
+            if route == "page" && current != nil {
+                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 6 right: 20 top: 8 bottom: 8}
+                    Back{text: "‹ Pages" on_click: || back_to_pages()}
+                    View{width: Fill height: 1}
+                    Label{padding: 0 text: "Page " + page_label(page_no) + " of " + page_count() draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 15}}}
+                }
+            }
+            if route == "merge" {
+                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 6 right: 10 top: 8}
+                    if merge_step == 3 { Back{text: "‹ Library" on_click: || go_library()} }
+                    else { Back{text: "Cancel" on_click: || go_library()} }
+                }
+                View{width: Fill height: Fit flow: Down spacing: 10 padding: Inset{left: 20 right: 20 top: 2 bottom: 14}
+                    UiTitle{text: "Merge PDFs" draw_text +: {text_style: theme.font_bold{font_size: 24}}}
+                    View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                        for i name in ["Choose", "Order", "Done"] {
+                            if i + 1 <= merge_step { DotOn{n.text: "" + (i + 1)} } else { Dot{n.text: "" + (i + 1)} }
+                            if i + 1 == merge_step { StepNameOn{text: name} } else { StepName{text: name} }
+                            if i < 2 { StepLine{} }
+                        }
+                    }
+                }
+            }
+            if route == "split" && current != nil {
+                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 6 right: 10 top: 8}
+                    if split_result != nil { Back{text: "‹ Library" on_click: || go_library()} }
+                    else { Back{text: "Cancel" on_click: || back_from_split()} }
+                }
+                View{width: Fill height: Fit flow: Down spacing: 10 padding: Inset{left: 20 right: 20 top: 2 bottom: 14}
+                    UiTitle{text: "Split " + current.title draw_text +: {text_style: theme.font_bold{font_size: 24}}}
+                    View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+                        for i name in ["Choose where", "Done"] {
+                            if i + 1 <= split_step() { DotOn{n.text: "" + (i + 1)} } else { Dot{n.text: "" + (i + 1)} }
+                            if i + 1 == split_step() { StepNameOn{text: name} } else { StepName{text: name} }
+                            if i < 1 { StepLine{} }
+                        }
+                    }
+                }
+            }
+        }}
+
+        findbar := View{visible: false width: Fill height: Fit padding: Inset{left: 16 right: 16 bottom: 10}
+            find := UiField{empty_text: "Find in the text" on_change: |text| set_query(text)}
+        }
+
+        lib_box := View{width: Fill height: Fill
+            lib_pane := Pane{on_render: || {
+                View{width: Fill height: 1}
+                if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if lib_note != nil {
+                    Alert{
+                        Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            Head{text: lib_note.head}
+                            UiCaption{text: lib_note.detail}
+                            Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: lib_note.note draw_text +: {color: ui_muted text_style: theme.font_code{font_size: 11}}}
+                        }
+                        UiButton{text: "OK" on_click: || { lib_note = nil refresh() }}
+                    }
+                }
+                if space_full { SpaceAlert{} }
+                    if docs.len() == 0 {
+                        UiCard{align: Align{x: 0.5} padding: 28 spacing: 14
+                            AppIcon{width: 64 height: 64 name: "pdf"}
+                            Label{padding: 0 text: "No PDFs here yet" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 20}}}
+                            Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} align: Align{x: 0.5}
+                                text: "Open a PDF from this device to read it, split it, merge it with others or copy its text. PDF Tools keeps its own copy."
+                                draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 14 line_spacing: 1.4}}}
+                            if files_ok { UiPrimary{text: pick(importing, "Choosing a PDF…", "Open a PDF from this device") on_click: || open_from_device()} }
+                            if files_ok && max_import > 0 { UiCaption{width: Fit text: import_limit()} }
+                            if files_known && !files_ok {
+                                Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} align: Align{x: 0.5}
+                                    text: "This OctoSense can't open files from the device for PDF Tools."
+                                    draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+                            }
+                        }
+                    }
+                    if docs.len() > 0 {
+                        GestureView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 padding: Inset{left: 18 right: 16 top: 6 bottom: 6} on_tap: |x, y| open_from_device()
+                            Glyph{text: ICON_OPEN draw_text +: {color: ui_link text_style: theme.font_icons{font_size: 15}}}
+                            Label{width: Fill padding: 0 text: pick(importing, "Choosing a PDF…", "Open a PDF from this device") draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}}
+                            if files_ok && !importing && max_import > 0 { Label{padding: 0 text: import_limit() draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 12}}} }
+                            if files_known && !files_ok {
+                                RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 3 bottom: 3} show_bg: true draw_bg +: {color: ui_field border_radius: 8.0}
+                                    Label{padding: 0 text: "Not available here" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 11}}}
+                                }
+                            }
+                        }
+                        List{
+                            for i d in docs {
+                                GestureView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 14 padding: Inset{left: 16 right: 14 top: 10 bottom: 10} on_tap: |x, y| open_doc(d)
+                                    Cover{
+                                        if optional(cover_src, d.name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, d.name, nil)} }
+                                        else { AppIcon{width: 26 height: 26 name: "file-pdf"} }
+                                    }
+                                    if d.error != "" { RowText{name.text: d.title meta.text: doc_meta(d) meta.draw_text.color: ui_danger} }
+                                    else { RowText{name.text: d.title meta.text: doc_meta(d)} }
+                                    Glyph{text: ICON_NEXT}
+                                }
+                                if i < docs.len() - 1 { RowLine{} }
+                            }
+                        }
+                    }
+            }}
+        }
+        pages_box := View{visible: false width: Fill height: Fill
+            pages_pane := Pane{on_render: || {
+                View{width: Fill height: 1}
+                if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if space_full { SpaceAlert{} }
+                if engine_state != "missing" {
+                        if doc_error != "" {
+                            Alert{
+                                Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                                View{width: Fill height: Fit flow: Down spacing: 6
+                                    Head{text: "Couldn't open this PDF"}
+                                    UiCaption{text: "It may be damaged, or not a PDF at all."}
+                                    Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: doc_error draw_text +: {color: ui_muted text_style: theme.font_code{font_size: 11}}}
+                                }
+                            }
+                        }
+                        if doc_error == "" && info == nil { UiCaption{text: "Opening…" padding: Inset{left: 4}} }
+                }
+                if engine_state != "missing" && info != nil {
+                            for row in rows_of(first_n(range_list(page_count()), shown_pages), columns) {
+                                View{width: Fill height: Fit flow: Right spacing: 12
+                                    for p in row {
+                                        GestureView{width: Fill height: Fit flow: Down spacing: 6 align: Align{x: 0.5} on_tap: |x, y| open_page(p)
+                                            Tile{height: tile_h()
+                                                if thumb_of(p) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: thumb_of(p)} }
+                                                else { TileLabel{text: pick(optional(thumb_failed, "p" + p, nil) != nil, "Can't draw this page", "…")} }
+                                            }
+                                            TileLabel{text: page_label(p)}
+                                        }
+                                    }
+                                    for k in columns - row.len() { View{width: Fill height: 1} }
+                                }
+                            }
+                            if page_count() > shown_pages {
+                                UiPill{text: "Show " + min(PAGE_BATCH, page_count() - shown_pages) + " more pages" on_click: || more_pages()}
+                            }
+                }
+            }}
+        }
+        text_box := View{visible: false width: Fill height: Fill
+            text_pane := Pane{on_render: || {
+                View{width: Fill height: 1}
+                if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if engine_state != "missing" {
+                        if doc_error != "" {
+                            Alert{
+                                Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                                View{width: Fill height: Fit flow: Down spacing: 6
+                                    Head{text: "Couldn't open this PDF"}
+                                    UiCaption{text: "It may be damaged, or not a PDF at all."}
+                                    Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: doc_error draw_text +: {color: ui_muted text_style: theme.font_code{font_size: 11}}}
+                                }
+                            }
+                        }
+                        if doc_error == "" && info == nil { UiCaption{text: "Opening…" padding: Inset{left: 4}} }
+                }
+                if engine_state != "missing" && info != nil {
+                            if text_state == "loading" { UiCaption{text: "Reading the text…" padding: Inset{left: 4}} }
+                            if text_state == "error" {
+                                Alert{
+                                    Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                                    View{width: Fill height: Fit flow: Down spacing: 6
+                                        Head{text: "Couldn't read the text"}
+                                        UiCaption{text: text_note}
+                                    }
+                                }
+                            }
+                            if text_pages != nil {
+                                if text_is_empty() {
+                                    UiCard{
+                                        Head{text: "This PDF has no text to copy"}
+                                        UiCaption{text: "Its pages are probably pictures, such as a scan."}
+                                    }
+                                }
+                                if !text_is_empty() {
+                                    if query != "" { UiCaption{padding: Inset{left: 4} text: pick(text_hits().len() == 0, "No page contains “" + query + "”.", plural(text_hits().len(), "page contains", "pages contain") + " “" + query + "”.")} }
+                                    if page_count() > MAX_TEXT { UiCaption{padding: Inset{left: 4} text: "Showing the text of the first " + MAX_TEXT + " pages."} }
+                                    for t in first_n(text_hits(), shown_text) {
+                                        UiCard{spacing: 8
+                                            Label{padding: 0 text: "PAGE " + page_label(t.page) draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 11}}}
+                                            Body{text: pick(t.text.trim() == "", "No text on this page.", t.text.trim())}
+                                        }
+                                    }
+                                    if text_hits().len() > shown_text {
+                                        UiPill{text: "Show more pages" on_click: || { shown_text = shown_text + TEXT_BATCH refresh() }}
+                                    }
+                                }
+                            }
+                }
+            }}
+        }
+        info_box := View{visible: false width: Fill height: Fill
+            info_pane := Pane{on_render: || {
+                View{width: Fill height: 1}
+                if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if engine_state != "missing" {
+                        if doc_error != "" {
+                            Alert{
+                                Glyph{text: ICON_WARN draw_text +: {color: ui_danger text_style: theme.font_icons{font_size: 18}}}
+                                View{width: Fill height: Fit flow: Down spacing: 6
+                                    Head{text: "Couldn't open this PDF"}
+                                    UiCaption{text: "It may be damaged, or not a PDF at all."}
+                                    Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: doc_error draw_text +: {color: ui_muted text_style: theme.font_code{font_size: 11}}}
+                                }
+                            }
+                        }
+                        if doc_error == "" && info == nil { UiCaption{text: "Opening…" padding: Inset{left: 4}} }
+                }
+                if engine_state != "missing" && info != nil {
+                            List{padding: Inset{top: 6 bottom: 6}
+                                for i row in info_rows() {
+                                    View{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{left: 18 right: 18 top: 10 bottom: 10}
+                                        Label{width: 112 padding: 0 text: row[0] draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 14}}}
+                                        Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: row[1] draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 14 line_spacing: 1.35}}}
+                                    }
+                                    if i < info_rows().len() - 1 { InfoLine{} }
+                                }
+                            }
+                }
+            }}
+        }
+        merge_box := View{visible: false width: Fill height: Fill
+            merge_pane := Pane{on_render: || {
+                View{width: Fill height: 1}
+                if engine_state == "missing" { EngineAlert{text.head.text: engine_headline() text.detail.text: engine_detail() text.note.text: engine_note} }
+                if space_full { SpaceAlert{} }
+                    if merge_step == 1 {
+                        UiCaption{padding: Inset{left: 4} text: "Choose the PDFs to put together, in the order they should go. You can change the order next."}
+                        List{
+                            for i d in docs {
+                                GestureView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 14 padding: Inset{left: 16 right: 16 top: 10 bottom: 10} on_tap: |x, y| toggle_pick(d)
+                                    Cover{
+                                        if optional(cover_src, d.name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, d.name, nil)} }
+                                        else { AppIcon{width: 26 height: 26 name: "file-pdf"} }
+                                    }
+                                    if d.error != "" { RowText{name.text: d.title meta.text: doc_meta(d) meta.draw_text.color: ui_danger} }
+                                    else { RowText{name.text: d.title meta.text: doc_meta(d)} }
+                                    if has(picked, d.name) { MarkOn{n.text: "" + (position(picked, d.name) + 1)} }
+                                    else if d.error == "" { Mark{} }
+                                }
+                                if i < docs.len() - 1 { RowLine{} }
+                            }
+                        }
+                    }
+                    if merge_step == 2 {
+                        UiCaption{padding: Inset{left: 4} text: "The pages go in this order. Move a file up or down to change it."}
+                        List{
+                            for i name in picked {
+                                View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10 padding: Inset{left: 12 right: 6 top: 10 bottom: 10}
+                                    Label{width: 16 padding: 0 align: Align{x: 0.5} text: "" + (i + 1) draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 14}}}
+                                    Cover{
+                                        if optional(cover_src, name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, name, nil)} }
+                                        else { AppIcon{width: 26 height: 26 name: "file-pdf"} }
+                                    }
+                                    RowText{name.text: title_of(name) meta.text: doc_meta(doc_named(name))}
+                                    View{width: Fit height: Fit flow: Right spacing: 0
+                                        if i > 0 { IconAct{text: ICON_UP on_click: || move_pick(i, -1)} } else { View{width: 36 height: 1} }
+                                        if i < picked.len() - 1 { IconAct{text: ICON_DOWN on_click: || move_pick(i, 1)} } else { View{width: 36 height: 1} }
+                                        IconAct{text: ICON_REMOVE on_click: || remove_pick(name)}
+                                    }
+                                }
+                                if i < picked.len() - 1 { RowLine{} }
+                            }
+                        }
+                        if merge_pages() != nil { UiCaption{padding: Inset{left: 4} text: "One PDF of " + plural(merge_pages(), "page", "pages") + ", saved in your library."} }
+                        if merge_error != "" { UiCaption{padding: Inset{left: 4} text: merge_error draw_text +: {color: ui_danger}} }
+                    }
+                    if merge_step == 3 && merge_result != nil {
+                        UiCard{align: Align{x: 0.5} padding: 28 spacing: 14
+                            Glyph{text: ICON_DONE draw_text +: {color: GREEN text_style: theme.font_icons{font_size: 36}}}
+                            Label{padding: 0 text: "Merged into one PDF" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 20}}}
+                            Cover{width: 120 height: 156
+                                if optional(cover_src, merge_result.name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, merge_result.name, nil)} }
+                                else { AppIcon{width: 40 height: 40 name: "file-pdf"} }
+                            }
+                            Label{padding: 0 text: merge_result.title draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 16}}}
+                            UiCaption{width: Fit text: doc_meta(merge_result)}
+                        }
+                    }
+            }}
+        }
+        split_box := View{visible: false width: Fill height: Fill
+            split_pane := Pane{on_render: || {
+                View{width: Fill height: 1}
+                if space_full { SpaceAlert{} }
+                if current != nil && split_result == nil {
+                        Segments{
+                            if split_mode == "every" { SegmentOn{text: "Every few pages"} } else { Segment{text: "Every few pages" on_click: || set_split_mode("every")} }
+                            if split_mode == "at" { SegmentOn{text: "Where I choose"} } else { Segment{text: "Where I choose" on_click: || set_split_mode("at")} }
+                        }
+                        if split_mode == "every" {
+                            UiCard{flow: Right align: Align{y: 0.5} spacing: 12
+                                View{width: Fill height: Fit flow: Down spacing: 4
+                                    Head{text: "Pages in each file"}
+                                    UiCaption{text: "The last file takes what is left."}
+                                }
+                                IconAct{text: "\u{f068}" on_click: || set_every(split_every - 1)}
+                                Label{width: 36 padding: 0 align: Align{x: 0.5} text: "" + split_every draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 20}}}
+                                IconAct{text: "\u{f067}" on_click: || set_every(split_every + 1)}
+                            }
+                        }
+                        if split_mode == "at" {
+                            UiCaption{padding: Inset{left: 4} text: "Tap each page that should start a new file. Tap it again to undo."}
+                            for row in rows_of(range_list(page_count()), columns) {
+                                View{width: Fill height: Fit flow: Right spacing: 12
+                                    for p in row {
+                                        GestureView{width: Fill height: Fit flow: Down spacing: 6 align: Align{x: 0.5} on_tap: |x, y| toggle_cut(p)
+                                            if has(split_cuts, p) {
+                                                TileCut{height: tile_h()
+                                                    if thumb_of(p) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: thumb_of(p)} }
+                                                    else { TileLabel{text: "…"} }
+                                                }
+                                                RoundedView{width: Fit height: Fit flow: Right spacing: 6 align: Align{y: 0.5} padding: Inset{left: 9 right: 9 top: 3 bottom: 3} show_bg: true draw_bg +: {color: ui_primary border_radius: 9.0}
+                                                    Glyph{text: ICON_CUT draw_text +: {color: #xffffff text_style: theme.font_icons{font_size: 9}}}
+                                                    Label{padding: 0 text: "File " + (position(split_cuts, p) + 2) + " starts here" draw_text +: {color: #xffffff text_style: theme.font_bold{font_size: 11}}}
+                                                }
+                                            }
+                                            if !has(split_cuts, p) {
+                                                Tile{height: tile_h()
+                                                    if thumb_of(p) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: thumb_of(p)} }
+                                                    else { TileLabel{text: "…"} }
+                                                }
+                                                TileLabel{text: page_label(p)}
+                                            }
+                                        }
+                                    }
+                                    for k in columns - row.len() { View{width: Fill height: 1} }
+                                }
+                            }
+                        }
+                        List{padding: Inset{top: 4 bottom: 4}
+                            View{width: Fill height: Fit padding: Inset{left: 18 right: 18 top: 10 bottom: 4}
+                                Head{text: pick(split_ranges().len() < 2, "Makes no new files yet", "Makes " + split_ranges().len() + " files")}
+                            }
+                            for k r in split_ranges() {
+                                View{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{left: 18 right: 18 top: 8 bottom: 8}
+                                    Label{width: Fill padding: 0 max_lines: 1 text: part_title(k + 1) + ".pdf" draw_text +: {color: ui_ink text_style: theme.font_regular{font_size: 14}}}
+                                    Label{padding: 0 text: range_text(r) draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13}}}
+                                }
+                            }
+                        }
+                        if split_replaces() > 0 { UiCaption{padding: Inset{left: 4} text: "Replaces " + plural(split_replaces(), "file", "files") + " of the same name in your library."} }
+                        if split_error != "" { UiCaption{padding: Inset{left: 4} text: split_error draw_text +: {color: ui_danger}} }
+                }
+                if split_result != nil {
+                        UiCard{align: Align{x: 0.5} padding: 24 spacing: 10
+                            Glyph{text: ICON_DONE draw_text +: {color: GREEN text_style: theme.font_icons{font_size: 36}}}
+                            Label{padding: 0 text: "Split into " + split_result.len() + " files" draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 20}}}
+                            UiCaption{width: Fit text: "They are in your library."}
+                        }
+                        List{
+                            for i f in split_result {
+                                GestureView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 14 padding: Inset{left: 16 right: 14 top: 10 bottom: 10} on_tap: |x, y| { let d = doc_named(f.name) if d != nil { open_doc(d) } }
+                                    Cover{
+                                        if optional(cover_src, f.name, nil) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: optional(cover_src, f.name, nil)} }
+                                        else { AppIcon{width: 26 height: 26 name: "file-pdf"} }
+                                    }
+                                    RowText{name.text: title_of(f.name) meta.text: range_text([f.first, f.last])}
+                                    Glyph{text: ICON_NEXT}
+                                }
+                                if i < split_result.len() - 1 { RowLine{} }
+                            }
+                        }
+                }
+            }}
+        }
+
+        stage_box := View{visible: false width: Fill height: Fill
+            stage := View{width: Fill height: Fill flow: Overlay padding: Inset{left: 12 right: 12} on_render: || {
+                RoundedView{width: Fill height: Fill show_bg: true draw_bg +: {color: ui_field border_radius: 14.0}}
+                GestureView{width: Fill height: Fill align: Align{x: 0.5 y: 0.5} padding: 18
+                    on_swipe: |dx, dy| { if dx < 0 { step_page(1) } else if dx > 0 { step_page(-1) } }
+                    if view_src != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: view_src} }
+                    else if thumb_of(page_no) != nil { Image{width: Fill height: Fill fit: ImageFit.Smallest src: thumb_of(page_no)} }
+                    else { UiCaption{width: Fit text: pick(view_note == "", "Drawing the page…", view_note)} }
+                }
+                if view_src == nil && view_note != "" && thumb_of(page_no) != nil {
+                    View{width: Fill height: Fill align: Align{x: 0.5 y: 1.0} padding: 16
+                        UiCaption{width: Fit text: view_note}
+                    }
+                }
+            }}
+        }
+
+        namebar := View{visible: false width: Fill height: Fit flow: Down spacing: 6 padding: Inset{left: 16 right: 16 top: 4}
+            Label{padding: Inset{left: 4} text: "Name" draw_text +: {color: ui_muted text_style: theme.font_bold{font_size: 13}}}
+            merge_field := UiField{empty_text: "Merged" on_change: |text| set_merge_name(text)}
+            name_note := UiCaption{visible: false text: "" padding: Inset{left: 4}}
+        }
+        bottom := View{width: Fill height: Fit flow: Right spacing: 10 padding: Inset{left: 16 right: 16 top: 8 bottom: 16} align: Align{y: 0.5} on_render: || {
+            View{width: 0 height: 1}
+            if route == "library" && docs.len() >= 2 {
+                if engine_state == "missing" { Muted{text: "Merge PDFs" on_click: || banner(engine_headline())} }
+                else { Primary{text: "Merge PDFs" on_click: || start_merge()} }
+            }
+            if route == "doc" && current != nil && confirm_remove {
+                Quiet{text: "Keep it" on_click: || keep_doc()}
+                Danger{text: "Remove" on_click: || remove_doc()}
+            }
+            if route == "doc" && tab == "pages" && current != nil && !confirm_remove {
+                if info != nil && page_count() >= 2 { Primary{text: "Split into files" on_click: || start_split()} }
+                if engine_state == "missing" { Muted{text: "Split into files" on_click: || banner(engine_headline())} }
+            }
+            if route == "page" {
+                if page_no > 1 { Quiet{text: "Previous" on_click: || step_page(-1)} } else { Muted{text: "Previous"} }
+                if page_no < page_count() { Quiet{text: "Next" on_click: || step_page(1)} } else { Muted{text: "Next"} }
+            }
+            if route == "merge" {
+                if merge_step == 1 {
+                    if picked.len() >= 2 { Primary{text: "Next: order " + picked.len() + " files" on_click: || merge_next()} }
+                    else { Muted{text: pick(picked.len() == 1, "Choose one more", "Choose 2 or more PDFs")} }
+                }
+                if merge_step == 2 {
+                    Quiet{width: Fit text: "Back" on_click: || { merge_step = 1 show(true) }}
+                    if merge_busy { Muted{text: "Merging…"} }
+                    else if engine_state == "missing" { Muted{text: "Merge " + picked.len() + " PDFs" on_click: || banner(engine_headline())} }
+                    else { Primary{text: "Merge " + picked.len() + " PDFs" on_click: || do_merge()} }
+                }
+                if merge_step == 3 && merge_result != nil {
+                    Quiet{text: "Done" on_click: || go_library()}
+                    Primary{text: "Open" on_click: || open_doc(merge_result)}
+                }
+            }
+            if route == "split" && current != nil {
+                if split_result != nil { Primary{text: "Done" on_click: || go_library()} }
+                else if split_busy { Muted{text: "Splitting…"} }
+                else if engine_state == "missing" { Muted{text: "Split" on_click: || banner(engine_headline())} }
+                else if split_ranges().len() < 2 { Muted{text: pick(split_mode == "at", "Tap a page to split there", "Split")} }
+                else { Primary{text: "Split into " + split_ranges().len() + " files" on_click: || do_split()} }
+            }
+        }}
+    }
+    banner := View{visible: false width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 16 right: 16 bottom: 84}
+        RoundedView{width: Fill max_width: 560 height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 16 right: 6 top: 6 bottom: 6}
+            new_batch: true show_bg: true draw_bg +: {color: #x1c1c1eee border_radius: 14.0}
+            banner_text := Label{width: Fill padding: 0 flow: Flow.Right{wrap: true} text: "" draw_text +: {color: #xffffff text_style: theme.font_regular{font_size: 13 line_spacing: 1.35}}}
+            ButtonFlat{height: 44 padding: Inset{left: 12 right: 12} text: "OK" on_click: || banner("")
+                draw_bg +: {color: #x00000000 color_focus: #x00000000 color_hover: #xffffff22 color_down: #xffffff33 border_size: 0.0}
+                draw_text +: {color: #x64d2ff color_focus: #x64d2ff color_hover: #x64d2ff color_down: #x64d2ff text_style: theme.font_bold{font_size: 13}}}
+        }
+    }
+}

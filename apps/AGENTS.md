@@ -72,7 +72,10 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `apps/effect/host-service` and `cargo test --locked -p octosense-effect-service`.
   The vector engine's (vectorcraft behind `vector.*`, same ADR, no bundle yet):
   `apps/vector/host-service` and `cargo test --locked -p octosense-vector-service`.
-  The pdf engine's (pdfcraft behind `pdf.*`, same ADR, no bundle yet):
+  The pdf engine's (pdfcraft behind `pdf.*`, same ADR; PDF Tools,
+  `apps/pdftools/bundle`, is its app, tested end to end in a hidden desktop
+  shell by `apps/pdftools/tests/ui.py` on the sample PDFs its
+  `pdftools_fixture` example writes, see `apps/pdftools/README.md`):
   `apps/pdf/host-service` and `cargo test --locked -p octosense-pdf-service`.
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object

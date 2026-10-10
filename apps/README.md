@@ -11,7 +11,7 @@ the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube and Quick Deck** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube, Quick Deck and PDF Tools** are *contained script apps*. Each is
   a Makepad Script/Splash program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under the permissions admitted from its `manifest.json`. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
@@ -92,7 +92,7 @@ OctoSense repository into the same workspace, then run this from your App Flow c
 
 ### Shared appearance
 
-News, Photos, Mail, Calendar, Maps, AI providers and YouTube share the interface
+News, Photos, Mail, Calendar, Maps, AI providers, YouTube and PDF Tools share the interface
 in [`interface.splash`](interface.splash): theme-aware page/card/field surfaces,
 readable secondary text, 44-point actions and 48-point inputs. Desktop content
 has a maximum width; narrow windows keep the same actions. Camera and media
@@ -132,6 +132,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage`, `deck` | none | [`deck`](deck/host-service): `new`, `info`, `render`, `convert`, in Quick Deck's own storage |
+| [PDF Tools](pdftools/bundle) | `os.pdftools` (desktop) | The PDFs in its own storage: a library with each first page, a document view with page thumbnails, text with find, and info; a page view; merge in three steps (choose, order, done) and split every few pages or where you choose; open a PDF from the device (up to 64 MiB) and remove one. See [its README](pdftools/README.md), with the hidden-shell journey that tests it | `storage`, `files`, `pdf` | none | the [`pdf`](pdf/host-service) engine service in the app's own storage: `pdf.info`, `pdf.render`, `pdf.text`, `pdf.merge`, `pdf.split`; the shell's `files.status` and `files.import` |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -296,7 +297,8 @@ mail/host-service/           octosense-mail-service, the `mail` host service (Ru
 mail/docs/                   Mail's plans (the email action card)
 calendar/host-service/       octosense-calendar-service, the `calendar` host service; resources/event.card, agenda.card
 news/host-service/           octosense-news-service, the `news` host service (News's data service)
-pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013; no bundle yet)
+pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013); examples/pdftools_fixture.rs writes PDF Tools' sample PDFs for its tests
+pdftools/                    PDF Tools: bundle/, tests/ui.py (its hidden-shell journey), README.md
 <name>/bundle/tools.json     app tools: News, Mail, Calendar, Photos, Maps, YouTube, Camera
 <family>/host-service/tools.json  the craft engines' tools (word, deck, cad, light, sound, design, film, effect, vector, pdf), the system agent's (ADR 0013)
 ../crates/shell/src/glance_notice.rs   shared notice service; ../crates/shell/resources/glance/notice.card

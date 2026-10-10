@@ -10,6 +10,7 @@
     "ai-providers",
     "youtube",
     "quickdeck",
+    "pdftools",
     "wasmlab"
   ],
   "assets": {}

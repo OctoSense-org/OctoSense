@@ -10,7 +10,7 @@
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 
-- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers、YouTube 和 Quick Deck**
+- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers、YouTube、Quick Deck 和 PDF Tools**
   是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 Makepad Script/Splash
   程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限由其
   `manifest.json` 经过准入后确定，与商店应用受到的隔离完全相同。它们同时也是
@@ -76,7 +76,7 @@ OctoSense-System-Apps 仓库（已归档）。
 
 ### 共用外观
 
-新闻、相册、邮件、日历、地图、AI providers 和 YouTube 共用
+新闻、相册、邮件、日历、地图、AI providers、YouTube 和 PDF Tools 共用
 [`interface.splash`](interface.splash)：页面、卡片和输入框跟随主题，
 辅助文字保持可读，操作按钮高 44 点，输入框高 48 点。桌面内容限制最大宽度，
 窄窗口保留相同操作。相机和媒体查看器保留深色观看背景。应用大厅的原生模块
@@ -109,6 +109,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
 | [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`、`deck` | 无 | [`deck`](deck/host-service)：`new`、`info`、`render`、`convert`，在 Quick Deck 自己的存储中运行 |
+| [PDF Tools](pdftools/bundle) | `os.pdftools`（桌面） | 管理自己存储中的 PDF：带首页预览的资料库，带页面缩略图、可查找的文字和信息的文档视图；单页视图；三步合并（选择、排序、完成），以及按固定页数或在指定页面处拆分；从设备打开 PDF（最大 64 MiB）和移除 PDF。见[它的 README](pdftools/README.zh-CN.md)，其中介绍了测试它的隐藏 Shell 流程 | `storage`、`files`、`pdf` | 无 | 在应用自己的存储中工作的 [`pdf`](pdf/host-service) 引擎服务：`pdf.info`、`pdf.render`、`pdf.text`、`pdf.merge`、`pdf.split`；Shell 的 `files.status` 和 `files.import` |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -233,7 +234,8 @@ mail/host-service/           octosense-mail-service，`mail` 宿主服务（Rust
 mail/docs/                   邮件的计划（邮件操作卡片）
 calendar/host-service/       octosense-calendar-service，`calendar` 宿主服务；resources/event.card、agenda.card
 news/host-service/           octosense-news-service，`news` 宿主服务（新闻的数据服务）
-pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013；尚无应用包）
+pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013）；examples/pdftools_fixture.rs 为 PDF Tools 的测试写出示例 PDF
+pdftools/                    PDF Tools：bundle/、tests/ui.py（在隐藏的 Shell 中运行的流程）、README.md
 <name>/bundle/tools.json     新闻、邮件、日历、相册、地图、YouTube、相机的 Agent 工具
 <family>/host-service/tools.json  craft 引擎（word、deck、cad、light、sound、design、film、effect、vector、pdf）的工具，供系统 Agent 使用（ADR 0013）
 ../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card

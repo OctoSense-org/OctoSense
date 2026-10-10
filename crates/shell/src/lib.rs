@@ -72,6 +72,8 @@ mod module_resize_tests;
 #[cfg(test)]
 mod maps_model_tests;
 #[cfg(test)]
+mod pdftools_model_tests;
+#[cfg(test)]
 mod system_app_theme_tests;
 pub mod module_view;
 pub mod native_apps;
