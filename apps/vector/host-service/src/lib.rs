@@ -110,6 +110,8 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     }
     let area = areas.area(call, "vector").map_err(|e| format!("vector: {e}"))?;
     dispatch_in(call.method(), &call.args, &area)
+        .map(|answer| area.relative_json(answer))
+        .map_err(|error| area.relative_text(&error))
 }
 
 fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {

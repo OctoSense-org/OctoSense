@@ -100,8 +100,10 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     if !may_call(&call.app_id) {
         return Err("The film service serves system apps only.".into());
     }
-    let area = areas.area(call, "film").map_err(|e| format!("film: {e}"))?;
-    dispatch_in(call.method(), &call.args, Arc::new(area))
+    let area = Arc::new(areas.area(call, "film").map_err(|e| format!("film: {e}"))?);
+    dispatch_in(call.method(), &call.args, area.clone())
+        .map(|answer| area.relative_json(answer))
+        .map_err(|error| area.relative_text(&error))
 }
 
 fn dispatch_in(method: &str, args: &Json, area: Arc<Area>) -> Result<Json, String> {

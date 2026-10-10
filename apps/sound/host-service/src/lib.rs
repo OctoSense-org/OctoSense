@@ -91,6 +91,8 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
     }
     let area = areas.area(call, "sound").map_err(|e| format!("sound: {e}"))?;
     dispatch_in(call.method(), &call.args, &area)
+        .map(|answer| area.relative_json(answer))
+        .map_err(|error| area.relative_text(&error))
 }
 
 /// A caller path resolved inside the area: relative, normal components
