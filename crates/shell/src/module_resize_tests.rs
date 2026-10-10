@@ -301,6 +301,45 @@ fn permission_dialog_pause_and_resume_leave_a_new_video_ready_for_its_first_sour
     assert!(!preview.is_playing());
 }
 
+/// #406: the OS pause and resume reach a contained app's Video through its
+/// tile. The resume starts again the start the pause cancelled, unless the
+/// app paused the player from its own script while the OS held it.
+#[test]
+fn os_resume_restores_a_hosted_video_unless_its_app_paused_it_meanwhile() {
+    let (mut cx, tile, root, outer) = hosted_card();
+    set_card_body(&mut cx, &root, outer, r#"
+mod.answers = []
+fn app_pause() { mod.answers.push(ui.clip.pause_playback()) }
+View{width: Fill height: Fill clip := Video{width: Fill height: 180 autoplay: false show_controls: false}}
+"#);
+    widget_tree::set_ui_root(&mut cx, &root);
+    let clip = root.video(&cx, ids!(clip));
+    // Bytes pass no network or storage policy, and this Cx has no platform
+    // loop: the native prepare stays queued, so nothing decodes or plays.
+    clip.set_source_in_memory(std::rc::Rc::new(vec![0; 16]));
+    let os = |cx: &mut Cx, event: Event| tile.handle_event(cx, &event, &mut Scope::empty());
+    clip.begin_playback(&mut cx);
+    assert!(clip.is_preparing());
+    os(&mut cx, Event::Pause);
+    assert!(clip.is_unprepared(), "the pause cancels a start the native player would finish on its own");
+    os(&mut cx, Event::Resume);
+    assert!(clip.is_preparing(), "the resume starts it again");
+    os(&mut cx, Event::Pause);
+    let card = root.splash(&cx, ids!(card));
+    assert!(with_isolate(&mut cx, outer, |cx| card.call_script_fn(cx, id!(app_pause), &[])));
+    // ui.* calls wait for the widget task pump, as after a real host callback.
+    makepad_widgets::makepad_platform::makepad_script_std::handle_script_tasks(&mut cx);
+    os(&mut cx, Event::Resume);
+    assert!(clip.is_unprepared(), "the app's pause outlasts the resume");
+    let source = card.borrow().unwrap().view.source.clone();
+    let owner = cx.script_ref_vm_id(&source).unwrap();
+    let answers = cx.with_script_vm_id_trusted(owner, |vm| {
+        let value = script_eval!(vm, {mod.answers.to_json()});
+        vm.bx.heap.string_with(value, |_, value| value.to_string()).unwrap()
+    });
+    assert_eq!(answers, "[true]", "the script's pause is accepted, though the player was not playing");
+}
+
 fn draw_card(cx: &mut Cx, tile: &WidgetRef, width: f64, height: f64) {
     let size = dvec2(width, height);
     let pass = DrawPass::new(cx);

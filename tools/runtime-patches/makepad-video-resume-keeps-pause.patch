@@ -1,0 +1,164 @@
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index a210a63ed..c98678f92 100644
+--- a/widgets/src/video.rs
++++ b/widgets/src/video.rs
+@@ -590,6 +590,8 @@ pub struct Video {
+     playback_state: PlaybackState,
+     #[rust]
+     native_lifetime: Option<Rc<()>>,
++    /// An OS pause held this player's playback or cancelled its start; the
++    /// OS resume gives it back (`handle_activity_events`).
+     #[rust]
+     resume_on_activity: bool,
+     #[rust]
+@@ -1823,23 +1825,49 @@ fn handle_key_seek(&mut self, cx: &mut Cx, ke: &KeyEvent) {
+         }
+     }
+ 
++    /// An OS pause holds playback and its resume gives back what it held: a
++    /// playing player plays on, and a start the pause cancelled starts again.
++    /// A player paused by the person stays paused, and so does one the app
++    /// paused or stopped while the OS held it (`script_control`).
+     fn handle_activity_events(&mut self, cx: &mut Cx, event: &Event) {
+         match event {
+             Event::Pause => {
+-                let was_playing = self.resume_on_activity || self.playback_state == PlaybackState::Playing;
++                // A start is cancelled, not held: a native player prepared
++                // with autoplay would start on its own once ready.
++                let starting = self.autoplay
++                    && (self.playback_state == PlaybackState::Preparing
++                        || self.should_prepare_playback)
++                    && self.restartable_after_activity();
++                let was_playing = self.resume_on_activity
++                    || self.playback_state == PlaybackState::Playing
++                    || starting;
+                 self.pause_playback(cx);
+                 self.resume_on_activity = was_playing;
+             }
+             Event::Resume => {
+-                if self.resume_on_activity {
+-                    self.resume_on_activity = false;
+-                    self.resume_playback(cx);
++                if std::mem::take(&mut self.resume_on_activity) {
++                    match self.playback_state {
++                        PlaybackState::Paused => self.resume_playback(cx),
++                        PlaybackState::Unprepared if self.restartable_after_activity() => {
++                            self.begin_playback(cx)
++                        }
++                        _ => {}
++                    }
+                 }
+             }
+             _ => (),
+         }
+     }
+ 
++    /// Whether an OS resume may start again what its pause cancelled. Not a
++    /// camera: CameraPreview restarts it after its own checks. Not an app's
++    /// frame session: the first prepare consumed it.
++    fn restartable_after_activity(&self) -> bool {
++        self.camera_preview_source.is_none()
++            && !self.has_session_source
++            && !matches!(self.source, VideoDataSource::Camera { .. })
++    }
++
+     fn handle_errors(&mut self, cx: &mut Cx, event: &Event) {
+         if let Event::VideoDecodingError(event) = event {
+             if event.video_id == self.id {
+@@ -1893,7 +1921,8 @@ fn script_control(&mut self, cx: &mut Cx, method: LiveId) -> Option<bool> {
+                 self.stop_and_cleanup_resources(cx);
+                 true
+             } else {
+-                false
++                // Held by an OS pause: the app's pause outlasts the resume.
++                std::mem::take(&mut self.resume_on_activity)
+             }
+         } else if method == live_id!(resume_playback) {
+             if self.playback_state == PlaybackState::Paused {
+@@ -1906,8 +1935,11 @@ fn script_control(&mut self, cx: &mut Cx, method: LiveId) -> Option<bool> {
+             let active = self.playback_state != PlaybackState::CleaningUp
+                 && (self.playback_state != PlaybackState::Unprepared
+                     || self.should_prepare_playback || self.native_lifetime.is_some());
++            // A start an OS pause cancelled is not active, but the resume
++            // would start it again.
++            let held = std::mem::take(&mut self.resume_on_activity);
+             if active { self.stop_and_cleanup_resources(cx); }
+-            active
++            active || held
+         } else if method == live_id!(mute_playback) {
+             let changed = !self.mute;
+             if changed { self.mute = true; self.mute_playback(cx); }
+@@ -2642,6 +2674,73 @@ fn activity_resume_preserves_manual_pause_and_does_not_repeat() {
+         assert_eq!(video.playback_state, PlaybackState::Paused);
+     }
+ 
++    #[test]
++    fn activity_resume_keeps_an_app_pause_made_while_the_os_held_playback() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        video.playback_state = PlaybackState::Playing;
++        video.handle_activity_events(&mut cx, &Event::Pause);
++        assert_eq!(video.playback_state, PlaybackState::Paused);
++        // The app's Splash pause (a timer, an agent) while the OS holds the
++        // player: accepted once, though the player is already paused.
++        assert_eq!(video.script_control(&mut cx, live_id!(pause_playback)), Some(true));
++        assert_eq!(video.script_control(&mut cx, live_id!(pause_playback)), Some(false));
++        video.handle_activity_events(&mut cx, &Event::Resume);
++        assert_eq!(video.playback_state, PlaybackState::Paused);
++    }
++
++    #[test]
++    fn activity_resume_starts_again_what_the_pause_cancelled_unless_the_app_said_otherwise() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* Video{autoplay: false}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut video = widget.borrow_mut::<Video>().unwrap();
++        // No policy applies to bytes, and this Cx has no platform loop to
++        // hand the queued native prepare to.
++        video.set_source_in_memory(Rc::new(vec![0; 16]));
++        for app in [None, Some(live_id!(pause_playback)), Some(live_id!(stop_and_cleanup_resources))] {
++            video.begin_playback(&mut cx);
++            assert_eq!(video.playback_state, PlaybackState::Preparing);
++            let cancelled = video.id;
++            // A player prepared with autoplay would start on its own, so the
++            // pause cancels the start rather than holding it.
++            video.handle_activity_events(&mut cx, &Event::Pause);
++            assert_eq!(video.playback_state, PlaybackState::Unprepared);
++            assert!(!VIDEO_PLAYERS.with(|players| players.borrow().contains_key(&cancelled)));
++            if let Some(method) = app {
++                assert_eq!(video.script_control(&mut cx, method), Some(true));
++            }
++            video.handle_activity_events(&mut cx, &Event::Resume);
++            if app.is_some() {
++                assert_eq!(video.playback_state, PlaybackState::Unprepared);
++                assert!(!video.autoplay);
++                continue;
++            }
++            assert_eq!(video.playback_state, PlaybackState::Preparing);
++            assert!(video.autoplay);
++            assert_ne!(video.id, cancelled);
++            assert!(VIDEO_PLAYERS.with(|players| players.borrow().contains_key(&video.id)));
++            video.stop_and_cleanup_resources(&mut cx);
++        }
++        // A camera's start is CameraPreview's to make again, after its checks.
++        video.in_memory_source = None;
++        video.source = VideoDataSource::Camera { input_id: LiveId(1), format_id: LiveId(2) };
++        video.playback_state = PlaybackState::Preparing;
++        video.autoplay = true;
++        video.handle_activity_events(&mut cx, &Event::Pause);
++        video.handle_activity_events(&mut cx, &Event::Resume);
++        assert_eq!(video.playback_state, PlaybackState::Unprepared);
++        assert!(!video.autoplay && video.last_error.is_none());
++    }
++
+     #[test]
+     fn explicit_prepared_play_can_pause_and_reapplies_mute_on_restart() {
+         let mut cx = Cx::new(Box::new(|_, _| {}));
