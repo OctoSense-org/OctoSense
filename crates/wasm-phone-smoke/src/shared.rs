@@ -200,8 +200,8 @@ impl Acceptance {
         std::fs::create_dir_all(&settings.jail_root).map_err(|e| e.to_string())?;
         let assets = AssetServer::start_with_static(bundle, &[])?;
         settings.hosts.push(assets.allowlist_entry());
-        let source = octosense_app_policy::script_source(bundle, assets.origin())?
-            .ok_or("Consumer has no script")?;
+        let source = octosense_app_policy::script_source(bundle, assets.origin())
+            .ok_or("Consumer has no script")??;
         octosense_app_policy::splash_adapter::apply(&self.card, cx, &settings);
         octosense_appstore::apply_device_consent(cx, bundle, &self.card)?;
         self.card.set_text(cx, &source);

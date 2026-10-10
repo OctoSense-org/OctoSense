@@ -1803,8 +1803,8 @@ mod tests {
     /// the registries are process-wide): they answer with typed JSON under
     /// either spelling of their names; one instance keeps its state between
     /// calls until a trap spends it; and its files are the app's own
-    /// storage, under what is left of its quota, and absent without the
-    /// storage capability.
+    /// storage, under what is left of its quota, and absent when the host
+    /// supplies no storage area.
     /// A shared component the app pins (App Hub ADR 0003, ADR 0014 phase 4)
     /// loads beside the app's own functions, here none: its functions answer
     /// as `<alias>.<function>`, from an instance of the app's own, and
@@ -1949,8 +1949,8 @@ mod tests {
         let bundle = root.join("bundle");
         std::fs::create_dir_all(bundle.join("fns")).unwrap();
         std::fs::copy(NOTES_COMPONENT, bundle.join("fns/notes.wasm")).unwrap();
-        // The apps' storage as the shell keeps it: a 4 KiB ceiling for one,
-        // no storage capability for the other.
+        // Explicit host fixtures: a 4 KiB storage ceiling for one app,
+        // no storage area for the other. These are not manifest grants.
         let storage = crate::app_storage::Storage::with_file_secrets(
             crate::app_storage::Layout::new(&root.join("home")).unwrap(),
         );
@@ -2095,7 +2095,7 @@ mod tests {
         assert_eq!(described["modules"][0]["storage_left"], 0);
         assert_eq!(described["modules"][0]["instances"], 2);
 
-        // Without the storage capability, no folder at all.
+        // Without a host-provided storage area, no folder at all.
         let mut plain = Lab::from_bundle(PLAIN, runtime, admission, || Ok(())).unwrap();
         let (_, plain_reply) = pending_reply(PLAIN, &host_dir);
         let error = plain
@@ -2116,7 +2116,7 @@ mod tests {
     /// as a system app that requires `wasm-components-v1` (App Hub's
     /// admission reads the component's imports), its functions answer the
     /// app's script with typed JSON, its instance keeps its state from one
-    /// request to the next, and without `storage` it has no folder.
+    /// request to the next, and without a host storage area it has no folder.
     #[test]
     fn a_shipped_component_answers_its_apps_script() {
         const CHILD: &str = "OCTOSENSE_TEST_WASM_SHIPPED_COMPONENT";
