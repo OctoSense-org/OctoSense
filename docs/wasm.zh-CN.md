@@ -110,7 +110,7 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
   并验证共享组件的精确版本、摘要和发布证明。省略 `wasm`、`storage` 或 `net` 不导致准入拒绝。
   为商店披露准确保留这些声明；运行时仍在加载时校验代码。规则见
   App Hub 的[发布参考](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md)
-  （`functions` 检查项和 `wasm` 能力）。
+  （`functions` 检查项、所需 ABI 及 `wasm` 用途披露）。
 - **系统应用。** 和其他系统应用一样，按摘要从打包方式的系统应用列表打包进外壳。
   `desktop/system-apps-wasm-lab.json` 和 `phone/system-apps-wasm-lab.json` 就是标准
   列表加上 `wasmlab`。
@@ -351,4 +351,5 @@ getrandom 0.2 和 0.3、uuid、fs2、ring 以及 aws-lc-sys 都无法为该目�
 - [ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)：`photo` 及其他 craft
   服务背后的引擎。
 - App Hub 的[发布参考](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md)：
-  `wasm` 能力、`functions` 检查项和 `wasm.<function>` 工具。
+  `wasm` 用途披露、所需 ABI、`functions` 检查项和 `wasm.<function>` 工具。
+  当前 1.11 策略不以匹配的能力族声明作为公共调用准入或执行的条件。

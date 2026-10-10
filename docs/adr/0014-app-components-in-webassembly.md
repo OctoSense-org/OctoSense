@@ -108,9 +108,9 @@ component reaches only what its app may already reach.
    - **`octosense:host`, phase 3:** `request(service, args)` reaches the host
      services as the app's script's `host.request` does, dispatched on the UI
      thread and, since makepad#118 (OctoSense #450), not checked against the
-     families the manifest declares (a service that needs a grant checks it
-     itself), but with no sheet and no prompt (only methods a background
-     surface may call), and never `wasm.*`.
+     families the manifest declares. Each service retains its actual
+     app/account, consent, review and resource checks. Calls gain no sheet or
+     prompt (only methods a background surface may call), and never `wasm.*`.
    - **Never:** `wasi:sockets`, and any import outside these packages. A
      component that asks for one is refused when it loads
      (`LoadError::Import`) and by App Hub's gate.
@@ -166,8 +166,10 @@ component reaches only what its app may already reach.
 - **The shell's dependency graph grows.** It gains `wasmtime-wasi` 49.0.2
   (`p2` only) and the `component-model` feature. Both are linked wherever
   `wasm-host` already is (feature `wasm-functions`).
-- **A component reaches only what its app could already reach:** its own
-  storage folder (with `storage`), and in phase 3 its declared hosts. Clocks
+- **A component uses its app's resources and identity:** its available,
+  quota-bounded private storage folder, outbound HTTP and available host services
+  under the app/account and background-call checks. `storage`, `net` and
+  `network.hosts` disclose use; omitting them does not deny execution. Clocks
   and randomness are new to Wasm but available to every script.
 - **Persistent instances use memory for longer.** The per-app worker cap
   (`MAX_WORKERS`) and the memory cap bound it, and idle workers exit as today.

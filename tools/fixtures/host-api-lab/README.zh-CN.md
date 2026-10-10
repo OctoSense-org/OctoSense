@@ -53,20 +53,20 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 - 工具的异步宿主回调不能打开权限面板。
 - 能发现文件状态、导入、导出和定位采样 API；二进制存储被标明为运行时 ABI，而不是可通过 `host.request` 调用的方法。
 - 真实的隔离 VM 用 `fs.write_bytes` / `fs.read_bytes` 往返读写字节 `0、127、128、255`，随后删除自己的临时文件。
-- 文件状态返回存储授权和字节上限；后台导入、导出在原生界面打开前被拒绝。
-- 未获得应用授权时，定位采样返回运行时授权检查的确切 `authorization_required` 错误。它的 API 描述也必须标明仅限前台调用。
+- 文件状态返回应用的有界存储可用性和字节上限；后台导入、导出在原生界面打开前被拒绝。
+- 来自工具后台回调的定位采样返回确切的 `location.sample is unavailable to agents/background surfaces` 拒绝错误。它的 API 描述也必须标明仅限前台调用。
 - 账户不对、工具未声明或输入无效的调用都会遭到拒绝。
 - 持有工具的应用关闭后，调用以 `app_not_running` 失败。
 
 工具会在宿主回调中刻意调用 `camera.permission.request`；这个回调保留了工具的后台来源，以此证明 App Hub 会拒绝这次申请。测试示例中没有任何环节能批准权限。应用身份、应用授权和系统权限是独立的检查。能力声明描述预期用途，不授权设备访问。这台 Mac 可能早已授予 OctoSense 摄像头权限，但全新的测试配置目录仍必须报告 `app_consent: false`。
 
-原生定位检查证明的是**没有应用授权时拒绝调用**，调用尚未到达宿主的前台限制检查。独立的 `platform_services::tests::location_sampling_broker_lifecycle` 回归测试会在隔离的测试存储中建立应用授权，再通过真实的服务代理发起后台采样请求。它要求返回确切的后台拒绝错误，而且没有排队请求、权限检查、授权审阅或正在运行的定位采样。该回归测试后续使用模拟权限结果检查生命周期，并不证明实际批准了权限或获得了真实定位。
+当前原生定位检查证明宿主保留回调的后台来源，并在启动原生工作之前拒绝采样。为兼容原有记录，回执键仍为 `location_without_consent_refused`，但断言现在要求上述确切的后台拒绝错误；早先的 `authorization_required` 结果属于下文的历史回执。独立的 `platform_services::tests::location_sampling_broker_lifecycle` 回归测试会在隔离测试存储中建立应用授权，并仍要求该后台拒绝错误，而且没有排队请求、权限检查、授权审阅或正在运行的定位采样。该回归测试后续使用模拟权限结果检查生命周期；两种检查均不证明实际批准了权限或获得了真实定位。
 
 0.4 的 release 模式 Mac 运行在源码 `53bab40f`、运行时 `fc938badf` 上通过 **30/30 项具名 OS 和公共服务检查**，以及签名工具完成、实时 UI 更新和原生按钮操作。三张原生截图均已审视，两个测试宿主进程均正常退出。[Mac 回执](evidence/public-api-v0.4/macos.json)用源码、运行时和二进制摘要绑定结果。[OnePlus 6 运行](evidence/public-api-v0.4/oneplus6.json)在 **Android 15 上通过 44/44 项检查**，APK 使用生产源码 `13e3b21a` 和相同运行时；构建期间的 `53bab40f` 改动仅影响测试代码，不包含在该 APK 中。完成后已强制停止独立测试包。
 
 单独的[回归回执](evidence/public-api-v0.4/regression.json)记录 `53bab40f` 上 **1,051/1,051 项共享 Shell 测试通过，失败和忽略项均为零**，同时通过三个打包检查（桌面默认／mobile、Home mobile）及原生测试应用构建。这些回执不验证之后的 Android Video Java 改动，也不验证真实账户或硬件操作。SDK 1.10.0 已发布；[宿主分发状态](../../../docs/host-os-api-status.zh-CN.md)单独记录。这些历史回执不验证最终 Desktop RC2 发行包，也不会更新已发布的 Home beta.1。
 
-[早先批次记录](evidence/os-api-batch1/receipt.json)记录源码 `807f2bc8` 的十项 OS 检查；`evidence/android/` 保留原始 14 项手机记录。这些历史结果不能验证当前源码。当前测试将“未声明即拒绝”改为麦克风状态可读、应用尚未授权、后台录音精确拒绝；这些语义需要新的验收回执。
+[早先批次记录](evidence/os-api-batch1/receipt.json)记录源码 `807f2bc8` 的十项 OS 检查；`evidence/android/` 保留原始 14 项手机记录。这些历史结果不能验证当前源码。当前测试将“未声明即拒绝”改为麦克风状态可读、应用尚未授权、后台录音与定位精确拒绝；这些语义需要新的验收回执。
 
 **此前已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
 

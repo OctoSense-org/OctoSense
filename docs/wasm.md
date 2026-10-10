@@ -149,7 +149,7 @@ yet, so installing an app that pins one and calling it in a shell is
   store disclosure; the runtime still validates code when it loads.
   The rules are in App Hub's
   [publishing reference](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md)
-  (the `functions` finding and the `wasm` capability).
+  (the `functions` finding, required ABIs and `wasm` usage disclosure).
 - **A system app.** It is packed into the shell like any other, by digest,
   from the packaging's system-app list. `desktop/system-apps-wasm-lab.json`
   and `phone/system-apps-wasm-lab.json` are the standard lists plus `wasmlab`.
@@ -454,4 +454,6 @@ source there. Treat these paths as unmaintained.
 - [ADR 0013](adr/0013-craft-engines-as-pinned-services.md): the engines behind
   `photo` and the other craft services.
 - App Hub's [publishing reference](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md):
-  the `wasm` capability, the `functions` finding and `wasm.<function>` tools.
+  `wasm` usage disclosure, required ABIs, the `functions` finding and
+  `wasm.<function>` tools. Current 1.11 policy does not require a matching
+  capability-family declaration to admit or execute a public call.
