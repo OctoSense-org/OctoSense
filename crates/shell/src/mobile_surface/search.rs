@@ -113,6 +113,7 @@ impl PhoneSurface {
             cx.hide_text_ime();
         }
         phone.search_focused = false;
+        phone.search_focus_requested = false;
         self.search_focus_pending = false;
         self.search_pointer = false;
         self.search_press = None;
@@ -128,12 +129,13 @@ impl PhoneSurface {
         input.set_text(cx, "");
         phone.search_query.clear();
         phone.search_scroll = 0.0;
-        self.focus_search(cx, phone);
+        phone.search_focus_requested = true;
     }
 
     pub fn focus_search(&mut self, cx: &mut Cx, phone: &mut PhoneState) {
         // A pull-down can be the editor's first appearance. Take focus again
         // after its first draw, when it has a real area for the native IME.
+        phone.search_focus_requested = false;
         self.search_focus_pending = true;
         self.search.text_input(cx, ids!(input)).take_key_focus(cx);
         phone.search_focused = true;
@@ -229,6 +231,9 @@ impl PhoneSurface {
         if phone.search_query != query {
             phone.search_query = query;
             phone.search_scroll = 0.0;
+            phone.search_velocity = 0.0;
+            phone.search_stretch = 0.0;
+            phone.search_stretch_velocity = 0.0;
         }
         consumed
     }
@@ -241,7 +246,7 @@ impl PhoneSurface {
         ink: Vec4f,
     ) -> Rect {
         let ios = state.style.target == DesktopStyle::Ios;
-        let editing = state.phone.searching();
+        let editing = state.phone.searching() || state.phone.search_reveal > 0.0;
         // At the bottom, just above the keyboard, as in iOS's search: the
         // field sits where the thumb already is. A native IME has reflowed
         // the viewport above itself; only the shell's own soft keyboard (a
@@ -249,10 +254,10 @@ impl PhoneSurface {
         let bottom = screen.pos.y + screen.size.y
             - state.phone.keyboard.max(state.phone.keyboard_target)
             - state.phone.search_keyboard_lift(crate::host::now())
-            - if state.phone.search_focused { 10.0 } else { 34.0 };
+            - if editing { 10.0 } else { 34.0 };
         let pill = rect(
             screen.pos.x + 20.0,
-            bottom - 40.0,
+            bottom - 40.0 + (1.0-state.phone.search_reveal.clamp(0.0,1.0))*64.0,
             screen.size.x - 40.0 - if editing { 64.0 } else { 0.0 },
             40.0,
         );

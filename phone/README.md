@@ -209,6 +209,8 @@ does not establish that integration.
 
 ## Gestures
 
+Home paging carries finger velocity into its settling spring. Search and Glance lists progressively resist pulling beyond an edge and rebound after release. A cancelled Home search pull retracts; a committed pull finishes opening before the keyboard takes focus. Reduced motion skips decorative settling while keeping direct dragging and in-bounds inertia. The shared Rust motion model has been exercised on a OnePlus 6 in a separate `dev.makepad.octosense.fluidtest` build; this is gesture validation, not a claim of hitch-free presentation on every device.
+
 | Where | Gesture | Does |
 |---|---|---|
 | Home page, middle | pull down | Search, with its input focused and keyboard ready |
