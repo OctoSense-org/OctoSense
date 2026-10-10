@@ -305,7 +305,7 @@ impl Acceptance {
             check(
                 "real_host_dispatch",
                 results["host_call"]["is_ok"] == true
-                    && descriptor["method"] == "runtime.describe"
+                    && descriptor["descriptor"]["name"] == "runtime.describe"
                     && descriptor["implemented"] == true,
             )?;
             let names = results["functions"]["data"]["functions"].as_array();
