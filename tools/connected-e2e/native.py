@@ -15,14 +15,14 @@ SELECT_ALL = {'cmd': 1} if sys.platform == 'darwin' else {'ctrl': 1}
 
 
 class Native:
-    def __init__(self, binary, arguments, evidence, name):
+    def __init__(self, binary, arguments, evidence, name, *, env=None, cwd=None):
         self.evidence = Path(evidence)
         self.name = name
         self.log_path = self.evidence / (name + '.log')
         self.log = self.log_path.open('w')
         self.child = subprocess.Popen([str(binary), *arguments, '--remote'],
-                                     env={**os.environ, 'MAKEPAD_HIDE_WINDOWS': '1'},
-                                     stdout=self.log, stderr=self.log)
+                                     env={**(os.environ if env is None else env), 'MAKEPAD_HIDE_WINDOWS': '1'},
+                                     cwd=cwd, stdout=self.log, stderr=self.log)
         self.endpoint = None
         self.actions = []
         deadline = time.monotonic() + 25
