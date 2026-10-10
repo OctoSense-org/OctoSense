@@ -149,7 +149,7 @@ component reaches only what its app may already reach.
 | --- | --- |
 | 1. Runtime spike (done here) | `crates/wasm-host::component`: load, check imports, list exports with WIT signatures, long-lived instances, JSON calls, the WASI subset above with the storage preopen, the deadline, the memory cap and logs. Tests run an unmodified crate (`pulldown-cmark`) built with plain cargo, and refuse a component that imports `wasi:sockets`. |
 | 2. Usable by developers | The shell's `wasm` service: loading components from `fns/`, `wasm.<function>` calls, per-app instances, the app's available storage area, and storage quota accounting for component writes. A larger input limit for components. The guest SDK and its macro; `octo wasm new/build/doctor`; App Hub's gate check and contract version; docs and an example app. |
-| 3. Reach and platforms | `wasi:http` outgoing to any host (declared with `net`, not enforced); an `octosense:host` import for host services under the same checks as `host.request`; compiling at install time, so a phone skips the first compile; Pulley (Wasmtime's interpreter) on iOS and, until its JIT policy is known, OpenHarmony; Windows once its CI runs the runtime's tests. |
+| 3. Reach and platforms | `wasi:http` outgoing to any host (declared with `net`, not enforced); an `octosense:host` import for host services under the same checks as `host.request`; compiling at install time, so a phone skips the first compile; Pulley (Wasmtime's interpreter) on OpenHarmony until its JIT policy is known; Windows runtime tests in CI. iOS remains outside the current plan. |
 | 4. Shared components | Reviewed, versioned components in App Hub's catalog that apps depend on, like npm packages. The installer verifies them, and every app still gets its own instance, account and storage boundaries. |
 
 ## Alternatives considered
@@ -221,5 +221,5 @@ Settled in phase 3: a component never calls a host service that opens a
 sheet or asks the person; such a call belongs to the script.
 
 - Async functions (WASI 0.3) and streaming bodies: after phase 3.
-- iOS: a Home build with the service in Pulley; the Rust target is not
-  installed on the build machine yet.
+- iOS is outside the current plan. Any later proposal needs a separate Home
+  build and device acceptance; Pulley tests do not establish iOS support.

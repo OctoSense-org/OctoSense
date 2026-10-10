@@ -103,7 +103,7 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 | --- | --- |
 | 1. 运行时验证原型（本 PR） | `crates/wasm-host::component`：加载、检查导入、列出导出及其 WIT 签名、长期存活的实例、JSON 调用、上述 WASI 子集与存储预打开、超时、内存上限和日志。测试运行一个用普通 cargo 构建的、未作修改的 crate（`pulldown-cmark`），并拒绝导入 `wasi:sockets` 的组件。 |
 | 2. 开发者可用 | shell 的 `wasm` 服务：从 `fns/` 加载组件、`wasm.<function>` 调用、按应用的实例、应用可用的存储目录，以及组件写入的存储配额计量。提高组件的输入上限。guest SDK 及其宏；`octo wasm new/build/doctor`；App Hub 闸门检查与合约版本；文档与示例应用。 |
-| 3. 访问能力与平台 | 可访问任何主机的 `wasi:http` 出站（以 `net` 声明，不在运行时强制）；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；iOS 使用 Pulley（Wasmtime 的解释器），OpenHarmony 在其 JIT 策略明确前也使用 Pulley；Windows 待其 CI 运行运行时测试后开启。 |
+| 3. 访问能力与平台 | 可访问任何主机的 `wasi:http` 出站（以 `net` 声明，不在运行时强制）；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；OpenHarmony 在其 JIT 策略明确前使用 Pulley（Wasmtime 的解释器）；Windows 运行时测试在 CI 中运行。iOS 不在当前计划内。 |
 | 4. 共享组件 | App Hub 目录中经过审核、带版本的组件，应用可以像 npm 包一样依赖它们。安装器负责校验，每个应用仍有自己的实例、账户和存储边界。 |
 
 ## 考虑过的替代方案
@@ -162,4 +162,4 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 第 3 阶段已定：组件绝不调用会打开面板或询问用户的宿主服务，这类调用属于脚本。
 
 - 异步函数（WASI 0.3）和流式内容：第 3 阶段之后。
-- iOS：在 Pulley 中带这个服务构建 Home；构建机器上还没有安装 Rust 的 iOS 目标。
+- iOS 不在当前计划内。任何后续支持方案都需要独立的 Home 构建与设备验收；Pulley 的测试结果不能证明 iOS 可用。
