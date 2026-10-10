@@ -105,11 +105,13 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   type or a path; `file` commands that write get a staging path inside the
   storage only; `doc_open` and `form_fill` (`code`) run with JavaScript off,
   proven by `doc_tests::a_forms_own_scripts_never_run`. Caps: 24–300 dpi and
-  16 MP a render, `find` ≤ 500 matches, 512 pages a call, and a render cache
-  in `.cache/pages/` of 16 MiB and 64 files (an app's storage holds at most
-  256 entries for its own writes), oldest first, cleared before a write
-  would fail with `storage_full:`. Errors start with a stable code
-  (`src/codes.rs`).
+  16 MP a render, `find` ≤ 500 matches, 512 pages a call, an image export
+  ≤ 64 pages and 256 MP in all (checked before anything is written), and a
+  render cache in `.cache/pages/` of 16 MiB and 64 files (an app's storage
+  holds at most 256 entries for its own writes), oldest first, cleared
+  before a write would fail with `storage_full:`. `pdf.fields` marks
+  read-only fields, and `pdf.fill` refuses one. Errors start with a stable
+  code (`src/codes.rs`).
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.

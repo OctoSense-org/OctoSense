@@ -120,7 +120,8 @@ fn assemble(objs: &[String]) -> Vec<u8> {
 /// `a` has a keystroke and a format script that write `note`; `total` has
 /// a calculate script (and is in the calculation order); `v` has a
 /// validate script that refuses every value; a document script writes
-/// `note`, and so does the document's open action.
+/// `note`, and so does the document's open action. Field `locked` is
+/// read-only.
 fn scripted_form() -> Vec<u8> {
     let widget = |name: &str, value: &str, y: u32, actions: &str| {
         format!("<< /Type /Annot /Subtype /Widget /FT /Tx /T ({name}) /V ({value}) /Rect [20 {y} 180 {}] /P 3 0 R /F 4 /DA (/Helv 10 Tf 0 g){actions} >>", y + 20)
@@ -129,9 +130,9 @@ fn scripted_form() -> Vec<u8> {
     let page = "BT /Helv 12 Tf 20 280 Td (A scripted form) Tj ET";
     let objs = [
         // 1 catalog, 2 pages, 3 page
-        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R 6 0 R 7 0 R] /CO [5 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 8 0 R >> >> >> /OpenAction 9 0 R /Names << /JavaScript 15 0 R >> >>".to_string(),
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R 5 0 R 6 0 R 7 0 R 17 0 R] /CO [5 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 8 0 R >> >> >> /OpenAction 9 0 R /Names << /JavaScript 15 0 R >> >>".to_string(),
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /Helv 8 0 R >> >> /Annots [4 0 R 5 0 R 6 0 R 7 0 R] /Contents 16 0 R >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /Helv 8 0 R >> >> /Annots [4 0 R 5 0 R 6 0 R 7 0 R 17 0 R] /Contents 16 0 R >>".to_string(),
         // 4–7 the fields
         widget("a", "1", 240, " /AA << /K 10 0 R /F 11 0 R >>"),
         widget("total", "untouched", 200, " /AA << /C 12 0 R >>"),
@@ -149,7 +150,17 @@ fn scripted_form() -> Vec<u8> {
         // 15 the document scripts' name tree, 16 the page's content
         "<< /Names [(setup) 14 0 R] >>".to_string(),
         format!("<< /Length {} >>\nstream\n{page}\nendstream", page.len()),
+        // 17 a read-only field (/Ff bit 1)
+        widget("locked", "fixed", 80, " /Ff 1"),
     ];
+    assemble(&objs)
+}
+
+/// A PDF of blank pages, one of each size in points.
+fn blank_pages(sizes: &[(f64, f64)]) -> Vec<u8> {
+    let kids: Vec<String> = (0..sizes.len()).map(|i| format!("{} 0 R", i + 3)).collect();
+    let mut objs = vec!["<< /Type /Catalog /Pages 2 0 R >>".to_string(), format!("<< /Type /Pages /Kids [{}] /Count {} >>", kids.join(" "), sizes.len())];
+    objs.extend(sizes.iter().map(|(w, h)| format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {w} {h}] >>")));
     assemble(&objs)
 }
 
@@ -490,6 +501,31 @@ fn fields_fill_and_fill_and_sign() {
     coded(&w.err("fill_sign", json!({"doc": lease, "page": 1, "kind": "check"})), "invalid");
 }
 
+/// `pdf.fields` marks a read-only field, and `pdf.fill` refuses one as
+/// `invalid:` before the engine sees the call: nothing of it is filled.
+#[test]
+fn read_only_fields_are_marked_and_never_filled() {
+    let w = World::new();
+    w.put("form.pdf", &scripted_form());
+    let doc = w.open("form.pdf");
+    let fields = w.ok("fields", json!({"doc": doc}));
+    let read_only = |name: &str| fields["fields"].as_array().unwrap().iter().find(|f| f["name"] == name).unwrap_or_else(|| panic!("no field {name}: {fields}"))["read_only"].clone();
+    assert_eq!(read_only("locked"), json!(true), "{fields}");
+    for name in ["a", "total", "v", "note"] {
+        assert_eq!(read_only(name), json!(false), "{name}: {fields}");
+    }
+    let e = w.err("fill", json!({"doc": doc, "values": {"locked": "changed"}}));
+    coded(&e, "invalid");
+    assert!(e.contains("\"locked\" is read-only"), "{e}");
+    let e = w.err("fill", json!({"doc": doc, "values": {"a": "9", "locked": "changed"}}));
+    coded(&e, "invalid");
+    assert!(e.contains("nothing was filled"), "{e}");
+    let fields = w.ok("fields", json!({"doc": doc}));
+    assert_eq!((value(&fields, "a"), value(&fields, "locked")), (json!("1"), json!("fixed")), "the whole call was refused");
+    assert_eq!(w.ok("state", json!({"doc": doc})), json!({"edited": false, "can_undo": false, "can_redo": false, "pages": 1}));
+    assert_eq!(w.ok("fill", json!({"doc": doc, "values": {"a": "9"}})), json!({"filled": 1}), "the fields beside it still fill");
+}
+
 /// `doc_open` and `form_fill` are `code`: with JavaScript on, the engine
 /// runs a form's scripts. Every service session has it off, so a form's
 /// own scripts never run: the keystroke, format, calculate and refusing
@@ -710,6 +746,59 @@ fn exports_and_merges_with_ranges() {
     coded(&w.err("merge", json!({"paths": [{"path": "Field guide.pdf", "pages": "1; rm"}, "Board minutes.pdf"], "out": "m3.pdf"})), "invalid");
     coded(&w.err("merge", json!({"paths": [{"path": "Field guide.pdf", "range": "1"}, "Board minutes.pdf"], "out": "m3.pdf"})), "invalid");
     assert!(no_staging_left(&w.root));
+}
+
+/// An image export takes at most 64 pages and 256 megapixels in all, each
+/// page at most 16: at each cap it writes, one over it is `too_large:`
+/// before anything is written.
+#[test]
+fn image_exports_take_64_pages_and_256_megapixels() {
+    let w = World::new();
+    w.put("many.pdf", &blank_pages(&[(200.0, 100.0); 65]));
+    let many = w.open("many.pdf");
+    let images = |doc: &Json, out_dir: &str, dpi: u32, pages: Option<Vec<u64>>| {
+        let mut args = json!({"doc": doc, "kind": "images", "out_dir": out_dir, "dpi": dpi});
+        if let Some(pages) = pages {
+            args["pages"] = json!(pages);
+        }
+        args
+    };
+    let many = json!(many);
+    // 65 pages, one over the page cap: every page, or 65 named.
+    let e = w.err("export", images(&many, "every", 24, None));
+    coded(&e, "too_large");
+    assert!(e.contains("65 pages") && e.contains("64"), "{e}");
+    let e = w.err("export", images(&many, "named", 24, Some((1..=65).collect())));
+    coded(&e, "too_large");
+    let e = w.err("export", images(&many, "repeated", 24, Some(vec![1; 65])));
+    coded(&e, "too_large");
+    assert!(!w.root.join("every").exists() && !w.root.join("named").exists() && !w.root.join("repeated").exists() && no_staging_left(&w.root));
+    // 64, at the cap.
+    let out = w.ok("export", images(&many, "sixty-four", 24, Some((1..=64).collect())));
+    assert_eq!(out["paths"].as_array().unwrap().len(), 64);
+    assert_eq!(std::fs::read_dir(w.root.join("sixty-four")).unwrap().count(), 64);
+
+    // At 72 dpi a page of 4000 × 4000 pt is 16,000,000 pixels: 16 of them
+    // are 256 MP, at the cap; with the 1-pt page after them, one pixel over.
+    // A page of 4001 × 4000 pt is over the 16 MP of one page.
+    let mut sizes = vec![(4000.0, 4000.0); 16];
+    sizes.push((1.0, 1.0));
+    sizes.push((4001.0, 4000.0));
+    w.put("posters.pdf", &blank_pages(&sizes));
+    let posters = json!(w.open("posters.pdf"));
+    let e = w.err("export", images(&posters, "over", 72, Some((1..=17).collect())));
+    coded(&e, "too_large");
+    assert!(e.contains("megapixels") && e.contains("256"), "{e}");
+    let e = w.err("export", images(&posters, "one too big", 72, Some(vec![18])));
+    coded(&e, "too_large");
+    assert!(e.contains("16 megapixels"), "{e}");
+    assert!(!w.root.join("over").exists() && !w.root.join("one too big").exists() && no_staging_left(&w.root));
+    let out = w.ok("export", images(&posters, "at the cap", 72, Some((1..=16).collect())));
+    let paths = out["paths"].as_array().unwrap();
+    assert_eq!(paths.len(), 16);
+    for p in paths {
+        assert!(std::fs::read(w.root.join(p.as_str().unwrap())).unwrap().starts_with(b"\x89PNG"), "{p}");
+    }
 }
 
 #[test]

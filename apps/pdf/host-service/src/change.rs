@@ -19,8 +19,10 @@
 //!   storage, and never over an existing file except the one write
 //!   SERVICE.md allows, an incremental save over the document's own file.
 //!   `page_extract` gets no `delete`, `separate`, `out_dir` or `open`;
-//!   `doc_export_images` gets no format but PNG; `doc_save` gets `full`
-//!   as the service decides.
+//!   `doc_export_images` gets no format but PNG, at most
+//!   [`MAX_EXPORT_PAGES`] pages and [`MAX_EXPORT_PIXELS`] in all, each page
+//!   at most 16 megapixels, all checked before anything is written;
+//!   `doc_save` gets `full` as the service decides.
 
 use std::path::{Path, PathBuf};
 
@@ -38,6 +40,12 @@ use crate::Ctx;
 /// default, the engine's.
 const EXPORT_DPI: (u32, u32) = (24, 300);
 const EXPORT_DEFAULT_DPI: u32 = 150;
+/// The most pages one image export writes: each is a file, and an app's
+/// storage holds at most 256 entries for its own writes.
+pub(crate) const MAX_EXPORT_PAGES: usize = 64;
+/// The most pixels one image export renders in all (256 megapixels): the
+/// engine renders on the shell's UI thread until #399.
+pub(crate) const MAX_EXPORT_PIXELS: u64 = 256_000_000;
 /// The longest text an edit types.
 const MAX_EDIT: usize = 10_000;
 
@@ -244,9 +252,24 @@ pub(crate) fn export(a: &Json, cx: &Ctx) -> Result<Json, String> {
             let pages = args::opt_pages(a, "pages", M)?;
             let dir = crate::contained(&area, out_dir, "out_dir", M)?;
             docs::with_doc(a, cx, M, |doc| {
-                let pages = all_pages(doc, pages, M)?;
+                // Every cap before anything is written: the pages, each
+                // page's pixels, and the pixels of the whole call.
+                let pages = all_pages(doc, pages, MAX_EXPORT_PAGES, M)?;
+                let mut pixels: u64 = 0;
                 for &p in &pages {
-                    reading::check_pixels(doc.size(p)?, dpi, p)?;
+                    let (w, h) = reading::check_pixels(doc.size(p)?, dpi, p)?;
+                    pixels = pixels.saturating_add(w * h);
+                }
+                if pixels > MAX_EXPORT_PIXELS {
+                    return Err(fail(
+                        Code::TooLarge,
+                        format!(
+                            "{M}: {} pages at {dpi} dpi are {:.1} megapixels, more than the {} megapixels one export renders: export fewer pages, or at a lower dpi",
+                            pages.len(),
+                            pixels as f64 / 1_000_000.0,
+                            MAX_EXPORT_PIXELS / 1_000_000
+                        ),
+                    ));
                 }
                 let stage = area.stage().map_err(codes::area)?;
                 let staging = crate::staged(&area, &stage, "")?;
@@ -264,7 +287,7 @@ pub(crate) fn export(a: &Json, cx: &Ctx) -> Result<Json, String> {
             let dest = crate::out_path(&area, out, "out", M)?;
             let name = file_name(out, M)?;
             docs::with_doc(a, cx, M, |doc| {
-                let pages = all_pages(doc, pages, M)?;
+                let pages = all_pages(doc, pages, args::MAX_PAGES, M)?;
                 let stage = area.stage().map_err(codes::area)?;
                 let staged = crate::staged(&area, &stage, &name)?;
                 doc.call("doc_export_text", json!({ "path": staged, "pages": pages })).map_err(|e| codes::refused(&e))?;
@@ -276,13 +299,14 @@ pub(crate) fn export(a: &Json, cx: &Ctx) -> Result<Json, String> {
     }
 }
 
-/// The pages an export names, or every page of a document of at most
-/// [`args::MAX_PAGES`].
-fn all_pages(doc: &OpenDoc, pages: Option<Vec<u64>>, m: &str) -> Result<Vec<u64>, String> {
+/// The pages an export names, at most `max`, or every page of a document
+/// of at most `max`.
+fn all_pages(doc: &OpenDoc, pages: Option<Vec<u64>>, max: usize, m: &str) -> Result<Vec<u64>, String> {
     match pages {
-        Some(pages) => Ok(pages),
-        None if doc.sizes.len() <= args::MAX_PAGES => Ok((1..=doc.sizes.len() as u64).collect()),
-        None => Err(fail(Code::TooLarge, format!("{m}: the document has {} pages; pass `pages` (at most {} per call)", doc.sizes.len(), args::MAX_PAGES))),
+        Some(pages) if pages.len() <= max => Ok(pages),
+        Some(pages) => Err(fail(Code::TooLarge, format!("{m}: this names {} pages, and one call takes at most {max}", pages.len()))),
+        None if doc.sizes.len() <= max => Ok((1..=doc.sizes.len() as u64).collect()),
+        None => Err(fail(Code::TooLarge, format!("{m}: the document has {} pages; pass `pages` (at most {max} per call)", doc.sizes.len()))),
     }
 }
 

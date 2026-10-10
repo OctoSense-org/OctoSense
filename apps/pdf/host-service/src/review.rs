@@ -352,6 +352,7 @@ pub(crate) fn fields(a: &Json, cx: &Ctx) -> Result<Json, String> {
                     "type": f["type"],
                     "value": f["value"],
                     "required": f["required"] == true,
+                    "read_only": f["read_only"] == true,
                     "page": f["page"],
                     "rect": xywh(&f["rect"]),
                     "options": options,
@@ -362,7 +363,9 @@ pub(crate) fn fields(a: &Json, cx: &Ctx) -> Result<Json, String> {
     })
 }
 
-/// `pdf.fill {doc, values}`: one undo step, no script runs (module doc).
+/// `pdf.fill {doc, values}`: one undo step, no script runs (module doc). A
+/// read-only field refuses the whole call before the engine sees it, so
+/// nothing of it is filled.
 pub(crate) fn fill(a: &Json, cx: &Ctx) -> Result<Json, String> {
     const M: &str = "pdf.fill";
     args::only(a, &["doc", "values"], M)?;
@@ -382,6 +385,16 @@ pub(crate) fn fill(a: &Json, cx: &Ctx) -> Result<Json, String> {
         }
     }
     docs::with_doc(a, cx, M, |doc| {
+        let listed = doc.call("form_fields", json!({})).map_err(|e| codes::refused(&e))?;
+        let locked: Vec<String> = values
+            .keys()
+            .filter(|name| listed["fields"].as_array().into_iter().flatten().any(|f| f["name"] == name.as_str() && f["read_only"] == true))
+            .map(|name| format!("{name:?}"))
+            .collect();
+        if !locked.is_empty() {
+            let verb = if locked.len() == 1 { "is" } else { "are" };
+            return Err(invalid(format!("{M}: {} {verb} read-only, so nothing was filled", locked.join(", "))));
+        }
         let out = doc.call("form_fill", json!({ "values": values })).map_err(|e| codes::refused(&e))?;
         doc.changed();
         Ok(json!({ "filled": out["filled"].as_u64().unwrap_or(values.len() as u64) }))
