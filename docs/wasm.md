@@ -328,6 +328,30 @@ The test components rebuild byte for byte: with rustc 1.97.1,
 and Home includes the service, and `tools/check-shell-graph.sh` checks that
 its runtime is linked exactly on macOS, Linux and Android.
 
+### Calling a function from the command line
+
+`crates/wasm-host/examples/wasm_call.rs` calls one function of a `.wasm`
+file with the same runtime and limits as the `wasm` service, with no shell
+and no device. Run from this repository:
+
+```sh
+cargo run -q -p octosense-wasm-host --example wasm_call -- \
+    crates/wasm-host/tests/fixtures/notes.component.wasm to-html '"# Hi"'
+```
+
+It prints `"<h1>Hi</h1>\n"`. For a component, the arguments are the JSON a
+script passes to `wasm.<function>`: a bare value for one parameter, an object
+by name, or an array in order. The answer prints as JSON, and a record prints
+as an object. For a core module, the arguments are the function's input as
+text: `wasm_call apps/wasmlab/bundle/fns/wasmlab.wasm md_to_html '# Hello *core*'`
+prints `<h1>Hello <em>core</em></h1>`.
+
+`--storage DIR` gives a component `DIR` as its app's storage folder. Its
+`wasi:http` requests go out as in the shell. Its `octosense:host` calls fail
+with `no host services in wasm_call: <service> needs a shell`. Each call runs
+in a fresh instance, where the shell keeps a component's instance between
+calls.
+
 ### Phone acceptance
 
 [`tools/fixtures/wasm-phone-lab`](../tools/fixtures/wasm-phone-lab/README.md)

@@ -2330,7 +2330,7 @@ mod tests {
             answer,
             json!({"app": "org.example.hostcalls", "method": "get", "args": {"id": 1}, "may_prompt": false})
         );
-        // A family with no service here: the dispatcher says so.
+        // Use a unique family: parallel shell tests may register real services.
         let error = call("wasmhostmissing.get", "{}").unwrap_err();
         assert!(error.contains(r#"no service answers "wasmhostmissing""#), "{error}");
         let error = call("wasm.functions", "{}").unwrap_err();
