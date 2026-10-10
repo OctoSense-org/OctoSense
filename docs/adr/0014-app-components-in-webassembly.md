@@ -2,7 +2,8 @@
 
 English | [简体中文](0014-app-components-in-webassembly.zh-CN.md)
 
-Status: Accepted (9 Oct 2026, "do 1 2 3 4"); phases 1 to 3 merged on
+Status: Accepted; implementation and release acceptance are tracked separately.
+Phases 1 to 3 merged on
 10 Oct 2026 in OctoSense (#436, #451), App Hub (#186, #188, #189, #190) and
 App Flow (#180, #181). Phase 1, the runtime spike, is in
 `crates/wasm-host` (`src/component.rs`, `tests/component.rs`). Phase 2's
@@ -16,8 +17,11 @@ App Hub #190 (shared components in the catalog, the gate and the store), and
 OctoSense's is the `wasm` service loading an app's pinned shared components
 (`wasm_service::shared_components`). App Flow's parts are the SDK and
 `tools/octo wasm`; iOS is not planned for now. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
-core modules keep working as they do. How WebAssembly runs on `main`:
-[WebAssembly in OctoSense](../wasm.md).
+core modules keep working. Desktop rc.2 ships core modules only. Shared-component
+publishing, installation and device execution need their own acceptance receipts;
+a merged implementation does not establish them. Current behavior:
+[WebAssembly in OctoSense](../wasm.md) and
+[capabilities and execution boundaries](../capabilities.md).
 
 ## Context
 
@@ -74,15 +78,15 @@ component reaches only what its app may already reach.
    A worker holding one waits a minute for the next call, not five seconds. A
    trap or a deadline spends the instance; the next call gets a fresh one. An
    update, a grant change or a withdrawal discards it, as for modules.
-4. **WASI scoped to the app's grants.**
+4. **WASI scoped to the app's resources and account.**
    - **Always:** `wasi:clocks`, `wasi:random`, `wasi:io` and `wasi:cli`.
      stdout and stderr become the app's log lines (bounded). The environment,
      arguments and stdin are empty.
-   - **`wasi:filesystem`:** only with the app's `storage` capability (and a
-     signed-in account, for an app with accounts), decided per call by the
-     rules an engine's folder follows. Its storage folder is preopened as `/`,
-     read-write, and nothing else of the host's filesystem is visible. Without
-     the capability there are no preopens.
+   - **`wasi:filesystem`:** the app's available storage area, with its active
+     account for an account-scoped app, decided per call by the rules an
+     engine's folder follows. Its storage folder is preopened as `/`,
+     read-write, and nothing else of the host's filesystem is visible. No
+     available area means no preopen. `storage` is a disclosure declaration.
    - **The storage quota, per write.** A call may add what is left of the
      app's quota when it starts. The runtime replaces the WASI calls that
      grow a file (`write`, `set-size`, and the streams `write-via-stream` and
@@ -128,8 +132,8 @@ component reaches only what its app may already reach.
 6. **Admission sees what a component reaches.** App Hub's gate reads each
    component's imports:
    - it refuses any outside the allowed set;
-   - it requires `storage` for `wasi:filesystem` and `net` for `wasi:http`,
-     so that the install sheet shows them;
+   - it records filesystem, HTTP and host imports for disclosure; it does not
+     require a matching capability declaration as execution permission;
    - it tells reviewers what the component reaches, for example "files in its
      app folder; the network".
    Components need a new app contract version.
@@ -139,9 +143,9 @@ component reaches only what its app may already reach.
 | Phase | Scope |
 | --- | --- |
 | 1. Runtime spike (done here) | `crates/wasm-host::component`: load, check imports, list exports with WIT signatures, long-lived instances, JSON calls, the WASI subset above with the storage preopen, the deadline, the memory cap and logs. Tests run an unmodified crate (`pulldown-cmark`) built with plain cargo, and refuse a component that imports `wasi:sockets`. |
-| 2. Usable by developers | The shell's `wasm` service: loading components from `fns/`, `wasm.<function>` calls, per-app instances, the storage grant from the manifest, and storage quota accounting for component writes. A larger input limit for components. The guest SDK and its macro; `octo wasm new/build/doctor`; App Hub's gate check and contract version; docs and an example app. |
+| 2. Usable by developers | The shell's `wasm` service: loading components from `fns/`, `wasm.<function>` calls, per-app instances, the app's available storage area, and storage quota accounting for component writes. A larger input limit for components. The guest SDK and its macro; `octo wasm new/build/doctor`; App Hub's gate check and contract version; docs and an example app. |
 | 3. Reach and platforms | `wasi:http` outgoing to any host (declared with `net`, not enforced); an `octosense:host` import for host services under the same checks as `host.request`; compiling at install time, so a phone skips the first compile; Pulley (Wasmtime's interpreter) on iOS and, until its JIT policy is known, OpenHarmony; Windows once its CI runs the runtime's tests. |
-| 4. Shared components | Reviewed, versioned components in App Hub's catalog that apps depend on, like npm packages. The installer verifies them, and every app still gets its own instance and grants. |
+| 4. Shared components | Reviewed, versioned components in App Hub's catalog that apps depend on, like npm packages. The installer verifies them, and every app still gets its own instance, account and storage boundaries. |
 
 ## Alternatives considered
 
