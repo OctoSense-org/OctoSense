@@ -34,6 +34,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod cache;
 pub mod component;
 
 use sha2::{Digest, Sha256};
@@ -154,6 +155,7 @@ pub struct Runtime {
     engine: Engine,
     limits: Limits,
     cache_dir: Option<PathBuf>,
+    cache_readers: Arc<cache::Readers>,
     ticker: Arc<Ticker>,
 }
 
@@ -230,6 +232,7 @@ impl Runtime {
             engine,
             limits,
             cache_dir,
+            cache_readers: cache::Readers::shared(),
             ticker,
         })
     }
@@ -257,18 +260,21 @@ impl Runtime {
         }
         let cached = self.cache_path(bytes);
         let mut from_cache = false;
-        let module = match cached.as_ref().and_then(|path| std::fs::read(path).ok()) {
+        let module = match self.read_cache(cached.as_ref()) {
             // SAFETY: the cache holds only what `Module::serialize` wrote for
             // this engine (the key includes its compatibility hash), in a
             // directory that belongs to the shell.
-            Some(code) => match unsafe { Module::deserialize(&self.engine, &code) } {
-                Ok(module) => {
-                    from_cache = true;
-                    module
+            cache::ReadResult::Hit(code) => {
+                match unsafe { Module::deserialize(&self.engine, &code) } {
+                    Ok(module) => {
+                        from_cache = true;
+                        module
+                    }
+                    Err(_) => self.compile(bytes, cached.as_ref())?,
                 }
-                Err(_) => self.compile(bytes, cached.as_ref())?,
-            },
-            None => self.compile(bytes, cached.as_ref())?,
+            }
+            cache::ReadResult::Missing => self.compile(bytes, cached.as_ref())?,
+            cache::ReadResult::Unavailable => self.compile(bytes, None)?,
         };
         let functions = check(&module)?;
         Ok(Program {
@@ -283,9 +289,6 @@ impl Runtime {
     /// that its first call loads from the cache instead of waiting for
     /// Cranelift (ADR 0014 phase 3). Without a cache it only checks.
     pub fn precompile(&self, bytes: &[u8]) -> Result<bool, LoadError> {
-        if self.cache_path(bytes).is_some_and(|path| path.is_file()) {
-            return Ok(false);
-        }
         if component::is_component(bytes) {
             self.load_component(bytes)
                 .map(|program| !program.from_cache())
@@ -309,44 +312,41 @@ impl Runtime {
 
     /// Writes compiled code to the cache atomically.
     fn publish_cache(&self, path: &PathBuf, code: &[u8]) {
-        {
-            {
-                // Different apps may compile identical bytes concurrently.
-                // Never truncate another worker's staging file: deserialization
-                // is only safe for complete, unmodified serialized modules.
-                static NEXT_CACHE_WRITE: AtomicU64 = AtomicU64::new(0);
-                let tmp = path.with_extension(format!(
-                    "{}-{}.tmp",
-                    std::process::id(),
-                    NEXT_CACHE_WRITE.fetch_add(1, Ordering::Relaxed)
-                ));
-                let published = (|| -> std::io::Result<()> {
-                    let mut file = std::fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(&tmp)?;
-                    file.write_all(code)?;
-                    drop(file);
-                    std::fs::rename(&tmp, path)
-                })();
-                if published.is_ok() {
-                    // Read it back off this thread: an on-access scanner
-                    // (Microsoft Defender's, on a managed Mac) holds the
-                    // first open of a new file for about a second, so let
-                    // that happen now rather than at the next load.
-                    let path = path.clone();
-                    let _ = std::thread::Builder::new()
-                        .name("wasm-cache".into())
-                        .spawn(move || drop(std::fs::read(path)));
-                }
-                let _ = std::fs::remove_file(tmp);
-            }
+        let Some(dir) = path.parent() else { return };
+        if std::fs::create_dir_all(dir).is_err() {
+            return;
+        }
+        // Different apps may compile identical bytes concurrently. Never
+        // truncate another worker's staging file: deserialization is safe
+        // only for complete, unmodified serialized modules.
+        static NEXT_CACHE_WRITE: AtomicU64 = AtomicU64::new(0);
+        let tmp = path.with_extension(format!(
+            "{}-{}.tmp",
+            std::process::id(),
+            NEXT_CACHE_WRITE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = (|| -> std::io::Result<()> {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&tmp)?;
+            file.write_all(code)?;
+            drop(file);
+            std::fs::rename(&tmp, path)
+        })();
+        // No detached warm-up reads: every cache read shares the bounded gate.
+        let _ = std::fs::remove_file(tmp);
+    }
+
+    fn read_cache(&self, path: Option<&PathBuf>) -> cache::ReadResult {
+        match path {
+            Some(path) => self.cache_readers.read(path.clone()),
+            None => cache::ReadResult::Unavailable,
         }
     }
 
     fn cache_path(&self, bytes: &[u8]) -> Option<PathBuf> {
         let dir = self.cache_dir.as_ref()?;
-        std::fs::create_dir_all(dir).ok()?;
         let mut engine = std::collections::hash_map::DefaultHasher::new();
         self.engine
             .precompile_compatibility_hash()
