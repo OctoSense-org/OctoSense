@@ -231,15 +231,19 @@ class Journey:
 
     def grab(self, name, note, settle=0.4):
         time.sleep(settle)
+        reply = None
         for attempt in range(12):
+            # A hidden window can miss a present (an error, or a reply with no
+            # picture); ask again.
             try:
                 reply = self.remote.get("/g")
-                break
             except RuntimeError:
-                # A hidden window can miss a present; ask again.
-                if attempt == 11:
-                    raise
-                time.sleep(0.3)
+                reply = None
+            if isinstance(reply, dict) and "png" in reply:
+                break
+            if attempt == 11:
+                raise RuntimeError(f"/g gave no picture: {reply}")
+            time.sleep(0.4)
         png = reply["png"]
         shutil.copy(png[0] if isinstance(png, list) else png, self.out / f"{name}.png")
         self.steps.append({"run": self.run_name, "grab": f"{name}.png", "note": note,
