@@ -362,7 +362,7 @@ Agent 的 `ask_user_question` 出现在这一轮的来处：用户和应用自�
 | [`crates/l0-chat/`](crates/l0-chat/README.zh-CN.md) | L0 卡片卡内对话（`sys.chat`）的宿主一侧，package `octosense-l0-chat`。 |
 | [`crates/toolbox/`](crates/toolbox/README.md) | 系统工具箱，package `octosense-toolbox`：工作流模板和 `mod.research`，在 `toolbox-peers` 特性下提供给应用 Agent。 |
 | [`crates/wasm-host/`](docs/wasm.zh-CN.md) | 应用自带 WebAssembly 函数的运行时，package `octosense-wasm-host`：Wasmtime 加 Cranelift、沙箱及其限制。Shell 的 `wasm` 服务在 macOS、Linux 和 Android 上运行它。 |
-| [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、日历、AI providers、YouTube、Quick Deck），均为脚本应用；它们的宿主服务（`mail`、`calendar`、`news`、`llm`）；`apps/reference`；以及需显式启用的 AppCard 助手。 |
+| [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、日历、AI providers、YouTube、Quick Deck、PDF Tools、Writer），均为脚本应用；它们的宿主服务（`mail`、`calendar`、`news`、`llm`）；`apps/reference`；以及需显式启用的 AppCard 助手。 |
 | [`native-apps.json`](native-apps.json) | 所有原生应用：代码来自哪里、在各平台上如何托管，以及它的 Agent。`tools/native_apps.py` 据此生成 Shell 的代码和 Cargo 条目。 |
 | `tools/` | `setup.py`（锁定版本的框架源码）、经审查的 Makepad 运行时补丁（`runtime-patches/`）、`kernel-artifact.py`（构建 octos 内核）、`check-shell-graph.sh`（依赖图检查）。 |
 | [`docs/`](docs/architecture.zh-CN.md) | 架构说明、代码导读和[架构决策记录](docs/adr/README.zh-CN.md)。 |

@@ -49,7 +49,9 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   `apps/sheets/host-service` and `cargo test --locked -p octosense-sheets-service`.
   The photo engine's (photocraft behind `photo.*`, same ADR, no bundle yet):
   `apps/photo/host-service` and `cargo test --locked -p octosense-photo-service`.
-  The word engine's (wordcraft behind `word.*`, same ADR, no bundle yet):
+  The word engine's (wordcraft behind `word.*`, same ADR; its app is Writer,
+  `apps/writer/bundle`, desktop only, whose own `word.*` calls work in its
+  storage; its tests are in apps/README.md):
   `apps/word/host-service` and `cargo test --locked -p octosense-word-service`.
   The deck engine's (deckcraft behind `deck.*`, same ADR; its app is Quick
   Deck, `apps/quickdeck/bundle`, desktop only, whose own `deck.*` calls work
