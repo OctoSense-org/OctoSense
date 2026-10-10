@@ -91,7 +91,7 @@ octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19" }
 octosense-appcard = { path = "apps/appcard/module" }
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8c86a4b9a26b3eed3eb5e39bcb9e10f4a044194a" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "80a64b4557aaba71f7c826c5dc69721c21c0f0fc" }
 makepad-calculator = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
 makepad-clock = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
 makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d653bc4493619ab979ccff165cf48c0c63b77d19", default-features = false }
@@ -131,12 +131,12 @@ makepad-d3 = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", 
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8c86a4b9a26b3eed3eb5e39bcb9e10f4a044194a" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "80a64b4557aaba71f7c826c5dc69721c21c0f0fc" }
 # The app policy (resolution, isolate settings, the Splash adapter) and the
 # Hub client the Card runner resolves an app's policy with; the shell's
 # glance tiles run cards under it (crates/shell/src/glance_card.rs).
-octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8c86a4b9a26b3eed3eb5e39bcb9e10f4a044194a" }
-octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8c86a4b9a26b3eed3eb5e39bcb9e10f4a044194a" }
+octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "80a64b4557aaba71f7c826c5dc69721c21c0f0fc" }
+octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "80a64b4557aaba71f7c826c5dc69721c21c0f0fc" }
 # The app contract (ADR 0005), from crates.io by version: App Hub, the shell
 # and Rinx all depend on `octosense-app-contract = "1"`, so Cargo links ONE
 # 1.x for the whole build (Cargo.lock pins the exact version OctoSense ships)
@@ -439,7 +439,7 @@ ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 # -i octos-core` still sees one octos source.
 [patch.crates-io]
 # Keep the contract identical to the pinned SDK for this release candidate.
-octosense-app-contract = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8c86a4b9a26b3eed3eb5e39bcb9e10f4a044194a" }
+octosense-app-contract = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "80a64b4557aaba71f7c826c5dc69721c21c0f0fc" }
 nix = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8" }
 
 # pdfcraft's bootstrap PDF stack: its workspace patches these five
