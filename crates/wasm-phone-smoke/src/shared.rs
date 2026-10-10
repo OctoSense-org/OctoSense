@@ -78,6 +78,9 @@ impl Acceptance {
         }
         let root = config.home.join("apps");
         std::fs::create_dir(&config.home).map_err(|e| e.to_string())?;
+        // The cache lock lives beside catalog-v2.json, before installation
+        // creates any app directories. Keep the entire store in this fresh home.
+        std::fs::create_dir(&root).map_err(|e| e.to_string())?;
         // All process-wide paths are redirected before any storage service is
         // initialized. Existing user profiles and native app homes are unused.
         std::env::set_var("OCTOSENSE_HOME", &config.home);
