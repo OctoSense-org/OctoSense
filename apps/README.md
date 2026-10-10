@@ -11,7 +11,7 @@ the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail, Calendar, AI providers and YouTube** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube and Quick Deck** are *contained script apps*. Each is
   a Makepad Script/Splash program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under the permissions admitted from its `manifest.json`. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
@@ -38,7 +38,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   speech, embedding and asynchronous video requests. Apps declare `model` and
   exact host API versions; provider entitlement is checked when used. See the
   [media contract and validation limits](ai-providers/host-service/MEDIA.md).
-- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder; no bundle yet.
+- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder. Its app is Quick Deck (`quickdeck/bundle`), whose calls work in Quick Deck's own storage.
 - **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the caller's own folder.
 - **The `light` engine service** (`light/host-service`) is lightcraft's RAW
   develop engine behind `light.*` (ADR 0013): EXIF/XMP metadata, the develop
@@ -131,6 +131,7 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage`, `deck` | none | [`deck`](deck/host-service): `new`, `info`, `render`, `convert`, in Quick Deck's own storage |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -222,8 +223,20 @@ reaches only the hosts the manifest lists.
   sheet came up, the agent added an event and its card opened the glance
   panel. Not packed on the phone. Its host service's tests are not in
   `apps.yml` yet.
-- Camera and AI providers ship PNG launcher artwork; YouTube ships SVG
-  artwork. The shell frames bundle icons for the selected platform style.
+- **Quick Deck** (2026-10-09, macOS, hidden windows, light and dark): run end
+  to end in a desktop shell built from its branch. A typed outline became a
+  deck through `deck.new`, `deck.info` and one `deck.render` per slide, all
+  writing into Quick Deck's own storage (`decks/<id>/g<n>/`); the review grid
+  and the slide view show the engine's PNGs, and the PowerPoint and PDF
+  exports land beside them. Refusals show in the app: a nearly full storage,
+  a deck file the engine can't read, and a path outside the storage. A light
+  or dark switch keeps the screen the person is on. The `deck` service runs on
+  the shell's UI thread (#399), so the shell pauses while it works: about 3 s
+  for a five-slide deck, 16 s on the very first call of a session. Every
+  screen and state, refusals included, is also covered in `card-host` by
+  `quickdeck/tests/ui.py` with the dev fixture below.
+- Camera and AI providers ship PNG launcher artwork; YouTube and Quick Deck
+  ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
 ## How the shells pack them
 
@@ -425,6 +438,27 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 ```
 
 The demo keeps its password in a file, so no keychain prompt appears.
+
+**Quick Deck's dev fixture.** `card-host` has no `deck` service, and the
+shipped bundle has no fixture code. Quick Deck's UI tests use
+`quickdeck/dev-fixture/`, outside the bundle: `engine.splash`, a stand-in for
+the engine that writes what each call asks for at the paths it is given;
+`fixture.json`, its settings; and real renders of `outline.txt` by the pinned
+deckcraft (d0e57d7e), for its pictures. `quickdeck/tests/ui.py` makes a
+scratch copy of the bundle with `engine.splash` in place of `deck_call()`,
+copies the fixture into the app's storage as `dev/`, and drives every screen
+and state in a hidden `card-host`, light and dark. Its first run uses the
+shipped bundle as it is, which shows that no engine answers.
+
+```sh
+python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
+```
+
+The grabs and a receipt per appearance land in `target/quickdeck-ui/light`
+and `target/quickdeck-ui/dark`. In `fixture.json`, `delay` is the seconds each
+call takes, `fail` names a call that fails (`new`, `info`, `render`, `convert`
+or `all`), and `unreadable: true` answers `render` without leaving a picture,
+so each slide shows its text.
 
 ## Host services and sheets
 

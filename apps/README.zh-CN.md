@@ -10,7 +10,7 @@
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 
-- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers 和 YouTube**
+- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers、YouTube 和 Quick Deck**
   是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 Makepad Script/Splash
   程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限由其
   `manifest.json` 经过准入后确定，与商店应用受到的隔离完全相同。它们同时也是
@@ -33,7 +33,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
-- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内；尚无 bundle。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。
 - **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
 - **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
   放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
@@ -108,6 +108,7 @@ OctoSense-System-Apps 仓库（已归档）。
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`、`deck` | 无 | [`deck`](deck/host-service)：`new`、`info`、`render`、`convert`，在 Quick Deck 自己的存储中运行 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -171,7 +172,16 @@ OctoSense-System-Apps 仓库（已归档）。
 - **日历**（2026-10-01，桌面端，隐藏窗口的 `--remote` 运行，接真实模型）：系统 Agent
   请日历的 Agent 放一张卡片；首次使用面板弹出，Agent 添加了一个日程，它的卡片打开了
   glance 面板。手机上没有打包。它的宿主服务测试还不在 `apps.yml` 中。
-- Camera 和 AI providers 自带 PNG 启动器图案，YouTube 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
+- **Quick Deck**（2026-10-09，macOS，隐藏窗口，浅色与深色）：在用其分支构建的桌面
+  Shell 中端到端运行。输入的大纲通过 `deck.new`、`deck.info` 和每张幻灯片一次
+  `deck.render` 变成演示文稿，全部写入 Quick Deck 自己的存储（`decks/<id>/g<n>/`）；
+  检查网格和单张视图显示引擎生成的 PNG，PowerPoint 和 PDF 导出也保存在旁边。
+  拒绝都会在应用中显示：存储几乎已满、引擎无法读取的演示文稿文件、存储之外的路径。
+  切换浅色或深色时，应用停留在用户所在的页面。`deck` 服务运行在 Shell 的 UI 线程上
+  （#399），所以它工作时 Shell 会停顿：五张幻灯片约 3 秒，会话中的第一次调用 16 秒。
+  每个页面和状态（包括各种拒绝）也由 `quickdeck/tests/ui.py` 用下方的开发夹具在
+  `card-host` 中覆盖。
+- Camera 和 AI providers 自带 PNG 启动器图案，YouTube 和 Quick Deck 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
 
@@ -354,6 +364,24 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 ```
 
 演示邮箱的密码存放在文件中，因此不会弹出钥匙串提示。
+
+**Quick Deck 的开发夹具。** `card-host` 没有 `deck` 服务，而随 Shell 发布的
+bundle 中没有任何夹具代码。Quick Deck 的 UI 测试使用 bundle 之外的
+`quickdeck/dev-fixture/`：`engine.splash` 是引擎的替身，它把每次调用要求的内容
+写到调用给出的路径；`fixture.json` 是它的设置；图片是固定版本的 deckcraft
+（d0e57d7e）根据 `outline.txt` 生成的真实渲染图。`quickdeck/tests/ui.py` 会复制一份
+临时 bundle，用 `engine.splash` 替换其中的 `deck_call()`，把夹具复制到应用存储的
+`dev/` 中，然后在隐藏的 `card-host` 中以浅色和深色外观走遍每个页面和状态。第一轮
+直接使用随 Shell 发布的 bundle，展示没有引擎应答时的样子。
+
+```sh
+python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
+```
+
+截图和每种外观的回执保存在 `target/quickdeck-ui/light` 与
+`target/quickdeck-ui/dark`。`fixture.json` 中，`delay` 是每次调用耗费的秒数，
+`fail` 指定失败的调用（`new`、`info`、`render`、`convert` 或 `all`），
+`unreadable: true` 让 `render` 正常应答但不留下图片，于是每张幻灯片显示其文字。
 
 ## 宿主服务与面板
 
