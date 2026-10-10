@@ -34,6 +34,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+pub mod component;
+
 use sha2::{Digest, Sha256};
 use wasmtime::{
     Caller, Config, Engine, Linker, Memory, Module, Store, StoreLimits, StoreLimitsBuilder, Trap,
@@ -210,6 +212,8 @@ impl Runtime {
     pub fn new(limits: Limits, cache_dir: Option<PathBuf>) -> Result<Runtime, String> {
         let mut config = Config::new();
         config.epoch_interruption(true);
+        // Components (ADR 0014) share the engine, its epoch and its cache.
+        config.wasm_component_model(true);
         config.max_wasm_stack(limits.stack_bytes);
         let engine = Engine::new(&config).map_err(|e| format!("{e:#}"))?;
         let ticker = Arc::new(Ticker::start(engine.clone()));
@@ -260,6 +264,16 @@ impl Runtime {
             // Check before caching: a refused module is never stored.
             check(&module)?;
             if let Ok(code) = module.serialize() {
+                self.publish_cache(path, &code);
+            }
+        }
+        Ok(module)
+    }
+
+    /// Writes compiled code to the cache atomically.
+    fn publish_cache(&self, path: &PathBuf, code: &[u8]) {
+        {
+            {
                 // Different apps may compile identical bytes concurrently.
                 // Never truncate another worker's staging file: deserialization
                 // is only safe for complete, unmodified serialized modules.
@@ -274,7 +288,7 @@ impl Runtime {
                         .write(true)
                         .create_new(true)
                         .open(&tmp)?;
-                    file.write_all(&code)?;
+                    file.write_all(code)?;
                     drop(file);
                     std::fs::rename(&tmp, path)
                 })();
@@ -291,7 +305,6 @@ impl Runtime {
                 let _ = std::fs::remove_file(tmp);
             }
         }
-        Ok(module)
     }
 
     fn cache_path(&self, bytes: &[u8]) -> Option<PathBuf> {

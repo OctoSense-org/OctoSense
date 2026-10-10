@@ -1,0 +1,12 @@
+# Test components for crates/wasm-host (ADR 0014), built with plain
+# `cargo build --target wasm32-wasip2 --release`; build.sh copies them to
+# ../fixtures. Its own workspace: none of this enters the shell's graph.
+[workspace]
+resolver = "2"
+members = ["notes", "netprobe"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1

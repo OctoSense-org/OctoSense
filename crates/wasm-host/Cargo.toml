@@ -7,6 +7,9 @@ publish = false
 
 [dependencies]
 wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+serde_json = { workspace = true }
+base64 = "0.22"
 sha2 = "0.10"
 # Not used directly: Wasmtime reads a trap's registers through libc's
 # ucontext_t, and before 0.2.190 Android aarch64's lacked the kernel's
@@ -16,6 +19,5 @@ libc = "0.2.190"
 
 [dev-dependencies]
 wat = "1"
-serde_json = { workspace = true }
 # The sample functions natively, to check the module against them.
 wasmlab-functions = { path = "../../apps/wasmlab/guest/functions" }
