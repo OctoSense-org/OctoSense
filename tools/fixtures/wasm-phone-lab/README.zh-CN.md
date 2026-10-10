@@ -36,8 +36,8 @@ cargo run --locked --offline -p octosense-wasm-host --example encode_phone_fixtu
 四次交替应用工具调用检查计数器、Markdown、文件隔离、别名发现，以及组件到宿主 `runtime.describe` 的真实往返，不启动模型或使用个人账户。
 
 通过已审阅的 [App Hub 候选目录工具](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SHARED-COMPONENT-REHEARSAL.zh-CN.md)和受保护的管理员工作流 `dry_run: true` 所生成的证明封装准备镜像，不改动正式目录。
-**以下命令在记录匹配回执之前均未验证**。先在隐藏桌面窗口完成检查，再操作获准使用的手机。
-使用新的证据目录、明确获准测试的 OnePlus 6 序列号和本机工具路径：
+以下构建和驱动命令已使用本机工具路径执行，先验证隐藏桌面窗口，最后验证获准使用的 OnePlus 6。
+复现时使用新的证据目录、明确获准测试的 OnePlus 6 序列号和本机工具路径：
 
 ```sh
 cargo build --locked -p octosense-wasm-phone-smoke
@@ -56,3 +56,22 @@ python3 tools/test-shared-components.py --adb "$ADB" --aapt2 "$AAPT2" --serial "
 原生回执记录真实目录载荷摘要、应用包和组件标识，以及四次完整的结果对象。
 两种模式验证不同约定：核心函数使用新实例；共享组件共享不可变字节，但保留应用私有实例。
 两者都不是性能基准或正式 Home 升级测试。
+
+本次完成的验收绑定到干净源码 `c5f0c5c1948d9b730c707b409e9713af49e3e614`，
+Makepad 运行时树为 `a6fae94aa4d233503b14bc6d0a36bcbc2b264b44`。
+两个组件和两个应用由[发布者工作流 38024551136](https://github.com/ymote/octosense-component-demo/actions/runs/38024551136)
+构建并取得证明，见 [v0.1.0 发布](https://github.com/ymote/octosense-component-demo/releases/tag/v0.1.0)。
+[受保护的管理员工作流 38026083032](https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/38026083032)
+以 `dry_run: true` 生成真实的第 16 版目录证明封装，载荷 SHA-256 为
+`87bde245807a5ff6a1b3297c409d4ef6684414e47b038519a196feab29f42a7e`。
+两次原生执行之前均验证了证明和全部产物摘要，公开目录保持不变。
+
+| 平台 | 原生组件断言 | 驱动检查 | 证据 |
+| --- | --- | --- | --- |
+| macOS，隐藏 Makepad 窗口 | 28/28 | 12/12，包括最终应用和计数器可见 | [驱动](evidence/shared-components/macos.json)、[原始原生结果](evidence/shared-components/macos-native.json)、[原生截图](evidence/shared-components/completed.png) |
+| OnePlus 6 | 28/28 | 13/13，包括指定设备、全新独立包和编译标识 | [驱动](evidence/shared-components/oneplus6.json)、[原始原生结果](evidence/shared-components/oneplus6-native.json) |
+
+回执未经改动直接复制，证明实际商店安装、Splash 应用工具调用、别名发现、组件到宿主调用、
+只读组件字节去重，以及各应用独立保留的计数器和文件。OnePlus 测试包已卸载，未使用个人账户或模型，
+也未改动已安装的 Home。这些是开发宿主的回执，不是发行二进制验收。
+本次不包含真实模型转发、性能、OpenHarmony 设备执行或正式 Home 升级。

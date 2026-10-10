@@ -44,9 +44,9 @@ round trip. No model or personal account runs.
 Prepare the mirror with the reviewed
 [App Hub candidate helper](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SHARED-COMPONENT-REHEARSAL.md)
 and the protected admin workflow's `dry_run: true` envelope. The official catalog
-is not changed. The following commands are **unverified until a matching receipt
-is recorded**; run the hidden desktop check before touching the assigned phone.
-Use new evidence directories, an explicitly assigned OnePlus 6 serial and your
+is not changed. The following build and driver commands were executed with
+local tool paths, desktop first and the assigned OnePlus 6 last. To repeat them,
+use new evidence directories, an explicitly assigned OnePlus 6 serial and your
 local tool paths:
 
 ```sh
@@ -69,3 +69,27 @@ catalog payload digest, bundle/component identities and all four result objects.
 The two modes test different contracts: core functions use fresh instances;
 shared components retain app-private instances while sharing immutable bytes.
 Neither mode is a performance benchmark or a release Home upgrade test.
+
+The completed run is bound to clean source
+`c5f0c5c1948d9b730c707b409e9713af49e3e614` and Makepad runtime tree
+`a6fae94aa4d233503b14bc6d0a36bcbc2b264b44`. The two components and two apps
+were built and attested by [publisher workflow 38024551136](https://github.com/ymote/octosense-component-demo/actions/runs/38024551136)
+for [v0.1.0](https://github.com/ymote/octosense-component-demo/releases/tag/v0.1.0).
+[Protected admin workflow 38026083032](https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/38026083032)
+produced the real sequence-16 catalog envelope with `dry_run: true`, payload
+SHA-256 `87bde245807a5ff6a1b3297c409d4ef6684414e47b038519a196feab29f42a7e`.
+Its proof and all artifact digests were verified before either native run.
+The public catalog stayed unchanged.
+
+| Platform | Native component assertions | Driver checks | Evidence |
+| --- | --- | --- | --- |
+| macOS, hidden Makepad window | 28/28 | 12/12, including the final app and counter visible | [Driver](evidence/shared-components/macos.json), [raw native results](evidence/shared-components/macos-native.json), [native capture](evidence/shared-components/completed.png) |
+| OnePlus 6 | 28/28 | 13/13, including the assigned device, fresh isolated package and compiled identities | [Driver](evidence/shared-components/oneplus6.json), [raw native results](evidence/shared-components/oneplus6-native.json) |
+
+The receipts are copied without changes. They show actual Store installation,
+Splash app-tool calls, alias discovery, a component-to-host call, deduplicated
+read-only component bytes, and retained counters and files isolated per app.
+The OnePlus test package was removed. No personal accounts or models were used,
+and the installed Home was untouched. These are development-host receipts,
+not released-binary acceptance. Live model relay, performance, OpenHarmony
+device execution and a production Home upgrade remain outside this run.

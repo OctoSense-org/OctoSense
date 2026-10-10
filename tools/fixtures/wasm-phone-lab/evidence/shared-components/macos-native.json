@@ -1,0 +1,1298 @@
+{
+  "apps": [
+    {
+      "bundle_digest": "aab50186682b24c201f5bfeb6a4a88c04215bf74e08f1d7fd62824f4926a45ac",
+      "declarations": [],
+      "id": "org.ymote.componentdemo.first"
+    },
+    {
+      "bundle_digest": "2d0d6c3fc6b52db513f13d1f78079a683185413917486ef6a09c2c55fe50c971",
+      "declarations": [
+        "wasm",
+        "storage"
+      ],
+      "id": "org.ymote.componentdemo.second"
+    }
+  ],
+  "catalog_channel": "github",
+  "catalog_sequence": 16,
+  "catalog_sha256": "87bde245807a5ff6a1b3297c409d4ef6684414e47b038519a196feab29f42a7e",
+  "checks": {
+    "turn_1_alias_discovery": true,
+    "turn_1_app_identity": true,
+    "turn_1_markdown": true,
+    "turn_1_private_storage_after_write": true,
+    "turn_1_private_storage_before_write": true,
+    "turn_1_real_host_dispatch": true,
+    "turn_1_retained_isolated_counter": true,
+    "turn_2_alias_discovery": true,
+    "turn_2_app_identity": true,
+    "turn_2_markdown": true,
+    "turn_2_private_storage_after_write": true,
+    "turn_2_private_storage_before_write": true,
+    "turn_2_real_host_dispatch": true,
+    "turn_2_retained_isolated_counter": true,
+    "turn_3_alias_discovery": true,
+    "turn_3_app_identity": true,
+    "turn_3_markdown": true,
+    "turn_3_private_storage_after_write": true,
+    "turn_3_private_storage_before_write": true,
+    "turn_3_real_host_dispatch": true,
+    "turn_3_retained_isolated_counter": true,
+    "turn_4_alias_discovery": true,
+    "turn_4_app_identity": true,
+    "turn_4_markdown": true,
+    "turn_4_private_storage_after_write": true,
+    "turn_4_private_storage_before_write": true,
+    "turn_4_real_host_dispatch": true,
+    "turn_4_retained_isolated_counter": true
+  },
+  "components": [
+    {
+      "alias": "md",
+      "blake3": "d7441f84609f1dc177a616be80141933ac729a2fe4cfb09906b8e445773c6122",
+      "id": "org.ymote.componentdemo.markdown",
+      "version": "0.1.0"
+    },
+    {
+      "alias": "bridge",
+      "blake3": "db454eecc87522886a19dcbe25190d93e313fd8732d777e0e0aa483f0cdaaaca",
+      "id": "org.ymote.componentdemo.hostcall",
+      "version": "0.1.0"
+    }
+  ],
+  "deduplicated_readonly_components": true,
+  "legacy_fallback": false,
+  "model_started": false,
+  "not_verified": [
+    "performance benchmark",
+    "live model relay",
+    "production Home upgrade"
+  ],
+  "passed": true,
+  "personal_accounts_used": false,
+  "platform": "macos",
+  "proof": "real GitHub catalog and publisher proofs -> Store install -> app tool -> Splash host.request -> shared component",
+  "runtime_tree": "a6fae94aa4d233503b14bc6d0a36bcbc2b264b44",
+  "schema": 1,
+  "source_dirty": false,
+  "source_revision": "c5f0c5c1948d9b730c707b409e9713af49e3e614",
+  "turns": [
+    {
+      "app": "org.ymote.componentdemo.first",
+      "results": {
+        "before_write": {
+          "data": null,
+          "error": "No such file or directory (os error 44)",
+          "is_ok": false
+        },
+        "count_1": {
+          "data": 1,
+          "error": null,
+          "is_ok": true
+        },
+        "count_2": {
+          "data": 2,
+          "error": null,
+          "is_ok": true
+        },
+        "functions": {
+          "data": {
+            "functions": [
+              "bridge.call",
+              "md.analyze",
+              "md.append_text",
+              "md.count",
+              "md.delete_file",
+              "md.echo_bytes",
+              "md.file_info",
+              "md.grow",
+              "md.now_ms",
+              "md.random_u64",
+              "md.read_file",
+              "md.save_html",
+              "md.set_len",
+              "md.spin",
+              "md.to_html"
+            ],
+            "modules": [
+              {
+                "bytes": 320651,
+                "exports": [
+                  {
+                    "name": "analyze",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "record { words: u32, lines: u32, headings: list<string> }",
+                    "wit": "analyze"
+                  },
+                  {
+                    "name": "append_text",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "text",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "append-text"
+                  },
+                  {
+                    "name": "count",
+                    "params": [],
+                    "result": "u32",
+                    "wit": "count"
+                  },
+                  {
+                    "name": "delete_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "delete-file"
+                  },
+                  {
+                    "name": "echo_bytes",
+                    "params": [
+                      [
+                        "data",
+                        "list<u8>"
+                      ]
+                    ],
+                    "result": "list<u8>",
+                    "wit": "echo-bytes"
+                  },
+                  {
+                    "name": "file_info",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<record { byte-count: u64, kind: enum { regular-file, directory, other } }, string>",
+                    "wit": "file-info"
+                  },
+                  {
+                    "name": "grow",
+                    "params": [
+                      [
+                        "megabytes",
+                        "u32"
+                      ]
+                    ],
+                    "result": "u32",
+                    "wit": "grow"
+                  },
+                  {
+                    "name": "now_ms",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "now-ms"
+                  },
+                  {
+                    "name": "random_u64",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "random-u64"
+                  },
+                  {
+                    "name": "read_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "read-file"
+                  },
+                  {
+                    "name": "save_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ],
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "save-html"
+                  },
+                  {
+                    "name": "set_len",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "len",
+                        "u64"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "set-len"
+                  },
+                  {
+                    "name": "spin",
+                    "params": [],
+                    "result": null,
+                    "wit": "spin"
+                  },
+                  {
+                    "name": "to_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "string",
+                    "wit": "to-html"
+                  }
+                ],
+                "file": "md (org.ymote.componentdemo.markdown 0.1.0)",
+                "from_cache": false,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 6,
+                "kind": "component",
+                "live": true,
+                "load_ms": 56.1,
+                "network": false,
+                "shared": {
+                  "alias": "md",
+                  "blake3": "d7441f84609f1dc177a616be80141933ac729a2fe4cfb09906b8e445773c6122",
+                  "id": "org.ymote.componentdemo.markdown",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777183
+              },
+              {
+                "bytes": 42284,
+                "exports": [
+                  {
+                    "name": "call",
+                    "params": [
+                      [
+                        "service",
+                        "string"
+                      ],
+                      [
+                        "args",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "call"
+                  }
+                ],
+                "file": "bridge (org.ymote.componentdemo.hostcall 0.1.0)",
+                "from_cache": false,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 1,
+                "kind": "component",
+                "live": true,
+                "load_ms": 11.8,
+                "network": false,
+                "shared": {
+                  "alias": "bridge",
+                  "blake3": "db454eecc87522886a19dcbe25190d93e313fd8732d777e0e0aa483f0cdaaaca",
+                  "id": "org.ymote.componentdemo.hostcall",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777183
+              }
+            ],
+            "stats": {
+              "bridge.call": {
+                "calls": 1,
+                "errors": 0,
+                "max_us": 679.8,
+                "mean_us": 679.8
+              },
+              "md.count": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 848.4,
+                "mean_us": 433.4
+              },
+              "md.read_file": {
+                "calls": 2,
+                "errors": 1,
+                "max_us": 705.8,
+                "mean_us": 587.5
+              },
+              "md.save_html": {
+                "calls": 1,
+                "errors": 0,
+                "max_us": 625.4,
+                "mean_us": 625.4
+              },
+              "md.to_html": {
+                "calls": 1,
+                "errors": 0,
+                "max_us": 182.3,
+                "mean_us": 182.3
+              }
+            }
+          },
+          "error": null,
+          "is_ok": true
+        },
+        "host_call": {
+          "data": "{\"authorization\":\"checked-on-call\",\"configured\":null,\"descriptor\":{\"agent_access\":\"allowed\",\"capability\":\"runtime\",\"input_schema\":{\"additionalProperties\":false,\"properties\":{\"method\":{\"type\":\"string\"}},\"required\":[\"method\"],\"type\":\"object\"},\"name\":\"runtime.describe\",\"output_schema\":{\"type\":\"object\"},\"platforms\":[\"android\",\"macos\",\"windows\",\"linux\",\"ios\",\"openharmony\",\"web\"],\"summary\":\"Describe one host API or report that this host does not implement it.\",\"version\":1},\"implemented\":true,\"supported\":true}",
+          "error": null,
+          "is_ok": true
+        },
+        "markdown": {
+          "data": "<h1>Component Demo · First</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "read_back": {
+          "data": "<h1>Component Demo · First</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "saved": {
+          "data": 33,
+          "error": null,
+          "is_ok": true
+        }
+      }
+    },
+    {
+      "app": "org.ymote.componentdemo.second",
+      "results": {
+        "before_write": {
+          "data": null,
+          "error": "No such file or directory (os error 44)",
+          "is_ok": false
+        },
+        "count_1": {
+          "data": 1,
+          "error": null,
+          "is_ok": true
+        },
+        "count_2": {
+          "data": 2,
+          "error": null,
+          "is_ok": true
+        },
+        "functions": {
+          "data": {
+            "functions": [
+              "bridge.call",
+              "md.analyze",
+              "md.append_text",
+              "md.count",
+              "md.delete_file",
+              "md.echo_bytes",
+              "md.file_info",
+              "md.grow",
+              "md.now_ms",
+              "md.random_u64",
+              "md.read_file",
+              "md.save_html",
+              "md.set_len",
+              "md.spin",
+              "md.to_html"
+            ],
+            "modules": [
+              {
+                "bytes": 320651,
+                "exports": [
+                  {
+                    "name": "analyze",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "record { words: u32, lines: u32, headings: list<string> }",
+                    "wit": "analyze"
+                  },
+                  {
+                    "name": "append_text",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "text",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "append-text"
+                  },
+                  {
+                    "name": "count",
+                    "params": [],
+                    "result": "u32",
+                    "wit": "count"
+                  },
+                  {
+                    "name": "delete_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "delete-file"
+                  },
+                  {
+                    "name": "echo_bytes",
+                    "params": [
+                      [
+                        "data",
+                        "list<u8>"
+                      ]
+                    ],
+                    "result": "list<u8>",
+                    "wit": "echo-bytes"
+                  },
+                  {
+                    "name": "file_info",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<record { byte-count: u64, kind: enum { regular-file, directory, other } }, string>",
+                    "wit": "file-info"
+                  },
+                  {
+                    "name": "grow",
+                    "params": [
+                      [
+                        "megabytes",
+                        "u32"
+                      ]
+                    ],
+                    "result": "u32",
+                    "wit": "grow"
+                  },
+                  {
+                    "name": "now_ms",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "now-ms"
+                  },
+                  {
+                    "name": "random_u64",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "random-u64"
+                  },
+                  {
+                    "name": "read_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "read-file"
+                  },
+                  {
+                    "name": "save_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ],
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "save-html"
+                  },
+                  {
+                    "name": "set_len",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "len",
+                        "u64"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "set-len"
+                  },
+                  {
+                    "name": "spin",
+                    "params": [],
+                    "result": null,
+                    "wit": "spin"
+                  },
+                  {
+                    "name": "to_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "string",
+                    "wit": "to-html"
+                  }
+                ],
+                "file": "md (org.ymote.componentdemo.markdown 0.1.0)",
+                "from_cache": true,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 6,
+                "kind": "component",
+                "live": true,
+                "load_ms": 1.4,
+                "network": false,
+                "shared": {
+                  "alias": "md",
+                  "blake3": "d7441f84609f1dc177a616be80141933ac729a2fe4cfb09906b8e445773c6122",
+                  "id": "org.ymote.componentdemo.markdown",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777182
+              },
+              {
+                "bytes": 42284,
+                "exports": [
+                  {
+                    "name": "call",
+                    "params": [
+                      [
+                        "service",
+                        "string"
+                      ],
+                      [
+                        "args",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "call"
+                  }
+                ],
+                "file": "bridge (org.ymote.componentdemo.hostcall 0.1.0)",
+                "from_cache": true,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 1,
+                "kind": "component",
+                "live": true,
+                "load_ms": 0.3,
+                "network": false,
+                "shared": {
+                  "alias": "bridge",
+                  "blake3": "db454eecc87522886a19dcbe25190d93e313fd8732d777e0e0aa483f0cdaaaca",
+                  "id": "org.ymote.componentdemo.hostcall",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777182
+              }
+            ],
+            "stats": {
+              "bridge.call": {
+                "calls": 1,
+                "errors": 0,
+                "max_us": 1431.8,
+                "mean_us": 1431.8
+              },
+              "md.count": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 475.8,
+                "mean_us": 246.6
+              },
+              "md.read_file": {
+                "calls": 2,
+                "errors": 1,
+                "max_us": 370.2,
+                "mean_us": 246.5
+              },
+              "md.save_html": {
+                "calls": 1,
+                "errors": 0,
+                "max_us": 375.8,
+                "mean_us": 375.8
+              },
+              "md.to_html": {
+                "calls": 1,
+                "errors": 0,
+                "max_us": 128.5,
+                "mean_us": 128.5
+              }
+            }
+          },
+          "error": null,
+          "is_ok": true
+        },
+        "host_call": {
+          "data": "{\"authorization\":\"checked-on-call\",\"configured\":null,\"descriptor\":{\"agent_access\":\"allowed\",\"capability\":\"runtime\",\"input_schema\":{\"additionalProperties\":false,\"properties\":{\"method\":{\"type\":\"string\"}},\"required\":[\"method\"],\"type\":\"object\"},\"name\":\"runtime.describe\",\"output_schema\":{\"type\":\"object\"},\"platforms\":[\"android\",\"macos\",\"windows\",\"linux\",\"ios\",\"openharmony\",\"web\"],\"summary\":\"Describe one host API or report that this host does not implement it.\",\"version\":1},\"implemented\":true,\"supported\":true}",
+          "error": null,
+          "is_ok": true
+        },
+        "markdown": {
+          "data": "<h1>Component Demo · Second</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "read_back": {
+          "data": "<h1>Component Demo · Second</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "saved": {
+          "data": 34,
+          "error": null,
+          "is_ok": true
+        }
+      }
+    },
+    {
+      "app": "org.ymote.componentdemo.first",
+      "results": {
+        "before_write": {
+          "data": "<h1>Component Demo · First</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "count_1": {
+          "data": 3,
+          "error": null,
+          "is_ok": true
+        },
+        "count_2": {
+          "data": 4,
+          "error": null,
+          "is_ok": true
+        },
+        "functions": {
+          "data": {
+            "functions": [
+              "bridge.call",
+              "md.analyze",
+              "md.append_text",
+              "md.count",
+              "md.delete_file",
+              "md.echo_bytes",
+              "md.file_info",
+              "md.grow",
+              "md.now_ms",
+              "md.random_u64",
+              "md.read_file",
+              "md.save_html",
+              "md.set_len",
+              "md.spin",
+              "md.to_html"
+            ],
+            "modules": [
+              {
+                "bytes": 320651,
+                "exports": [
+                  {
+                    "name": "analyze",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "record { words: u32, lines: u32, headings: list<string> }",
+                    "wit": "analyze"
+                  },
+                  {
+                    "name": "append_text",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "text",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "append-text"
+                  },
+                  {
+                    "name": "count",
+                    "params": [],
+                    "result": "u32",
+                    "wit": "count"
+                  },
+                  {
+                    "name": "delete_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "delete-file"
+                  },
+                  {
+                    "name": "echo_bytes",
+                    "params": [
+                      [
+                        "data",
+                        "list<u8>"
+                      ]
+                    ],
+                    "result": "list<u8>",
+                    "wit": "echo-bytes"
+                  },
+                  {
+                    "name": "file_info",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<record { byte-count: u64, kind: enum { regular-file, directory, other } }, string>",
+                    "wit": "file-info"
+                  },
+                  {
+                    "name": "grow",
+                    "params": [
+                      [
+                        "megabytes",
+                        "u32"
+                      ]
+                    ],
+                    "result": "u32",
+                    "wit": "grow"
+                  },
+                  {
+                    "name": "now_ms",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "now-ms"
+                  },
+                  {
+                    "name": "random_u64",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "random-u64"
+                  },
+                  {
+                    "name": "read_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "read-file"
+                  },
+                  {
+                    "name": "save_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ],
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "save-html"
+                  },
+                  {
+                    "name": "set_len",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "len",
+                        "u64"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "set-len"
+                  },
+                  {
+                    "name": "spin",
+                    "params": [],
+                    "result": null,
+                    "wit": "spin"
+                  },
+                  {
+                    "name": "to_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "string",
+                    "wit": "to-html"
+                  }
+                ],
+                "file": "md (org.ymote.componentdemo.markdown 0.1.0)",
+                "from_cache": false,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 12,
+                "kind": "component",
+                "live": true,
+                "load_ms": 56.1,
+                "network": false,
+                "shared": {
+                  "alias": "md",
+                  "blake3": "d7441f84609f1dc177a616be80141933ac729a2fe4cfb09906b8e445773c6122",
+                  "id": "org.ymote.componentdemo.markdown",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777183
+              },
+              {
+                "bytes": 42284,
+                "exports": [
+                  {
+                    "name": "call",
+                    "params": [
+                      [
+                        "service",
+                        "string"
+                      ],
+                      [
+                        "args",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "call"
+                  }
+                ],
+                "file": "bridge (org.ymote.componentdemo.hostcall 0.1.0)",
+                "from_cache": false,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 2,
+                "kind": "component",
+                "live": true,
+                "load_ms": 11.8,
+                "network": false,
+                "shared": {
+                  "alias": "bridge",
+                  "blake3": "db454eecc87522886a19dcbe25190d93e313fd8732d777e0e0aa483f0cdaaaca",
+                  "id": "org.ymote.componentdemo.hostcall",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777183
+              }
+            ],
+            "stats": {
+              "bridge.call": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 679.8,
+                "mean_us": 519.3
+              },
+              "md.count": {
+                "calls": 4,
+                "errors": 0,
+                "max_us": 848.4,
+                "mean_us": 227.8
+              },
+              "md.read_file": {
+                "calls": 4,
+                "errors": 1,
+                "max_us": 705.8,
+                "mean_us": 400.9
+              },
+              "md.save_html": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 625.4,
+                "mean_us": 425
+              },
+              "md.to_html": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 182.3,
+                "mean_us": 109.8
+              }
+            }
+          },
+          "error": null,
+          "is_ok": true
+        },
+        "host_call": {
+          "data": "{\"authorization\":\"checked-on-call\",\"configured\":null,\"descriptor\":{\"agent_access\":\"allowed\",\"capability\":\"runtime\",\"input_schema\":{\"additionalProperties\":false,\"properties\":{\"method\":{\"type\":\"string\"}},\"required\":[\"method\"],\"type\":\"object\"},\"name\":\"runtime.describe\",\"output_schema\":{\"type\":\"object\"},\"platforms\":[\"android\",\"macos\",\"windows\",\"linux\",\"ios\",\"openharmony\",\"web\"],\"summary\":\"Describe one host API or report that this host does not implement it.\",\"version\":1},\"implemented\":true,\"supported\":true}",
+          "error": null,
+          "is_ok": true
+        },
+        "markdown": {
+          "data": "<h1>Component Demo · First</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "read_back": {
+          "data": "<h1>Component Demo · First</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "saved": {
+          "data": 33,
+          "error": null,
+          "is_ok": true
+        }
+      }
+    },
+    {
+      "app": "org.ymote.componentdemo.second",
+      "results": {
+        "before_write": {
+          "data": "<h1>Component Demo · Second</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "count_1": {
+          "data": 3,
+          "error": null,
+          "is_ok": true
+        },
+        "count_2": {
+          "data": 4,
+          "error": null,
+          "is_ok": true
+        },
+        "functions": {
+          "data": {
+            "functions": [
+              "bridge.call",
+              "md.analyze",
+              "md.append_text",
+              "md.count",
+              "md.delete_file",
+              "md.echo_bytes",
+              "md.file_info",
+              "md.grow",
+              "md.now_ms",
+              "md.random_u64",
+              "md.read_file",
+              "md.save_html",
+              "md.set_len",
+              "md.spin",
+              "md.to_html"
+            ],
+            "modules": [
+              {
+                "bytes": 320651,
+                "exports": [
+                  {
+                    "name": "analyze",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "record { words: u32, lines: u32, headings: list<string> }",
+                    "wit": "analyze"
+                  },
+                  {
+                    "name": "append_text",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "text",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "append-text"
+                  },
+                  {
+                    "name": "count",
+                    "params": [],
+                    "result": "u32",
+                    "wit": "count"
+                  },
+                  {
+                    "name": "delete_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "delete-file"
+                  },
+                  {
+                    "name": "echo_bytes",
+                    "params": [
+                      [
+                        "data",
+                        "list<u8>"
+                      ]
+                    ],
+                    "result": "list<u8>",
+                    "wit": "echo-bytes"
+                  },
+                  {
+                    "name": "file_info",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<record { byte-count: u64, kind: enum { regular-file, directory, other } }, string>",
+                    "wit": "file-info"
+                  },
+                  {
+                    "name": "grow",
+                    "params": [
+                      [
+                        "megabytes",
+                        "u32"
+                      ]
+                    ],
+                    "result": "u32",
+                    "wit": "grow"
+                  },
+                  {
+                    "name": "now_ms",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "now-ms"
+                  },
+                  {
+                    "name": "random_u64",
+                    "params": [],
+                    "result": "u64",
+                    "wit": "random-u64"
+                  },
+                  {
+                    "name": "read_file",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "read-file"
+                  },
+                  {
+                    "name": "save_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ],
+                      [
+                        "path",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<u64, string>",
+                    "wit": "save-html"
+                  },
+                  {
+                    "name": "set_len",
+                    "params": [
+                      [
+                        "path",
+                        "string"
+                      ],
+                      [
+                        "len",
+                        "u64"
+                      ]
+                    ],
+                    "result": "result<_, string>",
+                    "wit": "set-len"
+                  },
+                  {
+                    "name": "spin",
+                    "params": [],
+                    "result": null,
+                    "wit": "spin"
+                  },
+                  {
+                    "name": "to_html",
+                    "params": [
+                      [
+                        "markdown",
+                        "string"
+                      ]
+                    ],
+                    "result": "string",
+                    "wit": "to-html"
+                  }
+                ],
+                "file": "md (org.ymote.componentdemo.markdown 0.1.0)",
+                "from_cache": true,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 12,
+                "kind": "component",
+                "live": true,
+                "load_ms": 1.4,
+                "network": false,
+                "shared": {
+                  "alias": "md",
+                  "blake3": "d7441f84609f1dc177a616be80141933ac729a2fe4cfb09906b8e445773c6122",
+                  "id": "org.ymote.componentdemo.markdown",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777182
+              },
+              {
+                "bytes": 42284,
+                "exports": [
+                  {
+                    "name": "call",
+                    "params": [
+                      [
+                        "service",
+                        "string"
+                      ],
+                      [
+                        "args",
+                        "string"
+                      ]
+                    ],
+                    "result": "result<string, string>",
+                    "wit": "call"
+                  }
+                ],
+                "file": "bridge (org.ymote.componentdemo.hostcall 0.1.0)",
+                "from_cache": true,
+                "instance_policy": "kept-between-calls",
+                "instances": 1,
+                "invocations": 2,
+                "kind": "component",
+                "live": true,
+                "load_ms": 0.3,
+                "network": false,
+                "shared": {
+                  "alias": "bridge",
+                  "blake3": "db454eecc87522886a19dcbe25190d93e313fd8732d777e0e0aa483f0cdaaaca",
+                  "id": "org.ymote.componentdemo.hostcall",
+                  "version": "0.1.0"
+                },
+                "skipped": [],
+                "storage": "app folder",
+                "storage_left": 16777182
+              }
+            ],
+            "stats": {
+              "bridge.call": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 1431.8,
+                "mean_us": 905.5
+              },
+              "md.count": {
+                "calls": 4,
+                "errors": 0,
+                "max_us": 475.8,
+                "mean_us": 133.4
+              },
+              "md.read_file": {
+                "calls": 4,
+                "errors": 1,
+                "max_us": 370.2,
+                "mean_us": 227.4
+              },
+              "md.save_html": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 375.8,
+                "mean_us": 310.3
+              },
+              "md.to_html": {
+                "calls": 2,
+                "errors": 0,
+                "max_us": 128.5,
+                "mean_us": 92.4
+              }
+            }
+          },
+          "error": null,
+          "is_ok": true
+        },
+        "host_call": {
+          "data": "{\"authorization\":\"checked-on-call\",\"configured\":null,\"descriptor\":{\"agent_access\":\"allowed\",\"capability\":\"runtime\",\"input_schema\":{\"additionalProperties\":false,\"properties\":{\"method\":{\"type\":\"string\"}},\"required\":[\"method\"],\"type\":\"object\"},\"name\":\"runtime.describe\",\"output_schema\":{\"type\":\"object\"},\"platforms\":[\"android\",\"macos\",\"windows\",\"linux\",\"ios\",\"openharmony\",\"web\"],\"summary\":\"Describe one host API or report that this host does not implement it.\",\"version\":1},\"implemented\":true,\"supported\":true}",
+          "error": null,
+          "is_ok": true
+        },
+        "markdown": {
+          "data": "<h1>Component Demo · Second</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "read_back": {
+          "data": "<h1>Component Demo · Second</h1>\n",
+          "error": null,
+          "is_ok": true
+        },
+        "saved": {
+          "data": 34,
+          "error": null,
+          "is_ok": true
+        }
+      }
+    }
+  ]
+}

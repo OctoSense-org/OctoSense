@@ -6,13 +6,14 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 函数，标准构建在 macOS、Windows、Linux、Android 和 OpenHarmony 上运行它们，属于有限支持。两个引擎的插件已经关闭：
 `photo` 背后的 photocraft 和 `vector` 背后的 vectorcraft，这两个服务都拒绝所有插件命令。另外两处是 makepad 的内部实现，以及
 一个无法编译的浏览器构建。本页逐一说明：运行的是谁的模块、它能接触什么、哪些构建包含它、
-如何检查过。本页描述当前源码。桌面版 0.1.0-rc.2 包含 ADR 0011 核心模块，
-不包含 ADR 0014 组件及下文的新声明策略。源码、测试与发行状态分别记录。
+如何检查过。本页描述当前源码。桌面版 0.1.0-rc.2 和 Home 0.1.0-beta.2 包含 ADR 0011 核心模块。
+ADR 0014 共享组件及下文的新声明策略已通过专用 macOS/OnePlus 6 测试，发行仍待完成。
+源码、测试与发行状态分别记录。
 参见[应用能力与执行边界](capabilities.zh-CN.md)。
 
 | 位置 | 谁的模块 | 运行时 | 构建 | 状态 |
 | --- | --- | --- | --- | --- |
-| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 已准入应用的 `fns/*.wasm` 或精确固定的共享组件 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`）；组件的 WASI 0.2 来自 `wasmtime-wasi` | macOS、Windows、Linux、Android 和 OpenHarmony 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`；OpenHarmony 上在 Wasmtime 的解释器 Pulley 中运行）；iOS 不包含 | 核心模块已进入桌面 rc.2；历史 OnePlus 验收仅覆盖核心模块。组件和新策略仍需新验收及发行版 |
+| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 已准入应用的 `fns/*.wasm` 或精确固定的共享组件 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`）；组件的 WASI 0.2 来自 `wasmtime-wasi` | macOS、Windows、Linux、Android 和 OpenHarmony 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`；OpenHarmony 上在 Wasmtime 的解释器 Pulley 中运行）；iOS 不包含 | 核心模块已进入桌面 rc.2 和 Home beta.2。共享组件已通过 macOS 和 OnePlus 6 开发宿主验收，发行仍待完成 |
 | 引擎插件：`photo` 背后的 photocraft、`vector` 背后的 vectorcraft（[ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | 无：两个服务都拒绝所有 `plugin.*` 命令（#398、#405） | wasmi 2，解释器 | 链接进所有带 App Hub 的构建 | 已关闭：任何调用方都不能安装或运行插件 |
 | Splash 的数学编译器（makepad） | makepad 根据 Splash 代码生成 | makepad-stitch，解释器 | 链接进所有构建 | 未使用：OctoSense 没有链接任何调用它的代码 |
 | 浏览器中的外壳 | 外壳本身，为 `wasm32-unknown-unknown` 构建 | 浏览器 | 无 | 无法构建 |
@@ -100,8 +101,11 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
 摘要检查。这里不会下载任何东西：App Hub 的安装程序会先于应用本身下载它固定的组件。组件缺失、被修改或
 被撤回时，应用无法启动。
 
-`wasm_service::tests::a_pinned_shared_component_answers_as_alias_and_function` 用替代的解析器运行这条
-路径。目前还没有目录发布过组件，因此安装固定了组件的应用并在 Shell 中调用它属于**未验证**。
+`wasm_service::tests::a_pinned_shared_component_answers_as_alias_and_function` 是使用替代解析器的定向测试。
+独立的[真实 GitHub 验收](../tools/fixtures/wasm-phone-lab/README.zh-CN.md#真实-github-共享组件验收)
+使用真实发布者证明和带管理员证明的私有试运行目录，通过实际商店安装两个应用，再经 Splash 工具调用共享组件。
+macOS 和 OnePlus 6 的原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13 通过。
+公开目录保持不变。这验证的是开发宿主的安装和执行，不是发行二进制或真实模型结果。
 
 ### 模块如何到达设备
 
@@ -178,7 +182,7 @@ App Hub 安装或更新应用时，外壳会在后台把它的函数编译进缓
 | Linux | 运行。运行时和服务的测试在 x86_64 上通过，陷阱由信号捕获；Wasm Lab 在无头桌面中运行过（2026 年 10 月 8 日）。 |
 | Android | 在 Home 的默认构建中运行。需要 libc 0.2.190 或更高版本，`crates/wasm-host` 已要求这一点：在 0.2.189 下，每个陷阱都会结束进程。已在 Redmi Note 12 上验证（ADR 0011），并在一部 OnePlus 6 上通过[手机验收](#手机验收)。运行时增加约 7.5 MiB 代码；在 Snapdragon 685 上编译一个 433 KiB 的模块约需 0.4 秒，从缓存加载需 5–11 毫秒。 |
 | Windows | 包含（ADR 0014）。[`wasm-windows.yml`](../.github/workflows/wasm-windows.yml) 在 GitHub 的 `windows-2022` 上运行运行时的测试，并编译带这个服务的外壳。在 Windows 上运行桌面版**未验证**。 |
-| iOS | 不包含。那里的应用不能生成代码，所以运行时会像在 OpenHarmony 上一样使用 Pulley；但还没有编译过带这个服务的 iOS 构建。 |
+| iOS | 不包含，目前也不计划支持（ADR 0014）。尚未编译过带此服务的 iOS 构建。 |
 | OpenHarmony | 包含，在 OpenHarmony 的代码生成策略明确之前于 Wasmtime 的解释器 Pulley 中运行：Cranelift 编译为 Pulley 字节码，没有任何东西以原生代码运行。Home 的 OpenHarmony 发布构建已带着这个服务编译通过（2026 年 10 月 9 日，`cargo-makepad makepad ohos … deveco -p octosense-home --release`）；还没有在设备上运行过（**未验证**）。Pulley 比 Cranelift 慢约 32 倍（ADR 0014）。 |
 
 在受管理的 Mac 上，Microsoft Defender 会把新写入的缓存文件的第一次打开拦住约一秒；具体
@@ -258,18 +262,19 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
 `tools/test-wasm-phone.py` 在指定的设备上驱动这一过程。它的
 [验收记录](../tools/fixtures/wasm-phone-lab/acceptance-oneplus6.json)显示，在 Android 15
 的 OnePlus 6 上 22 项检查全部通过，包括成功、客体错误、陷阱和超时之后都使用全新实例。它的
-源码 e67ce63e 与 `main` 的 wasm 服务和运行时相同。验收不包括实时模型、性能和发布版 APK。
+源码 e67ce63e 记录当时受测的服务和运行时。验收不包括实时模型、性能和发布版 APK。
 用该夹具 README 中的 `encode_phone_fixture` 命令可以逐字节重建 `state.wasm`。
 
 ### 尚未完成
 
-- 还没有任何发布版本包含这个服务：#400 之后从 `main` 构建的第一个桌面版和 Home 发布版
-  将会包含。
-- iOS：带这个服务（在 Pulley 中）构建 Home。
+- 发布并验证包含 ADR 0014 组件和新声明行为的二进制。核心模块支持已随
+  [桌面 rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2)
+  和 [Home beta.2](https://github.com/OctoSense-org/OctoSense/releases/tag/home-v0.1.0-beta.2) 发行。
 - 应用之间的 CPU 公平调度，以及磁盘缓存的上限：目前没有任何东西会清理它。
 - 提前编译系统应用的函数：已安装应用的函数在安装时编译，系统应用的函数在第一次调用时编译。
-- 手机上的组件：Android 和 OpenHarmony 构建链接了运行时，但还没有组件在设备上运行过（**未验证**）。
-- 共享组件的完整流程：还没有 App Hub 目录发布过共享组件，因此还没有已安装的应用固定过它（**未验证**）。
+- OpenHarmony 设备上的组件执行（**未验证**）；Android 共享组件执行已在 OnePlus 6 上通过。
+- 通过正式公开目录和发行宿主安装共享组件。带真实证明的私有试运行目录已通过开发宿主流程；
+  其中的合成测试条目没有加入公开目录。
 - 经 JSON 传字节很慢：1 MiB 的 `list<u8>` 以 base64 往返约需 18 毫秒。
 
 ## 引擎插件：`photo` 和 `vector` 服务

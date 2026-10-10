@@ -12,8 +12,11 @@ App Hub（#186、#188、#189、#190）和 App Flow（#180、#181）。第 1 阶�
 第 4 阶段中 App Hub 的部分是 App Hub #190（目录、审核和商店中的共享组件），OctoSense 的部分是 `wasm`
 服务加载应用固定的共享组件（`wasm_service::shared_components`）。App Flow 的部分是 SDK 和 `tools/octo wasm`；iOS 暂不计划。
 本 ADR 扩展 [ADR 0011](0011-apps-own-functions-in-webassembly.zh-CN.md)：核心模块照旧可用。
-桌面 rc.2 仅包含核心模块。共享组件的发布、安装和设备执行需要各自的验收记录，合并实现不等于
-验收通过。当前行为见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)及
+桌面 rc.2 和 Home beta.2 仅包含核心模块。
+[共享组件验收](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#真实-github-共享组件验收)
+现已记录真实发布者证明、带管理员证明的私有试运行目录，以及 macOS 和 OnePlus 6 上的实际商店安装和 Splash 工具执行。
+在干净源码 `c5f0c5c1` 上，两端原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13 通过。
+公开目录保持不变。组件及新策略的发行验收仍待完成；不声称真实模型、性能或 OpenHarmony 设备已经通过。当前行为见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)及
 [应用能力与执行边界](../capabilities.zh-CN.md)。
 
 ## 背景

@@ -17,9 +17,14 @@ App Hub #190 (shared components in the catalog, the gate and the store), and
 OctoSense's is the `wasm` service loading an app's pinned shared components
 (`wasm_service::shared_components`). App Flow's parts are the SDK and
 `tools/octo wasm`; iOS is not planned for now. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
-core modules keep working. Desktop rc.2 ships core modules only. Shared-component
-publishing, installation and device execution need their own acceptance receipts;
-a merged implementation does not establish them. Current behavior:
+core modules keep working. Desktop rc.2 and Home beta.2 ship core modules only.
+[Shared-component acceptance](../../tools/fixtures/wasm-phone-lab/README.md#real-github-shared-component-acceptance)
+now records real publisher attestations, an admin-attested private dry-run catalog,
+actual Store installation and Splash tool execution on macOS and OnePlus 6.
+At clean source `c5f0c5c1`, both passed 28/28 native assertions; the drivers passed
+12/12 and 13/13 checks. The public catalog stayed unchanged. Component and new
+policy release acceptance remains pending; no live model, performance or
+OpenHarmony device result is claimed. Current behavior:
 [WebAssembly in OctoSense](../wasm.md) and
 [capabilities and execution boundaries](../capabilities.md).
 
