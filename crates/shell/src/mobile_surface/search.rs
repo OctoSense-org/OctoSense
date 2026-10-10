@@ -106,6 +106,28 @@ pub fn top_hit(apps: &[(String, String)], query: &str) -> Option<String> {
 const ROW: f64 = 56.0;
 
 impl PhoneSurface {
+    /// Search results use 16 px labels, a different raster size from Home
+    /// and the editor. Prepare a bounded set of catalog glyphs while Home is
+    /// quiet so the first query/scroll does not build them in its draw call.
+    pub(super) fn prewarm_search_labels(&mut self, cx: &mut Cx2d, state: &WmState, hidden: Rect, step: usize) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        let labels: Vec<&str> = state.phone.android.rows.iter().map(|(_, label)| label.as_str()).collect();
+        let mut chars = Vec::new();
+        for c in labels.iter().flat_map(|s| s.chars()).filter(|c| !c.is_whitespace()) {
+            if seen.insert(c) {
+                chars.push(c);
+                if seen.len() == 96 { break; }
+            }
+        }
+        let mut glyphs = String::new();
+        for c in chars.iter().skip(step * 8).take(8) {
+            glyphs.push(*c);
+            glyphs.push(' '); // Do not turn adjacent catalog characters into ligatures.
+        }
+        self.d.label(cx, hidden, false, 16.0, vec4(0.0,0.0,0.0,0.0), HAlign::Left, &glyphs);
+        (step + 1) * 8 < chars.len()
+    }
+
     pub fn dismiss_search(&mut self, cx: &mut Cx, phone: &mut PhoneState, clear: bool) {
         let input = self.search.text_input(cx, ids!(input));
         if !input.area().is_empty() && cx.has_key_focus(input.area()) {

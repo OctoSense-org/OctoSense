@@ -227,6 +227,7 @@ impl WmDesk {
         for (slot,client,status,connected) in slots {
             if slot.kind.shell_drawn() {continue;}
             let shown_rect=Rect{pos:slot.rect.pos+dvec2(dx,0.0),size:slot.rect.size};
+            if !crate::mobile_pages::intersects_screen(shown_rect, screen) { continue; }
             let gave_up=phone.tiles.gave_up(slot.app);
             let entry=client.and_then(|c|phone.tiles.get(c));
             let mut shown=false;
@@ -460,6 +461,9 @@ impl WmDesk {
             Some(b)
         }else{None};
         if plan.home && !hit && !phone.card_covers_home {
+            // The quiet scene-record frame is outside the gesture, including
+            // its final settling frame. Prepare first-use navigation there.
+            if record && !moving { self.phone_ui.prewarm_navigation(cx, state, screen); }
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
             state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;

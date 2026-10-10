@@ -507,6 +507,14 @@ pub(crate) fn glance_column(screen: Rect, dx: f64) -> Rect {
         (screen.size.y - GLANCE_HEADER - GLANCE_BOTTOM).max(0.0))
 }
 
+/// Cull before resolving icons or drawing labels. GPU clipping happens too
+/// late to avoid their first-use CPU work on a barely overlapping page.
+pub(crate) fn intersects_screen(item: Rect, screen: Rect) -> bool {
+    item.pos.x < screen.pos.x + screen.size.x && item.pos.x + item.size.x > screen.pos.x
+        && item.pos.y < screen.pos.y + screen.size.y && item.pos.y + item.size.y > screen.pos.y
+        && item.size.x > 0.0 && item.size.y > 0.0
+}
+
 /// Refresh the page model from the shell each frame before the home draws:
 /// the favorites (the launcher's apps minus the dock), the capacities of
 /// page 0 and of a spill page on this screen, and the glance feed's shell
@@ -681,6 +689,20 @@ impl PhoneSurface {
         }
     }
 
+    /// A bounded preview through the same glyph/icon paths, outside the
+    /// viewport. Dynamic summaries keep their normal draw-time fallback.
+    pub(super) fn prewarm_glance(&mut self, cx: &mut Cx2d, phone: &PhoneState,
+        screen: Rect, style: DesktopStyle, dark: bool, step: usize) {
+        let clear = vec4(0.0, 0.0, 0.0, 0.0);
+        if step == 0 {
+            self.d.label_elided(cx, rect(screen.pos.x, screen.pos.y, screen.size.x, 30.0),
+                true, 24.0, clear, HAlign::Left, "At a glance");
+        } else if let Some(item) = phone.pages.feed.items().take(4).nth(step - 1) {
+            self.draw_glance_card(cx, rect(screen.pos.x + 20.0, screen.pos.y,
+                screen.size.x - 40.0, item.height()), screen, item, style, dark, clear, 0.0);
+        }
+    }
+
     fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, column: Rect, item: &GlanceItem, style: DesktopStyle, dark: bool, ink: Vec4f, opacity: f32) {
         if let GlanceItem::Card(card) = item {
             self.rounded(cx, r, 10.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.18 } else { 0.92 } * opacity));
@@ -801,6 +823,31 @@ mod tests {
     }
     fn settle(pages: &mut PagesState) {
         for _ in 0..120 { pages.step(1.0 / 60.0, None); }
+    }
+
+    #[test]
+    fn spring_overshoot_does_not_prepare_offscreen_spill_page_cells() {
+        let screen = rect(0.0, 28.0, 384.0, 760.0);
+        let mut pages = PagesState::default();
+        pages.sync(&ids(40), 8, 20);
+        let layout = mobile_tiles::home_layout_for_apps(screen,
+            PhoneSurface::home_top(DesktopStyle::Android, screen),
+            PhoneSurface::home_dock(screen), &[]);
+        let cell = layout.favorites.size.x / layout.columns as f64;
+        // The first return from Glance reached +0.0027 pages: the page
+        // overlaps by one point, but none of its actual cells is visible.
+        pages.index = 0.0027;
+        assert!(pages.page_visible(1, screen.size.x));
+        for column in 0..layout.columns {
+            let r = rect(layout.favorites.pos.x + column as f64 * cell
+                + pages.page_offset(1, screen.size.x), layout.favorites.pos.y, cell, layout.row_height);
+            assert!(!intersects_screen(r, screen));
+        }
+        // A deliberate swipe must draw a cell as soon as it enters.
+        pages.index = 0.3;
+        let first = rect(layout.favorites.pos.x + pages.page_offset(1, screen.size.x),
+            layout.favorites.pos.y, cell, layout.row_height);
+        assert!(intersects_screen(first, screen));
     }
 
     #[test]

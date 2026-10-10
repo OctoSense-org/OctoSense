@@ -388,6 +388,9 @@ pub struct PhoneSurface {
     #[live] pub shade_glass: GaussRoundedView,
     /// The shade's glyphs were rasterized ahead of its first pull.
     #[rust] shade_warm: bool,
+    /// Appearance and feed whose first-use navigation resources are ready.
+    #[rust] navigation_warm: Option<(DesktopStyle, bool, f64, f64, u64, u64)>,
+    #[rust] navigation_warm_step: usize,
     // The sheet's content recorded once per state, shown as one quad while
     // the sheet moves (mobile_shade.rs).
     #[rust] shade_content: ShadeContentCache,
@@ -846,6 +849,10 @@ impl PhoneSurface {
             for (index,id) in phone.pages.page_ids(k).iter().enumerate() {
                 let label=ids.iter().find(|(i,_)|i==id).map(|(_,l)|l.as_str()).unwrap_or("Unavailable app");
                 let r=rect(page.favorites.pos.x+dx+(index%page.columns)as f64*cell,page.favorites.pos.y+(index/page.columns)as f64*page.row_height,cell,page.row_height);
+                // A settling spring can expose a sliver of the next page.
+                // Its cells are still entirely outside the viewport; do not
+                // decode all its icons and rasterize its labels on that frame.
+                if !crate::mobile_pages::intersects_screen(r, screen) { continue; }
                 if phone.drag.as_ref().is_some_and(|d|d.app==*id) {
                     // The lifted icon's slot: a faint ring where it came from.
                     self.rounded(cx,rect(r.pos.x+(cell-size)*0.5,r.pos.y,size,size),(size*0.5) as f32,alpha(ink,0.12*opacity));
@@ -908,6 +915,51 @@ impl PhoneSurface {
         self.rounded(cx,pill,12.0,alpha(if dark {rgb(255,255,255)} else {rgb(20,18,30)},0.12*opacity));
         self.d.label(cx,pill,false,12.0,alpha(ink,0.85*opacity),HAlign::Center,text);
     }
+    /// Use the actual drawing paths while Home is still, before the first
+    /// swipe needs new glyphs, atlas space and the editor's shader. This is
+    /// bounded to the first four Glance summaries; no card app is executed.
+    /// Keep all hit regions and editor geometry from the visible scene.
+    pub(super) fn prewarm_navigation(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect) {
+        let phone = &state.phone;
+        if phone.screen != PhoneScreen::Home || phone.draw_active || phone.gesture.is_some()
+            || phone.search_reveal != 0.0 || phone.openness != 0.0 || phone.overview != 0.0
+            || phone.shade.open != 0.0 || phone.card_open || phone.pages.position() != 0.0 {
+            return;
+        }
+        let key = (state.style.target, state.style.dark, cx.current_dpi_factor(),
+            phone.android.font_scale, crate::glance::generation(), phone.android.catalog_revision);
+        if self.navigation_warm != Some(key) {
+            self.navigation_warm = Some(key);
+            self.navigation_warm_step = 0;
+        }
+        if self.navigation_warm_step == usize::MAX { return; }
+        let timing = crate::mobile_perf::work_start();
+        self.use_fonts(state.style.target == DesktopStyle::Ios);
+        self.d.set_text_scale(phone.android.font_scale);
+        let hidden = rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, screen.size.x, screen.size.y);
+        let hit_count = self.hits.len();
+        let search_rect = self.search_rect;
+        let cards = std::mem::take(&mut self.glance_cards);
+        let ink = self.theme_ink(if state.style.dark { rgb(255,255,255) } else { rgb(31,27,38) });
+        // One editor, header, summary or eight catalog characters per quiet
+        // frame. A touch suspends this work instead of waiting for the whole
+        // catalog to warm. Keep drawing until the bounded preparation ends.
+        let more = match self.navigation_warm_step {
+            0 => { self.draw_search(cx, state, hidden, ink); true }
+            step @ 1..=5 => {
+                self.prewarm_glance(cx, phone, hidden, state.style.target, state.style.dark, step - 1);
+                true
+            }
+            step => self.prewarm_search_labels(cx, state, hidden, step - 6),
+        };
+        self.navigation_warm_step = if more { self.navigation_warm_step + 1 } else { usize::MAX };
+        if more { cx.redraw_all(); }
+        self.hits.truncate(hit_count);
+        self.search_rect = search_rect;
+        self.glance_cards = cards;
+        crate::mobile_perf::work_end("navigation.prepare", timing);
+    }
+
     /// The same surface follows a pull, completes opening and returns Home.
     /// Only the transition composites Home; settled search is one opaque fill.
     fn draw_search_layer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {

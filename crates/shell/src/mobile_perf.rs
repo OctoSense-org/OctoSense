@@ -27,9 +27,10 @@
 //! the shell drawing (a capture, blur or cache pass kept dirty from inside)
 //! shows up there by name.
 //!
-//! The Android backend never closes the monitor's frames itself (only
-//! macOS calls `frame_boundary`), so the shell does, at the start of every
-//! phone scene draw. Only six app channels exist (`PERF_MONITOR_MAX_CHANNELS`
+//! Android and macOS close the monitor frames at presentation. Other
+//! backends use the start of a phone scene draw as a fallback. Never close
+//! an Android frame here too: that doubles its frame count and halves its
+//! reported cost. Only six app channels exist (`PERF_MONITOR_MAX_CHANNELS`
 //! minus the built-ins): the island is inside `overlay`.
 use makepad_widgets::*;
 use std::cell::RefCell;
@@ -283,16 +284,16 @@ pub fn saw_event(event: &Event) {
     });
 }
 
-/// The phone scene starts drawing: close the monitor's frame (the backend
-/// does not on Android) and account for who asked.
+/// The phone scene starts drawing: account for who asked. Only backends
+/// without a presentation boundary need the scene-draw fallback.
 pub fn frame_boundary(cx: &mut Cx) {
     if !enabled() { return; }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
     {
         let time = cx.seconds_since_app_start();
         cx.perf_monitor.frame_boundary(time);
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "android"))]
     let _ = &cx;
     COLLECTOR.with(|c| {
         let mut c = c.borrow_mut();
