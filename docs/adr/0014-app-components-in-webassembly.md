@@ -2,15 +2,20 @@
 
 English | [简体中文](0014-app-components-in-webassembly.zh-CN.md)
 
-Status: Proposed (9 Oct 2026). Phase 1, the runtime spike, is in
+Status: Accepted (9 Oct 2026, "do 1 2 3 4"); phases 1 to 3 merged on
+10 Oct 2026 in OctoSense (#436, #451), App Hub (#186, #188, #189, #190) and
+App Flow (#180, #181). Phase 1, the runtime spike, is in
 `crates/wasm-host` (`src/component.rs`, `tests/component.rs`). Phase 2's
 runtime and service parts are in `crates/wasm-host/src/component/files.rs` and
 `crates/shell/src/wasm_service.rs`, with the measurements below. Phase 3's are
 `component/net.rs` (`wasi:http`), `component/host.rs` with
 `wit/octosense-host.wit` (`octosense:host`), `Runtime::precompile` with
 `wasm_service::warm` (compiling at install), and Pulley on OpenHarmony and in
-tests; Windows runs the service, its tests in CI. App Hub's and App Flow's
-parts are in review, and iOS and phase 4 are the plan. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
+tests; Windows runs the service, its tests in CI. Phase 4's App Hub part is
+App Hub #190 (shared components in the catalog, the gate and the store), and
+OctoSense's is the `wasm` service loading an app's pinned shared components
+(`wasm_service::shared_components`). App Flow's parts are the SDK and
+`tools/octo wasm`; iOS is not planned for now. It extends [ADR 0011](0011-apps-own-functions-in-webassembly.md):
 core modules keep working as they do. How WebAssembly runs on `main`:
 [WebAssembly in OctoSense](../wasm.md).
 
@@ -97,9 +102,11 @@ component reaches only what its app may already reach.
      end it, so its timeouts are clamped to the call's deadline, which is
      10 s for a component that imports `wasi:http`.
    - **`octosense:host`, phase 3:** `request(service, args)` reaches the host
-     services the app is granted, dispatched on the UI thread as the app's
-     script's `host.request` is, but with no sheet and no prompt (only
-     methods a background surface may call), and never `wasm.*`.
+     services as the app's script's `host.request` does, dispatched on the UI
+     thread and, since makepad#118 (OctoSense #450), not checked against the
+     families the manifest declares (a service that needs a grant checks it
+     itself), but with no sheet and no prompt (only methods a background
+     surface may call), and never `wasm.*`.
    - **Never:** `wasi:sockets`, and any import outside these packages. A
      component that asks for one is refused when it loads
      (`LoadError::Import`) and by App Hub's gate.
