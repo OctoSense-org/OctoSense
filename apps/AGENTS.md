@@ -181,10 +181,11 @@ which each crate's tests load with App Hub's own loader. No app ships them, so
 the shell declares them under a virtual owner `os.<family>` (no bundle, no app
 agent, no Settings row) and runs them on the engine's service as that system
 identity. Only the system agent gets them: `ENGINE_TOOLS` in
-`../crates/shell/src/system_chat/grants.rs` grants every read tool and each
-act tool that only creates new files, never the command doors `vector.run`
-and `effect.run` (held for their own review). No app's agent gets an engine
-tool: none is shareable. An engine works in its caller's own folder (ADR
+`../crates/shell/src/system_chat/grants.rs`. Seven engines (word, deck, cad,
+light, film, effect, vector) offer `<family>.info` and a reviewed command
+door `<family>.run`; sound, design and pdf keep fixed tools (ADR 0013 lists
+each engine's surface). No app's agent gets an engine tool: none is
+shareable. An engine works in its caller's own folder (ADR
 0013, 9 Oct 2026; `../crates/shell/src/host_tools/areas.rs` decides it):
 for the system agent, its workspace, the folder its own file tools see, so
 it hands an engine a file by placing it there and reads the result back.
@@ -199,6 +200,28 @@ light). Change a tool's schema and the service together, keep both schemas
 objects (octos takes no other), and add a new tool to `ENGINE_TOOLS` only
 after reviewing it; the shell's `host_tools` tests run every granted tool
 against its declared result.
+
+A command door is an allowlist, never a deny-list. Its service builds the
+gate from `skill/safety.json` with `octosense_engine_area::door::Door` and
+its own `REVIEWED` settlements (the `file` commands that only read a file
+named in their parameters, the setters and their reviewed keys, the
+commands that name another command or an effect, whose inner id the gate
+checks in turn, and the limits on parameters that multiply work: counts,
+rows and columns, sizes, frame ranges, with copies multiplying across a
+call), admits every command of a call before running any, and fences what
+a command could plant in the document after each one (vector's linked
+images, effect's LUT and colour files, film's media and effect paths,
+photo's linked smart objects). Engine work runs on the shell's UI thread,
+so every door caps what one call may ask for: give a new multiplying
+parameter a `Limit`, with its reason beside it. A command the engine
+cannot yet do safely on hostile data (deck's media and zip parsing, #448)
+is `Held`: the door refuses it, saying why, until the engine is fixed. Only `safe` ids and reviewed reads
+run; an unclassified id fails the skill drift test, and an id the gate does
+not know is refused. Classify a new id from its implementation, never
+widen a class to make a command run, and keep a door's hostile fixtures
+(a batch wrapping a plug-in install, a plug-ins-folder preference, a
+plug-in effect) passing. Engine crate tests are not in CI (#412): run
+`cargo test --locked -p octosense-<family>-service` yourself after a change.
 
 Every engine (sheet and photo too) ships the system agent's skill for it in
 `<family>/host-service/skill/`, embedded by `src/skill.rs`. `SKILL.md` is

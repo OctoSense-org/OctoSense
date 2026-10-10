@@ -253,8 +253,10 @@ limits far above the `wasm` service's. A scratch program that calls the
 service as a script's `host.request` does showed both, on the Linux build host
 (8 October 2026). Before #398, `os.photos` installed photocraft's example
 plug-in, the next call listed it, and another system app, `os.notes`, ran it
-on a document. With #398, each of those calls is refused:
-``photo.run: `plugin.install` is not available through the photo service``.
+on a document. With #398, each of those calls was refused. Since the
+command doors (#418, ADR 0013) the refusal is the allowlist gate's, which
+classes every `plugin.*` id `code`:
+``photo.run: `plugin.install` is classed code: it installs or runs code, or runs other commands, so the door never runs it``.
 
 **Closed in `vector` by #405.** `vector.run` refused files, documents, the
 `app.*` group and path-like arguments, but not `plugin.*`, and vectorcraft's
@@ -262,9 +264,10 @@ engine installs a plug-in from base64 `dataBase64`. The same scratch program
 showed it on `main` before #405: `os.notes` installed vectorcraft's example
 plug-in, the next call listed it, another system app (`os.maps`) saw it, and
 `vector.commands` offered `plugin.install`. Now `vector.run` refuses every
-`plugin.*` id before the engine sees it
-(``vector.run: `plugin.install` is not available through the vector service``),
-and `vector.commands` leaves them out.
+`plugin.*` id before the engine sees it (since #418 by the allowlist gate:
+``vector.run: `plugin.install` is classed code: it installs or runs code, or runs other commands, so the door never runs it``),
+and `vector.commands` leaves them out. An effect plug-in named to a built-in
+effect command (`effect.apply {effect: "plugin.<id>"}`) is refused too.
 
 Both engines still link wasmi, and both services answer system apps (`os.*`)
 only.

@@ -28,63 +28,8 @@
       "implemented_by": "host-service"
     },
     {
-      "name": "vector.convert",
-      "description": "Convert a vector document in your workspace and write it there in the format `format` or else the extension of `out` picks: SVG/SVGZ, PDF, EPS, DXF, EMF/WMF, PNG/JPG/WebP/GIF/TIFF/BMP/TGA/PSD, or native .vectorcraft; `scale` (0.01 to 16) sizes raster output. A multi-artboard SVG export also writes numbered siblings, listed in `files`. Both paths are relative to your workspace (see vector.info); nothing is written outside it, and no existing file is ever replaced (a sibling's name included): choose a new name for `out`.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {"type": "string", "minLength": 1, "maxLength": 512},
-          "out": {"type": "string", "minLength": 1, "maxLength": 512},
-          "format": {"type": "string", "minLength": 2, "maxLength": 16},
-          "scale": {"type": "number", "minimum": 0.01, "maximum": 16}
-        },
-        "required": ["path", "out"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string"},
-          "format": {"type": "string"},
-          "bytes": {"type": "integer"},
-          "warnings": {"type": "array"},
-          "files": {"type": "array", "items": {"type": "string"}}
-        },
-        "required": ["out"]
-      },
-      "risk": "act",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "vector.render",
-      "description": "Render one artboard (0-based `artboard`, default 0) of a vector document in your workspace to a PNG at `out`, its longest edge `max_side` pixels (default 1024). Both paths are relative to your workspace (see vector.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {"type": "string", "minLength": 1, "maxLength": 512},
-          "out": {"type": "string", "minLength": 5, "maxLength": 512},
-          "max_side": {"type": "integer", "minimum": 1, "maximum": 4096},
-          "artboard": {"type": "integer", "minimum": 0}
-        },
-        "required": ["path", "out"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string"},
-          "width": {"type": "integer"},
-          "height": {"type": "integer"},
-          "bytes": {"type": "integer"}
-        },
-        "required": ["out", "width", "height", "bytes"]
-      },
-      "risk": "act",
-      "implemented_by": "host-service"
-    },
-    {
       "name": "vector.run",
-      "description": "Run up to 64 commands from the vector engine's drawing and editing catalog, in order, on the document at `path` in your workspace or on a new default document, and export it to `out` when given (as vector.convert, never over an existing file). Each command is {id, params}. The engine's file and plug-in commands and path-like parameters are refused; file access stays inside your workspace. A generic engine command door: not granted to the system agent until it is reviewed separately.",
+      "description": "Run up to 64 commands from the vector engine's catalog, in order, on the document at `path` (SVG, .vectorcraft or another format the engine opens) in your workspace, or on a new default document, then write it in the format `format` or the extension of `out` names (SVG/SVGZ, PDF, EPS, DXF, EMF/WMF, PNG/JPG/WebP/GIF/TIFF/BMP/TGA/PSD or .vectorcraft; raster output is one artboard, `artboard` 0-based, sized by `scale` 0.01 to 16 pixels per point) to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document) and effects the engine builds in (never a plug-in); anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the vector-engine skill first.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -104,7 +49,8 @@
           },
           "out": {"type": "string", "minLength": 1, "maxLength": 512},
           "format": {"type": "string", "minLength": 2, "maxLength": 16},
-          "scale": {"type": "number", "minimum": 0.01, "maximum": 16}
+          "scale": {"type": "number", "minimum": 0.01, "maximum": 16},
+          "artboard": {"type": "integer", "minimum": 0}
         },
         "required": ["cmds"],
         "additionalProperties": false
@@ -113,7 +59,7 @@
         "type": "object",
         "properties": {
           "results": {"type": "array", "items": {"type": "object"}},
-          "out": {"type": ["object", "null"]}
+          "out": {"type": ["string", "null"]}
         },
         "required": ["results"]
       },

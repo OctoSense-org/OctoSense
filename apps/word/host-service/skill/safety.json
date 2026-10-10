@@ -6,9 +6,9 @@
   "classes": {
     "safe": {"count": 326, "meaning": "pure document or pixel operations inside the session"},
     "file": {"count": 16, "meaning": "reads or writes a path (a door may allow it only inside the caller's area)"},
-    "code": {"count": 4, "meaning": "installs or runs code: plug-ins, scripts, expressions with I/O, or other commands (macros, actions, batches)"},
+    "code": {"count": 3, "meaning": "installs or runs code: plug-ins, scripts, expressions with I/O, or other commands (macros, actions, batches)"},
     "network": {"count": 1, "meaning": "uses the network"},
-    "device": {"count": 0, "meaning": "uses hardware: audio, MIDI, cameras, scanners, printers, tablets"},
+    "device": {"count": 1, "meaning": "uses hardware: audio, MIDI, cameras, scanners, printers, tablets"},
     "host": {"count": 42, "meaning": "host, app or UI state outside the document: windows, panels, views, preferences, shortcuts, the clipboard"}
   },
   "commands": {
@@ -291,7 +291,7 @@
     "review.previousChange": "safe",
     "review.previousComment": "safe",
     "review.proofing": "host",
-    "review.readAloud": "code",
+    "review.readAloud": "device",
     "review.reject": "safe",
     "review.rejectAll": "safe",
     "review.reply": "safe",

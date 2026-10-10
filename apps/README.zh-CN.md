@@ -531,11 +531,19 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发布，位于
 `<family>/host-service/tools.json`。Shell 以虚拟所有者 `os.<family>` 的名义声明这些
 工具，并只授予系统 Agent（[`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)
-中的 `ENGINE_TOOLS`）：每个引擎的读工具（`info`、`text`、`inspect`、`entities`、
-`measure`、`controls`、`peaks`、`project.info`），以及只新建文件的 act 工具
-（`new`、`convert`、`render`、`export`、`frame`、`develop`、`batch`、`trim`、`mix`、
-`merge`、`split`、`export_lottie`、`import_lottie`）。可以运行任意引擎命令的
-`vector.run` 和 `effect.run` 已声明但不授予，Shell 也拒绝它们。引擎在调用方自己的
+中的 `ENGINE_TOOLS`），共 27 个。七个引擎（word、deck、cad、light、film、effect、
+vector）提供 `<family>.info`（read）和 `<family>.run`：经过审查的命令入口，在一份文档上
+依次运行引擎目录中最多 64 条命令，再把结果写成新文件。每个服务在运行任何命令之前，先用
+由引擎审查后的分类（`skill/safety.json`；
+[`../crates/engine-area/src/door.rs`](../crates/engine-area/src/door.rs)）构建的允许列表
+检查调用中的每一条命令：只在打开的文档内部起作用的命令可以运行，服务审查过的、读取调用方
+文件夹内文件的命令也可以；触及其他文件、代码、网络、设备或应用的 id 一律拒绝，分类中没有的
+id、批处理或宏、应用级设置项以及插件效果同样拒绝。引擎工作在 Shell 的 UI 线程上运行，因此每个入口还
+限制一次调用能要求的工作量：数量、尺寸、帧范围、在一次调用内相乘的复制，每条命令之后文档的大小，以及
+它自己的输出。sound（没有命令目录）、design（按决定不设
+入口）和 pdf（只有几个固定操作）保留固定工具：`sound.info`、`peaks`、`convert`、`trim`、
+`mix`；`design.info`、`render`、`export`；`pdf.info`、`text`、`render`、`merge`、`split`。
+ADR 0013 记录了每个引擎的工具面。引擎在调用方自己的
 文件夹里工作（ADR 0013，`../crates/shell/src/host_tools/areas.rs`）：对系统 Agent
 而言就是它的工作区，它自己的文件工具能看到引擎写出的文件，每个引擎也能打开其他引擎
 做出的文件。所有路径都相对于该文件夹并留在其中，任何调用都不会替换已有文件，写进
@@ -545,7 +553,7 @@ pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发�
 **引擎技能。** 每个引擎（包括 sheet 和 photo 引擎）还在 `<family>/host-service/skill/` 中为系统 Agent
 附带一个技能：手写的 `SKILL.md`（引擎能做什么、系统 Agent 用哪些工具调用它、文件规则、示例），以及按引擎固定版本
 生成的参考文件：`commands.md`（命令目录，每个 id 一行，并标出每条命令能触及什么）、light 的 `controls.md` 和 sheet 的
-`functions.md`。与它们并列的 `safety.json`（每个命令 id 的类别，供经过审查的命令入口使用）只留在仓库中。内核服务在每次
+`functions.md`。与它们并列的 `safety.json`（每个命令 id 的类别，每个命令入口据此构建允许列表）只留在仓库中。内核服务在每次
 启动前把已链接引擎的技能安装到 `_main` profile 的技能目录（[`../crates/kernel/README.zh-CN.md`](../crates/kernel/README.zh-CN.md#系统智能体的技能)）；
 octos 把它们的一行描述列入系统 Agent 的提示词，Agent 需要某个引擎时再读取对应技能。各服务的 `tests/skill.rs` 会在参考文件
 与固定版本的引擎不一致时失败；用 `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`

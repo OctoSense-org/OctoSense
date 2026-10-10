@@ -1,16 +1,16 @@
 {
   "engine": "effectcraft",
-  "method": "Read every module commands/mod.rs::command_specs() aggregates (plus models.rs, storage.rs, learn.rs, templates.rs, ease_presets.rs, preview.rs, session_settings.rs) and followed each run fn into the Session hooks (services/Importer, exporter, script, plugin_loader, config ConfigStore, browser, storage, models_dir) and into raw std::fs / process::Command / Event::OpenUrl / Event::Frontend, using a per-function sink map of the engine crate plus rg over the render-path crates (effects, render, text, media, model, expr, script) and the egui frontend's command handlers. A command whose run is only frontend() is host; one that changes viewer-only display state, app Settings (config store) or process-wide state is host; an advisory frontend event alongside document work does not change the class (headless backends drain and drop events); renders that only decode the open project's footage are safe. Expressions: effectcraft_expr is full JavaScript on boa 0.22 (eval/Function/regex) but strictly I/O-free - its only native host calls read the open project and its footage pixels (host.rs Req::*), with no fs/net/console/module loader - and finitely capped (loop_iteration_limit 10,000,000, recursion_limit 400, <=2000 host-request passes, MAX_DEPTH 16), so expression-setting commands are classified safe (they store text and run a parse-only syntax check; evaluation happens only during rendering and reaches nothing outside the session); the caveat is the caps are coarse with no wall-clock or memory budget (a CPU-DoS, not a reach), flagged for Phase 2. Limits: classes are per id, so parameter-dependent reach (LUT/OCIO effect file-path params set via prop.set, glTF sibling-resource URIs) is flagged in why rather than reclassifying the generic setter; frontend behaviour was read only in crates/ui-egui; nothing was built or run; the line numbers are from the pinned checkout d60cb71.",
+  "method": "Read every module commands/mod.rs::command_specs() aggregates (plus models.rs, storage.rs, learn.rs, templates.rs, ease_presets.rs, preview.rs, session_settings.rs) and followed each run fn into the Session hooks (services/Importer, exporter, script, plugin_loader, config ConfigStore, browser, storage, models_dir) and into raw std::fs / process::Command / Event::OpenUrl / Event::Frontend, using a per-function sink map of the engine crate plus rg over the render-path crates (effects, render, text, media, model, expr, script) and the egui frontend's command handlers. A command whose run is only frontend() is host; one that changes viewer-only display state, app Settings (config store) or process-wide state is host; an advisory frontend event alongside document work does not change the class (headless backends drain and drop events); renders that only decode the open project's footage are safe. Expressions: effectcraft_expr is full JavaScript on boa 0.22 (eval/Function/regex), I/O-free - its only native host calls read the open project and its footage pixels (host.rs Req::*), with no fs/net/console/module loader - but with no time or memory budget: boa's loop_iteration_limit (10,000,000) counts one loop at a time, so nested loops or a script re-run for up to 2000 host-request passes multiply past it, recursion_limit is 400, and nothing bounds the heap (runtime.rs:211-213, lib.rs:44-46). Engine work runs on the shell's UI thread, so the Phase 2 review (the door's work caps, #418) classes code every command that sets or enables an expression, or evaluates one at every frame: an expression is code the engine runs without a bound wherever the project is drawn. The door's session evaluates no expression at all (the service gives it no expression host), and refuses to write a frame or a Lottie file of a composition that holds an enabled one. Limits: classes are per id, so parameter-dependent reach (LUT/OCIO effect file-path params set via prop.set, glTF sibling-resource URIs) is flagged in why rather than reclassifying the generic setter; frontend behaviour was read only in crates/ui-egui; nothing was built or run; the line numbers are from the pinned checkout d60cb71.",
   "rules": [
     {
       "prefix": "prop.",
       "class": "safe",
-      "why": "Edit the open project (layers, masks, shapes, paths, paint, puppet, liquify, effects, keyframes, property values and expressions, time, markers, tracking) or query it; no path, device, network, settings or other-command reach. Expression text is stored and parse-checked only (see method on the evaluator); it is evaluated during rendering, which stays I/O-free.",
+      "why": "Edit the open project (layers, masks, shapes, paths, paint, puppet, liquify, effects, keyframes, property values, time, markers, tracking) or query it; no path, device, network, settings or other-command reach. The commands that set or enable an expression, or evaluate one at every frame, are excepted (code).",
       "evidence": [
-        "crates/engine/src/commands/prop.rs:236-275: prop.setExpression stores text + runs expr_check (parse only), no execution",
         "crates/engine/src/commands/layer.rs,mask.rs,paths.rs,shape_stroke.rs,shape_tool.rs,paint.rs,puppet.rs,liquify.rs: edits go through Session::edit (project copy-on-write)",
         "crates/engine/src/commands/anim.rs:300-344: anim.reveal/addKeyframe operate on the project; the frontend reveal event is advisory",
-        "crates/expr/src/host.rs:300-470: expression host requests read only the project and its footage"
+        "crates/expr/src/host.rs:300-470: expression host requests read only the project and its footage",
+        "crates/engine/src/commands/prop.rs:61-101: prop.set clamps a slider value to its valid range and stores it"
       ]
     },
     {
@@ -39,14 +39,6 @@
       ]
     },
     {
-      "prefix": "paths.",
-      "class": "safe",
-      "why": "Null/trace helpers that add nulls and set link expressions on the project (expressions are stored, not run).",
-      "evidence": [
-        "crates/engine/src/commands/path_nulls.rs:173-281: adds nulls and prop.setExpression with fixed expression text"
-      ]
-    },
-    {
       "prefix": "shape.",
       "class": "safe",
       "why": "Shape layer / pen tool edits on the project.",
@@ -65,7 +57,7 @@
     {
       "prefix": "puppet.",
       "class": "safe",
-      "why": "Puppet pin mesh editing and recording (project only).",
+      "why": "Puppet pin mesh editing and recording (project only); puppet.follow, which sets pin expressions, is excepted (code).",
       "evidence": [
         "crates/engine/src/commands/puppet.rs"
       ]
@@ -105,7 +97,7 @@
     {
       "prefix": "camera.",
       "class": "safe",
-      "why": "3D camera, rig, light-from-model and focus-link edits on the project (focus links store expressions).",
+      "why": "3D camera, rig, light-from-model and view-camera edits on the project; the focus links and the stereo rig, which set expressions, are excepted (code).",
       "evidence": [
         "crates/engine/src/commands/camera_cmds.rs, crates/engine/src/commands/rig3d.rs, crates/engine/src/commands/focus.rs:38-41 (sets a focus expression), crates/engine/src/commands/three_d.rs (camera.orbit/pan/dolly edit the view camera / camera layer)"
       ]
@@ -187,7 +179,7 @@
     {
       "prefix": "layer.",
       "class": "safe",
-      "why": "Layer creation/transform/switches/styles/masks/markers/timing/text-animators and the layer tree query; layer.revealSource/openSource/revealExpressionErrors set session selection or navigate (with an advisory panel hint).",
+      "why": "Layer creation/transform/switches/styles/masks/markers/timing/text-animators and the layer tree query; layer.revealSource/openSource/revealExpressionErrors set session selection or navigate (with an advisory panel hint). layer.expressions, which enables a layer's expressions, is excepted (code).",
       "evidence": [
         "crates/engine/src/commands/layer.rs, crates/engine/src/commands/layer_menu.rs, crates/engine/src/commands/layer_time.rs, crates/engine/src/commands/styles.rs, crates/engine/src/commands/three_d.rs, crates/engine/src/commands/text_anim.rs, crates/engine/src/commands/create.rs",
         "crates/engine/src/commands/layer_menu.rs:626-699: openSource/revealSource/revealExpressionErrors (selection + frontend reveal)"
@@ -205,7 +197,7 @@
     {
       "prefix": "edit.",
       "class": "safe",
-      "why": "Undo/redo/history, cut/copy/paste/duplicate/clear/label/select; the clipboards are in-session memory, not the OS clipboard.",
+      "why": "Undo/redo/history, cut/copy/paste/duplicate/clear/label/select; the clipboards are in-session memory, not the OS clipboard. The copies that put expressions on the clipboard for edit.paste to set are excepted (code); a paste otherwise copies only expressions the project already holds.",
       "evidence": [
         "crates/engine/src/lib.rs:185-201: EditorState.clipboard / key_clipboard / effect_clipboard are session memory",
         "crates/engine/src/commands/edit.rs:209-380: copy/cut/paste move layers/keys/effects through EditorState, no OS clipboard"
@@ -246,7 +238,7 @@
     {
       "prefix": "expr.",
       "class": "safe",
-      "why": "Expression error list and language-menu metadata; expr.errors evaluates expressions (I/O-free) to report failures.",
+      "why": "Expression error list and language-menu metadata; expr.errors evaluates the project's expressions through the session's expression host, which the door's session does not have (it evaluates none), and sets nothing.",
       "evidence": [
         "crates/engine/src/commands/expr_tools.rs:43-96: errors() runs host.eval over the project; languageMenu is static"
       ]
@@ -470,10 +462,10 @@
         "effect.plugins.load"
       ],
       "class": "code",
-      "why": "Loads a WebAssembly effect plug-in into the process-wide effect registry through the host plug-in loader (effect.run already refuses effect.plugins.* except list).",
+      "why": "Loads a WebAssembly effect plug-in into the process-wide effect registry through the host plug-in loader; a registered plug-in is then applied by id like a built-in, and by display name ahead of a built-in it shadows.",
       "evidence": [
         "crates/engine/src/commands/effect.rs:34-72: plugins_load reads the .wasm (or every .wasm in a folder via std::fs::read_dir) and calls the plugin_loader",
-        "crates/engine/src/apps/effect/host-service/src/lib.rs:324-329: callable() refuses effect.plugins.* except list"
+        "crates/effects/src/plugin.rs:276-296: register_plugin adds the spec to the process-wide registry; crates/effects/src/lib.rs:486-535: find/lookup resolve plug-ins too"
       ]
     },
     {
@@ -485,6 +477,39 @@
       "evidence": [
         "crates/engine/src/learn.rs:413-427: step_cmd action=showMe executes st.show commands",
         "crates/engine/src/learn.rs:74-260: step `show` lists include playback.toggle and view.extendedViewer"
+      ]
+    },
+    {
+      "ids": [
+        "prop.setExpression",
+        "prop.pickWhip",
+        "prop.convertExpressionToKeyframes",
+        "layer.expressions",
+        "edit.copyExpressionOnly",
+        "edit.copyWithPropertyLinks",
+        "edit.copyWithRelativePropertyLinks",
+        "paths.pointsFollowNulls",
+        "paths.nullsFollowPoints",
+        "paths.tracePath",
+        "camera.linkFocusToPoi",
+        "camera.linkFocusToLayer",
+        "camera.stereoRig",
+        "puppet.follow"
+      ],
+      "class": "code",
+      "why": "Set or enable an expression, which the engine then runs as JavaScript with no time or memory budget whenever the project is drawn (on the shell's UI thread; see method), or evaluate one at every frame: prop.setExpression sets or enables any text; prop.pickWhip, the focus links, the stereo rig, puppet.follow and the paths.* null rigs write their own expressions (through an inner prop.setExpression the gate never sees); layer.expressions enables a layer's expressions; the three copies put expressions on the clipboard that edit.paste sets on other properties (Copy Expression Only enabled, whatever they were); prop.convertExpressionToKeyframes evaluates an expression at every comp frame of the layer's span, which the comp's duration does not bound.",
+      "evidence": [
+        "crates/expr/src/runtime.rs:211-213: set_loop_iteration_limit(10_000_000) and set_recursion_limit(400), no wall-clock or heap budget",
+        "crates/expr/src/lib.rs:44-46,143-156: MAX_DEPTH 16 nested evaluations, MAX_PASSES 2000 re-runs of the script per evaluation",
+        "crates/engine/src/commands/prop.rs:236-275: prop.setExpression sets text and enabled (default true), or toggles a default expression",
+        "crates/engine/src/commands/link.rs:154-176: prop.pickWhip runs prop.setExpression with a reference expression",
+        "crates/engine/src/commands/focus.rs:35-60: the focus links set cameraOptions/focusDistance expressions",
+        "crates/engine/src/commands/rig3d.rs:33-37,262-268: camera.stereoRig sets the eye cameras' position, point-of-interest and zoom expressions",
+        "crates/engine/src/commands/puppet.rs:534-586: puppet.follow runs prop.setExpression per follower pin",
+        "crates/engine/src/commands/path_nulls.rs:190-282: the three paths.* helpers run prop.setExpression",
+        "crates/engine/src/commands/layer_menu.rs:145-161: layer.expressions sets enabled (default true) on every expression of the layers",
+        "crates/engine/src/commands/edit.rs:268-356: Copy with (Relative) Property Links builds link expressions, Copy Expression Only copies expressions; paste_links sets them (links enabled)",
+        "crates/engine/src/commands/prop.rs:744-766: prop.convertExpressionToKeyframes evaluates the expression at every comp frame from the layer's in to out point"
       ]
     },
     {
@@ -830,15 +855,25 @@
         "file.scripts.list",
         "app.capabilities",
         "render.backend",
-        "mediaBrowser.addFavorite",
-        "mediaBrowser.removeFavorite",
         "effect.plugins.list"
       ],
       "class": "safe",
-      "why": "Project-only / query exceptions to their file/host namespace defaults: build placeholders/solids/comps, consolidate/remove-unused/reduce, interpret footage (uses project media), close, project settings, formats list, proxy switches, script list; app.capabilities and render.backend are queries/project settings; media-browser favourites are session state.",
+      "why": "Project-only / query exceptions to their file/host namespace defaults: build placeholders/solids/comps, consolidate/remove-unused/reduce, interpret footage (uses project media), close, project settings, formats list, proxy switches, script list; app.capabilities and render.backend are queries/project settings.",
       "evidence": [
         "crates/engine/src/commands/file.rs (projectSettings/cycleBitDepth), crates/engine/src/commands/file_more.rs:114-326 (placeholders/solids/newCompFromSelection/consolidate/reduce/interpret), crates/engine/src/commands/proxy.rs:76-139 (setProxyNone/useProxy/interpretProxy)",
-        "crates/engine/src/commands/scripts.rs:102-104 (file.scripts.list), crates/engine/src/commands/query.rs (app.capabilities), crates/engine/src/commands/panels_cmds.rs:84-93 (favourites in EditorState)"
+        "crates/engine/src/commands/scripts.rs:102-104 (file.scripts.list), crates/engine/src/commands/query.rs (app.capabilities)"
+      ]
+    },
+    {
+      "ids": [
+        "mediaBrowser.addFavorite",
+        "mediaBrowser.removeFavorite"
+      ],
+      "class": "host",
+      "why": "Media Browser panel state outside the document: a favourite folder kept in the session's EditorState. Without a `path` the favourite is the browser's home folder, the HOME environment variable, which the answer lists.",
+      "evidence": [
+        "crates/engine/src/commands/panels_cmds.rs:84-93: browser_favorite edits s.state.media_browser.favorites and returns the list; browser_dir falls back to b.home()",
+        "crates/engine/src/media_browser.rs:84-86,224-226: media_browser() is the file-system browser when the host sets none; home() reads HOME / USERPROFILE"
       ]
     },
     {

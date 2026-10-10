@@ -120,7 +120,8 @@ them:
   only inside its engine's own area. None is destructive, outward or
   shareable, so no app's agent can be granted one. The generic command
   doors `vector.run` and `effect.run` are declared but held back for a
-  separate review. The `commands` catalogs of design, effect and vector are
+  separate review. (Since 9 Oct 2026 the grant is 27 tools: `info` and a
+  reviewed `run` door for seven engines; see "Command doors" below.) The `commands` catalogs of design, effect and vector are
   not declared, because they answer JSON arrays and octos takes object
   results only.
 - **Files are the open gap** (closed on 9 Oct 2026: see below). Decision 5
@@ -134,7 +135,7 @@ them:
   admit outside documents to those two until that is contained.
 - **The kernel's cap.** octos takes at most 64 host tools in one
   registration and refuses a larger set whole. With the engines, the system
-  session's largest set is 63. The shell offers the engine tools last and
+  session's largest set is 63 (47 since the command doors). The shell offers the engine tools last and
   cuts them first past the cap, and a test keeps the whole grant within it.
 - **Long calls.** An engine call runs on the thread that dispatches it
   (the shell's UI thread for a tool call) and holds App Hub's service
@@ -189,11 +190,12 @@ reach: photocraft alone has 817 commands.
   as `safe`, `file`, `code` (plug-ins, scripts, commands that run other
   commands), `network`, `device` or `host` (windows, views, preferences,
   the clipboard). Each `safety.json` has its engine's counts.
-- **Next (not done).** Once per-caller areas land, `<family>.info` plus
-  one reviewed `<family>.run` door per engine with a catalog replace the 43
-  per-method tools. Each door denies `file` outside the caller's area and
-  every `code`, `network`, `device` and `host` id. An engine that cannot be
-  fenced keeps its curated tools.
+- **Next** (done on 9 Oct 2026: see "Command doors" below). Once
+  per-caller areas land, `<family>.info` plus one reviewed `<family>.run`
+  door per engine with a catalog replace the 43 per-method tools. Each door
+  denies `file` outside the caller's area and every `code`, `network`,
+  `device` and `host` id. An engine that cannot be fenced keeps its curated
+  tools.
 
 ## Engines work in the caller's own folder (9 Oct 2026)
 
@@ -296,13 +298,13 @@ service run without the shell (its own tests, App Hub's card-host).
   - **word, deck, cad, sound, sheet:** bytes in, bytes out; the engines
     open no other file. word, deck and cad use system fonts by family
     name, gridcraft refuses links to other workbooks, and sound never
-    opens an audio or MIDI device. The word service runs no engine
-    command but `file.info` and `document.inspect`, so wordcraft's
-    `review.readAloud` (which starts a speech program) is out of reach.
+    opens an audio or MIDI device. Since the command doors, `word.run`
+    runs wordcraft's commands, and `review.readAloud` (which starts a
+    speech program) is classed `device`, which no door runs.
 
   All twelve engines are fenced; none was left on its private folder.
-- **The command doors are held.** `vector.run` and `effect.run` were
-  never granted, and their lists of refused ids are no fence: a wrapper
+- **The command doors are held** (until 9 Oct 2026: see "Command doors"
+  below). `vector.run` and `effect.run` were never granted, and their lists of refused ids are no fence: a wrapper
   (`command.batch`, `engine.batch`, `file.runScript`), a preference
   (`prefs.set` of a plug-ins folder) or a plug-in effect runs past them.
   With the shell's resolver installed, both services refuse `run`
@@ -313,6 +315,113 @@ service run without the shell (its own tests, App Hub's card-host).
   opened in. A call from another area cannot see, change, export or close
   it. Each area holds at most 16 open workbooks, and all areas together
   at most 64.
+
+## Command doors (9 Oct 2026)
+
+The system agent now drives seven engines through one reviewed command door
+each, instead of a curated tool per method (#418).
+
+- **The surface.** word, deck, cad, light, film, effect and vector each
+  give the system agent `<family>.info` (a read) and `<family>.run`: up to
+  64 commands of the engine's catalog, run in order on the document at
+  `path` (or on a new one), then the result written to `out`, a new file in
+  the caller's folder. `out`'s extension picks what is written, so one door
+  covers what the per-method tools did (conversions, renders, frames,
+  exports, the Lottie import and export, a develop). sound, design and pdf
+  keep fixed tools. The engine grant goes from 43 tools to 27, and the
+  system session's largest set from 63 to 47 of octos's 64 (96 after octos
+  #2737 and a repin). The per-method service methods stay for apps' own
+  requests (`host.request`), which the doors do not change.
+- **An allowlist, never a deny-list.** Each service builds its gate
+  (`crates/engine-area/src/door.rs`, `Door`) from the engine's generated
+  classification `skill/safety.json` and its own `REVIEWED` settlements.
+  Every command of a call is admitted before any runs. Only ids classed
+  `safe` run, and the `file` commands a reviewer found only read the file
+  their parameters name: the gate resolves that path inside the caller's
+  folder (relative, no `..`, through links, an existing file) and hands
+  the engine the absolute path. Writes go through the door's own `out`
+  only (`Area::write`: never over an existing file for an agent, within
+  the quota). Every other id is refused: `code`, `network`, `device` and
+  `host`, an unreviewed `file` command, and an id the classification does
+  not have (the skill drift test fails while any engine id lacks a class).
+  A reviewer can also hold back a command that its class would let run,
+  when the engine cannot do it safely yet (`Held`): the door refuses it,
+  saying why, until the engine is fixed.
+- **Composite and indirect commands.** Batches, macros and scripts
+  (`command.batch`, `engine.batch`, `tools.macros`, `file.runScript`) are
+  classed `code` and refused whole. A setter that changes app-wide state by
+  key runs only with a key its service reviewed; none is reviewed today, so
+  cad's `setvar` is refused. A command that names another command
+  (vector's `perspective.draw {command}`) has that id admitted in turn,
+  with its own parameters, at most four deep. A command that names an
+  effect (`effect.apply`, vector's `appearance.addEffect`) runs only an
+  effect the engine builds in, so an effect plug-in (`plugin.<id>`) never
+  runs through a door.
+- **Caps (decided 9 Oct 2026).** Engine work runs on the shell's UI
+  thread until #399, so no single call may multiply work or memory
+  without bound. Each service reviews the parameters that do (array and
+  copy counts, rows and columns, canvas, page and render sizes, frame
+  ranges and rates, iteration counts, and the small scales and spacings
+  that multiply drawing work) and gives each a `Limit`: a ceiling on one
+  parameter or on a product, with its reason beside it, checked by the
+  gate before anything runs, inner commands included. Copies multiply
+  across a call (an array of an array), within a per-call budget. Each
+  service also keeps the document within a size ceiling after every
+  command (which stops a copy-and-paste loop that has no count) and bounds
+  its own `out` (a render's pixels, an export's frames).
+- **Fences after every command.** What a command can write into the
+  document, and a later command, render or `out` would then read, is
+  checked after each command, and the call fails before anything is
+  written: vector's linked images; effect's footage, LUT, OCIO and mocha
+  parameters (Essential Graphics values included) and effect plug-ins;
+  film's effect parameters, scratch disks, ingest folder and queued
+  exports (its media stay offline outside the area, as before); photo's
+  linked smart objects and Color Lookup files.
+- **#418's routes.** A batch wrapping `plugin.install`, `prefs.set` of a
+  plug-ins folder (vector: `code`; effect and film: `host`) and
+  `effect.apply {effect: "plugin.<id>"}` are refused, each with a hostile
+  fixture in its service's tests and again through the shell's relay
+  (`every_command_door_refuses_what_its_review_does_not_admit`). The fences
+  of #419 stay: design's IDML links and pdf's scripts (neither has a door),
+  effect's LUT and colour files and photo's `.psd` links (checked after
+  every command), and word's `review.readAloud` (now `device`).
+
+Each engine's surface:
+
+| Engine | The system agent's tools | What its door runs beyond `safe` ids | Caps (one call) |
+| --- | --- | --- | --- |
+| word | `word.info`, `word.run` | 328 of 389 ids. Reads: `insert.picture`, `picture.change` (`path`). | Tables ≤ 10,000 cells; pages 72–1584 pt a side; a replacement grows the text ≤ 1,000× (chained, ≤ 10,000×); the document ≤ 500,000 characters, 50,000 paragraphs and 128 MiB of pictures; a PDF ≤ 10,000 pages. |
+| deck | `deck.info`, `deck.run` | 198 of 222. Reads: `insert.picture`, `picture.change` (`path`). Held back until deckcraft bounds its media and zip parsing (hostile data can abort the shell, #448): `insert.audio`, `insert.video`, `media.info`, `media.posterFrame`, `file.openBytes`. | Tables ≤ 5,625 cells; charts ≤ 10,000 points; a slide ≤ 1920 × 1080 pt of area; the presentations ≤ 500 slides, 20,000 shapes and 1,000,000 characters; rasters ≤ 160 MP a call, 4096² each. |
+| cad | `cad.info`, `cad.run` | 288 of 295. `setvar` is refused: it sets variables by name, and no name is reviewed. | Arrays and copies ≤ 10,000 copies, multiplied across the call ≤ 10,000; polygons ≤ 1,024 sides; spline fit points ≤ 2,000; hatch and linetype scale ≥ 0.0001; drawings ≤ 200,000 objects; a render ≤ about a second of drawing work, estimated first. |
+| light | `light.info`, `light.run` | 189 of 239. Nothing more. | Originals ≤ 64 MP; exports ≤ 16 MP (AVIF ≤ 4); ≤ 16 photos (virtual copies included); ≤ 16 masks, 256 strokes and 64 spots; a crop ≥ 1% a side. |
+| film | `film.info`, `film.run` | 525 of 675. Read: `captions.import` (`path`). Built-ins only: `effects.apply`, both transition commands, `effects.setDefaultTransition`, `mixer.addInsert`, `presets.apply`, `lumetri.applyPreset`, `essentialSound.applyPreset`. | Sequences ≤ 4096 a side and 9.4 MP, ≤ 120 fps, ≤ 96 kHz; speed 1–10,000%; durations ≤ 24 h; a call adds ≤ 5,000 elements; analyses ≤ 18,000 frames; exports ≤ 18,000 frames. |
+| effect | `effect.info`, `effect.run` | 460 of 665. Built-ins only: `effect.apply`. | Comps ≤ 8.85 MP (4096 × 2160), ≤ 36,000 frames, 1–240 fps; repeater copies ≤ 1,000 (≤ 10,000 a call); about 120 effect parameters capped; the project ≤ 5,000 items, layers and effects. Expressions are `code`: a project holding one is saved, never rendered. |
+| vector | `vector.info`, `vector.run` | 574 of 679. Built-ins only: `effect.apply` and `appearance.addEffect` (by `effect` or `id`); `perspective.draw` runs only `shape.*` commands, each admitted in turn. | Shapes ≤ 1,000 points; blends ≤ 1,000 steps; repeats, mosaics and grids ≤ 10,000 copies (≤ 10,000 a call); Transform effects ≤ 1,000 copies; the document ≤ 20,000 nodes and 100,000 objects as drawn; a raster `out` ≤ 8192 px a side and 16 MP. |
+| sound | `sound.info`, `peaks`, `convert`, `trim`, `mix` | No door: soundcraft has no command catalog. | — |
+| design | `design.info`, `render`, `export` | No door, by decision (#418). | — |
+| pdf | `pdf.info`, `text`, `render`, `merge`, `split` | No door: a few fixed operations. | — |
+| photo | none (Photos' own `photos.info`) | `photo.run`, for apps' own requests only: 692 of 817 ids, each also passing photocraft's own workspace check. | Not yet capped (apps' own requests only). |
+| sheet | none (the Sheets app's own `sheets.*`) | No door: formula evaluation. | — |
+
+The review reclassified these ids: word's `review.readAloud` (`code` to
+`device`), vector's `effect.apply` and `appearance.addEffect` (`code` to
+`safe`, with their effect checked), effect's two Media Browser favourites
+(`safe` to `host`), effect's 14 commands that set or link expressions
+(`safe` to `code`: effectcraft runs an expression with no time, step or
+memory budget) and photo's `layer.smartFilter.setParams` (`safe` to
+`file`: it could plant a Color Lookup file path). It also closed two routes
+that no id check sees: Essential Graphics values that set an effect's LUT
+file inside a precomp (effect), and a Color Lookup smart filter naming a
+file (photo); both services' fences now catch them, at open and after
+every command. Within its caps a call can still hold the UI thread for
+seconds (a 4K export, a heavy stack of effects at their caps); moving
+engine work to a worker with timeouts is #399.
+
+`photo.run`, reached only by an app's own `host.request`, now goes through
+the same gate. Each door engine's `SKILL.md` lists `info` and `run`,
+explains the door and teaches commands by example; its service's tests run
+every example (`the_skill_examples_run`), and the shell checks them against
+the tools' schemas.
 
 ## Open questions
 

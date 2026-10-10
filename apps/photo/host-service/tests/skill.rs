@@ -8,8 +8,8 @@ use std::path::Path;
 use octosense_skill_gen::{check_commands, Catalog, Entry};
 use photocraft_automation::headless::Headless;
 
-/// The catalog `photo.commands` serves before its `plugin.*` filter: the
-/// engine's whole catalog, so every id gets a class.
+/// The engine's whole catalog, before `photo.commands` narrows it to what
+/// the command door runs, so every id gets a class.
 fn catalog() -> Catalog {
     let list = Headless::new().command_list();
     let entries = list

@@ -1,6 +1,6 @@
 ---
 name: deck-engine
-description: Presentations (pptx, .deckcraft, outline text): create from titles and bullets, read as outline, render a slide to PNG, convert, also to pdf. Read before using deck.* tools.
+description: Presentations (pptx, .deckcraft, outline text): create and edit with the engine's commands, read, render a slide to PNG, convert, also to pdf. Read before using deck.* tools.
 ---
 
 # Deck engine
@@ -12,13 +12,40 @@ charts.
 
 ## Tools
 
-- `deck.info {path}`: the slides with their titles, layouts and shape counts, the sections and the theme.
-- `deck.text {path}`: the deck as outline text (titles unindented, bullets tab-indented by level) and the slide count.
-- `deck.render {path, out, slide?, max_side?}`: one slide (0-based, default 0) as a PNG, its longest edge `max_side` pixels (default 1024).
-- `deck.new {out, slides}`: a new deck from `[{title, bullets?}]` (1 to 200 slides, at most 64 bullets each); `out` ends in `.pptx` or `.deckcraft`.
-- `deck.convert {path, out}`: the deck written as `.pptx`, `.deckcraft`, outline `.txt` or `.pdf`, by the extension of `out`.
+- `deck.info {path}`: the slides with their titles, layouts and shape counts, the sections and the theme. Reads only.
+- `deck.run {path?, cmds, out?, slide?, max_side?}`: up to 64 of the engine's commands, run in order on the presentation at `path` (or on a new blank one, 16:9 with no slides), then written to `out` when given: `.pptx`, `.deckcraft`, outline `.txt` or `.pdf` by its extension, or one slide (`slide`, 0-based, default 0) as a `.png` whose longest edge is `max_side` pixels (default 1024). Each command is `{"id": ..., "params": {...}}`. The answer has each command's result in `results`, so query commands read without writing anything; `"cmds": []` with an `out` converts or renders.
 
-`deck.info` and `deck.text` only read; the others write `out`.
+## How `deck.run` works
+
+The door checks every command of a call before it runs any. A command that
+`commands.md` lists untagged works on the open presentation only, and runs.
+So do `insert.picture` and `picture.change`, whose `path` must name an
+image in your workspace (at most 64 MB read in one call). Every other
+tagged id ([file], [device], [host]) and any id that is not in
+`commands.md` refuse the whole call, and nothing is written.
+
+Audio and video are held back for now: hostile media can crash the deck
+engine, and with it the device's shell, so the door refuses
+`insert.audio`, `insert.video`, `media.info` and `media.posterFrame`, and
+`file.openBytes` (which unzips a presentation from inline data), until the
+engine is fixed. Tell the person that you cannot add sound or video to a
+slide yet.
+
+The commands act like the app's own menus on one open presentation with a
+current slide. `slide.new {layout?, title?, body?}` adds a slide after the
+current one and makes it current (`body` lines become bullets; layouts
+include `title`, `titleAndContent`, `titleOnly` and `blank`), and
+`slide.last` goes to the end first. Useful queries: `document.inspect`
+(every slide's title, layout and shapes) and `slide.inspect {index}` (one
+slide's shapes with their ids and text, which `text.set {id, text}`
+replaces). For the outline as text, write `out` as a `.txt` and read it.
+The file at `path` is never changed: write the result to a new `out`.
+
+Each call is capped so it cannot stall the device: a table has at most
+5,625 cells (75 × 75), a chart at most 10,000 data points, a slide at
+most 1920 × 1080 points of area, and the presentations at most 500
+slides, 20,000 shapes and 1,000,000 characters. A command over a cap
+refuses the whole call and says which cap.
 
 ## Files
 
@@ -29,21 +56,26 @@ Every engine works in the same folder, so what one writes the next can open,
 and a file the person puts there is yours to use. No call ever replaces an
 existing file: pick a new name for each `out`, or the call is refused. If
 the person names a file outside your workspace, say that the deck engine
-cannot reach it. A PDF that `deck.convert` makes opens with `pdf.*`, and a
-slide `deck.render` draws shows with `view_image`.
+cannot reach it. A PDF that `deck.run` writes opens with `pdf.*`, and a
+slide it renders shows with `view_image`.
 
 ## Examples
 
 1. A three-slide deck, then a PDF of it:
-   `deck.new {"out": "launch.pptx", "slides": [{"title": "Launch plan"}, {"title": "Goals", "bullets": ["Ship in May", "Two pilots"]}, {"title": "Next steps", "bullets": ["Budget", "Hiring"]}]}`,
-   then `deck.convert {"path": "launch.pptx", "out": "launch.pdf"}`.
-2. Check what a deck says, slide by slide: `deck.text {"path": "launch.pptx"}`.
-3. Render its second slide: `deck.render {"path": "launch.pptx", "out": "slide2.png", "slide": 1}`.
+   `deck.run {"cmds": [{"id": "slide.new", "params": {"layout": "title", "title": "Launch plan"}}, {"id": "slide.new", "params": {"title": "Goals", "body": "Ship in May\nTwo pilots"}}, {"id": "slide.new", "params": {"title": "Next steps", "body": "Budget\nHiring"}}], "out": "launch.pptx"}`,
+   then `deck.run {"path": "launch.pptx", "cmds": [], "out": "launch.pdf"}`.
+2. What a deck says, slide by slide, without writing anything:
+   `deck.run {"path": "launch.pptx", "cmds": [{"id": "document.inspect"}, {"id": "slide.inspect", "params": {"index": 1}}]}`;
+   or its outline as text: `deck.run {"path": "launch.pptx", "cmds": [], "out": "launch.txt"}`.
+3. Render its second slide: `deck.run {"path": "launch.pptx", "cmds": [], "out": "slide2.png", "slide": 1}`.
+4. Append a slide with a picture from your workspace:
+   `deck.run {"path": "launch.pptx", "cmds": [{"id": "slide.last"}, {"id": "slide.new", "params": {"layout": "titleOnly", "title": "The chart"}}, {"id": "insert.picture", "params": {"path": "chart.png"}}], "out": "launch-2.pptx"}`.
 
 ## The engine's commands
 
 `commands.md` in this skill's folder lists every deckcraft command, one line
 each (id, label, parameters), with a tag on those that reach past the open
-deck. Grep it (`grep -i chart commands.md`) when the person asks what the
-engine can do. No tool on your list runs these ids: they show the engine's
-reach, not what you can call.
+deck. Grep it (`grep -i chart commands.md`) for the ids and parameters a
+request needs: `deck.run` runs the untagged ones (but for the media and
+zip commands held back above) and the two picture reads, and refuses the
+rest.

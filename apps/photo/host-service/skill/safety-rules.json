@@ -313,7 +313,7 @@
     {
       "prefix": "plugin.",
       "class": "code",
-      "why": "WebAssembly plug-ins in a process-wide registry: install loads a module from base64 `data` (Plugin::load) or a .wasm `path` (registry::load_file), reload loads a whole folder (`path` or the Plug-ins preference folder), run executes one on the active layer (and again as a smart filter on every re-render), and remove unregisters one for every session in the process. OctoSense's photo.run refuses these ids today (callable()).",
+      "why": "WebAssembly plug-ins in a process-wide registry: install loads a module from base64 `data` (Plugin::load) or a .wasm `path` (registry::load_file), reload loads a whole folder (`path` or the Plug-ins preference folder), run executes one on the active layer (and again as a smart filter on every re-render), and remove unregisters one for every session in the process. OctoSense's photo.run door never runs them.",
       "evidence": [
         "crates/engine/src/plugin_cmds.rs:65-100 run, :105-111 apply_to_surface (smart-filter re-run), :143-173 install, load_path, :206-220 reload, :223-281 specs"
       ]
@@ -427,6 +427,16 @@
       "evidence": [
         "crates/engine/src/smart_cmds.rs:80-90 source_bytes, :296-348 render, refresh, :729-814 edit_filters and filter edits, :944-1011 specs",
         "crates/engine/src/transform_cmds.rs:285 and crates/engine/src/canvas_geom.rs:192 refresh_layer on smart objects"
+      ]
+    },
+    {
+      "ids": ["layer.smartFilter.setParams"],
+      "class": "file",
+      "why": "Params trap, as layer.setAdjustment: it merges its `params` into a smart filter's parameters and re-renders the smart object at once, and a Color Lookup smart filter (image.adjustments.colorLookup) feeds them to lookup_from_params, which std::fs::read's a `file` (any path, also relative to the process) on every re-render. Other filters ignore unknown keys, but a param check cannot see which filter `index` names.",
+      "evidence": [
+        "crates/engine/src/smart_cmds.rs:759-774 set_filter_params (old.extend(new)); :729-736 edit_filters -> refresh_or_fail",
+        "crates/engine/src/smart_cmds.rs:276-292 apply_smart_filters -> crates/engine/src/filters.rs:165-167 apply_filter_to_surface (image.adjustments.*) -> crates/engine/src/adjust_cmds.rs:209-217 adjust_as_filter",
+        "crates/engine/src/adjust_params.rs:207 colorLookup -> crates/engine/src/adjust_cmds.rs:70-97 lookup_from_params (read_file(path) at 94)"
       ]
     },
     {
