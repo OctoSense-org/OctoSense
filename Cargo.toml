@@ -127,6 +127,7 @@ octoscript-core = { git = "https://github.com/OctoSense-org/Octoscript.git", rev
 octoscript-capabilities = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "2e37d9e657a246f16718d9a475e167ccd2d5b5fa" }
 octoscript-schema = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "2e37d9e657a246f16718d9a475e167ccd2d5b5fa" }
 octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
+makepad-d3 = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6cf2d90aa33ff4ae603f49c7557f3ecf986207f0" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
@@ -412,6 +413,7 @@ octoscript-capabilities = { path = ".sources/octoscript/crates/octoscript-capabi
 octoscript-schema = { path = ".sources/octoscript/crates/octoscript-schema" }
 
 [patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
+makepad-d3 = { path = ".sources/octoscript-makepad/crates/makepad-d3" }
 octoscript-makepad = { path = ".sources/octoscript-makepad/crates/octoscript-makepad" }
 octoscript-widgets = { path = ".sources/octoscript-makepad/crates/octoscript-widgets" }
 octoscript-node = { path = ".sources/octoscript-makepad/crates/octoscript-node" }

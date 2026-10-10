@@ -1527,6 +1527,45 @@ mod tests {
 
     #[test]
     #[cfg(feature = "app-hub")]
+    fn native_d3_charts_reach_glance_workspace() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = tile_cx();
+        cx.with_vm(crate::charts::register);
+        let mut tiles = GlanceTiles::scrolling();
+        tiles.viewport_layout = true;
+        let body: std::sync::Arc<str> = r#"
+            height: Fill flow: Down
+            line := d3.LineChart {height: 130 data: [[0 2], [1 6], [2 4]]}
+            bars := d3.BarChart {height: 130 data: [2 6 4] labels: ["A" "B" "C"]}
+            heat := d3.Heatmap {height: 130 data: [[1 2], [3 4]]}
+        "#.into();
+        let card = tiles.open(&mut cx, "chart-fixture", "test.charts", false, &body);
+        let pass = DrawPass::new(&mut cx);
+        let mut list = DrawList2d::new(&mut cx);
+        let size = dvec2(400.0, 500.0);
+        pass.set_size(&mut cx, size);
+        for _ in 0..2 {
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(&mut cx, &event);
+            let mut draw = Cx2d::new(&mut draw);
+            draw.begin_pass(&pass, Some(1.0));
+            list.begin_always(&mut draw);
+            draw.begin_root_turtle(size, Layout::default());
+            tiles.draw_workspace(&mut draw, "chart-fixture", "test.charts", false, &body, Rect {pos: dvec2(0.0, 0.0), size});
+            draw.end_turtle();
+            list.end(&mut draw);
+            draw.end_pass(&pass);
+        }
+        for id in [ids!(line), ids!(bars), ids!(heat)] {
+            let widget = card.widget(&cx, id);
+            assert!(!widget.is_empty(), "Glance instantiated the native chart");
+            assert!(widget.area().rect(&cx).size.y > 100.0, "Chart contributed its draw area");
+        }
+        tiles.sweep(&mut cx, &[]);
+    }
+
+    #[test]
+    #[cfg(feature = "app-hub")]
     fn selected_glance_style_reaches_existing_cards_without_replacing_state() {
         use makepad_widgets::makepad_draw::cx_draw::CxDraw;
         let mut cx = tile_cx();

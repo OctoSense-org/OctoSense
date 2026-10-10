@@ -1,0 +1,36 @@
+width: Fill height: Fill flow: Down spacing: 12 padding: 20
+Label { text: "Native Makepad charts in an ordinary Splash isolate" draw_text.text_style.font_size: 20 }
+status := Label { text: "Select a mark" }
+Button {
+    height: 40
+    text: "Replace data"
+    on_click: || {
+        ui.line.set_data([[0 4], [1 8], [2 6]])
+        ui.bars.set_data([4 8 6])
+        ui.bars.set_labels(["One" "Two" "Three"])
+        ui.heat.set_data([[1 3 5], [2 4 6]])
+        ui.status.set_text("Data replaced: " + ui.line.data().to_json() + " / " + ui.bars.data().to_json())
+    }
+}
+View {
+    width: Fill height: 280 flow: Right spacing: 16
+    line := d3.LineChart {
+        width: Fill height: Fill
+        data: [[0 3], [1 7], [2 5]]
+        on_click: |i| ui.status.set_text("Line point " + i)
+        on_hover: |i| ui.status.set_text("Line hover " + i)
+    }
+    bars := d3.BarChart {
+        width: Fill height: Fill
+        data: [3 7 5] labels: ["Mon" "Tue" "Wed"]
+        on_click: |i| ui.status.set_text("Bar " + i)
+        on_hover: |i| ui.status.set_text("Bar hover " + i)
+    }
+}
+heat := d3.Heatmap {
+    width: Fill height: 220
+    data: [[1 4 7], [2 5 8]]
+    colormap: "viridis"
+    on_click: |row col| ui.status.set_text("Cell " + row + "," + col)
+    on_hover: |row col| ui.status.set_text("Cell hover " + row + "," + col)
+}

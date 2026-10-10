@@ -23,6 +23,7 @@ pub mod approvals;
 pub mod apps;
 pub mod binds;
 pub mod clients;
+pub mod charts;
 pub mod demo_home;
 pub mod desk;
 pub mod desktop_layout;
@@ -6346,6 +6347,7 @@ impl App {
         host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
+        charts::register(vm);
         octosense::icon_frame::script_mod(vm);
 
         // The theme: evaluated before any module that reads

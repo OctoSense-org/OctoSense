@@ -250,6 +250,7 @@ pub fn register_host_services() {
         octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
         octosense_appstore::host_api::register_runtime_feature("video.playback_controls", 1);
         octosense_appstore::host_api::register_runtime_feature("camera.capture_intent", 1);
+        crate::charts::register_feature();
         octosense_markdown_editor::register();
         crate::connected_review::register();
         octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);
@@ -890,7 +891,7 @@ mod tests {
             "schema": 1, "id": "org.example.coldcard", "name": "Cold card", "version": "1.0.0",
             "integrity": {"bundle_blake3": "0".repeat(64)},
             "capabilities": [], "requires": ["host-api-v1", "script-tools-v1"],
-            "host_api": {"required": {"app_tools.dispatch": 1, "runtime.describe": 1}}
+            "host_api": {"required": {"app_tools.dispatch": 1, "runtime.describe": 1, "charts.d3": 1}}
         }).to_string()).unwrap();
         assert!(octosense_appstore::host_api::check_manifest(&manifest).is_err());
         register_host_services();

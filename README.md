@@ -28,6 +28,8 @@ saved state and actual interaction; phone-size previews remain separate from dev
 
 > **Building an app?** You don't need this repository to build, check or publish one. Start with [OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow) (formerly Design Flow; read `AGENTS.md`, then `docs/QUICKSTART.md`) and [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). The system apps in [`apps/`](apps/README.md) are complete examples. Build the desktop shell from here only to try your app in a shell before you publish it ([PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)).
 
+[Native chart APIs](docs/charts.md) describe Makepad D3 widgets shared by full apps and Glance, their compatibility requirement and data handling limits. This integration is newer than desktop RC4.
+
 Android Home supports page swipes from either side edge; apps and opened cards retain Back. See [phone gestures](phone/README.md#gestures).
 
 ## Key concepts

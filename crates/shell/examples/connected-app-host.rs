@@ -251,6 +251,7 @@ impl AppMain for App {
         makepad_widgets::theme_mod(vm);
         script_eval!(vm, {mod.theme = mod.themes.light});
         makepad_widgets::widgets_mod(vm);
+        octosense_shell::charts::register(vm);
         widget_async::set_splash_theme(widget_async::SplashTheme::Light);
         octosense_markdown_editor::register();
         octosense_oauth_service::sign_in_code::register();
