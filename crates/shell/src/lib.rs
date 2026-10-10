@@ -6338,11 +6338,83 @@ impl MatchEvent for App {
     }
 }
 
+/// Seconds east of UTC for the platform's current local zone, from the C
+/// library's own tz data (`localtime_r`'s `tm_gmtoff`, the same data the
+/// status clock reads). 0 where the platform exposes none.
+///
+/// The script VM's `std.local_time` adds this offset, but the platform never
+/// sets it itself (`platform::script::timer` ships it at 0 and only a host can
+/// raise it), so every `local_time()` in every app — a card's "as of" stamp,
+/// reminders, the store's dates — renders UTC until a host sets it here.
+pub fn local_utc_offset_secs() -> i64 {
+    #[cfg(unix)]
+    {
+        unsafe {
+            let now = libc::time(std::ptr::null_mut());
+            let mut tm: libc::tm = std::mem::zeroed();
+            if libc::localtime_r(&now, &mut tm).is_null() {
+                return 0;
+            }
+            tm.tm_gmtoff as i64
+        }
+    }
+    #[cfg(windows)]
+    {
+        // Windows has no C-library tz offset (`localtime_r`/`tm_gmtoff` are
+        // POSIX), so read the system zone through Win32: `Bias` is minutes
+        // *west* of UTC, hence seconds east of UTC = -(Bias) * 60, plus the
+        // daylight bias while DST is in effect.
+        #[repr(C)]
+        struct SysTime {
+            _parts: [u16; 8],
+        }
+        #[repr(C)]
+        struct TimeZoneInformation {
+            bias: i32,
+            standard_name: [u16; 32],
+            standard_date: SysTime,
+            standard_bias: i32,
+            daylight_name: [u16; 32],
+            daylight_date: SysTime,
+            daylight_bias: i32,
+        }
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetTimeZoneInformation(lp: *mut TimeZoneInformation) -> u32;
+        }
+        unsafe {
+            let mut tz: TimeZoneInformation = std::mem::zeroed();
+            match GetTimeZoneInformation(&mut tz) {
+                0xFFFF_FFFF => 0, // TIME_ZONE_ID_INVALID
+                id => {
+                    let mut bias = tz.bias;
+                    if id == 2 {
+                        // TIME_ZONE_ID_DAYLIGHT
+                        bias += tz.daylight_bias;
+                    }
+                    -(bias as i64) * 60
+                }
+            }
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        0
+    }
+}
+
 /// The shell's half of `AppMain`: a package with work of its own (the
 /// phone's Settings) wraps these in its own `App`; the desktop runs them
 /// as they are (`impl AppMain for App` below).
 impl App {
     pub fn shell_script_mod(vm: &mut ScriptVm) -> ScriptValue {
+        // Set the local UTC offset once, before any module is evaluated, so
+        // `std.local_time` (and everything built on it) reads local time in
+        // every package and every app. Without this the platform's offset is 0
+        // and cards stamp UTC.
+        makepad_widgets::makepad_platform::script::timer::set_script_local_utc_offset_secs(
+            local_utc_offset_secs(),
+        );
         host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
