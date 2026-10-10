@@ -352,16 +352,10 @@ fn public_service_checks(reply: &Result<Value, String>) -> serde_json::Map<Strin
             && p["video_discovery"]["data"]["version"] == 1,
         "microphone_recording_discovery": described("record_discovery", "microphone.record_start", "foreground-only"),
         "background_audio_playback_refused": refused("audio_play", "background"),
-        // Since makepad#118 (OctoSense #450) the runtime no longer refuses a
-        // family the app did not declare. From this agent tool call, a
-        // background surface, App Hub's dispatcher refuses the foreground-only
-        // method; in the foreground the audio service refuses the undeclared
-        // microphone itself.
-        "undeclared_microphone_recording_refused": p["record_start"]["ok"] == false
-            && matches!(
-                p["record_start"]["error"].as_str(),
-                Some("microphone.record_start is unavailable to agents/background surfaces")
-                    | Some("permission_denied: Audio requires its device capability and storage grant")
-            )
+        // A readable permission status never authorizes recording. The tool's
+        // callback retains background provenance even without a declaration.
+        "background_microphone_recording_refused": p["record_start"]["ok"] == false
+            && p["record_start"]["error"].as_str()
+                == Some("microphone.record_start is unavailable to agents/background surfaces")
     }).as_object().unwrap().clone()
 }

@@ -42,7 +42,7 @@ OS_BATCH_CHECKS = (
     "audio_playback_discovery",
     "microphone_recording_discovery",
     "background_audio_playback_refused",
-    "undeclared_microphone_recording_refused",
+    "background_microphone_recording_refused",
 )
 
 
@@ -123,10 +123,10 @@ def main():
         data = native['tool_result']['Ok']
         require('bound_device_account', data['account'] == 'device')
         require('native_camera_status', data['camera']['supported'] is True and data['camera']['os_permission'] in ('granted', 'not_determined', 'denied', 'settings_required'))
-        require('declared_capability_is_not_consent', data['camera']['app_policy_granted'] is True and data['camera']['app_consent'] is False)
+        require('admitted_identity_is_not_consent', data['camera']['app_policy_granted'] is True and data['camera']['app_consent'] is False)
         require('runtime_api_discovery', data['discovery']['supported'] is True and data['discovery']['descriptor']['name'] == 'camera.permission.status')
         require('uncompiled_rust_function_refused', data['missing']['implemented'] is False and data['missing']['supported'] is False)
-        require('undeclared_microphone_refused', data['microphone_allowed'] is False and data['microphone_error'])
+        require('microphone_status_without_declaration_or_consent', data['microphone']['capability'] == 'microphone' and data['microphone']['supported'] is True and data['microphone']['app_policy_granted'] is True and data['microphone']['app_consent'] is False and data['microphone']['os_permission'] in ('granted', 'not_determined', 'denied', 'settings_required'))
         require('background_permission_prompt_refused', data['background_prompt_allowed'] is False and 'background' in data['background_error'])
         require('no_native_approval_sheet', native['host_sheet_visible'] is False)
         require('cross_account_refused', 'account_scope' in native['refusals']['wrong_account'])

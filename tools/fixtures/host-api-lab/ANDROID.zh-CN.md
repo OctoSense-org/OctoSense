@@ -6,7 +6,7 @@
 
 单独的[回归记录](evidence/public-api-v0.4/regression.json)在 `53bab40f` 上通过 1,051 项共享 Shell 测试、三个打包检查及原生测试应用构建。SDK 1.10.0 已发布；[宿主分发状态](../../../docs/host-os-api-status.zh-CN.md)单独记录。这些历史回执不验证最终 Desktop RC2 发行包，也不会更新已发布的 Home beta.1。早先的 [24 项批次记录](evidence/os-api-batch1/receipt.json)保留其当时待执行的真机状态，下文原始 14 项记录也继续保留。
 
-历史[验收记录](evidence/android/receipt.json)确认：**OnePlus 6、Android 15，14 项检查全部通过**。[原生结果](evidence/android/native-result.json)来自实际手机进程。普通签名应用调用自己的 Splash 工具，通过生产环境宿主服务发现 API 并读取 Android 摄像头权限状态。测试同时验证跨账户调用、未声明的能力和工具、无效参数、未编译进宿主的 Rust 函数、后台权限弹窗以及工具关闭后的调用都会被拒绝。
+历史[验收记录](evidence/android/receipt.json)确认：**OnePlus 6、Android 15，14 项检查全部通过**。[原生结果](evidence/android/native-result.json)来自实际手机进程。普通签名应用调用自己的 Splash 工具，通过生产环境宿主服务发现 API 并读取 Android 摄像头权限状态。当时的测试验证未声明的能力、跨账户调用、未声明的工具、无效参数、未编译进宿主的 Rust 函数、后台权限弹窗以及工具关闭后的调用都会被拒绝。当前测试改为要求未声明麦克风能力时仍可读取原生权限状态、应用授权仍为 false，并精确验证后台录音被拒绝。新语义需要新的验收回执。
 
 这验证了原生应用、工具和宿主服务之间的执行链路。测试没有启动模型或 peer agent，没有拍照、批准权限、登录提供商，也不能证明物理输入审批。测试完成后只停止了自己的测试包，没有修改正常 Home 或个人资料。
 

@@ -44,7 +44,7 @@ OS_BATCH_CHECKS = (
     "audio_playback_discovery",
     "microphone_recording_discovery",
     "background_audio_playback_refused",
-    "undeclared_microphone_recording_refused",
+    "background_microphone_recording_refused",
 )
 
 
@@ -56,7 +56,7 @@ def require(condition, message):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", type=Path, default=REPO / "target/release/examples/host-api-lab")
-    parser.add_argument("--hub", type=Path, required=True, help="Current-source hub binary supporting files, device_calendar and audio (contract 1.10 source)")
+    parser.add_argument("--hub", type=Path, required=True, help="Current-source hub binary supporting declarative capabilities (contract 1.11 source)")
     parser.add_argument("--output", type=Path, help="New evidence directory; defaults to a private temporary directory")
     args = parser.parse_args()
     root = args.output.resolve() if args.output else Path(tempfile.mkdtemp(prefix="octosense-host-api-native-"))
@@ -132,11 +132,13 @@ def main():
                         data = native["tool_result"]["Ok"]
                         require(data["account"] == "device", "Wrong tool account")
                         require(data["camera"]["capability"] == "camera" and data["camera"]["supported"], "No native camera permission status")
-                        require(data["camera"]["app_policy_granted"] and not data["camera"]["app_consent"], "Capability confused with consent")
+                        require(data["camera"]["app_policy_granted"] and not data["camera"]["app_consent"], "Admitted identity confused with consent")
                         require(data["camera"]["os_permission"] in ["granted", "not_determined", "denied", "settings_required"], "Not a native OS status")
                         require(data["discovery"]["supported"] and data["discovery"]["descriptor"]["name"] == "camera.permission.status", "API discovery mismatch")
                         require(not data["missing"]["implemented"] and not data["missing"]["supported"], "Uncompiled Rust function advertised")
-                        require(not data["microphone_allowed"] and data["microphone_error"], "Undeclared capability was allowed")
+                        require(data["microphone"]["capability"] == "microphone" and data["microphone"]["supported"] is True, "Microphone status blocked by omitted disclosure")
+                        require(data["microphone"]["app_policy_granted"] is True and data["microphone"]["app_consent"] is False, "Microphone status granted device consent")
+                        require(data["microphone"]["os_permission"] in ["granted", "not_determined", "denied", "settings_required"], "Not a native microphone OS status")
                         require(not data["background_prompt_allowed"] and "background" in data["background_error"], "Tool callback gained prompt authority")
                         require(not native["host_sheet_visible"], "Background tool opened a native sheet")
                         require("account_scope" in native["refusals"]["wrong_account"], "Cross-account call accepted")
@@ -164,7 +166,7 @@ def main():
                         (root / "ui-snapshot.json").write_text(json.dumps(updated, indent=2))
                         shutil.copyfile(get("g?scale=1")["png"], root / "ui.png")
                         result["bundle_digest"] = native["bundle_digest"]
-                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "undeclared capability refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal", "file and location API discovery", "contained binary storage round trip", "file status metadata", "background import/export refusal", "location refusal without app consent", "public Calendar/Mail discovery", "Calendar status and consent refusal", "background Calendar/Mail mutation refusal", "Mail refusal without connected account"]
+                        result["verified"] = ["signed admission and launch", "own Splash tool completion", "native OS permission status", "live app UI update", "native UI button host call", "API discovery and missing-function fallback", "microphone status without declaration or consent", "background microphone recording refusal", "background callback prompt refusal", "cross-account and schema refusal", "closed-app refusal", "file and location API discovery", "contained binary storage round trip", "file status metadata", "background import/export refusal", "location refusal without app consent", "public Calendar/Mail discovery", "Calendar status and consent refusal", "background Calendar/Mail mutation refusal", "Mail refusal without connected account"]
                 finally:
                     if process.poll() is None:
                         try:
