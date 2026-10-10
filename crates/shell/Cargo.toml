@@ -55,6 +55,7 @@ chrono-tz = { workspace = true }
 # `appcard,maps`: the AppCard widget set (kit, text roles, weather,
 # finance, matplot) and the map navigation layer the appcard module renders.
 makepad-widgets = { workspace = true, features = ["appcard", "maps"] }
+makepad-d3 = { workspace = true }
 makepad-studio-protocol = { workspace = true }
 makepad-network = { workspace = true }
 makepad-audio-decode = { workspace = true }

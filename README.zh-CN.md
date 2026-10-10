@@ -26,6 +26,8 @@ OctoSense 是运行在普通操作系统之上的 Agent Shell。从屏幕上看�
 
 > **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoSense App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（原 Design Flow；先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) 开始。[`apps/`](apps/README.zh-CN.md) 中的系统应用就是完整的示例。只有想在发布前先在 Shell 里试用自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoSense-App-Flow/blob/main/docs/PUBLISHING.zh-CN.md#4-在本地演练商店流程)）。
 
+[原生图表 API](docs/charts.zh-CN.md) 介绍完整应用与 Glance 共用的 Makepad D3 组件、兼容性要求及数据处理限制。这项集成晚于桌面 RC4。
+
 Android 桌面支持从左右边缘滑动翻页、衔接松手速度的弹簧吸附，以及搜索和 Glance 列表的弹性滚动；应用和已展开卡片仍使用返回手势。参见[手机手势说明](phone/README.zh-CN.md#手势)。
 
 ## 关键概念

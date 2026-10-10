@@ -8811,6 +8811,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-d3"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "makepad-widgets",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "makepad-derive-wasm-bridge"
 version = "1.0.0"
 dependencies = [
@@ -11864,6 +11875,7 @@ dependencies = [
  "makepad-audio-decode",
  "makepad-calculator",
  "makepad-clock",
+ "makepad-d3",
  "makepad-network",
  "makepad-notes",
  "makepad-reminders",
