@@ -56,6 +56,55 @@ use crate::host_tools::areas::{self, AreaEnv};
 use crate::host_tools::script_apps;
 
 const MAX_MODULES: usize = 8;
+
+/// A shared component an app pins (App Hub ADR 0003, ADR 0014 phase 4): a
+/// component App Hub publishes on its own, whose functions the app's script
+/// calls as `wasm.<alias>.<function>`. The app gets its own instance, under
+/// its own grants, exactly as for a component in its `fns/`.
+#[derive(Clone, Debug, PartialEq)]
+struct Shared {
+    alias: String,
+    id: String,
+    version: String,
+    blake3: String,
+    path: PathBuf,
+}
+
+/// Resolves the shared components an app pins, by its apps root and id.
+type SharedResolver = Arc<dyn Fn(&Path, &str) -> Result<Vec<Shared>, String> + Send + Sync>;
+
+/// Tests only: shared components without App Hub's store.
+static SHARED_RESOLVER: Mutex<Option<SharedResolver>> = Mutex::new(None);
+
+/// The shared components `app` pins, verified: App Hub resolves a system
+/// app's from its bundle and an installed app's from the shared store,
+/// against the verified catalog, and checks every file's BLAKE3 digest.
+/// None for a manifest that pins none, without asking the store.
+fn shared_components(root: &Path, app: &str, manifest: &Value) -> Result<Vec<Shared>, String> {
+    if !manifest["components"]
+        .as_array()
+        .is_some_and(|pins| !pins.is_empty())
+    {
+        return Ok(Vec::new());
+    }
+    let resolver = SHARED_RESOLVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if let Some(resolve) = resolver {
+        return resolve(root, app);
+    }
+    Ok(octosense_appstore::components::resolved_in(root, app)?
+        .into_iter()
+        .map(|resolved| Shared {
+            alias: resolved.alias,
+            id: resolved.id,
+            version: resolved.version,
+            blake3: resolved.blake3,
+            path: resolved.path,
+        })
+        .collect())
+}
 const MAX_WORKERS: usize = 4;
 const MAX_QUEUED_PER_APP: usize = 4;
 const MAX_INPUT_BYTES: usize = 8 << 20;
@@ -654,18 +703,20 @@ fn warm_now(app: &str) -> Result<(usize, usize, f64), String> {
     let admission = Admission::current(app)?;
     let runtime = runtime(&admission.root.join(".host"))?;
     let started = Instant::now();
-    let mut files: Vec<PathBuf> = std::fs::read_dir(admission.bundle.join("fns"))
-        .map_err(|_| format!("{app}'s bundle has no fns directory"))?
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension().is_some_and(|ext| ext == "wasm")
-                && std::fs::symlink_metadata(path)
-                    .is_ok_and(|m| m.is_file() && m.len() <= runtime.limits().module_bytes as u64)
-        })
-        .collect();
+    let shared = shared_components(&admission.root, app, &admission.manifest)?;
+    let mut files: Vec<PathBuf> = match std::fs::read_dir(admission.bundle.join("fns")) {
+        Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
+        Err(_) if !shared.is_empty() => Vec::new(),
+        Err(_) => return Err(format!("{app}'s bundle has no fns directory")),
+    };
+    files.retain(|path| {
+        path.extension().is_some_and(|ext| ext == "wasm")
+            && std::fs::symlink_metadata(path)
+                .is_ok_and(|m| m.is_file() && m.len() <= runtime.limits().module_bytes as u64)
+    });
     files.sort();
     files.truncate(MAX_MODULES);
+    files.extend(shared.into_iter().map(|component| component.path));
     let mut compiled = 0;
     for path in &files {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
@@ -682,6 +733,9 @@ struct Module {
     load_ms: f64,
     from_cache: bool,
     code: Code,
+    /// The shared component this is, when it is not one of the app's own
+    /// `fns/`: its functions are named `<alias>.<function>`.
+    shared: Option<Shared>,
     /// Diagnostic high-water mark only: guest memory is never retained.
     memory_bytes: usize,
     invocations: u64,
@@ -724,21 +778,28 @@ impl Lab {
         check: impl Fn() -> Result<(), String>,
     ) -> Result<Lab, String> {
         let bundle = &admission.bundle;
-        let mut files: Vec<PathBuf> = std::fs::read_dir(bundle.join("fns"))
-            .map_err(|_| format!("{app}'s bundle has no fns directory"))?
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.extension().is_some_and(|ext| ext == "wasm")
-                    && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
-            })
-            .collect();
+        let shared = shared_components(&admission.root, app, &admission.manifest)?;
+        let mut files: Vec<PathBuf> = match std::fs::read_dir(bundle.join("fns")) {
+            Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
+            // An app may call only shared components.
+            Err(_) if !shared.is_empty() => Vec::new(),
+            Err(_) => return Err(format!("{app}'s bundle has no fns directory")),
+        };
+        files.retain(|path| {
+            path.extension().is_some_and(|ext| ext == "wasm")
+                && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
+        });
         files.sort();
-        if files.is_empty() || files.len() > MAX_MODULES {
+        if (files.is_empty() && shared.is_empty()) || files.len() > MAX_MODULES {
             return Err(format!(
                 "{app}'s bundle must carry 1 to {MAX_MODULES} fns/*.wasm modules"
             ));
         }
+        let sources = files.into_iter().map(|path| (path, None)).chain(
+            shared
+                .into_iter()
+                .map(|component| (component.path.clone(), Some(component))),
+        );
         let mut lab = Lab {
             app: app.to_string(),
             runtime,
@@ -751,13 +812,19 @@ impl Lab {
             }),
             admission: admission.clone(),
         };
-        for path in files {
+        for (path, shared) in sources {
             check()?;
-            let file = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
+            let file = match &shared {
+                Some(component) => format!(
+                    "{} ({} {})",
+                    component.alias, component.id, component.version
+                ),
+                None => path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
+            };
             if std::fs::metadata(&path).map_err(|e| e.to_string())?.len()
                 > runtime.limits().module_bytes as u64
             {
@@ -765,11 +832,23 @@ impl Lab {
             }
             let bytes = std::fs::read(&path).map_err(|e| format!("{file}: {e}"))?;
             let started = Instant::now();
+            if shared.is_some() && !component::is_component(&bytes) {
+                return Err(format!(
+                    "{file}: a shared component is not a WebAssembly component"
+                ));
+            }
             let (code, functions, from_cache) = if component::is_component(&bytes) {
                 let program = runtime
                     .load_component(&bytes)
                     .map_err(|e| format!("{file}: {e}"))?;
-                let names: Vec<String> = program.exports().iter().map(|e| e.name.clone()).collect();
+                let names: Vec<String> = program
+                    .exports()
+                    .iter()
+                    .map(|e| match &shared {
+                        Some(component) => format!("{}.{}", component.alias, e.name),
+                        None => e.name.clone(),
+                    })
+                    .collect();
                 let from_cache = program.from_cache();
                 (
                     Code::Component {
@@ -819,6 +898,7 @@ impl Lab {
                 load_ms,
                 from_cache,
                 code,
+                shared,
                 memory_bytes: 0,
                 invocations: 0,
             });
@@ -950,9 +1030,16 @@ impl Lab {
         }
         let (instance, _) = live.as_mut().expect("made above");
         module.invocations += 1;
+        let export = match &module.shared {
+            Some(component) => name
+                .strip_prefix(&format!("{}.", component.alias))
+                .unwrap_or(name),
+            None => name,
+        };
         // A write past the quota fails inside the component, as a full disk.
         instance.set_storage_budget(area.and_then(|a| a.quota_left));
-        let result = instance.call_json_guarded(name, &args, deadline, move || reply.is_pending());
+        let result =
+            instance.call_json_guarded(export, &args, deadline, move || reply.is_pending());
         let us = started.elapsed().as_secs_f64() * 1e6;
         for line in instance.take_logs() {
             makepad_widgets::log!("wasm {app}: {line}");
@@ -982,6 +1069,7 @@ impl Lab {
                     "live": live.is_some(), "storage": live.as_ref().map(|(_, g)| if g.storage_dir.is_some() { "app folder" } else { "none" }),
                     "storage_left": live.as_ref().and_then(|(i, _)| i.storage_budget()),
                     "network": program.uses_network(),
+                    "shared": m.shared.as_ref().map(|s| json!({"alias": s.alias, "id": s.id, "version": s.version, "blake3": s.blake3})),
                     "exports": program.exports().iter().map(|e| json!({"name": e.name, "wit": e.wit_name,
                         "params": e.params.iter().map(|(n, t)| json!([n, t])).collect::<Vec<_>>(), "result": e.result})).collect::<Vec<_>>(),
                     "skipped": program.skipped().iter().map(|(n, why)| json!({"name": n, "why": why})).collect::<Vec<_>>()}),
@@ -1722,6 +1810,121 @@ mod tests {
     /// calls until a trap spends it; and its files are the app's own
     /// storage, under what is left of its quota, and absent without the
     /// storage capability.
+    /// A shared component the app pins (App Hub ADR 0003, ADR 0014 phase 4)
+    /// loads beside the app's own functions, here none: its functions answer
+    /// as `<alias>.<function>`, from an instance of the app's own, and
+    /// `wasm.functions` says which component they come from.
+    #[test]
+    fn a_pinned_shared_component_answers_as_alias_and_function() {
+        const CHILD: &str = "OCTOSENSE_TEST_WASM_SHARED";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "wasm_service::tests::a_pinned_shared_component_answers_as_alias_and_function",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        const APP: &str = "os.wasmshared";
+        let root =
+            std::env::temp_dir().join(format!("octosense-wasm-shared-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // No fns/: the app calls only the component it pins.
+        let bundle = root.join("bundle");
+        std::fs::create_dir_all(&bundle).unwrap();
+        let mut env = areas::FixedEnv::default();
+        env.quotas.insert(
+            APP.into(),
+            areas::JailQuota {
+                bytes: None,
+                storage: false,
+            },
+        );
+        *AREA_ENV.lock().unwrap() = Some(Arc::new(env));
+        let pinned = Shared {
+            alias: "md".into(),
+            id: "org.example.markdown".into(),
+            version: "1.0.0".into(),
+            blake3: "0".repeat(64),
+            path: PathBuf::from(NOTES_COMPONENT),
+        };
+        let resolver: SharedResolver = {
+            let pinned = pinned.clone();
+            Arc::new(move |_: &Path, app: &str| {
+                Ok(if app == APP {
+                    vec![pinned.clone()]
+                } else {
+                    Vec::new()
+                })
+            })
+        };
+        *SHARED_RESOLVER.lock().unwrap() = Some(resolver);
+        let host_dir = root.join(".host");
+        let runtime = runtime(&host_dir).unwrap();
+        let admission = Admission {
+            root: root.clone(),
+            bundle,
+            manifest: json!({
+                "requires": ["wasm-shared-components-v1"],
+                "capabilities": ["wasm"],
+                "components": [{"as": "md", "id": "org.example.markdown", "version": "1.0.0", "blake3": "0".repeat(64)}],
+            }),
+        };
+        let mut lab = Lab::from_bundle(APP, runtime, admission, || Ok(())).unwrap();
+        let (_, reply) = pending_reply(APP, &host_dir);
+        let call = |lab: &mut Lab, method: &str, args: Value| {
+            let text = matches!(args, Value::String(_));
+            let input = input_bytes(&args).unwrap();
+            lab.answer(
+                method,
+                &input,
+                text,
+                Instant::now() + REQUEST_TIMEOUT,
+                reply.clone(),
+            )
+        };
+        assert_eq!(
+            call(&mut lab, "md.to_html", json!("# Hi")).unwrap(),
+            "<h1>Hi</h1>\n"
+        );
+        assert_eq!(
+            call(&mut lab, "md.to-html", json!({"markdown": "*a*"})).unwrap(),
+            "<p><em>a</em></p>\n"
+        );
+        // One instance of the app's own, kept between its calls.
+        assert_eq!(call(&mut lab, "md.count", json!({})).unwrap(), 1);
+        assert_eq!(call(&mut lab, "md.count", json!({})).unwrap(), 2);
+        // A bare name would be one of the app's own functions.
+        let error = call(&mut lab, "to_html", json!("# Hi")).unwrap_err();
+        assert!(error.contains("no function"), "{error}");
+        let described = lab.describe();
+        assert!(
+            described["functions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f == "md.to_html"),
+            "{described}"
+        );
+        let module = &described["modules"][0];
+        assert_eq!(module["file"], "md (org.example.markdown 1.0.0)");
+        assert_eq!(module["shared"]["id"], "org.example.markdown");
+        assert_eq!(module["shared"]["version"], "1.0.0");
+        assert_eq!(module["storage"], "none", "no storage grant, no folder");
+        *SHARED_RESOLVER.lock().unwrap() = None;
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn a_components_instance_keeps_state_and_its_files_stay_in_the_apps_storage() {
         const CHILD: &str = "OCTOSENSE_TEST_WASM_COMPONENT";
