@@ -144,17 +144,60 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
     // Its toolbox grant, from the same manifest (ADR 0002 §6, #151).
     #[cfg(feature = "toolbox-peers")]
     super::toolbox::grant_manifest(app, &loaded.manifest);
-    let executor = HostServiceExecutor { app: app.to_string(), tools: loaded.host_service_tools, families: loaded.families, host_dir };
-    super::set_executor(app, Some(Arc::new(executor)));
+    let executor = HostServiceExecutor { app: app.to_string(), tools: loaded.host_service_tools, families: loaded.families, host_dir: host_dir.clone() };
+    if app == octosense_daycast_service::APP {
+        super::set_executor(app, Some(Arc::new(DaycastExecutor { services: executor, host_dir })));
+    } else {
+        super::set_executor(app, Some(Arc::new(executor)));
+    }
 }
 
 /// Load `app`'s agent block from App Hub: a system app's packed bundle, or
 /// an installed one.
 pub fn load(app: &str) -> Result<(), String> {
     let (root, bundle) = admitted_bundle(app)?;
-    let loaded = from_bundle(&bundle)?;
+    let mut loaded = from_bundle(&bundle)?;
+    if app == octosense_daycast_service::APP {
+        // A shell-owned extension for this built-in app. Keep it out of
+        // manifest `agent.tools`: App Hub only admits tools pre-offered to
+        // contained apps, while this declaration is supplied by the host.
+        loaded.tools.push(octosense_daycast_service::agent_tool_declaration());
+    }
     install(app, loaded, root.join(".host"));
     Ok(())
+}
+
+/// Daycast's agent can request a schedule write through the same host relay
+/// as every other app tool. The relay obtains live approval before invoking
+/// this executor; all of Daycast's existing host-service tools still use the
+/// ordinary executor.
+struct DaycastExecutor {
+    services: HostServiceExecutor,
+    host_dir: PathBuf,
+}
+
+impl ToolExecutor for DaycastExecutor {
+    fn execute(&self, call: HostToolCall, reply: ToolReply) {
+        if call.name == octosense_daycast_service::AGENT_ADD_TOOL {
+            if !reply.is_open() { return; }
+            let result = octosense_daycast_service::handle(
+                octosense_daycast_service::APP,
+                "daycast.schedule.add",
+                &call.args,
+                &self.host_dir,
+            );
+            reply.finish(match result {
+                Ok(value) => ToolOutcome::Ok(value),
+                Err(error) => ToolOutcome::error("daycast_schedule", error),
+            });
+        } else {
+            self.services.execute(call, reply);
+        }
+    }
+
+    fn cancel(&self, call_id: &str) {
+        self.services.cancel(call_id);
+    }
 }
 
 /// `app`'s admitted bundle: a system app's packed bundle, or an installed

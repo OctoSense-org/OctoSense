@@ -204,6 +204,8 @@ fn register_host_services() {
         // published the same way.
         octosense_calendar_service::register();
         octosense_calendar_service::on_publish_card(Some(std::sync::Arc::new(|app: &str, args: serde_json::Value| crate::glance::publish_for(app, &args))));
+        octosense_daycast_service::register();
+        octosense_daycast_service::register_rinx_bridge(crate::host_tools::daycast_rinx::call);
         register_news();
         // After every service of the shell's own: the notice service never
         // stands in for one.

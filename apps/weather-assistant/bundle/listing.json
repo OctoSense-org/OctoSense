@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "subtitle": "Weather and personal plans for your day",
+  "description": "查看天气，管理衣橱和日程，并获得结合衣物与安排的出行建议。衣橱可记录衣物类型、家中存放位置，并选取或拍摄衣物照片；照片和衣橱数据保存在本机。问答可让 AI 帮你添加衣物、创建天气偏好、添加家庭城市或创建日程，确认后才会保存。",
+  "category": "weather",
+  "keywords": [
+    "天气",
+    "城市",
+    "预报",
+    "出行",
+    "Daycast"
+  ],
+  "screenshots": [
+    "screenshots/02-cities.png",
+    "screenshots/03-search.png",
+    "screenshots/04-search-jin.png",
+    "screenshots/06-mine.png"
+  ],
+  "icon": "icon.svg",
+  "platforms": [
+    "windows"
+  ],
+  "publisher": {
+    "name": "buqizixv",
+    "support": "https://github.com/buqizixv/shaotangjiabing/issues",
+    "privacy_policy_url": "https://github.com/buqizixv/shaotangjiabing/blob/main/octoscript-weather-assistant/PRIVACY.md"
+  },
+  "release_notes": "0.3.3：在升级后的 OctoSense 中增加 Rinx 家庭天气变化提醒；选择家人聊天室，天气变化后由 Rinx 确认发送，失败可重试。应用关闭后停止检查。",
+  "age_rating": "all",
+  "license": "Apache-2.0"
+}

@@ -584,8 +584,15 @@ pub fn approval_request(ask: &model::ApprovalAsk) -> (String, crate::approvals::
     // Command execution (`terminal.run`, the host tool Setup's switch grants
     // the system agent) is a command: `auto_approvable: false`, no standing
     // rule answers it, developer mode may (ADR 0004 §12, §13).
-    let tool = if ask.tool == grants::COMMAND_TOOL { ToolSpec::host(&ask.tool).command() } else { ToolSpec::host(&ask.tool) };
-    let app = if ask.tool == grants::COMMAND_TOOL { grants::COMMAND_APP } else { ask.app.as_deref().unwrap_or(APP) }.to_string();
+    let (tool, app) = if ask.tool == grants::COMMAND_TOOL {
+        (ToolSpec::host(&ask.tool).command(), grants::COMMAND_APP.to_string())
+    } else if ask.tool == crate::agents::DAYCAST_ADD_TOOL {
+        // Every Daycast schedule write needs a live decision; this cannot be
+        // approved by a standing rule, even when called from system chat.
+        (ToolSpec::host(&ask.tool).not_auto_approvable(), "os.weather-assistant".to_string())
+    } else {
+        (ToolSpec::host(&ask.tool), ask.app.as_deref().unwrap_or(APP).to_string())
+    };
     if ask.external {
         let context = RequestContext {
             call_id: format!("{EXTERNAL_PREFIX}{}", ask.approval_id),

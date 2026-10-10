@@ -41,6 +41,8 @@ pub mod schema;
 pub mod toolbox;
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub mod script_apps;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod daycast_rinx;
 
 #[cfg(test)]
 mod tests;
@@ -244,12 +246,19 @@ static BUS: Mutex<Vec<BusRequest>> = Mutex::new(Vec::new());
 
 /// The shell drains these after [`pump`] and hands them to its AI bus.
 pub fn take_bus_requests() -> Vec<BusRequest> {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    daycast_rinx::expire();
     std::mem::take(&mut *BUS.lock().unwrap_or_else(|e| e.into_inner()))
 }
 
 /// The bus answered (or failed) one of the relay's calls (`call_id` is the
 /// bus id, [`BUS_PREFIX`] + the kernel's).
 pub fn bus_result(call_id: &str, outcome: ToolOutcome) {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if call_id.starts_with(daycast_rinx::PREFIX) {
+        daycast_rinx::result(call_id, outcome);
+        return;
+    }
     if let Some(kernel_id) = call_id.strip_prefix(BUS_PREFIX) {
         submit(Event::BusResult { call_id: kernel_id.to_string(), outcome });
     }

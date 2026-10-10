@@ -1,6 +1,19 @@
 {
   "schema": 1,
   "source": "../apps",
-  "apps": ["news", "photos", "maps", "mail", "calendar", "ai-providers", "youtube"],
-  "assets": {}
+  "apps": [
+    "news",
+    "photos",
+    "maps",
+    "mail",
+    "calendar",
+    "ai-providers",
+    "youtube",
+    "weather-assistant"
+  ],
+  "assets": {
+    "weather-assistant": {
+      "assets": "../apps/weather-assistant/bundle/assets"
+    }
+  }
 }

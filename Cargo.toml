@@ -32,6 +32,7 @@ members = [
     "apps/news/host-service",
     "apps/mail/host-service",
     "apps/calendar/host-service",
+    "apps/weather-assistant/host-service",
     "apps/ai-providers/config",
     "apps/ai-providers/host-service",
     "apps/appcard/module",
@@ -155,6 +156,7 @@ octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-calendar-service = { path = "apps/calendar/host-service" }
+octosense-daycast-service = { path = "apps/weather-assistant/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
 octos-app = { path = "apps/appcard/app/app", default-features = false }
 octos-app-store = { path = "apps/appcard/app/crates/octos-app-store" }

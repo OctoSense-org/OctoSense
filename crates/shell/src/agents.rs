@@ -49,6 +49,7 @@ pub(crate) static FACTORY_TESTS: Mutex<()> = Mutex::new(());
 /// The host tools the system chat registers on the system session.
 pub const LIST_TOOL: &str = "agents.list";
 pub const ASK_TOOL: &str = "agents.ask";
+pub const DAYCAST_ADD_TOOL: &str = "agents.daycast_schedule_add";
 pub const PROVISION_TOOL: &str = "agents.provision";
 pub const STATUS_TOOL: &str = "agents.status";
 /// Their owner, as the kernel shows it.
@@ -357,7 +358,7 @@ pub fn system_note() -> Option<String> {
         return None;
     }
     let parts: Vec<String> = apps.iter().map(note_part).collect();
-    Some(format!("[OctoSense: apps with an agent: {}. peer_send_input takes a peer slug from peer_list, never an app id; never guess a peer that peer_list does not show.]", parts.join("; ")))
+    Some(format!("[OctoSense: apps with an agent: {}. To add a Daycast schedule event from this system chat, use agents.daycast_schedule_add; it writes to Daycast after the person approves the exact title and time. peer_send_input takes a peer slug from peer_list, never an app id; never guess a peer that peer_list does not show.]", parts.join("; ")))
 }
 
 /// Strip [`system_note`] from a message's text (the transcript keeps it; the
@@ -378,7 +379,7 @@ pub fn declarations() -> Vec<Value> {
         json!({
             "name": LIST_TOOL,
             "app": OWNER,
-            "description": "List every app on this device that has an agent, whether the person allowed it, whether its peer is ready (in peer_list), and its peer slug (`peer_slug`: pass it to peer_send_input; the app id is not a peer). Use it before delegating to an app's agent, and when peer_list does not show the app you need.",
+            "description": "List every app on this device that has an agent, whether the person allowed it, whether its peer is ready (in peer_list), and its peer slug (`peer_slug`: pass it to peer_send_input; the app id is not a peer). Use it before delegating to an app's agent, and when peer_list does not show the app you need. To add an event directly to Daycast's private schedule, use agents.daycast_schedule_add; the person approves each exact event.",
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": false},
             "risk": "read",
         }),
@@ -417,13 +418,23 @@ pub fn declarations() -> Vec<Value> {
             "input_schema":{"type":"object","properties":{"app":{"type":"string","enum":["os.mail"]}},"required":["app"],"additionalProperties":false},
             "risk":"read"
         }),
+        json!({
+            "name": DAYCAST_ADD_TOOL, "app": OWNER,
+            "description": "Add an event to Daycast's private schedule. Use when the person asks in this system chat to add a Daycast event. The title, local start and local end are required in YYYY-MM-DDTHH:mm format; ask the person for any missing date, time or duration before calling. Checks for an overlap, then shows the exact event in a host approval sheet. This always needs the person's live approval and cannot be covered by a standing rule.",
+            "input_schema": {"type":"object","properties":{
+                "title":{"type":"string","minLength":1,"maxLength":80},
+                "start":{"type":"string","minLength":1,"maxLength":32},
+                "end":{"type":"string","minLength":1,"maxLength":32}
+            },"required":["title","start","end"],"additionalProperties":false},
+            "risk":"destructive", "confirm":"host", "auto_approvable":false
+        }),
     ]);
     tools
 }
 
 /// Whether `tool` is one of [`declarations`].
 pub fn is_agents_tool(tool: &str) -> bool {
-    tool == LIST_TOOL || tool == ASK_TOOL || cfg!(any(feature = "app-hub", native_mobile)) && matches!(tool, PROVISION_TOOL | STATUS_TOOL)
+    tool == LIST_TOOL || tool == ASK_TOOL || cfg!(any(feature = "app-hub", native_mobile)) && matches!(tool, PROVISION_TOOL | STATUS_TOOL | DAYCAST_ADD_TOOL)
 }
 
 /// Answer the system agent's call of one of [`declarations`] (the system
@@ -441,6 +452,17 @@ pub fn call(tool: &str, args: &Value) -> ToolOutcome {
             Ok(value) => ToolOutcome::Ok(value),
             Err(error) => ToolOutcome::error("agent_status", error),
         },
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        DAYCAST_ADD_TOOL => {
+            let Some(root) = octosense_app_hub_app::data_root_if_set() else {
+                return ToolOutcome::error("daycast_unavailable", "Daycast storage is not available yet");
+            };
+            let host_dir = root.join(".host");
+            match octosense_daycast_service::handle("os.weather-assistant", "daycast.schedule.add", args, &host_dir) {
+                Ok(value) => ToolOutcome::Ok(value),
+                Err(error) => ToolOutcome::error("daycast_schedule", error),
+            }
+        }
         // Answered at once (the system chat holds the call instead, until
         // the person answered: system_chat `pump`).
         ASK_TOOL => match ask_app(args) {
