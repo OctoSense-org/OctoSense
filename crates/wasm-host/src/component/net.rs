@@ -38,6 +38,16 @@ impl WasiHttpHooks for Network {
         fut: Box<dyn Future<Output = Result<(), Error>> + Send>,
     ) -> Box<dyn Future<Output = Result<Response, Error>> + Send> {
         _ = fut;
+        if request.uri().scheme() == Some(&http::uri::Scheme::HTTPS)
+            && rustls::crypto::CryptoProvider::get_default().is_none()
+        {
+            // The full shell links both ring and aws-lc. Rustls cannot infer a
+            // default in that feature graph, and Wasmtime's default HTTPS
+            // client would panic instead of replying to the guest. Preserve a
+            // provider the embedding host already chose, including a racing
+            // installation; install_default never replaces an existing one.
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
         let left = self
             .deadline
             .map(|deadline| deadline.saturating_duration_since(Instant::now()));

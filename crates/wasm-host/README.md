@@ -29,3 +29,12 @@ compilation or cache publication.
 The runtime tests cover deterministic blocked readers, saturation, slot release,
 read errors and size limits; execution after fallback; and actual module and
 component deserialization from a ready cache.
+
+For outgoing component HTTPS, the host selects Rustls's `ring` provider when
+the process has not already chosen a provider. This avoids a worker panic when
+the full shell also links `aws-lc`; an existing host choice is retained.
+Certificate verification, trust roots and request deadlines are unchanged.
+The regression links both providers and drives a real component against an
+isolated TLS endpoint, including the case where the host selected `aws-lc`
+first. Public-network and full-shell acceptance are separate from that
+deterministic test; a unit-test pass alone does not establish either.
