@@ -95,10 +95,11 @@ two kinds apart by the file's preamble, and a bundle may carry both.
   connect, first-byte and between-bytes timeouts end with the call.
 - **Host services.** Through `octosense:host`
   ([`crates/wasm-host/wit/octosense-host.wit`](../crates/wasm-host/wit/octosense-host.wit)),
-  `request(service, args)` calls one of the host services its app is
-  granted, as the app's script does: the same families, dispatched on the UI
-  thread, but never with a sheet or a prompt, so only methods a background
-  surface may call. `wasm.*` is refused, since the app's worker is busy with
+  `request(service, args)` calls a host service as the app's script does:
+  dispatched on the UI thread, with no check of the families the manifest
+  declares (makepad#118; a service that needs a grant checks it itself), but
+  never with a sheet or a prompt, so only methods a background surface may
+  call. `wasm.*` is refused, since the app's worker is busy with
   the call, and the call's deadline bounds the wait.
 
 ADR 0014 records what this costs. On an M-series Mac, the 313 KiB test

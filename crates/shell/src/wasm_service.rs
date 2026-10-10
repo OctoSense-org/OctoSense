@@ -37,7 +37,7 @@
 //! is left of the quota is what a call may add (a write past it fails inside
 //! the component, as a full disk).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -99,14 +99,14 @@ static HOST_WAITING: Mutex<Option<Waiting>> = Mutex::new(None);
 /// isolate's.
 static NEXT_HOST_KEY: AtomicUsize = AtomicUsize::new(1 << 50);
 
-/// An app's host services as its components reach them: the families its
-/// admitted manifest grants (a system app's own namespace too), dispatched
-/// on the UI thread as its script's `host.request` would be, but never with
-/// a sheet or a prompt, so only the methods a background surface may call.
+/// An app's host services as its components reach them: dispatched on the
+/// UI thread as its script's `host.request` would be, and like it with no
+/// check of the families the manifest declares (makepad#118, OctoSense
+/// #450): a service that needs a grant checks it itself. Never with a sheet
+/// or a prompt, so only the methods a background surface may call.
 struct AppHostCalls {
     app: String,
     host_dir: PathBuf,
-    families: BTreeSet<String>,
 }
 
 impl HostCalls for AppHostCalls {
@@ -117,16 +117,6 @@ impl HostCalls for AppHostCalls {
             return Err(
                 "a component cannot call wasm.*: its app's functions are already running it".into(),
             );
-        }
-        let own = self
-            .app
-            .strip_prefix(octosense_appstore::system::SYSTEM_ID_PREFIX)
-            == Some(family);
-        if !self.families.contains(family) && !own {
-            return Err(format!(
-                "{} was not granted the {family} service, which {service} needs",
-                self.app
-            ));
         }
         let args: Value = serde_json::from_str(args)
             .map_err(|e| format!("{service}: the arguments are not JSON: {e}"))?;
@@ -758,12 +748,6 @@ impl Lab {
             host_calls: Arc::new(AppHostCalls {
                 app: app.to_string(),
                 host_dir: admission.root.join(".host"),
-                families: admission.manifest["capabilities"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|c| c.as_str().map(str::to_string))
-                    .collect(),
             }),
             admission: admission.clone(),
         };
@@ -2078,7 +2062,7 @@ mod tests {
     /// services, dispatched on the UI thread as its script's would be (a
     /// thread here plays the UI's part); nothing else, and never `wasm.*`.
     #[test]
-    fn a_components_host_calls_reach_only_its_apps_granted_services() {
+    fn a_components_host_calls_reach_the_host_as_its_apps_script_does() {
         struct Echo;
         impl HostService for Echo {
             fn family(&self) -> &'static str {
@@ -2116,7 +2100,9 @@ mod tests {
         let admission = Admission {
             root: root.clone(),
             bundle,
-            manifest: json!({"capabilities": ["wasm", "wasmhostecho"]}),
+            // No wasmhostecho capability: a host call, like the script's
+            // host.request, is not checked against the declared families.
+            manifest: json!({"capabilities": ["wasm"]}),
         };
         let mut lab = Lab::from_bundle(
             "org.example.hostcalls",
@@ -2146,11 +2132,9 @@ mod tests {
             answer,
             json!({"app": "org.example.hostcalls", "method": "get", "args": {"id": 1}, "may_prompt": false})
         );
+        // A family with no service here: the dispatcher says so.
         let error = call("mail.list", "{}").unwrap_err();
-        assert!(
-            error.contains("was not granted the mail service"),
-            "{error}"
-        );
+        assert!(error.contains(r#"no service answers "mail""#), "{error}");
         let error = call("wasm.functions", "{}").unwrap_err();
         assert!(error.contains("cannot call wasm.*"), "{error}");
         let error = call("wasmhostecho.get", "not json").unwrap_err();

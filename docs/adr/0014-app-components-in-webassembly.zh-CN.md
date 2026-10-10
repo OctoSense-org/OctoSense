@@ -69,9 +69,9 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
      运行时闸门，边界是操作系统和宿主的 API 表面。把组件限制在应用的 `network.hosts` 内、后来又限制
      为公共 HTTPS 主机的做法，都已按该裁定否决。请求在客体之外等待，epoch 检查无法结束它，因此
      请求的超时被限制在调用的截止时间内；导入 `wasi:http` 的组件每次调用有 10 秒。
-   - **`octosense:host`（第 3 阶段）：** `request(service, args)` 可以调用应用已获授权的宿主服务，
-     像应用脚本的 `host.request` 一样在 UI 线程上分派，但不打开面板、不询问用户（只能调用后台界面
-     可以调用的方法），并且绝不调用 `wasm.*`。
+   - **`octosense:host`（第 3 阶段）：** `request(service, args)` 像应用脚本的 `host.request` 一样调用
+     宿主服务，在 UI 线程上分派；自 makepad#118（OctoSense #450）起不检查清单声明的服务族（需要授权的
+     服务自己检查），但不打开面板、不询问用户（只能调用后台界面可以调用的方法），并且绝不调用 `wasm.*`。
    - **从不提供：** `wasi:sockets`，以及上述包以外的任何导入。请求这些导入的组件在加载时被拒绝
      （`LoadError::Import`），App Hub 的审核闸门也会拒绝。
 5. **无需编写 WIT。**
