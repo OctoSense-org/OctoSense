@@ -70,12 +70,28 @@ fn glance_devices_use_host_consent_for_declared_and_legacy_apps() {
         crate::glance_card::script_mod(vm);
     });
     let mut tiles = crate::glance_card::GlanceTiles::default();
-    let body: std::sync::Arc<str> = "View{}".into();
+    let body: std::sync::Arc<str> = r#"
+        fn probe_consent() { mod.host.request("camera.permission.request", {}, nil) }
+        View{}
+    "#
+    .into();
+    let ask = |cx: &mut Cx, splash: &makepad_widgets::SplashRef| {
+        assert!(splash.call_script_fn(
+            cx,
+            makepad_widgets::LiveId::from_str("probe_consent"),
+            &[],
+        ));
+        let heap = splash.isolate_heap_key(cx).unwrap();
+        let mut requests = splash_host::take_splash_host_requests_for(&[heap]);
+        assert_eq!(requests.len(), 1);
+        requests.pop().unwrap()
+    };
     for app in ["os.glancelegacy", "os.glancedevices"] {
-        tiles.open(&mut cx, app, app, true, &body);
+        let splash = tiles.open(&mut cx, app, app, true, &body);
         let heap = tiles.heap_key(&mut cx, app).unwrap();
-        assert_eq!(splash_host::app_tag_for_heap(heap).as_deref(), Some(app));
-        assert!(!splash_host::prompts_allowed_for_heap(heap));
+        let request = ask(&mut cx, &splash);
+        assert_eq!(request.app_tag, app);
+        assert!(!request.may_prompt);
         for (family, method) in [
             ("camera", "camera.preview"),
             ("microphone", "microphone.record"),
@@ -99,6 +115,8 @@ fn glance_devices_use_host_consent_for_declared_and_legacy_apps() {
     assert!(splash_policy::service_allowed(heap, "camera.preview").is_err());
     let legacy_heap = tiles.heap_key(&mut cx, "os.glancelegacy").unwrap();
     assert!(splash_policy::service_allowed(legacy_heap, "camera.preview").is_ok());
+    let splash = tiles.open(&mut cx, app, app, true, &body);
+    let request = ask(&mut cx, &splash);
 
     struct NoSheet;
     impl services::ServiceHost for NoSheet {
@@ -109,15 +127,15 @@ fn glance_devices_use_host_consent_for_declared_and_legacy_apps() {
     }
     services::dispatch(
         ServiceCall {
-            app_id: app.into(),
-            service: "camera.permission.request".into(),
-            args: json!({}),
+            app_id: request.app_tag,
+            service: request.service,
+            args: serde_json::from_str(&request.args_json).unwrap(),
             from_sheet: false,
-            may_prompt: splash_host::prompts_allowed_for_heap(heap),
+            may_prompt: request.may_prompt,
             host_dir: host,
         },
-        heap,
-        1,
+        request.heap_key,
+        request.req_id,
         &mut NoSheet,
     );
     let replies = services::take_replies_for(&[heap]);
@@ -127,10 +145,11 @@ fn glance_devices_use_host_consent_for_declared_and_legacy_apps() {
         assert!(error.contains("foreground"), "{error}");
     }
 
-    tiles.open(&mut cx, "missing", "os.glancemissing", true, &body);
+    let splash = tiles.open(&mut cx, "missing", "os.glancemissing", true, &body);
     let missing = tiles.heap_key(&mut cx, "missing").unwrap();
-    assert!(splash_host::app_tag_for_heap(missing).is_none());
-    assert!(!splash_host::prompts_allowed_for_heap(missing));
+    let request = ask(&mut cx, &splash);
+    assert!(request.app_tag.is_empty());
+    assert!(!request.may_prompt);
     assert!(splash_policy::service_allowed(missing, "camera.preview").is_err());
     tiles.sweep(&mut cx, &[]);
 }
