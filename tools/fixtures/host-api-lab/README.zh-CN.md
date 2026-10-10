@@ -55,6 +55,7 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 - 真实的隔离 VM 用 `fs.write_bytes` / `fs.read_bytes` 往返读写字节 `0、127、128、255`，随后删除自己的临时文件。
 - 文件状态返回应用的有界存储可用性和字节上限；后台导入、导出在原生界面打开前被拒绝。
 - 来自工具后台回调的定位采样返回确切的 `location.sample is unavailable to agents/background surfaces` 拒绝错误。它的 API 描述也必须标明仅限前台调用。
+- 宿主在执行应用源码前绑定准入的应用身份。原生存储句柄仅对该身份可用，其他应用身份被拒绝。当前检查集新增 `native_storage_identity_scoped`；上述历史回执不覆盖这项检查。
 - 账户不对、工具未声明或输入无效的调用都会遭到拒绝。
 - 持有工具的应用关闭后，调用以 `app_not_running` 失败。
 

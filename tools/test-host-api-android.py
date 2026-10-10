@@ -24,6 +24,7 @@ OS_BATCH_CHECKS = (
     "storage_binary_write_discovery",
     "contained_binary_roundtrip",
     "files_status_truthful",
+    "native_storage_identity_scoped",
     "location_sample_discovery",
     "background_import_refused",
     "background_export_refused",

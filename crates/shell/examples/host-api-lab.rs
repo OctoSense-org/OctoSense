@@ -227,6 +227,12 @@ impl AppMain for App {
             )
             .unwrap_err();
             let mut checks = os_batch_checks(&reply);
+            checks["native_storage_identity_scoped"] = json!(self.card.borrow_mut()
+                .and_then(|mut card| card.isolate_heap_key(cx))
+                .is_some_and(|heap| {
+                    splash_storage::storage_for_heap(heap, &self.app).is_some()
+                        && splash_storage::storage_for_heap(heap, "org.example.other").is_none()
+                }));
             checks
                 .as_object_mut()
                 .unwrap()

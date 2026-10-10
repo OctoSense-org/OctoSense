@@ -66,6 +66,7 @@ The script copies the fixture, captures its native preview as the listing screen
 - File status/import/export and location sampling are discoverable; binary storage is advertised as a runtime ABI, not a `host.request` method.
 - The live contained VM round-trips bytes `0, 127, 128, 255` through `fs.write_bytes` / `fs.read_bytes` and removes its temporary app file.
 - File status reports the app's bounded storage availability and byte limit; background import and export are refused before opening native UI.
+- The host binds the admitted app identity before evaluating its source. The live native storage handle exists for that identity and is refused for a different app. This adds `native_storage_identity_scoped` to the current check set; historical receipts above do not cover it.
 - Location sampling from the tool's background callback returns the exact `location.sample is unavailable to agents/background surfaces` refusal. Its API descriptor also declares it foreground-only.
 - Calls for the wrong account, for an undeclared tool or with invalid input are refused.
 - After the app that owns the tool closes, a call fails with `app_not_running`.
