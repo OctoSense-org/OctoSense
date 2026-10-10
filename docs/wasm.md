@@ -108,6 +108,34 @@ its Markdown function runs about 2.6 times slower than native Rust, close to
 the same code as a module. In Pulley it runs about 32 times slower than
 that.
 
+### Shared components
+
+An app can also call a component that App Hub publishes on its own (App Hub
+ADR 0003, OctoSense ADR 0014 phase 4). The manifest pins it under
+`components` by alias, id, exact version and BLAKE3 digest, and requires
+`wasm-shared-components-v1`. The `wasm` service loads each pinned component
+beside the app's `fns/` and routes its functions as `wasm.<alias>.<function>`:
+with `{"as": "md", "id": "org.example.markdown", …}`, `wasm.md.to_html` calls
+the component's `to-html`. The app gets an instance of its own, under its own
+grants, as for a component in its `fns/`. It may carry no `fns/` at all and
+call only shared components. `wasm.functions` lists their functions with the
+alias, and names the component each comes from (`"shared": {"alias", "id",
+"version", "blake3"}`).
+
+The service asks App Hub for the files on every load
+(`octosense_appstore::components::resolved_in`). A system app's are in its
+bundle at `components/<blake3>.wasm`. An installed app's are in the shared,
+read-only store at `<apps root>/.components/<blake3>.wasm`. Each is checked
+against the verified catalog, which must still offer it at that version, and
+against its digest. Nothing is fetched there: App Hub's installers fetch an
+app's components before the app itself. A missing, changed or withdrawn
+component stops the app's launch.
+
+`wasm_service::tests::a_pinned_shared_component_answers_as_alias_and_function`
+runs this path with a stand-in resolver. No catalog has published a component
+yet, so installing an app that pins one and calling it in a shell is
+**unverified**.
+
 ### How a module reaches a device
 
 - **A store app.** App Hub's gate (app contract 1.7.0) admits a `.wasm` file
@@ -317,6 +345,8 @@ command.
   install, a system app's at its first call.
 - Components on a phone: Android and OpenHarmony builds link the runtime,
   but no component has run on a device yet (**unverified**).
+- Shared components end to end: no App Hub catalog has published one yet,
+  so no installed app has pinned one (**unverified**).
 - Bytes are slow through JSON: a 1 MiB `list<u8>` costs about 18 ms there
   and back, as base64.
 
