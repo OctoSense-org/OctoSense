@@ -41,6 +41,12 @@ internal interfaces, not public app capabilities. Apps use the scoped host APIs
 and the app-agent broker. Web content also keeps its own sandbox and request
 validation; removing a manifest host list does not remove those boundaries.
 
+Before evaluating a card, App Hub's `apply_device_consent` binds the verified
+launch bundle's app ID to its isolate and applies the device-consent boundary.
+A storage folder alone is insufficient: native file and media services require
+that same isolate identity when obtaining its storage handle. A failed launch
+clears the previous identity; scripts cannot supply a replacement app ID.
+
 ## Validation and release
 
 The acceptance matrix pairs declared and undeclared calls, then separately
