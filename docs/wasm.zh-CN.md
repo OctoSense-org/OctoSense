@@ -249,6 +249,25 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
 两者。CI 中的每个桌面版和 Home 构建都包含这个服务，`tools/check-shell-graph.sh` 检查它的
 运行时恰好在 macOS、Linux 和 Android 上链接。
 
+### 在命令行中调用函数
+
+`crates/wasm-host/examples/wasm_call.rs` 用与 `wasm` 服务相同的运行时和限制调用 `.wasm` 文件中的一个函数，
+不需要 Shell，也不需要设备。在本仓库中运行：
+
+```sh
+cargo run -q -p octosense-wasm-host --example wasm_call -- \
+    crates/wasm-host/tests/fixtures/notes.component.wasm to-html '"# Hi"'
+```
+
+它输出 `"<h1>Hi</h1>\n"`。对组件来说，参数就是脚本传给 `wasm.<函数>` 的 JSON：单个参数可直接给值，也可以按名称
+传对象，或按顺序传数组；结果以 JSON 输出，记录输出为对象。对核心模块来说，参数是函数的文本输入：
+`wasm_call apps/wasmlab/bundle/fns/wasmlab.wasm md_to_html '# Hello *core*'` 输出
+`<h1>Hello <em>core</em></h1>`。
+
+`--storage DIR` 把 `DIR` 作为组件所在应用的存储文件夹。组件的 `wasi:http` 请求与在 Shell 中一样发出；
+`octosense:host` 调用会失败，并返回 `no host services in wasm_call: <service> needs a shell`。每次调用都使用
+新的实例，而 Shell 会在两次调用之间保留组件的实例。
+
 ### 手机验收
 
 [`tools/fixtures/wasm-phone-lab`](../tools/fixtures/wasm-phone-lab/README.zh-CN.md)
