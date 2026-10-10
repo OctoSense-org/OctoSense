@@ -8,8 +8,12 @@ Splash 文件系统；导出会保存已有应用文件的快照。应用只收�
 | 方法 | 参数 | 返回值 |
 | --- | --- | --- |
 | `files.status` | `{}` | `import_supported`、`export_supported`、`storage_granted`、`max_file_bytes`、`max_import_bytes`、`foreground_required` |
-| `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123}` |
+| `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123,"name":"Q3 report.pdf"}` |
 | `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}` | 相同的成功字段；可选的 `name` 是建议给系统对话框的文件名，不含目录 |
+
+`name` 是所选文档的显示名称，供应用展示：去掉文件夹、控制字符和不可见的方向标记后的
+文件名，最多 128 字节。副本仍存放在应用指定的 `path`。清理后为空时不返回；Android 的
+文档加载器暂不查询显示名称，因此 Android 上也不返回。
 
 取消选择返回 `{"cancelled":true}`。读取失败、不支持的平台、缺少授权、存储已满和
 传输忙碌都会返回错误。导入目标必须是新文件，不能覆盖应用已有文档。应用可用

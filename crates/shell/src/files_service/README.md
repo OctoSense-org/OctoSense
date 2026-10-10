@@ -9,7 +9,7 @@ count, never a host path or Android provider URI. No separate blob store is crea
 | Method | Arguments | Result |
 | --- | --- | --- |
 | `files.status` | `{}` | `import_supported`, `export_supported`, `photo_pick_supported`, `text_share_supported`, `storage_granted`, `max_file_bytes`, `max_import_bytes`, `max_share_text_bytes`, `foreground_required` |
-| `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123}` |
+| `files.import` | `{"path":"/documents/report.pdf"}` | `{"cancelled":false,"path":"/documents/report.pdf","bytes":123,"name":"Q3 report.pdf"}` |
 | `files.pick_photo` | `{"path":"/photos/new.png"}` | Choose one PNG/JPEG/WebP; returns the import fields plus its signature-detected `mime` |
 | `files.share` | `{"text":"Good morning 🌅"}` | Android only: `{"handoff":"chooser_opened","delivery":"unknown"}` after native chooser dispatch |
 | `files.export` | `{"path":"/documents/report.pdf","name":"Report.pdf"}` | The same success fields; `name` is an optional basename suggested to the native dialog |
@@ -30,6 +30,12 @@ The request expires after 20 seconds; a missing reply is an uncertain handoff, n
 reason to automatically open another chooser. Closing the app cannot recall an OS
 chooser that has already opened. The native result uses a unique per-request
 correlation value and a bounded reply; stale replies are discarded.
+
+`name` is the chosen document's display name, for the app to show: the file
+name without folders, control characters or invisible direction marks, at most 128
+bytes. The app still decides where the copy is stored (`path`). It is absent when
+nothing is left after cleaning, and on Android, whose document loader does not
+query a display name yet.
 
 Cancelling a document/image dialog returns `{"cancelled":true}`. Read failures, unsupported
 platforms, missing grants, full storage, and busy transfers are errors. Imports
