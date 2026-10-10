@@ -142,7 +142,10 @@ fn glance_devices_use_host_consent_for_declared_and_legacy_apps() {
     assert_eq!(replies.len(), 1);
     let error = replies[0].2.as_ref().unwrap_err();
     if permission_supported() {
-        assert!(error.contains("foreground"), "{error}");
+        assert_eq!(
+            error,
+            "camera.permission.request is unavailable to agents/background surfaces"
+        );
     }
 
     let splash = tiles.open(&mut cx, "missing", "os.glancemissing", true, &body);
