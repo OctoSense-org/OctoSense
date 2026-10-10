@@ -2,8 +2,10 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Ordinary App Hub apps granted `mail` can connect their own mailbox through the
-host sign-in sheet, read mail, compose a message and request native send review.
+Admitted App Hub apps can connect their own mailbox through the host sign-in
+sheet, read mail, compose a message and request native send review. The `mail`
+declaration describes usage; actual app/account access and native review remain
+required.
 Passwords and SMTP connections remain in this service. A model or app cannot
 approve sending.
 
@@ -82,7 +84,8 @@ fn review_reply(account, to, subject, body){
 }
 ```
 
-Declare capability `mail`. A new app can require the exact API majors through
+Declare `mail` to describe usage; omitting it does not deny a call. A new app
+can require the exact API majors through
 `host_api.required: {"mail.compose": 1, "mail.compose_status": 1,
 "mail.review_send": 1}`. Agent tools may map to `mail.compose` and
 `mail.compose_status` when supported by the consumer's contract. Account-aware
@@ -97,8 +100,8 @@ Public composer IDs include app and account in their host-side derivation;
 records live outside app storage. Sharing an account grant does not share
 composers. Historical `mail.propose_reply`, `mail.draft`, `mail.suggest_reply`,
 `mail.propose_send` and Mail's existing card/editor remain `os.mail`-only.
-At the send claim, the shell rechecks installed-app admission, the `mail`
-grant, account selection and suspension; the service rechecks account access,
+At the send claim, the shell rechecks installed-app admission,
+account selection and suspension; the service rechecks account access,
 revision, payload, sender and one-use attempt state. Closing the originating
 isolate invalidates an unsubmitted review. Review capabilities expire after
 ten minutes and are not serialized or exposed to scripts.

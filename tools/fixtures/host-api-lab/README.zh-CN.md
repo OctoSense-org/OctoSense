@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-[Android 复现步骤与 OnePlus 6 结果](ANDROID.zh-CN.md)：测试应用 0.4 在 **OnePlus 6／Android 15 上通过全部 44 项检查**，没有启动模型、登录账户或批准权限。原始 14 项记录继续保留为历史证据。
+**当前源码验收：**macOS 和 OnePlus 6 均通过 31/31 项原生检查，手机驱动全部 45 项也通过，详见[最终源码回执](#最终源码验收)。[Android 复现说明](ANDROID.zh-CN.md)保留较早测试应用 0.4 的 44/44 项手机结果及原始 14 项记录。测试均未启动模型、登录账户或批准权限。
 
 这个开发测试示例演示应用自己的 Splash 工具如何调用已经编译进 OctoSense 的 Rust 代码。工具读取 macOS 上真实的摄像头权限状态，更新应用界面，并把结构化结果返回给原生调用方。它还发现文件/定位 API，在自身存储隔离目录中写入并读回四个合成字节，验证后台调用被拒绝。它从不采集媒体、启动定位采样、打开文件选择器或批准设备访问。它不是提交给 App Hub 的应用，也不能用来加载任意 Rust 库。
 
@@ -21,9 +21,9 @@
 
 ## 公共日历与邮件检查（测试应用 0.4）
 
-当前版本增加公共 `device_calendar` 和 `mail` API，需要已发布的 [app-contract 1.10.0](https://crates.io/crates/octosense-app-contract/1.10.0) 声明及兼容的宿主实现，并保留之前的 `files` 能力。仅安装 SDK 不会提供这些宿主实现。新增十一项检查涵盖四个方法描述、原生日历权限状态、未获应用同意时拒绝列出日历、拒绝后台权限申请/日历选择/事件修改，以及无账户时拒绝准备邮件和拒绝后台发送。测试邮件服务使用合成传输，无法投递真实邮件。
+测试应用 0.4 使用 [app-contract 1.10.0](https://crates.io/crates/octosense-app-contract/1.10.0) 引入公共 `device_calendar` 和 `mail` 检查，并保留此前的 `files` API。当前源码使用契约 1.11.0 及[能力仅用于声明的策略](../../../docs/capabilities.zh-CN.md)。仅安装 SDK 不会提供兼容的宿主实现。新增十一项检查涵盖四个方法描述、原生日历权限状态、未获应用同意时拒绝列出日历、拒绝后台权限申请/日历选择/事件修改，以及无账户时拒绝准备邮件和拒绝后台发送。测试邮件服务使用合成传输，无法投递真实邮件。
 
-另外九项检查发现照片选择、文字分享、播放、录音 API 和 Video 控制运行时 ABI，并验证后台媒体请求（包括录音）被拒绝。未声明麦克风能力、未获得应用授权时，仍能读取麦克风权限状态。文字分享仅在 Android 上声明可用，不打开任何媒体设备。共二十项检查补充下文的十项 OS API 检查，不证明真实日历读写、亲手批准或 SMTP 投递。[Mac 回执](evidence/public-api-v0.4/macos.json)记录全部 30 项检查通过；[OnePlus 6 回执](evidence/public-api-v0.4/oneplus6.json)记录全部 44 项 Android 检查通过，其中包含原有 14 项。这些记录绑定各自列出的源码和运行时摘要；此前 14 项和 24 项记录继续作为历史证据保留。
+另外九项检查发现照片选择、文字分享、播放、录音 API 和 Video 控制运行时 ABI，并验证后台媒体请求（包括录音）被拒绝。在当前源码中，未声明麦克风能力、未获得应用授权时，仍能读取麦克风权限状态。文字分享仅在 Android 上声明可用，不打开任何媒体设备。共二十项检查补充下文的十项 OS API 检查，不证明真实日历读写、亲手批准或 SMTP 投递。[Mac 回执](evidence/public-api-v0.4/macos.json)记录全部 30 项检查通过；[OnePlus 6 回执](evidence/public-api-v0.4/oneplus6.json)记录全部 44 项 Android 检查通过，其中包含原有 14 项。这些记录绑定各自列出的源码和运行时摘要；此前 14 项和 24 项记录继续作为历史证据保留。
 
 ## 在 macOS 上运行
 
@@ -67,11 +67,30 @@ python3 tools/test-host-api-native.py --hub target/debug/hub
 
 单独的[回归回执](evidence/public-api-v0.4/regression.json)记录 `53bab40f` 上 **1,051/1,051 项共享 Shell 测试通过，失败和忽略项均为零**，同时通过三个打包检查（桌面默认／mobile、Home mobile）及原生测试应用构建。这些回执不验证之后的 Android Video Java 改动，也不验证真实账户或硬件操作。SDK 1.10.0 已发布；[宿主分发状态](../../../docs/host-os-api-status.zh-CN.md)单独记录。这些历史回执不验证最终 Desktop RC2 发行包，也不会更新已发布的 Home beta.1。
 
-[早先批次记录](evidence/os-api-batch1/receipt.json)记录源码 `807f2bc8` 的十项 OS 检查；`evidence/android/` 保留原始 14 项手机记录。这些历史结果不能验证当前源码。当前测试将“未声明即拒绝”改为麦克风状态可读、应用尚未授权、后台录音与定位精确拒绝；这些语义需要新的验收回执。
+[早先批次记录](evidence/os-api-batch1/receipt.json)记录源码 `807f2bc8` 的十项 OS 检查；`evidence/android/` 保留原始 14 项手机记录。这些历史结果不能验证当前源码。当前测试将“未声明即拒绝”改为麦克风状态可读、应用尚未授权、后台录音与定位精确拒绝；下文的最终源码回执覆盖这些语义。
 
 **此前已验证**：`.github/workflows/desktop.yml` 的 `native-host-api` 任务在 GitHub `macos-14` 运行器上，为添加本测试示例的改动运行了上述命令（另加 `--output` 指定证据目录），全部通过。
 
 **本次 macOS 运行未覆盖**：真实的模型推理、亲手批准权限、摄像头拍摄、交互式文件／照片／分享选择器、实时定位采样、原生浏览器启动、日历事件读写、SMTP 投递、录音与音频播放、Android、Linux 和 Windows 设备服务，以及发布兼容的宿主二进制文件。Android 的结果见[单独的 OnePlus 6 验收记录](ANDROID.zh-CN.md)。另有在真实的 Splash VM 上运行的运行时回归测试，覆盖分离的定时器、暂停的任务、HTTP 和 WebSocket 回调，以及原生设备辅助函数中的检查；本测试示例覆盖的是链式宿主回调。
+
+## 最终源码验收
+
+源码 `8b09e05d`（以相同树合并为 `40ca21da`）在 macOS 上通过 **31/31 项原生检查**；
+指定的 OnePlus 6 通过 **31/31 项原生检查及全部 45 项驱动检查**。这两次运行包含新增的
+`native_storage_identity_scoped` 断言：实际准入的隔离实例可以获得原生存储句柄，
+其他应用 ID 不能。即使未声明 `microphone`，也可查询状态；查询本身不会授予麦克风访问权限。后台录音和定位请求仍被拒绝。
+
+- macOS：[驱动](evidence/final-8b09/macos.json)、[原生结果](evidence/final-8b09/macos-native.json)。
+- OnePlus 6：[驱动](evidence/final-8b09/oneplus6.json)、[原生结果](evidence/final-8b09/oneplus6-native.json)、
+  [自有测试包卸载](evidence/final-8b09/oneplus6-cleanup.json)。
+- [汇总派生的手机构建来源](evidence/final-8b09/oneplus6-build-provenance.json)记录两个最终 APK
+  的摘要及对应干净源码。Host API Lab 本身不嵌入源码标识；独立的共享组件宿主会嵌入。
+
+上文的原始回执未经修改直接复制；较早的 0.4 和批次回执保留为历史证据。这些是开发/测试
+宿主，不是 RC4 归档包验收，也不是生产 Home 升级。Home beta.2 较旧，独立手机测试包
+未改动它。这些测试仍不验证真实模型行为、亲手批准权限、真实账户写入、媒体/选择器交互
+或 OpenHarmony 执行。完整 Shell 的单独结果见
+[桌面组件演练](../wasm-phone-lab/README.zh-CN.md#最终源码验收)。
 
 ## 复用这一模式
 

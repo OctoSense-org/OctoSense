@@ -136,14 +136,14 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | [Writer](writer/bundle) | `os.writer` (desktop) | A calm editor on a white page (a line starting with `#` is a heading, `-` a bullet, `>` a quote), a document list, Save as a Word document, a preview of the saved document with an outline from its headings, and export to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage`, `word` | none | [`word`](word/host-service) (`word.convert`, `word.info`, `word.inspect`), in Writer's own storage |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
-What each capability means is defined by the shared `octosense-app-contract` 1.x
-crate (`KNOWN_CAPABILITIES` in App Hub's `crates/app-contract/src/manifest.rs`): `images` shows
-pictures from any public https host, `web` opens a page in the system WebView,
-`library` offers captures to the system photo library, `mail` reaches the
-host's mail service, `llm` reaches the host's LLM-provider service, `news`
-reads the host's news service, `glance` publishes cards to the glance
-screen, and `model` requests bounded one-shot model completions. `net`
-reaches only the hosts the manifest lists.
+Capability names come from the shared `octosense-app-contract` 1.x crate
+(`KNOWN_CAPABILITIES` in App Hub's `crates/app-contract/src/manifest.rs`).
+They describe intended use: images, WebView pages, photo-library export,
+Mail, News, Glance or one-shot model calls. `net` and `network.hosts`
+disclose network use; they do not restrict public API execution. Declarations
+do not grant device consent, account access or tool sharing. Capture/export
+intent must be explicit, and `llm` provider management remains system-only.
+See [capabilities and execution boundaries](../docs/capabilities.md).
 
 ### Status and known gaps
 
@@ -366,8 +366,9 @@ A system app has the same shape as a store app, with these differences:
 | Ceilings | `HostLimits::system()`: 64 MB storage, 128 MB memory, a larger instruction budget, since the app lives as long as it is open | `HostLimits::default()`: sized for a card |
 | Extra files | a shell can mount directories into `{{assets}}` | only what is in the bundle |
 
-Everything else is identical: the same isolate, the same capability checks,
-the same network allowlist. How to write such an app (language, APIs, the
+Both use the same isolate and public API policy: declarations describe use;
+verified app identity, storage isolation, actual consent and service-specific
+checks remain enforced. How to write such an app (language, APIs, the
 `octo` CLI) is in
 [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)
 (`docs/QUICKSTART.md`, `docs/SCRIPT-API.md`).
@@ -509,12 +510,14 @@ The grabs and a receipt per appearance land in `target/writer-ui/light` and
 
 ## Host services and sheets
 
-Some work needs something a contained app must never hold: a socket, a
-credential, a device. A **host service** does that work in the shell, in
-Rust. The app calls it with `host.request("<family>.<method>", args, fn(r){…})`;
-the isolate refuses the call unless the manifest grants the family (`mail`),
-and the service answers with data, never the means. The runtime side lives in
-App Hub (`crates/appstore/src/services.rs`).
+Some operations need host-held credentials or device authority. A **host
+service** performs that work in the shell, in Rust, while the app uses public
+APIs under host-enforced app identity and consent rules. The app calls it with `host.request("<family>.<method>", args, fn(r){…})`;
+the admitted app calls under its verified identity, and the service checks
+its actual account scope, consent and operation rules. A family declaration
+such as `mail` describes usage; it does not grant or deny the call. The service
+answers with data, never credentials or approval authority. The runtime side
+lives in App Hub (`crates/appstore/src/services.rs`).
 
 When the person has to act (type a password, approve an account), the service
 raises a **sheet**: a host-owned Splash surface drawn over the app, in its own
@@ -563,8 +566,9 @@ credential-reset workaround.
 as Calendar (`os.calendar`). Its executor owns the service call even when Mail
 or the system agent is the caller. Both have explicit grants for the shareable
 `calendar.events`, `calendar.add_event` and `calendar.notify` tools. The relay
-checks the caller before routing. Calendar’s own UI separately requests the
-`calendar` capability; the service checks `os.calendar` identity. Removal, update, UI
+checks the caller before routing. Calendar’s own UI calls as the admitted
+`os.calendar` app; its `calendar` declaration describes use, and the service
+checks that identity. Removal, update, UI
 view and agenda are not included in these cross-app grants.
 
 | Method | Args | Answer |
@@ -753,8 +757,8 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   isn't available on this device). `calendar.notify` and
   `calendar.agenda` fill Calendar's own event and agenda cards. Every card
   is published with `notify` through the shell's `glance` service as the
-  app (the app needs the `glance` capability). These fixed-template tools take
-  model-supplied text; `mail.publish_card` additionally takes model-authored L0
+  admitted app, preserving its publisher/account identity. These fixed-template
+  tools take model-supplied text; `mail.publish_card` additionally takes model-authored L0
   source validated by the host.
 - **Trying it** on the desktop: open the assistant (F8) and ask the system
   agent to have an app's agent (Mail, Calendar, News, Photos, Maps or
@@ -860,9 +864,9 @@ from the original repository and does not run.
 1. Edit `apps/<name>/bundle/`. Use only APIs documented in
    App Flow's `docs/SCRIPT-API.md` or already used by
    another app here; check the runtime source before using anything else.
-2. Ask only for what the app uses. A new network host goes in
-   `network.hosts`; a new capability must exist in App Hub's
-   `KNOWN_CAPABILITIES`.
+2. Describe what the app uses in `capabilities` and `network.hosts`; use
+   capability names from App Hub's `KNOWN_CAPABILITIES`. These are disclosures,
+   not permission grants. Required API versions belong in `host_api.required`.
 3. Never add a password or code field. If the app needs a secret, a host
    service and its sheet handle it.
 4. Run it with `card-host --system` (Mail: in a shell with the demo). Test on

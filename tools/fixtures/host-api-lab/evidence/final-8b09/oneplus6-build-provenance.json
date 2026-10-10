@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "kind": "derived build-provenance summary, not a native receipt",
+  "source_revision": "8b09e05d1cb41b677340fa3f9415ee37ac88eace",
+  "merge_revision": "40ca21da68cc05ae930931adcfcf6d382d49ec26",
+  "source_tree": "703c30ecfdc6f2fa2db6323dafd526c9e0c9610c",
+  "runtime_tree": "a6fae94aa4d233503b14bc6d0a36bcbc2b264b44",
+  "apk_sha256": {
+    "components": "158b8b6b41c1d77061bec19c456aa158e7cb3437e5be1b3ac3e6218347a952ab",
+    "host-api": "7b0599a1f4b62d43f421aaa56841c87efe9e76de2ea6d3f641d7cb93670cba32"
+  },
+  "provenance": {
+    "components": "clean build and embedded stamp",
+    "host-api": "clean build receipt only"
+  }
+}

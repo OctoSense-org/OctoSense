@@ -21,10 +21,24 @@ core modules keep working. Desktop rc.2 and Home beta.2 ship core modules only.
 [Shared-component acceptance](../../tools/fixtures/wasm-phone-lab/README.md#real-github-shared-component-acceptance)
 now records real publisher attestations, an admin-attested private dry-run catalog,
 actual Store installation and Splash tool execution on macOS and OnePlus 6.
-At clean source `c5f0c5c1`, both passed 28/28 native assertions; the drivers passed
-12/12 and 13/13 checks. The public catalog stayed unchanged. Component and new
-policy release acceptance remains pending; no live model, performance or
-OpenHarmony device result is claimed. Current behavior:
+The earlier `c5f0c5c1` receipts passed 28/28 native assertions on both platforms,
+with 12/12 and 13/13 driver checks. At final source `8b09e05d` (merged as
+`40ca21da` with an identical tree), the full macOS desktop passed 11/11 App Hub
+checks; OnePlus 6 passed 28/28 component assertions plus 13/13 driver checks.
+Host API Lab separately passed 31/31 native checks on macOS and OnePlus 6,
+with all 45 phone driver checks passing. See
+[final component evidence](../../tools/fixtures/wasm-phone-lab/README.md#final-source-acceptance)
+and [Host API evidence](../../tools/fixtures/host-api-lab/README.md#final-source-acceptance).
+The public catalog and installed Home stayed unchanged. [Desktop RC4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4)
+is published from `9266b008`; its Mac archive passed 11/11 checks, with
+[acceptance bound to the final package bytes](../../tools/fixtures/wasm-phone-lab/README.md#rc4-release-evidence). The
+development binary and isolated phone fixtures do not establish a released
+Home upgrade, live-model behavior, performance or OpenHarmony device execution.
+Later [Windows validation](../../tools/fixtures/wasm-phone-lab/README.md#windows-cache-validation)
+passed 42/42 tests and the shell check at `a8e170d4`, merged as `af205d9c`.
+That test-only correction leaves production source unchanged; it is not part
+of the RC4 tag or proof of RC4 archive acceptance.
+Current behavior:
 [WebAssembly in OctoSense](../wasm.md) and
 [capabilities and execution boundaries](../capabilities.md).
 

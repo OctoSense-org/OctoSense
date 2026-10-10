@@ -8,7 +8,7 @@ English | [简体中文](README.zh-CN.md)
 
 [Capabilities and execution boundaries](docs/capabilities.md) explains declaration-only APIs, consent, accounts and app isolation.
 
-**Desktop download:** [OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) supports the current App Hub catalog, GitHub-attested app releases and the public host APIs declared by SDK 1.10.0. Choose the asset for your operating system and architecture; the release notes record prerequisites, signing status and platform validation. This desktop release does not update Android Home.
+**Desktop prerelease download:** [OctoSense 0.1.0-rc.4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4) includes app-contract 1.11.0, shared Wasm components, GitHub-attested app installation and declaration-only public API capabilities. Choose an asset for your operating system and architecture; the release notes record signing, prerequisites and platform acceptance limits. This desktop release does not update Android Home.
 
 Run the [live Mail → card → Calendar demo](docs/demos/mail-calendar/README.md) with your own mailbox: pinned source, selective policy, fictional test inputs, human draft edits and Calendar navigation.
 
@@ -50,10 +50,10 @@ Android Home supports page swipes from either side edge; apps and opened cards r
 
 To read the code in order, start with [From an app window to an agent turn](docs/architecture-walkthrough.md). The [product walkthrough](desktop/docs/code-walkthrough.md) adds how to run each product.
 
-Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** The RC2, RC1 and older beta.2 downloads contain none; an operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
+Connected App Hub samples share a host-owned GitHub/Google OAuth service, without an OctoSense account. Start with the [service and sample guide](crates/oauth-service/README.md) and [ADR 0010](docs/adr/0010-shared-oauth-and-connected-apps.md). GitHub Notes reuses Rinx’s Markdown editor; Inbox Assistant and Google Calendar are ordinary bundles. **Provider login requires distributor-supplied OAuth registrations.** RC2, RC1 and older beta.2 downloads contain none; the RC4 release workflow also supplies no provider registrations. An operator must supply the private host `oauth/clients.json` override or build with the [registration settings](crates/oauth-service/README.md#configure-a-release-maintainers). Installing an app from App Hub does not configure its provider login. Ordinary app users should receive a configured build. Live GitHub and Google sign-in has passed on macOS, and a [macOS test-account Calendar login/save](tools/connected-e2e/evidence/calendar-login-20261007.json) passed on its recorded build; this is not public Google verification. GitHub writes and Gmail sends are still unverified, and Google sign-in on Android still needs its native adapter.
 
-App Hub in desktop RC2 and this source build defaults to the GitHub-attested catalog and supports
-`publisher-github-v1` releases through app-contract 1.10.0 (RC1: 1.8.0). Developers request
+App Hub in this source build defaults to the GitHub-attested catalog and supports
+`publisher-github-v1` releases through app-contract 1.11.0 (desktop RC2: 1.10.0; RC1: 1.8.0). Developers request
 publication by opening an [App Hub submission issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml).
 App Hub accepts only GitHub-attested releases, so a developer needs no publisher
 key: the app's public repository is its publisher identity
@@ -62,7 +62,7 @@ A Hub admin still approves admission. The first catalog fetch needs a network co
 an old offline catalog is not converted into a GitHub proof. Custom local test
 catalogs can explicitly select `OCTOSENSE_HUB_CATALOG=legacy` with a fresh app-data
 directory; a library with a v2 cache refuses that downgrade. Beta.2 does not
-support this publishing mode; use desktop RC2 for these app releases.
+support this publishing mode. RC2 can install compatible GitHub-attested apps; apps that require shared components or newer host APIs need a compatible newer host. See [capability and release status](docs/capabilities.md).
 
 ## How it fits together
 
@@ -187,7 +187,7 @@ sequenceDiagram
 
 </details>
 
-The `<app>.notify` tools fill a fixed card template ([`notice.card`](crates/shell/resources/glance/notice.card), or Calendar's [event and agenda cards](apps/calendar/host-service/resources)), so the model writes only the text. Mail also has `mail.publish_card`, which takes a card the model wrote and checks it before publishing. Either way the shell publishes as the app and requires its `glance` permission.
+The `<app>.notify` tools fill a fixed card template ([`notice.card`](crates/shell/resources/glance/notice.card), or Calendar's [event and agenda cards](apps/calendar/host-service/resources)), so the model writes only the text. Mail also has `mail.publish_card`, which takes a card the model wrote and checks it before publishing. Either way the shell publishes under the admitted app identity; `glance` declarations describe usage, while card validation and caller checks still apply.
 
 Mail's agent can also start on its own. Once the person has signed in, allowed Mail's agent and asked the system agent to turn on new-mail processing (`agents.provision`), the host syncs the inbox independently of model turns and queues each new message for the agent. The agent reads the message with its scoped tools and decides whether to post a card. The [Mail event walkthrough](docs/mail-agent-events.md) describes this built-in path. Independently installed Gmail apps get the same kind of event through the connected-account service: they declare the account-bound trigger `<app namespace>.new_message`, where the app namespace is the last segment of the app id ([OAuth guide](crates/oauth-service/README.md)).
 
@@ -246,11 +246,11 @@ An app reaches its agent only through the shell, never through the raw kernel pr
 
 | Kind of app | API | Used by |
 | --- | --- | --- |
-| Script app | `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")`, limited to the names its manifest declares | store apps. The system apps declare none: the shell drives their agents. |
+| Script app | `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")`, for an admitted app with an assistant offer and user consent | store apps; the shell also drives system-app agents. |
 | Native app, in the shell or as a process | Makepad's `OctosPeer` client over the peer link: open the link, then `serve_tools` to answer the agent's calls to the app's own tools. The same code works in either hosting. | App Hub, Calculator, Clock, Notes, Reminders, Weather, Terminal |
 | Native app with the injected service | `OctosAppService`: `open_conversation` for the person's lane, `open_context` for a private context | Rinx, which uses only `open_context`, for its mini apps |
 
-For a script app, the smallest useful integration is two capabilities in the manifest:
+A script app first offers an assistant through its `agent`/tools metadata. Its capability list can describe these calls; it does not create or authorize an assistant:
 
 ```json
 "capabilities": ["octos.session.open", "octos.turn.start"]
@@ -280,13 +280,13 @@ In a shell with a kernel, the first call asks the person to allow the app's agen
 
 An agent can only work with what its app hands it. A script app declares all of this in its bundle; a native app declares it in its `native-apps.json` entry.
 
-- **A declaration.** The manifest's `agent` block names the kernel tools the agent may use (the system apps ask only for `ask_user_question`), the model features it needs (`tool_calling`) and, optionally, an `AGENT.md` with instructions and skills, which the shell sends with every turn. A native app's entry also says which of its tools its own agent may call (`own_tools`) and which the system agent may call (`system_tools`).
+- **A declaration.** The manifest's `agent` block selects tools from the host's admission offer, names the model features it needs (`tool_calling`) and can supply an `AGENT.md` with instructions and skills, which the shell sends with every turn. Toolbox tools are host-owned shared tools; listing them does not add them to the default store offer. A native app's entry also says which of its tools its own agent may call (`own_tools`) and which the system agent may call (`system_tools`).
 - **Tools.** `tools.json` describes each tool, named `<app>.<tool>`: its input schema, its `risk` (`read`, `act` or `destructive`), who confirms it (`confirm: host` for a shell sheet, `app` for the app's own sheet) and whether other apps' agents may use it (`shareable`).
 - **Something to run the tools.** A declared tool needs an executor: the app's host service (Mail, Calendar, News), the shell's notice service (`<app>.notify` for the other system apps) or a native app's open window. A store app has no host service of its own, but `host_method` can map one of its tools to a reviewed method of a shared service (`inbox.message` → `gmail.message`); the tool then runs on that service as the app ([architecture.md §4](docs/architecture.md#the-relay)). Since desktop RC1, a tool marked `implemented_by: "app"` runs in the app's own Splash code while the app is open, with `requires: ["script-tools-v1"]`; a closed app returns `app_not_running`. The older `desktop-v0.1.0-beta.2` refuses such a call with `app_tool_unavailable`.
 - **Data.** The agent works in its account's folder, `apps/<app id>/accounts/<account hash>/` (a single `device` folder for an app without accounts), and reads it with the host's read-only `files.list`, `files.read` and `files.search` (on Unix). A script app can declare `storage.agent_workspace: "none"` to give its agent no folder, so it sees only what its tools return; a native app's agent gets its folder either way. No agent sees another account's folder.
 - **Memory.** Each agent has its own memory namespace, `app/<app>/acct-<hash>`, erased with the account.
-- **A way to reach the person.** With the `glance` permission, its tools can publish cards.
-- **Events** (new mail only, for now). A `triggers.events` entry lets an agent react without being asked. Mail's agent handles new mail, guided by its `AGENT.md` and a triage skill. An installed app gets new-mail events from its Gmail connection: it must declare `auth` and `gmail`, and its `agent` block must set `background: true` and list `<app namespace>.new_message`, such as `inbox.new_message` ([OAuth guide](crates/oauth-service/README.md#new-mail-and-glance)).
+- **A way to reach the person.** Its tools can publish admitted Glance templates or L0 cards under the app's verified identity; a `glance` declaration describes this use, not permission to bypass review.
+- **Events** (new mail only, for now). A `triggers.events` entry lets an agent react without being asked. Mail's agent handles new mail, guided by its `AGENT.md` and a triage skill. An installed app gets new-mail events from its Gmail connection: it needs a valid app-owned connection and an allowed agent whose `agent` block sets `background: true` and lists `<app namespace>.new_message`, such as `inbox.new_message` ([OAuth guide](crates/oauth-service/README.md#new-mail-and-glance)).
 
 The steps for adding a tool (manifest, `tools.json`, grant, handler, approval path) are in [AGENTS.md](AGENTS.md#architecture-documentation-and-code-walkthroughs), and the design is [ADR 0002](docs/adr/0002-event-driven-app-agents.md).
 
@@ -335,7 +335,7 @@ sequenceDiagram
 
 ### Cards and questions
 
-An app with the `glance` permission publishes cards as itself (`glance.publish`, `glance.withdraw`, `glance.list`); the shell takes the publisher from the caller, never from the arguments. A card runs under its app's own permissions, so a button pressed in a card is the app's own action, not an agent tool call. The desktop README describes [the glance panel](desktop/README.md#the-glance-panel) where cards appear. On the phone, a card's notification opens that card's workspace, or the glance page if the card is gone.
+An admitted app publishes cards as itself (`glance.publish`, `glance.withdraw`, `glance.list`); the shell takes the publisher from the caller, never from the arguments. A card runs under its app's own permissions, so a button pressed in a card is the app's own action, not an agent tool call. The desktop README describes [the glance panel](desktop/README.md#the-glance-panel) where cards appear. On the phone, a card's notification opens that card's workspace, or the glance page if the card is gone.
 
 #### In-card chat
 
@@ -374,8 +374,8 @@ A phone runs the shell, the kernel, up to a dozen app agents and their apps at t
 | [`crates/kernel/`](crates/kernel/README.md) | The octos kernel as a shell service, package `octosense-kernel`: one per process, configured by AI providers, shared by every consumer; the system agent's exact tool list. |
 | [`crates/app-peers/`](crates/app-peers/README.md) | The app-agent broker, package `octosense-app-peers`: one peer per (app, account), its two lanes, its tools, `peer/input`, deadlines, purge. |
 | [`crates/l0-chat/`](crates/l0-chat/README.md) | The host side of an L0 card's in-card chat (`sys.chat`), package `octosense-l0-chat`. |
-| [`crates/toolbox/`](crates/toolbox/README.md) | The system toolbox, package `octosense-toolbox`: workflow templates and `mod.research`, offered to app agents behind the `toolbox-peers` feature. |
-| [`crates/wasm-host/`](docs/wasm.md) | The runtime for apps' own WebAssembly functions, package `octosense-wasm-host`: Wasmtime with Cranelift, the sandbox and its limits. The shell's `wasm` service runs it on macOS, Linux and Android. |
+| [`crates/toolbox/`](crates/toolbox/README.md) | The system toolbox, package `octosense-toolbox`: workflow templates and `mod.research`, available behind `toolbox-peers` subject to the host's tool offer, agent consent and research scope. |
+| [`crates/wasm-host/`](docs/wasm.md) | The runtime for apps' own WebAssembly functions, package `octosense-wasm-host`: Wasmtime, the sandbox and its limits. Current builds include the `wasm` service on macOS, Windows, Linux, Android and OpenHarmony (Pulley); see the linked guide for platform acceptance. |
 | [`apps/`](apps/README.md) | The system apps (News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube, Quick Deck, PDF Tools, Writer) as script apps, their host services (`mail`, `calendar`, `news`, `llm`), `apps/reference`, and the opt-in AppCard assistant. |
 | [`native-apps.json`](native-apps.json) | Every native app: where its code comes from, how it is hosted on each platform, and its agent. `tools/native_apps.py` generates the shell's code and Cargo entries from it. |
 | `tools/` | `setup.py` (the pinned framework sources), the reviewed Makepad runtime patch (`runtime-patches/`), `kernel-artifact.py` (the octos kernel build), `check-shell-graph.sh` (dependency-graph guards). |

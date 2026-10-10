@@ -3,7 +3,7 @@
 English | [简体中文](0012-app-host-api-discovery.zh-CN.md)
 
 - Date: 2026-10-07
-- Status: Implemented in source; contract 1.6.0 published. Compatible host release and phone acceptance pending.
+- Status: Implemented; current contract 1.11.0 published. Final-source macOS and OnePlus 6 acceptance passed. Desktop RC4 is published; its Mac archive passed 11/11 checks, bound to the final bytes.
 - Builds on: [ADR 0004](0004-native-apps-hosting-and-peers.md), [ADR 0005](0005-app-contract.md), [ADR 0010](0010-shared-oauth-and-connected-apps.md).
 
 ## Context
@@ -14,7 +14,10 @@ detection, and execution of their declared app tools. A capability name alone
 does not prove that a service exists, supports this platform, has an account,
 or has the user's permission.
 
-We defer Wasm, JIT and native-library loading. This decision exposes implemented
+This decision originally deferred Wasm, JIT and native-library loading;
+[ADR 0011](0011-apps-own-functions-in-webassembly.md) and
+[ADR 0014](0014-app-components-in-webassembly.md) subsequently added Wasm.
+Dynamic native-library loading remains deferred. This decision exposes implemented
 host services through the existing `host.request` transport and completes the
 bounded script-tool path. It does not promise all OS APIs or new privileges.
 
@@ -42,7 +45,8 @@ major differs; version 2 does not satisfy a request for version 1.
 `host_api.optional` permits installation and requires an app-side fallback.
 None of these fields grants a capability.
 
-With the `runtime` capability, apps call `runtime.list` or `runtime.describe`.
+Admitted apps call `runtime.list` or `runtime.describe` without a matching
+capability declaration.
 The former includes public method descriptions and a `runtime_features` map.
 The latter distinguishes callable service methods from `kind: "runtime-abi"`
 entries with `callable_via_host_request: false`. For example, discover
@@ -69,16 +73,18 @@ flowchart TD
 ```
 
 The host stamps the app/account identity; JSON arguments cannot select another
-app's VM, storage root, connection or approval authority. Existing capability,
-network and account restrictions still apply. Described denied/foreground-only
+app's VM, storage root, connection or approval authority. Capability and network
+declarations describe usage; account scope, consent, storage isolation and
+resource limits still apply ([current policy](../capabilities.md)). Described denied/foreground-only
 methods cannot be laundered through an agent tool or a nonprompting background
 request. A background agent cannot approve a native consent sheet.
 
 Device consent is per installed app; the OS grant belongs to the OctoSense
 package. The first adapter provides camera/microphone/location permission
-status, request and revoke on Android/macOS. The host applies the opt-in gate
+status, request and revoke on Android/macOS. The current host applies per-app consent
 before source evaluation, including legacy device widgets and GPS helpers.
-Old bundles retain the earlier manifest-based policy. Revocation does not revoke
+Legacy bundles do not inherit the host's device permissions. The `host-api-v1`
+requirement still checks broker compatibility. Revocation does not revoke
 another app's consent or the OS package grant.
 
 `location.get` is Android-only and returns a last-known fix with
@@ -145,8 +151,9 @@ arbitrary Rust/native library execution, or Wasm loading is added.
 
 ## Evidence and remaining acceptance
 
-The public dependency graph uses crates.io contract 1.6.0 and the checked-in
-App Hub, renderer and runtime pins; no private Cargo overrides are required.
+The initial implementation used contract 1.6.0. The current graph uses contract
+1.11.0 and the checked-in App Hub, renderer and runtime pins; the root's public
+contract override keeps all consumers on that one SDK revision.
 On macOS, `python3 tools/setup.py --check --cargo` and the desktop packaging
 check (`cargo check --locked -p octosense --features mobile-apps`) passed.
 From `phone/`, both `cargo check --locked -p octosense-home --features mobile-apps`
@@ -158,16 +165,22 @@ Real Splash VM tests cover declared handler invocation, shared UI/storage state,
 digest tampering, schema failures, ownership, cancellation, account changes,
 prompt suppression and instruction limits. Service/protocol tests cover backend
 boundaries and device permission policy. These tests do not establish a physical
-permission approval, a live installed-app login/write, or a OnePlus 6 journey.
-Phone, real-model and per-platform release acceptance remain pending.
+permission approval or a live installed-app login/write. Real-model and
+per-platform release acceptance are separate from these tests.
 
 The [native Host API Lab](../../tools/fixtures/host-api-lab/README.md) also passed
-on macOS: a signed Store-installed app invoked its own Splash tool, read real
+on macOS and OnePlus 6 at final source `8b09e05d`: both passed 31/31 native
+checks, and the phone passed all 45 driver checks. A signed Store-installed app
+invoked its own Splash tool, read real
 OS permission status through the Rust device service, updated its live UI and
 returned a bounded result. Native button input reused the same service. The
-fixture verified missing API fallback, capability/account/schema refusals,
+fixture verified missing API fallback, declaration-independent status,
+denied device consent, app identity/account/schema refusals,
 background callback prompt refusal and closed-app behavior. Its explicit test
 caller enters the tool queue directly, so this is not model/peer-consent evidence.
+The phone used isolated test packages, not an upgrade of the older Home beta.2.
+See [final receipts](../../tools/fixtures/host-api-lab/README.md#final-source-acceptance).
+Desktop RC4 is published; its separate [Mac archive acceptance](../../tools/fixtures/wasm-phone-lab/README.md#rc4-release-evidence) passed 11/11 checks against the final package bytes.
 
 Implementation owners: App Hub `crates/app-contract/src/{host_api,backend}.rs` and
 `crates/appstore/src/{host_api,script_tools}.rs`; OctoSense

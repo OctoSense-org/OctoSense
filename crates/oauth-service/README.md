@@ -47,12 +47,14 @@ Inbox Assistant and Google Calendar have not run there.
 | Android | GitHub flow present but unverified; **Google connection refused until its native adapter is implemented** | Mail's Android platform vault, separate namespace | Existing physical-touch provenance; this sample unverified |
 
 `desktop-v0.1.0-beta.2` is the first release with the connected-account
-services (`auth`, `github`, `gmail`, `gcalendar`); no Home (phone) release can
-install connected apps yet. In beta.2, `auth` has no backend sign-in, and
+services (`auth`, `github`, `gmail`, `gcalendar`). The following comparison
+describes those historical builds; current host validation and release status
+are recorded [separately](../../docs/capabilities.md#validation-and-release).
+In beta.2, `auth` has no backend sign-in, and
 provider registrations come only from `clients.json`
 ([Advanced operator override](#advanced-operator-override)). Beta.2 also
-predates later changes that are on OctoSense `main` but in no release yet. So in
-beta.2, only a Gmail send checks for a
+predates the later backend and review changes described below. In beta.2,
+only a Gmail send checks for a
 physical press, while GitHub and Calendar saves use a host sheet that does not;
 an agent's `glance.publish` still accepts a `script` card; and Calendar syncs
 the full event history with `gcalendar.sync` and sync tokens instead of the
@@ -97,9 +99,9 @@ These are separate choices; none requires an OctoSense account.
 
 | Purpose | Current contract |
 | --- | --- |
-| Identify a GitHub user inside an app | Grant `auth` and request `read:user`. The host verifies GitHub's numeric user ID and login, then returns an app-bound handle plus `app_id`, `provider`, `subject`, `label`, `scopes` and optional `expires_at`. Repository access is not required. This does not provide a verified email address. |
-| Identify a Google user inside an app | `auth` also admits identity-only `openid`, `email` and `profile` scopes without Gmail or Calendar capabilities. The host verifies the provider subject and uses the email as its label only when Google reports it verified. The same platform authorization limitations apply. |
-| Access provider data | GitHub repositories additionally require the `github` capability and repository scopes. Google Gmail and Calendar require their own `gmail` / `gcalendar` capabilities and scopes, regardless of which identity an app uses for login. |
+| Identify a GitHub user inside an app | Call `auth.connect` as the admitted app and request `read:user`. The host verifies GitHub's numeric user ID and login, then returns an app-bound handle plus `app_id`, `provider`, `subject`, `label`, `scopes` and optional `expires_at`. Repository access is not required. This does not provide a verified email address. |
+| Identify a Google user inside an app | `auth` also admits identity-only `openid`, `email` and `profile` scopes without Gmail or Calendar data scopes. The host verifies the provider subject and uses the email as its label only when Google reports it verified. The same platform authorization limitations apply. |
+| Access provider data | GitHub repositories require repository scopes; Google Gmail and Calendar require their respective provider scopes. The connection must belong to the admitted app. Family capability declarations describe usage and do not authorize provider data access, regardless of which identity an app uses for login. |
 | Register or log in to an app's own backend | On macOS and Android 9 or later, a host-owned login WebView uses the app's backend registration, a PKCE code exchange and the backend's protected identity endpoint. On desktop, the external browser remains an option. The registration comes from the `backend` block of the app's signed manifest or, if the manifest has none, from the operator ([Developer backend contract](#developer-backend-contract)). |
 
 The backend flow lets the developer's HTTPS login page offer its own
@@ -133,7 +135,8 @@ host-owned route remains disabled. Native Wayland still reports unsupported.
 
 ## Developer backend contract
 
-Declare `auth` and `storage.accounts: true`. Connect with
+Disclose `auth` usage and set `storage.accounts: true`. The family name is
+not an authorization gate. Connect with
 `auth.connect` arguments `{"provider":"backend","scopes":["app.session"]}`.
 On macOS/Android this defaults to the embedded login page. Set
 `"presentation":"webview"` to require that mode, or `"presentation":"browser"`
@@ -148,15 +151,19 @@ operations that the registration declares
 
 ### Where the registration comes from
 
-On OctoSense `main`, not yet in any release, an app declares its backend in the
-`backend` block of its signed manifest. The manifest must also require
-`backend-api-v1`, request `auth` and set `storage.accounts: true`. The block has
-the JSON shape of the operator registration below, without `app_id`: the app's
-identity always comes from its admitted bundle. App Hub's
+An app declares its backend in the `backend` block of its signed manifest.
+The manifest must require `backend-api-v1` and set `storage.accounts: true`;
+`auth` describes usage and does not grant access. The block has the JSON shape
+of the operator registration below, without `app_id`: the app's identity
+always comes from its admitted bundle. App Hub's
 [Sign in to your own backend](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md#sign-in-to-your-own-backend)
-gives the rules for each field. Only a host that implements
-`auth.backend.request@1` installs such an app; on `main`, that is macOS and
-Android.
+gives the rules for each field. Installation requires a host advertising
+`auth.backend.request@1`; that marker does not promise every login or write
+presentation. macOS/Android support embedded login, desktop platforms support
+the external-browser flow, and Windows/Linux protected writes remain
+unsupported. Check platform and acceptance limits in the
+[desktop browser guide](../../docs/desktop-embedded-browser.md) and the
+[current validation record](../../docs/capabilities.md#validation-and-release).
 
 The shell reads the declaration through its signed catalog and digest-checked
 bundle loader (`crates/shell/src/connected_backends.rs`) and hands it to this
@@ -359,8 +366,9 @@ peers and account folders follow the selected connection.
 `auth.connect` accepts a provider and named scopes. GitHub: `read:user`,
 `public_repo` or `repo`. Google: `openid`, `email`, `profile`, `calendar.list`,
 `calendar.events`, `mail.read`, `mail.send`. Backend login uses `app.session`.
-Provider-specific scopes remain
-separate from App Hub capabilities. Handles are private identifiers, not tokens.
+Provider-specific scopes are checked against the actual app-bound connection;
+App Hub capability declarations describe usage and do not grant or deny them.
+Handles are private identifiers, not tokens.
 Selection does not grant another app access to the same Google account.
 
 Example Calendar request syntax (production Google approval remains unverified):
@@ -410,9 +418,9 @@ another app's account changes or restore a revoked connection.
 
 An ordinary bundle uses its own tool namespace, such as `inbox.message`, and
 an explicit `host_method: "gmail.message"` in `tools.json`. App Hub admits
-only reviewed methods and enforces their minimum risk, private-data flag and
-declared service capability. Secret management, review approvals and remote
-writes are not available as tool aliases.
+only reviewed methods and enforces their minimum risk and private-data flag.
+A matching service-family declaration is not required. Secret management,
+review approvals and remote writes are not available as tool aliases.
 
 The shell reads the digest-checked bundle, registers the declaration and routes
 the tool through `HostServiceExecutor`. It checks the actual target family,
@@ -423,8 +431,9 @@ caller's grant; these three samples keep private reads non-shareable by default.
 
 ## New mail and Glance
 
-`connected_events.rs` discovers installed apps with Gmail/auth capabilities,
-agent consent, background permission and `<app namespace>.new_message`, where
+`connected_events.rs` discovers admitted apps with an active Google connection
+carrying `mail.read`, agent consent, `agent.background: true` and the declared
+`<app namespace>.new_message` trigger, where
 the app namespace is the last segment of the app id. The collector establishes a forward-only Gmail history baseline, then normally
 polls every five minutes while execution is allowed. After connecting and
 allowing the app agent, refresh until `gmail.events.status` reports

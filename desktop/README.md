@@ -2,7 +2,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**Download:** [desktop 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) supports the current App Hub catalog, GitHub-attested app bundles and SDK 1.10.0 public host APIs. Platform support and acceptance limits are listed in [Host OS API status](../docs/host-os-api-status.md). Choose the package for your operating system and architecture; check its release notes and checksums. Embedded pages also need the [platform browser prerequisites](../docs/desktop-embedded-browser.md#runtime-requirements).
+**Prerelease download:** [desktop 0.1.0-rc.4](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.4) includes app-contract 1.11.0, shared Wasm components and declaration-only public API capabilities. Choose the package for your operating system and architecture; check its release notes and checksums. Platform limits remain in [Host OS API status](../docs/host-os-api-status.md); embedded pages need the [platform browser prerequisites](../docs/desktop-embedded-browser.md#runtime-requirements).
+
+**Provider sign-in:** GitHub and Google login still need [distributor-supplied registrations](../crates/oauth-service/README.md#configure-a-release-maintainers). The release workflow does not configure them; installing a connected app from App Hub does not add them.
 
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
@@ -93,7 +95,7 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 | --- | --- | --- |
 | `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps); the Mail, News, Calendar and AI providers host services; the connected-account services (`auth`, `github`, `gmail`, `gcalendar`); and the Markdown editor GitHub Notes uses (`octosense-markdown-editor`). Without it the build has no App Hub and no system apps. |
 | `octos-core` | on | The octos kernel service (`octosense-kernel`, from `../crates/kernel`) and the app-agent broker (`octosense-app-peers`): the one kernel AppCard, Rinx and other consumers share, configured by AI providers. Always on for Android and iOS. Leave it out with `--no-default-features --features app-hub` (and whatever else you want). |
-| `wasm-functions` | on | The `wasm` host service: apps' own WebAssembly functions ([ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.md), [WebAssembly in OctoSense](../docs/wasm.md)), run by `../crates/wasm-host` (Wasmtime, compiled by Cranelift). It runs on macOS and Linux; a Windows build leaves the runtime out. `wasm-lab` is its former name. |
+| `wasm-functions` | on | The `wasm` host service: apps' own WebAssembly functions ([ADR 0011](../docs/adr/0011-apps-own-functions-in-webassembly.md), [WebAssembly in OctoSense](../docs/wasm.md)), run by `../crates/wasm-host` (Wasmtime, compiled by Cranelift). Current source includes it on macOS, Windows and Linux, and in Android and OpenHarmony Home builds (Pulley on OpenHarmony). OpenHarmony device execution remains unverified; platform acceptance is separate from compilation. `wasm-lab` is its former name. |
 | `app-rinx` | on | Links [Rinx](https://github.com/hagency-org/Rinx), the Matrix client, as a module; implies `octos-core` (its assistant is the shell's). |
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |
 | `app-sheets` | off | Links Makepad's Sheets as a module. |
@@ -209,7 +211,7 @@ Pull requests that change the packaging run the `package` jobs only: no secrets,
 
 ### Signing
 
-Without the secrets the signing jobs pass the packages through **unsigned**, with a warning: macOS Gatekeeper then asks to confirm the first open (right-click → Open), and Windows SmartScreen warns. To sign, create a GitHub environment named `release` (**Settings → Environments**), limit it to `main` and `desktop-v*` tags (and add required reviewers if wanted), and add these as its environment secrets, not repository secrets:
+Without the secrets the signing jobs pass the packages through **unsigned**, with a warning. macOS Gatekeeper can block the first launch; after checking the download and its checksum, use the app-specific **System Settings → Privacy & Security → Open Anyway** control described by [Apple](https://support.apple.com/102445) if you choose to run it. Windows SmartScreen warns. To sign, create a GitHub environment named `release` (**Settings → Environments**), limit it to `main` and `desktop-v*` tags (and add required reviewers if wanted), and add these as its environment secrets, not repository secrets:
 
 | Secret | For |
 | --- | --- |
@@ -227,7 +229,7 @@ The launcher lists four kinds of app together:
 
 | Kind | Comes from | Runs as | Launcher id |
 | --- | --- | --- | --- |
-| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), AI providers, YouTube, Quick Deck, PDF Tools and Writer (all three desktop only: their `deck`, `pdf` and `word` engines are behind `craft-engines`; Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
+| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), AI providers, YouTube, Quick Deck, PDF Tools and Writer (all three desktop only: their `deck`, `pdf` and `word` engines are behind `craft-engines`; Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each with verified app identity, an isolated store and the host consent boundary | `<name>` (manifest id `os.<name>`) |
 | **Store apps** | The signed App Hub catalog, installed from the store (`apphub`) | The same Card runner. Every open is checked against the catalog; an update closes old instances. | `hub:<manifest-id>` |
 | **Native modules** | Rust crates linked into this binary | In-process `AppModule`s. Trusted code only: App Hub, AppCard, Rinx, Reference and the `app-*` features. | module id |
 | **Developer programs** | `config/apps.json` | Separate processes in tiles, over Makepad's `--stdin-loop` hosting protocol, built on first launch | catalog `id` |
@@ -236,11 +238,11 @@ Precedence: a linked native module beats a system app of the same id, and a syst
 
 ### Containment and permissions
 
-A contained app is a bundle: `manifest.json` (id, version, capabilities) plus `main.splash`. The Card runner grants only the capabilities the manifest lists (Mail asks for `storage` and `mail`). The pinned Makepad ([makepad#30](https://github.com/OctoSense-org/makepad/pull/30)) enforces this at every exit of an isolate: network and web sockets answer to the app's host list, raw sockets and servers are refused, files stay in the app's storage jail, and password or one-time-code fields are inert inside a policed isolate.
+A contained app is a bundle: `manifest.json` (id, version, capabilities) plus `main.splash`. Capability families and `network.hosts` describe use; they do not grant or deny public APIs. The Card runner binds the admitted app identity before evaluating its source. Files stay in the app/account storage jail and quota, device calls require consent and OS permission, and private writes require trusted host review. Password and one-time-code fields remain inert inside a contained app. Required host ABI versions still gate compatibility. See [capabilities and execution boundaries](../docs/capabilities.md).
 
 ### Host services and host-owned sheets
 
-Secrets are the host's. An app that needs an account calls a **host service** through `host.request`; the service runs in the shell with the credentials, and the app never gets a socket or a password.
+Secrets are the host's. An app that needs an account calls a **host service** through `host.request`; the service runs in the shell with the credentials, and the app never receives the account password.
 
 Mail is the worked example (`octosense-mail-service`, from [`../apps/mail/host-service`](../apps/mail/host-service)):
 

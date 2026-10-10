@@ -113,11 +113,12 @@ OctoSense-System-Apps 仓库（已归档）。
 | [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage`、`word` | 无 | [`word`](word/host-service)（`word.convert`、`word.info`、`word.inspect`），在 Writer 自己的存储中 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
-每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
-中的 `KNOWN_CAPABILITIES`）：`images` 可显示任意公网 https 主机的图片，`web`
-在系统 WebView 中打开网页，`library` 把拍摄内容提供给系统相册，`mail` 访问
-宿主的邮件服务，`llm` 访问宿主的大模型服务商服务，`news` 读取宿主的新闻服务，
-`glance` 向速览屏发布卡片，`model` 请求有界的单次模型调用。`net` 只能访问 manifest 列出的主机。
+能力名称由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的
+`crates/app-contract/src/manifest.rs` 中的 `KNOWN_CAPABILITIES`），用于描述图片、
+WebView 页面、图库导出、邮件、新闻、Glance 或单次模型调用等用途。`net` 和
+`network.hosts` 披露联网用途，不限制公开 API 的执行。声明不会授予设备同意、账户访问
+或跨应用工具权限；拍摄/导出意图必须明确指定，`llm` 服务商管理仍仅限系统应用。
+见[能力与执行边界](../docs/capabilities.zh-CN.md)。
 
 ### 状态与已知问题
 
@@ -296,7 +297,7 @@ bundle 的源地址（Photos：`let assets = "{{assets}}"`，然后
 | 上限 | `HostLimits::system()`：64 MB 存储、128 MB 内存、更大的指令预算，因为应用在打开期间一直存活 | `HostLimits::default()`：按卡片规模设定 |
 | 额外文件 | Shell 可以把目录挂载到 `{{assets}}` | 只有 bundle 内的文件 |
 
-其余完全一致：同样的 isolate、同样的权限检查、同样的网络白名单。如何编写这类应用（语言、API、`octo` 命令行）见 [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（`docs/QUICKSTART.md`、`docs/SCRIPT-API.md`）。
+两者使用同一 isolate 和公开 API 策略：声明说明用途，仍检查已验证应用身份、存储隔离、实际同意和服务自身的规则。如何编写这类应用（语言、API、`octo` 命令行）见 [App Flow](https://github.com/OctoSense-org/OctoSense-App-Flow)（`docs/QUICKSTART.md`、`docs/SCRIPT-API.md`）。
 
 ## 启动器图标规范
 
@@ -420,10 +421,11 @@ python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host -
 
 ## 宿主服务与面板
 
-有些工作需要隔离运行的应用绝不能持有的东西：socket、凭据、设备。**宿主服务**
-在 Shell 中用 Rust 完成这些工作。应用通过
-`host.request("<family>.<method>", args, fn(r){…})` 调用；除非 manifest 授予了
-对应的 family（`mail`），isolate 会拒绝调用；服务返回数据，而不是能力本身。
+某些操作需要宿主持有的凭据或设备权限。**宿主服务**在 Shell 中用 Rust 完成这些工作；
+应用在宿主的身份与同意规则下调用公开 API。应用通过
+`host.request("<family>.<method>", args, fn(r){…})` 调用，以已准入应用的真实身份
+执行；服务检查实际账户作用域、同意和操作规则。`mail` 等服务族声明只描述用途，
+不授予或拒绝调用。服务返回数据，不返回凭据或审批权。
 运行时部分在 App Hub（`crates/appstore/src/services.rs`）。
 
 当需要用户操作时（输入密码、批准账户），服务会弹出一个**面板**：由宿主自有、
@@ -465,8 +467,8 @@ Android 的密码文件由该安装包的 Keystore 密钥加密；从测试包�
 `octosense-calendar-service`（`apps/calendar/host-service/src/lib.rs`）以日历
 （`os.calendar`）身份执行。Mail 与系统 Agent 均显式获授可共享的
 `calendar.events`、`calendar.add_event`、`calendar.notify`；Shell 中转检查调用者，
-再交给日历执行器。日历自身 UI 另行请求 `calendar` 能力，服务校验 `os.calendar`
-身份。删除、更新、UI 查看方法及议程工具不在这些跨应用授权中。
+再交给日历执行器。日历自身 UI 以已准入的 `os.calendar` 身份调用，`calendar` 声明只描述用途，
+服务仍校验该身份。删除、更新、UI 查看方法及议程工具不在这些跨应用授权中。
 
 | 方法 | 参数 | 返回 |
 | --- | --- | --- |
@@ -601,8 +603,8 @@ Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Cal
   `card_id` 会替换该应用之前的通知。邮件、新闻以及链接了照片引擎时（桌面）照片的服务把 `notify` 交给 Shell（照片的 `photos` 服务还在照片引擎上应答
   `photos.info`）；地图、YouTube
   和相机没有自己的服务，手机上的照片也没有，由 Shell 的通知服务应答（此时 `photos.info` 回答本设备不可用）。`calendar.notify` 和 `calendar.agenda` 填充日历
-  自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
-  （应用需要 `glance` 权限）。这些固定模板工具由模型提供文字；`mail.publish_card`
+  自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance`
+  服务发布，保留已准入发布者及其账户身份。这些固定模板工具由模型提供文字；`mail.publish_card`
   另接收经宿主校验的模型 L0 源码。
 - **试一试**（桌面端）：打开助手（F8），请系统 Agent 让某个应用的 Agent（邮件、日历、新闻、照片、
   地图或 YouTube）在 glance 屏幕上放一张卡片；在弹出的面板上允许该 Agent。邮件需要一个已登录的账户（下文的演示邮箱即可）。
@@ -689,8 +691,8 @@ crate 的 clippy（这一步会编译整个应用）、AppCard 的 transport 与
 ## 修改应用
 
 1. 编辑 `apps/<name>/bundle/`。只使用 App Flow 的 `docs/SCRIPT-API.md` 中有文档的 API，或本仓库其他应用已经在用的 API；用其他东西之前先查运行时源码。
-2. 只申请应用实际用到的权限。新的网络主机写进 `network.hosts`；新的权限必须
-   已存在于 App Hub 的 `KNOWN_CAPABILITIES` 中。
+2. 用 `capabilities` 和 `network.hosts` 描述实际用途，能力名称取自 App Hub 的
+   `KNOWN_CAPABILITIES`。这些是披露，不是授权；必需 API 的版本写入 `host_api.required`。
 3. 绝不添加密码或验证码输入框。应用需要密钥时，由宿主服务及其面板处理。
 4. 用 `card-host --system` 运行（Mail：在 Shell 中用演示邮箱）。在手机上用
    以独立测试包构建的 Home 测试，绝不替换设备上已安装的 Home。
