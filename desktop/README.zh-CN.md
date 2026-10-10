@@ -212,7 +212,7 @@ launcher 把四类应用列在一起：
 
 | 类别 | 来源 | 运行方式 | Launcher id |
 | --- | --- | --- | --- |
-| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube、Quick Deck 和 PDF Tools（均仅桌面：它们使用的 `deck` 和 `pdf` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
+| **系统应用**：新闻、相册、地图、相机、邮件、日历（仅桌面）、AI 提供商、YouTube、Quick Deck、PDF Tools 和 Writer（三者均仅桌面：它们使用的 `deck`、`pdf` 和 `word` 引擎在 `craft-engines` 之后） | `../apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
 | **商店应用** | 签名的 App Hub 目录，从商店（`apphub`）安装 | 同一个 Card 运行器。每次打开都会对照目录检查；更新会关闭旧实例。 | `hub:<manifest-id>` |
 | **原生模块** | 链接进本二进制的 Rust crate | 进程内的 `AppModule`。只允许受信任的代码：App Hub、AppCard、Rinx、Reference 以及各 `app-*` feature。 | 模块 id |
 | **开发者程序** | `config/apps.json` | tile 中的独立进程，通过 Makepad 的 `--stdin-loop` 托管协议运行，首次启动时构建 | 目录 `id` |

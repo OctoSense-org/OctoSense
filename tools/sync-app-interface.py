@@ -14,7 +14,7 @@ def main():
     args = parser.parse_args()
     prelude = START + (ROOT / "apps/interface.splash").read_text() + END
     stale = []
-    for name in ("news", "photos", "mail", "calendar", "maps", "ai-providers", "youtube", "wasmlab", "quickdeck", "pdftools"):
+    for name in ("news", "photos", "mail", "calendar", "maps", "ai-providers", "youtube", "wasmlab", "quickdeck", "pdftools", "writer"):
         path = ROOT / "apps" / name / "bundle/main.splash"
         text = path.read_text()
         body = text.split(END, 1)[1] if text.startswith(START) else text

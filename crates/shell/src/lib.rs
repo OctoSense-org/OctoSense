@@ -75,6 +75,8 @@ mod maps_model_tests;
 mod pdftools_model_tests;
 #[cfg(test)]
 mod system_app_theme_tests;
+#[cfg(test)]
+mod writer_model_tests;
 pub mod module_view;
 pub mod native_apps;
 pub mod sandbox;

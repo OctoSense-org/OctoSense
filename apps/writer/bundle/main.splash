@@ -1,0 +1,959 @@
+// BEGIN shared app interface
+// Shared system-app interface. Run tools/sync-app-interface.py after editing.
+// Bundles carry this prelude so they work in the contained standalone host too.
+// Resolve the current theme after a host restyle, not a retained prelude alias.
+let theme = mod.theme
+let ui_ink = theme.color_text
+let ui_page = theme.color_bg_app
+let ui_light = dot(ui_ink, #x36b61200) < 0.5
+let ui_surface = if ui_light { #xffffff } else { mix(ui_page, ui_ink, 0.06) }
+let ui_field = mix(ui_page, ui_ink, 0.075)
+let ui_hover = mix(ui_page, ui_ink, 0.12)
+let ui_border = mix(ui_page, ui_ink, 0.22)
+let ui_muted = mix(ui_ink, ui_page, 0.24)
+let ui_link = mix(ui_ink, #x356bce, 0.25)
+let ui_primary = #x285cd6
+let ui_success = mix(ui_ink, #x28a55b, 0.20)
+let ui_danger = mix(ui_ink, #xe13b53, 0.20)
+let UiButton = ButtonFlat{height: 44 margin: 0 padding: Inset{left: 14 right: 14}
+    draw_bg +: {border_radius: 12.0 border_size: 0.0 color: #x00000000 color_hover: ui_hover color_down: ui_field color_focus: ui_hover}
+    draw_text +: {color: ui_link color_hover: ui_link color_down: ui_link color_focus: ui_link text_style: theme.font_bold{font_size: 14}}
+}
+let UiPrimary = UiButton{
+    draw_bg +: {color: ui_primary color_hover: #x3468df color_down: #x204cb8 color_focus: #x204cb8}
+    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}
+}
+let UiPill = UiButton{draw_bg +: {color: ui_surface border_radius: 22.0} draw_text +: {color: ui_ink color_hover: ui_ink color_down: ui_ink color_focus: ui_ink}}
+let UiField = TextInput{width: Fill height: 48 margin: 0 padding: Inset{left: 14 right: 14 top: 12 bottom: 12}
+    draw_bg +: {color: ui_field color_hover: ui_field color_focus: ui_field color_empty: ui_field
+        border_color: ui_border border_color_hover: ui_link border_color_focus: ui_link border_color_empty: ui_border border_radius: 12.0}
+    draw_text +: {color: ui_ink color_hover: ui_ink color_focus: ui_ink color_empty: ui_muted color_empty_hover: ui_muted color_empty_focus: ui_muted text_style: theme.font_regular{font_size: 15}}
+    draw_selection.color: #x557dcc55
+}
+let UiCard = RoundedView{width: Fill height: Fit flow: Down spacing: 12 padding: 20
+    show_bg: true draw_bg +: {color: ui_surface border_radius: 16.0}}
+let UiCaption = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_muted text_style: theme.font_regular{font_size: 13 line_spacing: 1.4}}}
+let UiTitle = Label{padding: 0 flow: Flow.Right{wrap: true} width: Fill draw_text +: {color: ui_ink text_style: theme.font_bold{font_size: 28 line_spacing: 1.2}}}
+// END shared app interface
+// Writer: write in a calm editor, keep your documents, save them as Word
+// (DOCX) files, preview the saved document and export a copy, through the
+// host's `word` engine (wordcraft, ADR 0013).
+//
+// Writer's own storage (fs.*) is enough to keep writing:
+//   index.json          the documents, newest first
+//   drafts/<id>.txt     each draft exactly as typed
+// The engine works in the same storage (per-caller engine areas), with paths
+// relative to it:
+//   work/<id>.md        the draft as Markdown, written just before a save
+//   documents/<n>.docx  the saved document (word.convert)
+//   exports/<n>.<ext>   copies in other formats (word.convert)
+//
+// Formatting is plain text: a line starting with # is a heading (## and ###
+// for smaller ones), - a bullet, 1. a numbered item, > a quote; **bold** and
+// *italic* work inside a line. Every line is a paragraph.
+
+// ---- text rules -------------------------------------------------------------
+// Pure functions: no storage, widgets or clock. They decide what the list
+// shows for a draft, how a draft becomes the Markdown the engine imports, what
+// the files are called and how the preview reads the engine's blocks.
+// crates/shell/src/writer_model_tests.rs runs this file up to its first
+// top-level start_timeout( in a script VM and tests them.
+
+// A field of an object, or `fallback` when the object has none (reading a
+// missing field is an error). Keys compare as text: parsed JSON has string
+// keys, object literals have names.
+fn field(o, name, fallback){
+    for k v in o { if "" + k == name { return v } }
+    return fallback
+}
+fn plural(n, one, many){
+    if n == 1 { return "1 " + one }
+    return "" + n + " " + many
+}
+// How long `seconds` is, said as a time ago, up to 45 days; nil beyond that
+// (when() names the month then). A relative time needs no time zone.
+fn ago(seconds){
+    if seconds < 60 { return "just now" }
+    if seconds < 3600 { return "" + floor(seconds / 60) + " min ago" }
+    if seconds < 86400 { return "" + floor(seconds / 3600) + " h ago" }
+    let days = floor(seconds / 86400)
+    if days < 2 { return "1 day ago" }
+    if days < 45 { return "" + days + " days ago" }
+    return nil
+}
+fn size_text(bytes){
+    if bytes < 1024 { return "" + bytes + " bytes" }
+    if bytes < 1048576 { return "" + floor(bytes / 1024) + " KB" }
+    return "" + floor(bytes / 104857.6) / 10 + " MB"
+}
+fn leaf(path){ return path.replace(regex("^.*/"), "") }
+// Words as the engine counts them: a numbered item's "1." becomes the list's
+// numbering in the document, not a word. (Each line is matched after a
+// newline: in a global match, the runtime dropped the match `^` made at the
+// start of the text once more matches followed.)
+fn count_words(text){
+    return text.match_str(regex("\\S*\\w\\S*", "g")).len() - ("\n" + text).match_str(regex("\\n[ \\t]*\\d+[.)][ \\t]", "g")).len()
+}
+// At most `n` characters of `s` (to_chars gives the character codes, and
+// to_string turns the shortened codes back into text).
+fn clip(s, n){
+    let chars = s.to_chars()
+    if chars.len() <= n { return s }
+    while chars.len() > n { chars.pop() }
+    return chars.to_string().trim() + "…"
+}
+// A line without its Markdown markers.
+let marker_re = regex("^\\s*(?:#+\\s+|[-*+>]\\s+|\\d+[.)]\\s+)")
+let emphasis_re = regex("[*_`]+", "g")
+fn clean_line(line){
+    return line.replace(marker_re, "").replace(emphasis_re, "").trim()
+}
+fn title_of(text){
+    let m = text.match_str(regex("[^\\n]*\\S[^\\n]*"))
+    if m == nil { return "" }
+    return clip(clean_line(m.value), 80)
+}
+// The text after the title, flattened: what the list shows under it. Lines
+// that end without punctuation (list items, headings) get a dot between them.
+let ends_re = regex("[.,;:!?)]$")
+let pipes_re = regex("\\|", "g")
+let rule_re = regex("^[-=:\\s]*$")
+fn snippet_of(text){
+    let out = ""
+    let seen_title = false
+    for line in text.split("\n") {
+        let t = clean_line(line).replace(pipes_re, " ").trim()
+        if t.match_str(rule_re) != nil { t = "" }
+        if t != "" {
+            if seen_title {
+                if out != "" {
+                    if out.search(ends_re) >= 0 { out = out + " " } else { out = out + " · " }
+                }
+                out = out + t
+                if out.len() > 200 { break }
+            }
+            seen_title = true
+        }
+    }
+    return clip(out, 160)
+}
+fn shown_title(d){
+    if d.title == "" { return "Untitled" }
+    return d.title
+}
+// The list with `d` first and no other entry of the same id.
+fn front(d, list){
+    let out = [d]
+    for x in list { if x.id != d.id { out.push(x) } }
+    return out
+}
+
+// The draft as the engine's Markdown: every line its own paragraph, except
+// consecutive list items and table rows, which stay together. Indentation is
+// held under four spaces so no line turns into a code block. The regular
+// expressions use whole matches only.
+let item_re = regex("^[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]")
+let deep_re = regex("^ *\\t|^    ")     // a tab counts as four columns
+let lead_re = regex("^[ \\t]+")
+fn line_kind(line){
+    let t = line.trim()
+    if t == "" { return "" }
+    if t.search("|") == 0 { return "row" }
+    if line.search(item_re) == 0 { return "item" }
+    return "text"
+}
+// A conversion: the lines, how far it got and what it made so far.
+fn md_job(text){
+    return {lines: text.replace(regex("\\r", "g"), "").split("\n") i: 0 out: "" prev: "" done: nil}
+}
+// Converts the next slice of up to 240 lines, joined in small groups: a
+// string grows by copying, so one long running concatenation would spend
+// the script heap. True once the whole draft is converted. The app runs one
+// slice per turn, inside the per-turn instruction budget.
+fn md_slice(job){
+    let end = min(job.i + 240, job.lines.len())
+    let chunk = ""
+    while job.i < end {
+        let group = ""
+        let stop = min(job.i + 24, end)
+        while job.i < stop {
+            let line = job.lines[job.i]
+            if line.search(deep_re) == 0 {
+                if line_kind(line) == "item" { line = line.replace(lead_re, "   ") } else { line = line.replace(lead_re, "") }
+            }
+            let kind = line_kind(line)
+            if job.i > 0 {
+                if kind == "" || job.prev == "" || (kind == job.prev && kind != "text") { group = group + "\n" } else { group = group + "\n\n" }
+            }
+            group = group + line
+            job.prev = kind
+            job.i = job.i + 1
+        }
+        chunk = chunk + group
+    }
+    job.out = job.out + chunk
+    return job.i >= job.lines.len()
+}
+// A whole (short) draft at once.
+fn markdown_of(text){
+    let job = md_job(text)
+    loop { if md_slice(job) { break } }
+    return job.out
+}
+
+// A file name from the title.
+fn stem_of(title){
+    let s = title.replace(regex("[\\\\/:*?\"<>|]+", "g"), " ").replace(regex("\\s+", "g"), " ").trim()
+    s = clip(s, 60).replace(regex("…$"), "").trim()
+    if s == "" { s = "Untitled" }
+    return s
+}
+// Where `d` is saved: documents/<title>.docx, numbered when another of
+// `docs` already has that name.
+fn docx_name(d, docs){
+    let stem = stem_of(d.title)
+    let name = "documents/" + stem + ".docx"
+    let n = 2
+    loop {
+        let taken = false
+        for x in docs { if x.id != d.id && x.docx == name { taken = true } }
+        if !taken { return name }
+        name = "documents/" + stem + " " + n + ".docx"
+        n = n + 1
+    }
+}
+// Where the copy of `docx` in format `id` goes.
+fn export_path(docx, id){
+    return "exports/" + stem_of(leaf(docx).replace(regex("\\.docx$"), "")) + "." + id
+}
+fn export_of(d, id){
+    for e in d.exports { if e.format == id { return e } }
+    return nil
+}
+
+// word.inspect's blocks. It always sends type, style and (for paragraphs)
+// text; list, props and the rest only when set, so those go through field().
+fn heading_level(b){
+    if b.type != "paragraph" { return 0 }
+    let style = b.style
+    if style == "Title" || style == "Heading1" { return 1 }
+    if style == "Heading2" { return 2 }
+    if style == "Heading3" { return 3 }
+    if style == "Heading4" || style == "Heading5" || style == "Heading6" { return 4 }
+    return 0
+}
+// How the preview draws a block.
+fn kind_of(b){
+    if b.type == "table" { return "table" }
+    if b.type != "paragraph" { return "gap" }
+    let level = heading_level(b)
+    if level == 1 { return "h1" }
+    if level == 2 { return "h2" }
+    if level >= 3 { return "h3" }
+    let style = b.style
+    if style == "Quote" || style == "IntenseQuote" { return "quote" }
+    if style == "Code" { return "code" }
+    if style == "ListParagraph" { return "item" }
+    if b.text.trim() == "" {
+        if field(field(b, "props", {}), "borders", nil) != nil { return "rule" }
+        return "gap"
+    }
+    return "para"
+}
+fn list_indent(b){
+    let list = field(b, "list", nil)
+    if list == nil { return 0 }
+    return field(list, "level", 0) * 18
+}
+// The outline: the headings of levels 1 to 3 that have text, with their
+// block's index.
+fn outline_of(blocks){
+    let list = []
+    let i = 0
+    for b in blocks {
+        let level = heading_level(b)
+        if level > 0 && level <= 3 && field(b, "text", "").trim() != "" { list.push({level: level text: b.text.trim() index: i}) }
+        i = i + 1
+    }
+    return list
+}
+// The blocks under outline entry `k` of `count` blocks: from its heading up
+// to the next heading of the same or a higher level.
+fn section_of(outline, k, count){
+    let stop = count
+    let j = k + 1
+    while j < outline.len() {
+        if outline[j].level <= outline[k].level { stop = outline[j].index break }
+        j = j + 1
+    }
+    return {start: outline[k].index stop: stop}
+}
+
+// What went wrong with an engine call, in words a person can act on.
+fn engine_message(what, error){
+    let e = ""
+    if error != nil { e = error }
+    if e.search("not granted") >= 0 && e.search("word") >= 0 {
+        return "Writer can't " + what + " yet: the word engine on this device isn't open to apps. Your draft is safe in Writer."
+    }
+    if e.search("no service answers") >= 0 {
+        return "Writer can't " + what + " here: this device has no word engine. Your draft is safe in Writer."
+    }
+    return "Writer couldn't " + what + ". The engine said: " + e
+}
+
+// ---- state ----------------------------------------------------------------
+// Everything Writer remembers is one object kept on `mod`. Switching between
+// light and dark runs this file again to restyle it: the widgets keep what
+// they show and the runtime keeps the `mod` entries this file made, but every
+// `let` starts over. So the rerun finds `mod.writer` here and goes on with it.
+
+let st = field(mod, "writer", nil)
+if st == nil {
+    st = {
+        docs: []              // [{id title snippet created updated words rev saved_rev saved_at docx exports}]
+        doc: nil              // the open document (an entry of docs)
+        doc_is_new: false     // made with New and not stored yet
+        kept_text: ""         // the open draft as last written to storage
+        draft_timer: nil
+        next_seq: 0
+        busy: false
+        busy_at: 0            // when the running engine action started
+        booted: false
+        screen: "docs"        // the pane on show: docs, editor, preview or export
+        md_job: nil           // the Markdown conversion under way
+        blocks: []            // word.inspect blocks of the previewed document
+        outline: []           // [{level text index}] headings among the blocks
+        section: -1           // the outline entry shown alone, or -1
+        shown: []             // the blocks the preview draws
+        shown_limit: 240      // how many of them it draws now ("Show more")
+        pending_delete: false
+        formats: [
+            {id: "pdf" name: "PDF" note: "For sharing and printing" state: "" text: ""}
+            {id: "md" name: "Markdown" note: "Plain text that keeps headings and lists" state: "" text: ""}
+            {id: "html" name: "Web page" note: "HTML for a browser or a website" state: "" text: ""}
+            {id: "odt" name: "OpenDocument" note: "For LibreOffice and other word processors" state: "" text: ""}
+        ]
+    }
+    mod.writer = st
+}
+let months = ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
+// When `t` was, in words: a time ago, or the month after 45 days.
+fn when(t){
+    if t == nil || t == 0 { return "" }
+    let text = ago(time_now() - t)
+    if text != nil { return text }
+    let m = local_time(t)
+    return months[m.month - 1] + " " + m.year
+}
+
+// ---- storage ------------------------------------------------------------
+
+fn remove_file(path){ if fs.exists(path) { fs.remove(path) } }
+fn draft_path(d){ return "drafts/" + d.id + ".txt" }
+fn store_index(){
+    let data = {schema: 1 docs: st.docs}
+    fs.write("index.json", data.to_json())
+}
+fn boot(){
+    if st.booted { resume() return }
+    if fs.exists("index.json") {
+        let v = fs.read("index.json").parse_json()
+        if v != nil { st.docs = field(v, "docs", []) }
+    }
+    render_docs()
+    st.booted = true
+}
+// After a restyle (see "state" above): the same screen, its lists drawn again
+// with the new look.
+fn resume(){
+    pane(st.screen)
+    render_docs()
+    if st.doc != nil && !is_busy() { refresh_editor(ui.editor_text.text()) }
+    ui.outline_rows.render()
+    ui.preview_body.render()
+    ui.export_rows.render()
+}
+start_timeout(0.05, || boot())
+// Relative times ("5 min ago") on the visible screen stay true.
+start_interval(30.0, || refresh_times())
+fn refresh_times(){
+    if is_busy() { return }
+    if st.screen == "docs" { ui.doc_rows.render() }
+    if st.screen == "editor" && st.doc != nil { show_status(st.doc.words) }
+}
+// A first turn cut short by the time budget leaves the list unloaded: retry.
+start_timeout(1.5, || { if !st.booted { boot() } })
+
+// ---- engine -------------------------------------------------------------
+
+// Every word.* call goes through here. The answer always arrives on a later
+// turn: a refused request calls back at once, inside host.request, and work
+// done in that nested call is fragile.
+fn engine(method, args, done){
+    host.request(method, args, fn(r){ start_timeout(0.01, || done(r)) })
+}
+
+// ---- screens ------------------------------------------------------------
+
+fn pane(name){
+    st.screen = name
+    ui.docs.set_visible(name == "docs")
+    ui.editor.set_visible(name == "editor")
+    ui.preview.set_visible(name == "preview")
+    ui.export.set_visible(name == "export")
+}
+fn notice(where, text){
+    if where == "editor" { ui.editor_notice_text.set_text(text) ui.editor_notice.set_visible(text != "") }
+    if where == "preview" { ui.preview_notice_text.set_text(text) ui.preview_notice.set_visible(text != "") }
+}
+fn render_docs(){
+    ui.doc_count.set_text(plural(st.docs.len(), "document", "documents") + " on this device")
+    ui.doc_count.set_visible(st.docs.len() > 0)
+    ui.new_top.set_visible(st.docs.len() > 0)
+    ui.doc_rows.render()
+}
+
+// ---- documents ------------------------------------------------------------
+
+fn new_doc(){
+    st.next_seq = st.next_seq + 1
+    st.doc = {id: "d" + floor(time_now()) + "-" + st.next_seq title: "" snippet: "" created: time_now() updated: time_now() words: 0 rev: 0 saved_rev: -1 saved_at: 0 docx: "" exports: []}
+    st.doc_is_new = true
+    st.kept_text = ""
+    ui.editor_text.set_text("")
+    show_editor()
+}
+fn open_doc(d){
+    st.doc = d
+    st.doc_is_new = false
+    st.kept_text = ""
+    if fs.exists(draft_path(d)) { st.kept_text = fs.read(draft_path(d)) }
+    ui.editor_text.set_text(st.kept_text)
+    show_editor()
+}
+fn show_editor(){
+    st.pending_delete = false
+    ui.delete_button.set_text("Delete")
+    notice("editor", "")
+    refresh_editor(ui.editor_text.text())
+    pane("editor")
+}
+fn back_to_docs(){
+    flush_now()
+    st.doc = nil
+    pane("docs")
+    render_docs()
+}
+fn delete_doc(){
+    if st.doc == nil || is_busy() { return }
+    if !st.pending_delete {
+        st.pending_delete = true
+        ui.delete_button.set_text("Tap again to delete")
+        return
+    }
+    let d = st.doc
+    if st.draft_timer != nil { stop_timer(st.draft_timer) st.draft_timer = nil }
+    if !st.doc_is_new {
+        remove_file(draft_path(d))
+        if d.docx != "" { remove_file(d.docx) }
+        for e in d.exports { remove_file(e.out) }
+        let kept = []
+        for x in st.docs { if x.id != d.id { kept.push(x) } }
+        st.docs = kept
+        store_index()
+    }
+    st.doc = nil
+    pane("docs")
+    render_docs()
+}
+
+// ---- editor ---------------------------------------------------------------
+
+fn save_state(){
+    if st.doc == nil || st.doc_is_new { return "Not saved yet" }
+    if st.doc.docx != "" && st.doc.saved_rev == st.doc.rev { return "Saved as DOCX " + when(st.doc.saved_at) }
+    if st.doc.docx != "" { return "Edited since saving" }
+    return "Draft kept"
+}
+fn show_status(words){
+    ui.editor_status.set_text(plural(words, "word", "words") + " · " + save_state())
+}
+fn refresh_editor(text){
+    show_status(count_words(text))
+    ui.tip.set_visible(text == "")
+}
+fn draft_changed(text){
+    ui.tip.set_visible(text == "")
+    if st.pending_delete { st.pending_delete = false ui.delete_button.set_text("Delete") }
+    if st.draft_timer != nil { stop_timer(st.draft_timer) }
+    st.draft_timer = start_timeout(0.6, || flush())
+}
+fn flush_now(){
+    if st.draft_timer != nil { stop_timer(st.draft_timer) st.draft_timer = nil }
+    flush()
+}
+// Write the draft and its index entry when the text changed. The runtime can
+// cut a turn short (its per-turn time budget), so the entry is worked out
+// first and the draft counts as kept only after the index is written: the
+// next flush retries whatever did not finish.
+fn flush(){
+    st.draft_timer = nil
+    if st.doc == nil { return }
+    let text = ui.editor_text.text()
+    if text == st.kept_text || (st.doc_is_new && text.trim() == "") {
+        refresh_editor(text)
+        return
+    }
+    let title = title_of(text)
+    let snippet = snippet_of(text)
+    let words = count_words(text)
+    if !fs.exists("drafts") { fs.mkdir("drafts") }
+    fs.write(draft_path(st.doc), text)
+    st.doc.title = title
+    st.doc.snippet = snippet
+    st.doc.words = words
+    st.doc.updated = time_now()
+    st.doc.rev = st.doc.rev + 1
+    st.docs = front(st.doc, st.docs)
+    store_index()
+    st.doc_is_new = false
+    st.kept_text = text
+    show_status(words)
+    ui.tip.set_visible(false)
+}
+
+// The draft as Markdown (see md_slice), a slice per turn, then `done(md)`.
+fn to_markdown(text, done){
+    let job = md_job(text)
+    job.done = done
+    st.md_job = job
+    md_step()
+}
+fn md_step(){
+    let job = st.md_job
+    if !md_slice(job) {
+        start_timeout(0.0, || md_step())
+        return
+    }
+    st.md_job = nil
+    let done = job.done
+    done(job.out)
+}
+
+// Save the draft as a Word document, then run `next`; `what` names the
+// action in messages ("save Word documents", "show a preview").
+// An action that never answered (a failed turn) frees the buttons again.
+fn is_busy(){ return st.busy && time_now() - st.busy_at < 90 }
+fn set_busy(){
+    st.busy = true
+    st.busy_at = time_now()
+}
+fn save_then(what, next){
+    if is_busy() || st.doc == nil { return }
+    flush_now()
+    if ui.editor_text.text().trim() == "" {
+        notice("editor", "Write something first, then save it as a Word document.")
+        return
+    }
+    set_busy()
+    notice("editor", "")
+    ui.save_button.set_text("Saving…")
+    let d = st.doc
+    let rev = d.rev
+    let source = "work/" + d.id + ".md"
+    let out = docx_name(d, st.docs)
+    to_markdown(st.kept_text, fn(md){ convert_draft(what, next, d, rev, source, out, md) })
+}
+fn convert_draft(what, next, d, rev, source, out, md){
+    if !fs.exists("work") { fs.mkdir("work") }
+    fs.write(source, md)
+    engine("word.convert", {path: source out: out format: "docx"}, fn(r){
+        st.busy = false
+        ui.save_button.set_text("Save")
+        remove_file(source)
+        if !r.is_ok {
+            notice("editor", engine_message(what, r.error))
+            if st.doc != nil { refresh_editor(ui.editor_text.text()) }
+            return
+        }
+        if d.docx != "" && d.docx != out { remove_file(d.docx) }
+        d.docx = out
+        d.saved_rev = rev
+        d.saved_at = time_now()
+        store_index()
+        if st.doc != nil && st.doc.id == d.id { refresh_editor(ui.editor_text.text()) next() }
+    })
+}
+fn save_doc(){ save_then("save Word documents", || {}) }
+
+// ---- preview --------------------------------------------------------------
+
+fn open_preview(){
+    if is_busy() || st.doc == nil { return }
+    flush_now()
+    if ui.editor_text.text().trim() == "" {
+        notice("editor", "Write something first, then preview it.")
+        return
+    }
+    // The engine works in Writer's own storage, so Writer can see whether the
+    // saved document is still there; one that went missing is saved again.
+    if st.doc.docx != "" && !fs.exists(st.doc.docx) {
+        st.doc.docx = ""
+        store_index()
+    }
+    if st.doc.docx != "" && st.doc.saved_rev == st.doc.rev { read_preview() } else { save_then("show a preview", || read_preview()) }
+}
+// Reopen the saved document through the engine: word.info for its numbers,
+// then word.inspect for its outline and blocks.
+fn read_preview(){
+    if is_busy() || st.doc == nil { return }
+    set_busy()
+    ui.editor_status.set_text("Opening the preview…")
+    let d = st.doc
+    engine("word.info", {path: d.docx}, fn(info){
+        if !info.is_ok {
+            st.busy = false
+            if st.doc == nil || st.doc.id != d.id { return }
+            notice("editor", engine_message("show a preview", info.error))
+            refresh_editor(ui.editor_text.text())
+            return
+        }
+        engine("word.inspect", {path: d.docx text: true}, fn(r){ show_preview(d, info.data, r) })
+    })
+}
+fn show_preview(d, info, r){
+    st.busy = false
+    if st.doc == nil || st.doc.id != d.id { return }
+    if !r.is_ok {
+        notice("editor", engine_message("show a preview", r.error))
+        refresh_editor(ui.editor_text.text())
+        return
+    }
+    st.blocks = field(r.data, "blocks", [])
+    st.outline = outline_of(st.blocks)
+    st.section = -1
+    st.shown = st.blocks
+    st.shown_limit = 240
+    ui.preview_info.set_text(plural(field(info, "pages", 1), "page", "pages") + "  ·  " + plural(field(info, "words", d.words), "word", "words") + "  ·  " + plural(field(info, "paragraphs", 0), "paragraph", "paragraphs") + "  ·  " + leaf(d.docx))
+    ui.outline_card.set_visible(st.outline.len() > 0)
+    ui.section_bar.set_visible(false)
+    notice("preview", "")
+    refresh_editor(ui.editor_text.text())
+    pane("preview")
+    ui.outline_rows.render()
+    ui.preview_body.render()
+}
+fn show_section(k){
+    st.section = k
+    let range = section_of(st.outline, k, st.blocks.len())
+    let out = []
+    let i = 0
+    for b in st.blocks {
+        if i >= range.start && i < range.stop { out.push(b) }
+        i = i + 1
+    }
+    st.shown = out
+    st.shown_limit = 240
+    ui.section_label.set_text(st.outline[k].text)
+    ui.section_bar.set_visible(true)
+    ui.outline_rows.render()
+    ui.preview_body.render()
+}
+fn show_whole(){
+    st.section = -1
+    st.shown = st.blocks
+    st.shown_limit = 240
+    ui.section_bar.set_visible(false)
+    ui.outline_rows.render()
+    ui.preview_body.render()
+}
+fn show_more(){
+    st.shown_limit = st.shown_limit + 240
+    ui.preview_body.render()
+}
+fn back_to_editor(){
+    pane("editor")
+    refresh_editor(ui.editor_text.text())
+}
+
+// ---- export ---------------------------------------------------------------
+
+fn open_export(){
+    if st.doc == nil { return }
+    for f in st.formats {
+        f.state = ""
+        f.text = ""
+        let e = export_of(st.doc, f.id)
+        if e != nil { f.text = "Last copy " + when(e.at) + "  ·  " + size_text(e.bytes) }
+    }
+    ui.export_doc.set_text(shown_title(st.doc))
+    pane("export")
+    ui.export_rows.render()
+}
+fn export_as(f){
+    if is_busy() || st.doc == nil || st.doc.docx == "" { return }
+    set_busy()
+    f.state = "busy"
+    f.text = ""
+    ui.export_rows.render()
+    let d = st.doc
+    let out = export_path(d.docx, f.id)
+    engine("word.convert", {path: d.docx out: out format: f.id}, fn(r){
+        st.busy = false
+        if r.is_ok {
+            let bytes = field(r.data, "bytes", 0)
+            let kept = []
+            for e in d.exports { if e.format != f.id { kept.push(e) } }
+            kept.push({format: f.id out: out bytes: bytes at: time_now()})
+            d.exports = kept
+            store_index()
+            f.state = "done"
+            f.text = "Saved in Writer: " + out + "  ·  " + size_text(bytes)
+        } else {
+            f.state = "fail"
+            f.text = engine_message("export copies", r.error)
+        }
+        ui.export_rows.render()
+    })
+}
+
+// ---- look -------------------------------------------------------------------
+
+let ink = ui_ink
+let muted = ui_muted
+// The paper the writer writes on stays white with dark ink in both
+// appearances, as a printed page does (apps/AGENTS.md: a surface the app
+// paints keeps the fixed ink).
+let paper = #xffffff
+let paper_ink = #x1c1c1e
+let paper_muted = #x6e6e73
+let paper_line = #xe3e3e8
+let Bar = UiButton{}
+let Primary = UiPrimary{}
+let Caption = UiCaption{}
+let TopBar = View{width: Fill height: 56 flow: Right align: Align{y: 0.5} padding: Inset{left: 8 right: 12} spacing: 6}
+let Notice = RoundedView{visible: false width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 14 right: 6 top: 6 bottom: 6}
+    show_bg: true draw_bg +: {color: ui_field border_radius: 12.0}}
+let NoticeText = Label{width: Fill text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 13 line_spacing: 1.35}}}
+let Paper = RoundedView{width: Fill max_width: 760 height: Fill flow: Down show_bg: true draw_bg +: {color: paper border_radius: 14.0}}
+let H1 = Label{width: Fill text: "" draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 24 line_spacing: 1.25}}}
+let H2 = Label{width: Fill margin: Inset{top: 6} text: "" draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 19 line_spacing: 1.25}}}
+let H3 = Label{width: Fill margin: Inset{top: 4} text: "" draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 16 line_spacing: 1.3}}}
+let Para = Label{width: Fill text: "" draw_text +: {color: paper_ink text_style: theme.font_regular{font_size: 15 line_spacing: 1.5}}}
+let Quote = Label{width: Fill text: "" draw_text +: {color: paper_muted text_style: theme.font_italic{font_size: 15 line_spacing: 1.5}}}
+let Mono = Label{width: Fill text: "" draw_text +: {color: paper_ink text_style: theme.font_code{font_size: 13}}}
+let Cell = Label{width: Fill text: "" draw_text +: {color: paper_ink text_style: theme.font_regular{font_size: 13 line_spacing: 1.3}}}
+let CellHead = Label{width: Fill text: "" draw_text +: {color: paper_ink text_style: theme.font_bold{font_size: 13 line_spacing: 1.3}}}
+let OutlineRow = Label{width: Fill text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 14}}}
+let OutlineRowOn = Label{width: Fill text: "" draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}}
+
+SolidView{width: Fill height: Fill flow: Overlay align: Align{x: 0.5} draw_bg.color: ui_page
+    // Documents: the list of what you have written, newest first.
+    docs := View{width: Fill max_width: 840 height: Fill flow: Down
+        View{width: Fill height: Fit flow: Down spacing: 2 padding: Inset{left: 20 right: 16 top: 16 bottom: 8}
+            View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10
+                Label{text: "Writer" draw_text +: {color: ink text_style: theme.font_bold{font_size: 28}}}
+                View{width: Fill height: 1}
+                new_top := Primary{visible: false text: "New document" on_click: || new_doc()}
+            }
+            doc_count := Caption{visible: false width: Fit text: ""}
+        }
+        doc_rows := ScrollYView{width: Fill height: Fill flow: Down spacing: 10 padding: Inset{left: 14 right: 14 top: 6 bottom: 24} on_render: || {
+            View{width: Fill height: 1}
+            if st.docs.len() == 0 {
+                View{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{top: 64}
+                    UiCard{width: Fill max_width: 460 padding: 28 spacing: 14 align: Align{x: 0.5}
+                        Label{width: Fill align: Align{x: 0.5} text: "Start your first document" draw_text +: {color: ink text_style: theme.font_bold{font_size: 20}}}
+                        Caption{align: Align{x: 0.5} text: "Write here, then save it as a Word document or export a PDF. Everything stays on this device."}
+                        View{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{top: 6}
+                            Primary{text: "New document" padding: Inset{left: 26 right: 26} on_click: || new_doc()}
+                        }
+                    }
+                }
+            }
+            for d in st.docs {
+                GestureView{width: Fill height: Fit on_tap: |x, y| open_doc(d)
+                    RoundedView{width: Fill height: Fit flow: Down spacing: 6 padding: Inset{left: 18 right: 18 top: 15 bottom: 15}
+                        show_bg: true draw_bg +: {color: ui_surface border_radius: 14.0}
+                        View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
+                            Label{width: Fill max_lines: 2 text: shown_title(d) draw_text +: {color: ink text_style: theme.font_bold{font_size: 17 line_spacing: 1.25}}}
+                            if d.docx != "" && d.saved_rev == d.rev {
+                                RoundedView{width: Fit height: Fit padding: Inset{left: 7 right: 7 top: 2 bottom: 2} show_bg: true draw_bg +: {color: ui_field border_radius: 6.0}
+                                    Label{text: "DOCX" draw_text +: {color: ui_success text_style: theme.font_bold{font_size: 11}}}}
+                            }
+                            if d.docx != "" && d.saved_rev != d.rev {
+                                RoundedView{width: Fit height: Fit padding: Inset{left: 7 right: 7 top: 2 bottom: 2} show_bg: true draw_bg +: {color: ui_field border_radius: 6.0}
+                                    Label{text: "Edited" draw_text +: {color: muted text_style: theme.font_bold{font_size: 11}}}}
+                            }
+                        }
+                        if d.snippet != "" {
+                            Label{width: Fill max_lines: 2 text: d.snippet draw_text +: {color: muted text_style: theme.font_regular{font_size: 14 line_spacing: 1.35}}}
+                        }
+                        Label{width: Fill text: "Edited " + when(d.updated) + "  ·  " + plural(d.words, "word", "words") draw_text +: {color: muted text_style: theme.font_regular{font_size: 12}}}
+                    }
+                }
+            }
+        }}
+    }
+
+    // Editor: the page, and nothing that does not help writing on it.
+    editor := View{visible: false width: Fill height: Fill flow: Down align: Align{x: 0.5}
+        TopBar{max_width: 840
+            Bar{text: "‹ Documents" on_click: || back_to_docs()}
+            View{width: Fill height: 1}
+            Bar{text: "Preview" on_click: || open_preview()}
+            save_button := Primary{text: "Save" on_click: || save_doc()}
+        }
+        View{width: Fill max_width: 784 height: Fit flow: Down padding: Inset{left: 12 right: 12}
+            editor_notice := Notice{
+                editor_notice_text := NoticeText{}
+                Bar{height: 36 text: "OK" on_click: || notice("editor", "")}
+            }
+        }
+        View{width: Fill height: Fill flow: Down align: Align{x: 0.5} padding: Inset{left: 12 right: 12 top: 6 bottom: 10} spacing: 8
+            tip := Caption{visible: false width: Fill max_width: 760 text: "Start a line with # for a heading, - for a list or > for a quote. Writer keeps the draft as you type."}
+            Paper{padding: Inset{left: 26 right: 26 top: 22 bottom: 18}
+                editor_text := TextInput{width: Fill height: Fill is_multiline: true margin: 0 padding: Inset{right: 6} empty_text: "Start writing…"
+                    draw_bg +: {color: #x00000000 color_hover: #x00000000 color_focus: #x00000000 color_down: #x00000000 color_empty: #x00000000
+                        border_size: 0.0 border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_down: #x00000000 border_color_empty: #x00000000}
+                    draw_text +: {color: paper_ink color_hover: paper_ink color_focus: paper_ink color_down: paper_ink
+                        color_empty: #x9a9aa0 color_empty_hover: #x9a9aa0 color_empty_focus: #x9a9aa0
+                        text_style: theme.font_regular{font_size: 17 line_spacing: 1.55}}
+                    draw_cursor +: {color: paper_ink}
+                    scroll_bar +: {bar_size: 6.0 draw_bg +: {color: #x0000001c color_hover: #x00000030 color_drag: #x00000040}}
+                    draw_selection +: {color: #x285cd640 color_hover: #x285cd640 color_focus: #x285cd640 color_down: #x285cd640}
+                    on_change: |text| draft_changed(text)
+                }
+            }
+            View{width: Fill max_width: 760 height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 8}
+                editor_status := Label{width: Fill text: "" draw_text +: {color: muted text_style: theme.font_regular{font_size: 13}}}
+                delete_button := Bar{height: 36 text: "Delete" on_click: || delete_doc()
+                    draw_text +: {color: ui_danger color_hover: ui_danger color_down: ui_danger color_focus: ui_danger text_style: theme.font_regular{font_size: 13}}}
+            }
+        }
+    }
+
+    // Preview: the saved Word document as the engine reads it back.
+    preview := View{visible: false width: Fill height: Fill flow: Down align: Align{x: 0.5}
+        TopBar{max_width: 840
+            Bar{text: "‹ Edit" on_click: || back_to_editor()}
+            View{width: Fill height: 1}
+            Primary{text: "Export" on_click: || open_export()}
+        }
+        View{width: Fill max_width: 784 height: Fit flow: Down padding: Inset{left: 12 right: 12}
+            preview_notice := Notice{
+                preview_notice_text := NoticeText{}
+                Bar{height: 36 text: "OK" on_click: || notice("preview", "")}
+            }
+        }
+        ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} spacing: 12 padding: Inset{left: 12 right: 12 top: 4 bottom: 28}
+            View{width: Fill max_width: 760 height: Fit flow: Down spacing: 6 padding: Inset{left: 8}
+                preview_info := Caption{text: ""}
+            }
+            outline_card := UiCard{visible: false max_width: 760 padding: Inset{left: 18 right: 18 top: 14 bottom: 14} spacing: 8
+                Caption{text: "OUTLINE"}
+                outline_rows := View{width: Fill height: Fit flow: Down spacing: 2 on_render: || {
+                    View{width: Fill height: 1}
+                    for k in st.outline.len() {
+                        GestureView{width: Fill height: Fit padding: Inset{left: (st.outline[k].level - 1) * 16 top: 6 bottom: 6} on_tap: |x, y| show_section(k)
+                            if st.section == k { OutlineRowOn{text: st.outline[k].text} }
+                            if st.section != k { OutlineRow{text: st.outline[k].text} }
+                        }
+                    }
+                }}
+            }
+            section_bar := View{visible: false width: Fill max_width: 760 height: Fit flow: Right align: Align{y: 0.5} spacing: 8 padding: Inset{left: 8}
+                section_label := Label{width: Fill max_lines: 1 text: "" draw_text +: {color: ink text_style: theme.font_bold{font_size: 14}}}
+                Bar{height: 36 text: "Show whole document" on_click: || show_whole()}
+            }
+            RoundedView{width: Fill max_width: 760 height: Fit flow: Down padding: Inset{left: 28 right: 28 top: 26 bottom: 30} show_bg: true draw_bg +: {color: paper border_radius: 14.0}
+                preview_body := View{width: Fill height: Fit flow: Down spacing: 10 on_render: || {
+                    View{width: Fill height: 1}
+                    let n = 0
+                    for b in st.shown {
+                        n = n + 1
+                        let kind = "skip"
+                        if n <= st.shown_limit { kind = kind_of(b) }
+                        if kind == "h1" { H1{text: b.text} }
+                        if kind == "h2" { H2{text: b.text} }
+                        if kind == "h3" { H3{text: b.text} }
+                        if kind == "para" { Para{text: b.text} }
+                        if kind == "item" {
+                            View{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{left: list_indent(b) right: 4}
+                                RoundedView{width: 6 height: 6 margin: Inset{top: 11} show_bg: true draw_bg +: {color: paper_ink border_radius: 3.0}}
+                                Para{text: b.text}
+                            }
+                        }
+                        if kind == "quote" {
+                            View{width: Fill height: Fit flow: Right spacing: 12 padding: Inset{right: 8}
+                                SolidView{width: 3 height: Fill draw_bg.color: paper_line}
+                                Quote{text: b.text}
+                            }
+                        }
+                        if kind == "code" {
+                            RoundedView{width: Fill height: Fit padding: 10 show_bg: true draw_bg +: {color: #xf2f2f5 border_radius: 8.0}
+                                Mono{text: b.text}
+                            }
+                        }
+                        if kind == "rule" { SolidView{width: Fill height: 1 draw_bg.color: paper_line} }
+                        if kind == "gap" { View{width: Fill height: 4} }
+                        if kind == "table" {
+                            View{width: Fill height: Fit flow: Down spacing: 6
+                                for r in b.cells.len() {
+                                    View{width: Fill height: Fit flow: Right spacing: 10
+                                        for c in b.cells[r] {
+                                            if r == 0 { CellHead{text: c} }
+                                            if r > 0 { Cell{text: c} }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if st.shown.len() > st.shown_limit {
+                        View{width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{top: 8}
+                            Bar{text: "Show more of the document" draw_text +: {color: #x285cd6 color_hover: #x285cd6 color_down: #x285cd6 color_focus: #x285cd6}
+                                draw_bg +: {color_hover: #xeef1fb color_down: #xe2e8f8 color_focus: #xeef1fb} on_click: || show_more()}
+                        }
+                    }
+                }}
+            }
+        }
+    }
+
+    // Export: a copy of the saved document in another format.
+    export := View{visible: false width: Fill height: Fill flow: Down align: Align{x: 0.5}
+        TopBar{max_width: 840
+            Bar{text: "‹ Preview" on_click: || pane("preview")}
+            View{width: Fill height: 1}
+        }
+        ScrollYView{width: Fill height: Fill flow: Down align: Align{x: 0.5} spacing: 10 padding: Inset{left: 14 right: 14 top: 4 bottom: 28}
+            View{width: Fill max_width: 760 height: Fit flow: Down spacing: 4 padding: Inset{left: 6 bottom: 6}
+                Label{padding: 0 text: "Export a copy" draw_text +: {color: ink text_style: theme.font_bold{font_size: 24}}}
+                export_doc := Label{padding: 0 width: Fill text: "" draw_text +: {color: ink text_style: theme.font_regular{font_size: 15}}}
+                Caption{text: "Writer converts the saved Word document and keeps the copy with your documents."}
+            }
+            export_rows := View{width: Fill max_width: 760 height: Fit flow: Down spacing: 10 on_render: || {
+                View{width: Fill height: 1}
+                for f in st.formats {
+                    GestureView{width: Fill height: Fit on_tap: |x, y| export_as(f)
+                        RoundedView{width: Fill height: Fit flow: Down spacing: 6 padding: Inset{left: 18 right: 18 top: 14 bottom: 14}
+                            show_bg: true draw_bg +: {color: ui_surface border_radius: 14.0}
+                            View{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
+                                Label{width: Fill padding: 0 text: f.name draw_text +: {color: ink text_style: theme.font_bold{font_size: 16}}}
+                                if f.state == "" { Label{padding: 0 text: "›" draw_text +: {color: muted text_style: theme.font_bold{font_size: 20}}} }
+                                if f.state == "busy" { Label{padding: 0 text: "Exporting…" draw_text +: {color: muted text_style: theme.font_regular{font_size: 13}}} }
+                                if f.state == "done" { Label{padding: 0 text: "Done" draw_text +: {color: ui_success text_style: theme.font_bold{font_size: 14}}} }
+                                if f.state == "fail" { Label{padding: 0 text: "Try again" draw_text +: {color: ui_link text_style: theme.font_bold{font_size: 14}}} }
+                            }
+                            Label{width: Fill padding: 0 text: f.note draw_text +: {color: muted text_style: theme.font_regular{font_size: 13}}}
+                            if f.state == "fail" { Label{width: Fill padding: 0 text: f.text draw_text +: {color: ui_danger text_style: theme.font_regular{font_size: 13 line_spacing: 1.35}}} }
+                            if f.state != "fail" && f.text != "" { Label{width: Fill padding: 0 text: f.text draw_text +: {color: muted text_style: theme.font_regular{font_size: 12}}} }
+                        }
+                    }
+                }
+            }}
+        }
+    }
+}
