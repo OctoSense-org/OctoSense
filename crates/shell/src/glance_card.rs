@@ -1450,7 +1450,7 @@ mod tests {
     }
 
     /// A system app, registered from a pack made on the fly, whose manifest
-    /// grants `glance` and `storage` and nothing else. It is registered as
+    /// declares `glance` and `storage`. It is registered as
     /// a test's, so the catalog tests running beside these leave it out.
     #[cfg(feature = "app-hub")]
     fn register_test_app(id: &'static str) {
@@ -1482,6 +1482,47 @@ mod tests {
     #[cfg(feature = "app-hub")]
     fn heap_of(cx: &mut Cx, splash: &SplashRef) -> usize {
         splash.borrow_mut().unwrap().isolate_heap_key(cx).expect("the card runs in its own isolate")
+    }
+
+    /// Admission and consent registries are process-wide. Exercise the real
+    /// bundle loader in a private profile, independently of parallel tests.
+    #[cfg(feature = "app-hub")]
+    struct AppProfile(std::path::PathBuf);
+    #[cfg(feature = "app-hub")]
+    impl AppProfile {
+        fn isolated(test: &str) -> Option<Self> {
+            const CHILD: &str = "OCTOSENSE_GLANCE_PROFILE_TEST";
+            if std::env::var(CHILD).ok().as_deref() != Some(test) {
+                let name = format!("glance_card::tests::{test}");
+                let output = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", &name, "--nocapture"])
+                    .env(CHILD, test).output().unwrap();
+                assert!(output.status.success(), "{}\n{}",
+                    String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+                return None;
+            }
+            let root = std::env::temp_dir().join(format!("glance-profile-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&root).unwrap();
+            std::env::set_var("OCTOSENSE_APP_DATA", &root);
+            octosense_appstore::set_data_root(root.clone());
+            Some(Self(root))
+        }
+    }
+    #[cfg(feature = "app-hub")]
+    impl Drop for AppProfile {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    #[cfg(feature = "app-hub")]
+    fn queued_glance_request(cx: &mut Cx, splash: &SplashRef) -> splash_host::SplashHostRequest {
+        let vm = isolate_of(cx, splash).unwrap();
+        widget_async::with_isolate(cx, vm, |cx| cx.with_vm(|vm| {
+            script_eval!(vm, {mod.host.request("glance.list", {}, nil)});
+        }));
+        let heap = heap_of(cx, splash);
+        let mut requests = splash_host::take_splash_host_requests_for(&[heap]);
+        assert_eq!(requests.len(), 1);
+        requests.pop().unwrap()
     }
 
     #[test]
@@ -1550,39 +1591,53 @@ mod tests {
         tiles.sweep(&mut cx, &[]);
     }
 
-    /// A contained app's tile runs under that app's resolved policy, the one
-    /// its Card runner applies: its grants pass the isolate's gate, and
-    /// nothing it was not granted does. A native module's tile gets none.
+    /// A contained app's tile retains its admitted identity and public APIs,
+    /// independently of declarations, without inheriting device consent.
+    /// A native module's tile never becomes a contained app host surface.
     #[cfg(feature = "app-hub")]
     #[test]
     fn a_tile_runs_under_its_apps_policy() {
+        let Some(_profile) = AppProfile::isolated("a_tile_runs_under_its_apps_policy") else { return };
         use makepad_widgets::splash_policy::service_allowed;
         register_test_app("os.glancetile");
         let mut cx = tile_cx();
         let mut tiles = GlanceTiles::default();
         let app = tiles.open(&mut cx, "os.glancetile/c", "os.glancetile", true, &"View{}".into());
         let heap = heap_of(&mut cx, &app);
-        assert!(service_allowed(heap, "glance.list").is_ok(), "the app's grant");
-        assert!(service_allowed(heap, "mail.send").is_err(), "not granted to the app");
+        assert_eq!(queued_glance_request(&mut cx, &app).app_tag, "os.glancetile");
+        assert!(service_allowed(heap, "glance.list").is_ok(), "declared public API");
+        // Public host requests bypass declaration checks. service_allowed is
+        // the device/private-runtime gate, not the public service dispatcher.
+        let vm = isolate_of(&mut cx, &app).unwrap();
+        widget_async::with_isolate(&mut cx, vm, |cx| cx.with_vm(|vm| {
+            script_eval!(vm, {mod.host.request("mail.send", {}, nil)});
+        }));
+        let requests = splash_host::take_splash_host_requests_for(&[heap]);
+        assert_eq!(requests.len(), 1, "an undeclared public method reaches the host boundary");
+        assert_eq!(requests[0].app_tag, "os.glancetile");
+        assert_eq!(requests[0].service, "mail.send");
+        assert!(!requests[0].may_prompt, "public API availability cannot authorize a review or send");
+        assert!(service_allowed(heap, "camera.preview").unwrap_err().starts_with("authorization_required:"),
+            "an admitted app still needs its own device consent");
         let native = tiles.open(&mut cx, "news/c", "news", false, &"View{}".into());
         let heap = heap_of(&mut cx, &native);
+        assert!(queued_glance_request(&mut cx, &native).app_tag.is_empty());
         assert!(service_allowed(heap, "glance.list").is_err(), "a native module's tile has no grants");
+        tiles.sweep(&mut cx, &[]);
     }
 
     #[cfg(feature = "app-hub")]
     #[test]
     fn only_foreground_workspaces_prompt_and_host_sheet_is_modal_and_retired() {
+        let Some(_profile) = AppProfile::isolated("only_foreground_workspaces_prompt_and_host_sheet_is_modal_and_retired") else { return };
         register_test_app("os.glanceforeground");
         crate::glance::register();
         widget_async::register_splash_isolate_mod(|vm| {script_mod(vm);});
         let mut cx = tile_cx();
         let ask = |cx: &mut Cx, splash: &SplashRef| {
-            let vm = isolate_of(cx, splash).unwrap();
-            widget_async::with_isolate(cx, vm, |cx| cx.with_vm(|vm| {
-                script_eval!(vm, {mod.host.request("glance.list", {}, nil)});
-            }));
-            let heap = heap_of(cx, splash);
-            splash_host::take_splash_host_requests_for(&[heap]).pop().unwrap()
+            let request = queued_glance_request(cx, splash);
+            assert_eq!(request.app_tag, "os.glanceforeground");
+            request
         };
         let mut background = GlanceTiles::default();
         let summary = background.open(&mut cx, "summary", "os.glanceforeground", true, &"View{}".into());
