@@ -23,6 +23,10 @@
 //! `calendar` service, which ship with the shell; `os.photos`'s `photos`
 //! service, which answers `photos.info` on the photo engine and
 //! `photos.notify` through the shell's notice hook, `glance_notice`).
+//! A declared tool whose engine this build leaves out never runs: Photos'
+//! `photos.info` on Home, where the photo engine is desktop only (ADR 0013)
+//! and the shell's notice service answers Photos' `notify`, is refused as
+//! `unavailable`, plainly and before any folder is made ([`unlinked_engine`]).
 //! A tool the app's own script implements (`implemented_by: "app"`) runs on
 //! its admitted full-app runner's live UI isolate through App Hub's script
 //! tool queue. Closed apps fail visibly; Glance never becomes a second owner.
@@ -235,6 +239,21 @@ pub struct HostServiceExecutor {
     pub host_dir: PathBuf,
 }
 
+/// The engine (ADR 0013) `method` runs on when this build leaves it out:
+/// the photo engine, which only the desktop links (`craft-engines`; weighed
+/// for Home and left out), for its own `photo.*` methods and Photos'
+/// `photos.info`. `None` when the build links it, or the method needs none.
+pub fn unlinked_engine(method: &str) -> Option<&'static str> {
+    let photo = method == "photos.info" || method.split('.').next() == Some("photo");
+    (photo && !cfg!(feature = "craft-engines")).then_some("photo")
+}
+
+/// The plain answer to `tool`, whose `engine` this build leaves out
+/// ([`unlinked_engine`]): the call never runs here.
+pub fn not_on_this_device(tool: &str, engine: &str) -> String {
+    format!("{tool} isn't available on this device: the {engine} engine is only in the desktop build")
+}
+
 /// Where an engine method's call works ([`HostServiceExecutor::run`]): the
 /// shell's areas (`None`), or a test's.
 #[cfg(feature = "app-hub")]
@@ -400,6 +419,14 @@ impl HostServiceExecutor {
                 reply.finish(ToolOutcome::error("api_unavailable", format!("{method} is not supported on this platform")));
                 return;
             }
+        }
+        // A declared tool whose engine this build leaves out (Photos'
+        // `photos.info` on Home) never runs: the agent hears so plainly,
+        // before any area is made for it, rather than the stand-in notice
+        // service's "no method".
+        if let Some(engine) = unlinked_engine(method) {
+            reply.finish(ToolOutcome::error("unavailable", not_on_this_device(&call.name, engine)));
+            return;
         }
         if let Err(message) = check_agent_publication(method, &call.args) {
             reply.finish(ToolOutcome::error("unsafe_card_source", message));

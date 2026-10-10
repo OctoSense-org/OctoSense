@@ -4,15 +4,15 @@
   "regenerate": "OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-vector-service --test skill",
   "rules": "safety-rules.json",
   "classes": {
-    "safe": {"count": 572, "meaning": "pure document or pixel operations inside the session"},
+    "safe": {"count": 574, "meaning": "pure document or pixel operations inside the session"},
     "file": {"count": 50, "meaning": "reads or writes a path (a door may allow it only inside the caller's area)"},
-    "code": {"count": 10, "meaning": "installs or runs code: plug-ins, scripts, expressions with I/O, or other commands (macros, actions, batches)"},
+    "code": {"count": 8, "meaning": "installs or runs code: plug-ins, scripts, expressions with I/O, or other commands (macros, actions, batches)"},
     "network": {"count": 0, "meaning": "uses the network"},
     "device": {"count": 0, "meaning": "uses hardware: audio, MIDI, cameras, scanners, printers, tablets"},
     "host": {"count": 47, "meaning": "host, app or UI state outside the document: windows, panels, views, preferences, shortcuts, the clipboard"}
   },
   "commands": {
-    "appearance.addEffect": "code",
+    "appearance.addEffect": "safe",
     "appearance.addFill": "safe",
     "appearance.addStroke": "safe",
     "appearance.clear": "safe",
@@ -142,7 +142,7 @@
     "edit.pasteWithoutFormatting": "safe",
     "edit.redo": "safe",
     "edit.undo": "safe",
-    "effect.apply": "code",
+    "effect.apply": "safe",
     "effect.duplicate": "safe",
     "effect.expandAppearance": "safe",
     "effect.list": "safe",

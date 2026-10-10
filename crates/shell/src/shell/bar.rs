@@ -272,6 +272,34 @@ pub fn local_time(fmt: &std::ffi::CStr) -> String {
     }
 }
 
+/// Keep Splash's `std.local_time` on this device's zone. makepad has no
+/// timezone database: it shows UTC until its host sets the offset
+/// (`set_script_local_utc_offset_secs`). The same local time as the clock,
+/// refreshed with it, so a daylight-saving change or a new zone follows.
+pub fn refresh_script_utc_offset() {
+    if let Some(offset) = local_utc_offset_secs() {
+        makepad_widgets::makepad_platform::script::timer::set_script_local_utc_offset_secs(offset);
+    }
+}
+
+/// This device's offset from UTC now, in seconds: what `localtime_r` gives
+/// the clock on Unix.
+fn local_utc_offset_secs() -> Option<i64> {
+    #[cfg(unix)]
+    {
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        let now = unsafe { libc::time(std::ptr::null_mut()) };
+        if unsafe { libc::localtime_r(&now, &mut tm) }.is_null() {
+            return None;
+        }
+        Some(tm.tm_gmtoff as i64)
+    }
+    #[cfg(not(unix))]
+    {
+        Some(chrono::Local::now().offset().local_minus_utc() as i64)
+    }
+}
+
 /// Everything the bar reads from the OS, gathered OFF the main thread.
 ///
 /// Every sampler below is a `fork+exec+wait` (`osascript`, `date`, `pmset`,
@@ -321,6 +349,7 @@ pub fn start_status_sampler(
                 status.muted = muted;
                 status.clock = sample_clock(false);
                 status.clock_alt = sample_clock(true);
+                refresh_script_utc_offset();
                 if round % 5 == 0 {
                     status.battery = sample_battery();
                     status.network = sample_network();
@@ -1185,5 +1214,15 @@ mod tests {
             press_action(m, MouseButton::MIDDLE),
             press_action(m, MouseButton::SECONDARY)
         );
+    }
+
+    /// Script apps' `std.local_time` uses the offset the shell sets, which
+    /// is this device's own: the one chrono reads from the same zone data.
+    #[test]
+    fn script_local_time_follows_the_device_zone() {
+        use makepad_widgets::makepad_platform::script::timer::script_local_utc_offset_secs;
+        refresh_script_utc_offset();
+        let device = chrono::Local::now().offset().local_minus_utc() as i64;
+        assert_eq!(script_local_utc_offset_secs(), device);
     }
 }

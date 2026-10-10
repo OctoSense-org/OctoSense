@@ -100,7 +100,9 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   的窄授权：共 43 个工具，包括每个读工具，以及只在其引擎自己区域内写入
   的每个 act 工具。没有一个是 destructive、outward 或 shareable 的，因此
   任何应用的代理都无法被授予。通用命令入口 `vector.run` 和 `effect.run`
-  已声明，但留待单独审查，暂不授予。design、effect 与 vector 的
+  已声明，但留待单独审查，暂不授予。（自 2026 年 10 月 9 日起，这份授权是
+  27 个工具：七个引擎各一个 `info` 加一个经过审查的 `run` 入口，见下文的
+  “命令入口”。）design、effect 与 vector 的
   `commands` 目录没有声明，因为它们返回 JSON 数组，而 octos 只接受对象
   结果。
 - **文件仍是缺口**（已于 2026 年 10 月 9 日补上，见下文）。决定 5 预期文件
@@ -112,7 +114,7 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   会这样解析链接图片；在这一点被收敛之前，暂存路径不得把外部文档交给
   这两个引擎。
 - **内核的上限。** octos 一次注册最多接受 64 个宿主工具，超出则整组拒绝。
-  加上引擎工具后，系统会话可能的最大集合为 63 个。Shell 把引擎工具放在
+  加上引擎工具后，系统会话可能的最大集合为 63 个（有了命令入口后为 47 个）。Shell 把引擎工具放在
   最后，超限时最先舍去，并有测试保证整份授权不超过上限。
 - **长调用。** 引擎调用在派发它的线程上运行（工具调用时是 Shell 的 UI
   线程），运行期间占用 App Hub 的服务注册表，应用调用这些引擎时一直如此。
@@ -134,7 +136,7 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   `commands.md`，每个 id 一行；light 有 `controls.md`，sheet 有 `functions.md`。
   每个服务都嵌入自己的技能（`src/skill.rs`），因此构建发布的技能总与其引擎一致。
   Shell 用与服务相同的条件注册已链接引擎的技能
-  （`crates/shell/src/system_chat/skills.rs`）：sheet 和 photo 随 `app-hub`，
+  （`crates/shell/src/system_chat/skills.rs`）：sheet 随 `app-hub`，photo 和
   另外十个随 `craft-engines`。
 - **每次内核启动前安装。** 内核服务（`crates/kernel/src/skills.rs`）把它们写入
   octos 为系统代理的 profile 读取的技能目录 `<core dir>/profiles/_main/data/skills`，
@@ -155,9 +157,9 @@ vector、pdf）现已有代理工具，系统代理可以调用：
 - **安全类别。** 每个目录 id 都依据其实现归入 `safe`、`file`、`code`（插件、
   脚本、会运行其他命令的命令）、`network`、`device` 或 `host`（窗口、视图、
   偏好设置、剪贴板）。每份 `safety.json` 都有该引擎的统计。
-- **下一步（尚未完成）。** 按调用方划分的区域落地后，`<family>.info` 加上每个
-  有目录的引擎一个经过审查的 `<family>.run` 入口，将取代这 43 个按方法划分的
-  工具。每个入口拒绝调用方区域之外的 `file`，以及所有 `code`、`network`、
+- **下一步**（已于 2026 年 10 月 9 日完成，见下文的“命令入口”）。按调用方划分的
+  区域落地后，`<family>.info` 加上每个有目录的引擎一个经过审查的 `<family>.run`
+  入口，将取代这 43 个按方法划分的工具。每个入口拒绝调用方区域之外的 `file`，以及所有 `code`、`network`、
   `device` 和 `host` id。无法加以围栏的引擎保留其精选工具。
 
 ## 引擎在调用方自己的文件夹里工作（2026 年 10 月 9 日）
@@ -237,12 +239,13 @@ App Hub 的 card-host）。
     其 XMP 附属文件必须在区域内。
   - **word、deck、cad、sound、sheet：** 只进出字节，引擎不打开任何其他文件。
     word、deck 和 cad 按字体族名使用系统字体，gridcraft 拒绝指向其他工作簿
-    的链接，sound 从不打开音频或 MIDI 设备。word 服务只运行 `file.info` 和
-    `document.inspect` 两个引擎命令，因此 wordcraft 的 `review.readAloud`
-    （会启动语音程序）够不着。
+    的链接，sound 从不打开音频或 MIDI 设备。有了命令入口后，`word.run` 会运行
+    wordcraft 的命令，而 `review.readAloud`（会启动语音程序）归为 `device`，
+    任何入口都不运行它。
 
   十二个引擎全部受到限制，没有一个留在私有文件夹里。
-- **命令入口暂不开放。** `vector.run` 和 `effect.run` 从未授予，它们拒绝的
+- **命令入口暂不开放**（直到 2026 年 10 月 9 日，见下文的“命令入口”）。
+  `vector.run` 和 `effect.run` 从未授予，它们拒绝的
   id 列表也算不上围栏：包装命令（`command.batch`、`engine.batch`、
   `file.runScript`）、偏好设置（用 `prefs.set` 设置插件文件夹）或插件效果都能
   绕过去。装上 Shell 的解析器后，这两个服务直接拒绝 `run`，因此在审查之前这两
@@ -252,15 +255,121 @@ App Hub 的 card-host）。
   到、改不了、导不出也关不掉它。每个区域最多 16 个打开的工作簿，所有区域
   合计最多 64 个。
 
+## 命令入口（2026 年 10 月 9 日）
+
+系统代理现在通过每个引擎一个经过审查的命令入口来驱动七个引擎，不再为每个方法
+单独精选一个工具（#418）。
+
+- **工具面。** word、deck、cad、light、film、effect 和 vector 各给系统代理两个
+  工具：`<family>.info`（读）和 `<family>.run`：在 `path` 指向的文档（或一份新
+  文档）上依次运行引擎目录中最多 64 条命令，再把结果写到 `out`，即调用方文件夹
+  中的一个新文件。写出什么由 `out` 的扩展名决定，因此一个入口就涵盖了原先按方法
+  划分的工具所做的事（转换、渲染、帧、导出、Lottie 导入与导出、显影）。sound、
+  design 和 pdf 保留固定工具。引擎授权从 43 个工具减为 27 个，系统会话的最大
+  集合从 63 个减为 47 个（octos 的上限为 64，octos #2737 加上重新固定版本后为
+  96）。按方法划分的服务方法仍然保留，供应用自己的请求（`host.request`）使用，
+  命令入口不改变它们。
+- **允许列表，绝不用拒绝列表。** 每个服务用引擎生成的分类 `skill/safety.json`
+  和自己的 `REVIEWED` 审查结论构建门禁（`crates/engine-area/src/door.rs`，
+  `Door`）。一次调用中的每条命令都在任何命令运行之前先经过准入。只有归为
+  `safe` 的 id 可以运行，另外还有审查者确认只读取其参数所指文件的 `file`
+  命令：门禁在调用方的文件夹内解析该路径（相对路径、不含 `..`、跟随链接、
+  必须是已有文件），再把绝对路径交给引擎。写入只经过入口自己的 `out`
+  （`Area::write`：代理的写入从不覆盖已有文件，并受配额限制）。其他 id
+  一律拒绝：`code`、`network`、`device` 和 `host`，未经审查的 `file` 命令，
+  以及分类中没有的 id（只要引擎还有 id 没有类别，技能漂移测试就会失败）。
+  审查者还可以暂缓开放一条按类别本可运行的命令（`Held`），当引擎还不能安全地执行它时：
+  入口拒绝它并说明原因，直到引擎修好。
+- **组合命令与间接命令。** 批处理、宏和脚本（`command.batch`、`engine.batch`、
+  `tools.macros`、`file.runScript`）归为 `code`，整条拒绝。按键名修改应用级
+  状态的设置命令，只有使用其服务审查过的键名时才能运行；目前没有任何键名
+  经过审查，所以 cad 的 `setvar` 被拒绝。指名另一条命令的命令（vector 的
+  `perspective.draw {command}`）会让被指名的 id 连同其参数再次经过准入，最多
+  嵌套四层。指名效果的命令（`effect.apply`、vector 的 `appearance.addEffect`）
+  只运行引擎内置的效果，因此效果插件（`plugin.<id>`）绝不会经由入口运行。
+- **上限（2026 年 10 月 9 日决定）。** 在 #399 之前，引擎工作都在 Shell 的 UI 线程上运行，
+  因此任何单次调用都不能无限放大工作量或内存。每个服务都审查了会放大工作量的参数（阵列和
+  复制的数量、行数和列数、画布、页面和渲染尺寸、帧范围和帧率、迭代次数，以及会成倍增加绘制
+  工作的小比例和小间距），并为每个参数设一个 `Limit`：对单个参数或若干参数乘积的上限，理由
+  写在旁边，由门禁在任何命令运行之前检查，内层命令也不例外。复制在一次调用内相乘（阵列再
+  阵列），受每次调用的预算约束。每个服务还在每条命令之后把文档保持在尺寸上限以内（这能拦住
+  没有数量参数的复制粘贴循环），并限制自己的 `out`（渲染的像素、导出的帧数）。
+- **每条命令之后的围栏。** 命令可能写进文档、之后又会被后续命令、渲染或 `out`
+  读取的内容，会在每条命令之后检查，不通过则调用在写出任何东西之前失败：
+  vector 的链接图片；effect 的素材、LUT、OCIO 和 mocha 参数（包括 Essential
+  Graphics 取值）以及效果插件；film 的效果参数、暂存盘、采集文件夹和排队的导出
+  （区域外的媒体照旧保持离线）；photo 的链接智能对象和 Color Lookup 文件。
+- **#418 的几条路径。** 包装 `plugin.install` 的批处理、用 `prefs.set` 设置插件
+  文件夹（vector：`code`；effect 和 film：`host`），以及
+  `effect.apply {effect: "plugin.<id>"}` 都会被拒绝，每条都在其服务的测试中有
+  恶意样例，并在 Shell 的中继里再验证一次
+  （`every_command_door_refuses_what_its_review_does_not_admit`）。#419 的围栏
+  保持不变：design 的 IDML 链接和 pdf 的脚本（两者都没有入口），effect 的 LUT
+  与色彩文件以及 photo 的 `.psd` 链接（每条命令之后都检查），以及 word 的
+  `review.readAloud`（现归为 `device`）。
+
+每个引擎的工具面：
+
+| 引擎 | 系统代理的工具 | 入口在 `safe` id 之外还运行什么 | 上限（单次调用） |
+| --- | --- | --- | --- |
+| word | `word.info`、`word.run` | 389 个 id 中的 328 个。读取：`insert.picture`、`picture.change`（`path`）。 | 表格 ≤ 10,000 个单元格；页面每边 72–1584 pt；一次替换使文本最多增长 1,000 倍（连续替换合计 ≤ 10,000 倍）；文档 ≤ 500,000 个字符、50,000 个段落、128 MiB 图片；PDF ≤ 10,000 页。 |
+| deck | `deck.info`、`deck.run` | 222 个中的 198 个。读取：`insert.picture`、`picture.change`（`path`）。在 deckcraft 限制其媒体和 zip 解析之前暂缓开放（恶意数据可能让 Shell 进程中止，#448）：`insert.audio`、`insert.video`、`media.info`、`media.posterFrame`、`file.openBytes`。 | 表格 ≤ 5,625 个单元格；图表 ≤ 10,000 个数据点；单张幻灯片面积 ≤ 1920 × 1080 pt；演示文稿 ≤ 500 张幻灯片、20,000 个形状、1,000,000 个字符；每次调用的栅格化 ≤ 160 MP，每张 ≤ 4096²。 |
+| cad | `cad.info`、`cad.run` | 295 个中的 288 个。`setvar` 被拒绝：它按名称设置变量，而没有任何名称经过审查。 | 阵列和复制 ≤ 10,000 份，一次调用内相乘 ≤ 10,000；多边形 ≤ 1,024 条边；样条拟合点 ≤ 2,000；填充和线型比例 ≥ 0.0001；图形 ≤ 200,000 个对象；渲染约 ≤ 一秒的绘制工作量，先估算再绘制。 |
+| light | `light.info`、`light.run` | 239 个中的 189 个。没有其他。 | 原图 ≤ 64 MP；导出 ≤ 16 MP（AVIF ≤ 4）；≤ 16 张照片（含虚拟副本）；≤ 16 个蒙版、256 笔画笔、64 个污点；裁剪每边 ≥ 1%。 |
+| film | `film.info`、`film.run` | 675 个中的 525 个。读取：`captions.import`（`path`）。只运行内置项：`effects.apply`、两个转场命令、`effects.setDefaultTransition`、`mixer.addInsert`、`presets.apply`、`lumetri.applyPreset`、`essentialSound.applyPreset`。 | 序列每边 ≤ 4096 且 ≤ 9.4 MP，≤ 120 fps，≤ 96 kHz；速度 1%–10,000%；时长 ≤ 24 小时；一次调用最多添加 5,000 个元素；分析 ≤ 18,000 帧；导出 ≤ 18,000 帧。 |
+| effect | `effect.info`、`effect.run` | 665 个中的 460 个。只运行内置项：`effect.apply`。 | 合成 ≤ 8.85 MP（4096 × 2160）、≤ 36,000 帧、1–240 fps；中继器副本 ≤ 1,000（每次调用 ≤ 10,000）；约 120 个效果参数设了上限；项目 ≤ 5,000 个项目、图层和效果。表达式归为 `code`：含表达式的项目只保存，不渲染。 |
+| vector | `vector.info`、`vector.run` | 679 个中的 574 个。只运行内置项：`effect.apply` 和 `appearance.addEffect`（经 `effect` 或 `id`）；`perspective.draw` 只运行 `shape.*` 命令，每条再经过准入。 | 形状 ≤ 1,000 个点；混合 ≤ 1,000 步；重复、马赛克和网格 ≤ 10,000 份（每次调用 ≤ 10,000）；变换效果 ≤ 1,000 份；文档按绘制计 ≤ 20,000 个节点、100,000 个对象；栅格 `out` 每边 ≤ 8192 px 且 ≤ 16 MP。 |
+| sound | `sound.info`、`peaks`、`convert`、`trim`、`mix` | 没有入口：soundcraft 没有命令目录。 | — |
+| design | `design.info`、`render`、`export` | 按决定不设入口（#418）。 | — |
+| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。 | — |
+| photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 | 尚未设上限（只供应用自己的请求使用）。 |
+| sheet | 无（Sheets 应用自己的 `sheets.*`） | 没有入口：公式求值。 | — |
+
+这次审查重新归类了这些 id：word 的 `review.readAloud`（`code` 改为 `device`），vector 的
+`effect.apply` 和 `appearance.addEffect`（`code` 改为 `safe`，并检查其效果），effect 的两个
+媒体浏览器收藏命令（`safe` 改为 `host`），effect 中设置或链接表达式的 14 个命令（`safe` 改为
+`code`：effectcraft 运行表达式时没有时间、步数或内存预算），以及 photo 的
+`layer.smartFilter.setParams`（`safe` 改为 `file`：它可能写入一个 Color Lookup 文件路径）。审查还堵上了两条 id 检查看不到的路径：
+预合成中通过 Essential Graphics 取值设置效果的 LUT 文件（effect），以及指名文件的 Color Lookup
+智能滤镜（photo）；两个服务的围栏现在都会在打开时和每条命令之后拦下它们。即使在上限之内，
+一次调用仍可能占用 UI 线程数秒（一次 4K 导出、一组参数都在上限内的重型效果）；把引擎工作
+移到带超时的工作线程上是 #399 的事。
+
+只能由应用自己的 `host.request` 调用的 `photo.run` 现在也经过同一个门禁。每个
+有入口的引擎的 `SKILL.md` 都列出 `info` 和 `run`，说明入口的规则，并用示例教
+命令；其服务的测试会运行每个示例（`the_skill_examples_run`），Shell 则对照工具
+的 schema 检查它们。
+
+## 手机打包：逐引擎权衡（2026 年 10 月 9 日）
+
+决定第 3 条规定，在逐个引擎权衡其二进制成本之前，服务不进入手机外壳。自 #415
+起，系统 Agent 背后的十个引擎仅限桌面。sheet 与 photo 引擎在 Home 的 Android
+库上称量：在 main `c6fbae6f` 上，用 `rom/scripts/build-home.py` 的打包步骤做
+aarch64 release 构建（默认特性，不带内核、不签名），一次保持原样，另外分别把
+一个引擎移到 `craft-engines` 之后：
+
+| 引擎 | 打包时的 `libmakepad.so` | strip 后 | APK | 只由它引入的 crate |
+| --- | --- | --- | --- | --- |
+| photo | +36.1 MB | +26.8 MB | +13.2 MB | 78 个：photocraft 及其文字与字体栈（parley、skrifa、harfrust）、编解码器（exr、tiff、WebP、一个 JPEG 编码器）、wasmi、rayon |
+| sheet | +4.7 MB | +3.4 MB | +1.8 MB | 13 个：gridcraft、zip、quick-xml、`makepad-script-compute` |
+
+此前 Home 的库打包时为 410.6 MB（strip 后 314.7 MB），不含内核的 APK 为
+239.5 MB。规则按引擎执行：只有几 MB 的留下，更多的改为仅限桌面。
+
+- **photo 引擎仅限桌面。** 它和那十个引擎一起由 `craft-engines` 引入，若进入
+  Home 的依赖图，`tools/check-shell-graph.sh` 即报错。在 Home 上，Shell 的通知
+  服务应答 Photos 的命名空间，因此 `photos.notify` 照常可用；Photos 声明的
+  `photos.info` 在运行前即被拒绝，类别为 `unavailable`："photos.info isn't
+  available on this device: the photo engine is only in the desktop build"
+  （`host_tools::script_apps::unlinked_engine`）。它的技能只随引擎一起发布。
+- **sheet 引擎留在 Home。** 原生 Sheets 应用的 Agent 工具在手机上依赖它，依赖图
+  检查要求凡链接 App Hub 处都包含它。
+- 两个引擎都能为 `aarch64-linux-android` 编译、链接，且没有警告。两者都还没有在
+  手机上运行过（**未验证**）。
+
 ## 待决问题
 
 - 第一个服务写出后，服务 crate 的归属（`crates/craft-*` 还是各应用的
   `apps/<name>/host-service`）。
 - soundcraft 的引擎（以及我们 makepad fork 尚未收录的 `audio_aot`）是
   否足以支撑本季度的可脚本化音效线。
-- 手机打包。自 2026 年 10 月 9 日起，系统 Agent 背后的十个引擎（word、deck、
-  cad、light、sound、design、film、effect、vector、pdf）仅限桌面：由桌面默认
-  特性 `craft-engines` 引入，若其中任一进入 Home 的依赖图，
-  `tools/check-shell-graph.sh` 即报错。sheet 与 photo 引擎仍随 Home 发布，因为
-  原生 Sheets 应用和 Photos 的 Agent 工具在手机上依赖它们。是保留它们（二进制
-  成本尚未评估），还是同样改为仅限桌面（并在手机上撤下这些工具），仍待决定。

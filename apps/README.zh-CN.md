@@ -4,13 +4,13 @@
 
 **初次阅读源码**？先读[桌面、Home、ROM 与系统应用导读](../desktop/docs/code-walkthrough.zh-CN.md)，再读 [Agent 与 Tokio 导读](../docs/architecture-walkthrough.zh-CN.md)。前者追踪启动、原生托管、脚本 bundle、应用数据和 Android 平台边界。
 
-> **在整个系统中的位置**。系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent。Shell 为每个启用的应用/账户提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
+> **在整个系统中的位置**。系统应用在 App Hub 的 Card runner 中运行。新闻、邮件、日历、相册、地图、YouTube 和相机声明应用 Agent；AI providers 配置宿主，自身不声明 Agent，Writer 也不声明。Shell 为每个启用的应用/账户提供 peer，替系统 Agent、“Ask <app>” 面板和卡内聊天驱动对话。声明的工具经过 Shell 的 relay 和审批路由进入宿主服务；只暴露 `<namespace>.notify` 的应用由 Shell 共用通知服务处理。具体工具见[应用 Agent](#应用-agent)，两条通道和信任边界见[架构](../docs/architecture.zh-CN.md)。Glance 接受 L0 和 Splash 卡片，按发布应用的策略运行。
 
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 
-- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers 和 YouTube**
+- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、日历（Calendar）、AI providers、YouTube、Quick Deck、PDF Tools 和 Writer**
   是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 Makepad Script/Splash
   程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限由其
   `manifest.json` 经过准入后确定，与商店应用受到的隔离完全相同。它们同时也是
@@ -25,7 +25,7 @@ OctoSense-System-Apps 仓库（已归档）。
   （`desktop/system-apps.json` 与 `phone/system-apps.json`）。
 - **新闻的宿主服务**（`news/host-service`）按定时器收集新闻条目，不使用模型，并运行新闻
   Agent 的 `news.list`、`news.read` 和 `news.notify`（通知由 Shell 绘制）。
-- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方自己的文件夹内。暂无 bundle。
+- **word 引擎服务**（`word/host-service`，ADR 0013）把 wordcraft 文档引擎放在类型化的 `word.*` 方法后面：文档信息、纯文本提取、结构检查、docx、md、html、rtf、odt、txt 与 pdf 之间的转换，以及写出一个最小新文档，全部限制在调用方自己的文件夹内。它的应用是 Writer（`writer/bundle`，仅桌面端）；Writer 的调用在 Writer 自己的存储中进行。
 - **`llm` 宿主服务**（`ai-providers/host-service`）是 AI providers 的 Rust
   部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
   以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
@@ -33,7 +33,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **`model` 媒体 API** 使用宿主持有的供应商配置，执行有上限的图片、语音、向量和异步
   视频请求。应用声明 `model` 和精确宿主 API 版本；调用时检查供应商权益。见
   [媒体契约与验证范围](ai-providers/host-service/MEDIA.zh-CN.md)。
-- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内；尚无 bundle。
+- **`deck` 宿主服务**（`deck/host-service`，ADR 0013）把 deckcraft 演示文稿引擎放在 `deck.*` 之后：检查幻灯片、提取大纲文本、渲染 PNG、按标题和要点新建演示文稿，以及格式转换（pptx、原生格式、大纲、PDF），全部限制在调用方自己的文件夹内。它的应用是 Quick Deck（`quickdeck/bundle`），其调用在 Quick Deck 自己的存储中运行。
 - **`cad` 引擎服务**（`cad/host-service`）：cadcraft 制图引擎，提供 `cad.*` 方法（ADR 0013，暂无 bundle）——在调用方自己的文件夹内检查、查询、测量、渲染和转换 DXF/DWG 图纸。
 - **`light` 引擎服务**（`light/host-service`）把 lightcraft 的 RAW 显影引擎
   放在 `light.*` 方法之后（ADR 0013）：EXIF/XMP 元数据、显影控制目录、单张与
@@ -76,7 +76,7 @@ OctoSense-System-Apps 仓库（已归档）。
 
 ### 共用外观
 
-新闻、相册、邮件、日历、地图、AI providers 和 YouTube 共用
+新闻、相册、邮件、日历、地图、AI providers、YouTube、PDF Tools 和 Writer 共用
 [`interface.splash`](interface.splash)：页面、卡片和输入框跟随主题，
 辅助文字保持可读，操作按钮高 44 点，输入框高 48 点。桌面内容限制最大宽度，
 窄窗口保留相同操作。相机和媒体查看器保留深色观看背景。应用大厅的原生模块
@@ -101,13 +101,16 @@ OctoSense-System-Apps 仓库（已归档）。
 | 应用 | Id | 功能 | 权限（manifest） | 网络主机（manifest） | 宿主服务 |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web`、`news`、`glance` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com`、`api.gdeltproject.org`、`feeds.bbci.co.uk`、`feeds.npr.org`、`www.theguardian.com`、`feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；自己的 `photos` 服务：`photos.notify` 经 Shell 的通知回调、`photos.info` 在照片引擎上（原图使用资源挂载） |
+| [Photos](photos/bundle) | `os.photos` | 示例相册：AI 整理的回忆、可选主题提示、保存的故事和幻灯片；本地回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage`、`glance`、`model` | 无（宿主调用模型） | `model.complete`；桌面上用自己的 `photos` 服务：`photos.notify` 经 Shell 的通知回调、`photos.info` 在照片引擎上；手机不带该引擎，由 Shell 通知服务应答 `photos.notify`，`photos.info` 不可用（原图使用资源挂载） |
 | [Maps](maps/bundle) | `os.maps` | 随时可拖动和缩放的 `MapView` 地点地图：按可见区域搜索、带 OpenStreetMap 详情（营业时间、电话、网站、菜系）的地点卡片、以图钉显示的收藏地点、长按查看“这里是什么”、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始；浏览地图使用 makepad 预先烘焙的世界地图（`makepad.nl`），驾驶地图和地点详情通过 Overpass 读取 OpenStreetMap | `storage`、`net`、`location`、`web`、`glance` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr`、`makepad.nl` | Shell 通知服务的 `maps.notify` |
 | [Camera](camera/bundle) | `os.camera`（Home） | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library`、`glance` | 无 | Shell 通知服务的 `camera.notify` |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信；它的 Agent 把通知卡片放到 glance 屏幕上（`mail.notify`） | `storage`、`mail`、`glance` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net`、`glance` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | Shell 通知服务的 `youtube.notify` |
 | [Calendar](calendar/bundle) | `os.calendar` | 月历、按日列表、日程详情与编辑器；Glance 使用应用自有卡片，并能打开已保存日程 | `calendar`、`glance` | 无 | [`calendar`](calendar/host-service)（日历持有执行器；跨应用工具需授权） |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck`（桌面） | 分四步把大纲变成演示文稿：写幻灯片（每张一个标题和若干要点）、生成、逐张检查（缩略图网格，以及带缩略图条的单张视图）、导出 PowerPoint 或 PDF；保留自己的演示文稿列表 | `storage`、`deck` | 无 | [`deck`](deck/host-service)：`new`、`info`、`render`、`convert`，在 Quick Deck 自己的存储中运行 |
+| [PDF Tools](pdftools/bundle) | `os.pdftools`（桌面） | 管理自己存储中的 PDF：带首页预览的资料库，带页面缩略图、可查找的文字和信息的文档视图；单页视图；三步合并（选择、排序、完成），以及按固定页数或在指定页面处拆分；从设备打开 PDF（最大 64 MiB）和移除 PDF。见[它的 README](pdftools/README.zh-CN.md)，其中介绍了测试它的隐藏 Shell 流程 | `storage`、`files`、`pdf` | 无 | 在应用自己的存储中工作的 [`pdf`](pdf/host-service) 引擎服务：`pdf.info`、`pdf.render`、`pdf.text`、`pdf.merge`、`pdf.split`；Shell 的 `files.status` 和 `files.import` |
+| [Writer](writer/bundle) | `os.writer`（桌面端） | 白纸上的安静编辑器（以 `#` 开头的行是标题，`-` 是列表项，`>` 是引用）、文档列表、保存为 Word 文档、预览已保存的文档并按其标题生成大纲，以及导出为 PDF、Markdown、HTML 或 OpenDocument；草稿自动保存在应用自己的存储中 | `storage`、`word` | 无 | [`word`](word/host-service)（`word.convert`、`word.info`、`word.inspect`），在 Writer 自己的存储中 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由共享的 `octosense-app-contract` 1.x crate 定义（App Hub 的 `crates/app-contract/src/manifest.rs`
@@ -171,7 +174,25 @@ OctoSense-System-Apps 仓库（已归档）。
 - **日历**（2026-10-01，桌面端，隐藏窗口的 `--remote` 运行，接真实模型）：系统 Agent
   请日历的 Agent 放一张卡片；首次使用面板弹出，Agent 添加了一个日程，它的卡片打开了
   glance 面板。手机上没有打包。它的宿主服务测试还不在 `apps.yml` 中。
-- Camera 和 AI providers 自带 PNG 启动器图案，YouTube 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
+- **Quick Deck**（2026-10-09，macOS，隐藏窗口，浅色与深色）：在用其分支构建的桌面
+  Shell 中端到端运行。输入的大纲通过 `deck.new`、`deck.info` 和每张幻灯片一次
+  `deck.render` 变成演示文稿，全部写入 Quick Deck 自己的存储（`decks/<id>/g<n>/`）；
+  检查网格和单张视图显示引擎生成的 PNG，PowerPoint 和 PDF 导出也保存在旁边。
+  拒绝都会在应用中显示：存储几乎已满、引擎无法读取的演示文稿文件、存储之外的路径。
+  切换浅色或深色时，应用停留在用户所在的页面。`deck` 服务运行在 Shell 的 UI 线程上
+  （#399），所以它工作时 Shell 会停顿：五张幻灯片约 3 秒，会话中的第一次调用 16 秒。
+  每个页面和状态（包括各种拒绝）也由 `quickdeck/tests/ui.py` 用下方的开发夹具在
+  `card-host` 中覆盖。
+- **Writer**（2026-10-09）。在用本仓库构建的隐藏桌面 Shell 中（`MAKEPAD_WM_TEST_APP=writer`，
+  隐藏窗口的 `--remote` 运行，浅色与深色），使用在 Writer 自己存储中工作的真实 `word` 引擎：
+  通过 instrument 输入的文档被保存为 Word 文档（`word.convert` 转换 Writer 写到 `work/` 的
+  Markdown），在预览中重新打开（`word.info`、`word.inspect`），编辑后覆盖保存当前文档并再次打开，
+  并导出为 PDF、Markdown、HTML 和 OpenDocument（`exports/`）。损坏的 DOCX 显示了引擎的拒绝信息，
+  丢失的 DOCX 会在预览前重新保存。在浅色与深色之间切换后，打开的文档和它的预览都保留，
+  切换后输入的文字也被保留并保存。`card-host` 没有 `word` 服务，保存和预览在那里回答
+  “Writer can't … here: this device has no word engine”并保留草稿；`writer/tests/ui.py` 在那里以浅色和深色运行
+  每个界面（见下文的 Writer 的测试）。Writer 只在桌面端，所以没有手机上的运行。
+- Camera 和 AI providers 自带 PNG 启动器图案，YouTube、Quick Deck 和 Writer 自带 SVG 图案；Shell 按当前平台风格统一绘制外形。
 
 ## Shell 如何打包它们
 
@@ -196,11 +217,12 @@ OctoSense-System-Apps 仓库（已归档）。
 
 2. 通过 Shell（[`crates/shell`](../crates/shell) 的 `app-hub` 特性）链接宿主服务
    `octosense-mail-service`、`octosense-calendar-service`、`octosense-news-service`、
-   `octosense-llm-service`，以及引擎服务 `octosense-sheets-service` 和
-   `octosense-photo-service`（workspace 内的 path 依赖），并在启动时注册
+   `octosense-llm-service`，以及 sheet 引擎的 `octosense-sheets-service`（workspace 内的
+   path 依赖；photo 引擎的 `octosense-photo-service` 随仅限桌面的 `craft-engines` 引入，
+   按引擎权衡见 [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)），并在启动时注册
    （`crates/shell/src/apps.rs` 的 `register_host_services`）：Mail 服务在真实账户下用
    `register()`，Shell 的应用配置中 `mail_demo: true` 时用 `register_demo()`。
-   Mail、News 和 Photos 安装 `on_notify` 回调，调用 Shell 共用通知渲染器；Calendar 安装卡片发布器。
+   Mail、News 以及（带 photo 引擎时）Photos 安装 `on_notify` 回调，调用 Shell 共用通知渲染器；Calendar 安装卡片发布器。
    Shell 为其余系统应用命名空间注册 `NoticeService`；`llm` 服务使用 octos 内核的 core 目录以及
    Shell 的二维码扫描器和图片选择器（见 [`llm` 服务](#llm-服务)）。App Hub 只在根目录
    `Cargo.toml` 中固定一次，因此只有一个宿主服务注册表。
@@ -223,12 +245,14 @@ mail/host-service/           octosense-mail-service，`mail` 宿主服务（Rust
 mail/docs/                   邮件的计划（邮件操作卡片）
 calendar/host-service/       octosense-calendar-service，`calendar` 宿主服务；resources/event.card、agenda.card
 news/host-service/           octosense-news-service，`news` 宿主服务（新闻的数据服务）
-pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013；尚无应用包）
+pdf/host-service/            octosense-pdf-service，`pdf` 宿主服务（pdfcraft 引擎，ADR 0013）；examples/pdftools_fixture.rs 为 PDF Tools 的测试写出示例 PDF
+pdftools/                    PDF Tools：bundle/、tests/ui.py（在隐藏的 Shell 中运行的流程）、README.md
 <name>/bundle/tools.json     新闻、邮件、日历、相册、地图、YouTube、相机的 Agent 工具
 <family>/host-service/tools.json  craft 引擎（word、deck、cad、light、sound、design、film、effect、vector、pdf）的工具，供系统 Agent 使用（ADR 0013）
 ../crates/shell/src/glance_notice.rs   共用通知服务；../crates/shell/resources/glance/notice.card
 ai-providers/                `llm` 宿主服务（host-service/）和 octosense-llm-config（config/：
                              octos 模型目录与服务商注册表、profile 合并、OCTOS1/OCTOS1E 二维码）
+writer/                      Writer：bundle/、tests/ui.py（它的 card-host 界面测试）、dev-fixture/engine.splash（该测试换入的替身 word 引擎；不随应用发布）
 reference/                   reference 模块
 appcard/                     原生 AppCard 助手
   app/                       octos-app 及 store/transport/render crate（根 workspace 的成员）
@@ -355,6 +379,45 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 演示邮箱的密码存放在文件中，因此不会弹出钥匙串提示。
 
+**Quick Deck 的开发夹具。** `card-host` 没有 `deck` 服务，而随 Shell 发布的
+bundle 中没有任何夹具代码。Quick Deck 的 UI 测试使用 bundle 之外的
+`quickdeck/dev-fixture/`：`engine.splash` 是引擎的替身，它把每次调用要求的内容
+写到调用给出的路径；`fixture.json` 是它的设置；图片是固定版本的 deckcraft
+（d0e57d7e）根据 `outline.txt` 生成的真实渲染图。`quickdeck/tests/ui.py` 会复制一份
+临时 bundle，用 `engine.splash` 替换其中的 `deck_call()`，把夹具复制到应用存储的
+`dev/` 中，然后在隐藏的 `card-host` 中以浅色和深色外观走遍每个页面和状态。第一轮
+直接使用随 Shell 发布的 bundle，展示没有引擎应答时的样子。
+
+```sh
+python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
+```
+
+截图和每种外观的回执保存在 `target/quickdeck-ui/light` 与
+`target/quickdeck-ui/dark`。`fixture.json` 中，`delay` 是每次调用耗费的秒数，
+`fail` 指定失败的调用（`new`、`info`、`render`、`convert` 或 `all`），
+`unreadable: true` 让 `render` 正常应答但不留下图片，于是每张幻灯片显示其文字。
+
+**Writer 的测试。** 发布的应用包只有一条引擎路径 `host.request("word.*")`，不含 fixture 代码。
+它的文本规则（列表为草稿显示什么、交给引擎的 Markdown、文件名、大纲、相对时间以及拒绝时的提示）
+都是纯函数，由 `../crates/shell/src/writer_model_tests.rs` 在脚本 VM 中运行：
+
+```sh
+cargo test --locked -p octosense-shell --lib writer_model
+```
+
+`card-host` 没有 `word` 服务，所以 `writer/tests/ui.py` 在隐藏的 `card-host` 中以浅色和深色
+驱动每个界面。前几轮直接使用发布的应用包：写作、列表、重启后仍在的自动保存、删除，以及
+“Writer can't … here: this device has no word engine”的回答。其余几轮使用应用包的临时副本，其中 `engine()`
+被换成 `writer/dev-fixture/engine.splash`：一个替身引擎，在应用存储中读写每次调用给出的路径，
+设置（`delay`、`fail`）放在存储中的 `dev/fixture.json`。
+
+```sh
+python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/writer-ui
+```
+
+截图和每种外观的回执保存在 `target/writer-ui/light` 和 `target/writer-ui/dark`。
+真实引擎的流程已在 Shell 中验证（见上文的状态）。
+
 ## 宿主服务与面板
 
 有些工作需要隔离运行的应用绝不能持有的东西：socket、凭据、设备。**宿主服务**
@@ -460,7 +523,7 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 | 新闻 | `agent` 块、`glance` | `news.list`、`news.read`（read，可共享）、`news.notify`（act，后台） | Shell 的通知卡片 |
 | 邮件 | `agent` 块、`glance`、`storage.accounts`（Agent 代表已登录的账户工作） | `mail.accounts`、`mail.folders`、`mail.sync`、`mail.list`、`mail.peek`、`mail.draft`（read）；`mail.notify`、`mail.publish_card`、`mail.skip_event`、`mail.propose_reply`、`mail.suggest_reply`、`mail.propose_send`（act，后台） | L0 卡片或 Shell 通知卡片 |
 | 日历 | `agent` 块、`glance` | `calendar.events`（read）、`calendar.add_event`（act）、`calendar.remove_event`（destructive，`confirm: host`）、`calendar.notify`、`calendar.agenda`（act） | `event.card`、`agenda.card` |
-| 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查照片 Agent 自己文件夹内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | Shell 的通知卡片 |
+| 照片 | `agent` 块、`glance` | `photos.notify`（act，后台）、`photos.info`（read：照片引擎检查照片 Agent 自己文件夹内的文件，[ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.zh-CN.md)；仅限桌面，手机上返回 `unavailable`） | Shell 的通知卡片 |
 | 地图、YouTube、相机 | `agent` 块、`glance` | `maps.notify`、`youtube.notify`、`camera.notify`（act，后台） | Shell 的通知卡片 |
 | AI providers | 无 | 暂无：App Hub 只接受 `[a-z0-9_]` 形式的工具命名空间（octos 也只接受由 `[a-z][a-z0-9_]` 段组成的工具名），所以 `ai-providers.notify` 会被拒绝 | – |
 
@@ -469,11 +532,19 @@ Mail 仅在用户请求或系统明确配置了安排日程策略时执行，先
 pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发布，位于
 `<family>/host-service/tools.json`。Shell 以虚拟所有者 `os.<family>` 的名义声明这些
 工具，并只授予系统 Agent（[`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)
-中的 `ENGINE_TOOLS`）：每个引擎的读工具（`info`、`text`、`inspect`、`entities`、
-`measure`、`controls`、`peaks`、`project.info`），以及只新建文件的 act 工具
-（`new`、`convert`、`render`、`export`、`frame`、`develop`、`batch`、`trim`、`mix`、
-`merge`、`split`、`export_lottie`、`import_lottie`）。可以运行任意引擎命令的
-`vector.run` 和 `effect.run` 已声明但不授予，Shell 也拒绝它们。引擎在调用方自己的
+中的 `ENGINE_TOOLS`），共 27 个。七个引擎（word、deck、cad、light、film、effect、
+vector）提供 `<family>.info`（read）和 `<family>.run`：经过审查的命令入口，在一份文档上
+依次运行引擎目录中最多 64 条命令，再把结果写成新文件。每个服务在运行任何命令之前，先用
+由引擎审查后的分类（`skill/safety.json`；
+[`../crates/engine-area/src/door.rs`](../crates/engine-area/src/door.rs)）构建的允许列表
+检查调用中的每一条命令：只在打开的文档内部起作用的命令可以运行，服务审查过的、读取调用方
+文件夹内文件的命令也可以；触及其他文件、代码、网络、设备或应用的 id 一律拒绝，分类中没有的
+id、批处理或宏、应用级设置项以及插件效果同样拒绝。引擎工作在 Shell 的 UI 线程上运行，因此每个入口还
+限制一次调用能要求的工作量：数量、尺寸、帧范围、在一次调用内相乘的复制，每条命令之后文档的大小，以及
+它自己的输出。sound（没有命令目录）、design（按决定不设
+入口）和 pdf（只有几个固定操作）保留固定工具：`sound.info`、`peaks`、`convert`、`trim`、
+`mix`；`design.info`、`render`、`export`；`pdf.info`、`text`、`render`、`merge`、`split`。
+ADR 0013 记录了每个引擎的工具面。引擎在调用方自己的
 文件夹里工作（ADR 0013，`../crates/shell/src/host_tools/areas.rs`）：对系统 Agent
 而言就是它的工作区，它自己的文件工具能看到引擎写出的文件，每个引擎也能打开其他引擎
 做出的文件。所有路径都相对于该文件夹并留在其中，任何调用都不会替换已有文件，写进
@@ -483,7 +554,7 @@ pdf）没有应用，也没有应用 Agent；它们的工具随服务一起发�
 **引擎技能。** 每个引擎（包括 sheet 和 photo 引擎）还在 `<family>/host-service/skill/` 中为系统 Agent
 附带一个技能：手写的 `SKILL.md`（引擎能做什么、系统 Agent 用哪些工具调用它、文件规则、示例），以及按引擎固定版本
 生成的参考文件：`commands.md`（命令目录，每个 id 一行，并标出每条命令能触及什么）、light 的 `controls.md` 和 sheet 的
-`functions.md`。与它们并列的 `safety.json`（每个命令 id 的类别，供经过审查的命令入口使用）只留在仓库中。内核服务在每次
+`functions.md`。与它们并列的 `safety.json`（每个命令 id 的类别，每个命令入口据此构建允许列表）只留在仓库中。内核服务在每次
 启动前把已链接引擎的技能安装到 `_main` profile 的技能目录（[`../crates/kernel/README.zh-CN.md`](../crates/kernel/README.zh-CN.md#系统智能体的技能)）；
 octos 把它们的一行描述列入系统 Agent 的提示词，Agent 需要某个引擎时再读取对应技能。各服务的 `tests/skill.rs` 会在参考文件
 与固定版本的引擎不一致时失败；用 `OCTOSENSE_SKILL_REGEN=1 cargo test --locked -p octosense-<family>-service --test skill`
@@ -527,9 +598,9 @@ Peer 的工作目录不会挂载 Mail 的宿主数据库或凭据保险库。Cal
   （[`../crates/shell/resources/glance/notice.card`](../crates/shell/resources/glance/notice.card)，
   由 [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs) 填充），带有应用的
   图标和名称、时间，以及 Agent 写的标题（最多 80 个字符）和正文（最多 600 个字符）；同一个
-  `card_id` 会替换该应用之前的通知。邮件、新闻和照片的服务把 `notify` 交给 Shell（照片的 `photos` 服务还在照片引擎上应答
+  `card_id` 会替换该应用之前的通知。邮件、新闻以及链接了照片引擎时（桌面）照片的服务把 `notify` 交给 Shell（照片的 `photos` 服务还在照片引擎上应答
   `photos.info`）；地图、YouTube
-  和相机没有自己的服务，由 Shell 的通知服务应答。`calendar.notify` 和 `calendar.agenda` 填充日历
+  和相机没有自己的服务，手机上的照片也没有，由 Shell 的通知服务应答（此时 `photos.info` 回答本设备不可用）。`calendar.notify` 和 `calendar.agenda` 填充日历
   自己的日程卡片和议程卡片。每张卡片都以应用的身份、带 `notify` 通过 Shell 的 `glance` 服务发布
   （应用需要 `glance` 权限）。这些固定模板工具由模型提供文字；`mail.publish_card`
   另接收经宿主校验的模型 L0 源码。

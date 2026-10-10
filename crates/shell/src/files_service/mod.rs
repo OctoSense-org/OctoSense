@@ -128,6 +128,33 @@ fn image_mime(bytes: &[u8]) -> Result<&'static str, String> {
     }
     Err("invalid_image: Choose a PNG, JPEG or WebP file; filename and MIME labels are not sufficient".into())
 }
+/// The chosen document's name as the app may show it: the last component
+/// of what the native loader reports, without control characters or the
+/// invisible format characters that can disguise an extension, at most 128
+/// bytes. None when nothing is left, and on Android, whose loader names
+/// every selection "document" (it queries no display name).
+fn display_name(reported: &str) -> Option<String> {
+    if cfg!(target_os = "android") {
+        return None;
+    }
+    let base = reported.rsplit(['/', '\\']).next().unwrap_or("");
+    let cleaned: String = base
+        .chars()
+        .filter(|c| {
+            !c.is_control()
+                && !matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}')
+        })
+        .collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() || cleaned == "." || cleaned == ".." {
+        return None;
+    }
+    let mut end = cleaned.len().min(128);
+    while !cleaned.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(cleaned[..end].trim_end().to_string())
+}
 fn share_outcome(value: &Value) -> Result<Value, String> {
     match value["outcome"].as_str() {
         Some("opened") => Ok(json!({"handoff":"chooser_opened","delivery":"unknown"})),
@@ -307,7 +334,7 @@ impl HostService for FilesService {
             ),
         ] {
             methods.push(HostApiMethod::new(format!("files.{method}"), 1, "files", summary, input,
-                json!({"type":"object","required":["cancelled"],"properties":{"cancelled":{"type":"boolean"},"path":{"type":"string"},"bytes":{"type":"integer","minimum":0},"mime":{"enum":["image/png","image/jpeg","image/webp"]}}}))
+                json!({"type":"object","required":["cancelled"],"properties":{"cancelled":{"type":"boolean"},"path":{"type":"string"},"bytes":{"type":"integer","minimum":0},"name":{"type":"string","maxLength":128},"mime":{"enum":["image/png","image/jpeg","image/webp"]}}}))
                 .with_platforms(&["macos","windows","linux","android"]).with_agent_access(AgentAccess::ForegroundOnly));
         }
         methods
@@ -609,6 +636,7 @@ fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
             // its current quota.
             let path = path.clone();
             let bytes = file.bytes.clone();
+            let name = display_name(&file.name);
             let snapshot = storage.worker_snapshot();
             let failed = work.reply.clone();
             let submitted = cx.task_pool().submit(Lane::Heavy, move || {
@@ -619,6 +647,9 @@ fn complete(cx: &mut Cx, pending: Pending, action: &FileDialogAction) {
                         let mut value = json!({"cancelled":false,"path":path,"bytes":bytes.len()});
                         if let Some(mime) = mime {
                             value["mime"] = mime.into();
+                        }
+                        if let Some(name) = name {
+                            value["name"] = name.into();
                         }
                         (staged, value)
                     });

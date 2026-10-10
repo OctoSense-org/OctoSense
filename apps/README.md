@@ -4,14 +4,14 @@ English | [简体中文](README.zh-CN.md)
 
 **New to the code?** Read the [desktop, Home, ROM and system-app walkthrough](../desktop/docs/code-walkthrough.md), then the [agent and Tokio walkthrough](../docs/architecture-walkthrough.md). The first follows launch, native hosting, script bundles, app data and Android platform boundaries.
 
-> **Where this fits.** System apps run in App Hub's Card runner. News, Mail, Calendar, Photos, Maps, YouTube and Camera declare app agents; AI providers configures the host and declares none. The shell gives each enabled app/account its own peer and drives its conversations for the system agent, the “Ask <app>” panel and in-card chat. Declared tools pass through the shell's relay and approval router to a host service; the shell's shared notice service handles apps that only expose `<namespace>.notify`. See [App agents](#app-agents) for the exact tools and [architecture](../docs/architecture.md) for the two lanes and trust boundaries. Glance accepts L0 and Splash cards under the publishing app's policy.
+> **Where this fits.** System apps run in App Hub's Card runner. News, Mail, Calendar, Photos, Maps, YouTube and Camera declare app agents; AI providers configures the host and declares none, and neither does Writer. The shell gives each enabled app/account its own peer and drives its conversations for the system agent, the “Ask <app>” panel and in-card chat. Declared tools pass through the shell's relay and approval router to a host service; the shell's shared notice service handles apps that only expose `<namespace>.notify`. See [App agents](#app-agents) for the exact tools and [architecture](../docs/architecture.md) for the two lanes and trust boundaries. Glance accepts L0 and Splash cards under the publishing app's policy.
 
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
 the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail, Calendar, AI providers and YouTube** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, Calendar, AI providers, YouTube, Quick Deck, PDF Tools and Writer** are *contained script apps*. Each is
   a Makepad Script/Splash program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under the permissions admitted from its `manifest.json`. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
@@ -27,7 +27,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
 - **News's host service** (`news/host-service`) collects News's stories on a
   timer, with no model, and runs News's agent tools `news.list`, `news.read`
   and `news.notify` (the shell draws the notice).
-- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's own folder. No bundle yet.
+- **The word engine service** (`word/host-service`, ADR 0013) is wordcraft's document engine behind typed `word.*` methods: document info, plain-text extraction, structure inspection, conversion between docx, md, html, rtf, odt, txt and pdf, and writing a minimal new document, all inside the caller's own folder. Writer (`writer/bundle`, desktop only) is its app; Writer's calls work in Writer's own storage.
 - **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
@@ -38,7 +38,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   speech, embedding and asynchronous video requests. Apps declare `model` and
   exact host API versions; provider entitlement is checked when used. See the
   [media contract and validation limits](ai-providers/host-service/MEDIA.md).
-- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder; no bundle yet.
+- **The `deck` host service** (`deck/host-service`, ADR 0013) is the deckcraft presentation engine behind `deck.*`: decks inspected, read as outline text, rendered to PNG, created from titles and bullets, and converted (pptx, native, outline, PDF), confined to the caller's own folder. Its app is Quick Deck (`quickdeck/bundle`), whose calls work in Quick Deck's own storage.
 - **The `cad` engine service** (`cad/host-service`): the cadcraft drafting engine behind `cad.*` (ADR 0013, no bundle yet) — inspect, query, measure, render and convert DXF/DWG drawings, every path inside the caller's own folder.
 - **The `light` engine service** (`light/host-service`) is lightcraft's RAW
   develop engine behind `light.*` (ADR 0013): EXIF/XMP metadata, the develop
@@ -92,7 +92,7 @@ OctoSense repository into the same workspace, then run this from your App Flow c
 
 ### Shared appearance
 
-News, Photos, Mail, Calendar, Maps, AI providers and YouTube share the interface
+News, Photos, Mail, Calendar, Maps, AI providers, YouTube, PDF Tools and Writer share the interface
 in [`interface.splash`](interface.splash): theme-aware page/card/field surfaces,
 readable secondary text, 44-point actions and 48-point inputs. Desktop content
 has a maximum width; narrow windows keep the same actions. Camera and media
@@ -124,13 +124,16 @@ profiles. Phone-sized desktop captures are not physical-device verification.
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine (full-size photos use the asset mount) |
+| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; its own `photos` service on the desktop: `photos.notify` through the shell's notice hook, `photos.info` on the photo engine; on the phone, which leaves that engine out, the shell notice service answers `photos.notify` and `photos.info` is unavailable (full-size photos use the asset mount) |
 | [Maps](maps/bundle) | `os.maps` | `MapView` map of places that can always be dragged and zoomed: search near the visible area, place cards with OpenStreetMap details (hours, phone, website, cuisine), saved places as pins, a long press for "What's here", directions with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the browse map draws makepad's pre-baked world map (`makepad.nl`), the drive maps and the place details read OpenStreetMap through Overpass | `storage`, `net`, `location`, `web`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
 | [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net`, `glance` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | `youtube.notify` via the shell notice service |
 | [Calendar](calendar/bundle) | `os.calendar` | Month/day calendar, event details and editor; app-owned event/agenda cards in Glance, with saved-event navigation | `calendar`, `glance` | none | [`calendar`](calendar/host-service) (Calendar-owned executor; granted cross-app tools) |
+| [Quick Deck](quickdeck/bundle) | `os.quickdeck` (desktop) | An outline becomes a deck in four steps: write the slides (a title and points each), generate, review every slide (a thumbnail grid, and a slide view with a strip), export PowerPoint or PDF; keeps a list of its decks | `storage`, `deck` | none | [`deck`](deck/host-service): `new`, `info`, `render`, `convert`, in Quick Deck's own storage |
+| [PDF Tools](pdftools/bundle) | `os.pdftools` (desktop) | The PDFs in its own storage: a library with each first page, a document view with page thumbnails, text with find, and info; a page view; merge in three steps (choose, order, done) and split every few pages or where you choose; open a PDF from the device (up to 64 MiB) and remove one. See [its README](pdftools/README.md), with the hidden-shell journey that tests it | `storage`, `files`, `pdf` | none | the [`pdf`](pdf/host-service) engine service in the app's own storage: `pdf.info`, `pdf.render`, `pdf.text`, `pdf.merge`, `pdf.split`; the shell's `files.status` and `files.import` |
+| [Writer](writer/bundle) | `os.writer` (desktop) | A calm editor on a white page (a line starting with `#` is a heading, `-` a bullet, `>` a quote), a document list, Save as a Word document, a preview of the saved document with an outline from its headings, and export to PDF, Markdown, HTML or OpenDocument; drafts autosave in the app's storage | `storage`, `word` | none | [`word`](word/host-service) (`word.convert`, `word.info`, `word.inspect`), in Writer's own storage |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by the shared `octosense-app-contract` 1.x
@@ -222,8 +225,35 @@ reaches only the hosts the manifest lists.
   sheet came up, the agent added an event and its card opened the glance
   panel. Not packed on the phone. Its host service's tests are not in
   `apps.yml` yet.
-- Camera and AI providers ship PNG launcher artwork; YouTube ships SVG
-  artwork. The shell frames bundle icons for the selected platform style.
+- **Quick Deck** (2026-10-09, macOS, hidden windows, light and dark): run end
+  to end in a desktop shell built from its branch. A typed outline became a
+  deck through `deck.new`, `deck.info` and one `deck.render` per slide, all
+  writing into Quick Deck's own storage (`decks/<id>/g<n>/`); the review grid
+  and the slide view show the engine's PNGs, and the PowerPoint and PDF
+  exports land beside them. Refusals show in the app: a nearly full storage,
+  a deck file the engine can't read, and a path outside the storage. A light
+  or dark switch keeps the screen the person is on. The `deck` service runs on
+  the shell's UI thread (#399), so the shell pauses while it works: about 3 s
+  for a five-slide deck, 16 s on the very first call of a session. Every
+  screen and state, refusals included, is also covered in `card-host` by
+  `quickdeck/tests/ui.py` with the dev fixture below.
+- **Writer** (2026-10-09). In a hidden desktop shell built from this tree
+  (`MAKEPAD_WM_TEST_APP=writer`, a hidden `--remote` run, light and dark),
+  with the real `word` engine working in Writer's own storage: a document
+  typed through the instrument was saved as a Word document (`word.convert`
+  of the Markdown Writer writes to `work/`), reopened in Preview
+  (`word.info`, `word.inspect`), edited, saved over the open document and
+  reopened, and exported to PDF, Markdown, HTML and OpenDocument
+  (`exports/`). A damaged DOCX showed the engine's refusal, and a DOCX that
+  went missing was saved again before the preview. Switching between light
+  and dark kept the open document and its preview, and text typed after the
+  switch was kept and saved. In `card-host`, which has no `word` service,
+  Save and Preview answer "Writer can't … here: this device has no word
+  engine" and keep the draft; `writer/tests/ui.py` runs every screen there,
+  light and dark (see Writer's tests, below). Writer is desktop only, so
+  there is no phone run.
+- Camera and AI providers ship PNG launcher artwork; YouTube, Quick Deck and
+  Writer ship SVG artwork. The shell frames bundle icons for the selected platform style.
 
 ## How the shells pack them
 
@@ -250,11 +280,13 @@ standalone launcher and ROM image). Each packaging:
 
 2. Links the host services `octosense-mail-service`,
    `octosense-calendar-service`, `octosense-news-service`,
-   `octosense-llm-service` and the engine services `octosense-sheets-service`
-   and `octosense-photo-service` (workspace path dependencies) through the shell,
-   [`crates/shell`](../crates/shell) (its `app-hub` feature), and registers them at startup (`crates/shell/src/apps.rs`, `register_host_services`): Mail with `register()` for real accounts, or `register_demo()`
-   when the shell's app config has `mail_demo: true`. Mail, News and Photos install
-   `on_notify` callbacks to the shell's common notice renderer; Calendar
+   `octosense-llm-service` and the sheet engine's `octosense-sheets-service`
+   (workspace path dependencies) through the shell,
+   [`crates/shell`](../crates/shell) (its `app-hub` feature; the photo engine's
+   `octosense-photo-service` comes with the desktop-only `craft-engines`, weighed
+   per engine in [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)), and registers them at startup (`crates/shell/src/apps.rs`, `register_host_services`): Mail with `register()` for real accounts, or `register_demo()`
+   when the shell's app config has `mail_demo: true`. Mail, News and, with the photo
+   engine, Photos install `on_notify` callbacks to the shell's common notice renderer; Calendar
    installs its card publisher. The shell registers `NoticeService` for
    remaining system-app namespaces; `llm` with the octos
    kernel's core dir and the shell's QR scanner and image picker (see
@@ -283,12 +315,14 @@ mail/host-service/           octosense-mail-service, the `mail` host service (Ru
 mail/docs/                   Mail's plans (the email action card)
 calendar/host-service/       octosense-calendar-service, the `calendar` host service; resources/event.card, agenda.card
 news/host-service/           octosense-news-service, the `news` host service (News's data service)
-pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013; no bundle yet)
+pdf/host-service/            octosense-pdf-service, the `pdf` host service (the pdfcraft engine, ADR 0013); examples/pdftools_fixture.rs writes PDF Tools' sample PDFs for its tests
+pdftools/                    PDF Tools: bundle/, tests/ui.py (its hidden-shell journey), README.md
 <name>/bundle/tools.json     app tools: News, Mail, Calendar, Photos, Maps, YouTube, Camera
 <family>/host-service/tools.json  the craft engines' tools (word, deck, cad, light, sound, design, film, effect, vector, pdf), the system agent's (ADR 0013)
 ../crates/shell/src/glance_notice.rs   shared notice service; ../crates/shell/resources/glance/notice.card
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
+writer/                      Writer: bundle/, tests/ui.py (its card-host UI test), dev-fixture/engine.splash (the stand-in word engine that test swaps in; never shipped)
 reference/                   the reference module
 appcard/                     the native AppCard assistant
   app/                       octos-app + store/transport/render crates (members of the root workspace)
@@ -426,6 +460,53 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 
 The demo keeps its password in a file, so no keychain prompt appears.
 
+**Quick Deck's dev fixture.** `card-host` has no `deck` service, and the
+shipped bundle has no fixture code. Quick Deck's UI tests use
+`quickdeck/dev-fixture/`, outside the bundle: `engine.splash`, a stand-in for
+the engine that writes what each call asks for at the paths it is given;
+`fixture.json`, its settings; and real renders of `outline.txt` by the pinned
+deckcraft (d0e57d7e), for its pictures. `quickdeck/tests/ui.py` makes a
+scratch copy of the bundle with `engine.splash` in place of `deck_call()`,
+copies the fixture into the app's storage as `dev/`, and drives every screen
+and state in a hidden `card-host`, light and dark. Its first run uses the
+shipped bundle as it is, which shows that no engine answers.
+
+```sh
+python3 apps/quickdeck/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/quickdeck-ui
+```
+
+The grabs and a receipt per appearance land in `target/quickdeck-ui/light`
+and `target/quickdeck-ui/dark`. In `fixture.json`, `delay` is the seconds each
+call takes, `fail` names a call that fails (`new`, `info`, `render`, `convert`
+or `all`), and `unreadable: true` answers `render` without leaving a picture,
+so each slide shows its text.
+
+**Writer's tests.** The shipped bundle has one engine path,
+`host.request("word.*")`, and no fixture code. Its text rules (what the list
+shows for a draft, the Markdown it hands the engine, the file names, the
+outline, relative times and what a refusal says) are pure functions, run in a
+script VM by `../crates/shell/src/writer_model_tests.rs`:
+
+```sh
+cargo test --locked -p octosense-shell --lib writer_model
+```
+
+`card-host` has no `word` service, so `writer/tests/ui.py` drives every screen
+in a hidden `card-host`, light and dark. Its first runs use the shipped bundle
+as it is: writing, the list, autosave across a restart, deleting, and the
+"Writer can't … here" answers. The other runs use a scratch copy of the bundle
+with `writer/dev-fixture/engine.splash` in place of `engine()`: a stand-in
+that reads and writes the paths each call gives it in the app's storage, with
+its settings (`delay`, `fail`) in the storage as `dev/fixture.json`.
+
+```sh
+python3 apps/writer/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/writer-ui
+```
+
+The grabs and a receipt per appearance land in `target/writer-ui/light` and
+`target/writer-ui/dark`. The real engine's flows were checked in a shell
+(Status, above).
+
 ## Host services and sheets
 
 Some work needs something a contained app must never hold: a socket, a
@@ -552,7 +633,7 @@ model lane and tools. Which system apps have one, and how
 | News | `agent` block, `glance` | `news.list`, `news.read` (read, shareable), `news.notify` (act, background) | the shell's notice card |
 | Mail | `agent` block, `glance`, `storage.accounts` (the agent acts for the signed-in account) | `mail.accounts`, `mail.folders`, `mail.sync`, `mail.list`, `mail.peek`, `mail.draft` (read); `mail.notify`, `mail.publish_card`, `mail.skip_event`, `mail.propose_reply`, `mail.suggest_reply`, `mail.propose_send` (act, background) | L0 card or the shell's notice card |
 | Calendar | `agent` block, `glance` | `calendar.events` (read), `calendar.add_event` (act), `calendar.remove_event` (destructive, `confirm: host`), `calendar.notify`, `calendar.agenda` (act) | `event.card`, `agenda.card` |
-| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in the Photos agent's own folder, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md)) | the shell's notice card |
+| Photos | `agent` block, `glance` | `photos.notify` (act, background), `photos.info` (read: the photo engine inspects a file in the Photos agent's own folder, [ADR 0013](../docs/adr/0013-craft-engines-as-pinned-services.md); desktop only, on the phone it answers `unavailable`) | the shell's notice card |
 | Maps, YouTube, Camera | `agent` block, `glance` | `maps.notify`, `youtube.notify`, `camera.notify` (act, background) | the shell's notice card |
 | AI providers | none | none yet: App Hub takes a tool namespace only as `[a-z0-9_]` (and octos a tool name's segments only as `[a-z][a-z0-9_]`), so `ai-providers.notify` is refused | – |
 
@@ -561,13 +642,26 @@ The ten craft engines (word, deck, cad, light, sound, design, film, effect,
 vector, pdf) have no app and no app agent; their tools ship with their
 services, in `<family>/host-service/tools.json`. The shell declares them under
 a virtual owner `os.<family>` and grants them to the system agent alone
-(`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)):
-each engine's read tools (`info`, `text`, `inspect`, `entities`, `measure`,
-`controls`, `peaks`, `project.info`) and its act tools that only create new
-files (`new`, `convert`, `render`, `export`, `frame`, `develop`, `batch`,
-`trim`, `mix`, `merge`, `split`, `export_lottie`, `import_lottie`).
-`vector.run` and `effect.run`, which run any engine command, are declared but
-not granted, and the shell refuses them. An engine works in its caller's own
+(`ENGINE_TOOLS` in [`../crates/shell/src/system_chat/grants.rs`](../crates/shell/src/system_chat/grants.rs)),
+27 tools in all. Seven engines (word, deck, cad, light, film, effect,
+vector) offer `<family>.info` (read) and `<family>.run`, a reviewed command
+door: it runs up to 64 commands of the engine's catalog on one document and
+writes the result to a new file. Each service admits every command of a
+call before it runs any, through an allowlist built from the engine's
+reviewed classification (`skill/safety.json`;
+[`../crates/engine-area/src/door.rs`](../crates/engine-area/src/door.rs)):
+a command that works inside the open document runs, and so does a read of a
+file inside the caller's folder that the service reviewed; an id that
+reaches other files, code, the network, a device or the app is refused, and
+so is an id the classification does not know, a batch or macro, an
+app-wide setter and a plug-in effect. Engine work runs on the shell's UI
+thread, so every door also caps what one call may ask for: counts, sizes,
+frame ranges and the copies that multiply across a call, the document's
+size after every command, and its own output. Sound (no command catalog), design
+(no door, by decision) and pdf (a few fixed operations) keep fixed tools:
+`sound.info`, `peaks`, `convert`, `trim`, `mix`; `design.info`, `render`,
+`export`; `pdf.info`, `text`, `render`, `merge`, `split`. ADR 0013 records
+each engine's surface. An engine works in its caller's own
 folder (ADR 0013, `../crates/shell/src/host_tools/areas.rs`): for the system
 agent, its workspace, where its own file tools see what the engines wrote and
 every engine opens what the others made. Every path is relative to that
@@ -581,8 +675,8 @@ hand-written `SKILL.md` (what the engine does, the tools the system agent has
 for it, the file rules, worked examples) and references generated from the
 engine at its pin: `commands.md` (its command catalog, one line per id,
 tagged by what each command reaches), light's `controls.md` and sheet's
-`functions.md`. Beside them, `safety.json` (every command id's class, for a
-reviewed command door) stays in the repository. The kernel service installs
+`functions.md`. Beside them, `safety.json` (every command id's class, from
+which each command door builds its allowlist) stays in the repository. The kernel service installs
 the linked engines' skills into the `_main` profile's skills dir before every
 start ([`../crates/kernel/README.md`](../crates/kernel/README.md#the-system-agents-skills));
 octos lists their one-line descriptions in the system agent's prompt, and the
@@ -651,10 +745,12 @@ See the [data-access walkthrough](../desktop/docs/code-walkthrough.md#4-follow-a
   filled by [`../crates/shell/src/glance_notice.rs`](../crates/shell/src/glance_notice.rs)),
   with the app's icon and name, the time, and the agent's title (at most 80
   characters) and text (at most 600); the same `card_id` replaces the app's
-  earlier notice. Mail's, News's and Photos' services hand `notify` to the
-  shell (Photos' `photos` service also answers `photos.info` on the photo
-  engine); Maps, YouTube and Camera have no service of their own, so the
-  shell's notice service answers it. `calendar.notify` and
+  earlier notice. Mail's, News's and, where the photo engine is linked (the
+  desktop), Photos' services hand `notify` to the shell (Photos' `photos`
+  service also answers `photos.info` on the photo engine); Maps, YouTube and
+  Camera have no service of their own, nor does Photos on the phone, so the
+  shell's notice service answers it (and there `photos.info` answers that it
+  isn't available on this device). `calendar.notify` and
   `calendar.agenda` fill Calendar's own event and agenda cards. Every card
   is published with `notify` through the shell's `glance` service as the
   app (the app needs the `glance` capability). These fixed-template tools take

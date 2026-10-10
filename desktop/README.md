@@ -227,7 +227,7 @@ The launcher lists four kinds of app together:
 
 | Kind | Comes from | Runs as | Launcher id |
 | --- | --- | --- | --- |
-| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), AI providers, YouTube (Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
+| **System apps**: News, Photos, Maps, Mail, Calendar (desktop only), AI providers, YouTube, Quick Deck, PDF Tools and Writer (all three desktop only: their `deck`, `pdf` and `word` engines are behind `craft-engines`; Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
 | **Store apps** | The signed App Hub catalog, installed from the store (`apphub`) | The same Card runner. Every open is checked against the catalog; an update closes old instances. | `hub:<manifest-id>` |
 | **Native modules** | Rust crates linked into this binary | In-process `AppModule`s. Trusted code only: App Hub, AppCard, Rinx, Reference and the `app-*` features. | module id |
 | **Developer programs** | `config/apps.json` | Separate processes in tiles, over Makepad's `--stdin-loop` hosting protocol, built on first launch | catalog `id` |

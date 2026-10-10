@@ -1128,15 +1128,19 @@ fn the_system_agents_whole_grant_fits_the_kernels_cap() {
 fn over_the_kernels_cap_the_engines_tools_give_way_first() {
     let decl = |name: &str| json!({"name": name, "description": "d", "input_schema": {"type": "object"}, "risk": "read"});
     let engines: Vec<Value> = grants::ENGINE_TOOLS.iter().map(|tool| decl(tool)).collect();
-    let others: Vec<Value> = (0..30).map(|i| decl(&format!("app{i}.read"))).collect();
     let agents = vec![decl("agents.list"), decl("agents.ask")];
+    // Room for only a few engine tools after every other grant.
+    let room = 5;
+    assert!(engines.len() > room);
+    let n = grants::MAX_SESSION_TOOLS - agents.len() - room;
+    let others: Vec<Value> = (0..n).map(|i| decl(&format!("app{i}.read"))).collect();
     let mut granted = engines.clone();
     granted.extend(others.clone());
     let set = super::session::session_set(granted, agents.clone());
     assert_eq!(set.len(), grants::MAX_SESSION_TOOLS);
-    assert_eq!(&set[..30], &others[..]);
-    assert_eq!(&set[30..32], &agents[..]);
-    assert!(set[32..].iter().all(|d| grants::is_engine_tool(d["name"].as_str().unwrap())));
+    assert_eq!(&set[..n], &others[..]);
+    assert_eq!(&set[n..n + 2], &agents[..]);
+    assert!(set[n + 2..].iter().all(|d| grants::is_engine_tool(d["name"].as_str().unwrap())));
     let set = super::session::session_set(engines.clone(), agents.clone());
     assert_eq!(set.len(), engines.len() + agents.len(), "under the cap, nothing is dropped");
     assert_eq!(&set[..2], &agents[..]);

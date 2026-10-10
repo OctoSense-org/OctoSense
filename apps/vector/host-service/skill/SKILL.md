@@ -1,6 +1,6 @@
 ---
 name: vector-engine
-description: Vector graphics (SVG, .vectorcraft, PDF, EPS, DXF, EMF): inspect artboards and layers, convert between formats, render an artboard to PNG. Read before using vector.* tools.
+description: Vector graphics (SVG, .vectorcraft, PDF, EPS, DXF, EMF): draw and edit with the engine's commands, inspect artboards and layers, convert, render to PNG. Read before using vector.* tools.
 ---
 
 # Vector engine
@@ -13,11 +13,35 @@ raster formats PNG, JPEG, WebP, GIF, TIFF, BMP, TGA and PSD.
 
 ## Tools
 
-- `vector.info {path, depth?}`: artboards, the layer tree to `depth` levels (default 2, at most 8), object count, colour mode, units and import warnings.
-- `vector.convert {path, out, format?, scale?}`: the document in the format `format` or the extension of `out` names; `scale` (0.01 to 16) sizes raster output. A multi-artboard SVG export also writes numbered siblings, listed in `files`.
-- `vector.render {path, out, max_side?, artboard?}`: one artboard (0-based, default 0) as a PNG, its longest edge `max_side` pixels (default 1024).
+- `vector.info {path, depth?}`: artboards, the layer tree to `depth` levels (default 2, at most 8), object count, colour mode, units and import warnings. Reads only.
+- `vector.run {path?, cmds, out?, format?, scale?, artboard?}`: up to 64 of the engine's commands, run in order on the document at `path` (or on a new default one), then exported to `out` when given, in the format `format` or else the extension of `out` names. A raster export is one artboard (`artboard`, 0-based, default 0) at `scale` pixels per point (0.01 to 16, default 1); a multi-artboard SVG export also writes numbered siblings, listed in `files`. Each command is `{"id": ..., "params": {...}}`. The answer has each command's result in `results`, so query commands read without writing anything; `"cmds": []` with an `out` converts.
 
-`vector.info` only reads; the others write `out`.
+## How `vector.run` works
+
+The door checks every command of a call before it runs any. A command that
+`commands.md` lists untagged works on the open document only, and runs.
+`effect.apply` and `appearance.addEffect` run only an effect the engine
+builds in (the ids `effect.list` gives, such as `stylize.dropShadow`), never
+an effect plug-in. Every tagged id ([file], [code], [host]) and any id that
+is not in `commands.md` refuse the whole call, and nothing is written. A
+command that would link an image from outside your workspace fails the
+call too: embed images instead.
+
+The commands act like the app's own menus on one open document with a
+selection: a shape or text a command draws is selected, and most edits
+(paint, effects, arrange, align) apply to the selection or to the `ids`
+they are given. Useful queries: `document.inspect` (the layer tree,
+artboards and selection, with object ids) and `document.info` (counts,
+fonts, images and swatches). The file at `path` is never changed: write
+the result to a new `out`.
+
+Each call is capped so it cannot stall the device: a star or polygon has
+at most 1,000 points, a blend 1,000 steps, a repeat, mosaic or grid
+10,000 copies, and the copies of one call multiply to at most 10,000; a
+document holds at most 20,000 nodes and 100,000 objects as drawn (live
+repeats and effects counted); a raster `out` is at most 8192 pixels on a
+side and 16 megapixels, so choose `scale` to fit. A command over a cap
+refuses the whole call and says which cap.
 
 ## Files
 
@@ -34,15 +58,16 @@ refused.
 ## Examples
 
 1. What a file holds: `vector.info {"path": "logo.svg", "depth": 3}`.
-2. A 4x PNG of it for a slide: `vector.convert {"path": "logo.svg", "out": "logo@4x.png", "scale": 4}`.
-3. The same logo for print and for a cutter: `vector.convert {"path": "logo.svg", "out": "logo.pdf"}`,
-   then `vector.convert {"path": "logo.svg", "out": "logo.dxf"}`.
+2. A 4x PNG of it for a slide: `vector.run {"path": "logo.svg", "cmds": [], "out": "logo@4x.png", "scale": 4}`.
+3. The same logo for print and for a cutter: `vector.run {"path": "logo.svg", "cmds": [], "out": "logo.pdf"}`,
+   then `vector.run {"path": "logo.svg", "cmds": [], "out": "logo.dxf"}`.
+4. A rounded badge with a label and a drop shadow, as SVG:
+   `vector.run {"cmds": [{"id": "shape.rectangle", "params": {"x": 20, "y": 20, "width": 240, "height": 96, "radius": 16}}, {"id": "paint.setFill", "params": {"color": "#3366cc"}}, {"id": "effect.apply", "params": {"effect": "stylize.dropShadow"}}, {"id": "text.create", "params": {"x": 48, "y": 80, "text": "Beta", "size": 40, "color": "#ffffff"}}], "out": "badge.svg"}`.
 
 ## The engine's commands
 
 `commands.md` in this skill's folder lists every vectorcraft command, one
 line each (id, label, parameters), with a tag on those that reach past the
-open document. Grep it (`grep -i pathfinder commands.md`) when the person
-asks what the engine can do. `vector.run` would run these ids, but it is
-held for its own review and is not one of your tools: they show the
-engine's reach, not what you can call.
+open document. Grep it (`grep -i pathfinder commands.md`) for the ids and
+parameters a request needs: `vector.run` runs the untagged ones, and
+refuses the rest.

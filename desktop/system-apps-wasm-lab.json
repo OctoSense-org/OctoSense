@@ -9,6 +9,9 @@
     "calendar",
     "ai-providers",
     "youtube",
+    "quickdeck",
+    "pdftools",
+    "writer",
     "wasmlab"
   ],
   "assets": {}

@@ -28,8 +28,10 @@
 //!   to consent to: the system agent's calls are authorized by its reviewed
 //!   grant alone (`system_chat::grants::ENGINE_TOOLS`), as its Calendar
 //!   tools are. None of the tools is shareable, so no app's agent can be
-//!   granted one. The generic engine command doors are declared but held
-//!   back from that grant ([`HELD_FOR_REVIEW`]).
+//!   granted one. Seven engines' surface is `<family>.info` and a
+//!   reviewed command door, `<family>.run`, whose service admits every
+//!   command through its allowlist (`octosense_engine_area::door`) before
+//!   any runs; sound, design and pdf keep fixed tools.
 //! - It is admitted as the shell's own compiled-in service
 //!   (`admission::check`): no catalog entry or bundle exists to withdraw.
 //!   No path loads a bundle for it: `ensure_loaded` skips an owner the
@@ -79,13 +81,6 @@ pub const ENGINES: &[Engine] = &[
     Engine { family: "vector", tools_json: octosense_vector_service::TOOLS_JSON },
     Engine { family: "pdf", tools_json: octosense_pdf_service::TOOLS_JSON },
 ];
-
-/// Declared, never in the system agent's grant: the generic engine command
-/// doors, which run any command of an engine's catalog. Their services
-/// fence file access, but what a command can do is the whole engine's
-/// surface, so they are reviewed separately before anyone is granted one.
-#[cfg(feature = "craft-engines")]
-pub const HELD_FOR_REVIEW: &[&str] = &["effect.run", "vector.run"];
 
 #[cfg(feature = "craft-engines")]
 impl Engine {
@@ -258,47 +253,83 @@ mod tests {
         }
     }
 
+    /// Each engine's reviewed command door gate, for the engines with one:
+    /// its service's `door()`, built from the engine's classification.
+    #[cfg(feature = "craft-engines")]
+    fn gate(family: &str) -> Option<Result<&'static octosense_engine_area::door::Door, String>> {
+        Some(match family {
+            "word" => octosense_word_service::door(),
+            "deck" => octosense_deck_service::door(),
+            "cad" => octosense_cad_service::door(),
+            "light" => octosense_light_service::door(),
+            "film" => octosense_film_service::door(),
+            "effect" => octosense_effect_service::door(),
+            "vector" => octosense_vector_service::door(),
+            _ => return None,
+        })
+    }
+
     /// The system agent's engine grant is exactly every declared engine
-    /// tool but the held command doors, each a read or an act (an act only
-    /// creates files in the agent's own workspace, never replacing one:
-    /// each service's tests); none is destructive or outward, and no door
-    /// reaches the grant.
+    /// tool, each a read or an act (an act only creates files in the
+    /// caller's own folder, never replacing one: each service's tests);
+    /// none is destructive or outward. Seven engines' surface is `info`
+    /// and the command door `run`; the others keep fixed tools.
     #[cfg(feature = "craft-engines")]
     #[test]
-    fn the_system_grant_is_every_engine_tool_but_the_held_doors() {
+    fn the_system_grant_is_every_declared_engine_tool() {
         use octosense_app_policy::Risk;
         use crate::system_chat::grants::{self, ENGINE_TOOLS};
         let granted: BTreeSet<String> = ENGINE_TOOLS.iter().map(|tool| tool.to_string()).collect();
         assert_eq!(granted.len(), ENGINE_TOOLS.len(), "no tool granted twice");
         let mut declared = BTreeSet::new();
         for engine in ENGINES {
-            for tool in engine.tools().unwrap() {
+            let tools: Vec<String> = engine.tools().unwrap().into_iter().map(|tool| {
                 assert!(matches!(tool.risk, Risk::Read | Risk::Act), "{} is {:?}", tool.name, tool.risk);
-                declared.insert(tool.name);
+                tool.name
+            }).collect();
+            if gate(engine.family).is_some() {
+                assert_eq!(tools, [format!("{}.info", engine.family), format!("{}.run", engine.family)], "{}", engine.family);
             }
+            declared.extend(tools);
         }
-        let held: BTreeSet<String> = HELD_FOR_REVIEW.iter().map(|tool| tool.to_string()).collect();
-        assert!(held.is_subset(&declared));
-        assert_eq!(granted, &declared - &held);
+        assert_eq!(granted, declared);
+        assert_eq!(granted.len(), 27);
         let now = grants::host_tools();
         for tool in &granted {
-            assert!(!tool.ends_with(".run"), "{tool} is a command door");
             assert!(grants::is_engine_tool(tool) && now.contains(tool), "{tool}");
-        }
-        for door in HELD_FOR_REVIEW {
-            assert!(!now.contains(*door) && !grants::is_engine_tool(door), "{door}");
         }
     }
 
-    /// The command doors are declared by their engines, so the relay can
-    /// refuse them by name (`not_granted`) rather than as unknown tools.
+    /// A command door is declared, and so granted, only where its service
+    /// admits commands through a reviewed allowlist: the engine's gate
+    /// builds from its classification, runs only ids classed `safe` and
+    /// the reads it reviewed (`file`), and refuses one it does not know.
+    /// Sound, design and pdf have no door.
     #[cfg(feature = "craft-engines")]
     #[test]
-    fn the_held_doors_are_declared_tools() {
-        for door in HELD_FOR_REVIEW {
-            let family = door.split('.').next().unwrap();
-            let engine = ENGINES.iter().find(|e| e.family == family).unwrap();
-            assert!(engine.tools().unwrap().iter().any(|t| t.name == *door), "{door}");
+    fn every_command_door_has_its_reviewed_gate() {
+        use octosense_engine_area::door::Class;
+        let mut doors = 0;
+        for engine in ENGINES {
+            let door = format!("{}.run", engine.family);
+            let declared = engine.tools().unwrap().iter().any(|t| t.name == door);
+            let Some(gate) = gate(engine.family) else {
+                assert!(!declared, "{door} is declared without a reviewed gate");
+                continue;
+            };
+            let gate = gate.unwrap_or_else(|e| panic!("{door}: {e}"));
+            assert!(declared, "{door}");
+            assert!(!gate.runs("not.a.command"), "{door}");
+            let runnable = gate.runnable();
+            assert!(runnable.len() >= 20, "{door}: {} commands", runnable.len());
+            for id in runnable {
+                assert!(matches!(gate.class(id), Some(Class::Safe | Class::File)), "{door}: {id} is {:?}", gate.class(id));
+            }
+            doors += 1;
+        }
+        assert_eq!(doors, 7);
+        for family in ["sound", "design", "pdf"] {
+            assert!(gate(family).is_none(), "{family}");
         }
     }
 

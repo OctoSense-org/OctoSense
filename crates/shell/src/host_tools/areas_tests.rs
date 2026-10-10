@@ -35,12 +35,18 @@ fn script_app(storage: &Storage, app: &str, accounts: bool) {
 
 #[test]
 fn the_engines_methods_work_in_an_area_and_nothing_else_does() {
-    for method in ["sheet.open", "sheet.eval", "photo.convert", "photos.info"] {
+    for method in ["sheet.open", "sheet.eval"] {
         assert!(needs_area(method), "{method}");
     }
     #[cfg(feature = "craft-engines")]
-    for method in ["word.info", "deck.new", "cad.render", "light.develop", "sound.mix", "design.export", "film.export", "effect.render", "vector.convert", "pdf.split"] {
+    for method in ["photo.convert", "photos.info", "word.info", "deck.new", "cad.render", "light.develop", "sound.mix", "design.export", "film.export", "effect.render", "vector.convert", "pdf.split"] {
         assert!(needs_area(method), "{method}");
+    }
+    // Without the desktop's engines (Home), their methods work in no area:
+    // the executor refuses them as unavailable first.
+    #[cfg(not(feature = "craft-engines"))]
+    for method in ["photo.convert", "photos.info", "word.info"] {
+        assert!(!needs_area(method), "{method}");
     }
     for method in ["photos.notify", "mail.list", "calendar.events", "news.read", "glance.publish", "oauth.connect", "sheets.get", "wordy.info"] {
         assert!(!needs_area(method), "{method}");

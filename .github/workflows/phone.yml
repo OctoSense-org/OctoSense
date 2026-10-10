@@ -155,12 +155,16 @@ jobs:
           OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
           MAKEPAD_SPLASH_BUDGET_MS: "10000"
         run: |
-          # The ten ADR 0013 engines are desktop only (`craft-engines`, off in
-          # Home's build), so their relay, grant and kernel-cap tests run with it.
-          # Both filters use this same graph; the baseline suite above also
-          # covers the host tools with toolbox-peers and craft-engines off.
+          # The ten ADR 0013 engines behind the system agent and the photo
+          # engine are desktop only (`craft-engines`, off in Home's build), so
+          # their relay, grant, skill and kernel-cap tests run with it, and
+          # glance_notice covers Photos' own `photos` service on the photo
+          # engine. The filters use this same graph; the baseline suite above
+          # covers them with toolbox-peers and craft-engines off, where the
+          # notice service answers Photos and `photos.info` is unavailable.
           cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell host_tools
           cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell system_chat
+          cargo test --locked --features mobile-apps,toolbox-peers,craft-engines -p octosense-shell glance_notice
       - name: Build linked Terminal tests
         working-directory: phone
         timeout-minutes: 60

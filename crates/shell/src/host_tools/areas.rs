@@ -2,11 +2,11 @@
 //! folder. The engines are OctoSense-wide tools that run in an app's file
 //! folders, not in a folder of their own.
 //!
-//! Every engine service (sheet and photo, with Photos' own `photos.info`;
-//! with `craft-engines`, also word, deck, cad, light, sound, design, film,
-//! effect, vector and pdf) takes its area from the resolver this module
-//! installs at registration ([`install_resolvers`]). It decides from
-//! trusted host data alone, never from a call's arguments:
+//! Every engine service (sheet; with the desktop's `craft-engines`, also
+//! photo, with Photos' own `photos.info`, and word, deck, cad, light,
+//! sound, design, film, effect, vector and pdf) takes its area from the
+//! resolver this module installs at registration ([`install_resolvers`]).
+//! It decides from trusted host data alone, never from a call's arguments:
 //!
 //! | The call | Its area | May replace a file | Quota |
 //! | --- | --- | --- | --- |
@@ -49,22 +49,27 @@ use serde_json::Value;
 use crate::ai_host::app_peers::host_tools::{CallerKind, HostToolCall, ToolOutcome, ToolReply};
 use crate::app_storage::Storage;
 
-/// The engines every shell with App Hub links: the native Sheets app's and
-/// Photos' agent tools run on them, on the phone too.
-const ENGINES: &[&str] = &["sheet", "photo"];
+/// The engines every shell with App Hub links: the native Sheets app's
+/// agent tools run on the sheet engine, on the phone too.
+const ENGINES: &[&str] = &["sheet"];
 
-/// The ten engines behind the system agent, desktop only.
+/// The engines only the desktop links (`craft-engines`): the photo engine,
+/// which Photos' `photos.info` runs on, and the ten behind the system agent.
 #[cfg(feature = "craft-engines")]
-const CRAFT_ENGINES: &[&str] = &["word", "deck", "cad", "light", "sound", "design", "film", "effect", "vector", "pdf"];
+const CRAFT_ENGINES: &[&str] = &["photo", "word", "deck", "cad", "light", "sound", "design", "film", "effect", "vector", "pdf"];
 #[cfg(not(feature = "craft-engines"))]
 const CRAFT_ENGINES: &[&str] = &[];
 
 /// Whether `method` (`family.name`) works in its caller's area: every
-/// method of an engine's family, and Photos' own `photos.info`, which runs
-/// on the photo engine (not `photos.notify`, which touches no file).
+/// method of a linked engine's family, and Photos' own `photos.info`, which
+/// runs on the photo engine where it is linked (not `photos.notify`, which
+/// touches no file). A method on an engine this build leaves out works
+/// nowhere: its executor refuses it before any area
+/// (`script_apps::unlinked_engine`).
 pub fn needs_area(method: &str) -> bool {
     let family = method.split('.').next().unwrap_or("");
-    method == "photos.info" || ENGINES.contains(&family) || CRAFT_ENGINES.contains(&family)
+    let photos_info = method == "photos.info" && CRAFT_ENGINES.contains(&"photo");
+    photos_info || ENGINES.contains(&family) || CRAFT_ENGINES.contains(&family)
 }
 
 // ------------------------------------------------------------ what the host knows
@@ -337,10 +342,10 @@ pub fn resolver() -> octosense_engine_area::Resolver {
 /// caller's area from now on.
 pub fn install_resolvers() {
     let resolver = resolver();
-    octosense_sheets_service::set_area_resolver(Some(resolver.clone()));
-    octosense_photo_service::set_area_resolver(Some(resolver.clone()));
+    // The desktop's engines (`craft-engines`): the photo engine and the ten.
     #[cfg(feature = "craft-engines")]
     {
+        octosense_photo_service::set_area_resolver(Some(resolver.clone()));
         octosense_word_service::set_area_resolver(Some(resolver.clone()));
         octosense_deck_service::set_area_resolver(Some(resolver.clone()));
         octosense_cad_service::set_area_resolver(Some(resolver.clone()));
@@ -350,8 +355,11 @@ pub fn install_resolvers() {
         octosense_film_service::set_area_resolver(Some(resolver.clone()));
         octosense_effect_service::set_area_resolver(Some(resolver.clone()));
         octosense_vector_service::set_area_resolver(Some(resolver.clone()));
-        octosense_pdf_service::set_area_resolver(Some(resolver));
+        octosense_pdf_service::set_area_resolver(Some(resolver.clone()));
     }
+    // The sheet engine, wherever App Hub is linked (Home too), last: it
+    // takes the resolver itself, so no build leaves it unused.
+    octosense_sheets_service::set_area_resolver(Some(resolver));
 }
 
 // ------------------------------------------------------------ answers

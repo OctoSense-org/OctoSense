@@ -29,96 +29,38 @@
       "implemented_by": "host-service"
     },
     {
-      "name": "word.text",
-      "description": "Extract the plain text of a document in your workspace, with its word and paragraph counts. Reads only. `path` is relative to your workspace (see word.info). A very long document can exceed the answer size limit; word.inspect with text false gives its structure instead.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {"type": "string", "minLength": 1, "maxLength": 512}
-        },
-        "required": ["path"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "text": {"type": "string"},
-          "words": {"type": "integer"},
-          "paragraphs": {"type": "integer"}
-        },
-        "required": ["text", "words", "paragraphs"]
-      },
-      "risk": "read",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "word.inspect",
-      "description": "Inspect a document's structure in your workspace: its blocks (paragraphs with style and runs, tables with cells), with their text unless `text` is false. Reads only. `path` is relative to your workspace (see word.info).",
+      "name": "word.run",
+      "description": "Run up to 64 commands from the word engine's catalog, in order, on the document at `path` in your workspace, or on a new empty document, then write it as docx, md, html, rtf, odt, txt, json, pdf or png (by `format` or the extension of `out`) to `out` when given. Each command is {id, params}. Only reviewed commands run: those the skill's commands.md lists untagged (work inside the document), and picture inserts that read an image from your workspace; anything that reaches other files, code, the network, devices or the app is refused before any command runs. Paths are relative to your workspace, and `out` must be a new file. Read the word-engine skill first.",
       "input_schema": {
         "type": "object",
         "properties": {
           "path": {"type": "string", "minLength": 1, "maxLength": 512},
-          "text": {"type": "boolean"}
-        },
-        "required": ["path"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "blocks": {"type": "array", "items": {"type": "object"}}
-        },
-        "required": ["blocks"]
-      },
-      "risk": "read",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "word.convert",
-      "description": "Convert a document in your workspace and write the result there: docx, md, html, rtf, odt, txt, json, pdf or png, chosen by `format` or else by the extension of `out`. Both paths are relative to your workspace (see word.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "path": {"type": "string", "minLength": 1, "maxLength": 512},
+          "cmds": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "params": {"type": "object"}
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
           "out": {"type": "string", "minLength": 1, "maxLength": 512},
           "format": {"type": "string", "enum": ["docx", "md", "html", "rtf", "odt", "txt", "json", "pdf", "png"]}
         },
-        "required": ["path", "out"],
+        "required": ["cmds"],
         "additionalProperties": false
       },
       "output_schema": {
         "type": "object",
         "properties": {
-          "out": {"type": "string"},
-          "format": {"type": "string"},
-          "bytes": {"type": "integer"}
+          "results": {"type": "array", "items": {"type": "object"}},
+          "out": {"type": ["string", "null"]}
         },
-        "required": ["out", "format", "bytes"]
-      },
-      "risk": "act",
-      "implemented_by": "host-service"
-    },
-    {
-      "name": "word.new",
-      "description": "Write a new document into your workspace from plain text: each line becomes a paragraph, with an optional title property. The extension of `out` picks the format, usually .docx. `out` is relative to your workspace (see word.info); nothing is written outside it, and a file already at `out` is never replaced: choose a new name.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string", "minLength": 1, "maxLength": 512},
-          "text": {"type": "string", "maxLength": 60000},
-          "title": {"type": "string", "maxLength": 512}
-        },
-        "required": ["out"],
-        "additionalProperties": false
-      },
-      "output_schema": {
-        "type": "object",
-        "properties": {
-          "out": {"type": "string"},
-          "words": {"type": "integer"},
-          "paragraphs": {"type": "integer"}
-        },
-        "required": ["out", "words", "paragraphs"]
+        "required": ["results"]
       },
       "risk": "act",
       "implemented_by": "host-service"
