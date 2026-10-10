@@ -56,9 +56,15 @@ fn may_call(app_id: &str) -> bool {
 
 pub struct DeckService;
 
-/// Register the `deck` service with App Hub's host-service registry.
+mod warm;
+pub use warm::warm;
+
+/// Register the `deck` service with App Hub's host-service registry, and
+/// start paying the engine's first-call cost on a thread of its own
+/// ([`warm`]).
 pub fn register() {
     register_host_service(Box::new(DeckService));
+    warm();
 }
 
 /// The shell's resolver: where each call works (`None` removes it, and
