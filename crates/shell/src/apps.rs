@@ -888,6 +888,7 @@ mod tests {
         }
         let manifest = octosense_app_policy::AppManifest::parse(&serde_json::json!({
             "schema": 1, "id": "org.example.coldcard", "name": "Cold card", "version": "1.0.0",
+            "integrity": {"bundle_blake3": "0".repeat(64)},
             "capabilities": [], "requires": ["host-api-v1", "script-tools-v1"],
             "host_api": {"required": {"app_tools.dispatch": 1, "runtime.describe": 1}}
         }).to_string()).unwrap();
