@@ -100,7 +100,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 `register_host_services`。App Hub 的原生 `CARD_MODULE` 托管这些解释执行程序；
 可选的 AppCard 助手使用自己的模块。
 
-准入将 manifest 的能力请求解析为策略。脚本的 `host.request(...)` 按应用身份执行。
+准入验证应用包，解析元数据与资源上限。能力名称披露用途，不是执行许可。脚本的 `host.request(...)` 按应用身份执行。
 App Hub 的 `crates/appstore/src/services.rs` 定义 `HostService`、`ServiceCall` 和回复机制；
 调用携带应用身份和宿主目录，供服务检查。只有明确声明的 Agent 工具，才会把相应操作提供给模型。
 
@@ -145,14 +145,14 @@ sequenceDiagram
 | Photos、Maps、YouTube、Camera | 只有 `<namespace>.notify`；Shell 的 `NoticeService` 处理各应用的命名空间。Camera 由 Home 打包。 |
 
 AI providers 配置宿主，目前不声明应用 Agent。Calendar 的月历、按日列表和编辑器
-使用显式 `calendar` 能力，与上述 Agent 工具共享本地日程存储。Glance 中已保存日程
+披露 `calendar` 用途，服务检查已准入应用身份与数据范围，并与上述 Agent 工具共享本地日程存储。Glance 中已保存日程
 的卡片可打开 Calendar 中同一条记录；编辑日程也会刷新它的卡片。
 
 共用通知的实现见 [`glance_notice.rs`](../../crates/shell/src/glance_notice.rs) 和
 [`resources/glance/notice.card`](../../crates/shell/resources/glance/notice.card)。
 Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` 只为尚无服务的命名空间
 注册 `NoticeService`。`publish_args` 填入应用名称/图标、时间、标题和正文，
-再由 `glance::publish_for` 检查应用的 `glance` 授权。通知卡片可以打开所属应用，
+再由 `glance::publish_for` 检查发布者当前准入状态与账户身份。通知卡片可以打开所属应用，
 并设置 `notify: true`。Calendar 继续使用自己的事件和议程模板。
 
 更通用的 [`glance.publish`](../../crates/shell/src/glance.rs) API 接受 L0 `source`
@@ -175,7 +175,7 @@ Mail 和 News 保留自己的服务并安装通知回调；`serve_system_apps` �
 
 | 边界 | 访问路径 |
 | --- | --- |
-| 脚本存储 | 在应用能力和隔离目录限制下使用运行时 storage API。 |
+| 脚本存储 | 在有配额的应用私有隔离目录中使用运行时 storage API，即使遗漏 `storage` 声明也一样。 |
 | Agent 工作目录 | 通过获授权的文件工具和 Shell 策略访问 peer 的应用/账户目录。 |
 | 宿主服务数据库 | 经明确的 Rust 方法/工具访问 Calendar 日程、Mail 缓存和 News 数据。凭据保留在宿主确认面板和保险库中。 |
 

@@ -31,7 +31,7 @@
 | 进程应用（源码检出构建中的 Terminal 和 Task） | [clients.rs](../crates/shell/src/clients.rs)、[hub.rs](../crates/shell/src/hub.rs) | hub 只接纳出示了本次启动从 stdin 读到的密钥的子进程 socket；`sandbox_policy` 构建系统沙箱。 |
 | 脚本应用（日历、邮件、所有商店应用） | `apps.rs` 中的 `system_card_apps`，然后是 App Hub 的 `CARD_MODULE` | `card` 模块，也就是 Card runner，托管所有系统应用和已安装应用，每个实例一个隔离环境。 |
 
-`system_card_apps` 生成日历的启动器条目，并在第一次时注册 Shell 的宿主服务（`register_host_services`）。日历的 `calendar` 能力让其隔离 UI 调用所属服务。月历、按日列表、编辑器及日历 Agent 工具共用 `.host/calendar/events.json`。Glance 日程卡片是同一记录的投影，卡片内的 **Open Calendar** 按钮通过绑定在发布记录中的 `event/<id>` 路由，在真实日历应用中打开该日程。跨应用 Agent 调用仍须下文的独立授权。
+`system_card_apps` 生成日历的启动器条目，并在第一次时注册 Shell 的宿主服务（`register_host_services`）。日历的 `calendar` 声明披露服务用途；隔离 UI 以已准入应用身份调用，受服务实际身份和数据规则约束。月历、按日列表、编辑器及日历 Agent 工具共用 `.host/calendar/events.json`。Glance 日程卡片是同一记录的投影，卡片内的 **Open Calendar** 按钮通过绑定在发布记录中的 `event/<id>` 路由，在真实日历应用中打开该日程。跨应用 Agent 调用仍须下文的独立授权。
 
 运行方法见桌面端 README 的[构建与运行](../desktop/README.zh-CN.md#构建与运行)，其中用 `python3 tools/kernel-artifact.py --host --stage target/release` 准备锁定版本的内核。
 
@@ -115,7 +115,7 @@ sequenceDiagram
 | “Ask &lt;app&gt;” 面板 | [app_chat/mod.rs](../crates/shell/src/app_chat/mod.rs)：`agents::conversation`，然后是 `ContextOp::TurnFrom { trigger: TurnTrigger::Person }` |
 | 原生应用自己的对话（经注入的服务） | `OctosAppService::open_conversation`。Rinx 只用 `open_context`，供小程序的私有上下文使用。 |
 | 其他原生应用的对话 | Makepad 的 `OctosPeer`，经由 peer link：不带 `client` 的 `octos.session.open`（[peer_link/link.rs](../crates/shell/src/peer_link/link.rs)） |
-| 脚本应用自己的对话 | `host.request("octos.turn.start")`，由 `contained.rs` 应答，限于 manifest 声明的名称 |
+| 脚本应用自己的对话 | `host.request("octos.turn.start")`，由 `contained.rs` 为已准入应用应答，并检查 Agent 同意与当前账户 |
 | 卡片的 Chat 标签页，或声明了 `sys.chat` 的卡片 | [glance_chat.rs](../crates/shell/src/glance_chat.rs) 和 [l0-chat](../crates/l0-chat/src/lib.rs) |
 
 **卡片工作区**（[卡内对话](../README.zh-CN.md#卡内对话)）。[glance_sheet.rs](../crates/shell/src/glance_sheet.rs) 显示打开的卡片：手机上全屏，桌面端居中。如果发布者有 Agent，而卡片没有声明对话，`L0Session::for_card`（[glance_card.rs](../crates/shell/src/glance_card.rs)）会在 Card / Chat 标签页后面加上宿主拥有的 `WorkspaceChat`。`chat_submit` 把每一轮经由 `glance_chat::perform_bound` 发往发布这张卡片的账户（`agents::conversation_for_account`），卡片的数据和本地状态只作为上下文（`ContextKind::Card`），从不作为工具。邮件回复卡片则用 Email / Chat 共用一份保存的草稿；Chat 的每一轮都带着一个一次性令牌（`drafts::issue_chat_edit`），让 `mail.suggest_reply` 能保存这次修改（[可组合的邮件卡片](mail-composable-cards.zh-CN.md)）。
@@ -127,7 +127,7 @@ sequenceDiagram
 - 用户已允许它的 Agent；
 - 它安装的这个版本在当前的本地签名目录中仍是已准入状态（见[第 7 节](#7-把工具追到-rust-代码)中的撤回检查）；
 - 它已准入的 `agent` 块设置了 `background: true`，并列出触发器 `<应用短名>.new_message`，其中应用短名是应用 id 的最后一段（Inbox Assistant 的触发器是 `inbox.new_message`）；
-- 它声明了 `auth` 和 `gmail`；
+- 收集器验证已准入应用；`auth` 和 `gmail` 披露用途，不授权事件投递；
 - 它当前的 Google 连接可以读取 Gmail。
 
 其他应用还没有事件。
@@ -150,7 +150,7 @@ sequenceDiagram
 
 `calendar.events` 只读，所以不会询问任何人。`calendar.remove_event`（`destructive`、`confirm: host`）则先由 octos 把关：内核发起一个 `host_tool` 审批，代理把它交给 `ToolHost::host_tool_approval`，只有获批的调用才会到达。
 
-Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别名），执行器拒绝原始 `script`、混合模板与源码的参数，以及可执行或 L1 源码。Agent 可以选择已审核应用包内的模板并提供 `initial` 数据对象，或提交合法的纯声明 L0。Glance 在渲染前仍会验证模板所在的已准入应用包及应用权限。这一限制针对模型生成的发布内容；已准入前台应用仍可运行自身经过审核的 Splash 实现。
+Agent 调用最终映射到 `glance.publish` 时（包括 `inbox.notify` 等别名），执行器拒绝原始 `script`、混合模板与源码的参数，以及可执行或 L1 源码。Agent 可以选择已审核应用包内的模板并提供 `initial` 数据对象，或提交合法的纯声明 L0。Glance 在渲染前仍验证模板所在的已准入应用包、发布者与账户身份及资源上限；能力族仅作披露。这一限制针对模型生成的发布内容；已准入前台应用仍可运行自身经过审核的 Splash 实现。
 
 已安装应用的 Agent 还要求该精确版本持续满足准入条件。加载指导文本、提供工具及接受系统 Agent 输入时都会读取当前本地签名目录。代理还会在每次实际发送 `turn/start` 前检查 `ToolHost::admit_turn`，包括缓存对话、排队输入与重试；中转在执行前再次检查工具所有者与调用应用，包括等待审批后恢复执行的情况。撤回在下一次获取目录后生效，缓存的 peer 也不能绕过。Gmail 分发器随后释放不可用的 peer，保留未完成事件以便之后经授权重试。用户之前保存的同意不会改变；应用不可用不等于用户拒绝。
 
