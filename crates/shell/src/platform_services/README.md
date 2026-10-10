@@ -27,6 +27,7 @@ The host puts the consent check in place before it runs any of the app's source.
 
 | Method | Arguments | What it does |
 | --- | --- | --- |
+| `camera.capture_intent` | `{}` | Version 1 describes explicit `audio`/`library` capture options and their safe defaults; no hardware access or prompt. Require this method before relying on these options. |
 | `camera.permission.status` | `{}` | Reads the app's consent and the OS camera permission. Never prompts. |
 | `camera.permission.request` | `{}` | From the app in the foreground: shows the host's consent sheet, then the OS dialog if needed. |
 | `camera.permission.revoke` | `{}` | Withdraws this app's consent and stops its running `CameraPreview`. The OS permission for OctoSense is unchanged. |
@@ -64,11 +65,11 @@ An agent, a background card (such as the app's card on the Glance screen), and t
 
 ## Older device paths
 
-For an app that requires `host-api-v1`, the same consent also gates the older paths: `CameraPreview`, `sys.request_location`, `sys.gps` and the map's GPS reads. The host supplies the app's identity and caches consent per capability. After the host starts, the cache denies each capability until the app calls one of that capability's permission methods, which loads its saved consent. Call the matching `status` method before using these paths: `camera.permission.status` before `CameraPreview`, `microphone.permission.status` before recording sound, and `location.permission.status` before `sys.gps` or a map GPS read.
+Every contained app's older device paths also require per-app consent: `CameraPreview`, `sys.request_location`, `sys.gps` and the map's GPS reads. The host supplies the app's identity and caches consent per capability. After the host starts, the cache denies each capability until the app calls one of that capability's permission methods, which loads its saved consent. Call the matching `status` method before using these paths: `camera.permission.status` before `CameraPreview`, `microphone.permission.status` before recording sound, and `location.permission.status` before `sys.gps` or a map GPS read.
 
-An agent or a background card cannot use these paths to raise an OS dialog either. `CameraPreview` checks the OS permission before it previews or records, and only a request that starts in the foreground and is still there when the check returns may prompt. Background code can still use an OS permission that OctoSense already has, as long as the app has consent. In an app that requires `host-api-v1`, the camera never treats a timeout as approval. `sys.request_location` can prompt, so it needs the foreground; background code can read `sys.gps`, or call `location.get`, once the app has consent.
+An agent or a background card cannot use these paths to raise an OS dialog either. `CameraPreview` checks the OS permission before it previews or records, and only a request that starts in the foreground and is still there when the check returns may prompt. Background code can still use an OS permission that OctoSense already has, as long as the app has consent. The camera never treats a timeout as approval for a contained app. `sys.request_location` can prompt, so it needs the foreground; background code can read `sys.gps`, or call `location.get`, once the app has consent.
 
-Apps that do not require `host-api-v1` keep the earlier manifest-only rules, and their calls to these methods fail with `host_requirement_missing`.
+Apps that do not require `host-api-v1` still cannot borrow the shell's device permissions. Their permission-method calls fail with `host_requirement_missing`; add that compatibility requirement to use this API.
 
 ## Fresh location samples
 

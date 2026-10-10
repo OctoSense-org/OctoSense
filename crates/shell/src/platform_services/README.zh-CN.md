@@ -12,7 +12,7 @@
 
 ## 声明应用要用的能力
 
-在清单中要求 `host-api-v1`，并声明应用用到的每项能力。下面这段清单片段申请摄像头和位置：
+在清单中要求 `host-api-v1`；能力声明描述用途，省略声明不拒绝调用。下面的片段描述摄像头和位置用途：
 
 ```json
 {
@@ -27,6 +27,7 @@
 
 | 方法 | 参数 | 作用 |
 | --- | --- | --- |
+| `camera.capture_intent` | `{}` | 版本 1 描述明确的 `audio`/`library` 拍摄参数及安全默认值；不访问硬件、不弹窗。依赖这些参数前应要求此方法。 |
 | `camera.permission.status` | `{}` | 读取应用授权和系统摄像头权限，从不弹窗。 |
 | `camera.permission.request` | `{}` | 仅限前台应用：显示宿主的授权面板，需要时再显示系统权限对话框。 |
 | `camera.permission.revoke` | `{}` | 撤销本应用的授权，并停止它正在运行的 `CameraPreview`。系统授予 OctoSense 的权限不变。 |
@@ -66,11 +67,11 @@ Agent、后台卡片（例如应用在速览栏上的卡片），以及它们启
 
 ## 旧的设备接口
 
-对于要求 `host-api-v1` 的应用，同一份授权也约束这些旧接口：`CameraPreview`、`sys.request_location`、`sys.gps` 和地图的 GPS 读取。应用身份由宿主提供，授权按能力分别缓存。宿主启动后，缓存对每项能力一律拒绝，直到应用调用该能力的某个权限方法，把保存的授权加载进来。所以使用这些接口之前，请先调用对应能力的 `status`：使用 `CameraPreview` 之前调用 `camera.permission.status`，录制声音之前调用 `microphone.permission.status`，读取 `sys.gps` 或地图 GPS 之前调用 `location.permission.status`。
+每个受限应用的旧设备接口也需要按应用的同意：`CameraPreview`、`sys.request_location`、`sys.gps` 和地图的 GPS 读取。应用身份由宿主提供，授权按能力分别缓存。宿主启动后，缓存对每项能力一律拒绝，直到应用调用该能力的某个权限方法，把保存的授权加载进来。所以使用这些接口之前，请先调用对应能力的 `status`：使用 `CameraPreview` 之前调用 `camera.permission.status`，录制声音之前调用 `microphone.permission.status`，读取 `sys.gps` 或地图 GPS 之前调用 `location.permission.status`。
 
-Agent 和后台卡片同样不能借这些接口弹出系统对话框。`CameraPreview` 在预览或录像之前先检查系统权限；只有从前台发起、并且检查结果返回时仍在前台的请求才可以弹窗。只要应用已获授权，后台代码仍可使用 OctoSense 已有的系统权限。在要求 `host-api-v1` 的应用中，摄像头绝不会把超时当作批准。`sys.request_location` 可能弹窗，因此必须在前台调用；应用获得授权后，后台代码可以读取 `sys.gps` 或调用 `location.get`。
+Agent 和后台卡片同样不能借这些接口弹出系统对话框。`CameraPreview` 在预览或录像之前先检查系统权限；只有从前台发起、并且检查结果返回时仍在前台的请求才可以弹窗。只要应用已获授权，后台代码仍可使用 OctoSense 已有的系统权限。对受限应用，摄像头绝不会把超时当作批准。`sys.request_location` 可能弹窗，因此必须在前台调用；应用获得授权后，后台代码可以读取 `sys.gps` 或调用 `location.get`。
 
-没有要求 `host-api-v1` 的应用沿用此前只看清单的规则，它们调用这些方法会以 `host_requirement_missing` 失败。
+没有要求 `host-api-v1` 的应用同样不能借用外壳的设备权限；调用权限方法时返回 `host_requirement_missing`，使用本 API 前应添加这项兼容性要求。
 
 ## 新鲜位置采样
 

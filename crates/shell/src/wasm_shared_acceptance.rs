@@ -23,7 +23,7 @@ impl Drop for Scratch {
 
 struct NoSheet;
 impl ServiceHost for NoSheet {
-    fn open_sheet(&mut self, _: &str) {
+    fn open_sheet(&mut self, _: String) {
         panic!("A component must never open an approval sheet");
     }
     fn close_sheet(&mut self) {}
