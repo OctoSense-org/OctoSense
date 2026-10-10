@@ -12,6 +12,9 @@ wasmtime-wasi-http = { workspace = true }
 # The requests a component's `wasi:http` sends, checked against its hosts.
 http = "1"
 http-body-util = "0.1"
+# Wasmtime's default HTTPS client uses Rustls's process provider. Other shell
+# dependencies also link aws-lc; choose ring explicitly when no host chose one.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = { workspace = true }
 base64 = "0.22"
 # File writes a component makes (wasmtime-wasi's streams carry `Bytes`).
@@ -35,5 +38,7 @@ wasmtime = { workspace = true, features = ["pulley"] }
 
 [dev-dependencies]
 wat = "1"
+# Reproduce the full shell's unified TLS feature graph in runtime regressions.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 # The sample functions natively, to check the module against them.
 wasmlab-functions = { path = "../../apps/wasmlab/guest/functions" }

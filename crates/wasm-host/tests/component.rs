@@ -352,6 +352,96 @@ fn http_reaches_any_host() {
     );
 }
 
+/// The shell links both Rustls providers. Exercise a real component's HTTPS
+/// path in a fresh process: it must begin TLS rather than panic in Rustls's
+/// ambiguous-provider fallback. No public network, credentials or test CA.
+#[test]
+fn component_https_chooses_a_provider_without_replacing_the_hosts() {
+    const CHILD: &str = "OCTOSENSE_WASI_TLS_REGRESSION";
+    let mode = match std::env::var(CHILD) {
+        Ok(mode) if mode == "unset" || mode == "host-selected" => mode,
+        _ => {
+            for mode in ["unset", "host-selected"] {
+                let result = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "component_https_chooses_a_provider_without_replacing_the_hosts",
+                        "--nocapture",
+                    ])
+                    .env(CHILD, mode)
+                    .output()
+                    .unwrap();
+                assert!(
+                    result.status.success(),
+                    "{mode}: {}{}",
+                    String::from_utf8_lossy(&result.stdout),
+                    String::from_utf8_lossy(&result.stderr)
+                );
+            }
+            return;
+        }
+    };
+    // Both APIs must compile into this test. Testing only ring would let
+    // Rustls infer a provider and miss the released-shell regression.
+    assert!(!rustls::crypto::ring::default_provider()
+        .cipher_suites
+        .is_empty());
+    assert!(!rustls::crypto::aws_lc_rs::default_provider()
+        .cipher_suites
+        .is_empty());
+    assert!(rustls::crypto::CryptoProvider::get_default().is_none());
+    if mode == "host-selected" {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .unwrap();
+    }
+    let original = rustls::crypto::CryptoProvider::get_default().cloned();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            match listener.accept() {
+                Ok((mut socket, _)) => {
+                    socket
+                        .set_read_timeout(Some(Duration::from_secs(3)))
+                        .unwrap();
+                    let mut header = [0; 5];
+                    std::io::Read::read_exact(&mut socket, &mut header).unwrap();
+                    // TLS handshake record, not plaintext HTTP or an empty
+                    // connection abandoned by a provider-initialization panic.
+                    assert_eq!(header[0], 0x16);
+                    assert_eq!(header[1], 0x03);
+                    return;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "HTTPS did not connect");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("owned TLS endpoint failed: {error}"),
+            }
+        }
+    });
+    let rt = runtime();
+    let program = rt.load_component(FETCH).unwrap();
+    let mut instance = rt
+        .instantiate_component(&program, &Grants::default(), None)
+        .unwrap();
+    let result = instance.call_json("get", &json!(format!("https://{address}/tls-probe")));
+    // Our endpoint intentionally closes after ClientHello. The guest receives
+    // an ordinary request error; this test must not weaken certificate checks.
+    assert!(matches!(result, Err(CallError::Guest(_))), "{result:?}");
+    server.join().unwrap();
+    let chosen = rustls::crypto::CryptoProvider::get_default().unwrap();
+    if let Some(original) = original {
+        assert!(
+            Arc::ptr_eq(&original, chosen),
+            "replaced the embedding host's provider"
+        );
+    }
+}
+
 /// A request waits outside the guest, where the epoch check cannot end it:
 /// its timeouts are clamped to the call's deadline, so a server that never
 /// answers ends the call instead of holding the worker.
