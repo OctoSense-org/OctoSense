@@ -89,6 +89,10 @@ def main():
                 time.sleep(.15)
             if native is None:
                 raise TimeoutError('Native shared-component host produced no receipt')
+            if not native.get('passed'):
+                raise RuntimeError(native.get('error', 'Native component acceptance failed'))
+            check('final_app_presented', bool(ui.label('Component Demo · Second')))
+            check('final_counter_presented', bool(ui.label("This app's counter: 3 → 4")))
             # Force a settled present; the first hidden capture can precede
             # the completed glyph frame even after the widget tree exists.
             ui.call('m', k='move', x=20, y=100, wait=1)

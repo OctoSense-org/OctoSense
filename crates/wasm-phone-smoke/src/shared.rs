@@ -208,6 +208,10 @@ impl Acceptance {
         octosense_app_policy::splash_adapter::apply(&self.card, cx, &settings);
         octosense_appstore::apply_device_consent(cx, bundle, &self.card)?;
         self.card.set_text(cx, &source);
+        // Replacing the Splash view creates fresh draw areas. Invalidate the
+        // containing window too, so it presents the current app rather than
+        // retaining the previous app's frame in the hidden acceptance host.
+        cx.redraw_all();
         self.registration = script_tools::bind(cx, id, bundle, &self.card)?;
         self.assets = Some(assets);
         let replies = self.replies.clone();
