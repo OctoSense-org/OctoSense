@@ -348,6 +348,24 @@ fn hosted_card_receives_size_changes_once_in_its_own_isolate() {
     );
 }
 
+/// A restyle runs the app's script again in the same content view: its
+/// layout state starts over, so it must hear its size again, though the
+/// slot kept it. Quick Deck, Writer and PDF Tools all lost their layout
+/// width on a light/dark switch before this.
+#[test]
+fn restyled_card_receives_its_size_again_in_an_unchanged_slot() {
+    let (mut cx, tile, root, _) = hosted_card();
+    draw_card(&mut cx, &tile, 370.0, 88.0);
+    draw_card(&mut cx, &tile, 370.0, 88.0);
+    crate::module_host::restyled();
+    draw_card(&mut cx, &tile, 370.0, 88.0);
+    draw_card(&mut cx, &tile, 370.0, 88.0);
+    assert_eq!(
+        resize_history(&mut cx, &root),
+        serde_json::json!([[370, 88], [370, 88]])
+    );
+}
+
 #[test]
 fn reloaded_card_receives_its_size_even_when_the_slot_is_unchanged() {
     let (mut cx, tile, root, outer) = hosted_card();
