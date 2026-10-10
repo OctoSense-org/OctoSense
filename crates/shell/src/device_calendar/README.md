@@ -83,3 +83,5 @@ Packaged macOS builds include Calendar usage descriptions and the Calendar entit
 - `macos.rs`: EventKit; `phone/resources/android/java/dev/makepad/octosense/DeviceCalendarClient.java`: CalendarProvider.
 
 Synthetic Rust tests cover bounds, timezone/DST display, consent isolation/revocation, stale revisions, single-use review and refusal of synthetic approval. Compilation of the adapters does not establish real OS permission or provider correctness. No test here reads personal calendars or grants OS access.
+
+The macOS adapter normalizes Foundation’s zero-offset `GMT` name to `UTC` on event readback, because Foundation returns `GMT` for an event created with `UTC`. Epoch times and other timezones are preserved, so an approved UTC all-day event can be verified without another write.
