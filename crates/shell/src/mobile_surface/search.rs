@@ -182,7 +182,7 @@ impl PhoneSurface {
         let top = ready.screen.pos.y + if ready.screen.size.x > ready.screen.size.y {24.0} else {42.0};
         let split = self.search_snapshot.field_top;
         let field_height = ready.screen.pos.y + ready.screen.size.y - split;
-        let field_y = screen.pos.y + screen.size.y - field_height + 64.0 * (1.0 - p as f64);
+        let field_y = Self::search_pill(&state.phone, screen).pos.y - 10.0;
         let results_height = (split - top).max(0.0);
         // The capture already contains the opaque ground. Fill only the
         // gaps around its two slices, so fading does not blend it twice.
@@ -410,6 +410,24 @@ impl PhoneSurface {
         consumed
     }
 
+    fn search_pill(phone: &PhoneState, screen: Rect) -> Rect {
+        let editing = phone.searching() || phone.search_reveal > 0.0;
+        // At the bottom, just above the keyboard, as in iOS's search: the
+        // field sits where the thumb already is. A native IME has reflowed
+        // the viewport above itself; only the shell's own soft keyboard (a
+        // desktop preview) is drawn over it and taken off here.
+        let bottom = screen.pos.y + screen.size.y
+            - phone.keyboard.max(phone.keyboard_target)
+            - phone.search_keyboard_lift(crate::host::now())
+            - if editing { 10.0 } else { 34.0 };
+        rect(
+            screen.pos.x + 20.0,
+            bottom - 40.0 + (1.0-phone.search_reveal.clamp(0.0,1.0))*64.0,
+            screen.size.x - 40.0 - if editing { 64.0 } else { 0.0 },
+            40.0,
+        )
+    }
+
     pub(super) fn draw_search(
         &mut self,
         cx: &mut Cx2d,
@@ -419,20 +437,7 @@ impl PhoneSurface {
     ) -> Rect {
         let ios = state.style.target == DesktopStyle::Ios;
         let editing = state.phone.searching() || state.phone.search_reveal > 0.0;
-        // At the bottom, just above the keyboard, as in iOS's search: the
-        // field sits where the thumb already is. A native IME has reflowed
-        // the viewport above itself; only the shell's own soft keyboard (a
-        // desktop preview) is drawn over it and taken off here.
-        let bottom = screen.pos.y + screen.size.y
-            - state.phone.keyboard.max(state.phone.keyboard_target)
-            - state.phone.search_keyboard_lift(crate::host::now())
-            - if editing { 10.0 } else { 34.0 };
-        let pill = rect(
-            screen.pos.x + 20.0,
-            bottom - 40.0 + (1.0-state.phone.search_reveal.clamp(0.0,1.0))*64.0,
-            screen.size.x - 40.0 - if editing { 64.0 } else { 0.0 },
-            40.0,
-        );
+        let pill = Self::search_pill(&state.phone, screen);
         self.search_rect = pill;
         if self.search_style != Some((ios, state.style.dark)) {
             let timing = crate::mobile_perf::work_start();
