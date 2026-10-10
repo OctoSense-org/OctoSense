@@ -656,9 +656,9 @@ struct Lab {
 /// Compile an installed or updated app's functions into the disk cache in
 /// the background, so that its first call does not wait for Cranelift (ADR
 /// 0014 phase 3; a phone takes about 0.4 s for a 433 KiB module). From its
-/// admitted bundle only, and only with the `wasm` grant; one app at a time,
-/// on a thread of its own, never in a worker's place. A call that comes
-/// first compiles the same code itself: the cache takes either.
+/// admitted bundle only; capability declarations do not gate warming. One
+/// app at a time, on its own thread, never in a worker's place. A call that
+/// comes first or finds a slow cache read compiles the same verified code.
 pub fn warm(app: &str) {
     static QUEUE: Mutex<(Vec<String>, bool)> = Mutex::new((Vec::new(), false));
     {
@@ -2256,9 +2256,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    /// A component's `octosense:host` calls reach its app's granted host
-    /// services, dispatched on the UI thread as its script's would be (a
-    /// thread here plays the UI's part); nothing else, and never `wasm.*`.
+    /// A component's `octosense:host` calls use the same admitted app identity
+    /// and public host services as its script, dispatched on the UI thread
+    /// (a thread here plays that part); recursive `wasm.*` calls are refused.
     #[test]
     fn a_components_host_calls_reach_the_host_as_its_apps_script_does() {
         struct Echo;
@@ -2342,17 +2342,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    /// An installed app's functions are compiled before its first call, in
-    /// a process of its own (the apps root and the registries are
-    /// process-wide): the first call loads them from the cache.
+    /// Background compilation produces code the first request can actually
+    /// deserialize from a ready cache. The test prepares cache file I/O;
+    /// it does not measure fresh first-run UI performance. The app root and
+    /// registries are process-wide, so this fixture runs in its own process.
     #[test]
-    fn an_installed_apps_first_call_loads_from_the_cache() {
+    fn an_installed_apps_precompiled_code_loads_from_a_ready_cache() {
         const CHILD: &str = "OCTOSENSE_TEST_WASM_WARM";
         if std::env::var_os(CHILD).is_none() {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "wasm_service::tests::an_installed_apps_first_call_loads_from_the_cache",
+                    "wasm_service::tests::an_installed_apps_precompiled_code_loads_from_a_ready_cache",
                     "--nocapture",
                 ])
                 .env(CHILD, "1")
@@ -2393,6 +2394,15 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(cached(), "warm compiled nothing into {}", cache.display());
+        // A slow first open deliberately falls back to source compilation.
+        // This fixture instead requires a real cache hit, after file I/O is
+        // ready; blocked readers are covered by wasm-host's deterministic tests.
+        for entry in std::fs::read_dir(&cache).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "cwasm") {
+                std::fs::read(path).unwrap();
+            }
+        }
         let ranked = request(
             "os.wasmlab",
             "wasm.fuzzy_rank",
