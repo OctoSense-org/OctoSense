@@ -1,0 +1,2028 @@
+{
+ "schema": 1,
+ "screen": "03-find",
+ "state": "Find 'revenue': 12 matches on 7 pages, the second current",
+ "image": "source/03-find.png",
+ "image_sha256": "aec86c4a1cd6531b029285d31084665b45d4cdf2af465a12c795d152575f7d69",
+ "measured": "source/03-find.measured.json",
+ "measured_sha256": "a2c6a93fe1447181860c2f4eb3414ec17c3d56ea43f208a4ac9abac63efaf598",
+ "units": "1 image pixel = 1 layout point (the designs are a 1536 x 1024 window)",
+ "built_in": "apps/pdftools/bundle/main.splash (v2)",
+ "runtime": "OctoSense-org/makepad d653bc44 with runtime-patches.lock.json, as tools/setup.py prepares .sources/makepad",
+ "type_rule": "size in theme units: the ink height for runs without descenders, ink / 1.23 with them (calibrated in card-host on the runtime's own text); the build may round",
+ "colours": "light from this screen (or the light screens), dark from 09-dark-reading; tokens below, selected by the shared interface's ui_light",
+ "tokens": {
+  "pt_accent": {
+   "light": "#116cdc",
+   "dark": "#2f75d8",
+   "from": "02 s19 Save fill #116cdc; 09 s16 Save #246acf, s08 outline selection #2970d7"
+  },
+  "pt_link": {
+   "light": "#1c6ce0",
+   "dark": "#4d91e3",
+   "from": "02 t00 'Read' ink #3c7ae8 (anti-aliased); 09 t00 #468bd8"
+  },
+  "pt_tabs": {
+   "light": "#f4f4f5",
+   "dark": "#191e21",
+   "from": "02 s04 tab row #f4f4f5; 09 tab row sample (1350,30) #191e21"
+  },
+  "pt_tab_on": {
+   "light": "#ffffff",
+   "dark": "#232a2e",
+   "from": "02 active tab; 09 active tab ground #22282c"
+  },
+  "pt_bar": {
+   "light": "#ffffff",
+   "dark": "#232a2e",
+   "from": "02 mode bar #fefefe; 09 t07 ground #22292d"
+  },
+  "pt_rail": {
+   "light": "#ffffff",
+   "dark": "#1e252a",
+   "from": "02 rail #fefefe; 09 s02 #1e252a"
+  },
+  "pt_panel": {
+   "light": "#ffffff",
+   "dark": "#192025",
+   "from": "02 s02 #fefefe; 09 s01 #192025"
+  },
+  "pt_desk": {
+   "light": "#eceded",
+   "dark": "#191f24",
+   "from": "02 s00 #eceded; 09 desk sample (420,500) #191f24"
+  },
+  "pt_home": {
+   "light": "#f7f8f9",
+   "dark": "#191f24",
+   "from": "01 s00 #f7f8f9; dark Home not designed: 09's desk"
+  },
+  "pt_status": {
+   "light": "#ffffff",
+   "dark": "#1b2226",
+   "from": "02 status #fefefe; 09 status sample (700,1000) #1b2226"
+  },
+  "pt_pill": {
+   "light": "#ffffff",
+   "dark": "#282d32",
+   "from": "02 pill #fefefe; 09 s04 #282d32"
+  },
+  "pt_card": {
+   "light": "#ffffff",
+   "dark": "#232a2e",
+   "from": "04/06/08 cards #fefefe; dark: 09 bar colour (cards not in 09)"
+  },
+  "pt_line": {
+   "light": "#e1e2e3",
+   "dark": "#383d41",
+   "from": "02 d00 #e1e2e3; 09 d24 #383d41"
+  },
+  "pt_line_soft": {
+   "light": "#ececee",
+   "dark": "#2c3236",
+   "from": "02 d02 #ecedee; 09 d07 #303437"
+  },
+  "pt_thumb_line": {
+   "light": "#d3d5d9",
+   "dark": "#464b50",
+   "from": "02 thumbnails' border (s15 #e0e1f0 on the page edge, darker at 1x); dark derived"
+  },
+  "pt_tint": {
+   "light": "#e9f2fe",
+   "dark": "#275294",
+   "from": "02 s16 rail selection #e9f2fe; 09 s14 #275293"
+  },
+  "pt_tint_line": {
+   "light": "#cfe0fa",
+   "dark": "#34619f",
+   "from": "04 s27 Highlight tool border #dfebfc; dark derived from pt_tint"
+  },
+  "pt_tint_ink": {
+   "light": "#2f6fd0",
+   "dark": "#bac7dd",
+   "from": "02 t01 rail 'Pages' ink #5973a6 (anti-aliased blue); 09 t03 #bac7dd"
+  },
+  "pt_select": {
+   "light": "#eff5fc",
+   "dark": "#22344d",
+   "from": "03 s06 result group fill #eff5fc; dark derived"
+  },
+  "pt_field": {
+   "light": "#ffffff",
+   "dark": "#1e2429",
+   "from": "02 s06 search #fefefe; 09 s10 #1e2429"
+  },
+  "pt_field_line": {
+   "light": "#dcdcde",
+   "dark": "#3c4043",
+   "from": "02 d01 #dcdcde; 09 d02 #3c4043"
+  },
+  "pt_hover": {
+   "light": "#f1f2f3",
+   "dark": "#2b3237",
+   "from": "hover: derived"
+  },
+  "pt_ink": {
+   "light": "#37393c",
+   "dark": "#d5d7d8",
+   "from": "02 t16 'Pages' title #38393b, t05 tab #414142; 09 t06 tab #d1d3d4, t09 #d7d9da"
+  },
+  "pt_ink2": {
+   "light": "#55575b",
+   "dark": "#b0b2b4",
+   "from": "02 mode labels #5c5d5e-#6d6d6e; 09 mode labels #a9abad-#b3b4b4"
+  },
+  "pt_muted": {
+   "light": "#76787c",
+   "dark": "#9a9da0",
+   "from": "02 t57 'Saved' #79797b, t58 #6d6d6e; 09 t59 #929698, t60 #9b9d9f"
+  },
+  "pt_faint": {
+   "light": "#9c9da0",
+   "dark": "#7d8184",
+   "from": "02 t15 placeholder #9c9d9f; 09 dimmer than t25 #9fa2a5"
+  },
+  "pt_icon": {
+   "light": "#5b5d61",
+   "dark": "#a9acae",
+   "from": "02 icons; 09 icons"
+  },
+  "pt_green": {
+   "light": "#49b039",
+   "dark": "#38a540",
+   "from": "02 'Saved' dot sample #49b039; 09 #38a540"
+  },
+  "pt_orange": {
+   "light": "#f2a20d",
+   "dark": "#e39a1c",
+   "from": "08 'Edited' dot (31,984)"
+  },
+  "pt_red": {
+   "light": "#e5534f",
+   "dark": "#f06a66",
+   "from": "07 t74 'Monthly rent *' #e85652, t75 #ed4f4a"
+  },
+  "pt_shadow": {
+   "light": "#00000022",
+   "dark": "#00000070",
+   "from": "page and pill shadows: soft, from 02 page edge #e9eaeb"
+  }
+ },
+ "regions": [
+  {
+   "id": "pill",
+   "role": "canvas controls: page n / N, previous, next, zoom out, zoom %, zoom in, fit width, fit page",
+   "widget": "View pill (overlay, bottom centre; on_render pill_view): RoundedShadowView radius 26.5 with IconBtn chevron-left, Label 'p / N' (78 wide), IconBtn chevron-right, SolidView 1x28, IconBtn minus, Label zoom % (66 wide), IconBtn plus, SolidView, IconBtn fit-width, IconBtn fit-page",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:227 (RoundedShadowView)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)",
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'"
+   ],
+   "geometry": {
+    "height": 53,
+    "radius": 26.5,
+    "bottom": 12,
+    "padding": 14
+   },
+   "colors": {
+    "light": {
+     "pill": "#ffffff",
+     "line": "#e1e2e3",
+     "text": "#55575b",
+     "icon": "#5b5d61",
+     "shadow": "#00000022"
+    },
+    "dark": {
+     "pill": "#282d32",
+     "line": "#383d41",
+     "text": "#b0b2b4",
+     "icon": "#a9acae",
+     "shadow": "#00000070"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "",
+   "image_rect": [
+    546,
+    927,
+    446,
+    54
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 84,
+      "text": "<",
+      "ocr_height": 13.4,
+      "ink": "#4b4c52",
+      "ground": "#f8f8f9",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 85,
+      "text": "3 / 24",
+      "ocr_height": 13.4,
+      "ink": "#5e6065",
+      "ground": "#f8f8f8",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 86,
+      "text": ">",
+      "ocr_height": 15.6,
+      "ink": "#484a51",
+      "ground": "#fafafa",
+      "ink_px": 13,
+      "size": 13.0
+     },
+     {
+      "i": 87,
+      "text": "- 100%",
+      "ocr_height": 14.1,
+      "ink": "#5e6064",
+      "ground": "#f9f9fa",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 88,
+      "text": "+",
+      "ocr_height": 17.8,
+      "ink": "#676970",
+      "ground": "#fafbfb",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 89,
+      "text": "ГОлRС СОС ОООIШC ЗUЗоОВCCKоIlK Cotoranc",
+      "ocr_height": 5,
+      "ink": "#818285",
+      "ground": "#ededee",
+      "ink_px": 4,
+      "size": 4.0
+     }
+    ],
+    "surfaces": [],
+    "dividers": [
+     18
+    ]
+   }
+  },
+  {
+   "id": "page1",
+   "role": "page: the engine's render",
+   "page_content": true,
+   "widget": "RectShadowView (white, shadow 7) with Image (binary_resource of pdf.page's PNG at 72 x zoom x 2 dpi), LoadingSpinner + 'Rendering page n…' until it lands; overlays placed by margin in points x zoom; GestureView over it (on_tap/on_double_tap in page points)",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:150 (RectShadowView: shadow_color, shadow_radius, shadow_offset)",
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; used by apps/quickdeck and v1 apps/pdftools",
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin: draw/src/turtle.rs:3990-3995",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256",
+    "makepad widgets/src/loading_spinner.rs:7 (LoadingSpinner); App Flow docs/SCRIPT-API.md 'Widgets available'",
+    "makepad widgets/src/splash_storage.rs:446-457 (no 1 MiB cap on reads, splash_storage.rs:362-368)"
+   ],
+   "geometry": {
+    "size": "the engine's page size x zoom (100% = 1 pt per layout point)"
+   },
+   "colors": {
+    "light": {
+     "page": "#ffffff",
+     "shadow": "#00000022"
+    },
+    "dark": {
+     "page": "#ffffff",
+     "shadow": "#00000070"
+    }
+   },
+   "decision": "Page contents are sample art: every page is the engine's render (pdf.page); highlights, matches and fields are overlays from the engine's rectangles.",
+   "image_rect": [
+    504,
+    162,
+    573,
+    677
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     45,
+     46,
+     56,
+     57,
+     58,
+     59,
+     60,
+     61,
+     62,
+     63,
+     64,
+     65,
+     66,
+     67,
+     68,
+     69,
+     70,
+     71,
+     72,
+     73,
+     74,
+     75,
+     76,
+     77,
+     78,
+     79,
+     80
+    ],
+    "surfaces": [
+     1,
+     2,
+     3,
+     12,
+     16,
+     22,
+     29,
+     35,
+     38,
+     42,
+     44
+    ],
+    "dividers": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     12,
+     14,
+     15,
+     23,
+     24,
+     25,
+     26,
+     27
+    ],
+    "note": "sample art inside the page: not rebuilt"
+   }
+  },
+  {
+   "id": "page2",
+   "role": "page: the engine's render",
+   "page_content": true,
+   "widget": "RectShadowView (white, shadow 7) with Image (binary_resource of pdf.page's PNG at 72 x zoom x 2 dpi), LoadingSpinner + 'Rendering page n…' until it lands; overlays placed by margin in points x zoom; GestureView over it (on_tap/on_double_tap in page points)",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:150 (RectShadowView: shadow_color, shadow_radius, shadow_offset)",
+    "makepad widgets/src/image.rs:71 (Image), ImageFit image_cache.rs:4; binary_resource platform/src/script/res.rs:1398; used by apps/quickdeck and v1 apps/pdftools",
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin: draw/src/turtle.rs:3990-3995",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256",
+    "makepad widgets/src/loading_spinner.rs:7 (LoadingSpinner); App Flow docs/SCRIPT-API.md 'Widgets available'",
+    "makepad widgets/src/splash_storage.rs:446-457 (no 1 MiB cap on reads, splash_storage.rs:362-368)"
+   ],
+   "geometry": {
+    "size": "the engine's page size x zoom (100% = 1 pt per layout point)"
+   },
+   "colors": {
+    "light": {
+     "page": "#ffffff",
+     "shadow": "#00000022"
+    },
+    "dark": {
+     "page": "#ffffff",
+     "shadow": "#00000070"
+    }
+   },
+   "decision": "Page contents are sample art: every page is the engine's render (pdf.page); highlights, matches and fields are overlays from the engine's rectangles.",
+   "image_rect": [
+    504,
+    846,
+    573,
+    139
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     47,
+     81,
+     82,
+     83
+    ],
+    "surfaces": [],
+    "dividers": [
+     16,
+     17
+    ],
+    "note": "sample art inside the page: not rebuilt"
+   }
+  },
+  {
+   "id": "tabs",
+   "role": "document tabs",
+   "widget": "SolidView tabs (on_render tabs_view): Tab = RoundedView per open PDF (Svg file-pdf 16, Label title with ellipsis, IconBtn close 13), Outline button 'Open' (Svg plus) after the last tab; Home tab only on Home",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256"
+   ],
+   "geometry": {
+    "height": 53,
+    "x": 0,
+    "width": "Fill",
+    "tab": "Fit, 48 tall from y 11; the row clips 6 so the open tab joins the mode bar",
+    "tab_padding": [
+     16,
+     8
+    ],
+    "gap": 2,
+    "open": "Outline 36 tall, 6 after the last tab"
+   },
+   "colors": {
+    "light": {
+     "row": "#f4f4f5",
+     "tab_on": "#ffffff",
+     "border": "#e1e2e3",
+     "text_on": "#37393c",
+     "text": "#76787c"
+    },
+    "dark": {
+     "row": "#191e21",
+     "tab_on": "#232a2e",
+     "border": "#383d41",
+     "text_on": "#d5d7d8",
+     "text": "#9a9da0"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "decision": null,
+   "notes": "",
+   "image_rect": [
+    0,
+    0,
+    1536,
+    48
+   ],
+   "status": "built",
+   "source": {
+    "text": [
+     {
+      "i": 6,
+      "text": "Q3 2026 Board Report.pdf x",
+      "ocr_height": 16,
+      "ink": "#5a5c60",
+      "ground": "#f7f8f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 7,
+      "text": "11.",
+      "ocr_height": 13.4,
+      "ink": "#ae6260",
+      "ground": "#f0dfde",
+      "ink_px": 19,
+      "size": 19.0
+     },
+     {
+      "i": 8,
+      "text": "Riverside Lease 2026.pdf",
+      "ocr_height": 14,
+      "ink": "#686a6f",
+      "ground": "#f2f3f4",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 48,
+      "text": "Field Guide to Garden Birds.pdf",
+      "ocr_height": 14,
+      "ink": "#686a6f",
+      "ground": "#f3f3f5",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 49,
+      "text": "Invoice INV-2041.pdf",
+      "ocr_height": 14,
+      "ink": "#6a6c71",
+      "ground": "#f3f4f5",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 50,
+      "text": "Site Survey Photos.pdf",
+      "ocr_height": 14,
+      "ink": "#6a6b70",
+      "ground": "#f2f3f5",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 51,
+      "text": "X",
+      "ocr_height": 11.2,
+      "ink": "#8a8d94",
+      "ground": "#f6f7f8",
+      "ink_px": 8,
+      "size": 8.0
+     },
+     {
+      "i": 115,
+      "text": "+ Open",
+      "ocr_height": 16.3,
+      "ink": "#585a5f",
+      "ground": "#f5f6f7",
+      "ink_px": 15,
+      "size": 12.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 10,
+      "bounds": [
+       539,
+       9,
+       284,
+       37
+      ],
+      "fill": "#f8f8fa",
+      "radius": 1
+     },
+     {
+      "i": 13,
+      "bounds": [
+       278,
+       9,
+       255,
+       37
+      ],
+      "fill": "#f8f8fa",
+      "radius": 1
+     },
+     {
+      "i": 14,
+      "bounds": [
+       1070,
+       9,
+       246,
+       37
+      ],
+      "fill": "#f8f8fa",
+      "radius": 0
+     },
+     {
+      "i": 15,
+      "bounds": [
+       825,
+       9,
+       238,
+       37
+      ],
+      "fill": "#f8f8fa",
+      "radius": 1
+     },
+     {
+      "i": 33,
+      "bounds": [
+       1442,
+       11,
+       82,
+       33
+      ],
+      "fill": "#f8f9fa",
+      "radius": 0
+     }
+    ],
+    "dividers": []
+   }
+  },
+  {
+   "id": "modebar",
+   "role": "mode bar: Read · Comment · Fill & Sign · Pages · Combine · Edit, search field, Undo, Redo, Save",
+   "widget": "SolidView modebar (on_render modebar_view): per mode a fixed-width column (Flat text button + 3 pt SolidView underline, accent when current); RoundedView search box with Svg search and TextInput (on_return find), IconBtn undo/redo (faint when unavailable), SolidView 1x26 divider, Primary 'Save' with Svg save",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/text_input.rs:468 (TextInput), on_change/on_return text_input.rs:675-677, is_multiline text_input.rs:576, empty_text text_input.rs:604",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)"
+   ],
+   "geometry": {
+    "height": 54,
+    "padding": [
+     15,
+     19
+    ],
+    "mode_columns": [
+     69,
+     101,
+     100,
+     78,
+     99,
+     61
+    ],
+    "underline": "3 pt, inset 16, 1 pt above the bar's line",
+    "search": "Fill, at most 344, right-aligned, x 35, radius 5",
+    "undo_redo": "34 x 34, icons 20",
+    "save": "128 x 33, radius 5"
+   },
+   "colors": {
+    "light": {
+     "bar": "#ffffff",
+     "mode": "#55575b",
+     "current": "#1c6ce0",
+     "underline": "#116cdc",
+     "field": "#ffffff",
+     "field_line": "#dcdcde",
+     "placeholder": "#9c9da0",
+     "save": "#116cdc"
+    },
+    "dark": {
+     "bar": "#232a2e",
+     "mode": "#b0b2b4",
+     "current": "#4d91e3",
+     "underline": "#2f75d8",
+     "field": "#1e2429",
+     "field_line": "#3c4043",
+     "placeholder": "#7d8184",
+     "save": "#2f75d8"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12.5,
+   "current_mode": "read",
+   "notes": "the search field shows the query and a clear cross",
+   "image_rect": [
+    0,
+    48,
+    1536,
+    54
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 0,
+      "text": "Read",
+      "ocr_height": 13.4,
+      "ink": "#3e7ce0",
+      "ground": "#f0f5fc",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 9,
+      "text": "Comment",
+      "ocr_height": 13.4,
+      "ink": "#535559",
+      "ground": "#f5f5f6",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 10,
+      "text": "Fill & Sign",
+      "ocr_height": 16.1,
+      "ink": "#515355",
+      "ground": "#f5f6f6",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 11,
+      "text": "Pages",
+      "ocr_height": 15.6,
+      "ink": "#4f5055",
+      "ground": "#f5f5f5",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 12,
+      "text": "Combine",
+      "ocr_height": 13.4,
+      "ink": "#4f5155",
+      "ground": "#f3f3f4",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 44,
+      "text": "Edit",
+      "ocr_height": 13.4,
+      "ink": "#484a50",
+      "ground": "#f1f2f2",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 52,
+      "text": "Q",
+      "ocr_height": 20.1,
+      "ink": "#5c5e65",
+      "ground": "#f8f8f8",
+      "ink_px": 17,
+      "size": 17.0
+     },
+     {
+      "i": 53,
+      "text": "revenue",
+      "ocr_height": 12.1,
+      "ink": "#54555a",
+      "ground": "#f5f5f5",
+      "ink_px": 8,
+      "size": 8.0
+     },
+     {
+      "i": 116,
+      "text": "Save",
+      "ocr_height": 13.4,
+      "ink": "#c1daf5",
+      "ground": "#1569d9",
+      "ink_px": 11,
+      "size": 11.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 9,
+      "bounds": [
+       974,
+       59,
+       353,
+       37
+      ],
+      "fill": "#fefefe",
+      "radius": 0
+     },
+     {
+      "i": 11,
+      "bounds": [
+       977,
+       62,
+       346,
+       30
+      ],
+      "fill": "#fefefe",
+      "radius": 1
+     },
+     {
+      "i": 34,
+      "bounds": [
+       1442,
+       60,
+       79,
+       34
+      ],
+      "fill": "#1167d7",
+      "radius": 4
+     }
+    ],
+    "dividers": [
+     0,
+     1
+    ]
+   }
+  },
+  {
+   "id": "rail",
+   "role": "left rail: Pages, Outline, Comments, Search",
+   "widget": "SolidView rail (on_render rail_view): GestureView 69 x 77 per item holding a RoundedView (tint when selected), Svg 26 and Label",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/svg.rs:10 (Svg), draw_svg.svg from http_resource: draw/src/shader/draw_svg.rs:481-518; App Flow examples/health/cards/health-02/rounds/001/layout.json.native.splash:23",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)"
+   ],
+   "geometry": {
+    "width": 84,
+    "item": [
+     69,
+     77
+    ],
+    "first_top": 13,
+    "pitch": 85,
+    "radius": 6
+   },
+   "colors": {
+    "light": {
+     "rail": "#ffffff",
+     "selected": "#e9f2fe",
+     "selected_ink": "#2f6fd0",
+     "icon": "#5b5d61",
+     "label": "#76787c",
+     "line": "#e1e2e3"
+    },
+    "dark": {
+     "rail": "#1e252a",
+     "selected": "#275294",
+     "selected_ink": "#bac7dd",
+     "icon": "#a9acae",
+     "label": "#9a9da0",
+     "line": "#383d41"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 10.5,
+   "selected": "search",
+   "notes": "",
+   "image_rect": [
+    0,
+    102,
+    100,
+    883
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 1,
+      "text": "Pages",
+      "ocr_height": 13.4,
+      "ink": "#989ba1",
+      "ground": "#f7f8f8",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 2,
+      "text": ":=",
+      "ocr_height": 17.8,
+      "ink": "#7c8086",
+      "ground": "#f8f9f9",
+      "ink_px": 17,
+      "size": 17.0
+     },
+     {
+      "i": 3,
+      "text": "Outline",
+      "ocr_height": 13.4,
+      "ink": "#9ea0a7",
+      "ground": "#f9f9f9",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 4,
+      "text": "Comments",
+      "ocr_height": 11.2,
+      "ink": "#a0a2a7",
+      "ground": "#f8f8f9",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 5,
+      "text": "Search",
+      "ocr_height": 13.4,
+      "ink": "#508ae0",
+      "ground": "#e6f0fb",
+      "ink_px": 10,
+      "size": 10.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 17,
+      "bounds": [
+       9,
+       359,
+       84,
+       69
+      ],
+      "fill": "#e8f1fb",
+      "radius": 4
+     }
+    ],
+    "dividers": [
+     20
+    ]
+   }
+  },
+  {
+   "id": "results",
+   "role": "left panel: Search results grouped by page",
+   "widget": "SolidView panel_wide (288): head (Label '<n> matches on <m> pages' bold 13, IconBtn close), ScrollYView results: per page a RoundedView group (Label 'Page n', Label '<k> match(es)'; selected: accent border 1.5 and tint), per match a GestureView (go_match) with Html snippet (the match in <b>), hairlines between snippets",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/view_ui.rs:805 (ScrollYView); a view keeps its scroll position across its own render(): view.rs:296-306",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/html.rs:75 (Html), body html.rs:196; apps/mail/bundle/main.splash:268",
+    "makepad widgets/src/gesture_view.rs:44 (GestureView), on_tap/on_double_tap/on_pan gesture_view.rs:182-196, cumulative pan deltas gesture_view.rs:256"
+   ],
+   "geometry": {
+    "width": 288,
+    "group_padding": 12,
+    "snippet": "Html 11.5"
+   },
+   "colors": {
+    "light": {
+     "panel": "#ffffff",
+     "selected": "#eff5fc",
+     "border": "#116cdc",
+     "page": "#37393c",
+     "count": "#9c9da0",
+     "snippet": "#55575b"
+    },
+    "dark": {
+     "panel": "#192025",
+     "selected": "#22344d",
+     "border": "#2f75d8",
+     "page": "#d5d7d8",
+     "count": "#7d8184",
+     "snippet": "#b0b2b4"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 11.5,
+   "notes": "the filter icon beside the count is not built: nothing in the brief filters results",
+   "image_rect": [
+    100,
+    102,
+    290,
+    883
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 13,
+      "text": "12 matches on 7 pages",
+      "ocr_height": 15.6,
+      "ink": "#888b91",
+      "ground": "#f8f9f9",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 14,
+      "text": "Page 1",
+      "ocr_height": 16,
+      "ink": "#444649",
+      "ground": "#f6f6f6",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 15,
+      "text": "1 match",
+      "ocr_height": 11.4,
+      "ink": "#adafb5",
+      "ground": "#fafafa",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 16,
+      "text": "... strong start to Q3. Total revenue",
+      "ocr_height": 15.6,
+      "ink": "#727478",
+      "ground": "#f8f8f9",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 17,
+      "text": "increased 12% year over year...",
+      "ocr_height": 15.6,
+      "ink": "#8a8d92",
+      "ground": "#f8f8f9",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 18,
+      "text": "Page 3",
+      "ocr_height": 16.1,
+      "ink": "#484d56",
+      "ground": "#ecf0f6",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 19,
+      "text": "Revenue grew 12% year over year,",
+      "ocr_height": 16.1,
+      "ink": "#60656f",
+      "ground": "#ecf1f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 20,
+      "text": "led by the Northwest region.",
+      "ocr_height": 16.0,
+      "ink": "#6e747f",
+      "ground": "#ecf1f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 21,
+      "text": "2 matches",
+      "ocr_height": 13.9,
+      "ink": "#a4acba",
+      "ground": "#eef4fb",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 22,
+      "text": "... continued strength in revenue",
+      "ocr_height": 16.0,
+      "ink": "#585d67",
+      "ground": "#ebf0f7",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 23,
+      "text": "across all regions...",
+      "ocr_height": 15.6,
+      "ink": "#787e87",
+      "ground": "#eef3f9",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 24,
+      "text": "Page 4",
+      "ocr_height": 15.6,
+      "ink": "#515356",
+      "ground": "#f8f8f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 25,
+      "text": "1 match i",
+      "ocr_height": 11.2,
+      "ink": "#aaacb2",
+      "ground": "#f9f9fa",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 26,
+      "text": "Operating expenses rose 4% while",
+      "ocr_height": 18,
+      "ink": "#808288",
+      "ground": "#f8f8f9",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 27,
+      "text": "revenue outpaced costs...",
+      "ocr_height": 13.4,
+      "ink": "#707277",
+      "ground": "#f6f6f7",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 28,
+      "text": "Page 9",
+      "ocr_height": 15.6,
+      "ink": "#55565b",
+      "ground": "#f7f7f7",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 29,
+      "text": "1 match i",
+      "ocr_height": 11.2,
+      "ink": "#adb0b6",
+      "ground": "#fafbfb",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 30,
+      "text": "...strategic investments to drive",
+      "ocr_height": 16.0,
+      "ink": "#83858a",
+      "ground": "#f8f8f9",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 31,
+      "text": "future revenue growth ...",
+      "ocr_height": 18.0,
+      "ink": "#64666a",
+      "ground": "#f8f8f9",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 32,
+      "text": "Page 15",
+      "ocr_height": 15.6,
+      "ink": "#4e4f54",
+      "ground": "#f6f7f7",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 33,
+      "text": "1 match i",
+      "ocr_height": 11.3,
+      "ink": "#aaacb2",
+      "ground": "#f9f9fa",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 34,
+      "text": "Appendix B: detailed revenue by",
+      "ocr_height": 15.6,
+      "ink": "#76787c",
+      "ground": "#f8f8f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 35,
+      "text": "region and product line.",
+      "ocr_height": 16.0,
+      "ink": "#8c8e93",
+      "ground": "#f8f9f9",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 36,
+      "text": "Page 16",
+      "ocr_height": 16,
+      "ink": "#545559",
+      "ground": "#f7f7f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 37,
+      "text": "1 match",
+      "ocr_height": 14,
+      "ink": "#a9acb2",
+      "ground": "#f9fafa",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 38,
+      "text": "Year-over-year revenue comparison",
+      "ocr_height": 16,
+      "ink": "#6d6f74",
+      "ground": "#f7f7f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 39,
+      "text": "shows consistent momentum ...",
+      "ocr_height": 13.4,
+      "ink": "#8f9197",
+      "ground": "#f7f8f8",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 40,
+      "text": "Page 21",
+      "ocr_height": 15.6,
+      "ink": "#3a3c3f",
+      "ground": "#f3f4f4",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 41,
+      "text": "1 match",
+      "ocr_height": 11.2,
+      "ink": "#a9acb2",
+      "ground": "#f9fafa",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 42,
+      "text": "Risks to revenue include market",
+      "ocr_height": 16.0,
+      "ink": "#6e7075",
+      "ground": "#f7f7f8",
+      "ink_px": 12,
+      "size": 12.0
+     },
+     {
+      "i": 43,
+      "text": "volatility and supply constraints.",
+      "ocr_height": 13.5,
+      "ink": "#8d8f94",
+      "ground": "#f6f7f8",
+      "ink_px": 14,
+      "size": 11.5
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 5,
+      "bounds": [
+       101,
+       155,
+       287,
+       829
+      ],
+      "fill": "#fdfefe",
+      "radius": 0
+     },
+     {
+      "i": 6,
+      "bounds": [
+       105,
+       258,
+       265,
+       155
+      ],
+      "fill": "#eff5fc",
+      "radius": 3
+     },
+     {
+      "i": 8,
+      "bounds": [
+       101,
+       104,
+       286,
+       49
+      ],
+      "fill": "#fefefe",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     21,
+     22
+    ]
+   }
+  },
+  {
+   "id": "findbar",
+   "role": "find bar: 'n of N', previous, next, Done",
+   "widget": "SolidView 50 tall (toolrow, find_bar): RoundedView 104 x 38 with Label 'n of N', Outline 38 x 38 arrow-up / arrow-down (go_match ±1), Outline 'Done' (end_find)",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/button.rs:20 (ButtonFlat), draw_icon/icon_walk button.rs:470-477",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)"
+   ],
+   "geometry": {
+    "height": 50,
+    "align": "centre",
+    "gap": 8
+   },
+   "colors": {
+    "light": {
+     "bar": "#ffffff",
+     "box": "#ffffff",
+     "line": "#dcdcde",
+     "text": "#55575b"
+    },
+    "dark": {
+     "bar": "#232a2e",
+     "box": "#1e2429",
+     "line": "#3c4043",
+     "text": "#b0b2b4"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 12,
+   "image_rect": [
+    390,
+    102,
+    805,
+    52
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 54,
+      "text": "2 of 12",
+      "ocr_height": 13.4,
+      "ink": "#595b5f",
+      "ground": "#f7f7f7",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 55,
+      "text": "Done",
+      "ocr_height": 13.4,
+      "ink": "#454649",
+      "ground": "#f3f3f4",
+      "ink_px": 11,
+      "size": 11.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 7,
+      "bounds": [
+       390,
+       104,
+       803,
+       50
+      ],
+      "fill": "#fafbfc",
+      "radius": 0
+     },
+     {
+      "i": 18,
+      "bounds": [
+       646,
+       109,
+       148,
+       38
+      ],
+      "fill": "#fefefe",
+      "radius": 0
+     },
+     {
+      "i": 31,
+      "bounds": [
+       650,
+       114,
+       101,
+       29
+      ],
+      "fill": "#fdfdfd",
+      "radius": 1
+     },
+     {
+      "i": 36,
+      "bounds": [
+       844,
+       111,
+       62,
+       35
+      ],
+      "fill": "#fdfefe",
+      "radius": 0
+     },
+     {
+      "i": 39,
+      "bounds": [
+       795,
+       111,
+       43,
+       36
+      ],
+      "fill": "#fdfdfe",
+      "radius": 0
+     },
+     {
+      "i": 40,
+      "bounds": [
+       847,
+       115,
+       55,
+       28
+      ],
+      "fill": "#fcfdfd",
+      "radius": 0
+     },
+     {
+      "i": 41,
+      "bounds": [
+       752,
+       113,
+       38,
+       31
+      ],
+      "fill": "#fefefe",
+      "radius": 1
+     },
+     {
+      "i": 43,
+      "bounds": [
+       798,
+       114,
+       37,
+       29
+      ],
+      "fill": "#fdfdfd",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     2,
+     3
+    ]
+   }
+  },
+  {
+   "id": "matches",
+   "role": "match highlights on the page (overlay)",
+   "widget": "RoundedView per match rectangle (pdf.find rects, [x, y, w, h] points x zoom) inside the page's Overlay: yellow 42%, the current one orange 55% with a 1.5 pt border",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:5 (View); flow: Overlay children placed by margin from the parent's origin: draw/src/turtle.rs:3990-3995",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)"
+   ],
+   "geometry": {
+    "placement": "margin left x*zoom-1, top y*zoom-1; size w*zoom+2, h*zoom+2"
+   },
+   "colors": {
+    "light": {
+     "match": "#ffd84d6b",
+     "current": "#ffa62a8c",
+     "current_border": "#f0a020"
+    },
+    "dark": {
+     "match": "#ffd84d6b",
+     "current": "#ffa62a8c",
+     "current_border": "#f0a020"
+    }
+   },
+   "image_rect": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [],
+    "surfaces": [],
+    "dividers": []
+   }
+  },
+  {
+   "id": "document_panel",
+   "role": "right panel: Document properties, tags, signatures, reviewers",
+   "widget": "not built",
+   "status": "omitted",
+   "cite": [],
+   "geometry": {},
+   "colors": {},
+   "decision": "Find: drop the invented right 'Document' panel (tags, signatures, reviewers). Find has no right panel.",
+   "image_rect": [
+    1195,
+    104,
+    341,
+    880
+   ],
+   "source": {
+    "text": [
+     {
+      "i": 90,
+      "text": "Document",
+      "ocr_height": 13.9,
+      "ink": "#3b3e41",
+      "ground": "#f2f2f2",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 91,
+      "text": "File name",
+      "ocr_height": 14.1,
+      "ink": "#9b9ea4",
+      "ground": "#f8f8f9",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 92,
+      "text": "Q3 2026 Board Report.pdf",
+      "ocr_height": 15.6,
+      "ink": "#5e5f63",
+      "ground": "#f6f6f7",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 93,
+      "text": "Pages",
+      "ocr_height": 15.6,
+      "ink": "#94969e",
+      "ground": "#f9f9fa",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 94,
+      "text": "24",
+      "ocr_height": 11.2,
+      "ink": "#505258",
+      "ground": "#f4f4f4",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 95,
+      "text": "File size",
+      "ocr_height": 13.4,
+      "ink": "#9c9fa5",
+      "ground": "#f8f8f9",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 96,
+      "text": "2.8 MB",
+      "ocr_height": 14,
+      "ink": "#63656a",
+      "ground": "#f7f7f8",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 97,
+      "text": "Created",
+      "ocr_height": 11.2,
+      "ink": "#a1a3aa",
+      "ground": "#f8f8f9",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 98,
+      "text": "6 Oct 2026, 09:14",
+      "ocr_height": 15.6,
+      "ink": "#585a5e",
+      "ground": "#f5f5f6",
+      "ink_px": 12,
+      "size": 10.0
+     },
+     {
+      "i": 99,
+      "text": "Modified",
+      "ocr_height": 11.3,
+      "ink": "#9b9da2",
+      "ground": "#f7f7f8",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 100,
+      "text": "6 Oct 2026, 09:14",
+      "ocr_height": 13.4,
+      "ink": "#55575b",
+      "ground": "#f3f4f4",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 101,
+      "text": "Tags",
+      "ocr_height": 15.6,
+      "ink": "#47484d",
+      "ground": "#f6f7f7",
+      "ink_px": 15,
+      "size": 12.0
+     },
+     {
+      "i": 102,
+      "text": "• Add tag",
+      "ocr_height": 16.0,
+      "ink": "#626468",
+      "ground": "#f7f7f8",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 103,
+      "text": "Signatures",
+      "ocr_height": 15.6,
+      "ink": "#434448",
+      "ground": "#f5f5f5",
+      "ink_px": 14,
+      "size": 11.5
+     },
+     {
+      "i": 104,
+      "text": "All signatures are valid",
+      "ocr_height": 15.6,
+      "ink": "#5c5d60",
+      "ground": "#f6f6f6",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 105,
+      "text": "Signed by: Jun Park",
+      "ocr_height": 15.6,
+      "ink": "#94959a",
+      "ground": "#f8f8f9",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 106,
+      "text": "Signed on: 6 Oct 2026, 09:10",
+      "ocr_height": 15.6,
+      "ink": "#93959b",
+      "ground": "#f8f9f9",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 107,
+      "text": "View signatures",
+      "ocr_height": 13.4,
+      "ink": "#787a7e",
+      "ground": "#f7f8f8",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 108,
+      "text": "Reviewers",
+      "ocr_height": 13.4,
+      "ink": "#424348",
+      "ground": "#f2f2f3",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 109,
+      "text": "MC",
+      "ocr_height": 15.6,
+      "ink": "#798699",
+      "ground": "#f1f4f8",
+      "ink_px": 21,
+      "size": 21.0
+     },
+     {
+      "i": 110,
+      "text": "Maya Chen (You)",
+      "ocr_height": 13.4,
+      "ink": "#65676b",
+      "ground": "#f5f5f6",
+      "ink_px": 13,
+      "size": 10.5
+     },
+     {
+      "i": 111,
+      "text": "Jun Park",
+      "ocr_height": 13.4,
+      "ink": "#6c6d70",
+      "ground": "#f8f8f8",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 112,
+      "text": "AR",
+      "ocr_height": 11.2,
+      "ink": "#c36875",
+      "ground": "#fbf0f2",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 113,
+      "text": "Ana Ruiz",
+      "ocr_height": 14.5,
+      "ink": "#636568",
+      "ground": "#f6f7f7",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 114,
+      "text": "Add reviewer",
+      "ocr_height": 11.2,
+      "ink": "#787a7e",
+      "ground": "#f6f6f7",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 117,
+      "text": "No status",
+      "ocr_height": 13.6,
+      "ink": "#95989e",
+      "ground": "#f9f9f9",
+      "ink_px": 9,
+      "size": 9.0
+     },
+     {
+      "i": 118,
+      "text": "Reviewed",
+      "ocr_height": 13.4,
+      "ink": "#79ad89",
+      "ground": "#f5faf7",
+      "ink_px": 10,
+      "size": 10.0
+     },
+     {
+      "i": 119,
+      "text": "Changes requested v",
+      "ocr_height": 14,
+      "ink": "#dd8484",
+      "ground": "#fdf8f8",
+      "ink_px": 11,
+      "size": 9.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 4,
+      "bounds": [
+       1195,
+       104,
+       340,
+       880
+      ],
+      "fill": "#fefefe",
+      "radius": 0
+     },
+     {
+      "i": 19,
+      "bounds": [
+       1210,
+       887,
+       125,
+       37
+      ],
+      "fill": "#fdfefe",
+      "radius": 0
+     },
+     {
+      "i": 20,
+      "bounds": [
+       1400,
+       798,
+       118,
+       38
+      ],
+      "fill": "#fefefe",
+      "radius": 0
+     },
+     {
+      "i": 21,
+      "bounds": [
+       1400,
+       753,
+       118,
+       38
+      ],
+      "fill": "#fefefe",
+      "radius": 0
+     },
+     {
+      "i": 23,
+      "bounds": [
+       1210,
+       665,
+       114,
+       36
+      ],
+      "fill": "#fdfdfd",
+      "radius": 0
+     },
+     {
+      "i": 24,
+      "bounds": [
+       1400,
+       843,
+       118,
+       33
+      ],
+      "fill": "#fefdfd",
+      "radius": 0
+     },
+     {
+      "i": 25,
+      "bounds": [
+       1213,
+       890,
+       119,
+       31
+      ],
+      "fill": "#fdfdfd",
+      "radius": 1
+     },
+     {
+      "i": 26,
+      "bounds": [
+       1403,
+       801,
+       112,
+       32
+      ],
+      "fill": "#fdfefe",
+      "radius": 1
+     },
+     {
+      "i": 27,
+      "bounds": [
+       1403,
+       756,
+       112,
+       32
+      ],
+      "fill": "#fdfefe",
+      "radius": 1
+     },
+     {
+      "i": 28,
+      "bounds": [
+       1213,
+       668,
+       107,
+       30
+      ],
+      "fill": "#fcfdfd",
+      "radius": 1
+     },
+     {
+      "i": 30,
+      "bounds": [
+       1403,
+       846,
+       114,
+       27
+      ],
+      "fill": "#fefcfd",
+      "radius": 0
+     },
+     {
+      "i": 32,
+      "bounds": [
+       1209,
+       497,
+       87,
+       33
+      ],
+      "fill": "#fcfcfd",
+      "radius": 0
+     },
+     {
+      "i": 37,
+      "bounds": [
+       1213,
+       500,
+       80,
+       27
+      ],
+      "fill": "#fbfbfb",
+      "radius": 0
+     }
+    ],
+    "dividers": [
+     10,
+     11,
+     13,
+     19,
+     28,
+     29
+    ]
+   }
+  },
+  {
+   "id": "canvas",
+   "role": "canvas: the desk behind the pages",
+   "widget": "ScrollXYView canvas (on_render canvas_view): a run of up to 8 pages from the page gone to (go_page: drawn empty for one frame so the scroll clamps to the top, then filled), 'Continue with page n' after the run",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:790 (ScrollXYView); scroll clamped to content each draw: scroll_bar.rs:1264-1267",
+    "makepad widgets/src/view.rs:904-929 (render), a fn returning a widget may be called in on_render and inside literals (card-host probe, pdftools2-spike/scope)"
+   ],
+   "geometry": {
+    "width": "Fill",
+    "page_top": 13,
+    "page_gap": 13,
+    "bottom": 92,
+    "sides": 24,
+    "align": "centre"
+   },
+   "colors": {
+    "light": {
+     "desk": "#eceded"
+    },
+    "dark": {
+     "desk": "#191f24"
+    }
+   },
+   "notes": "",
+   "image_rect": [
+    388,
+    154,
+    807,
+    831
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [],
+    "surfaces": [],
+    "dividers": []
+   }
+  },
+  {
+   "id": "status",
+   "role": "status line: save state, storage used",
+   "widget": "SolidView status (on_render status_view): RoundedView 12 dot (green Saved, orange Edited/Saving), Label state, Label '<x> of 64 MB used' (the library's PDFs against the 64 MiB storage); on Home the label and a RoundedView bar",
+   "cite": [
+    "makepad widgets/src/view_ui.rs:85 (SolidView); App Flow docs/SCRIPT-API.md 'Backgrounds'",
+    "makepad widgets/src/view_ui.rs:308 (RoundedView)",
+    "makepad widgets/src/label.rs:11 (Label), max_lines label.rs:258, text_overflow draw_text.rs:1295 (Ellipsis)"
+   ],
+   "geometry": {
+    "height": 44,
+    "padding": [
+     33,
+     29
+    ],
+    "dot": 12,
+    "gap": 11
+   },
+   "colors": {
+    "light": {
+     "status": "#ffffff",
+     "text": "#76787c",
+     "saved": "#49b039",
+     "edited": "#f2a20d"
+    },
+    "dark": {
+     "status": "#1b2226",
+     "text": "#9a9da0",
+     "saved": "#38a540",
+     "edited": "#e39a1c"
+    }
+   },
+   "font": "theme.font_regular",
+   "size": 11.5,
+   "state": "Saved",
+   "notes": "",
+   "image_rect": [
+    0,
+    985,
+    1536,
+    39
+   ],
+   "status": "built",
+   "decision": null,
+   "source": {
+    "text": [
+     {
+      "i": 120,
+      "text": "• Saved",
+      "ocr_height": 14,
+      "ink": "#66977f",
+      "ground": "#f7f8f8",
+      "ink_px": 11,
+      "size": 11.0
+     },
+     {
+      "i": 121,
+      "text": "14.6 of 64 MB used",
+      "ocr_height": 14,
+      "ink": "#8f9197",
+      "ground": "#f9f9fa",
+      "ink_px": 11,
+      "size": 11.0
+     }
+    ],
+    "surfaces": [
+     {
+      "i": 0,
+      "bounds": [
+       0,
+       5,
+       1536,
+       1019
+      ],
+      "fill": "#fdfefe",
+      "radius": 0
+     }
+    ],
+    "dividers": []
+   }
+  }
+ ],
+ "coverage": {
+  "text": 122,
+  "surfaces": 45,
+  "dividers": 30,
+  "unmapped": 0
+ }
+}
