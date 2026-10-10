@@ -4,7 +4,7 @@
     "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "80242e5023a56cd8c0091d13ac634d8499192ecc",
+    "tree": "9cc9fd25250ffccdf36ffb086f8262754e9975ef",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -46,7 +46,8 @@
       "Video numeric controls accept both integer and floating Splash arguments while refusing nonnumeric, nonfinite and out-of-range values; native acceptance exposed the integer-seek regression.",
       "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback.",
       "A script can move a plain map and hear it (makepad#113, branch octosense/map-script-api): fly_to, fit_route and clear_route, and the on_tap, on_long_press, on_marker and on_viewport callbacks on MapView. A script's fly_to and a pending fit give way to the person's drag; clear_route also drops a script route, its vehicle and a pending fit. On any map, a wheel that a scroll view over or around it already used no longer zooms it. Maps' route preview stays draggable; the plan, follow and drive cameras are unchanged.",
-      "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB."
+      "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
+      "Linux renderer performance (fork 5e0f0f165..edd594801 plus a port of 3efa295a9 onto the pinned Wayland loop): renderer maintenance wakes no longer broadcast Event::Signal; redundant GL uniform uploads and time-driven repaints of empty draw calls are skipped; the Wayland loop idles at 0.2 s and serves GL retirement without repainting; MSDF glyphs are generated 28x faster with identical output; Vulkan windows present through a mailbox swapchain with draw/wait timing."
     ],
     "stacked": [
       {
@@ -180,6 +181,10 @@
       {
         "patch": "tools/runtime-patches/makepad-large-document-import.patch",
         "sha256": "d8c3c516d7f6feff3f36162a745bd5f939bb971d13c8c10942a9e5731728f3df"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-linux-renderer-perf.patch",
+        "sha256": "5c2d5505c53446326fa07eaa7a51c65f94de4ad6037e978d66f0e441b6a604f8"
       }
     ]
   }

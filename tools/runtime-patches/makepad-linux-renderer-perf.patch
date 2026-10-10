@@ -1,0 +1,1784 @@
+diff --git a/draw/src/text/msdfer.rs b/draw/src/text/msdfer.rs
+index 7b5caef59..b17eb980c 100644
+--- a/draw/src/text/msdfer.rs
++++ b/draw/src/text/msdfer.rs
+@@ -18,9 +18,22 @@
+ 
+ const EDGE_COLORS: [u8; 3] = [COLOR_CYAN, COLOR_MAGENTA, COLOR_YELLOW];
+ 
++const CHANNELS: [u8; 3] = [CHANNEL_R, CHANNEL_G, CHANNEL_B];
++
+ const QUADRATIC_FLATTEN_STEPS: usize = 64;
+ const CUBIC_FLATTEN_STEPS: usize = 96;
+ 
++/// Flattened segments of one edge are culled in runs of at most this many,
++/// each with its own bounding box. Shorter runs hug the curve but add boxes to
++/// test at every pixel; 32 was fastest on Latin and CJK glyphs (4: 12x, 8: 19x,
++/// 16: 26x, 32: 28x, 64: 24x faster than the full scan).
++const SEGMENT_RUN_LEN: usize = 32;
++/// Slack (in pixels) on the culling bound, far above f32 rounding of these
++/// distances, so a segment that could tie the winner is never culled.
++const CULL_EPSILON: f32 = 1.0 / 64.0;
++/// A flattened segment this short (squared, in pixels) has no distance.
++const DEGENERATE_SEGMENT_LEN_SQ: f32 = 0.000_000_1;
++
+ pub struct Msdfer {
+     settings: Settings,
+ }
+@@ -39,6 +52,22 @@ pub fn outline_to_msdf(
+         outline: &GlyphOutline,
+         dpxs_per_em: f32,
+         output: &mut SubimageMut<'_, Bgra>,
++    ) {
++        self.render(outline, dpxs_per_em, output, true);
++    }
++
++    /// With `cull`, a pixel skips each run of segments whose bounding box lies
++    /// beyond every nearest distance the run could still improve. Those
++    /// segments are strictly farther than the winners, and the remaining ones
++    /// keep their order, so the image is identical to scanning every segment
++    /// (`cull == false`), which costs pixels x segments: ~10^7 distance
++    /// evaluations for one CJK glyph.
++    fn render(
++        &mut self,
++        outline: &GlyphOutline,
++        dpxs_per_em: f32,
++        output: &mut SubimageMut<'_, Bgra>,
++        cull: bool,
+     ) {
+         let output_size = output.size();
+         let inner_size = output_size
+@@ -51,9 +80,11 @@ pub fn outline_to_msdf(
+         let mut shape = Shape::from_outline(outline);
+         color_shape_edges(&mut shape, self.settings.corner_angle_threshold);
+         let transform = outline.rasterize_transform(dpxs_per_em);
+-        let segments = flatten_shape(&shape, transform, inner_size.height);
++        let (segments, runs) = flatten_shape(&shape, transform, inner_size.height);
+ 
+         for y in 0..output_size.height {
++            // Nearest |distance| (R, G, B, overall) at the previous pixel of the row.
++            let mut previous: Option<[f32; 4]> = None;
+             for x in 0..output_size.width {
+                 let point = Point::new(
+                     x as f32 - self.settings.padding as f32 + 0.5,
+@@ -64,34 +95,66 @@ pub fn outline_to_msdf(
+                 let mut selector_b = ChannelSelector::default();
+                 let mut min_distance = SignedDistance::inf();
+ 
+-                for (segment_index, segment) in segments.iter().enumerate() {
+-                    let (distance, param) = segment.signed_distance(point);
+-                    if distance_is_better(distance, min_distance) {
+-                        min_distance = distance;
++                // Upper bounds on this pixel's nearest distances. A distance
++                // moves by at most the one-pixel step, so the previous pixel's
++                // bound this one; a row's first pixel takes the closest of the
++                // runs' farthest box corners.
++                let bound = match (cull, previous) {
++                    (false, _) => [f32::INFINITY; 4],
++                    (true, Some(previous)) => previous.map(|distance| distance + 1.0 + CULL_EPSILON),
++                    (true, None) => far_corner_bounds_sq(&runs, point)
++                        .map(|bound_sq| bound_sq.sqrt() + CULL_EPSILON),
++                };
++
++                for run in &runs {
++                    if cull {
++                        let mut limit = bound[3];
++                        for channel in 0..3 {
++                            if run.color & CHANNELS[channel] != 0 {
++                                limit = limit.max(bound[channel]);
++                            }
++                        }
++                        if run.near_distance_sq(point) > limit * limit {
++                            continue;
++                        }
+                     }
+-                    if segment.color & CHANNEL_R != 0
+-                        && distance_is_better(distance, selector_r.min_distance)
+-                    {
+-                        selector_r.min_distance = distance;
+-                        selector_r.near_segment_index = Some(segment_index);
+-                        selector_r.near_param = param;
+-                    }
+-                    if segment.color & CHANNEL_G != 0
+-                        && distance_is_better(distance, selector_g.min_distance)
+-                    {
+-                        selector_g.min_distance = distance;
+-                        selector_g.near_segment_index = Some(segment_index);
+-                        selector_g.near_param = param;
+-                    }
+-                    if segment.color & CHANNEL_B != 0
+-                        && distance_is_better(distance, selector_b.min_distance)
+-                    {
+-                        selector_b.min_distance = distance;
+-                        selector_b.near_segment_index = Some(segment_index);
+-                        selector_b.near_param = param;
++                    for segment_index in run.segments.clone() {
++                        let segment = &segments[segment_index];
++                        let (distance, param) = segment.signed_distance(point);
++                        if distance_is_better(distance, min_distance) {
++                            min_distance = distance;
++                        }
++                        if segment.color & CHANNEL_R != 0
++                            && distance_is_better(distance, selector_r.min_distance)
++                        {
++                            selector_r.min_distance = distance;
++                            selector_r.near_segment_index = Some(segment_index);
++                            selector_r.near_param = param;
++                        }
++                        if segment.color & CHANNEL_G != 0
++                            && distance_is_better(distance, selector_g.min_distance)
++                        {
++                            selector_g.min_distance = distance;
++                            selector_g.near_segment_index = Some(segment_index);
++                            selector_g.near_param = param;
++                        }
++                        if segment.color & CHANNEL_B != 0
++                            && distance_is_better(distance, selector_b.min_distance)
++                        {
++                            selector_b.min_distance = distance;
++                            selector_b.near_segment_index = Some(segment_index);
++                            selector_b.near_param = param;
++                        }
+                     }
+                 }
+ 
++                previous = Some([
++                    selector_r.min_distance.distance.abs(),
++                    selector_g.min_distance.distance.abs(),
++                    selector_b.min_distance.distance.abs(),
++                    min_distance.distance.abs(),
++                ]);
++
+                 if !min_distance.distance.is_finite() {
+                     output[Point::new(x, y)] = Bgra::new(0, 0, 0, 255);
+                     continue;
+@@ -340,14 +403,88 @@ fn flatten_shape(
+     shape: &Shape,
+     transform: Transform<f32>,
+     inner_height: usize,
+-) -> Vec<FlatSegment> {
++) -> (Vec<FlatSegment>, Vec<SegmentRun>) {
+     let mut segments = Vec::new();
++    let mut runs = Vec::new();
+     for contour in &shape.contours {
+         for edge in &contour.edges {
++            let edge_start = segments.len();
+             flatten_edge(*edge, transform, inner_height, &mut segments);
++            let mut start = edge_start;
++            while start < segments.len() {
++                let end = (start + SEGMENT_RUN_LEN).min(segments.len());
++                runs.push(SegmentRun::new(&segments, start..end, edge.color));
++                start = end;
++            }
+         }
+     }
+-    segments
++    (segments, runs)
++}
++
++/// Consecutive flattened segments of one edge and the box that contains them.
++struct SegmentRun {
++    segments: std::ops::Range<usize>,
++    color: u8,
++    min: Point<f32>,
++    max: Point<f32>,
++    /// Whether a segment of the run has a finite distance, which its box's
++    /// farthest corner then bounds. A run of degenerate segments bounds nothing.
++    bounds_nearest: bool,
++}
++
++impl SegmentRun {
++    fn new(segments: &[FlatSegment], range: std::ops::Range<usize>, color: u8) -> Self {
++        let mut min = Point::new(f32::INFINITY, f32::INFINITY);
++        let mut max = Point::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
++        for segment in &segments[range.clone()] {
++            for p in [segment.p0, segment.p1] {
++                min = Point::new(min.x.min(p.x), min.y.min(p.y));
++                max = Point::new(max.x.max(p.x), max.y.max(p.y));
++            }
++        }
++        let bounds_nearest = segments[range.clone()].iter().any(|segment| {
++            let v = Vec2::from_points(segment.p0, segment.p1);
++            v.dot(v) > DEGENERATE_SEGMENT_LEN_SQ
++        });
++        Self {
++            segments: range,
++            color,
++            min,
++            max,
++            bounds_nearest,
++        }
++    }
++
++    /// Squared distance from `point` to the box: no segment of the run is nearer.
++    fn near_distance_sq(&self, point: Point<f32>) -> f32 {
++        let x = (self.min.x - point.x).max(point.x - self.max.x).max(0.0);
++        let y = (self.min.y - point.y).max(point.y - self.max.y).max(0.0);
++        x * x + y * y
++    }
++
++    /// Squared distance from `point` to the box's farthest corner: the run's
++    /// nearest segment (if it has a distance) is no farther.
++    fn far_distance_sq(&self, point: Point<f32>) -> f32 {
++        let x = (point.x - self.min.x).abs().max((self.max.x - point.x).abs());
++        let y = (point.y - self.min.y).abs().max((self.max.y - point.y).abs());
++        x * x + y * y
++    }
++}
++
++/// Squared upper bounds on the nearest distance per channel (R, G, B) and
++/// overall: the closest farthest corner among the runs that can be nearest.
++fn far_corner_bounds_sq(runs: &[SegmentRun], point: Point<f32>) -> [f32; 4] {
++    let mut bound_sq = [f32::INFINITY; 4];
++    for run in runs.iter().filter(|run| run.bounds_nearest) {
++        let far_sq = run.far_distance_sq(point);
++        bound_sq[3] = bound_sq[3].min(far_sq);
++        for channel in 0..3 {
++            if run.color & CHANNELS[channel] != 0 {
++                bound_sq[channel] = bound_sq[channel].min(far_sq);
++            }
++        }
++    }
++    bound_sq
+ }
+ 
+ fn flatten_edge(
+@@ -562,7 +699,7 @@ impl FlatSegment {
+     fn signed_distance(self, point: Point<f32>) -> (SignedDistance, f32) {
+         let segment = Vec2::from_points(self.p0, self.p1);
+         let segment_len_sq = segment.dot(segment);
+-        if segment_len_sq <= 0.000_000_1 {
++        if segment_len_sq <= DEGENERATE_SEGMENT_LEN_SQ {
+             return (SignedDistance::inf(), 0.0);
+         }
+ 
+@@ -778,3 +915,79 @@ fn length(self) -> f32 {
+         self.dot(self).sqrt()
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use {
++        super::*,
++        crate::text::{
++            geom::Rect,
++            glyph_outline,
++            image::Image,
++        },
++        rustybuzz::ttf_parser,
++        std::time::{Duration, Instant},
++    };
++
++    fn outlines(font_file: &str, text: &str) -> Vec<(char, GlyphOutline)> {
++        let path = format!("{}/../widgets/resources/{font_file}", env!("CARGO_MANIFEST_DIR"));
++        let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
++        let face = ttf_parser::Face::parse(&bytes, 0).unwrap();
++        let units_per_em = face.units_per_em() as f32;
++        text.chars()
++            .filter_map(|ch| {
++                let id = face.glyph_index(ch)?;
++                let mut builder = glyph_outline::Builder::new();
++                let bounds = face.outline_glyph(id, &mut builder)?;
++                let min = Point::new(bounds.x_min as f32, bounds.y_min as f32);
++                let max = Point::new(bounds.x_max as f32, bounds.y_max as f32);
++                Some((ch, builder.finish(Rect::new(min, max - min), units_per_em)))
++            })
++            .collect()
++    }
++
++    fn render(outline: &GlyphOutline, dpxs_per_em: f32, cull: bool) -> (Vec<Bgra>, Duration) {
++        // The layouter's MSDF settings, and the rasterizer's image size.
++        let settings = Settings { padding: 4, radius: 8.0, cutoff: 0.25, corner_angle_threshold: 3.0 };
++        let in_dpxs = outline.size_in_ems() * dpxs_per_em;
++        let size = Size::new(
++            in_dpxs.width.ceil() as usize + settings.padding * 2,
++            in_dpxs.height.ceil() as usize + settings.padding * 2,
++        );
++        let mut image = Image::<Bgra>::new(size);
++        let started = Instant::now();
++        Msdfer::new(settings).render(outline, dpxs_per_em, &mut image.subimage_mut(Rect::from(size)), cull);
++        (image.into_pixels(), started.elapsed())
++    }
++
++    /// Culling must not change one bit of any channel; it only skips segments
++    /// that cannot be nearest. Run with `--nocapture` in release for timings.
++    #[test]
++    fn culled_msdf_matches_full_scan() {
++        let glyphs = [
++            ("IBMPlexSans-Text.ttf", "AaBgQW@&%?8Rß"),
++            ("LXGWWenKaiRegular.ttf", "这样的周末真好下次一起测试输入是否流畅龍鬱齉體驚"),
++        ];
++        let (mut full_time, mut culled_time) = (Duration::ZERO, Duration::ZERO);
++        let mut images = 0;
++        for (font, text) in glyphs {
++            for (ch, outline) in outlines(font, text) {
++                for dpxs_per_em in [20.0, 32.0, 48.0, 64.0, 96.0, 128.0] {
++                    let (full, full_elapsed) = render(&outline, dpxs_per_em, false);
++                    let (culled, culled_elapsed) = render(&outline, dpxs_per_em, true);
++                    assert!(full == culled, "{ch:?} at {dpxs_per_em} dpx/em differs");
++                    full_time += full_elapsed;
++                    culled_time += culled_elapsed;
++                    images += 1;
++                }
++            }
++        }
++        assert!(images > 100);
++        println!(
++            "{images} glyph images: full scan {:.1} ms, culled {:.1} ms ({:.1}x)",
++            full_time.as_secs_f64() * 1e3,
++            culled_time.as_secs_f64() * 1e3,
++            full_time.as_secs_f64() / culled_time.as_secs_f64(),
++        );
++    }
++}
+diff --git a/platform/network/src/ui_signal.rs b/platform/network/src/ui_signal.rs
+index 6674f9458..53b47eff9 100644
+--- a/platform/network/src/ui_signal.rs
++++ b/platform/network/src/ui_signal.rs
+@@ -56,6 +56,7 @@ fn wake_ui() {
+ 
+ static UI_SIGNAL: AtomicBool = AtomicBool::new(false);
+ static ACTION_SIGNAL: AtomicBool = AtomicBool::new(false);
++static RENDERER_SIGNAL: AtomicBool = AtomicBool::new(false);
+ 
+ impl SignalToUI {
+     pub fn set_ui_signal() {
+@@ -64,18 +65,37 @@ pub fn set_ui_signal() {
+         }
+     }
+ 
++    /// Wake backend maintenance without delivering an application `Event::Signal`.
++    /// Renderers use this after asynchronous submission, allocation, or compilation;
++    /// completed application work must continue to use `set_ui_signal`.
++    pub fn set_renderer_signal() {
++        if !RENDERER_SIGNAL.swap(true, Ordering::AcqRel) {
++            wake_ui();
++        }
++    }
++
++    /// Consume a renderer wake in the platform event loop, before servicing paints.
++    pub fn check_and_clear_renderer_signal() -> bool {
++        RENDERER_SIGNAL.swap(false, Ordering::AcqRel)
++    }
++
+     pub fn set_action_signal() {
+         if !ACTION_SIGNAL.swap(true, Ordering::AcqRel) {
+             wake_ui();
+         }
+     }
+ 
+-    /// Whether a UI or action signal is raised and not yet taken. Does not
++    /// Whether an application, action, or renderer wake is pending. Does not
+     /// clear it: the event loop uses it to decide whether a wake needs a tick.
+     pub fn signal_pending() -> bool {
+-        UI_SIGNAL.load(Ordering::Acquire) || ACTION_SIGNAL.load(Ordering::Acquire)
++        UI_SIGNAL.load(Ordering::Acquire)
++            || ACTION_SIGNAL.load(Ordering::Acquire)
++            || RENDERER_SIGNAL.load(Ordering::Acquire)
+     }
+ 
++    /// Platform event-loop consumption only. Application `Event::Signal` handlers
++    /// must drain their own queues or check an owned `SignalToUI` instance instead:
++    /// the global flag has already been consumed before that event is dispatched.
+     pub fn check_and_clear_ui_signal() -> bool {
+         UI_SIGNAL.swap(false, Ordering::AcqRel)
+     }
+diff --git a/platform/src/draw_list.rs b/platform/src/draw_list.rs
+index fa22f5ac3..76322b556 100644
+--- a/platform/src/draw_list.rs
++++ b/platform/src/draw_list.rs
+@@ -1058,7 +1058,7 @@ pub fn retire_free_items_with_ids<P: Send + 'static>(
+                 let _ = returned.try_send(batch);
+                 counter.fetch_sub(1, Ordering::AcqRel);
+                 #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+-                crate::thread::SignalToUI::set_ui_signal();
++                crate::thread::SignalToUI::set_renderer_signal();
+             };
+             // Android and OpenHarmony serve the rest of the debt on the idle vsync beat
+             // (`opengl_maintain_instance_retirements`) and on every painted
+@@ -1066,10 +1066,9 @@ pub fn retire_free_items_with_ids<P: Send + 'static>(
+             // raise (twice, with the pool's completion signal) arrived once per
+             // animation frame as an `Event::Signal` through the whole app,
+             // hosted modules included, and as an extra trip round the loop.
+-            #[cfg(any(target_os = "android", target_env = "ohos"))]
++            // Other backends wake only their maintenance path above. The pool
++            // must not publish an application signal for this detached job.
+             slot.submit_detached_silent("retained draw storage retirement", job);
+-            #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+-            slot.submit_named("retained draw storage retirement", job).detach();
+         }
+         // Settlement includes rotating scans and completion/metadata debt,
+         // not just the queue of freed CPU publications. Otherwise a view can
+diff --git a/platform/src/os/apple/ios/ios.rs b/platform/src/os/apple/ios/ios.rs
+index 83a5fab33..52141d2bd 100644
+--- a/platform/src/os/apple/ios/ios.rs
++++ b/platform/src/os/apple/ios/ios.rs
+@@ -717,6 +717,7 @@ fn ios_event_callback(&mut self, event: IosEvent, metal_cx: &mut MetalCx) -> Eve
+                     }
+                     self.drain_ios_text_events();
+                     // check signals
++                    SignalToUI::check_and_clear_renderer_signal();
+                     if SignalToUI::check_and_clear_ui_signal() {
+                         self.handle_media_signals();
+                         self.handle_script_signals();
+diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
+index 877a3781a..7507e8235 100644
+--- a/platform/src/os/apple/macos/macos.rs
++++ b/platform/src/os/apple/macos/macos.rs
+@@ -125,7 +125,7 @@ fn new(layer: ObjcId) -> Self {
+                 let drawable = NonNull::new(drawable).map(RcObjcId::from_unowned);
+                 unsafe { let _: () = msg_send![pool, release]; }
+                 if ready.try_send(drawable).is_err() { break; }
+-                SignalToUI::set_ui_signal();
++                SignalToUI::set_renderer_signal();
+             }
+         }).expect("drawable acquisition worker");
+         Self { request, ready: replies, pending: false, wait_ns, started: None }
+@@ -856,11 +856,6 @@ pub(crate) fn handle_repaint(
+                             }
+                         }
+                         metal_window.gate_closed_since = None;
+-                        // PerfMonitor: a presented window frame starts here;
+-                        // nextDrawable is where vsync/pool pressure blocks
+-                        // the main thread, so it gets its own channel.
+-                        self.perf_monitor
+-                            .frame_boundary(with_macos_app(|app| app.time_now()));
+                         let drawable = acquired.as_ref().map_or(nil, RcObjcId::as_id);
+                         if drawable == nil {
+                             if let Some(trace) = &metal_cx.present_trace { trace.cause(PresentCause::NoDrawable); }
+@@ -920,6 +915,20 @@ pub(crate) fn handle_repaint(
+                         if remote_present {
+                             self.os.remote_presented = Some(presented);
+                         }
++                        if presented {
++                            self.perf_monitor
++                                .frame_boundary(with_macos_app(|app| app.time_now()));
++                            // A normal paint can satisfy an input frame that
++                            // initially had to wait for a drawable. Its old
++                            // acquisition deadline must not poison a later input.
++                            if self
++                                .os
++                                .remote_present_waiting
++                                .is_some_and(|(id, _)| id == window_id)
++                            {
++                                self.os.remote_present_waiting = None;
++                            }
++                        }
+                         // The pass bailed before presenting, so its handler never
+                         // fires. Give the count back or the gate closes for good.
+                         if !presented {
+@@ -1121,6 +1130,7 @@ fn cocoa_event_callback(
+                     }
+ 
+                     // check signals
++                    needs_timer |= SignalToUI::check_and_clear_renderer_signal();
+                     if SignalToUI::check_and_clear_ui_signal() {
+                         self.handle_termination_signal();
+                         self.handle_media_signals();
+diff --git a/platform/src/os/apple/macos/macos_stdin.rs b/platform/src/os/apple/macos/macos_stdin.rs
+index 1aff52750..8e1aa479d 100644
+--- a/platform/src/os/apple/macos/macos_stdin.rs
++++ b/platform/src/os/apple/macos/macos_stdin.rs
+@@ -362,6 +362,7 @@ fn stdin_handle_host_to_stdin(
+                         }
+                     }
+                 }
++                SignalToUI::check_and_clear_renderer_signal();
+                 if SignalToUI::check_and_clear_ui_signal() {
+                     self.handle_termination_signal();
+                     self.handle_media_signals();
+diff --git a/platform/src/os/apple/metal.rs b/platform/src/os/apple/metal.rs
+index fdd0e07a0..ac7230ba2 100644
+--- a/platform/src/os/apple/metal.rs
++++ b/platform/src/os/apple/metal.rs
+@@ -2422,7 +2422,7 @@ fn spawn_submitter(
+                 if let Some(trace) = &trace { trace.mark(PresentStage::CommitReturned); }
+                 drop(submission);
+                 let _: () = unsafe { msg_send![pool, release] };
+-                crate::thread::SignalToUI::set_ui_signal();
++                crate::thread::SignalToUI::set_renderer_signal();
+             }
+         })
+         .expect("Metal submission worker");
+@@ -3509,7 +3509,7 @@ fn failure(&self, error: String) {
+         crate::error!("Metal shader: {}", error);
+         let _ = self.blend.set(Err(error.clone()));
+         let _ = self.solid.set(Err(error));
+-        crate::thread::SignalToUI::set_ui_signal();
++        crate::thread::SignalToUI::set_renderer_signal();
+     }
+ 
+     fn compile(
+@@ -3662,7 +3662,7 @@ fn compile(
+                         } else {
+                             ready.solid.set(result)
+                         };
+-                        crate::thread::SignalToUI::set_ui_signal();
++                        crate::thread::SignalToUI::set_renderer_signal();
+                     });
+                     unsafe {
+                         let _: () = msg_send![callback_device.as_id(),
+@@ -4195,7 +4195,7 @@ fn spawn_allocator() -> (std::sync::mpsc::SyncSender<MetalAllocationRequest>, st
+                     }
+                 }
+                 let _: () = unsafe { msg_send![pool, release] };
+-                crate::thread::SignalToUI::set_ui_signal();
++                crate::thread::SignalToUI::set_renderer_signal();
+             }
+         }).expect("Metal instance allocation worker");
+         (tx, thread)
+diff --git a/platform/src/os/apple/tvos/tvos.rs b/platform/src/os/apple/tvos/tvos.rs
+index d7e9110cf..a293697b9 100644
+--- a/platform/src/os/apple/tvos/tvos.rs
++++ b/platform/src/os/apple/tvos/tvos.rs
+@@ -136,6 +136,7 @@ fn tvos_event_callback(&mut self, event: TvosEvent, metal_cx: &mut MetalCx) -> E
+         match &event {
+             TvosEvent::Timer(te) => {
+                 if te.timer_id == 0 {
++                    SignalToUI::check_and_clear_renderer_signal();
+                     if SignalToUI::check_and_clear_ui_signal() {
+                         self.handle_media_signals();
+                         self.handle_script_signals();
+diff --git a/platform/src/os/gpusim/event_loop.rs b/platform/src/os/gpusim/event_loop.rs
+index 2b3deb38d..523ad8d2e 100644
+--- a/platform/src/os/gpusim/event_loop.rs
++++ b/platform/src/os/gpusim/event_loop.rs
+@@ -134,6 +134,7 @@ fn gpusim_bounded_loop(&mut self, draw_cycles: usize) {
+ 
+         let mut completed_cycles = 0usize;
+         while running && completed_cycles < draw_cycles {
++            SignalToUI::check_and_clear_renderer_signal();
+             if SignalToUI::check_and_clear_ui_signal() {
+                 self.handle_termination_signal();
+                 self.handle_script_signals();
+@@ -400,6 +401,7 @@ pub fn stdin_event_loop(&mut self) {
+                 }
+                 StudioToApp::RunViewFrameRequest(_) => {}
+                 StudioToApp::Tick => {
++                    SignalToUI::check_and_clear_renderer_signal();
+                     if SignalToUI::check_and_clear_ui_signal() {
+                         self.handle_termination_signal();
+                         self.handle_script_signals();
+diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
+index e6249a89f..d5d0d4092 100644
+--- a/platform/src/os/linux/android/android.rs
++++ b/platform/src/os/linux/android/android.rs
+@@ -1891,6 +1891,7 @@ pub(crate) fn handle_other_events(&mut self) {
+         }
+ 
+         // Signals
++        SignalToUI::check_and_clear_renderer_signal();
+         if SignalToUI::check_and_clear_ui_signal() {
+             self.handle_media_signals();
+             self.handle_script_signals();
+diff --git a/platform/src/os/linux/direct/linux_direct.rs b/platform/src/os/linux/direct/linux_direct.rs
+index 0fc4fc85e..3fc39af14 100644
+--- a/platform/src/os/linux/direct/linux_direct.rs
++++ b/platform/src/os/linux/direct/linux_direct.rs
+@@ -168,6 +168,7 @@ pub fn event_loop(cx: Rc<RefCell<Cx>>) {
+             // The wake pipe signals completed worker/hosted-app work. Drain
+             // it on wake, before paint, rather than delaying child frames
+             // until the 8 ms maintenance timer (which would cap them at 125 Hz).
++            SignalToUI::check_and_clear_renderer_signal();
+             if SignalToUI::check_and_clear_ui_signal() {
+                 cx.handle_termination_signal();
+                 cx.handle_media_signals();
+diff --git a/platform/src/os/linux/open_harmony/open_harmony.rs b/platform/src/os/linux/open_harmony/open_harmony.rs
+index 67ab8affc..78a9bf716 100644
+--- a/platform/src/os/linux/open_harmony/open_harmony.rs
++++ b/platform/src/os/linux/open_harmony/open_harmony.rs
+@@ -183,6 +183,7 @@ fn handle_other_events(&mut self) {
+         }
+ 
+         // Signals
++        SignalToUI::check_and_clear_renderer_signal();
+         if SignalToUI::check_and_clear_ui_signal() {
+             self.handle_media_signals();
+             self.handle_script_signals();
+diff --git a/platform/src/os/linux/opengl.rs b/platform/src/os/linux/opengl.rs
+index c081aa356..bb321c507 100644
+--- a/platform/src/os/linux/opengl.rs
++++ b/platform/src/os/linux/opengl.rs
+@@ -473,11 +473,18 @@ pub(crate) fn render_view(
+         {
+             // Retirement debt is maintenance, not ink. Android and OpenHarmony
+             // service it on idle vsync beats (`opengl_maintain_instance_retirements`)
+-            // without painting; the desktop GL loops only wake for a repaint, so
+-            // they keep the repaint as their wake until the debt settles.
++            // without painting, and so does a desktop loop with a maintenance
++            // beat (Wayland's timer 0). Other desktop GL loops only wake for a
++            // repaint, so they keep the repaint as their wake until the debt settles.
+             #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+             {
+-                self.demo_time_repaint = true;
++                #[cfg(not(linux_direct))]
++                let beat = self.os.gl_maintenance_beat;
++                #[cfg(linux_direct)]
++                let beat = false;
++                if !beat {
++                    self.demo_time_repaint = true;
++                }
+             }
+         }
+         self.render_view_inner(pass, list, zbias, step);
+@@ -708,13 +715,22 @@ fn render_view_inner(
+                 }
+ 
+                 // update the zbias uniform if we have it.
+-                draw_call.resolve_zbias(*zbias, sploded, uniforms_gen);
++                let zbias_changed = draw_call.resolve_zbias(*zbias, sploded, uniforms_gen);
+                 *zbias += zbias_step;
+ 
+-                draw_item
+-                    .os
+-                    .draw_call_uniforms
+-                    .update_uniform_buffer(gl, draw_call.draw_call_uniforms.as_slice());
++                // This buffer contains only draw-call uniforms (including zbias).
++                // Upload once when changed: a second BufferData for the same
++                // bytes in the uniforms_dirty branch stalls mobile GL drivers.
++                // A cached draw still needs an upload if its paint order changed.
++                if zbias_changed
++                    || draw_call.uniforms_dirty
++                    || draw_item.os.draw_call_uniforms.gl_buffer.is_none()
++                {
++                    draw_item
++                        .os
++                        .draw_call_uniforms
++                        .update_uniform_buffer(gl, draw_call.draw_call_uniforms.as_slice());
++                }
+ 
+                 let instances = if draw_item.retained_instances.is_some() {
+                     draw_item.retained_instance_count as u64
+@@ -796,10 +812,6 @@ fn render_view_inner(
+ 
+                 if draw_call.uniforms_dirty {
+                     draw_call.uniforms_dirty = false;
+-                    draw_item
+-                        .os
+-                        .draw_call_uniforms
+-                        .update_uniform_buffer(gl, draw_call.draw_call_uniforms.as_slice());
+                     draw_item
+                         .os
+                         .user_uniforms
+@@ -4435,7 +4447,6 @@ pub(crate) struct TextureFence {
+     pending: Option<(u64, GlSync)>,
+     /// Idle maintenance beats served (`opengl_maintain_instance_retirements`);
+     /// their ledger frame keys count down from `u64::MAX`, apart from paints.
+-    #[cfg(any(target_os = "android", target_env = "ohos"))]
+     maintenance_beats: u64,
+     framebuffers: Vec<u32>,
+ }
+@@ -4597,14 +4608,12 @@ pub(crate) fn detach_released_texture(&mut self, id: crate::texture::TextureId)
+     /// same beat (`maintain_instance_retirements`); a paint used to carry it.
+     /// Released GPU storage still waiting on its completion fence or a
+     /// worker: what keeps a mobile loop asking for beats without painting.
+-    #[cfg(any(target_os = "android", target_env = "ohos"))]
+     pub(crate) fn opengl_retirement_pending(&self) -> bool {
+         self.textures.1.gl.pending.is_some()
+             || !self.textures.1.retired.is_empty()
+             || self.draw_lists.has_pending_instance_retirements()
+     }
+ 
+-    #[cfg(any(target_os = "android", target_env = "ohos"))]
+     pub(crate) fn opengl_maintain_instance_retirements(&mut self) -> bool {
+         let fence_pending = self.textures.1.gl.pending.is_some() || !self.textures.1.retired.is_empty();
+         if !fence_pending && !self.draw_lists.has_pending_instance_retirements() {
+diff --git a/platform/src/os/linux/opengl_cx.rs b/platform/src/os/linux/opengl_cx.rs
+index fc60816a7..76e02d3bb 100644
+--- a/platform/src/os/linux/opengl_cx.rs
++++ b/platform/src/os/linux/opengl_cx.rs
+@@ -390,7 +390,13 @@ pub fn draw_pass_to_window(
+         let mut zbias = 0.0;
+         let zbias_step = self.passes[draw_pass_id].zbias_step;
+ 
++        // GPU time per pass and per shader (`MAKEPAD_TRACE=gpu.pass,gpu.draws`),
++        // as Android reports it; polling also reads back the texture passes'
++        // intervals, which nothing else on this backend collects.
++        let timed = super::gl_timer::begin_pass(self.os.gl(), &self.passes[draw_pass_id].debug_name);
+         self.render_view(draw_pass_id, draw_list_id, &mut zbias, zbias_step);
++        super::gl_timer::end(self.os.gl(), timed);
++        super::gl_timer::poll(self.os.gl());
+ 
+         if crate::makepad_error_log::trace_enabled("gl.readback") {
+             let mut pixel = [0u8; 4];
+diff --git a/platform/src/os/linux/select_timer.rs b/platform/src/os/linux/select_timer.rs
+index 6c0d00848..d27f8f65f 100644
+--- a/platform/src/os/linux/select_timer.rs
++++ b/platform/src/os/linux/select_timer.rs
+@@ -50,18 +50,21 @@ pub fn new() -> Self {
+         }
+     }
+ 
+-    pub fn select(&mut self, fd: c_int) {
+-        self.select_fds(std::iter::once(fd));
++    /// Sleeps until `fd` is readable, the next timer is due or another thread
++    /// wakes the UI loop. Returns whether such a wake arrived: a thread raised
++    /// `SignalToUI` (or a `--remote` command) and wants its queues serviced.
++    pub fn select(&mut self, fd: c_int) -> bool {
++        self.select_fds(std::iter::once(fd))
+     }
+ 
+-    pub fn select_fds(&mut self, input_fds: impl IntoIterator<Item = c_int>) {
+-        self.select_fds_capped(input_fds, None);
++    pub fn select_fds(&mut self, input_fds: impl IntoIterator<Item = c_int>) -> bool {
++        self.select_fds_capped(input_fds, None)
+     }
+ 
+     /// Like `select_fds`, but never sleeps longer than `max_timeout` seconds.
+     /// The direct renderer uses a sub-millisecond cap to retry a GPU that is
+     /// still presenting, while input and the wake pipe interrupt it as usual.
+-    pub fn select_fds_capped(&mut self, input_fds: impl IntoIterator<Item = c_int>, max_timeout: Option<f64>) {
++    pub fn select_fds_capped(&mut self, input_fds: impl IntoIterator<Item = c_int>, max_timeout: Option<f64>) -> bool {
+         let mut max_fd = -1;
+         let mut fds = mem::MaybeUninit::uninit();
+         unsafe {
+@@ -116,13 +119,17 @@ pub fn select_fds_capped(&mut self, input_fds: impl IntoIterator<Item = c_int>,
+                     .unwrap_or(ptr::null_mut()),
+             )
+         };
++        let mut woken = false;
+         let wake_fd = ui_wake_pipe()[0];
+         if wake_fd >= 0 {
+             let mut buffer = [0_u8; 64];
+             unsafe {
+-                while libc_sys::read(wake_fd, buffer.as_mut_ptr().cast(), buffer.len()) > 0 {}
++                while libc_sys::read(wake_fd, buffer.as_mut_ptr().cast(), buffer.len()) > 0 {
++                    woken = true;
++                }
+             }
+         }
++        woken
+     }
+ 
+     pub fn time_now(&self) -> f64 {
+diff --git a/platform/src/os/linux/vulkan.rs b/platform/src/os/linux/vulkan.rs
+index 9aea31054..3adb09d1d 100644
+--- a/platform/src/os/linux/vulkan.rs
++++ b/platform/src/os/linux/vulkan.rs
+@@ -54,10 +54,16 @@
+ use std::collections::{HashMap, HashSet};
+ use std::ffi::CStr;
+ use std::os::raw::c_void;
+-#[cfg(target_os = "android")]
+ use std::os::raw::c_char;
+ use std::time::Instant;
+ 
++/// How long a window present waits for the previous frame's fence or a free
++/// swapchain image before handing the frame back to the event loop. With zero
++/// the present only polls, and a busy GPU or compositor turns the loop into a
++/// spin of paint attempts until one succeeds.
++#[cfg(target_os = "linux")]
++const PRESENT_WAIT_NS: u64 = 0;
++
+ #[cfg(target_os = "android")]
+ #[link(name = "nativewindow")]
+ extern "C" {
+@@ -502,9 +508,112 @@ pub struct CxVulkan {
+     profile: vulkan_profile::VulkanProfile,
+     #[cfg(target_os = "linux")]
+     recycle_pass_resources: bool,
++    #[cfg(target_os = "linux")]
++    present_stats: PresentStats,
++}
++
++/// Window presents, the attempts that found the previous frame's fence or the
++/// swapchain busy, and the main-thread time they took. Summarised every two
++/// seconds under `MAKEPAD_TRACE=gpu.present`.
++#[cfg(target_os = "linux")]
++#[derive(Default)]
++struct PresentStats {
++    since: Option<Instant>,
++    presented: u32,
++    fence_busy: u32,
++    image_busy: u32,
++    encode_us: u64,
++    wait_us: u64,
++    /// Encoding, by phase: geometry pruning, texture preparation, command
++    /// recording, submission, publication of the draw receipts.
++    phase_us: [u64; 5],
++}
++
++#[cfg(target_os = "linux")]
++impl PresentStats {
++    fn report(&mut self) {
++        if !crate::makepad_error_log::trace_enabled("gpu.present") {
++            return;
++        }
++        let since = *self.since.get_or_insert_with(Instant::now);
++        let elapsed = since.elapsed().as_secs_f64();
++        if elapsed < 2.0 {
++            return;
++        }
++        crate::trace!(
++            "gpu.present",
++            "{elapsed:.1}s: {} presented; {} attempts found the fence busy, {} no free image; main thread encode {:.2} ms (prune {:.2}, textures {:.2}, record {:.2}, submit {:.2}, publish {:.2}), wait {:.2} ms",
++            self.presented,
++            self.fence_busy,
++            self.image_busy,
++            self.encode_us as f64 / 1000.0,
++            self.phase_us[0] as f64 / 1000.0,
++            self.phase_us[1] as f64 / 1000.0,
++            self.phase_us[2] as f64 / 1000.0,
++            self.phase_us[3] as f64 / 1000.0,
++            self.phase_us[4] as f64 / 1000.0,
++            self.wait_us as f64 / 1000.0
++        );
++        *self = Self { since: Some(Instant::now()), ..Self::default() };
++    }
++}
++
++/// The present mode of a windowed swapchain: mailbox when the surface offers
++/// it, else FIFO. The Wayland loop already paces presents on the compositor's
++/// frame callbacks, one per vblank; a FIFO swapchain adds the driver's own
++/// wait for the previous image to be presented, and the two in series cost two
++/// vblanks per frame (60 presents per second on a 120 Hz output, measured with
++/// a wheel step every 8 ms). Mailbox leaves the pacing to the loop, as GL's
++/// swap interval of zero does, and the compositor still composes without
++/// tearing. `MAKEPAD_VULKAN_PRESENT_MODE=fifo|mailbox|immediate` overrides.
++#[cfg(target_os = "linux")]
++fn window_present_mode(available: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
++    let requested = match std::env::var("MAKEPAD_VULKAN_PRESENT_MODE").ok().as_deref() {
++        Some("fifo") => Some(vk::PresentModeKHR::FIFO),
++        Some("mailbox") => Some(vk::PresentModeKHR::MAILBOX),
++        Some("immediate") => Some(vk::PresentModeKHR::IMMEDIATE),
++        Some(other) => {
++            crate::warning!("MAKEPAD_VULKAN_PRESENT_MODE={other:?} is not fifo, mailbox or immediate");
++            None
++        }
++        None => None,
++    };
++    let preferred = [vk::PresentModeKHR::MAILBOX, vk::PresentModeKHR::FIFO];
++    let mode = requested
++        .into_iter()
++        .chain(preferred)
++        .find(|mode| available.contains(mode))
++        .or_else(|| available.first().copied())
++        .unwrap_or(vk::PresentModeKHR::FIFO);
++    crate::log!("Vulkan swapchain present mode: {mode:?} (available {available:?})");
++    mode
++}
++
++#[cfg(not(target_os = "linux"))]
++fn window_present_mode(available: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
++    if available.contains(&vk::PresentModeKHR::FIFO) {
++        vk::PresentModeKHR::FIFO
++    } else {
++        available.first().copied().unwrap_or(vk::PresentModeKHR::FIFO)
++    }
+ }
+ 
+ impl CxVulkan {
++    /// A present attempt that found the GPU or the compositor busy: the frame
++    /// stays dirty and the event loop comes back for it.
++    #[cfg(target_os = "linux")]
++    fn present_busy(&mut self, cx: &mut Cx, attempt_start: Instant, fence: bool) {
++        let us = attempt_start.elapsed().as_micros() as u64;
++        if fence {
++            self.present_stats.fence_busy += 1;
++        } else {
++            self.present_stats.image_busy += 1;
++        }
++        self.present_stats.wait_us += us;
++        self.present_stats.report();
++        cx.perf_monitor.add(crate::perf_monitor::PERF_CHANNEL_DRAWABLE_WAIT, us);
++    }
++
+     #[cfg(target_os = "android")]
+     pub(crate) fn has_drawable_surface(&self) -> bool {
+         !self.window.is_null()
+@@ -2933,11 +3042,17 @@ fn draw_pass_and_present_inner(
+             }
+         };
+ 
++        #[cfg(target_os = "linux")]
++        let attempt_start = Instant::now();
+         unsafe {
+             #[cfg(target_os = "linux")]
+-            if !self.device.get_fence_status(self.in_flight_fence)
+-                .map_err(|e| format!("get_fence_status failed: {e:?}"))? {
+-                return Ok(false);
++            match self.device.wait_for_fences(&[self.in_flight_fence], true, PRESENT_WAIT_NS) {
++                Ok(()) => {}
++                Err(vk::Result::TIMEOUT) => {
++                    self.present_busy(cx, attempt_start, true);
++                    return Ok(false);
++                }
++                Err(e) => return Err(format!("wait_for_fences failed: {e:?}")),
+             }
+             #[cfg(target_os = "android")]
+             self.device
+@@ -2955,16 +3070,24 @@ fn draw_pass_and_present_inner(
+ 
+         self.destroy_frame_resources();
+ 
++        #[cfg(target_os = "linux")]
++        let acquire_timeout_ns = PRESENT_WAIT_NS;
++        #[cfg(not(target_os = "linux"))]
++        let acquire_timeout_ns = u64::MAX;
+         let (image_index, acquire_suboptimal) = match unsafe {
+             self.swapchain_loader.acquire_next_image(
+                 self.swapchain,
+-                if cfg!(target_os = "linux") { 0 } else { u64::MAX },
++                acquire_timeout_ns,
+                 self.image_available_semaphore,
+                 vk::Fence::null(),
+             )
+         } {
+             Ok(v) => v,
+-            Err(vk::Result::NOT_READY | vk::Result::TIMEOUT) => return Ok(false),
++            Err(vk::Result::NOT_READY | vk::Result::TIMEOUT) => {
++                #[cfg(target_os = "linux")]
++                self.present_busy(cx, attempt_start, false);
++                return Ok(false);
++            }
+             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                 self.recreate_swapchain()?;
+                 return Ok(false);
+@@ -2978,6 +3101,12 @@ fn draw_pass_and_present_inner(
+             }
+         };
+         self.acquired_image_pending = true;
++        // PerfMonitor "wait": fence and image acquisition before encoding, plus
++        // the present after it; "draw": encoding and submission, as GL reports.
++        #[cfg(target_os = "linux")]
++        let wait_before_encode_us = attempt_start.elapsed().as_micros() as u64;
++        #[cfg(target_os = "linux")]
++        let encode_start = Instant::now();
+         if self.swapchain_images.get(image_index as usize).is_none() {
+             return Err(format!("invalid swapchain image index {image_index}"));
+         }
+@@ -3009,11 +3138,46 @@ fn draw_pass_and_present_inner(
+                 .begin_command_buffer(self.command_buffer, &begin_info)
+                 .map_err(|e| format!("begin_command_buffer failed: {e:?}"))?;
+         }
++        // `MAKEPAD_VULKAN_PROFILE=1` times the window pass on the GPU like an
++        // offscreen pass; the next frame's fence check collects the sample.
++        #[cfg(target_os = "linux")]
++        let mut profile_sample = self.profile.begin_sample(
++            cx,
++            draw_pass_id,
++            false,
++            self.swapchain_extent.width,
++            self.swapchain_extent.height,
++            wait_before_encode_us as f64 / 1000.0,
++        );
++        #[cfg(target_os = "linux")]
++        if let Some(sample) = profile_sample.as_mut() {
++            sample.wrote_timestamps = self.profile.begin_timestamps(
++                &self.device,
++                &self.instance,
++                self.physical_device,
++                self.queue_family_index,
++                self.command_buffer,
++            );
++        }
+ 
+         self.texture_upload_count_this_frame = 0;
+         self.texture_upload_bytes_this_frame = 0;
++        #[cfg(target_os = "linux")]
++        let mut phase_start = Instant::now();
++        #[cfg(target_os = "linux")]
++        let mut phase_us = [0u64; 5];
+         self.prune_stale_geometry_resources(cx);
++        #[cfg(target_os = "linux")]
++        {
++            phase_us[0] = phase_start.elapsed().as_micros() as u64;
++            phase_start = Instant::now();
++        }
+         self.prepare_draw_list_textures(cx, draw_list_id)?;
++        #[cfg(target_os = "linux")]
++        {
++            phase_us[1] = phase_start.elapsed().as_micros() as u64;
++            phase_start = Instant::now();
++        }
+ 
+         let mut zbias = 0.0f32;
+         let zbias_step = cx.passes[draw_pass_id].zbias_step;
+@@ -3187,6 +3351,13 @@ fn draw_pass_and_present_inner(
+             }
+         }
+ 
++        #[cfg(target_os = "linux")]
++        if profile_sample
++            .as_ref()
++            .is_some_and(|sample| sample.wrote_timestamps)
++        {
++            self.profile.end_timestamps(&self.device, self.command_buffer);
++        }
+         unsafe {
+             self.device
+                 .end_command_buffer(self.command_buffer)
+@@ -3203,9 +3374,32 @@ fn draw_pass_and_present_inner(
+             .command_buffers(&cmd_buffers)
+             .signal_semaphores(&signal_semaphores);
+ 
++        #[cfg(target_os = "linux")]
++        let submit_start = Instant::now();
++        #[cfg(target_os = "linux")]
++        {
++            phase_us[2] = submit_start.duration_since(phase_start).as_micros() as u64;
++        }
+         self.submit_frame(&submit_info)?;
++        #[cfg(target_os = "linux")]
++        {
++            phase_us[3] = submit_start.elapsed().as_micros() as u64;
++            phase_start = Instant::now();
++        }
+         self.publish_draw_submission(cx, &draw_stats);
+         self.acquired_image_pending = false;
++        #[cfg(target_os = "linux")]
++        let encode_us = encode_start.elapsed().as_micros() as u64;
++        #[cfg(target_os = "linux")]
++        {
++            phase_us[4] = phase_start.elapsed().as_micros() as u64;
++        }
++        #[cfg(target_os = "linux")]
++        if let Some(mut sample) = profile_sample.take() {
++            sample.encode_ms = submit_start.duration_since(encode_start).as_secs_f64() * 1000.0;
++            sample.submit_ms = submit_start.elapsed().as_secs_f64() * 1000.0;
++            self.profile.admit_pending(sample);
++        }
+ 
+         let swapchains = [self.swapchain];
+         let image_indices = [image_index];
+@@ -3214,6 +3408,8 @@ fn draw_pass_and_present_inner(
+             .swapchains(&swapchains)
+             .image_indices(&image_indices);
+ 
++        #[cfg(target_os = "linux")]
++        let present_start = Instant::now();
+         before_present();
+         let present_suboptimal = match unsafe {
+             self.swapchain_loader
+@@ -3234,6 +3430,8 @@ fn draw_pass_and_present_inner(
+                 return Err(format!("queue_present failed: {err:?}"));
+             }
+         };
++        #[cfg(target_os = "linux")]
++        let present_us = present_start.elapsed().as_micros() as u64;
+ 
+         if capture_swapchain {
+             let capture_result = (|| -> Result<(), String> {
+@@ -3267,6 +3465,29 @@ fn draw_pass_and_present_inner(
+             self.recreate_swapchain()?;
+         }
+ 
++        #[cfg(target_os = "linux")]
++        {
++            let wait_us = wait_before_encode_us + present_us;
++            self.present_stats.presented += 1;
++            self.present_stats.encode_us += encode_us;
++            self.present_stats.wait_us += wait_us;
++            for (total, us) in self.present_stats.phase_us.iter_mut().zip(phase_us) {
++                *total += us;
++            }
++            self.present_stats.report();
++            cx.perf_monitor.add(crate::perf_monitor::PERF_CHANNEL_DRAW, encode_us);
++            cx.perf_monitor.add(crate::perf_monitor::PERF_CHANNEL_DRAWABLE_WAIT, wait_us);
++            crate::trace!(
++                "gpu.present",
++                "present time={:.6} encode={:.2}ms wait={:.2}ms (acquire {:.2}, present {:.2})",
++                crate::cx_api::CxOsApi::seconds_since_app_start(cx),
++                encode_us as f64 / 1000.0,
++                wait_us as f64 / 1000.0,
++                wait_before_encode_us as f64 / 1000.0,
++                (wait_us - wait_before_encode_us) as f64 / 1000.0
++            );
++        }
++        #[cfg(not(target_os = "linux"))]
+         crate::trace!("gpu.present", "present time={:.6}", crate::cx_api::CxOsApi::seconds_since_app_start(cx));
+         cx.passes[draw_pass_id].paint_dirty = false;
+         // The bake transaction's paint receipt, after all selected ranges.
+@@ -7653,14 +7874,7 @@ fn recreate_swapchain_inner(&mut self) -> Result<(), String> {
+                 .get_physical_device_surface_present_modes(self.physical_device, self.surface)
+         }
+         .map_err(|e| format!("get_surface_present_modes failed: {e:?}"))?;
+-        let present_mode = if present_modes.contains(&vk::PresentModeKHR::FIFO) {
+-            vk::PresentModeKHR::FIFO
+-        } else {
+-            present_modes
+-                .first()
+-                .copied()
+-                .unwrap_or(vk::PresentModeKHR::FIFO)
+-        };
++        let present_mode = window_present_mode(&present_modes);
+ 
+         let usage = capabilities.supported_usage_flags;
+         if !usage.contains(vk::ImageUsageFlags::COLOR_ATTACHMENT) {
+diff --git a/platform/src/os/linux/vulkan_linux.rs b/platform/src/os/linux/vulkan_linux.rs
+index 63ab1b495..b33605252 100644
+--- a/platform/src/os/linux/vulkan_linux.rs
++++ b/platform/src/os/linux/vulkan_linux.rs
+@@ -318,6 +318,7 @@ fn finish(
+             xr_depth_dummy: None,
+             recycle_pass_resources,
+             profile: vulkan_profile::VulkanProfile::from_env(recycle_pass_resources),
++            present_stats: PresentStats::default(),
+         };
+         // From this point CxVulkan::drop covers every partially constructed resource.
+         renderer.command_pool = unsafe {
+diff --git a/platform/src/os/linux/wayland/linux_wayland.rs b/platform/src/os/linux/wayland/linux_wayland.rs
+index 94021ab60..444894f4e 100644
+--- a/platform/src/os/linux/wayland/linux_wayland.rs
++++ b/platform/src/os/linux/wayland/linux_wayland.rs
+@@ -13,7 +13,7 @@
+ use crate::opengl_cx::OpenglCx;
+ use crate::os::linux::gstreamer_sys::LibGStreamer;
+ use crate::os::linux::linux_video_playback::{
+-    poll_pending_gstreamer_teardowns, GStreamerVideoPlayer,
++    has_pending_gstreamer_teardowns, poll_pending_gstreamer_teardowns, GStreamerVideoPlayer,
+ };
+ use crate::os::linux::linux_video_player::{
+     collect_linux_video_player_events, prepare_desktop_linux_video, LinuxPrepareResult,
+@@ -54,6 +54,8 @@ pub fn wayland_event_loop(cx: Rc<RefCell<Cx>>) {
+     WaylandCx::event_loop_impl(cx);
+ }
+ 
++use crate::os::linux::windowing_backend::{TIMER0_ACTIVE_SECS, TIMER0_IDLE_SECS};
++
+ pub(crate) struct WaylandCx {
+     cx: Rc<RefCell<Cx>>,
+     qhandle: Option<wayland_client::QueueHandle<WaylandState>>,
+@@ -64,6 +66,8 @@ pub(crate) struct WaylandCx {
+     /// callbacks the compositor withholds) from wedging the event loop. Disabled by
+     /// `MAKEPAD_NO_VSYNC` for uncapped benchmarking.
+     frame_pacing: bool,
++    /// Whether timer 0 runs at `TIMER0_ACTIVE_SECS` (else `TIMER0_IDLE_SECS`).
++    timer0_active: bool,
+ }
+ 
+ impl WaylandCx {
+@@ -79,6 +83,7 @@ pub fn event_loop_impl(cx: Rc<RefCell<Cx>>) {
+             cx: cx.clone(),
+             qhandle: None,
+             frame_pacing: std::env::var_os("MAKEPAD_NO_VSYNC").is_none(),
++            timer0_active: true,
+         }));
+         let conn = Connection::connect_to_env().unwrap();
+         let display = conn.display();
+@@ -92,6 +97,9 @@ pub fn event_loop_impl(cx: Rc<RefCell<Cx>>) {
+                     display_ptr as NativeDisplayType,
+                 )
+             });
++            // Timer 0 retires released GL storage (see the `Timer` arm), so a
++            // frame that leaves retirement debt need not repaint to be woken.
++            cx.borrow_mut().os.gl_maintenance_beat = true;
+         }
+         #[cfg(use_vulkan)]
+         {
+@@ -142,7 +150,7 @@ pub fn event_loop_impl(cx: Rc<RefCell<Cx>>) {
+         cx.borrow_mut().call_event_handler(&Event::Startup);
+         cx.borrow_mut().redraw_all();
+ 
+-        app.start_timer(0, 0.008, true);
++        app.start_timer(0, TIMER0_ACTIVE_SECS, true);
+         app.event_loop();
+         // WSI must release its surfaces while their wl_surface and display are alive.
+         #[cfg(use_vulkan)]
+@@ -313,6 +321,12 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+                 // ok here we send out to all our childprocesses
+ 
+                 self.handle_repaint(state);
++                // A frame that released GL storage leaves retirement debt that
++                // timer 0 serves; serve it at the active rate until it settles.
++                #[cfg(not(use_vulkan))]
++                if self.cx.borrow().opengl_retirement_pending() {
++                    self.pace_timer0(state, true);
++                }
+ 
+                 {
+                     let cx = self.cx.borrow();
+@@ -457,8 +471,10 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+                 cx.call_event_handler(&Event::TextCut(e))
+             }
+             XlibEvent::Timer(e) => {
++                let mut timer0_has_work = None;
+                 let mut cx = self.cx.borrow_mut();
+                 if e.timer_id == 0 {
++                    SignalToUI::check_and_clear_renderer_signal();
+                     if SignalToUI::check_and_clear_ui_signal() {
+                         cx.handle_termination_signal();
+                         cx.handle_media_signals();
+@@ -515,6 +531,23 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+                             cx.os.video_players = players;
+                         }
+                     }
++                    // Released GL storage waiting on its completion fence retires on
++                    // this beat instead of by repainting every live pass until the
++                    // fence passes (see `CxOs::gl_maintenance_beat`).
++                    #[cfg(not(use_vulkan))]
++                    let retirement_pending = cx.opengl_retirement_pending() && {
++                        cx.os.opengl_cx.as_ref().unwrap().make_current();
++                        cx.opengl_maintain_instance_retirements()
++                    };
++                    #[cfg(use_vulkan)]
++                    let retirement_pending = false;
++                    timer0_has_work = Some(
++                        retirement_pending
++                            || state.has_pending_clipboard_read()
++                            || crate::remote::needs_ticks()
++                            || !cx.os.video_players.is_empty()
++                            || has_pending_gstreamer_teardowns(),
++                    );
+                 } else {
+                     cx.handle_script_timer(&e);
+                     cx.call_event_handler(&Event::Timer(e))
+@@ -523,6 +556,9 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+                 cx.run_live_edit_if_needed("linux-wayland");
+                 let has_platform_ops = !cx.platform_ops.is_empty();
+                 drop(cx);
++                if let Some(has_work) = timer0_has_work {
++                    self.pace_timer0(state, has_work);
++                }
+                 if has_platform_ops {
+                     if let EventFlow::Exit = self.handle_platform_ops(state) {
+                         let mut cx = self.cx.borrow_mut();
+@@ -531,7 +567,22 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+                         return EventFlow::Exit;
+                     }
+                 }
+-                return EventFlow::Wait;
++                // Paint what this timer queued (a redraw, a next frame, a serviced
++                // signal's results) now: timer 0 may be idling, and app timers such
++                // as a caret blink must not wait for its next beat either. Not while
++                // a frame callback is outstanding: the paint would only find the
++                // window gated, as `Paint` decides.
++                let cx = self.cx.borrow();
++                let has_work = cx.any_passes_dirty()
++                    || cx.need_redrawing()
++                    || cx.new_next_frames.len() != 0
++                    || cx.screenshot_requests.len() > 0
++                    || cx.demo_time_repaint;
++                return if has_work && !state.any_frame_callback_pending() {
++                    EventFlow::Poll
++                } else {
++                    EventFlow::Wait
++                };
+             }
+         }
+         // Drain ops queued during this event (e.g. pause/resume from MouseDown).
+@@ -564,6 +615,10 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+     fn app_event_callback(&mut self, wayland_app: &mut WaylandApp, event: XlibEvent) -> EventFlow {
+         let _phase = crate::thread::ui_phase(crate::thread::UiPhase::NativeEvent);
+         let event_flow = self.state_event_callback(&mut wayland_app.state, event);
++        // A paste just started: poll its pipe at the active rate until it is read.
++        if wayland_app.state.has_pending_clipboard_read() {
++            self.pace_timer0(&mut wayland_app.state, true);
++        }
+         if let EventFlow::Exit = event_flow {
+             wayland_app.terminate_event_loop();
+         }
+@@ -1214,6 +1269,16 @@ fn handle_platform_ops(&self, state: &mut WaylandState) -> EventFlow {
+         ret
+     }
+ 
++    /// Runs timer 0 at the active rate while it has work to poll (see
++    /// `TIMER0_ACTIVE_SECS`) and at the idle rate as soon as it has none.
++    fn pace_timer0(&mut self, state: &mut WaylandState, active: bool) {
++        if active != self.timer0_active {
++            self.timer0_active = active;
++            state.stop_timer(0);
++            state.start_timer(0, if active { TIMER0_ACTIVE_SECS } else { TIMER0_IDLE_SECS }, true);
++        }
++    }
++
+     pub(crate) fn handle_repaint(&self, state: &mut WaylandState) {
+         let mut cx = self.cx.borrow_mut();
+         // Skip the eglMakeCurrent + full pass-list scan when there is nothing to draw.
+@@ -1226,6 +1291,28 @@ pub(crate) fn handle_repaint(&self, state: &mut WaylandState) {
+         cx.os.opengl_cx.as_ref().unwrap().make_current();
+         let mut passes_todo = Vec::new();
+         cx.compute_pass_repaint_order(&mut passes_todo);
++        // A pass whose window still awaits its frame callback stays dirty with
++        // the window instead of rendering now: its live-with-parent children
++        // (the glass blur chain) re-dirty on every wake until the callback, and
++        // re-encoding them each time starved the compositor's own GPU work and
++        // delayed that very callback (p50 115 ms, up to 1.3 s on an Intel iGPU).
++        if self.frame_pacing {
++            passes_todo.retain(|&pass| {
++                let mut walk = pass;
++                loop {
++                    match cx.passes[walk].parent {
++                        CxDrawPassParent::DrawPass(parent) => walk = parent,
++                        CxDrawPassParent::Window(window_id) => {
++                            break !state.is_frame_callback_pending(window_id)
++                        }
++                        _ => break true,
++                    }
++                }
++            });
++            if passes_todo.is_empty() {
++                return;
++            }
++        }
+         cx.repaint_id += 1;
+         for draw_pass_id in &passes_todo {
+             let now = state.time_now();
+@@ -1241,6 +1328,7 @@ pub(crate) fn handle_repaint(&self, state: &mut WaylandState) {
+                     // minimized). Skip the present and leave the pass dirty so the
+                     // window repaints when the callback arrives.
+                     if self.frame_pacing && state.is_frame_callback_pending(window_id) {
++                        crate::trace!("wayland", "Wayland present skipped window={:?} (frame callback pending) t={:.4}", window_id, state.time_now());
+                         continue;
+                     }
+                     let mut presented = false;
+@@ -1252,6 +1340,7 @@ pub(crate) fn handle_repaint(&self, state: &mut WaylandState) {
+                         }
+                         window.resize_buffers();
+                         if crate::makepad_error_log::trace_enabled("wayland") {
++                            crate::trace!("wayland", "Wayland present window={:?} t={:.4}", window.window_id, now);
+                             crate::trace!(
+                                 "wayland",
+                                 "Wayland paint window={:?} inner=({}, {}) dpi={} pix=({}, {})",
+diff --git a/platform/src/os/linux/wayland/wayland_app.rs b/platform/src/os/linux/wayland/wayland_app.rs
+index b12e12aa3..5820c3c2d 100644
+--- a/platform/src/os/linux/wayland/wayland_app.rs
++++ b/platform/src/os/linux/wayland/wayland_app.rs
+@@ -8,7 +8,7 @@
+ 
+ use crate::{
+     cx_native::EventFlow, wayland::wayland_state::WaylandState, x11::xlib_event::XlibEvent,
+-    TimerEvent,
++    SignalToUI, TimerEvent,
+ };
+ 
+ pub(crate) struct WaylandApp {
+@@ -42,14 +42,26 @@ pub fn event_loop(&mut self) {
+                 EventFlow::Wait => {
+                     let time = self.time_now();
+                     self.state.timers.update_timers(&mut timer_ids);
++                    let mut timer_queued_work = false;
+                     for timer_id in &timer_ids {
+                         if !self.state.handle_key_repeat_timer(*timer_id) {
+                             self.do_callback(XlibEvent::Timer(TimerEvent {
+                                 timer_id: *timer_id,
+                                 time: Some(time),
+                             }));
++                            timer_queued_work |= matches!(self.state.event_flow, EventFlow::Poll);
+                         }
+                     }
++                    if !self.state.event_loop_running {
++                        break;
++                    }
++                    // A timer that redrew or dispatched a signal with work paints
++                    // now. Timer 0 idles slowly, so sleeping first would hold that
++                    // paint until an unrelated wake.
++                    if timer_queued_work {
++                        self.state.event_flow = EventFlow::Poll;
++                        continue;
++                    }
+                     // Send any requests queued during event handling (cursor shapes,
+                     // frame callback requests, etc.) before blocking, so the compositor
+                     // can respond and wake the select below. A WouldBlock just means the
+@@ -67,8 +79,18 @@ pub fn event_loop(&mut self) {
+                             return;
+                         }
+                     }
+-                    if let Some(guard) = self.event_queue.prepare_read() {
+-                        self.state.timers.select(guard.connection_fd().as_raw_fd());
++                    let woken = match self.event_queue.prepare_read() {
++                        Some(guard) => self.state.timers.select(guard.connection_fd().as_raw_fd()),
++                        None => false,
++                    };
++                    // Another thread raised a signal or queued a `--remote` command.
++                    // Service it on this wake, as macOS does for its wake event,
++                    // instead of on the next timer-0 tick.
++                    if woken || SignalToUI::signal_pending() {
++                        self.do_callback(XlibEvent::Timer(TimerEvent {
++                            timer_id: 0,
++                            time: Some(self.time_now()),
++                        }));
+                     }
+                     self.state.event_flow = EventFlow::Poll;
+                 }
+diff --git a/platform/src/os/linux/wayland/wayland_state.rs b/platform/src/os/linux/wayland/wayland_state.rs
+index 5290095a2..c1444ecf2 100644
+--- a/platform/src/os/linux/wayland/wayland_state.rs
++++ b/platform/src/os/linux/wayland/wayland_state.rs
+@@ -1585,6 +1585,7 @@ fn event(
+         // the window's pass if it is still dirty. The window may have been closed while
+         // the callback was in flight, in which case there is nothing left to clear.
+         if let wl_callback::Event::Done { .. } = event {
++            crate::trace!("wayland", "Wayland frame callback window={:?} t={:.4}", window_id, state.time_now());
+             state.clear_frame_callback_pending(*window_id);
+         }
+     }
+@@ -1745,6 +1746,12 @@ pub(crate) fn take_pending_paste_text_input(&mut self) -> Option<String> {
+         self.pending_paste_text_input.take()
+     }
+ 
++    /// A paste's data is still arriving on a pipe the event loop does not
++    /// select on, so the loop must keep polling it (`pump_pending_clipboard_read`).
++    pub(crate) fn has_pending_clipboard_read(&self) -> bool {
++        self.pending_clipboard_read.is_some()
++    }
++
+     pub(crate) fn pump_pending_clipboard_read(&mut self) {
+         let mut pending = match self.pending_clipboard_read.take() {
+             Some(pending) => pending,
+diff --git a/platform/src/os/linux/windowing_backend.rs b/platform/src/os/linux/windowing_backend.rs
+index 142635bd4..6fa37d4d1 100644
+--- a/platform/src/os/linux/windowing_backend.rs
++++ b/platform/src/os/linux/windowing_backend.rs
+@@ -69,6 +69,14 @@ fn detect_windowing_protocol() -> WindowingProtocol {
+     WindowingProtocol::X11
+ }
+ 
++/// Timer 0 services what no fd wakes: video frames, GStreamer teardowns, GL
++/// retirement fences, embedded browsers, in-flight `--remote` requests, live
++/// edit. Signals wake the loop and are serviced at once, and painting follows
++/// the display, so with none of that pending the beat drops to the idle rate
++/// instead of waking the process 125 times a second.
++pub(crate) const TIMER0_ACTIVE_SECS: f64 = 0.008;
++pub(crate) const TIMER0_IDLE_SECS: f64 = 0.2;
++
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub enum WindowingProtocol {
+     X11,
+@@ -225,6 +233,10 @@ pub struct CxOs {
+     pub(crate) stdin_timers: PollTimers,
+     pub(crate) start_time: Option<Instant>,
+     pub opengl_cx: Option<OpenglCx>,
++    /// The event loop retires released GL storage on a beat that paints nothing
++    /// (`opengl_maintain_instance_retirements`). Without one, a frame that leaves
++    /// retirement debt repaints every pass to get the loop to come back for it.
++    pub(crate) gl_maintenance_beat: bool,
+     #[cfg(use_vulkan)]
+     pub(crate) vulkan: Option<super::vulkan::CxVulkan>,
+     pub(crate) video_players: HashMap<LiveId, LinuxVideoPlayer>,
+diff --git a/platform/src/os/linux/x11/linux_x11.rs b/platform/src/os/linux/x11/linux_x11.rs
+index c445ec3b0..255be7c8f 100644
+--- a/platform/src/os/linux/x11/linux_x11.rs
++++ b/platform/src/os/linux/x11/linux_x11.rs
+@@ -2,7 +2,7 @@
+     self::super::super::{
+         egl_sys,
+         linux_webkit::{self, LinuxSystemBrowser},
+-        linux_video_playback::{poll_pending_gstreamer_teardowns, GStreamerVideoPlayer},
++        linux_video_playback::{has_pending_gstreamer_teardowns, poll_pending_gstreamer_teardowns, GStreamerVideoPlayer},
+         linux_video_player::{
+             collect_linux_video_player_events, prepare_desktop_linux_video, LinuxPrepareResult,
+             LinuxVideoPlayer,
+@@ -35,6 +35,7 @@
+     std::cell::RefCell,
+     std::rc::Rc,
+ };
++use crate::os::linux::windowing_backend::{TIMER0_ACTIVE_SECS, TIMER0_IDLE_SECS};
+ 
+ fn log_linux_backdrop_unsupported_once() {
+     static LOG_ONCE: std::sync::Once = std::sync::Once::new();
+@@ -50,6 +51,8 @@ pub fn x11_event_loop(cx: Rc<RefCell<Cx>>) {
+ pub struct X11Cx {
+     pub cx: Rc<RefCell<Cx>>,
+     browsers: std::collections::HashMap<LiveId, LinuxSystemBrowser>,
++    /// Whether timer 0 runs at `TIMER0_ACTIVE_SECS` (else `TIMER0_IDLE_SECS`).
++    timer0_active: bool,
+ }
+ 
+ impl X11Cx {
+@@ -57,6 +60,7 @@ pub fn event_loop_impl(cx: Rc<RefCell<Cx>>) {
+         let mut x11_cx = X11Cx {
+             cx: cx.clone(),
+             browsers: Default::default(),
++            timer0_active: true,
+         };
+         cx.borrow_mut().self_ref = Some(cx.clone());
+         cx.borrow_mut().os_type = OsType::LinuxWindow(LinuxWindowParams {
+@@ -99,9 +103,15 @@ pub fn event_loop_impl(cx: Rc<RefCell<Cx>>) {
+             return cx.borrow_mut().stdin_event_loop();
+         }
+ 
++        // Timer 0 retires released GL storage (see the `Timer` arm), so a
++        // frame that leaves retirement debt need not repaint to be woken.
++        #[cfg(not(use_vulkan))]
++        {
++            cx.borrow_mut().os.gl_maintenance_beat = true;
++        }
+         cx.borrow_mut().call_event_handler(&Event::Startup);
+         cx.borrow_mut().redraw_all();
+-        get_xlib_app_global().start_timer(0, 0.008, true);
++        get_xlib_app_global().start_timer(0, TIMER0_ACTIVE_SECS, true);
+         get_xlib_app_global().event_loop();
+     }
+ 
+@@ -208,6 +218,12 @@ fn xlib_event_callback(
+                 // ok here we send out to all our childprocesses
+ 
+                 self.handle_repaint(opengl_windows);
++                // A frame that released GL storage leaves retirement debt that
++                // timer 0 serves; serve it at the active rate until it settles.
++                #[cfg(not(use_vulkan))]
++                if self.cx.borrow().opengl_retirement_pending() {
++                    self.pace_timer0(xlib_app, true);
++                }
+ 
+                 {
+                     let cx = self.cx.borrow();
+@@ -324,12 +340,14 @@ fn xlib_event_callback(
+                 cx.call_event_handler(&Event::TextCut(e))
+             }
+             XlibEvent::Timer(e) => {
++                let mut timer0_has_work = None;
+                 if e.timer_id == 0 {
+                     linux_webkit::pump();
+                     self.browsers.retain(|_, browser| !browser.is_finished());
+                 }
+                 let mut cx = self.cx.borrow_mut();
+                 if e.timer_id == 0 {
++                    SignalToUI::check_and_clear_renderer_signal();
+                     if SignalToUI::check_and_clear_ui_signal() {
+                         cx.handle_termination_signal();
+                         cx.handle_media_signals();
+@@ -373,6 +391,23 @@ fn xlib_event_callback(
+                             cx.call_event_handler(&event);
+                         }
+                     }
++                    // Released GL storage waiting on its completion fence retires on
++                    // this beat instead of by repainting every live pass until the
++                    // fence passes (see `CxOs::gl_maintenance_beat`).
++                    #[cfg(not(use_vulkan))]
++                    let retirement_pending = cx.opengl_retirement_pending() && {
++                        cx.os.opengl_cx.as_ref().unwrap().make_current();
++                        cx.opengl_maintain_instance_retirements()
++                    };
++                    #[cfg(use_vulkan)]
++                    let retirement_pending = false;
++                    timer0_has_work = Some(
++                        retirement_pending
++                            || !self.browsers.is_empty()
++                            || crate::remote::needs_ticks()
++                            || !cx.os.video_players.is_empty()
++                            || has_pending_gstreamer_teardowns(),
++                    );
+                 } else {
+                     cx.handle_script_timer(&e);
+                     cx.call_event_handler(&Event::Timer(e))
+@@ -381,6 +416,9 @@ fn xlib_event_callback(
+                 cx.run_live_edit_if_needed("linux-x11");
+                 let has_platform_ops = !cx.platform_ops.is_empty();
+                 drop(cx);
++                if let Some(has_work) = timer0_has_work {
++                    self.pace_timer0(xlib_app, has_work);
++                }
+                 if has_platform_ops {
+                     if let EventFlow::Exit = self.handle_platform_ops(opengl_windows, xlib_app) {
+                         let mut cx = self.cx.borrow_mut();
+@@ -388,7 +426,19 @@ fn xlib_event_callback(
+                         return EventFlow::Exit;
+                     }
+                 }
+-                return EventFlow::Wait;
++                // Paint what this timer queued now: timer 0 may be idling, and app
++                // timers such as a caret blink must not wait for its next beat.
++                let cx = self.cx.borrow();
++                return if cx.any_passes_dirty()
++                    || cx.need_redrawing()
++                    || cx.new_next_frames.len() != 0
++                    || cx.screenshot_requests.len() > 0
++                    || cx.demo_time_repaint
++                {
++                    EventFlow::Poll
++                } else {
++                    EventFlow::Wait
++                };
+             }
+         }
+ 
+@@ -421,6 +471,16 @@ fn xlib_event_callback(
+         }
+     }
+ 
++    /// Runs timer 0 at the active rate while it has work to poll (see
++    /// `TIMER0_ACTIVE_SECS`) and at the idle rate as soon as it has none.
++    fn pace_timer0(&mut self, xlib_app: &mut XlibApp, active: bool) {
++        if active != self.timer0_active {
++            self.timer0_active = active;
++            xlib_app.stop_timer(0);
++            xlib_app.start_timer(0, if active { TIMER0_ACTIVE_SECS } else { TIMER0_IDLE_SECS }, true);
++        }
++    }
++
+     pub(crate) fn handle_repaint(&mut self, opengl_windows: &mut Vec<OpenglWindow>) {
+         {
+             // Paint is emitted on every idle poll/timer tick. If no pass is dirty there is
+diff --git a/platform/src/os/linux/x11/linux_x11_stdin.rs b/platform/src/os/linux/x11/linux_x11_stdin.rs
+index 1219b5e83..eb69eb161 100644
+--- a/platform/src/os/linux/x11/linux_x11_stdin.rs
++++ b/platform/src/os/linux/x11/linux_x11_stdin.rs
+@@ -1017,6 +1017,7 @@ fn stdin_handle_host_to_stdin(
+             }
+             StudioToApp::RunViewFrameRequest(_) => {}
+             StudioToApp::Tick => {
++                SignalToUI::check_and_clear_renderer_signal();
+                 if SignalToUI::check_and_clear_ui_signal() {
+                     self.handle_termination_signal();
+                     self.handle_media_signals();
+diff --git a/platform/src/os/linux/x11/xlib_app.rs b/platform/src/os/linux/x11/xlib_app.rs
+index 62a67d4bd..8c02ed905 100644
+--- a/platform/src/os/linux/x11/xlib_app.rs
++++ b/platform/src/os/linux/x11/xlib_app.rs
+@@ -1298,13 +1298,33 @@ pub fn event_loop(&mut self) {
+                     EventFlow::Wait => {
+                         let time = self.time_now();
+                         self.timers.update_timers(&mut timer_ids);
++                        let mut timer_queued_work = false;
+                         for timer_id in &timer_ids {
+                             self.do_callback(XlibEvent::Timer(TimerEvent {
+                                 timer_id: *timer_id,
+                                 time: Some(time),
+                             }));
++                            timer_queued_work |= matches!(self.event_flow, EventFlow::Poll);
++                        }
++                        if !self.event_loop_running {
++                            break;
++                        }
++                        // A timer that redrew or dispatched a signal with work paints
++                        // now. Timer 0 idles slowly, so sleeping first would hold that
++                        // paint until an unrelated wake.
++                        if timer_queued_work {
++                            self.event_flow = EventFlow::Poll;
++                            continue;
++                        }
++                        let woken = self.timers.select(self.display_fd);
++                        // Another thread raised a signal or queued a `--remote` command.
++                        // Service it on this wake instead of on the next timer-0 tick.
++                        if woken || crate::SignalToUI::signal_pending() {
++                            self.do_callback(XlibEvent::Timer(TimerEvent {
++                                timer_id: 0,
++                                time: Some(self.time_now()),
++                            }));
+                         }
+-                        self.timers.select(self.display_fd);
+                         self.event_flow = EventFlow::Poll;
+                     }
+                     EventFlow::Poll => {
+diff --git a/platform/src/os/web/web.rs b/platform/src/os/web/web.rs
+index a8b799bf9..b82d0673f 100644
+--- a/platform/src/os/web/web.rs
++++ b/platform/src/os/web/web.rs
+@@ -1730,6 +1730,9 @@ pub fn from_wasm(&mut self, from_wasm: impl FromWasm) {
+ #[cfg(target_arch = "wasm32")]
+ pub unsafe extern "C" fn wasm_check_signal() -> u32 {
+     let mut x = 0;
++    if SignalToUI::check_and_clear_renderer_signal() {
++        x |= 4; // Pump backend maintenance without forwarding Event::Signal.
++    }
+     if SignalToUI::check_and_clear_ui_signal() {
+         x |= 1
+     }
+diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
+index b3cc8f7d7..087b79732 100644
+--- a/platform/src/os/windows/windows.rs
++++ b/platform/src/os/windows/windows.rs
+@@ -380,6 +380,7 @@ fn win32_event_callback(
+                 self.call_event_handler(&Event::Timer(e))
+             }
+             Win32Event::Signal => {
++                SignalToUI::check_and_clear_renderer_signal();
+                 if SignalToUI::check_and_clear_ui_signal() {
+                     self.handle_termination_signal();
+                     self.handle_media_signals();
+diff --git a/platform/src/os/windows/windows_stdin.rs b/platform/src/os/windows/windows_stdin.rs
+index ac3a85683..0298093d5 100644
+--- a/platform/src/os/windows/windows_stdin.rs
++++ b/platform/src/os/windows/windows_stdin.rs
+@@ -310,6 +310,7 @@ fn stdin_handle_host_to_stdin(
+             }
+             StudioToApp::RunViewFrameRequest(_) => {}
+             StudioToApp::Tick => {
++                SignalToUI::check_and_clear_renderer_signal();
+                 if SignalToUI::check_and_clear_ui_signal() {
+                     self.handle_termination_signal();
+                     self.handle_media_signals();
+diff --git a/platform/src/remote.rs b/platform/src/remote.rs
+index 147397b49..b6ab41df8 100644
+--- a/platform/src/remote.rs
++++ b/platform/src/remote.rs
+@@ -578,10 +578,9 @@ pub fn is_active() -> bool {
+ 
+     /// True while a request is in flight, so the event loop knows to keep its
+     /// paint clock at full rate instead of downshifting to the idle poll.
+-    /// Only macOS downshifts, so this is unused on the other backends — they
+-    /// poll the control channel at a fixed rate anyway.
+-    #[allow(dead_code)]
+-    #[allow(dead_code)]// only the macos paint clock asks
++    /// macOS and Wayland downshift; the other backends poll the control
++    /// channel at a fixed rate anyway.
++    #[allow(dead_code)] // only the downshifting loops ask
+     pub(crate) fn needs_ticks() -> bool {
+         if !ACTIVE.load(Ordering::Relaxed) {
+             return false;
+@@ -3259,7 +3258,7 @@ pub fn requested() -> bool {
+     pub fn is_active() -> bool {
+         false
+     }
+-    #[allow(dead_code)] // only the macos paint clock asks
++    #[allow(dead_code)] // only the downshifting loops ask
+     pub(crate) fn needs_ticks() -> bool {
+         false
+     }
+diff --git a/widgets/src/portal_list.rs b/widgets/src/portal_list.rs
+index c7ddd3c4e..52135c943 100644
+--- a/widgets/src/portal_list.rs
++++ b/widgets/src/portal_list.rs
+@@ -17,7 +17,7 @@
+         widget_async::CxSplashVmExt,
+         widget_tree::CxWidgetExt,
+     },
+-    std::collections::HashMap,
++    std::collections::{HashMap, VecDeque},
+ };
+ 
+ script_mod! {
+@@ -526,6 +526,14 @@ pub struct PortalList {
+     capture_overload: bool,
+     #[live(false)]
+     keep_invisible: bool,
++    /// Retain this many recently requested entry identities in addition to
++    /// visible/selected items. Unlike `reuse_items`, retained widgets keep their
++    /// entry and state and are never reset or rebound to a different entry.
++    /// Zero preserves the default visible-only policy. Ignored by reuse_items.
++    #[live(0)]
++    cache_items: usize,
++    #[rust]
++    cached_item_order: VecDeque<usize>,
+     #[live(true)]
+     skip_widget_tree_search: bool,
+ 
+@@ -1003,14 +1011,20 @@ fn end(&mut self, cx: &mut Cx2d) {
+         // so their selection state persists when scrolled back into view.
+         if !self.keep_invisible && !self.is_selecting {
+             let selection_range = self.get_selection_range();
++            self.cached_item_order.truncate(self.cache_items);
+             if self.reuse_items {
+                 let reusable_items = &mut self.reusable_items;
+                 self.items.retain_visible_with(|v: WidgetItem| {
+                     reusable_items.entry(v.template).or_default().push(v);
+                 });
+-            } else if let Some((start, end)) = selection_range {
+-                self.items
+-                    .retain_visible_and(|item_id, _| *item_id >= start.0 && *item_id <= end.0);
++            } else if self.cache_items > 0 || selection_range.is_some() {
++                let cached = &self.cached_item_order;
++                self.items.retain_visible_and(|item_id, _| {
++                    cached.contains(item_id)
++                        || selection_range.is_some_and(|(start, end)| {
++                            *item_id >= start.0 && *item_id <= end.0
++                        })
++                });
+             } else {
+                 self.items.retain_visible();
+             }
+@@ -1392,6 +1406,11 @@ pub fn item_with_existed(
+         use std::collections::hash_map::Entry;
+ 
+         if let Some(template_ref) = self.templates.get(&template) {
++            if self.cache_items > 0 && !self.reuse_items {
++                self.cached_item_order.retain(|id| *id != entry_id);
++                self.cached_item_order.push_front(entry_id);
++                self.cached_item_order.truncate(self.cache_items);
++            }
+             let template_value: ScriptValue = template_ref.as_object().into();
+             // Instantiate items in the VM whose heap actually minted the template.
+             // Using `cx.with_vm` (the main VM) here would dereference an isolate-heap

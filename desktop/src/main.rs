@@ -20,9 +20,19 @@ mod linux_entry {
     }
 }
 
+/// The Linux windowing backend. The embedded WebKitGTK browser is an XEmbed
+/// plug and needs the X11 backend, which on a Wayland session means the
+/// whole shell renders through XWayland: on Hyprland that blocked the UI
+/// thread in `eglSwapBuffers` for up to a second per idle repaint, stalled
+/// alt-tab and menus 150–480 ms, and drew at the panel's unscaled size. So
+/// X11 is opt-in: `OCTOSENSE_LINUX_BACKEND=x11` (or Makepad's own
+/// `--linux-backend=x11`) for the embedded browser; otherwise Makepad picks
+/// native Wayland when `WAYLAND_DISPLAY` is set, else X11.
 #[cfg(target_os = "linux")]
 pub fn app_main() {
-    Cx::prefer_x11_for_embedded_browser();
+    if std::env::var("OCTOSENSE_LINUX_BACKEND").map_or(false, |v| v.eq_ignore_ascii_case("x11")) {
+        Cx::prefer_x11_for_embedded_browser();
+    }
     linux_entry::start();
 }
 

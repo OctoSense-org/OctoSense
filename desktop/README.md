@@ -119,6 +119,7 @@ App Hub's modules have no process form and always open in-process.
 | `--assistant`, `--prewarm` | Start the assistant app / prewarm apps (need matching catalog entries). Off by default. |
 | `--demo-home`, `--download-wallpapers` | Generate a demo filesystem; fetch the Omarchy theme's full wallpaper set. |
 | `OCTOSENSE_HOME` | State directory (default `~/.octosense`; falls back to an existing `~/.makeos`, and `MAKEOS_HOME`). |
+| `OCTOSENSE_LINUX_BACKEND=x11` | Linux: run the shell through X11/XWayland so the embedded WebKitGTK browser (an XEmbed plug) can attach. By default Makepad selects native Wayland when `WAYLAND_DISPLAY` is set; on a Wayland session XWayland blocks the UI thread in the GL swap and renders at the unscaled size, so the browser's hosting is opt-in. |
 | `OCTOSENSE_APP_DATA` | Where App Hub keeps installed apps (default `apps/` in the platform data directory). |
 | `OCTOSENSE_HUB`, `OCTOSENSE_HUB_ANCHOR` | App Hub catalog origin (path or URL) and trust anchor; default is the App Hub repository's `main`. |
 | `OCTOSENSE_SYSTEM_APPS` | The system-app selection file; the root `.cargo/config.toml` sets it to `desktop/system-apps.json`. |
