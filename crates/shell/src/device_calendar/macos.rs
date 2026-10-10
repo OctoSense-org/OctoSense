@@ -94,17 +94,21 @@ unsafe fn event_data(object: ObjcId) -> Result<EventData, String> {
     let all_day: BOOL = msg_send![object, isAllDay];
     let recurring: BOOL = msg_send![object, hasRecurrenceRules];
     let attendees: BOOL = msg_send![object, hasAttendees];
+    let all_day = all_day == YES;
+    let mut zone = property(timezone, sel!(name));
+    let mut first = (start * 1000.).round() as i64;
+    let mut last = (end * 1000.).round() as i64;
+    if all_day {
+        (first, last) = super::model::all_day_read_range(first, last, &zone)?;
+        zone = "UTC".into();
+    }
     let data = EventData {
         id: property(object, sel!(eventIdentifier)),
         title: property(object, sel!(title)),
-        start_ms: (start * 1000.).round() as i64,
-        end_ms: (end * 1000.).round() as i64,
-        timezone: if timezone == nil {
-            "UTC".into()
-        } else {
-            property(timezone, sel!(name))
-        },
-        all_day: all_day == YES,
+        start_ms: first,
+        end_ms: last,
+        timezone: zone,
+        all_day,
         location: property(object, sel!(location)),
         notes: property(object, sel!(notes)),
         recurring: recurring == YES,
@@ -266,13 +270,27 @@ pub(super) fn execute(
                 } else {
                     msg_send![class!(EKEvent),eventWithEventStore:store.0]
                 };
-                let zone: ObjcId =
-                    msg_send![class!(NSTimeZone),timeZoneWithName:str_to_nsstring(&event.timezone)];
+                let zone: ObjcId = if event.all_day {
+                    msg_send![class!(NSTimeZone), localTimeZone]
+                } else {
+                    msg_send![class!(NSTimeZone),timeZoneWithName:str_to_nsstring(&event.timezone)]
+                };
                 if zone == nil {
                     return Err("invalid_arguments: Unknown timezone".into());
                 }
-                let start: ObjcId = msg_send![class!(NSDate),dateWithTimeIntervalSince1970:(event.start_ms as f64/1000.)];
-                let end: ObjcId = msg_send![class!(NSDate),dateWithTimeIntervalSince1970:(event.end_ms as f64/1000.)];
+                let (first, last) = if event.all_day {
+                    super::model::all_day_write_range(
+                        event.start_ms,
+                        event.end_ms,
+                        &property(zone, sel!(name)),
+                    )?
+                } else {
+                    (event.start_ms, event.end_ms)
+                };
+                let start: ObjcId =
+                    msg_send![class!(NSDate),dateWithTimeIntervalSince1970:(first as f64/1000.)];
+                let end: ObjcId =
+                    msg_send![class!(NSDate),dateWithTimeIntervalSince1970:(last as f64/1000.)];
                 let _: () = msg_send![object,setCalendar:native_calendar];
                 let _: () = msg_send![object,setTitle:str_to_nsstring(&event.title)];
                 let _: () = msg_send![object,setStartDate:start];
