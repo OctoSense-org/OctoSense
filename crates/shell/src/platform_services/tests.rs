@@ -1,5 +1,140 @@
 use super::*;
 
+#[cfg(feature = "app-hub")]
+#[test]
+fn glance_devices_use_host_consent_for_declared_and_legacy_apps() {
+    const CHILD: &str = "OCTOSENSE_GLANCE_DEVICE_CONSENT_TEST";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "platform_services::tests::glance_devices_use_host_consent_for_declared_and_legacy_apps",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    use makepad_widgets::{splash_host, splash_policy};
+    let home = Home::new();
+    let host = home.0.join(".host");
+    std::env::set_var("OCTOSENSE_APP_DATA", &home.0);
+    octosense_appstore::set_data_root(home.0.clone());
+    register();
+    octosense_appstore::host_api::register_runtime_feature("camera.capture_intent", 1);
+    for (app, capabilities, requires) in [
+        ("os.glancelegacy", json!([]), json!([])),
+        (
+            "os.glancedevices",
+            json!(["camera", "microphone", "location", "glance"]),
+            json!(["host-api-v1"]),
+        ),
+    ] {
+        let bundle = crate::host_tools::script_apps::tests::stamped_bundle(
+            "camera",
+            app,
+            |bundle, manifest| {
+                manifest["id"] = json!(app);
+                manifest["capabilities"] = capabilities;
+                manifest["requires"] = requires;
+                for key in ["agent", "host_api"] {
+                    manifest.as_object_mut().unwrap().remove(key);
+                }
+                for file in ["tools.json", "AGENT.md"] {
+                    let _ = std::fs::remove_file(bundle.join(file));
+                }
+                std::fs::write(bundle.join("main.splash"), "View{}\n").unwrap();
+            },
+        );
+        let packed = octosense_app_hub::pack::pack_system_app(&bundle).unwrap();
+        std::fs::remove_dir_all(bundle).unwrap();
+        octosense_appstore::system::register_system_app(octosense_appstore::system::SystemApp {
+            id: app,
+            name: "Glance device fixture",
+            pack: Box::leak(packed.pack_json.into_boxed_str()),
+            assets: &[],
+        });
+    }
+
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    cx.with_vm(|vm| {
+        makepad_widgets::script_mod(vm);
+        crate::glance_card::script_mod(vm);
+    });
+    let mut tiles = crate::glance_card::GlanceTiles::default();
+    let body: std::sync::Arc<str> = "View{}".into();
+    for app in ["os.glancelegacy", "os.glancedevices"] {
+        tiles.open(&mut cx, app, app, true, &body);
+        let heap = tiles.heap_key(&mut cx, app).unwrap();
+        assert_eq!(splash_host::app_tag_for_heap(heap).as_deref(), Some(app));
+        assert!(!splash_host::prompts_allowed_for_heap(heap));
+        for (family, method) in [
+            ("camera", "camera.preview"),
+            ("microphone", "microphone.record"),
+            ("location", "location.get"),
+        ] {
+            assert!(
+                splash_policy::service_allowed(heap, method)
+                    .unwrap_err()
+                    .starts_with("authorization_required:"),
+                "{app}: neither declarations nor another app's consent authorize {family}"
+            );
+            // A host-owned consent change, not an OS grant or script argument.
+            consent::set(&host, app, family, true, None).unwrap();
+            assert!(splash_policy::service_allowed(heap, method).is_ok());
+        }
+    }
+
+    let app = "os.glancedevices";
+    let heap = tiles.heap_key(&mut cx, app).unwrap();
+    consent::set(&host, app, "camera", false, None).unwrap();
+    assert!(splash_policy::service_allowed(heap, "camera.preview").is_err());
+    let legacy_heap = tiles.heap_key(&mut cx, "os.glancelegacy").unwrap();
+    assert!(splash_policy::service_allowed(legacy_heap, "camera.preview").is_ok());
+
+    struct NoSheet;
+    impl services::ServiceHost for NoSheet {
+        fn open_sheet(&mut self, _: String) {
+            panic!("A Glance summary must not open a permission sheet");
+        }
+        fn close_sheet(&mut self) {}
+    }
+    services::dispatch(
+        ServiceCall {
+            app_id: app.into(),
+            service: "camera.permission.request".into(),
+            args: json!({}),
+            from_sheet: false,
+            may_prompt: splash_host::prompts_allowed_for_heap(heap),
+            host_dir: host,
+        },
+        heap,
+        1,
+        &mut NoSheet,
+    );
+    let replies = services::take_replies_for(&[heap]);
+    assert_eq!(replies.len(), 1);
+    let error = replies[0].2.as_ref().unwrap_err();
+    if permission_supported() {
+        assert!(error.contains("foreground"), "{error}");
+    }
+
+    tiles.open(&mut cx, "missing", "os.glancemissing", true, &body);
+    let missing = tiles.heap_key(&mut cx, "missing").unwrap();
+    assert!(splash_host::app_tag_for_heap(missing).is_none());
+    assert!(!splash_host::prompts_allowed_for_heap(missing));
+    assert!(splash_policy::service_allowed(missing, "camera.preview").is_err());
+    tiles.sweep(&mut cx, &[]);
+}
+
 struct Home(PathBuf);
 impl Home {
     fn new() -> Self {

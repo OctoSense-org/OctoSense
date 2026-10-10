@@ -1309,22 +1309,34 @@ fn isolate_of(cx: &mut Cx, splash: &SplashRef) -> Option<widget_async::SplashVmI
 fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) -> bool {
     #[cfg(any(feature = "app-hub", native_mobile))]
     if contained {
-        match admitted_app_isolate(cx, app) {
-            Ok(mut settings) => {
-                // Glance is a separate isolate: apply the same opt-in device
-                // consent gate as the full app before evaluating its source.
-                let requires_consent = crate::host_tools::script_apps::guidance(app)
-                    .map(|loaded| loaded.manifest["requires"].as_array().is_some_and(|features|
-                        features.iter().any(|feature| feature.as_str() == Some("host-api-v1"))))
-                    .unwrap_or(true);
-                splash.set_device_consent(cx, requires_consent);
-                let admitted_prompts = settings.host_prompts;
-                settings.host_prompts = false;
-                let applied = octosense_app_policy::splash_adapter::apply(splash, cx, &settings);
+        // A legacy manifest must not inherit the shell's OS permissions.
+        // Keep this fail-closed state if admission or the manifest reload fails.
+        splash.set_device_consent(cx, true);
+        splash.set_host_caps(cx, Vec::new());
+        splash.set_host_tag(cx, None);
+        let seated = (|| {
+            let mut settings = admitted_app_isolate(cx, app)?;
+            let (_, bundle) = crate::host_tools::script_apps::admitted_bundle(app)?;
+            let admitted_prompts = settings.host_prompts;
+            settings.host_prompts = false;
+            let applied = octosense_app_policy::splash_adapter::apply(splash, cx, &settings);
+            // The generic adapter enables only non-device APIs. Use the same
+            // host-consent and capture-intent setup as the full app, before any
+            // card code runs. Identity never comes from the published body.
+            splash.set_host_tag(cx, Some(app.to_string()));
+            octosense_appstore::apply_device_consent(cx, &bundle, splash)?;
+            Ok::<_, String>((admitted_prompts, applied))
+        })();
+        match seated {
+            Ok((admitted_prompts, applied)) => {
                 log!("glance: {app}'s tile runs under its policy: {} capability(ies), {} host(s)", applied.capabilities, applied.hosts);
                 return admitted_prompts;
             }
-            Err(e) => log!("glance: {app}'s tile runs with no grants: {e}"),
+            Err(e) => {
+                splash.set_host_caps(cx, Vec::new());
+                splash.set_host_tag(cx, None);
+                log!("glance: {app}'s tile runs with no grants: {e}");
+            }
         }
     }
     let _ = (app, contained);
