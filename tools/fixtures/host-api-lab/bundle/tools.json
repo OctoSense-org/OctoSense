@@ -21,8 +21,7 @@
           "camera",
           "discovery",
           "missing",
-          "microphone_allowed",
-          "microphone_error",
+          "microphone",
           "background_prompt_allowed",
           "background_error",
           "calls",
@@ -42,12 +41,6 @@
           "missing": {
             "type": "object"
           },
-          "microphone_allowed": {
-            "type": "boolean"
-          },
-          "microphone_error": {
-            "type": "string"
-          },
           "background_prompt_allowed": {
             "type": "boolean"
           },
@@ -62,6 +55,9 @@
             "type": "object"
           },
           "public_services": {
+            "type": "object"
+          },
+          "microphone": {
             "type": "object"
           }
         },

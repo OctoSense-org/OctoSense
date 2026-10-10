@@ -18,11 +18,9 @@
 //! is `implemented_by: "host-service"` runs on the host service of its
 //! namespace (`news.list` → the `news` service), exactly as the app's own
 //! `host.request("news.list", …)` would: with the app's identity, never
-//! from a sheet, and only when the app's manifest was granted that family,
-//! or the family is a system app's own namespace (`os.calendar` and its
-//! `calendar` service, which ship with the shell; `os.photos`'s `photos`
-//! service, which answers `photos.info` on the photo engine and
-//! `photos.notify` through the shell's notice hook, `glance_notice`).
+//! from a sheet. Manifest families describe usage and do not gate calls.
+//! The relay checks tool ownership and sharing; each host service retains
+//! its identity, account, consent and review requirements.
 //! A declared tool whose engine this build leaves out never runs: Photos'
 //! `photos.info` on Home, where the photo engine is desktop only (ADR 0013)
 //! and the shell's notice service answers Photos' `notify`, is refused as
@@ -61,7 +59,7 @@ pub struct Loaded {
     pub generic: Vec<String>,
     /// Other apps' tools its agent asks for (owner resolved at grant time).
     pub asks: Vec<String>,
-    /// Its tools that run on host services, and the families it was granted.
+    /// Its tools that run on host services, and the families it declares.
     pub host_service_tools: BTreeSet<String>,
     pub script_tools: BTreeSet<String>,
     pub host_methods: HashMap<String, String>,
@@ -146,8 +144,7 @@ pub(crate) fn glance_template(app: &str, name: &str) -> Result<String, String> {
         return Err("Choose a Splash template basename from this app's admitted bundle".into());
     }
     let (_, bundle) = admitted_bundle(app)?;
-    let loaded = from_bundle(&bundle)?;
-    if !loaded.families.contains("glance") {return Err("This app has no Glance grant".into());}
+    from_bundle(&bundle)?;
     let path = bundle.join(name);
     if !std::fs::symlink_metadata(&path).is_ok_and(|m|m.is_file() && m.len() <= 256 * 1024) {
         return Err("The admitted Glance template is missing or too large".into());
@@ -217,11 +214,30 @@ pub(crate) fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
     Ok((root, bundle))
 }
 
-/// Whether `app`'s admitted manifest was granted the capability `family`:
-/// for a host service acting for the app outside its isolate (a tool call),
-/// where the Card runner's gate does not run.
+/// Whether an admitted manifest declares a family, for disclosure only.
+/// Execution must check identity, consent and account scope independently.
 pub fn grants(app: &str, family: &str) -> bool {
     admitted_bundle(app).and_then(|(_, bundle)| from_bundle(&bundle)).is_ok_and(|loaded| loaded.families.contains(family))
+}
+
+/// The app still has a verified, admitted bundle. Capability declarations
+/// describe its intended use; they do not grant access to a host service.
+pub fn admitted(app: &str) -> bool {
+    guidance(app).is_ok()
+}
+
+/// Bind a host request to the current admitted app and host profile before
+/// inspecting its account, opening a device, or reading private host state.
+pub fn admitted_host(app: &str, host_dir: &Path) -> Result<Loaded, String> {
+    let (root, bundle) = admitted_bundle(app)?;
+    if root.join(".host") != host_dir {
+        return Err("Host request belongs to another app profile".into());
+    }
+    let loaded = from_bundle(&bundle)?;
+    if loaded.manifest["id"].as_str() != Some(app) {
+        return Err("Host request belongs to another app identity".into());
+    }
+    Ok(loaded)
 }
 
 // ------------------------------------------------------------ the executor
@@ -233,7 +249,7 @@ pub struct HostServiceExecutor {
     /// The tools that run on a host service.
     pub tools: BTreeSet<String>,
     pub methods: HashMap<String, String>,
-    /// The capability families the app's manifest was granted.
+    /// Declared capability families, retained as disclosure metadata.
     pub families: BTreeSet<String>,
     /// The directory App Hub hands every host service (`<apps root>/.host`).
     pub host_dir: PathBuf,
@@ -433,14 +449,9 @@ impl HostServiceExecutor {
             return;
         }
         let family = method.split('.').next().unwrap_or("");
-        // A system app's own namespace is its own host service: both ship
-        // with the shell (Calendar's `calendar`, which App Hub's closed
-        // capability list does not name). Any other family needs the grant.
-        let own = self.app.strip_prefix(octosense_appstore::system::SYSTEM_ID_PREFIX) == Some(family);
-        if !self.families.contains(family) && !own {
-            reply.finish(ToolOutcome::error("not_granted", format!("{} was not granted the {family} service", self.app)));
-            return;
-        }
+        // Tool ownership/sharing was checked by the relay. A manifest family
+        // is disclosure, not a second grant. The service keeps its own
+        // identity, account, consent and foreground-review boundaries.
         let mut args = match scoped_args(&self.app, &call) {
             Ok(args) => args,
             Err(message) => {
@@ -647,6 +658,24 @@ pub(crate) mod tests {
     use super::*;
     use crate::ai_host::app_peers::host_tools::HostToolCall;
     use octosense_appstore::services::{HostService, Replier};
+
+    /// Register a real packed fixture for declaration/identity boundary tests.
+    /// Each caller runs in a child process before setting App Hub's data root.
+    pub(crate) fn declaration_fixture(id: &'static str, capabilities: &[&str]) {
+        let dir = stamped_bundle("camera", id, |dir, manifest| {
+            manifest["id"] = json!(id);
+            manifest["capabilities"] = json!(capabilities);
+            manifest["requires"] = json!(["host-api-v1"]);
+            for key in ["agent", "host_api"] { manifest.as_object_mut().unwrap().remove(key); }
+            for path in ["tools.json", "AGENT.md"] { let _ = std::fs::remove_file(dir.join(path)); }
+            std::fs::write(dir.join("main.splash"), "use mod.widgets.*\nApp { Label { text: \"Fixture\" } }\n").unwrap();
+        });
+        let packed = octosense_app_hub::pack::pack_system_app(&dir).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        octosense_appstore::system::register_system_app(octosense_appstore::system::SystemApp {
+            id, name: "Declaration fixture", pack: Box::leak(packed.pack_json.into_boxed_str()), assets: &[],
+        });
+    }
 
     /// A copy of `apps/<name>/bundle` stamped as App Hub packs it (the
     /// manifest carries the bundle's digest), with `edit` applied first.
@@ -1083,15 +1112,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn admitted_alias_dispatches_with_owner_identity_and_checks_actual_family() {
+    fn admitted_alias_dispatches_with_owner_identity_without_a_family_declaration() {
         octosense_appstore::services::register_host_service(Box::new(Probe));
-        let mut exec=HostServiceExecutor {app:"org.example.notes".into(),
+        let exec=HostServiceExecutor {app:"org.example.notes".into(),
             tools:["notes.lookup".to_owned()].into_iter().collect(),
             methods:HashMap::from([("notes.lookup".into(),"g3probe.echo".into())]),
             families:["notes".to_owned()].into_iter().collect(),host_dir:std::env::temp_dir()};
-        let (r,sent)=reply();exec.execute(call("notes.lookup"),r);
-        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"],"not_granted");
-        exec.families.insert("g3probe".into());
         let (r,sent)=reply();exec.execute(call("notes.lookup"),r);
         for _ in 0..50 {poll();if !sent.lock().unwrap().is_empty(){break;} std::thread::sleep(std::time::Duration::from_millis(10));}
         let answer=sent.lock().unwrap();
@@ -1235,8 +1261,8 @@ pub(crate) mod tests {
     }
 
     /// The executor runs a host-service tool as the app's own
-    /// `host.request` would (its identity, never a sheet), only for a
-    /// granted family; the answer reaches the call through `poll`.
+    /// `host.request` would (its identity, never a sheet); the answer reaches
+    /// the call through `poll`. The tool offer still bounds callable tools.
     #[test]
     fn a_host_service_tool_runs_as_the_apps_own_request() {
         octosense_appstore::services::register_host_service(Box::new(Probe));
@@ -1261,17 +1287,21 @@ pub(crate) mod tests {
         assert_eq!(got[0]["data"], json!({"app": "os.g3probe", "service": "g3probe.echo", "args": {"q": 1}, "from_sheet": false}));
         let (r, sent) = reply();
         exec.execute(call("other.x"), r);
-        assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "a family the manifest was not granted");
+        for _ in 0..50 {
+            poll();
+            if !sent.lock().unwrap().is_empty() { break; }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(sent.lock().unwrap()[0]["error"]["message"].as_str().unwrap().contains("no service answers"), "unavailable service, not a declaration denial");
         let (r, sent) = reply();
         exec.execute(call("g3probe.in_script"), r);
         assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "app_tool_unavailable");
     }
 
-    /// A system app's own namespace is its own service, granted or not
-    /// (Calendar's `calendar`); a store app's needs the grant like any
-    /// other family.
+    /// System and installed apps use the same host dispatch path even when
+    /// neither declares the tool's service family.
     #[test]
-    fn a_system_apps_own_namespace_needs_no_grant() {
+    fn system_and_installed_tools_dispatch_without_family_declarations() {
         octosense_appstore::services::register_host_service(Box::new(Probe));
         let run = |app: &str| {
             let exec = HostServiceExecutor { app: app.into(), tools: ["g3probe.echo".to_string()].into_iter().collect(), methods: Default::default(), families: Default::default(), host_dir: std::env::temp_dir() };
@@ -1288,6 +1318,6 @@ pub(crate) mod tests {
             got
         };
         assert_eq!(run("os.g3probe")[0]["ok"], true, "its own service");
-        assert_eq!(run("com.example.g3probe")[0]["error"]["kind"], "not_granted", "a store app is granted nothing by its id");
+        assert_eq!(run("com.example.g3probe")[0]["ok"], true, "an admitted tool uses the same dispatcher regardless of declarations");
     }
 }

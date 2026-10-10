@@ -2,7 +2,7 @@
 
 [English](0014-app-components-in-webassembly.md) | 简体中文
 
-状态：已接受（2026 年 10 月 9 日，“do 1 2 3 4”）；第 1 至第 3 阶段于 2026 年 10 月 10 日合并到 OctoSense（#436、#451）、
+状态：已接受；实现与发布验收分别追踪。第 1 至第 3 阶段于 2026 年 10 月 10 日合并到 OctoSense（#436、#451）、
 App Hub（#186、#188、#189、#190）和 App Flow（#180、#181）。第 1 阶段（运行时验证原型）位于
 `crates/wasm-host`（`src/component.rs`、`tests/component.rs`）。第 2 阶段的运行时和服务
 部分位于 `crates/wasm-host/src/component/files.rs` 和 `crates/shell/src/wasm_service.rs`，
@@ -12,7 +12,12 @@ App Hub（#186、#188、#189、#190）和 App Flow（#180、#181）。第 1 阶�
 第 4 阶段中 App Hub 的部分是 App Hub #190（目录、审核和商店中的共享组件），OctoSense 的部分是 `wasm`
 服务加载应用固定的共享组件（`wasm_service::shared_components`）。App Flow 的部分是 SDK 和 `tools/octo wasm`；iOS 暂不计划。
 本 ADR 扩展 [ADR 0011](0011-apps-own-functions-in-webassembly.zh-CN.md)：核心模块照旧可用。
-`main` 上 WebAssembly 的运行方式见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
+桌面 rc.2 和 Home beta.2 仅包含核心模块。
+[共享组件验收](../../tools/fixtures/wasm-phone-lab/README.zh-CN.md#真实-github-共享组件验收)
+现已记录真实发布者证明、带管理员证明的私有试运行目录，以及 macOS 和 OnePlus 6 上的实际商店安装和 Splash 工具执行。
+在干净源码 `c5f0c5c1` 上，两端原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13 通过。
+公开目录保持不变。组件及新策略的发行验收仍待完成；不声称真实模型、性能或 OpenHarmony 设备已经通过。当前行为见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)及
+[应用能力与执行边界](../capabilities.zh-CN.md)。
 
 ## 背景
 
@@ -55,12 +60,12 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 3. **实例保留状态。** 每个组件一个实例，在应用的 worker 存活期间一直存在，因此组件可以保存文档、
    缓存或模型。持有实例的 worker 等待下一次调用一分钟，而不是五秒。陷阱（trap）或超时会使实例
    作废，下一次调用会得到新实例。应用更新、授权变更或撤回时实例会被丢弃，与模块相同。
-4. **WASI 的范围与应用授权一致。**
+4. **WASI 的范围由应用资源和账户决定。**
    - **始终提供：** `wasi:clocks`、`wasi:random`、`wasi:io` 和 `wasi:cli`。stdout 与 stderr
      成为应用的日志行（有上限）。环境变量、参数和 stdin 都为空。
-   - **`wasi:filesystem`：** 仅在应用有 `storage` 能力（有账户的应用还需已登录账户）时提供，
-     每次调用都按引擎文件夹所遵循的规则决定。其存储文件夹以读写方式预打开为 `/`，
-     主机文件系统的其余部分一概不可见。没有该能力时不预打开任何目录。
+   - **`wasi:filesystem`：** 使用应用可用的存储目录；按账户隔离的应用需要当前已连接账户。
+     每次调用按引擎文件夹的规则决定。存储文件夹以读写方式预打开为 `/`，主机文件系统的
+     其余部分不可见。没有可用目录时不预打开。`storage` 是使用披露声明。
    - **存储配额逐次写入计量。** 一次调用可以写入的量，是调用开始时应用配额的剩余部分。运行时把使文件
      变大的 WASI 调用（`write`、`set-size`，以及 `write-via-stream` 与 `append-via-stream` 返回
      的流）替换为计量增长的版本，把释放字节的调用（截断的 `open-at`、`unlink-file-at`）替换为
@@ -72,8 +77,8 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
      为公共 HTTPS 主机的做法，都已按该裁定否决。请求在客体之外等待，epoch 检查无法结束它，因此
      请求的超时被限制在调用的截止时间内；导入 `wasi:http` 的组件每次调用有 10 秒。
    - **`octosense:host`（第 3 阶段）：** `request(service, args)` 像应用脚本的 `host.request` 一样调用
-     宿主服务，在 UI 线程上分派；自 makepad#118（OctoSense #450）起不检查清单声明的服务族（需要授权的
-     服务自己检查），但不打开面板、不询问用户（只能调用后台界面可以调用的方法），并且绝不调用 `wasm.*`。
+     宿主服务，在 UI 线程上分派；自 makepad#118（OctoSense #450）起不检查清单声明的服务族。
+     各服务保留实际的应用／账户、同意、审阅与资源检查，但不打开面板、不询问用户（只能调用后台界面可以调用的方法），并且绝不调用 `wasm.*`。
    - **从不提供：** `wasi:sockets`，以及上述包以外的任何导入。请求这些导入的组件在加载时被拒绝
      （`LoadError::Import`），App Hub 的审核闸门也会拒绝。
 5. **无需编写 WIT。**
@@ -88,7 +93,7 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
    - **分发：** SDK 发布到 crates.io（需维护者批准）；发布前使用 git 依赖。
 6. **审核能看到组件的访问范围。** App Hub 的闸门读取每个组件的导入：
    - 拒绝允许集合以外的导入；
-   - `wasi:filesystem` 需要 `storage` 能力，`wasi:http` 需要 `net` 能力，以便安装界面展示它们；
+   - 记录文件系统、HTTP 和宿主服务导入供披露，不把匹配的能力声明作为执行许可；
    - 告诉审核者组件能访问什么，例如“其应用文件夹中的文件；网络”。
    组件需要新的应用合约版本。
 
@@ -97,9 +102,9 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 | 阶段 | 范围 |
 | --- | --- |
 | 1. 运行时验证原型（本 PR） | `crates/wasm-host::component`：加载、检查导入、列出导出及其 WIT 签名、长期存活的实例、JSON 调用、上述 WASI 子集与存储预打开、超时、内存上限和日志。测试运行一个用普通 cargo 构建的、未作修改的 crate（`pulldown-cmark`），并拒绝导入 `wasi:sockets` 的组件。 |
-| 2. 开发者可用 | shell 的 `wasm` 服务：从 `fns/` 加载组件、`wasm.<function>` 调用、按应用的实例、来自清单的存储授权，以及组件写入的存储配额计量。提高组件的输入上限。guest SDK 及其宏；`octo wasm new/build/doctor`；App Hub 闸门检查与合约版本；文档与示例应用。 |
-| 3. 访问能力与平台 | 可访问任何主机的 `wasi:http` 出站（以 `net` 声明，不在运行时强制）；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；iOS 使用 Pulley（Wasmtime 的解释器），OpenHarmony 在其 JIT 策略明确前也使用 Pulley；Windows 待其 CI 运行运行时测试后开启。 |
-| 4. 共享组件 | App Hub 目录中经过审核、带版本的组件，应用可以像 npm 包一样依赖它们。安装器负责校验，每个应用仍有自己的实例和授权。 |
+| 2. 开发者可用 | shell 的 `wasm` 服务：从 `fns/` 加载组件、`wasm.<function>` 调用、按应用的实例、应用可用的存储目录，以及组件写入的存储配额计量。提高组件的输入上限。guest SDK 及其宏；`octo wasm new/build/doctor`；App Hub 闸门检查与合约版本；文档与示例应用。 |
+| 3. 访问能力与平台 | 可访问任何主机的 `wasi:http` 出站（以 `net` 声明，不在运行时强制）；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；OpenHarmony 在其 JIT 策略明确前使用 Pulley（Wasmtime 的解释器）；Windows 运行时测试在 CI 中运行。iOS 不在当前计划内。 |
+| 4. 共享组件 | App Hub 目录中经过审核、带版本的组件，应用可以像 npm 包一样依赖它们。安装器负责校验，每个应用仍有自己的实例、账户和存储边界。 |
 
 ## 考虑过的替代方案
 
@@ -115,7 +120,8 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 
 - **shell 的依赖图变大。** 新增 `wasmtime-wasi` 49.0.2（仅 `p2`）和 `component-model` 特性，
   链接在 `wasm-host` 已链接的地方（特性 `wasm-functions`）。
-- **组件只能访问其应用本来就能访问的东西：** 自身的存储文件夹（需 `storage`），第 3 阶段起还有声明过的主机。
+- **组件使用所属应用的资源和身份：** 可用且有配额的应用私有存储、出站 HTTP，以及通过应用／账户和
+  后台调用检查的可用宿主服务。`storage`、`net` 和 `network.hosts` 用于披露用途，省略它们不会拒绝执行。
   时钟和随机数对 Wasm 是新增的，但每个脚本本来就能使用。
 - **常驻实例会更长时间占用内存。** 每应用 worker 上限（`MAX_WORKERS`）与内存上限约束其用量，
   空闲的 worker 照旧退出。
@@ -156,4 +162,4 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 第 3 阶段已定：组件绝不调用会打开面板或询问用户的宿主服务，这类调用属于脚本。
 
 - 异步函数（WASI 0.3）和流式内容：第 3 阶段之后。
-- iOS：在 Pulley 中带这个服务构建 Home；构建机器上还没有安装 Rust 的 iOS 目标。
+- iOS 不在当前计划内。任何后续支持方案都需要独立的 Home 构建与设备验收；Pulley 的测试结果不能证明 iOS 可用。

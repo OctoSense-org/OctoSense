@@ -240,6 +240,9 @@ impl MatchEvent for App {
         self.sheet = self.ui.splash(cx, ids!(sheet));
         let app = self.card.clone();
         octosense_app_policy::splash_adapter::apply(&app, cx, &settings);
+        app.set_host_tag(cx, Some(self.app.clone()));
+        octosense_appstore::apply_device_consent(cx, &bundle, &app)
+            .expect("Apply the admitted app's device consent boundary");
         app.set_text(cx, &source);
     }
 }

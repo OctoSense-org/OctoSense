@@ -3,11 +3,37 @@
   "id": "os.camera",
   "version": "1.0.0",
   "name": "Camera",
-  "integrity": { "bundle_blake3": "" },
-  "capabilities": ["storage", "camera", "microphone", "library", "glance"],
+  "integrity": {
+    "bundle_blake3": ""
+  },
+  "capabilities": [
+    "storage",
+    "camera",
+    "microphone",
+    "library",
+    "glance"
+  ],
   "agent": {
     "profile": "read-only",
-    "tools": ["ask_user_question"],
-    "model": { "needs": ["tool_calling"] }
+    "tools": [
+      "ask_user_question"
+    ],
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    }
+  },
+  "requires": [
+    "host-api-v1"
+  ],
+  "host_api": {
+    "required": {
+      "camera.capture_intent": 1
+    },
+    "optional": {
+      "camera.permission.request": 1,
+      "microphone.permission.request": 1
+    }
   }
 }

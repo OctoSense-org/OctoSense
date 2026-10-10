@@ -12,6 +12,7 @@ use std::{
 };
 #[path = "../../shell/examples/connected_support/mod.rs"]
 mod connected_support;
+mod shared;
 app_main!(App, font_set: International);
 
 script_mod! {
@@ -58,10 +59,19 @@ struct App {
     admitted_prompts: bool,
     #[rust]
     suspended: bool,
+    #[rust]
+    shared: Option<shared::Acceptance>,
 }
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        if let Some(config) = shared::config(cx) {
+            self.shared = Some(
+                shared::Acceptance::new(cx, &self.ui, config)
+                    .expect("Real GitHub shared-component acceptance"),
+            );
+            return;
+        }
         #[cfg(not(target_os = "android"))]
         let arg =
             |name: &str| std::env::args().find_map(|a| a.strip_prefix(name).map(str::to_owned));
@@ -181,6 +191,10 @@ impl AppMain for App {
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         self.match_event(cx, event);
+        if let Some(shared) = &mut self.shared {
+            shared.handle_event(cx, event, &self.ui);
+            return;
+        }
         if matches!(event, Event::Pause | Event::Background) {
             self.suspended = true;
         }

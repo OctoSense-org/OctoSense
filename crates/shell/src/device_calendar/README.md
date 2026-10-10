@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+
+The `device_calendar` declaration is disclosure, not authorization. Admission, `host-api-v1`, account scope, per-app consent, OS permission and native review remain independent requirements.
 `device_calendar.*` gives installed App Hub apps bounded access to calendars already configured in the host OS. It uses EventKit on macOS and CalendarProvider in Android Home. It does not log into Google or create calendars. The bundled `calendar.*` service and the OAuth-backed `gcalendar.*` service keep their separate identities and storage.
 
 This is source implementation, not a claim that an existing release contains it. A compatible App Hub contract must admit `device_calendar`, and the host must register this service. Check `runtime.list` and `runtime.describe`, then `device_calendar.permission.status`. Windows, Linux, iOS and Android packagings without the Home adapter report unsupported; discovery describes supported platforms. OS-account acceptance remains unverified until explicitly tested with a synthetic test calendar.

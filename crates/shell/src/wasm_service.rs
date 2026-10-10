@@ -14,9 +14,9 @@
 //!
 //! **Whose code.** A module comes only from the calling app's own admitted
 //! bundle (digest-checked, [`script_apps::admitted_bundle`]): no argument
-//! names a file, and no app reaches another's functions. The Card runner's
-//! gate and the tool executor both require the app's `wasm` capability, and
-//! the service checks the admitted manifest again before it loads anything.
+//! names a file, and no app reaches another's functions. Capabilities are
+//! declarations; the service verifies admission before loading or executing
+//! code and before delivering a result.
 //!
 //! **Where it runs.** A bounded worker per active app caches compiled Programs,
 //! never guest instances. Every invocation starts with fresh memory/globals/tables.
@@ -33,7 +33,7 @@
 //! or the worker's exit (a minute without calls) ends it. Its filesystem is
 //! the app's storage, the jail its script's `fs.*` sees, decided per call by
 //! the same rules as an engine's ([`crate::host_tools::areas::app_area`]):
-//! none without the `storage` capability or a signed-in account, and what
+//! none without an available app storage area or required signed-in account; what
 //! is left of the quota is what a call may add (a write past it fails inside
 //! the component, as a full disk).
 
@@ -310,9 +310,6 @@ impl Admission {
     fn current(app: &str) -> Result<Self, String> {
         let (root, bundle) = script_apps::admitted_bundle(app)?;
         let loaded = script_apps::from_bundle(&bundle)?;
-        if !loaded.families.contains("wasm") {
-            return Err(format!("{app} was not granted the wasm service"));
-        }
         Ok(Self {
             root,
             bundle,
@@ -659,9 +656,9 @@ struct Lab {
 /// Compile an installed or updated app's functions into the disk cache in
 /// the background, so that its first call does not wait for Cranelift (ADR
 /// 0014 phase 3; a phone takes about 0.4 s for a 433 KiB module). From its
-/// admitted bundle only, and only with the `wasm` grant; one app at a time,
-/// on a thread of its own, never in a worker's place. A call that comes
-/// first compiles the same code itself: the cache takes either.
+/// admitted bundle only; capability declarations do not gate warming. One
+/// app at a time, on its own thread, never in a worker's place. A call that
+/// comes first or finds a slow cache read compiles the same verified code.
 pub fn warm(app: &str) {
     static QUEUE: Mutex<(Vec<String>, bool)> = Mutex::new((Vec::new(), false));
     {
@@ -1092,6 +1089,10 @@ fn round(value: f64) -> f64 {
 }
 
 #[cfg(test)]
+#[path = "wasm_shared_acceptance.rs"]
+mod shared_acceptance;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ai_host::app_peers::host_tools::{HostToolCall, ToolExecutor, ToolReply};
@@ -1417,7 +1418,7 @@ mod tests {
             ship_state("os.wasmstate", "3.0.0", false)
         })
         .unwrap_err();
-        assert!(error.contains("not granted"), "{error}");
+        assert!(error.contains("admission changed"), "{error}");
         assert!(
             lab.is_none(),
             "revocation drops cached Programs before delivery"
@@ -1652,7 +1653,7 @@ mod tests {
         std::env::set_var("OCTOSENSE_APP_DATA", &root);
         octosense_appstore::set_data_root(root.clone());
         ship("os.wasmlab", "service", |_, _| {});
-        // The same bundle without the capability (and so without its tools).
+        // The same functions without declarations or an app agent.
         ship("os.wasmplain", "plain", |dir, manifest| {
             manifest["capabilities"] = json!([]);
             manifest.as_object_mut().unwrap().remove("agent");
@@ -1766,19 +1767,13 @@ mod tests {
             "compiled code is cached"
         );
 
-        // No grant, no functions: the service checks the admitted manifest
-        // itself, whoever dispatched the request.
-        let error = request(
-            "os.wasmplain",
-            "wasm.fuzzy_rank",
-            json!({"query": "m", "items": []}),
-            &host_dir,
-        )
-        .unwrap_err();
-        assert!(
-            error.contains("was not granted the wasm service"),
-            "{error}"
-        );
+        // Declarations do not gate execution; ownership and admission still do.
+        let ranked = request(
+            "os.wasmplain", "wasm.fuzzy_rank",
+            json!({"query": "m", "items": ["Mail"]}), &host_dir,
+        ).unwrap();
+        assert_eq!(ranked["ranked"][0]["item"], "Mail");
+        assert!(request("os.wasmmissing", "wasm.fuzzy_rank", json!({}), &host_dir).is_err());
         // And a sheet never reaches it.
         let heap = NEXT_HEAP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let call = ServiceCall {
@@ -1808,8 +1803,8 @@ mod tests {
     /// the registries are process-wide): they answer with typed JSON under
     /// either spelling of their names; one instance keeps its state between
     /// calls until a trap spends it; and its files are the app's own
-    /// storage, under what is left of its quota, and absent without the
-    /// storage capability.
+    /// storage, under what is left of its quota, and absent when the host
+    /// supplies no storage area.
     /// A shared component the app pins (App Hub ADR 0003, ADR 0014 phase 4)
     /// loads beside the app's own functions, here none: its functions answer
     /// as `<alias>.<function>`, from an instance of the app's own, and
@@ -1954,8 +1949,8 @@ mod tests {
         let bundle = root.join("bundle");
         std::fs::create_dir_all(bundle.join("fns")).unwrap();
         std::fs::copy(NOTES_COMPONENT, bundle.join("fns/notes.wasm")).unwrap();
-        // The apps' storage as the shell keeps it: a 4 KiB ceiling for one,
-        // no storage capability for the other.
+        // Explicit host fixtures: a 4 KiB storage ceiling for one app,
+        // no storage area for the other. These are not manifest grants.
         let storage = crate::app_storage::Storage::with_file_secrets(
             crate::app_storage::Layout::new(&root.join("home")).unwrap(),
         );
@@ -2100,7 +2095,7 @@ mod tests {
         assert_eq!(described["modules"][0]["storage_left"], 0);
         assert_eq!(described["modules"][0]["instances"], 2);
 
-        // Without the storage capability, no folder at all.
+        // Without a host-provided storage area, no folder at all.
         let mut plain = Lab::from_bundle(PLAIN, runtime, admission, || Ok(())).unwrap();
         let (_, plain_reply) = pending_reply(PLAIN, &host_dir);
         let error = plain
@@ -2121,7 +2116,7 @@ mod tests {
     /// as a system app that requires `wasm-components-v1` (App Hub's
     /// admission reads the component's imports), its functions answer the
     /// app's script with typed JSON, its instance keeps its state from one
-    /// request to the next, and without `storage` it has no folder.
+    /// request to the next, and without a host storage area it has no folder.
     #[test]
     fn a_shipped_component_answers_its_apps_script() {
         const CHILD: &str = "OCTOSENSE_TEST_WASM_SHIPPED_COMPONENT";
@@ -2261,9 +2256,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    /// A component's `octosense:host` calls reach its app's granted host
-    /// services, dispatched on the UI thread as its script's would be (a
-    /// thread here plays the UI's part); nothing else, and never `wasm.*`.
+    /// A component's `octosense:host` calls use the same admitted app identity
+    /// and public host services as its script, dispatched on the UI thread
+    /// (a thread here plays that part); recursive `wasm.*` calls are refused.
     #[test]
     fn a_components_host_calls_reach_the_host_as_its_apps_script_does() {
         struct Echo;
@@ -2347,17 +2342,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    /// An installed app's functions are compiled before its first call, in
-    /// a process of its own (the apps root and the registries are
-    /// process-wide): the first call loads them from the cache.
+    /// Background compilation produces code the first request can actually
+    /// deserialize from a ready cache. The test prepares cache file I/O;
+    /// it does not measure fresh first-run UI performance. The app root and
+    /// registries are process-wide, so this fixture runs in its own process.
     #[test]
-    fn an_installed_apps_first_call_loads_from_the_cache() {
+    fn an_installed_apps_precompiled_code_loads_from_a_ready_cache() {
         const CHILD: &str = "OCTOSENSE_TEST_WASM_WARM";
         if std::env::var_os(CHILD).is_none() {
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "wasm_service::tests::an_installed_apps_first_call_loads_from_the_cache",
+                    "wasm_service::tests::an_installed_apps_precompiled_code_loads_from_a_ready_cache",
                     "--nocapture",
                 ])
                 .env(CHILD, "1")
@@ -2398,6 +2394,15 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(cached(), "warm compiled nothing into {}", cache.display());
+        // A slow first open deliberately falls back to source compilation.
+        // This fixture instead requires a real cache hit, after file I/O is
+        // ready; blocked readers are covered by wasm-host's deterministic tests.
+        for entry in std::fs::read_dir(&cache).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "cwasm") {
+                std::fs::read(path).unwrap();
+            }
+        }
         let ranked = request(
             "os.wasmlab",
             "wasm.fuzzy_rank",

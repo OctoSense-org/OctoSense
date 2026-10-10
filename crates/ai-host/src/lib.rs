@@ -30,19 +30,19 @@
 //! - **The `llm` host service** (feature `llm`) the AI providers system app
 //!   (`os.ai-providers`) calls, writing the kernel's profile under
 //!   [`core_dir`], with the platform's [`QrImport`].
-//! - **The `model` host service** (feature `llm`): contained apps granted
-//!   `model` make one-shot, schema-checked calls to the person's providers
+//! - **The `model` host service** (feature `llm`): admitted contained apps
+//!   make one-shot, schema-checked calls to the person's providers
 //!   within a per-app budget (`octosense_llm_service::complete`).
 //! - **Apps' assistant access** (Rinx ADR 0007): when the shell creates a
-//!   native module instance whose declared `octos.*` services the host
-//!   [`Policy`] grants, [`offer`] makes ONE octos peer for that app (owned by
+//!   native module instance that opts in and the host [`Policy`] allows,
+//!   [`offer`] makes ONE octos peer for that app (owned by
 //!   the shell's system agent, on the shell's kernel) and offers the instance
 //!   a scoped service for the duration of its `create` only. A module that
 //!   declares or is granted nothing gets nothing, and no peer is allocated.
 //!   Dropping the [`Assistant`] releases the instance's leases and
 //!   interrupts its peer's running work; the kernel and other apps go on.
 //! - **The `octos` host service** ([`contained`]): contained apps the Card
-//!   runner hosts that declare `octos.*` get their own peer (`card.<app id>`)
+//!   runner hosts with an opted-in agent get their own peer (`card.<app id>`)
 //!   under the same contract, while [`Policy::contained_apps`] is on. The
 //!   shell also prepares that peer for every app whose agent the person
 //!   allowed, whether or not the app calls `octos` (`contained::prepare`),
@@ -145,16 +145,16 @@ pub enum ContainedGate {
     #[default]
     Off,
     /// Each app once the person allowed its agent (`consent::granted`,
-    /// ADR 0004 §4; the first call asks), with only the `octos.*` services
-    /// its manifest declares.
+    /// ADR 0004 §4; the first call asks), with the supported public methods.
+    /// Admission and genuine agent opt-in are still required.
     Consent,
-    /// Every app, without asking: `OCTOSENSE_CONTAINED_APPS=1`, a developer
-    /// override. Still only the declared services.
+    /// Every admitted app with an opted-in agent, without asking:
+    /// `OCTOSENSE_CONTAINED_APPS=1`, a developer override.
     Everyone,
 }
 
-/// Which native modules may use the assistant, and with which `octos.*`
-/// services (exact names; others are ignored).
+/// Which native modules opt in to the assistant. Exact public `octos.*`
+/// names establish the offer; they no longer divide methods into permissions.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Policy {
     grants: Vec<(String, Vec<String>)>,
@@ -177,9 +177,9 @@ impl Policy {
     ///
     /// The `octos` service for contained apps follows consent in the
     /// shipped policy: an app gets its agent once the person allowed it at
-    /// first use (ADR 0004 section 4), with the services its manifest
-    /// declares. `OCTOSENSE_CONTAINED_APPS` is the developer override: `1`
-    /// on for every app without asking, `0` off.
+    /// first use (ADR 0004 section 4), with all supported public methods.
+    /// `OCTOSENSE_CONTAINED_APPS` is the developer override: `1` skips consent
+    /// for admitted, opted-in apps; `0` turns this access off.
     pub fn shipped() -> Self {
         let gate = contained_gate_from(std::env::var("OCTOSENSE_CONTAINED_APPS").ok().as_deref());
         native_agents::NATIVE_AGENTS
@@ -414,9 +414,9 @@ fn register_llm(core_dir: Option<PathBuf>, import: QrImport) -> bool {
     }));
     octosense_llm_service::register_with(options.clone());
     // `model` (ADR 0002, `model.complete`): contained apps' one-shot model
-    // calls over the same providers, with per-app budgets. Apps granted the
-    // `model` capability only; the ledger lives in the Card runner's host
-    // dir, attached at the first call.
+    // calls over the same providers, with per-app budgets. Admission and
+    // active account scope remain mandatory; declarations are descriptive.
+    // The ledger lives in the Card runner's host dir, attached at first use.
     let mut model = octosense_llm_service::complete::Options::default().grants(|app, root| {
         let grants = MODEL_GRANTS.lock().unwrap().clone();
         grants.is_some_and(|grants| grants(app, root))
@@ -426,7 +426,7 @@ fn register_llm(core_dir: Option<PathBuf>, import: QrImport) -> bool {
         scope.and_then(|scope| scope(app, root))
     }));
     octosense_llm_service::register_model(&options, model);
-    log!("model: service registered (one-shot calls; granted apps only)");
+    log!("model: service registered (one-shot calls; admitted apps only)");
     true
 }
 

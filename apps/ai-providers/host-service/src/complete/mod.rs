@@ -3,8 +3,8 @@
 //!
 //! An app's AI keeps its main path through its own octos agent and the
 //! toolbox's templates. For a bounded job (classify this, summarize that
-//! into three lines, pull these fields out of a message) an app granted
-//! `model` calls, through `host.request`:
+//! into three lines, pull these fields out of a message) an admitted app
+//! calls through `host.request`, independently of capability declarations:
 //!
 //! | method | args | answer |
 //! |---|---|---|
@@ -120,7 +120,7 @@ impl Class {
 /// Why a call was refused. The code is stable; the message is for people.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Code {
-    /// The app was not granted `model`.
+    /// The host did not admit this app/profile (legacy stable error code).
     Capability,
     /// The person has no usable AI provider.
     NoProvider,
@@ -391,7 +391,7 @@ impl Transport for Http {
     }
 }
 
-/// Whether an app was granted `model` (`app id`, the Card runner's host
+/// Whether this app is admitted by the host (`app id`, the Card runner's host
 /// directory).
 pub type Grants = Arc<dyn Fn(&str, &Path) -> bool + Send + Sync>;
 /// Host-derived active account scope, never taken from script arguments.
@@ -405,37 +405,14 @@ fn system_clock() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// The default grant check: the app's own verified manifest, where App Hub
-/// put it next to the host directory (`<apps root>/<id>/bundle/manifest.json`
-/// for an installed app, `<apps root>/.system/<id>/*/manifest.json` for a
-/// system app), lists `model`. The Card runner's isolate already refuses a
-/// `model.*` request from an app whose policy lacks the capability; this is
-/// the service's own check behind it, so a caller the runner does not
-/// police (a future host path) is not served on trust.
-pub fn manifest_grants(app_id: &str, host_dir: &Path) -> bool {
-    let valid = !app_id.is_empty() && app_id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')) && !app_id.starts_with('.');
-    let Some(root) = host_dir.parent().filter(|_| valid) else { return false };
-    let lists_model = |path: PathBuf| {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-            .is_some_and(|m| m["id"] == app_id && m["capabilities"].as_array().is_some_and(|c| c.iter().any(|c| c == FAMILY)))
-    };
-    if lists_model(root.join(app_id).join("bundle").join("manifest.json")) {
-        return true;
-    }
-    std::fs::read_dir(root.join(".system").join(app_id))
-        .map(|dirs| dirs.flatten().any(|d| lists_model(d.path().join("manifest.json"))))
-        .unwrap_or(false)
-}
-
 /// What a shell hands [`register_with`]. `Options::default()` reads nothing
 /// and grants nobody: set `providers` (the llm service's registration does).
 #[derive(Clone, Default)]
 pub struct Options {
     pub providers: Option<Arc<dyn Providers>>,
     pub transport: Option<Arc<dyn Transport>>,
-    /// `None`: [`manifest_grants`].
+    /// Verified caller and exact host-profile admission. Missing callback
+    /// fails closed; a manifest declaration alone is never proof of identity.
     pub grants: Option<Grants>,
     pub limits: Option<Limits>,
     /// Where the ledger lives before the first call names the host dir.
@@ -731,7 +708,7 @@ impl HostService for ModelService {
 pub fn register_with(options: Options) -> Arc<ModelHost> {
     let host = Arc::new(ModelHost::new(&options));
     *HOST.lock().unwrap() = Some(host.clone());
-    let grants = options.grants.clone().unwrap_or_else(|| Arc::new(manifest_grants));
+    let grants = options.grants.clone().unwrap_or_else(|| Arc::new(|_, _| false));
     octosense_appstore::services::register_host_service(Box::new(ModelService { host: host.clone(), grants }));
     host
 }

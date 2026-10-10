@@ -128,7 +128,7 @@ Release packages ship only `octosense` and the kernel, so there the Terminal run
 
 ### Script apps
 
-System and store apps run in App Hub's Card runner (`CARD_MODULE`), one isolate per instance with a file jail and a quota, and reach the shell only through `host.request` for granted families. `desktop/system-apps.json` and `phone/system-apps.json` list each shell's system apps.
+System and store apps run in App Hub's Card runner (`CARD_MODULE`), one isolate per instance with a file jail and a quota, and reach registered host services through `host.request`, attributed to the admitted app. Capability names disclose usage; actual identity, account, consent and review checks remain. `desktop/system-apps.json` and `phone/system-apps.json` list each shell's system apps.
 
 ```mermaid
 flowchart TB
@@ -175,7 +175,7 @@ octos lists only prepared peers, so the shell tells the system agent the rest: a
 
 An app agent is a host-owned octos peer for one (app, account), owned by the system agent's session (octos UPCR-2026-034) and driven by a broker (`crates/app-peers/src/broker.rs`). Its memory namespace is `app/<app>/acct-<tag>`, and the broker refuses a kernel that does not confirm it. Its workspace is the account's folder ([section 6](#6-storage-and-secrets)), and its host token sits in a record under `<core dir>/../app-peers`, owner-only on Unix. The broker registers its tools after every `peer/prepare` and reconnect; a peer whose registration fails runs no turn.
 
-A script app's peer is `card.<app id>` (`crates/ai-host/src/contained.rs`). Apps without accounts act for `device`; Mail acts for the account signed in last, and a connected app for its active connection ([Connected accounts](#connected-accounts)). `apps::agent_apps` decides which apps have an agent, and an app granted nothing gets no broker.
+A script app's peer is `card.<app id>` (`crates/ai-host/src/contained.rs`). Apps without accounts act for `device`; Mail acts for the account signed in last, and a connected app for its active connection ([Connected accounts](#connected-accounts)). `apps::agent_apps` decides which apps have an agent, and the person must enable an offered agent before it runs; an empty capability list alone does not remove its broker.
 
 - A script app's peer is prepared once the agent is allowed and at each startup (`agents::start`), so `peer_list` shows it while the app is closed.
 - A native app's peer belongs to its open instance. With several instances, the oldest drives it and the next takes over (`driver_of`, `take_over`).
@@ -259,7 +259,7 @@ An app never sees the host token, and the shell stamps the app's identity on eve
 | --- | --- | --- |
 | Peer link (`crates/shell/src/peer_link/`) | App Hub, Calculator, Clock, Notes, Reminders, Weather, Terminal | Makepad's `OctosPeer` client. A process app's link rides its hub socket. A module's `OctosPeer::open` parks an in-memory channel, which `module_host` claims for that instance and the shell serves as the same frames (`peer_link::module_connected`). `serve_tools` answers the agent's tool calls. |
 | Injected service | Rinx | `ai_host::offer` before the module's `create`, and `injection::claim` inside it, give the instance a scoped `OctosAppService` (`open_conversation`, `open_context`). |
-| `host.request("octos.*")` | store apps | The Card runner's `octos` host service (`crates/ai-host/src/contained.rs`): only the services the manifest declares, after first-use consent. |
+| `host.request("octos.*")` | store apps | The Card runner's `octos` host service (`crates/ai-host/src/contained.rs`): the admitted app's supported methods, after agent consent and current-account checks. |
 
 On the peer link, the socket or module instance is the identity, and a call's account, context and client come from the shell's records of the contexts the app opened. When a process dies, its outstanding calls fail (`outcome_unknown` unless they only read), and the peer stays.
 
@@ -271,7 +271,7 @@ The bus is Makepad's other AI model: one central conversation, the desktop's AI 
 
 ## 4. Tools and grants
 
-The manifest declares, the person grants at install, and the shell enforces on every call (ADR 0004 §12). A script app declares its tools in `tools.json`; a native app declares its agent in its `native-apps.json` entry (`agent.octos`, `tools`, `own_tools`, `system_tools`, `grants`, `generic_tools`, `budget`, `tool_policy`). The README's [What an app gives its agent](../README.md#what-an-app-gives-its-agent) explains most of them. `tool_policy` sets a tool's confirmation: the Terminal's `run` is `confirm: host` with `auto_approvable: false`, so no standing rule ever answers it.
+Capability and network declarations disclose intended use; they do not grant or deny public API execution. Tool ownership and inter-app sharing, agent opt-in, account scope, device consent and per-call review remain actual authorization boundaries ([capabilities and execution boundaries](capabilities.md)). A script app declares its tools in `tools.json`; a native app declares its agent in its `native-apps.json` entry (`agent.octos`, `tools`, `own_tools`, `system_tools`, `grants`, `generic_tools`, `budget`, `tool_policy`). The README's [What an app gives its agent](../README.md#what-an-app-gives-its-agent) explains most of them. `tool_policy` sets a tool's confirmation: the Terminal's `run` is `confirm: host` with `auto_approvable: false`, so no standing rule ever answers it.
 
 | Source | Declared in | Runs on | Today |
 | --- | --- | --- | --- |
@@ -279,7 +279,7 @@ The manifest declares, the person grants at install, and the shell enforces on e
 | octos's kernel tools | plain names in `agent.tools`; `agent.generic_tools` | octos | script apps only `ask_user_question`; Rinx files, memory and web; other native agents none |
 | `files.list`, `files.read`, `files.search` | the shell, on consented peers with a workspace (Unix) | the shell, over the caller's account folder | at most 128 KiB a read, 500 entries a listing, 100 matches a search |
 | Other apps' shareable tools | dotted names in `agent.tools`; `agent.grants` | the owning app, through the relay | News shares `news.list` and `news.read`; no app asks for one yet |
-| The toolbox (`toolbox.*`, `workflow.*`) | the `research` and `crawl` capabilities | the shell ([`crates/toolbox`](../crates/toolbox/README.md)), feature `toolbox-peers`, default on phones | no app declares either yet |
+| The toolbox (`toolbox.*`, `workflow.*`) | explicit names in `agent.tools`, with top-level `research` bounds | the shell ([`crates/toolbox`](../crates/toolbox/README.md)), feature `toolbox-peers`, default on phones | no app declares either yet |
 | `dev.run` | developer mode | the shell (`host_tools/dev_run.rs`) | covered apps only |
 
 An app's `AGENT.md` and skills are not tools: the broker sends their text with every turn as host guidance (`crates/app-peers/src/guidance.rs`).
@@ -294,9 +294,9 @@ The relay (`crates/shell/src/host_tools/`) takes every `peer/tool/call` from the
 4. **Confirm** a `confirm: app` call: acknowledge it to the kernel, then hand it to the owner's sheet ([section 5](#5-approvals)).
 5. **Answer once,** checked against `output_schema` (at most 256 KiB); nothing runs after a cancel. Each call is audited, with a digest of its arguments, in `logs/tool-calls.jsonl`.
 
-A script app's `implemented_by: "host-service"` tool runs on its namespace's host service, as the app, if the app was granted that family or owns it as a system app. The shell's `NoticeService` answers `<app>.notify` for Photos, Maps, YouTube and Camera. A script app's `implemented_by: "app"` tool runs in the app itself: `ScriptAppExecutor` (`host_tools/script_apps.rs`) queues the call to App Hub's script-tool runner, which calls the app's `app_tool(name, call_id)` hook in its open full-app VM. The bundle must require `script-tools-v1`. A closed app answers `app_not_running`, and a destructive or outward call to a script tool marked `confirm: app` is refused `app_confirmation_unavailable` ([ADR 0012](adr/0012-app-host-api-discovery.md)). This is on `main` but in no release yet: `desktop-v0.1.0-beta.2` refuses every call to such a tool with `app_tool_unavailable`.
+A script app's `implemented_by: "host-service"` tool runs its resolved host method as the admitted app. The relay checks tool ownership and sharing; the service keeps app/account scope, actual consent, review and availability checks. An omitted family declaration does not deny execution. The shell's `NoticeService` answers `<app>.notify` for Photos, Maps, YouTube and Camera. A script app's `implemented_by: "app"` tool runs in the app itself: `ScriptAppExecutor` (`host_tools/script_apps.rs`) queues the call to App Hub's script-tool runner, which calls the app's `app_tool(name, call_id)` hook in its open full-app VM. The bundle must require `script-tools-v1`. A closed app answers `app_not_running`, and a destructive or outward call to a script tool marked `confirm: app` is refused `app_confirmation_unavailable` ([ADR 0012](adr/0012-app-host-api-discovery.md)). This is on `main` but in no release yet: `desktop-v0.1.0-beta.2` refuses every call to such a tool with `app_tool_unavailable`.
 
-A store app's tool can instead map to a shared service with `host_method`, as Inbox Assistant's `inbox.message` maps to `gmail.message`. App Hub admits only the methods on its reviewed list, `SHARED_HOST_METHODS`: GitHub, Gmail and Google Calendar reads, Gmail draft edits and new-mail event decisions, and `glance.*`. Each needs its family's capability, `private_data: true` and at least its listed risk. The executor runs the method only if the app was granted its family, and for `github`, `gmail` and `gcalendar` it injects the app's active connection (`host_tools/script_apps.rs`). No method on the list opens a host sheet, so no tool can sign in, commit, save an event or send ([Connected accounts](#connected-accounts)).
+A store app's tool can instead map to a shared service with `host_method`, as Inbox Assistant's `inbox.message` maps to `gmail.message`. App Hub admits only methods on its reviewed list, `SHARED_HOST_METHODS`, including GitHub, Gmail and Google Calendar reads, Gmail draft edits and new-mail event decisions, and `glance.*`. Each keeps the minimum risk and privacy requirements listed for that method. A matching family disclosure is not required to execute it. For `github`, `gmail` and `gcalendar`, the executor injects the app's active connection (`host_tools/script_apps.rs`), whose provider scopes and ownership remain checked. No method on the list opens a host sheet, so no tool can sign in, commit, save an event or send ([Connected accounts](#connected-accounts)).
 
 ### The system agent's tool set
 
@@ -304,7 +304,7 @@ Before every kernel start, `enforce` (`crates/kernel/src/system_tools.rs`) write
 
 ### What an agent puts on the glance screen
 
-The glance service (`crates/shell/src/glance.rs`) publishes every card as the calling app, under the account the host records, and only with the app's `glance` grant. An app may publish at most 6 times a minute. Both phone and desktop scroll all retained cards; neither a four-card publisher quota nor a six-row feed cutoff applies. Retained payloads have an 8 MiB per-app and 32 MiB overall budget. Under pressure, lower-priority older cards retire while the new valid publication remains available; the owning services retain their drafts and source mail. `mail.publish_card` can also bind a card to one of Mail's saved drafts, and a bound card cannot move to another account, email or draft.
+The glance service (`crates/shell/src/glance.rs`) publishes every card as the calling app, under the account the host records, after verifying the publisher's current admission; `glance` is a usage disclosure. An app may publish at most 6 times a minute. Both phone and desktop scroll all retained cards; neither a four-card publisher quota nor a six-row feed cutoff applies. Retained payloads have an 8 MiB per-app and 32 MiB overall budget. Under pressure, lower-priority older cards retire while the new valid publication remains available; the owning services retain their drafts and source mail. `mail.publish_card` can also bind a card to one of Mail's saved drafts, and a bound card cannot move to another account, email or draft.
 
 On `main`, an agent's tool call that resolves to `glance.publish`, such as Inbox Assistant's `inbox.notify`, must name a template from the app's admitted bundle with an `initial` object, or send valid L0 source. Executable Splash (`script`), L1 source and mixed payloads are refused (`check_agent_publication` in `host_tools/script_apps.rs`). The app's own UI can still publish its reviewed Splash. `desktop-v0.1.0-beta.2` has no such check and accepts an agent's `script` card.
 
@@ -314,7 +314,7 @@ On a phone, the glance feed draws compact summaries and runs no generated UI (`m
 
 A store app can use the person's GitHub or Google account, or sign the person in to its own backend, without an OctoSense account ([ADR 0010](adr/0010-shared-oauth-and-connected-apps.md)). [`crates/oauth-service`](../crates/oauth-service/README.md) implements the OAuth flows, the GitHub, Google and backend adapters and the connection store. `register_host_services` (`crates/shell/src/apps.rs`) registers its four host services: `auth` for sign-in and the app's connections, and `github`, `gmail` and `gcalendar` for GitHub and Google data. The crate's README lists their methods.
 
-- **Declaration.** The app declares `auth`, each data family it uses (`github`, `gmail`, `gcalendar`) and `storage.accounts: true`. With `auth` alone, the app can still sign the person in for identity only (GitHub's `read:user`; Google's `openid`, `email` and `profile`), but it gets no GitHub or Google data: the host refuses any other scope whose family the app was not granted (`register_host_services`).
+- **Disclosure and consent.** The app describes `auth` and its data families (`github`, `gmail`, `gcalendar`) and configures `storage.accounts: true`. These family names do not authorize provider access. `register_host_services` checks current app admission and valid provider scopes; the person authorizes requested scopes through the provider. An identity-only connection (GitHub's `read:user`; Google's `openid`, `email`, `profile`) has no mail/calendar/repository scopes just because a family is declared. Every data call still checks the actual connection and scopes.
 - **Identity.** The app sees only an opaque connection handle. Its peer acts for its active connection (`app_storage/lifecycle.rs`), so each connected account has its own agent.
 - **Configuration.** The OAuth client registrations belong to the host, never to an app. A distributor compiles them into its build from build variables such as `OCTOSENSE_GITHUB_CLIENT_ID` (`crates/oauth-service/src/registration.rs`); `desktop-v0.1.0-beta.2` downloads have none. An operator can replace the whole set with `clients.json` in App Hub's host directory, `<apps root>/.host/oauth/clients.json`, where `<apps root>` is `<octosense home>/apps` ([section 6](#6-storage-and-secrets)); a provider the file leaves out is turned off. Without a registration for the provider, sign-in fails with "GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor." (or the same message naming Google). On beta.2, a missing `clients.json` gives "OAuth is not configured" instead.
 - **The app's own backend.** `auth.connect` with `{"provider":"backend","scopes":["app.session"]}` signs the person in to the app's own server, and `auth.backend.me` returns the identity that server verified (`crates/oauth-service/src/host_backend.rs`). On `main` (in no release yet), the app's signed bundle can declare its backend and named operations, which the app calls with `auth.backend.request` ([ADR 0012](adr/0012-app-host-api-discovery.md)); an app without that declaration uses the operator's registration in `<apps root>/.host/oauth/backends.json`. `desktop-v0.1.0-beta.2` has no backend sign-in. The server's login page opens in a host-owned WebView on macOS and on Android 9 or later. On Windows and Linux, and on macOS with `"presentation":"browser"`, it opens in the browser instead (`presentation` in `host.rs`). iOS has no backend sign-in.
@@ -416,7 +416,7 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
  |  checks every call: grants, consent, approvals, budgets, audit           |
  |   +------------------+   +------------------------------------------+    |
  |   | native modules   |   | Card runner: script apps in isolates     |    |
- |   | reviewed, same   |   | (jail, quota, host.request by grant)     |    |
+ |   | reviewed, same   |   | (jail, quota, attributed host.request)     |    |
  |   | memory: trusted  |   +------------------------------------------+    |
  |   +------------------+                                                   |
  +-------|------------------------------------------|-----------------------+
@@ -430,8 +430,8 @@ The kernel's core dir, `~/.octosense/octos-home/.octos` on the desktop and `<app
 
 | Boundary | What holds it |
 | --- | --- |
-| Script app ↔ shell | The Card runner's isolate, jail and quota; `host.request` only for granted families |
-| An app's own WebAssembly functions ↔ shell | A fresh Wasmtime instance per call that reaches only its own memory and `octo.log`, with a deadline and memory, stack and size caps; in standard builds on macOS, Linux and Android ([WebAssembly in OctoSense](wasm.md)) |
+| Script app ↔ shell | The Card runner's isolate, jail and quota; `host.request` checks current app identity, account scope, consent and review; declarations do not gate public APIs |
+| An app's WebAssembly functions ↔ shell | Core modules get fresh bounded instances and their input/`octo.log`. Components retain app/account-scoped instances, with bounded WASI storage/network and attributed host dispatch; shared component code is immutable, while state stays private to the app/account. Current source includes macOS, Windows, Linux, Android and OpenHarmony (Pulley); see the platform and validation limits in [WebAssembly in OctoSense](wasm.md). |
 | Native module ↔ shell | Nothing in memory: review of first-party code, and panic containment |
 | Process app ↔ shell | Its own address space and an OS sandbox: Seatbelt on macOS, Landlock and seccomp on Linux. **Not yet:** Windows. |
 | App ↔ kernel | No app sees the host token. Only an octos client's kernel port speaks OUP, held by the router to the coding scope (ADR 0003, item 9) |

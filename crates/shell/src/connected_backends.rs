@@ -107,13 +107,8 @@ fn resolve_admitted(
         return Err("Backend declaration belongs to another app".into());
     }
     let parsed = octosense_app_contract::AppManifest::parse(&manifest.to_string())?;
-    if !parsed
-        .capabilities
-        .iter()
-        .any(|capability| capability == "auth")
-        || !parsed.storage.accounts
-    {
-        return Err("This app has no account authentication grant".into());
+    if !parsed.storage.accounts {
+        return Err("This app does not configure account storage".into());
     }
     // Validate through the shared contract first; the OAuth crate's local
     // representation deliberately does not depend on the UI/store crate graph.
@@ -205,7 +200,7 @@ mod tests {
             "operations":{"notes.list":{"method":"GET","path":"/api/notes"}}}})
     }
     #[test]
-    fn resolver_only_accepts_matching_profile_identity_and_admitted_grants() {
+    fn resolver_accepts_declaration_only_capabilities_but_keeps_profile_and_account_scope() {
         let root = std::env::temp_dir().join(format!("backend-resolver-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join(".host")).unwrap();
         let id = "org.example.backend";
@@ -234,9 +229,12 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        let mut denied = manifest();
-        denied["capabilities"] = serde_json::json!([]);
-        assert!(resolve_admitted(&root.join(".host"), &root, id, || Ok(denied)).is_err());
+        let mut undeclared = manifest();
+        undeclared["capabilities"] = serde_json::json!([]);
+        assert!(resolve_admitted(&root.join(".host"), &root, id, || Ok(undeclared)).unwrap().is_some());
+        let mut no_accounts = manifest();
+        no_accounts["storage"]["accounts"] = serde_json::json!(false);
+        assert!(resolve_admitted(&root.join(".host"), &root, id, || Ok(no_accounts)).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]

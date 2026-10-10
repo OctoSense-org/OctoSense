@@ -128,7 +128,7 @@ flowchart LR
 
 ### 脚本应用
 
-系统应用和商店应用运行在 App Hub 的 Card runner（`CARD_MODULE`）中：每个实例一个隔离环境，带文件 jail 和配额，只能通过 `host.request` 访问已授权的服务族。`desktop/system-apps.json` 和 `phone/system-apps.json` 列出各个 Shell 的系统应用。
+系统应用和商店应用运行在 App Hub 的 Card runner（`CARD_MODULE`）中：每个实例一个隔离环境，带文件 jail 和配额，通过 `host.request` 以已准入应用的身份访问已注册宿主服务。能力名称披露用途；实际身份、账户、同意和审核检查仍然生效。`desktop/system-apps.json` 和 `phone/system-apps.json` 列出各个 Shell 的系统应用。
 
 ```mermaid
 flowchart TB
@@ -175,7 +175,7 @@ octos 只列出已准备好的 peer，所以其余情况由 Shell 告诉系统 A
 
 应用 Agent 是宿主拥有的 octos peer，对应一个（应用，账户），归系统 Agent 的会话所有（octos UPCR-2026-034），由一个代理驱动（`crates/app-peers/src/broker.rs`）。它的记忆命名空间是 `app/<app>/acct-<tag>`，内核若不确认这个命名空间，代理就拒绝该内核。它的工作区是账户文件夹（见[第 6 节](#6-存储与机密)），宿主 token 保存在 `<core dir>/../app-peers` 下的一条记录中，在 Unix 上仅所有者可读写。每次 `peer/prepare` 和重新连接之后，代理都会注册它的工具；注册失败的 peer 不运行任何回合。
 
-脚本应用的 peer 名为 `card.<app id>`（`crates/ai-host/src/contained.rs`）。不区分账户的应用以 `device` 身份行事；邮件以最近登录的账户行事，连接账户的应用以它当前的连接行事（见[已连接账户](#已连接账户)）。哪些应用有 Agent 由 `apps::agent_apps` 决定；没有任何授权的应用得不到代理。
+脚本应用的 peer 名为 `card.<app id>`（`crates/ai-host/src/contained.rs`）。不区分账户的应用以 `device` 身份行事；邮件以最近登录的账户行事，连接账户的应用以它当前的连接行事（见[已连接账户](#已连接账户)）。哪些应用有 Agent 由 `apps::agent_apps` 决定；用户须先启用已提供的 Agent，它才能运行；能力列表为空本身不会取消代理。
 
 - 脚本应用的 peer 在 Agent 获准时准备好，此后每次启动时（`agents::start`）也会准备，所以即使应用关着，`peer_list` 也能看到它。
 - 原生应用的 peer 属于它已打开的实例。同时打开多个实例时，最早的那个驱动 peer，它关闭后由下一个接管（`driver_of`、`take_over`）。
@@ -259,7 +259,7 @@ octos 把系统 Agent 的输入以 `peer/input {peer, session_id, input_id, turn
 | --- | --- | --- |
 | Peer link（`crates/shell/src/peer_link/`） | App Hub、Calculator、Clock、Notes、Reminders、Weather、Terminal | Makepad 的 `OctosPeer` 客户端。进程应用的链接走它的 hub 连接。模块的 `OctosPeer::open` 先暂存一条内存中的通道，`module_host` 把它认领给打开它的实例，Shell 再以同样的帧提供服务（`peer_link::module_connected`）。`serve_tools` 应答 Agent 的工具调用。 |
 | 注入的服务 | Rinx | 在模块 `create` 之前调用 `ai_host::offer`，在 `create` 中调用 `injection::claim`，实例由此得到一个限定范围的 `OctosAppService`（`open_conversation`、`open_context`）。 |
-| `host.request("octos.*")` | 商店应用 | Card runner 的 `octos` 宿主服务（`crates/ai-host/src/contained.rs`）：只限 manifest 声明的服务，并需首次使用同意。 |
+| `host.request("octos.*")` | 商店应用 | Card runner 的 `octos` 宿主服务（`crates/ai-host/src/contained.rs`）：供已准入应用调用受支持的方法，需 Agent 同意和当前账户检查。 |
 
 在 peer link 上，身份就是那个套接字或模块实例；一次调用的账户、上下文和客户端，来自 Shell 对该应用所开上下文的记录。进程退出时，它未完成的调用失败（除只读调用外均为 `outcome_unknown`），peer 保留。
 
@@ -271,7 +271,7 @@ Rinx 在其锁定的版本中，只把注入的服务用于小程序的上下文
 
 ## 4. 工具与授权
 
-manifest 声明，用户在安装时授权，Shell 在每次调用时强制执行（ADR 0004 §12）。脚本应用在 `tools.json` 中声明工具；原生应用在 `native-apps.json` 的条目中声明它的 Agent（`agent.octos`、`tools`、`own_tools`、`system_tools`、`grants`、`generic_tools`、`budget`、`tool_policy`）。其中大部分字段的含义见 README 的[应用要给 Agent 提供什么](../README.zh-CN.md#应用要给-agent-提供什么)。`tool_policy` 设定工具由谁确认：Terminal 的 `run` 是 `confirm: host` 且 `auto_approvable: false`，所以任何常设规则都不会替用户批准它。
+能力与网络声明披露预期用途，不授予或拒绝公开 API 的执行。工具归属、应用间共享、Agent 启用、账户作用域、设备同意和逐次审核仍是实际授权边界（见[能力与执行边界](capabilities.zh-CN.md)）。脚本应用在 `tools.json` 中声明工具；原生应用在 `native-apps.json` 的条目中声明它的 Agent（`agent.octos`、`tools`、`own_tools`、`system_tools`、`grants`、`generic_tools`、`budget`、`tool_policy`）。其中大部分字段的含义见 README 的[应用要给 Agent 提供什么](../README.zh-CN.md#应用要给-agent-提供什么)。`tool_policy` 设定工具由谁确认：Terminal 的 `run` 是 `confirm: host` 且 `auto_approvable: false`，所以任何常设规则都不会替用户批准它。
 
 | 来源 | 声明于 | 运行在 | 现状 |
 | --- | --- | --- | --- |
@@ -279,7 +279,7 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 | octos 的内核工具 | `agent.tools` 中不带点的名称；`agent.generic_tools` | octos | 脚本应用只有 `ask_user_question`；Rinx 有文件、记忆和网页工具；其他原生 Agent 没有 |
 | `files.list`、`files.read`、`files.search` | Shell，注册在已获同意、有工作区的 peer 上（Unix） | Shell，作用于调用方的账户文件夹 | 每次读取最多 128 KiB，每次列出最多 500 项，每次搜索最多 100 个匹配 |
 | 其他应用可共享的工具 | `agent.tools` 中带点的名称；`agent.grants` | 所属应用，经中转 | 新闻共享 `news.list` 和 `news.read`；还没有应用申请 |
-| 工具箱（`toolbox.*`、`workflow.*`） | `research` 和 `crawl` 能力 | Shell（[`crates/toolbox`](../crates/toolbox/README.md)），需 `toolbox-peers` feature，手机上默认开启 | 还没有应用声明 |
+| 工具箱（`toolbox.*`、`workflow.*`） | `agent.tools` 中的确切名称，以及顶层 `research` 的范围限制 | Shell（[`crates/toolbox`](../crates/toolbox/README.md)），需 `toolbox-peers` feature，手机上默认开启 | 还没有应用声明 |
 | `dev.run` | 开发者模式 | Shell（`host_tools/dev_run.rs`） | 仅限所覆盖的应用 |
 
 应用的 `AGENT.md` 和技能不是工具：代理把它们的文字作为宿主指导随每一轮发送（`crates/app-peers/src/guidance.rs`）。
@@ -294,9 +294,9 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 4. **确认** `confirm: app` 调用：先向内核确认收到，再交给所属应用的面板（见[第 5 节](#5-审批)）。
 5. **只回答一次**，结果要符合 `output_schema`（最多 256 KiB）；取消之后什么都不再运行。每次调用都会连同参数摘要记录到 `logs/tool-calls.jsonl`。
 
-脚本应用中 `implemented_by: "host-service"` 的工具，以该应用的身份在其命名空间对应的宿主服务上运行，前提是应用获授了该服务族，或该服务族就是这个系统应用自己的。Shell 的 `NoticeService` 为相册、地图、YouTube 和相机应答 `<app>.notify`。脚本应用中 `implemented_by: "app"` 的工具在应用自身中运行：`ScriptAppExecutor`（`host_tools/script_apps.rs`）把调用排入 App Hub 的脚本工具运行器，由运行器在应用已打开的完整应用 VM 中调用它的 `app_tool(name, call_id)` 钩子。应用包必须要求 `script-tools-v1`。应用关闭时返回 `app_not_running`；对标为 `confirm: app` 的脚本工具发起的破坏性或对外调用，会以 `app_confirmation_unavailable` 遭到拒绝（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）。这项能力已在 `main` 上，但尚未进入任何发布版本：`desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝对这类工具的所有调用。
+脚本应用中 `implemented_by: "host-service"` 的工具，以已准入应用的身份运行解析出的宿主方法。中转检查工具归属和共享；服务保留应用与账户作用域、实际同意、审核和可用性检查。遗漏服务族声明不会拒绝执行。Shell 的 `NoticeService` 为相册、地图、YouTube 和相机应答 `<app>.notify`。脚本应用中 `implemented_by: "app"` 的工具在应用自身中运行：`ScriptAppExecutor`（`host_tools/script_apps.rs`）把调用排入 App Hub 的脚本工具运行器，由运行器在应用已打开的完整应用 VM 中调用它的 `app_tool(name, call_id)` 钩子。应用包必须要求 `script-tools-v1`。应用关闭时返回 `app_not_running`；对标为 `confirm: app` 的脚本工具发起的破坏性或对外调用，会以 `app_confirmation_unavailable` 遭到拒绝（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）。这项能力已在 `main` 上，但尚未进入任何发布版本：`desktop-v0.1.0-beta.2` 会以 `app_tool_unavailable` 拒绝对这类工具的所有调用。
 
-商店应用的工具也可以用 `host_method` 映射到共享服务，例如 Inbox Assistant 的 `inbox.message` 映射到 `gmail.message`。App Hub 只准入经审查的列表 `SHARED_HOST_METHODS` 中的方法：GitHub、Gmail 和 Google Calendar 的读取，Gmail 草稿编辑和新邮件事件处理，以及 `glance.*`。每个方法都要求声明对应服务族的能力和 `private_data: true`，风险等级也不能低于列表规定的等级。执行器只在应用获授该服务族时运行这个方法；对 `github`、`gmail` 和 `gcalendar`，它还会注入应用当前的连接（`host_tools/script_apps.rs`）。列表中没有任何方法会打开宿主面板，所以任何工具都不能登录、提交、保存日程或发送（见[已连接账户](#已连接账户)）。
+商店应用的工具也可以用 `host_method` 映射到共享服务，例如 Inbox Assistant 的 `inbox.message` 映射到 `gmail.message`。App Hub 只准入经审查的列表 `SHARED_HOST_METHODS` 中的方法，包括GitHub、Gmail 和 Google Calendar 的读取，Gmail 草稿编辑和新邮件事件处理，以及 `glance.*`。每个方法保留列表规定的最低风险与隐私要求，执行不要求匹配的服务族披露。对 `github`、`gmail` 和 `gcalendar`，执行器会注入应用当前的连接（`host_tools/script_apps.rs`），并继续检查其提供商 scope 和归属。列表中没有任何方法会打开宿主面板，所以任何工具都不能登录、提交、保存日程或发送（见[已连接账户](#已连接账户)）。
 
 ### 系统 Agent 的工具集
 
@@ -304,7 +304,7 @@ manifest 声明，用户在安装时授权，Shell 在每次调用时强制执�
 
 ### Agent 往 glance 屏幕上放什么
 
-glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在宿主记录的账户下发布每张卡片，而且只在应用有 `glance` 授权时才发布。一个应用每分钟最多发布 6 次。手机和桌面都能滚动浏览所有保留卡片，不再限制每应用四张卡片或信息流六行。保留负载的预算为每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，但保留新的有效发布；所属服务继续保存草稿和原邮件。`mail.publish_card` 还能把卡片绑定到邮件已保存的某份草稿上；绑定后的卡片不能再换到别的账户、邮件或草稿。
+glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在宿主记录的账户下发布每张卡片，并验证发布者当前仍已准入；`glance` 只是用途披露。一个应用每分钟最多发布 6 次。手机和桌面都能滚动浏览所有保留卡片，不再限制每应用四张卡片或信息流六行。保留负载的预算为每应用 8 MiB、合计 32 MiB；容量紧张时淘汰优先级较低的旧卡片，但保留新的有效发布；所属服务继续保存草稿和原邮件。`mail.publish_card` 还能把卡片绑定到邮件已保存的某份草稿上；绑定后的卡片不能再换到别的账户、邮件或草稿。
 
 在 `main` 上，Agent 的工具调用若最终映射到 `glance.publish`（例如 Inbox Assistant 的 `inbox.notify`），必须指定应用已准入应用包中的模板并提供 `initial` 对象，或者提交合法的 L0 源码。可执行的 Splash（`script`）、L1 源码以及混合的参数都会被拒绝（`host_tools/script_apps.rs` 中的 `check_agent_publication`）。应用自己的界面仍可发布它经过审核的 Splash。`desktop-v0.1.0-beta.2` 没有这项检查，会接受 Agent 发布的 `script` 卡片。
 
@@ -314,7 +314,7 @@ glance 服务（`crates/shell/src/glance.rs`）以调用方应用的身份、在
 
 商店应用不需要 OctoSense 账户，就能使用用户的 GitHub 或 Google 账户，或让用户登录应用自己的后端（[ADR 0010](adr/0010-shared-oauth-and-connected-apps.zh-CN.md)）。[`crates/oauth-service`](../crates/oauth-service/README.zh-CN.md) 实现了 OAuth 协议、GitHub、Google 和后端的适配器以及连接存储。`register_host_services`（`crates/shell/src/apps.rs`）注册它的四个宿主服务：`auth` 负责登录和应用的连接，`github`、`gmail`、`gcalendar` 提供 GitHub 和 Google 的数据。各服务的方法见该 crate 的 README。
 
-- **声明**。应用声明 `auth`、它用到的每个数据服务族（`github`、`gmail`、`gcalendar`），以及 `storage.accounts: true`。只声明 `auth` 时，应用仍能让用户仅为确认身份而登录（GitHub 的 `read:user`；Google 的 `openid`、`email` 和 `profile`），但拿不到任何 GitHub 或 Google 数据：其他 scope 所属的服务族若未获授，宿主一律拒绝（`register_host_services`）。
+- **披露与同意**。应用描述 `auth` 及数据服务族（`github`、`gmail`、`gcalendar`），并配置 `storage.accounts: true`。这些名称不授权访问提供商。`register_host_services` 检查当前应用准入与提供商 scope 是否有效；用户通过提供商授权所请求的 scope。仅身份连接（GitHub 的 `read:user`；Google 的 `openid`、`email`、`profile`）不会因声明某个服务族就获得邮件、日历或仓库 scope。每次数据调用仍检查真实连接和 scope。
 - **身份**。应用只看到不透明的连接句柄。它的 peer 以它当前的连接行事（`app_storage/lifecycle.rs`），所以每个已连接账户都有自己的 Agent。
 - **配置**。OAuth 客户端注册归宿主所有，从不由应用提供。发行方在构建时通过构建变量（例如 `OCTOSENSE_GITHUB_CLIENT_ID`）把注册编译进宿主（`crates/oauth-service/src/registration.rs`）；`desktop-v0.1.0-beta.2` 的下载包不含任何注册。运维人员可以用 App Hub 宿主目录中的 `clients.json`（`<apps root>/.host/oauth/clients.json`，其中 `<apps root>` 即 `<octosense home>/apps`，见[第 6 节](#6-存储与机密)）替换整套注册；文件中没有列出的提供商随之停用。缺少某个提供商的注册时，登录会失败并提示“GitHub sign-in is unavailable in this build. Check for an OctoSense update or contact its distributor.”（Google 的提示相同，只是换成 Google）。在 beta.2 上，缺少 `clients.json` 时提示的则是“OAuth is not configured”。
 - **应用自己的后端**。`auth.connect` 带上 `{"provider":"backend","scopes":["app.session"]}`，就能让用户登录应用自己的服务器；`auth.backend.me` 返回该服务器验证过的身份（`crates/oauth-service/src/host_backend.rs`）。在 `main` 上（尚未进入任何发布版本），应用的签名应用包可以声明自己的后端和命名操作，应用用 `auth.backend.request` 调用这些操作（[ADR 0012](adr/0012-app-host-api-discovery.zh-CN.md)）；没有这项声明的应用使用运维人员在 `<apps root>/.host/oauth/backends.json` 中的注册。`desktop-v0.1.0-beta.2` 没有后端登录。在 macOS 和 Android 9 及以上版本上，服务器的登录页面显示在宿主拥有的 WebView 中；在 Windows 和 Linux 上，或在 macOS 上指定 `"presentation":"browser"` 时，改在浏览器中打开（见 `host.rs` 中的 `presentation`）。iOS 不支持后端登录。
@@ -416,7 +416,7 @@ Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth
  |  每次调用都检查：授权、同意、审批、预算、审计                            |
  |   +------------------+   +------------------------------------------+    |
  |   | 原生模块         |   | Card runner：脚本应用各在隔离环境中      |    |
- |   | 经审查，与 Shell |   | （jail、配额、按授权 host.request）      |    |
+ |   | 经审查，与 Shell |   | （jail、配额、归属明确的 host.request）      |    |
  |   | 共享内存：可信   |   +------------------------------------------+    |
  |   +------------------+                                                   |
  +-------|------------------------------------------|-----------------------+
@@ -430,8 +430,8 @@ Rinx（通过 `OctosAppService::set_account`）、邮件的宿主服务和 `auth
 
 | 边界 | 由什么保证 |
 | --- | --- |
-| 脚本应用 ↔ Shell | Card runner 的隔离环境、jail 和配额；`host.request` 只能访问已授权的服务族 |
-| 应用自带的 WebAssembly 函数 ↔ Shell | 每次调用一个全新的 Wasmtime 实例，只能接触自己的内存和 `octo.log`，有截止时间以及内存、栈和大小上限；在 macOS、Linux 和 Android 的标准构建中存在（[OctoSense 中的 WebAssembly](wasm.zh-CN.md)） |
+| 脚本应用 ↔ Shell | Card runner 的隔离环境、jail 和配额；`host.request` 检查当前应用身份、账户作用域、实际同意与审核；声明不限制公开 API |
+| 应用自带的 WebAssembly 函数 ↔ Shell | 核心模块每次调用使用全新的受限实例，只接收输入并调用 `octo.log`。组件保留按应用和账户隔离的实例，使用受限的 WASI 存储与网络，并以明确身份分派宿主调用；共享组件代码不可变，状态仍归各应用和账户私有。当前源码包含 macOS、Windows、Linux、Android 和 OpenHarmony（Pulley）；平台及验证边界见 [OctoSense 中的 WebAssembly](wasm.zh-CN.md)。 |
 | 原生模块 ↔ Shell | 内存上没有隔离：靠对第一方代码的审查，以及模块边界的 panic 捕获 |
 | 进程应用 ↔ Shell | 独立的地址空间和系统沙箱：macOS 上是 Seatbelt，Linux 上是 Landlock 和 seccomp。**尚未实现**：Windows。 |
 | 应用 ↔ 内核 | 没有应用看得到宿主 token。只有 octos 客户端的内核端口使用 OUP，由路由器按编码范围约束（ADR 0003 第 9 条） |

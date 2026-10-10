@@ -31,7 +31,7 @@ Where an app runs decides how it reaches its agent and where its tools execute. 
 | Process app (the Terminal and Task, in a checkout build) | [clients.rs](../crates/shell/src/clients.rs), [hub.rs](../crates/shell/src/hub.rs) | The hub admits a child's socket only with the secret its launch read on stdin; `sandbox_policy` builds the OS sandbox. |
 | Script app (Calendar, Mail, every store app) | `system_card_apps` in `apps.rs`, then App Hub's `CARD_MODULE` | The `card` module, the Card runner, hosts every system and installed app, one isolate per instance. |
 
-`system_card_apps` makes Calendar's launcher row and, the first time, registers the shell's host services (`register_host_services`). Calendar's `calendar` capability grants its contained UI access to the owning service. Month/day views, the editor and Calendar-owned tools all read and write `.host/calendar/events.json`. The app's Glance event card is a projection of that record; its in-card **Open Calendar** action uses the publication-bound `event/<id>` route to open that same event in Calendar. Cross-app agent calls still require the separate grants described below.
+`system_card_apps` makes Calendar's launcher row and, the first time, registers the shell's host services (`register_host_services`). Calendar's `calendar` declaration describes its service use; the contained UI calls as the admitted app under the service's actual identity and data rules. Month/day views, the editor and Calendar-owned tools all read and write `.host/calendar/events.json`. The app's Glance event card is a projection of that record; its in-card **Open Calendar** action uses the publication-bound `event/<id>` route to open that same event in Calendar. Cross-app agent calls still require the separate grants described below.
 
 To run the desktop, follow its README's [Build and run](../desktop/README.md#build-and-run), which stages the pinned kernel with `python3 tools/kernel-artifact.py --host --stage target/release`.
 
@@ -115,7 +115,7 @@ Every surface but the system chat opens the person's lane:
 | "Ask &lt;app&gt;" panel | [app_chat/mod.rs](../crates/shell/src/app_chat/mod.rs): `agents::conversation`, then `ContextOp::TurnFrom { trigger: TurnTrigger::Person }` |
 | A native app's own chat, through the injected service | `OctosAppService::open_conversation`. Rinx uses only `open_context`, for its mini apps' private contexts. |
 | Another native app's chat | Makepad's `OctosPeer` over the peer link: `octos.session.open` without a `client` ([peer_link/link.rs](../crates/shell/src/peer_link/link.rs)) |
-| A script app's own chat | `host.request("octos.turn.start")`, served by `contained.rs` for the names its manifest declares |
+| A script app's own chat | `host.request("octos.turn.start")`, served by `contained.rs` for the admitted app with agent consent and current account checks |
 | A card's Chat tab, or a card that declares `sys.chat` | [glance_chat.rs](../crates/shell/src/glance_chat.rs) and [l0-chat](../crates/l0-chat/src/lib.rs) |
 
 **Card workspaces** ([in-card chat](../README.md#in-card-chat)). [glance_sheet.rs](../crates/shell/src/glance_sheet.rs) shows an opened card full screen on the phone, centred on the desktop. If the publisher has an agent and the card declares no chat, `L0Session::for_card` ([glance_card.rs](../crates/shell/src/glance_card.rs)) adds a host-owned `WorkspaceChat` behind Card / Chat tabs. `chat_submit` sends each turn through `glance_chat::perform_bound` to the account that published the card (`agents::conversation_for_account`), with the card's data and local state as context (`ContextKind::Card`), never as tools. Mail's reply cards show Email / Chat over one saved draft; a Chat turn carries a one-use token (`drafts::issue_chat_edit`) that lets `mail.suggest_reply` save the edit ([Composed Mail cards](mail-composable-cards.md)).
@@ -127,7 +127,7 @@ The trigger decides how far approvals trust a turn. Only the shell's own surface
 - the person allowed the app's agent;
 - its installed release is still admitted in the current signed local catalog (see the withdrawal checks in [section 7](#7-trace-a-tool-to-rust-code));
 - its admitted `agent` block sets `background: true` and lists the trigger `<app namespace>.new_message`, where the app namespace is the last segment of the app id (Inbox Assistant's trigger is `inbox.new_message`);
-- it declares `auth` and `gmail`;
+- the collector verifies the admitted app; `auth` and `gmail` disclose usage rather than authorize delivery;
 - its active Google connection can read Gmail.
 
 No other app has events yet.
@@ -150,7 +150,7 @@ Follow `calendar.events` from its declaration to the file it reads:
 
 `calendar.events` only reads, so nobody is asked. `calendar.remove_event` (`destructive`, `confirm: host`) is gated in octos first: the kernel raises a `host_tool` approval, which the broker hands to `ToolHost::host_tool_approval`, and only an approved call arrives.
 
-For agent calls resolving to `glance.publish`, including aliases such as `inbox.notify`, the executor refuses raw `script`, mixed template/source payloads and executable or L1 source. An agent can select a reviewed bundle template with an `initial` data object, or supply valid declaration-only L0. Glance still checks the template's admitted bundle and the app's capabilities before rendering. This restriction applies to model-authored publications; an admitted foreground app retains its own reviewed Splash implementation.
+For agent calls resolving to `glance.publish`, including aliases such as `inbox.notify`, the executor refuses raw `script`, mixed template/source payloads and executable or L1 source. An agent can select a reviewed bundle template with an `initial` data object, or supply valid declaration-only L0. Glance still checks the template's admitted bundle, publisher/account identity and resource limits before rendering; capability families are descriptive. This restriction applies to model-authored publications; an admitted foreground app retains its own reviewed Splash implementation.
 
 An installed app's agent also depends on its exact release remaining admitted. Guidance, tool offers and system-agent input read the current signed local catalog. The broker also checks `ToolHost::admit_turn` immediately before every actual `turn/start`, including cached conversations, queued input and retries; the relay checks both tool owner and calling app again before execution, including after a pending approval. A withdrawal takes effect after the next catalog fetch, even for cached peers. The Gmail dispatcher then releases the unavailable peer and retains its unfinished event for a later authorized retry. Saved user consent is unchanged; an unavailable app is not treated as a user denial.
 

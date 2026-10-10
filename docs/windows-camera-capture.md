@@ -9,11 +9,12 @@ It still needs the host's camera grant, OS camera access, and its storage jail.
 The backend does not add permissions, select another app's storage, or open a
 camera in response to a background tool call.
 
-For this batch, declare **camera and storage without library**. The shared
-widget currently turns a `library.write` grant into a request to export every
-capture. Windows gallery export is unsupported and is refused before capture.
-An unrestricted native CameraPreview may therefore request unsupported gallery
-export by default. This change does not alter shared widget intent semantics.
+Capture intent is explicit: `capture()` saves locally, as does
+`capture({library: false})`. Manifest declarations do not request automatic
+gallery export. `capture({library: true})` reports unsupported on Windows before
+capture; the existing export adapter is OpenHarmony-only. On recording-capable
+platforms, audio is requested with `record_start({audio: true})` and still needs
+microphone consent. Without options, recording is silent and local.
 Video recording, pause, resume and stop also report unsupported explicitly.
 
 A lazy, long-lived worker accepts at most one still request per camera. The

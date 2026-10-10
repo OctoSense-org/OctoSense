@@ -16,9 +16,7 @@ fn trigger(app: &str) -> String {
 fn background_guidance(app: &str) -> bool {
     match crate::host_tools::script_apps::guidance(app) {
         Ok(loaded) => loaded.background
-            && loaded.triggers.iter().any(|t| t == &trigger(app))
-            && loaded.families.contains("gmail")
-            && loaded.families.contains("auth"),
+            && loaded.triggers.iter().any(|t| t == &trigger(app)),
         Err(_) => {
             // A withdrawn/tampered release cannot keep its cached peer alive.
             // Release its contexts without changing the person's saved consent.

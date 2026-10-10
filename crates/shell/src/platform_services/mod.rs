@@ -1,7 +1,8 @@
 //! Device APIs for installed apps, backed by Makepad's native permission bridge.
 //!
-//! Manifest capability, retained per-app consent, and OS authorization are three
-//! different checks. An OS grant to the shell never authorizes another app.
+//! Manifest capabilities describe usage. Verified admission, retained per-app
+//! consent and OS authorization are independent checks. An OS grant to the
+//! shell never authorizes another app.
 //! All native requests run on the UI thread; agents cannot open permission UI.
 use makepad_widgets::{
     makepad_platform::{
@@ -75,7 +76,7 @@ impl Work {
         true
     }
     fn policy_allows(&self) -> bool {
-        crate::host_tools::script_apps::grants(&self.call.app_id, self.family)
+        crate::host_tools::script_apps::admitted_host(&self.call.app_id, &self.call.host_dir).is_ok()
     }
     fn current_grant(&self) -> Result<consent::Grant, String> {
         consent::get(&self.call.host_dir, &self.call.app_id, self.family)
@@ -156,6 +157,13 @@ pub fn register() {
         services::register_host_service(Box::new(DeviceService { family }));
     }
 }
+fn camera_capture_intent() -> Value {
+    json!({"abi":1,"defaults":{"audio":false,"library":false},
+        "options":{"capture":["library"],"record_start":["audio","library"]},
+        "library_export_supported":cfg!(target_env = "ohos"),
+        "library_export_requires_foreground":true,"microphone_consent_required":true})
+}
+
 struct DeviceService {
     family: &'static str,
 }
@@ -165,8 +173,15 @@ impl HostService for DeviceService {
     }
     fn api_methods(&self) -> Vec<services::HostApiMethod> {
         use services::{AgentAccess, HostApiMethod};
+        let capture_intent = if self.family == "camera" {
+            vec![HostApiMethod::new("camera.capture_intent", 1, "camera",
+                "Describe explicit per-capture audio/library options; availability never records or exports",
+                json!({"type":"object","additionalProperties":false}),
+                json!({"type":"object","required":["abi","defaults","options","library_export_supported","library_export_requires_foreground","microphone_consent_required"]}))
+                .with_agent_access(AgentAccess::Allowed)]
+        } else { vec![] };
         if !permission_supported() {
-            return vec![];
+            return capture_intent;
         }
         let input = json!({"type":"object","additionalProperties":false});
         let output = json!({"type":"object","required":["capability","supported","app_policy_granted","app_consent","os_permission"],
@@ -206,6 +221,7 @@ impl HostService for DeviceService {
             .with_platforms(&["android", "macos"])
             .with_agent_access(AgentAccess::Allowed),
         ];
+        methods.extend(capture_intent);
         if self.family == "location" && cfg!(target_os = "android") {
             methods.push(HostApiMethod::new("location.get",1,"location",
                 "Read Android's last-known location after app consent and a fresh OS permission check; fix age is unknown",input,
@@ -275,10 +291,14 @@ impl HostService for DeviceService {
             ));
             return;
         }
-        if !crate::host_tools::script_apps::grants(&call.app_id, self.family) {
+        if crate::host_tools::script_apps::admitted_host(&call.app_id, &call.host_dir).is_err() {
             reply.send(Err(
-                "permission_denied: The installed app has no grant for this capability".into(),
+                "permission_denied: The app or host profile is no longer admitted".into(),
             ));
+            return;
+        }
+        if self.family == "camera" && call.method() == "capture_intent" {
+            reply.send(Ok(camera_capture_intent()));
             return;
         }
         let opted_in = crate::host_tools::script_apps::guidance(&call.app_id).is_ok_and(|loaded| {

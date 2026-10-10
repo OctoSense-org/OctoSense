@@ -119,7 +119,8 @@ tests installation into the shell before publication.
 `agent_apps` and `register_host_services`. App Hub's native `CARD_MODULE` hosts
 these interpreted programs. The optional AppCard assistant has its own module.
 
-Admission resolves manifest capability requests into policy. A script's
+Admission verifies the bundle and resolves its metadata and resource limits.
+Capability names disclose usage, not execution permission. A script's
 `host.request(...)` runs under that app's identity. App Hub's
 `crates/appstore/src/services.rs` defines `HostService`, `ServiceCall` and replies;
 the call supplies an app identity and host directory for the service to check.
@@ -170,7 +171,8 @@ The shipped declarations provide these operations:
 | Photos, Maps, YouTube, Camera | `<namespace>.notify` only; the shell's `NoticeService` handles each application's namespace. Camera is packaged by Home. |
 
 AI providers configures the host and currently declares no app agent. Calendar's
-contained month/day view and editor use the explicit `calendar` capability. Its
+contained month/day view and editor disclose `calendar` use; the service
+checks their admitted app identity and data scope. Its
 UI and the agent tools above share one local event store. A saved event's Glance
 card opens that exact record in Calendar, and editing it refreshes its card.
 
@@ -179,7 +181,7 @@ Follow [`glance_notice.rs`](../../crates/shell/src/glance_notice.rs) and
 for the shared notice. Mail and News keep their own services and install notice
 callbacks; `serve_system_apps` adds a `NoticeService` only for namespaces without
 a service. `publish_args` fills app name/icon, time, title and body, then
-`glance::publish_for` checks the app's `glance` grant. The notice opens its app and
+`glance::publish_for` checks current publisher admission and account identity. The notice opens its app and
 sets `notify: true`. Calendar keeps its own event and agenda card templates.
 
 The broader [`glance.publish`](../../crates/shell/src/glance.rs) API accepts either
@@ -205,7 +207,7 @@ Keep the data boundaries visible when adding a tool:
 
 | Boundary | Access path |
 | --- | --- |
-| Script storage | Runtime storage APIs under the app's capability and jail. |
+| Script storage | Runtime storage APIs in the app's bounded private jail, even when `storage` is omitted. |
 | Agent workspace | The peer's app/account folder through granted file tools and shell policy. |
 | Host-service database | Explicit Rust methods/tools for Calendar events, Mail cache or News data. Credentials stay with host sheets and vaults. |
 

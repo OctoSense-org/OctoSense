@@ -3,7 +3,7 @@ let calls = 0
 fn show_status(data) {
     calls = calls + 1
     ui.status.set_text("Native OS permission: " + data.os_permission)
-    ui.policy.set_text("App capability: declared | App consent: " + data.app_consent.to_string())
+    ui.policy.set_text("App identity: admitted | App consent: " + data.app_consent.to_string())
     ui.count.set_text("Completed native queries: " + calls.to_string())
 }
 fn read_status() {
@@ -118,8 +118,9 @@ fn app_tool(name, call_id) {
             host.request("camera.permission.status", {}, fn(camera) {
                 if !camera.is_ok { mod.app_tools.fail(call_id, camera.error); return }
                 show_status(camera.data)
-                // No microphone capability is declared. This must be refused.
+                // Omitted disclosure does not block status. It must not grant consent.
                 host.request("microphone.permission.status", {}, fn(microphone) {
+                    if !microphone.is_ok { mod.app_tools.fail(call_id, microphone.error); return }
                     // A tool callback must retain its background provenance.
                     host.request("camera.permission.request", {}, fn(prompt) {
                         ui.safety.set_text("Permission checks complete; no approval sheet opened")
@@ -129,8 +130,7 @@ fn app_tool(name, call_id) {
                             camera: camera.data
                             discovery: discovery.data
                             missing: missing.data
-                            microphone_allowed: microphone.is_ok
-                            microphone_error: microphone.error
+                            microphone: microphone.data
                             background_prompt_allowed: prompt.is_ok
                             background_error: prompt.error
                             calls: calls
@@ -147,7 +147,7 @@ SolidView {width: Fill height: Fill flow: Down padding: 28 spacing: 20 draw_bg.c
     SolidView {width: Fill height: Fit flow: Down padding: 20 spacing: 16 draw_bg.color: #xffffff
         Label {text: "CAMERA PERMISSION" draw_text.color: #x48566b draw_text.text_style.font_size: 12}
         status := Label {width: Fill text: "Waiting for a signed native query" draw_text.color: #x17243b draw_text.text_style.font_size: 20}
-        policy := Label {width: Fill text: "The capability and OS permission are separate checks." draw_text.color: #x48566b}
+        policy := Label {width: Fill text: "App consent and OS permission are separate checks." draw_text.color: #x48566b}
         count := Label {text: "Completed native queries: 0" draw_text.color: #x48566b}
         refresh := Button {text: "Read permission status" on_click: || read_status()}
     }

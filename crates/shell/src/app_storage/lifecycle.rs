@@ -226,8 +226,10 @@ pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
     }
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
-        if crate::host_tools::script_apps::grants(app, "auth") {
-            return octosense_oauth_service::host::active_connection(&storage.layout().apps_root().join(".host"),app).map(|connection| connection.handle);
+        if let Some(connection) = octosense_oauth_service::host::active_connection(
+            &storage.layout().apps_root().join(".host"), app,
+        ) {
+            return Some(connection.handle);
         }
         octosense_mail_service::active_account(&storage.layout().apps_root().join(".host"), app)
     }
@@ -415,7 +417,7 @@ pub fn install(storage: &'static Arc<Storage>) {
 }
 
 /// Last check inside the Mail service's atomic send claim. It deliberately
-/// rechecks local admission, grants and account metadata: no broker locks,
+/// rechecks local admission and account metadata: no broker locks,
 /// draft calls, UI callbacks or networking. Account metadata writers hold the claim lock too.
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn mail_claim_allowed(storage: &Storage, host_dir: &Path, app: &str, account: &str) -> Result<(), String> {
@@ -424,9 +426,7 @@ fn mail_claim_allowed(storage: &Storage, host_dir: &Path, app: &str, account: &s
     }
     if app != "os.mail" {
         crate::host_tools::admission::check(app)?;
-        if !crate::host_tools::script_apps::grants(app, "mail") {
-            return Err("This app no longer has the Mail capability".into());
-        }
+        crate::host_tools::script_apps::admitted_host(app, host_dir)?;
     }
     mail_account_claim_allowed(storage, host_dir, app, account)
 }

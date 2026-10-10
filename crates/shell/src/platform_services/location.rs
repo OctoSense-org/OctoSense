@@ -113,7 +113,7 @@ fn keep(work: &Work, check_authority: bool) -> bool {
         return false;
     }
     let failure = if check_authority && (!work.policy_allows() || !work.consent_still_valid()) {
-        Some("permission_denied: Location consent or the app's capability changed")
+        Some("permission_denied: Location consent or app admission changed")
     } else {
         None
     };

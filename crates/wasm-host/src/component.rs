@@ -197,18 +197,21 @@ impl Runtime {
         }
         let cached = self.cache_path(bytes);
         let mut from_cache = false;
-        let component = match cached.as_ref().and_then(|path| std::fs::read(path).ok()) {
+        let component = match self.read_cache(cached.as_ref()) {
             // SAFETY: the cache holds only what `Component::serialize` wrote
             // for this engine (the key includes its compatibility hash), in a
             // directory that belongs to the shell.
-            Some(code) => match unsafe { Component::deserialize(&self.engine, &code) } {
-                Ok(component) => {
-                    from_cache = true;
-                    component
+            super::cache::ReadResult::Hit(code) => {
+                match unsafe { Component::deserialize(&self.engine, &code) } {
+                    Ok(component) => {
+                        from_cache = true;
+                        component
+                    }
+                    Err(_) => self.compile_component(bytes, cached.as_ref())?,
                 }
-                Err(_) => self.compile_component(bytes, cached.as_ref())?,
-            },
-            None => self.compile_component(bytes, cached.as_ref())?,
+            }
+            super::cache::ReadResult::Missing => self.compile_component(bytes, cached.as_ref())?,
+            super::cache::ReadResult::Unavailable => self.compile_component(bytes, None)?,
         };
         let (exports, skipped) = check_component(&self.engine, &component)?;
         let uses_network = component

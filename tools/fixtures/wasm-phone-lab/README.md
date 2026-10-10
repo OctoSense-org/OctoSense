@@ -27,3 +27,69 @@ cargo run --locked --offline -p octosense-wasm-host --example encode_phone_fixtu
 The guest deliberately remembers input if its instance is reused. Passing requires the host to create a new instance, including after success. Earlier 19-check evidence used explicit result fields and did not prove raw response forwarding; the repaired raw path adds that check, and the reproducible harness adds two compiled-identity checks. The [OnePlus 6 receipt](acceptance-oneplus6.json) records **22/22 checks passed** on Android 15, built from source `e67ce63ebca6054961899691e1644a54c2b4f081` with runtime tree `0fc8e29e2411fd7eb94d845ba16a261d2ebc9dfc`. The build and driver commands above were executed with local tool paths. Live model/peer relay, performance and release APK behavior remain unverified.
 
 The listing image is a separate native macOS capture of this fixture after its signed app tool completed, made in a hidden Makepad window from source `d3535a95`. It is not a phone screenshot and does not extend the 22-check OnePlus receipt to the later screenshot-only change. The image and refreshed fixture digest replace the earlier unrelated Host API Lab image.
+
+## Real GitHub shared-component acceptance
+
+The same native host also accepts a mirror containing a genuine GitHub-attested
+`catalog-v2.json`, its two reviewed consumer bundles and pinned shared components
+from [the synthetic publisher](https://github.com/ymote/octosense-component-demo).
+This mode uses the default GitHub trust channel and actual Store admission;
+it creates no legacy signatures and grants no additional capability.
+The first consumer has no capability declarations; the second declares `wasm`
+and `storage`. Both call the same component bytes in their own retained instance
+and private storage. Four alternating app-tool turns check counters, Markdown,
+file separation, alias discovery and a real component-to-host `runtime.describe`
+round trip. No model or personal account runs.
+
+Prepare the mirror with the reviewed
+[App Hub candidate helper](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/SHARED-COMPONENT-REHEARSAL.md)
+and the protected admin workflow's `dry_run: true` envelope. The official catalog
+is not changed. The following build and driver commands were executed with
+local tool paths, desktop first and the assigned OnePlus 6 last. To repeat them,
+use new evidence directories, an explicitly assigned OnePlus 6 serial and your
+local tool paths:
+
+```sh
+cargo build --locked -p octosense-wasm-phone-smoke
+python3 tools/test-shared-components.py --host target/debug/octosense-wasm-phone-smoke \
+  --mirror "$SHARED_MIRROR" --out "$SHARED_MAC_EVIDENCE"
+MAKEPAD_FORCE_DEBUGGABLE=1 CARGO_TARGET_DIR="$WASM_TARGET" "$CARGO_MAKEPAD" makepad android \
+  --sdk-path="$MAKEPAD_ANDROID_SDK" --abi=aarch64 --version-code=2026100901 \
+  --package-name=dev.makepad.octosense.hostapilab.shared1 --app-label=OctoSenseSharedComponentTest \
+  build -p octosense-wasm-phone-smoke --release --locked --offline
+python3 tools/test-shared-components.py --adb "$ADB" --aapt2 "$AAPT2" --serial "$ONEPLUS_SERIAL" \
+  --apk "$WASM_TARGET/makepad-android-apk/octosense_wasm_phone_smoke/apk/octo_sense_shared_component_test.apk" \
+  --mirror "$SHARED_MIRROR" --out "$SHARED_PHONE_EVIDENCE"
+```
+
+The driver refuses an existing test package, binds its receipt to the clean
+compiled source/runtime and removes only its own newly installed phone package.
+The receipt excludes the device serial. The raw native receipt records the real
+catalog payload digest, bundle/component identities and all four result objects.
+The two modes test different contracts: core functions use fresh instances;
+shared components retain app-private instances while sharing immutable bytes.
+Neither mode is a performance benchmark or a release Home upgrade test.
+
+The completed run is bound to clean source
+`c5f0c5c1948d9b730c707b409e9713af49e3e614` and Makepad runtime tree
+`a6fae94aa4d233503b14bc6d0a36bcbc2b264b44`. The two components and two apps
+were built and attested by [publisher workflow 38024551136](https://github.com/ymote/octosense-component-demo/actions/runs/38024551136)
+for [v0.1.0](https://github.com/ymote/octosense-component-demo/releases/tag/v0.1.0).
+[Protected admin workflow 38026083032](https://github.com/OctoSense-org/OctoSense-App-Hub/actions/runs/38026083032)
+produced the real sequence-16 catalog envelope with `dry_run: true`, payload
+SHA-256 `87bde245807a5ff6a1b3297c409d4ef6684414e47b038519a196feab29f42a7e`.
+Its proof and all artifact digests were verified before either native run.
+The public catalog stayed unchanged.
+
+| Platform | Native component assertions | Driver checks | Evidence |
+| --- | --- | --- | --- |
+| macOS, hidden Makepad window | 28/28 | 12/12, including the final app and counter visible | [Driver](evidence/shared-components/macos.json), [raw native results](evidence/shared-components/macos-native.json), [native capture](evidence/shared-components/completed.png) |
+| OnePlus 6 | 28/28 | 13/13, including the assigned device, fresh isolated package and compiled identities | [Driver](evidence/shared-components/oneplus6.json), [raw native results](evidence/shared-components/oneplus6-native.json) |
+
+The receipts are copied without changes. They show actual Store installation,
+Splash app-tool calls, alias discovery, a component-to-host call, deduplicated
+read-only component bytes, and retained counters and files isolated per app.
+The OnePlus test package was removed. No personal accounts or models were used,
+and the installed Home was untouched. These are development-host receipts,
+not released-binary acceptance. Live model relay, performance, OpenHarmony
+device execution and a production Home upgrade remain outside this run.

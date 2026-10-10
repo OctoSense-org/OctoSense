@@ -2,6 +2,8 @@
 English | [简体中文](README.zh-CN.md)
 
 `files` connects a foreground app to the native document picker. An import copies
+
+Capability declarations describe intended use. File calls require current app admission; `storage_granted` reports whether the calling isolate has live app storage. Native chooser interaction, the storage jail and quota remain required.
 one selected document into that app's existing Splash filesystem; an export saves
 a snapshot of an existing app file. Apps receive an app-relative path and byte
 count, never a host path or Android provider URI. No separate blob store is created.
@@ -38,7 +40,7 @@ nothing is left after cleaning, and on Android, whose document loader does not
 query a display name yet.
 
 Cancelling a document/image dialog returns `{"cancelled":true}`. Read failures, unsupported
-platforms, missing grants, full storage, and busy transfers are errors. Imports
+platforms, invalid app admission, full storage, and busy transfers are errors. Imports
 require a new destination: they cannot overwrite an existing app document. The
 app can read imported bytes with `fs.read_bytes(path)`, pass that array to an image
 widget, or copy it with `fs.write_bytes(other_path, fs.read_bytes(path))`.

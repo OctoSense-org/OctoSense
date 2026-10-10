@@ -31,14 +31,20 @@ let toast = ""
 let timers = []
 let stopped = []
 let stop_requests = 0
+let microphone_allowed = true
+let host = {{request: fn(service, args, reply){{
+    assert(service == "microphone.permission.request")
+    reply({{is_ok: true data: {{app_consent: microphone_allowed os_permission: "granted"}}}})
+}}}}
 fn time_now() {{ 123 }}
 fn start_interval(seconds, callback) {{ timers.push(callback); timers.len() }}
 fn stop_timer(timer) {{ stopped.push(timer) }}
 let widget = {{render: fn(){{}} set_text: fn(text){{}}}}
 let ui = {{
     cam: {{
-        record_start: fn(){{ native_recording = true; true }}
+        record_start: fn(options){{ assert(options.audio && !options.library); native_recording = true; true }}
         record_stop: fn(){{ stop_requests += 1; native_recording = false }}
+        is_running: fn(){{ true }}
         is_recording: fn(){{ native_recording }}
         error: fn(){{ native_error }}
         set_aspect: fn(aspect){{}}
@@ -78,6 +84,11 @@ assert(mode == "video")
 stop_recording()
 assert(!recording && !timer_visible && rec_timer == nil)
 assert(stopped.len() == 2 && stopped[1] == 2 && stop_requests == 1)
+// Rejected app consent cannot start another native recording or UI timer.
+microphone_allowed = false
+start_recording()
+assert(!recording && !native_recording && !timer_visible && rec_timer == nil)
+assert(timers.len() == 2 && retry_visible && !permission_pending)
 true
 ;"#),
             ..Default::default()

@@ -3,14 +3,17 @@
 [English](wasm.md) | 简体中文
 
 OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己的代码而设计：应用自带的
-函数，标准构建在 macOS、Linux 和 Android 上运行它们，属于有限支持。两个引擎的插件已经关闭：
+函数，标准构建在 macOS、Windows、Linux、Android 和 OpenHarmony 上运行它们，属于有限支持。两个引擎的插件已经关闭：
 `photo` 背后的 photocraft 和 `vector` 背后的 vectorcraft，这两个服务都拒绝所有插件命令。另外两处是 makepad 的内部实现，以及
 一个无法编译的浏览器构建。本页逐一说明：运行的是谁的模块、它能接触什么、哪些构建包含它、
-如何检查过。内容对应 #400 之后的 `main`（2026 年 10 月 8 日）。
+如何检查过。本页描述当前源码。桌面版 0.1.0-rc.2 和 Home 0.1.0-beta.2 包含 ADR 0011 核心模块。
+ADR 0014 共享组件及下文的新声明策略已通过专用 macOS/OnePlus 6 测试，发行仍待完成。
+源码、测试与发行状态分别记录。
+参见[应用能力与执行边界](capabilities.zh-CN.md)。
 
 | 位置 | 谁的模块 | 运行时 | 构建 | 状态 |
 | --- | --- | --- | --- | --- |
-| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 应用自己的应用包，`fns/*.wasm`，需要 `wasm` 能力 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`）；组件的 WASI 0.2 来自 `wasmtime-wasi` | macOS、Windows、Linux、Android 和 OpenHarmony 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`；OpenHarmony 上在 Wasmtime 的解释器 Pulley 中运行）；iOS 不包含 | 已接受，有限支持。测试在 macOS 和 Linux 上通过；一部 OnePlus 6 通过了手机验收。尚无发布版本包含它 |
+| 应用自带的函数：`wasm` 服务（[ADR 0011](adr/0011-apps-own-functions-in-webassembly.zh-CN.md)） | 已准入应用的 `fns/*.wasm` 或精确固定的共享组件 | Wasmtime 49，由 Cranelift 编译（`crates/wasm-host`）；组件的 WASI 0.2 来自 `wasmtime-wasi` | macOS、Windows、Linux、Android 和 OpenHarmony 上的每个标准桌面版和 Home 构建（特性 `wasm-functions`；OpenHarmony 上在 Wasmtime 的解释器 Pulley 中运行）；iOS 不包含 | 核心模块已进入桌面 rc.2 和 Home beta.2。共享组件已通过 macOS 和 OnePlus 6 开发宿主验收，发行仍待完成 |
 | 引擎插件：`photo` 背后的 photocraft、`vector` 背后的 vectorcraft（[ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)） | 无：两个服务都拒绝所有 `plugin.*` 命令（#398、#405） | wasmi 2，解释器 | 链接进所有带 App Hub 的构建 | 已关闭：任何调用方都不能安装或运行插件 |
 | Splash 的数学编译器（makepad） | makepad 根据 Splash 代码生成 | makepad-stitch，解释器 | 链接进所有构建 | 未使用：OctoSense 没有链接任何调用它的代码 |
 | 浏览器中的外壳 | 外壳本身，为 `wasm32-unknown-unknown` 构建 | 浏览器 | 无 | 无法构建 |
@@ -44,7 +47,7 @@ OctoSense 中有四处用到 WebAssembly。其中一处专为运行应用自己�
 
 ### 组件
 
-[ADR 0014](adr/0014-app-components-in-webassembly.zh-CN.md)（提议）增加了第二种
+[ADR 0014](adr/0014-app-components-in-webassembly.zh-CN.md)（已接受；发布尚未完成）增加了第二种
 `fns/<name>.wasm`：WebAssembly 组件，用 `cargo build --target wasm32-wasip2` 从普通的
 Rust crate 构建。服务按文件头区分两者，一个应用包可以同时携带两种。
 
@@ -59,23 +62,23 @@ Rust crate 构建。服务按文件头区分两者，一个应用包可以同时
 - **能接触什么。** 时钟和随机数。它的 stdout 和 stderr 成为应用的日志行，没有环境变量、
   参数和 stdin。导入 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:http`、`wasi:io`、
   `wasi:random` 和 `octosense:host` 以外任何东西（例如套接字）的组件在加载时被拒绝。
-- **文件。** 应用有 `storage` 能力（有账户的应用还需已登录账户）时，应用自己的存储文件夹，
-  即其脚本的 `fs.*` 看到的那个，就是组件的 `/`。设备上的其他东西一概不可见；没有这个能力
-  时没有文件系统。
+- **文件。** 应用可用的存储文件夹，即其脚本的 `fs.*` 看到的那个，就是组件的 `/`。
+  按账户隔离的应用需要当前已连接账户。设备上的其他路径不可见；存储不可用或所需账户已退出时
+  不预打开目录。省略 `storage` 声明不会取消存储。
 - **存储配额。** 一次调用可以写入的量，是调用开始时应用配额的剩余部分。超出的写入会在组件
   内部失败：`ftruncate` 报告磁盘已满，普通写入报告 I/O 错误，因为 wasi-libc 把任何失败的
   流写入都报告为 I/O 错误。这时请求的错误以 "a write was refused: the storage budget is
   used up" 结尾。改写、截断和删除会归还字节，因此组件可以自己腾出空间。
 - **网络。** 组件的 `wasi:http` 请求可以访问任何主机，与设备本身能访问的范围相同：应用的网络
   声明（`net`、`network.hosts`）在安装时展示，运行时不强制。2026 年 10 月 8 日的裁定取消了按应用
-  的运行时闸门，边界是操作系统和宿主的 API 表面。（在 Makepad 分支去掉之前，应用的 Splash 脚本
-  仍要经过 Splash 运行时的 URL 闸门。）导入 `wasi:http` 的组件每次调用有 10 秒，而不是 2 秒；
+  的运行时闸门，边界是操作系统和宿主的 API 表面。固定版本的 Splash 运行时也不再强制执行
+  清单中的主机列表。导入 `wasi:http` 的组件每次调用有 10 秒，而不是 2 秒；
   每个请求的连接、首字节和字节间超时都随调用结束。
 - **宿主服务。** 通过 `octosense:host`
   （[`crates/wasm-host/wit/octosense-host.wit`](../crates/wasm-host/wit/octosense-host.wit)），
-  组件可以用 `request(service, args)` 像应用的脚本一样调用宿主服务：在 UI 线程上分派，不检查清单
-  声明的服务族（makepad#118；需要授权的服务自己检查），但绝不打开面板、不询问用户，因此只能调用
-  后台界面可以调用的方法。`wasm.*`
+  组件通过 `request(service, args)` 以已准入应用的身份在 UI 线程上分派调用。
+  声明列表不作为执行许可；各服务仍检查账户、同意、审阅和资源边界。组件不能获得面板、权限提示
+  或可信用户输入，只能调用允许后台使用的方法。`wasm.*`
   被拒绝，因为应用的工作线程正忙于这次调用；调用的截止时间限制等待时长。
 
 ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 毫秒完成编译，从缓存加载
@@ -88,7 +91,7 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
 `components` 中按别名、id、确切版本和 BLAKE3 摘要固定它，并在 `requires` 中声明
 `wasm-shared-components-v1`。`wasm` 服务把每个固定的组件和应用的 `fns/` 一起加载，并以
 `wasm.<别名>.<函数>` 路由它的函数：固定为 `{"as": "md", "id": "org.example.markdown", …}` 时，
-`wasm.md.to_html` 调用该组件的 `to-html`。应用得到一个属于自己的实例，使用自己的授权，与 `fns/` 中的
+`wasm.md.to_html` 调用该组件的 `to-html`。应用得到自己的实例、账户和存储边界，与 `fns/` 中的
 组件相同；应用也可以完全没有 `fns/`，只调用共享组件。`wasm.functions` 带别名列出这些函数，并说明每个
 函数来自哪个组件（`"shared": {"alias", "id", "version", "blake3"}`）。
 
@@ -98,28 +101,29 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
 摘要检查。这里不会下载任何东西：App Hub 的安装程序会先于应用本身下载它固定的组件。组件缺失、被修改或
 被撤回时，应用无法启动。
 
-`wasm_service::tests::a_pinned_shared_component_answers_as_alias_and_function` 用替代的解析器运行这条
-路径。目前还没有目录发布过组件，因此安装固定了组件的应用并在 Shell 中调用它属于**未验证**。
+`wasm_service::tests::a_pinned_shared_component_answers_as_alias_and_function` 是使用替代解析器的定向测试。
+独立的[真实 GitHub 验收](../tools/fixtures/wasm-phone-lab/README.zh-CN.md#真实-github-共享组件验收)
+使用真实发布者证明和带管理员证明的私有试运行目录，通过实际商店安装两个应用，再经 Splash 工具调用共享组件。
+macOS 和 OnePlus 6 的原生断言均为 28/28 通过，驱动分别为 12/12 和 13/13 通过。
+公开目录保持不变。这验证的是开发宿主的安装和执行，不是发行二进制或真实模型结果。
 
 ### 模块如何到达设备
 
-- **商店应用。** App Hub 的审核（应用契约 1.7.0）只接受放在 `fns/<name>.wasm` 的
-  `.wasm` 文件（名称为 `[a-z0-9_-]`，最多 64 个字符），必须是核心模块（检查文件的前八个
-  字节），最多 8 个，并且应用必须声明 `wasm` 能力。声明了 `wasm` 能力却没有模块会得到一条
-  警告。审核不读取模块的导入和导出：外壳在加载模块时检查它们。商店会告诉用户：
-  "Run its own sandboxed functions on this device"（在本设备上运行自带的沙箱函数）。规则见
+- **商店应用。** App Hub 当前审核（应用契约 1.11）接受最多 8 个位于 `fns/<name>.wasm`
+  的文件（名称 `[a-z0-9_-]`，最多 64 字符）。它区分核心模块和组件，检查组件导入及所需 ABI，
+  并验证共享组件的精确版本、摘要和发布证明。省略 `wasm`、`storage` 或 `net` 不导致准入拒绝。
+  为商店披露准确保留这些声明；运行时仍在加载时校验代码。规则见
   App Hub 的[发布参考](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md)
-  （`functions` 检查项和 `wasm` 能力）。
+  （`functions` 检查项、所需 ABI 及 `wasm` 用途披露）。
 - **系统应用。** 和其他系统应用一样，按摘要从打包方式的系统应用列表打包进外壳。
   `desktop/system-apps-wasm-lab.json` 和 `phone/system-apps-wasm-lab.json` 就是标准
   列表加上 `wasmlab`。
 
 ### 服务
 
-`wasm` 宿主服务（`crates/shell/src/wasm_service.rs`）存在于 macOS、Linux 和 Android 上的
-每个标准桌面版和 Home 构建中：即外壳的 `wasm-functions` 特性，两个包都默认开启（`wasm-lab`
-是它以前的名字）。Windows、iOS 和 OpenHarmony 的构建不包含这个运行时
-（`crates/shell/Cargo.toml`、`crates/shell/build.rs`），在那里调用会得到
+`wasm` 宿主服务（`crates/shell/src/wasm_service.rs`）存在于 macOS、Windows、Linux、Android
+和 OpenHarmony 上的每个标准桌面版和 Home 构建中：外壳的 `wasm-functions` 特性在两个包中
+都默认开启（`wasm-lab` 是旧名）。iOS 不包含运行时。不含服务的构建返回
 `no service answers "wasm" on this device`。它回答两类请求：
 
 - `wasm.functions`：应用的模块导出了哪些函数，每个模块如何加载（编译，还是取自缓存，
@@ -129,8 +133,8 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
   （见[组件](#组件)）。函数自己返回的错误、陷阱或超时都是这次请求的错误。
 
 代码总是来自发起调用的应用自己的、已准入且摘要校验过的应用包，绝不来自参数；任何应用都
-接触不到别的应用的函数。Card runner 的审核和工具执行器都要求 `wasm` 能力，服务在加载任何
-东西之前还会再次检查已准入清单中的授权。
+接触不到别的应用的函数。服务在加载或执行前复查应用包准入、应用身份和配置目录。
+能力声明不是执行许可。
 
 每次调用模块都使用全新的实例：一次调用的内存、全局变量、表和日志行都不会进入下一次调用，
 成功调用或函数自己返回错误之后也一样。组件则在调用之间保留一个实例（见[组件](#组件)）。
@@ -158,13 +162,15 @@ ADR 0014 记录了开销。在 M 系列 Mac 上，313 KiB 的测试组件约 40 
 队列已满或没有空闲的工作线程时，请求会立即失败，不会等待。
 
 App Hub 安装或更新应用时，外壳会在后台把它的函数编译进缓存（`wasm_service::warm`）：一次一个
-应用，在单独的线程上，只编译已准入的应用包，并且只在应用有 `wasm` 授权时进行。这样应用的第一次
-调用就从缓存加载，不必等待 Cranelift 编译。
+应用，在单独的线程上，只编译已准入的应用包。当后台编译已完成且缓存可以及时读取时，
+应用的第一次调用使用编译好的代码。缓存读取最多等待 50 毫秒，每个进程最多同时保留两个读取线程。
+缓存读取缓慢或不可用时，运行时改为编译已验证的源代码，不覆盖该缓存条目。请求期限仍是
+10 秒，源代码编译本身仍需时间。详见[运行时缓存说明](../crates/wasm-host/README.zh-CN.md)。
 
 ### Agent 工具
 
 应用的 `tools.json` 可以用 `"host_method": "wasm.<function>"` 把一个工具映射到自己的
-某个函数。这需要 `wasm` 能力。与共享宿主方法不同，它没有最低风险等级，也不需要
+某个函数。工具必须由应用提供；`wasm` 声明不是执行许可。与共享宿主方法不同，它没有最低风险等级，也不需要
 `"private_data": true`：模块只能看到传给它的参数，组件还能看到自己应用的文件夹，与应用的
 脚本相同。两者都接触不到共享数据。Wasm Lab 把 `wasmlab.find_slots`、
 `wasmlab.rank` 和 `wasmlab.diff` 映射到 `wasm.find_slots`、`wasm.fuzzy_rank` 和
@@ -178,11 +184,12 @@ App Hub 安装或更新应用时，外壳会在后台把它的函数编译进缓
 | Linux | 运行。运行时和服务的测试在 x86_64 上通过，陷阱由信号捕获；Wasm Lab 在无头桌面中运行过（2026 年 10 月 8 日）。 |
 | Android | 在 Home 的默认构建中运行。需要 libc 0.2.190 或更高版本，`crates/wasm-host` 已要求这一点：在 0.2.189 下，每个陷阱都会结束进程。已在 Redmi Note 12 上验证（ADR 0011），并在一部 OnePlus 6 上通过[手机验收](#手机验收)。运行时增加约 7.5 MiB 代码；在 Snapdragon 685 上编译一个 433 KiB 的模块约需 0.4 秒，从缓存加载需 5–11 毫秒。 |
 | Windows | 包含（ADR 0014）。[`wasm-windows.yml`](../.github/workflows/wasm-windows.yml) 在 GitHub 的 `windows-2022` 上运行运行时的测试，并编译带这个服务的外壳。在 Windows 上运行桌面版**未验证**。 |
-| iOS | 不包含。那里的应用不能生成代码，所以运行时会像在 OpenHarmony 上一样使用 Pulley；但还没有编译过带这个服务的 iOS 构建。 |
+| iOS | 不包含，目前也不计划支持（ADR 0014）。尚未编译过带此服务的 iOS 构建。 |
 | OpenHarmony | 包含，在 OpenHarmony 的代码生成策略明确之前于 Wasmtime 的解释器 Pulley 中运行：Cranelift 编译为 Pulley 字节码，没有任何东西以原生代码运行。Home 的 OpenHarmony 发布构建已带着这个服务编译通过（2026 年 10 月 9 日，`cargo-makepad makepad ohos … deveco -p octosense-home --release`）；还没有在设备上运行过（**未验证**）。Pulley 比 Cranelift 慢约 32 倍（ADR 0014）。 |
 
-在受管理的 Mac 上，Microsoft Defender 会把新写入的缓存文件的第一次打开拦住约一秒；具体
-测量见 ADR 0011。
+ADR 0011 记录了受管理 Mac 上较早的缓存打开耗时。完整桌面验收还观察到约 10 秒的文件打开阻塞；
+线程采样确定了等待发生在文件打开操作，但没有确定原因。有界缓存读取避免了这个可选缓存等待
+耗尽整个请求期限。
 
 ### Wasm Lab
 
@@ -232,8 +239,8 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
   服务器发出的请求在截止时间结束；`hostcall`，它通过嵌入方调用宿主服务；以及拒绝导入套接字的组件。
 - 服务测试覆盖工具映射、输入上限、每次调用使用全新实例、更新或授权变化或撤回之后的撤销、
   取消和队列上限，以及应用自己的函数回答它的工具和脚本。对组件，测试覆盖带类型的调用、
-  实例的状态、应用的存储文件夹及其配额、没有存储能力的应用、作为系统应用经 App Hub 准入发布的
-  组件、只能访问应用主机的请求、只能到达已授权服务的宿主调用，以及已安装应用的第一次调用从缓存加载。
+  实例的状态、应用的存储文件夹及其配额、没有可用存储目录的应用、作为系统应用经 App Hub 准入发布的
+  组件、不受清单主机列表限制的请求、保留应用身份和服务边界的宿主调用，以及已安装应用的首次缓存加载。
 - `cargo run --release -p octosense-wasm-host --example measure_component` 打印组件
   相对于模块和原生 Rust 的耗时。
 - `OCTOSENSE_WASM_PULLEY=1 cargo test --locked -p octosense-wasm-host --features pulley`
@@ -247,7 +254,7 @@ cd phone && cargo test --locked --features mobile-apps -p octosense-shell wasm_s
 `phone.yml` 运行第一条命令，服务的测试则作为 Home 测试的一部分运行（`mobile-apps` 包含
 `wasm-functions`）；`tools/ci-local.sh --linux-host --offload` 在 Linux 构建主机上运行
 两者。CI 中的每个桌面版和 Home 构建都包含这个服务，`tools/check-shell-graph.sh` 检查它的
-运行时恰好在 macOS、Linux 和 Android 上链接。
+运行时按当前目标平台配置链接。
 
 ### 在命令行中调用函数
 
@@ -277,18 +284,19 @@ cargo run -q -p octosense-wasm-host --example wasm_call -- \
 `tools/test-wasm-phone.py` 在指定的设备上驱动这一过程。它的
 [验收记录](../tools/fixtures/wasm-phone-lab/acceptance-oneplus6.json)显示，在 Android 15
 的 OnePlus 6 上 22 项检查全部通过，包括成功、客体错误、陷阱和超时之后都使用全新实例。它的
-源码 e67ce63e 与 `main` 的 wasm 服务和运行时相同。验收不包括实时模型、性能和发布版 APK。
+源码 e67ce63e 记录当时受测的服务和运行时。验收不包括实时模型、性能和发布版 APK。
 用该夹具 README 中的 `encode_phone_fixture` 命令可以逐字节重建 `state.wasm`。
 
 ### 尚未完成
 
-- 还没有任何发布版本包含这个服务：#400 之后从 `main` 构建的第一个桌面版和 Home 发布版
-  将会包含。
-- iOS：带这个服务（在 Pulley 中）构建 Home。
+- 发布并验证包含 ADR 0014 组件和新声明行为的二进制。核心模块支持已随
+  [桌面 rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2)
+  和 [Home beta.2](https://github.com/OctoSense-org/OctoSense/releases/tag/home-v0.1.0-beta.2) 发行。
 - 应用之间的 CPU 公平调度，以及磁盘缓存的上限：目前没有任何东西会清理它。
 - 提前编译系统应用的函数：已安装应用的函数在安装时编译，系统应用的函数在第一次调用时编译。
-- 手机上的组件：Android 和 OpenHarmony 构建链接了运行时，但还没有组件在设备上运行过（**未验证**）。
-- 共享组件的完整流程：还没有 App Hub 目录发布过共享组件，因此还没有已安装的应用固定过它（**未验证**）。
+- OpenHarmony 设备上的组件执行（**未验证**）；Android 共享组件执行已在 OnePlus 6 上通过。
+- 通过正式公开目录和发行宿主安装共享组件。带真实证明的私有试运行目录已通过开发宿主流程；
+  其中的合成测试条目没有加入公开目录。
 - 经 JSON 传字节很慢：1 MiB 的 `list<u8>` 以 base64 往返约需 18 毫秒。
 
 ## 引擎插件：`photo` 和 `vector` 服务
@@ -370,4 +378,5 @@ getrandom 0.2 和 0.3、uuid、fs2、ring 以及 aws-lc-sys 都无法为该目�
 - [ADR 0013](adr/0013-craft-engines-as-pinned-services.zh-CN.md)：`photo` 及其他 craft
   服务背后的引擎。
 - App Hub 的[发布参考](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/PUBLISHING.md)：
-  `wasm` 能力、`functions` 检查项和 `wasm.<function>` 工具。
+  `wasm` 用途披露、所需 ABI、`functions` 检查项和 `wasm.<function>` 工具。
+  当前 1.11 策略不以匹配的能力族声明作为公共调用准入或执行的条件。

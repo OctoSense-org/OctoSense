@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 An installed script app can ask a compatible OctoSense host for camera, microphone and location access. Query API discovery on the actual host; fresh location sampling described here belongs to the unreleased OS wiring batch. Three separate checks decide whether an app can use a device:
 
-- **Capability.** The app's manifest declares `camera`, `microphone` or `location`. This is the most the app can ever get.
+- **Admission.** The host verifies the app and host profile. Manifest capabilities describe usage; they do not supply consent.
 - **App consent.** The person allows this app on a native host sheet. Consent covers this app on all of its accounts, and no other app.
 - **OS permission.** The operating system grants it to OctoSense as a whole, so on its own it authorizes no installed app.
 
@@ -12,7 +12,7 @@ This module's device service (`DeviceService`) implements permission status, req
 
 ## Declare what the app uses
 
-Require `host-api-v1` and declare each capability the app uses. This manifest fragment asks for the camera and location:
+Require `host-api-v1`; capability declarations describe what the app uses and do not deny omitted families. This manifest fragment asks for the camera and location:
 
 ```json
 {
@@ -21,12 +21,13 @@ Require `host-api-v1` and declare each capability the app uses. This manifest fr
 }
 ```
 
-The host puts the consent check in place before it runs any of the app's source. To keep the app off hosts that lack a method, list the method and its exact version in `host_api.required`; App Hub then refuses to install or launch the app on such a host. For a method the app can do without, check at run time with `runtime.describe`, which needs the `runtime` capability.
+The host puts the consent check in place before it runs any of the app's source. To keep the app off hosts that lack a method, list the method and its exact version in `host_api.required`; App Hub then refuses to install or launch the app on such a host. For a method the app can do without, check at run time with `runtime.describe`, without a capability grant.
 
 ## Methods
 
 | Method | Arguments | What it does |
 | --- | --- | --- |
+| `camera.capture_intent` | `{}` | Version 1 describes explicit `audio`/`library` capture options and their safe defaults; no hardware access or prompt. Require this method before relying on these options. |
 | `camera.permission.status` | `{}` | Reads the app's consent and the OS camera permission. Never prompts. |
 | `camera.permission.request` | `{}` | From the app in the foreground: shows the host's consent sheet, then the OS dialog if needed. |
 | `camera.permission.revoke` | `{}` | Withdraws this app's consent and stops its running `CameraPreview`. The OS permission for OctoSense is unchanged. |
@@ -36,7 +37,7 @@ The host puts the consent check in place before it runs any of the app's source.
 | `location.sample` | Optional `timeout_ms`, `max_age_ms`, `max_accuracy_m` | Android/macOS foreground app only: waits for a fix meeting the requested age and accuracy, without raising permission UI. |
 | `location.sample.cancel` | `{}` | Cancels every pending sample belonging to this app; returns `cancelled`, the count. Other apps are unaffected. |
 
-Beyond `host-api-v1`, `status` and `revoke` need only the capability. `request` is how the app gets consent, and `location.get` and `location.sample` need both consent and the OS permission.
+Beyond `host-api-v1`, `status` and `revoke` need a verified admitted identity. `request` is how the app gets consent, and `location.get` and `location.sample` need both consent and the OS permission.
 
 ## Request access
 
@@ -50,7 +51,7 @@ host.request("camera.permission.request", {}, fn(r) {
 })
 ```
 
-This is an API example, not a published sample app. The result reports the three checks separately: `app_policy_granted` (the capability), `app_consent` and `os_permission`. `os_permission` is `granted`, `not_determined`, `denied` or `settings_required` (denied permanently; only the system settings can change it). If the app already has consent, the host skips its sheet; if OctoSense already has the OS permission, no OS dialog appears.
+This is an API example, not a published sample app. The result reports the three checks separately: `app_policy_granted` (the admitted identity; the field name is retained for compatibility), `app_consent` and `os_permission`. `os_permission` is `granted`, `not_determined`, `denied` or `settings_required` (denied permanently; only the system settings can change it). If the app already has consent, the host skips its sheet; if OctoSense already has the OS permission, no OS dialog appears.
 
 The consent sheet offers **Not now** and **Continue**. **Continue** accepts only a physical press: synthetic input from Makepad automation or ADB does not count, and an app cannot mount its own copy of the sheet's widget to approve itself. **Not now** closes the sheet on any input and ends the request with `cancelled`. A sheet left open for 5 minutes expires, and the request fails with `timeout`.
 
@@ -64,11 +65,11 @@ An agent, a background card (such as the app's card on the Glance screen), and t
 
 ## Older device paths
 
-For an app that requires `host-api-v1`, the same consent also gates the older paths: `CameraPreview`, `sys.request_location`, `sys.gps` and the map's GPS reads. The host supplies the app's identity and caches consent per capability. After the host starts, the cache denies each capability until the app calls one of that capability's permission methods, which loads its saved consent. Call the matching `status` method before using these paths: `camera.permission.status` before `CameraPreview`, `microphone.permission.status` before recording sound, and `location.permission.status` before `sys.gps` or a map GPS read.
+Every contained app's older device paths also require per-app consent: `CameraPreview`, `sys.request_location`, `sys.gps` and the map's GPS reads. The host supplies the app's identity and caches consent per capability. After the host starts, the cache denies each capability until the app calls one of that capability's permission methods, which loads its saved consent. Call the matching `status` method before using these paths: `camera.permission.status` before `CameraPreview`, `microphone.permission.status` before recording sound, and `location.permission.status` before `sys.gps` or a map GPS read.
 
-An agent or a background card cannot use these paths to raise an OS dialog either. `CameraPreview` checks the OS permission before it previews or records, and only a request that starts in the foreground and is still there when the check returns may prompt. Background code can still use an OS permission that OctoSense already has, as long as the app has consent. In an app that requires `host-api-v1`, the camera never treats a timeout as approval. `sys.request_location` can prompt, so it needs the foreground; background code can read `sys.gps`, or call `location.get`, once the app has consent.
+An agent or a background card cannot use these paths to raise an OS dialog either. `CameraPreview` checks the OS permission before it previews or records, and only a request that starts in the foreground and is still there when the check returns may prompt. Background code can still use an OS permission that OctoSense already has, as long as the app has consent. The camera never treats a timeout as approval for a contained app. `sys.request_location` can prompt, so it needs the foreground; background code can read `sys.gps`, or call `location.get`, once the app has consent.
 
-Apps that do not require `host-api-v1` keep the earlier manifest-only rules, and their calls to these methods fail with `host_requirement_missing`.
+Apps that do not require `host-api-v1` still cannot borrow the shell's device permissions. Their permission-method calls fail with `host_requirement_missing`; add that compatibility requirement to use this API.
 
 ## Fresh location samples
 
@@ -80,14 +81,14 @@ The result has `latitude`, `longitude`, `accuracy_m`, `timestamp` (Unix seconds)
 
 `location.permission.status` reports `location_sample_supported`; its older `location_read_supported` field still describes the legacy `location.get` reader. The host uses Android LocationManager / macOS CoreLocation events and a nonprompting start operation. It checks OS authorization before acquisition and again before delivering the result; sampling never opens permission UI. Agents/background cards cannot start samples. This API does not provide a watch or background location.
 
-`location.sample.cancel` cancels this app's samples across its surfaces. Closing the originating isolate, revoking consent, losing the app capability, timeout or host backgrounding also stops acquisition. A 250 ms timer bounds cleanup when no native event arrives. The sampler releases its stream ownership once no sample is acquiring. Native route/location requests retain separate ownership, so either caller can stop without interrupting the other; the platform keeps its existing best-accuracy request. The separate Android legacy GPS feed and `location.get@1` response remain unchanged.
+`location.sample.cancel` cancels this app's samples across its surfaces. Closing the originating isolate, revoking consent, losing app admission, timeout or host backgrounding also stops acquisition. A 250 ms timer bounds cleanup when no native event arrives. The sampler releases its stream ownership once no sample is acquiring. Native route/location requests retain separate ownership, so either caller can stop without interrupting the other; the platform keeps its existing best-accuracy request. The separate Android legacy GPS feed and `location.get@1` response remain unchanged.
 
 ## Errors
 
 | Error | When |
 | --- | --- |
 | `host_requirement_missing` | The manifest does not require `host-api-v1`. |
-| `permission_denied` | The manifest lacks the capability, or the app was removed, lost the capability or had its consent changed while the request waited. |
+| `permission_denied` | The app/profile is no longer admitted, or its consent changed while the request waited. |
 | `invalid_arguments` | Arguments are not an object, include unknown fields, or exceed the documented bounds. Methods other than `location.sample` require `{}`. |
 | `method_unavailable` | The method is not one of those listed above, for example `camera.get`. |
 | `authorization_required` | `location.get` ran without app consent or without the OS permission, or a `request` arrived when the host could not prompt, for example while it was in the background. |
@@ -101,7 +102,7 @@ The result has `latitude`, `longitude`, `accuracy_m`, `timestamp` (Unix seconds)
 
 ## How the host runs a request
 
-The device service queues each native operation on the shell's UI event loop and matches the OS result to its request ID. Before it answers, it checks again that the app is still installed with the capability and that its consent revision has not changed. It drops a request that ended in the meantime because the app closed or App Hub timed it out. Revoking consent invalidates every older request still waiting for approval, and one app's denial never clears another app's consent.
+The device service queues each native operation on the shell's UI event loop and matches the OS result to its request ID. Before it answers, it checks again that the app is still admitted in this host profile and that its consent revision has not changed. It drops a request that ended in the meantime because the app closed or App Hub timed it out. Revoking consent invalidates every older request still waiting for approval, and one app's denial never clears another app's consent.
 
 On Android, the OS permission dialog can pause the activity. A request already waiting for that dialog survives the pause; every other queued request, and every consent sheet not yet approved, is cancelled.
 
