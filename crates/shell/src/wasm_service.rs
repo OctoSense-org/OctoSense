@@ -1089,6 +1089,10 @@ fn round(value: f64) -> f64 {
 }
 
 #[cfg(test)]
+#[path = "wasm_shared_acceptance.rs"]
+mod shared_acceptance;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ai_host::app_peers::host_tools::{HostToolCall, ToolExecutor, ToolReply};
