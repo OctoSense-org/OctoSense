@@ -2331,8 +2331,8 @@ mod tests {
             json!({"app": "org.example.hostcalls", "method": "get", "args": {"id": 1}, "may_prompt": false})
         );
         // A family with no service here: the dispatcher says so.
-        let error = call("mail.list", "{}").unwrap_err();
-        assert!(error.contains(r#"no service answers "mail""#), "{error}");
+        let error = call("wasmhostmissing.get", "{}").unwrap_err();
+        assert!(error.contains(r#"no service answers "wasmhostmissing""#), "{error}");
         let error = call("wasm.functions", "{}").unwrap_err();
         assert!(error.contains("cannot call wasm.*"), "{error}");
         let error = call("wasmhostecho.get", "not json").unwrap_err();
