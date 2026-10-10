@@ -36,6 +36,30 @@ A page gets no bridge into OctoSense: it cannot call the app's tools or host ser
 
 The URL checks are not a network sandbox: a public host name can resolve to a private address. Do not rely on a reader to keep a page away from private networks (SSRF).
 
+## macOS frozen captures and resizing
+
+On macOS, a phone-style shell can freeze an app's texture and detach its drawing
+pass from the window. The reader's watchdog must still hide its native WebView.
+The adapter now detaches hidden readers, and readers without an attached window,
+instead of ignoring their updates. Showing the app again attaches the same page
+at its current layout size, preserving its form state and private session.
+The runtime overlay is `tools/runtime-patches/makepad-macos-webview-placement.patch`.
+Authentication inspection retains its existing host-only, explicit-fixture gate.
+
+The macOS regression uses a hidden native window, a local fictional page and an
+opt-in texture surface. It checks wide, narrow and short windows, freezing the
+surface before resizing, and restoring it without a reload or lost draft.
+`nativeAttached` in the existing native inspection receipt distinguishes a page
+that still exists from an overlay that is still mounted.
+
+```sh
+cargo build --locked -p octosense-browser-smoke
+python3 tools/test-browser-resize.py --out /tmp/octosense-reader-resize-check
+```
+
+Use a new output directory for each run. This regression passed on macOS;
+Windows, Linux, iOS and Android device behavior for this change is **unverified**.
+
 ## Sign-in stays in the external browser
 
 Backend sign-in is a separate, host-owned flow. **On Linux and Windows it still uses the external browser.** Reader support does not enable embedded sign-in (OAuth), and it does not give apps the login cookies. WebKitGTK cannot reliably confirm that a navigation is in the main frame before it requests the sign-in callback, so the Linux adapter refuses embedded sign-in outright. The Windows adapter can intercept the callback, but embedded sign-in stays off in production until its complete host-owned flow passes acceptance. Google and GitHub keep their existing provider flows. See [Connected accounts](../crates/oauth-service/README.md).

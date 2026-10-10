@@ -24,7 +24,9 @@ script_mod! {
             window.inner_size: vec2(800, 620)
             body +: { flow: Down padding: 16 spacing: 12
                 Label {text: "OctoSense embedded browser acceptance"}
-                browser := WebReader {width: Fill height: Fill}
+                browser_surface := View {width: Fill height: Fill flow: Down
+                    browser := WebReader {width: Fill height: Fill}
+                }
             }
         }}
     }
@@ -40,6 +42,8 @@ struct App {
     timer: Option<Timer>,
     #[rust]
     last_command: u64,
+    #[rust]
+    frozen_surface: Option<makepad_widgets::view::ViewTextureSnapshot>,
     #[cfg(target_os = "windows")]
     #[rust]
     message_probe: Option<windows_message_probe::WindowsMessageProbe>,
@@ -85,6 +89,37 @@ impl App {
         let widget = self.ui.widget(cx, ids!(browser));
         let browser_id = self.browser_id(cx);
         match operation {
+            "freeze" => {
+                let surface = self.ui.view(cx, ids!(browser_surface));
+                self.frozen_surface = surface
+                    .borrow_mut()
+                    .and_then(|mut view| view.take_texture_snapshot(cx));
+                accepted = self.frozen_surface.is_some();
+                if accepted {
+                    surface.set_visible(cx, false);
+                }
+            }
+            "restore" => {
+                self.frozen_surface = None;
+                self.ui
+                    .view(cx, ids!(browser_surface))
+                    .set_visible(cx, true);
+            }
+            "resize" => {
+                if let Some((width, height)) = command["width"]
+                    .as_f64()
+                    .zip(command["height"].as_f64())
+                    .filter(|(width, height)| {
+                        (160.0..=4096.0).contains(width) && (160.0..=4096.0).contains(height)
+                    })
+                {
+                    self.ui
+                        .window(cx, ids!(main_window))
+                        .resize(cx, dvec2(width, height));
+                } else {
+                    accepted = false;
+                }
+            }
             #[cfg(target_os = "windows")]
             "calibrate_messages" => {
                 if self.message_probe.is_some() {
@@ -93,7 +128,9 @@ impl App {
                     match windows_message_probe::WindowsMessageProbe::start() {
                         Ok(probe) => self.message_probe = Some(probe),
                         Err(error) => {
-                            self.record(json!({"kind":"message_control","passed":false,"error":error}));
+                            self.record(
+                                json!({"kind":"message_control","passed":false,"error":error}),
+                            );
                             accepted = false;
                         }
                     }
@@ -178,6 +215,13 @@ impl AppMain for App {
                 .find_map(|arg| arg.strip_prefix("--control-root=").map(PathBuf::from))
                 .filter(|path| path.is_absolute() && path.is_dir())
                 .expect("Pass an existing, isolated absolute --control-root directory");
+            if std::env::args().any(|arg| arg == "--texture-surface") {
+                self.ui
+                    .view(cx, ids!(browser_surface))
+                    .borrow_mut()
+                    .unwrap()
+                    .set_optimize(cx, makepad_widgets::view::ViewOptimize::Texture);
+            }
             self.timer = Some(cx.start_interval(0.05));
             self.record(json!({"kind":"started", "platform":std::env::consts::OS}));
         }

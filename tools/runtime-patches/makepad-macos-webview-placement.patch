@@ -1,0 +1,75 @@
+diff --git a/platform/src/os/apple/apple_webview.rs b/platform/src/os/apple/apple_webview.rs
+index 77a5b9f..fdf9e1f 100644
+--- a/platform/src/os/apple/apple_webview.rs
++++ b/platform/src/os/apple/apple_webview.rs
+@@ -263,7 +263,9 @@ pub(crate) fn inspect(&mut self, result_path: String, snapshot_path: Option<Stri
+         if self.web_view == nil { return; }
+         let scroll = scroll_y.filter(|y| y.is_finite())
+             .map(|y| format!("window.scrollTo(0,{y});")).unwrap_or_default();
++        let native_attached = self.attached_window.is_some();
+         let script = format!(r#"{scroll}JSON.stringify({{
++            nativeAttached:{native_attached},
+             readyState:document.readyState,title:document.title,
+             scrollY:window.scrollY,scrollHeight:document.documentElement.scrollHeight,
+             viewportHeight:window.innerHeight,viewportWidth:window.innerWidth,
+diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
+index c925040..5a3e70e 100644
+--- a/platform/src/os/apple/macos/macos.rs
++++ b/platform/src/os/apple/macos/macos.rs
+@@ -2067,36 +2067,26 @@ fn handle_platform_ops(
+                     area,
+                     visible,
+                 } => {
+-                    let Some(draw_list_id) = area.draw_list_id() else {
+-                        continue;
+-                    };
+-                    let Some(draw_pass_id) = self.draw_lists[draw_list_id].draw_pass_id else {
+-                        continue;
+-                    };
+-                    let Some(window_id) = self.get_pass_window_id(draw_pass_id) else {
+-                        continue;
+-                    };
+-                    let Some(metal_window) =
+-                        metal_windows.iter().find(|w| w.window_id == window_id)
+-                    else {
+-                        continue;
+-                    };
+-
+-                    let mut unclipped_rect = area.rect(self);
+-                    let mut clipped_rect = area.clipped_rect(self);
+-                    let win_h = self.windows[window_id].window_geom.inner_size.y;
+-                    unclipped_rect.pos.y = win_h - unclipped_rect.pos.y - unclipped_rect.size.y;
+-                    clipped_rect.pos.y = win_h - clipped_rect.pos.y - clipped_rect.size.y;
+-                    let parent_view = metal_window.cocoa_window.view;
+-
+-                    if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) {
+-                        browser.update(
+-                            window_id,
+-                            parent_view,
+-                            unclipped_rect,
+-                            clipped_rect,
+-                            visible,
+-                        );
++                    // Frozen captures can detach their pass before the reader's
++                    // watchdog hides its native view. Hiding must not depend on
++                    // finding the area in a currently attached window.
++                    let placement = visible.then(|| area.draw_list_id())
++                        .flatten()
++                        .and_then(|id| self.draw_lists[id].draw_pass_id)
++                        .and_then(|pass| self.get_pass_window_id(pass))
++                        .and_then(|id| metal_windows.iter().find(|w| w.window_id == id)
++                            .map(|w| (id, w.cocoa_window.view)));
++                    if let Some((window_id, parent_view)) = placement {
++                        let mut unclipped_rect = area.rect(self);
++                        let mut clipped_rect = area.clipped_rect(self);
++                        let win_h = self.windows[window_id].window_geom.inner_size.y;
++                        unclipped_rect.pos.y = win_h - unclipped_rect.pos.y - unclipped_rect.size.y;
++                        clipped_rect.pos.y = win_h - clipped_rect.pos.y - clipped_rect.size.y;
++                        if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) {
++                            browser.update(window_id, parent_view, unclipped_rect, clipped_rect, true);
++                        }
++                    } else if let Some(browser) = self.os.system_browsers.get_mut(&browser_id) {
++                        browser.detach();
+                     }
+                 }
+                 CxOsOp::DetachSystemBrowser { browser_id } => {
