@@ -85,13 +85,6 @@ pub struct Grants {
     pub storage_dir: Option<PathBuf>,
     /// Open the storage folder read-only (its quota is used up).
     pub read_only: bool,
-    /// The hosts its `wasi:http` requests may reach, by a script's rule
-    /// (`host`, or `host:port`), over HTTPS. Empty: none.
-    pub http_hosts: Vec<String>,
-    /// Let those requests reach this device and its local network too, over
-    /// plain HTTP as well (still only listed hosts): for tests and a
-    /// developer's runs. The shell never sets it.
-    pub http_local: bool,
 }
 
 /// One function an app may call, with its WIT-like signature.
@@ -117,6 +110,8 @@ pub struct ComponentProgram {
     /// the reason, so `wasm.functions` can say why they are missing.
     skipped: Vec<(String, String)>,
     from_cache: bool,
+    /// It imports `wasi:http`, so its calls may wait for the network.
+    uses_network: bool,
 }
 
 impl ComponentProgram {
@@ -134,6 +129,12 @@ impl ComponentProgram {
     pub fn from_cache(&self) -> bool {
         self.from_cache
     }
+
+    /// Whether it imports `wasi:http`: it may reach any host, and its calls
+    /// get the network deadline.
+    pub fn uses_network(&self) -> bool {
+        self.uses_network
+    }
 }
 
 struct State {
@@ -145,8 +146,8 @@ struct State {
     /// What the running call may add to the storage folder.
     budget: files::Budget,
     http: wasmtime_wasi_http::WasiHttpCtx,
-    /// The hosts its requests may reach, and what it was refused.
-    hosts: net::Hosts,
+    /// The running call's deadline, for the requests it sends.
+    network: net::Network,
     /// Its app's host services (`octosense:host`), when the embedder gives
     /// them.
     host_calls: host::Calls,
@@ -166,7 +167,7 @@ impl wasmtime_wasi_http::WasiHttpView for State {
         wasmtime_wasi_http::WasiHttpCtxView {
             ctx: &mut self.http,
             table: &mut self.table,
-            hooks: &mut self.hosts,
+            hooks: &mut self.network,
         }
     }
 }
@@ -210,11 +211,16 @@ impl Runtime {
             None => self.compile_component(bytes, cached.as_ref())?,
         };
         let (exports, skipped) = check_component(&self.engine, &component)?;
+        let uses_network = component
+            .component_type()
+            .imports(&self.engine)
+            .any(|(name, _)| name.starts_with("wasi:http/"));
         Ok(ComponentProgram {
             component,
             exports,
             skipped,
             from_cache,
+            uses_network,
         })
     }
 
@@ -288,19 +294,20 @@ impl Runtime {
                 Box::new(|| true) as Box<dyn Fn() -> bool + Send + Sync>,
             ),
         };
-        // A component that may reach the network waits for replies: its
-        // calls get the longer deadline.
-        let call_deadline = if grants.http_hosts.is_empty() {
-            self.limits.deadline
-        } else {
+        // A component that imports wasi:http waits for replies: its calls
+        // get the longer deadline.
+        let call_deadline = if program.uses_network {
             self.limits.network_deadline.max(self.limits.deadline)
+        } else {
+            self.limits.deadline
         };
         let guard = Arc::new(InvocationGuard {
             deadline: deadline.min(Instant::now() + call_deadline),
             pending,
         });
-        let mut hosts = net::Hosts::new(grants.http_hosts.clone(), grants.http_local);
-        hosts.deadline = Some(guard.deadline);
+        let network = net::Network {
+            deadline: Some(guard.deadline),
+        };
         let mut store = Store::new(
             &self.engine,
             State {
@@ -311,7 +318,7 @@ impl Runtime {
                 // Start-up code may read the folder, not grow it.
                 budget: files::Budget::default(),
                 http: wasmtime_wasi_http::WasiHttpCtx::new(),
-                hosts,
+                network,
                 host_calls: None,
             },
         );
@@ -626,7 +633,7 @@ impl ComponentInstance {
         let args = arguments(&params, args).map_err(CallError::Guest)?;
         let results_ty: Vec<Type> = fty.results().collect();
         let mut results = vec![Val::Bool(false); results_ty.len()];
-        self.store.data_mut().hosts.deadline = Some(guard.deadline);
+        self.store.data_mut().network.deadline = Some(guard.deadline);
         self.store.data_mut().guard = Some(guard);
         self.store.set_epoch_deadline(1);
         let outcome = func
@@ -634,10 +641,6 @@ impl ComponentInstance {
             .map_err(trap);
         self.store.data_mut().guard = None;
         self.collect_logs();
-        for (host, why) in self.store.data_mut().hosts.take_refused() {
-            self.logs
-                .push(format!("a request to {host} was refused: {why}"));
-        }
         // A refused write reaches the guest as a full disk or, through a
         // stream, a bare I/O error: say what it was.
         let refused = self.store.data().budget.take_refused();

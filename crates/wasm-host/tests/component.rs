@@ -159,8 +159,6 @@ fn files_live_only_in_the_granted_storage_folder() {
     let grants = Grants {
         storage_dir: Some(dir.clone()),
         read_only: false,
-        http_hosts: Vec::new(),
-        http_local: false,
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
     let written = instance
@@ -191,8 +189,6 @@ fn files_live_only_in_the_granted_storage_folder() {
     let read_only = Grants {
         storage_dir: Some(dir.clone()),
         read_only: true,
-        http_hosts: Vec::new(),
-        http_local: false,
     };
     let mut reader = rt
         .instantiate_component(&program, &read_only, None)
@@ -234,8 +230,6 @@ fn the_storage_budget_refuses_growth_and_returns_freed_bytes() {
     let grants = Grants {
         storage_dir: Some(dir.clone()),
         read_only: false,
-        http_hosts: Vec::new(),
-        http_local: false,
     };
     let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
     assert_eq!(instance.storage_budget(), None);
@@ -327,47 +321,35 @@ fn serve(reply: Option<&'static str>) -> String {
     address
 }
 
-/// `wasi:http` reaches exactly the app's hosts, by a script's rule; anything
-/// else is refused inside the component and logged.
+/// `wasi:http` reaches any host, as the app's script does: an app's network
+/// declarations are shown at install, not enforced (the ruling of
+/// 8 October 2026), and no grant is needed.
 #[test]
-fn http_reaches_only_the_apps_hosts() {
+fn http_reaches_any_host() {
     let rt = runtime();
     let program = rt.load_component(FETCH).unwrap();
     let server = serve(Some("hello"));
     let port = server.rsplit(':').next().unwrap().to_string();
-    let grants = Grants {
-        http_hosts: vec![server.clone()],
-        // A local test server: this device, which only a test may reach.
-        http_local: true,
-        ..Grants::default()
-    };
-    let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
+    let mut instance = rt
+        .instantiate_component(&program, &Grants::default(), None)
+        .unwrap();
     assert_eq!(
         instance
             .call_json("get", &json!(format!("http://{server}/hi")))
             .unwrap(),
         json!("200 hello")
     );
-    // The same server under another name is another host.
-    match instance.call_json("get", &json!(format!("http://localhost:{port}/hi"))) {
-        Err(CallError::Guest(why)) => assert!(why.contains("HttpRequestDenied"), "{why}"),
-        other => panic!("{other:?}"),
-    }
-    assert!(
-        instance.take_logs().iter().any(|l| l
-            == &format!(
-            "a request to localhost:{port} was refused: it is not one of the app's network hosts"
-        )),
-        "the refusal is logged"
+    // The same server under another name: still reached.
+    assert_eq!(
+        instance
+            .call_json("get", &json!(format!("http://localhost:{port}/hi")))
+            .unwrap(),
+        json!("200 hello")
     );
-    // No hosts, no network.
-    let mut offline = rt
-        .instantiate_component(&program, &Grants::default(), None)
-        .unwrap();
-    match offline.call_json("get", &json!(format!("http://{server}/hi"))) {
-        Err(CallError::Guest(why)) => assert!(why.contains("HttpRequestDenied"), "{why}"),
-        other => panic!("{other:?}"),
-    }
+    assert!(
+        instance.take_logs().is_empty(),
+        "nothing is refused or logged"
+    );
 }
 
 /// A request waits outside the guest, where the epoch check cannot end it:
@@ -385,13 +367,9 @@ fn a_request_that_never_answers_ends_at_the_deadline() {
     .unwrap();
     let program = rt.load_component(FETCH).unwrap();
     let server = serve(None);
-    let grants = Grants {
-        http_hosts: vec![server.clone()],
-        // A local test server: this device, which only a test may reach.
-        http_local: true,
-        ..Grants::default()
-    };
-    let mut instance = rt.instantiate_component(&program, &grants, None).unwrap();
+    let mut instance = rt
+        .instantiate_component(&program, &Grants::default(), None)
+        .unwrap();
     let started = std::time::Instant::now();
     let result = instance.call_json("get", &json!(format!("http://{server}/")));
     assert!(result.is_err(), "{result:?}");

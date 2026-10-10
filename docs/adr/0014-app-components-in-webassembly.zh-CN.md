@@ -64,11 +64,11 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
      的流）替换为计量增长的版本，把释放字节的调用（截断的 `open-at`、`unlink-file-at`）替换为
      归还字节的版本。超出预算的写入在组件内部失败，调用的错误会说明原因。我们没有采用"每次调用后
      检查"：一次调用在检查之前就可能写入数 GB，而且每次调用要遍历文件夹两次。
-   - **`wasi:http` 出站（第 3 阶段）：** 只能在有 `net` 时访问清单 `network.hosts` 中的主机，规则与
-     脚本相同（主机完全列出，不区分大小写，端口不限），使用 HTTPS，并且即使列出也绝不访问设备本身或其本地网络
-     （比脚本的规则更严格：脚本列出 `127.0.0.1` 就能访问本机的所有服务）。请求在客体
-     之外等待，epoch 检查无法结束它，因此请求的超时被限制在调用的截止时间内；可以访问网络的组件
-     每次调用有 10 秒。
+   - **`wasi:http` 出站（第 3 阶段）：** 可以访问任何主机。应用声明 `net`，让安装界面说明它会使用
+     网络，但运行时既不强制 `net`，也不强制 `network.hosts`：2026 年 10 月 8 日的裁定取消了按应用的
+     运行时闸门，边界是操作系统和宿主的 API 表面。把组件限制在应用的 `network.hosts` 内、后来又限制
+     为公共 HTTPS 主机的做法，都已按该裁定否决。请求在客体之外等待，epoch 检查无法结束它，因此
+     请求的超时被限制在调用的截止时间内；导入 `wasi:http` 的组件每次调用有 10 秒。
    - **`octosense:host`（第 3 阶段）：** `request(service, args)` 可以调用应用已获授权的宿主服务，
      像应用脚本的 `host.request` 一样在 UI 线程上分派，但不打开面板、不询问用户（只能调用后台界面
      可以调用的方法），并且绝不调用 `wasm.*`。
@@ -86,8 +86,8 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
    - **分发：** SDK 发布到 crates.io（需维护者批准）；发布前使用 git 依赖。
 6. **审核能看到组件的访问范围。** App Hub 的闸门读取每个组件的导入：
    - 拒绝允许集合以外的导入；
-   - `wasi:filesystem` 需要 `storage` 能力，`wasi:http` 需要 `network.hosts`；
-   - 告诉审核者组件能访问什么，例如“其应用文件夹中的文件；访问 api.example.com 的 HTTPS”。
+   - `wasi:filesystem` 需要 `storage` 能力，`wasi:http` 需要 `net` 能力，以便安装界面展示它们；
+   - 告诉审核者组件能访问什么，例如“其应用文件夹中的文件；网络”。
    组件需要新的应用合约版本。
 
 ## 阶段
@@ -96,7 +96,7 @@ crates.io 上的大多数 crate 要么需要上述缺失能力中的某些（时
 | --- | --- |
 | 1. 运行时验证原型（本 PR） | `crates/wasm-host::component`：加载、检查导入、列出导出及其 WIT 签名、长期存活的实例、JSON 调用、上述 WASI 子集与存储预打开、超时、内存上限和日志。测试运行一个用普通 cargo 构建的、未作修改的 crate（`pulldown-cmark`），并拒绝导入 `wasi:sockets` 的组件。 |
 | 2. 开发者可用 | shell 的 `wasm` 服务：从 `fns/` 加载组件、`wasm.<function>` 调用、按应用的实例、来自清单的存储授权，以及组件写入的存储配额计量。提高组件的输入上限。guest SDK 及其宏；`octo wasm new/build/doctor`；App Hub 闸门检查与合约版本；文档与示例应用。 |
-| 3. 访问能力与平台 | 受 `network.hosts` 约束的 `wasi:http` 出站；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；iOS 使用 Pulley（Wasmtime 的解释器），OpenHarmony 在其 JIT 策略明确前也使用 Pulley；Windows 待其 CI 运行运行时测试后开启。 |
+| 3. 访问能力与平台 | 可访问任何主机的 `wasi:http` 出站（以 `net` 声明，不在运行时强制）；`octosense:host` 导入，以与 `host.request` 相同的检查调用主机服务；安装时编译，让手机跳过首次编译；iOS 使用 Pulley（Wasmtime 的解释器），OpenHarmony 在其 JIT 策略明确前也使用 Pulley；Windows 待其 CI 运行运行时测试后开启。 |
 | 4. 共享组件 | App Hub 目录中经过审核、带版本的组件，应用可以像 npm 包一样依赖它们。安装器负责校验，每个应用仍有自己的实例和授权。 |
 
 ## 考虑过的替代方案

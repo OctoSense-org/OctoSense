@@ -66,14 +66,11 @@ Rust crate 构建。服务按文件头区分两者，一个应用包可以同时
   内部失败：`ftruncate` 报告磁盘已满，普通写入报告 I/O 错误，因为 wasi-libc 把任何失败的
   流写入都报告为 I/O 错误。这时请求的错误以 "a write was refused: the storage budget is
   used up" 结尾。改写、截断和删除会归还字节，因此组件可以自己腾出空间。
-- **网络。** 应用有 `net` 能力时，组件的 `wasi:http` 请求按脚本的规则访问应用的
-  `network.hosts`：主机必须完全列出，不区分大小写，端口不限。请求使用 HTTPS，并且即使应用列出了
-  这样的主机，也绝不访问设备本身或其本地网络：不访问环回、私有或链路本地地址，也不访问
-  `localhost`、单标签名称或 `.local`、`.lan`、`.internal` 名称。解析为本地地址的公共名称目前还
-  检查不到，脚本也是如此。可以访问网络的组件每次调用有 10 秒，
-  而不是 2 秒；每个请求的连接、首字节和字节间超时都随调用结束。被拒绝的请求在组件内部失败
-  （`HttpRequestDenied`），应用的日志会说明原因："a request to … was refused: it is not one
-  of the app's network hosts"。
+- **网络。** 组件的 `wasi:http` 请求可以访问任何主机，与设备本身能访问的范围相同：应用的网络
+  声明（`net`、`network.hosts`）在安装时展示，运行时不强制。2026 年 10 月 8 日的裁定取消了按应用
+  的运行时闸门，边界是操作系统和宿主的 API 表面。（在 Makepad 分支去掉之前，应用的 Splash 脚本
+  仍要经过 Splash 运行时的 URL 闸门。）导入 `wasi:http` 的组件每次调用有 10 秒，而不是 2 秒；
+  每个请求的连接、首字节和字节间超时都随调用结束。
 - **宿主服务。** 通过 `octosense:host`
   （[`crates/wasm-host/wit/octosense-host.wit`](../crates/wasm-host/wit/octosense-host.wit)），
   组件可以用 `request(service, args)` 调用应用已获授权的宿主服务，与应用的脚本相同：同样的服务族，

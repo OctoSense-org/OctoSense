@@ -56,8 +56,8 @@ const LOG_LINES: usize = 64;
 pub struct Limits {
     /// How long one call may run.
     pub deadline: Duration,
-    /// How long one call may run when it may reach the network (a
-    /// component granted hosts): it waits for replies.
+    /// How long one call may run when it may wait for the network (a
+    /// component that imports `wasi:http`).
     pub network_deadline: Duration,
     /// The most linear memory an instance may have.
     pub memory_bytes: usize,

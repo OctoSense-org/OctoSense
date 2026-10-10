@@ -78,8 +78,6 @@ fn area_env() -> Arc<dyn AreaEnv> {
 }
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
-/// Tests only: let components reach a local server (see [`Grants::http_local`]).
-static HTTP_LOCAL_FOR_TESTS: AtomicBool = AtomicBool::new(false);
 
 // ------------------------------------------------- a component's host calls
 
@@ -615,9 +613,6 @@ struct Lab {
     owner: BTreeMap<String, usize>,
     stats: BTreeMap<String, Stats>,
     admission: Admission,
-    /// The hosts its components' `wasi:http` may reach: the admitted
-    /// policy's network hosts, granted `net`.
-    http_hosts: Vec<String>,
     /// Its host services, as its components reach them (`octosense:host`).
     host_calls: Arc<dyn HostCalls>,
 }
@@ -691,23 +686,6 @@ fn warm_now(app: &str) -> Result<(usize, usize, f64), String> {
     Ok((compiled, files.len(), started.elapsed().as_secs_f64() * 1e3))
 }
 
-/// The hosts an app's components may reach over HTTP(S): its policy's
-/// `network.hosts` when it is granted `net`, as for its script; none when
-/// the manifest does not resolve.
-fn http_hosts(manifest: &Value) -> Vec<String> {
-    let resolved =
-        octosense_app_contract::AppManifest::parse(&manifest.to_string()).and_then(|m| {
-            octosense_app_contract::resolve(
-                &m,
-                &octosense_app_contract::HostLimits::default().with_require_signature(false),
-            )
-        });
-    match resolved {
-        Ok(policy) if policy.allows("net") => policy.hosts.into_iter().collect(),
-        _ => Vec::new(),
-    }
-}
-
 struct Module {
     file: String,
     bytes: usize,
@@ -777,7 +755,6 @@ impl Lab {
             modules: Vec::new(),
             owner: BTreeMap::new(),
             stats: BTreeMap::new(),
-            http_hosts: http_hosts(&admission.manifest),
             host_calls: Arc::new(AppHostCalls {
                 app: app.to_string(),
                 host_dir: admission.root.join(".host"),
@@ -953,10 +930,6 @@ impl Lab {
         let grants = Grants {
             storage_dir: area.as_ref().map(|a| a.root.clone()),
             read_only: false,
-            http_hosts: self.http_hosts.clone(),
-            // This device and its network are no app's to reach; only the
-            // service's own tests use a local server.
-            http_local: cfg!(test) && HTTP_LOCAL_FOR_TESTS.load(Ordering::Relaxed),
         };
         let app = self.app.clone();
         let host_calls = self.host_calls.clone();
@@ -1024,7 +997,7 @@ impl Lab {
                     "from_cache": m.from_cache, "invocations": m.invocations, "instances": instances, "instance_policy": "kept-between-calls",
                     "live": live.is_some(), "storage": live.as_ref().map(|(_, g)| if g.storage_dir.is_some() { "app folder" } else { "none" }),
                     "storage_left": live.as_ref().and_then(|(i, _)| i.storage_budget()),
-                    "http_hosts": live.as_ref().map(|(_, g)| g.http_hosts.clone()),
+                    "network": program.uses_network(),
                     "exports": program.exports().iter().map(|e| json!({"name": e.name, "wit": e.wit_name,
                         "params": e.params.iter().map(|(n, t)| json!([n, t])).collect::<Vec<_>>(), "result": e.result})).collect::<Vec<_>>(),
                     "skipped": program.skipped().iter().map(|(n, why)| json!({"name": n, "why": why})).collect::<Vec<_>>()}),
@@ -2030,11 +2003,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    /// A component's requests reach its app's own hosts, as its script's
-    /// do: the admitted manifest's `network.hosts` with `net`, and nothing
-    /// for an app without `net`.
+    /// A component's requests reach any host: an app's network
+    /// declarations are shown at install, not enforced (the ruling of
+    /// 8 October 2026), so an app with neither `net` nor `network.hosts`
+    /// reaches a server on this device.
     #[test]
-    fn a_components_requests_reach_only_its_apps_hosts() {
+    fn a_components_requests_reach_any_host() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         std::thread::spawn(move || {
@@ -2068,36 +2042,25 @@ mod tests {
             bundle.join("fns/fetch.wasm"),
         )
         .unwrap();
-        let manifest = |granted: bool| {
-            let dir = script_apps::tests::stamped_bundle("wasmlab", "net", |_, _| {});
-            let mut manifest: Value =
-                serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap())
-                    .unwrap();
-            let _ = std::fs::remove_dir_all(&dir);
-            manifest["requires"] = json!(["wasm-components-v1"]);
-            if granted {
-                manifest["capabilities"] = json!(["wasm", "net"]);
-                manifest["network"] = json!({"hosts": ["127.0.0.1"]});
-            } else {
-                manifest["capabilities"] = json!(["wasm"]);
-            }
-            manifest
-        };
-        assert_eq!(http_hosts(&manifest(true)), ["127.0.0.1"]);
-        assert!(http_hosts(&manifest(false)).is_empty());
+        let dir = script_apps::tests::stamped_bundle("wasmlab", "net", |_, _| {});
+        let mut manifest: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap())
+                .unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        manifest["requires"] = json!(["wasm-components-v1"]);
+        manifest["capabilities"] = json!(["wasm"]);
+        assert!(manifest.get("network").is_none());
         let host_dir = root.join(".host");
         let runtime = runtime(&host_dir).unwrap();
-        // The server is on this device, which only a test may reach.
-        HTTP_LOCAL_FOR_TESTS.store(true, Ordering::Relaxed);
-        let url = json!(format!("http://127.0.0.1:{port}/hi"));
-        for granted in [true, false] {
-            let admission = Admission {
-                root: root.clone(),
-                bundle: bundle.clone(),
-                manifest: manifest(granted),
-            };
-            let mut lab = Lab::from_bundle("os.wasmnet", runtime, admission, || Ok(())).unwrap();
+        let admission = Admission {
+            root: root.clone(),
+            bundle: bundle.clone(),
+            manifest,
+        };
+        let mut lab = Lab::from_bundle("os.wasmnet", runtime, admission, || Ok(())).unwrap();
+        for host in ["127.0.0.1", "localhost"] {
             let (_, reply) = pending_reply("os.wasmnet", &host_dir);
+            let url = json!(format!("http://{host}:{port}/hi"));
             let answer = lab.answer(
                 "get",
                 url.to_string().as_bytes(),
@@ -2105,17 +2068,9 @@ mod tests {
                 Instant::now() + REQUEST_TIMEOUT,
                 reply,
             );
-            if granted {
-                assert_eq!(answer.unwrap(), "200 hello");
-                assert_eq!(
-                    lab.describe()["modules"][0]["http_hosts"],
-                    json!(["127.0.0.1"])
-                );
-            } else {
-                let error = answer.unwrap_err();
-                assert!(error.contains("HttpRequestDenied"), "{error}");
-            }
+            assert_eq!(answer.unwrap(), "200 hello", "{host}");
         }
+        assert_eq!(lab.describe()["modules"][0]["network"], json!(true));
         let _ = std::fs::remove_dir_all(root);
     }
 

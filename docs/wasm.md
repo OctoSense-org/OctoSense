@@ -85,18 +85,14 @@ two kinds apart by the file's preamble, and a bundle may carry both.
   reports any failed stream write as one. The request's error then ends with
   "a write was refused: the storage budget is used up". Rewriting, truncating
   and deleting give bytes back, so a component can free space.
-- **The network.** With the `net` capability, its `wasi:http` requests reach
-  the app's `network.hosts` by a script's rule: the host listed exactly,
-  without regard to case, on any port. Requests use HTTPS, and never reach
-  this device or its local network, even when the app lists such a host:
-  not loopback, private or link-local addresses, nor `localhost`,
-  single-label or `.local`, `.lan`, `.internal` names. A public name that
-  resolves to a local address is not caught yet, as for scripts. A component that may
-  reach the network gets 10 s a call instead of 2 s, and each request's
-  connect, first-byte and between-bytes timeouts end with the call. A refused
-  request fails inside the component (`HttpRequestDenied`), and the app's log
-  says why: "a request to … was refused: it is not one of the app's network
-  hosts".
+- **The network.** Its `wasi:http` requests reach any host, as the device
+  can: an app's network declarations (`net`, `network.hosts`) are shown when
+  it is installed and not enforced while it runs. The ruling of 8 October
+  2026 removed the per-app runtime gates; the OS and the host's API surface
+  are the boundary. (The app's Splash script still passes the Splash
+  runtime's URL gate until the Makepad fork drops it.) A component that
+  imports `wasi:http` gets 10 s a call instead of 2 s, and each request's
+  connect, first-byte and between-bytes timeouts end with the call.
 - **Host services.** Through `octosense:host`
   ([`crates/wasm-host/wit/octosense-host.wit`](../crates/wasm-host/wit/octosense-host.wit)),
   `request(service, args)` calls one of the host services its app is
