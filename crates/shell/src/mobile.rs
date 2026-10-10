@@ -330,6 +330,12 @@ impl PhoneState {
     /// native keyboard (the desktop preview), and half a second after focus
     /// if none came (a hardware keyboard).
     pub fn search_keyboard_lift(&self, now: f64) -> f64 {
+        // Focus is released before the IME's hide animation ends. Once
+        // KeyboardView restores the full body, keep the outgoing field above
+        // the still-visible keyboard instead of jumping underneath it.
+        if self.search_closing {
+            return (self.native_keyboard - self.body_reflow).max(0.0);
+        }
         if !self.search_focused || self.native_keyboard_seen <= 0.0 {
             return 0.0;
         }
@@ -701,6 +707,23 @@ mod tests {
         for _ in 0..120 {phone.step(1.0/60.0);}
         assert_eq!(phone.screen,PhoneScreen::Home);
         assert_eq!(phone.search_reveal,0.0);
+    }
+
+    #[test]
+    fn search_dismissal_tracks_the_keyboard_after_focus_and_body_reflow_end() {
+        let mut phone = PhoneState::default();
+        phone.search_closing = true;
+        phone.search_focused = false;
+        phone.native_keyboard = 320.0;
+        phone.body_reflow = 320.0;
+        let full_height = 800.0;
+        assert_eq!(full_height - phone.body_reflow - phone.search_keyboard_lift(10.0), 480.0);
+        phone.body_reflow = 0.0;
+        assert_eq!(full_height - phone.body_reflow - phone.search_keyboard_lift(10.0), 480.0);
+        phone.native_keyboard = 160.0;
+        assert_eq!(full_height - phone.search_keyboard_lift(10.0), 640.0);
+        phone.native_keyboard = 0.0;
+        assert_eq!(phone.search_keyboard_lift(10.0), 0.0);
     }
 
     #[test]
