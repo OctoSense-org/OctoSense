@@ -51,12 +51,26 @@
 
 启用 `toolbox-peers` 时，工具箱通过 Shell 的工具中继服务应用 Agent。系统应用和已准入的商店应用遵循相同规则，没有额外的 `os.*` 限制。
 
-| 显式选择且允许的工具能力 | 提供的工具 |
+| 脚本应用在 `agent.tools` 中请求的精确名称 | 提供的工具 |
 | --- | --- |
-| `research` | `workflow.run`、`workflow.fork`、`toolbox.search`、`toolbox.web_read` |
-| `crawl`，且范围中的 `max_depth`、`max_pages` 大于 0 | `toolbox.deep_crawl` |
+| 没有请求工具箱工具 | 无 |
+| `workflow.run` / `workflow.fork` | 仅请求的那个工具 |
+| `toolbox.search` / `toolbox.web_read` | 仅请求的那个工具 |
+| `toolbox.deep_crawl`，且 `max_depth`、`max_pages` 大于 0 | `toolbox.deep_crawl` |
 
-这里的选择描述实际共享工具和资源范围，不能因宿主 API 声明改为描述性就自动开放。调用方必须提供经过准入和摘要校验的 manifest。中继仍检查 Agent 同意、工具授权和需要的审批；执行器再次核对工具授权。取消的调用不返回结果。
+`ToolboxGrant::for_manifest` 从经过准入和摘要校验的 manifest 读取 `agent.tools`，忽略 `capabilities`。省略能力说明不会禁用已请求的工具，仅说明 `research`/`crawl` 也不会获得工具。顶层 `research` 对象仍使用 octos 的 `Scope` 字段限制资源范围；只请求搜索不会连带获得工作流写入、网页读取或爬取工具。
+
+例如，下面的 manifest 片段只请求搜索和有范围限制的爬取：
+
+```json
+{
+  "capabilities": [],
+  "agent": {"profile": "read-only", "tools": ["toolbox.search", "toolbox.deep_crawl"]},
+  "research": {"max_depth": 2, "max_pages": 5}
+}
+```
+
+原生应用的 `for_module` 保留随宿主编译、经审阅的工具能力选择。中继仍检查 Agent 同意、跨应用工具授权及必要审批；执行器再次核对精确工具名称，取消的调用不返回结果。内核工具单独管理：受限应用只能选择宿主合约允许的名称（`ask_user_question`），工具箱访问不开放任意内核工具。
 
 模板模型调用与 `model.complete` 共用供应商和预算。结果写入宿主持有的 `<apps root>/.host/toolbox/<app id>`，供 Glance 的 `sys.digest` 读取。手机默认启用工具箱；桌面可通过同名 feature 启用。手机的隐藏系统 WebView 可辅助读取需要渲染的网页。
 

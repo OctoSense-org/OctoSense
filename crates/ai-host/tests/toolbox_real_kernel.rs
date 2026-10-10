@@ -133,8 +133,12 @@ fn a_real_peer_is_offered_exactly_its_granted_toolbox_tools_after_consent_and_a_
             Ok(PeerToolbox::from_host(Library::builtin().map_err(|e| e.to_string())?, fixture::host(&data), backend))
         }),
     );
-    // News declares research (and not crawl); research is granted.
-    executor.set_grant("os.news", ToolboxGrant::for_manifest("os.news", &json!({"id": "os.news", "capabilities": ["research"]})));
+    // This admitted fixture requests the four research tools explicitly;
+    // omitted capability disclosures do not deny those shared tool requests.
+    executor.set_grant("os.news", ToolboxGrant::for_manifest("os.news", &json!({
+        "id": "os.news", "capabilities": [],
+        "agent": {"tools": ["workflow.run", "workflow.fork", "toolbox.search", "toolbox.web_read"]}
+    })));
     let host = Arc::new(Relay { executor, consent: AtomicBool::new(false), ran: Mutex::new(Vec::new()) });
 
     let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();

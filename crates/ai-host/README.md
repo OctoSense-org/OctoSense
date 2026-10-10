@@ -108,23 +108,35 @@ authorizes each call and routes it to the toolbox's executor. This crate adds
 only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
 `peer` module):
 
-| Declared and granted | Offered (risk), each `app: "toolbox"` |
+| Script app's exact `agent.tools` request | Offered tool (risk), `app: "toolbox"` |
 | --- | --- |
-| neither | nothing |
-| `research` | `workflow.run` (read), `workflow.fork` (act), `toolbox.search` (read), `toolbox.web_read` (read) |
-| `crawl`, with `max_depth` and `max_pages` above 0 in the scope | `toolbox.deep_crawl` (read) |
+| no toolbox tool requested | nothing |
+| `workflow.run` / `workflow.fork` | that requested tool only (read / act) |
+| `toolbox.search` / `toolbox.web_read` | that requested tool only (read) |
+| `toolbox.deep_crawl`, with positive `max_depth` and `max_pages` | `toolbox.deep_crawl` (read) |
 
 - `catalog()`: every toolbox tool, `shareable`, owned by `toolbox`; the relay
   declares it once and grants each app its `ToolboxGrant::tools()`.
-- `ToolboxGrant`: what the app declares AND the person granted
-  (`ToolboxGrant::new(app, declared, granted, scope)`). A native module's
-  declared capabilities are reviewed with the shell (`for_module`). A script
-  app's manifest (`for_manifest`: `research`/`crawl` in `capabilities`, the
-  scope in octos's `Scope` shape under the top-level `research` object) must
-  come from the shell's admitted, digest-checked bundle. Store and system
-  apps follow the same policy. These settings select actual shared tools
-  and resource scopes; removing host-service declaration gates does not
-  grant every toolbox tool or bypass agent consent and relay approvals.
+- `ToolboxGrant::for_manifest` reads exact shared tool requests from an
+  admitted, digest-checked manifest's `agent.tools`. It ignores `capabilities`:
+  omitted disclosures do not deny a requested tool, and a `research`/`crawl`
+  disclosure alone grants none. The top-level `research` object still bounds
+  resource use with octos's `Scope` fields. Store and system apps follow the
+  same policy. Selecting search never also grants workflow writes or crawling.
+- Native `for_module` retains the shell's compiled, reviewed family offer;
+  `ToolboxGrant::new(app, declared, granted, scope)` intersects that host
+  selection. Neither path bypasses agent consent or relay approval.
+
+For example, this manifest excerpt requests only search and bounded crawling:
+
+```json
+{
+  "capabilities": [],
+  "agent": {"profile": "read-only", "tools": ["toolbox.search", "toolbox.deep_crawl"]},
+  "research": {"max_depth": 2, "max_pages": 5}
+}
+```
+
 - `ToolboxExecutor`: the relay's executor for the `toolbox` owner. It checks
   the calling app's grant again (a forged `toolbox.deep_crawl` is
   `not_granted`), runs the call with the app's `AppContext` (id, grants,
@@ -135,10 +147,9 @@ only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
 - Consent (the #120 first-use sheet) is the relay's: no toolbox tool is
   offered to an app, or run for it, before the person allowed its agent.
 
-Nothing else is held back: octos's own generic tools (`deep_research` among
-them) are the kernel's, and which of them a peer gets is its `generic_tools`
-list: exactly the kernel tools its manifest names and the person granted,
-which the broker sets with every registration.
+Kernel tools are separate from shared toolbox tools. Contained apps keep
+only the kernel tool names the host contract permits (`ask_user_question`),
+selected in `agent.tools`; toolbox access never adds arbitrary kernel tools.
 
 Which shells build it: the phone's default features include `toolbox-peers`
 (`phone/Cargo.toml`, generated from `native-apps.json`); the desktop's do
