@@ -112,10 +112,10 @@ index 371b5401b..172a09162 100644
      fn android_requires_physical_unobscured_touch_and_never_cancel() {
          for action in [0, 1, 2, 5, 6] {
 diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
-index df40d386d..064e008f0 100644
+index fe73a2d47..342378ca8 100644
 --- a/platform/src/os/apple/macos/macos.rs
 +++ b/platform/src/os/apple/macos/macos.rs
-@@ -1067,9 +1067,9 @@ fn cocoa_event_callback(
+@@ -1076,9 +1076,9 @@ fn cocoa_event_callback(
          }
          // send a mouse up when dragging starts
          match &event {
@@ -127,7 +127,7 @@ index df40d386d..064e008f0 100644
              | MacosEvent::Scroll(_)
              | MacosEvent::KeyDown(_)
              | MacosEvent::KeyUp(_)
-@@ -1505,7 +1505,7 @@ fn cocoa_event_callback(
+@@ -1518,7 +1518,7 @@ fn cocoa_event_callback(
                  // ok here we send out to all our childprocesses
                  self.handle_repaint(metal_windows, metal_cx);
              }
@@ -136,7 +136,7 @@ index df40d386d..064e008f0 100644
                  if !self.windows.is_valid(e.window_id) || !self.windows[e.window_id].is_created {
                      return EventFlow::Wait;
                  }
-@@ -1513,7 +1513,7 @@ fn cocoa_event_callback(
+@@ -1526,7 +1526,7 @@ fn cocoa_event_callback(
                  self.dpi_override_scale(&mut e.abs, e.window_id);
                  self.fingers.process_tap_count(e.abs, e.time);
                  self.fingers.mouse_down(e.button, e.window_id);
@@ -145,7 +145,7 @@ index df40d386d..064e008f0 100644
                  self.update_pointer_capture_pacing();
              }
              MacosEvent::MouseMove(mut e) => {
-@@ -1545,7 +1545,7 @@ fn cocoa_event_callback(
+@@ -1558,7 +1558,7 @@ fn cocoa_event_callback(
                  self.fingers.cycle_hover_area(live_id!(mouse).into());
                  self.fingers.switch_captures();
              }
@@ -154,7 +154,7 @@ index df40d386d..064e008f0 100644
                  if !self.windows.is_valid(e.window_id) || !self.windows[e.window_id].is_created {
                      return EventFlow::Wait;
                  }
-@@ -1553,7 +1553,7 @@ fn cocoa_event_callback(
+@@ -1566,7 +1566,7 @@ fn cocoa_event_callback(
                  let button = e.button;
                  let abs = e.abs;
                  let modifiers = e.modifiers;
@@ -384,10 +384,10 @@ index d11b9b962..0ca4dfa38 100644
          }
          // Dispatch any synthetic geom changes queued during the original
 diff --git a/platform/src/remote.rs b/platform/src/remote.rs
-index 4d348fa72..147397b49 100644
+index 6052e9cba..b6ab41df8 100644
 --- a/platform/src/remote.rs
 +++ b/platform/src/remote.rs
-@@ -997,7 +997,7 @@ pub(crate) fn next_grab_deadline() -> Option<Instant> {
+@@ -996,7 +996,7 @@ pub(crate) fn next_grab_deadline() -> Option<Instant> {
      }
  
      fn poll_with_present(cx: &mut Cx, mut present: impl FnMut(&mut Cx, WindowId) -> Option<bool>) -> bool {

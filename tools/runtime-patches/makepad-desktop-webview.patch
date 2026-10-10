@@ -1,16 +1,16 @@
 diff --git a/platform/Cargo.toml b/platform/Cargo.toml
-index 8f4a84ffd..31b5a5398 100644
+index 41a615d82..93aa67187 100644
 --- a/platform/Cargo.toml
 +++ b/platform/Cargo.toml
-@@ -43,6 +43,7 @@ makepad-zune-png = { path = "../libs/zune/zune-png", version = "0.5.2" }
- makepad-tsdf = { path = "../libs/tsdf", version = "0.1.0" }
+@@ -44,6 +44,7 @@ makepad-tsdf = { path = "../libs/tsdf", version = "0.1.0" }
  smallvec = { version = "1.15", path = "../libs/smallvec" }
  bitflags = { version = "2.10", path = "../libs/bitflags" }
+ foldhash = { version = "0.2", path = "../libs/vulkan/foldhash" }
 +url = "2.5.8"
  
  [target.wasm32-unknown-unknown.dependencies]
  makepad-wasm-bridge = { path = "../libs/wasm_bridge", version = "1.0.0" }
-@@ -107,6 +108,9 @@ ohos-sys = { version = "0.2.1", features = ["xcomponent"] }
+@@ -108,6 +109,9 @@ ohos-sys = { version = "0.2.1", features = ["xcomponent"] }
  path = "../libs/futures_legacy"
  version = "1.0.0"
  
@@ -20,7 +20,7 @@ index 8f4a84ffd..31b5a5398 100644
  [target.'cfg(windows)'.dependencies.windows-core]
  path = "../libs/windows/windows-core"
  version = "0.62.2"
-@@ -165,3 +169,8 @@ features = [
+@@ -166,3 +170,8 @@ features = [
  ## `windows-targets` v0.52.*, so we use that version to avoid duplicates.
  [target.'cfg(windows)'.dependencies.windows-targets]
  version = "0.52"
@@ -30,7 +30,7 @@ index 8f4a84ffd..31b5a5398 100644
 +version = "=0.62.2"
 +features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"]
 diff --git a/platform/src/cx_api.rs b/platform/src/cx_api.rs
-index 96085e29b..8c8072dc9 100644
+index 8ad82ca09..d419cea94 100644
 --- a/platform/src/cx_api.rs
 +++ b/platform/src/cx_api.rs
 @@ -209,8 +209,8 @@ pub fn close(&mut self) {
@@ -637,10 +637,10 @@ index e234e0fee..1994e6a98 100644
  // this has to carry the same gate as its siblings: Android and OHOS are
  // `os::linux` too, and would otherwise fail to resolve `wayland_client`.
 diff --git a/platform/src/os/linux/wayland/linux_wayland.rs b/platform/src/os/linux/wayland/linux_wayland.rs
-index 9fa1ec6a8..94021ab60 100644
+index 1a814f7e8..f3d3b916b 100644
 --- a/platform/src/os/linux/wayland/linux_wayland.rs
 +++ b/platform/src/os/linux/wayland/linux_wayland.rs
-@@ -184,6 +184,7 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
+@@ -198,6 +198,7 @@ fn state_event_callback(&mut self, state: &mut WaylandState, event: XlibEvent) -
              }
          }
          match event {
@@ -648,7 +648,7 @@ index 9fa1ec6a8..94021ab60 100644
              XlibEvent::WindowGotFocus(window_id) => {
                  // repaint all window passes. Metal sometimes doesnt flip buffers when hidden/no focus
                  let mut cx = self.cx.borrow_mut();
-@@ -674,6 +675,14 @@ fn handle_platform_ops(&self, state: &mut WaylandState) -> EventFlow {
+@@ -736,6 +737,14 @@ fn handle_platform_ops(&self, state: &mut WaylandState) -> EventFlow {
                  }
              }
              match op {
@@ -664,7 +664,7 @@ index 9fa1ec6a8..94021ab60 100644
                      #[cfg(not(use_vulkan))]
                      let gl_cx = cx.os.opengl_cx.as_ref().unwrap();
 diff --git a/platform/src/os/linux/windowing_backend.rs b/platform/src/os/linux/windowing_backend.rs
-index 499c6dc3c..f7e8af444 100644
+index aeb3efaac..4cbfdb617 100644
 --- a/platform/src/os/linux/windowing_backend.rs
 +++ b/platform/src/os/linux/windowing_backend.rs
 @@ -11,6 +11,13 @@
@@ -718,7 +718,7 @@ index 499c6dc3c..f7e8af444 100644
                      println!("Reason: DISPLAY environment variable is set");
                  } else {
 diff --git a/platform/src/os/linux/x11/linux_x11.rs b/platform/src/os/linux/x11/linux_x11.rs
-index b5c58e27e..c445ec3b0 100644
+index 4df47ec0f..55a618663 100644
 --- a/platform/src/os/linux/x11/linux_x11.rs
 +++ b/platform/src/os/linux/x11/linux_x11.rs
 @@ -1,6 +1,7 @@
@@ -805,8 +805,8 @@ index b5c58e27e..c445ec3b0 100644
 +                }
                  let mut cx = self.cx.borrow_mut();
                  if e.timer_id == 0 {
-                     if SignalToUI::check_and_clear_ui_signal() {
-@@ -567,6 +587,7 @@ fn handle_platform_ops(
+                     let internal_signal = SignalToUI::check_and_clear_internal_signal();
+@@ -571,6 +591,7 @@ fn handle_platform_ops(
                      opengl_windows.push(opengl_window);
                  }
                  CxOsOp::CloseWindow(window_id) => {
@@ -814,7 +814,7 @@ index b5c58e27e..c445ec3b0 100644
                      drop(cx);
                      self.close_popup_children(opengl_windows, xlib_app, window_id);
                      cx = self.cx.borrow_mut();
-@@ -596,7 +617,7 @@ fn handle_platform_ops(
+@@ -600,7 +621,7 @@ fn handle_platform_ops(
                          }
                      }
                  }
@@ -823,7 +823,7 @@ index b5c58e27e..c445ec3b0 100644
                  CxOsOp::MinimizeWindow(window_id) => {
                      if let Some(window) =
                          opengl_windows.iter_mut().find(|w| w.window_id == window_id)
-@@ -912,6 +933,53 @@ fn handle_platform_ops(
+@@ -916,6 +937,53 @@ fn handle_platform_ops(
                          let _ = player.select_audio_track(index);
                      }
                  }
@@ -920,7 +920,7 @@ index 6e69c6605..84372712a 100644
      MouseDown(MouseDownEvent),
      MouseUp(MouseUpEvent),
 diff --git a/platform/src/os/windows/d3d11.rs b/platform/src/os/windows/d3d11.rs
-index f060468ab..6beec0f15 100644
+index 08802b7b0..1fdf234af 100644
 --- a/platform/src/os/windows/d3d11.rs
 +++ b/platform/src/os/windows/d3d11.rs
 @@ -33,7 +33,7 @@
@@ -932,7 +932,7 @@ index f060468ab..6beec0f15 100644
                      D3D_SRV_DIMENSION_TEXTURECUBE,
                  },
                  Direct3D11::{
-@@ -2542,15 +2542,19 @@ fn create_device_tier() -> windows_core::Result<(
+@@ -2543,15 +2543,19 @@ fn create_device_tier() -> windows_core::Result<(
              // before a hybrid-GPU transition or a driver reinstall keeps handing back the
              // adapter that went away. Recovery always starts from a fresh factory.
              let factory: IDXGIFactory2 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))?;
@@ -969,7 +969,7 @@ index 19aea0eb4..9ec64eaec 100644
  pub mod windows_media_engine_notify;
  pub mod windows_mf_source_reader;
 diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
-index c0404864b..19a5b124a 100644
+index 250cb26dd..b9c25eb14 100644
 --- a/platform/src/os/windows/windows.rs
 +++ b/platform/src/os/windows/windows.rs
 @@ -24,6 +24,7 @@
@@ -988,7 +988,7 @@ index c0404864b..19a5b124a 100644
                  // Cascade-close popups parented to this window. Their own WindowClosed
                  // arrives via the queued authentic event; removing the D3d11Window now
                  // makes the app's `WindowHandle::close()` response a no-op.
-@@ -990,6 +992,7 @@ fn handle_platform_ops(
+@@ -994,6 +996,7 @@ fn handle_platform_ops(
                      });
                  }
                  CxOsOp::CloseWindow(window_id) => {
@@ -996,7 +996,7 @@ index c0404864b..19a5b124a 100644
                      // The authentic WindowClosed event this triggers delivers
                      // Event::WindowClosed and the exit check; firing it here would double it.
                      // Remove the D3d11Window now so later ops cannot touch the destroyed hwnd.
-@@ -1290,6 +1293,51 @@ fn handle_platform_ops(
+@@ -1294,6 +1297,51 @@ fn handle_platform_ops(
                          player.set_playback_rate(rate);
                      }
                  }
@@ -1048,7 +1048,7 @@ index c0404864b..19a5b124a 100644
                  // Track selection is currently implemented on Linux GStreamer only.
                  CxOsOp::SelectVideoTrack(_, _) | CxOsOp::SelectAudioTrack(_, _) => {}
                  CxOsOp::AttachCameraNativePreview { .. }
-@@ -1424,6 +1472,7 @@ pub struct CxOs {
+@@ -1428,6 +1476,7 @@ pub struct CxOs {
      pub(crate) game_input_events: GameInputEventChannel,
      pub(crate) windows_game_input: Option<WindowsGameInput>,
      pub(crate) video_players: HashMap<LiveId, WindowsUnifiedVideoPlayer>,

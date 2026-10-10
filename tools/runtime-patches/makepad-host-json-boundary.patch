@@ -82,7 +82,7 @@ index 58c21a392..11292ce9e 100644
      fn numeric_string_conversion_handles_inline_and_heap_strings_and_yields_nan() {
          let mut host = ScriptVmHost::new((), ());
 diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
-index 81529af28..7028cd4ad 100644
+index 52cab0d95..73c28afce 100644
 --- a/widgets/src/splash_host.rs
 +++ b/widgets/src/splash_host.rs
 @@ -73,10 +73,30 @@ struct HostBridge {
@@ -117,7 +117,7 @@ index 81529af28..7028cd4ad 100644
  std::thread_local! {
      /// UI-thread-owned like the isolate registry itself.
      static BRIDGE: std::cell::RefCell<HostBridge> = Default::default();
-@@ -164,6 +184,7 @@ pub fn splash_host_respond(
+@@ -173,6 +193,7 @@ pub fn splash_host_respond(
      let Some(vm_id) = crate::widget_async::vm_for_heap(cx, heap_key) else {
          return SplashRespondOutcome::IsolateGone;
      };
@@ -125,7 +125,7 @@ index 81529af28..7028cd4ad 100644
      let mut delivered = true;
      let contained = crate::widget_async::contain_isolate_panic("host request callback", || {
      cx.with_script_vm_id(vm_id, |vm| {
-@@ -196,7 +217,7 @@ pub fn splash_host_respond(
+@@ -205,7 +226,7 @@ pub fn splash_host_respond(
              return;
          }
          vm.with_instruction_limit(WIDGET_SCRIPT_INSTRUCTION_LIMIT, |vm| {
@@ -134,7 +134,7 @@ index 81529af28..7028cd4ad 100644
          });
          if !crate::splash_policy::charge(heap_key, vm.last_limit_consumed() as u64) {
              crate::makepad_draw::log!("splash host: an app spent its instruction budget in a callback and is stopped");
-@@ -253,13 +274,38 @@ pub fn script_mod(vm: &mut ScriptVm) {
+@@ -262,13 +283,38 @@ pub fn script_mod(vm: &mut ScriptVm) {
              let on_result = script_value!(vm, args.on_result);
  
              let mut service = None;
@@ -177,15 +177,15 @@ index 81529af28..7028cd4ad 100644
  
              let callback = if let Some(obj) = on_result.as_object() {
                  Some(vm.bx.heap.new_fn_ref(obj))
-@@ -269,7 +315,6 @@ pub fn script_mod(vm: &mut ScriptVm) {
+@@ -278,7 +324,6 @@ pub fn script_mod(vm: &mut ScriptVm) {
                  return script_err_invalid_args!(vm.trap(), "on_result must be a fn or nil");
              };
  
 -            let heap_key = vm.bx.heap.heap_key();
-             // ADR 0002 phase 2: the capability list is checked HERE, not
-             // merely reported. A refused request never reaches the host's
-             // queue; the app hears `{is_ok: false, error}` like any other
-@@ -294,11 +339,11 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             // No capability check here: an app's capabilities are declarations
+             // since the ruling of 8 October 2026 (OctoSense #450), and the
+             // host decides, as for an isolate with no policy. A host service
+@@ -287,11 +332,11 @@ pub fn script_mod(vm: &mut ScriptVm) {
                  let mut b = b.borrow_mut();
                  b.next_req_id += 1;
                  let req_id = b.next_req_id;
@@ -199,7 +199,7 @@ index 81529af28..7028cd4ad 100644
                  b.queue.push(SplashHostRequest {
                      app_tag,
                      heap_key,
-@@ -356,6 +401,85 @@ pub fn script_mod(vm: &mut ScriptVm) {
+@@ -349,6 +394,85 @@ pub fn script_mod(vm: &mut ScriptVm) {
  mod tests {
      use super::*;
  

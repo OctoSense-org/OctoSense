@@ -131,7 +131,7 @@ index 7ee164283..a557a7c0d 100644
      }
  
 diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
-index 3709be935..47a105f48 100644
+index a5ddb50df..75362aa35 100644
 --- a/widgets/src/splash_host.rs
 +++ b/widgets/src/splash_host.rs
 @@ -146,6 +146,17 @@ pub(crate) fn prompts_allowed_for_heap(heap_key: usize) -> bool {

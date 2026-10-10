@@ -1,8 +1,8 @@
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-index 274f2bbad..adad3b647 100644
+index 870a02a13..b10842450 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-@@ -876,7 +876,12 @@ class MakepadSurface
+@@ -925,7 +925,12 @@ class MakepadSurface
              mEditorSession=session;
              if (mInputConnection!=null) {
                  if (initial) mInputConnection.bindInitialSession(session);

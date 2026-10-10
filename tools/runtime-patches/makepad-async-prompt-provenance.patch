@@ -448,7 +448,7 @@ index 6a8830380..0559cd9dd 100644
              }
              std::panic::resume_unwind(payload)
 diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
-index 679ac186a..257498cfc 100644
+index 73c28afce..78c9a78c4 100644
 --- a/widgets/src/splash_host.rs
 +++ b/widgets/src/splash_host.rs
 @@ -84,9 +84,9 @@ struct HostCallback {
@@ -471,7 +471,7 @@ index 679ac186a..257498cfc 100644
  }
  
  /// Drops all bridge state for reclaimed isolates (called from the isolate GC).
-@@ -348,7 +349,9 @@ pub fn script_mod(vm: &mut ScriptVm) {
+@@ -332,7 +333,9 @@ pub fn script_mod(vm: &mut ScriptVm) {
                  let mut b = b.borrow_mut();
                  b.next_req_id += 1;
                  let req_id = b.next_req_id;
@@ -483,7 +483,7 @@ index 679ac186a..257498cfc 100644
                      b.callbacks.insert((heap_key, req_id), HostCallback { function: callback, may_prompt });
                  }
 diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
-index 81218427d..0f5300799 100644
+index 801b82e1b..7b8eaebc4 100644
 --- a/widgets/src/widget_async.rs
 +++ b/widgets/src/widget_async.rs
 @@ -331,6 +331,7 @@ pub enum ScriptAsyncResult {

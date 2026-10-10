@@ -322,7 +322,7 @@ index ce7ca3217..21e6b1eae 100644
      fn the_preview_profile_matches_the_viewfinder_then_takes_the_most_pixels() {
          let choice = CameraChoice {
 diff --git a/widgets/src/splash.rs b/widgets/src/splash.rs
-index fc374b01a..c8f86598b 100644
+index 56d06f846..5165a076d 100644
 --- a/widgets/src/splash.rs
 +++ b/widgets/src/splash.rs
 @@ -68,6 +68,9 @@ pub struct Splash {
@@ -335,7 +335,7 @@ index fc374b01a..c8f86598b 100644
      /// Whole-jail byte cap when the host has granted this app extra room.
      /// None leaves the storage default.
      #[rust]
-@@ -227,6 +230,7 @@ fn eval_styled_body_with_apply(&mut self, cx: &mut Cx, preserve: bool, apply: &A
+@@ -229,6 +232,7 @@ fn eval_styled_body_with_apply(&mut self, cx: &mut Cx, preserve: bool, apply: &A
          crate::splash_host::set_prompts_for_heap(heap_key, self.host_prompts);
          crate::splash_storage::set_quota_for_heap(heap_key, self.storage_quota);
          self.apply_policy(cx, heap_key);
@@ -343,7 +343,7 @@ index fc374b01a..c8f86598b 100644
          if !crate::splash_policy::may_run(heap_key) {
              log!("splash: {} is stopped: its instruction budget is spent", self.source_label());
              return;
-@@ -831,6 +835,16 @@ pub fn set_host_prompts(&mut self, cx: &mut Cx, may_prompt: bool) {
+@@ -833,6 +837,16 @@ pub fn set_host_prompts(&mut self, cx: &mut Cx, may_prompt: bool) {
          }
      }
  
@@ -357,10 +357,10 @@ index fc374b01a..c8f86598b 100644
 +        }
 +    }
 +
-     /// Puts this isolate under an ENFORCED policy (ADR 0002): `host.request`
-     /// is refused outside `host_caps`, every network path (`net`, artwork,
-     /// `sys.*` data) is refused outside `hosts`, and `instruction_budget`
-@@ -1005,6 +1019,11 @@ pub fn set_host_prompts(&self, cx: &mut Cx, may_prompt: bool) {
+     /// Puts this isolate under an ENFORCED policy (ADR 0002): files stay in
+     /// its jail, and the runtime's own reads of the person's data and devices
+     /// need their grants. `hosts`, `instruction_budget` and the capabilities
+@@ -1007,6 +1021,11 @@ pub fn set_host_prompts(&self, cx: &mut Cx, may_prompt: bool) {
          }
      }
  
@@ -372,7 +372,7 @@ index fc374b01a..c8f86598b 100644
      /// See [`Splash::isolate_heap_key`].
      pub fn isolate_heap_key(&self, cx: &mut Cx) -> Option<usize> {
          if let Some(mut inner) = self.borrow_mut() {
-@@ -3762,7 +3781,8 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+@@ -3764,7 +3783,8 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
          id_lut!(request_location),
          script_args_def!(),
          |vm, _args| {
@@ -383,7 +383,7 @@ index fc374b01a..c8f86598b 100644
              }
              #[cfg(target_os = "android")]
 diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
-index 81529af28..a8b8f1f65 100644
+index c77786d1a..52cab0d95 100644
 --- a/widgets/src/splash_host.rs
 +++ b/widgets/src/splash_host.rs
 @@ -97,6 +97,11 @@ pub(crate) fn set_tag_for_heap(heap_key: usize, tag: Option<String>) {
@@ -410,11 +410,11 @@ index 81529af28..a8b8f1f65 100644
  pub(crate) fn gc_bridge(dead_heaps: &[usize]) {
      BRIDGE.with(|b| {
 diff --git a/widgets/src/splash_policy.rs b/widgets/src/splash_policy.rs
-index 04cf78b36..b0f356bf6 100644
+index 56e21eee3..ea4e6396f 100644
 --- a/widgets/src/splash_policy.rs
 +++ b/widgets/src/splash_policy.rs
-@@ -24,7 +24,8 @@
- //! host, URLs are allowed, and only the per-evaluation cap applies.
+@@ -35,7 +35,8 @@
+ //! host.
  use crate::makepad_draw::makepad_platform::makepad_script_std;
  use std::cell::RefCell;
 -use std::collections::HashMap;
@@ -423,7 +423,7 @@ index 04cf78b36..b0f356bf6 100644
  
  #[derive(Clone, Debug, Default)]
  pub struct HeapPolicy {
-@@ -43,6 +44,45 @@ pub struct HeapPolicy {
+@@ -53,6 +54,45 @@ pub struct HeapPolicy {
  
  thread_local! {
      static POLICIES: RefCell<HashMap<usize, HeapPolicy>> = RefCell::new(HashMap::new());
@@ -469,7 +469,7 @@ index 04cf78b36..b0f356bf6 100644
  }
  
  /// Set (or replace) the policy for a heap. Enforcement starts here: a heap
-@@ -70,6 +110,7 @@ pub fn set_policy_for_heap(heap_key: usize, capabilities: Vec<String>, hosts: Ve
+@@ -75,6 +115,7 @@ pub fn set_policy_for_heap(heap_key: usize, capabilities: Vec<String>, hosts: Ve
  
  /// Drop policies for reclaimed isolates (from the isolate GC).
  pub(crate) fn gc_policies(dead_heaps: &[usize]) {
@@ -477,8 +477,8 @@ index 04cf78b36..b0f356bf6 100644
      POLICIES.with(|p| {
          let mut p = p.borrow_mut();
          for heap in dead_heaps {
-@@ -95,7 +136,8 @@ pub fn service_allowed(heap_key: usize, service: &str) -> Result<(), String> {
-         }
+@@ -98,7 +139,8 @@ pub fn service_allowed(heap_key: usize, service: &str) -> Result<(), String> {
+         let Some(policy) = p.get(&heap_key) else { return Ok(()) };
          let family = service.split('.').next().unwrap_or(service);
          if policy.capabilities.iter().any(|c| c == service || c == family) {
 -            Ok(())
@@ -487,8 +487,8 @@ index 04cf78b36..b0f356bf6 100644
          } else {
              Err(format!("this app was not granted {family:?}, which {service:?} needs"))
          }
-@@ -459,6 +501,40 @@ fn a_policed_heap_opens_no_server_and_no_raw_socket_whatever_it_holds() {
-         assert!(makepad_script_std::script_sockets_allowed(911));
+@@ -386,6 +428,40 @@ fn a_policy_installs_no_gate() {
+         gc_policies(&[911]);
      }
  
 +    #[test]

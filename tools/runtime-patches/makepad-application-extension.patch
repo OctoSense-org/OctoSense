@@ -1,8 +1,8 @@
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-index 7be1adfc2..3d8242230 100644
+index b10842450..41aa2c8f7 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-@@ -1262,12 +1262,22 @@ public class MakepadActivity
+@@ -1259,12 +1259,22 @@ public class MakepadActivity
  
      private void createApplicationExtension() {
          try {

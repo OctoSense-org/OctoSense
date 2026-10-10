@@ -301,7 +301,9 @@ impl MatchEvent for App {
             && splash_policy::local_path_for_heap(heap, "playback.mp4")
                 .is_some_and(|path| PathBuf::from(path) == jail.join("playback.mp4"))
             && splash_policy::local_path_for_heap(heap, "../outside.mp4").is_none()
-            && !splash_policy::url_allowed(heap, "https://video.invalid/fixture.mp4");
+            // Its host list is a declaration since makepad#117 (OctoSense
+            // #450): a network source is not refused by the runtime.
+            && splash_policy::url_allowed(heap, "https://video.invalid/fixture.mp4");
         assert!(self.contained, "Fixture must retain the app storage jail");
         self.timer = Some(cx.start_interval(0.05));
         self.write_state();

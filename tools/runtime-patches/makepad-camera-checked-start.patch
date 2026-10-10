@@ -1,6 +1,8 @@
+diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
+index acff6af41..5b583ff97 100644
 --- a/platform/src/os/linux/android/android.rs
 +++ b/platform/src/os/linux/android/android.rs
-@@ -1975,6 +1975,7 @@
+@@ -1990,6 +1990,7 @@ fn poll_camera_players(&mut self) {
              None
          };
          let mut events = Vec::new();
@@ -8,7 +10,7 @@
  
          for (_video_id, player) in players.iter_mut() {
              match player.check_prepared() {
-@@ -1997,10 +1998,12 @@
+@@ -2012,10 +2013,12 @@ fn poll_camera_players(&mut self) {
                      }));
                  }
                  Some(Err(err)) => {
@@ -21,7 +23,7 @@
                  }
                  None => {}
              }
-@@ -2084,6 +2087,12 @@
+@@ -2099,6 +2102,12 @@ fn poll_camera_players(&mut self) {
              }
          }
  
@@ -34,9 +36,11 @@
          self.os.camera_players = players;
          for event in events {
              self.call_event_handler(&event);
+diff --git a/platform/src/os/linux/android/android_camera.rs b/platform/src/os/linux/android/android_camera.rs
+index 042d3032f..beb4c00db 100644
 --- a/platform/src/os/linux/android/android_camera.rs
 +++ b/platform/src/os/linux/android/android_camera.rs
-@@ -95,10 +95,12 @@
+@@ -95,10 +95,12 @@ struct CameraStreamNode {
      controls: CameraControlState,
      dispatch: Arc<Mutex<StreamDispatch>>,
      session: Option<AndroidCaptureSession>,
@@ -49,7 +53,7 @@
  pub struct AndroidCaptureSession {
      capture_session: *mut ACameraCaptureSession,
      output_container: *mut ACaptureSessionOutputContainer,
-@@ -562,7 +564,16 @@
+@@ -562,7 +564,16 @@ unsafe fn start(
          preview_window: Option<*mut ANativeWindow>,
          needs_image_reader: bool,
          still: Option<(VideoInputId, i32, i32)>,
@@ -67,7 +71,7 @@
          let reader_mode = {
              let guard = dispatch.lock().unwrap();
              if !guard.preview_hardware_buffer_input_cbs.is_empty()
-@@ -570,252 +581,131 @@
+@@ -570,252 +581,131 @@ unsafe fn start(
                  && guard.frame_input_cbs.is_empty()
                  && guard.preview_frame_input_cbs.is_empty()
                  && guard.encoders.is_empty()
@@ -150,6 +154,7 @@
 -                        2,
 -                        &mut image_reader,
 -                    )
+-                }
 +        // Every acquired resource belongs to this partial session. A failed
 +        // stage closes it; no null/incomplete session is reported as running.
 +        let result = (|| -> Result<(), String> {
@@ -157,95 +162,6 @@
 +                onError: Some(Self::device_on_error),
 +                onDisconnected: Some(Self::device_on_disconnected),
 +                context: session.capture_context as *mut _,
-+            };
-+            check("open-device", ACameraManager_openCamera(manager, camera_id.as_ptr(),
-+                &mut callbacks, &mut session.camera_device))?;
-+            pointer("open-device", session.camera_device)?;
-+            check("preview-request", ACameraDevice_createCaptureRequest(session.camera_device,
-+                TEMPLATE_PREVIEW, &mut session.capture_request))?;
-+            pointer("preview-request", session.capture_request)?;
-+
-+            if needs_image_reader {
-+                let status = match reader_mode {
-+                    AndroidImageReaderMode::HardwareBufferYuv => AImageReader_newWithUsage(
-+                        format.width as _, format.height as _, AIMAGE_FORMAT_YUV_420_888,
-+                        ndk_sys::AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, 3, &mut session.image_reader),
-+                    AndroidImageReaderMode::CpuReadable => {
-+                        let image_format = match format.pixel_format {
-+                            VideoPixelFormat::YUV420 => AIMAGE_FORMAT_YUV_420_888,
-+                            VideoPixelFormat::MJPEG => AIMAGE_FORMAT_JPEG,
-+                            _ => return Err("camera startup has an unsupported image format".into()),
-+                        };
-+                        AImageReader_new(format.width as _, format.height as _, image_format,
-+                            2, &mut session.image_reader)
-+                    }
-+                };
-+                check("preview-reader", status)?;
-+                pointer("preview-reader", session.image_reader)?;
-+                let mut listener = AImageReader_ImageListener {
-+                    context: session.capture_context as *mut _,
-+                    onImageAvailable: Some(Self::image_on_image_available),
-+                };
-+                check("preview-listener", AImageReader_setImageListener(session.image_reader, &mut listener))?;
-+                let mut window = std::ptr::null_mut();
-+                check("preview-window", AImageReader_getWindow(session.image_reader, &mut window))?;
-+                pointer("preview-window", window)?;
-+                ANativeWindow_acquire(window);
-+                session.image_window = window;
-+                check("preview-target", ACameraOutputTarget_create(window, &mut session.image_target))?;
-+                pointer("preview-target", session.image_target)?;
-+                check("preview-request-target", ACaptureRequest_addTarget(session.capture_request, session.image_target))?;
-+                check("preview-output", ACaptureSessionOutput_create(window, &mut session.image_output))?;
-+                pointer("preview-output", session.image_output)?;
-+                if reader_mode == AndroidImageReaderMode::CpuReadable && format.pixel_format == VideoPixelFormat::MJPEG {
-+                    let quality = 60u8;
-+                    check("preview-jpeg-quality", ACaptureRequest_setEntry_u8(session.capture_request,
-+                        ACAMERA_JPEG_QUALITY, 1, &quality))?;
-                 }
-+            }
-+
-+            if let Some((input_id, width, height)) = still {
-+                check("still-reader", AImageReader_new(width, height, AIMAGE_FORMAT_JPEG,
-+                    2, &mut session.still_reader))?;
-+                pointer("still-reader", session.still_reader)?;
-+                session.still_context = Box::into_raw(Box::new(AndroidStillContext {
-+                    input_id, pending: Mutex::new(None), alive: Arc::new(AtomicBool::new(true)),
-+                }));
-+                let mut listener = AImageReader_ImageListener {
-+                    context: session.still_context as *mut _, onImageAvailable: Some(Self::still_on_image_available),
-+                };
-+                check("still-listener", AImageReader_setImageListener(session.still_reader, &mut listener))?;
-+                let mut window = std::ptr::null_mut();
-+                check("still-window", AImageReader_getWindow(session.still_reader, &mut window))?;
-+                pointer("still-window", window)?;
-+                ANativeWindow_acquire(window);
-+                session.still_window = window;
-+                check("still-target", ACameraOutputTarget_create(window, &mut session.still_target))?;
-+                pointer("still-target", session.still_target)?;
-+                check("still-output", ACaptureSessionOutput_create(window, &mut session.still_output))?;
-+                pointer("still-output", session.still_output)?;
-+            }
-+            check("output-container", ACaptureSessionOutputContainer_create(&mut session.output_container))?;
-+            pointer("output-container", session.output_container)?;
-+            for (stage, output) in [("still-output-add", session.still_output), ("preview-output-add", session.image_output)] {
-+                if !output.is_null() { check(stage, ACaptureSessionOutputContainer_add(session.output_container, output))?; }
-+            }
-+            if let Some(window) = preview_window.filter(|w| !w.is_null()) {
-+                ANativeWindow_acquire(window);
-+                session.preview_window = window;
-+                check("native-preview-target", ACameraOutputTarget_create(window, &mut session.preview_target))?;
-+                pointer("native-preview-target", session.preview_target)?;
-+                check("native-preview-request-target", ACaptureRequest_addTarget(session.capture_request, session.preview_target))?;
-+                check("native-preview-output", ACaptureSessionOutput_create(window, &mut session.preview_output))?;
-+                pointer("native-preview-output", session.preview_output)?;
-+                check("native-preview-output-add", ACaptureSessionOutputContainer_add(session.output_container, session.preview_output))?;
-+            }
-+            if session.image_output.is_null() && session.preview_output.is_null() {
-+                return Err("camera startup has no preview output".into());
-+            }
-+            let callbacks = ACameraCaptureSession_stateCallbacks {
-+                context: session.capture_context as *mut _, onClosed: Some(Self::session_on_closed),
-+                onReady: Some(Self::session_on_ready), onActive: Some(Self::session_on_active),
              };
 -            if image_reader_result != 0 || image_reader.is_null() {
 -                crate::warning!(
@@ -290,8 +206,52 @@
 -                    1,
 -                    &jpeg_quality,
 -                );
--            }
--
++            check("open-device", ACameraManager_openCamera(manager, camera_id.as_ptr(),
++                &mut callbacks, &mut session.camera_device))?;
++            pointer("open-device", session.camera_device)?;
++            check("preview-request", ACameraDevice_createCaptureRequest(session.camera_device,
++                TEMPLATE_PREVIEW, &mut session.capture_request))?;
++            pointer("preview-request", session.capture_request)?;
++
++            if needs_image_reader {
++                let status = match reader_mode {
++                    AndroidImageReaderMode::HardwareBufferYuv => AImageReader_newWithUsage(
++                        format.width as _, format.height as _, AIMAGE_FORMAT_YUV_420_888,
++                        ndk_sys::AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE, 3, &mut session.image_reader),
++                    AndroidImageReaderMode::CpuReadable => {
++                        let image_format = match format.pixel_format {
++                            VideoPixelFormat::YUV420 => AIMAGE_FORMAT_YUV_420_888,
++                            VideoPixelFormat::MJPEG => AIMAGE_FORMAT_JPEG,
++                            _ => return Err("camera startup has an unsupported image format".into()),
++                        };
++                        AImageReader_new(format.width as _, format.height as _, image_format,
++                            2, &mut session.image_reader)
++                    }
++                };
++                check("preview-reader", status)?;
++                pointer("preview-reader", session.image_reader)?;
++                let mut listener = AImageReader_ImageListener {
++                    context: session.capture_context as *mut _,
++                    onImageAvailable: Some(Self::image_on_image_available),
++                };
++                check("preview-listener", AImageReader_setImageListener(session.image_reader, &mut listener))?;
++                let mut window = std::ptr::null_mut();
++                check("preview-window", AImageReader_getWindow(session.image_reader, &mut window))?;
++                pointer("preview-window", window)?;
++                ANativeWindow_acquire(window);
++                session.image_window = window;
++                check("preview-target", ACameraOutputTarget_create(window, &mut session.image_target))?;
++                pointer("preview-target", session.image_target)?;
++                check("preview-request-target", ACaptureRequest_addTarget(session.capture_request, session.image_target))?;
++                check("preview-output", ACaptureSessionOutput_create(window, &mut session.image_output))?;
++                pointer("preview-output", session.image_output)?;
++                if reader_mode == AndroidImageReaderMode::CpuReadable && format.pixel_format == VideoPixelFormat::MJPEG {
++                    let quality = 60u8;
++                    check("preview-jpeg-quality", ACaptureRequest_setEntry_u8(session.capture_request,
++                        ACAMERA_JPEG_QUALITY, 1, &quality))?;
++                }
+             }
+ 
 -            let _ = ACaptureSessionOutput_create(image_window, &mut image_output);
 -        }
 -
@@ -316,11 +276,19 @@
 -                    input_id,
 -                    pending: Mutex::new(None),
 -                    alive: Arc::new(AtomicBool::new(true)),
--                }));
++            if let Some((input_id, width, height)) = still {
++                check("still-reader", AImageReader_new(width, height, AIMAGE_FORMAT_JPEG,
++                    2, &mut session.still_reader))?;
++                pointer("still-reader", session.still_reader)?;
++                session.still_context = Box::into_raw(Box::new(AndroidStillContext {
++                    input_id, pending: Mutex::new(None), alive: Arc::new(AtomicBool::new(true)),
+                 }));
 -                let mut still_listener = AImageReader_ImageListener {
 -                    context: still_context as *mut _,
 -                    onImageAvailable: Some(Self::still_on_image_available),
--                };
++                let mut listener = AImageReader_ImageListener {
++                    context: session.still_context as *mut _, onImageAvailable: Some(Self::still_on_image_available),
+                 };
 -                AImageReader_setImageListener(still_reader, &mut still_listener);
 -                AImageReader_getWindow(still_reader, &mut still_window);
 -                ANativeWindow_acquire(still_window);
@@ -328,7 +296,17 @@
 -                let _ = ACaptureSessionOutput_create(still_window, &mut still_output);
 -            } else {
 -                crate::warning!("Android camera: no still stream at {still_width}x{still_height}");
--            }
++                check("still-listener", AImageReader_setImageListener(session.still_reader, &mut listener))?;
++                let mut window = std::ptr::null_mut();
++                check("still-window", AImageReader_getWindow(session.still_reader, &mut window))?;
++                pointer("still-window", window)?;
++                ANativeWindow_acquire(window);
++                session.still_window = window;
++                check("still-target", ACameraOutputTarget_create(window, &mut session.still_target))?;
++                pointer("still-target", session.still_target)?;
++                check("still-output", ACaptureSessionOutput_create(window, &mut session.still_output))?;
++                pointer("still-output", session.still_output)?;
+             }
 -        }
 -
 -        let mut output_container = std::ptr::null_mut();
@@ -356,7 +334,11 @@
 -                if !preview_output.is_null() {
 -                    ACaptureSessionOutputContainer_add(output_container, preview_output);
 -                }
--            }
++            check("output-container", ACaptureSessionOutputContainer_create(&mut session.output_container))?;
++            pointer("output-container", session.output_container)?;
++            for (stage, output) in [("still-output-add", session.still_output), ("preview-output-add", session.image_output)] {
++                if !output.is_null() { check(stage, ACaptureSessionOutputContainer_add(session.output_container, output))?; }
+             }
 -        }
 -
 -        if image_output.is_null() && preview_output.is_null() {
@@ -419,6 +401,23 @@
 -            still_target,
 -            still_context,
 -        })
++            if let Some(window) = preview_window.filter(|w| !w.is_null()) {
++                ANativeWindow_acquire(window);
++                session.preview_window = window;
++                check("native-preview-target", ACameraOutputTarget_create(window, &mut session.preview_target))?;
++                pointer("native-preview-target", session.preview_target)?;
++                check("native-preview-request-target", ACaptureRequest_addTarget(session.capture_request, session.preview_target))?;
++                check("native-preview-output", ACaptureSessionOutput_create(window, &mut session.preview_output))?;
++                pointer("native-preview-output", session.preview_output)?;
++                check("native-preview-output-add", ACaptureSessionOutputContainer_add(session.output_container, session.preview_output))?;
++            }
++            if session.image_output.is_null() && session.preview_output.is_null() {
++                return Err("camera startup has no preview output".into());
++            }
++            let callbacks = ACameraCaptureSession_stateCallbacks {
++                context: session.capture_context as *mut _, onClosed: Some(Self::session_on_closed),
++                onReady: Some(Self::session_on_ready), onActive: Some(Self::session_on_active),
++            };
 +            check("configure-session", ACameraDevice_createCaptureSession(session.camera_device,
 +                session.output_container, &callbacks, &mut session.capture_session))?;
 +            pointer("configure-session", session.capture_session)?;
@@ -440,7 +439,7 @@
      }
  
      /// Apply the person's controls to the repeating request. `rotation` is the
-@@ -979,68 +869,41 @@
+@@ -979,68 +869,41 @@ unsafe fn capture_still(
      }
  
      unsafe fn stop(self) {
@@ -492,20 +491,6 @@
 -        if !self.preview_target.is_null() {
 -            ACaptureRequest_removeTarget(self.capture_request, self.preview_target);
 -            ACameraOutputTarget_free(self.preview_target);
--        }
--        ACaptureRequest_free(self.capture_request);
--        if !self.image_window.is_null() {
--            ANativeWindow_release(self.image_window);
--        }
--        if !self.preview_window.is_null() {
--            ANativeWindow_release(self.preview_window);
--        }
--        if !self.image_reader.is_null() {
--            AImageReader_delete(self.image_reader);
--        }
--        ACameraDevice_close(self.camera_device);
--        let _ = Box::from_raw(self.capture_context);
--    }
 +        if !self.capture_context.is_null() { (*self.capture_context).alive.store(false, Ordering::Relaxed); }
 +        if !self.still_context.is_null() { (*self.still_context).alive.store(false, Ordering::Relaxed); }
 +        // Stop producers before deleting their windows/readers and callback
@@ -521,30 +506,39 @@
 +                AImageReader_setImageListener(reader, &mut none);
 +                AImageReader_delete(reader);
 +            }
-+        }
+         }
+-        ACaptureRequest_free(self.capture_request);
+-        if !self.image_window.is_null() {
+-            ANativeWindow_release(self.image_window);
 +        if !self.output_container.is_null() { ACaptureSessionOutputContainer_free(self.output_container); }
 +        for output in [self.image_output, self.preview_output, self.still_output] {
 +            if !output.is_null() { ACaptureSessionOutput_free(output); }
-+        }
+         }
+-        if !self.preview_window.is_null() {
+-            ANativeWindow_release(self.preview_window);
 +        for target in [self.image_target, self.preview_target] {
 +            if !target.is_null() {
 +                if !self.capture_request.is_null() { ACaptureRequest_removeTarget(self.capture_request, target); }
 +                ACameraOutputTarget_free(target);
 +            }
-+        }
+         }
+-        if !self.image_reader.is_null() {
+-            AImageReader_delete(self.image_reader);
 +        if !self.still_target.is_null() { ACameraOutputTarget_free(self.still_target); }
 +        if !self.capture_request.is_null() { ACaptureRequest_free(self.capture_request); }
 +        for window in [self.image_window, self.preview_window, self.still_window] {
 +            if !window.is_null() { ANativeWindow_release(window); }
-+        }
+         }
+-        ACameraDevice_close(self.camera_device);
+-        let _ = Box::from_raw(self.capture_context);
 +        if !self.still_context.is_null() { let _ = Box::from_raw(self.still_context); }
 +        if !self.capture_context.is_null() { let _ = Box::from_raw(self.capture_context); }
-+    }
+     }
 +
  }
  
  pub struct AndroidCameraAccess {
-@@ -1225,7 +1088,7 @@
+@@ -1225,7 +1088,7 @@ fn restart_stream_if_needed(&mut self, key: CameraStreamKey) {
  
          *node.dispatch.lock().unwrap() = dispatch;
  
@@ -553,7 +547,7 @@
              || node.preview_window != desired_preview_window
              || node.needs_image_reader != needs_image_reader;
  
-@@ -1249,7 +1112,8 @@
+@@ -1249,7 +1112,8 @@ fn restart_stream_if_needed(&mut self, key: CameraStreamKey) {
              .iter()
              .find(|device| device.desc.input_id == key.input_id)
              .and_then(|device| device.still_size.map(|(w, h)| (key.input_id, w, h)));
@@ -563,7 +557,7 @@
              AndroidCaptureSession::start(
                  node.dispatch.clone(),
                  self.manager,
-@@ -1264,6 +1128,10 @@
+@@ -1264,6 +1128,10 @@ fn restart_stream_if_needed(&mut self, key: CameraStreamKey) {
                  still,
              )
          };
@@ -574,7 +568,7 @@
          if let Some(session) = node.session.as_ref() {
              let (active_array, rotation) = self
                  .devices
-@@ -1386,6 +1254,7 @@
+@@ -1386,6 +1254,7 @@ fn reconcile_streams(&mut self) {
                      controls: CameraControlState::default(),
                      dispatch: Arc::new(Mutex::new(StreamDispatch::default())),
                      session: None,
@@ -582,7 +576,7 @@
                      preview_window: std::ptr::null_mut(),
                      needs_image_reader: false,
                  },
-@@ -1432,6 +1301,7 @@
+@@ -1432,6 +1301,7 @@ pub fn register_preview(
              crate::log!("camera: no stream for this input and format; the preview stays empty");
              return;
          };
@@ -590,7 +584,7 @@
          if let Some(old) = self.preview_subscriptions.remove(&video_id) {
              if !old.preview_window.is_null() {
                  unsafe { ANativeWindow_release(old.preview_window) };
-@@ -1462,6 +1332,7 @@
+@@ -1462,6 +1332,7 @@ pub fn register_preview_hardware_buffer(
              return;
          };
  
@@ -598,21 +592,23 @@
          if let Some(old) = self.preview_subscriptions.remove(&video_id) {
              if !old.preview_window.is_null() {
                  unsafe { ANativeWindow_release(old.preview_window) };
-@@ -1478,6 +1349,11 @@
-             },
-         );
+@@ -1480,6 +1351,11 @@ pub fn register_preview_hardware_buffer(
          self.reconcile_streams();
-+    }
-+
+     }
+ 
 +    pub fn preview_start_error(&self, video_id: LiveId) -> Option<String> {
 +        let sub = self.preview_subscriptions.get(&video_id)?;
 +        self.streams.get(&sub.stream)?.start_error.clone()
-     }
- 
++    }
++
      pub fn update_preview_window(
+         &mut self,
+         video_id: LiveId,
+diff --git a/platform/src/os/linux/android/android_camera_player.rs b/platform/src/os/linux/android/android_camera_player.rs
+index 2dff90dd5..4fb79fdc3 100644
 --- a/platform/src/os/linux/android/android_camera_player.rs
 +++ b/platform/src/os/linux/android/android_camera_player.rs
-@@ -237,63 +237,42 @@
+@@ -237,63 +237,42 @@ pub fn check_prepared(&mut self) -> Option<Result<PlaybackPrepared, String>> {
              return None;
          }
  
@@ -629,7 +625,8 @@
 -                vec!["camera".to_string()],
 -                vec![],
 -            )));
--        }
++            return Some(Err(error));
+         }
 -
 -        if let Some(latest) = self.hardware_buffer_frame.as_ref() {
 -            let guard = latest.lock().unwrap();
@@ -643,8 +640,6 @@
 -            };
 -            self.width = frame.width;
 -            self.height = frame.height;
-+            return Some(Err(error));
-+        }
 +        // Readiness wins over the deadline: the UI can be suspended after the
 +        // producer queues its first frame. A late poll must not reject it.
 +        let ready_size = if self.native_preview && self.prepared {
@@ -677,7 +672,10 @@
 -        let frames = self.i420_frames.as_mut()?;
 -        if !frames.prime_pending_from_latest() {
 -            return None;
--        }
++        if !self.native_preview && self.created_at.elapsed().as_secs_f32() >= 10.0 {
++            self.prepare_notified = true;
++            return Some(Err("camera startup first-frame timed out after 10 seconds".into()));
+         }
 -
 -        let (width, height) = {
 -            let frame = frames.pending_frame()?;
@@ -695,10 +693,6 @@
 -            vec!["camera".to_string()],
 -            vec![],
 -        )))
-+        if !self.native_preview && self.created_at.elapsed().as_secs_f32() >= 10.0 {
-+            self.prepare_notified = true;
-+            return Some(Err("camera startup first-frame timed out after 10 seconds".into()));
-+        }
 +        if !self.warned_waiting_for_first_frame && self.created_at.elapsed().as_secs_f32() >= 2.0 {
 +            self.warned_waiting_for_first_frame = true;
 +        }
@@ -706,9 +700,11 @@
      }
  
      pub fn take_hardware_buffer_frame(&mut self) -> Option<AndroidCameraHardwareBufferFrame> {
+diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+index 4a477b7dd..ce7ca3217 100644
 --- a/widgets/src/camera_preview.rs
 +++ b/widgets/src/camera_preview.rs
-@@ -229,6 +229,10 @@
+@@ -229,6 +229,10 @@ fn start(&mut self, cx: &mut Cx) -> bool {
              return false;
          }
          self.wanted = true;
@@ -719,7 +715,7 @@
          if self.permission.is_none() && !self.permission_pending {
              self.permission_pending = true;
              self.asked_at = cx.seconds_since_app_start();
-@@ -574,19 +578,20 @@
+@@ -574,19 +578,20 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
                      .collect();
                  self.drive(cx);
              }
@@ -743,12 +739,10 @@
                      let why = format!("the camera stopped: {}", e.error);
                      self.fail(cx, why);
                  }
-@@ -616,6 +621,43 @@
- 
-     fn format(width: usize, height: usize, pixel_format: VideoPixelFormat, id: u64) -> VideoFormat {
+@@ -618,6 +623,43 @@ fn format(width: usize, height: usize, pixel_format: VideoPixelFormat, id: u64)
          VideoFormat { format_id: VideoFormatId(LiveId(id)), width, height, frame_rate: Some(30.0), pixel_format }
-+    }
-+
+     }
+ 
 +    #[test]
 +    fn failed_start_stops_retries_until_explicit_start_and_ignores_other_players() {
 +        let mut cx = Cx::new(Box::new(|_, _| {}));
@@ -784,12 +778,16 @@
 +        assert!(!preview.permission_pending, "an already granted camera does not prompt again");
 +        preview.stop(&mut cx);
 +        crate::splash_policy::gc_policies(&[heap]);
-     }
- 
++    }
++
      #[test]
+     fn the_preview_profile_matches_the_viewfinder_then_takes_the_most_pixels() {
+         let choice = CameraChoice {
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index 16c48f7d1..197599cf4 100644
 --- a/widgets/src/video.rs
 +++ b/widgets/src/video.rs
-@@ -622,6 +622,11 @@
+@@ -622,6 +622,11 @@ fn on_after_apply(
  }
  
  impl VideoRef {

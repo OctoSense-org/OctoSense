@@ -1,3 +1,5 @@
+diff --git a/widgets/src/web_reader.rs b/widgets/src/web_reader.rs
+index d1e2a1b04..44240521e 100644
 --- a/widgets/src/web_reader.rs
 +++ b/widgets/src/web_reader.rs
 @@ -1,5 +1,7 @@
@@ -8,7 +10,7 @@
  //!
  //! ```text
  //! reader := WebReader{width: Fill height: Fill on_error: || show(ui.reader.error())}
-@@ -168,6 +170,14 @@
+@@ -168,6 +170,14 @@ fn report(&mut self, cx: &mut Cx, why: String) {
  
      /// Open `url`, when this app may. Returns whether it opened.
      pub fn open(&mut self, cx: &mut Cx, url: &str) -> bool {
@@ -23,7 +25,7 @@
          if self.auth_mode { self.close(cx); self.auth_mode = false; self.auth_id = None; }
          let heap = self.heap_key();
          if !crate::splash_policy::page_allowed(heap, url) {
-@@ -442,3 +452,27 @@
+@@ -442,3 +452,27 @@ fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawSte
          step
      }
  }
