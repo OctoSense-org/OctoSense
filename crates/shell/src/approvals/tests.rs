@@ -1083,6 +1083,27 @@ fn contained_consent_describes_the_admitted_name_and_account_workspace() {
     assert!(wrong.consent.prompt().is_none());
 }
 
+#[test]
+fn agent_consent_does_not_require_method_declarations_or_create_plain_app_agents() {
+    let app = "org.example.agent";
+    let supported: Vec<String> = crate::ai_host::app_peers::OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+    for caps in [json!([]), json!(["octos.session.open"])] {
+        let manifest = json!({"id":app,"name":"Example","agent":{},"capabilities":caps});
+        let mut a = super::Approvals::memory();
+        assert!(!super::contained_gate(&mut a, app, &manifest, &supported));
+        assert_eq!(a.consent.prompt().unwrap().app, app);
+        a.consent.set(&ApprovalGesture::sheet_tap(), app, true, T0);
+        assert!(super::contained_gate(&mut a, app, &manifest, &supported));
+        assert!(!super::contained_gate(&mut a, app, &manifest, &[]), "removing agent opt-in cannot inherit old consent");
+        a.consent.turn_off(app, T0);
+        assert!(!super::contained_gate(&mut a, app, &manifest, &supported));
+    }
+    let mut plain = super::Approvals::memory();
+    plain.consent.set(&ApprovalGesture::sheet_tap(), "plain", true, T0);
+    assert!(!super::module_gate(&mut plain, "plain", "Plain", &["model", "octos.unknown"]));
+    assert!(plain.consent.prompt().is_none());
+}
+
 // ---------------------------------------------------------------- external clients (G1)
 
 fn external(id: &str, tool: ToolSpec) -> Request {

@@ -24,7 +24,7 @@
 
 外部链接使用同一个规范化 URL 做策略判断和 OS 打开，拒绝控制字符及无效的绝对 URL；错误日志不包含 URL。可信的原生宿主调用仍可使用有效的绝对协议地址。本批没有新增名为 `web.open` 的宿主请求方法：补齐的是已有控件入口，与嵌入式浏览不同。Makepad 源码符号包括 `normalize_external_url`、`LinkLabel::handle_event`、各平台的 `CxOsApi::open_url`、`android_jni::to_java_open_url`、`MakepadActivity.openUrl`。固定源码及覆盖补丁由 [runtime-patches.lock.json](../runtime-patches.lock.json) 和 [native-runtime.lock.json](../native-runtime.lock.json) 定位。
 
-未实现拍照或录像的后端返回 `CameraCaptureResult::Failed`，不再静默忽略请求。当前集成还新增有界的 [Windows 静态拍摄工作线程](windows-camera-capture.zh-CN.md)：九项真实源码工作线程测试和 Windows 目标类型检查已通过，但没有操作 Windows 相机硬件。该路径应声明 `camera`、`storage`，不声明 `library`；Windows 图库导出和录像仍不支持，共享拍摄存储配额预留也未补齐。这些检查不能验证原生设备回调、权限界面或隐私指示灯。
+未实现拍照或录像的后端返回 `CameraCaptureResult::Failed`，不再静默忽略请求。当前集成还新增有界的 [Windows 静态拍摄工作线程](windows-camera-capture.zh-CN.md)：九项真实源码工作线程测试和 Windows 目标类型检查已通过，但没有操作 Windows 相机硬件。拍摄参数现在明确表达意图：`capture()` 只存本地；`capture({library: true})` 请求图库导出，在 Windows 上会被拒绝。清单声明不会自动开启导出。Windows 图库导出和录像仍不支持，共享拍摄存储配额预留也未补齐。这些检查不能验证原生设备回调、权限界面或隐私指示灯。
 
 ## 已有能力与剩余 OS 工作
 

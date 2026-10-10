@@ -1,6 +1,7 @@
 let mode = "photo"          // photo | video
 let flash = "off"           // off | auto | on
 let recording = false
+let permission_pending = false
 let rec_started = 0
 let rec_timer = nil
 let shots = []              // app-relative paths, newest last
@@ -46,21 +47,34 @@ fn captured(){
     let path = ui.cam.last()
     if path == "" { return }
     shots.push(path)
-    // The newest few stay in the app; the photo library keeps them all.
-    while shots.len() > keep {
-        let old = shots[0]
-        shots.remove(0)
-        if fs.exists(old) { fs.remove(old) }
-    }
+    // Bound thumbnail history only. Captures remain in app storage; no
+    // platform-independent photo-library export has been requested.
+    while shots.len() > keep { shots.remove(0) }
     save_shots()
     show_thumb()
 }
 fn shutter(){
-    if mode == "photo" { ui.cam.capture(); return }
+    if mode == "photo" { ui.cam.capture({library: false}); return }
     if recording { stop_recording() } else { start_recording() }
 }
+fn permission_failed(r){
+    permission_pending = false
+    if r.is_ok { ui.toast.set_text("Permission was not granted. Open Camera and try again.") }
+    else { ui.toast.set_text(r.error) }
+    ui.retry_camera.set_visible(true)
+}
 fn start_recording(){
-    if !ui.cam.record_start() { return }
+    if permission_pending { return }
+    permission_pending = true
+    host.request("microphone.permission.request", {}, fn(r){
+        permission_pending = false
+        if r.is_ok && r.data.app_consent && r.data.os_permission == "granted" {
+            if mode == "video" && !recording && ui.cam.is_running() { begin_recording() }
+        } else { permission_failed(r) }
+    })
+}
+fn begin_recording(){
+    if !ui.cam.record_start({audio: true library: false}) { return }
     recording = true
     rec_started = time_now()
     ui.rec.set_text("00:00")
@@ -103,7 +117,7 @@ fn open_viewer(){
         ui.full.load_image_from_data_async(fs.read_bytes(viewing))
         ui.viewer_note.set_text("")
     } else {
-        ui.viewer_note.set_text("Video saved to your photo library")
+        ui.viewer_note.set_text("Video saved in Camera app storage")
     }
     ui.viewer.set_visible(true)
 }
@@ -116,8 +130,14 @@ fn failed(){
     ui.toast.set_text(ui.cam.error()) ui.retry_camera.set_visible(true)
 }
 fn retry_camera(){
+    if permission_pending { return }
+    permission_pending = true
     ui.toast.set_text("") ui.retry_camera.set_visible(false)
-    ui.cam.start()
+    host.request("camera.permission.request", {}, fn(r){
+        permission_pending = false
+        if r.is_ok && r.data.app_consent && r.data.os_permission == "granted" { ui.cam.start() }
+        else { permission_failed(r) }
+    })
 }
 fn boot(){
     load_shots()
@@ -125,7 +145,7 @@ fn boot(){
     ui.zooms.render()
     ui.modes.render()
     ui.shutter_face.render()
-    ui.cam.start()
+    retry_camera()
 }
 start_timeout(0.05, || boot())
 

@@ -2,6 +2,31 @@ use super::*;
 use makepad_widgets::*;
 
 #[test]
+fn declaration_does_not_replace_audio_admission_or_microphone_consent() {
+    const CHILD: &str = "OCTOSENSE_AUDIO_DECLARATION_TEST";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "audio_service::tests::declaration_does_not_replace_audio_admission_or_microphone_consent", "--nocapture"])
+            .env(CHILD, "1").output().unwrap();
+        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        return;
+    }
+    let root = std::env::temp_dir().join(format!("audio-declaration-{}", uuid::Uuid::new_v4()));
+    octosense_appstore::set_data_root(root.clone());
+    for (app, capabilities) in [
+        ("os.audiodeclared", &["audio", "microphone", "storage"][..]),
+        ("os.audioundeclared", &[][..]),
+    ] {
+        crate::host_tools::script_apps::tests::declaration_fixture(app, capabilities);
+        assert!(admission(app, &root.join(".host")).is_ok());
+        assert!(admission(app, &root.join("other-profile/.host")).is_err());
+        assert!(crate::platform_services::microphone_consent(&root.join(".host"), app).is_err(), "a declaration never supplies consent");
+    }
+    assert!(admission("os.notinstalled", &root.join(".host")).is_err());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn paths_arguments_and_capture_duration_are_bounded_before_device_work() {
     assert!(parse(
         "microphone",

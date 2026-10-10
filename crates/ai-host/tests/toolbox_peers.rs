@@ -312,11 +312,12 @@ fn no_toolbox_tool_is_offered_or_run_before_consent() {
 }
 
 #[test]
-fn until_app_hub_verifies_the_grant_only_system_apps_get_what_their_manifest_declares() {
+fn admitted_store_agents_use_the_same_toolbox_policy_as_system_agents() {
     let store = json!({"id": "com.example.news", "capabilities": ["research", "crawl"], "research": {"max_depth": 1, "max_pages": 3}});
     let grant = ToolboxGrant::for_manifest("com.example.news", &store);
-    assert!(grant.is_empty());
-    assert!(grant.notes[0].contains("only system apps"), "{:?}", grant.notes);
+    assert_eq!(grant.grants, BTreeSet::from(["research".to_owned(), "crawl".to_owned()]));
+    assert_eq!(grant.tools(), BTreeSet::from([RUN, FORK, SEARCH, WEB_READ, DEEP_CRAWL]));
+    assert!(grant.notes.is_empty());
     // A manifest for another app, or a scope octos refuses, grants nothing.
     assert!(ToolboxGrant::for_manifest("os.mail", &manifest(&["research"], None)).is_empty());
     let bad = ToolboxGrant::for_manifest(APP, &manifest(&["research"], Some(json!({"languages": ["en"]}))));

@@ -63,8 +63,7 @@ fn admitted(call: &ServiceCall) -> bool {
             crate::host_tools::script_apps::from_bundle(&bundle)
         })
         .is_ok_and(|bundle| {
-            bundle.families.contains(FAMILY)
-                && bundle.manifest["requires"]
+            bundle.manifest["requires"]
                     .as_array()
                     .is_some_and(|a| a.iter().any(|v| v == "host-api-v1"))
         })
@@ -263,7 +262,7 @@ impl HostService for DeviceCalendarService {
 }
 fn begin(call: ServiceCall, reply: Replier, host: &mut dyn ServiceHost) -> Result<(), String> {
     if !admitted(&call) {
-        return Err("permission_denied: Declare device_calendar and requires host-api-v1".into());
+        return Err("permission_denied: App must be admitted in this host and require host-api-v1".into());
     }
     let account = scope(&call.app_id)?;
     let grant = match store::get(&call.host_dir, &call.app_id, &account) {
@@ -1000,6 +999,28 @@ fn execute_local(context: &Context, command: &Command, deadline: Instant) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn admission_ignores_declarations_but_keeps_the_host_identity() {
+        const CHILD: &str = "OCTOSENSE_CALENDAR_DECLARATION_TEST";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "device_calendar::tests::admission_ignores_declarations_but_keeps_the_host_identity", "--nocapture"])
+                .env(CHILD, "1").output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("calendar-declaration-{}", uuid::Uuid::new_v4()));
+        octosense_appstore::set_data_root(root.clone());
+        for (app, capabilities) in [("os.caldeclared", &["device_calendar"][..]), ("os.calundeclared", &[][..])] {
+            crate::host_tools::script_apps::tests::declaration_fixture(app, capabilities);
+            let mut call = ServiceCall { app_id: app.into(), service: "device_calendar.permission.status".into(), args: json!({}), from_sheet: false, may_prompt: true, host_dir: root.join(".host") };
+            assert!(admitted(&call));
+            call.host_dir = root.join("foreign/.host");
+            assert!(!admitted(&call));
+            assert!(scope(app).is_err(), "admission must not manufacture a connected account");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn native_review_is_single_use_and_cannot_claim_loading_or_finished() {
         let mut phase = Phase::Ready(Prepared::Permission);

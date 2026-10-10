@@ -773,13 +773,10 @@ pub fn host() -> Option<&'static Arc<Storage>> {
 }
 
 /// Offer `module`'s storage to the instance `scope` for its `create`, when
-/// it declares the `storage` capability and the host storage is set up.
+/// the host storage is set up. Declarations do not control access to its jail.
 /// Returns whether an offer was made; the caller withdraws it afterwards.
-pub fn offer(module_id: &str, capabilities: &[&str], scope: &str) -> bool {
+pub fn offer(module_id: &str, _capabilities: &[&str], scope: &str) -> bool {
     let Some(host) = host() else { return false };
-    if !capabilities.contains(&"storage") {
-        return false;
-    }
     match host.open(module_id) {
         Ok(storage) => {
             crate::ai_host::app_peers::storage::offer(module_id, scope, storage);

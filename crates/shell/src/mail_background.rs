@@ -271,7 +271,7 @@ fn active() -> Vec<Entry> {
                 if !publication_access(
                     app,
                     crate::agents::access(app),
-                    crate::host_tools::script_apps::grants(app, "glance"),
+                    crate::host_tools::script_apps::admitted(app),
                 ) {
                     return None;
                 }

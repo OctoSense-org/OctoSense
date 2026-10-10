@@ -223,19 +223,18 @@ pub fn register_host_services() {
     register_mail_services();
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        // Capability declarations describe intended use. Admission still binds
+        // every call to a verified app and the current host profile.
         crate::ai_host::set_model_grants(|app, host_dir| {
-            crate::host_tools::script_apps::admitted_bundle(app)
-                .and_then(|(root, bundle)| {
-                    if root.join(".host") != host_dir { return Err("Model caller belongs to another app root".into()); }
-                    crate::host_tools::script_apps::from_bundle(&bundle)
-                })
-                .is_ok_and(|bundle| bundle.families.contains("model"))
+            crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
         });
-        crate::ai_host::set_model_scope(|app, _| Some(
+        crate::ai_host::contained::set_caller_admitted(|app, host_dir| {
+            crate::host_tools::script_apps::admitted_host(app, host_dir).is_ok()
+        });
+        crate::ai_host::set_model_scope(|app, _| {
             crate::app_storage::lifecycle::contained_account(app)
                 .map(|account| crate::app_storage::account_hash(&account))
-                .unwrap_or_else(|| crate::app_storage::DEVICE.into())
-        ));
+        });
         crate::platform_services::register();
         crate::device_calendar::register(|app| {
             crate::app_storage::lifecycle::contained_account(app)
@@ -245,6 +244,7 @@ pub fn register_host_services() {
         crate::audio_service::register();
         octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
         octosense_appstore::host_api::register_runtime_feature("video.playback_controls", 1);
+        octosense_appstore::host_api::register_runtime_feature("camera.capture_intent", 1);
         octosense_markdown_editor::register();
         crate::connected_review::register();
         octosense_oauth_service::host_inbox::register_with_review_hook(crate::connected_review::sheet);
@@ -256,18 +256,8 @@ pub fn register_host_services() {
         crate::connected_events::start();
         crate::connected_backends::register();
         octosense_oauth_service::host::register(std::sync::Arc::new(|app, provider, scopes| {
-            use octosense_oauth_service::Provider;
-            let granted = |family| crate::host_tools::script_apps::grants(app, family);
-            granted("auth") && scopes.iter().all(|scope| match provider {
-                Provider::Github => scope == "read:user" || granted("github"),
-                Provider::Backend => scope == "app.session",
-                Provider::Google => match scope.as_str() {
-                    "openid" | "email" | "profile" => true,
-                    s if s.starts_with("https://www.googleapis.com/auth/calendar.") => granted("gcalendar"),
-                    s if s.starts_with("https://www.googleapis.com/auth/gmail.") => granted("gmail"),
-                    _ => false,
-                },
-            })
+            crate::host_tools::script_apps::admitted(app)
+                && provider.validate_scopes(&scopes.iter().cloned().collect::<Vec<_>>()).is_ok()
         }));
         // Provider sign-in sheets name the app from its admitted manifest and
         // show GitHub's one-time code in a host-held panel (ADR 0010).
@@ -479,13 +469,14 @@ pub fn agent_apps() -> Vec<AgentApp> {
 }
 
 /// The `octos.*` services script app `app_id`'s manifest declares (`None`:
-/// no such app here). The contained `octos` service grants only these.
+/// no opted-in agent here). The list is disclosure metadata; an admitted,
+/// consented agent exposes the four supported assistant methods independently.
 pub fn declared_octos(app_id: &str) -> Option<std::collections::BTreeSet<String>> {
     script_agent_apps().into_iter().find(|a| a.id == app_id).map(|a| a.octos.into_iter().collect())
 }
 
 fn octos_of(capabilities: &serde_json::Value) -> Vec<String> {
-    capabilities.as_array().into_iter().flatten().filter_map(|c| c.as_str()).filter(|c| c.starts_with("octos.")).map(str::to_string).collect()
+    capabilities.as_array().into_iter().flatten().filter_map(|c| c.as_str()).filter(|c| crate::ai_host::app_peers::OCTOS_SERVICES.contains(c)).map(str::to_string).collect()
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
@@ -539,6 +530,7 @@ fn script_agent_apps() -> Vec<AgentApp> {
 pub fn script_agent_app(manifest_path: &Path, id: &str, name: &str) -> Option<AgentApp> {
     let text = std::fs::read_to_string(manifest_path).ok()?;
     let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if manifest["id"].as_str() != Some(id) { return None; }
     let octos = octos_of(&manifest["capabilities"]);
     let agent_block = manifest.get("agent").is_some_and(serde_json::Value::is_object);
     let declares = !octos.is_empty() || agent_block || bundle_ships_agent(manifest_path.parent()?, &text);
@@ -878,6 +870,30 @@ pub(crate) fn installed_bundle(root: &Path, app_id: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn script_agent_discovery_requires_matching_identity_and_genuine_opt_in() {
+        let root = std::env::temp_dir().join(format!("shell-agent-discovery-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("manifest.json");
+        let app = "org.example.notes";
+        for manifest in [
+            serde_json::json!({"id":app,"capabilities":[],"agent":{}}),
+            serde_json::json!({"id":app,"capabilities":["octos.session.open"]}),
+        ] {
+            std::fs::write(&path, manifest.to_string()).unwrap();
+            assert!(script_agent_app(&path, app, "Notes").is_some());
+            assert!(script_agent_app(&path, "org.example.other", "Other").is_none());
+        }
+        for manifest in [
+            serde_json::json!({"id":app,"capabilities":[],"agent":null}),
+            serde_json::json!({"id":app,"capabilities":["octos.unrestricted"]}),
+        ] {
+            std::fs::write(&path, manifest.to_string()).unwrap();
+            assert!(script_agent_app(&path, app, "Notes").is_none());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// The assistant pane's own process is a registry row (F10 starts it
     /// from there) but no list shows it as an app; the apps people pick
     /// are listed.

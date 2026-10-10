@@ -4,7 +4,7 @@
 
 已安装的脚本应用可以向兼容的 OctoSense 宿主申请摄像头、麦克风和位置权限。请查询实际宿主的 API 发现结果；本文描述的新鲜位置采样属于尚未发布的 OS 接线批次。应用能否使用设备，由三项相互独立的检查决定：
 
-- **能力。** 应用清单声明 `camera`、`microphone` 或 `location`。这是应用能得到的上限。
+- **准入。** 宿主验证应用及配置目录。清单中的能力仅说明用途，不能代替用户同意。
 - **应用授权。** 用户在宿主的原生面板上允许这个应用。授权覆盖该应用的所有账户，不覆盖其他应用。
 - **系统权限。** 操作系统授予 OctoSense 本身的权限。单凭它，任何已安装应用都无权使用设备。
 
@@ -21,7 +21,7 @@
 }
 ```
 
-宿主在运行应用的任何源码之前就启用设备授权检查。如果不想让应用装到缺少某个方法的宿主上，把该方法及其确切版本写进 `host_api.required`；App Hub 会在安装和启动时检查，宿主缺少该方法就拒绝安装或启动。对于应用可以不依赖的方法，改在运行时用 `runtime.describe` 查询；这需要 `runtime` 能力。
+宿主在运行应用的任何源码之前就启用设备授权检查。如果不想让应用装到缺少某个方法的宿主上，把该方法及其确切版本写进 `host_api.required`；App Hub 会在安装和启动时检查，宿主缺少该方法就拒绝安装或启动。对于应用可以不依赖的方法，改在运行时用 `runtime.describe` 查询；不需要能力授权。
 
 ## 方法
 
@@ -36,7 +36,7 @@
 | `location.sample` | 可选 `timeout_ms`、`max_age_ms`、`max_accuracy_m` | 仅限 Android/macOS 前台应用：等待符合时效和精度要求的位置，不弹出权限界面。 |
 | `location.sample.cancel` | `{}` | 取消当前应用全部待完成采样，返回数量 `cancelled`；不影响其他应用。 |
 
-除了 `host-api-v1`，`status` 和 `revoke` 只需要相应的能力。`request` 是应用获得授权的途径，`location.get` 和 `location.sample` 则同时需要应用授权和系统权限。
+除了 `host-api-v1`，`status` 和 `revoke` 需要已验证的应用身份。`request` 是应用获得授权的途径，`location.get` 和 `location.sample` 则同时需要应用授权和系统权限。清单能力仅说明用途，省略声明不会阻止调用。
 
 ## 申请权限
 
@@ -50,7 +50,7 @@ host.request("camera.permission.request", {}, fn(r) {
 })
 ```
 
-这是 API 示例，不是已发布的示例应用。返回结果分别报告三项检查：`app_policy_granted`（能力）、`app_consent` 和 `os_permission`。`os_permission` 的取值为 `granted`、`not_determined`、`denied` 或 `settings_required`（用户已永久拒绝，只能到系统设置中更改）。应用已有授权时，宿主不再显示面板；OctoSense 已有系统权限时，也不会再弹出系统对话框。
+这是 API 示例，不是已发布的示例应用。返回结果分别报告三项检查：`app_policy_granted`（应用身份已通过准入检查；字段名为兼容保留）、`app_consent` 和 `os_permission`。`os_permission` 的取值为 `granted`、`not_determined`、`denied` 或 `settings_required`（用户已永久拒绝，只能到系统设置中更改）。应用已有授权时，宿主不再显示面板；OctoSense 已有系统权限时，也不会再弹出系统对话框。
 
 授权面板提供 **Not now** 和 **Continue** 两个按钮，其中 **Continue** 只接受亲手点按：Makepad 自动化或 ADB 发出的合成输入都不算数，应用也不能挂载面板控件的副本来批准自己。**Not now** 接受任何输入，它会关闭面板，并以 `cancelled` 结束申请。面板打开 5 分钟后过期，申请以 `timeout` 失败。
 
@@ -80,14 +80,14 @@ Agent 和后台卡片同样不能借这些接口弹出系统对话框。`CameraP
 
 `location.permission.status` 的 `location_sample_supported` 表示新采样接口可用；旧字段 `location_read_supported` 仍只表示 `location.get` 可用。宿主接入 Android LocationManager / macOS CoreLocation 事件，使用不弹窗的启动操作，在采样前和交付结果前分别检查系统权限。采样不会转为权限申请；Agent 和后台卡片不能启动采样。本次不提供持续订阅或后台定位。
 
-`location.sample.cancel` 取消本应用各界面的全部待完成采样。来源隔离环境关闭、应用授权撤销、能力移除、超时或宿主进入后台都会停止采样。没有原生事件时，250 毫秒计时器仍会执行清理。没有待采样请求后释放采样器的位置流所有权；原生路线/位置请求保留独立所有权，任何一方停止都不会中断另一方，平台维持原有的最高精度请求；独立的 Android 旧 GPS 流和 `location.get@1` 响应保持不变。
+`location.sample.cancel` 取消本应用各界面的全部待完成采样。来源隔离环境关闭、应用授权撤销、应用失去准入资格、超时或宿主进入后台都会停止采样。没有原生事件时，250 毫秒计时器仍会执行清理。没有待采样请求后释放采样器的位置流所有权；原生路线/位置请求保留独立所有权，任何一方停止都不会中断另一方，平台维持原有的最高精度请求；独立的 Android 旧 GPS 流和 `location.get@1` 响应保持不变。
 
 ## 错误
 
 | 错误 | 出现时机 |
 | --- | --- |
 | `host_requirement_missing` | 清单没有要求 `host-api-v1`。 |
-| `permission_denied` | 清单缺少该能力；或在请求等待期间，应用已卸载、失去该能力，或授权已变化。 |
+| `permission_denied` | 应用或配置目录不再通过准入检查，或请求等待期间用户同意发生变化。 |
 | `invalid_arguments` | 参数不是对象、包含未知字段或超出规定范围。除 `location.sample` 外的方法都要求 `{}`。 |
 | `method_unavailable` | 方法不在上表之列，例如 `camera.get`。 |
 | `authorization_required` | 在没有应用授权或没有系统权限时调用了 `location.get`；或 `request` 到达时宿主无法弹窗，例如宿主正处于后台。 |
@@ -101,7 +101,7 @@ Agent 和后台卡片同样不能借这些接口弹出系统对话框。`CameraP
 
 ## 宿主如何处理请求
 
-设备服务把每个原生操作排入 Shell 的 UI 事件循环，并按请求 ID 匹配系统返回的结果。回复之前，它会再次确认应用仍已安装、仍有该能力，且授权版本没有变化。如果请求在此期间已经结束（应用已关闭，或 App Hub 已判定超时），服务会直接丢弃它。撤销授权会使所有仍在等待批准的旧请求失效；一个应用遭到拒绝，也不会清除另一个应用的授权。
+设备服务把每个原生操作排入 Shell 的 UI 事件循环，并按请求 ID 匹配系统返回的结果。回复之前，它会再次确认应用仍在当前宿主中通过准入检查，且授权版本没有变化。如果请求在此期间已经结束（应用已关闭，或 App Hub 已判定超时），服务会直接丢弃它。撤销授权会使所有仍在等待批准的旧请求失效；一个应用遭到拒绝，也不会清除另一个应用的授权。
 
 在 Android 上，系统权限对话框可能让 Activity 暂停。已在等待该对话框结果的请求会保留下来；其他排队中的请求，以及所有尚未批准的授权面板，都会取消。
 

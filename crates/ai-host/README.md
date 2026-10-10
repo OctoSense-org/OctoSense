@@ -1,5 +1,7 @@
 # octosense-ai-host: the shell's AI services
 
+English | [简体中文](README.zh-CN.md)
+
 > **Where this fits.** This crate is the shell's side of the octos kernel: it owns the kernel service, offers each granted native module its `OctosAppService` (from `crates/app-peers`), and serves script apps' `host.request("octos.*")` through the `octos` host service. Every path from an app into octos goes through it; apps never talk to the kernel. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../../README.md#how-it-fits-together); the details: [docs/architecture.md](../../docs/architecture.md) and [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 One entry point for what every OctoSense shell (desktop/, phone/) hosts:
@@ -13,8 +15,8 @@ One entry point for what every OctoSense shell (desktop/, phone/) hosts:
   and image picker, desktop open panel and drops, elsewhere a pasted code);
 - **the `model` host service** (`model.complete`, implemented in
   `apps/ai-providers/host-service/src/complete/`): one-shot model calls over
-  the same providers for apps granted the `model` capability, with per-app
-  budgets;
+  the same providers for admitted apps, with per-app budgets and active
+  account scope. Omitting `model` from capabilities does not deny a call;
 - **script apps' agents**: the `octos` host service (`src/contained.rs`,
   below), one host-owned peer `card.<app id>` per app;
 - **native apps' assistant access** (Rinx ADR 0007): a scoped
@@ -53,9 +55,9 @@ ai_host::shutdown();
 `octos-kernel` on a desktop,
 `Program(path)`, `None`; `KernelSource::platform()` picks); `qr_import:
 QrImport` (`platform()` or `paste_only()`); `policy: Policy`
-(`Policy::shipped()` grants each native app the `octos.*` services listed in
-its `native-apps.json` entry (`agent.octos`), through the generated
-`src/native_agents.rs`).
+(`Policy::shipped()` uses `native-apps.json`'s `agent.octos` to identify
+native assistant offers through generated `src/native_agents.rs`; a
+consented offer receives all four supported methods).
 
 Features: `octos-core` (the kernel, app-peers broker, llm restart; native
 mobile targets always have it — `cfg(kernel)`, set by build.rs), `llm`
@@ -67,7 +69,7 @@ the same name).
 
 `start` registers `ContainedOctos` (family `octos`) in App Hub's host-service
 registry where the shell hosts a kernel. It is how every script app, system
-or store, has an agent:
+or store, can use an opted-in agent:
 
 - **The peer.** One host-owned octos peer per app, `card.<app id>`
   (`PEER_PREFIX`, `peer_id`), launched through
@@ -82,10 +84,14 @@ or store, has an agent:
   The service is registered even when off, so an app hears why.
 - **The app's own calls.** `host.request("octos.session.open" |
   "octos.session.history" | "octos.turn.start" | "octos.turn.interrupt")`,
-  only the names its manifest declares (`set_declared`, else
-  `NOT_DECLARED`); text at most 32 KiB, replies at most 2 MiB. None of
-  today's system apps with an agent (News, Mail, Calendar) declares one:
-  their agents are driven by the shell.
+  the fixed public method set for any admitted, opted-in, consented agent.
+  `set_caller_admitted` checks the current bundle and exact host profile;
+  `set_declared` returns `None` for an app without an agent, including when
+  the public API is available to every app. An agent block, admitted tools,
+  or a supported assistant declaration opts an app in. An empty declaration
+  list on an opted-in agent is allowed. Missing identity/consent callbacks
+  fail closed. Text is limited to 32 KiB, replies to 2 MiB; arbitrary kernel
+  methods and app-selected sessions, profiles or accounts remain refused.
 - **The shell's calls.** `prepare` (the shell prepares every allowed app's
   peer at startup and when it is allowed, so the system agent's `peer_list`
   shows it), `conversation` (the person's lane, for the "Ask <app>" panel and
@@ -114,11 +120,11 @@ only the toolbox's part (`src/toolbox_peers.rs`, over `crates/toolbox`'s
   (`ToolboxGrant::new(app, declared, granted, scope)`). A native module's
   declared capabilities are reviewed with the shell (`for_module`). A script
   app's manifest (`for_manifest`: `research`/`crawl` in `capabilities`, the
-  scope in octos's `Scope` shape under the top-level `research` object, App
-  Hub #26's shape) is, **temporarily**, granted only to system apps (`os.*`)
-  until the host reads App Hub's verified grant. The shells' App Hub pin
-  (`d2ca3a30`) already includes #26; the code still keeps the `os.*` gate
-  (`system_app_only`). No system app declares `research` or `crawl` yet.
+  scope in octos's `Scope` shape under the top-level `research` object) must
+  come from the shell's admitted, digest-checked bundle. Store and system
+  apps follow the same policy. These settings select actual shared tools
+  and resource scopes; removing host-service declaration gates does not
+  grant every toolbox tool or bypass agent consent and relay approvals.
 - `ToolboxExecutor`: the relay's executor for the `toolbox` owner. It checks
   the calling app's grant again (a forged `toolbox.deep_crawl` is
   `not_granted`), runs the call with the app's `AppContext` (id, grants,
@@ -174,7 +180,8 @@ inputs; they are not separate kernel system-message roles. Tool grants and the
 original `TurnTrigger` remain the authorization boundary, including for incoming
 email. Incoming text cannot replace the host's structured guidance fields.
 
-`cargo test --locked -p octosense-ai-host --features octos-core,llm` passed
-39 tests with isolated host/data directories and hidden windows. The new
-guidance test checks account mismatch, payload limits and provisioning without
-preparing a peer. No provider or device was exercised.
+The guidance tests use isolated host/data directories and fake peers. They
+check account mismatch, payload limits and provisioning without preparing a
+peer. The declaration regressions exercise omitted/subset declarations,
+agent opt-in, host-profile mismatch, consent and signed-out accounts. These
+are scripted checks; they do not verify a live provider or phone.

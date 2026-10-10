@@ -166,9 +166,7 @@ fn sharing_has_bounded_text_no_file_authority_and_truthful_handoff() {
         parse_operation("share", &json!({"text":text})).unwrap(),
         Operation::Share { text: text.into() }
     );
-    assert!(!parse_operation("share", &json!({"text":text}))
-        .unwrap()
-        .needs_storage());
+    assert!(matches!(parse_operation("share", &json!({"text":text})).unwrap(), Operation::Share { .. }));
     for args in [
         json!({"text":""}),
         json!({"text":"a\0b"}),
@@ -278,7 +276,7 @@ fn a_selected_document_is_staged_off_the_ui_thread_and_linked_in_against_the_liv
     octosense_appstore::set_data_root(root.join("apps"));
     let dir = crate::host_tools::script_apps::tests::stamped_bundle("camera", APP, |dir, manifest| {
         manifest["id"] = json!(APP);
-        manifest["capabilities"] = json!(["files", "storage"]);
+        manifest["capabilities"] = json!([]);
         manifest["requires"] = json!(["host-api-v1"]);
         manifest["storage"] = json!({"max_bytes": 8 << 20});
         manifest.as_object_mut().unwrap().remove("agent");
@@ -295,7 +293,7 @@ fn a_selected_document_is_staged_off_the_ui_thread_and_linked_in_against_the_liv
         pack: Box::leak(packed.pack_json.into_boxed_str()),
         assets: &[],
     });
-    let manifest = admission(APP, true).unwrap();
+    let manifest = admission(APP, &root.join("apps/.host")).unwrap();
 
     let jail = root.join("jail");
     std::fs::create_dir_all(&jail).unwrap();
@@ -341,7 +339,7 @@ fn a_selected_document_is_staged_off_the_ui_thread_and_linked_in_against_the_liv
                 args: json!({"path": path}),
                 from_sheet: false,
                 may_prompt: true,
-                host_dir: root.join(".host"),
+                host_dir: root.join("apps/.host"),
             },
             heap,
             request,

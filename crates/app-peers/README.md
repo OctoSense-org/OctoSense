@@ -1,5 +1,7 @@
 # octosense-app-peers: host-owned octos app peers
 
+English | [简体中文](README.zh-CN.md)
+
 > **Where this fits.** The broker is the host connection for app agents: one host-owned peer per (app, account), owned by the system agent. It starts the system agent's `peer/input` turns on the peer's session (`…#peer-<slug>`), runs the person's turns in a separate request context opened with `share_history` (`…#peerctx-<id>`; octos#2636), registers the app's tools and hands every `peer/tool/call`, approval and question to the shell, and applies the 10-minute prompt deadline and the person's Stop. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../../README.md#how-it-fits-together); the details: [docs/architecture.md](../../docs/architecture.md) and [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md):
@@ -7,8 +9,9 @@ an OctoSense shell runs ONE octos kernel and ONE provider profile
 ([`crates/kernel`](../kernel)). An app with an agent gets ONE octos peer per
 account, owned by the shell's system agent. A native app that declares
 assistant services (the exact `octos.*` names App Hub publishes) and that
-host policy grants gets its peer and a scoped service handle injected at
-module creation. A script app with an agent (News, Mail, Calendar today)
+host policy allows gets its peer and a scoped service handle injected at
+module creation. These declarations opt the native app in; they do not
+limit it to a subset of the four public assistant methods. A script app with an agent (News, Mail, Calendar today)
 gets its peer `card.<app id>` from the shell's `octos` host service
 (`crates/ai-host/src/contained.rs`), which launches it through
 `hosted::launch` as well. The app talks with its agent in
@@ -20,7 +23,14 @@ both lanes and its history merges them (octos UPCR-2026-034). It also
 opens plain request contexts of that peer for per-client work
 (`open_context`: one per client instance, e.g. a Rinx mini app). It never sees raw
 kernel protocol, provider settings or credentials, and it never starts a
-kernel. An app without granted assistant services allocates no peer.
+kernel. An app without an agent opt-in or host consent allocates no peer.
+For script apps, the host also verifies the bundle and exact host profile;
+an agent block or admitted tools can opt in without `octos.*` declarations.
+
+The broker still intersects each host-issued context's requested services
+with its supported surface. This is a context lease, not a manifest
+permission. Context/account ownership, cancellation and tool approvals
+remain enforced; a manifest cannot add kernel methods or another app's tools.
 
 The kernel side is octos UPCR-2026-034 (`peer/prepare` host binding with an
 app/account memory namespace and `resume`, `peer/context/open|close`,
@@ -161,10 +171,8 @@ inputs; they are not separate kernel system-message roles. Tool grants and the
 original `TurnTrigger` remain the authorization boundary, including for incoming
 email. Incoming text cannot replace the host's structured guidance fields.
 
-Validation for this bridge: `cargo test --locked -p octosense-app-peers
---features broker` passed (26 unit, 62 broker, one ancillary test); after adding
-the account-clear regression, `cargo test --locked -p octosense-app-peers
---features broker guidance` passed all three guidance unit tests and the broker
-integration test. These use scripted connectors, not a provider or phone. The
-integration test covers incoming approval provenance, unchanged request data,
-all three entry points and updates without peer recreation.
+The guidance tests use scripted connectors, not a provider or phone. They
+cover incoming approval provenance, unchanged request data, all three entry
+points, account clearing and updates without peer recreation. The hosted
+service tests cover the public method set after opt-in and host consent;
+unknown methods and apps with no agent offer remain refused.

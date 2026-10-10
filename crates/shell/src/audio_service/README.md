@@ -25,8 +25,10 @@ error/cancellation. `format` is `wav` for recording and null for playback.
 the user heard the audio. `starting` becomes `recording`/`playing` only when
 device callbacks deliver frames. Missing frames fail within five seconds.
 
-Request the `microphone` and `storage` capabilities to record, and `audio` plus
-`storage` to play. Declare `requires: ["host-api-v1"]` and the exact methods in
+Declare `microphone` and `storage` for recording, and `audio` plus `storage`
+for playback disclosure. These declarations do not gate calls; app admission,
+the storage jail and microphone consent are checked independently.
+Declare `requires: ["host-api-v1"]` and the exact methods in
 `host_api.required` at major version 1. `runtime.describe` exposes the supported
 methods. Unsupported platforms omit these methods. All seven are foreground-only,
 including calls through an app agent; none is an agent-tool alias.

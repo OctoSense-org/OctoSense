@@ -22,7 +22,8 @@
 实际听到声音的证明。设备回调产生帧后，`starting` 才变为 `recording` 或
 `playing`；五秒内没有收到帧会明确失败。
 
-录音需声明 `microphone` 与 `storage`，播放需声明 `audio` 与 `storage`。
+录音声明 `microphone` 与 `storage`，播放声明 `audio` 与 `storage`，用于说明用途。
+省略声明不会阻止调用；应用准入、存储隔离和麦克风同意仍须独立检查。
 同时声明 `requires: ["host-api-v1"]`，并在 `host_api.required` 中列出所用
 方法的主版本 1。`runtime.describe` 返回支持的方法；不支持的平台不会列出。
 全部七个方法均仅供前台使用，包括经应用代理转发的调用；不提供代理工具别名。
@@ -53,7 +54,7 @@
 
 播放从同一沙箱读取最多 1 MiB，支持 PCM16/float32 WAV、MP3、FLAC、Ogg Vorbis。
 解码限制为单声道或双声道、六十秒及 2,880,000 帧。文件导入导出另用 `files`
-API，网络下载仍需应用正常的 HTTP 授权。本接口面向短音频，不提供音乐流媒体
+API，网络下载通过应用的 HTTP 接口。本接口面向短音频，不提供音乐流媒体
 或后台媒体服务。
 
 MorningBrief 的自定义 `llm.speech`、`llm.speak`、`llm.listen_*` 补丁仍需要

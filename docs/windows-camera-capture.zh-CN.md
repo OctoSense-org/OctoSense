@@ -7,10 +7,11 @@ Windows 运行时补丁为已打开的 Media Foundation 相机增加
 只有 JPEG 保存成功才收到 `on_capture`。应用仍需要宿主相机授权、OS 相机权限和
 自己的存储沙箱。后端不会增加授权、选择其他应用的存储，也不会因后台工具调用而打开相机。
 
-本批次应声明 **camera 和 storage，不声明 library**。共享控件目前把
-`library.write` 授权当成每次拍摄都导出图库的请求。Windows 图库导出尚不支持，
-会在拍摄前明确拒绝。因此，无权限限制的原生 CameraPreview 默认也可能请求不支持的
-图库导出。本补丁不改变共享控件表达保存意图的方式。录像开始、暂停、继续和停止也明确报告不支持。
+拍摄意图由参数明确表达：`capture()` 和 `capture({library: false})` 都只保存到本地。
+清单声明不会自动触发图库导出。Windows 在拍摄前明确拒绝
+`capture({library: true})`；现有图库导出适配器仅支持 OpenHarmony。
+支持录像的平台通过 `record_start({audio: true})` 请求声音，仍需麦克风同意。
+不传参数时，录像默认为静音且只存本地。Windows 的录像开始、暂停、继续和停止也明确报告不支持。
 
 每个相机按需启动长期工作线程，同时只接受一个静态拍摄请求。Media Foundation
 回调只把请求后的下一帧复制到有界队列。JPEG 解码、编码和文件写入都在工作线程执行。

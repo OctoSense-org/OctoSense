@@ -14,9 +14,9 @@
 //!
 //! **Whose code.** A module comes only from the calling app's own admitted
 //! bundle (digest-checked, [`script_apps::admitted_bundle`]): no argument
-//! names a file, and no app reaches another's functions. The Card runner's
-//! gate and the tool executor both require the app's `wasm` capability, and
-//! the service checks the admitted manifest again before it loads anything.
+//! names a file, and no app reaches another's functions. Capabilities are
+//! declarations; the service verifies admission before loading or executing
+//! code and before delivering a result.
 //!
 //! **Where it runs.** A bounded worker per active app caches compiled Programs,
 //! never guest instances. Every invocation starts with fresh memory/globals/tables.
@@ -33,7 +33,7 @@
 //! or the worker's exit (a minute without calls) ends it. Its filesystem is
 //! the app's storage, the jail its script's `fs.*` sees, decided per call by
 //! the same rules as an engine's ([`crate::host_tools::areas::app_area`]):
-//! none without the `storage` capability or a signed-in account, and what
+//! none without an available app storage area or required signed-in account; what
 //! is left of the quota is what a call may add (a write past it fails inside
 //! the component, as a full disk).
 
@@ -271,9 +271,6 @@ impl Admission {
     fn current(app: &str) -> Result<Self, String> {
         let (root, bundle) = script_apps::admitted_bundle(app)?;
         let loaded = script_apps::from_bundle(&bundle)?;
-        if !loaded.families.contains("wasm") {
-            return Err(format!("{app} was not granted the wasm service"));
-        }
         Ok(Self {
             root,
             bundle,
@@ -1345,7 +1342,7 @@ mod tests {
             ship_state("os.wasmstate", "3.0.0", false)
         })
         .unwrap_err();
-        assert!(error.contains("not granted"), "{error}");
+        assert!(error.contains("admission changed"), "{error}");
         assert!(
             lab.is_none(),
             "revocation drops cached Programs before delivery"
@@ -1580,7 +1577,7 @@ mod tests {
         std::env::set_var("OCTOSENSE_APP_DATA", &root);
         octosense_appstore::set_data_root(root.clone());
         ship("os.wasmlab", "service", |_, _| {});
-        // The same bundle without the capability (and so without its tools).
+        // The same functions without declarations or an app agent.
         ship("os.wasmplain", "plain", |dir, manifest| {
             manifest["capabilities"] = json!([]);
             manifest.as_object_mut().unwrap().remove("agent");
@@ -1694,19 +1691,13 @@ mod tests {
             "compiled code is cached"
         );
 
-        // No grant, no functions: the service checks the admitted manifest
-        // itself, whoever dispatched the request.
-        let error = request(
-            "os.wasmplain",
-            "wasm.fuzzy_rank",
-            json!({"query": "m", "items": []}),
-            &host_dir,
-        )
-        .unwrap_err();
-        assert!(
-            error.contains("was not granted the wasm service"),
-            "{error}"
-        );
+        // Declarations do not gate execution; ownership and admission still do.
+        let ranked = request(
+            "os.wasmplain", "wasm.fuzzy_rank",
+            json!({"query": "m", "items": ["Mail"]}), &host_dir,
+        ).unwrap();
+        assert_eq!(ranked["ranked"][0]["item"], "Mail");
+        assert!(request("os.wasmmissing", "wasm.fuzzy_rank", json!({}), &host_dir).is_err());
         // And a sheet never reaches it.
         let heap = NEXT_HEAP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let call = ServiceCall {

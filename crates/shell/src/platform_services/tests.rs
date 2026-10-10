@@ -101,7 +101,7 @@ fn descriptors_do_not_claim_unimplemented_location_or_background_authorization()
         let service = DeviceService { family };
         let methods = service.api_methods();
         if !permission_supported() {
-            assert!(methods.is_empty());
+            assert_eq!(methods.len(), usize::from(family == "camera"));
             continue;
         }
         let request = methods
@@ -256,7 +256,7 @@ fn location_sampling_broker_lifecycle() {
         let dir =
             crate::host_tools::script_apps::tests::stamped_bundle("camera", id, |dir, manifest| {
                 manifest["id"] = json!(id);
-                manifest["capabilities"] = json!(["location"]);
+                manifest["capabilities"] = if id == "os.locationone" { json!(["location"]) } else { json!([]) };
                 manifest["requires"] = json!(["host-api-v1"]);
                 manifest.as_object_mut().unwrap().remove("agent");
                 for path in ["tools.json", "AGENT.md"] {
@@ -280,7 +280,7 @@ fn location_sampling_broker_lifecycle() {
     let host_dir = root.0.join(".host");
     for app in ["os.locationone", "os.locationtwo"] {
         consent::set(&host_dir, app, "location", true, None).unwrap();
-        assert!(crate::host_tools::script_apps::grants(app, "location"));
+        assert!(crate::host_tools::script_apps::admitted(app));
     }
     services::register_host_service(Box::new(DeviceService { family: "location" }));
     let mut cx = Cx::new(Box::new(|_, _| {}));
@@ -513,4 +513,19 @@ fn location_sampling_broker_lifecycle() {
         );
         assert_eq!(out[0].2.as_ref().unwrap_err(), location::TIMEOUT_ERROR);
     }
+}
+
+#[test]
+fn camera_capture_intent_discovery_matches_the_safe_runtime_defaults() {
+    let method = DeviceService { family: "camera" }.api_methods().into_iter()
+        .find(|method| method.name == "camera.capture_intent").unwrap();
+    assert_eq!(method.version, 1);
+    assert_eq!(method.agent_access, services::AgentAccess::Allowed);
+    assert_eq!(method.input_schema["additionalProperties"], false);
+    let result = camera_capture_intent();
+    assert_eq!(result["defaults"], json!({"audio":false,"library":false}));
+    assert_eq!(result["options"]["capture"], json!(["library"]));
+    assert_eq!(result["options"]["record_start"], json!(["audio","library"]));
+    assert_eq!(result["library_export_supported"], cfg!(target_env = "ohos"));
+    assert_eq!(result["microphone_consent_required"], true);
 }

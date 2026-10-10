@@ -6,6 +6,8 @@
 
 [宿主 OS API 状态](docs/host-os-api-status.zh-CN.md)记录文件、定位和外部链接支持，以及已有服务、剩余缺口和验证范围。
 
+[能力声明与执行边界](docs/capabilities.zh-CN.md)说明声明式 API、用户同意、账户和应用隔离。
+
 **桌面版下载**：[OctoSense 0.1.0-rc.2](https://github.com/OctoSense-org/OctoSense/releases/tag/desktop-v0.1.0-rc.2) 支持当前的 App Hub 签名目录、带 GitHub 证明的应用 Release 及 SDK 1.10.0 声明的公开宿主 API。请选择与操作系统和架构对应的文件；运行前置条件、签名状态和各平台验收范围见发行说明。此桌面版本不会更新 Android Home。
 
 用自己的邮箱[复现真实邮件 → 卡片 → Calendar 演示](docs/demos/mail-calendar/README.zh-CN.md)：固定源码版本、重要邮件策略、虚构测试输入、人工修改草稿和日历跳转。

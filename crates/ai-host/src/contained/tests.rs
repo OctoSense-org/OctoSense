@@ -218,6 +218,10 @@ fn ask(app: &str, service: &str, args: Value, from_sheet: bool) -> Result<Value,
 pub(crate) fn serial() -> std::sync::MutexGuard<'static, ()> {
     let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     reset_for_tests();
+    set_declared(manifests);
+    set_consent(|app| app != "com.example.no-consent");
+    set_caller_admitted(|app, root| app != "com.example.unadmitted"
+        && root == std::env::temp_dir().join("octosense-contained-tests"));
     guard
 }
 
@@ -426,33 +430,33 @@ fn policy_contained_apps_follow_consent() {
 }
 
 /// The shell's manifest lookup, as a test sets it once for the whole crate:
-/// every app declares everything but these two.
+/// known agents may have full, partial or empty declaration metadata.
 fn manifests(app: &str) -> Option<BTreeSet<String>> {
     match app {
         "com.example.reader" => Some(["octos.session.open", "octos.session.history", "not.octos"].iter().map(|s| s.to_string()).collect()),
         "com.example.unknown" => None,
+        "com.example.undeclared" => Some(BTreeSet::new()),
         _ => Some(OCTOS_SERVICES.iter().map(|s| s.to_string()).collect()),
     }
 }
 
 #[test]
-fn contained_apps_get_only_the_octos_services_their_manifest_declares() {
+fn opted_in_apps_get_public_assistant_methods_independent_of_declarations() {
     let _g = serial();
     set_declared(manifests);
     let peers = Peers::new(Turn::Reply(json!({"turn_id": "t1", "text": "ok"})));
     register(true, &peers);
     ask("com.example.reader", "octos.session.open", json!({}), false).expect("declared");
-    // The peer serves the shell's panel too; the app's own context holds
-    // only what its manifest declares, never all four.
-    assert_eq!(peers.granted.lock().unwrap().len(), 1);
+    // These declarations omit turn.start, and the second opted-in agent has
+    // no octos declaration at all. Both have the same public method surface.
+    ask("com.example.reader", "octos.turn.start", json!({"text": "hi"}), false).expect("public method");
+    ask("com.example.undeclared", "octos.turn.start", json!({"text": "hi"}), false).expect("opted-in agent without declarations");
     let specs = peers.service("card.com.example.reader").specs.lock().unwrap().clone();
     assert_eq!(specs.len(), 1);
-    assert_eq!(specs[0].services, ["octos.session.history", "octos.session.open"].iter().map(|s| s.to_string()).collect::<BTreeSet<_>>(), "never all four");
-    let err = ask("com.example.reader", "octos.turn.start", json!({"text": "hi"}), false).unwrap_err();
-    assert_eq!(err, NOT_DECLARED);
+    assert_eq!(specs[0].services, OCTOS_SERVICES.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>());
     let err = ask("com.example.unknown", "octos.session.open", json!({}), false).unwrap_err();
     assert_eq!(err, NOT_DECLARED);
-    assert_eq!(peers.ids(), vec!["card.com.example.reader".to_string()], "no peer for an app the shell does not know");
+    assert_eq!(peers.ids(), vec!["card.com.example.reader".to_string(), "card.com.example.undeclared".to_string()], "no peer without agent opt-in");
 }
 
 #[test]
@@ -475,8 +479,8 @@ fn turning_an_agent_off_releases_its_live_peer_at_once() {
 /// prepares a consented app's peer without the app calling `octos` (News
 /// ships tools.json and declares no `octos.*`); the app's own calls, the
 /// shell's panel and the preparation share ONE peer; the panel's
-/// conversation holds every service while the app's own context holds only
-/// what it declares; revoking releases the peer and a later preparation
+/// conversation and the app's own context hold the public method surface;
+/// revoking releases the peer and a later preparation
 /// gets a fresh one.
 #[test]
 fn the_shell_prepares_a_consented_apps_peer_and_its_panel_shares_it() {
@@ -500,13 +504,12 @@ fn the_shell_prepares_a_consented_apps_peer_and_its_panel_shares_it() {
     assert!(panel.is_open());
     assert_eq!(news.conversations.load(Ordering::SeqCst), 1);
     assert_eq!(news.specs.lock().unwrap()[0].services.len(), OCTOS_SERVICES.len());
-    // An app that also calls `octos` itself uses that peer, with only what
-    // it declares.
+    // An app that also calls `octos` itself uses that same scoped peer.
     prepare("com.example.reader").unwrap();
     ask("com.example.reader", "octos.session.open", json!({}), false).expect("declared");
     assert_eq!(peers.ids(), vec!["card.os.news".to_string(), "card.com.example.reader".to_string()], "no second peer");
     let reader = peers.service("card.com.example.reader").specs.lock().unwrap().clone();
-    assert_eq!(reader[0].services, ["octos.session.history", "octos.session.open"].iter().map(|s| s.to_string()).collect::<BTreeSet<_>>());
+    assert_eq!(reader[0].services, OCTOS_SERVICES.iter().map(|s| s.to_string()).collect::<BTreeSet<_>>());
     // Turned off: released at once; allowed again, a fresh peer.
     assert!(revoke("os.news"));
     assert!(news.released.load(Ordering::SeqCst));
@@ -670,4 +673,20 @@ fn a_bound_card_conversation_cannot_follow_a_changed_or_signed_out_account() {
     assert!(conversation_for_account("os.mail", "card-chat", "original").is_err());
     assert_eq!(mail.conversations.load(Ordering::SeqCst), 1, "no new context for a stale binding");
     set_account_of(None);
+}
+
+#[test]
+fn declaration_changes_never_bypass_consent_or_verified_caller_identity() {
+    let _g = serial();
+    let peers = Peers::new(Turn::Reply(json!({})));
+    register(true, &peers);
+    assert_eq!(ask("com.example.no-consent", "octos.turn.start", json!({"text":"hi"}), false).unwrap_err(), NO_CONSENT);
+    assert_eq!(ask("com.example.unadmitted", "octos.session.open", json!({}), false).unwrap_err(), NOT_ADMITTED);
+    assert!(peers.ids().is_empty());
+    let heap = NEXT_HEAP.fetch_add(1, Ordering::SeqCst);
+    dispatch(ServiceCall { app_id: APP.into(), service: "octos.session.open".into(), args: json!({}), from_sheet: false,
+        may_prompt: true, host_dir: std::env::temp_dir().join("another-host-profile") }, heap, 1, &mut NoSheets);
+    let (_, _, result) = take_replies_for(&[heap]).pop().expect("synchronous identity refusal");
+    assert_eq!(result.unwrap_err(), NOT_ADMITTED);
+    assert!(peers.ids().is_empty(), "wrong host profile never creates a peer");
 }

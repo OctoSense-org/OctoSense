@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "0e7e0dacab19db708793e63ded641cd7b3ea319c",
+    "tree": "a6fae94aa4d233503b14bc6d0a36bcbc2b264b44",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -46,7 +46,8 @@
       "Video numeric controls accept both integer and floating Splash arguments while refusing nonnumeric, nonfinite and out-of-range values; native acceptance exposed the integer-seek regression.",
       "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback.",
       "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
-      "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406)."
+      "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
+      "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture."
     ],
     "stacked": [
       {
@@ -180,6 +181,10 @@
       {
         "patch": "tools/runtime-patches/makepad-video-resume-keeps-pause.patch",
         "sha256": "a9350a3e24d7d3a6a76bfd444860452f769bc834cd796d1a92c8e24c0be1c802"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-camera-capture-intent.patch",
+        "sha256": "d056b76d2eb6b55aa9c96447a49fc90d32a9a235b6bc9a1ff125902a73c28208"
       }
     ]
   }

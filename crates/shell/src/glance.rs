@@ -64,20 +64,11 @@
 //! notification carries ([`GlanceNote::key`], [`NoteTargets`], [`card`]).
 //! The shell drains them with [`take_notifications`].
 //!
-//! **Who may call.** A contained app publishes only when it holds the
-//! `glance` capability (App Hub's `KNOWN_CAPABILITIES`; the store tells the
-//! person "Show cards on your glance screen"). The Card runner's gate
-//! (Makepad's `splash_policy::service_allowed`) lets a `glance.*` request
-//! out of an app's isolate only when the app's resolved policy grants
-//! `glance`, so a call the runner hands [`GlanceService`] from the app
-//! itself holds the grant. A host sheet runs under no app's policy, so a
-//! call from a sheet holds none, and [`Caller::Contained`] records which it
-//! is. Every method refuses a contained caller without the grant. System
-//! apps are no exception: they run under their own manifest's policy like
-//! any installed app, so a system app that publishes requests `glance` in
-//! its manifest, as Mail requests `mail`. Native modules are the shell's own
-//! code and publish by the id the shell hosts them as. The capability only
-//! decides who may publish; the limits above hold for every caller.
+//! **Who may call.** Contained callers have a verified app identity in the
+//! current host profile. Manifest capabilities describe usage and do not grant
+//! publication. Host sheets cannot publish as an app. Native modules publish
+//! by the identity the shell hosts them as. Ownership, content validation,
+//! account binding and the limits above hold independently of declarations.
 //!
 //! **The feed.** The system agent will rank and trim; until then the shell
 //! scrolls all retained cards by priority, then recency ([`shown`]); only
@@ -111,8 +102,8 @@ pub const STORE_BYTES: usize = 32 * 1024 * 1024;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Caller {
     /// A contained app, by the manifest id the Card runner runs it under,
-    /// and whether its policy grants `glance` (see the module docs).
-    Contained { app: String, granted: bool },
+    /// and whether its identity is admitted (see the module docs).
+    Contained { app: String, admitted: bool },
     /// A native module or the shell itself, by the id the shell hosts it as.
     Native(String),
 }
@@ -123,14 +114,14 @@ impl Caller {
             Caller::Contained { app: id, .. } | Caller::Native(id) => id,
         }
     }
-    /// A contained app whose policy grants `glance`.
-    pub fn granted(app: impl Into<String>) -> Caller {
-        Caller::Contained { app: app.into(), granted: true }
+    /// A contained caller whose identity has been verified by the host.
+    pub fn admitted(app: impl Into<String>) -> Caller {
+        Caller::Contained { app: app.into(), admitted: true }
     }
     /// Whether this caller may use the glance service at all.
     pub fn may_use(&self) -> Result<(), String> {
         match self {
-            Caller::Contained { app, granted: false } => Err(format!("{app} was not granted the glance capability")),
+            Caller::Contained { app, admitted: false } => Err(format!("{app} was not an admitted app publisher")),
             _ => Ok(()),
         }
     }
@@ -970,18 +961,17 @@ impl octosense_appstore::services::HostService for GlanceService {
     }
     fn call(&mut self, call: octosense_appstore::services::ServiceCall, reply: octosense_appstore::services::Replier, _host: &mut dyn octosense_appstore::services::ServiceHost) {
         if call.method() == "take_open" {
-            if call.from_sheet || !call.may_prompt {
+            if call.from_sheet || !call.may_prompt || crate::host_tools::script_apps::admitted_host(&call.app_id, &call.host_dir).is_err() {
                 reply.send(Err("Open routes belong to the foreground app".into()));
             } else {
                 reply.send(Ok(json!({"route":crate::glance_routes::take(&call.app_id)})));
             }
             return;
         }
-        // The identity is the runner's, never the app's arguments. A call from
-        // the app's own isolate passed the runner's gate, which requires the
-        // `glance` capability; a host sheet's isolate has no app policy and
-        // holds no grant.
-        let caller = Caller::Contained { app: call.app_id.clone(), granted: !call.from_sheet };
+        // The identity is the runner's, never the app's arguments. Verify
+        // admission and the host profile; declarations do not grant access.
+        // Host sheets cannot act as an app publisher.
+        let caller = Caller::Contained { app: call.app_id.clone(), admitted: !call.from_sheet && crate::host_tools::script_apps::admitted_host(&call.app_id, &call.host_dir).is_ok() };
         reply.send(request(&caller, &call.service, &call.args));
     }
 }
@@ -992,19 +982,19 @@ pub fn register() {
 }
 
 /// Publish a card for contained app `app` from one of its host services:
-/// a tool call runs outside the app's isolate, where the Card runner's gate
-/// does not, so the grant is the app's admitted manifest's `glance`
-/// (`script_apps::grants`). Calendar's cards and every app's notice
+/// a tool call runs outside the app's isolate, so recheck its admitted
+/// identity. Capability declarations do not gate publication. Calendar's
+/// cards and every app's notice
 /// (glance_notice.rs) go out this way.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn publish_for(app: &str, args: &Value) -> Result<Value, String> {
-    let caller = Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
+    let caller = Caller::Contained { app: app.to_string(), admitted: crate::host_tools::script_apps::admitted(app) };
     request(&caller, "glance.publish", args)
 }
 
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn withdraw_for(app: &str, id: &str) -> Result<(), String> {
-    let caller = Caller::Contained {app:app.into(),granted:crate::host_tools::script_apps::grants(app,"glance")};
+    let caller = Caller::Contained {app:app.into(),admitted:crate::host_tools::script_apps::admitted(app)};
     request(&caller,"glance.withdraw",&json!({"card_id":id})).map(|_| ())
 }
 
@@ -1022,7 +1012,7 @@ fn restore_calendar_publications() {
     static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if RESTORED.load(Ordering::Acquire) { return; }
     let Some(host) = crate::app_storage::host() else { return; };
-    if !crate::host_tools::script_apps::grants("os.calendar","glance") { return; }
+    if !crate::host_tools::script_apps::admitted("os.calendar") { return; }
     let root = host.layout().apps_root().join(".host");
     let now = now_ms();
     let Ok(publications) = octosense_calendar_service::publications(&root,now) else { return; };
@@ -1033,7 +1023,7 @@ fn restore_calendar_publications() {
         args["notify"] = json!(false);
         args["expires"] = json!(EXPIRES_MAX_S);
         let mut temporary = GlanceStore::default();
-        if temporary.publish(&Caller::granted("os.calendar"),&args,now).is_err() { continue; }
+        if temporary.publish(&Caller::admitted("os.calendar"),&args,now).is_err() { continue; }
         let Some(mut card) = temporary.cards.pop() else { continue; };
         card.published_ms = p.published; card.expires_ms = p.expires;
         if with_store(|store| store.restore_publication(card,now)) { changed(); }
@@ -1085,7 +1075,7 @@ pub fn publish_mail_l0_for(app: &str, args: &Value) -> Result<Value, String> {
     let mut binding: crate::mail_card::Binding = serde_json::from_value(metadata.clone()).map_err(|_| "Invalid Mail host binding")?;
     binding.card_id = args["card_id"].as_str().ok_or("Missing card_id")?.to_string();
     binding.validate()?;
-    let caller = Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
+    let caller = Caller::Contained { app: app.to_string(), admitted: crate::host_tools::script_apps::admitted(app) };
     caller.may_use()?;
     if crate::mail_card::completed(&binding) {
         // A repair/retry of a completed message must not resurrect its card or
@@ -1117,7 +1107,7 @@ pub(crate) fn restore_mail_publication(args: &Value, binding: crate::mail_card::
     let source = args["source"].as_str().ok_or("Missing L0 source")?;
     check_generated_l0(source)?;
     check_generated_data(source, &args["data"])?;
-    let caller = Caller::Contained { app: binding.publisher.clone(), granted: crate::host_tools::script_apps::grants(&binding.publisher, "glance") };
+    let caller = Caller::Contained { app: binding.publisher.clone(), admitted: crate::host_tools::script_apps::admitted(&binding.publisher) };
     let mut temporary = GlanceStore::default().with_digest_root(crate::glance_digest::digest_root());
     let mut args = args.clone();
     args["notify"] = json!(false);
@@ -1142,7 +1132,7 @@ pub(crate) fn restore_notification_for(app: &str, args: &Value, account: &str, p
     }
     let now = now_ms();
     if expires <= now || published >= expires {return Err("Expired publication".into());}
-    let caller = Caller::Contained {app:app.into(),granted:crate::host_tools::script_apps::grants(app,"glance")};
+    let caller = Caller::Contained {app:app.into(),admitted:crate::host_tools::script_apps::admitted(app)};
     let mut temporary = GlanceStore::default().with_digest_root(crate::glance_digest::digest_root());
     let mut args = args.clone(); args["notify"]=json!(false); args["expires"]=json!(EXPIRES_MAX_S);
     temporary.publish(&caller,&args,now)?;
@@ -1170,7 +1160,7 @@ pub(crate) fn restore_mail_notification(args: &Value, account: &str, published: 
     let source = args["source"].as_str().ok_or("Missing source")?;
     check_generated_l0(source)?;
     check_generated_data(source, &args["data"])?;
-    let caller = Caller::Contained { app:"os.mail".into(), granted:crate::host_tools::script_apps::grants("os.mail", "glance") };
+    let caller = Caller::Contained { app:"os.mail".into(), admitted:crate::host_tools::script_apps::admitted("os.mail") };
     let mut temporary = GlanceStore::default().with_digest_root(crate::glance_digest::digest_root());
     let mut args = args.clone();
     args["notify"] = json!(false);
@@ -1301,7 +1291,7 @@ pub fn publish_demo_if_asked() {
             crate::glance_chat::set_demo_mail(true);
             seed_demo_mail_chat("os.mail");
             for args in demo_mail_publishes() {
-                if let Err(e) = request(&Caller::granted("os.mail"), "glance.publish", &args) {
+                if let Err(e) = request(&Caller::admitted("os.mail"), "glance.publish", &args) {
                     makepad_widgets::log!("glance: demo mail card refused: {e}");
                 }
             }
@@ -1311,7 +1301,7 @@ pub fn publish_demo_if_asked() {
             #[cfg(any(feature = "app-hub", native_mobile))]
             for &(app, card_id, title, body) in DEMO_NOTICES {
                 let args = crate::glance_notice::publish_args(app, &json!({"title": title, "body": body, "card_id": card_id}), now_ms());
-                if let Err(e) = args.and_then(|args| request(&Caller::granted(app), "glance.publish", &args)) {
+                if let Err(e) = args.and_then(|args| request(&Caller::admitted(app), "glance.publish", &args)) {
                     makepad_widgets::log!("glance: demo notice {card_id} refused: {e}");
                 }
             }
@@ -1321,7 +1311,7 @@ pub fn publish_demo_if_asked() {
             "card_id": "digest", "title": "News digest", "source": source, "data": data,
             "priority": 70, "open": {"app": "news"}
         });
-        if let Err(e) = request(&Caller::granted("os.news"), "glance.publish", &args) {
+        if let Err(e) = request(&Caller::admitted("os.news"), "glance.publish", &args) {
             makepad_widgets::log!("glance: demo digest refused: {e}");
         }
     });
@@ -1394,7 +1384,7 @@ mod tests {
     }
 
     fn news() -> Caller {
-        Caller::granted("os.news")
+        Caller::admitted("os.news")
     }
     fn args(card_id: &str) -> Value {
         let (source, data) = demo_digest();
@@ -1444,7 +1434,7 @@ mod tests {
         let shown = store.shown(1_000, usize::MAX);
         assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.news", "news"));
         // Another app sees, replaces and withdraws only its own cards.
-        let maps = Caller::granted("os.maps");
+        let maps = Caller::admitted("os.maps");
         assert_eq!(store.list(&maps, 1_000).unwrap(), json!([]));
         assert_eq!(store.withdraw(&maps, &json!({"card_id": "digest"}), 1_000).unwrap()["withdrawn"], false);
         assert_eq!(store.len(), 1);
@@ -1458,11 +1448,11 @@ mod tests {
         use octosense_calendar_service as cal;
         let mut store = GlanceStore::default();
         let event = cal::event_card_args("Dentist", "Fri 2 Oct", "15:00\u{2013}16:00", "Main St", "Bring the form", "ev-1", 70);
-        store.publish(&Caller::granted("os.calendar"), &event, 1_000).expect("Calendar event template must be admitted");
+        store.publish(&Caller::admitted("os.calendar"), &event, 1_000).expect("Calendar event template must be admitted");
         let now = cal::parse_time("2026-10-01T09:00").unwrap();
         let events = vec![cal::Event { id: "a".into(), title: "Standup".into(), start: "2026-10-02T09:30".into(), end: None, location: String::new(), notes: String::new(), request_id: String::new(), timezone: String::new() }];
         let agenda = cal::agenda_card_args(&events, 7, now);
-        assert!(store.publish(&Caller::granted("os.calendar"), &agenda, 1_000).is_ok());
+        assert!(store.publish(&Caller::admitted("os.calendar"), &agenda, 1_000).is_ok());
         let shown = store.shown(1_000, usize::MAX);
         assert!(shown.iter().all(|c| c.app == "os.calendar" && c.open_app == "calendar"));
     }
@@ -1474,11 +1464,11 @@ mod tests {
     fn mails_notice_card_is_admitted_as_mails_own() {
         let mut store = GlanceStore::default();
         let args = crate::glance_notice::publish_args("os.mail", &json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
-        let ok = store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap();
+        let ok = store.publish(&Caller::admitted("os.mail"), &args, 1_000).unwrap();
         assert_eq!(ok["card_id"], "hello");
         let shown = store.shown(1_000, usize::MAX);
         assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.mail", "mail"));
-        let ungranted = Caller::Contained { app: "os.mail".into(), granted: false };
+        let ungranted = Caller::Contained { app: "os.mail".into(), admitted: false };
         assert!(store.publish(&ungranted, &args, 1_000).is_err());
     }
 
@@ -1491,11 +1481,11 @@ mod tests {
         for app in ["os.news", "os.photos", "os.maps", "os.youtube", "os.camera", "os.calendar", "os.ai-providers"] {
             let mut store = GlanceStore::default();
             let args = crate::glance_notice::publish_args(app, &json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
-            let ok = store.publish(&Caller::granted(app), &args, 1_000);
+            let ok = store.publish(&Caller::admitted(app), &args, 1_000);
             assert!(ok.is_ok(), "{app}: {ok:?}");
             let shown = store.shown(1_000, usize::MAX);
             assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), (app, app.strip_prefix("os.").unwrap()));
-            assert!(store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap_err().contains("opens the app that published it"), "{app}");
+            assert!(store.publish(&Caller::admitted("os.mail"), &args, 1_000).unwrap_err().contains("opens the app that published it"), "{app}");
         }
     }
 
@@ -1558,7 +1548,7 @@ mod tests {
             let err = store.publish(&news(), &brief(&other), now()).unwrap_err();
             assert!(err.contains("own app's digests"), "{err}");
             // Maps naming itself gets its own (empty) folder, never News's.
-            let maps = Caller::granted("os.maps");
+            let maps = Caller::admitted("os.maps");
             let mut args = brief(&NEWS_BRIEF_CARD.replace("app: \"os.news\"", "app: \"os.maps\""));
             args["open"] = Value::Null;
             store.publish(&maps, &args, now()).unwrap();
@@ -1606,40 +1596,25 @@ mod tests {
     }
 
     #[test]
-    fn a_contained_app_needs_the_glance_capability_whoever_it_is() {
+    fn a_contained_publisher_needs_admission_whoever_it_is() {
         let mut store = GlanceStore::default();
-        // A store app with the grant publishes like a system app, under the
+        // An admitted store app publishes like a system app, under the
         // same limits, and its card opens only itself.
         let mut a = args("d");
         a["open"] = json!({"app": "com.example.news"});
-        assert!(store.publish(&Caller::granted("com.example.news"), &a, 0).is_ok());
-        // Without the grant, no app may publish, list or withdraw; being a
-        // system app is not a grant.
+        assert!(store.publish(&Caller::admitted("com.example.news"), &a, 0).is_ok());
+        // Without admission, no app may publish, list or withdraw; a
+        // system-looking app id is not sufficient.
         for app in ["com.example.other", "os.maps"] {
-            let ungranted = Caller::Contained { app: app.into(), granted: false };
+            let ungranted = Caller::Contained { app: app.into(), admitted: false };
             let err = store.publish(&ungranted, &args("d"), 0).unwrap_err();
-            assert!(err.contains("not granted the glance capability"), "{err}");
+            assert!(err.contains("not an admitted app publisher"), "{err}");
             assert!(store.list(&ungranted, 0).is_err());
             assert!(store.withdraw(&ungranted, &json!({"card_id": "d"}), 0).is_err());
         }
         // A native module publishes through the same API.
         assert!(store.publish(&Caller::Native("news".into()), &args("d"), 0).is_ok());
         assert_eq!(store.len(), 2);
-    }
-
-    /// The grant is the Card runner's: its isolate gate lets `glance.*` out
-    /// only for an app whose resolved policy lists `glance` (a prefix or a
-    /// neighbouring family is not enough).
-    #[test]
-    fn the_runner_gate_admits_glance_only_with_the_capability() {
-        use makepad_widgets::splash_policy::{service_allowed, set_policy_for_heap};
-        set_policy_for_heap(9201, vec!["storage".into(), "news".into()], Vec::new(), None);
-        assert!(service_allowed(9201, "glance.publish").is_err());
-        set_policy_for_heap(9202, vec!["glance".into()], Vec::new(), None);
-        for method in ["glance.publish", "glance.withdraw", "glance.list"] {
-            assert!(service_allowed(9202, method).is_ok(), "{method}");
-        }
-        assert!(service_allowed(9202, "news.list").is_err(), "glance grants nothing else");
     }
 
     #[test]
@@ -1692,7 +1667,7 @@ mod tests {
         a["notify"] = json!("yes");
         assert!(GlanceStore::default().publish(&news(), &a, 0).unwrap_err().contains("notify"));
         a["notify"] = json!(true);
-        request(&Caller::granted("os.notifytest"), "glance.publish", &{
+        request(&Caller::admitted("os.notifytest"), "glance.publish", &{
             a["open"] = Value::Null;
             a
         })
@@ -1700,7 +1675,7 @@ mod tests {
         let notes = take_notifications();
         let note = notes.iter().find(|n| n.app == "os.notifytest").expect("queued");
         assert_eq!((note.key.as_str(), note.title.as_str()), ("os.notifytest/notify-test", "News digest"));
-        request(&Caller::granted("os.notifytest"), "glance.withdraw", &json!({"card_id": "notify-test"})).unwrap();
+        request(&Caller::admitted("os.notifytest"), "glance.withdraw", &json!({"card_id": "notify-test"})).unwrap();
     }
 
     /// The fake Mail cards pass the L0 admission and publish as `os.mail`,
@@ -1713,9 +1688,9 @@ mod tests {
         // publish it.
         let mut ana = demo_mail_publishes().remove(0);
         ana["open"] = Value::Null;
-        let err = GlanceStore::default().publish(&Caller::granted("os.mailtest"), &ana, 0).unwrap_err();
+        let err = GlanceStore::default().publish(&Caller::admitted("os.mailtest"), &ana, 0).unwrap_err();
         assert!(err.contains("own app's agent only (os.mailtest), not os.mail"), "{err}");
-        let mail = Caller::granted("os.mail");
+        let mail = Caller::admitted("os.mail");
         let mut targets = NoteTargets::default();
         let mut keys = Vec::new();
         for (i, mut args) in demo_mail_publishes().into_iter().enumerate() {
@@ -1761,12 +1736,12 @@ mod tests {
                     view root Surface(pad: .page) {\n  Col(gap: 8) {\n    for m in convo.entries key m.id { ChatEntry(text: m.text, role: m.role) }\n  }\n}\n";
         let forged = json!({"convo": {"status": "ready", "count": 1, "entries": [{"id": "x", "role": "model", "text": "FORGED ENTRY", "at": 0}]}});
         let mut store = GlanceStore::default();
-        store.publish(&Caller::granted("os.chatpub"), &json!({"card_id": "c", "title": "t", "source": card, "data": forged}), 0).unwrap();
+        store.publish(&Caller::admitted("os.chatpub"), &json!({"card_id": "c", "title": "t", "source": card, "data": forged}), 0).unwrap();
         let published = store.card("os.chatpub/c", 0).unwrap();
         assert!(!published.body.contains("FORGED ENTRY"), "{}", published.body);
         // The host's own entry is.
         crate::glance_chat::store().seed_if_empty("os.chatpub", "main", &[(crate::glance_chat::Role::Model, "The host's entry")], 0);
-        store.publish(&Caller::granted("os.chatpub"), &json!({"card_id": "c", "title": "t", "source": card, "data": forged}), 1).unwrap();
+        store.publish(&Caller::admitted("os.chatpub"), &json!({"card_id": "c", "title": "t", "source": card, "data": forged}), 1).unwrap();
         assert!(store.card("os.chatpub/c", 1).unwrap().body.contains("The host's entry"));
     }
 
@@ -1808,7 +1783,7 @@ mod tests {
         // Another app has its own window.
         let mut maps = args("digest");
         maps["open"] = json!({"app": "maps"});
-        assert!(store.publish(&Caller::granted("os.maps"), &maps, 2_000).is_ok());
+        assert!(store.publish(&Caller::admitted("os.maps"), &maps, 2_000).is_ok());
         // The window slides.
         assert!(store.publish(&news(), &args("digest"), 1_000 + RATE_WINDOW_MS).is_ok());
     }
@@ -1841,7 +1816,7 @@ mod tests {
         store.publish(&news(), &incoming, 2).unwrap();
         let mut maps = args("commute");
         maps["open"] = Value::Null;
-        store.publish(&Caller::granted("os.maps"), &maps, 3).unwrap();
+        store.publish(&Caller::admitted("os.maps"), &maps, 3).unwrap();
         let one_card = store.cards.iter().map(GlanceCard::retained_bytes).max().unwrap();
         store.trim_payloads(Some("os.news/incoming"), one_card, usize::MAX);
         assert!(store.card("os.news/older", 3).is_none());
@@ -1973,7 +1948,7 @@ mod tests {
                 let mut a = args(&format!("c{i}"));
                 a["priority"] = json!(p);
                 a["open"] = Value::Null;
-                store.publish(&Caller::granted(app), &a, t).unwrap();
+                store.publish(&Caller::admitted(app), &a, t).unwrap();
             }
         }
         let shown = store.shown(t, usize::MAX);
@@ -1988,6 +1963,18 @@ mod tests {
     #[cfg(feature = "app-hub")]
     #[test]
     fn the_card_runner_dispatch_carries_the_callers_identity() {
+        const CHILD: &str = "OCTOSENSE_GLANCE_ADMISSION_TEST";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "glance::tests::the_card_runner_dispatch_carries_the_callers_identity", "--nocapture"])
+                .env(CHILD, "1").output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("glance-admission-{}", uuid::Uuid::new_v4()));
+        octosense_appstore::set_data_root(root.clone());
+        crate::host_tools::script_apps::tests::declaration_fixture("os.news", &["glance"]);
+        crate::host_tools::script_apps::tests::declaration_fixture("os.glanceundeclared", &[]);
         use octosense_appstore::services::{dispatch, take_replies_for, ServiceCall, ServiceHost};
         struct NoSheets;
         impl ServiceHost for NoSheets {
@@ -1995,7 +1982,7 @@ mod tests {
             fn close_sheet(&mut self) {}
         }
         register();
-        let call = |app: &str, service: &str, args: Value| ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, may_prompt: true, host_dir: std::env::temp_dir() };
+        let call = |app: &str, service: &str, args: Value| ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, may_prompt: true, host_dir: root.join(".host") };
         let from_sheet = |app: &str, service: &str, args: Value| ServiceCall { from_sheet: true, ..call(app, service, args) };
         let mut spoof = args("dispatch-test");
         spoof["app"] = json!("os.mail");
@@ -2004,13 +1991,24 @@ mod tests {
         assert!(refused[0].2.as_ref().unwrap_err().contains("caller"), "{refused:?}");
         // A host sheet over an app runs under no app policy: no grant.
         dispatch(from_sheet("os.news", "glance.publish", args("dispatch-test")), 9102, 1, &mut NoSheets);
-        assert!(take_replies_for(&[9102])[0].2.as_ref().unwrap_err().contains("not granted the glance capability"));
+        assert!(take_replies_for(&[9102])[0].2.as_ref().unwrap_err().contains("not an admitted app publisher"));
         dispatch(call("os.news", "glance.publish", args("dispatch-test")), 9103, 1, &mut NoSheets);
         assert!(take_replies_for(&[9103])[0].2.is_ok());
         assert!(shown().iter().any(|c| c.key() == "os.news/dispatch-test" && c.open_app == "news"));
         dispatch(call("os.news", "glance.withdraw", json!({"card_id": "dispatch-test"})), 9104, 1, &mut NoSheets);
         assert!(take_replies_for(&[9104])[0].2.as_ref().unwrap().contains("true"));
         assert!(!shown().iter().any(|c| c.key() == "os.news/dispatch-test"));
+        let mut undeclared = args("undeclared-test");
+        undeclared["open"] = Value::Null;
+        dispatch(call("os.glanceundeclared", "glance.publish", undeclared.clone()), 9105, 1, &mut NoSheets);
+        assert!(take_replies_for(&[9105])[0].2.is_ok(), "a declaration is not a publication grant");
+        let mut foreign = call("os.glanceundeclared", "glance.publish", undeclared);
+        foreign.host_dir = root.join("foreign/.host");
+        dispatch(foreign, 9106, 1, &mut NoSheets);
+        assert!(take_replies_for(&[9106])[0].2.is_err(), "host profile identity still matters");
+        dispatch(call("os.glanceundeclared", "glance.withdraw", json!({"card_id":"undeclared-test"})), 9107, 1, &mut NoSheets);
+        assert!(take_replies_for(&[9107])[0].2.is_ok());
+        let _ = std::fs::remove_dir_all(root);
     }
     #[test]
     fn publication_account_is_host_metadata_and_stale_accounts_cannot_open() {
@@ -2018,7 +2016,7 @@ mod tests {
         let mut input = args("account-bound");
         input.as_object_mut().unwrap().remove("open");
         input["account"] = json!("forged-account");
-        store.publish(&Caller::granted("os.account-probe"), &input, 0).unwrap();
+        store.publish(&Caller::admitted("os.account-probe"), &input, 0).unwrap();
         let mut card = store.card("os.account-probe/account-bound", 0).unwrap();
         assert_ne!(card.account.as_deref(), Some("forged-account"));
         card.account = Some("signed-out-test-account".into());

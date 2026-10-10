@@ -1,0 +1,395 @@
+diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+index dfedf1a5a..5c7db9850 100644
+--- a/widgets/src/camera_preview.rs
++++ b/widgets/src/camera_preview.rs
+@@ -7,7 +7,9 @@
+ //!     on_error: || say(ui.cam.error())}
+ //! ui.cam.start()   ui.cam.stop()   ui.cam.switch()   ui.cam.facing()
+ //! ui.cam.capture()                     // a JPEG into the app's storage
+-//! ui.cam.record_start()  ui.cam.record_stop()   // an MP4
++//! ui.cam.capture({library: true})      // explicit gallery export, where supported
++//! ui.cam.record_start({audio: true})   // an MP4 with explicitly requested sound
++//! ui.cam.record_stop()
+ //! ui.cam.set_zoom(2.0)  ui.cam.set_flash("off"|"on"|"auto"|"torch")
+ //! ui.cam.set_exposure(-1.0)  ui.cam.focus(x, y)   // x, y 0..1 in the preview
+ //! ui.cam.set_aspect(16 / 9)            // the viewfinder shape; reopens the camera
+@@ -19,9 +21,12 @@
+ //!
+ //! Frames never pass through script: the preview is a platform texture, and
+ //! script hears one call per finished capture. What an app under a policy
+-//! gets: `camera` to open it at all; captures land in its own storage jail;
+-//! `microphone` adds sound to a recording; `library` also offers each capture
+-//! to the system photo library.
++//! gets: camera access is still checked; captures land in its own storage jail.
++//! Microphone permission and library availability do not select behavior:
++//! each call must request `audio: true` or `library: true` explicitly. Both
++//! default to false. Requested audio still needs microphone consent and OS
++//! permission. Library export requires foreground authority and a supported
++//! backend; unsupported export fails before taking the capture.
+ //!
+ //! The camera is a device the person can see is on, so it is released as soon
+ //! as it is not needed: when the preview has not drawn for a second (its tile
+@@ -57,6 +62,21 @@
+     }
+ }
+ 
++/// Per-call intent, independent of the APIs the host makes available.
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++struct CaptureIntent {
++    audio: bool,
++    library: bool,
++}
++
++#[derive(Clone, Copy, Debug)]
++struct AudioPermissionRequest {
++    id: i32,
++    prompted: bool,
++    may_prompt: bool,
++    intent: CaptureIntent,
++}
++
+ const WATCHDOG_SECONDS: f64 = 0.5;
+ /// How long a camera may be without a permission answer before it opens
+ /// anyway: a bare desktop binary never gets the prompt's completion, and the
+@@ -229,7 +249,7 @@ pub struct CameraPreview {
+     #[rust]
+     permission_may_prompt: bool,
+     #[rust]
+-    audio_permission_request: Option<(i32, bool, bool)>,
++    audio_permission_request: Option<AudioPermissionRequest>,
+     #[rust]
+     timer: Option<Timer>,
+     #[rust]
+@@ -461,8 +481,28 @@ fn capture_path(&self, cx: &Cx, kind: &str, ext: &str) -> Option<(String, String
+         Some((relative, real))
+     }
+ 
+-    fn capture(&mut self, cx: &mut Cx) -> bool {
++    fn validate_capture_intent(&mut self, cx: &mut Cx, intent: CaptureIntent) -> bool {
++        let failure = if intent.library && !crate::splash_policy::device_prompt_allowed(self.heap_key()) {
++            Some("foreground_required: open the app to export a capture to the photo library")
++        } else if intent.library && !cfg!(target_env = "ohos") {
++            Some("unsupported_platform: photo-library export is unavailable; use library: false to keep the capture in app storage")
++        } else if intent.library && !self.granted("library.write") {
++            Some("authorization_required: the host has not enabled photo-library export")
++        } else if intent.audio && !self.granted("microphone.record") {
++            Some("authorization_required: request microphone.permission.request from the foreground app before recording audio")
++        } else {
++            None
++        };
++        if let Some(error) = failure {
++            self.fail(cx, error.into());
++            return false;
++        }
++        true
++    }
++
++    fn capture(&mut self, cx: &mut Cx, intent: CaptureIntent) -> bool {
+         if !self.granted("camera.preview") { self.stop(cx); return false; }
++        if !self.validate_capture_intent(cx, intent) { return false; }
+         let (Some(input), State::Running) = (self.input, self.state) else {
+             self.fail(cx, "the camera is not running".into());
+             return false;
+@@ -472,13 +512,13 @@ fn capture(&mut self, cx: &mut Cx) -> bool {
+             return false;
+         };
+         self.last = relative;
+-        let library = self.granted("library.write");
+-        cx.camera_capture(input, CameraCaptureRequest::Photo { path: real, library });
++        cx.camera_capture(input, CameraCaptureRequest::Photo { path: real, library: intent.library });
+         true
+     }
+ 
+-    fn record_start(&mut self, cx: &mut Cx) -> bool {
++    fn record_start(&mut self, cx: &mut Cx, intent: CaptureIntent) -> bool {
+         if !self.granted("camera.preview") { self.stop(cx); return false; }
++        if !self.validate_capture_intent(cx, intent) { return false; }
+         let (Some(_), State::Running) = (self.input, self.state) else {
+             self.fail(cx, "the camera is not running".into());
+             return false;
+@@ -486,31 +526,34 @@ fn record_start(&mut self, cx: &mut Cx) -> bool {
+         if self.recording.is_some() || self.audio_permission_request.is_some() {
+             return true;
+         }
+-        let audio = self.granted("microphone.record");
+-        if audio && crate::splash_policy::device_consent_required(self.heap_key()) {
+-            self.audio_permission_request = Some((cx.check_permission(Permission::AudioInput), false,
+-                crate::splash_policy::device_prompt_allowed(self.heap_key())));
++        if intent.audio && crate::splash_policy::device_consent_required(self.heap_key()) {
++            self.audio_permission_request = Some(AudioPermissionRequest {
++                id: cx.check_permission(Permission::AudioInput),
++                prompted: false,
++                may_prompt: crate::splash_policy::device_prompt_allowed(self.heap_key()),
++                intent,
++            });
+             return true;
+         }
+-        if audio { cx.request_permission(Permission::AudioInput); }
+-        self.begin_recording(cx, audio)
++        if intent.audio { cx.request_permission(Permission::AudioInput); }
++        self.begin_recording(cx, intent)
+     }
+ 
+-    fn begin_recording(&mut self, cx: &mut Cx, audio: bool) -> bool {
+-        if !self.granted("camera.preview") || (audio && !self.granted("microphone.record")) {
++    fn begin_recording(&mut self, cx: &mut Cx, intent: CaptureIntent) -> bool {
++        if !self.granted("camera.preview") || (intent.audio && !self.granted("microphone.record")) {
+             self.stop(cx);
+             return false;
+         }
++        if !self.validate_capture_intent(cx, intent) { return false; }
+         let (Some(input), State::Running) = (self.input, self.state) else { return false; };
+         let Some((relative, real)) = self.capture_path(cx, "VID", "mp4") else {
+             self.fail(cx, "this app's storage is full or missing".into());
+             return false;
+         };
+-        self.recording_audio = audio;
++        self.recording_audio = intent.audio;
+         self.recording = Some(relative);
+         self.set_recording_input(Some(input));
+-        let library = self.granted("library.write");
+-        cx.camera_capture(input, CameraCaptureRequest::StartVideo { path: real, audio, library });
++        cx.camera_capture(input, CameraCaptureRequest::StartVideo { path: real, audio: intent.audio, library: intent.library });
+         true
+     }
+ 
+@@ -606,6 +649,41 @@ fn arg_string(vm: &mut ScriptVm, args: ScriptValue, index: usize) -> Option<Stri
+     vm.bx.heap.cast_to_owned_string(value, "copying a camera argument")
+ }
+ 
++/// Only an optional object of boolean options is accepted. Unknown keys and
++/// truthy strings/numbers are errors, never accidental capture/export intent.
++fn capture_intent(vm: &mut ScriptVm, args: ScriptValue, recording: bool) -> Result<CaptureIntent, &'static str> {
++    let Some(args) = args.as_object() else {
++        return if args.is_nil() { Ok(CaptureIntent::default()) } else { Err("bad_request: pass an options object with boolean audio/library fields") };
++    };
++    match vm.bx.heap.vec_len(args) {
++        0 => return Ok(CaptureIntent::default()),
++        1 => {},
++        _ => return Err("bad_request: capture accepts one options object"),
++    }
++    let value = vm.bx.heap.vec_value_if_exist(args, 0).unwrap_or(NIL);
++    let Some(options) = value.as_object() else {
++        return Err("bad_request: capture options must be an object, such as {library: false}");
++    };
++    if vm.bx.heap.vec_len(options) != 0 || vm.bx.heap.map_len(options) > 2 {
++        return Err("bad_request: only boolean audio/library capture options are supported");
++    }
++    let mut fields = Vec::new();
++    vm.bx.heap.object_data(options).map_iter(|key, value| fields.push((key, value)));
++    let mut intent = CaptureIntent::default();
++    for (key, value) in fields {
++        let name = key.as_id().or_else(|| vm.bx.heap.cast_to_owned_string(key, "reading capture option").map(|key| LiveId::from_str(&key)));
++        let Some(value) = value.as_bool() else {
++            return Err("bad_request: audio and library must be true or false, not strings or numbers");
++        };
++        match name {
++            Some(name) if name == live_id!(library) => intent.library = value,
++            Some(name) if name == live_id!(audio) && recording => intent.audio = value,
++            _ => return Err("bad_request: capture supports library; record_start supports audio and library"),
++        }
++    }
++    Ok(intent)
++}
++
+ impl Widget for CameraPreview {
+     fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue) -> ScriptAsyncResult {
+         let ret = |v: ScriptValue| ScriptAsyncResult::Return(v);
+@@ -635,8 +713,18 @@ fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue)
+                 ret(NIL)
+             }
+             m if m == live_id!(facing) => ret(vm.bx.heap.new_string_from_str(if self.facing == "front" { "front" } else { "back" })),
+-            m if m == live_id!(capture) => ret(vm.with_cx_mut(|cx| self.capture(cx)).into()),
+-            m if m == live_id!(record_start) => ret(vm.with_cx_mut(|cx| self.record_start(cx)).into()),
++            m if m == live_id!(capture) || m == live_id!(record_start) => {
++                let recording = m == live_id!(record_start);
++                match capture_intent(vm, args, recording) {
++                    Ok(intent) => ret(vm.with_cx_mut(|cx| {
++                        if recording { self.record_start(cx, intent) } else { self.capture(cx, intent) }
++                    }).into()),
++                    Err(error) => {
++                        vm.with_cx_mut(|cx| self.fail(cx, error.into()));
++                        ret(false.into())
++                    }
++                }
++            }
+             m if m == live_id!(record_stop) => {
+                 vm.with_cx_mut(|cx| self.record_stop(cx));
+                 ret(NIL)
+@@ -731,16 +819,18 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+                 self.drive(cx);
+             }
+             Event::PermissionResult(result) if result.permission == Permission::AudioInput
+-                && self.audio_permission_request.is_some_and(|(id, _, _)| id == result.request_id) => {
+-                let (_, prompted, may_prompt) = self.audio_permission_request.take().unwrap();
++                && self.audio_permission_request.is_some_and(|request| request.id == result.request_id) => {
++                let mut request = self.audio_permission_request.take().unwrap();
+                 if !self.granted("camera.preview") || !self.granted("microphone.record") || self.state != State::Running {
+                     return;
+                 }
+                 if result.status == PermissionStatus::Granted {
+-                    self.begin_recording(cx, true);
+-                } else if !prompted && may_prompt && crate::splash_policy::device_prompt_allowed(self.heap_key())
++                    self.begin_recording(cx, request.intent);
++                } else if !request.prompted && request.may_prompt && crate::splash_policy::device_prompt_allowed(self.heap_key())
+                     && matches!(result.status, PermissionStatus::NotDetermined | PermissionStatus::DeniedCanRetry) {
+-                    self.audio_permission_request = Some((cx.request_permission(Permission::AudioInput), true, may_prompt));
++                    request.id = cx.request_permission(Permission::AudioInput);
++                    request.prompted = true;
++                    self.audio_permission_request = Some(request);
+                 } else {
+                     self.fail(cx, format!("microphone permission {:?}; open the app to authorize recording", result.status));
+                 }
+@@ -803,6 +893,116 @@ fn format(width: usize, height: usize, pixel_format: VideoPixelFormat, id: u64)
+         VideoFormat { format_id: VideoFormatId(LiveId(id)), width, height, frame_rate: Some(30.0), pixel_format }
+     }
+ 
++    #[test]
++    fn capture_options_require_explicit_boolean_intent() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(|vm| {
++            let args_for = |vm: &mut ScriptVm, value: Option<ScriptValue>| {
++                let args = vm.bx.heap.new_object();
++                if let Some(value) = value {
++                    let trap = vm.bx.threads.cur().trap.pass();
++                    vm.bx.heap.vec_push(args, NIL, value, trap);
++                }
++                args.into()
++            };
++            let empty = args_for(vm, None);
++            assert_eq!(capture_intent(vm, empty, false), Ok(CaptureIntent::default()));
++            assert_eq!(capture_intent(vm, empty, true), Ok(CaptureIntent::default()));
++            let options = crate::script_eval!(vm, {{audio: true library: false}});
++            let args = args_for(vm, Some(options));
++            assert_eq!(capture_intent(vm, args, true), Ok(CaptureIntent { audio: true, library: false }));
++            assert!(capture_intent(vm, args, false).unwrap_err().contains("capture supports library"));
++            let library = crate::script_eval!(vm, {{library: true}});
++            let args = args_for(vm, Some(library));
++            assert_eq!(capture_intent(vm, args, false), Ok(CaptureIntent { audio: false, library: true }));
++            for value in [
++                crate::script_eval!(vm, {{audio: "true"}}),
++                crate::script_eval!(vm, {{library: 1}}),
++                crate::script_eval!(vm, {{export: true}}),
++                crate::script_eval!(vm, {true}),
++                NIL,
++            ] {
++                let args = args_for(vm, Some(value));
++                assert!(capture_intent(vm, args, true).unwrap_err().starts_with("bad_request:"));
++            }
++            let args = vm.bx.heap.new_object();
++            let trap = vm.bx.threads.cur().trap.pass();
++            vm.bx.heap.vec_push(args, NIL, options, trap);
++            vm.bx.heap.vec_push(args, NIL, library, trap);
++            assert!(capture_intent(vm, args.into(), true).is_err(), "extra arguments cannot hide intent");
++        });
++    }
++
++    #[test]
++    fn available_microphone_and_library_never_opt_a_capture_in() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* CameraPreview{}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut preview = widget.borrow_mut::<CameraPreview>().unwrap();
++        let heap = preview.heap_key();
++        crate::splash_policy::set_policy_for_heap(heap, vec!["camera".into(), "microphone".into(), "library".into()], vec![], None);
++        preview.state = State::Running;
++        preview.input = Some(VideoInputId(LiveId(1)));
++        // No storage root: stop before native capture. Broad API availability
++        // must neither request microphone permission nor select gallery export.
++        assert!(!preview.record_start(&mut cx, CaptureIntent::default()));
++        assert!(preview.audio_permission_request.is_none());
++        assert!(!preview.recording_audio);
++        assert!(preview.last_error.contains("storage"));
++        assert!(!preview.last_error.contains("export"));
++        crate::splash_policy::gc_policies(&[heap]);
++    }
++
++    #[test]
++    fn explicit_intent_preserves_host_consent_and_background_export_rules() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* CameraPreview{}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut preview = widget.borrow_mut::<CameraPreview>().unwrap();
++        let heap = preview.heap_key();
++        crate::splash_policy::set_policy_for_heap(heap, vec!["camera".into(), "microphone".into(), "library".into()], vec![], None);
++        crate::splash_policy::set_device_consent_for_heap(heap, true);
++        // Missing host identity means no per-app microphone grant, regardless
++        // of a manifest declaration or another app's OS permission.
++        crate::splash_host::set_tag_for_heap(heap, None);
++        assert!(!preview.validate_capture_intent(&mut cx, CaptureIntent { audio: true, library: false }));
++        assert!(preview.last_error.contains("microphone.permission.request"));
++        assert!(preview.audio_permission_request.is_none());
++        crate::splash_host::set_prompts_for_heap(heap, false);
++        assert!(!preview.validate_capture_intent(&mut cx, CaptureIntent { audio: false, library: true }));
++        assert!(preview.last_error.starts_with("foreground_required:"));
++        assert!(preview.last.is_empty());
++        assert!(preview.recording.is_none());
++        crate::splash_policy::gc_policies(&[heap]);
++        crate::splash_host::gc_bridge(&[heap]);
++    }
++
++    #[cfg(not(target_env = "ohos"))]
++    #[test]
++    fn unsupported_library_export_fails_before_creating_a_local_capture() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let widget = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let value = crate::script_eval!(vm, {use mod.widgets.* CameraPreview{}});
++            WidgetRef::script_from_value(vm, value)
++        });
++        let mut preview = widget.borrow_mut::<CameraPreview>().unwrap();
++        let heap = preview.heap_key();
++        crate::splash_policy::set_policy_for_heap(heap, vec!["camera".into(), "library".into()], vec![], None);
++        assert!(!preview.capture(&mut cx, CaptureIntent { audio: false, library: true }));
++        assert!(preview.last_error.starts_with("unsupported_platform:"));
++        assert!(preview.last_error.contains("library: false"));
++        assert!(preview.last.is_empty());
++        assert!(preview.recording.is_none());
++        crate::splash_policy::gc_policies(&[heap]);
++    }
++
+     #[test]
+     fn failed_start_stops_retries_until_explicit_start_and_ignores_other_players() {
+         let mut cx = Cx::new(Box::new(|_, _| {}));
+@@ -936,9 +1136,12 @@ fn background_device_consent_checks_os_grants_without_prompting_or_timeout_fallb
+         assert!(preview.wanted, "a background surface may use an existing OS grant");
+         preview.state = State::Running;
+         preview.input = Some(VideoInputId(LiveId(1)));
+-        assert!(preview.record_start(&mut cx));
+-        let audio_request = preview.audio_permission_request.unwrap().0;
+-        assert!(!preview.audio_permission_request.unwrap().1, "recording only checks the existing microphone grant");
++        assert!(preview.record_start(&mut cx, CaptureIntent { audio: true, library: false }));
++        let audio_request = preview.audio_permission_request.unwrap().id;
++        assert_eq!(preview.audio_permission_request.unwrap().intent, CaptureIntent { audio: true, library: false });
++        assert!(preview.record_start(&mut cx, CaptureIntent::default()));
++        assert_eq!(preview.audio_permission_request.unwrap().intent, CaptureIntent { audio: true, library: false }, "a second call cannot rewrite a pending recording's capture intent");
++        assert!(!preview.audio_permission_request.unwrap().prompted, "recording only checks the existing microphone grant");
+         crate::splash_host::set_prompts_for_heap(heap, true);
+         preview.handle_event(&mut cx, &result(Permission::AudioInput, audio_request, PermissionStatus::NotDetermined), &mut Scope::empty());
+         assert!(preview.audio_permission_request.is_none(), "returning to foreground cannot upgrade a background recording request");
+@@ -946,8 +1149,8 @@ fn background_device_consent_checks_os_grants_without_prompting_or_timeout_fallb
+         assert!(preview.last_error.contains("microphone permission"));
+         assert!(preview.permission_request.is_none(), "no native prompt follows the background check");
+         crate::splash_host::set_prompts_for_heap(heap, false);
+-        assert!(preview.record_start(&mut cx));
+-        let cancelled = preview.audio_permission_request.unwrap().0;
++        assert!(preview.record_start(&mut cx, CaptureIntent { audio: true, library: false }));
++        let cancelled = preview.audio_permission_request.unwrap().id;
+         preview.record_stop(&mut cx);
+         preview.handle_event(&mut cx, &result(Permission::AudioInput, cancelled, PermissionStatus::Granted), &mut Scope::empty());
+         assert!(preview.recording.is_none(), "late OS approval must not revive cancelled recording");
+@@ -988,7 +1191,7 @@ fn revocation_stops_an_existing_camera_and_cannot_restart_from_its_watchdog() {
+         preview.state = State::Idle;
+         preview.drive(&mut cx);
+         assert_eq!(preview.state, State::Idle);
+-        assert!(!preview.capture(&mut cx));
++        assert!(!preview.capture(&mut cx, CaptureIntent::default()));
+         crate::splash_policy::gc_policies(&[heap]);
+     }
+ 

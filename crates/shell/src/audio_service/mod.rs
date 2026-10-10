@@ -404,8 +404,8 @@ fn live(session: &Session, foreground: Option<&str>, background: bool) -> bool {
             )
         })
 }
-fn admission(app: &str, kind: Kind) -> Result<Value, String> {
-    let loaded = crate::host_tools::script_apps::guidance(app)
+fn admission(app: &str, host: &std::path::Path) -> Result<Value, String> {
+    let loaded = crate::host_tools::script_apps::admitted_host(app, host)
         .map_err(|_| "permission_denied: App is no longer admitted")?;
     if !loaded.manifest["requires"]
         .as_array()
@@ -413,16 +413,6 @@ fn admission(app: &str, kind: Kind) -> Result<Value, String> {
     {
         return Err(
             "host_requirement_missing: Declare host-api-v1 for native audio sessions".into(),
-        );
-    }
-    let family = if kind == Kind::Record {
-        "microphone"
-    } else {
-        "audio"
-    };
-    if !loaded.families.contains(family) || !loaded.families.contains("storage") {
-        return Err(
-            "permission_denied: Audio requires its device capability and storage grant".into(),
         );
     }
     Ok(loaded.manifest)
@@ -444,7 +434,7 @@ fn run_worker(
         if worker_shared.cancel.load(Ordering::Acquire) {
             return Err("cancelled: App closed before audio preparation".into());
         }
-        let manifest = admission(&app, kind)?;
+        let manifest = admission(&app, &host)?;
         let revision = if kind == Kind::Record {
             Some(crate::platform_services::microphone_consent(&host, &app)?)
         } else {
@@ -489,7 +479,7 @@ fn run_worker(
             break;
         }
         if policy_check.elapsed() >= Duration::from_secs(1) {
-            if admission(&app, kind).ok().as_ref() != manifest.as_ref() {
+            if admission(&app, &host).ok().as_ref() != manifest.as_ref() {
                 worker_shared.invalid.store(true, Ordering::Release);
                 failure = Some("permission_denied: App admission changed".into());
                 break;

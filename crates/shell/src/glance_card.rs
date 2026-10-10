@@ -1747,6 +1747,16 @@ mod tests {
     #[cfg(feature = "app-hub")]
     #[test]
     fn input_reaches_the_card_and_its_requests_go_out_as_the_app() {
+        const CHILD: &str = "OCTOSENSE_GLANCE_INPUT_ADMISSION_TEST";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "glance_card::tests::input_reaches_the_card_and_its_requests_go_out_as_the_app", "--nocapture"])
+                .env(CHILD, "1").output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("glance-input-admission-{}", uuid::Uuid::new_v4()));
+        octosense_appstore::set_data_root(root.clone());
         register_test_app("os.glanceinput");
         crate::glance::register();
         widget_async::register_splash_isolate_mod(|vm| {
@@ -1760,6 +1770,7 @@ mod tests {
         // The request the card queued goes out on the next event.
         tiles.handle_event(&mut cx, &Event::Signal);
         assert!(crate::glance::shown().iter().any(|c| c.key() == "os.glanceinput/typed" && c.contained), "published as the tile's app");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn mail_session(card_id: &str) -> L0Session {
@@ -1980,7 +1991,7 @@ mod tests {
         let args = serde_json::json!({"card_id":"navigation", "title":"Appointment", "source":source,
             "data":{"info":{"url1":"app://calendar/event/fixture"}}, "open":{"app":"calendar","route":"event/fixture"}});
         let mut store = GlanceStore::default();
-        store.publish(&Caller::granted("os.calendar"), &args, 0).unwrap();
+        store.publish(&Caller::admitted("os.calendar"), &args, 0).unwrap();
         let card = store.card("os.calendar/navigation", 0).unwrap();
         let mut live = LiveCards::default();
         live.prepare_native("tile", &card);
@@ -2026,7 +2037,7 @@ mod tests {
         crate::glance_chat::store().seed_if_empty("os.mail", "panel-taps", &[(Role::User, "Earlier?"), (Role::Model, "Net 30.")], 0);
         let publish = serde_json::json!({"card_id": "panel", "title": title, "source": source, "data": data});
         let mut store = GlanceStore::default();
-        store.publish(&Caller::granted("os.mail"), &publish, 0).unwrap();
+        store.publish(&Caller::admitted("os.mail"), &publish, 0).unwrap();
         let card = store.card("os.mail/panel", 0).unwrap();
         let key = card.key();
 
@@ -2067,7 +2078,7 @@ mod tests {
         assert!(answered.contains("When do they need it?") && answered.contains(DEMO_ANSWER), "{answered}");
 
         // A newer publish of the card starts it over, as published.
-        store.publish(&Caller::granted("os.mail"), &publish, 1).unwrap();
+        store.publish(&Caller::admitted("os.mail"), &publish, 1).unwrap();
         let newer = store.card("os.mail/panel", 1).unwrap();
         assert!(!live.body(&key, &newer, "glance panel").contains(DEMO_ANSWER), "back to the brief");
         // A tile the surface drops takes its session and its queued taps.
@@ -2087,7 +2098,7 @@ mod tests {
         use crate::glance::{Caller, GlanceStore};
         let (_, _, source, data) = crate::glance::demo_mail().into_iter().find(|c| c.0 == "ups-lamp").unwrap();
         let mut store = GlanceStore::default();
-        let shop = Caller::granted("com.example.shop");
+        let shop = Caller::admitted("com.example.shop");
         store.publish(&shop, &serde_json::json!({"card_id": "parcel", "title": "Your parcel", "source": source, "data": data}), 0).unwrap();
         let card = store.card("com.example.shop/parcel", 0).unwrap();
         let mut cx = tile_cx();

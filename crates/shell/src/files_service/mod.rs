@@ -100,9 +100,6 @@ enum Operation {
 }
 
 impl Operation {
-    fn needs_storage(&self) -> bool {
-        !matches!(self, Self::Share { .. })
-    }
     /// What the native loader may read for this selection: the operation's
     /// own bound, never more than the app's whole storage quota.
     fn selection_limit(&self, quota: u64) -> u64 {
@@ -231,12 +228,9 @@ fn parse_operation(method: &str, args: &Value) -> Result<Operation, String> {
     Ok(Operation::Export { path, name })
 }
 
-fn admission(app: &str, storage: bool) -> Result<Value, String> {
-    let loaded = crate::host_tools::script_apps::guidance(app)
+fn admission(app: &str, host: &std::path::Path) -> Result<Value, String> {
+    let loaded = crate::host_tools::script_apps::admitted_host(app, host)
         .map_err(|_| "permission_denied: App is no longer admitted")?;
-    if !loaded.families.contains("files") || (storage && !loaded.families.contains("storage")) {
-        return Err("permission_denied: File transfer requires files and storage grants".into());
-    }
     Ok(loaded.manifest)
 }
 
@@ -265,7 +259,7 @@ struct Work {
 impl Work {
     fn authorized(&self) -> Result<(), String> {
         check_authorization(self.reply.is_pending(), self.manifest.as_ref(), || {
-            admission(&self.call.app_id, self.operation.needs_storage())
+            admission(&self.call.app_id, &self.call.host_dir)
         })
     }
     fn storage(&self) -> Result<StorageAccess, String> {
@@ -348,14 +342,15 @@ impl HostService for FilesService {
                 return;
             }
             // Status is intentionally nonprompting and does not need storage.
-            reply.send(admission(&call.app_id, false).map(|_| {
+            let heap = reply.isolate_key();
+            reply.send(admission(&call.app_id, &call.host_dir).map(|_| {
                 json!({
                     "import_supported":file_dialogs::native_file_bytes_supported(),
                     "export_supported":file_dialogs::native_file_bytes_supported(),
                     "max_file_bytes":MAX_FILE_BYTES, "max_import_bytes":MAX_IMPORT, "foreground_required":true,
                     "photo_pick_supported":file_dialogs::native_file_bytes_supported(),
                     "text_share_supported":cfg!(target_os="android"), "max_share_text_bytes":MAX_SHARE_TEXT,
-                    "storage_granted":crate::host_tools::script_apps::grants(&call.app_id,"storage")
+                    "storage_granted":splash_storage::storage_for_heap(heap, &call.app_id).is_some()
                 })
             }));
             return;
@@ -476,7 +471,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                 work.reply.send(Err("foreground_required: Return to this app before choosing or sharing a file".into()));
                 return;
             }
-            work.manifest = match admission(&work.call.app_id, work.operation.needs_storage()) {
+            work.manifest = match admission(&work.call.app_id, &work.call.host_dir) {
                 Ok(m) => Some(m),
                 Err(e) => {
                     work.reply.send(Err(e));
@@ -510,6 +505,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
             let reply = work.reply.clone();
             let app = work.call.app_id.clone();
             let manifest = work.manifest.clone();
+            let host_dir = work.call.host_dir.clone();
             // The native loader can outlive Pending: a provider read already
             // in progress may block even after close/timeout revokes the reply.
             // Keep its one-transfer slot until the guard/worker is dropped.
@@ -521,7 +517,7 @@ pub fn handle_event(cx: &mut Cx, event: &Event) {
                 .set_access_guard(FileDialogAccessGuard::new(move || {
                     let _keep_slot = &reservation;
                     check_authorization(reply.is_pending(), manifest.as_ref(), || {
-                        admission(&app, true)
+                        admission(&app, &host_dir)
                     })
                     .is_ok()
                 }));

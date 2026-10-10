@@ -131,7 +131,7 @@ impl AreaEnv for ShellEnv {
             }
         }
         let policy = admitted_policy(app)?;
-        let quota = JailQuota { bytes: Some(policy.storage_bytes), storage: policy.capabilities.contains("storage") };
+        let quota = JailQuota { bytes: Some(policy.storage_bytes), storage: true };
         if system {
             SYSTEM.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(app.to_string(), quota);
         }

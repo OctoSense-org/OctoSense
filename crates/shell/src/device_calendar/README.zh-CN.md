@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+`device_calendar` 声明用于说明用途，不是授权。应用准入、`host-api-v1`、账户范围、用户同意、系统权限和原生审核仍是独立要求。
+
 `device_calendar.*` 为安装的 App Hub 应用提供有范围和数量限制的系统日历访问。macOS 使用 EventKit，Android Home 使用 CalendarProvider。它读取操作系统已配置的日历，不负责登录 Google 或创建日历。内置 `calendar.*` 与基于 OAuth 的 `gcalendar.*` 保持独立。
 
 这里描述的是源代码实现，不代表现有发布版已经包含它。App Hub 合约必须支持 `device_calendar`，宿主也必须注册该服务。先通过 `runtime.list`、`runtime.describe` 和 `device_calendar.permission.status` 检查实际能力。Windows、Linux、iOS 和不含 Home 适配器的 Android 打包明确报告不支持。只有在专用测试日历上完成验证后，才能确认真实 OS 权限和日历操作；目前不能将编译通过称为设备验收通过。
