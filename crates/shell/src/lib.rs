@@ -4531,6 +4531,9 @@ impl App {
         // ~0.5s hiccups in every child app). A background thread samples
         // and we only copy its cache here.
         if self.status_rx.is_none() {
+            // Before the first script app reads the time: the worker keeps it
+            // current from its first round on.
+            shell::bar::refresh_script_utc_offset();
             match shell::bar::start_status_sampler(&cx.thread_spawner()) {
                 Ok((rx, worker)) => {
                     self.status_rx = Some(rx);
