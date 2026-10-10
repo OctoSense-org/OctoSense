@@ -214,8 +214,12 @@ A full queue or no free worker fails the request at once instead of making it wa
 
 When App Hub installs or updates an app, the shell compiles its functions into
 the cache in the background (`wasm_service::warm`): one app at a time, on a
-thread of its own, from the admitted bundle. The
-app's first call then loads from the cache instead of waiting for Cranelift.
+thread of its own, from the admitted bundle. When that work has finished and
+the cache is promptly readable, the app's first call uses the compiled code.
+Cache reads wait at most 50 ms, with at most two readers in flight per process.
+A slow or unavailable cache falls back to compiling the verified source without
+rewriting that cache entry. The request deadline remains 10 s; source compilation
+still takes time. See the [runtime cache notes](../crates/wasm-host/README.md).
 
 ### Agent tools
 
@@ -239,8 +243,10 @@ to `wasm.find_slots`, `wasm.fuzzy_rank` and `wasm.text_diff`, all `read`.
 | iOS | Not included and not planned for now (ADR 0014). No iOS build with the service has been compiled. |
 | OpenHarmony | Included, in Pulley, Wasmtime's interpreter, until OpenHarmony's code-generation policy is known: Cranelift compiles to Pulley's bytecode and nothing runs as native code. Home's OpenHarmony release build compiled with the service (9 October 2026, `cargo-makepad makepad ohos … deveco -p octosense-home --release`); no device has run it (**unverified**). Pulley is about 32 times slower than Cranelift (ADR 0014). |
 
-On a managed Mac, Microsoft Defender holds the first open of a freshly written
-cache file for about a second; ADR 0011 has the measurements.
+ADR 0011 records earlier cache-open measurements on a managed Mac. The full
+desktop rehearsal also observed file-open stalls lasting about 10 s; its stack
+sample identifies the file-open wait, not its cause. The bounded cache reader
+prevents this optional cache wait from consuming the whole request deadline.
 
 ### Wasm Lab
 
