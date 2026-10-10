@@ -662,7 +662,7 @@ impl PhoneSurface {
         // navigation bands match the page instead of showing bare wallpaper.
         let i = &phone.insets;
         let dimmed = rect(page.pos.x, page.pos.y - i.top, page.size.x, page.size.y + i.top + i.bottom);
-        self.rounded(cx, dimmed, 0.0, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
+        self.d.solid(cx, dimmed, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
         let ink = alpha(self.theme_ink(if dark { rgb(255, 255, 255) } else { rgb(26, 26, 32) }), opacity);
         let top = page.pos.y + 36.0;
         let left = page.pos.x + 20.0;
@@ -676,12 +676,23 @@ impl PhoneSurface {
         // Painting and hit testing use the same viewport. Previously only
         // hits were clipped, so text painted behind the launcher controls.
         cx.begin_turtle(Walk::abs_rect(column), Layout::default());
+        let mut visible = Vec::new();
         for item in phone.pages.feed.items() {
             let h = item.height();
             if y + h > column.pos.y && y < bottom {
-                self.draw_glance_card(cx, rect(left, y, width, h), column, item, style, dark, ink, opacity);
+                let r = rect(left, y, width, h);
+                visible.push((item, r));
+                // Cards do not overlap. Their backgrounds can be one batch
+                // below all the text instead of splitting each text batch.
+                let (radius, fill_alpha) = if matches!(item, GlanceItem::Card(_)) {
+                    (10.0, if dark { 0.18 } else { 0.92 })
+                } else { (18.0, if dark { 0.10 } else { 0.55 }) };
+                self.rounded(cx, r, radius, alpha(self.theme_face(rgb(255,255,255)), fill_alpha * opacity));
             }
             y += h + GLANCE_GAP;
+        }
+        for (item, r) in visible {
+            self.draw_glance_card(cx, r, column, item, style, ink, opacity);
         }
         cx.end_turtle();
         if dx == 0.0 && phone.gesture.is_none() && phone.pages.glance_velocity == 0.0 {
@@ -692,20 +703,19 @@ impl PhoneSurface {
     /// A bounded preview through the same glyph/icon paths, outside the
     /// viewport. Dynamic summaries keep their normal draw-time fallback.
     pub(super) fn prewarm_glance(&mut self, cx: &mut Cx2d, phone: &PhoneState,
-        screen: Rect, style: DesktopStyle, dark: bool, step: usize) {
+        screen: Rect, style: DesktopStyle, step: usize) {
         let clear = vec4(0.0, 0.0, 0.0, 0.0);
         if step == 0 {
             self.d.label_elided(cx, rect(screen.pos.x, screen.pos.y, screen.size.x, 30.0),
                 true, 24.0, clear, HAlign::Left, "At a glance");
         } else if let Some(item) = phone.pages.feed.items().take(4).nth(step - 1) {
             self.draw_glance_card(cx, rect(screen.pos.x + 20.0, screen.pos.y,
-                screen.size.x - 40.0, item.height()), screen, item, style, dark, clear, 0.0);
+                screen.size.x - 40.0, item.height()), screen, item, style, clear, 0.0);
         }
     }
 
-    fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, column: Rect, item: &GlanceItem, style: DesktopStyle, dark: bool, ink: Vec4f, opacity: f32) {
+    fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, column: Rect, item: &GlanceItem, style: DesktopStyle, ink: Vec4f, opacity: f32) {
         if let GlanceItem::Card(card) = item {
-            self.rounded(cx, r, 10.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.18 } else { 0.92 } * opacity));
             self.glance_cards.record(card, rect(r.pos.x, r.pos.y, r.size.x, SUMMARY_HEIGHT), column);
             let pad = 16.0;
             let w = r.size.x - pad * 2.0;
@@ -718,7 +728,6 @@ impl PhoneSurface {
             }
             return;
         }
-        self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
         let pad = 16.0;
         let inner = rect(r.pos.x + pad, r.pos.y + pad, r.size.x - pad * 2.0, r.size.y - pad * 2.0);
         let dim = alpha(ink, 0.65 * opacity);

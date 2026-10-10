@@ -1,0 +1,40 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index 95248e320..e5042071b 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -1342,6 +1342,7 @@ public class MakepadActivity
+     // it *before* Makepad's routing runs, and taps elsewhere fall through the
+     // non-clickable overlay to the full-screen Splash card.
+     private FrameLayout mComposerOverlay;
++    private int mComposerKeyboardOverlapPx;
+     private LinearLayout mComposerPill;
+     private EditText mComposerInput;
+     // Collapsed state: a small round "+" button (bottom-right). Tapping it
+@@ -3956,6 +3957,7 @@ public class MakepadActivity
+                     return;
+                 }
+                 mComposerOverlay.setVisibility(View.VISIBLE);
++                positionComposerForKeyboard(mComposerKeyboardOverlapPx);
+                 mComposerOverlay.bringToFront();
+             }
+         });
+@@ -4022,10 +4024,17 @@ public class MakepadActivity
+     // at the new position. The pill is BOTTOM-gravity inside the overlay, so
+     // bottom padding pushes it up above the keyboard.
+     public void positionComposerForKeyboard(int keyboardOverlapPx) {
+-        if (mComposerOverlay == null) {
++        mComposerKeyboardOverlapPx = Math.max(0, keyboardOverlapPx);
++        // Even a GONE View's setPadding() requests a root layout. The native
++        // composer is normally hidden while a Rust editor owns the IME;
++        // relayout here needlessly redraws the Activity's window on every
++        // keyboard-animation frame beside the independent GL SurfaceView.
++        // Remember the inset without invalidating that window. showComposer
++        // applies it before the overlay's first visible frame.
++        if (mComposerOverlay == null || mComposerOverlay.getVisibility() != View.VISIBLE) {
+             return;
+         }
+-        int pad = Math.max(0, keyboardOverlapPx);
++        int pad = mComposerKeyboardOverlapPx;
+         if (mComposerOverlay.getPaddingBottom() != pad) {
+             mComposerOverlay.setPadding(0, 0, 0, pad);
+         }

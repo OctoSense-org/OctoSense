@@ -5,7 +5,7 @@ use crate::mobile_shade::ShadeContentCache;
 use crate::mobile_pages::GlanceCards;
 use crate::octosense::style::AppIconDraw;
 mod search;
-use search::SearchResults;
+use search::{SearchResults, SearchSnapshot};
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -391,6 +391,7 @@ pub struct PhoneSurface {
     /// Appearance and feed whose first-use navigation resources are ready.
     #[rust] navigation_warm: Option<(DesktopStyle, bool, f64, f64, u64, u64)>,
     #[rust] navigation_warm_step: usize,
+    #[rust] search_snapshot: SearchSnapshot,
     // The sheet's content recorded once per state, shown as one quad while
     // the sheet moves (mobile_shade.rs).
     #[rust] shade_content: ShadeContentCache,
@@ -436,6 +437,7 @@ impl PhoneSurface {
         if self.palette == palette { return false; }
         self.palette = palette;
         self.search_style = None;
+        self.search_snapshot.invalidate();
         self.d.set_palette(palette.map(|p| p.shell()));
         true
     }
@@ -947,7 +949,7 @@ impl PhoneSurface {
         let more = match self.navigation_warm_step {
             0 => { self.draw_search(cx, state, hidden, ink); true }
             step @ 1..=5 => {
-                self.prewarm_glance(cx, phone, hidden, state.style.target, state.style.dark, step - 1);
+                self.prewarm_glance(cx, phone, hidden, state.style.target, step - 1);
                 true
             }
             step => self.prewarm_search_labels(cx, state, hidden, step - 6),
@@ -963,6 +965,8 @@ impl PhoneSurface {
     /// The same surface follows a pull, completes opening and returns Home.
     /// Only the transition composites Home; settled search is one opaque fill.
     fn draw_search_layer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
+        if self.present_search_dismissal(cx, state, screen) { return; }
+        let recording = self.begin_search_snapshot(cx, state, screen);
         let p = state.phone.search_reveal.clamp(0.0, 1.0) as f32;
         self.hits.clear();
         let ground = self.theme_ground(if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
@@ -974,6 +978,7 @@ impl PhoneSurface {
             self.hits.clear();
             self.search_rect=Rect::default();
         }
+        self.end_search_snapshot(cx, screen, pill.pos.y - 10.0, recording);
     }
     /// Android's app drawer: a sheet with every launchable app on one grid.
     fn draw_android_drawer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {

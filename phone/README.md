@@ -211,6 +211,8 @@ does not establish that integration.
 
 Home paging carries finger velocity into its settling spring. Search and Glance lists progressively resist pulling beyond an edge and rebound after release. A cancelled Home search pull retracts; a committed pull finishes opening before the keyboard takes focus. Reduced motion skips decorative settling while keeping direct dragging and in-bounds inertia. The shared Rust motion model has been exercised on a OnePlus 6 in a separate `dev.makepad.octosense.fluidtest` build; this is gesture validation, not a claim of hitch-free presentation on every device. Navigation prepares the search editor, a bounded set of result glyphs and the first Glance summaries across quiet Home frames; touching the screen suspends preparation. Offscreen launcher cells are culled before their icons or labels are resolved, including the neighboring page briefly exposed by spring overshoot.
 
+Search and Glance group non-overlapping drawing to reduce GPU submissions. Once a search sheet is still, Home can retain its image for the closing fade while Android hides the keyboard; typing, selection and scrolling remain live. Query, catalog, geometry, appearance and editing changes retire the old image. A fast dismissal without a current capture uses normal drawing.
+
 | Where | Gesture | Does |
 |---|---|---|
 | Home page, middle | pull down | Search, with its input focused and keyboard ready |

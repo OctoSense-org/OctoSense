@@ -147,9 +147,9 @@ pub fn trace_phone_frame(phone: &crate::mobile::PhoneState) {
         if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } == 0 {
             let ns = ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64;
             let active = phone.draw_active || phone.gesture.is_some();
-            log!("[phone.frames] ns={} active={} screen={:?} shade={:.4} overview={:.4} openness={:.4} page={:.4} pages={:.4} search={:.4} search_scroll={:.2} search_stretch={:.2} glance_scroll={:.2} glance_stretch={:.2}",
+            log!("[phone.frames] ns={} active={} screen={:?} shade={:.4} overview={:.4} openness={:.4} page={:.4} pages={:.4} search={:.4} search_scroll={:.2} search_stretch={:.2} glance_scroll={:.2} glance_stretch={:.2} ime={:.2} reflow={:.2}",
                 ns, active as u8, phone.screen, phone.shade.open, phone.overview,
-                phone.openness, phone.page, phone.pages.position(), phone.search_reveal, phone.search_scroll, phone.search_stretch, phone.pages.glance_scroll, phone.pages.glance_stretch);
+                phone.openness, phone.page, phone.pages.position(), phone.search_reveal, phone.search_scroll, phone.search_stretch, phone.pages.glance_scroll, phone.pages.glance_stretch, phone.native_keyboard, phone.body_reflow);
         }
     }
     #[cfg(not(native_mobile))]

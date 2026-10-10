@@ -2,6 +2,66 @@
 //! clipboard and native IME stay with TextInput. Only its soft keys are hosted.
 use super::*;
 
+#[derive(Clone, Default)]
+struct SearchIcons(std::sync::Arc<std::collections::HashMap<String, Texture>>);
+impl PartialEq for SearchIcons {
+    fn eq(&self, other: &Self) -> bool { std::sync::Arc::ptr_eq(&self.0, &other.0) }
+}
+
+#[derive(Clone, PartialEq)]
+struct SearchSnapshotKey {
+    screen: Rect,
+    window: Vec2d,
+    dpi: f64,
+    style: DesktopStyle,
+    dark: bool,
+    font_scale: f64,
+    catalog: u64,
+    visuals: u64,
+    icons: SearchIcons,
+    query: String,
+    scroll: f64,
+}
+
+impl SearchSnapshotKey {
+    fn new(cx: &Cx2d, state: &WmState, screen: Rect) -> Self {
+        use std::hash::{Hash, Hasher};
+        // Icons arrive asynchronously and notification dots can change
+        // without a catalog update. Neither may revive an older capture.
+        let mut visuals = std::collections::hash_map::DefaultHasher::new();
+        for note in &state.phone.shade.notifications { note.app.hash(&mut visuals); }
+        Self { screen, window: cx.cx.windows[CxWindowPool::id_zero()].window_geom.inner_size,
+            dpi: cx.current_dpi_factor(), style: state.style.target, dark: state.style.dark,
+            font_scale: state.phone.android.font_scale, catalog: state.phone.android.catalog_revision,
+            visuals: visuals.finish(),
+            // Holding the Arc forces the icon loader's make_mut to replace
+            // the map, so pointer equality also detects in-place updates.
+            icons: SearchIcons(state.phone.android.icons.clone()),
+            query: state.phone.search_query.clone(), scroll: state.phone.search_scroll }
+    }
+    fn matches_dismissal(&self, current: &Self) -> bool {
+        // KeyboardView grows the body as the IME hides. Retain the outgoing
+        // sheet's original height, but never reuse it after a window resize.
+        let mut key = self.clone();
+        key.screen.size.y = current.screen.size.y;
+        key == *current
+    }
+}
+
+/// Prepare an outgoing search sheet only after its content has stayed still.
+/// Typing and scrolling draw live; closing can then fade one texture while
+/// Android animates the keyboard instead of redrawing every result beneath it.
+#[derive(Default)]
+pub(super) struct SearchSnapshot {
+    frame: Option<crate::dock_warp::WindowFrame>,
+    ready: Option<SearchSnapshotKey>,
+    pending: Option<(SearchSnapshotKey, std::time::Instant)>,
+    field_top: f64,
+}
+impl SearchSnapshot {
+    pub(super) fn invalidate(&mut self) { self.ready = None; self.pending = None; }
+}
+
 /// Lowercase with the common Latin accents folded, so "cafe" finds "Café".
 fn fold(text: &str) -> String {
     text.chars()
@@ -106,6 +166,87 @@ pub fn top_hit(apps: &[(String, String)], query: &str) -> Option<String> {
 const ROW: f64 = 56.0;
 
 impl PhoneSurface {
+    pub(super) fn present_search_dismissal(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect) -> bool {
+        if !state.phone.search_closing { return false; }
+        let key = SearchSnapshotKey::new(cx, state, screen);
+        let Some(ready) = self.search_snapshot.ready.as_ref().filter(|old| old.matches_dismissal(&key)) else { return false; };
+        let Some(frame) = self.search_snapshot.frame.as_ref() else { return false; };
+        let p = state.phone.search_reveal.clamp(0.0, 1.0) as f32;
+        let ground = self.theme_ground(if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
+        frame.attach(cx);
+        self.android_icon.draw_vars.set_texture(0, frame.texture());
+        self.android_icon.opacity = p;
+        // The results retain the finger's elastic offset; the field follows
+        // the disappearing IME. Moving the whole snapshot as one sheet would
+        // snap stretched rows back to rest at the start of dismissal.
+        let top = ready.screen.pos.y + if ready.screen.size.x > ready.screen.size.y {24.0} else {42.0};
+        let split = self.search_snapshot.field_top;
+        let field_height = ready.screen.pos.y + ready.screen.size.y - split;
+        let field_y = screen.pos.y + screen.size.y - field_height + 64.0 * (1.0 - p as f64);
+        let results_height = (split - top).max(0.0);
+        // The capture already contains the opaque ground. Fill only the
+        // gaps around its two slices, so fading does not blend it twice.
+        let bottom = screen.pos.y + screen.size.y;
+        let mut fill_y = screen.pos.y;
+        for (start, end) in [
+            ((top + state.phone.search_stretch).max(top), (top + state.phone.search_stretch + results_height).min(field_y)),
+            (field_y, field_y + field_height),
+        ] {
+            let (start, end) = (start.clamp(screen.pos.y, bottom), end.clamp(screen.pos.y, bottom));
+            if end <= start { continue; }
+            if start > fill_y { self.d.solid(cx, rect(screen.pos.x, fill_y, screen.size.x, start-fill_y), alpha(ground, p)); }
+            fill_y = fill_y.max(end);
+        }
+        if fill_y < bottom { self.d.solid(cx, rect(screen.pos.x, fill_y, screen.size.x, bottom-fill_y), alpha(ground, p)); }
+        if results_height > 0.0 {
+            cx.begin_turtle(Walk::abs_rect(rect(screen.pos.x, top, screen.size.x, (field_y-top).max(0.0))), Layout::default());
+            self.android_icon.image_scale = vec2(1.0, (results_height / ready.screen.size.y) as f32);
+            self.android_icon.image_pan = vec2(0.0, ((top - ready.screen.pos.y) / ready.screen.size.y) as f32);
+            self.android_icon.draw_abs(cx, rect(screen.pos.x, top + state.phone.search_stretch, screen.size.x, results_height));
+            cx.end_turtle();
+        }
+        self.android_icon.image_scale = vec2(1.0, (field_height / ready.screen.size.y) as f32);
+        self.android_icon.image_pan = vec2(0.0, ((split - ready.screen.pos.y) / ready.screen.size.y) as f32);
+        self.android_icon.draw_abs(cx, rect(screen.pos.x, field_y, screen.size.x, field_height));
+        self.android_icon.image_scale = vec2(1.0, 1.0);
+        self.android_icon.image_pan = vec2(0.0, 0.0);
+        self.hits.clear();
+        self.search_rect = Rect::default();
+        if crate::mobile_perf::trace_on() { log!("[phone.search] cached_dismissal"); }
+        true
+    }
+
+    pub(super) fn begin_search_snapshot(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect) -> bool {
+        if state.phone.search_closing { return false; }
+        let key = SearchSnapshotKey::new(cx, state, screen);
+        let cache = &mut self.search_snapshot;
+        if cache.pending.as_ref().is_none_or(|(old, _)| *old != key) {
+            cache.pending = Some((key.clone(), std::time::Instant::now()));
+        }
+        if cache.ready.as_ref() == Some(&key) || state.phone.search_reveal != 1.0
+            || state.phone.search_reveal_velocity != 0.0 || state.phone.gesture.is_some()
+            || state.phone.search_stretch != 0.0 || state.phone.search_stretch_velocity != 0.0
+            || state.phone.search_velocity != 0.0
+            || cache.pending.as_ref().unwrap().1.elapsed().as_secs_f64() < 0.35 {
+            return false;
+        }
+        cache.ready = Some(key);
+        cache.frame.get_or_insert_with(|| crate::dock_warp::WindowFrame::new_with_name(cx, "phone_search_dismissal"))
+            .begin(cx, screen);
+        true
+    }
+
+    pub(super) fn end_search_snapshot(&mut self, cx: &mut Cx2d, screen: Rect, field_top: f64, recording: bool) {
+        if !recording { return; }
+        self.search_snapshot.field_top = field_top;
+        let frame = self.search_snapshot.frame.as_mut().unwrap();
+        frame.end(cx);
+        if crate::mobile_perf::trace_on() { log!("[phone.search] recorded_dismissal"); }
+        self.android_icon.draw_vars.set_texture(0, frame.texture());
+        self.android_icon.opacity = 1.0;
+        self.android_icon.draw_abs(cx, screen);
+    }
+
     /// Search results use 16 px labels, a different raster size from Home
     /// and the editor. Prepare a bounded set of catalog glyphs while Home is
     /// quiet so the first query/scroll does not build them in its draw call.
@@ -129,6 +270,7 @@ impl PhoneSurface {
     }
 
     pub fn dismiss_search(&mut self, cx: &mut Cx, phone: &mut PhoneState, clear: bool) {
+        if clear { self.search_snapshot.invalidate(); }
         let input = self.search.text_input(cx, ids!(input));
         if !input.area().is_empty() && cx.has_key_focus(input.area()) {
             cx.set_key_focus(Area::Empty);
@@ -147,6 +289,7 @@ impl PhoneSurface {
     }
 
     pub fn clear_search(&mut self, cx: &mut Cx, phone: &mut PhoneState) {
+        self.search_snapshot.invalidate();
         let input = self.search.text_input(cx, ids!(input));
         input.set_text(cx, "");
         phone.search_query.clear();
@@ -155,6 +298,7 @@ impl PhoneSurface {
     }
 
     pub fn focus_search(&mut self, cx: &mut Cx, phone: &mut PhoneState) {
+        self.search_snapshot.invalidate();
         // A pull-down can be the editor's first appearance. Take focus again
         // after its first draw, when it has a real area for the native IME.
         phone.search_focus_requested = false;
@@ -202,6 +346,9 @@ impl PhoneSurface {
         if let Some((point, time, down, up)) = pointer {
             let inside = self.search_rect.contains(point) && self.hit(point).is_none();
             if down && inside {
+                // Cursor/selection edits can change the image without
+                // changing the query. A fresh capture must follow them.
+                self.search_snapshot.invalidate();
                 self.search_pointer = true;
                 self.search_press = Some((point, time));
             }
@@ -226,6 +373,9 @@ impl PhoneSurface {
         }
         let focused = cx.has_key_focus(input.area());
         if focused {
+            if matches!(event, Event::KeyDown(_) | Event::TextInput(_) | Event::TextCut(_)) {
+                self.search_snapshot.invalidate();
+            }
             consumed |= matches!(
                 event,
                 Event::KeyDown(_)
@@ -400,6 +550,7 @@ impl PhoneSurface {
         // Only the rows on screen are laid out and drawn.
         let first = (scroll / ROW).floor().max(0.0) as usize;
         let last = (((scroll + height) / ROW).ceil().max(0.0) as usize).min(count);
+        let mut rows = Vec::with_capacity(last.saturating_sub(first));
         for index in first..last {
             let (id, label) = &apps[results.found[index]];
             let y = top + index as f64 * ROW - scroll;
@@ -407,22 +558,31 @@ impl PhoneSurface {
                 continue;
             }
             let row = rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, 56.0);
+            rows.push((id, label, row));
+        }
+        // Icons, labels and separators occupy disjoint rectangles. Submit
+        // each kind together so consecutive labels/fills share draw calls;
+        // alternating all three per row fragments the same atlas into one
+        // GL submission per label during scrolling and IME dismissal.
+        for (id, _, row) in &rows {
             let icon_timing = crate::mobile_perf::work_start();
             self.draw_launcher_icon(
                 cx,
                 state,
                 id,
-                rect(row.pos.x + 4.0, y + 6.0, 44.0, 44.0),
+                rect(row.pos.x + 4.0, row.pos.y + 6.0, 44.0, 44.0),
                 ink,
                 1.0,
             );
             if icon_timing.is_some() {
                 crate::mobile_perf::work_end(&format!("search.icon.{id}"), icon_timing);
             }
+        }
+        for (_, label, row) in &rows {
             let label_timing = crate::mobile_perf::work_start();
             self.d.label_elided(
                 cx,
-                rect(row.pos.x + 64.0, y, row.size.x - 64.0, 56.0),
+                rect(row.pos.x + 64.0, row.pos.y, row.size.x - 64.0, 56.0),
                 false,
                 16.0,
                 ink,
@@ -430,14 +590,16 @@ impl PhoneSurface {
                 label,
             );
             crate::mobile_perf::work_end("search.label", label_timing);
+        }
+        for (id, _, row) in rows {
             self.d.solid(
                 cx,
-                rect(row.pos.x + 64.0, y + 55.0, row.size.x - 64.0, 0.5),
+                rect(row.pos.x + 64.0, row.pos.y + 55.0, row.size.x - 64.0, 0.5),
                 alpha(ink, 0.12),
             );
-            let y0 = y.max(top);
+            let y0 = row.pos.y.max(top);
             self.hits.push((
-                rect(row.pos.x, y0, row.size.x, (y + 56.0).min(bottom) - y0),
+                rect(row.pos.x, y0, row.size.x, (row.pos.y + 56.0).min(bottom) - y0),
                 PhoneHit::App(id.clone()),
             ));
         }
@@ -450,6 +612,39 @@ impl PhoneSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dismissal_snapshot_accepts_ime_reflow_but_rejects_stale_content_and_geometry() {
+        let key = SearchSnapshotKey {
+            screen: rect(0.0,24.0,384.0,440.0), window: dvec2(384.0,800.0), dpi: 2.8125,
+            style: DesktopStyle::Android, dark: false, font_scale: 1.0, catalog: 1, visuals: 1, icons: SearchIcons::default(),
+            query: "octo".into(), scroll: 0.0,
+        };
+        let mut hidden_ime = key.clone();
+        hidden_ime.screen.size.y = 740.0;
+        assert!(key.matches_dismissal(&hidden_ime));
+        let mut stale = hidden_ime.clone(); stale.query.push('s');
+        assert!(!key.matches_dismissal(&stale));
+        let mut stale = hidden_ime.clone(); stale.scroll = 56.0;
+        assert!(!key.matches_dismissal(&stale));
+        let mut stale = hidden_ime.clone(); stale.catalog += 1;
+        assert!(!key.matches_dismissal(&stale));
+        let mut stale = hidden_ime.clone(); stale.visuals += 1;
+        assert!(!key.matches_dismissal(&stale));
+        let mut stale = hidden_ime.clone(); stale.icons = SearchIcons::default();
+        assert!(!key.matches_dismissal(&stale));
+        let mut stale = hidden_ime.clone(); stale.dark = true;
+        assert!(!key.matches_dismissal(&stale));
+        let mut stale = hidden_ime.clone(); stale.font_scale = 1.5;
+        assert!(!key.matches_dismissal(&stale));
+        let mut resized = hidden_ime.clone(); resized.window.y = 700.0;
+        assert!(!key.matches_dismissal(&resized));
+        let mut rotated = hidden_ime; rotated.screen.size.x = 740.0;
+        assert!(!key.matches_dismissal(&rotated));
+        let mut cache = SearchSnapshot { ready: Some(key), ..Default::default() };
+        cache.invalidate();
+        assert!(cache.ready.is_none(), "a palette change retires the old image");
+    }
     #[test]
     fn search_matches_word_starts_like_ios() {
         let apps: Vec<(String, String)> = [
