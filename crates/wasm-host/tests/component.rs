@@ -404,6 +404,9 @@ fn component_https_chooses_a_provider_without_replacing_the_hosts() {
         loop {
             match listener.accept() {
                 Ok((mut socket, _)) => {
+                    // macOS inherits the listener's nonblocking flag. The
+                    // accepted stream uses the explicit bounded read below.
+                    socket.set_nonblocking(false).unwrap();
                     socket
                         .set_read_timeout(Some(Duration::from_secs(3)))
                         .unwrap();
