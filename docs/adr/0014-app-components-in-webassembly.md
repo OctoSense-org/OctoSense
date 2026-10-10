@@ -97,9 +97,11 @@ component reaches only what its app may already reach.
      end it, so its timeouts are clamped to the call's deadline, which is
      10 s for a component that imports `wasi:http`.
    - **`octosense:host`, phase 3:** `request(service, args)` reaches the host
-     services the app is granted, dispatched on the UI thread as the app's
-     script's `host.request` is, but with no sheet and no prompt (only
-     methods a background surface may call), and never `wasm.*`.
+     services as the app's script's `host.request` does, dispatched on the UI
+     thread and, since makepad#118 (OctoSense #450), not checked against the
+     families the manifest declares (a service that needs a grant checks it
+     itself), but with no sheet and no prompt (only methods a background
+     surface may call), and never `wasm.*`.
    - **Never:** `wasi:sockets`, and any import outside these packages. A
      component that asks for one is refused when it loads
      (`LoadError::Import`) and by App Hub's gate.
