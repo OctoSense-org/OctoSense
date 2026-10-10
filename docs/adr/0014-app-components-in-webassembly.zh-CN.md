@@ -2,13 +2,15 @@
 
 [English](0014-app-components-in-webassembly.md) | 简体中文
 
-状态：提议（2026 年 10 月 9 日）。第 1 阶段（运行时验证原型）位于
+状态：已接受（2026 年 10 月 9 日，“do 1 2 3 4”）；第 1 至第 3 阶段于 2026 年 10 月 10 日合并到 OctoSense（#436、#451）、
+App Hub（#186、#188、#189、#190）和 App Flow（#180、#181）。第 1 阶段（运行时验证原型）位于
 `crates/wasm-host`（`src/component.rs`、`tests/component.rs`）。第 2 阶段的运行时和服务
 部分位于 `crates/wasm-host/src/component/files.rs` 和 `crates/shell/src/wasm_service.rs`，
 测量结果见下文。第 3 阶段的部分是 `component/net.rs`（`wasi:http`）、`component/host.rs` 与
 `wit/octosense-host.wit`（`octosense:host`）、`Runtime::precompile` 与 `wasm_service::warm`
 （安装时编译），以及 OpenHarmony 上和测试中的 Pulley；Windows 运行这个服务，其测试在 CI 中运行。
-App Hub 与 App Flow 的部分正在审阅，iOS 和第 4 阶段是计划。
+第 4 阶段中 App Hub 的部分是 App Hub #190（目录、审核和商店中的共享组件），OctoSense 的部分是 `wasm`
+服务加载应用固定的共享组件（`wasm_service::shared_components`）。App Flow 的部分是 SDK 和 `tools/octo wasm`；iOS 暂不计划。
 本 ADR 扩展 [ADR 0011](0011-apps-own-functions-in-webassembly.zh-CN.md)：核心模块照旧可用。
 `main` 上 WebAssembly 的运行方式见 [OctoSense 中的 WebAssembly](../wasm.zh-CN.md)。
 
