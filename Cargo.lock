@@ -11793,6 +11793,7 @@ dependencies = [
 name = "octosense-pdf-service"
 version = "0.1.0"
 dependencies = [
+ "makepad-widgets",
  "octosense-app-policy",
  "octosense-appstore",
  "octosense-engine-area",

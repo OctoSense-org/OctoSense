@@ -321,7 +321,7 @@ App Hub 的 card-host）。
 | vector | `vector.info`、`vector.run` | 679 个中的 574 个。只运行内置项：`effect.apply` 和 `appearance.addEffect`（经 `effect` 或 `id`）；`perspective.draw` 只运行 `shape.*` 命令，每条再经过准入。 | 形状 ≤ 1,000 个点；混合 ≤ 1,000 步；重复、马赛克和网格 ≤ 10,000 份（每次调用 ≤ 10,000）；变换效果 ≤ 1,000 份；文档按绘制计 ≤ 20,000 个节点、100,000 个对象；栅格 `out` 每边 ≤ 8192 px 且 ≤ 16 MP。 |
 | sound | `sound.info`、`peaks`、`convert`、`trim`、`mix` | 没有入口：soundcraft 没有命令目录。 | — |
 | design | `design.info`、`render`、`export` | 按决定不设入口（#418）。 | — |
-| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。 | — |
+| pdf | `pdf.info`、`text`、`render`、`merge`、`split` | 没有入口：只有几个固定操作。应用自己的请求还能使用 PDF Tools v2 的打开文档（`apps/pdftools/design/SERVICE.md`）：每个方法只运行为它审查过的命令，参数由服务自己构造；`comment_add` 不带附件类型或路径；`page_insert_file` 读取应用存储中的 PDF；`doc_save`、`page_extract` 和各种导出写入存储内的暂存文件夹，再移到目标位置，不替换已有文件（保存回文档自己的文件除外）；`doc_open` 和 `form_fill` 在 JavaScript 关闭时运行。 | 应用自己的请求：每个调用方 ≤ 8 个打开的文档；渲染 24–300 dpi 且 ≤ 16 MP；查找 ≤ 500 个匹配；每次调用 ≤ 512 页；渲染缓存 ≤ 16 MiB 和 64 个文件，写入会因空间不足失败之前先清空。 |
 | photo | 无（照片应用自己的 `photos.info`） | `photo.run` 只供应用自己的请求使用：817 个 id 中的 692 个，并且每个还要通过 photocraft 自己的工作区检查。 | 尚未设上限（只供应用自己的请求使用）。 |
 | sheet | 无（Sheets 应用自己的 `sheets.*`） | 没有入口：公式求值。 | — |
 
