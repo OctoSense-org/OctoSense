@@ -242,6 +242,10 @@ pub fn register_host_services() {
         });
         crate::files_service::register();
         crate::audio_service::register();
+        // App Hub admits bundles before the first CardModule is opened. The
+        // linked card runner already supports app tools at that point, so its
+        // ABI must not depend on a card's lazy VM registration.
+        octosense_appstore::host_api::register_runtime_feature("app_tools.dispatch", 1);
         octosense_appstore::host_api::register_runtime_feature("storage.binary_write", 1);
         octosense_appstore::host_api::register_runtime_feature("video.playback_controls", 1);
         octosense_appstore::host_api::register_runtime_feature("camera.capture_intent", 1);
