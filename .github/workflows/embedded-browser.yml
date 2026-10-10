@@ -6,6 +6,8 @@ on:
       - 'crates/browser-smoke/**'
       - 'tools/browser-smoke.py'
       - 'tools/browser_smoke_x11.py'
+      - 'tools/test-browser-resize.py'
+      - 'tools/connected-e2e/native.py'
       - 'tools/runtime-patches/**'
       - 'runtime-patches.lock.json'
       - 'native-runtime.lock.json'
@@ -18,6 +20,8 @@ on:
       - 'crates/browser-smoke/**'
       - 'tools/browser-smoke.py'
       - 'tools/browser_smoke_x11.py'
+      - 'tools/test-browser-resize.py'
+      - 'tools/connected-e2e/native.py'
       - 'tools/runtime-patches/**'
       - 'runtime-patches.lock.json'
       - 'native-runtime.lock.json'
@@ -34,6 +38,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare the exact native runtime
+        run: python3 tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: embedded-browser-macos
+          cache-on-failure: true
+      - name: Build and test the native acceptance host
+        run: |
+          cargo build --locked --release -p octosense-browser-smoke
+          cargo test --locked --release -p octosense-browser-smoke
+      - name: Native resize and frozen-capture regression
+        run: python3 tools/test-browser-resize.py --binary target/release/octosense-browser-smoke --out "$RUNNER_TEMP/browser-resize"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: embedded-browser-macos-resize
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/browser-resize/
   windows:
     runs-on: windows-2022
     timeout-minutes: 40

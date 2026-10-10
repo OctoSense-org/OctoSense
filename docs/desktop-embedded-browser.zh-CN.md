@@ -36,6 +36,28 @@
 
 URL 检查不是网络沙箱：公开的主机名也可能解析到私有地址。不要指望阅读器把网页挡在私有网络之外（SSRF）。
 
+## macOS 缓存画面与窗口缩放
+
+在 macOS 上，手机样式的 Shell 可以冻结应用纹理，并解除绘制通道与窗口的
+关联。阅读器的看门狗此时仍必须隐藏原生 WebView。适配器现在会解除已隐藏
+或没有关联窗口的阅读器的挂载，而不是忽略更新。重新显示应用时，同一页面
+按当前布局尺寸重新挂载，保留表单状态和私有会话。运行时补丁为
+`tools/runtime-patches/makepad-macos-webview-placement.patch`。
+认证页面检查仍保留现有的宿主专用、显式测试场景准入检查。
+
+macOS 回归测试使用隐藏的原生窗口、本地虚构页面和显式启用的纹理表面。
+它检查宽、窄和较矮窗口，冻结画面后缩放，再恢复画面，确认页面不重载、草稿
+不丢失。现有原生检查回执中的 `nativeAttached` 用于区分页面仍然存在和覆盖层
+仍然挂载。
+
+```sh
+cargo build --locked -p octosense-browser-smoke
+python3 tools/test-browser-resize.py --out /tmp/octosense-reader-resize-check
+```
+
+每次运行使用新的输出目录。该回归测试已在 macOS 通过；本次改动在 Windows、
+Linux、iOS 和 Android 设备上的行为**未验证**。
+
 ## 登录仍在外部浏览器中完成
 
 后端登录是独立的、由宿主掌控的流程。**在 Linux 和 Windows 上，登录仍然使用外部浏览器**。阅读器支持既不会启用嵌入式登录（OAuth），也不会把登录 Cookie 交给应用。WebKitGTK 在请求登录回调之前，无法可靠地确认导航发生在主框架中，因此 Linux 适配器一律拒绝嵌入式登录。Windows 适配器能够拦截回调，但在完整的宿主登录流程通过验收之前，生产环境中的嵌入式登录保持关闭。Google 和 GitHub 继续使用各自已有的提供商流程。参阅[已连接账户](../crates/oauth-service/README.zh-CN.md)。
