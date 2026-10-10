@@ -89,8 +89,11 @@ fn may_call(app_id: &str) -> bool {
 
 pub struct PdfService;
 
-/// Register the `pdf` service with App Hub's host-service registry.
+/// Register the `pdf` service with App Hub's host-service registry, and
+/// its listener for closing isolates: the open documents an isolate holds
+/// go when it closes ([`docs`]).
 pub fn register() {
+    octosense_appstore::services::on_isolate_closed(docs::isolate_closed);
     register_host_service(Box::new(PdfService));
 }
 
@@ -139,8 +142,8 @@ fn serve(areas: &Slot, call: &ServiceCall, isolate: usize) -> Result<Json, Strin
     if !may_call(&call.app_id) {
         return Err(invalid("the pdf service serves system apps only"));
     }
-    // Documents whose caller's storage scope went away go first, on every
-    // call (App Hub has no "isolate closed" hook for services).
+    // Documents whose isolate closed during a call, or whose caller's
+    // storage scope changed or went, go first, on every call ([`docs`]).
     docs::sweep();
     let area = areas.area(call, "pdf").map_err(|e| invalid(format!("this call has no folder to work in: {e}")))?;
     let cx = Ctx { area: &area, app: &call.app_id, isolate };

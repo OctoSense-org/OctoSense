@@ -94,11 +94,14 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   card runner, the relay's and components' calls from `host_tools::pump`),
   which must take no lock another thread can hold. `pdf.close` releases a
   document, and so does its app closing: a document is bound to the opening
-  isolate's storage scope (Makepad's `splash_storage::storage_for_heap` for
-  `Replier::isolate_key()`, gone when App Hub's card shutdown clears the
-  isolate's host tag), which every call sweeps first, App Hub having no
-  "isolate closed" hook for services; a caller with no isolate gets a
-  15-minute idle bound. Each method runs reviewed engine commands, its
+  isolate, and the service's listener on App Hub's
+  `services::on_isolate_closed` (called from `cancel_heap`, which every host
+  calls for a closing isolate) releases its documents and their renders
+  before the isolate's heap key, an address, can be reused. Every call also
+  sweeps for a changed storage scope (Makepad's
+  `splash_storage::storage_for_heap` for `Replier::isolate_key()`), and a
+  caller with no isolate gets a 15-minute idle bound. Each method runs
+  reviewed engine commands, its
   review beside it (`src/reading.rs`, `src/review.rs`, `src/change.rs`): the
   service builds every engine argument itself and each v2 method refuses a
   key it does not take, so `comment_add` (`file`) never sees its attachment

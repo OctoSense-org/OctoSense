@@ -376,6 +376,57 @@ fn a_document_goes_when_its_apps_storage_scope_does() {
     coded(&w.call_full(APP, "state", json!({"doc": opened["doc"]}), true, heap).unwrap_err(), "unknown_doc");
 }
 
+/// An isolate closing (App Hub's `cancel_heap`, which every host calls for
+/// one) releases its documents at once, with their renders, before a new
+/// isolate can get its heap key: a new isolate with the same key (the same
+/// app tag and storage) starts clean, with all 8 documents to open, and
+/// the old handles name nothing.
+#[test]
+fn a_closed_isolates_documents_go_before_its_key_is_reused() {
+    use makepad_widgets::*;
+    // The listener, as the shell registers the service.
+    crate::register();
+    let w = World::new().samples();
+    let mut cx = Cx::new(Box::new(|_, _| {}));
+    let mut card = cx.with_vm(|vm| {
+        makepad_widgets::script_mod(vm);
+        let value = vm.eval(script! {use mod.widgets.* Splash{}});
+        Splash::script_from_value(vm, value)
+    });
+    card.set_host_tag(&mut cx, Some(APP.into()));
+    card.set_sandbox_dir(&mut cx, Some(w.root.clone()));
+    card.set_text(&mut cx, "View {}");
+    let heap = card.isolate_heap_key(&mut cx).unwrap();
+    let from = |method: &str, args: Json| w.call_full(APP, method, args, true, heap);
+    let renders = |doc: &Json| w.root.join(format!(".cache/pages/{}", doc.as_str().unwrap()));
+    let old: Vec<Json> = (0..3).map(|_| from("open", json!({"path": "Board minutes.pdf"})).unwrap()["doc"].clone()).collect();
+    for doc in &old {
+        from("page", json!({"doc": doc, "page": 1, "dpi": 24})).unwrap();
+        assert!(renders(doc).is_dir());
+    }
+    // Another isolate closing changes nothing here.
+    octosense_appstore::services::cancel_heap(heap.wrapping_add(64));
+    assert_eq!(docs::open_count(), 3);
+    // This one closes: its documents go now, before any pdf call.
+    octosense_appstore::services::cancel_heap(heap);
+    assert_eq!(docs::open_count(), 0, "released by the listener");
+    assert!(old.iter().all(|doc| !renders(doc).exists()), "their renders went with them");
+    // A new isolate gets the same heap key, the same app tag and storage.
+    card.set_host_tag(&mut cx, Some(APP.into()));
+    card.set_sandbox_dir(&mut cx, Some(w.root.clone()));
+    let fresh: Vec<Json> = (0..docs::MAX_OPEN).map(|_| from("open", json!({"path": "Field guide.pdf"})).unwrap()["doc"].clone()).collect();
+    assert_eq!(fresh.len(), 8, "the whole cap is the new isolate's");
+    coded(&from("open", json!({"path": "Field guide.pdf"})).unwrap_err(), "too_many_open");
+    for doc in &old {
+        coded(&from("state", json!({"doc": doc})).unwrap_err(), "unknown_doc");
+    }
+    // Closing while a call holds the table: the next call releases them.
+    docs::while_busy(|| octosense_appstore::services::cancel_heap(heap));
+    assert_eq!(docs::open_count(), 8, "queued, not lost");
+    coded(&from("state", json!({"doc": fresh[0]})).unwrap_err(), "unknown_doc");
+    assert_eq!(docs::open_count(), 0);
+}
+
 #[test]
 fn a_document_no_isolate_holds_goes_after_it_is_idle() {
     let w = World::new().samples();
@@ -685,6 +736,59 @@ fn saving_incrementally_and_as_a_new_file() {
     w.ok("save", json!({"doc": doc}));
     assert_eq!(w.ok("info", json!({"path": "copies/minutes rotated.pdf"}))["document"]["pages"], 1, "the next save went to the new file");
     assert_eq!(std::fs::read(w.root.join("Board minutes.pdf")).unwrap(), now);
+    assert!(no_staging_left(&w.root));
+}
+
+/// Every save lands in a staging folder that is then moved into place, so
+/// the file the engine saved to is gone: the engine must go on from the
+/// bytes it saved. After each save, incremental and full, a page never
+/// drawn before renders, find finds, text comes out, further edits save
+/// incrementally onto the right file, and reopening shows every saved edit.
+#[test]
+fn work_goes_on_after_each_save() {
+    let w = World::new().samples();
+    let guide = "Field guide.pdf";
+    let note = |doc: &Json, page: u64, text: &str| {
+        w.ok("comment", json!({"doc": doc, "op": "add", "page": page, "type": "note", "at": [60, 120], "text": text}));
+    };
+    // Page `page` is the bird's: drawn for the first time, found, read.
+    let still_works = |doc: &Json, page: u64, bird: &str| {
+        let drawn = w.ok("page", json!({"doc": doc, "page": page, "dpi": 36}));
+        assert!(std::fs::read(w.root.join(drawn["path"].as_str().unwrap())).unwrap().starts_with(b"\x89PNG"), "{drawn}");
+        let found = w.ok("find", json!({"doc": doc, "query": bird}));
+        assert!(found["matches"].as_array().unwrap().iter().any(|m| m["page"] == page && m["rects"].as_array().is_some_and(|r| !r.is_empty())), "{found}");
+        let text = w.ok("text", json!({"doc": doc, "pages": [page]}));
+        assert!(text["pages"][0]["text"].as_str().unwrap().contains(bird), "{text}");
+    };
+    let notes = |doc: &Json| -> Vec<String> {
+        w.ok("comments", json!({"doc": doc}))["comments"].as_array().unwrap().iter().map(|c| c["text"].as_str().unwrap().to_string()).collect()
+    };
+    let doc = json!(w.open(guide));
+    note(&doc, 1, "first");
+    w.ok("save", json!({"doc": doc}));
+    let first = std::fs::read(w.root.join(guide)).unwrap();
+    still_works(&doc, 2, "Robin");
+    note(&doc, 3, "second");
+    w.ok("save", json!({"doc": doc}));
+    let second = std::fs::read(w.root.join(guide)).unwrap();
+    assert!(second.len() > first.len() && second.starts_with(&first), "the second save appends to the first");
+    still_works(&doc, 3, "Blue tit");
+    w.ok("close", json!({"doc": doc}));
+    let doc = json!(w.open(guide));
+    assert_eq!(notes(&doc), ["first", "second"]);
+    // Save as: the document is the new file from then on.
+    w.ok("save", json!({"doc": doc, "path": "copies/guide.pdf"}));
+    let saved_as = std::fs::read(w.root.join("copies/guide.pdf")).unwrap();
+    still_works(&doc, 4, "Goldfinch");
+    note(&doc, 5, "third");
+    w.ok("save", json!({"doc": doc}));
+    let copy = std::fs::read(w.root.join("copies/guide.pdf")).unwrap();
+    assert!(copy.len() > saved_as.len() && copy.starts_with(&saved_as), "the incremental save went onto the new file");
+    still_works(&doc, 6, "Wren");
+    w.ok("close", json!({"doc": doc}));
+    assert_eq!(notes(&json!(w.open("copies/guide.pdf"))), ["first", "second", "third"]);
+    assert_eq!(notes(&json!(w.open(guide))), ["first", "second"], "the original kept its two");
+    assert_eq!(std::fs::read(w.root.join(guide)).unwrap(), second);
     assert!(no_staging_left(&w.root));
 }
 

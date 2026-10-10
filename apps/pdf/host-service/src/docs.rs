@@ -25,24 +25,26 @@
 //!
 //! **Release.** A document goes on `pdf.close`, and when its caller's
 //! storage scope goes away. A document opened from an app's isolate is
-//! bound to that isolate's storage scope, makepad's
-//! `splash_storage::storage_for_heap` for the call's
-//! `Replier::isolate_key()` (UI-thread state, like this table). It goes
-//! away when the app closes: App Hub's card shutdown clears the isolate's
-//! host tag at once, and freeing the isolate drops its sandbox root; a
-//! changed scope (another account's storage) counts as gone too. App Hub
-//! offers host services no "isolate closed" hook, so every call first
-//! sweeps the table ([`sweep`]) and releases the documents whose scope is
-//! gone. A document opened by a caller with no isolate (a component's
-//! host call, a test) cannot be bound, and goes after [`IDLE`] without a
-//! call. Known gap: a heap key is an address, so a new isolate of the same
-//! app can reuse a dead one's key before any call observed the death; its
-//! documents then stay open (reachable only by their handles, which the
-//! new isolate does not know) and count toward that caller's cap until the
-//! shell restarts. Released documents' renders are removed when the
-//! caller next opens a document ([`cache::prune`]).
+//! bound to that isolate (the call's `Replier::isolate_key()`) and to its
+//! storage scope (makepad's `splash_storage::storage_for_heap` for that
+//! key, UI-thread state like this table).
+//!
+//! - The isolate closing: App Hub calls the service's listener
+//!   ([`isolate_closed`], registered with `services::on_isolate_closed` by
+//!   [`crate::register`]) from `services::cancel_heap`, which every host
+//!   calls for a closing isolate (App Hub's card shutdown; the shell's
+//!   glance, script-app and Wasm hosts), on the UI thread, before a new
+//!   isolate can reuse its heap key: a key is an address. Every document
+//!   bound to it goes then, with its renders. If a call holds the table at
+//!   that moment, the key waits for the next [`sweep`].
+//! - The scope changing (another account's storage) or going: every call
+//!   first sweeps the table ([`sweep`]), which also releases a document
+//!   opened by a caller with no isolate (a component's host call, a test)
+//!   after [`IDLE`] without a call. Its renders go with it, and any a
+//!   released document left behind go when the caller next opens a
+//!   document ([`cache::prune`]).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
@@ -164,6 +166,16 @@ impl OpenDoc {
             Binding::Unbound => now.saturating_duration_since(self.last_used) < IDLE,
         }
     }
+
+    fn bound_to(&self, closed: &[usize]) -> bool {
+        matches!(&self.binding, Binding::Isolate { heap, .. } if closed.contains(heap))
+    }
+
+    /// The document goes: its engine session, and its renders in the
+    /// service's cache.
+    fn release(self) {
+        cache::forget(&Area::new(self.owner.clone(), None, false), &self.handle);
+    }
 }
 
 /// Each page's displayed size from `doc_info`.
@@ -186,6 +198,33 @@ impl Docs {
 thread_local! {
     /// The open documents of this thread: the UI thread's (module doc).
     static DOCS: RefCell<Docs> = RefCell::new(Docs::default());
+    /// Heap keys of isolates that closed while a call held [`DOCS`]: the
+    /// next [`sweep`] releases their documents. A `Cell`, which a listener
+    /// can always fill.
+    static CLOSED: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
+}
+
+/// App Hub's `services::on_isolate_closed` listener ([`crate::register`]):
+/// the isolate whose heap key is `heap` closed, so every document bound to
+/// it goes now, with its renders, before a new isolate can get the key.
+/// If a call holds the table (a listener reached from inside one), the key
+/// waits for the next [`sweep`].
+pub(crate) fn isolate_closed(heap: usize) {
+    let released = DOCS.with(|docs| {
+        let mut docs = docs.try_borrow_mut().ok()?;
+        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&[heap]));
+        docs.open = kept;
+        Some(gone)
+    });
+    match released {
+        // The engine sessions drop and the renders go outside the table.
+        Some(gone) => gone.into_iter().for_each(OpenDoc::release),
+        None => CLOSED.with(|closed| {
+            let mut keys = closed.take();
+            keys.push(heap);
+            closed.set(keys);
+        }),
+    }
 }
 
 /// Whose documents a call reaches: its area's root as the file system
@@ -220,19 +259,37 @@ fn unknown() -> String {
     fail(Code::UnknownDoc, "no document of this app is open under that handle: open it again")
 }
 
-/// Release the documents whose caller's scope went away (module doc).
+/// Release the documents of isolates that closed while a call held the
+/// table, and those whose caller's scope went away (module doc).
 pub(crate) fn sweep() {
     sweep_at(Instant::now());
 }
 
 pub(crate) fn sweep_at(now: Instant) {
-    DOCS.with(|docs| docs.borrow_mut().open.retain(|doc| doc.alive(now)));
+    let closed = CLOSED.with(Cell::take);
+    let gone: Vec<OpenDoc> = DOCS.with(|docs| {
+        let mut docs = docs.borrow_mut();
+        let (gone, kept): (Vec<OpenDoc>, Vec<OpenDoc>) = std::mem::take(&mut docs.open).into_iter().partition(|doc| doc.bound_to(&closed) || !doc.alive(now));
+        docs.open = kept;
+        gone
+    });
+    gone.into_iter().for_each(OpenDoc::release);
 }
 
 /// How many documents are open on this thread (tests).
 #[cfg(test)]
 pub(crate) fn open_count() -> usize {
     DOCS.with(|docs| docs.borrow().open.len())
+}
+
+/// Run `f` while a call holds the table, as a listener reached from inside
+/// one would find it (tests).
+#[cfg(test)]
+pub(crate) fn while_busy(f: impl FnOnce()) {
+    DOCS.with(|docs| {
+        let _held = docs.borrow_mut();
+        f();
+    });
 }
 
 /// Run `f` on the document `args.doc` names, if this caller has it open.
