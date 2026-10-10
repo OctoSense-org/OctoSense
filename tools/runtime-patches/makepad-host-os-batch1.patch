@@ -36,7 +36,7 @@ index 159a9d530..66f5822d5 100644
                  true
              }
 diff --git a/platform/src/cx.rs b/platform/src/cx.rs
-index de09102a7..8a48805f3 100644
+index 52beef62b..afc2fa954 100644
 --- a/platform/src/cx.rs
 +++ b/platform/src/cx.rs
 @@ -131,6 +131,10 @@ pub struct Cx {
@@ -50,7 +50,7 @@ index de09102a7..8a48805f3 100644
      pub(crate) pending_camera_playbacks: Vec<PendingCameraPlayback>,
  
      pub(crate) new_next_frames: HashSet<NextFrame>,
-@@ -908,6 +912,8 @@ pub fn new(event_handler: Box<dyn FnMut(&mut Cx, &Event)>) -> Self {
+@@ -906,6 +910,8 @@ pub fn new(event_handler: Box<dyn FnMut(&mut Cx, &Event)>) -> Self {
              ime_area: Default::default(),
              keyboard_shift: 0.0,
              platform_ops: Default::default(),
@@ -60,7 +60,7 @@ index de09102a7..8a48805f3 100644
              studio_http: "".to_string(),
              new_next_frames: Default::default(),
 diff --git a/platform/src/cx_api.rs b/platform/src/cx_api.rs
-index 8c8072dc9..e5087a9bd 100644
+index d419cea94..ac244fadd 100644
 --- a/platform/src/cx_api.rs
 +++ b/platform/src/cx_api.rs
 @@ -40,6 +40,17 @@ pub enum OpenUrlInPlace {
@@ -97,7 +97,7 @@ index 8c8072dc9..e5087a9bd 100644
              Self::StopLocationUpdates => write!(f, "StopLocationUpdates"),
  
              Self::HttpRequest { .. } => write!(f, "HttpRequest"),
-@@ -1867,12 +1880,36 @@ pub fn request_gps_location(&mut self) {
+@@ -1874,12 +1887,36 @@ pub fn request_gps_location(&mut self) {
      /// platform, failures arrive as [`Event::LocationError`]. Platforms
      /// without a location service log an error and stay silent.
      pub fn start_location_updates(&mut self) {
@@ -458,10 +458,10 @@ index f0b9c7ddf..0ce896e83 100644
          if let Some(access) = self.os.media.location.access.as_mut() {
              access.stop();
 diff --git a/platform/src/os/apple/ios/ios.rs b/platform/src/os/apple/ios/ios.rs
-index 9b14fcb3c..83a5fab33 100644
+index 9f5e3f543..e13b6b6a1 100644
 --- a/platform/src/os/apple/ios/ios.rs
 +++ b/platform/src/os/apple/ios/ios.rs
-@@ -1213,6 +1213,9 @@ fn handle_platform_ops(&mut self, metal_cx: &MetalCx) {
+@@ -1217,6 +1217,9 @@ fn handle_platform_ops(&mut self, metal_cx: &MetalCx) {
                  CxOsOp::StartLocationUpdates => {
                      self.apple_start_location_updates();
                  }
@@ -471,7 +471,7 @@ index 9b14fcb3c..83a5fab33 100644
                  CxOsOp::StopLocationUpdates => {
                      self.apple_stop_location_updates();
                  }
-@@ -1884,8 +1887,29 @@ fn seconds_since_app_start(&self) -> f64 {
+@@ -1888,8 +1891,29 @@ fn seconds_since_app_start(&self) -> f64 {
              .as_secs_f64()
      }
  
@@ -504,10 +504,10 @@ index 9b14fcb3c..83a5fab33 100644
  
      fn max_texture_width() -> usize {
 diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
-index bfb3af932..877a3781a 100644
+index a24f806dd..c9250405b 100644
 --- a/platform/src/os/apple/macos/macos.rs
 +++ b/platform/src/os/apple/macos/macos.rs
-@@ -2157,6 +2157,9 @@ fn handle_platform_ops(
+@@ -2170,6 +2170,9 @@ fn handle_platform_ops(
                  CxOsOp::StartLocationUpdates => {
                      self.apple_start_location_updates();
                  }
@@ -518,10 +518,10 @@ index bfb3af932..877a3781a 100644
                      self.apple_stop_location_updates();
                  }
 diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
-index edf7cf611..26fbdba61 100644
+index 5b583ff97..867305424 100644
 --- a/platform/src/os/linux/android/android.rs
 +++ b/platform/src/os/linux/android/android.rs
-@@ -3054,6 +3054,23 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+@@ -3101,6 +3101,23 @@ fn handle_platform_ops(&mut self) -> EventFlow {
                          },
                      }
                  }
@@ -545,7 +545,7 @@ index edf7cf611..26fbdba61 100644
                  CxOsOp::StopLocationUpdates => {
                      self.os.location_updates_wanted = false;
                      unsafe {
-@@ -3540,8 +3557,11 @@ fn seconds_since_app_start(&self) -> f64 {
+@@ -3587,8 +3604,11 @@ fn seconds_since_app_start(&self) -> f64 {
              .as_secs_f64()
      }
  
@@ -572,10 +572,10 @@ index 1e42638f4..5f00c2d45 100644
      }
  }
 diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
-index 226a23c85..e77a763d8 100644
+index 7890d0926..a68c5b32d 100644
 --- a/platform/src/os/linux/android/android_jni.rs
 +++ b/platform/src/os/linux/android/android_jni.rs
-@@ -1776,13 +1776,17 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
+@@ -1813,13 +1813,17 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
  }
  
  unsafe fn jstring_to_string(env: *mut jni_sys::JNIEnv, java_string: jni_sys::jstring) -> String {
@@ -600,7 +600,7 @@ index 226a23c85..e77a763d8 100644
  }
  
  unsafe fn java_string_array_to_vec(
-@@ -1797,6 +1801,7 @@ unsafe fn java_string_array_to_vec(
+@@ -1834,6 +1838,7 @@ unsafe fn java_string_array_to_vec(
      for i in 0..length {
          let string = (**env).GetObjectArrayElement.unwrap()(env, object_array, i as jni_sys::jsize);
          out.push(jstring_to_string(env, string));
@@ -608,7 +608,7 @@ index 226a23c85..e77a763d8 100644
      }
      out
  }
-@@ -2602,6 +2607,7 @@ pub unsafe fn to_java_open_file_dialog(
+@@ -2639,6 +2644,7 @@ pub unsafe fn to_java_open_file_dialog(
      mime_types: &[String],
      allow_multiple: bool,
      file_name: &str,
@@ -616,7 +616,7 @@ index 226a23c85..e77a763d8 100644
  ) {
      let env = attach_jni_env();
      let mime_jstr = new_java_string(env, mime_type);
-@@ -2612,13 +2618,14 @@ pub unsafe fn to_java_open_file_dialog(
+@@ -2649,13 +2655,14 @@ pub unsafe fn to_java_open_file_dialog(
          env,
          get_activity(),
          "openFileDialog",
@@ -633,7 +633,7 @@ index 226a23c85..e77a763d8 100644
      );
  
      (**env).DeleteLocalRef.unwrap()(env, file_name_jstr);
-@@ -2626,12 +2633,138 @@ pub unsafe fn to_java_open_file_dialog(
+@@ -2663,12 +2670,138 @@ pub unsafe fn to_java_open_file_dialog(
      (**env).DeleteLocalRef.unwrap()(env, mime_jstr);
  }
  
@@ -777,7 +777,7 @@ index 226a23c85..e77a763d8 100644
  }
  
  unsafe fn new_java_string_array(
-@@ -3039,6 +3172,22 @@ fn decode_qr_luma(luma: &[u8], w: usize, h: usize) -> Option<String> {
+@@ -3076,6 +3209,22 @@ fn decode_qr_luma(luma: &[u8], w: usize, h: usize) -> Option<String> {
  // Outbound: calls into the buildtool's octos Java (MakepadActivity).
  // ===========================================================================
  
@@ -820,7 +820,7 @@ index 84f7b6c92..4c0c8cfee 100644
  
  /// What the caller wants a path for.
 diff --git a/platform/src/os/linux/windowing_backend.rs b/platform/src/os/linux/windowing_backend.rs
-index f7e8af444..142635bd4 100644
+index 4cbfdb617..0eb1494ce 100644
 --- a/platform/src/os/linux/windowing_backend.rs
 +++ b/platform/src/os/linux/windowing_backend.rs
 @@ -188,8 +188,33 @@ fn seconds_since_app_start(&self) -> f64 {
@@ -860,10 +860,10 @@ index f7e8af444..142635bd4 100644
  }
  
 diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
-index 19a5b124a..b3cc8f7d7 100644
+index b9c25eb14..fb1dd91b6 100644
 --- a/platform/src/os/windows/windows.rs
 +++ b/platform/src/os/windows/windows.rs
-@@ -1453,8 +1453,42 @@ fn seconds_since_app_start(&self) -> f64 {
+@@ -1457,8 +1457,42 @@ fn seconds_since_app_start(&self) -> f64 {
              .as_secs_f64()
      }
  
@@ -924,10 +924,10 @@ index f57575ea1..082980a69 100644
      /// Required on: iOS, Android, macOS, Web
      /// Auto-granted on: Windows, Linux (no location service there yet)
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-index e50abdfc3..ebb6cb2ab 100644
+index 13db67689..94c99d8e0 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-@@ -1985,7 +1985,11 @@ public class MakepadActivity
+@@ -1983,7 +1983,11 @@ public class MakepadActivity
      public void onRequestPermissionsResult(int requestId, String[] permissions, int[] grantResults) {
          super.onRequestPermissionsResult(requestId, permissions, grantResults);
  
@@ -940,7 +940,7 @@ index e50abdfc3..ebb6cb2ab 100644
              int status;
              if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
                  status = 1; // Granted
-@@ -1998,8 +2002,16 @@ public class MakepadActivity
+@@ -1996,8 +2000,16 @@ public class MakepadActivity
                  }
              }
              
@@ -959,7 +959,7 @@ index e50abdfc3..ebb6cb2ab 100644
          }
  
          // QR-scanner camera permission: open the scanner once granted, else
-@@ -2034,6 +2046,10 @@ public class MakepadActivity
+@@ -2032,6 +2044,10 @@ public class MakepadActivity
  
      public int checkPermission(String permission) {
          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -970,7 +970,7 @@ index e50abdfc3..ebb6cb2ab 100644
              if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
                  return 1; // Granted
              } else {
-@@ -2056,8 +2072,13 @@ public class MakepadActivity
+@@ -2054,8 +2070,13 @@ public class MakepadActivity
  
      public void requestPermission(String permission, int requestId) {
          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -986,7 +986,7 @@ index e50abdfc3..ebb6cb2ab 100644
              } else {
                  // Permission already granted
                  MakepadNative.onPermissionResult(permission, requestId, 1); // 1 = Granted
-@@ -2075,13 +2096,54 @@ public class MakepadActivity
+@@ -2073,13 +2094,54 @@ public class MakepadActivity
      //
      // kind: 0 = ACTION_OPEN_DOCUMENT, 1 = ACTION_CREATE_DOCUMENT,
      //       2 = ACTION_OPEN_DOCUMENT_TREE.
@@ -1042,7 +1042,7 @@ index e50abdfc3..ebb6cb2ab 100644
      ) {
          runOnUiThread(new Runnable() {
              @Override
-@@ -2111,8 +2173,9 @@ public class MakepadActivity
+@@ -2109,8 +2171,9 @@ public class MakepadActivity
                      // Ask for a grant that outlives this process, so a URI handed
                      // to Rust is still openable after the app is killed and
                      // relaunched (see takePersistableUriPermission below).
@@ -1054,7 +1054,7 @@ index e50abdfc3..ebb6cb2ab 100644
                      if (kind != 0) {
                          intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                      }
-@@ -2124,6 +2187,7 @@ public class MakepadActivity
+@@ -2122,6 +2185,7 @@ public class MakepadActivity
                      // picker, and Rust must not be left waiting forever.
                      Log.e(LOG_TAG, "openFileDialog failed", e);
                      mFileDialogRequests.remove(requestCode);
@@ -1062,7 +1062,7 @@ index e50abdfc3..ebb6cb2ab 100644
                      MakepadNative.onFileDialogResult(requestCode, new String[0]);
                  }
              }
-@@ -2132,6 +2196,7 @@ public class MakepadActivity
+@@ -2130,6 +2194,7 @@ public class MakepadActivity
  
      // An empty URI array means cancelled, which is a normal outcome.
      private void handleFileDialogResult(int requestCode, int resultCode, Intent data) {
@@ -1070,7 +1070,7 @@ index e50abdfc3..ebb6cb2ab 100644
          ArrayList<String> uris = new ArrayList<>();
          if (resultCode == RESULT_OK && data != null) {
              ClipData clip = data.getClipData();
-@@ -2142,13 +2207,13 @@ public class MakepadActivity
+@@ -2140,13 +2205,13 @@ public class MakepadActivity
                  for (int i = 0; i < clip.getItemCount(); i++) {
                      Uri uri = clip.getItemAt(i).getUri();
                      if (uri != null) {
@@ -1086,7 +1086,7 @@ index e50abdfc3..ebb6cb2ab 100644
                  uris.add(uri.toString());
              }
          }
-@@ -2989,6 +3054,24 @@ public class MakepadActivity
+@@ -2987,6 +3052,24 @@ public class MakepadActivity
          }).start();
      }
  
@@ -1111,7 +1111,7 @@ index e50abdfc3..ebb6cb2ab 100644
      // Fire the system share sheet (ACTION_SEND) for social sharing. Called
      // from Rust via `android_jni::to_java_share_text`.
      public void shareText(String content) {
-@@ -4160,38 +4243,38 @@ public class MakepadActivity
+@@ -4158,38 +4241,38 @@ public class MakepadActivity
                      @Override public void onProviderDisabled(String provider) {}
                  };
                  boolean any = false;

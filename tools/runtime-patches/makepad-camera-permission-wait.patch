@@ -1,7 +1,8 @@
 diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+index 72bccb9fb..4a477b7dd 100644
 --- a/widgets/src/camera_preview.rs
 +++ b/widgets/src/camera_preview.rs
-@@ -185,6 +185,8 @@
+@@ -185,6 +185,8 @@ pub struct CameraPreview {
      #[rust]
      asked_at: f64,
      #[rust]
@@ -10,7 +11,7 @@ diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
      timer: Option<Timer>,
      #[rust]
      drawn: bool,
-@@ -227,7 +229,8 @@
+@@ -227,7 +229,8 @@ fn start(&mut self, cx: &mut Cx) -> bool {
              return false;
          }
          self.wanted = true;
@@ -20,7 +21,7 @@ diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
              self.asked_at = cx.seconds_since_app_start();
              cx.request_permission(Permission::Camera);
          }
-@@ -284,7 +287,12 @@
+@@ -284,7 +287,12 @@ fn drive(&mut self, cx: &mut Cx) {
                          self.fail(cx, format!("camera permission {status:?}"));
                          return;
                      }
@@ -34,7 +35,7 @@ diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
                      None => self.permission = Some(PermissionStatus::Granted),
                  }
                  let Some(choice) = self.cameras.iter().find(|c| c.front == want_front).or(self.cameras.first()).cloned() else {
-@@ -547,7 +555,13 @@
+@@ -547,7 +555,13 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
          }
          match event {
              Event::PermissionResult(result) if result.permission == Permission::Camera => {
@@ -49,9 +50,10 @@ diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
              }
              Event::VideoInputs(VideoInputsEvent { descs }) => {
 diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index 67f028061..16c48f7d1 100644
 --- a/widgets/src/video.rs
 +++ b/widgets/src/video.rs
-@@ -1670,7 +1670,10 @@
+@@ -1665,7 +1665,10 @@ fn handle_secondary_click(
      }
  
      fn pause_playback(&mut self, cx: &mut Cx) {

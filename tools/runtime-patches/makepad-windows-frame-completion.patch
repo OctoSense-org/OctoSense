@@ -1,8 +1,8 @@
 diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
-index 4abb93472..c0404864b 100644
+index 2be479926..250cb26dd 100644
 --- a/platform/src/os/windows/windows.rs
 +++ b/platform/src/os/windows/windows.rs
-@@ -581,7 +581,11 @@ fn paint_tick(
+@@ -585,7 +585,11 @@ fn paint_tick(
          }
          // ok here we send out to all our childprocesses
  
@@ -15,10 +15,10 @@ index 4abb93472..c0404864b 100644
          // the Poll loop to the display. A pass that presents nothing has no
          // blocking call at all, so a NextFrame listener that re-arms without
 diff --git a/platform/src/os/windows/windows_stdin.rs b/platform/src/os/windows/windows_stdin.rs
-index e9467b02f..ac3a85683 100644
+index 83638bdcf..8ebcb52aa 100644
 --- a/platform/src/os/windows/windows_stdin.rs
 +++ b/platform/src/os/windows/windows_stdin.rs
-@@ -340,7 +340,11 @@ fn stdin_handle_host_to_stdin(
+@@ -344,7 +344,11 @@ fn stdin_handle_host_to_stdin(
                      self.hlsl_compile_shaders(d3d11_cx);
                  }
  

@@ -254,7 +254,7 @@ index cf0804a97..908287413 100644
  
      /// Set the current thread by ScriptThreadId
 diff --git a/platform/script/src/vm.rs b/platform/script/src/vm.rs
-index a25df99d6..84e4ab0ff 100644
+index e9916d8a8..14a217f51 100644
 --- a/platform/script/src/vm.rs
 +++ b/platform/script/src/vm.rs
 @@ -656,6 +656,85 @@ fn script_me_from_value(&mut self, me: ScriptValue) -> Option<ScriptMe> {
@@ -489,15 +489,20 @@ index 4e380243d..18f2a529a 100644
 +    assert_eq!(vm.bx.threads.len(), allocated, "completed callback thread was not reused");
 +}
 diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
-index 15d9c8a76..3709be935 100644
+index b086c99b4..a5ddb50df 100644
 --- a/widgets/src/splash_host.rs
 +++ b/widgets/src/splash_host.rs
-@@ -536,6 +536,68 @@ fn delayed_background_callbacks_keep_nested_requests_nonprompting() {
+@@ -517,6 +517,78 @@ fn delayed_background_callbacks_keep_nested_requests_nonprompting() {
          gc_bridge(&[heap]);
      }
  
++    /// A refusal deep in a chain of callbacks still updates a widget and
++    /// completes the nested request. Since makepad#118 (OctoSense #450) the
++    /// runtime no longer refuses a family the app did not declare, so the
++    /// host refuses here, as the device service does for an app without
++    /// `location`.
 +    #[test]
-+    fn synchronous_refusal_can_update_a_widget_and_complete_a_nested_callback() {
++    fn a_refused_request_can_update_a_widget_and_complete_a_nested_callback() {
 +        use crate::*;
 +        let mut cx = Cx::new(Box::new(|_, _| {}));
 +        let root = cx.with_vm(|vm| {
@@ -534,11 +539,16 @@ index 15d9c8a76..3709be935 100644
 +        "#);
 +        let heap = card.isolate_heap_key(&mut cx).unwrap();
 +        assert!(card.call_script_fn(&mut cx, id!(run), &[]));
-+        for service in ["fixture.status", "fixture.import", "fixture.export"] {
++        for service in ["fixture.status", "fixture.import", "fixture.export", "location.sample"] {
 +            let requests = take_splash_host_requests_for(&[heap]);
 +            assert_eq!(requests.len(), 1, "missing {service}");
 +            assert_eq!(requests[0].service, service);
-+            splash_host_respond(&mut cx, heap, requests[0].req_id, Ok("{}"));
++            let answer = if service == "location.sample" {
++                Err("permission_denied: this app was not granted location")
++            } else {
++                Ok("{}")
++            };
++            splash_host_respond(&mut cx, heap, requests[0].req_id, answer);
 +        }
 +        crate::makepad_platform::makepad_script_std::pump(&mut cx);
 +        let vm_id = crate::widget_async::vm_for_heap(&mut cx, heap).unwrap();

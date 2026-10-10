@@ -1,8 +1,8 @@
 diff --git a/platform/Cargo.toml b/platform/Cargo.toml
-index 31b5a5398..e4f424ac7 100644
+index 93aa67187..ff9e74c0e 100644
 --- a/platform/Cargo.toml
 +++ b/platform/Cargo.toml
-@@ -104,6 +104,10 @@ napi-derive-ohos = "0.0.9"
+@@ -105,6 +105,10 @@ napi-derive-ohos = "0.0.9"
  napi-ohos = "0.1.3"
  ohos-sys = { version = "0.2.1", features = ["xcomponent"] }
  

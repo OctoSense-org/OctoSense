@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "makepad": {
-    "base_revision": "32d6415fb7476345ad36ee4f98d6f844d1f07fd2",
+    "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
-    "sha256": "b17352ebf59e50ab3db6ff1cb825c4e006bcdff47d83522e372b8fe585e57570",
-    "tree": "77308d82093bb86bb7d306a32247b9b4e8395447",
+    "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
+    "tree": "0e7e0dacab19db708793e63ded641cd7b3ea319c",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -45,38 +45,37 @@
       "CameraPreview correlates native events before the child retires its player generation; cancelling preparation permits an explicit retry without waiting for a stale release callback.",
       "Video numeric controls accept both integer and floating Splash arguments while refusing nonnumeric, nonfinite and out-of-range values; native acceptance exposed the integer-seek regression.",
       "Android Video seeks to the closest frame on API26+ instead of the previous keyframe; older backends retain a bounded legacy fallback.",
-      "A script can move a plain map and hear it (makepad#113, branch octosense/map-script-api): fly_to, fit_route and clear_route, and the on_tap, on_long_press, on_marker and on_viewport callbacks on MapView. A script's fly_to and a pending fit give way to the person's drag; clear_route also drops a script route, its vehicle and a pending fit. On any map, a wheel that a scroll view over or around it already used no longer zooms it. Maps' route preview stays draggable; the plan, follow and drive cameras are unchanged.",
       "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406)."
     ],
     "stacked": [
       {
         "patch": "tools/runtime-patches/makepad-system-back.patch",
-        "sha256": "3268cb486bbd05db7bb6920c26007e437017b6234a4d9f045a99a7d1954b7427"
+        "sha256": "c5965f3ca8d9ebea874ae533146e9168fe36c82dbc80cff0554170602e96091e"
       },
       {
         "patch": "tools/runtime-patches/makepad-ime-inactive-no-restart.patch",
-        "sha256": "8ae6a6aceb93a013234c724ffdc6efc614cc8b9dddd7cae6ed8b1c569b94fdf1"
+        "sha256": "2c4b21d7adbb2f58f5e156cf39c6bbf51948e280fed1505245f935fd4e10514e"
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-remote-capture.patch",
-        "sha256": "2c0fabb6f5c0733d9d3356cde4cc7c8d40aabebf9a4752740c94f332b7e1317a"
+        "sha256": "30e7c7994aeb80b0608242341bed84226f40dfba36030c271f9b1ff50c2eb8f8"
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-frame-completion.patch",
-        "sha256": "8d58e16bc12aae5f4313fdc5c9d3f6944b96ee20e609fe5ff069fe2403954595"
+        "sha256": "0e29a789d106a689b5ed394c681de53dec49f6b938e21acceafbb5358fbe2bf9"
       },
       {
         "patch": "tools/runtime-patches/makepad-application-extension.patch",
-        "sha256": "133099ee598a9794ec5df61dfbef30bca25df7bc03a66deecdb66355a8b8e6bf"
+        "sha256": "0668f176fb7b115b17550e6b2dd76109f4cc3906b4815a5d3687ff9d838d91c7"
       },
       {
         "patch": "tools/runtime-patches/makepad-trusted-user-input.patch",
-        "sha256": "48ac389a3b0fab5051092539700f63d4d58b7dd21cb60af43c30b0fda60a6b32"
+        "sha256": "405558a2a2cf136e6e2cf49f312f5652cb5f2a34c418e49cf2e50e4599014bcd"
       },
       {
         "patch": "tools/runtime-patches/makepad-desktop-trusted-input.patch",
-        "sha256": "0bb2bbc7d776bb9c8b8064b2f44bcec6e9442c10e1fbf84acbdfd03f0b89be50"
+        "sha256": "90b188d3b161bfa54bd349f8ae7db4b7dc112052d997238d11bd4234b1b41cdd"
       },
       {
         "patch": "tools/runtime-patches/makepad-android-enter-composition.patch",
@@ -84,71 +83,71 @@
       },
       {
         "patch": "tools/runtime-patches/makepad-auth-webview.patch",
-        "sha256": "61d5e247627bd7a3a883dab6689d6c82b7df7cbc031e3731b82b31f388555131"
+        "sha256": "71e1cc7745b6fa7927b470a0326ac4e3739c8182c1e95ffe67991f59710fa606"
       },
       {
         "patch": "tools/runtime-patches/makepad-camera-permission-wait.patch",
-        "sha256": "6b1c5998521dbf44e70bc8b90ab025d8f449a8e646c363585f3b172734d478c2"
+        "sha256": "96c30eca01ce5ed6d2eb56f9503eebd4e2404ac29027f20597ec18116ef1f4bd"
       },
       {
         "patch": "tools/runtime-patches/makepad-location-explicit-consent.patch",
-        "sha256": "e4490b7a6e717b2737431c99bd9486ea14c272a45effdd3ddab2d679f4fa5c63"
+        "sha256": "cf1c948a0c9dd97e7b063a46758ff9d5106ca48fe32b7419dfc7406bc2b80976"
       },
       {
         "patch": "tools/runtime-patches/makepad-location-request.patch",
-        "sha256": "9cd0980e8d07a24bf0a650e5e4f8bddc736cfa4bf143ced72d772d5f3f6f1e06"
+        "sha256": "aa85f0dae99db54e3201e3b752aef121253248981cfe5046b3daa1c0456aa503"
       },
       {
         "patch": "tools/runtime-patches/makepad-label-restyle-wrap.patch",
-        "sha256": "caffe63992d32aa5295af426903d2e6ef028cdb5d831336fa43ea79710d34305"
+        "sha256": "35ea02662b7b998737ffe1f1d98600f05b80acc5dd7c7d4bd2db828b1e5bc603"
       },
       {
         "patch": "tools/runtime-patches/makepad-camera-checked-start.patch",
-        "sha256": "f28349631a2f7b851c0d5289ebebfa387a020170a69793f65c4f2f985504ffc0"
+        "sha256": "614613dc9780faab0231c946d1a50c5db07f9370a06c07d5016bef7b1e6cfb84"
       },
       {
         "patch": "tools/runtime-patches/makepad-device-consent.patch",
-        "sha256": "8a09c8c07f15d899667db40500bf407393fc9ec262b8a01d01d4a7852c4c2693"
+        "sha256": "edb8fe27f19f6ec36afb10fff4f2fe234ee223b5fce6827b01ce0d68ce209349"
       },
       {
         "patch": "tools/runtime-patches/makepad-web-reader-availability.patch",
-        "sha256": "5db088e4fa0b15a59861e52e65a2194e80bb8c351eafc2dd57e59c0d7161c71e"
+        "sha256": "96d02f21e37a6d7dbd06cdb7870273787d8d45bfa378a4e53ccb734254047d64"
       },
       {
         "patch": "tools/runtime-patches/makepad-host-json-boundary.patch",
-        "sha256": "7235aea8fa614e19e7ca9133712967d49ec908bf5a0319fcdda4cea7134cbe69"
+        "sha256": "d5b562950b1908df52df9460046f502dc99db2e63eb95f1a5ca1ab13725008df"
       },
       {
         "patch": "tools/runtime-patches/makepad-async-prompt-provenance.patch",
-        "sha256": "46bb7620ccb4f6a76a08d0333c0249d2619123da2a2649f55294fd4d35f0d905"
+        "sha256": "dbf816dca437906391f00e11e0344d08228654ff41af43d11e4272602749f9df"
       },
       {
         "patch": "tools/runtime-patches/makepad-desktop-webview.patch",
-        "sha256": "dda81412903a247525cf3750a00aab820aa1dea28722cc633cbdf65fd5770221"
+        "sha256": "613b6d042fbb09e6b33736292650180011f5576a13aaa6fc72531b615dc58500"
       },
       {
         "patch": "tools/runtime-patches/makepad-host-response-json.patch",
-        "sha256": "a95cd969b2d034ca30d38bfdb6ca6a890aaef4f24c7034076ddf72eb4c3d829a"
+        "sha256": "cf9baf53a11c35e9fa2d6bc84fcce20b3cce901cb0a31411ffd6f26373d147fd"
       },
       {
         "patch": "tools/runtime-patches/makepad-splash-budget.patch",
-        "sha256": "cebcae3327ec955a2b37eb1f3353e97160d702bd4081abb264006fee4ac17ee5"
+        "sha256": "c40e263f1869b157bf5a31132025a85091b6f34cd4b207998dbfbaa87434aa47"
       },
       {
         "patch": "tools/runtime-patches/makepad-host-os-batch1.patch",
-        "sha256": "e336290797373331285ae16c2a6414c20b5674eb550b7219ba1132e4743c0141"
+        "sha256": "40cff18e59a7abad2808e6751a909f1313517ee148e650cd56d9ba377f3941f9"
       },
       {
         "patch": "tools/runtime-patches/makepad-host-api-runtime-fixes.patch",
-        "sha256": "89459d67c66ec1bea55987b89d4ae0b080324f873ddd17883d6f698f8e7a4343"
+        "sha256": "48dfff13b94532fed3864c6b1fa540748d6048eb9185153acfb5d3fe4d8a076e"
       },
       {
         "patch": "tools/runtime-patches/makepad-photo-text-sharing.patch",
-        "sha256": "8a027f43b6d63f31bfe272e48c2b1968047907e5c76f2685f01b1c5446c4735f"
+        "sha256": "dc832e970adf7509fcab296101c8841a37f27d7a8f7e64aac58abfddd8f78472"
       },
       {
         "patch": "tools/runtime-patches/makepad-native-audio-session-ownership.patch",
-        "sha256": "79d33aa0756f140de9f15db326e17bfd01d12856069d17721845b459540dea3f"
+        "sha256": "4ee0d436e0e5bc25b9bc063edb4c4e88f8b7803c28efe0690bdf4d57173cad39"
       },
       {
         "patch": "tools/runtime-patches/makepad-apple-audio-open-generation.patch",
@@ -156,11 +155,11 @@
       },
       {
         "patch": "tools/runtime-patches/makepad-video-controls-lifecycle.patch",
-        "sha256": "c92fd343720ab6e26564ac782b9276ce9e5f0708e3c7547f0b17981c340f88ea"
+        "sha256": "83ec1f0b8596afff7996814bbc31f939331c950b4cfc1a93dbcba89d7c839d37"
       },
       {
         "patch": "tools/runtime-patches/makepad-windows-still-capture.patch",
-        "sha256": "7e80e9414355979a9bafbfda847c2a33f63ce4b30776a7cb813e78cc3b6fa964"
+        "sha256": "f2056252f5859f550549290fcab38f331b6276d123e7702cfb8fdf38da57594b"
       },
       {
         "patch": "tools/runtime-patches/makepad-camera-video-generation-routing.patch",
@@ -173,10 +172,6 @@
       {
         "patch": "tools/runtime-patches/makepad-android-video-seek.patch",
         "sha256": "e52e281cd375d25105dbaa285354c970148ab07442400c3cda6a712c460b01e9"
-      },
-      {
-        "patch": "tools/runtime-patches/makepad-map-script-api.patch",
-        "sha256": "f0626c970bb5362eb10fddd7eb22421e457ec428062a4bcefdd4c59c8505eb50"
       },
       {
         "patch": "tools/runtime-patches/makepad-large-document-import.patch",

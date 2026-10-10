@@ -1,5 +1,5 @@
 diff --git a/platform/src/cx_api.rs b/platform/src/cx_api.rs
-index 71c12d2a3..4782017e0 100644
+index 363dc7eeb..d3e27fc32 100644
 --- a/platform/src/cx_api.rs
 +++ b/platform/src/cx_api.rs
 @@ -131,6 +131,18 @@ pub fn spawn_navigable(&mut self, url: &str) {
@@ -527,10 +527,10 @@ index 2d7bf1496..77a5b9f05 100644
  fn clipped_browser_layout(
      unclipped_rect: Rect,
 diff --git a/platform/src/os/apple/macos/macos.rs b/platform/src/os/apple/macos/macos.rs
-index 064e008f0..bfb3af932 100644
+index 342378ca8..a24f806dd 100644
 --- a/platform/src/os/apple/macos/macos.rs
 +++ b/platform/src/os/apple/macos/macos.rs
-@@ -2040,6 +2040,15 @@ fn handle_platform_ops(
+@@ -2053,6 +2053,15 @@ fn handle_platform_ops(
                          .or_insert_with(|| MacosSystemBrowser::new(&url))
                          .set_url(&url, false);
                  }
@@ -546,7 +546,7 @@ index 064e008f0..bfb3af932 100644
                  CxOsOp::UpdateSystemBrowser {
                      browser_id,
                      area,
-@@ -2108,6 +2117,13 @@ fn handle_platform_ops(
+@@ -2121,6 +2130,13 @@ fn handle_platform_ops(
                          let _ = std::fs::write(result_path, r#"{"error":"native browser is closed"}"#);
                      }
                  }
@@ -561,10 +561,10 @@ index 064e008f0..bfb3af932 100644
                      with_macos_app(|app| app.open_save_file_dialog(settings));
                  }
 diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
-index 8d910fc7b..66969ce8b 100644
+index 1012812ae..94029dd20 100644
 --- a/platform/src/os/linux/android/android.rs
 +++ b/platform/src/os/linux/android/android.rs
-@@ -1588,6 +1588,10 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -1597,6 +1597,10 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                  Cx::post_action(crate::event::NativeQrCancelled { reason });
                  self.handle_action_receiver();
              }
@@ -575,7 +575,7 @@ index 8d910fc7b..66969ce8b 100644
              FromJavaMessage::SystemBrowserInvoke {
                  browser_id,
                  call_id,
-@@ -2867,6 +2871,9 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+@@ -2914,6 +2918,9 @@ fn handle_platform_ops(&mut self) -> EventFlow {
                  CxOsOp::ShowQrScanner => unsafe {
                      android_jni::to_java_request_qr_scanner();
                  },
@@ -586,7 +586,7 @@ index 8d910fc7b..66969ce8b 100644
                      browser_id,
                      url,
 diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
-index 2f3608350..1d2434abc 100644
+index 376b20e96..2ee73cd8c 100644
 --- a/platform/src/os/linux/android/android_jni.rs
 +++ b/platform/src/os/linux/android/android_jni.rs
 @@ -256,6 +256,9 @@ pub enum FromJavaMessage {
@@ -599,7 +599,7 @@ index 2f3608350..1d2434abc 100644
      SystemBrowserInvoke { browser_id: i64, call_id: i64, tool: String, args: String },
      SystemBrowserPageError { browser_id: i64, code: i32, description: String, url: String },
      DeepLink { url: String },
-@@ -2857,6 +2860,22 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onLocation(
+@@ -2894,6 +2897,22 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onLocation(
      });
  }
  
@@ -622,7 +622,7 @@ index 2f3608350..1d2434abc 100644
  /// A system browser's main-frame load failed (see `MakepadActivity`'s
  /// WebViewClient). Delivered as a `NativeSystemBrowserPageError` action so the
  /// widget hosting the browser can show that the page did not load, instead of
-@@ -3135,6 +3154,21 @@ pub unsafe fn to_java_spawn_system_browser(browser_id: LiveId, url: &str, naviga
+@@ -3172,6 +3191,21 @@ pub unsafe fn to_java_spawn_system_browser(browser_id: LiveId, url: &str, naviga
      );
  }
  
@@ -659,10 +659,10 @@ index 1caaa86da..fe5d7fbf0 100644
          makepad_java_classes_dir.join("MakepadNetwork.java"),
          makepad_java_classes_dir.join("MakepadSpeech.java"),
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-index 3d8242230..59238ad36 100644
+index 41aa2c8f7..69314ccdf 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-@@ -4425,10 +4425,15 @@ public class MakepadActivity
+@@ -4498,10 +4498,15 @@ public class MakepadActivity
          });
      }
  
@@ -1148,10 +1148,10 @@ index 000000000..faa8f789b
 +    String domain() { return start.getHost().toLowerCase(Locale.ROOT) + (start.getPort() > 0 ? ":" + start.getPort() : ""); }
 +}
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
-index 9f27bf02c..99b451ab5 100644
+index c1fe6470b..520fdfa38 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
-@@ -82,6 +82,8 @@ public class MakepadNative {
+@@ -102,6 +102,8 @@ public class MakepadNative {
      // A system browser's main-frame load failed (no network, host unresolved,
      // server refused). Rust hands it to the widget hosting the browser so the
      // failure is shown rather than leaving an empty view on screen.
@@ -1471,7 +1471,7 @@ index bcdc907b3..d1e2a1b04 100644
                          self.hide_overlay(cx);
                          let why = format!("could not load {}: {}", self.url.as_deref().unwrap_or(""), err.description);
 diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
-index d2f22abeb..81218427d 100644
+index 1f5a2872e..801b82e1b 100644
 --- a/widgets/src/widget_async.rs
 +++ b/widgets/src/widget_async.rs
 @@ -8,7 +8,8 @@

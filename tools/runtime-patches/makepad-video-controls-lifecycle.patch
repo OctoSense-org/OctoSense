@@ -1065,7 +1065,7 @@ index 197599cf4..b11c4151d 100644
 +
 +}
 diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
-index c0d1a367a..bf8e11258 100644
+index 110176edb..dab21e678 100644
 --- a/widgets/src/widget_async.rs
 +++ b/widgets/src/widget_async.rs
 @@ -1479,6 +1479,8 @@ fn on_widget_script_thread_completed(

@@ -1,5 +1,5 @@
 diff --git a/platform/src/os/windows/d3d11.rs b/platform/src/os/windows/d3d11.rs
-index ebe77a0..f060468 100644
+index d6d4d7fdb..08802b7b0 100644
 --- a/platform/src/os/windows/d3d11.rs
 +++ b/platform/src/os/windows/d3d11.rs
 @@ -1187,6 +1187,23 @@ fn capture_window_screenshot(&mut self, d3d11_window: &D3d11Window, d3d11_cx: &D
@@ -27,10 +27,10 @@ index ebe77a0..f060468 100644
              Ok(png) => Self::send_studio_screenshot_response(request_ids, width, height, png),
              Err(err) => {
 diff --git a/platform/src/remote.rs b/platform/src/remote.rs
-index 678fc72..6b0d6a6 100644
+index 7744a8152..0e95d6734 100644
 --- a/platform/src/remote.rs
 +++ b/platform/src/remote.rs
-@@ -759,11 +759,11 @@ pub(crate) fn deliver_grabs(
+@@ -758,11 +758,11 @@ pub(crate) fn deliver_grabs(
          rest
      }
  
@@ -44,7 +44,7 @@ index 678fc72..6b0d6a6 100644
      ))]
      pub(crate) fn deliver_grab_pixels(
          request_ids: Vec<u64>,
-@@ -778,7 +778,7 @@ pub(crate) fn deliver_grab_pixels(
+@@ -777,7 +777,7 @@ pub(crate) fn deliver_grab_pixels(
              return request_ids;
          }
          let captured = Instant::now();

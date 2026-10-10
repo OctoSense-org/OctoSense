@@ -1,6 +1,8 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index 69314ccdf..d5a6b442e 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-@@ -1366,19 +1366,12 @@
+@@ -1363,19 +1363,12 @@ public class MakepadActivity
      private long mQrLastFrameMs = 0;
      private static final int QR_CAMERA_PERM_REQ = 0x51A2;
  
@@ -22,7 +24,7 @@
  
      static {
          System.loadLibrary("makepad");
-@@ -2183,18 +2176,10 @@
+@@ -2181,18 +2174,10 @@ public class MakepadActivity
          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
              && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
              && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {

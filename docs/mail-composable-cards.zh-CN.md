@@ -104,7 +104,7 @@ Lab **0468** 还验证了拒绝首次助手同意：Enable assistant 按钮消�
 
 ## 运行时契约与输入来源
 
-[工具 schema](../apps/mail/bundle/tools.json)定义四个草稿/提议工具。目录契约固定在 Octoscript `2e37d9e657a246f16718d9a475e167ccd2d5b5fa`，Octoscript-Makepad 固定在 `33dea2f1f3ad3f1346a219aa8cf6e91b31361e23`。两个 Mail 源都要求应用身份为字面量；本宿主还要求草稿 ID 字面量与可信发布绑定一致。检查器将草稿 `to`、`subject`、`body` 和 `suggestion_body` 保守地视为模型文本：可以显示/编辑，不能直接复用为操作载荷或源选择参数。宿主批准授权准确的已保存邮件，不要求用户把未经修改的 AI 草稿重新输入一遍。
+[工具 schema](../apps/mail/bundle/tools.json)定义四个草稿/提议工具。目录契约固定在 Octoscript `2e37d9e657a246f16718d9a475e167ccd2d5b5fa`，Octoscript-Makepad 固定在 `6cf2d90aa33ff4ae603f49c7557f3ecf986207f0`。两个 Mail 源都要求应用身份为字面量；本宿主还要求草稿 ID 字面量与可信发布绑定一致。检查器将草稿 `to`、`subject`、`body` 和 `suggestion_body` 保守地视为模型文本：可以显示/编辑，不能直接复用为操作载荷或源选择参数。宿主批准授权准确的已保存邮件，不要求用户把未经修改的 AI 草稿重新输入一遍。
 
 下文的历史真机运行对应 **0416**（`abf06d8f`），当时使用 Octoscript `9ca9545b` 和 Octoscript-Makepad `a950f7fb`。当前固定版本仅对同一份 L0 实现应用 rustfmt，并将该修订同步到包装层。较新的 0427–0432 工作区版本使用当前固定版本，其验证单独记录在上方。
 
