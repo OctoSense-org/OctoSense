@@ -131,7 +131,7 @@ impl WmDesk {
     pub fn phone_hit(&self,p:Vec2d)->Option<PhoneHit> {self.phone_ui.hit(p)}
     pub fn phone_hit_rect(&self,hit:&PhoneHit)->Option<Rect> {self.phone_ui.hit_rect(hit)}
     pub fn phone_search_event(&mut self,cx:&mut Cx,event:&Event,state:&mut WmState)->bool {
-        let enabled=state.style.target.mobile() && state.phone.searching();
+        let enabled=state.style.target.mobile() && state.phone.searching() && !state.phone.search_closing;
         self.phone_ui.search_event(cx,event,&mut state.phone,enabled)
     }
     pub fn dismiss_phone_search(&mut self,cx:&mut Cx,phone:&mut crate::mobile::PhoneState,clear:bool) {
@@ -227,6 +227,7 @@ impl WmDesk {
         for (slot,client,status,connected) in slots {
             if slot.kind.shell_drawn() {continue;}
             let shown_rect=Rect{pos:slot.rect.pos+dvec2(dx,0.0),size:slot.rect.size};
+            if !crate::mobile_pages::intersects_screen(shown_rect, screen) { continue; }
             let gave_up=phone.tiles.gave_up(slot.app);
             let entry=client.and_then(|c|phone.tiles.get(c));
             let mut shown=false;
@@ -282,9 +283,12 @@ impl WmDesk {
         state.phone.body_reflow=(window.y-(full.pos.y+full.size.y)).max(0.0);
         // A hiding keyboard grows the body back a few frames after it starts
         // to go: lay out in the whole window at once, as the keyboard slides
-        // off over it, rather than squeezed above where it was.
+        // off over it, rather than squeezed above where it was. Android can
+        // report positive animated insets after WillHide: a closing search
+        // must keep this full viewport instead of shrinking it again, leaving
+        // an unpainted band and relaying out Home mid-transition.
         let mut full=full;
-        if state.phone.native_keyboard<=0.0 && state.phone.body_reflow>0.0 {
+        if (state.phone.native_keyboard<=0.0 || state.phone.search_closing) && state.phone.body_reflow>0.0 {
             full.size.y+=state.phone.body_reflow;
             state.phone.body_reflow=0.0;
         }
@@ -460,6 +464,9 @@ impl WmDesk {
             Some(b)
         }else{None};
         if plan.home && !hit && !phone.card_covers_home {
+            // The quiet scene-record frame is outside the gesture, including
+            // its final settling frame. Prepare first-use navigation there.
+            if record && !moving { self.phone_ui.prewarm_navigation(cx, state, screen); }
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
             state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;

@@ -30,7 +30,7 @@ saved state and actual interaction; phone-size previews remain separate from dev
 
 [Native chart APIs](docs/charts.md) describe Makepad D3 widgets shared by full apps and Glance, their compatibility requirement and data handling limits. This integration is newer than desktop RC4.
 
-Android Home supports page swipes from either side edge; apps and opened cards retain Back. See [phone gestures](phone/README.md#gestures).
+Android Home supports page swipes from either side edge, velocity-aware settling, and elastic Search/Glance scrolling; apps and opened cards retain Back. See [phone gestures](phone/README.md#gestures).
 
 ## Key concepts
 

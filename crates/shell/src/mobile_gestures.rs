@@ -183,11 +183,14 @@ const HOLD_NEAR: f64 = 0.6;
 pub struct GestureRecognizer {
     pub metrics: GestureMetrics,
     track: Option<Track>,
+    release_velocity: Vec2d,
 }
 
 impl GestureRecognizer {
-    pub fn new(metrics: GestureMetrics) -> Self { Self { metrics, track: None } }
+    pub fn new(metrics: GestureMetrics) -> Self { Self { metrics, track: None, release_velocity: dvec2(0.0, 0.0) } }
     /// The recognizer claimed the finger that is down.
+    /// Velocity of the last release, in logical points/second. Cleared on Down/cancel.
+    pub fn release_velocity(&self) -> Vec2d { self.release_velocity }
     pub fn active(&self) -> bool { self.track.is_some() }
     /// The gesture in progress, as last emitted.
     pub fn current(&self) -> Option<ShellGesture> { self.track.as_ref().and_then(|t| t.live) }
@@ -201,6 +204,7 @@ impl GestureRecognizer {
     pub fn feed(&mut self, phase: FingerPhase, p: Vec2d, time: f64, ctx: &GestureContext, exclusions: &ExclusionZones) -> Option<ShellGesture> {
         match phase {
             FingerPhase::Down => {
+                self.release_velocity = dvec2(0.0, 0.0);
                 self.track = None;
                 let origin = self.origin_at(p, ctx, exclusions)?;
                 let mut samples = VecDeque::with_capacity(SAMPLES);
@@ -242,6 +246,7 @@ impl GestureRecognizer {
                 let delta = p - t.start;
                 let progress = Self::progress(kind, t.origin, delta, m.commit_distance);
                 let velocity = Self::velocity(&t);
+                self.release_velocity = velocity;
                 let along = Self::along(kind, t.origin, velocity);
                 // A library flick sends it back only while it is still going
                 // mostly sideways, not a swipe that turned into a scroll.
@@ -249,7 +254,8 @@ impl GestureRecognizer {
                 if kind == GestureKind::HomeUp && t.held { return Some(ShellGesture::Commit(GestureKind::Switcher)); }
                 // Nor one that ended up travelling further down than right.
                 if t.origin == Origin::Library && delta.x <= delta.y.abs() { return Some(ShellGesture::Cancel(kind)); }
-                if progress >= Self::commit_fraction(kind) || flick { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
+                let reversing_page = matches!(kind, GestureKind::Page(_)) && along <= -m.flick_velocity;
+                if !reversing_page && (progress >= Self::commit_fraction(kind) || flick) { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
             }
         }
     }
@@ -274,6 +280,7 @@ impl GestureRecognizer {
     /// Another finger took over, the screen rotated, or the shell changed
     /// under the finger: drop the track, telling the surfaces to animate back.
     pub fn cancel(&mut self) -> Option<ShellGesture> {
+        self.release_velocity = dvec2(0.0, 0.0);
         let t = self.track.take()?;
         t.kind.map(ShellGesture::Cancel)
     }
@@ -617,6 +624,19 @@ mod tests {
         rec.feed(Down, dvec2(200.0, 880.0), 1.0, &ctx(PhoneScreen::App), &ex);
         assert!(!rec.active(), "a key at the bottom of the keyboard is a key, not home");
     }
+    #[test]
+    fn reversing_a_page_cancels_and_release_velocity_is_not_reused() {
+        let mut rec=GestureRecognizer::default(); let context=ctx(PhoneScreen::Home); let zones=ExclusionZones::default();
+        for (phase,x,t) in [(Down,350.0,0.0),(Move,80.0,0.3),(Move,80.0,0.45),(Move,110.0,0.46),(Move,160.0,0.48)] {
+            rec.feed(phase,dvec2(x,400.0),t,&context,&zones);
+        }
+        assert_eq!(rec.feed(Up,dvec2(210.0,400.0),0.5,&context,&zones),Some(ShellGesture::Cancel(GestureKind::Page(Dir::Left))));
+        assert!(rec.release_velocity().x>900.0);
+        rec.feed(Down,dvec2(250.0,400.0),1.0,&context,&zones);
+        assert_eq!(rec.release_velocity(),dvec2(0.0,0.0));
+        rec.cancel(); assert_eq!(rec.release_velocity(),dvec2(0.0,0.0));
+    }
+
     #[test]
     fn a_home_horizontal_drag_is_a_page_swipe() {
         let mut rec = GestureRecognizer::default();
