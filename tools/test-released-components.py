@@ -216,8 +216,10 @@ def main():
             ui.click('Get')
             ui.label('Install ' + name + '?')
             ui.click('Install')
+            size = ui.call('s')['w'][0]['sz']
+            ui.call('m', k='scroll', x=size[0] / 2, y=size[1] / 2, dy=-5000, wait=1)
             ui.wait(lambda: any('Installed. Your app is ready to open.' in row.get('t', '')
-                               for row in ui.rows()), timeout=90)
+                               for row in ui.rows()) and ui.find(text='Open'), timeout=90)
             check(app_id + '.installed_through_hub', True)
             ui.capture(app_id + '-installed')
             ui.click_row(ui.reachable(identifier='back'))
