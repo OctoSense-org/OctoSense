@@ -1944,6 +1944,50 @@ fn an_apps_agent_works_in_its_own_folder_and_cannot_reach_anothers() {
     assert_eq!(closed["ok"], true, "{closed}");
 }
 
+/// Home leaves the photo engine out (ADR 0013, weighed per engine). Photos'
+/// agent still declares `photos.info`: through the relay it reaches Photos'
+/// executor and is refused plainly as `unavailable` (the call never runs),
+/// not with the stand-in notice service's "no method" or App Hub's "no
+/// service". `photos.notify` still works: the shell's notice service
+/// answers Photos' namespace there.
+#[cfg(all(feature = "app-hub", not(feature = "craft-engines")))]
+#[test]
+fn photos_info_is_plainly_unavailable_without_the_photo_engine() {
+    use super::script_apps::{self, HostServiceExecutor};
+    // The shell's own services, then the notice services: with no photo
+    // engine, Photos' namespace gets one, as on Home.
+    let _ = crate::apps::system_card_apps();
+    let dir = script_apps::tests::stamped_bundle("photos", "no-photo-engine", |_, _| {});
+    let photos = script_apps::from_bundle(&dir).unwrap();
+    let mut relay = Relay::default();
+    relay.catalog.declare("os.photos", photos.tools);
+    relay.set_executor("os.photos", Some(Arc::new(HostServiceExecutor {
+        app: "os.photos".into(), tools: photos.host_service_tools, methods: photos.host_methods,
+        families: photos.families, host_dir: dir.join("test-host"),
+    })));
+    let mut world = World::new(FixedDevMode::off());
+    let own = |id: &str, tool: &str, args: Value| {
+        let mut c = call(id, tool, "card.os.photos");
+        c.app = "os.photos".into();
+        c.args = args;
+        c
+    };
+    let info = answer(&mut relay, &mut world, own("p-info", "photos.info", json!({"path": "beach.jpg"})));
+    assert_eq!(info["ok"], false, "{info}");
+    assert_eq!(info["error"]["kind"], "unavailable", "{info}");
+    assert_eq!(info["error"]["message"], "photos.info isn't available on this device: the photo engine is only in the desktop build", "{info}");
+    // The photo engine's own methods are refused the same way.
+    assert_eq!(script_apps::unlinked_engine("photo.convert"), Some("photo"));
+    assert_eq!(script_apps::unlinked_engine("photos.notify"), None);
+    assert_eq!(script_apps::unlinked_engine("sheet.eval"), None);
+    // Photos' notice reaches the notice service (a blank title is refused
+    // there, before anything is published).
+    let notice = answer(&mut relay, &mut world, own("p-notify", "photos.notify", json!({"title": " ", "body": "Hi"})));
+    assert_eq!(notice["error"]["kind"], "app_error", "{notice}");
+    assert!(notice["error"]["message"].as_str().unwrap().contains("Provide a title"), "{notice}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// A signed-out account's agent has no area. The relay refuses its calls
 /// first (`signed_out`, the same suspension); an engine call that reaches
 /// an executor anyway is refused before the engine runs. Signed in again,

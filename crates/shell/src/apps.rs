@@ -285,9 +285,9 @@ pub fn register_host_services() {
         register_calendar_services();
         register_news();
         // The sheet engine service (ADR 0013): gridcraft behind `sheet.*`.
-        // With the photo engine it still ships on the phone, where the
-        // native Sheets app's and Photos' agent tools use them; the ten
-        // engines below are desktop only (`craft-engines`).
+        // It ships on the phone too, where the native Sheets app's agent
+        // tools use it (weighed per engine: +3.4 MB stripped on Home); the
+        // photo engine and the ten below are desktop only (`craft-engines`).
         #[cfg(feature = "app-hub")]
         octosense_sheets_service::register();
         // The native Sheets app's agent tools (`sheets.*`) run on that
@@ -295,13 +295,19 @@ pub fn register_host_services() {
         // route them to a bus the Sheets module does not serve.
         #[cfg(feature = "app-hub")]
         crate::host_tools::set_executor("sheets", Some(std::sync::Arc::new(crate::host_tools::engines::EngineExecutor::sheets())));
-        // The photo engine service (ADR 0013): photocraft behind `photo.*`.
-        #[cfg(feature = "app-hub")]
+        // The photo engine service (ADR 0013): photocraft behind `photo.*`,
+        // desktop only (`craft-engines`): weighed per engine, it would add
+        // 26.8 MB stripped to Home.
+        #[cfg(feature = "craft-engines")]
         octosense_photo_service::register();
         // Photos' own namespace service, as Mail's and News's: its agent's
         // `photos.info` on the engine, `photos.notify` on the shell's
         // notice card (so the notice service never stands in for Photos).
-        #[cfg(feature = "app-hub")]
+        // Without the photo engine (Home), the notice service answers
+        // Photos' namespace (`glance_notice::serve_system_apps`):
+        // `photos.notify` works, and `photos.info` says plainly that it is
+        // not available on this device (`script_apps::unlinked_engine`).
+        #[cfg(feature = "craft-engines")]
         {
             octosense_photo_service::register_photos();
             octosense_photo_service::on_notify(Some(std::sync::Arc::new(crate::glance_notice::notify)));

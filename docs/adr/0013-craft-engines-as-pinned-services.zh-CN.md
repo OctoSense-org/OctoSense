@@ -136,7 +136,7 @@ vector、pdf）现已有代理工具，系统代理可以调用：
   `commands.md`，每个 id 一行；light 有 `controls.md`，sheet 有 `functions.md`。
   每个服务都嵌入自己的技能（`src/skill.rs`），因此构建发布的技能总与其引擎一致。
   Shell 用与服务相同的条件注册已链接引擎的技能
-  （`crates/shell/src/system_chat/skills.rs`）：sheet 和 photo 随 `app-hub`，
+  （`crates/shell/src/system_chat/skills.rs`）：sheet 随 `app-hub`，photo 和
   另外十个随 `craft-engines`。
 - **每次内核启动前安装。** 内核服务（`crates/kernel/src/skills.rs`）把它们写入
   octos 为系统代理的 profile 读取的技能目录 `<core dir>/profiles/_main/data/skills`，
@@ -340,15 +340,36 @@ App Hub 的 card-host）。
 命令；其服务的测试会运行每个示例（`the_skill_examples_run`），Shell 则对照工具
 的 schema 检查它们。
 
+## 手机打包：逐引擎权衡（2026 年 10 月 9 日）
+
+决定第 3 条规定，在逐个引擎权衡其二进制成本之前，服务不进入手机外壳。自 #415
+起，系统 Agent 背后的十个引擎仅限桌面。sheet 与 photo 引擎在 Home 的 Android
+库上称量：在 main `c6fbae6f` 上，用 `rom/scripts/build-home.py` 的打包步骤做
+aarch64 release 构建（默认特性，不带内核、不签名），一次保持原样，另外分别把
+一个引擎移到 `craft-engines` 之后：
+
+| 引擎 | 打包时的 `libmakepad.so` | strip 后 | APK | 只由它引入的 crate |
+| --- | --- | --- | --- | --- |
+| photo | +36.1 MB | +26.8 MB | +13.2 MB | 78 个：photocraft 及其文字与字体栈（parley、skrifa、harfrust）、编解码器（exr、tiff、WebP、一个 JPEG 编码器）、wasmi、rayon |
+| sheet | +4.7 MB | +3.4 MB | +1.8 MB | 13 个：gridcraft、zip、quick-xml、`makepad-script-compute` |
+
+此前 Home 的库打包时为 410.6 MB（strip 后 314.7 MB），不含内核的 APK 为
+239.5 MB。规则按引擎执行：只有几 MB 的留下，更多的改为仅限桌面。
+
+- **photo 引擎仅限桌面。** 它和那十个引擎一起由 `craft-engines` 引入，若进入
+  Home 的依赖图，`tools/check-shell-graph.sh` 即报错。在 Home 上，Shell 的通知
+  服务应答 Photos 的命名空间，因此 `photos.notify` 照常可用；Photos 声明的
+  `photos.info` 在运行前即被拒绝，类别为 `unavailable`："photos.info isn't
+  available on this device: the photo engine is only in the desktop build"
+  （`host_tools::script_apps::unlinked_engine`）。它的技能只随引擎一起发布。
+- **sheet 引擎留在 Home。** 原生 Sheets 应用的 Agent 工具在手机上依赖它，依赖图
+  检查要求凡链接 App Hub 处都包含它。
+- 两个引擎都能为 `aarch64-linux-android` 编译、链接，且没有警告。两者都还没有在
+  手机上运行过（**未验证**）。
+
 ## 待决问题
 
 - 第一个服务写出后，服务 crate 的归属（`crates/craft-*` 还是各应用的
   `apps/<name>/host-service`）。
 - soundcraft 的引擎（以及我们 makepad fork 尚未收录的 `audio_aot`）是
   否足以支撑本季度的可脚本化音效线。
-- 手机打包。自 2026 年 10 月 9 日起，系统 Agent 背后的十个引擎（word、deck、
-  cad、light、sound、design、film、effect、vector、pdf）仅限桌面：由桌面默认
-  特性 `craft-engines` 引入，若其中任一进入 Home 的依赖图，
-  `tools/check-shell-graph.sh` 即报错。sheet 与 photo 引擎仍随 Home 发布，因为
-  原生 Sheets 应用和 Photos 的 Agent 工具在手机上依赖它们。是保留它们（二进制
-  成本尚未评估），还是同样改为仅限桌面（并在手机上撤下这些工具），仍待决定。

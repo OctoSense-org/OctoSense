@@ -78,7 +78,10 @@ octosense-oauth-service = { workspace = true, optional = true, features = ["host
 octosense-markdown-editor = { workspace = true, optional = true }
 octosense-calendar-service = { workspace = true, optional = true }
 octosense-news-service = { workspace = true, optional = true }
-# The sheet engine service (ADR 0013): gridcraft behind `sheet.*`, desktop only.
+# The engine services (ADR 0013), weighed per engine for the phone: the
+# sheet engine (gridcraft behind `sheet.*`) ships wherever App Hub does,
+# Home included, for the native Sheets app's agent tools; the photo engine
+# (photocraft behind `photo.*`) is desktop only (`craft-engines`).
 octosense-sheets-service = { workspace = true, optional = true }
 octosense-photo-service = { workspace = true, optional = true }
 # Where an engine works (ADR 0013): the caller's area, which the shell's
@@ -174,7 +177,7 @@ app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 app-terminal = ["dep:makepad-terminal"]
 app-appcard = ["dep:octosense-appcard", "octos-core"]
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-photo-service", "dep:octosense-engine-area", "dep:octosense-calendar-service", "octosense-ai-host/llm"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-oauth-service", "dep:octosense-markdown-editor", "dep:octosense-news-service", "dep:octosense-sheets-service", "dep:octosense-engine-area", "dep:octosense-calendar-service", "octosense-ai-host/llm"]
 app-calculator = ["dep:makepad-calculator"]
 app-clock = ["dep:makepad-clock"]
 app-notes = ["dep:makepad-notes"]
@@ -196,11 +199,16 @@ dev-mode = []
 wasm-functions = ["app-hub", "dep:octosense-wasm-host"]
 # The feature's former name.
 wasm-lab = ["wasm-functions"]
-# The ten ADR 0013 engines behind the system agent (`host_tools::engines`):
-# desktop only, a desktop default (tools/native_apps.py `SHELL_BASE_DEFAULT`).
-# The sheet and photo engines stay under `app-hub`: the native Sheets app's
-# and Photos' agent tools use them on the phone too.
-craft-engines = ["app-hub", "dep:octosense-word-service", "dep:octosense-deck-service", "dep:octosense-cad-service", "dep:octosense-light-service", "dep:octosense-sound-service", "dep:octosense-design-service", "dep:octosense-film-service", "dep:octosense-effect-service", "dep:octosense-vector-service", "dep:octosense-pdf-service"]
+# The ADR 0013 engines only the desktop links, a desktop default
+# (tools/native_apps.py `SHELL_BASE_DEFAULT`): the ten behind the system
+# agent (`host_tools::engines`) and the photo engine, which Photos'
+# `photos.info` runs on. Weighed per engine on Home's Android library
+# (9 Oct 2026, ADR 0013): photo +26.8 MB stripped, desktop only; sheet
+# +3.4 MB, so it stays under `app-hub` for the native Sheets app's agent
+# tools on the phone. Without the photo engine, Photos' namespace gets the
+# shell's notice service: `photos.notify` works, `photos.info` is refused
+# as unavailable (`host_tools::script_apps::unlinked_engine`).
+craft-engines = ["app-hub", "dep:octosense-photo-service", "dep:octosense-word-service", "dep:octosense-deck-service", "dep:octosense-cad-service", "dep:octosense-light-service", "dep:octosense-sound-service", "dep:octosense-design-service", "dep:octosense-film-service", "dep:octosense-effect-service", "dep:octosense-vector-service", "dep:octosense-pdf-service"]
 # The system toolbox offered to app agents as host-routed tools (ADR 0002
 # §6, ADR 0004 §12; src/host_tools/toolbox.rs): the `toolbox` owner in the
 # host-tool relay. Off by default.

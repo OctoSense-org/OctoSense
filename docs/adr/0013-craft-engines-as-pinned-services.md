@@ -163,8 +163,8 @@ reach: photocraft alone has 817 commands.
   `functions.md`. Each service embeds its skill (`src/skill.rs`), so a build
   ships the skill that matches its engine. The shell registers the linked
   engines' skills with the services' own gates
-  (`crates/shell/src/system_chat/skills.rs`): sheet and photo with
-  `app-hub`, the ten with `craft-engines`.
+  (`crates/shell/src/system_chat/skills.rs`): sheet with `app-hub`,
+  photo and the ten with `craft-engines`.
 - **Installed before every kernel start.** The kernel service
   (`crates/kernel/src/skills.rs`) writes them into the skills dir octos
   reads for the system agent's profile, `<core dir>/profiles/_main/data/skills`,
@@ -423,17 +423,42 @@ explains the door and teaches commands by example; its service's tests run
 every example (`the_skill_examples_run`), and the shell checks them against
 the tools' schemas.
 
+## Phone packaging, weighed per engine (9 Oct 2026)
+
+Decision 3 kept the services out of the phone shells until each engine's
+binary cost was weighed. Since #415 the ten engines behind the system
+agent are desktop only. The sheet and photo engines were weighed on
+Home's Android library: release builds for aarch64 with the packager step
+of `rom/scripts/build-home.py` (default features, no kernel, no signing)
+on main `c6fbae6f`, as is and with each engine moved behind
+`craft-engines`:
+
+| Engine | `libmakepad.so` as packaged | Stripped | APK | Crates only it brings |
+| --- | --- | --- | --- | --- |
+| photo | +36.1 MB | +26.8 MB | +13.2 MB | 78: photocraft, its text and font stack (parley, skrifa, harfrust), codecs (exr, tiff, WebP, a JPEG encoder), wasmi, rayon |
+| sheet | +4.7 MB | +3.4 MB | +1.8 MB | 13: gridcraft, zip, quick-xml, `makepad-script-compute` |
+
+Before, Home's library was 410.6 MB as packaged (314.7 MB stripped) and
+its APK, without the kernel, 239.5 MB. The rule is per engine: a few MB
+stays, more is desktop only.
+
+- **The photo engine is desktop only.** `craft-engines` owns it with the
+  ten, and `tools/check-shell-graph.sh` fails if it reaches Home's graph.
+  On Home the shell's notice service answers Photos' namespace, so
+  `photos.notify` works, and Photos' declared `photos.info` is refused
+  before it runs, as `unavailable`: "photos.info isn't available on this
+  device: the photo engine is only in the desktop build"
+  (`host_tools::script_apps::unlinked_engine`). Its skill ships only where
+  the engine does.
+- **The sheet engine stays in Home.** The native Sheets app's agent tools
+  run on it there, and the graph guard requires it wherever App Hub is
+  linked.
+- Both engines compile and link for `aarch64-linux-android`, with no
+  warnings. Neither has run on a phone (**unverified**).
+
 ## Open questions
 
 - Where the service crates live (`crates/craft-*` vs per-app
   `apps/<name>/host-service`) once the first one is written.
 - Whether soundcraft's engine (and `audio_aot`, not yet vendored in our
   makepad fork) justifies a scriptable-effects lane this quarter.
-- Phone packaging. Since 9 Oct 2026 the ten engines behind the system
-  agent (word, deck, cad, light, sound, design, film, effect, vector, pdf)
-  are desktop only: the desktop-default feature `craft-engines` owns them,
-  and `tools/check-shell-graph.sh` fails if one reaches Home's graph. The
-  sheet and photo engines still ship in Home, because the native Sheets
-  app's and Photos' agent tools run on them there. Whether to keep them
-  (their binary cost, not yet weighed) or move them desktop-only too (and
-  withdraw those tools on the phone) is still open.
