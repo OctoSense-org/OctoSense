@@ -57,6 +57,7 @@ pub mod kernel_port;
 pub mod layout;
 pub mod octosense;
 pub mod module_host;
+pub mod native_activity;
 #[cfg(test)]
 mod module_close_tests;
 #[cfg(test)]
