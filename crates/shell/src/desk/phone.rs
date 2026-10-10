@@ -283,9 +283,12 @@ impl WmDesk {
         state.phone.body_reflow=(window.y-(full.pos.y+full.size.y)).max(0.0);
         // A hiding keyboard grows the body back a few frames after it starts
         // to go: lay out in the whole window at once, as the keyboard slides
-        // off over it, rather than squeezed above where it was.
+        // off over it, rather than squeezed above where it was. Android can
+        // report positive animated insets after WillHide: a closing search
+        // must keep this full viewport instead of shrinking it again, leaving
+        // an unpainted band and relaying out Home mid-transition.
         let mut full=full;
-        if state.phone.native_keyboard<=0.0 && state.phone.body_reflow>0.0 {
+        if (state.phone.native_keyboard<=0.0 || state.phone.search_closing) && state.phone.body_reflow>0.0 {
             full.size.y+=state.phone.body_reflow;
             state.phone.body_reflow=0.0;
         }

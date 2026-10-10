@@ -313,6 +313,9 @@ impl PhoneState {
         }
         self.native_keyboard=match event {
             VirtualKeyboardEvent::WillShow{height,..}|VirtualKeyboardEvent::DidShow{height,..}=>height.max(0.0),
+            // WillHide announces a destination, not a zero-height keyboard.
+            // The closing search follows the subsequent animated insets.
+            VirtualKeyboardEvent::WillHide{..} if self.search_closing=>self.native_keyboard,
             VirtualKeyboardEvent::WillHide{..}|VirtualKeyboardEvent::DidHide{..}=>0.0,
         };
         // WillShow carries the height the keyboard will reach; a rising
@@ -720,9 +723,13 @@ mod tests {
         assert_eq!(full_height - phone.body_reflow - phone.search_keyboard_lift(10.0), 480.0);
         phone.body_reflow = 0.0;
         assert_eq!(full_height - phone.body_reflow - phone.search_keyboard_lift(10.0), 480.0);
-        phone.native_keyboard = 160.0;
+        phone.native_keyboard_event(&VirtualKeyboardEvent::WillHide {
+            time: 10.0, height: 0.0, duration: 0.2, ease: makepad_platform::event::Ease::OutCubic,
+        });
+        assert_eq!(full_height - phone.search_keyboard_lift(10.0), 480.0);
+        phone.native_keyboard_event(&VirtualKeyboardEvent::DidShow {time: 10.1, height: 160.0});
         assert_eq!(full_height - phone.search_keyboard_lift(10.0), 640.0);
-        phone.native_keyboard = 0.0;
+        phone.native_keyboard_event(&VirtualKeyboardEvent::DidHide {time: 10.2});
         assert_eq!(phone.search_keyboard_lift(10.0), 0.0);
     }
 
