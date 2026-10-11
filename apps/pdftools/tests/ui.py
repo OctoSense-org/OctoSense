@@ -449,7 +449,13 @@ def range_field_of(app, name, timeout=15.0):
     found = []
 
     def beside():
+        # A list scrolled by the wheel may still be moving: the row must sit
+        # still across two looks before its field is clicked.
+        first = app.find(name, "Label", timeout=2.0)["r"]
+        time.sleep(0.4)
         label = app.find(name, "Label", timeout=2.0)["r"]
+        if abs(label[1] - first[1]) > 0.5:
+            return False
         row = label[1] + label[3] / 2
         found[:] = [w["r"] for w in range_fields(app) if abs(w["r"][1] + w["r"][3] / 2 - row) < 40]
         return bool(found)
@@ -909,6 +915,8 @@ def restart(app, out):
 def full(app, out):
     """No room left: the engine refuses to write, and the app says so."""
     app.find("PDF Tools' storage is full", "Label", timeout=90)
+    # No room for a cover: each card still shows its pages and size (pdf.info).
+    wait_until(lambda: not any((w.get("t") or "") == "Reading…" for w in app.widgets()), "a card still says Reading… with the storage full", timeout=90)
     app.grab(out, "f01-home-full")
     app.scroll(400)
     time.sleep(1)
