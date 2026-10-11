@@ -20,12 +20,20 @@ pub const APP_TOOLS: &[&str] = &[
     "studio.inspect",
     "studio.close",
     "studio.install",
+    "studio.uninstall",
 ];
+/// A development build only (`cfg(dev_mode)`: a debug build, or the
+/// `dev-mode` feature): a release build has no studio, whatever it is
+/// launched with.
 pub fn is_tool(name: &str) -> bool {
-    name == RENDER
-        || cfg!(all(unix, any(feature = "app-hub", native_mobile))) && APP_TOOLS.contains(&name)
+    cfg!(dev_mode)
+        && (name == RENDER
+            || cfg!(all(unix, any(feature = "app-hub", native_mobile))) && APP_TOOLS.contains(&name))
 }
 pub fn declarations(app: &str) -> Vec<Value> {
+    if !cfg!(dev_mode) {
+        return Vec::new();
+    }
     let mut out = vec![declaration(app)];
     if cfg!(all(unix, any(feature = "app-hub", native_mobile))) {
         out.extend(APP_TOOLS.iter().map(|name| app_declaration(app, name)));
@@ -39,13 +47,16 @@ fn app_declaration(app: &str, name: &str) -> Value {
         "studio.open" => ("Open a visible contained app. Supply exactly one of bundle_path (disposable preview state) or app_id (previous developer install, persistent app state). Returns an instance id after layout; inspect it before targeting input.",json!({"bundle_path":{"type":"string","minLength":1,"maxLength":1024},"app_id":{"type":"string","minLength":1,"maxLength":100}}),vec![]),
         "studio.input" => ("Send a real tap or text event to a visible enabled widget in your Studio app instance. Use the widget id from inspect. Never targets another app or host UI.",json!({"instance_id":{"type":"string","minLength":1,"maxLength":100},"widget_id":{"type":"string","minLength":1,"maxLength":512},"action":{"type":"string","enum":["tap","text","scroll"]},"text":{"type":"string","maxLength":2048},"delta_y":{"type":"number","minimum":-2000,"maximum":2000}}),vec!["instance_id","widget_id","action"]),
         "studio.inspect" => ("Inspect your Studio app. Returns a compact page of visible widget selectors; pass each exact selector to studio.input. Follow next_offset with offset for more. path is a PNG for view_image; snapshot_path is the full diagnostic JSON.",json!({"instance_id":{"type":"string","minLength":1,"maxLength":100},"offset":{"type":"integer","minimum":0}}),vec!["instance_id"]),
+        "studio.uninstall" => ("Remove one of your own local developer installs: its receipt, snapshot, app data and owner record. Close its open instance first. Catalog apps are never touched.",json!({"app_id":{"type":"string","minLength":1,"maxLength":100}}),vec!["app_id"]),
         _ => ("Close your Studio app instance. Preview state is discarded; an installed app's state persists.",json!({"instance_id":{"type":"string","minLength":1,"maxLength":100}}),vec!["instance_id"]),
     };
     json!({"name":name,"app":app,"description":description,
         "input_schema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
-        "output_schema":{"type":"object"},"risk":if name=="studio.install" || name=="studio.input" || name=="studio.open" {"act"} else {"read"},"background":false,"shareable":false})
+        "output_schema":{"type":"object"},"risk":if name=="studio.install" || name=="studio.uninstall" || name=="studio.input" || name=="studio.open" {"act"} else {"read"},"background":false,"shareable":false})
 }
-pub const SUPPORTED: bool = cfg!(unix);
+/// Whether this build has the studio at all: a development build on a unix
+/// target. Release builds answer no tool, module, launcher row or fixture.
+pub const SUPPORTED: bool = cfg!(all(unix, dev_mode));
 pub const SOURCE_MAX: usize = 16 * 1024;
 pub const DATA_MAX: usize = 32 * 1024;
 const MAX_WAIT: Duration = Duration::from_secs(25);
@@ -321,6 +332,7 @@ pub fn test_action(spec_path: &str) -> Result<(), String> {
     if !crate::dev_mode::grants_all(SYSTEM) {
         return Err("studio test action requires developer mode for system".into());
     }
+    confine_to_fixtures(Path::new(spec_path))?;
     use std::io::Read;
     let mut text = String::new();
     std::fs::File::open(spec_path)
@@ -340,7 +352,7 @@ pub fn test_action(spec_path: &str) -> Result<(), String> {
     if !root.is_absolute() {
         return Err("fixture workspace must be absolute".into());
     }
-    confine_to_home(&root)?;
+    confine_to_fixtures(&root)?;
     args.as_object_mut()
         .ok_or("fixture must be an object")?
         .remove("workspace");
@@ -380,6 +392,7 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
     let Some(tag) = crate::dev_mode::tag().filter(|t| authorized(SYSTEM, t)) else {
         return Err("studio flow requires developer mode for system".into());
     };
+    confine_to_fixtures(Path::new(spec_path))?;
     let mut text = String::new();
     std::fs::File::open(spec_path)
         .map_err(|e| e.to_string())?
@@ -394,6 +407,7 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
     if !root.is_absolute() {
         return Err("flow workspace must be absolute".into());
     }
+    confine_to_fixtures(&root)?;
     for name in ["requests", "responses"] {
         let dir = root.join(name);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -405,7 +419,6 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
             return Err("flow directory must not be a symlink".into());
         }
     }
-    confine_to_home(&root)?;
     let scope = scoped::Workspace::open(&root, None)?;
     std::thread::spawn(move || {
         let executor = StudioExecutor::default();
@@ -476,22 +489,48 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// A launch fixture may only point at a workspace inside this app's own
-/// private directory: the intent extra that names it is readable by any app
-/// that can start Home, so the spool must never reach another root. On
-/// Android that directory is the package's `files/`, whose `.octosense` child
-/// is the OctoSense home; elsewhere it is the home itself.
-fn confine_to_home(root: &Path) -> Result<(), String> {
-    let home = std::fs::canonicalize(crate::octosense::paths::home())
-        .map_err(|e| format!("home: {e}"))?;
-    let allowed = if cfg!(target_os = "android") {
+/// Launch fixtures live in one host-owned folder, `studio-fixture`: beside
+/// the OctoSense home on Android (in the package's private `files/`), inside
+/// the home elsewhere. The intent extra that names a fixture is readable by
+/// any app that can start Home, so a spec or workspace anywhere else, an
+/// app's own storage say, is refused before anything is created.
+fn fixtures_root() -> Result<PathBuf, String> {
+    let home = crate::octosense::paths::home();
+    let parent = if cfg!(target_os = "android") {
         home.parent().map(Path::to_path_buf).unwrap_or_else(|| home.clone())
     } else {
-        home.clone()
+        home
     };
-    let real = std::fs::canonicalize(root).map_err(|e| format!("workspace: {e}"))?;
-    if !real.starts_with(&allowed) {
-        return Err("fixture workspace must be inside OctoSense's private directory".into());
+    let root = parent.join("studio-fixture");
+    std::fs::create_dir_all(&root).map_err(|e| format!("fixtures: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("fixtures: {e}"))?;
+    }
+    std::fs::canonicalize(&root).map_err(|e| format!("fixtures: {e}"))
+}
+/// Refuses `path` unless it is inside the fixtures folder. A path that does
+/// not exist yet is judged by its nearest existing ancestor, before it is
+/// created.
+fn confine_to_fixtures(path: &Path) -> Result<(), String> {
+    let root = fixtures_root()?;
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("fixture paths must be absolute, without ..".into());
+    }
+    let mut probe = path.to_path_buf();
+    while !probe.exists() {
+        let Some(parent) = probe.parent() else { break };
+        probe = parent.to_path_buf();
+    }
+    let real = std::fs::canonicalize(&probe).map_err(|e| format!("fixture path: {e}"))?;
+    if !real.starts_with(&root) {
+        return Err("fixture paths must be inside OctoSense's studio-fixture folder".into());
     }
     Ok(())
 }

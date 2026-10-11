@@ -182,13 +182,22 @@ fn admit_snapshot(
             .with_max_memory_bytes(16 * 1024 * 1024),
         &RefuseAllSignatures,
     )?;
+    if manifest.name.chars().count() > 64 {
+        return Err("the app's name is at most 64 characters".into());
+    }
     let source =
         octosense_app_policy::script_source(&root, "").ok_or("bundle needs main.splash")??;
     if source.is_empty() || source.len() > MAX_SOURCE_BYTES {
         return Err("main.splash must be nonempty and at most 64 KiB".into());
     }
-    if source.contains("{{assets}}") || source.contains("http_resource(") {
-        return Err("this Studio release accepts resource-free script screens; local launcher artwork may still ship in the bundle".into());
+    // `script_source` has resolved `{{assets}}` already, so that route is
+    // read from the file as written. The isolate withholds only the `net`
+    // module: a URL in an image, video or `sys.*` source would still reach
+    // the network, so an offline screen names none.
+    let written = std::fs::read_to_string(root.join("main.splash"))
+        .map_err(|e| format!("main.splash: {e}"))?;
+    if written.contains("{{assets}}") || source.contains("http_resource(") || source.contains("://") {
+        return Err("this Studio release accepts offline, resource-free script screens: no {{assets}}, http_resource( or URL in main.splash; local launcher artwork may still ship in the bundle".into());
     }
     if expected.is_none() {
         std::fs::write(&manifest_path, &text).map_err(|e| e.to_string())?;
@@ -233,6 +242,15 @@ pub fn install(bundle: &Arc<Bundle>) -> Result<Value, String> {
         if old.owner != bundle.owner {
             return Err("this app id belongs to another Studio conversation".into());
         }
+        // The receipt proves the owner: a data folder from before owner
+        // records is adopted rather than wiped.
+        if !data_owner_file(&root, &bundle.id).exists() {
+            private_child(&root, "data")?;
+            write_private(
+                &data_owner_file(&root, &bundle.id),
+                &serde_json::to_vec(&bundle.owner).map_err(|e| e.to_string())?,
+            )?;
+        }
         Some(old.snapshot)
     } else {
         // A receipt whose grant has ended cannot open again, so it must not
@@ -240,6 +258,9 @@ pub fn install(bundle: &Arc<Bundle>) -> Result<Value, String> {
         if reap_dead_receipts(&receipts, &root)? >= 16 {
             return Err("Studio supports at most 16 local developer installs".into());
         }
+        // Data another conversation's install of this id left behind goes
+        // now, not at the first open.
+        claim_data(&root, &bundle.id, &bundle.owner)?;
         None
     };
     let receipt = Receipt {
@@ -352,7 +373,31 @@ pub fn installed(id: &str, owner: Option<&Owner>) -> Result<Arc<Bundle>, String>
     }
     Ok(Arc::new(bundle))
 }
+/// The installed developer apps, for the launcher. Admission re-reads and
+/// re-hashes every receipt and the launcher asks on the UI thread, so the
+/// list is kept until an install or removal, a developer-mode change, or two
+/// seconds pass.
 pub fn installed_apps() -> Vec<Arc<Bundle>> {
+    type Cache = (u64, u64, std::time::Instant, Vec<Arc<Bundle>>);
+    static CACHE: std::sync::Mutex<Option<Cache>> = std::sync::Mutex::new(None);
+    let installs = generation();
+    let dev = crate::dev_mode::generation_relaxed();
+    if let Some((cached_installs, cached_dev, filled, apps)) =
+        CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+    {
+        if *cached_installs == installs
+            && *cached_dev == dev
+            && filled.elapsed() < std::time::Duration::from_secs(2)
+        {
+            return apps.clone();
+        }
+    }
+    let apps = read_installed_apps();
+    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some((installs, dev, std::time::Instant::now(), apps.clone()));
+    apps
+}
+fn read_installed_apps() -> Vec<Arc<Bundle>> {
     let Ok(root) = base() else { return Vec::new() };
     let Ok(entries) = std::fs::read_dir(root.join("installed")) else {
         return Vec::new();
@@ -363,11 +408,77 @@ pub fn installed_apps() -> Vec<Arc<Bundle>> {
         .filter_map(|id| installed(&id, None).ok())
         .collect()
 }
+/// The owner an app id's data folder belongs to, kept beside the folder as
+/// `data/<id>.owner.json`, outside the app's storage jail.
+fn data_owner_file(root: &Path, id: &str) -> PathBuf {
+    root.join("data").join(format!("{id}.owner.json"))
+}
+/// Claims `data/<id>` for `owner`. A folder another conversation's install
+/// left behind (or one without an owner record) is wiped first, so a
+/// reinstall of the id under a new grant never opens on the old entries.
+fn claim_data(root: &Path, id: &str, owner: &Owner) -> Result<PathBuf, String> {
+    let data = private_child(root, "data")?;
+    let folder = data.join(id);
+    let marker = data_owner_file(root, id);
+    let previous: Option<Owner> = std::fs::read(&marker)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    if previous.as_ref() != Some(owner) {
+        if folder.exists() {
+            std::fs::remove_dir_all(&folder).map_err(|e| e.to_string())?;
+        }
+        write_private(&marker, &serde_json::to_vec(owner).map_err(|e| e.to_string())?)?;
+    }
+    private_child(&data, id)
+}
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let temp = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temp)
+        .map_err(|e| e.to_string())?;
+    file.write_all(bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&temp, path).map_err(|e| e.to_string())
+}
 pub fn data_dir(bundle: &Bundle) -> Result<PathBuf, String> {
     if !bundle.valid() {
         return Err("developer grant expired".into());
     }
-    private_child(&private_child(&base()?, "data")?, &bundle.id)
+    claim_data(&base()?, &bundle.id, &bundle.owner)
+}
+/// Removes a developer install's receipt, snapshot, data folder and owner
+/// record; only the owning conversation may.
+fn uninstall_at(root: &Path, id: &str, owner: &Owner) -> Result<(), String> {
+    valid_id(id)?;
+    let path = root.join("installed").join(format!("{id}.json"));
+    let bytes =
+        std::fs::read(&path).map_err(|_| "no developer install with this id".to_string())?;
+    let receipt: Receipt = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if &receipt.owner != owner {
+        return Err("this app belongs to another Studio conversation".into());
+    }
+    std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    if uuid::Uuid::parse_str(&receipt.snapshot).is_ok() {
+        let _ = std::fs::remove_dir_all(root.join("bundles").join(&receipt.snapshot));
+    }
+    let _ = std::fs::remove_dir_all(root.join("data").join(id));
+    let _ = std::fs::remove_file(data_owner_file(root, id));
+    Ok(())
+}
+/// `studio.uninstall`: refused while an instance of the app is open.
+pub fn uninstall(id: &str, owner: &Owner) -> Result<Value, String> {
+    let _guard = INSTALL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if crate::studio::apps::app_is_open(id) {
+        return Err("close the app's open instance first".into());
+    }
+    uninstall_at(&base()?, id, owner)?;
+    Ok(json!({"app_id": id, "uninstalled": true}))
 }
 
 static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -383,8 +494,12 @@ fn open_bundle(bundle: Arc<Bundle>, persistent: bool) -> Result<String, String> 
     }
     let instance_id = uuid::Uuid::new_v4().to_string();
     let jail = if persistent {
+        if !bundle.root.join("manifest.json").is_file() {
+            return Err("developer install removed".into());
+        }
         data_dir(&bundle)?
     } else {
+        sweep_stale_previews();
         private_child(&private_child(&base()?, "previews")?, &instance_id)?
     };
     let admission = crate::studio::apps::stage_open(crate::studio::apps::OpenSpec {
@@ -418,7 +533,23 @@ fn open_bundle(bundle: Arc<Bundle>, persistent: bool) -> Result<String, String> 
 }
 /// A person launches a validated installed receipt through the same UI queue.
 pub fn request_launch_installed(id: &str) -> Result<String, String> {
-    open_bundle(installed(id, None)?, true)
+    // The launcher's own list, so a launch re-hashes nothing on the UI
+    // thread; `open_bundle` checks the grant again.
+    let bundle = match installed_apps().into_iter().find(|b| b.id == id) {
+        Some(bundle) => bundle,
+        None => installed(id, None)?,
+    };
+    open_bundle(bundle, true)
+}
+/// Previews from an earlier process belong to nobody: removed once per
+/// process, before this one makes its first.
+fn sweep_stale_previews() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if let Ok(root) = base() {
+            let _ = std::fs::remove_dir_all(root.join("previews"));
+        }
+    });
 }
 
 pub fn execute(
@@ -459,6 +590,12 @@ pub fn execute(
                     return Ok(result);
                 }
                 return Ok(bundle.summary());
+            }
+            "studio.uninstall" => {
+                let result = uninstall(call.args["app_id"].as_str().unwrap_or(""), &owner)?;
+                GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                makepad_widgets::SignalToUI::set_ui_signal();
+                return Ok(result);
             }
             "studio.open" => {
                 let path = call.args["bundle_path"].as_str();
@@ -863,6 +1000,81 @@ mod tests {
         let tiny = home.0.join("tiny");
         std::fs::create_dir(&tiny).unwrap();
         assert!(scope.copy_bundle("author", &tiny, 10, 1, 1).is_err());
+    }
+    /// `data/<id>` belongs to the owner recorded beside it: the same owner
+    /// keeps its entries, another conversation claiming the id starts empty.
+    #[test]
+    fn another_owners_data_is_wiped_when_the_id_is_claimed() {
+        let home = crate::app_storage::tests::Scratch::new("studio-claim");
+        let root = home.0.join("studio");
+        let first = claim_data(&root, "dev.studio.planner", &owner()).unwrap();
+        std::fs::write(first.join("tasks.json"), b"[1]").unwrap();
+        claim_data(&root, "dev.studio.planner", &owner()).unwrap();
+        assert!(first.join("tasks.json").exists());
+        let mut other = owner();
+        other.session = "another-session".into();
+        let second = claim_data(&root, "dev.studio.planner", &other).unwrap();
+        assert_eq!(first, second);
+        assert!(!second.join("tasks.json").exists());
+        let marker: Owner = serde_json::from_slice(
+            &std::fs::read(data_owner_file(&root, "dev.studio.planner")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(marker, other);
+    }
+    /// `studio.uninstall` is the owner's alone and removes the receipt, the
+    /// snapshot, the data folder and the owner record.
+    #[test]
+    fn uninstall_is_owner_only_and_removes_receipt_snapshot_and_data() {
+        let home = crate::app_storage::tests::Scratch::new("studio-uninstall");
+        let root = home.0.join("studio");
+        let receipts = root.join("installed");
+        std::fs::create_dir_all(&receipts).unwrap();
+        let snapshot = uuid::Uuid::new_v4().to_string();
+        std::fs::create_dir_all(root.join("bundles").join(&snapshot)).unwrap();
+        let receipt = Receipt {
+            owner: owner(),
+            profile_id: "test-profile".into(),
+            since: 1,
+            snapshot: snapshot.clone(),
+            digest: "d".repeat(64),
+            manifest: "{}".into(),
+        };
+        std::fs::write(receipts.join("dev.studio.planner.json"), serde_json::to_vec(&receipt).unwrap()).unwrap();
+        let data = claim_data(&root, "dev.studio.planner", &owner()).unwrap();
+        std::fs::write(data.join("tasks.json"), b"[1]").unwrap();
+        let mut other = owner();
+        other.session = "another-session".into();
+        assert!(uninstall_at(&root, "dev.studio.planner", &other).is_err());
+        assert!(receipts.join("dev.studio.planner.json").exists());
+        assert!(uninstall_at(&root, "dev.studio.missing", &owner()).is_err());
+        uninstall_at(&root, "dev.studio.planner", &owner()).unwrap();
+        assert!(!receipts.join("dev.studio.planner.json").exists());
+        assert!(!root.join("bundles").join(&snapshot).exists());
+        assert!(!data.exists());
+        assert!(!data_owner_file(&root, "dev.studio.planner").exists());
+    }
+    /// An offline screen names no URL and no `{{assets}}` route, as written;
+    /// an app's name fits a launcher tile.
+    #[test]
+    fn urls_assets_routes_and_long_names_are_refused() {
+        let home = crate::app_storage::tests::Scratch::new("studio-offline");
+        let url = home.0.join("url");
+        fixture(&url, |_| {});
+        std::fs::write(url.join("main.splash"), "View{Image{source: \"https://example.invalid/a.png\"}}").unwrap();
+        let error = admit_snapshot(url, owner(), tag(), None).err().expect("URL refused");
+        assert!(error.contains("URL"), "{error}");
+        let assets = home.0.join("assets");
+        fixture(&assets, |_| {});
+        std::fs::write(assets.join("main.splash"), "View{Image{source: \"{{assets}}/a.png\"}}").unwrap();
+        assert!(admit_snapshot(assets, owner(), tag(), None).is_err());
+        let long = home.0.join("long");
+        fixture(&long, |m| m["name"] = json!("N".repeat(65)));
+        let error = admit_snapshot(long, owner(), tag(), None).err().expect("name refused");
+        assert!(error.contains("64"), "{error}");
+        let fine = home.0.join("fine");
+        fixture(&fine, |m| m["name"] = json!("计划".repeat(32)));
+        admit_snapshot(fine, owner(), tag(), None).unwrap();
     }
     #[test]
     fn local_admission_cannot_claim_system_ids_publishers_network_or_agents() {

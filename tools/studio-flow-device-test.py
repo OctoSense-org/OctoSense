@@ -348,7 +348,7 @@ def main():
     parser.add_argument("--serial", required=True)
     parser.add_argument("--package", type=_probe.test_package, default=_probe.DEFAULT_PACKAGE)
     parser.add_argument("--adb", default="adb")
-    parser.add_argument("--workspace", required=True, help="absolute authoring workspace inside the test package's files directory")
+    parser.add_argument("--workspace", required=True, help="absolute authoring workspace inside the test package's files/studio-fixture directory")
     parser.add_argument("--bundle-path", required=True, help="model-authored bundle, relative to workspace")
     parser.add_argument("--generation-receipt", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True, help="new local evidence directory")
@@ -359,9 +359,9 @@ def main():
         parser.error("--timeout must be at least 30 seconds")
     try:
         safe_relative(args.bundle_path)
-        allowed = [f"/data/user/0/{args.package}/files/", f"/data/data/{args.package}/files/"]
+        allowed = [f"/data/user/0/{args.package}/files/studio-fixture/", f"/data/data/{args.package}/files/studio-fixture/"]
         if not any(args.workspace.startswith(prefix) for prefix in allowed):
-            raise ProbeError("workspace must belong to the studio test package")
+            raise ProbeError("workspace must be inside the studio test package's files/studio-fixture folder")
         safe_relative(args.workspace[1:])
         contract = json.loads(CONTRACT.read_text())
         generation = generation_receipt(args.generation_receipt)

@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent
 HOME = REPO / "phone"
 HOME_PACKAGE = "dev.makepad.octosense"
+BRIDGE_PACKAGE = "dev.makepad.octosense.bridge"
 
 
 def _load_kernel_tool():
@@ -83,6 +84,10 @@ def arguments(argv=None):
         p.error("--package-name must be a dotted Android application ID")
     if args.variant == "rom" and args.package_name != HOME_PACKAGE:
         p.error("--package-name overrides are only for standalone Home test builds")
+    if args.dev_mode and not args.development and args.package_name == HOME_PACKAGE:
+        p.error("--dev-mode needs --development or a test --package-name: a developer build never carries the installed Home's identity under its signer")
+    if args.package_name == BRIDGE_PACKAGE:
+        p.error("--package-name must not be the Bridge's identity")
     if args.version_code != "auto" and (not args.version_code.isdigit() or not 0 < int(args.version_code) < 2100000000):
         p.error("--version-code must be auto or a positive Android version code")
     # Resolve once: Gradle and cargo-makepad must not cross an hour boundary

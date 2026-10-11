@@ -61,7 +61,9 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     crate::native_apps::link(&mut out);
     out.extend(crate::ext::linked_modules());
     #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
-    out.push(&crate::studio::module::STUDIO_MODULE);
+    if cfg!(dev_mode) {
+        out.push(&crate::studio::module::STUDIO_MODULE);
+    }
     out
 }
 
@@ -599,6 +601,9 @@ fn cached_installed_apps(key: (std::path::PathBuf, u64), load: impl FnOnce() -> 
 
 /// Local developer installs are a separate registry, never catalog packages.
 pub fn studio_apps() -> Vec<crate::clients::AppDef> {
+    if !cfg!(dev_mode) {
+        return Vec::new();
+    }
     #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
     { return crate::host_tools::studio_bundles::installed_apps().into_iter()
         .map(|bundle| studio_row(bundle.id.clone(), bundle.name.clone(), Vec::new())).collect(); }

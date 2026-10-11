@@ -222,6 +222,22 @@ impl Renderer {
             Event::Resume | Event::Foreground => self.foreground = true,
             _ => {}
         }
+        // Only these events change the queue, the surface or a job's
+        // standing; input and draw events skip the locks and the developer
+        // mode reads below.
+        if !matches!(
+            event,
+            Event::Signal
+                | Event::Timer(_)
+                | Event::NextFrame(_)
+                | Event::WindowGeomChange(_)
+                | Event::Pause
+                | Event::Background
+                | Event::Resume
+                | Event::Foreground
+        ) {
+            return;
+        }
         if let Some(a) = self.active.as_ref() {
             let status = if !self.foreground {
                 Err("not_foreground".into())

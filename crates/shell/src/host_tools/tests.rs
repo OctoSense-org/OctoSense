@@ -1423,6 +1423,7 @@ fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
         let mut c=call(&id,name,"os.news");c.app="os.news".into();
         c.args=match *name {
             "studio.bundle_check"|"studio.install"|"studio.open"=>json!({"bundle_path":"planner"}),
+            "studio.uninstall"=>json!({"app_id":"dev.studio.planner"}),
             "studio.input"=>json!({"instance_id":"one","widget_id":"button","action":"tap"}),
             _=>json!({"instance_id":"one"}),
         };

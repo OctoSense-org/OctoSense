@@ -81,13 +81,51 @@ fn queue() -> &'static Mutex<Queue> {
     static QUEUE: OnceLock<Mutex<Queue>> = OnceLock::new();
     QUEUE.get_or_init(Default::default)
 }
+const GRANT_CACHE_TTL: Duration = Duration::from_secs(2);
+/// Whether `owner` still holds a developer grant under `tag`. Developer mode
+/// is asked once per grant per generation (and at most every two seconds),
+/// so the UI thread rarely takes its lock.
 fn granted(owner: &str, tag: &DevTag) -> bool {
+    type Cache = (u64, Instant, HashMap<(String, String, u64), bool>);
+    static CACHE: Mutex<Option<Cache>> = Mutex::new(None);
+    let generation = dev_mode::generation_relaxed();
+    let key = (owner.to_owned(), tag.profile_id.clone(), tag.since);
+    {
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cached, filled, answers)) = cache.as_ref() {
+            if *cached == generation && filled.elapsed() < GRANT_CACHE_TTL {
+                if let Some(answer) = answers.get(&key) {
+                    return *answer;
+                }
+            }
+        }
+    }
     let identity: Option<Value> = serde_json::from_str(owner).ok();
     let app = identity
         .as_ref()
         .and_then(|v| v["app"].as_str())
         .unwrap_or(owner);
-    dev_mode::tag_valid(tag) && dev_mode::grants_all(crate::host_tools::app_of_peer(app))
+    let answer =
+        dev_mode::tag_valid(tag) && dev_mode::grants_all(crate::host_tools::app_of_peer(app));
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    match cache.as_mut() {
+        Some((cached, filled, answers))
+            if *cached == generation && filled.elapsed() < GRANT_CACHE_TTL =>
+        {
+            answers.insert(key, answer);
+        }
+        _ => *cache = Some((generation, Instant::now(), HashMap::from([(key, answer)]))),
+    }
+    answer
+}
+/// Whether an instance of the installed app `app_id` is open or launching.
+pub fn app_is_open(app_id: &str) -> bool {
+    queue()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .specs
+        .values()
+        .any(|s| s.app_id.as_deref() == Some(app_id))
 }
 fn valid(p: &Pending) -> Result<(), String> {
     if !FOREGROUND.load(Ordering::Acquire) {
@@ -320,7 +358,13 @@ pub fn shutdown(cx: &mut Cx, instance_id: &str) {
         }
     }
     let mut q = queue().lock().unwrap_or_else(|e| e.into_inner());
-    q.specs.remove(instance_id);
+    if let Some(spec) = q.specs.remove(instance_id) {
+        // A preview that never got its widget (an expired launch) still has a
+        // folder; a widget removes its own in `stop`.
+        if !spec.persistent {
+            let _ = std::fs::remove_dir_all(&spec.jail);
+        }
+    }
     q.launches.retain(|id| id != instance_id);
     let mut rejected = Vec::new();
     let mut keep = VecDeque::new();
@@ -354,6 +398,19 @@ pub fn tick(cx: &mut Cx, event: &Event) {
         Event::Resume | Event::Foreground => FOREGROUND.store(true, Ordering::Release),
         _ => {}
     }
+    // Only these events change a queue or a grant's standing. Input and draw
+    // events take neither the queue lock nor developer mode on the UI thread.
+    if !matches!(
+        event,
+        Event::Signal
+            | Event::Timer(_)
+            | Event::Pause
+            | Event::Background
+            | Event::Resume
+            | Event::Foreground
+    ) {
+        return;
+    }
     let background = matches!(event, Event::Pause | Event::Background);
     if background {
         for token in queue()
@@ -365,29 +422,41 @@ pub fn tick(cx: &mut Cx, event: &Event) {
             token.store(true, Ordering::Release);
         }
     }
-    let expired: Vec<String> = queue()
+    // The grant checks run after the lock is released: developer mode has
+    // its own lock, which an executor thread may hold while it waits for us.
+    let grants: Vec<(String, String, DevTag)> = queue()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .specs
         .iter()
-        .filter(|(_, s)| !granted(&s.owner, &s.dev_tag))
-        .map(|(id, _)| id.clone())
+        .map(|(id, s)| (id.clone(), s.owner.clone(), s.dev_tag.clone()))
         .collect();
-    for id in expired {
-        shutdown(cx, &id);
+    for (id, owner, tag) in grants {
+        if !granted(&owner, &tag) {
+            shutdown(cx, &id);
+        }
     }
     let mut expired_requests = Vec::new();
-    {
-        let mut q = queue().lock().unwrap_or_else(|e| e.into_inner());
-        let mut keep = VecDeque::new();
-        for p in q.requests.drain(..) {
-            if let Err(error) = valid(&p) {
-                expired_requests.push((p, error));
-            } else {
-                keep.push_back(p);
-            }
+    let waiting: Vec<Pending> = queue()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .requests
+        .drain(..)
+        .collect();
+    let mut keep = VecDeque::new();
+    for p in waiting {
+        if let Err(error) = valid(&p) {
+            expired_requests.push((p, error));
+        } else {
+            keep.push_back(p);
         }
+    }
+    {
+        // Requests submitted meanwhile queue behind the ones that waited.
+        let mut q = queue().lock().unwrap_or_else(|e| e.into_inner());
+        let newer: Vec<Pending> = q.requests.drain(..).collect();
         q.requests = keep;
+        q.requests.extend(newer);
     }
     for (p, error) in expired_requests {
         finish(p, Err(error));

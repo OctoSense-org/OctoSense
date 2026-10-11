@@ -872,7 +872,7 @@ impl App {
         }
 
         #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
-        if app.bin == "studio-app" {
+        if app.bin == "studio-app" && cfg!(dev_mode) {
             if let Err(error) = host_tools::studio_bundles::request_launch_installed(&app.id) {
                 self.notify(cx, "Could not open developer app", &error);
             }
@@ -5468,13 +5468,16 @@ impl App {
                     }
                     #[cfg(unix)]
                     if let Some(path) = name.strip_prefix("studio-render:") {
-                        if let Err(error) = host_tools::studio::test_action(path) { log!("studio test: {error}"); }
+                        // Development builds only: a release build has no studio.
+                        let result = if cfg!(dev_mode) { host_tools::studio::test_action(path) } else { Err("not a development build".to_string()) };
+                        if let Err(error) = result { log!("studio test: {error}"); }
                         i += 2;
                         continue;
                     }
                     #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
                     if let Some(path) = name.strip_prefix("studio-flow:") {
-                        if let Err(error) = host_tools::studio::test_flow(path) { log!("studio flow: {error}"); }
+                        let result = if cfg!(dev_mode) { host_tools::studio::test_flow(path) } else { Err("not a development build".to_string()) };
+                        if let Err(error) = result { log!("studio flow: {error}"); }
                         i += 2;
                         continue;
                     }
@@ -6402,7 +6405,9 @@ impl MatchEvent for App {
                 wasm_service::warm(&id);
             }
             #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
-            self.drain_studio(cx);
+            if cfg!(dev_mode) {
+                self.drain_studio(cx);
+            }
             self.drain_hub(cx);
             self.drain_client_lines(cx);
             self.drain_module_upstream();
@@ -6518,7 +6523,9 @@ impl App {
         self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
         // Studio is independent of modal/phone routes that may consume an event.
-        if let Event::Draw(draw) = event { self.studio.draw(cx, draw); }
+        if cfg!(dev_mode) {
+            if let Event::Draw(draw) = event { self.studio.draw(cx, draw); }
+        }
         // A switch or Home action must stop device access in this event, not
         // wait for the newly focused app's next draw.
         #[cfg(any(feature = "app-hub", native_mobile))]
@@ -6571,10 +6578,12 @@ impl App {
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
-        #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
-        studio::apps::tick(cx, event);
-        let studio_surface = studio::surface_geometry(cx);
-        self.studio.event(cx, event, studio_surface);
+        if cfg!(dev_mode) {
+            #[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+            studio::apps::tick(cx, event);
+            let studio_surface = studio::surface_geometry(cx);
+            self.studio.event(cx, event, studio_surface);
+        }
         self.route_texture_readbacks(cx);
         // Quitting, or closing the shell's window, asks the hosted instances
         // first (makepad#65). A termination signal is never refused.

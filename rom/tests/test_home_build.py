@@ -82,17 +82,31 @@ class BuildTests(unittest.TestCase):
         self.assertFalse(any("OctoSense-mobile" in arg for c in commands for arg in c))
 
     def test_developer_options_are_separate_from_signing_and_keep_release_optimization(self):
-        for variant, signer in (("standalone", ["--development"]),
-                                ("rom", ["--sign-key", "/keys/platform.pk8", "--sign-cert", "/keys/platform.x509.pem"])):
-            with self.subTest(variant=variant):
-                ordinary = self.args("--variant", variant, *signer)
-                developer = self.args("--variant", variant, *signer, "--dev-mode")
+        release_signer = ["--sign-key", "/keys/platform.pk8", "--sign-cert", "/keys/platform.x509.pem"]
+        for signer in (["--development"], release_signer + ["--package-name", "dev.makepad.octosense.studio"]):
+            with self.subTest(signer=signer[0]):
+                ordinary = self.args("--variant", "standalone", *signer)
+                developer = self.args("--variant", "standalone", *signer, "--dev-mode")
                 normal_plan, dev_plan = build.build_plan(ordinary), build.build_plan(developer)
                 self.assertNotIn("dev-mode", normal_plan[-1][1])
                 self.assertEqual(dev_plan[:-1], normal_plan[:-1], "kernel, Bridge and packager are unchanged")
                 self.assertEqual(dev_plan[-1][1], normal_plan[-1][1] + ["--features", "dev-mode"])
                 self.assertIn("--release", dev_plan[-1][1])
                 self.assertNotEqual(ordinary.output, developer.output)
+
+    def test_developer_options_never_take_the_installed_homes_identity(self):
+        # Developer options under the installed Home's identity and signer would
+        # upgrade it in place; so would the ROM channel's platform signer.
+        release_signer = ["--sign-key", "/keys/platform.pk8", "--sign-cert", "/keys/platform.x509.pem"]
+        for argv in (["--variant", "standalone", *release_signer, "--dev-mode"],
+                     ["--variant", "rom", *release_signer, "--dev-mode"],
+                     ["--variant", "standalone", "--development", "--package-name", "dev.makepad.octosense.bridge"],
+                     ["--variant", "standalone", *release_signer, "--package-name", "dev.makepad.octosense.bridge"]):
+            with self.subTest(argv=" ".join(argv)), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.args(*argv)
+        self.assertTrue(self.args("--variant", "standalone", "--development", "--dev-mode").dev_mode)
+        self.assertTrue(self.args("--variant", "standalone", *release_signer, "--dev-mode",
+                                  "--package-name", "dev.makepad.octosense.studio").dev_mode)
 
     def test_test_package_only_changes_home_and_is_recorded_in_dry_run(self):
         package = "dev.makepad.octosense.studio"
