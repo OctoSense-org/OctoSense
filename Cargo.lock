@@ -11793,12 +11793,16 @@ dependencies = [
 name = "octosense-pdf-service"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "libc",
  "makepad-widgets",
  "octosense-app-policy",
  "octosense-appstore",
  "octosense-engine-area",
  "octosense-skill-gen",
+ "pdfcraft-annot",
  "pdfcraft-automation",
+ "pdfcraft-cos",
  "pdfcraft-xfa",
  "serde_json",
  "tempfile",

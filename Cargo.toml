@@ -280,6 +280,10 @@ vectorcraft-format = { git = "https://github.com/ymote/vectorcraft.git", rev = "
 # The pdfcraft PDF engine (ADR 0013): the pinned ymote fork, one revision;
 # default features off to leave its MCP server out of the build.
 pdfcraft-automation = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399", default-features = false }
+# The pdf service's comment dates: the engine's own object reader and comment
+# reader, which keep `/M` with its zone (the engine's listing drops it).
+pdfcraft-cos = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
+pdfcraft-annot = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }
 # The pdf service's tests only: the engine's own scripted XFA form, the
 # hostile fixture of the scripts-off fence (ADR 0013).
 pdfcraft-xfa = { git = "https://github.com/ymote/pdfcraft.git", rev = "d801407a9f956281d612dee3d2d72c76d43ef399" }

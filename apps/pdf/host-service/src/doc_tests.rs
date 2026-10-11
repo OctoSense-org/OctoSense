@@ -1091,14 +1091,138 @@ fn snippets_mark_the_match_within_120_characters() {
     assert!(s.chars().count() <= reading::SNIPPET && s.starts_with("[[word") && s.ends_with("…]]"), "{s}");
 }
 
+/// Seven hours behind UTC: California's clock in October.
+const PDT: i64 = -7 * 3_600;
+
+/// A comment's `date` from what the engine lists and what the file writes:
+/// the written date with its zone, when it is the one listed; the listed
+/// wall clock as written otherwise.
 #[test]
-fn pdf_dates_read_as_iso_8601() {
-    assert_eq!(review::date(&json!("2026-10-10 14:30")), json!("2026-10-10T14:30"), "the engine's listing: the file's wall clock");
-    assert_eq!(review::date(&json!("D:20261010143000+02'00'")), json!("2026-10-10T14:30:00+02:00"));
-    assert_eq!(review::date(&json!("D:20261010143000Z")), json!("2026-10-10T14:30:00Z"));
-    assert_eq!(review::date(&json!("D:20261010")), json!("2026-10-10T00:00:00Z"));
-    assert_eq!(review::date(&json!("yesterday")), json!("yesterday"));
-    assert_eq!(review::date(&Json::Null), Json::Null);
+fn pdf_dates_read_as_local_time() {
+    let pdt = |_: i64| PDT;
+    let date = |listed: Json, written: Option<&str>| review::date(&listed, written, pdt);
+    // The bug: the engine stamps a mark made at 17:32 on 10 Oct in
+    // California as 00:32 UTC on 11 Oct, and lists it as "2026-10-11 00:32".
+    assert_eq!(date(json!("2026-10-11 00:32"), Some("D:20261011003256Z")), json!("2026-10-10T17:32"));
+    assert_eq!(date(json!("2026-10-10 14:30"), Some("D:20261010143000+02'00'")), json!("2026-10-10T05:30"));
+    assert_eq!(date(json!("2026-10-10 14:30"), Some("D:20261010143000")), json!("2026-10-10T14:30"), "no zone: as written");
+    // Without the written date, or with one that is not the listed one, the
+    // listing's wall clock, as written.
+    assert_eq!(date(json!("2026-10-11 00:32"), None), json!("2026-10-11T00:32"));
+    assert_eq!(date(json!("2026-10-11 00:32"), Some("D:20261012003256Z")), json!("2026-10-11T00:32"));
+    // A date the listing passed through (fewer than twelve digits).
+    assert_eq!(date(json!("D:2026101014Z"), Some("D:2026101014Z")), json!("2026-10-10T07:00"));
+    assert_eq!(date(json!("D:20261010"), None), json!("2026-10-10T00:00"));
+    assert_eq!(date(json!("yesterday"), Some("yesterday")), json!("yesterday"));
+    assert_eq!(date(Json::Null, Some("D:20261011003256Z")), Json::Null);
+}
+
+/// A one-page PDF whose comments and replies carry each kind of date a
+/// file writes: UTC (`Z`, as the engine stamps its own marks), an offset
+/// (`+02'00'`) and no zone. Comment `a` (UTC) has a reply dated with an
+/// offset, `b` (an offset) one with no zone, `c` (no zone) one in UTC, and
+/// the last comment has no name (its id is its place) and a western offset.
+fn dated_comments() -> Vec<u8> {
+    let note = |name: &str, top: u32, date: &str, extra: &str| {
+        let nm = if name.is_empty() { String::new() } else { format!(" /NM ({name})") };
+        format!("<< /Type /Annot /Subtype /Text /Rect [40 {} 60 {top}] /T (Ana) /Contents (about {name}) /M ({date}){nm}{extra} /P 3 0 R >>", top - 20)
+    };
+    let page = "BT /F1 12 Tf 20 280 Td (Dated comments) Tj ET";
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 12 0 R >> >> /Contents 11 0 R /Annots [4 0 R 5 0 R 6 0 R 7 0 R 8 0 R 9 0 R 10 0 R] >>".to_string(),
+        // 4–6 the comments, 7–9 their replies, 10 the unnamed comment
+        note("a", 260, "D:20261011003256Z", ""),
+        note("b", 220, "D:20261010143000+02'00'", ""),
+        note("c", 180, "D:20261010143000", ""),
+        note("a-reply", 260, "D:20261011090000+02'00'", " /IRT 4 0 R"),
+        note("b-reply", 220, "D:20261011090000", " /IRT 5 0 R"),
+        note("c-reply", 180, "D:20261011003000Z", " /IRT 6 0 R"),
+        note("", 140, "D:20261011220000-04'00'", ""),
+        // 11 the page's content, 12 its font
+        format!("<< /Length {} >>\nstream\n{page}\nendstream", page.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+    ];
+    assemble(&objs)
+}
+
+/// The dates of `pdf.comments`, as (id, date) of each comment, then
+/// (reply id, date) of each reply.
+fn dates_of(list: &Json) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for c in list["comments"].as_array().unwrap() {
+        out.push((c["id"].as_str().unwrap().to_string(), c["date"].as_str().unwrap_or("").to_string()));
+        for r in c["replies"].as_array().unwrap() {
+            out.push((r["id"].as_str().unwrap().to_string(), r["date"].as_str().unwrap_or("").to_string()));
+        }
+    }
+    out
+}
+
+/// SERVICE.md: a comment's `date` is this device's local time. A date in
+/// UTC or with an offset goes to the device's clock, and a date with no
+/// zone is taken as written, for comments and replies alike, read from the
+/// file's own `/M` (the engine's listing drops the zone).
+#[test]
+fn comment_dates_are_this_devices_local_time() {
+    let w = World::new();
+    w.put("dated.pdf", &dated_comments());
+    let doc = w.open("dated.pdf");
+    let owned = |pairs: &[(&str, &str)]| pairs.iter().map(|(id, date)| (id.to_string(), date.to_string())).collect::<Vec<_>>();
+    let in_california = dates::with_offset(PDT, || dates_of(&w.ok("comments", json!({"doc": doc}))));
+    assert_eq!(
+        in_california,
+        owned(&[
+            ("a", "2026-10-10T17:32"),
+            ("a-reply", "2026-10-11T00:00"),
+            ("b", "2026-10-10T05:30"),
+            ("b-reply", "2026-10-11T09:00"),
+            ("c", "2026-10-10T14:30"),
+            ("c-reply", "2026-10-10T17:30"),
+            ("@1-7", "2026-10-11T19:00"),
+        ])
+    );
+    let in_tokyo = dates::with_offset(9 * 3_600, || dates_of(&w.ok("comments", json!({"doc": doc}))));
+    assert_eq!(
+        in_tokyo,
+        owned(&[
+            ("a", "2026-10-11T09:32"),
+            ("a-reply", "2026-10-11T16:00"),
+            ("b", "2026-10-10T21:30"),
+            ("b-reply", "2026-10-11T09:00"),
+            ("c", "2026-10-10T14:30"),
+            ("c-reply", "2026-10-11T09:30"),
+            ("@1-7", "2026-10-12T11:00"),
+        ]),
+        "the same file on a clock nine hours ahead of UTC; dates with no zone stay as written"
+    );
+    assert_eq!(w.ok("state", json!({"doc": doc}))["edited"], false, "reading the dates changed nothing");
+
+    // A mark made now is stamped in UTC by the engine and reads as the
+    // device's clock now, unsaved and after a save; one in another place
+    // too (an unnamed comment's id is its place).
+    let made = |before: i64, after: i64, date: &str| [before, after].iter().any(|t| dates::minute_at(*t, PDT) == date);
+    let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let before = now();
+    let id = w.ok("comment", json!({"doc": doc, "op": "add", "page": 1, "type": "note", "at": [200, 200], "text": "now", "author": "Ana"}))["id"].as_str().unwrap().to_string();
+    w.ok("comment", json!({"doc": doc, "op": "reply", "id": "a", "text": "seen", "author": "Ben"}));
+    let after = now();
+    let list = dates::with_offset(PDT, || w.ok("comments", json!({"doc": doc})));
+    let listed = dates_of(&list);
+    let date_of = |listed: &[(String, String)], id: &str| listed.iter().find(|(i, _)| i == id).map(|(_, d)| d.clone()).unwrap_or_else(|| panic!("no {id}: {listed:?}"));
+    assert!(made(before, after, &date_of(&listed, &id)), "a new comment, unsaved: {listed:?}");
+    let a = list["comments"].as_array().unwrap().iter().find(|c| c["id"] == "a").unwrap();
+    let seen = a["replies"].as_array().unwrap().iter().find(|r| r["text"] == "seen").unwrap_or_else(|| panic!("no reply: {a}"));
+    assert!(made(before, after, seen["date"].as_str().unwrap()), "a new reply, unsaved: {a}");
+    assert_eq!(date_of(&listed, "a-reply"), "2026-10-11T00:00", "the reply beside it keeps its own zone");
+    w.ok("save", json!({"doc": doc}));
+    w.ok("close", json!({"doc": doc}));
+    let again = w.open("dated.pdf");
+    let reopened = dates::with_offset(PDT, || dates_of(&w.ok("comments", json!({"doc": again}))));
+    assert!(made(before, after, &date_of(&reopened, &id)), "saved and opened again: {reopened:?}");
+    assert_eq!(date_of(&reopened, "a"), "2026-10-10T17:32");
+    assert_eq!(date_of(&reopened, "b-reply"), "2026-10-11T09:00");
 }
 
 #[test]

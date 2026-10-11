@@ -57,6 +57,7 @@ mod args;
 mod cache;
 mod change;
 mod codes;
+mod dates;
 mod docs;
 mod reading;
 mod review;

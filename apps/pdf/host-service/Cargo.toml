@@ -25,6 +25,17 @@ serde_json = { workspace = true }
 # The engine, pinned to one ymote/pdfcraft revision (ADR 0013); default
 # features off to leave its MCP server out of the build.
 pdfcraft-automation = { workspace = true }
+# A comment's date with its zone: the engine's object reader and comment
+# reader, on the open document's working bytes, read only (src/review.rs).
+pdfcraft-cos = { workspace = true }
+pdfcraft-annot = { workspace = true }
+
+# This device's offset from UTC, from where the shell's status clock reads it
+# (crates/shell/src/shell/bar.rs): localtime_r on Unix, chrono elsewhere.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+[target.'cfg(not(unix))'.dependencies]
+chrono = { workspace = true }
 
 [dev-dependencies]
 # Generates and checks the skill's references (tests/skill.rs).
