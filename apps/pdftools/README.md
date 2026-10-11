@@ -37,18 +37,21 @@ The designs are drawn at 1536 x 1024, and the manifest asks the desktop to
 open the window at that size: `"window": {"width": 1536, "height": 1024}`,
 App Hub's optional window hint, which needs `"schema_minor": 1`. The desk
 clamps it to its own size, less the margins every new window keeps (42
-points left and right, 32 top and bottom; `crates/shell/src/desktop_layout.rs`).
-In the hidden shell's 1400 x 899 window, PDF Tools opens at 1296 x 783
-points with an app area of 1292 x 747
+points left and right, 32 top and bottom). Where the dock floats over the
+desk, as OctoSense's does, the bottom margin is kept above the dock, so the
+zoom bar and the status line are never behind it
+(`crates/shell/src/desktop_layout.rs`). In the hidden shell's 1400 x 897
+window, PDF Tools opens at 1296 x 703 points with an app area of 1292 x 667,
+its wide layout
 ([tests/evidence/window-20261010](tests/evidence/window-20261010/README.md)).
 Before the hint it got the default window, 72% of the desk's width and 76%
 of its height, at most 1000 x 720 points: an app area of 990 x 603. A
 shell that predates the hint ignores it and opens the default. The person
-can resize or maximize the window either way. The OctoSense style's dock
-overlays the desk, so a window this tall has its lowest points behind the
-dock. Below 1180 points wide the mode tabs and Save trim their padding, both
-right panels take 320 points, a right panel takes the left panel's place,
-and until the person zooms, the page fits the canvas, up to 100%.
+can resize or maximize the window either way. At 1180 points wide and up
+(the wide layout), a right panel opens beside the left panel. Below 1180 the
+mode tabs and Save trim their padding, both right panels take 320 points, a
+right panel takes the left panel's place, and until the person zooms, the
+page fits the canvas, up to 100%.
 
 ## Modes
 
@@ -200,23 +203,28 @@ that refusal.
   ran with `--budget-ms 1000`: its stand-in engine answers in script, and at
   64 ms one of its answers overran in the dark pass. Those runs had the
   default window, an app area of 990 x 603 points.
-- **Verified on 10 Oct 2026, the window's size** (macOS, Apple silicon;
+- **Verified on 10 Oct 2026 at the window's own size** (macOS, Apple silicon;
   [tests/evidence/window-20261010](tests/evidence/window-20261010/README.md)):
-  in a hidden desktop shell, the manifest's 1536 x 1024 opens a 1296 x 783
-  window on the 1380 x 847 desk.
+  the `shell` run, light and dark, with the real engine at the runtime's 64 ms
+  budget, in the wide layout (an app area of 1292 x 662); and, opened from the
+  shell's menu, a 1296 x 703 window on a 1380 x 845 work area, 32 points
+  above the dock.
 - **Not verified**: the host's file dialog and a real import (a hidden window
   cannot open it); with the real engine, form fields, outlines, Redo, the
   other comment and page operations, password-protected PDFs, the eight-PDF
   cap and the unsaved-changes question (the dev fixture covers their screens);
-  the modes at the window's new size (the runs above checked them at
-  990 x 603 points and, in card-host, at 1536 x 1024); other screen sizes;
-  Linux, Windows, phones.
+  the `restart`, `full` and `empty` runs at the window's own size; other
+  screen sizes; Linux, Windows, phones.
 - **Known**: a comment's date is the engine's UTC time read as local time, so
   a comment made in the evening west of UTC shows the next day's date, until
   the pdf service converts it. The status line counts only the PDFs in the
   library: the files service does not report the storage's use. On a heavily
   loaded machine a tap can overrun the 64 ms budget and be lost (seen at load
-  averages of 60 to 150 before `library.json` moved off the tap path).
+  averages of 60 to 150 before `library.json` moved off the tap path). On a
+  screen 900 points tall the app area is about 1292 x 662. There, with two
+  PDFs in Combine, the card's Combine button needs one scroll (85 points
+  short). Home's last caption line (when each PDF was last opened) also sits
+  at the fold.
 - **Not part of this version**: export (no approved design), opening
   password-protected PDFs, keyboard shortcuts (the runtime gives script apps no
   key events), the Edit panel's Alignment and Colour (`pdf.edit_text` takes

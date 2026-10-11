@@ -1,18 +1,34 @@
-# PDF Tools 的窗口尺寸 — 2026-10-10
+# PDF Tools 按自身窗口尺寸运行 — 2026-10-10
 
 [English](README.md) | 简体中文
 
 PDF Tools 的清单请求桌面按设计图的 1536 x 1024 点打开它的窗口（`"window"`，并写明
-`"schema_minor": 1`）。Shell 会把这个尺寸限制在桌面以内，并减去每个新窗口都保留的边距。用这个
-分支构建的隐藏桌面 Shell 验证了这一点（macOS，Apple 芯片；[receipt.json](receipt.json) 记录了
-二进制文件的摘要、命令和数值）。每次运行都使用全新的 `OCTOSENSE_HOME`，从 Terminal.app 标签页以
-`MAKEPAD_HIDE_WINDOWS=1` 和 `MAKEPAD_REMOTE=127.0.0.1:8915` 启动，机器上同时只运行一个实例。
-每次运行都通过远程桥驱动，并以 `/quit` 结束。
+`"schema_minor": 1`）。Shell 会把这个尺寸限制在桌面以内，并减去每个新窗口都保留的边距。
+OctoSense 的程序坞浮在桌面之上、不预留区域，所以底部边距从程序坞上沿算起。用这个分支构建的
+隐藏桌面 Shell 配合真实的 `pdf` 引擎验证了这一点（macOS，Apple 芯片；
+[receipt.json](receipt.json) 记录了二进制文件的摘要、命令、数值和发现的问题）。每次运行都使用
+全新的 `OCTOSENSE_HOME`，从 Terminal.app 标签页以 `MAKEPAD_HIDE_WINDOWS=1` 和
+`MAKEPAD_REMOTE=127.0.0.1:8915` 启动，机器上同时只运行一个实例。每次运行都通过远程桥驱动，
+并以 `/quit` 结束。截图是每点一个像素的 `/g` 抓图。
 
-- [opened-from-the-menu.png](opened-from-the-menu.png)：桌面绘制完成后，打开 Shell 的菜单，
-  输入“pdf tools”，按 Return。1400 x 899 的 Shell 的平铺区域为 1380 x 847。窗口以
-  1296 x 783 点打开，左右各留 42 点、上下各留 32 点，应用得到 1292 x 747。此前它得到的是
-  默认窗口，应用区域为 990 x 603（[v2-20261010](../v2-20261010/README.zh-CN.md)）。OctoSense
-  风格的程序坞覆盖在桌面之上，而不是预留一条区域，因此窗口最下面的部分位于程序坞后面。
-- 启动时打开（`MAKEPAD_WM_TEST_APP=pdftools`，与 `tests/ui.py` 的打开方式相同），没有保留
-  截图：1296 x 776 点。Shell 在桌面首次绘制之前打开的每个窗口，都按启动时的比例确定尺寸。
+- [opened-from-the-menu.png](opened-from-the-menu.png)：打开 Shell 的菜单，输入“pdf tools”，
+  按 Return 之后的整个隐藏窗口。1400 x 897 的 Shell 的工作区为 1380 x 845，程序坞覆盖其底部
+  78 点。窗口以 1296 x 703 点打开，距程序坞 32 点，应用得到 1292 x 667。此前应用得到的是
+  默认窗口，应用区域为 990 x 603（[v2-20261010](../v2-20261010/README.zh-CN.md)）。
+- [wide/](wide)：未经修改的 [ui.py](../../ui.py) `shell` 运行，先浅色后深色，PDF Tools 在启动
+  时打开（`MAKEPAD_WM_TEST_APP`）。窗口为 1296 x 698：Shell 在桌面首次绘制之前打开的每个
+  窗口都按启动时的比例确定尺寸。应用得到 1292 x 662，即宽布局（1180 点及以上）：右侧面板在
+  左侧面板旁边打开。两轮的每一步都在运行时 64 ms 的脚本预算下通过，没有脚本错误。截图是应用区域：
+  首页、阅读、查找、带高亮的评论、合并（滚动前和滚动一次之后）、编辑，以及深色一轮中的阅读。
+  每张截图里的状态栏（“Saved”或“Edited”，以及存储用量）和缩放条都位于程序坞上方。
+
+这次运行发现：
+
+- **合并：**列出两个 PDF 时，在这个尺寸下卡片自己的 Combine 按钮比可见区域低 85 点。
+  [06-combine.png](wide/06-combine.png) 只显示到“One PDF of 5 pages”，滚动一次才能看到名称
+  和按钮（[06a-combine-end.png](wide/06a-combine-end.png)）。
+- **首页：**卡片的第三行说明（PDF 上次打开的时间）正好在可见区域边缘，18 点中只露出 2 点。
+- 两者都是高度不够造成的。让窗口保持在程序坞上方，会在这个 898 点高的窗口上占去 78 点。
+  做这项改动之前，应用区域高 740 点：首页的说明放得下，Combine 按钮约差 7 点。
+- 10 月 10 日（太平洋夏令时）做的评论显示为 10 月 11 日：即 [README](../../../README.zh-CN.md#状态)
+  中列出的已知 UTC 读取问题。

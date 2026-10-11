@@ -105,7 +105,8 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --locked --release -p octosens
 `App::launch_module_as` 用 `apps::window_hint` 从 Card 运行器将要打开的应用包中读取它，
 [`desktop_layout.rs`](../../crates/shell/src/desktop_layout.rs) 中的 `preferred_size`
 再把它限制在桌面减去每个新窗口都保留的边距之内（左右各 42 点，上下各 32 点），且不小于
-80 x 60。没有 `window` 时，窗口宽度取桌面的 72%、高度取 76%，最大 1000 x 720 点。
+80 x 60。程序坞浮在桌面之上、不预留区域时（macOS 和 OctoSense 风格），底部边距改为从程序坞
+上沿算起（`desktop::dock_overlay`），所以窗口的下边缘不会位于程序坞后面。没有 `window` 时，窗口宽度取桌面的 72%、高度取 76%，最大 1000 x 720 点。
 两种情况下用户都可以调整窗口大小；手机忽略这个提示。PDF Tools 请求它设计图的 1536 x 1024。
 
 准入验证应用包，解析元数据与资源上限。能力名称披露用途，不是执行许可。脚本的 `host.request(...)` 按应用身份执行。
