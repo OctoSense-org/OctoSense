@@ -476,15 +476,22 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// A launch fixture may only point at a workspace inside this home: the
-/// intent extra that names it is readable by any app that can start Home, so
-/// the spool must never reach another root.
+/// A launch fixture may only point at a workspace inside this app's own
+/// private directory: the intent extra that names it is readable by any app
+/// that can start Home, so the spool must never reach another root. On
+/// Android that directory is the package's `files/`, whose `.octosense` child
+/// is the OctoSense home; elsewhere it is the home itself.
 fn confine_to_home(root: &Path) -> Result<(), String> {
     let home = std::fs::canonicalize(crate::octosense::paths::home())
         .map_err(|e| format!("home: {e}"))?;
+    let allowed = if cfg!(target_os = "android") {
+        home.parent().map(Path::to_path_buf).unwrap_or_else(|| home.clone())
+    } else {
+        home.clone()
+    };
     let real = std::fs::canonicalize(root).map_err(|e| format!("workspace: {e}"))?;
-    if !real.starts_with(&home) {
-        return Err("fixture workspace must be inside OctoSense's home directory".into());
+    if !real.starts_with(&allowed) {
+        return Err("fixture workspace must be inside OctoSense's private directory".into());
     }
     Ok(())
 }
