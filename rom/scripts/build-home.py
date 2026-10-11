@@ -41,6 +41,9 @@ OCTOS_URL = kernel_tool.OCTOS_URL
 OCTOS_KERNEL_BUILD = kernel_tool.KERNEL_BUILD
 ANDROID_TARGET = kernel_tool.TARGET
 ANDROID_API = kernel_tool.API
+# The standard Home/Bridge platform contract remains the same for custom or
+# omitted kernel payloads. Keep both packagers aligned (test_home_build.py).
+ANDROID_MIN_SDK = 33
 extra_libs = kernel_tool.extra_libs
 
 
@@ -173,7 +176,19 @@ def apk_metadata(aapt, apk, env):
     match = re.search(r"^package: name='([^']+)' versionCode='([0-9]+)' versionName='([^']*)'", badging, re.MULTILINE)
     if not match:
         raise RuntimeError(f"No package/version metadata for {apk.name}")
-    return {"package_name": match[1], "version_code": int(match[2]), "version_name": match[3]}
+    # aapt and aapt2 use different minimum labels. Require exactly one value
+    # across both aliases; duplicate or malformed lines must not hide a conflict.
+    levels = []
+    for names in ("(?:minSdkVersion|sdkVersion)", "targetSdkVersion"):
+        fields = re.findall(rf"^{names}:(.*)$", badging, re.MULTILINE)
+        value = re.fullmatch(r"'([0-9]+)'", fields[0]) if len(fields) == 1 else None
+        if value is None:
+            raise RuntimeError(f"Missing or invalid Android SDK metadata for {apk.name}")
+        levels.append(int(value[1]))
+    if not 0 < levels[0] <= levels[1]:
+        raise RuntimeError(f"Missing or invalid Android SDK metadata for {apk.name}")
+    return {"package_name": match[1], "version_code": int(match[2]), "version_name": match[3],
+            "min_sdk_version": levels[0], "target_sdk_version": levels[1]}
 
 
 def verify_pair(artifacts, args):
@@ -182,6 +197,8 @@ def verify_pair(artifacts, args):
         item = artifacts[name]
         if item["package_name"] != package or item["version_code"] != int(args.version_code):
             raise RuntimeError(f"{name} package/version does not match the requested release")
+        if item.get("min_sdk_version") != ANDROID_MIN_SDK:
+            raise RuntimeError(f"{name} must require Android API {ANDROID_MIN_SDK} (Home/Bridge platform contract)")
         if args.version_name is not None and item["version_name"] != args.version_name:
             raise RuntimeError(f"{name} version name does not match the requested release")
         if args.expected_signer and item["certificate_sha256"] != args.expected_signer:
@@ -198,6 +215,7 @@ def main(argv=None):
         print(json.dumps({"variant": args.variant, "development": args.development,
                           "output": str(args.output), "version_code": int(args.version_code),
                           "version_name": args.version_name, "expected_signer": args.expected_signer,
+                          "min_sdk_version": ANDROID_MIN_SDK,
                           "octos_kernel": str(kernel) if kernel else None,
                           "android_env": {"MAKEPAD_ANDROID_EXTRA_LIBS": extra_libs(kernel)},
                           "steps": [
