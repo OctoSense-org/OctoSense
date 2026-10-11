@@ -7287,26 +7287,16 @@ impl App {
             .map(|s| s.connection)
             .unwrap_or(StoreCs::Offline);
         let (label, color) = match cs {
-            StoreCs::Connected => ("Live", "#x4FCB6E"),
-            StoreCs::Reconnecting => ("Reconnecting", "#xF6BE63"),
-            StoreCs::Offline => ("Offline", "#xE36363"),
+            StoreCs::Connected => ("Live", vec4(79.0 / 255.0, 203.0 / 255.0, 110.0 / 255.0, 1.0)),
+            StoreCs::Reconnecting => ("Reconnecting", vec4(246.0 / 255.0, 190.0 / 255.0, 99.0 / 255.0, 1.0)),
+            StoreCs::Offline => ("Offline", vec4(227.0 / 255.0, 99.0 / 255.0, 99.0 / 255.0, 1.0)),
         };
-        let _ = color; // referenced in the script_apply_eval below
         self.ui
             .label(cx, ids!(connection_state_label))
             .set_text(cx, label);
-        let mut dot = self.ui.label(cx, ids!(connection_dot));
-        match cs {
-            StoreCs::Connected => script_apply_eval!(cx, dot, {
-                draw_text +: { color: #x4FCB6E }
-            }),
-            StoreCs::Reconnecting => script_apply_eval!(cx, dot, {
-                draw_text +: { color: #xF6BE63 }
-            }),
-            StoreCs::Offline => script_apply_eval!(cx, dot, {
-                draw_text +: { color: #xE36363 }
-            }),
-        }
+        // Signals also wake unrelated work. Native setters skip unchanged
+        // values, avoiding a script evaluation and style application per wake.
+        self.ui.label(cx, ids!(connection_dot)).set_text_color(cx, color);
     }
 
     /// Re-render every assistant message's markdown with the current A2App
