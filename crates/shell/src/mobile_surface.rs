@@ -5,8 +5,6 @@ use crate::mobile_shade::ShadeContentCache;
 use crate::mobile_pages::GlanceCards;
 use crate::octosense::style::AppIconDraw;
 mod search;
-mod icon_atlas;
-use icon_atlas::IconAtlas;
 use search::{SearchResults, SearchSnapshot};
 
 script_mod! {
@@ -405,7 +403,6 @@ pub struct PhoneSurface {
     #[live] wallpaper: DrawQuad,
     #[live] wallpaper_plain: DrawQuad,
     #[live] android_icon: DrawImage,
-    #[rust] drawer_icon_atlas: IconAtlas,
     #[rust] pub icons: AppIconDraw,
     #[rust] pub hits: Vec<(Rect, PhoneHit)>,
     /// The glance page's published cards, live: each a Splash tile under its
@@ -989,7 +986,6 @@ impl PhoneSurface {
     /// Android's app drawer: a sheet with every launchable app on one grid.
     fn draw_android_drawer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
         let landscape=screen.size.x>screen.size.y;
-        self.drawer_icon_atlas.set_revision(state.phone.android.catalog_revision);
         // A flat fill, not the SDF chrome quad: the sheet is a full-screen
         // opaque rect, and under Recents' glass every full-screen layer counts.
         self.d.solid(cx,screen,self.theme_ground(if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)}));
@@ -1112,23 +1108,11 @@ impl PhoneSurface {
             let inset=r.size.x*0.07;
             (rect(r.pos.x+inset,r.pos.y+inset,r.size.x-inset*2.0,r.size.y-inset*2.0),opacity*0.72)
         } else {(r,opacity)};
-        if let Some((native, texture))=app.and_then(|app|state.phone.android.icons.get(&app.icon).map(|texture| (app, texture))) {
+        if let Some(texture)=app.and_then(|app|state.phone.android.icons.get(&app.icon)) {
             if cfg!(target_os="android") {self.home_icon_bounds.push((id.to_string(),r));}
-            let atlas = if cfg!(target_os="android") && state.phone.screen == PhoneScreen::Drawer
-                && state.style.target == DesktopStyle::Android {
-                self.drawer_icon_atlas.get(cx, &native.icon, texture)
-            } else { None };
-            if let Some(icon) = &atlas {
-                self.android_icon.draw_vars.set_texture(0, &icon.texture);
-                self.android_icon.image_scale = icon.scale;
-                self.android_icon.image_pan = icon.pan;
-            } else {
-                self.android_icon.draw_vars.set_texture(0, texture);
-            }
+            self.android_icon.draw_vars.set_texture(0,texture);
             self.android_icon.opacity=opacity;
             self.android_icon.draw_abs(cx,r);
-            self.android_icon.image_scale = vec2(1.0, 1.0);
-            self.android_icon.image_pan = vec2(0.0, 0.0);
         } else {self.icons.draw(cx,id,state.style.target,r,opacity,ink);}
         // A dot for an app with a notification in the shade (its package or
         // its identity posted it).

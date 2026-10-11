@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "1af126c280dbf10a8abefe229df3a9b4f4a590b1",
+    "tree": "bff0f1fa029efcdda0f18fd5b4936d01b1db3018",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -49,7 +49,8 @@
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
       "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame.",
-      "Android GLES UI buffers carry an explicit presentation time based on the compositor refresh interval; optional android.present tracing correlates submitted buffers with actual display timestamps. Choreographer cadence is retained; XR, Vulkan and manual pacing paths are unchanged."
+      "Android GLES UI buffers carry an explicit presentation time based on the compositor refresh interval; optional android.present tracing correlates submitted buffers with actual display timestamps. Choreographer cadence is retained; XR, Vulkan and manual pacing paths are unchanged.",
+      "Standard Image and DrawImage automatically batch eligible static pictures in bounded shared atlases; CPU mutation invalidates cached instances and restores individual textures. Custom sampling, animated images, minified mipmaps and capacity overflow preserve the original texture path."
     ],
     "stacked": [
       {
@@ -195,6 +196,10 @@
       {
         "patch": "tools/runtime-patches/makepad-android-presentation.patch",
         "sha256": "3419c3ee8823f18736707478d1fd884c50cad91a7f5fe7fc2dede0f7382d681b"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-image-atlas.patch",
+        "sha256": "8664a0a5293619cc4074330c14530e5ea234f5eedb973c76bb044c7d4fdcaf76"
       }
     ]
   }
