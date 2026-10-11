@@ -478,6 +478,41 @@ mod tests {
         assert_eq!(shelf_geometry(screen, &t, n), mac, "settled OctoSense");
     }
     #[test]
+    fn the_dock_overlays_the_desk_only_where_it_floats_over_it() {
+        // The hidden shell: a 1400 x 899 window, the desk from y = 32 to its
+        // bottom, a work area 10 points (the outer gap) inside it.
+        let (desk_bottom, gap) = (899.0, crate::desk::GAPS_OUT);
+        let mut t = StyleTween::default();
+        for style in [DesktopStyle::OctoSense, DesktopStyle::Macos] {
+            t.select(style);
+            t.step(1.0);
+            let area_bottom = desk_bottom - gap - t.reserved_height();
+            assert_eq!(dock_overlay(&t, desk_bottom, area_bottom), 78.0, "{style:?}");
+            // The dock it covers with is the one the shelf draws.
+            let drawn = shelf_geometry(rect(0.0, 0.0, 1400.0, desk_bottom), &t, 20);
+            assert_eq!(dock_overlay(&t, desk_bottom, area_bottom), area_bottom - drawn.pos.y, "{style:?}");
+        }
+        // Windows reserves its taskbar's strip; the other rows float nothing
+        // over the desk's bottom.
+        for style in [
+            DesktopStyle::Windows,
+            DesktopStyle::Windows2000,
+            DesktopStyle::Omarchy,
+            DesktopStyle::NextStep,
+            DesktopStyle::Ios,
+            DesktopStyle::Android,
+        ] {
+            t.select(style);
+            t.step(1.0);
+            let area_bottom = desk_bottom - gap - t.reserved_height();
+            assert_eq!(dock_overlay(&t, desk_bottom, area_bottom), 0.0, "{style:?}");
+        }
+        // Mid-tween it reads the style the tween is heading to.
+        t.select(DesktopStyle::OctoSense);
+        t.step(0.2);
+        assert_eq!(dock_overlay(&t, desk_bottom, desk_bottom - gap), 78.0);
+    }
+    #[test]
     fn chrome_follows_the_flag_for_styles_with_both_appearances() {
         for style in [DesktopStyle::OctoSense, DesktopStyle::Macos, DesktopStyle::Windows, DesktopStyle::Ios, DesktopStyle::Android] {
             assert!(dark_chrome(style, true), "{style:?}");
@@ -1051,6 +1086,25 @@ fn dock_app_ids(state: &WmState) -> Vec<String> {
 }
 pub fn dock_bounds(state: &WmState, size: Vec2d) -> Rect {
     shelf_geometry(rect(0.0,0.0,size.x,size.y), &state.style, dock_app_ids(state).len())
+}
+
+/// How many points of the work area's bottom the dock covers, on a desk
+/// that ends at `desk_bottom` with a work area that ends at `area_bottom`
+/// (window coordinates, where [`shelf_geometry`] places the shelf): macOS's
+/// and OctoSense's docks float over the desk and reserve no strip. 0 for a
+/// shelf that reserves its strip (Windows: the work area already stops above
+/// it), sits elsewhere (NeXTSTEP's column, Omarchy's bar) or is absent (the
+/// phone rows). Read for the style the tween is heading to, settled. A window
+/// that asks for its own size ends above it (`desktop_layout::room`).
+pub fn dock_overlay(style: &StyleTween, desk_bottom: f64, area_bottom: f64) -> f64 {
+    if !matches!(style.target, DesktopStyle::Macos | DesktopStyle::OctoSense) {
+        return 0.0;
+    }
+    let mut settled = StyleTween::default();
+    settled.select(style.target);
+    settled.step(1.0);
+    let dock = shelf_geometry(rect(0.0, 0.0, 1.0, desk_bottom), &settled, 0);
+    (area_bottom - dock.pos.y).max(0.0)
 }
 pub fn dock_icon_bounds(state: &WmState, size: Vec2d, app: &str) -> Rect {
     let apps=dock_app_ids(state);

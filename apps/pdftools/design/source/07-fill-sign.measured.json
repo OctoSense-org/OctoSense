@@ -1,0 +1,1804 @@
+{
+ "schema_version": 1,
+ "image": "07-fill-sign.png",
+ "image_sha256": "fc8314c6e42ea94a8d64df669b160e3eacc408ca4923bfe57fd1b3d4a04aa721",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "Q3 2026 Board Report.pdf",
+   "bounds": [
+    46.9,
+    20.0,
+    151.8,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#5d5e5e",
+   "ground": "#eeeeef"
+  },
+  {
+   "text": "Riverside Lease 2026.pdf",
+   "bounds": [
+    288.0,
+    22.0,
+    163.0,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#424242",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Field Guide to Garden Birds.pdf X",
+   "bounds": [
+    524.7,
+    20.0,
+    198.7,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#585959",
+   "ground": "#efefef"
+  },
+  {
+   "text": "Invoice INV-2041.pdf",
+   "bounds": [
+    779.2,
+    20.0,
+    127.3,
+    18
+   ],
+   "confidence": 1,
+   "ink": "#606061",
+   "ground": "#f0f0f0"
+  },
+  {
+   "text": "Read",
+   "bounds": [
+    31.2,
+    71.3,
+    35.8,
+    13.6
+   ],
+   "confidence": 1,
+   "ink": "#4a4b4b",
+   "ground": "#f0f0f0"
+  },
+  {
+   "text": "Comment",
+   "bounds": [
+    113.9,
+    71.4,
+    69.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#575859",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Fill & Sign",
+   "bounds": [
+    223.3,
+    71.0,
+    71.4,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#3e86e8",
+   "ground": "#f1f6fc"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    334.9,
+    71.4,
+    42.4,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#4a4b4b",
+   "ground": "#f2f2f3"
+  },
+  {
+   "text": "Combine",
+   "bounds": [
+    417.5,
+    71.4,
+    62.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#535354",
+   "ground": "#f3f3f4"
+  },
+  {
+   "text": "Edit",
+   "bounds": [
+    518.0,
+    71.4,
+    33.5,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#49494a",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    100.5,
+    127.2,
+    44.7,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#3c3d3d",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "This form has 6 fields. 2 required fields are empty.",
+   "bounds": [
+    386.2,
+    127.0,
+    292.5,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#525354",
+   "ground": "#f3f4f5"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    24.6,
+    167.3,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#508dea",
+   "ground": "#dfebfc"
+  },
+  {
+   "text": "Outline",
+   "bounds": [
+    22.3,
+    249.9,
+    40.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#888889",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Comments",
+   "bounds": [
+    13.4,
+    334.6,
+    58.1,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#959595",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Search",
+   "bounds": [
+    22.3,
+    419.4,
+    40.2,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#989899",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "X",
+   "bounds": [
+    283.5,
+    127.2,
+    17.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#5e5f5f",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "RIVERSIDE RESIDENCES",
+   "bounds": [
+    167.4,
+    203.0,
+    75.9,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#a0a0a1",
+   "ground": "#f4f3f4"
+  },
+  {
+   "text": "1",
+   "bounds": [
+    189.8,
+    428.3,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#242526",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "2",
+   "bounds": [
+    189.8,
+    700.5,
+    11.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#4f4f50",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "V",
+   "bounds": [
+    192.0,
+    908.0,
+    13.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#5f5f60",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "RIVERSIDE RESIDENCES",
+   "bounds": [
+    636.3,
+    211.9,
+    308.1,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#434343",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "RESIDENTIAL LEASE AGREEMENT",
+   "bounds": [
+    663.1,
+    245.0,
+    252.3,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#4d4d4d",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "This Residential Lease Agreement (\"Agreement\") is made between Riverside",
+   "bounds": [
+    495.6,
+    287.8,
+    446.5,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#787879",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Residences LLC (\"Landlord\") and the Tenant named below.",
+   "bounds": [
+    495.6,
+    307.9,
+    346.0,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#808081",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "1. PARTIES",
+   "bounds": [
+    495.6,
+    341.0,
+    73.8,
+    16.4
+   ],
+   "confidence": 1,
+   "ink": "#525252",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Tenant name:",
+   "bounds": [
+    515.7,
+    368.0,
+    75.9,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#828283",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Landlord:",
+   "bounds": [
+    515.7,
+    394.9,
+    55.8,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#797a7a",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "Maya Chen",
+   "bounds": [
+    600.5,
+    367.9,
+    60.4,
+    13.7
+   ],
+   "confidence": 1,
+   "ink": "#606367",
+   "ground": "#eceff4"
+  },
+  {
+   "text": "Riverside Residences LLC",
+   "bounds": [
+    602.8,
+    392.6,
+    147.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7b7b7c",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "2. PREMISES",
+   "bounds": [
+    495.5,
+    420.7,
+    89.6,
+    17.4
+   ],
+   "confidence": 1,
+   "ink": "#565657",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Address:",
+   "bounds": [
+    518.0,
+    448.4,
+    49.1,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#7c7d7e",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "123 Riverfront Drive, Portland, OR 97201",
+   "bounds": [
+    582.7,
+    446.0,
+    230.0,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#777878",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Unit:",
+   "bounds": [
+    518.0,
+    473.0,
+    31.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#808081",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "4B",
+   "bounds": [
+    578.2,
+    473.0,
+    20.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4d4f51",
+   "ground": "#eceff4"
+  },
+  {
+   "text": "3. TERM",
+   "bounds": [
+    495.5,
+    505.7,
+    60.6,
+    17.0
+   ],
+   "confidence": 1,
+   "ink": "#4e4e4f",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Start date:",
+   "bounds": [
+    517.8,
+    530.4,
+    56.1,
+    14.6
+   ],
+   "confidence": 1,
+   "ink": "#808081",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "1 November 2026",
+   "bounds": [
+    584.9,
+    531.0,
+    96,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#646568",
+   "ground": "#f0f2f5"
+  },
+  {
+   "text": "End date:",
+   "bounds": [
+    723.3,
+    531.0,
+    49.1,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#838384",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "(month-to-month thereafter)",
+   "bounds": [
+    870.7,
+    531.0,
+    142.9,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#888889",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "4. RENT",
+   "bounds": [
+    495.6,
+    564.0,
+    60.3,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#4c4d4d",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Monthly rent: $",
+   "bounds": [
+    518.0,
+    591.0,
+    89.3,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#7f7f80",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Rent is due on the first day of each month.",
+   "bounds": [
+    518.0,
+    613.5,
+    225.5,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#8b8b8c",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "5. SIGNATURES",
+   "bounds": [
+    497.9,
+    649.0,
+    104.9,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#454646",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "By signing below, theparties agree to the terms of this Agreement.",
+   "bounds": [
+    518.0,
+    669.0,
+    337.1,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#838384",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Landlord",
+   "bounds": [
+    495.6,
+    700.5,
+    53.6,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#616262",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Signature:",
+   "bounds": [
+    497.9,
+    725.1,
+    51.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#868687",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Name:",
+   "bounds": [
+    497.9,
+    749.6,
+    35.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#808081",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Date:",
+   "bounds": [
+    497.9,
+    774.1,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#878789",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Riverside Residences LLC",
+   "bounds": [
+    558.1,
+    749.6,
+    129.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#7f7f80",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Tenant",
+   "bounds": [
+    783.6,
+    700.5,
+    42.4,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#666667",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Signature:",
+   "bounds": [
+    785.9,
+    722.8,
+    51.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#929293",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Name:",
+   "bounds": [
+    785.9,
+    749.6,
+    35.7,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#939394",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Date:",
+   "bounds": [
+    785.9,
+    774.1,
+    31.3,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8f8f90",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Maya Chen",
+   "bounds": [
+    843.9,
+    749.6,
+    62.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#858586",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Initials:",
+   "bounds": [
+    497.9,
+    805.4,
+    42.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#8d8c8d",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Initials:",
+   "bounds": [
+    788.1,
+    805.4,
+    40.2,
+    11.2
+   ],
+   "confidence": 1,
+   "ink": "#8c8c8c",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "MC",
+   "bounds": [
+    917.6,
+    832.1,
+    35.7,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#2a2a2a",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Page 1 of 4",
+   "bounds": [
+    475.5,
+    863.3,
+    55.9,
+    13.6
+   ],
+   "confidence": 1,
+   "ink": "#7f7f80",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Riverside Residences LLC",
+   "bounds": [
+    759.1,
+    863.0,
+    120.6,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#7f7f80",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "<",
+   "bounds": [
+    584.9,
+    914.7,
+    11.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#484849",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "1 / 12",
+   "bounds": [
+    618.4,
+    914.7,
+    40.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#535353",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "100%",
+   "bounds": [
+    783.6,
+    914.7,
+    38.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#4f5050",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "+",
+   "bounds": [
+    841.7,
+    912.5,
+    17.9,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#6e6e6f",
+   "ground": "#fcfcfc"
+  },
+  {
+   "text": "Site Survey Photos.pdf",
+   "bounds": [
+    1004.7,
+    20.0,
+    129.5,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#585959",
+   "ground": "#eeeeee"
+  },
+  {
+   "text": "+ Open",
+   "bounds": [
+    1212.3,
+    20.0,
+    55.8,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#5d5d5e",
+   "ground": "#f0f0f1"
+  },
+  {
+   "text": "Q Search in document",
+   "bounds": [
+    1009.1,
+    69.0,
+    147.3,
+    18.0
+   ],
+   "confidence": 1,
+   "ink": "#9c9c9d",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "Highlight fields",
+   "bounds": [
+    998.0,
+    127.0,
+    93.8,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#555657",
+   "ground": "#f1f3f4"
+  },
+  {
+   "text": "Fields",
+   "bounds": [
+    1187.7,
+    127.2,
+    44.7,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#464647",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Field name",
+   "bounds": [
+    1187.7,
+    178.3,
+    64.8,
+    13.7
+   ],
+   "confidence": 1,
+   "ink": "#828283",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Tenant name",
+   "bounds": [
+    1190.0,
+    227.6,
+    82.6,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#525353",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Unit",
+   "bounds": [
+    1192.2,
+    274.4,
+    29.0,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#5a5a5b",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Start date",
+   "bounds": [
+    1189.9,
+    319.0,
+    67.0,
+    18.0
+   ],
+   "confidence": 1,
+   "ink": "#575758",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "End date",
+   "bounds": [
+    1190.0,
+    365.9,
+    60.3,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#59595a",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "Monthly rent *",
+   "bounds": [
+    1192.1,
+    410.3,
+    91.6,
+    20.5
+   ],
+   "confidence": 1,
+   "ink": "#e85652",
+   "ground": "#fdf8f8"
+  },
+  {
+   "text": "Initials (Landlord) *",
+   "bounds": [
+    1187.7,
+    457.0,
+    125.0,
+    20.4
+   ],
+   "confidence": 1,
+   "ink": "#ed4f4a",
+   "ground": "#fdf6f6"
+  },
+  {
+   "text": "Initials (Tenant)*",
+   "bounds": [
+    1187.5,
+    505.3,
+    112.0,
+    22.2
+   ],
+   "confidence": 1,
+   "ink": "#ed5450",
+   "ground": "#fdf8f8"
+  },
+  {
+   "text": "5",
+   "bounds": [
+    1330.6,
+    69.2,
+    15.6,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#6b6a6b",
+   "ground": "#fafafa"
+  },
+  {
+   "text": "Save",
+   "bounds": [
+    1460.1,
+    71.4,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#cae3f9",
+   "ground": "#1971e6"
+  },
+  {
+   "text": "Value",
+   "bounds": [
+    1352.9,
+    178.4,
+    33.5,
+    13.5
+   ],
+   "confidence": 1,
+   "ink": "#8e8e8f",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "Maya Chen",
+   "bounds": [
+    1352.8,
+    227.0,
+    74.0,
+    21.2
+   ],
+   "confidence": 1,
+   "ink": "#656566",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "4B",
+   "bounds": [
+    1352.9,
+    274.4,
+    22.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#5c5d5d",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "1 November 2026",
+   "bounds": [
+    1355.2,
+    319.0,
+    109.4,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#606061",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Empty",
+   "bounds": [
+    1352.9,
+    365.9,
+    42.4,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#b7b7b8",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "Empty",
+   "bounds": [
+    1352.9,
+    412.7,
+    42.4,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#b9b9ba",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "Empty",
+   "bounds": [
+    1352.9,
+    461.8,
+    42.4,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#b8b8b9",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "Empty",
+   "bounds": [
+    1352.9,
+    508.7,
+    42.4,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#b5b5b6",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "T Add text",
+   "bounds": [
+    1205.5,
+    713.7,
+    85.0,
+    20.6
+   ],
+   "confidence": 1,
+   "ink": "#585859",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "Add date",
+   "bounds": [
+    1239.0,
+    774.0,
+    55.9,
+    13.6
+   ],
+   "confidence": 1,
+   "ink": "#5b5b5c",
+   "ground": "#f3f3f3"
+  },
+  {
+   "text": "MC Add initials",
+   "bounds": [
+    1203.3,
+    827.7,
+    111.6,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#555656",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "\u2022 Saved",
+   "bounds": [
+    22.3,
+    986.0,
+    62.5,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#508c6d",
+   "ground": "#f8f9f9"
+  },
+  {
+   "text": "14.6 of 64 MB used",
+   "bounds": [
+    1395.3,
+    986.0,
+    116.1,
+    16.0
+   ],
+   "confidence": 1,
+   "ink": "#606061",
+   "ground": "#f6f6f6"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    324,
+    157,
+    850,
+    816
+   ],
+   "fill": "#fdfdfd",
+   "border": "#ececec",
+   "radius": 144
+  },
+  {
+   "bounds": [
+    422,
+    166,
+    652,
+    801
+   ],
+   "fill": "#fdfdfd",
+   "border": "#ededed",
+   "radius": 7
+  },
+  {
+   "bounds": [
+    86,
+    159,
+    239,
+    737
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    327,
+    109,
+    845,
+    48
+   ],
+   "fill": "#f7fafb",
+   "border": "#f8fbfc",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    117,
+    184,
+    165,
+    238
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fcfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    118,
+    475,
+    156,
+    221
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    560,
+    896,
+    417,
+    54
+   ],
+   "fill": "#fdfdfd",
+   "border": "#f6f6f6",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    86,
+    898,
+    239,
+    73
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1193,
+    815,
+    325,
+    44
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fbfcfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1193,
+    760,
+    325,
+    43
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fbfbfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1193,
+    702,
+    325,
+    43
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fcfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1196,
+    705,
+    319,
+    37
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fcfcfe",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    1196,
+    818,
+    318,
+    37
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfe",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    1196,
+    763,
+    318,
+    37
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fbfcfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    86,
+    109,
+    238,
+    48
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    996,
+    58,
+    281,
+    40
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fefefd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    595,
+    359,
+    391,
+    27
+   ],
+   "fill": "#f4f7fc",
+   "border": "#fdfdfe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    482,
+    7,
+    251,
+    41
+   ],
+   "fill": "#f1f1f1",
+   "border": "#fcfcfc",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    6,
+    6,
+    241,
+    42
+   ],
+   "fill": "#f1f1f1",
+   "border": "#f5f5f6",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    963,
+    7,
+    230,
+    41
+   ],
+   "fill": "#f1f1f1",
+   "border": "#f8f9f9",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    1000,
+    61,
+    274,
+    34
+   ],
+   "fill": "#fdfdfd",
+   "border": "#fdfdfd",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    738,
+    7,
+    223,
+    41
+   ],
+   "fill": "#f1f1f1",
+   "border": "#fbfbfc",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    598,
+    363,
+    384,
+    20
+   ],
+   "fill": "#f4f7fc",
+   "border": "#eff3f9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    599,
+    582,
+    194,
+    26
+   ],
+   "fill": "#fef7f6",
+   "border": "#fefdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    10,
+    123,
+    64,
+    65
+   ],
+   "fill": "#e3edfc",
+   "border": "#fdfdfd",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    578,
+    524,
+    131,
+    26
+   ],
+   "fill": "#f4f7fb",
+   "border": "#fbfcfd",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    615,
+    586,
+    175,
+    19
+   ],
+   "fill": "#fef7f6",
+   "border": "#fdf4f3",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1437,
+    60,
+    82,
+    36
+   ],
+   "fill": "#156ce4",
+   "border": "#fcfcfe",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    1203,
+    8,
+    75,
+    37
+   ],
+   "fill": "#f2f2f2",
+   "border": "#eeeeef",
+   "radius": 4
+  },
+  {
+   "bounds": [
+    572,
+    466,
+    95,
+    27
+   ],
+   "fill": "#f4f7fc",
+   "border": "#fbfcfd",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    582,
+    528,
+    124,
+    19
+   ],
+   "fill": "#f2f5f9",
+   "border": "#eaeefa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    777,
+    524,
+    85,
+    26
+   ],
+   "fill": "#f5f7fc",
+   "border": "#fcfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    576,
+    469,
+    87,
+    21
+   ],
+   "fill": "#f4f7fc",
+   "border": "#f2f7fc",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    780,
+    528,
+    79,
+    19
+   ],
+   "fill": "#f5f7fc",
+   "border": "#f2f5fa",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    918,
+    826,
+    41,
+    31
+   ],
+   "fill": "#f9f9fa",
+   "border": "#e2e9f8",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    555,
+    797,
+    41,
+    29
+   ],
+   "fill": "#f4f6fb",
+   "border": "#fafbfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1102,
+    121,
+    43,
+    24
+   ],
+   "fill": "#1a76ef",
+   "border": "#f5f9fb",
+   "radius": 6
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 46,
+   "from": 731,
+   "to": 1536,
+   "color": "#dadadb"
+  },
+  {
+   "axis": "h",
+   "at": 47,
+   "from": 1193,
+   "to": 1536,
+   "color": "#f3f3f4"
+  },
+  {
+   "axis": "h",
+   "at": 107,
+   "from": 328,
+   "to": 1175,
+   "color": "#dedfe1"
+  },
+  {
+   "axis": "h",
+   "at": 157,
+   "from": 325,
+   "to": 1171,
+   "color": "#e0e1e2"
+  },
+  {
+   "axis": "h",
+   "at": 158,
+   "from": 1172,
+   "to": 1536,
+   "color": "#e0e1e2"
+  },
+  {
+   "axis": "h",
+   "at": 360,
+   "from": 597,
+   "to": 982,
+   "color": "#b8cfeb"
+  },
+  {
+   "axis": "h",
+   "at": 361,
+   "from": 596,
+   "to": 983,
+   "color": "#98b7e1"
+  },
+  {
+   "axis": "h",
+   "at": 362,
+   "from": 647,
+   "to": 984,
+   "color": "#fbfdfe"
+  },
+  {
+   "axis": "h",
+   "at": 381,
+   "from": 659,
+   "to": 981,
+   "color": "#fdfefe"
+  },
+  {
+   "axis": "h",
+   "at": 382,
+   "from": 618,
+   "to": 981,
+   "color": "#c7d8ef"
+  },
+  {
+   "axis": "h",
+   "at": 383,
+   "from": 618,
+   "to": 981,
+   "color": "#a0bae1"
+  },
+  {
+   "axis": "h",
+   "at": 672,
+   "from": 1181,
+   "to": 1528,
+   "color": "#e2e2e3"
+  },
+  {
+   "axis": "h",
+   "at": 703,
+   "from": 1196,
+   "to": 1514,
+   "color": "#678fcd"
+  },
+  {
+   "axis": "h",
+   "at": 704,
+   "from": 1195,
+   "to": 1515,
+   "color": "#c5d4eb"
+  },
+  {
+   "axis": "h",
+   "at": 742,
+   "from": 1195,
+   "to": 1514,
+   "color": "#5382c1"
+  },
+  {
+   "axis": "h",
+   "at": 743,
+   "from": 1197,
+   "to": 1512,
+   "color": "#eef2f9"
+  },
+  {
+   "axis": "h",
+   "at": 760,
+   "from": 1200,
+   "to": 1510,
+   "color": "#f5f6fb"
+  },
+  {
+   "axis": "h",
+   "at": 761,
+   "from": 1195,
+   "to": 1514,
+   "color": "#477cc4"
+  },
+  {
+   "axis": "h",
+   "at": 762,
+   "from": 1194,
+   "to": 1515,
+   "color": "#f0f4fa"
+  },
+  {
+   "axis": "h",
+   "at": 799,
+   "from": 1195,
+   "to": 1515,
+   "color": "#d9e2ef"
+  },
+  {
+   "axis": "h",
+   "at": 800,
+   "from": 1196,
+   "to": 1514,
+   "color": "#6a91c9"
+  },
+  {
+   "axis": "h",
+   "at": 816,
+   "from": 1196,
+   "to": 1514,
+   "color": "#668fce"
+  },
+  {
+   "axis": "h",
+   "at": 817,
+   "from": 1195,
+   "to": 1515,
+   "color": "#c0d1ec"
+  },
+  {
+   "axis": "h",
+   "at": 855,
+   "from": 1195,
+   "to": 1515,
+   "color": "#81a3d7"
+  },
+  {
+   "axis": "h",
+   "at": 856,
+   "from": 1196,
+   "to": 1513,
+   "color": "#9fb9e1"
+  },
+  {
+   "axis": "h",
+   "at": 897,
+   "from": 569,
+   "to": 967,
+   "color": "#dededf"
+  },
+  {
+   "axis": "h",
+   "at": 945,
+   "from": 565,
+   "to": 970,
+   "color": "#f3f2f2"
+  },
+  {
+   "axis": "h",
+   "at": 946,
+   "from": 567,
+   "to": 969,
+   "color": "#cecfcf"
+  },
+  {
+   "axis": "h",
+   "at": 971,
+   "from": 0,
+   "to": 1536,
+   "color": "#e0e0e1"
+  },
+  {
+   "axis": "h",
+   "at": 972,
+   "from": 0,
+   "to": 1536,
+   "color": "#f3f4f3"
+  },
+  {
+   "axis": "v",
+   "at": 84,
+   "from": 158,
+   "to": 972,
+   "color": "#e3e3e3"
+  },
+  {
+   "axis": "v",
+   "at": 119,
+   "from": 477,
+   "to": 694,
+   "color": "#cfcecf"
+  },
+  {
+   "axis": "v",
+   "at": 272,
+   "from": 185,
+   "to": 418,
+   "color": "#e6edfb"
+  },
+  {
+   "axis": "v",
+   "at": 273,
+   "from": 186,
+   "to": 420,
+   "color": "#0d68e8"
+  },
+  {
+   "axis": "v",
+   "at": 274,
+   "from": 187,
+   "to": 419,
+   "color": "#348cf1"
+  },
+  {
+   "axis": "v",
+   "at": 424,
+   "from": 175,
+   "to": 961,
+   "color": "#e1e1e2"
+  },
+  {
+   "axis": "v",
+   "at": 425,
+   "from": 171,
+   "to": 963,
+   "color": "#f1f2f2"
+  },
+  {
+   "axis": "v",
+   "at": 1070,
+   "from": 171,
+   "to": 963,
+   "color": "#eff0f0"
+  },
+  {
+   "axis": "v",
+   "at": 1071,
+   "from": 173,
+   "to": 962,
+   "color": "#dfdfe1"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

@@ -1,0 +1,1083 @@
+{
+ "schema_version": 1,
+ "image": "06-combine.png",
+ "image_sha256": "bbb5c2bf1a5288343e42b6602e231314f3dc79effb6cfe789aa14cf743baef08",
+ "script_sha256": "ea860507e32482b955d3ac577ab3cf9fc559f59ecc916c89175293932b54e0b7",
+ "size": [
+  1536,
+  1024
+ ],
+ "ocr_engine": "Apple Vision VNRecognizeTextRequest accurate, en-US (App Flow ocr.swift)",
+ "text": [
+  {
+   "text": "Q3 2026 Board Report.pdf x",
+   "bounds": [
+    51.3,
+    20.0,
+    198.7,
+    18
+   ],
+   "confidence": 1,
+   "ink": "#515152",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Riverside Lease 2026.pdf X",
+   "bounds": [
+    308.1,
+    20.0,
+    183.1,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#555758",
+   "ground": "#eeeff1"
+  },
+  {
+   "text": "Field Guide to Garden Birds.pdf x",
+   "bounds": [
+    547.0,
+    17.8,
+    218.8,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#5b5c5e",
+   "ground": "#f0f1f3"
+  },
+  {
+   "text": "Read",
+   "bounds": [
+    35.7,
+    73.6,
+    51.3,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#616569",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Comment",
+   "bounds": [
+    104.9,
+    73.3,
+    91.6,
+    16.2
+   ],
+   "confidence": 1,
+   "ink": "#62656a",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Fill & Sign",
+   "bounds": [
+    238.9,
+    73.6,
+    78.1,
+    20.4
+   ],
+   "confidence": 1,
+   "ink": "#5b5d62",
+   "ground": "#f4f4f5"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    361.6,
+    73.4,
+    47.0,
+    18.2
+   ],
+   "confidence": 1,
+   "ink": "#5c5e63",
+   "ground": "#f3f4f4"
+  },
+  {
+   "text": "Combine",
+   "bounds": [
+    455.4,
+    73.4,
+    71.6,
+    16.1
+   ],
+   "confidence": 1,
+   "ink": "#438ae2",
+   "ground": "#f2f6fb"
+  },
+  {
+   "text": "Edit",
+   "bounds": [
+    569.3,
+    73.6,
+    35.7,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#5b5e63",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Invoice INV-2041.pdf x",
+   "bounds": [
+    821.6,
+    17.8,
+    158.5,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#58595c",
+   "ground": "#f0f1f3"
+  },
+  {
+   "text": "Site Survey Photos.pdf x",
+   "bounds": [
+    1035.9,
+    17.8,
+    171.9,
+    20.2
+   ],
+   "confidence": 1,
+   "ink": "#595a5b",
+   "ground": "#f0f1f3"
+  },
+  {
+   "text": "+ Open",
+   "bounds": [
+    1230.1,
+    17.8,
+    62.5,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#555658",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Search in document",
+   "bounds": [
+    971.2,
+    75.9,
+    127.3,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#a2a4a8",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Save",
+   "bounds": [
+    1473.5,
+    75.9,
+    33.5,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#cee3f9",
+   "ground": "#257ae5"
+  },
+  {
+   "text": "Pages",
+   "bounds": [
+    26.8,
+    176.2,
+    40.2,
+    15.6
+   ],
+   "confidence": 1,
+   "ink": "#777a7e",
+   "ground": "#f5f5f6"
+  },
+  {
+   "text": "Outline",
+   "bounds": [
+    24.6,
+    263.3,
+    46.9,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#85878b",
+   "ground": "#f6f7f7"
+  },
+  {
+   "text": "Combine files",
+   "bounds": [
+    459.9,
+    196.0,
+    151.8,
+    25
+   ],
+   "confidence": 1,
+   "ink": "#3c3d3e",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "NORTUMNO",
+   "bounds": [
+    511.3,
+    258.8,
+    42.4,
+    15.6
+   ],
+   "confidence": 0.3,
+   "ink": "#9a9a9c",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Q3 2026",
+   "bounds": [
+    511.3,
+    283.0,
+    42.4,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#737477",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Board Report",
+   "bounds": [
+    511.3,
+    294.0,
+    58.0,
+    12
+   ],
+   "confidence": 1,
+   "ink": "#808082",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Q3 2026 Board Report.pdf",
+   "bounds": [
+    596.1,
+    292.0,
+    187.5,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#57585a",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "All (24 pages)",
+   "bounds": [
+    888.5,
+    292.1,
+    87.1,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#7b7d80",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Comments",
+   "bounds": [
+    13.3,
+    349.9,
+    67.1,
+    14.1
+   ],
+   "confidence": 1,
+   "ink": "#828589",
+   "ground": "#f6f6f7"
+  },
+  {
+   "text": "Appendix A - Figures.pdf",
+   "bounds": [
+    596.1,
+    408.0,
+    178.6,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#4f5051",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "1-4,9 (5 pages)",
+   "bounds": [
+    886.2,
+    407.7,
+    105.1,
+    19.0
+   ],
+   "confidence": 1,
+   "ink": "#818386",
+   "ground": "#f8f8f9"
+  },
+  {
+   "text": "Search",
+   "bounds": [
+    24.5,
+    437.1,
+    44.8,
+    15.9
+   ],
+   "confidence": 1,
+   "ink": "#85878b",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "::",
+   "bounds": [
+    459.9,
+    519.8,
+    17.9,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#6c6f76",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "Cover Letter.pdf",
+   "bounds": [
+    596.1,
+    524.0,
+    118.3,
+    18.1
+   ],
+   "confidence": 1,
+   "ink": "#4d4e50",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "All (2 pages)",
+   "bounds": [
+    886.3,
+    524.0,
+    82.6,
+    20.3
+   ],
+   "confidence": 1,
+   "ink": "#7b7d81",
+   "ground": "#f7f7f8"
+  },
+  {
+   "text": "X",
+   "bounds": [
+    1071.6,
+    406.0,
+    17.9,
+    20.1
+   ],
+   "confidence": 1,
+   "ink": "#6e7177",
+   "ground": "#f9f9f9"
+  },
+  {
+   "text": "X",
+   "bounds": [
+    1071.6,
+    522.0,
+    17.9,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#6a6d73",
+   "ground": "#f8f8f8"
+  },
+  {
+   "text": "+ Add files",
+   "bounds": [
+    718.9,
+    609.0,
+    93.8,
+    22.4
+   ],
+   "confidence": 1,
+   "ink": "#5693e5",
+   "ground": "#f8fafc"
+  },
+  {
+   "text": "One PDF of 31 pages",
+   "bounds": [
+    444.3,
+    689.0,
+    160.7,
+    20.4
+   ],
+   "confidence": 1,
+   "ink": "#606367",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "Name",
+   "bounds": [
+    444.3,
+    736.2,
+    40.2,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#6f7173",
+   "ground": "#f5f5f5"
+  },
+  {
+   "text": "Q3 2026 Board Pack",
+   "bounds": [
+    513.5,
+    736.0,
+    138.4,
+    16
+   ],
+   "confidence": 1,
+   "ink": "#646669",
+   "ground": "#f4f4f4"
+  },
+  {
+   "text": "Combine",
+   "bounds": [
+    986.8,
+    792.0,
+    96,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#cde3f8",
+   "ground": "#2175e2"
+  },
+  {
+   "text": "3 / 24",
+   "bounds": [
+    593.9,
+    894.6,
+    60.3,
+    17.8
+   ],
+   "confidence": 1,
+   "ink": "#58595b",
+   "ground": "#f7f7f7"
+  },
+  {
+   "text": "100%",
+   "bounds": [
+    806.0,
+    896.8,
+    42.4,
+    13.4
+   ],
+   "confidence": 1,
+   "ink": "#75787a",
+   "ground": "#f6f6f6"
+  },
+  {
+   "text": "+",
+   "bounds": [
+    870.7,
+    894.6,
+    20.1,
+    22.3
+   ],
+   "confidence": 1,
+   "ink": "#727579",
+   "ground": "#fbfbfb"
+  },
+  {
+   "text": "\u2022 Saved",
+   "bounds": [
+    22.3,
+    985.9,
+    69.3,
+    18.3
+   ],
+   "confidence": 1,
+   "ink": "#588f5a",
+   "ground": "#f7f8f8"
+  },
+  {
+   "text": "14.6 of 64 MB used",
+   "bounds": [
+    1366.3,
+    988.0,
+    131.7,
+    14
+   ],
+   "confidence": 1,
+   "ink": "#6c6d6e",
+   "ground": "#f5f5f5"
+  }
+ ],
+ "surfaces": [
+  {
+   "bounds": [
+    2,
+    7,
+    1533,
+    963
+   ],
+   "fill": "#f1f2f4",
+   "border": "#f5f6f7",
+   "radius": 6
+  },
+  {
+   "bounds": [
+    94,
+    112,
+    1441,
+    856
+   ],
+   "fill": "#f1f2f4",
+   "border": "#f1f2f4",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    420,
+    155,
+    717,
+    696
+   ],
+   "fill": "#fcfcfc",
+   "border": "#ebebed",
+   "radius": 7
+  },
+  {
+   "bounds": [
+    444,
+    239,
+    669,
+    414
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    2,
+    970,
+    1533,
+    53
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    2,
+    115,
+    90,
+    853
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fbfbfb",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    448,
+    474,
+    662,
+    113
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    448,
+    358,
+    662,
+    113
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    448,
+    243,
+    662,
+    113
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fafafa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    2,
+    2,
+    1533,
+    48
+   ],
+   "fill": "#f3f4f6",
+   "border": "#fcfbfb",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    263,
+    5,
+    958,
+    45
+   ],
+   "fill": "#f2f3f5",
+   "border": "#f3f3f4",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    448,
+    589,
+    662,
+    60
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    513,
+    874,
+    545,
+    61
+   ],
+   "fill": "#fcfcfc",
+   "border": "#eaeaec",
+   "radius": 16
+  },
+  {
+   "bounds": [
+    1220,
+    5,
+    310,
+    42
+   ],
+   "fill": "#f8f8f9",
+   "border": "#f8f8f9",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    501,
+    725,
+    310,
+    40
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fbfbfb",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    931,
+    63,
+    311,
+    38
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    504,
+    728,
+    304,
+    33
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    934,
+    67,
+    305,
+    31
+   ],
+   "fill": "#fcfcfc",
+   "border": "#faf9fa",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    504,
+    364,
+    84,
+    101
+   ],
+   "fill": "#fbfafa",
+   "border": "#fdfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    876,
+    278,
+    178,
+    43
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    504,
+    249,
+    78,
+    98
+   ],
+   "fill": "#fafafa",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    875,
+    510,
+    179,
+    42
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fefefe",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    875,
+    394,
+    179,
+    42
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    504,
+    480,
+    73,
+    101
+   ],
+   "fill": "#fbfbfb",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    970,
+    779,
+    140,
+    46
+   ],
+   "fill": "#1e71e3",
+   "border": "#fafafc",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    508,
+    368,
+    66,
+    94
+   ],
+   "fill": "#f9f9f9",
+   "border": "#f6f6f6",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    879,
+    513,
+    172,
+    36
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    879,
+    397,
+    172,
+    36
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    879,
+    282,
+    172,
+    35
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fcfcfc",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1256,
+    63,
+    135,
+    39
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fbfbfb",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    508,
+    252,
+    67,
+    78
+   ],
+   "fill": "#fbfbfb",
+   "border": "#dfe0e2",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    1434,
+    64,
+    87,
+    37
+   ],
+   "fill": "#2075e4",
+   "border": "#f7f8fc",
+   "radius": 3
+  },
+  {
+   "bounds": [
+    1259,
+    66,
+    65,
+    32
+   ],
+   "fill": "#fcfbfb",
+   "border": "#fdfdfd",
+   "radius": 1
+  },
+  {
+   "bounds": [
+    1326,
+    66,
+    62,
+    32
+   ],
+   "fill": "#fcfcfc",
+   "border": "#fdfdfd",
+   "radius": 0
+  },
+  {
+   "bounds": [
+    513,
+    504,
+    53,
+    36
+   ],
+   "fill": "#ebebeb",
+   "border": "#fbfbfb",
+   "radius": 7
+  },
+  {
+   "bounds": [
+    514,
+    514,
+    51,
+    24
+   ],
+   "fill": "#e9e8ea",
+   "border": "#f9f9fa",
+   "radius": 3
+  }
+ ],
+ "dividers": [
+  {
+   "axis": "h",
+   "at": 5,
+   "from": 1226,
+   "to": 1525,
+   "color": "#eeeeef"
+  },
+  {
+   "axis": "h",
+   "at": 98,
+   "from": 934,
+   "to": 1238,
+   "color": "#dadcdf"
+  },
+  {
+   "axis": "h",
+   "at": 113,
+   "from": 93,
+   "to": 1536,
+   "color": "#dbdde0"
+  },
+  {
+   "axis": "h",
+   "at": 157,
+   "from": 427,
+   "to": 1130,
+   "color": "#dadbde"
+  },
+  {
+   "axis": "h",
+   "at": 355,
+   "from": 447,
+   "to": 1110,
+   "color": "#f2f3f4"
+  },
+  {
+   "axis": "h",
+   "at": 356,
+   "from": 447,
+   "to": 1110,
+   "color": "#e7e8eb"
+  },
+  {
+   "axis": "h",
+   "at": 587,
+   "from": 446,
+   "to": 1110,
+   "color": "#e9e9ea"
+  },
+  {
+   "axis": "h",
+   "at": 667,
+   "from": 446,
+   "to": 1111,
+   "color": "#e8e9eb"
+  },
+  {
+   "axis": "h",
+   "at": 668,
+   "from": 446,
+   "to": 1111,
+   "color": "#f4f5f6"
+  },
+  {
+   "axis": "h",
+   "at": 725,
+   "from": 506,
+   "to": 805,
+   "color": "#f5f5f5"
+  },
+  {
+   "axis": "h",
+   "at": 726,
+   "from": 505,
+   "to": 807,
+   "color": "#e0e0e3"
+  },
+  {
+   "axis": "h",
+   "at": 846,
+   "from": 427,
+   "to": 1131,
+   "color": "#e7e8e9"
+  },
+  {
+   "axis": "h",
+   "at": 847,
+   "from": 427,
+   "to": 1130,
+   "color": "#d5d5d7"
+  },
+  {
+   "axis": "h",
+   "at": 876,
+   "from": 651,
+   "to": 1034,
+   "color": "#dfdfe1"
+  },
+  {
+   "axis": "h",
+   "at": 930,
+   "from": 539,
+   "to": 1031,
+   "color": "#e3e4e6"
+  },
+  {
+   "axis": "h",
+   "at": 931,
+   "from": 539,
+   "to": 1031,
+   "color": "#d8d9dc"
+  },
+  {
+   "axis": "h",
+   "at": 968,
+   "from": 0,
+   "to": 1536,
+   "color": "#dcdde0"
+  },
+  {
+   "axis": "h",
+   "at": 969,
+   "from": 1,
+   "to": 1535,
+   "color": "#f5f6f6"
+  },
+  {
+   "axis": "v",
+   "at": 91,
+   "from": 114,
+   "to": 772,
+   "color": "#e8e9ea"
+  },
+  {
+   "axis": "v",
+   "at": 92,
+   "from": 114,
+   "to": 772,
+   "color": "#e1e1e4"
+  },
+  {
+   "axis": "v",
+   "at": 422,
+   "from": 162,
+   "to": 844,
+   "color": "#d5d6d8"
+  },
+  {
+   "axis": "v",
+   "at": 423,
+   "from": 162,
+   "to": 845,
+   "color": "#eeeff0"
+  },
+  {
+   "axis": "v",
+   "at": 1110,
+   "from": 243,
+   "to": 647,
+   "color": "#e0e2e5"
+  },
+  {
+   "axis": "v",
+   "at": 1133,
+   "from": 164,
+   "to": 841,
+   "color": "#e1e2e4"
+  },
+  {
+   "axis": "v",
+   "at": 1134,
+   "from": 164,
+   "to": 841,
+   "color": "#dadadc"
+  }
+ ],
+ "limits": [
+  "Evidence for review: roles and widgets are assigned in the semantic map, not here."
+ ]
+}

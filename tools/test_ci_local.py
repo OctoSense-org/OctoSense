@@ -296,6 +296,21 @@ class MergeEvidence(unittest.TestCase):
         self.assertIn("| phone.yml / home | Test | PASS |", body)
 
 
+class PullRequestFiles(unittest.TestCase):
+    def test_files_come_from_the_paginated_listing_with_renamed_paths(self):
+        # A diff over 20,000 lines made `gh pr diff --name-only` fail (#473):
+        # the files listing has no such limit, and a name may hold spaces.
+        listing = "apps/pdftools/bundle/main.splash\t\napps/x/new name.png\tapps/x/old name.png\n"
+        done = SimpleNamespace(returncode=0, stdout=listing, stderr="")
+        with patch.object(merge, "run", return_value=done) as call:
+            paths, files = merge.pr_files(473)
+        self.assertEqual(files, 2)
+        self.assertEqual(paths, ["apps/pdftools/bundle/main.splash", "apps/x/new name.png", "apps/x/old name.png"])
+        argv = call.call_args[0][0]
+        self.assertEqual(argv[:3], ["gh", "api", "--paginate"])
+        self.assertIn("repos/{owner}/{repo}/pulls/473/files?per_page=100", argv)
+
+
 class NativeRemoteEvidence(unittest.TestCase):
     def test_unrelated_changes_do_not_query_native_runner(self):
         with patch.object(merge, "gh_json") as query:
