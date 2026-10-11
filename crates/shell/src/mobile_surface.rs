@@ -5,6 +5,8 @@ use crate::mobile_shade::ShadeContentCache;
 use crate::mobile_pages::GlanceCards;
 use crate::octosense::style::AppIconDraw;
 mod search;
+mod icon_atlas;
+use icon_atlas::IconAtlas;
 use search::{SearchResults, SearchSnapshot};
 
 script_mod! {
@@ -391,6 +393,9 @@ pub struct PhoneSurface {
     /// Appearance and feed whose first-use navigation resources are ready.
     #[rust] navigation_warm: Option<(DesktopStyle, bool, f64, f64, u64, u64)>,
     #[rust] navigation_warm_step: usize,
+    #[rust] drawer_warm: Option<(DesktopStyle, bool, f64, f64, u64)>,
+    #[rust] drawer_warm_icons: Option<std::sync::Arc<std::collections::HashMap<String, Texture>>>,
+    #[rust] drawer_warm_step: usize,
     #[rust] search_snapshot: SearchSnapshot,
     // The sheet's content recorded once per state, shown as one quad while
     // the sheet moves (mobile_shade.rs).
@@ -400,6 +405,7 @@ pub struct PhoneSurface {
     #[live] wallpaper: DrawQuad,
     #[live] wallpaper_plain: DrawQuad,
     #[live] android_icon: DrawImage,
+    #[rust] drawer_icon_atlas: IconAtlas,
     #[rust] pub icons: AppIconDraw,
     #[rust] pub hits: Vec<(Rect, PhoneHit)>,
     /// The glance page's published cards, live: each a Splash tile under its
@@ -983,6 +989,7 @@ impl PhoneSurface {
     /// Android's app drawer: a sheet with every launchable app on one grid.
     fn draw_android_drawer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
         let landscape=screen.size.x>screen.size.y;
+        self.drawer_icon_atlas.set_revision(state.phone.android.catalog_revision);
         // A flat fill, not the SDF chrome quad: the sheet is a full-screen
         // opaque rect, and under Recents' glass every full-screen layer counts.
         self.d.solid(cx,screen,self.theme_ground(if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)}));
@@ -1022,12 +1029,26 @@ impl PhoneSurface {
         self.search_scroll_max=(rows as f64*row_h-(bottom-top)).max(0.0);
         let scroll=state.phone.search_scroll.clamp(0.0,self.search_scroll_max)-state.phone.search_stretch;
         cx.begin_turtle(Walk::abs_rect(rect(screen.pos.x,top,screen.size.x,(bottom-top).max(0.0))),Layout::default());
-        for (index,(id,label)) in ids.iter().enumerate() {
-            let r=rect(screen.pos.x+12.0+(index%columns)as f64*cell,top+(index/columns)as f64*row_h-scroll,cell,row_h);
-            if r.pos.y+r.size.y<=top || r.pos.y>=bottom {continue;}
+        // Visit only visible rows. Submit icons before labels: these occupy
+        // disjoint rectangles, so grouping the text lets its atlas batch
+        // across the grid instead of splitting it once per app texture.
+        let first = ((scroll / row_h).floor().max(0.0) as usize * columns).min(ids.len());
+        let last = ((((scroll + (bottom-top).max(0.0)) / row_h).ceil().max(0.0) as usize) * columns).min(ids.len());
+        let cell_rect = |index: usize| rect(
+            screen.pos.x+12.0+(index%columns)as f64*cell,
+            top+(index/columns)as f64*row_h-scroll,cell,row_h,
+        );
+        for index in first..last {
+            let (id, _) = &ids[index];
+            let r = cell_rect(index);
             self.draw_launcher_icon(cx,state,id,rect(r.pos.x+(cell-size)*0.5,r.pos.y,size,size),ink,1.0);
+        }
+        for index in first..last {
+            let (id, label) = &ids[index];
+            let r = cell_rect(index);
             self.label(cx,rect(r.pos.x,r.pos.y+size+4.0,cell,20.0),label,11.0,false,ink);
-            self.hits.push((r,PhoneHit::App(id.clone())));
+            let y0 = r.pos.y.max(top);
+            self.hits.push((rect(r.pos.x,y0,cell,(r.pos.y+row_h).min(bottom)-y0),PhoneHit::App(id.clone())));
         }
         cx.end_turtle();
         self.scrub.clear();
@@ -1048,6 +1069,30 @@ impl PhoneSurface {
             }
             self.hits.push((column,PhoneHit::Scrub));
         } else {self.scrub_rect=Rect::default();}
+        // Prepare at most four off-screen entries per quiet frame. The first
+        // scroll must not upload each new icon and rasterize its label while
+        // the finger is moving. A touch or animation suspends this work.
+        if !state.phone.animation_active && state.phone.gesture.is_none() {
+            let key = (state.style.target, state.style.dark, cx.current_dpi_factor(),
+                state.phone.android.font_scale, state.phone.android.catalog_revision);
+            let icons = &state.phone.android.icons;
+            if self.drawer_warm != Some(key)
+                || !self.drawer_warm_icons.as_ref().is_some_and(|old| std::sync::Arc::ptr_eq(old, icons)) {
+                self.drawer_warm = Some(key);
+                self.drawer_warm_icons = Some(icons.clone());
+                self.drawer_warm_step = 0;
+            }
+            let end = (self.drawer_warm_step + 4).min(ids.len());
+            let bounds = self.home_icon_bounds.len();
+            let hidden = rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, size, size);
+            for (id, label) in &ids[self.drawer_warm_step.min(end)..end] {
+                self.draw_launcher_icon(cx, state, id, hidden, ink, 1.0);
+                self.label(cx, rect(hidden.pos.x, hidden.pos.y + size + 4.0, cell, 20.0), label, 11.0, false, ink);
+            }
+            self.home_icon_bounds.truncate(bounds);
+            self.drawer_warm_step = end;
+            if end < ids.len() { cx.redraw_all(); }
+        }
     }
     /// The drawer scroll for the letter under `y` on the scrubber.
     pub fn scrub_scroll(&self,y:f64)->Option<f64> {
@@ -1067,11 +1112,23 @@ impl PhoneSurface {
             let inset=r.size.x*0.07;
             (rect(r.pos.x+inset,r.pos.y+inset,r.size.x-inset*2.0,r.size.y-inset*2.0),opacity*0.72)
         } else {(r,opacity)};
-        if let Some(texture)=app.and_then(|app|state.phone.android.icons.get(&app.icon)) {
+        if let Some((native, texture))=app.and_then(|app|state.phone.android.icons.get(&app.icon).map(|texture| (app, texture))) {
             if cfg!(target_os="android") {self.home_icon_bounds.push((id.to_string(),r));}
-            self.android_icon.draw_vars.set_texture(0,texture);
+            let atlas = if cfg!(target_os="android") && state.phone.screen == PhoneScreen::Drawer
+                && state.style.target == DesktopStyle::Android {
+                self.drawer_icon_atlas.get(cx, &native.icon, texture)
+            } else { None };
+            if let Some(icon) = &atlas {
+                self.android_icon.draw_vars.set_texture(0, &icon.texture);
+                self.android_icon.image_scale = icon.scale;
+                self.android_icon.image_pan = icon.pan;
+            } else {
+                self.android_icon.draw_vars.set_texture(0, texture);
+            }
             self.android_icon.opacity=opacity;
             self.android_icon.draw_abs(cx,r);
+            self.android_icon.image_scale = vec2(1.0, 1.0);
+            self.android_icon.image_pan = vec2(0.0, 0.0);
         } else {self.icons.draw(cx,id,state.style.target,r,opacity,ink);}
         // A dot for an app with a notification in the shade (its package or
         // its identity posted it).

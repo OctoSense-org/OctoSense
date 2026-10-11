@@ -4,7 +4,7 @@
     "base_revision": "d653bc4493619ab979ccff165cf48c0c63b77d19",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "3a79cddddc89dc4d064a9f0bdd17dc8111dcab9c796a334d95f61ecb9d5011aa",
-    "tree": "3f4fd959f1ee43445bc7ef13cf72465bb1951829",
+    "tree": "1af126c280dbf10a8abefe229df3a9b4f4a590b1",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
@@ -48,7 +48,8 @@
       "A native host may stage up to 64 MiB into an app's jail (MAX_IMPORT_BYTES; prepare_import and commit_import), so files.import can take documents above the 1 MiB script write limit. Staged bytes never enter the script heap; the jail's byte quota and entry cap still apply, and script writes, photo picks and exports keep 1 MiB.",
       "An OS resume restarts only the Video playback its pause stopped, including a start it cancelled; a player paused by the person, or paused or stopped by its app during the pause, stays paused (#406).",
       "Camera capture and recording use explicit per-call boolean audio/library options, defaulting to silent app-local output. Permission availability never opts into recording audio or exporting captures; async microphone checks retain capture intent and background provenance. Unsupported library export fails before capture.",
-      "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame."
+      "A hidden Android native composer remembers animated IME insets without requesting a root layout every frame; showing it applies the latest inset before its first visible frame.",
+      "Android GLES UI buffers carry an explicit presentation time based on the compositor refresh interval; optional android.present tracing correlates submitted buffers with actual display timestamps. Choreographer cadence is retained; XR, Vulkan and manual pacing paths are unchanged."
     ],
     "stacked": [
       {
@@ -190,6 +191,10 @@
       {
         "patch": "tools/runtime-patches/makepad-hidden-composer-insets.patch",
         "sha256": "75935d129cfe4adf09555d3a94b0a7ad387f2ea97cf357f9d60c728d87239037"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-android-presentation.patch",
+        "sha256": "3419c3ee8823f18736707478d1fd884c50cad91a7f5fe7fc2dede0f7382d681b"
       }
     ]
   }
