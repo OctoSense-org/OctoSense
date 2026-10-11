@@ -54,6 +54,10 @@ Android 桌面支持从左右边缘滑动翻页、衔接松手速度的弹簧吸
 
 此源码构建中的 App Hub 默认使用带 GitHub 证明的签名目录，并通过应用契约 1.11.0（桌面 RC2 为 1.10.0，RC1 为 1.8.0）支持 `publisher-github-v1` 的 Release。开发者通过 [App Hub 提交 issue](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/new?template=submit-app.yml) 申请发布。App Hub 只接受带 GitHub 证明的 Release，因此开发者无需发布者密钥：应用的公开仓库就是它的发布者身份（[App Hub ADR 0002](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/adr/0002-github-attested-publisher-identity.zh-CN.md)）。准入仍须由 Hub 管理员批准。首次获取签名目录需要网络连接，旧的离线签名目录不会转换成 GitHub 证明。使用自定义的本地测试签名目录时，可以在全新的应用数据目录下显式设置 `OCTOSENSE_HUB_CATALOG=legacy`；已有 v2 缓存的应用库会拒绝这种降级。beta.2 不支持这种发布方式。RC2 可以安装与其兼容的 GitHub 证明应用；要求共享组件或更新宿主 API 的应用需要兼容的新宿主，详见[能力与发布状态](docs/capabilities.zh-CN.md)。
 
+[手机上的 App Studio](docs/adr/0006-app-studio-on-the-phone.md) 现已提供开发者工具，可检查、打开、观测、操作并本地安装离线 `main.splash` 应用。预览状态可丢弃；已安装应用的状态在开发者授权范围内持久保留。参见 [Studio 代码导读](docs/architecture-walkthrough.zh-CN.md#从-agent-调用跟到-app-studio-中可运行的应用)。
+
+模型从头编写的 Task Planner 在合并 `main` 之前已在 OnePlus 6 上通过 129 次真机工具调用，合并之后另一个 Task Planner 又在一部普通小米手机上通过了同样的验证（见[再次验证](docs/studio/xiaomi-revalidation.md)），两次都覆盖交互和已安装状态持久化；[竖屏应用与键盘视觉评审](docs/studio/oneplus6-validation.md)在两部手机上都已通过。故障注入仍待完成；图像生成、可编辑工具箱流程与公开发布仍是后续工作。Home 的[构建选项](phone/README.zh-CN.md#构建与运行)提供开发者模式和独立测试包。
+
 ## 整体如何运作
 
 每台设备一个 Shell 进程，每个 Shell 一个 octos 内核，每个 Agent 都是这个内核中的一个会话。Shell 是内核唯一的完整客户端：它启动 octos 并持有宿主 token，启动每个应用 Agent 的回合，转交每一次对应用工具的调用，并掌管所有审批。应用从不直接与内核通信。

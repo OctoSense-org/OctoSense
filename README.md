@@ -66,6 +66,10 @@ catalogs can explicitly select `OCTOSENSE_HUB_CATALOG=legacy` with a fresh app-d
 directory; a library with a v2 cache refuses that downgrade. Beta.2 does not
 support this publishing mode. RC2 can install compatible GitHub-attested apps; apps that require shared components or newer host APIs need a compatible newer host. See [capability and release status](docs/capabilities.md).
 
+[App Studio on the phone](docs/adr/0006-app-studio-on-the-phone.md) now has developer-only tools to check, open, inspect, exercise and locally install an offline `main.splash` app. Preview state is disposable; installed app state persists under its developer grant. Follow the [Studio code walkthrough](docs/architecture-walkthrough.md#follow-app-studio-from-the-agent-to-a-working-app).
+
+A fresh model-authored Task Planner passed 129 physical-device tool calls on a OnePlus 6 before the merges of `main`, and a second one passed the same flow on a stock Xiaomi after them ([re-validation](docs/studio/xiaomi-revalidation.md)); both runs covered interaction and installed-state persistence, and the [portrait app and keyboard visual review](docs/studio/oneplus6-validation.md) passed on both. Fault injection remains pending; image generation, the editable toolbox flow and public publishing remain future work. Home's [build options](phone/README.md#build-and-run) provide developer mode and a separate test package.
+
 ## How it fits together
 
 One shell process per device, one octos kernel per shell, and every agent is a session in that kernel. The shell is the kernel's only full client. It starts octos and holds its host token, starts every app agent's turns, relays every call to an app's tools, and owns every approval. Apps never talk to the kernel.

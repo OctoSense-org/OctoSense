@@ -27,6 +27,7 @@ struct Script {
     unavailable: Option<Unavailable>,
     /// `session/open` fails with this message.
     open_error: Option<String>,
+    opened_workspace: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -57,7 +58,7 @@ impl Link for FakeLink {
         let reply = match method.as_str() {
             "session/open" => match &s.open_error {
                 Some(e) => json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": e}}),
-                None => json!({"jsonrpc": "2.0", "id": id, "result": {"opened": {"session_id": SYSTEM_SESSION}}}),
+                None => json!({"jsonrpc": "2.0", "id": id, "result": {"opened": {"session_id": SYSTEM_SESSION, "workspace_root": s.opened_workspace}}}),
             },
             "session/hydrate" => json!({"jsonrpc": "2.0", "id": id, "result": {"messages": s.history.clone()}}),
             _ => json!({"jsonrpc": "2.0", "id": id, "result": {}}),
@@ -1144,4 +1145,23 @@ fn over_the_kernels_cap_the_engines_tools_give_way_first() {
     let set = super::session::session_set(engines.clone(), agents.clone());
     assert_eq!(set.len(), engines.len() + agents.len(), "under the cap, nothing is dropped");
     assert_eq!(&set[..2], &agents[..]);
+}
+
+#[test]
+fn kernel_confirmed_system_workspace_is_delivered_and_cleared_on_disconnect() {
+    struct Workspaces(Arc<Mutex<Vec<Option<String>>>>);
+    impl SystemHost for Workspaces {
+        fn declarations(&self) -> Vec<Value> { vec![] }
+        fn workspace_opened(&self, path: Option<&str>) { self.0.lock().unwrap().push(path.map(str::to_owned)); }
+    }
+    let fake = Fake::default();
+    fake.s().opened_workspace = Some("/kernel/system-workspace".into());
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut driver = Driver::with_system_host(Box::new(FakeConnector(fake.clone())), Box::new(Workspaces(seen.clone())));
+    driver.command(Command::Open);
+    settle(&mut driver);
+    assert_eq!(seen.lock().unwrap().last().cloned(), Some(Some("/kernel/system-workspace".into())));
+    driver.command(Command::Close);
+    settle(&mut driver);
+    assert_eq!(seen.lock().unwrap().last().cloned(), Some(None));
 }

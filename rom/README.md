@@ -67,6 +67,8 @@ python3 rom/scripts/stage-home.py                 # verify the receipt, copy the
 rom/scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage the Quickstep and SystemUI forks
 ```
 
+**App Studio development builds.** Home's build wrapper accepts `--dev-mode` for standalone builds only, with `--development` or with the release signer under a test `--package-name`; the ROM variant and the installed Home's own identity never carry developer options. Standalone tests can use `--package-name dev.makepad.octosense.studio`; only Home is renamed, so keep the installed Bridge. Developer-enabled receipts cannot be staged or published as ROM releases. See the [build contract](docs/home-build.md#android-builds) and [in-progress milestone](../docs/adr/0006-app-studio-on-the-phone.md). Build-plan tests do not establish device operation.
+
 Then, on the host, `scripts/run-rom-rootfs.sh` enters the chroot (under
 `OCTOSENSE_BUILD_ROOT`, default `/home/ubuntu/octosense-adr0001`) and runs
 `build-rom.sh preflight`, `bacon` (the full signed build) or `module <name>`.

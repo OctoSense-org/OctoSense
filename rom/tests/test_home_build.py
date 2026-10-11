@@ -81,6 +81,74 @@ class BuildTests(unittest.TestCase):
         self.assertFalse(any("adb" in c or "fastboot" in c for c in commands))
         self.assertFalse(any("OctoSense-mobile" in arg for c in commands for arg in c))
 
+    def test_developer_options_are_separate_from_signing_and_keep_release_optimization(self):
+        release_signer = ["--sign-key", "/keys/platform.pk8", "--sign-cert", "/keys/platform.x509.pem"]
+        for signer in (["--development"], release_signer + ["--package-name", "dev.makepad.octosense.studio"]):
+            with self.subTest(signer=signer[0]):
+                ordinary = self.args("--variant", "standalone", *signer)
+                developer = self.args("--variant", "standalone", *signer, "--dev-mode")
+                normal_plan, dev_plan = build.build_plan(ordinary), build.build_plan(developer)
+                self.assertNotIn("dev-mode", normal_plan[-1][1])
+                self.assertEqual(dev_plan[:-1], normal_plan[:-1], "kernel, Bridge and packager are unchanged")
+                self.assertEqual(dev_plan[-1][1], normal_plan[-1][1] + ["--features", "dev-mode"])
+                self.assertIn("--release", dev_plan[-1][1])
+                self.assertNotEqual(ordinary.output, developer.output)
+
+    def test_developer_options_never_take_the_installed_homes_identity(self):
+        # Developer options under the installed Home's identity and signer would
+        # upgrade it in place; so would the ROM channel's platform signer.
+        release_signer = ["--sign-key", "/keys/platform.pk8", "--sign-cert", "/keys/platform.x509.pem"]
+        for argv in (["--variant", "standalone", *release_signer, "--dev-mode"],
+                     ["--variant", "rom", *release_signer, "--dev-mode"],
+                     ["--variant", "standalone", "--development", "--package-name", "dev.makepad.octosense.bridge"],
+                     ["--variant", "standalone", *release_signer, "--package-name", "dev.makepad.octosense.bridge"]):
+            with self.subTest(argv=" ".join(argv)), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.args(*argv)
+        self.assertTrue(self.args("--variant", "standalone", "--development", "--dev-mode").dev_mode)
+        self.assertTrue(self.args("--variant", "standalone", *release_signer, "--dev-mode",
+                                  "--package-name", "dev.makepad.octosense.studio").dev_mode)
+
+    def test_test_package_only_changes_home_and_is_recorded_in_dry_run(self):
+        package = "dev.makepad.octosense.studio"
+        argv = ["--variant", "standalone", "--development", "--dev-mode", "--package-name", package,
+                "--sdk", "/sdk with spaces", "--android-sdk", "/android", "--no-octos-kernel", "--dry-run"]
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            build.main(argv)
+        plan = json.loads(output.getvalue())
+        self.assertTrue(plan["development"])
+        self.assertTrue(plan["dev_mode"])
+        self.assertEqual(plan["home_package"], package)
+        self.assertFalse(plan["installs_or_flashes"])
+        self.assertTrue(plan["output"].endswith("standalone-dev-mode/" + package))
+        commands = [step["argv"] for step in plan["steps"]]
+        self.assertIn("--package-name=" + package, commands[-1])
+        self.assertLess(commands[-1].index("--package-name=" + package), commands[-1].index("build"))
+        self.assertFalse(any("--package-name=" + package in c for c in commands[:-1]))
+
+    def test_bad_package_names_and_rom_overrides_are_refused(self):
+        for package in ("bare", "dev.test/escape", "dev.test..app", "dev.test.$value", "dev.1app"):
+            with self.subTest(package=package), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                self.args("--variant", "standalone", "--development", "--package-name", package)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self.args("--variant", "rom", "--sign-key", "/keys/platform.pk8", "--sign-cert", "/keys/platform.x509.pem",
+                      "--package-name", "dev.makepad.octosense.studio")
+
+    def test_receipt_requires_the_requested_apk_identity(self):
+        # A test package (--package-name) is the identity verify_pair expects of
+        # Home; the Bridge keeps its own. The default identity refuses that pair.
+        artifacts = {
+            "OctoSenseHome.apk": {"package_name": "dev.makepad.octosense.studio", "version_code": 42,
+                                  "version_name": "1", "certificate_sha256": "a" * 64},
+            "OctoSenseBridge.apk": {"package_name": "dev.makepad.octosense.bridge", "version_code": 42,
+                                    "version_name": "1", "certificate_sha256": "a" * 64},
+        }
+        studio = self.args("--variant", "standalone", "--development", "--version-code", "42",
+                           "--package-name", "dev.makepad.octosense.studio")
+        build.verify_pair(artifacts, studio)
+        default = self.args("--variant", "standalone", "--development", "--version-code", "42")
+        with self.assertRaises(RuntimeError):
+            build.verify_pair(artifacts, default)
+
     def test_existing_packager_skips_tool_compilation(self):
         args = self.args("--variant", "standalone", "--development", "--packager", "/tools/cargo-makepad", "--no-octos-kernel")
         plan = build.build_plan(args)
@@ -225,6 +293,18 @@ class StagingTests(unittest.TestCase):
         self.receipt["variant"] = "standalone"
         self.write_receipt()
         with self.assertRaises(ValueError):
+            stage.verify(self.directory)
+
+    def test_rom_channel_rejects_developer_options_even_with_platform_signing(self):
+        self.receipt["dev_mode"] = True
+        self.write_receipt()
+        with self.assertRaisesRegex(ValueError, "developer mode"):
+            stage.verify(self.directory)
+
+    def test_rom_channel_rejects_a_home_test_identity(self):
+        self.receipt["home_package"] = "dev.makepad.octosense.studio"
+        self.write_receipt()
+        with self.assertRaisesRegex(ValueError, "test package"):
             stage.verify(self.directory)
 
     def test_rejects_an_apk_replaced_after_signing(self):

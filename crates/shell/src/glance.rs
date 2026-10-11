@@ -226,6 +226,33 @@ pub fn check_level(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Prepare an unpublished studio card without touching the glance store.
+/// Chat snapshots currently create account folders; refuse them until the
+/// studio has a strictly read-only chat snapshot API.
+pub(crate) fn prepare_studio(app: &str, source: &str, data: &Value, dark: bool) -> Result<String, String> {
+    if source.len() > SOURCE_MAX || serde_json::to_vec(data).map_err(|e| e.to_string())?.len() > DATA_MAX {
+        return Err("card source or data exceeds the glance budget".into());
+    }
+    if !data.is_object() { return Err("data must be an object".into()); }
+    check_level(source)?;
+    if octoscript_ui_l0::check_ui_l0(source).level != octoscript_ui_l0::Level::L0 {
+        return Err("studio milestone 1 accepts L0 only".into());
+    }
+    crate::glance_chat::check_publisher(source, app)?;
+    if crate::glance_chat::reads_chat(source) {
+        return Err("studio_chat_unsupported: read-only chat snapshots are not available yet".into());
+    }
+    let mut data = data.clone();
+    resolve_digests(&Caller::Native(app.into()), source, &mut data,
+        crate::glance_digest::digest_root().as_deref(), octosense_l0_chat::now_ms())?;
+    let body = crate::glance_card::lower_in_mode(source, &data, dark)?;
+    // Images may finish loading after a visually quiet frame. Until their
+    // pending-resource state is observable, never call such a render settled.
+    if body.contains("http_resource(") || body.contains("Image {") || body.contains("Image{") || body.contains("crate_resource(\"self:") {
+        return Err("studio_images_unsupported: milestone 1 renders resource-free L0 cards".into());
+    }
+    Ok(body)
+}
 /// Model-authored Mail cards deliberately use the declaration-only L0 subset.
 pub fn check_generated_l0(source: &str) -> Result<(), String> {
     check_level(source)?;

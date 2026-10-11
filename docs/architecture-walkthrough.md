@@ -276,6 +276,44 @@ Three channel kinds recur: `oneshot` for one answer (a request's reply, a turn's
 
 `Broker::bind`, `Broker::host_request` and `OctosAppService::prepare` block their caller for up to a minute, so call them off the UI thread.
 
+### Follow App Studio from the agent to a working app
+
+App Studio adds shell-owned tools to the existing system or app agent while developer mode covers that caller. Their [declarations and executor](../crates/shell/src/host_tools/studio.rs) use the same relay, audit and cancellation path as other host tools. A system call uses the workspace confirmed by `session/open`; an app call uses the broker-confirmed peer workspace, narrowed to its own `contexts/<id>/` for a human conversation. Arguments cannot replace that identity or choose an output directory.
+
+An agent can write a fresh `manifest.json` and `main.splash` with its normal file tools, then follow this sequence:
+
+| Tool | What it does |
+| --- | --- |
+| `studio.bundle_check {bundle_path}` | Copies bounded files from the conversation workspace, computes the digest and admits a private developer snapshot. It leaves the author's files unchanged. |
+| `studio.open {bundle_path}` | Opens a visible preview with disposable app state; returns `instance_id`. |
+| `studio.inspect {instance_id, offset?}` | Returns a PNG `path`, a compact page of widget selectors and checks, and `snapshot_path` for full diagnostic JSON. |
+| `studio.input {instance_id, widget_id, action, …}` | Sends a real `tap`, `text` or `scroll` event to an inspected widget. Text uses `text`; scrolling uses `delta_y`. |
+| `studio.close {instance_id}` | Closes the app and discards preview state. |
+| `studio.install {bundle_path}` | Records a local developer install, visible in Home. Open it with `studio.open {app_id}` or its launcher tile; its own state survives closing and reopening. |
+| `studio.uninstall {app_id}` | Removes one of the caller's own developer installs: receipt, snapshot, app data and owner record. Refused while an instance of it is open. |
+
+The first full-app path accepts offline, storage-only `main.splash` bundles under `dev.studio.*`. These apps have no agent of their own, account access or `net` module, and every `host.request` is refused; the admitted instruction budget is a declaration, while the jail, quota and memory cap are enforced. Admission also refuses a `main.splash` whose text names a URL or the `{{assets}}` route; that scan is a lint, since Splash builds strings at runtime, and the offline guarantee is the isolate itself, which runs with no network hosts and no host capabilities. A bundle may contain an original launcher icon, but in-screen resource routes are not supported yet. In [studio_bundles.rs](../crates/shell/src/host_tools/studio_bundles.rs), admission limits the bundle to 128 files/directories, eight directory levels and 2 MiB total, with at most 512 KiB per file and 64 KiB for `main.splash`. The resolved policy allows at most 1 MiB of private app storage, five million script instructions and a 16 MiB heap; a lower manifest limit remains lower.
+
+A developer install is separate from App Hub's signed catalog. Its host-private receipt binds the admitted bytes to the authoring app, account, session, context and `DevTag`. The tag identifies the developer profile and the activation that authorized it. Opening an installed app rechecks its receipt and digest. Ending that grant removes its launcher availability and stops its running instance. Another conversation cannot inspect, control or replace it. One installed app runs in one instance at a time, avoiding concurrent writes to its state.
+
+Now follow the Rust execution boundaries:
+
+1. The host executor runs bounded file reads and admission on a worker thread, then queues an `OpenSpec` or instrument request. It waits for a reply channel without blocking Makepad's UI thread.
+2. The shell drains the launch queue into a normal window-manager client. [StudioModule](../crates/shell/src/studio/module.rs) creates the [StudioApp](../crates/shell/src/studio/apps.rs) widget and owns its shutdown. Splash evaluates the source after the private jail and admitted limits are installed. Preview writes stay in a disposable jail; installed writes stay in that app's persistent jail.
+3. The UI thread builds a Makepad `WidgetTree` rooted at that app alone. Inspection reads its real rectangles and control state; input resolves a visible, enabled widget and follows the event path. Duplicate names have unique `selector` values. GPU readback uses the shell's shared ticket router; PNG compression runs on the heavy worker pool. The reply returns to the same agent call.
+
+The model receives at most 3,800 UTF-8 bytes from `studio.inspect`. `snapshot.widgets` lists visible non-Splash widgets with exact `selector` values; pass one as `studio.input.widget_id`, rather than guessing a button's painted label. Long text/value fields carry `text_truncated` or `value_truncated`. If `next_offset` is an integer, call inspect again with that `offset` to read the next page. Each call observes the current UI, so page through a stable app state. `snapshot.checks` summarizes the pass result and finding/error counts.
+
+The `snapshot_path` file contains the full original result, including all widgets, rectangles, geometry, tree and findings, plus the PNG path. This pretty-printed JSON is limited to 1 MiB and stored alongside the PNG in the caller's conversation workspace; `read_file` can retrieve bounded line ranges. Full diagnostics stay available without pushing selectors beyond the kernel's 4 KiB model-visible tool-output limit.
+
+The Android HTTP remote instrument is unavailable at this pin. Studio uses its underlying Makepad widget APIs in process, scoped to its own app. The current checks detect empty geometry, clipped text and small buttons; they do not prove the app's behavior or overall UX. App inspection returns `settled: false`: it captures a current frame without claiming that an arbitrary interactive script has finished changing. The agent can call `view_image` on the returned PNG and then test the app's behavior with further inputs.
+
+`studio.render` remains the separate L0 glance path: relative `source_path`, optional `data_path` and `dark`, with 16/32 KiB source/data limits. It uses the actual glance width and 72–440 point height bounds, a zero-quota disposable jail, and no network or host capabilities. Three matching readbacks after shader readiness produce `settled: true`; chat and image resources are explicitly unsupported. Both capture paths cap PNGs at 5 MiB and check cancellation, foreground state and the developer grant. UI requests have a 20-second deadline inside the host's 25-second wait and normal 30-second kernel call deadline.
+
+None of this creates an agent peer or assigns one Tokio task to each app. The existing agent invokes a host tool; Rust workers handle files and encoding, and the UI thread owns widgets and GPU submission.
+
+A fresh Task Planner authored by DeepSeek V4 Flash passed **129 tool calls on a physical OnePlus 6**: task entry/completion/filtering, disposable preview state, separate installed state, close/reopen, process restart, exact Chinese text input and scrolling. The harness did not modify app source or storage directly. Portrait app and keyboard visual review passed, with generous spacing and separate shell overlay/status-bar observations; malformed-storage/save-failure fault injection remains pending. See the [validation report](studio/oneplus6-validation.md), [ADR 0006](adr/0006-app-studio-on-the-phone.md) and the [fresh-app brief](studio/task-planner-brief.md). The `mod.studio` toolbox adapter, image generation/comparison, richer asset routes and public publishing are not implemented by this slice. After the merges of `main`, a fresh Task Planner authored by Claude passed the same acceptance flow on a stock Xiaomi (134 tool calls on the final head), and a second spool-driven check covered owned app data, `studio.uninstall` and an ended developer grant ([re-validation](studio/xiaomi-revalidation.md)).
+
 ## 11. Tests
 
 [crates/app-peers/tests/broker.rs](../crates/app-peers/tests/broker.rs) drives the broker against a scripted kernel; its test names state the protocol's rules. Start with `a_persons_message_runs_while_the_system_agents_input_runs`, `a_lane_stop_leaves_the_other_lane_running`, `a_kernel_without_shared_history_is_refused_for_the_conversation` and `removing_an_account_purges_its_recorded_peer_and_drops_the_record`. [host_tools/scenario_tests.rs](../crates/shell/src/host_tools/scenario_tests.rs) runs the same two-lane story with a test News app end to end against the pinned octos and a scripted model; its header says how to run it.

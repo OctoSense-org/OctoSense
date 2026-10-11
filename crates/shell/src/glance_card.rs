@@ -138,21 +138,26 @@ const MOODS: &[(&str, &str)] = &[
 /// general translation re-lowered chips the Material way and dropped their
 /// text, and drew the shipping card's tiles light under white text).
 pub fn lower(source: &str, data: &serde_json::Value) -> Result<String, String> {
-    lower_report(source, octoscript_ui_l0::realize(source, data, Default::default()), true)
+    lower_in_mode(source, data, dark())
+}
+
+/// Studio selects a palette without changing the live shell's mode.
+pub fn lower_in_mode(source: &str, data: &serde_json::Value, dark: bool) -> Result<String, String> {
+    lower_report(source, octoscript_ui_l0::realize(source, data, Default::default()), true, dark)
 }
 
 /// [`lower`], realized against a card's local state (its `InstanceStore`),
 /// for the card window.
 pub fn lower_with_state(source: &str, data: &serde_json::Value, store: &octoscript_ui_l0::InstanceStore) -> Result<String, String> {
-    lower_report(source, octoscript_ui_l0::realize_with_state(source, data, store, Default::default()), true)
+    lower_report(source, octoscript_ui_l0::realize_with_state(source, data, store, Default::default()), true, dark())
 }
 
-fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bool) -> Result<String, String> {
+fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bool, dark: bool) -> Result<String, String> {
     let root = report.complete_root()?;
     if octoscript_ui_l0::kit_pack::contains(root) {
         return Err("native kit components are not offered on a glance tile".into());
     }
-    let mood = octoscript_ui_l0::card_theme(source).unwrap_or_else(|| if dark() { "dark" } else { "light" }.into());
+    let mood = octoscript_ui_l0::card_theme(source).unwrap_or_else(|| if dark { "dark" } else { "light" }.into());
     let delta = MOODS.iter().find(|(name, _)| *name == mood).map(|(_, d)| *d).ok_or_else(|| format!("theme {mood:?} is not offered on a glance tile"))?;
     for (axis, value) in octoscript_ui_l0::card_theme_axes(source) {
         if !matches!(value.as_str(), "neutral" | "regular" | "none" | "soft" | "sans") {
@@ -1385,7 +1390,7 @@ pub const CAN_RENDER: bool = cfg!(any(feature = "app-hub", native_mobile));
 
 /// Give every Splash isolate the Card runner's vocabulary, once: the same
 /// registration the `card` module makes before it runs an app.
-fn ensure_vocabulary(cx: &mut Cx) {
+pub(crate) fn ensure_vocabulary(cx: &mut Cx) {
     thread_local! {
         static DONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
