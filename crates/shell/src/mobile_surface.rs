@@ -4,6 +4,7 @@ use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::mobile_shade::ShadeContentCache;
 use crate::mobile_pages::GlanceCards;
 use crate::octosense::style::AppIconDraw;
+use makepad_widgets::makepad_draw::text::async_labels::LabelCache;
 mod search;
 use search::{SearchResults, SearchSnapshot};
 
@@ -391,6 +392,10 @@ pub struct PhoneSurface {
     /// Appearance and feed whose first-use navigation resources are ready.
     #[rust] navigation_warm: Option<(DesktopStyle, bool, f64, f64, u64, u64)>,
     #[rust] navigation_warm_step: usize,
+    #[rust] drawer_warm: Option<(DesktopStyle, bool, f64, f64, u64)>,
+    #[rust] drawer_warm_icons: Option<std::sync::Arc<std::collections::HashMap<String, Texture>>>,
+    #[rust] drawer_warm_step: usize,
+    #[rust] drawer_index_labels: LabelCache,
     #[rust] search_snapshot: SearchSnapshot,
     // The sheet's content recorded once per state, shown as one quad while
     // the sheet moves (mobile_shade.rs).
@@ -1022,14 +1027,37 @@ impl PhoneSurface {
         self.search_scroll_max=(rows as f64*row_h-(bottom-top)).max(0.0);
         let scroll=state.phone.search_scroll.clamp(0.0,self.search_scroll_max)-state.phone.search_stretch;
         cx.begin_turtle(Walk::abs_rect(rect(screen.pos.x,top,screen.size.x,(bottom-top).max(0.0))),Layout::default());
-        for (index,(id,label)) in ids.iter().enumerate() {
-            let r=rect(screen.pos.x+12.0+(index%columns)as f64*cell,top+(index/columns)as f64*row_h-scroll,cell,row_h);
-            if r.pos.y+r.size.y<=top || r.pos.y>=bottom {continue;}
+        // Visit only visible rows. Submit icons before labels: these occupy
+        // disjoint rectangles, so grouping the text lets its atlas batch
+        // across the grid instead of splitting it once per app texture.
+        let first = ((scroll / row_h).floor().max(0.0) as usize * columns).min(ids.len());
+        let last = ((((scroll + (bottom-top).max(0.0)) / row_h).ceil().max(0.0) as usize) * columns).min(ids.len());
+        let cell_rect = |index: usize| rect(
+            screen.pos.x+12.0+(index%columns)as f64*cell,
+            top+(index/columns)as f64*row_h-scroll,cell,row_h,
+        );
+        let icons_work = cx.perf_monitor.begin_work("drawer.icons", "PhoneSurface");
+        for index in first..last {
+            let icon_work = cx.perf_monitor.begin_work("drawer.icon", "PhoneSurface");
+            let (id, _) = &ids[index];
+            let r = cell_rect(index);
             self.draw_launcher_icon(cx,state,id,rect(r.pos.x+(cell-size)*0.5,r.pos.y,size,size),ink,1.0);
-            self.label(cx,rect(r.pos.x,r.pos.y+size+4.0,cell,20.0),label,11.0,false,ink);
-            self.hits.push((r,PhoneHit::App(id.clone())));
+            cx.perf_monitor.end_work(icon_work);
         }
+        cx.perf_monitor.end_work(icons_work);
+        let labels_work = cx.perf_monitor.begin_work("drawer.labels", "PhoneSurface");
+        for index in first..last {
+            let label_work = cx.perf_monitor.begin_work("drawer.label", "PhoneSurface");
+            let (id, label) = &ids[index];
+            let r = cell_rect(index);
+            self.label(cx,rect(r.pos.x,r.pos.y+size+4.0,cell,20.0),label,11.0,false,ink);
+            cx.perf_monitor.end_work(label_work);
+            let y0 = r.pos.y.max(top);
+            self.hits.push((rect(r.pos.x,y0,cell,(r.pos.y+row_h).min(bottom)-y0),PhoneHit::App(id.clone())));
+        }
+        cx.perf_monitor.end_work(labels_work);
         cx.end_turtle();
+        let scrub_work = cx.perf_monitor.begin_work("drawer.scrub", "PhoneSurface");
         self.scrub.clear();
         if scrub_w>0.0 && self.search_scroll_max>0.0 {
             for (index,(_,label)) in ids.iter().enumerate() {
@@ -1042,12 +1070,78 @@ impl PhoneSurface {
             self.scrub_rect=column;
             let step=(column.size.y/self.scrub.len().max(1) as f64).min(20.0);
             let y0=column.pos.y+(column.size.y-step*self.scrub.len() as f64)*0.5;
+            // Prepare active index glyphs on Makepad's label worker. Several
+            // sections share the bottom offset, so a first fling can activate
+            // several new bold glyphs together. An early gesture must not wait
+            // for quiet-frame preparation: retain the normal face until the
+            // worker has published the bold glyph, with the active ink intact.
+            if cfg!(target_os="android") {
+                let work = cx.perf_monitor.begin_work("drawer.index.prepare", "PhoneSurface");
+                self.d.text_bold.text_style.font_size = crate::shell::ui::px_to_pt(9.5 * self.d.text_scale());
+                for &(letter, _) in &self.scrub {
+                    self.drawer_index_labels.measure(cx, &self.d.text_bold, &letter.to_string());
+                }
+                self.drawer_index_labels.pump(cx);
+                if self.drawer_index_labels.pending() { cx.redraw_all(); }
+                cx.perf_monitor.end_work(work);
+            }
             for (n,(letter,scroll_to)) in self.scrub.iter().enumerate() {
                 let near=(scroll-scroll_to).abs()<row_h*0.5;
-                self.d.label(cx,rect(column.pos.x,y0+n as f64*step,scrub_w,step),near,9.5,alpha(ink,if near {1.0} else {0.55}),HAlign::Center,&letter.to_string());
+                let text = letter.to_string();
+                let bold = near && (!cfg!(target_os="android")
+                    || self.drawer_index_labels.measure(cx, &self.d.text_bold, &text).is_some());
+                let label_work = cx.perf_monitor.begin_work(
+                    if near { "drawer.index.active" } else { "drawer.index.normal" }, "PhoneSurface");
+                let r = rect(column.pos.x,y0+n as f64*step,scrub_w,step);
+                let color = alpha(ink,if near {1.0} else {0.55});
+                let drawn = if bold && cfg!(target_os="android") {
+                    // Use the worker's resident run directly. Calling label()
+                    // here would resolve the same glyph through the synchronous
+                    // font path again, including its first-use outline work.
+                    let face = &mut self.d.text_bold;
+                    face.color = color;
+                    let run = face.layout(cx,0.0,0.0,None,false,Align::default(),&text);
+                    let x = r.pos.x + (r.size.x - run.size_in_lpxs.width as f64) * 0.5;
+                    let y = r.pos.y + (r.size.y - run.size_in_lpxs.height as f64) * 0.5
+                        + run.ink_center_offset_in_lpxs() as f64;
+                    let dpi = cx.current_dpi_factor();
+                    let origin = dvec2((x*dpi).round()/dpi,(y*dpi).round()/dpi);
+                    self.drawer_index_labels.draw(cx,face,origin,&text)
+                } else { false };
+                if !drawn {
+                    self.d.label(cx,r,bold && !cfg!(target_os="android"),9.5,color,HAlign::Center,&text);
+                }
+                cx.perf_monitor.end_work(label_work);
             }
             self.hits.push((column,PhoneHit::Scrub));
         } else {self.scrub_rect=Rect::default();}
+        cx.perf_monitor.end_work(scrub_work);
+        // Prepare at most four off-screen entries per quiet frame. The first
+        // scroll must not upload each new icon and rasterize its label while
+        // the finger is moving. A touch or animation suspends this work.
+        if !state.phone.animation_active && state.phone.gesture.is_none() {
+            let warm_work = cx.perf_monitor.begin_work("drawer.prewarm", "PhoneSurface");
+            let key = (state.style.target, state.style.dark, cx.current_dpi_factor(),
+                state.phone.android.font_scale, state.phone.android.catalog_revision);
+            let icons = &state.phone.android.icons;
+            if self.drawer_warm != Some(key)
+                || !self.drawer_warm_icons.as_ref().is_some_and(|old| std::sync::Arc::ptr_eq(old, icons)) {
+                self.drawer_warm = Some(key);
+                self.drawer_warm_icons = Some(icons.clone());
+                self.drawer_warm_step = 0;
+            }
+            let end = (self.drawer_warm_step + 4).min(ids.len());
+            let bounds = self.home_icon_bounds.len();
+            let hidden = rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, size, size);
+            for (id, label) in &ids[self.drawer_warm_step.min(end)..end] {
+                self.draw_launcher_icon(cx, state, id, hidden, ink, 1.0);
+                self.label(cx, rect(hidden.pos.x, hidden.pos.y + size + 4.0, cell, 20.0), label, 11.0, false, ink);
+            }
+            self.home_icon_bounds.truncate(bounds);
+            self.drawer_warm_step = end;
+            if end < ids.len() { cx.redraw_all(); }
+            cx.perf_monitor.end_work(warm_work);
+        }
     }
     /// The drawer scroll for the letter under `y` on the scrubber.
     pub fn scrub_scroll(&self,y:f64)->Option<f64> {
