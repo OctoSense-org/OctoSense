@@ -252,6 +252,7 @@ pub(crate) fn prepare_studio(app: &str, source: &str, data: &Value, dark: bool) 
         return Err("studio_images_unsupported: milestone 1 renders resource-free L0 cards".into());
     }
     Ok(body)
+}
 /// Model-authored Mail cards deliberately use the declaration-only L0 subset.
 pub fn check_generated_l0(source: &str) -> Result<(), String> {
     check_level(source)?;

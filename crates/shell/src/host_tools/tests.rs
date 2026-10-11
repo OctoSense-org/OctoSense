@@ -1439,6 +1439,7 @@ fn studio_app_tools_are_own_caller_only_and_disappear_on_revocation() {
         w.dev_all=true;
     }
     assert_eq!(host.0.lock().unwrap().len(),super::studio::APP_TOOLS.len());
+}
 // ------------------------------------------------------------ the engines
 //
 // ADR 0013: the ten craft engines' tools, declared under their virtual
