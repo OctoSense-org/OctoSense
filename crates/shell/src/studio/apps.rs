@@ -402,7 +402,9 @@ pub fn tick(cx: &mut Cx, event: &Event) {
 }
 impl StudioApp {
     fn stop(&mut self, cx: &mut Cx) {
-        self.view.splash(cx, ids!(card)).set_text(cx, "");
+        let card = self.view.splash(cx, ids!(card));
+        super::release_isolate(cx, &card);
+        card.set_text(cx, "");
         cx.stop_timer(self.timer);
         if let Some(p) = self.pending.take() {
             finish(p, Err("studio_closed".into()));

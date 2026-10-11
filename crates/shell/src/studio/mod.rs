@@ -164,6 +164,23 @@ pub(crate) fn refuse_host_requests(cx: &mut Cx, splash: &SplashRef) {
     }
 }
 
+/// Release everything the shell keeps for a studio isolate before its text
+/// is cleared, as `glance_card` does for a tile: answer queued host requests,
+/// drop pending taps and cancel the heap's service calls (App Hub's
+/// `on_isolate_closed` listeners run from `cancel_heap`).
+pub(crate) fn release_isolate(cx: &mut Cx, splash: &SplashRef) {
+    let Some(heap) = splash
+        .borrow_mut()
+        .and_then(|mut s| s.isolate_heap_key(cx))
+    else {
+        return;
+    };
+    refuse_host_requests(cx, splash);
+    crate::glance_card::drop_taps(heap);
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    octosense_appstore::services::cancel_heap(heap);
+}
+
 struct Active {
     pending: Pending,
     frame: WidgetRef,
@@ -387,6 +404,7 @@ impl Renderer {
         }
         let a = self.active.take().unwrap();
         let bytes = a.previous.clone().unwrap();
+        release_isolate(cx, &a.splash);
         a.splash.set_text(cx, "");
         let _ = std::fs::remove_dir_all(&a.jail);
         let reply = a.pending.job.reply.clone();
@@ -429,6 +447,7 @@ impl Renderer {
             if let Some(ticket) = a.ticket {
                 cx.cancel_texture_readback(ticket);
             }
+            release_isolate(cx, &a.splash);
             a.splash.set_text(cx, "");
             let _ = std::fs::remove_dir_all(&a.jail);
             let _ = a.pending.job.reply.send(Err(reason));
