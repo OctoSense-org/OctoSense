@@ -66,7 +66,9 @@ let INDEX = "accounts/device/library.json"
 let CACHE = ".cache/pages"
 // What an imported PDF is called: the import names its destination first.
 let IMPORT_NAME = "Imported PDF"
-// The app's storage: App Hub's system ceiling (no storage.max_bytes).
+// The app's storage: App Hub's system ceiling (no storage.max_bytes). The
+// status line reads the real numbers from files.status; this is for a host
+// that doesn't say.
 let QUOTA = 67108864
 // What the pdf service allows: 8 open documents, 2 to 16 files per merge,
 // 512 pages named in one call.
@@ -100,6 +102,10 @@ let PAGE_GAP = 13
 // Comment colours: the four dots of the Comment tool row.
 let MARKS = ["yellow", "green", "blue", "pink"]
 let MARK_HEX = {yellow: "#ffd84d" green: "#5cb85c" blue: "#2d7ff9" pink: "#f0609e"}
+// The Edit panel's text colours (design 08), as pdf.edit_text takes them,
+// and its alignments, as it names them (SERVICE.md "Edit").
+let TEXT_COLOURS = [{name: "Black" hex: "#000000"}, {name: "Dark grey" hex: "#4b4f54"}, {name: "Blue" hex: "#1a5fb4"}, {name: "Red" hex: "#c01c28"}, {name: "Green" hex: "#26a269"}, {name: "Orange" hex: "#e66100"}]
+let ALIGNS = ["left", "center", "right", "justify"]
 let MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 let MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
@@ -130,12 +136,20 @@ fn size_text(bytes){
     if bytes < 1048576 { return "" + round(bytes / 1024) + " KB" }
     "" + floor(bytes / 104857.6) / 10 + " MB"
 }
-// "14.6 of 64 MB used": the PDFs, against the app's storage.
-// Under 1 MB it counts in kilobytes ("90 KB of 64 MB used").
-fn used_text(bytes){
-    let quota_part = " of " + round(QUOTA / 1048576) + " MB used"
+// "14.6 of 64 MB used": what the app's storage holds, against what it may
+// hold. Under 1 MB it counts in kilobytes ("90 KB of 64 MB used").
+fn used_text(bytes, quota){
+    let quota_part = " of " + round(quota / 1048576) + " MB used"
     if bytes < 1048576 { return size_text(bytes) + quota_part }
     "" + floor(bytes / 104857.6) / 10 + quota_part
+}
+// What files.status says the app's storage holds and may hold, or nil when
+// it doesn't say (no storage, or a shell from before it did).
+fn usage_from(data){
+    let used = optional(data, "used_bytes", nil)
+    let quota = optional(data, "quota_bytes", nil)
+    if used == nil || quota == nil || quota <= 0 { return nil }
+    {used: used quota: quota}
 }
 
 // A library row: the file, and what the index kept about it (`known`, or
@@ -243,8 +257,11 @@ fn day_text(t, now_t){
     "" + a.day + " " + MONTHS[a.month - 1] + " " + a.year
 }
 fn two(n){ pick(n < 10, "0" + n, "" + n) }
-// A comment's date as the engine reports it (a PDF date "D:20261010101200",
-// or ISO "2026-10-10T10:12"), as Unix seconds in local time, or nil.
+// A comment's date as the service reports it, this device's local time
+// ("2026-10-10T10:12"; SERVICE.md "Comments": it reads the date the file
+// writes and converts it from its zone), as its parts, or nil when the file
+// wrote something else (shown as it is). A PDF date the service passed on
+// ("D:20261010101200") reads the same way.
 fn comment_time(date){
     let s = "" + date
     let m = regex("^D?:?([0-9][0-9][0-9][0-9])-?([0-9][0-9])-?([0-9][0-9])[T ]?([0-9][0-9])?:?([0-9][0-9])?").exec(s)
@@ -267,6 +284,62 @@ fn comment_when(date, now_t){
 fn date_text(t){
     let a = local_time(t)
     "" + a.day + " " + MONTH_NAMES[a.month - 1] + " " + a.year
+}
+
+// How far apart the smallest and largest of `values` are.
+fn spread(values){
+    if values.len() == 0 { return 0 }
+    let lo = values[0]
+    let hi = values[0]
+    for v in values {
+        lo = min(lo, v)
+        hi = max(hi, v)
+    }
+    hi - lo
+}
+// A paragraph's alignment as its lines show it, for the Edit panel's
+// Alignment: `boxes` are its lines' [x, y, w, h] from pdf.lines, top to
+// bottom. Lines that start together are flush left, or justified when every
+// line but the last also ends together (three lines at least: two might
+// just happen to); lines centred on one point are centred, and lines that
+// end together flush right. The engine reports no alignment and sets an
+// edited paragraph flush left unless told otherwise (SERVICE.md "Edit"), so
+// an edit sends what this finds unless the person picks another.
+fn guess_align(boxes){
+    if boxes.len() < 2 { return "left" }
+    let lefts = []
+    let rights = []
+    let centres = []
+    for b in boxes {
+        lefts.push(b[0])
+        rights.push(b[0] + b[2])
+        centres.push(b[0] + b[2] / 2)
+    }
+    if spread(lefts) <= 1.5 {
+        let full = []
+        for i r in rights { if i < rights.len() - 1 { full.push(r) } }
+        if boxes.len() >= 3 && spread(full) <= 1.5 { return "justify" }
+        return "left"
+    }
+    if spread(centres) <= 1.5 { return "center" }
+    if spread(rights) <= 1.5 { return "right" }
+    "left"
+}
+// pdf.edit_text's arguments for the paragraph edit `e`: its text and its
+// alignment always (the engine sets a paragraph flush left when none is
+// named), its colour only when the person chose one.
+fn edit_args(doc, e){
+    let args = {doc: doc page: e.page paragraph: e.n text: e.draft align: e.align}
+    if e.color != nil { args.color = e.color }
+    args
+}
+// Whether the edit `e` changes anything: its text, alignment or colour.
+fn edit_changes(e){ e.draft != e.text || e.align != e.align0 || e.color != nil }
+// A text colour's name in the Edit panel: "Its own colour" until one is chosen.
+fn colour_name(hex){
+    if hex == nil { return "Its own colour" }
+    for c in TEXT_COLOURS { if c.hex == hex { return c.name } }
+    hex
 }
 
 start_timeout(0.05, || boot())
@@ -378,6 +451,9 @@ if st == nil {
         files_known: false    // files.status answered
         files_ok: false       // this device copies a chosen file in
         max_import: 0
+        used: -1              // what the app's storage holds (files.status); -1 until it says
+        quota: 0              // and what it may hold
+        storage_due: false    // a files.status question is on its way
         importing: false
         alert: nil            // {head detail note}: why something failed, on Home
         space_full: false     // the last write found no room
@@ -496,6 +572,7 @@ fn storage_full(e){
 // Every engine write: a refusal for room shows until a write succeeds or a
 // PDF is removed.
 fn wrote(a){
+    storage_later()
     if a.is_ok { st.space_full = false return }
     if storage_full(a.error) { st.space_full = true }
 }
@@ -624,7 +701,10 @@ fn remove_doc(d){
             render_home()
             return
         }
+        // Its cover, kept in the pdf service's cache folder, goes with it.
+        if d.cover.search(".cache/covers/") == 0 { try { fs.remove(d.cover) } catch {} }
         forget(d.name)
+        storage_later()
         st.space_full = false
         scan_library()
         render_home()
@@ -672,11 +752,18 @@ fn opened_text(d, days){
     "Opened " + a.day + " " + MONTHS[a.month - 1] + " " + a.year
 }
 
-// Each PDF's pages, size and first page, one engine call at a time.
+// Each PDF's cover (its first page) and its pages and size, one engine call
+// at a time. A cover is kept in the pdf service's cache across closes and
+// runs (pdf.cover), and its path in library.json, so a start with every
+// cover kept asks the engine nothing; pages and size come once (pdf.info).
+fn needs_cover(d){
+    if d.error != "" || d.locked || optional(st.cover_tried, d.name, nil) != nil { return false }
+    optional(st.covers, d.name, nil) == nil || d.cover == "" || d.pages == nil || d.bytes == nil
+}
 fn cover_next(){
     if st.busy || st.engine == "missing" || st.engine == "old" { return false }
     for d in st.docs {
-        if optional(st.covers, d.name, nil) == nil && optional(st.cover_tried, d.name, nil) == nil && d.error == "" && !d.locked {
+        if needs_cover(d) {
             read_cover(d)
             return true
         }
@@ -685,63 +772,68 @@ fn cover_next(){
 }
 fn read_cover(d){
     st.cover_tried[d.name] = true
-    if d.cover != "" && d.pages != nil && fs.exists(d.cover) {
+    if d.cover != "" && fs.exists(d.cover) {
         let src = try { binary_resource(fs.read_bytes(d.cover)) } catch { nil }
-        if src != nil {
-            st.covers[d.name] = src
-            render_home()
-            start_timeout(0.02, || pump())
+        if src != nil { st.covers[d.name] = src }
+    }
+    st.busy = true
+    st.busy_at = time_now()
+    if optional(st.covers, d.name, nil) != nil && d.cover != "" {
+        if d.pages != nil && d.bytes != nil {
+            cover_done()
             return
         }
-    }
-    let t = tab_named(d.name)
-    if t != nil && t.doc != nil {
-        cover_from(d, t.doc, false)
+        doc_facts(d)
         return
     }
-    st.busy = true
-    st.busy_at = time_now()
-    engine("open", {path: d.path}, fn(a){
-        if engine_gone(a) || outdated_open(a) {
+    engine("cover", {path: d.path dpi: COVER_DPI}, fn(a){
+        if engine_gone(a) {
             st.busy = false
             render_home()
             return
         }
+        wrote(a)
         if !a.is_ok {
-            st.busy = false
-            if err_code(a.error) != "too_many_open" { doc_failed(d, a.error) } else { st.cover_tried[d.name] = nil }
-            render_home()
-            start_timeout(0.02, || pump())
+            // A damaged or locked PDF says so on its card; a shell without
+            // covers, or a full storage, leaves the card without one.
+            if !outdated(a.error) && !storage_full(a.error) { doc_failed(d, a.error) }
+            cover_done()
             return
         }
-        d.pages = optional(a.data, "pages", d.pages)
-        cover_from(d, a.data.doc, true)
+        let path = optional(a.data, "path", "")
+        let src = try { binary_resource(fs.read_bytes(path)) } catch { nil }
+        if src != nil {
+            st.covers[d.name] = src
+            d.cover = path
+        }
+        if d.pages == nil || d.bytes == nil {
+            doc_facts(d)
+            return
+        }
+        remember(d)
+        cover_done()
     })
 }
-fn cover_from(d, doc, close_after){
-    st.busy = true
-    st.busy_at = time_now()
-    engine("info", {doc: doc}, fn(i){
+// A PDF's pages and size, read once from the file (the library keeps them).
+fn doc_facts(d){
+    engine("info", {path: d.path}, fn(i){
         if i.is_ok {
             d.bytes = optional(i.data, "file_size", d.bytes)
-            if d.pages == nil { d.pages = optional(i.data, "pages", []).len() }
+            d.pages = optional(i.data, "pages", []).len()
+        } else if !outdated(i.error) {
+            doc_failed(d, i.error)
         }
-        engine("page", {doc: doc page: 1 dpi: COVER_DPI}, fn(a){
-            wrote(a)
-            if a.is_ok {
-                let path = optional(a.data, "path", "")
-                let src = try { binary_resource(fs.read_bytes(path)) } catch { nil }
-                if src != nil {
-                    st.covers[d.name] = src
-                    d.cover = path
-                }
-            }
-            remember(d)
-            if close_after {
-                engine("close", {doc: doc discard: true}, fn(c){ cover_done() })
-            } else { cover_done() }
-        })
+        remember(d)
+        cover_done()
     })
+}
+// A saved PDF's cover is out of date: Home asks for its new one, keeping the
+// old picture until it comes (the service drops the old file then).
+fn stale_cover(d){
+    d.cover = ""
+    let tried = {}
+    for k v in st.cover_tried { if k != d.name { tried[k] = v } }
+    st.cover_tried = tried
 }
 fn cover_done(){
     st.busy = false
@@ -761,8 +853,33 @@ fn check_files(){
             if answer.is_ok {
                 st.files_ok = optional(answer.data, "import_supported", false) && optional(answer.data, "storage_granted", false)
                 st.max_import = optional(answer.data, "max_import_bytes", 0)
+                took_usage(answer.data)
             }
             render_home()
+        })
+    })
+}
+// The status line's numbers, from files.status: what the app's storage
+// holds, this service's renders and covers included, and what it may hold.
+fn took_usage(data){
+    let u = usage_from(data)
+    if u == nil { return }
+    st.used = u.used
+    st.quota = u.quota
+}
+// Ask files.status again a moment after a write: one question for a burst of
+// writes (a page turn renders several pages).
+fn storage_later(){
+    if st.storage_due { return }
+    st.storage_due = true
+    start_timeout(0.8, || {
+        host.request("files.status", {}, fn(r){
+            let answer = {is_ok: r.is_ok data: r.data}
+            start_timeout(0.01, || {
+                st.storage_due = false
+                if answer.is_ok { took_usage(answer.data) }
+                render_status()
+            })
         })
     })
 }
@@ -806,6 +923,7 @@ fn imported(name, a){
         return
     }
     if optional(a.data, "cancelled", false) { render_home() return }
+    storage_later()
     forget(name)
     let taken = []
     for d in st.docs { taken.push(d.title) }
@@ -912,6 +1030,7 @@ fn show_tab(i){
 fn go_home(){
     st.screen = "home"
     scan_library()
+    storage_later()
     show()
     pump()
 }
@@ -1373,6 +1492,7 @@ fn save(t, then){
         let d = doc_named(t.name)
         if d != nil {
             d.bytes = optional(a.data, "bytes", d.bytes)
+            stale_cover(d)
             remember(d)
         }
         render_status()
@@ -1944,7 +2064,14 @@ fn edit_tap(t, p, x, y){
             note("Click a paragraph of text to edit it.")
             return
         }
-        t.edit = {page: p n: hit.n box: hit.box text: hit.text draft: hit.text font: optional(hit, "font", "") size: optional(hit, "size", 0)}
+        // Its lines' boxes show how it is aligned (guess_align).
+        let boxes = []
+        for n in optional(hit, "lines", []) {
+            for l in optional(lines, "lines", []) { if l.n == n { boxes.push(l.box) } }
+        }
+        let align = guess_align(boxes)
+        t.edit = {page: p n: hit.n box: hit.box text: hit.text draft: hit.text font: optional(hit, "font", "") size: optional(hit, "size", 0)
+            align: align align0: align color: nil colours: false}
         render_canvas()
         render_right()
     })
@@ -1952,13 +2079,13 @@ fn edit_tap(t, p, x, y){
 fn apply_edit(t){
     let e = t.edit
     if e == nil { return }
-    if e.draft == e.text {
+    if !edit_changes(e) {
         t.edit = nil
         render_canvas()
         render_right()
         return
     }
-    engine("edit_text", {doc: t.doc page: e.page paragraph: e.n text: e.draft}, fn(a){
+    engine("edit_text", edit_args(t.doc, e), fn(a){
         wrote(a)
         if !a.is_ok {
             note(action_failed("change the text", a.error))
@@ -1975,6 +2102,23 @@ fn apply_edit(t){
 fn cancel_edit(t){
     t.edit = nil
     render_canvas()
+    render_right()
+}
+fn set_align(t, a){
+    if t == nil || t.edit == nil { return }
+    t.edit.align = a
+    render_right()
+}
+// `hex` nil: the paragraph keeps its own colour.
+fn set_colour(t, hex){
+    if t == nil || t.edit == nil { return }
+    t.edit.color = hex
+    t.edit.colours = false
+    render_right()
+}
+fn toggle_colours(t){
+    if t == nil || t.edit == nil { return }
+    t.edit.colours = !t.edit.colours
     render_right()
 }
 fn font_text(e){
@@ -3170,6 +3314,11 @@ fn edit_panel(t){
                     RoundedView{width: Fill height: 40 flow: Right align: Align{y: 0.5} padding: Inset{left: 12 right: 12} show_bg: true draw_bg +: {color: pt_field border_size: 1.0 border_color: pt_field_line border_radius: 4.0}
                         Label{padding: 0 width: Fill max_lines: 1 text_overflow: TextOverflow.Ellipsis text: font_text(t.edit) draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}
                     }
+                    View{width: Fill height: Fit padding: Inset{top: 14} Label{padding: 0 text: "Alignment" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}}
+                    align_segments(t.edit)
+                    View{width: Fill height: Fit padding: Inset{top: 14} Label{padding: 0 text: "Colour" draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}}
+                    colour_box(t.edit)
+                    if t.edit.colours { colour_list(t.edit) }
                     View{width: Fill height: Fit flow: Right margin: Inset{top: 22} spacing: 14
                         Primary{width: Fill height: 37 text: "Apply" on_click: || apply_edit(cur_tab())}
                         Outline{width: Fill height: 37 text: "Cancel" on_click: || cancel_edit(cur_tab())}
@@ -3177,6 +3326,65 @@ fn edit_panel(t){
                 }
             }
         }
+    }
+}
+
+// Alignment: four segments (left, centre, right, justify), the paragraph's
+// own (guess_align) chosen until another is tapped.
+fn align_segments(e){
+    RoundedView{width: Fill height: 40 flow: Right padding: 2 spacing: 2 show_bg: true draw_bg +: {color: pt_field border_size: 1.0 border_color: pt_field_line border_radius: 4.0}
+        for a in ALIGNS {
+            GestureView{width: Fill height: Fill cursor: MouseCursor.Hand on_tap: |x, y| set_align(cur_tab(), a)
+                RoundedView{width: Fill height: Fill align: Align{x: 0.5 y: 0.5} show_bg: true
+                    draw_bg +: {color: pick(e.align == a, pt_select, pt_field) border_size: 1.0 border_color: pick(e.align == a, pt_accent, pt_field) border_radius: 3.0}
+                    Ico{width: 20 height: 20 draw_svg +: {svg: icon("align-" + a) color: pick(e.align == a, pt_accent, pt_icon)}}
+                }
+            }
+        }
+    }
+}
+// A text colour as the Edit panel shows it (TEXT_COLOURS).
+fn text_swatch(hex){
+    if hex == "#4b4f54" { return #x4b4f54 }
+    if hex == "#1a5fb4" { return #x1a5fb4 }
+    if hex == "#c01c28" { return #xc01c28 }
+    if hex == "#26a269" { return #x26a269 }
+    if hex == "#e66100" { return #xe66100 }
+    #x000000
+}
+// A colour's square; an empty one for the paragraph's own colour, which the
+// engine doesn't report.
+fn swatch(hex){
+    if hex == nil {
+        return RoundedView{width: 22 height: 22 show_bg: true draw_bg +: {color: pt_field border_size: 1.0 border_color: pt_thumb_line border_radius: 4.0}}
+    }
+    RoundedView{width: 22 height: 22 show_bg: true draw_bg +: {color: text_swatch(hex) border_size: 1.0 border_color: pt_thumb_line border_radius: 4.0}}
+}
+// Colour: the chosen colour in a box that opens the list below it (the
+// runtime gives a script no pop-up menu).
+fn colour_box(e){
+    GestureView{width: Fill height: 40 cursor: MouseCursor.Hand on_tap: |x, y| toggle_colours(cur_tab())
+        RoundedView{width: Fill height: Fill flow: Right align: Align{y: 0.5} padding: Inset{left: 9 right: 12} spacing: 12 show_bg: true draw_bg +: {color: pt_field border_size: 1.0 border_color: pick(e.colours, pt_accent, pt_field_line) border_radius: 4.0}
+            swatch(e.color)
+            Label{padding: 0 width: Fill text: colour_name(e.color) draw_text +: {color: pt_ink2 text_style: theme.font_regular{font_size: 12}}}
+            Ico{width: 16 height: 16 draw_svg +: {svg: icon(pick(e.colours, "chevron-up", "chevron-down")) color: pt_icon}}
+        }
+    }
+}
+// The colours the box opens: one row of squares, the paragraph's own first
+// (the panel is short in a small window; the box names the one chosen).
+fn colour_chip(e, hex){
+    GestureView{width: 36 height: 36 align: Align{x: 0.5 y: 0.5} cursor: MouseCursor.Hand on_tap: |x, y| set_colour(cur_tab(), hex)
+        RoundedView{width: 36 height: 36 align: Align{x: 0.5 y: 0.5} show_bg: true
+            draw_bg +: {color: pick(e.color == hex, pt_select, pt_field) border_size: 1.0 border_color: pick(e.color == hex, pt_accent, pt_field_line) border_radius: 4.0}
+            swatch(hex)
+        }
+    }
+}
+fn colour_list(e){
+    View{width: Fill height: Fit flow: Right spacing: 6
+        colour_chip(e, nil)
+        for c in TEXT_COLOURS { colour_chip(e, c.hex) }
     }
 }
 
@@ -3310,15 +3518,26 @@ fn doc_card(d, days){
     }
 }
 
+// What the status line says of the storage: files.status's numbers, or,
+// from a host that doesn't give them, the library's PDFs against the
+// system ceiling; and how much of the bar that fills.
+fn storage_text(){
+    if st.used >= 0 && st.quota > 0 { return used_text(st.used, st.quota) }
+    used_text(library_bytes(), QUOTA)
+}
+fn storage_share(){
+    if st.used >= 0 && st.quota > 0 { return min(1, st.used / st.quota) }
+    min(1, library_bytes() / QUOTA)
+}
 // The status line: whether the open PDF is saved, and the storage used.
 fn status_view(){
     let t = cur_tab()
-    let used = used_text(library_bytes())
+    let used = storage_text()
     if t == nil {
         return View{width: Fill height: Fill flow: Right align: Align{y: 0.5} padding: Inset{left: 20 right: 29} spacing: 20
             Label{padding: 0 text: used draw_text +: {color: pt_muted text_style: theme.font_regular{font_size: 11}}}
             RoundedView{width: Fill max_width: 1110 height: 6 flow: Right show_bg: true draw_bg +: {color: pt_line_soft border_radius: 3.0}
-                RoundedView{width: max(6, floor(min(1, library_bytes() / QUOTA) * min(1110, st.width - 230))) height: Fill show_bg: true draw_bg +: {color: pick(st.space_full, pt_red, pt_accent) border_radius: 3.0}}
+                RoundedView{width: max(6, floor(storage_share() * min(1110, st.width - 230))) height: Fill show_bg: true draw_bg +: {color: pick(st.space_full, pt_red, pt_accent) border_radius: 3.0}}
             }
         }
     }

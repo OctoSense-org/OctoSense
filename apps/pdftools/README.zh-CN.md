@@ -27,7 +27,7 @@ craft 引擎只在桌面版中提供（`craft-engines`）。
 | 画布 | 页面以白色显示在桌面背景上：从你前往的那一页开始的至多八页，每页都是引擎按屏幕分辨率渲染的结果 |
 | 浮动控制条 | 页码“3 / 24”、上一页和下一页、缩小、缩放比例、放大、适合宽度、适合页面 |
 | 右侧面板 | Comment：评论线程。Fill & Sign：表单字段以及 Add text、Add date、Add initials。Edit：正在编辑的段落 |
-| 状态栏 | Saved 或 Edited，以及 PDF 占用的存储（“14.6 of 64 MB used”、“37 KB of 64 MB used”） |
+| 状态栏 | Saved 或 Edited，以及应用存储已用多少、最多可用多少，来自 Shell 的 `files.status`（“14.6 of 64 MB used”、“37 KB of 64 MB used”） |
 
 设计图按 1536 x 1024 绘制，清单请求桌面按这个尺寸打开窗口：`"window": {"width": 1536,
 "height": 1024}`，即 App Hub 的可选窗口提示，需要 `"schema_minor": 1`。桌面会把它限制在自身
@@ -53,7 +53,7 @@ PDF Tools 以 1296 x 703 点打开，应用区域为 1292 x 667，即它的宽�
 | Fill & Sign | 用框线标出表单字段（未填的必填字段为红色）并列出其值；选中一个字段即可输入值；Add text、Add date 和 Add initials 会在点按处放置标记；姓名缩写会被保存 | `pdf.fields`、`pdf.fill`、`pdf.fill_sign` |
 | Pages | 每页一张大缩略图：选择页面，向左或向右旋转、删除、提取（在资料库中生成新 PDF）、从文件插入（这里的另一个 PDF），拖动页面以移动 | `pdf.pages` |
 | Combine | 当前 PDF 与其他 PDF 按顺序排列（拖动手柄调整顺序），每个都可指定页面（“1-4, 9”或 All），“One PDF of 31 pages”，名称，Combine；新 PDF 随即打开 | `pdf.merge` |
-| Edit | 点击一个段落：它的文字可以就地编辑，右侧面板显示字体和字号；Apply 或 Cancel | `pdf.lines`、`pdf.edit_text` |
+| Edit | 点击一个段落：它的文字可以就地编辑；右侧面板显示字体和字号、Alignment（左对齐、居中、右对齐或两端对齐：默认选中各行所显示的那种，因为引擎在未指定时会把编辑后的段落设为左对齐）和 Colour（在选择六种颜色之一前保持段落原有颜色）；Apply 或 Cancel | `pdf.lines`、`pdf.edit_text` |
 
 Undo 和 Redo 使用引擎的历史记录；Save 把 PDF 写回（`pdf.undo`、`pdf.redo`、`pdf.save`、
 `pdf.state`）。关闭有未保存更改的标签时会询问：Save、Don't save 或 Cancel。
@@ -79,14 +79,17 @@ PDF to make room”）、已打开八个 PDF、关闭时有未保存的更改，
 | 路径 | 内容 |
 | --- | --- |
 | `accounts/device/library/*.pdf` | 所有 PDF，包括导入、提取和合并得到的 |
-| `accounts/device/library.json` | 每个文件的标题（与文件名不同时）、页数、大小、上次打开时间、离开时所在的页面和缩放比例、封面的渲染结果；以及 `who`：评论使用的名字和 Fill & Sign 放置的姓名缩写 |
-| `.cache/pages/<doc>/<page>@<dpi>.png` | 引擎的页面渲染结果：它的缓存，最多 16 MiB、64 个文件 |
+| `accounts/device/library.json` | 每个文件的标题（与文件名不同时）、页数、大小、上次打开时间、离开时所在的页面和缩放比例、封面；以及 `who`：评论使用的名字和 Fill & Sign 放置的姓名缩写 |
+| `.cache/pages/<doc>/<page>@<dpi>.png` | 引擎的页面渲染结果：它的缓存，与封面合计最多 16 MiB、64 个文件 |
+| `.cache/covers/<name>-<size>-<modified>@48.png` | 每个 PDF 的封面，即第 1 页（`pdf.cover`）：关闭和重启后仍保留，PDF 改变后重新绘制；最多占缓存 64 个文件中的 32 个，空间不足时先移除页面渲染 |
 
 给修改脚本的人的说明：
 
 - **引擎工作在 Shell 的 UI 线程上运行（#399）。** 应用同时只发出一个后台渲染
   （`pump()`）：先是当前页及其后两页，然后是可见的缩略图，然后是这一组页面中的其余页面，
-  再是其他缩略图，最后是主页的封面。一处更改只丢弃它所涉及页面的渲染结果；Undo 和 Redo
+  再是其他缩略图，最后是主页的封面。封面只绘制一次（`pdf.cover`）并保留，路径记在
+  `library.json` 中，所以全部封面都已保留时，启动不会向引擎请求任何东西；保存会使该 PDF 的
+  封面过期，移除会删除它。页数和大小只读取一次，来自 `pdf.info`。一处更改只丢弃它所涉及页面的渲染结果；Undo 和 Redo
   不说明改了什么，因此重新绘制当前显示的那一组页面。
 - **脚本应用拿不到滚动位置。** 运行时不给脚本应用读取或设置滚动视图位置的方法。所以画布是
   一个静态的 `ScrollXYView`，在渲染结果陆续到达时保持位置不变；前往某一页（缩略图、大纲、
@@ -110,8 +113,8 @@ PDF to make room”）、已打开八个 PDF、关闭时有未保存的更改，
 
 资料库的规则是 `main.splash` 中的纯函数，由 Rust 在脚本虚拟机中执行包内函数来测试
 （`crates/shell/src/pdftools_model_tests.rs`）：导入的 PDF 的标题、拆分出的部分的标题、
-资料库索引在重启后保留的内容、页面范围所指的页面、查找摘要中加粗的匹配、头像中的姓名缩写，
-以及评论的日期。
+资料库索引在重启后保留的内容、页面范围所指的页面、查找摘要中加粗的匹配、头像中的姓名缩写、
+评论的日期、状态栏的存储用量文字、从各行读出的段落对齐方式，以及一次编辑发送的内容。
 
 ```sh
 cargo test --locked -p octosense-shell --lib pdftools_model
@@ -137,8 +140,8 @@ python3 apps/pdftools/tests/ui.py --card-host <App Hub>/target/release/card-host
 
 | 运行 | 覆盖内容 |
 | --- | --- |
-| `shell` | 在 Shell 自己的窗口中、在示例上覆盖每种模式，先浅色，再通过 Shell 自己的样式菜单切到深色（深色这一轮在浅色一轮留下的状态上进行）：主页及其封面、“Open a PDF from this device”被拒绝、阅读和缩略图、查找（“9 matches on 4 pages”）、一处高亮及其回复、一次旋转及其撤销、带页面范围的合并（“One PDF of 5 pages”）、Fill & Sign 放置的姓名缩写、一次文字编辑、保存，以及损坏的文件 |
-| `restart` | 再次使用同一个主目录：资料库、其中的标题、PDF 离开时所在的页面，以及按导入方式放入的 `Imported PDF.pdf` |
+| `shell` | 在 Shell 自己的窗口中、在示例上覆盖每种模式，先浅色，再通过 Shell 自己的样式菜单切到深色（深色这一轮在浅色一轮留下的状态上进行）：主页及其封面、状态栏与存储实际字节数相符、“Open a PDF from this device”被拒绝、阅读和缩略图、查找（“9 matches on 4 pages”）、一处高亮及其回复（日期按本机时钟显示，如“Today 19:42”）、一次旋转及其撤销、带页面范围的合并（“One PDF of 5 pages”）、Fill & Sign 放置的姓名缩写、一次带对齐方式和颜色的文字编辑、保存，以及损坏的文件；之后检查封面缓存中每个 PDF 只有一个封面，且都记在 `library.json` 中 |
+| `restart` | 再次使用同一个主目录：资料库、其中的标题、PDF 离开时所在的页面、按导入方式放入的 `Imported PDF.pdf`，以及所有当前封面都被保留、没有重新绘制 |
 | `full` | 存储被填到距 64 MiB 只差 8 KB：主页上的拒绝提示，然后移除一个 PDF（会再确认一次） |
 | `empty` | 没有 PDF：空资料库及其 Open 按钮，浅色和深色 |
 | `missing` | 使用发布包的 `card-host`：没有引擎，也没有文件服务 |
@@ -174,11 +177,11 @@ python3 apps/pdftools/dev-fixture/make_fixture.py <card-host app data>/os.pdftoo
   字段、大纲、Redo、其他评论和页面操作、受密码保护的 PDF、八个 PDF 的上限以及未保存更改
   的询问（开发夹具覆盖了它们的界面）；窗口自身尺寸下的 `restart`、`full` 和 `empty` 运行；
   其他屏幕尺寸；Linux、Windows、手机。
-- **已知问题**：评论的日期是引擎的 UTC 时间被当作本地时间读取，因此在 UTC 以西的晚上做的
-  评论会显示第二天的日期，直到 pdf 服务完成转换。状态栏只统计资料库中的 PDF：文件服务不
-  报告存储的用量。在负载很高的机器上，一次点按可能超出 64 ms 预算而丢失（在 `library.json`
+- **已知问题**：在负载很高的机器上，一次点按可能超出 64 ms 预算而丢失（在 `library.json`
   移出点按路径之前，于 60 到 150 的平均负载下见到过）。在 900 点高的屏幕上，应用区域约为
   1292 x 662：合并中列出两个 PDF 时，卡片的 Combine 按钮需要滚动一次才能看到（差 85 点），
-  首页卡片的最后一行说明（每个 PDF 上次打开的时间）正好在可见区域边缘。
+  首页卡片的最后一行说明（每个 PDF 上次打开的时间）正好在可见区域边缘。引擎既不报告段落的
+  对齐方式，也不报告它的颜色：Edit 面板从各行的边框读出对齐方式，并在选择颜色之前把颜色显示为
+  段落原有的颜色。
 - **不在这个版本中**：导出（没有已批准的设计）、打开受密码保护的 PDF、键盘快捷键（运行时
-  不给脚本应用按键事件）、Edit 面板中的 Alignment 和 Colour（`pdf.edit_text` 只接收文字）。
+  不给脚本应用按键事件）。

@@ -163,3 +163,63 @@ fn the_shipped_manifest_asks_for_the_designs_window_size() {
     assert_eq!(manifest.schema_minor, 1);
     assert_eq!(manifest.window, Some(octosense_app_contract::WindowHint::new(1536, 1024)));
 }
+
+#[test]
+fn the_storage_line_reads_what_files_status_says() {
+    // Design 08's status line, from files.status's used_bytes and quota_bytes.
+    assert_eq!(pdftools_model("used_text(15309209, 67108864).to_json()"), json!("14.6 of 64 MB used"));
+    assert_eq!(pdftools_model("used_text(92160, 67108864).to_json()"), json!("90 KB of 64 MB used"));
+    assert_eq!(pdftools_model("used_text(4002, 8388608).to_json()"), json!("4 KB of 8 MB used"));
+    assert_eq!(
+        pdftools_model("usage_from({used_bytes: 15309209 quota_bytes: 67108864}).to_json()"),
+        json!({"used": 15309209, "quota": 67108864})
+    );
+    // No storage, or a shell from before files.status said: nothing to read.
+    for data in ["{}", "nil", "{used_bytes: 5}", "{used_bytes: 5 quota_bytes: 0}"] {
+        assert_eq!(pdftools_model(&format!("usage_from({data}).to_json()")), json!(null), "{data}");
+    }
+}
+
+#[test]
+fn the_edit_panel_reads_a_paragraphs_alignment_from_its_lines() {
+    let align = |boxes: &str| pdftools_model(&format!("guess_align({boxes}).to_json()"));
+    // Design 08's paragraph: flush left, ragged right.
+    assert_eq!(align("[[56, 100, 300, 14], [56, 116, 280, 14], [56, 132, 120, 14]]"), json!("left"));
+    assert_eq!(align("[[56, 100, 300, 14], [56, 116, 300, 14], [56, 132, 120, 14]]"), json!("justify"));
+    assert_eq!(align("[[56, 100, 300, 14], [56, 116, 300.8, 14]]"), json!("left"), "two lines may just happen to end together");
+    assert_eq!(align("[[106, 100, 200, 14], [126, 116, 160, 14], [156, 132, 100, 14]]"), json!("center"));
+    assert_eq!(align("[[100, 100, 256, 14], [150, 116, 206, 14]]"), json!("right"));
+    assert_eq!(align("[[70, 100, 286, 14], [56, 116, 290, 14], [56, 132, 120, 14]]"), json!("left"), "an indented first line");
+    assert_eq!(align("[[56, 100, 300, 14]]"), json!("left"), "one line shows nothing");
+    assert_eq!(align("[]"), json!("left"));
+}
+
+#[test]
+fn an_edit_sends_its_text_and_alignment_and_a_chosen_colour() {
+    // SERVICE.md "Edit": the engine sets a paragraph flush left unless told,
+    // so the alignment always goes; the colour only once one is chosen.
+    let edit = |draft: &str, align: &str, color: &str| {
+        format!("{{page: 2 n: 3 text: \"Old\" draft: \"{draft}\" align: \"{align}\" align0: \"left\" color: {color}}}")
+    };
+    assert_eq!(
+        pdftools_model(&format!("edit_args(\"d1\", {}).to_json()", edit("New", "center", "nil"))),
+        json!({"doc": "d1", "page": 2, "paragraph": 3, "text": "New", "align": "center"})
+    );
+    assert_eq!(
+        pdftools_model(&format!("edit_args(\"d1\", {}).to_json()", edit("Old", "left", "\"#c01c28\""))),
+        json!({"doc": "d1", "page": 2, "paragraph": 3, "text": "Old", "align": "left", "color": "#c01c28"})
+    );
+    let changes = |e: String| pdftools_model(&format!("edit_changes({e}).to_json()"));
+    assert_eq!(changes(edit("Old", "left", "nil")), json!(false), "nothing to apply");
+    assert_eq!(changes(edit("New", "left", "nil")), json!(true));
+    assert_eq!(changes(edit("Old", "right", "nil")), json!(true), "an alignment alone");
+    assert_eq!(changes(edit("Old", "left", "\"#000000\"")), json!(true), "a colour alone");
+    assert_eq!(pdftools_model("colour_name(nil).to_json()"), json!("Its own colour"));
+    assert_eq!(pdftools_model("colour_name(\"#c01c28\").to_json()"), json!("Red"));
+    // What the panel offers is what pdf.edit_text takes.
+    assert_eq!(pdftools_model("ALIGNS.to_json()"), json!(["left", "center", "right", "justify"]));
+    for c in pdftools_model("TEXT_COLOURS.to_json()").as_array().unwrap() {
+        let hex = c["hex"].as_str().unwrap();
+        assert!(hex.len() == 7 && hex.starts_with('#') && hex[1..].bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "{c}");
+    }
+}

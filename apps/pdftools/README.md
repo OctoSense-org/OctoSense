@@ -31,7 +31,7 @@ decision that applies.
 | Canvas | The pages, white on the desk: a run of up to eight pages from the page you went to, each the engine's render at screen resolution |
 | Pill | Page "3 / 24", previous and next, zoom out, zoom, zoom in, fit width, fit page |
 | Right panel | Comment: the threads. Fill & Sign: the form's fields and Add text, Add date, Add initials. Edit: the paragraph being edited |
-| Status line | Saved or Edited, and the storage the PDFs use ("14.6 of 64 MB used", "37 KB of 64 MB used") |
+| Status line | Saved or Edited, and what the app's storage holds against what it may hold, from the shell's `files.status` ("14.6 of 64 MB used", "37 KB of 64 MB used") |
 
 The designs are drawn at 1536 x 1024, and the manifest asks the desktop to
 open the window at that size: `"window": {"width": 1536, "height": 1024}`,
@@ -64,7 +64,7 @@ page fits the canvas, up to 100%.
 | Fill & Sign | The form's fields outlined (required empty ones in red) and listed with their values; choose one to type its value; Add text, Add date and Add initials place a mark where you tap; initials are kept | `pdf.fields`, `pdf.fill`, `pdf.fill_sign` |
 | Pages | Every page as a large thumbnail: choose pages, Rotate left or right, Delete, Extract (a new PDF in the library), Insert from file (another PDF here), drag a page to move it | `pdf.pages` |
 | Combine | This PDF and others in order (drag the grip to reorder), each with its pages ("1-4, 9" or All), "One PDF of 31 pages", a name, Combine; the new PDF opens | `pdf.merge` |
-| Edit | Click a paragraph: its text becomes editable in place, the right panel shows its font and size; Apply or Cancel | `pdf.lines`, `pdf.edit_text` |
+| Edit | Click a paragraph: its text becomes editable in place; the right panel shows its font and size, its Alignment (left, centre, right or justify: the one its lines show is chosen, since the engine sets an edited paragraph flush left unless told) and its Colour (its own until you pick one of six); Apply or Cancel | `pdf.lines`, `pdf.edit_text` |
 
 Undo and Redo use the engine's history; Save writes the PDF back
 (`pdf.undo`, `pdf.redo`, `pdf.save`, `pdf.state`). Closing a tab with unsaved
@@ -97,15 +97,19 @@ engine works in the same folder.
 | Path | Holds |
 | --- | --- |
 | `accounts/device/library/*.pdf` | The PDFs, including imported, extracted and combined ones |
-| `accounts/device/library.json` | Per file: title (when not its file name), pages, size, when last opened, the page and zoom it was left at, its cover's render; and `who`: the name comments carry and the initials Fill & Sign places |
-| `.cache/pages/<doc>/<page>@<dpi>.png` | The engine's page renders: its cache, at most 16 MiB and 64 files |
+| `accounts/device/library.json` | Per file: title (when not its file name), pages, size, when last opened, the page and zoom it was left at, its cover; and `who`: the name comments carry and the initials Fill & Sign places |
+| `.cache/pages/<doc>/<page>@<dpi>.png` | The engine's page renders: its cache, at most 16 MiB and 64 files with the covers |
+| `.cache/covers/<name>-<size>-<modified>@48.png` | Each PDF's cover, page 1 (`pdf.cover`): kept across closes and restarts, drawn again when the PDF changes; at most 32 of the cache's 64 files, and page renders go first |
 
 Notes for whoever changes the script:
 
 - **Engine work runs on the shell's UI thread (#399).** The app keeps one
   background render out at a time (`pump()`): the current page and the two
   after it, then the visible thumbnails, then the rest of the run, then the
-  other thumbnails, then Home's covers. A change drops only the renders of
+  other thumbnails, then Home's covers. A cover is drawn once (`pdf.cover`)
+  and kept, its path in `library.json`, so a start with every cover kept asks
+  the engine nothing; a save marks its PDF's cover stale, and Remove deletes
+  it. Pages and size come once, from `pdf.info`. A change drops only the renders of
   the pages it touched; Undo and Redo, which don't say what changed, redraw
   the run on show.
 - **No scroll position for script apps.** The runtime gives a script app no
@@ -138,8 +142,9 @@ The library's rules are pure functions in `main.splash`, tested from Rust by
 evaluating the bundle's functions in a script VM
 (`crates/shell/src/pdftools_model_tests.rs`): an imported PDF's title, a split
 part's title, what the library index keeps across a restart, the pages a
-range names, a find snippet's match in bold, an avatar's initials and a
-comment's date.
+range names, a find snippet's match in bold, an avatar's initials, a
+comment's date, the storage line's words, a paragraph's alignment read from
+its lines, and what an edit sends.
 
 ```sh
 cargo test --locked -p octosense-shell --lib pdftools_model
@@ -168,8 +173,8 @@ exceeded` in its log); `--budget-ms 1000` raises the hosts' budget
 
 | Run | What it covers |
 | --- | --- |
-| `shell` | Every mode on the samples in the shell's own window, light, then dark through the shell's own style menu (the dark pass works on what the light pass left): Home and its covers, "Open a PDF from this device" refused, reading and thumbnails, find ("9 matches on 4 pages"), a highlight and its reply, a rotation and its undo, combine with a page range ("One PDF of 5 pages"), initials placed by Fill & Sign, a text edit, save, and the damaged file |
-| `restart` | The same home again: the library, its titles, the page a PDF was left at, and `Imported PDF.pdf` placed as an import leaves one |
+| `shell` | Every mode on the samples in the shell's own window, light, then dark through the shell's own style menu (the dark pass works on what the light pass left): Home and its covers, the status line against the storage's own bytes, "Open a PDF from this device" refused, reading and thumbnails, find ("9 matches on 4 pages"), a highlight and its reply dated on this machine's clock ("Today 19:42"), a rotation and its undo, combine with a page range ("One PDF of 5 pages"), initials placed by Fill & Sign, a text edit with an alignment and a colour, save, and the damaged file; then one cover per PDF in the cover cache, each in `library.json` |
+| `restart` | The same home again: the library, its titles, the page a PDF was left at, `Imported PDF.pdf` placed as an import leaves one, and every current cover kept, not drawn again |
 | `full` | Storage filled to 8 KB short of its 64 MiB: the refusal on Home, then a removal, which asks once more |
 | `empty` | No PDFs: the empty library and its Open button, light and dark |
 | `missing` | `card-host` with the shipped bundle: no engine and no files service |
@@ -215,17 +220,15 @@ that refusal.
   cap and the unsaved-changes question (the dev fixture covers their screens);
   the `restart`, `full` and `empty` runs at the window's own size; other
   screen sizes; Linux, Windows, phones.
-- **Known**: a comment's date is the engine's UTC time read as local time, so
-  a comment made in the evening west of UTC shows the next day's date, until
-  the pdf service converts it. The status line counts only the PDFs in the
-  library: the files service does not report the storage's use. On a heavily
-  loaded machine a tap can overrun the 64 ms budget and be lost (seen at load
-  averages of 60 to 150 before `library.json` moved off the tap path). On a
-  screen 900 points tall the app area is about 1292 x 662. There, with two
-  PDFs in Combine, the card's Combine button needs one scroll (85 points
-  short). Home's last caption line (when each PDF was last opened) also sits
-  at the fold.
+- **Known**: on a heavily loaded machine a tap can overrun the 64 ms budget
+  and be lost (seen at load averages of 60 to 150 before `library.json` moved
+  off the tap path). On a screen 900 points tall the app area is about
+  1292 x 662. There, with two PDFs in Combine, the card's Combine button needs
+  one scroll (85 points short). Home's last caption line (when each PDF was
+  last opened) also sits at the fold. The engine reports neither a
+  paragraph's alignment nor its colour: the Edit panel reads the alignment
+  from the lines' boxes and shows the colour as the paragraph's own until you
+  pick one.
 - **Not part of this version**: export (no approved design), opening
   password-protected PDFs, keyboard shortcuts (the runtime gives script apps no
-  key events), the Edit panel's Alignment and Colour (`pdf.edit_text` takes
-  only text).
+  key events).
