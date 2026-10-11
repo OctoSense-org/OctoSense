@@ -471,3 +471,5 @@ python3 ../rom/scripts/build-home.py --help                     # the Home and B
 ## 许可证
 
 Apache License 2.0（[LICENSE](LICENSE)、[NOTICE](NOTICE)）。从 Makepad 复制的源码保留其 MIT 声明（[LICENSES/](LICENSES)）。依赖项保留各自的许可证。
+
+后端 OAuth 的 HTTPS 客户端读取系统证书信任，包括用户明确设为可信的本地开发 CA；证书与域名校验保持启用。

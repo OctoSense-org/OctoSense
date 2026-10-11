@@ -483,3 +483,5 @@ Each product is tagged on its own: `desktop-v*`, `home-v*` (the APK) and `rom-v*
 ## License
 
 Apache License 2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)). Source copied from Makepad keeps its MIT notice ([LICENSES/](LICENSES)). Dependencies keep their own licenses.
+
+Backend OAuth HTTPS clients use platform certificate trust, including local development CAs explicitly trusted by the user; certificate and hostname verification remain enabled.
