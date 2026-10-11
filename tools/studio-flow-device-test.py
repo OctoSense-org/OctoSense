@@ -394,6 +394,15 @@ def main():
         if checked.get("source_modified") is not False or checked.get("publisher_signed") is not False:
             raise ProbeError("expected source-preserving unsigned developer preparation")
         evidence["checks"]["model_bundle_digest_binding"] = "passed; authorship evidence requires transcript review"
+        # A previous run's developer install of this app would keep its data
+        # for the same owner, so the flow begins from no install at all.
+        try:
+            studio.call("studio.uninstall", {"app_id": contract["app_id"]})
+            evidence["checks"]["previous_install_removed"] = "removed a previous developer install before the flow"
+        except ProbeError as error:
+            if "no developer install" not in str(error):
+                raise
+            evidence["checks"]["previous_install_removed"] = "none present"
         studio.open(bundle_path=args.bundle_path)
         evidence["checks"]["preview_interactions"] = exercise(studio, contract, "preview")
         studio.close()

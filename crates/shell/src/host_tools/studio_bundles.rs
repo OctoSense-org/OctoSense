@@ -344,7 +344,7 @@ pub fn installed(id: &str, owner: Option<&Owner>) -> Result<Arc<Bundle>, String>
     valid_id(id)?;
     let root = base()?;
     let bytes = std::fs::read(root.join("installed").join(format!("{id}.json")))
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| "no developer install with this id".to_string())?;
     if bytes.len() > 128 * 1024 {
         return Err("invalid developer receipt".into());
     }

@@ -300,7 +300,7 @@ Agent 可先用普通文件工具从头编写 `manifest.json` 和 `main.splash`�
 
 这些操作不会创建 Agent peer，也不是每个应用对应一个 Tokio task。已有 Agent 调用宿主工具，Rust 工作线程负责文件与编码，UI 线程持有控件并提交 GPU 工作。
 
-DeepSeek V4 Flash 从头编写的 Task Planner 已在**真实 OnePlus 6 上通过 129 次工具调用**，覆盖任务输入、完成与筛选、预览状态丢弃、独立安装状态、关闭重开、进程重启、准确的中文输入及滚动。测试工具没有直接修改应用源码或存储。竖屏应用与键盘视觉评审已通过；间距较宽，Shell 浮层和状态栏另有观察记录。损坏存储与保存失败的故障注入仍待完成，详见[验收报告](studio/oneplus6-validation.md)。见 [ADR 0006](adr/0006-app-studio-on-the-phone.md) 和[新应用需求](studio/task-planner-brief.md)。本次实现不包含 `mod.studio` 工具箱适配器、图像生成/比较、更完整的资源路径或公开发布。合并 `main` 之后，一个由 Claude 从头编写的 Task Planner 在一部普通小米手机上通过了同样的 129 次调用流程（见[再次验证](studio/xiaomi-revalidation.md)）。
+DeepSeek V4 Flash 从头编写的 Task Planner 已在**真实 OnePlus 6 上通过 129 次工具调用**，覆盖任务输入、完成与筛选、预览状态丢弃、独立安装状态、关闭重开、进程重启、准确的中文输入及滚动。测试工具没有直接修改应用源码或存储。竖屏应用与键盘视觉评审已通过；间距较宽，Shell 浮层和状态栏另有观察记录。损坏存储与保存失败的故障注入仍待完成，详见[验收报告](studio/oneplus6-validation.md)。见 [ADR 0006](adr/0006-app-studio-on-the-phone.md) 和[新应用需求](studio/task-planner-brief.md)。本次实现不包含 `mod.studio` 工具箱适配器、图像生成/比较、更完整的资源路径或公开发布。合并 `main` 之后，一个由 Claude 从头编写的 Task Planner 在一部普通小米手机上通过了同样的验收流程（最终版本上共 134 次工具调用），另一项通过同一请求队列驱动的检查覆盖了应用数据的所有权、`studio.uninstall` 和开发者授权结束后的行为（见[再次验证](studio/xiaomi-revalidation.md)）。
 
 ## 11. 测试
 
