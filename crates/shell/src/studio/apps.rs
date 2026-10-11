@@ -465,8 +465,14 @@ impl StudioApp {
         }
         card.set_sandbox_dir(cx, Some(spec.jail.clone()));
         card.set_storage_quota(cx, Some(spec.storage_quota));
+        // Fail closed on the device and carry no host identity, as a seated
+        // contained app does (`glance_card::seat`).
+        card.set_device_consent(cx, true);
+        card.set_host_tag(cx, None);
         card.set_host_caps(cx, Vec::new());
         card.set_host_prompts(cx, false);
+        // The admitted budget is a declaration since the ruling of 8 October
+        // 2026; the jail, quota and memory cap are what is enforced.
         card.set_policy(cx, Some(Vec::new()), Some(spec.instruction_budget));
         card.set_memory_bytes(cx, Some(spec.memory_bytes as usize));
         card.set_text(cx, &spec.source);
@@ -474,12 +480,8 @@ impl StudioApp {
         if let Some(s) = card.borrow() {
             s.children(&mut |_, _| children += 1);
         }
-        let running = card
-            .borrow_mut()
-            .and_then(|mut s| s.isolate_heap_key(cx))
-            .is_some_and(makepad_widgets::splash_policy::may_run);
-        if children == 0 || !running {
-            return Err(format!("studio_eval_failed: {}/main.splash produced no root content or exceeded its admitted instruction budget",spec.instance_id));
+        if children == 0 {
+            return Err(format!("studio_eval_failed: {}/main.splash produced no root content", spec.instance_id));
         }
         self.timer = cx.start_interval(0.08);
         Ok(())
@@ -806,6 +808,7 @@ impl Widget for StudioApp {
         if self.spec.is_none() {
             return;
         }
+        super::refuse_host_requests(cx, &self.view.splash(cx, ids!(card)));
         self.dispatch(cx, event);
         self.pump(cx);
     }

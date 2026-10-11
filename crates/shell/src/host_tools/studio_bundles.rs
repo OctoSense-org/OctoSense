@@ -166,6 +166,12 @@ fn admit_snapshot(
     {
         return Err("this Studio release accepts offline, storage-only script apps without accounts or agents".into());
     }
+    if raw
+        .get("components")
+        .is_some_and(|c| !c.as_array().is_some_and(|a| a.is_empty()))
+    {
+        return Err("this Studio release accepts no WebAssembly components".into());
+    }
     let policy = octosense_app_policy::admit_and_resolve_dir(
         &text,
         &digest,
@@ -217,7 +223,8 @@ pub fn install(bundle: &Arc<Bundle>) -> Result<Value, String> {
     if !bundle.valid() {
         return Err("developer grant expired".into());
     }
-    let receipts = private_child(&base()?, "installed")?;
+    let root = base()?;
+    let receipts = private_child(&root, "installed")?;
     let path = receipts.join(format!("{}.json", bundle.id));
     let previous = if path.exists() {
         let old: Receipt =
@@ -228,13 +235,9 @@ pub fn install(bundle: &Arc<Bundle>) -> Result<Value, String> {
         }
         Some(old.snapshot)
     } else {
-        if std::fs::read_dir(&receipts)
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .filter(|e| e.path().extension().is_some_and(|s| s == "json"))
-            .count()
-            >= 16
-        {
+        // A receipt whose grant has ended cannot open again, so it must not
+        // hold one of the slots; remove it and its snapshot before counting.
+        if reap_dead_receipts(&receipts, &root)? >= 16 {
             return Err("Studio supports at most 16 local developer installs".into());
         }
         None
@@ -282,6 +285,38 @@ pub fn install(bundle: &Arc<Bundle>) -> Result<Value, String> {
     let mut result = bundle.summary();
     result["installed"] = json!(true);
     Ok(result)
+}
+/// Removes the receipts whose developer grant has ended, and their snapshots,
+/// and returns how many live receipts remain. The app's data folder stays, for
+/// a later install of the same id by the same owner.
+fn reap_dead_receipts(receipts: &Path, root: &Path) -> Result<usize, String> {
+    let mut live = 0;
+    for entry in std::fs::read_dir(receipts).map_err(|e| e.to_string())?.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|s| s != "json") {
+            continue;
+        }
+        let receipt: Option<Receipt> = std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+        let alive = receipt.as_ref().is_some_and(|r| {
+            crate::dev_mode::tag_valid(&DevTag {
+                profile_id: r.profile_id.clone(),
+                since: r.since,
+            })
+        });
+        if alive {
+            live += 1;
+            continue;
+        }
+        if let Some(r) = receipt {
+            if uuid::Uuid::parse_str(&r.snapshot).is_ok() {
+                let _ = std::fs::remove_dir_all(root.join("bundles").join(&r.snapshot));
+            }
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(live)
 }
 /// Launcher calls with None; host tools pass the full calling identity.
 pub fn installed(id: &str, owner: Option<&Owner>) -> Result<Arc<Bundle>, String> {
@@ -737,6 +772,61 @@ mod tests {
         let mut manifest = json!({"schema":1,"id":"dev.studio.planner","version":"0.1.0","name":"Planner","capabilities":["storage"],"integrity":{"bundle_blake3":"pending"}});
         edit(&mut manifest);
         std::fs::write(root.join("manifest.json"), manifest.to_string()).unwrap();
+    }
+    /// Studio bundles carry no WebAssembly: a `.wasm` file is refused while
+    /// the bundle is copied, and a manifest that pins shared components is
+    /// refused at admission (ADR 0014 components are App Hub's to admit).
+    #[test]
+    fn wasm_files_and_shared_components_are_refused() {
+        let home = crate::app_storage::tests::Scratch::new("studio-wasm");
+        let author = home.0.join("author");
+        fixture(&author, |_| {});
+        std::fs::create_dir(author.join("fns")).unwrap();
+        std::fs::write(author.join("fns/tool.WASM"), b"\0asm\x0d\0\x01\0").unwrap();
+        let snapshot = home.0.join("copy");
+        std::fs::create_dir(&snapshot).unwrap();
+        let scope = Workspace::open(&home.0, None).unwrap();
+        let error = scope
+            .copy_bundle("author", &snapshot, MAX_FILES, MAX_BYTES, MAX_FILE_BYTES)
+            .unwrap_err();
+        assert!(error.contains("WebAssembly"), "{error}");
+
+        let pinned = home.0.join("pinned");
+        fixture(&pinned, |m| {
+            m["components"] = json!([{"as": "md", "id": "org.example.markdown", "version": "1.0.0", "blake3": "0".repeat(64)}]);
+        });
+        let error = admit_snapshot(pinned, owner(), tag(), None).err().expect("components refused");
+        assert!(error.contains("components"), "{error}");
+        let empty = home.0.join("empty");
+        fixture(&empty, |m| {
+            m["components"] = json!([]);
+        });
+        admit_snapshot(empty, owner(), tag(), None).unwrap();
+    }
+    /// A receipt whose developer grant has ended is removed with its snapshot
+    /// and never counts toward the install cap; other files are left alone.
+    #[test]
+    fn dead_receipts_are_reaped_and_do_not_count() {
+        let home = crate::app_storage::tests::Scratch::new("studio-reap");
+        let root = home.0.join("studio");
+        let receipts = root.join("installed");
+        std::fs::create_dir_all(&receipts).unwrap();
+        let snapshot = uuid::Uuid::new_v4().to_string();
+        std::fs::create_dir_all(root.join("bundles").join(&snapshot)).unwrap();
+        let dead = Receipt {
+            owner: owner(),
+            profile_id: "gone-profile".into(),
+            since: 1,
+            snapshot: snapshot.clone(),
+            digest: "d".repeat(64),
+            manifest: "{}".into(),
+        };
+        std::fs::write(receipts.join("dev.studio.old.json"), serde_json::to_vec(&dead).unwrap()).unwrap();
+        std::fs::write(receipts.join("notes.txt"), b"kept").unwrap();
+        assert_eq!(reap_dead_receipts(&receipts, &root).unwrap(), 0);
+        assert!(!receipts.join("dev.studio.old.json").exists());
+        assert!(!root.join("bundles").join(&snapshot).exists());
+        assert!(receipts.join("notes.txt").exists());
     }
     #[test]
     fn staging_is_bounded_confined_and_never_stamps_author_source() {

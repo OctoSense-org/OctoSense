@@ -143,6 +143,27 @@ pub(crate) fn surface_geometry(cx: &Cx) -> Option<SurfaceGeometry> {
     SurfaceGeometry::from_window(window.is_created, &window.window_geom)
 }
 
+/// A studio isolate has no host services. Answer every `host.request` it
+/// queued with a refusal instead of leaving it in the shared bridge queue,
+/// where it would hang the script and hold slots other apps need (ADR 0006
+/// section 4: "a `host.request` that would change something is refused").
+pub(crate) fn refuse_host_requests(cx: &mut Cx, splash: &SplashRef) {
+    let Some(heap) = splash
+        .borrow_mut()
+        .and_then(|mut s| s.isolate_heap_key(cx))
+    else {
+        return;
+    };
+    for request in makepad_widgets::splash_host::take_splash_host_requests_for(&[heap]) {
+        let _ = makepad_widgets::splash_host::splash_host_respond(
+            cx,
+            heap,
+            request.req_id,
+            Err("studio previews have no host services; host.request is refused"),
+        );
+    }
+}
+
 struct Active {
     pending: Pending,
     frame: WidgetRef,
@@ -275,6 +296,9 @@ impl Renderer {
     }
     /// A separate root pass never becomes a live tile or enters its store.
     pub fn draw(&mut self, cx: &mut Cx, event: &DrawEvent) {
+        if let Some(a) = self.active.as_ref() {
+            refuse_host_requests(cx, &a.splash);
+        }
         let Some(a) = self
             .active
             .as_mut()
@@ -472,8 +496,15 @@ impl Active {
         }
         splash.set_sandbox_dir(cx, Some(jail.clone()));
         splash.set_storage_quota(cx, Some(0));
+        // Fail closed on the device: a studio render never inherits the
+        // shell's OS permissions and carries no host identity, as a seated
+        // contained app does (`glance_card::seat`).
+        splash.set_device_consent(cx, true);
+        splash.set_host_tag(cx, None);
         splash.set_host_caps(cx, Vec::new());
         splash.set_host_prompts(cx, false);
+        // Hosts and the instruction budget are declarations since the ruling
+        // of 8 October 2026; the jail, quota and memory cap are what is enforced.
         splash.set_policy(cx, Some(Vec::new()), Some(5_000_000));
         splash.set_memory_bytes(cx, Some(16 * 1024 * 1024));
         splash.set_text(cx, &body);
@@ -481,14 +512,10 @@ impl Active {
         if let Some(s) = splash.borrow() {
             s.children(&mut |_, _| children += 1);
         }
-        let running = splash
-            .borrow_mut()
-            .and_then(|mut s| s.isolate_heap_key(cx))
-            .is_some_and(makepad_widgets::splash_policy::may_run);
-        if children == 0 || !running {
+        if children == 0 {
             splash.set_text(cx, "");
             let _ = std::fs::remove_dir_all(&jail);
-            return Err((pending, "studio_eval_failed: preview has no root content or exhausted its instruction budget".into()));
+            return Err((pending, "studio_eval_failed: preview has no root content".into()));
         }
         let pass = DrawPass::new_with_name(cx, "studio_l0_preview");
         let texture = Texture::new_with_format(

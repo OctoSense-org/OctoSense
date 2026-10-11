@@ -43,7 +43,7 @@ fn app_declaration(app: &str, name: &str) -> Value {
     };
     json!({"name":name,"app":app,"description":description,
         "input_schema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
-        "output_schema":{"type":"object"},"risk":if name=="studio.install" || name=="studio.input" {"act"} else {"read"},"background":false,"shareable":false})
+        "output_schema":{"type":"object"},"risk":if name=="studio.install" || name=="studio.input" || name=="studio.open" {"act"} else {"read"},"background":false,"shareable":false})
 }
 pub const SUPPORTED: bool = cfg!(unix);
 pub const SOURCE_MAX: usize = 16 * 1024;
@@ -340,6 +340,7 @@ pub fn test_action(spec_path: &str) -> Result<(), String> {
     if !root.is_absolute() {
         return Err("fixture workspace must be absolute".into());
     }
+    confine_to_home(&root)?;
     args.as_object_mut()
         .ok_or("fixture must be an object")?
         .remove("workspace");
@@ -404,6 +405,7 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
             return Err("flow directory must not be a symlink".into());
         }
     }
+    confine_to_home(&root)?;
     let scope = scoped::Workspace::open(&root, None)?;
     std::thread::spawn(move || {
         let executor = StudioExecutor::default();
@@ -465,7 +467,25 @@ pub fn test_flow(spec_path: &str) -> Result<(), String> {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
+        makepad_widgets::log!(
+            "studio flow: stopped after {} request(s); developer mode {}",
+            seen.len(),
+            if authorized(SYSTEM, &tag) { "still on" } else { "ended" }
+        );
     });
+    Ok(())
+}
+
+/// A launch fixture may only point at a workspace inside this home: the
+/// intent extra that names it is readable by any app that can start Home, so
+/// the spool must never reach another root.
+fn confine_to_home(root: &Path) -> Result<(), String> {
+    let home = std::fs::canonicalize(crate::octosense::paths::home())
+        .map_err(|e| format!("home: {e}"))?;
+    let real = std::fs::canonicalize(root).map_err(|e| format!("workspace: {e}"))?;
+    if !real.starts_with(&home) {
+        return Err("fixture workspace must be inside OctoSense's home directory".into());
+    }
     Ok(())
 }
 
@@ -697,6 +717,9 @@ pub(super) mod scoped {
             }
             budget.0 -= 1;
             let name = std::ffi::OsString::from_vec(name.to_vec());
+            if name.to_string_lossy().to_ascii_lowercase().ends_with(".wasm") {
+                return Err("this Studio release accepts no WebAssembly files".into());
+            }
             let input = File::from(openat(fd, &name, libc::O_RDONLY)?);
             let meta = input.metadata().map_err(|e| e.to_string())?;
             let output = target.join(&name);

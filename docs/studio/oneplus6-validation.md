@@ -13,7 +13,7 @@ Evidence identifiers from the retained local run artifacts:
 | Admitted bundle, BLAKE3 | `7892501e8b69d752b002130879dde11af8f7c7e7b7e620a6854b97892fc95f3b` |
 | Model transcript, SHA-256 | `2d35937d1165d22e9f1ee8a1509064afe33df7f311ee7e2b80420ff4af34e219` |
 | Generation receipt, SHA-256 | `495461c440b451047bd32114a47ba69e778a9cb25eafdb72c1f99094fb0da6db` |
-| Acceptance contract, SHA-256 | `58a2091f2593a231982f755f643559b9dc29649b8d657b67c4edc3d3cbf715` |
+| Acceptance contract, SHA-256 | `58a2091f2593a231982f755f643559b9dc29649b8d657b67c4edc3d3d3cbf715` |
 
 The final functional run is `adr0006-task-planner-acceptance-final`, using runtime commit `50639fa2528baa9e6263ba603fb66eb3505e72a1` after rebasing onto `bf3c2180` and fixing both review findings. APK SHA-256: `d57dc55f1380372a37228ba37a4c6f4d3221599d5566783ae85d5b2d7e9122f3`. The unchanged model-authored bundle passed all 129 calls again. Before rerunning, the previous test-only installed data directory was archived by rename; the harness then created fresh installed state through native input. Production Home and Bridge were not replaced. After the final checks, the original developer-profile files and screen timeout were restored, the temporary provider profile was removed, the test package was stopped and adbd remained unprivileged.
 
