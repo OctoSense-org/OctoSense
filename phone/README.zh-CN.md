@@ -53,7 +53,7 @@ rom/scripts/build-home.sh --variant standalone --development \
 Home 默认使用 `dev.makepad.octosense`。要在已安装的应用旁构建测试 Home，请给上面的独立版命令加上 `--package-name dev.makepad.octosense.studio`。同时使用两个选项时，默认输出为 `rom/out/home/standalone-dev-mode/dev.makepad.octosense.studio/`。只安装测试 Home APK；配套 Bridge 保持原包名，不能替换设备上已安装的 Bridge。独立测试 Home 仍须满足现有包名与签名检查，才可访问 ROM 的特权服务。
 
 新增构建计划和回执路径已通过单元测试与 dry-run 检查；APK 和设备验证另行进行。[App Studio 里程碑 1](../docs/adr/0006-app-studio-on-the-phone.md) 正在实现，完整的手机应用创作循环尚不可用。
-[Studio 设备探针](../tools/studio-device-probe.py) 在该独立测试包中检查权限拒绝、浅色/深色 PNG 输出和切入后台后的取消。它需要使用 `MAKEPAD_FORCE_DEBUGGABLE=1` 构建的 `--dev-mode` APK，让 `run-as` 能写入测试夹具。探针会恢复开发者设置并返回主屏；它不安装 APK，也不测试模型能否收到图片。运行前须先处理首次启动的权限提示；渲染不需要定位权限，可以保持拒绝。启动夹具（`studio-render:` 与 `studio-flow:` 测试动作）只接受位于该包私有目录 `files/studio-fixture/` 下的文件，探针也写在那里。这些设备检查已于 2026 年 10 月在一部普通小米手机上通过（见[证据](../docs/studio/xiaomi-revalidation.md)）。
+[Studio 设备探针](../tools/studio-device-probe.py) 在该独立测试包中检查权限拒绝、浅色/深色 PNG 输出和切入后台后的取消。它需要使用 `MAKEPAD_FORCE_DEBUGGABLE=1` 构建的 `--dev-mode` APK，让 `run-as` 能写入测试夹具。探针会恢复开发者设置并返回主屏；它不安装 APK，也不测试模型能否收到图片。运行前须先处理首次启动的权限提示；渲染不需要定位权限，可以保持拒绝。启动夹具（`studio-render:` 与 `studio-flow:` 测试动作）只接受位于该包私有目录 `files/studio-fixture/` 下的文件，探针也把夹具写在那里。这些设备检查已于 2026 年 10 月在一部普通小米手机上通过（见[证据](../docs/studio/xiaomi-revalidation.md)）。
 
 清单中的 `dev.makepad.android.APPLICATION_EXTENSION` 元数据让应用 ID 改变后
 仍使用同一个 Java 集成类。准备好运行时补丁后，应重新构建锁定版本的打包工具；

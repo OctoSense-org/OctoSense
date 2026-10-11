@@ -9,7 +9,7 @@ Bridge and the default launcher were untouched. The OnePlus 6 evidence in
 [oneplus6-validation.md](oneplus6-validation.md) belongs to the pre-rebase
 build and does not transfer; this run replaces it for the rebased code.
 
-An earlier pass on this phone (source `cde02171`, before the second review
+An earlier run on this phone (source `cde02171`, before the second review
 batch) passed the same probe and a 129-call acceptance flow; the figures
 below are from the final run.
 
@@ -59,7 +59,7 @@ the checked digest preserved; the installed app's interactions with storage
 separate from the preview; close and reopen; persistence across a process
 restart; the Chinese title `测试中文任务：买燕麦` entered natively and present
 after reopen; native scrolling with eight extra rows; the long title. The
-harness made no direct source or app-storage write. The keyboard was observed
+harness did not modify app source or app storage directly. The keyboard was observed
 open and owned by the test package. The two fault checks (malformed
 `tasks.json` preserved, save failure reported) were not run; they need
 isolated fault injection.
@@ -96,7 +96,7 @@ the first grant's `DevTag` no longer matched.
 
 Revocation of a *running* app was not driven on the device: a developer
 profile's grant never expires, and only the Settings and banner gestures end
-it; the unit tests cover that path (the app closes and its launcher row goes).
+it; the unit tests cover that path (the app closes and its launcher row is removed).
 
 ## Not covered
 

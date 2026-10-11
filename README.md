@@ -68,7 +68,7 @@ support this publishing mode. RC2 can install compatible GitHub-attested apps; a
 
 [App Studio on the phone](docs/adr/0006-app-studio-on-the-phone.md) now has developer-only tools to check, open, inspect, exercise and locally install an offline `main.splash` app. Preview state is disposable; installed app state persists under its developer grant. Follow the [Studio code walkthrough](docs/architecture-walkthrough.md#follow-app-studio-from-the-agent-to-a-working-app).
 
-A fresh model-authored Task Planner passed 129 physical-device tool calls on a OnePlus 6 before the merge of `main`, and another on a stock Xiaomi after it ([re-validation](docs/studio/xiaomi-revalidation.md)), including interaction and installed-state persistence; the [portrait app and keyboard visual review](docs/studio/oneplus6-validation.md) passed on both. Fault injection remains pending; image generation, the editable toolbox flow and public publishing remain future work. Home's [build options](phone/README.md#build-and-run) provide developer mode and a separate test package.
+A fresh model-authored Task Planner passed 129 physical-device tool calls on a OnePlus 6 before the merges of `main`, and a second one passed the same flow on a stock Xiaomi after them ([re-validation](docs/studio/xiaomi-revalidation.md)); both runs covered interaction and installed-state persistence, and the [portrait app and keyboard visual review](docs/studio/oneplus6-validation.md) passed on both. Fault injection remains pending; image generation, the editable toolbox flow and public publishing remain future work. Home's [build options](phone/README.md#build-and-run) provide developer mode and a separate test package.
 
 ## How it fits together
 
