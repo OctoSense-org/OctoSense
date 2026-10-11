@@ -110,6 +110,14 @@ impl Area {
         self.freed.fetch_add(freed, Ordering::Relaxed);
     }
 
+    /// Record `bytes` the call removed from the area outside its own writes
+    /// (a cache of its own it cleared to make room): the quota may use them
+    /// again for the rest of the call. Works through a shared reference, so
+    /// a [`Stage`] borrowing the area sees the room it gives.
+    pub fn credit(&self, bytes: u64) {
+        self.freed.fetch_add(bytes, Ordering::Relaxed);
+    }
+
     /// `path` as the caller names it: relative to the root, never the
     /// host's own spelling of it.
     pub fn shown(&self, path: &Path) -> String {
@@ -565,6 +573,26 @@ mod tests {
         assert_eq!(app.room(), Some(0));
         assert!(app.write(&dir.path().join("d"), b"1").is_err());
         assert_eq!(Area::new(dir.path(), None, false).room(), None);
+    }
+
+    /// What a call removes outside its own writes (a cache it cleared) is
+    /// room again, for a plain write and for a stage that borrows the area.
+    #[test]
+    fn credited_bytes_are_room_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let area = Area::new(dir.path(), Some(4), false);
+        assert!(area.write(&dir.path().join("a"), b"123456").unwrap_err().contains("more than the 4 bytes left"));
+        area.credit(2);
+        assert_eq!(area.room(), Some(6));
+        area.write(&dir.path().join("a"), b"123456").unwrap();
+        assert_eq!(area.room(), Some(0));
+        let stage = area.stage().unwrap();
+        std::fs::write(stage.path("b"), b"12").unwrap();
+        assert!(stage.commit(&[(stage.path("b"), dir.path().join("b"))]).is_err(), "no room yet");
+        area.credit(2);
+        stage.commit(&[(stage.path("b"), dir.path().join("b"))]).unwrap();
+        assert_eq!(area.room(), Some(0));
+        assert_eq!(Area::new(dir.path(), None, false).room(), None, "no quota: nothing to credit");
     }
 
     #[test]

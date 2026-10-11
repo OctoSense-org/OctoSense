@@ -81,6 +81,40 @@ app's own agent and `tools.json`, the system toolbox, `glance.publish` and
   shell by `apps/pdftools/tests/ui.py` on the sample PDFs its
   `pdftools_fixture` example writes, see `apps/pdftools/README.md`):
   `apps/pdf/host-service` and `cargo test --locked -p octosense-pdf-service`.
+  Besides the file methods (`info`, `text`, `render`, `merge`, `split`: the
+  system agent's five tools, which stay as they are), it serves PDF Tools
+  v2's open documents to apps' own requests, as
+  `apps/pdftools/design/SERVICE.md` specifies; change that contract and the
+  service together. `pdf.open` keeps the engine's document, its edits and
+  undo history, under a handle; a document belongs to the caller app, its
+  storage scope (the area's root) and the handle, so another app's or
+  scope's handle is `unknown_doc:`, and a caller keeps at most 8 open
+  (`src/docs.rs`). The table is a `thread_local`, because every call reaches
+  the service on the UI thread (App Hub's `services::pump` inline from the
+  card runner, the relay's and components' calls from `host_tools::pump`),
+  which must take no lock another thread can hold. `pdf.close` releases a
+  document, and so does its app closing: a document is bound to the opening
+  isolate, and the service's listener on App Hub's
+  `services::on_isolate_closed` (called from `cancel_heap`, which every host
+  calls for a closing isolate) releases its documents and their renders
+  before the isolate's heap key, an address, can be reused. Every call also
+  sweeps for a changed storage scope (Makepad's
+  `splash_storage::storage_for_heap` for `Replier::isolate_key()`), and a
+  caller with no isolate gets a 15-minute idle bound. Each method runs
+  reviewed engine commands, its
+  review beside it (`src/reading.rs`, `src/review.rs`, `src/change.rs`): the
+  service builds every engine argument itself and each v2 method refuses a
+  key it does not take, so `comment_add` (`file`) never sees its attachment
+  type or a path; `file` commands that write get a staging path inside the
+  storage only; `doc_open` and `form_fill` (`code`) run with JavaScript off,
+  proven by `doc_tests::a_forms_own_scripts_never_run`. Caps: 24–300 dpi and
+  16 MP a render, `find` ≤ 500 matches, 512 pages a call, an image export
+  ≤ 64 pages and 256 MP in all (checked before anything is written), and a
+  render cache in `.cache/pages/` of 16 MiB and 64 files (an app's storage
+  holds at most 256 entries for its own writes), oldest first, cleared
+  before a write would fail with `storage_full:`. `pdf.fields` marks
+  read-only fields, and `pdf.fill` refuses one. Errors start with a stable
+  code (`src/codes.rs`).
 - Declare an app's agent in its manifest and `bundle/tools.json`. Keep the
   input/output schemas consistent with the executor (octos requires an object
   output schema), and select the actual risk, sharing and confirmation policy.

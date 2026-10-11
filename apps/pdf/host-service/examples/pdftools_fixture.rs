@@ -48,8 +48,9 @@ fn main() {
     }
 }
 
-/// The samples: file name and bytes.
-fn documents() -> Vec<(&'static str, Vec<u8>)> {
+/// The samples: file name and bytes. (The service's own tests include
+/// this file as a module and use them too.)
+pub(crate) fn documents() -> Vec<(&'static str, Vec<u8>)> {
     vec![
         ("Quarterly report.pdf", quarterly_report()),
         ("Board minutes.pdf", board_minutes()),
@@ -513,7 +514,7 @@ fn apartment_lease() -> Vec<u8> {
     pdf(&info(title, "Harbour Lane Homes", "Lease for 14 Harbour Lane, flat 3B", "lease, rental, agreement"), pages)
 }
 
-fn garden_plan() -> Vec<u8> {
+pub(crate) fn garden_plan() -> Vec<u8> {
     let title = "Garden plan - spring 2027";
     let beds = [
         ("Bed 1: salad", 0x6a994e, "Lettuce, rocket and radishes, sown every three weeks from March for a steady supply."),

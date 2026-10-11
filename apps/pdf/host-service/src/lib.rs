@@ -1,34 +1,51 @@
 //! `octosense-pdf-service` — the `pdf` host service (ADR 0013).
 //!
-//! pdfcraft's PDF engine through its own headless automation layer. Every
-//! call is a fresh, stateless session whose file access is confined to the
-//! call's area, first by this service's own path check and then by the
-//! engine's root-confined resolver, which refuses `..`, absolute paths and
-//! symlink escapes before any I/O. A reference inside a PDF (a remote
-//! go-to, a launch action, an external file specification) is reported,
-//! never followed, and a document's own scripts never run: every session
-//! turns the engine's JavaScript off before it opens anything, so an XFA
-//! form's initialize and calculate scripts (which the engine runs on
-//! opening by default, in its sandbox) and field scripts stay inert.
+//! pdfcraft's PDF engine through its own headless automation layer, in two
+//! shapes:
+//!
+//! - **Files.** A call that names a `path` is a fresh session that opens
+//!   the file, acts and closes: `info`, `text`, `render`, `merge`, `split`.
+//!   The system agent's five `pdf.*` tools (`tools.json`) are these.
+//! - **Open documents** (PDF Tools v2, `apps/pdftools/design/SERVICE.md`):
+//!   `open` keeps the engine's document, its edits and undo history,
+//!   between calls under a handle that later calls name as `doc`; `close`,
+//!   `state`, `page`, `find`, `lines`, `comments`, `comment`, `fields`,
+//!   `fill`, `fill_sign`, `pages`, `edit_text`, `undo`, `redo`, `save` and
+//!   `export` work on it, and `info` and `text` take `{doc}` too. Who holds
+//!   an open document, on which thread, and what releases it: [`docs`].
 //!
 //! **Where a call works** (ADR 0013, 2026-10-08): the caller's own folder,
-//! the [`Area`] the shell's resolver gives it ([`set_area_resolver`]), or
-//! without one the legacy `<host dir>/pdf`. A write that may not replace (an
-//! agent's) only creates new files, within the area's quota: a rendered page
-//! goes through [`Area::write`], and what the engine writes itself (a merge,
-//! a split) lands in a staging folder inside the area first and is moved
-//! into place all or nothing ([`octosense_engine_area::Stage`]).
+//! the [`Area`] the shell's resolver gives it ([`set_area_resolver`]): an
+//! app's storage for its own requests. Without a resolver a call works in
+//! the legacy `<host dir>/pdf`. Every path is relative to the area and kept
+//! inside it, first by this service's own check ([`contained`]) and then by
+//! the engine's root-confined resolver, which refuses `..`, absolute paths
+//! and link escapes before any I/O. What the engine writes lands in a
+//! staging folder inside the area first and is moved into place all or
+//! nothing ([`octosense_engine_area::Stage`]), within what is left of the
+//! storage. A write never replaces a file, except an app's own foreground
+//! call where it always could (`merge`, `split`, `render`), the service's
+//! own render cache ([`cache`]), and SERVICE.md's incremental `save` over
+//! the document's own file. Before a write would fail for room, the render
+//! cache is cleared.
 //!
-//! Methods (all under the `pdf` family; paths relative to the area):
-//! - `info {path}` → the document inspected as JSON (pages, metadata,
-//!   outline, fonts, security, repair notes)
-//! - `text {path, pages?}` → `{pages: [{page, text}]}` — 1-based pages,
-//!   in reading order
-//! - `render {path, page, out, max_side?}` → `{out, width, height,
-//!   bytes}` — one page written as a PNG
-//! - `merge {paths, out}` → `{out, bytes}` — the files combined, in order
-//! - `split {path, out_dir, every? | before?}` → `{files}` — split every
-//!   N pages, or before the given 1-based page numbers
+//! **Scripts.** A reference inside a PDF (a remote go-to, a launch action,
+//! an external file specification) is reported, never followed, and a
+//! document's own scripts never run: every session turns the engine's
+//! JavaScript off before it opens anything ([`session`]), so an XFA form's
+//! initialize and calculate scripts (which the engine runs on opening by
+//! default, in its sandbox), field scripts and document scripts stay
+//! inert, through every method.
+//!
+//! **Engine commands** are called only with arguments this service builds
+//! from reviewed values, never with a caller's object; every v2 method
+//! refuses an argument it does not take ([`args::only`]). Each command's
+//! class in `skill/safety.json` and the review of it are beside the
+//! methods that call it ([`reading`], [`review`], [`change`]).
+//!
+//! **Errors** start with a stable code ([`codes`]): `not_found:`,
+//! `damaged:`, `protected:`, `storage_full:`, `too_many_open:`,
+//! `unknown_doc:`, `unsaved:`, `invalid:`, `too_large:`.
 //!
 //! The service serves system apps only until ADR 0013's store capability
 //! is designed.
@@ -36,12 +53,23 @@
 /// The system agent's skill for this engine (ADR 0013).
 pub mod skill;
 
+mod args;
+mod cache;
+mod change;
+mod codes;
+mod docs;
+mod reading;
+mod review;
+
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Component, Path, PathBuf};
 
 use octosense_appstore::services::{register_host_service, HostService, Replier, ServiceCall, ServiceHost};
 use octosense_engine_area::{Area, Slot, Stage};
-use pdfcraft_automation::{Automation, Content};
+use pdfcraft_automation::{Automation, Content, ToolError};
 use serde_json::{json, Value as Json};
+
+use codes::{fail, invalid, Code};
 
 /// The longest page edge `render` produces.
 const MAX_RENDER_SIDE: u64 = 4096;
@@ -52,7 +80,7 @@ const MAX_MERGE_FILES: usize = 16;
 /// The most files one `split` writes.
 const MAX_SPLIT_FILES: u64 = 256;
 /// The most pages one `text` call extracts.
-const MAX_TEXT_PAGES: usize = 512;
+const MAX_TEXT_PAGES: usize = args::MAX_PAGES;
 
 /// Which apps may call the service: system apps, as Sheets and Photo.
 fn may_call(app_id: &str) -> bool {
@@ -61,8 +89,11 @@ fn may_call(app_id: &str) -> bool {
 
 pub struct PdfService;
 
-/// Register the `pdf` service with App Hub's host-service registry.
+/// Register the `pdf` service with App Hub's host-service registry, and
+/// its listener for closing isolates: the open documents an isolate holds
+/// go when it closes ([`docs`]).
 pub fn register() {
+    octosense_appstore::services::on_isolate_closed(docs::isolate_closed);
     register_host_service(Box::new(PdfService));
 }
 
@@ -86,19 +117,37 @@ impl HostService for PdfService {
     }
 
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
-        reply.send(serve(&AREAS, &call));
+        // App Hub calls this inline, holding its registry's lock: a panic
+        // in the engine must not unwind through it (and poison every
+        // service's registry), so it becomes this call's error.
+        let isolate = reply.isolate_key();
+        let answer = catch_unwind(AssertUnwindSafe(|| serve(&AREAS, &call, isolate)))
+            .unwrap_or_else(|_| Err(fail(Code::Damaged, "the PDF engine failed unexpectedly")));
+        reply.send(answer);
     }
 }
 
+/// One call: where it works, who made it, and from which isolate.
+pub(crate) struct Ctx<'a> {
+    pub area: &'a Area,
+    pub app: &'a str,
+    /// The requesting isolate's heap key (App Hub's `Replier::isolate_key`;
+    /// a key no isolate has for an agent's or a component's call): what a
+    /// document it opens is bound to ([`docs`]).
+    pub isolate: usize,
+}
+
 /// One call, in the area `areas` gives it.
-fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
+fn serve(areas: &Slot, call: &ServiceCall, isolate: usize) -> Result<Json, String> {
     if !may_call(&call.app_id) {
-        return Err("The pdf service serves system apps only.".into());
+        return Err(invalid("the pdf service serves system apps only"));
     }
-    let area = areas.area(call, "pdf").map_err(|e| format!("pdf: {e}"))?;
-    dispatch_in(call.method(), &call.args, &area)
-        .map(|answer| area.relative_json(answer))
-        .map_err(|error| area.relative_text(&error))
+    // Documents whose isolate closed during a call, or whose caller's
+    // storage scope changed or went, go first, on every call ([`docs`]).
+    docs::sweep();
+    let area = areas.area(call, "pdf").map_err(|e| invalid(format!("this call has no folder to work in: {e}")))?;
+    let cx = Ctx { area: &area, app: &call.app_id, isolate };
+    dispatch_in(call.method(), &call.args, &cx).map(|answer| area.relative_json(answer)).map_err(|error| area.relative_text(&error))
 }
 
 /// A fresh engine session whose every file read and write is root-confined
@@ -106,22 +155,39 @@ fn serve(areas: &Slot, call: &ServiceCall) -> Result<Json, String> {
 /// scripts off (the engine's Preferences ▸ JavaScript switch, on by
 /// default).
 fn session(area: &Area) -> Result<Automation, String> {
-    let mut a = Automation::new().with_root(area.root.clone()).map_err(|e| format!("pdf: {e}"))?;
-    tool_json(&mut a, "js_enabled", json!({"enabled": false}), "pdf")?;
+    let mut a = Automation::new().with_root(area.root.clone()).map_err(|e| invalid(format!("this call's folder: {e}")))?;
+    run(&mut a, "js_enabled", &json!({"enabled": false})).map_err(|e| fail(Code::Damaged, format!("the engine's scripting could not be turned off: {e}")))?;
     if a.session().javascript() {
-        return Err("pdf: the engine's scripting could not be turned off".into());
+        return Err(fail(Code::Damaged, "the engine's scripting could not be turned off"));
     }
     Ok(a)
 }
 
-fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
+fn dispatch_in(method: &str, args: &Json, cx: &Ctx) -> Result<Json, String> {
     match method {
-        "info" => info(args, area),
-        "text" => text(args, area),
-        "render" => render(args, area),
-        "merge" => merge(args, area),
-        "split" => split(args, area),
-        other => Err(format!("pdf.{other} is not a method of the pdf service")),
+        "info" => info(args, cx),
+        "text" => text(args, cx),
+        "render" => render(args, cx.area),
+        "merge" => merge(args, cx.area),
+        "split" => split(args, cx.area),
+        "open" => docs::open(args, cx),
+        "close" => docs::close(args, cx),
+        "state" => docs::state(args, cx),
+        "page" => reading::page(args, cx),
+        "find" => reading::find(args, cx),
+        "lines" => reading::lines(args, cx),
+        "comments" => review::comments(args, cx),
+        "comment" => review::comment(args, cx),
+        "fields" => review::fields(args, cx),
+        "fill" => review::fill(args, cx),
+        "fill_sign" => review::fill_sign(args, cx),
+        "pages" => change::pages(args, cx),
+        "edit_text" => change::edit_text(args, cx),
+        "undo" => change::history(args, cx, false),
+        "redo" => change::history(args, cx, true),
+        "save" => change::save(args, cx),
+        "export" => change::export(args, cx),
+        other => Err(invalid(format!("pdf.{other} is not a method of the pdf service"))),
     }
 }
 
@@ -131,18 +197,14 @@ fn dispatch_in(method: &str, args: &Json, area: &Area) -> Result<Json, String> {
 fn dispatch(method: &str, args: &Json, host_dir: &Path) -> Result<Json, String> {
     let area = Area::legacy(host_dir, "pdf");
     std::fs::create_dir_all(&area.root).map_err(|e| format!("pdf: {e}"))?;
-    dispatch_in(method, args, &area)
+    dispatch_in(method, args, &Ctx { area: &area, app: "os.fixture", isolate: 0 })
 }
 
 /// A staging path (`name` inside `stage`) as the engine names paths: relative
 /// to its root, the area's.
 fn staged(area: &Area, stage: &Stage<'_>, name: &str) -> Result<String, String> {
-    let dir = stage.dir().strip_prefix(&area.root).map_err(|_| "pdf: the staging folder is outside the area".to_string())?;
+    let dir = stage.dir().strip_prefix(&area.root).map_err(|_| invalid("the staging folder is outside the area"))?;
     Ok(dir.join(name).to_string_lossy().into_owned())
-}
-
-fn need_str<'a>(args: &'a Json, key: &str, m: &str) -> Result<&'a str, String> {
-    args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("{m}: `{key}` is required"))
 }
 
 /// A path strictly inside the area: relative, normal components only, and
@@ -151,15 +213,16 @@ fn need_str<'a>(args: &'a Json, key: &str, m: &str) -> Result<&'a str, String> {
 /// take). The engine's resolver enforces the same bound again at I/O time.
 fn contained(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
-        return Err(format!("{m}: `{key}` is required"));
+        return Err(invalid(format!("{m} needs `{key}`")));
     }
+    let outside = || invalid(format!("{m}: `{key}` stays inside this app's storage"));
     let rel_path = Path::new(rel);
     if rel_path.is_absolute() || rel_path.components().any(|c| !matches!(c, Component::Normal(_))) {
-        return Err(format!("{m}: `{key}` stays inside this call's folder"));
+        return Err(outside());
     }
     let root = &area.root;
     let joined = root.join(rel_path);
-    let check_root = root.canonicalize().map_err(|e| format!("{m}: folder: {e}"))?;
+    let check_root = root.canonicalize().map_err(|e| invalid(format!("{m}: this call's folder: {e}")))?;
     let deepest = {
         let mut p = joined.clone();
         while !p.exists() {
@@ -170,9 +233,9 @@ fn contained(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, Stri
         }
         p
     };
-    let resolved = deepest.canonicalize().map_err(|e| format!("{m}: {e}"))?;
+    let resolved = deepest.canonicalize().map_err(|_| outside())?;
     if !resolved.starts_with(&check_root) {
-        return Err(format!("{m}: `{key}` stays inside this call's folder"));
+        return Err(outside());
     }
     Ok(joined)
 }
@@ -181,151 +244,224 @@ fn contained(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, Stri
 /// works when the area's rules would refuse it.
 fn out_path(area: &Area, rel: &str, key: &str, m: &str) -> Result<PathBuf, String> {
     let out = contained(area, rel, key, m)?;
-    area.check(&out, 0).map_err(|e| format!("{m}: {e}"))?;
+    area.check(&out, 0).map_err(codes::area)?;
     Ok(out)
 }
 
 /// The containment check plus the size cap, for a file a method will read.
 fn checked_input(area: &Area, rel: &str, key: &str, m: &str) -> Result<(), String> {
     let path = contained(area, rel, key, m)?;
-    let meta = std::fs::metadata(&path).map_err(|e| format!("{m}: {rel}: {e}"))?;
+    let meta = match std::fs::metadata(&path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(fail(Code::NotFound, format!("{rel} is not in this app's storage"))),
+        Err(e) => return Err(invalid(format!("{rel}: {e}"))),
+    };
+    if !meta.is_file() {
+        return Err(invalid(format!("{rel} is not a file")));
+    }
     if meta.len() > MAX_PDF_BYTES {
-        return Err(format!("{m}: {rel} is larger than the service reads ({} MB)", MAX_PDF_BYTES >> 20));
+        return Err(fail(Code::TooLarge, format!("{rel} is larger than the service reads ({} MB)", MAX_PDF_BYTES >> 20)));
     }
     Ok(())
 }
 
 /// Run one engine tool and keep its JSON result.
-fn tool_json(a: &mut Automation, tool: &str, args: Json, m: &str) -> Result<Json, String> {
-    let contents = a.call(tool, &args).map_err(|e| format!("{m}: {e}"))?;
-    for c in contents {
+fn run(a: &mut Automation, tool: &str, args: &Json) -> Result<Json, ToolError> {
+    for c in a.call(tool, args)? {
         if let Content::Json(v) = c {
             return Ok(v);
         }
     }
-    Err(format!("{m}: the engine returned no result"))
+    Err(ToolError::Failed(format!("{tool}: the engine returned no result")))
 }
 
 /// Open `path` (already checked) and return the session's document id and
 /// page count.
-fn open(a: &mut Automation, path: &str, m: &str) -> Result<(Json, u64), String> {
-    let opened = tool_json(a, "doc_open", json!({ "path": path }), m)?;
+fn open(a: &mut Automation, path: &str) -> Result<(Json, u64), String> {
+    let opened = run(a, "doc_open", &json!({ "path": path })).map_err(|e| codes::unreadable(&e))?;
     let pages = opened["pages"].as_u64().unwrap_or(0);
     Ok((opened["doc"].clone(), pages))
 }
 
-fn info(args: &Json, area: &Area) -> Result<Json, String> {
+/// `{path}` or `{doc}`, not both: which one a reading method was given.
+fn path_or_doc<'a>(args: &'a Json, m: &str) -> Result<Option<&'a str>, String> {
+    match (args.get("path").filter(|v| !v.is_null()), args.get("doc").filter(|v| !v.is_null())) {
+        (Some(_), Some(_)) => Err(invalid(format!("{m} takes `path` or `doc`, not both"))),
+        (_, Some(_)) => Ok(None),
+        _ => args::need_str(args, "path", m).map(Some),
+    }
+}
+
+/// The `pages` a text call names, or all of a document of at most
+/// [`MAX_TEXT_PAGES`].
+fn text_pages(args: &Json, total: u64, m: &str) -> Result<Option<Vec<u64>>, String> {
+    match args::opt_pages(args, "pages", m)? {
+        Some(pages) => Ok(Some(pages)),
+        None if total as usize > MAX_TEXT_PAGES => {
+            Err(fail(Code::TooLarge, format!("{m}: the document has {total} pages; pass `pages` ({MAX_TEXT_PAGES} per call)")))
+        }
+        None => Ok(None),
+    }
+}
+
+fn info(args: &Json, cx: &Ctx) -> Result<Json, String> {
     const M: &str = "pdf.info";
-    let path = need_str(args, "path", M)?;
-    checked_input(area, path, "path", M)?;
-    let mut a = session(area)?;
-    let (doc, _) = open(&mut a, path, M)?;
-    let mut out = tool_json(&mut a, "doc_info", json!({ "doc": doc }), M)?;
+    let Some(path) = path_or_doc(args, M)? else {
+        args::only(args, &["doc"], M)?;
+        return docs::with_doc(args, cx, M, |doc| {
+            let mut out = doc.call("doc_info", json!({})).map_err(|e| codes::refused(&e))?;
+            // The engine reads the file from wherever it last saved it (a
+            // staging folder): the document's file is the service's to name.
+            out["file"] = json!(doc.file);
+            out["document"]["path"] = json!(doc.file);
+            Ok(out)
+        });
+    };
+    checked_input(cx.area, path, "path", M)?;
+    let mut a = session(cx.area)?;
+    let (doc, _) = open(&mut a, path)?;
+    let mut out = run(&mut a, "doc_info", &json!({ "doc": doc })).map_err(|e| codes::unreadable(&e))?;
     out["file"] = json!(path);
     Ok(out)
 }
 
-fn text(args: &Json, area: &Area) -> Result<Json, String> {
+fn text(args: &Json, cx: &Ctx) -> Result<Json, String> {
     const M: &str = "pdf.text";
-    let path = need_str(args, "path", M)?;
-    checked_input(area, path, "path", M)?;
-    let mut a = session(area)?;
-    let (doc, total) = open(&mut a, path, M)?;
-    let call_args = match &args["pages"] {
-        Json::Null => {
-            if total as usize > MAX_TEXT_PAGES {
-                return Err(format!("{M}: the document has {total} pages; pass `pages` ({MAX_TEXT_PAGES} per call)"));
+    let Some(path) = path_or_doc(args, M)? else {
+        args::only(args, &["doc", "pages"], M)?;
+        return docs::with_doc(args, cx, M, |doc| {
+            let mut call = json!({});
+            if let Some(pages) = text_pages(args, doc.sizes.len() as u64, M)? {
+                call["pages"] = json!(pages);
             }
-            json!({ "doc": doc })
-        }
-        Json::Array(list) if !list.is_empty() && list.len() <= MAX_TEXT_PAGES => {
-            json!({ "doc": doc, "pages": list })
-        }
-        Json::Array(_) => return Err(format!("{M}: `pages` is 1..={MAX_TEXT_PAGES} page numbers")),
-        other => return Err(format!("{M}: `pages` is a list of 1-based page numbers, not {other}")),
+            doc.call("text_extract", call).map_err(|e| codes::refused(&e))
+        });
     };
-    tool_json(&mut a, "text_extract", call_args, M)
+    checked_input(cx.area, path, "path", M)?;
+    let mut a = session(cx.area)?;
+    let (doc, total) = open(&mut a, path)?;
+    let mut call = json!({ "doc": doc });
+    if let Some(pages) = text_pages(args, total, M)? {
+        call["pages"] = json!(pages);
+    }
+    run(&mut a, "text_extract", &call).map_err(|e| codes::refused(&e))
 }
 
 fn render(args: &Json, area: &Area) -> Result<Json, String> {
     const M: &str = "pdf.render";
-    let path = need_str(args, "path", M)?;
-    let out = need_str(args, "out", M)?;
-    let page = args["page"].as_u64().filter(|p| *p >= 1).ok_or(format!("{M}: `page` is a 1-based page number"))?;
-    let max_side = args["max_side"].as_u64().unwrap_or(1024).clamp(16, MAX_RENDER_SIDE);
+    let path = args::need_str(args, "path", M)?;
+    let out = args::need_str(args, "out", M)?;
+    let page = args::positive(args, "page", M)?;
+    let max_side = args::opt_int(args, "max_side", M)?.unwrap_or(1024).clamp(16, MAX_RENDER_SIDE as i64) as u64;
     checked_input(area, path, "path", M)?;
     let out_abs = out_path(area, out, "out", M)?;
     let mut a = session(area)?;
-    let (doc, _) = open(&mut a, path, M)?;
+    let (doc, _) = open(&mut a, path)?;
     // The page's size in points decides the dpi that fits `max_side`.
-    let inspected = tool_json(&mut a, "doc_info", json!({ "doc": doc }), M)?;
+    let inspected = run(&mut a, "doc_info", &json!({ "doc": doc })).map_err(|e| codes::unreadable(&e))?;
     let dims = &inspected["pages"][(page - 1) as usize];
     let side = dims["width"].as_f64().unwrap_or(0.0).max(dims["height"].as_f64().unwrap_or(0.0));
     if side <= 0.0 {
-        return Err(format!("{M}: the document has no page {page}"));
+        return Err(invalid(format!("the document has no page {page}")));
     }
     let dpi = (72.0 * max_side as f64 / side).clamp(1.0, 600.0);
-    let contents =
-        a.call("page_render", &json!({ "doc": doc, "page": page, "dpi": dpi })).map_err(|e| format!("{M}: {e}"))?;
-    let Some(Content::Png { data, width, height }) =
-        contents.into_iter().find(|c| matches!(c, Content::Png { .. }))
-    else {
-        return Err(format!("{M}: the engine returned no image"));
+    let contents = a.call("page_render", &json!({ "doc": doc, "page": page, "dpi": dpi })).map_err(|e| codes::refused(&e))?;
+    let Some(Content::Png { data, width, height }) = contents.into_iter().find(|c| matches!(c, Content::Png { .. })) else {
+        return Err(fail(Code::Damaged, format!("page {page} could not be rendered")));
     };
-    area.write(&out_abs, &data).map_err(|e| format!("{M}: {e}"))?;
+    cache::make_room(area, (data.len() as u64).saturating_sub(cache::regular_len(&out_abs)));
+    area.write(&out_abs, &data).map_err(codes::area)?;
     Ok(json!({ "out": out, "width": width, "height": height, "bytes": data.len() }))
+}
+
+/// A merge input's page range (`"1-4, 9"`): `None` for every page (none
+/// given, `""` or `"all"`). Dashes a person types (`–`, `—`) read as `-`.
+fn range(text: &str, m: &str) -> Result<Option<String>, String> {
+    let t = text.trim();
+    if t.is_empty() || t.eq_ignore_ascii_case("all") {
+        return Ok(None);
+    }
+    let t: String = t.chars().map(|c| if matches!(c, '–' | '—' | '‒' | '−') { '-' } else { c }).collect();
+    if t.len() > 256 || !t.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | '-' | ' ')) {
+        return Err(invalid(format!("{m}: `pages` is a range of page numbers such as \"1-4, 9\"")));
+    }
+    Ok(Some(t))
 }
 
 fn merge(args: &Json, area: &Area) -> Result<Json, String> {
     const M: &str = "pdf.merge";
-    let out = need_str(args, "out", M)?;
+    let out = args::need_str(args, "out", M)?;
     let out_abs = out_path(area, out, "out", M)?;
-    let paths = args["paths"].as_array().ok_or(format!("{M}: `paths` is a list of files"))?;
-    if paths.len() < 2 || paths.len() > MAX_MERGE_FILES {
-        return Err(format!("{M}: `paths` is 2..={MAX_MERGE_FILES} files"));
+    let items = args["paths"].as_array().ok_or_else(|| invalid(format!("{M}: `paths` is a list of files")))?;
+    if items.len() < 2 || items.len() > MAX_MERGE_FILES {
+        return Err(invalid(format!("{M}: `paths` is 2 to {MAX_MERGE_FILES} files")));
     }
-    for p in paths {
-        let p = p.as_str().filter(|s| !s.is_empty()).ok_or(format!("{M}: every path is a file name"))?;
-        checked_input(area, p, "paths", M)?;
+    let mut paths: Vec<&str> = Vec::new();
+    let mut ranges: Vec<Option<String>> = Vec::new();
+    for item in items {
+        let (path, pages) = match item {
+            Json::String(p) => (p.as_str(), None),
+            Json::Object(o) => {
+                args::only(item, &["path", "pages"], M)?;
+                let p = o.get("path").and_then(Json::as_str).ok_or_else(|| invalid(format!("{M}: every input names its `path`")))?;
+                let pages = match o.get("pages") {
+                    None | Some(Json::Null) => None,
+                    Some(Json::String(r)) => range(r, M)?,
+                    Some(_) => return Err(invalid(format!("{M}: `pages` is a range such as \"1-4, 9\""))),
+                };
+                (p, pages)
+            }
+            _ => return Err(invalid(format!("{M}: every input is a path or {{path, pages}}"))),
+        };
+        if path.is_empty() {
+            return Err(invalid(format!("{M}: every input names a file")));
+        }
+        checked_input(area, path, "paths", M)?;
+        paths.push(path);
+        ranges.push(pages);
     }
     // The engine writes the merge itself: into a staging folder, then into
     // place under the area's rules.
-    let stage = area.stage().map_err(|e| format!("{M}: {e}"))?;
+    let stage = area.stage().map_err(codes::area)?;
     let mut a = session(area)?;
-    let combined = tool_json(&mut a, "doc_combine", json!({ "paths": paths, "out": staged(area, &stage, "merged.pdf")?, "open": false }), M)?;
-    stage.commit(&[(stage.path("merged.pdf"), out_abs)]).map_err(|e| format!("{M}: {e}"))?;
+    let mut call = json!({ "paths": paths, "out": staged(area, &stage, "merged.pdf")?, "open": false });
+    if ranges.iter().any(Option::is_some) {
+        call["pages"] = json!(ranges);
+    }
+    let combined = run(&mut a, "doc_combine", &call).map_err(|e| codes::read_or_refused(&e))?;
+    change::commit(area, &stage, &[(stage.path("merged.pdf"), out_abs)])?;
     Ok(json!({ "out": out, "bytes": combined["bytes"] }))
 }
 
 fn split(args: &Json, area: &Area) -> Result<Json, String> {
     const M: &str = "pdf.split";
-    let path = need_str(args, "path", M)?;
-    let out_dir = need_str(args, "out_dir", M)?;
+    let path = args::need_str(args, "path", M)?;
+    let out_dir = args::need_str(args, "out_dir", M)?;
     checked_input(area, path, "path", M)?;
     let out_dir_abs = contained(area, out_dir, "out_dir", M)?;
     let every = args["every"].as_u64();
     let before = args["before"].as_array();
     let mut a = session(area)?;
-    let (doc, total) = open(&mut a, path, M)?;
+    let (doc, total) = open(&mut a, path)?;
     // The engine writes the parts itself: into a staging folder, then all
     // of them into `out_dir` under the area's rules, or none.
-    let stage = area.stage().map_err(|e| format!("{M}: {e}"))?;
+    let stage = area.stage().map_err(codes::area)?;
     let staging = staged(area, &stage, "")?;
     let call_args = match (every, before) {
         (Some(n), None) if n >= 1 => {
             if total.div_ceil(n) > MAX_SPLIT_FILES {
-                return Err(format!("{M}: splitting {total} pages every {n} makes too many files (at most {MAX_SPLIT_FILES})"));
+                return Err(fail(Code::TooLarge, format!("splitting {total} pages every {n} makes too many files (at most {MAX_SPLIT_FILES})")));
             }
             json!({ "doc": doc, "out_dir": staging, "every": n })
         }
         (None, Some(b)) if !b.is_empty() && (b.len() as u64) < MAX_SPLIT_FILES => {
             json!({ "doc": doc, "out_dir": staging, "before": b })
         }
-        _ => return Err(format!("{M}: pass exactly one of `every` (pages per file, ≥ 1) or `before` (1-based page numbers)")),
+        _ => return Err(invalid(format!("{M}: pass exactly one of `every` (pages per file, ≥ 1) or `before` (1-based page numbers)"))),
     };
-    let parts = tool_json(&mut a, "doc_split", call_args, M)?;
+    let parts = run(&mut a, "doc_split", &call_args).map_err(|e| codes::refused(&e))?;
     let moves: Vec<(PathBuf, PathBuf)> = stage.files().into_iter().map(|rel| (stage.path(&rel), out_dir_abs.join(rel))).collect();
-    stage.commit(&moves).map_err(|e| format!("{M}: {e}"))?;
+    change::commit(area, &stage, &moves)?;
     // The engine reports where it wrote, in the staging folder; callers
     // speak area-relative paths, where the parts are now.
     let files: Vec<Json> = parts["files"]
@@ -344,13 +480,16 @@ fn split(args: &Json, area: &Area) -> Result<Json, String> {
 }
 
 #[cfg(test)]
+mod doc_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     /// The value of form field `name` in `path`, as `session` opens it.
     fn field(a: &mut Automation, path: &str, name: &str) -> Json {
-        let (doc, _) = open(a, path, "test").unwrap();
-        let fields = tool_json(a, "form_fields", json!({"doc": doc}), "test").unwrap();
+        let (doc, _) = open(a, path).unwrap();
+        let fields = run(a, "form_fields", &json!({"doc": doc})).unwrap();
         let list = if fields.is_array() { fields } else { fields["fields"].clone() };
         list.as_array().unwrap().iter().find(|f| f["name"] == name).map(|f| f["value"].clone()).unwrap_or_else(|| panic!("no field {name}: {list}"))
     }
@@ -372,15 +511,16 @@ mod tests {
         let mut a = session(&area).unwrap();
         assert!(!a.session().javascript(), "every service session turns scripts off");
         assert_ne!(field(&mut a, "form.pdf", "qty"), json!("2"), "no script ran");
-        dispatch_in("info", &json!({"path": "form.pdf"}), &area).unwrap();
-        dispatch_in("text", &json!({"path": "form.pdf"}), &area).unwrap();
-        dispatch_in("render", &json!({"path": "form.pdf", "page": 1, "out": "form.png", "max_side": 64}), &area).unwrap();
+        let cx = Ctx { area: &area, app: "os.fixture", isolate: 0 };
+        dispatch_in("info", &json!({"path": "form.pdf"}), &cx).unwrap();
+        dispatch_in("text", &json!({"path": "form.pdf"}), &cx).unwrap();
+        dispatch_in("render", &json!({"path": "form.pdf", "page": 1, "out": "form.png", "max_side": 64}), &cx).unwrap();
     }
 
     /// A tiny, valid two-page PDF written by this test: Helvetica text on
     /// each page, exact stream lengths and xref offsets, no compression —
     /// so the suite needs no fixtures on disk.
-    fn tiny_pdf(page1: &str, page2: &str) -> Vec<u8> {
+    pub(crate) fn tiny_pdf(page1: &str, page2: &str) -> Vec<u8> {
         let (s1, s2) = (
             format!("BT /F1 12 Tf 20 50 Td ({page1}) Tj ET"),
             format!("BT /F1 12 Tf 20 50 Td ({page2}) Tj ET"),
@@ -434,11 +574,12 @@ mod tests {
             host_dir: host.to_path_buf(),
         };
         let host = host.display().to_string();
-        let answer = serve(&Slot::new(), &call(json!({"path": "a.pdf"}))).unwrap();
+        let answer = serve(&Slot::new(), &call(json!({"path": "a.pdf"})), 0).unwrap();
         assert_eq!(answer["document"]["pages"], json!(2), "{answer}");
         assert!(!answer.to_string().contains(&host), "{answer}");
-        let error = serve(&Slot::new(), &call(json!({"path": "missing.pdf"}))).unwrap_err();
+        let error = serve(&Slot::new(), &call(json!({"path": "missing.pdf"})), 0).unwrap_err();
         assert!(!error.contains(&host), "{error}");
+        assert!(error.starts_with("not_found: "), "{error}");
     }
 
     #[test]
@@ -516,28 +657,28 @@ mod tests {
         assert!(a.root.is_dir(), "created on first use");
         std::fs::write(a.root.join("a.pdf"), tiny_pdf("in the area", "p2")).unwrap();
         for _ in 0..2 {
-            serve(&Slot::new(), &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "o.png"}), host, false)).unwrap();
+            serve(&Slot::new(), &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "o.png"}), host, false), 0).unwrap();
         }
         assert!(a.root.join("o.png").is_file(), "writes land inside the area, replacing as before");
         assert!(!host.join("o.png").exists(), "nothing lands beside the area in the shared host dir");
     }
 
     /// A call as App Hub hands it to the service.
-    fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
+    pub(crate) fn service_call(method: &str, args: Json, host_dir: &Path, may_prompt: bool) -> ServiceCall {
         ServiceCall { app_id: "os.fixture".into(), service: format!("pdf.{method}"), args, from_sheet: false, may_prompt, host_dir: host_dir.to_path_buf() }
     }
 
     /// A resolver shaped like the shell's: every call works in `root`, an
     /// app's own foreground call may replace a file and an agent's may not,
     /// within `quota`.
-    fn resolver(root: &Path, quota: Option<u64>) -> Slot {
+    pub(crate) fn resolver(root: &Path, quota: Option<u64>) -> Slot {
         let slot = Slot::new();
         let root = root.to_path_buf();
         slot.set(Some(std::sync::Arc::new(move |call: &ServiceCall| Ok(Area::new(&root, quota, call.may_prompt)))));
         slot
     }
 
-    fn no_staging_left(root: &Path) -> bool {
+    pub(crate) fn no_staging_left(root: &Path) -> bool {
         std::fs::read_dir(root).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with(octosense_engine_area::STAGING_PREFIX))
     }
 
@@ -553,33 +694,33 @@ mod tests {
         std::fs::write(root.join("b.pdf"), tiny_pdf("Second file", "Last page")).unwrap();
         let areas = resolver(&root, None);
         let host = dir.path().join(".host");
-        let doc = serve(&areas, &service_call("info", json!({"path": "a.pdf"}), &host, false)).unwrap();
+        let doc = serve(&areas, &service_call("info", json!({"path": "a.pdf"}), &host, false), 0).unwrap();
         assert_eq!(doc["document"]["pages"], json!(2), "{doc}");
-        let merged = serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "b.pdf"], "out": "out/m.pdf"}), &host, false)).unwrap();
+        let merged = serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "b.pdf"], "out": "out/m.pdf"}), &host, false), 0).unwrap();
         assert!(merged["bytes"].as_u64().unwrap() > 0, "{merged}");
         assert!(root.join("out/m.pdf").is_file());
-        let split = serve(&areas, &service_call("split", json!({"path": "out/m.pdf", "out_dir": "parts", "every": 2}), &host, false)).unwrap();
+        let split = serve(&areas, &service_call("split", json!({"path": "out/m.pdf", "out_dir": "parts", "every": 2}), &host, false), 0).unwrap();
         let files = split["files"].as_array().unwrap();
         assert_eq!(files.len(), 2, "{split}");
         for f in files {
             let rel = f["path"].as_str().unwrap();
             assert!(rel.starts_with("parts/") && root.join(rel).is_file(), "{rel}");
         }
-        serve(&areas, &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "p1.png", "max_side": 32}), &host, false)).unwrap();
+        serve(&areas, &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "p1.png", "max_side": 32}), &host, false), 0).unwrap();
         assert!(root.join("p1.png").is_file() && !host.exists() && !root.join("pdf").exists());
         assert!(no_staging_left(&root));
         std::fs::write(dir.path().join("beside.pdf"), tiny_pdf("x", "y")).unwrap();
         for bad in ["../beside.pdf", "/etc/hosts", "out/../../beside.pdf"] {
-            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false)).is_err(), "{bad}");
-            assert!(serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "b.pdf"], "out": bad}), &host, true)).is_err(), "{bad}");
-            assert!(serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": bad, "every": 1}), &host, true)).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("info", json!({"path": bad}), &host, false), 0).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "b.pdf"], "out": bad}), &host, true), 0).is_err(), "{bad}");
+            assert!(serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": bad, "every": 1}), &host, true), 0).is_err(), "{bad}");
         }
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(dir.path(), root.join("up")).unwrap();
-            assert!(serve(&areas, &service_call("info", json!({"path": "up/beside.pdf"}), &host, false)).is_err());
-            assert!(serve(&areas, &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "up/o.png"}), &host, true)).is_err());
-            assert!(serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": "up", "every": 1}), &host, true)).is_err());
+            assert!(serve(&areas, &service_call("info", json!({"path": "up/beside.pdf"}), &host, false), 0).is_err());
+            assert!(serve(&areas, &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "up/o.png"}), &host, true), 0).is_err());
+            assert!(serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": "up", "every": 1}), &host, true), 0).is_err());
             assert!(!dir.path().join("o.png").exists() && !dir.path().join("a-part1.pdf").exists());
         }
     }
@@ -592,22 +733,22 @@ mod tests {
         std::fs::write(dir.path().join("a.pdf"), tiny_pdf("Hello PDF", "Page two")).unwrap();
         std::fs::write(dir.path().join("taken.pdf"), b"keep me").unwrap();
         let areas = resolver(dir.path(), None);
-        let refused = serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "a.pdf"], "out": "taken.pdf"}), dir.path(), false)).unwrap_err();
+        let refused = serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "a.pdf"], "out": "taken.pdf"}), dir.path(), false), 0).unwrap_err();
         assert!(refused.contains("`taken.pdf` already exists"), "{refused}");
         std::fs::write(dir.path().join("p.png"), b"keep").unwrap();
-        assert!(serve(&areas, &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "p.png"}), dir.path(), false)).is_err());
+        assert!(serve(&areas, &service_call("render", json!({"path": "a.pdf", "page": 1, "out": "p.png"}), dir.path(), false), 0).is_err());
         // One part's name is taken: no part lands.
         std::fs::create_dir(dir.path().join("parts")).unwrap();
         std::fs::write(dir.path().join("parts/a-part2.pdf"), b"theirs").unwrap();
-        let refused = serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": "parts", "every": 1}), dir.path(), false)).unwrap_err();
+        let refused = serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": "parts", "every": 1}), dir.path(), false), 0).unwrap_err();
         assert!(refused.contains("already exists"), "{refused}");
         assert!(!dir.path().join("parts/a-part1.pdf").exists(), "all or nothing");
         assert_eq!(std::fs::read(dir.path().join("parts/a-part2.pdf")).unwrap(), b"theirs");
         assert_eq!(std::fs::read(dir.path().join("taken.pdf")).unwrap(), b"keep me");
         assert!(no_staging_left(dir.path()));
-        serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "a.pdf"], "out": "taken.pdf"}), dir.path(), true)).unwrap();
+        serve(&areas, &service_call("merge", json!({"paths": ["a.pdf", "a.pdf"], "out": "taken.pdf"}), dir.path(), true), 0).unwrap();
         assert!(std::fs::read(dir.path().join("taken.pdf")).unwrap().starts_with(b"%PDF"));
-        serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": "parts", "every": 1}), dir.path(), true)).unwrap();
+        serve(&areas, &service_call("split", json!({"path": "a.pdf", "out_dir": "parts", "every": 1}), dir.path(), true), 0).unwrap();
         assert!(std::fs::read(dir.path().join("parts/a-part2.pdf")).unwrap().starts_with(b"%PDF"));
     }
 
@@ -623,8 +764,8 @@ mod tests {
             ("split", json!({"path": "a.pdf", "out_dir": "parts", "every": 1})),
             ("render", json!({"path": "a.pdf", "page": 1, "out": "p.png"})),
         ] {
-            let refused = serve(&tight, &service_call(method, args, dir.path(), true)).unwrap_err();
-            assert!(refused.contains("bytes left"), "{method}: {refused}");
+            let refused = serve(&tight, &service_call(method, args, dir.path(), true), 0).unwrap_err();
+            assert!(refused.starts_with("storage_full: ") && refused.contains("bytes left"), "{method}: {refused}");
         }
         assert!(!dir.path().join("m.pdf").exists() && !dir.path().join("p.png").exists() && !dir.path().join("parts/a-part1.pdf").exists());
         assert!(no_staging_left(dir.path()));
