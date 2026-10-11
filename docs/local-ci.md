@@ -93,7 +93,7 @@ tools/ci-local-merge.sh <PR number>          # --dry-run to preview
 
 - ran on the PR's exact head commit, with a clean tree;
 - comes from a head that contains the current `origin/main`;
-- covers each workflow GitHub would run for the PR's files (their `pull_request` `paths`), with no FAIL, NOT RUN or SKIPPED step in them or in the drift check. Other workflows don't count, so `--only desktop,phone` is enough for a PR that triggers only those two;
+- covers each workflow GitHub would run for the PR's files (their `pull_request` `paths`), with no FAIL, NOT RUN or SKIPPED step in them or in the drift check. Other workflows don't count, so `--only desktop,phone` is enough for a PR that triggers only those two. The files come from GitHub's paginated files listing, a renamed file's old path included, so a PR whose diff is too large for `gh pr diff` (generated images, evidence frames) merges the same way; a PR GitHub lists only partly (over 3,000 files) is refused;
 - binds every `--linux-host` step to that same commit; a remote result for another commit is stale. The `linux-host / sandbox` checks count like the workflows they cover when present, but a run without them is not refused.
 
 It also refuses while the newest finished push run of a workflow on `main` has failed (cancelled runs don't count). Pass `--fixes-main` only for the PR that fixes it. Then it posts the summary table as a PR comment ("Local CI passed on `<sha>` …") and runs `gh pr merge <n> --admin --merge --match-head-commit <sha>`, with the subject `Merge pull request #<n> from <owner>/<branch>`. `--dry-run` prints the comment instead of posting it, and merges nothing.
