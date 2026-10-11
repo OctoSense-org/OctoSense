@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Read,
+    sync::Mutex,
     time::{Duration, Instant},
 };
 use url::Url;
@@ -22,6 +23,27 @@ pub const SESSION_SCOPE: &str = "app.session";
 /// A contained app or backend registration cannot choose this destination.
 pub const WEBVIEW_CALLBACK_URL: &str = "https://octosense.invalid/auth/callback";
 const RESPONSE_LIMIT: usize = 64 * 1024;
+
+// Revalidating an admitted backend must not rebuild the TLS runtime on the UI
+// thread. Only the transport is shared: no cookies, default bearer headers,
+// registration, account or token state lives in this client.
+static HTTP_CLIENT: Mutex<Option<reqwest::blocking::Client>> = Mutex::new(None);
+
+fn http_client() -> Result<reqwest::blocking::Client, String> {
+    let mut cached = HTTP_CLIENT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(client) = cached.as_ref() {
+        return Ok(client.clone());
+    }
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .user_agent("OctoSense-Backend/1")
+        .build()
+        .map_err(|_| "Cannot initialize backend transport")?;
+    *cached = Some(client.clone());
+    Ok(client)
+}
 
 /// Trusted host metadata; never deserialize this from a contained app request.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -259,13 +281,7 @@ impl BackendClient {
         let canonical =
             serde_json::to_vec(&registration).map_err(|_| "Invalid backend registration")?;
         let binding = format!("{:x}", Sha256::digest(canonical));
-        let http = reqwest::blocking::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .user_agent("OctoSense-Backend/1")
-            .build()
-            .map_err(|_| "Cannot initialize backend transport")?;
+        let http = http_client()?;
         Ok(Self {
             registration,
             binding,

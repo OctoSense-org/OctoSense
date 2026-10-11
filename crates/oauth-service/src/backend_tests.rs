@@ -1,5 +1,81 @@
 use super::*;
 
+#[test]
+fn reconstructed_backends_reuse_connection_without_reusing_credentials() {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        net::TcpListener,
+        thread,
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let mut reader = BufReader::new(stream);
+        for expected in ["Bearer fixture-account-one", "Bearer fixture-account-two"] {
+            let mut headers = String::new();
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+                headers.push_str(&line);
+            }
+            assert!(headers
+                .to_ascii_lowercase()
+                .contains(&format!("authorization: {}", expected.to_ascii_lowercase())));
+            assert!(!headers.to_ascii_lowercase().contains("cookie:"));
+            reader.get_mut().write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nSet-Cookie: session=fixture\r\n\r\n{\"ok\":true}").unwrap();
+            reader.get_mut().flush().unwrap();
+        }
+    });
+    let mut first_binding = None;
+    for (app, access) in [
+        ("fixture.app.one", "fixture-account-one"),
+        ("fixture.app.two", "fixture-account-two"),
+    ] {
+        let mut registration = registration(&origin);
+        registration.app_id = app.into();
+        registration.operations.insert(
+            "notes.list".into(),
+            BackendOperation {
+                method: "GET".into(),
+                path: "/api/notes".into(),
+                query_keys: BTreeSet::new(),
+            },
+        );
+        let client = BackendClient::validated(registration, true).unwrap();
+        if let Some(binding) = first_binding.as_ref() {
+            assert_ne!(client.binding(), binding);
+        } else {
+            first_binding = Some(client.binding().to_owned());
+        }
+        let tokens = Tokens {
+            access: access.into(),
+            refresh: None,
+            expires_at: None,
+            scopes: BTreeSet::from([SESSION_SCOPE.into()]),
+        };
+        client
+            .request(
+                app,
+                &tokens,
+                &BackendRequest {
+                    connection: "fixture-handle".into(),
+                    operation: "notes.list".into(),
+                    query: BTreeMap::new(),
+                    body: None,
+                },
+            )
+            .unwrap();
+    }
+    server.join().unwrap();
+}
+
 fn registration(origin: &str) -> BackendRegistration {
     BackendRegistration {
         id: "fixture".into(),
