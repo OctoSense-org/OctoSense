@@ -49,6 +49,62 @@ impl EventData {
         Ok(())
     }
 }
+// EventKit represents floating all-day dates in the device zone, sometimes
+// ending at 23:59:59. The public API represents dates at UTC midnight with an
+// exclusive end. Timed events must never pass through these conversions.
+pub(super) fn all_day_read_range(start: i64, end: i64, zone: &str) -> Result<(i64, i64), String> {
+    use chrono::Timelike;
+    let zone: chrono_tz::Tz = zone
+        .parse()
+        .map_err(|_| "platform_error: Unknown calendar timezone")?;
+    let start = chrono::DateTime::from_timestamp_millis(start)
+        .ok_or("platform_error: Invalid event date")?
+        .with_timezone(&zone);
+    let end = chrono::DateTime::from_timestamp_millis(end)
+        .ok_or("platform_error: Invalid event date")?
+        .with_timezone(&zone);
+    let last = if end.time().num_seconds_from_midnight() == 0 && end.time().nanosecond() == 0 {
+        end.date_naive()
+    } else {
+        end.date_naive()
+            .succ_opt()
+            .ok_or("platform_error: Invalid event end")?
+    };
+    let first = start
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp_millis();
+    let last = last
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp_millis();
+    if last <= first {
+        return Err("platform_error: Invalid all-day date range".into());
+    }
+    Ok((first, last))
+}
+pub(super) fn all_day_write_range(start: i64, end: i64, zone: &str) -> Result<(i64, i64), String> {
+    use chrono::TimeZone;
+    let zone: chrono_tz::Tz = zone
+        .parse()
+        .map_err(|_| "platform_error: Unknown calendar timezone")?;
+    let convert = |value| -> Result<i64, String> {
+        let date = chrono::DateTime::from_timestamp_millis(value)
+            .ok_or("platform_error: Invalid event date")?
+            .date_naive();
+        zone.from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+            .single()
+            .map(|d| d.timestamp_millis())
+            .ok_or_else(|| {
+                "unsupported_event: All-day boundary is ambiguous or missing in the device timezone"
+                    .into()
+            })
+    };
+    Ok((convert(start)?, convert(end)?))
+}
 pub(super) fn fields(value: &Value, allowed: &[&str]) -> Result<(), String> {
     let object = value
         .as_object()
@@ -233,6 +289,70 @@ mod tests {
         assert!(event(&e).is_ok());
         e["timezone"] = "America/Los_Angeles".into();
         assert!(event(&e).is_err());
+    }
+    #[test]
+    fn eventkit_inclusive_end_preserves_observed_civil_date() {
+        assert_eq!(
+            all_day_read_range(1792166400000, 1792252799000, "Asia/Shanghai").unwrap(),
+            (1792195200000, 1792281600000)
+        );
+        // Providers may already return the exclusive midnight instead.
+        assert_eq!(
+            all_day_read_range(1792166400000, 1792252800000, "Asia/Shanghai").unwrap(),
+            (1792195200000, 1792281600000)
+        );
+    }
+    #[test]
+    fn all_day_write_and_read_roundtrip_east_west_and_dst() {
+        use chrono::NaiveDate;
+        for (zone, date, days) in [
+            ("Asia/Shanghai", "2026-10-17", 1),
+            ("America/Los_Angeles", "2026-03-08", 1),
+            ("America/Los_Angeles", "2026-11-01", 1),
+            ("Europe/Berlin", "2026-03-28", 3),
+            ("Pacific/Auckland", "2026-09-27", 1),
+            ("UTC", "2026-10-17", 1),
+        ] {
+            let first = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc()
+                .timestamp_millis();
+            let last = first + days * 86_400_000;
+            let raw = all_day_write_range(first, last, zone).unwrap();
+            assert_eq!(
+                all_day_read_range(raw.0, raw.1, zone).unwrap(),
+                (first, last),
+                "{zone} {date}"
+            );
+            assert_eq!(
+                all_day_read_range(raw.0, raw.1 - 1000, zone).unwrap(),
+                (first, last),
+                "inclusive {zone} {date}"
+            );
+        }
+    }
+    #[test]
+    fn existing_long_all_day_event_is_not_rejected_by_draft_duration_limit() {
+        let first = 1792195200000;
+        let last = first + 120 * 86_400_000;
+        assert_eq!(
+            all_day_read_range(first, last, "UTC").unwrap(),
+            (first, last)
+        );
+    }
+    #[test]
+    fn unsafe_or_missing_local_midnight_is_rejected() {
+        assert!(all_day_read_range(0, 1000, "Mars/Olympus").is_err());
+        assert!(all_day_read_range(1792166400000, 1792166400000, "Asia/Shanghai").is_err());
+        let first = chrono::NaiveDate::from_ymd_opt(2011, 12, 30)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        assert!(all_day_write_range(first, first + 86_400_000, "Pacific/Apia").is_err());
     }
     #[test]
     fn revision_detects_changes_and_complex_events_are_read_only() {

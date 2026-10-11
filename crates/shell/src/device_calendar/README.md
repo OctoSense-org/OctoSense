@@ -56,6 +56,9 @@ All names in this table have the `device_calendar.` prefix. Arguments are JSON o
 
 An event draft requires `title`, `start_ms`, `end_ms` and an actual IANA `timezone`; optional fields are `all_day` (false), `location` and `notes` (empty). Epoch values are milliseconds, from 1970 through 2100; the end is exclusive and the duration cannot exceed 93 days. Text limits are 512/2048/8192 UTF-8 bytes for title/location/notes. All-day drafts use `timezone: "UTC"` and UTC-midnight date boundaries. Native review shows civil time with the correct zone abbreviation and UTC offset, including DST, or an explicit all-day date range with exclusive end.
 
+
+On macOS, EventKit floating all-day dates are converted from the device timezone to these same UTC date boundaries on readback; a native 23:59:59 end becomes the following exclusive midnight. Writes convert UTC date labels to device-local midnight so dates also remain correct west of UTC and across DST. Timed events keep their timestamps and timezone. An ambiguous or missing local midnight is rejected before saving.
+
 **Unverified interaction recipe using synthetic content:** select a dedicated test calendar; create a “Synthetic visit” at 09:00 in `America/Los_Angeles`; physically approve; list that day's events; change only the title using its returned revision; physically approve; refresh; delete using the new revision and approve again. Do not use a personal calendar for automated validation.
 
 ## Agent and safety boundary
