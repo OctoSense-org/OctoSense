@@ -811,9 +811,19 @@ fn read_cover(d){
         }
         wrote(a)
         if !a.is_ok {
-            // A damaged or locked PDF says so on its card; a shell without
-            // covers, or a full storage, leaves the card without one.
-            if !outdated(a.error) && !storage_full(a.error) { doc_failed(d, a.error) }
+            // A damaged or locked PDF says so on its card. A shell without
+            // covers, or a full storage, leaves the card without one, and its
+            // pages and size still come from the file (pdf.info writes
+            // nothing).
+            if !outdated(a.error) && !storage_full(a.error) {
+                doc_failed(d, a.error)
+                cover_done()
+                return
+            }
+            if d.pages == nil || d.bytes == nil {
+                doc_facts(d)
+                return
+            }
             cover_done()
             return
         }
