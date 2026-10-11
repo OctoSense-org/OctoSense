@@ -1,0 +1,187 @@
+{
+ "result": "pass",
+ "date": "2026-10-10",
+ "scope": "PDF Tools v2 follow-ups end to end: comment dates in local time, the Edit panel's Alignment and Colour, the storage line from files.status, covers kept across closes (pdf.cover), and Combine's footer kept in view. In a hidden OctoSense desktop shell built from this branch (debug, macOS, Apple silicon), rebased on main with #478, so PDF Tools opened at its own window size (the wide layout), with the real pdf engine in the app's own storage; and in App Hub's card-host with the dev fixture at the designs' 1536 x 1024. Every engine call in the shell runs was real.",
+ "live_engine": true,
+ "base": "5c28da7d96aec78278010e73205221318189a0cf (main with #478: a script app opens at its manifest's window size); the sources below are this branch's",
+ "head": "80395f7c320986622507857205327e7360649a35",
+ "bundle_blake3": "18564f10f14edf090e4c396df84fd52be5a84f726b262e5cd93eeb52ba238007",
+ "shell": {
+  "binary": "target/debug/octosense (cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines)",
+  "binary_sha256": "a66853b59935c754dbfadecbfe47c3ea6ca6cabbee9a2b61281a3e45d15728be",
+  "app_hub_revision": "d86101d7206162b73ea873e2a31b48364600a110 (contract 1.12)",
+  "runtime": "the root's .sources: makepad d653bc44 with runtime-patches.lock.json's stacked patches, Octoscript-Makepad 6cf2d90a, Octoscript 2e37d9e6",
+  "launch": "a Terminal.app tab (osascript) under the machine's shell-run lock, one OctoSense at a time: OCTOSENSE_HOME=<fresh home> OCTOS_APP_CORE_DIR=<home>/octos-home/.octos MAKEPAD_HOME=<home>/makepad MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=127.0.0.1:8915 MAKEPAD_WM_TEST_APP=pdftools; ended with /quit",
+  "script_budget": "the runtime's 64 ms (load averages 15 to 35 while other sessions built)",
+  "window": "PDF Tools at its own window size (#478): an app area of 1292 x 662 points in the 1400 x 898 hidden shell, the wide layout",
+  "time_zone": "America/Los_Angeles (PDT, UTC-7): the runs were after 17:00, when UTC is already the next day"
+ },
+ "card_host": {
+  "binary_sha256": "760bb822435d578d69b89c39d7f25a8f8dafc1851a1911687efc0f483df895ec",
+  "app_hub_revision": "8347a489141c0e24cab564883db7c4592935a8b2 (the one on this machine; it predates the manifest's window hint)",
+  "manifest": "the scratch copy's manifest drops `window` and `schema_minor`, which this card-host refuses as unknown keys; main.splash and the rest of the bundle are the branch's own",
+  "size": "1536 x 1024 (--size), MAKEPAD_WIDGET_STYLE=macos and macos-dark",
+  "script_budget": "MAKEPAD_SPLASH_BUDGET_MS=1000: the stand-in engine answers in script"
+ },
+ "source_sha256": {
+  "apps/pdftools/bundle/main.splash": "ca21dca2094a30607de44ba88b25ce33f9f20528536d1ac1936aea0417d9c85f",
+  "apps/pdftools/bundle/manifest.json": "3c062555c5521ec7de41a0c2c86b1bac75be0d005cd7727f9d32c55535000236",
+  "apps/pdftools/tests/ui.py": "ac4abb8f1df3597c6208784f760431e5777bad403e2a8c9b0785fc319fa02581",
+  "apps/pdftools/dev-fixture/engine.splash": "b9a3d9759a5607dc7ca3e4984fd72ac99bdcf3db99504b0fa7ea3e773fc542d4",
+  "apps/pdftools/dev-fixture/make_fixture.py": "92541102e942d7af8ff45fff33a8885a1a8ef6c47efa76d812e89b5218d53614",
+  "apps/pdf/host-service/examples/pdftools_fixture.rs": "f44ad5a202da98b4a07468e9dccdff59f7e2b333edec6e879245a3b7491307fc",
+  "apps/pdftools/design/SERVICE.md": "d3959995765cd53010452ea9811bc094cf627064a865c55d21648124cc12e7b9",
+  "apps/pdf/host-service/src/review.rs": "c00694cdc3ac399b40bedee6bd575ef5890a6e345bf3bf40db8080cf39f66383",
+  "apps/pdf/host-service/src/dates.rs": "0590244f3ca006adb59107ca201a6be424e3a85d122495bad55b2e581626e714",
+  "apps/pdf/host-service/src/change.rs": "226b188c08425e173de2583ad80c88140202dedd757d8072da15564e0d48f563",
+  "apps/pdf/host-service/src/covers.rs": "a391029db168f272dfbd6e670c09a595081cad834febd3164bbe8358fe1be300",
+  "apps/pdf/host-service/src/cache.rs": "7f4d6d2a8de28ffb1a92b5c582c1476149cd7d711787e2afcb6067b183dc6dd2",
+  "crates/shell/src/files_service/mod.rs": "74df96648bdca7a0dbe64116addcab48643e6295a44aaafdb443c5992889eb9f"
+ },
+ "commands": [
+  "python3 tools/setup.py",
+  "cargo test --locked -p octosense-pdf-service",
+  "cargo clippy --locked -p octosense-pdf-service --all-targets --no-deps -- -D warnings",
+  "(from phone/) cargo test --locked --features mobile-apps -p octosense-shell --lib files_service",
+  "(from phone/) cargo test --locked --features mobile-apps -p octosense-shell --lib pdftools_model",
+  "python3 tools/setup.py --check --cargo; python3 tools/native_apps.py --check",
+  "cargo build --locked -p octosense --no-default-features --features app-hub,craft-engines",
+  "python3 apps/pdftools/tests/ui.py --shell target/debug/octosense --lock <scratch>/octosense-shell.lock --output <scratch>/ui-wide --only shell --only restart --only full --only empty",
+  "<venv with PIL> <scratch>/fixture_run.py --card-host <App Hub 8347a489>/target/release/card-host --only fixture --budget-ms 1000 --output <scratch>/ui-fixture (ui.py's card-host run; the wrapper only drops `window` and `schema_minor` from the scratch bundle's manifest)",
+  "hub stamp <copy of apps/pdftools/bundle>; hub check <copy> --system-app (the same two findings as main's bundle: no store listing, unsigned; nothing new)",
+  "frames: the app's area cut from each shell grab by its sidecar (one pixel per point); card-host side-by-sides halved and reduced to 256 colours (PIL)"
+ ],
+ "runs": {
+  "shell": "the samples, light, then dark through the shell's style menu, the dark pass on what the light pass left",
+  "restart": "the same home again, with Imported PDF.pdf (pdftools_fixture --import-sample) placed in the library between the runs",
+  "full": "a fresh home whose storage was filled to 8 KB short of 64 MiB",
+  "empty": "a fresh home with no PDFs, light then dark",
+  "fixture": "card-host, a scratch copy of the bundle with dev-fixture/engine.splash in place of engine(), make_fixture.py's documents, 1536 x 1024, light then dark"
+ },
+ "observed": {
+  "storage_line": {
+   "shown": [
+    191488.0,
+    64
+   ],
+   "jail_bytes": 191793,
+   "library_pdf_bytes": 38356
+  },
+  "comment_dates": [
+   {
+    "pass": "light",
+    "utc_now": "2026-10-11T03:21Z",
+    "shown_one_of": [
+     "Today 20:21"
+    ]
+   },
+   {
+    "pass": "dark",
+    "utc_now": "2026-10-11T03:22Z",
+    "shown_one_of": [
+     "Today 20:22"
+    ]
+   }
+  ],
+  "combine_button": [
+   {
+    "pass": "light",
+    "area": [
+     54,
+     76,
+     1292,
+     662
+    ],
+    "button": [
+     937,
+     613,
+     140,
+     46
+    ]
+   },
+   {
+    "pass": "dark",
+    "area": [
+     54,
+     76,
+     1292,
+     662
+    ],
+    "button": [
+     937,
+     613,
+     140,
+     46
+    ]
+   }
+  ],
+  "covers_after_shell_run": [
+   "529d0969fe6aecff-16477-1791688873200061363@48.png",
+   "613ca0035b985603-10535-1791688974198863438@48.png",
+   "af4c8071f14d2a8a-5732-1791688873199739564@48.png",
+   "daec677dceec21c2-9551-1791688873199437766@48.png",
+   "e135281299f25e61-10535-1791688913105699184@48.png",
+   "f0b4f225a4635b83-83406-1791688989310550962@48.png"
+  ],
+  "covers_after_restart": {
+   "kept_untouched": [
+    "529d0969fe6aecff-16477-1791688873200061363@48.png",
+    "613ca0035b985603-10535-1791688974198863438@48.png",
+    "af4c8071f14d2a8a-5732-1791688873199739564@48.png",
+    "daec677dceec21c2-9551-1791688873199437766@48.png",
+    "e135281299f25e61-10535-1791688913105699184@48.png",
+    "f0b4f225a4635b83-83406-1791688989310550962@48.png"
+   ],
+   "drawn_now": [
+    "9bbd32ca74ee02a3-5053-1791688996011782964@48.png"
+   ],
+   "gone_now": []
+  }
+ },
+ "checks": [
+  "Storage line: Home said '187 KB of 64 MB used' while the app's storage held 191793 bytes (files.status used_bytes and quota_bytes); its PDFs alone were 38356 bytes, what the old line counted",
+  "Comment dates: the highlight made in each pass, and its reply, read 'Today 20:21' (UTC 2026-10-11T03:21Z) and 'Today 20:22' (UTC 2026-10-11T03:22Z): this machine's local time, where the engine stamps UTC (the old reading showed the next day)",
+  "Edit (design 08): clause 1 of the lease with Alignment centred and Colour Red (the box opened into its seven colours), applied: the engine drew it centred and red; the dark pass set it flush right in its own colour",
+  "Combine: with two PDFs listed, the card's own Combine button stayed in view with no scroll (light: [937, 613, 140, 46] in the app area [54, 76, 1292, 662]; dark: [937, 613, 140, 46] in the app area [54, 76, 1292, 662]); the list scrolls inside the card; before, the button sat 85 points below the fold at this size",
+  "Covers: after the shell run, one cover per PDF in .cache/covers (6), each named in library.json; the restart drew none of the 6 current covers again (the same files and times) and drew one for the new import",
+  "Full storage: '63.9 of 64 MB used' with the bar full; no room for a cover, each card still shows its pages and size; removing a PDF works",
+  "Design size (card-host, 1536 x 1024): Combine's card fits as designed; the Edit panel shows Font, Alignment and Colour as design 08 draws them",
+  "No script errors in any run's log (check_log)"
+ ],
+ "not_verified": [
+  "Linux and Windows (the pdf engine is desktop-only; Windows's offset path, chrono's Local, was not built here); phones",
+  "the shell suite beyond files_service and pdftools_model on this branch (see the PR)",
+  "card-host at App Hub's current pin: the one on this machine predates the window hint",
+  "the host's file dialog and a real import (a hidden window cannot open it)"
+ ],
+ "grabs": [
+  "dark/01-home.png",
+  "dark/04-comment.png",
+  "dark/04b-replied.png",
+  "dark/06-combine.png",
+  "dark/08-edit.png",
+  "dark/08b-edited.png",
+  "dark/09-saved.png",
+  "empty/de01-empty.png",
+  "empty/e01-empty.png",
+  "fixture/06-combine.png",
+  "fixture/08-edit.png",
+  "fixture/d08-edit.png",
+  "full/f01-home-full.png",
+  "full/f02-remove-asks.png",
+  "full/f03-removed.png",
+  "light/01-home.png",
+  "light/04-comment.png",
+  "light/04b-replied.png",
+  "light/06-combine.png",
+  "light/06a-combine-end.png",
+  "light/06b-combined.png",
+  "light/08-edit.png",
+  "light/08a-colours.png",
+  "light/08b-edited.png",
+  "light/09-saved.png",
+  "restart/r01-home.png",
+  "restart/r02-imported.png",
+  "restart/r03-place-kept.png"
+ ]
+}

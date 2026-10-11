@@ -63,7 +63,7 @@ page fits the canvas, up to 100%.
 | Comment | Highlight, Underline or Strike out the line you tap (tap twice for its paragraph), Note and Text box where you tap, in one of four colours; threads with replies, a status, delete. Comments carry the name kept under "Comment as" | `pdf.lines`, `pdf.comments`, `pdf.comment` |
 | Fill & Sign | The form's fields outlined (required empty ones in red) and listed with their values; choose one to type its value; Add text, Add date and Add initials place a mark where you tap; initials are kept | `pdf.fields`, `pdf.fill`, `pdf.fill_sign` |
 | Pages | Every page as a large thumbnail: choose pages, Rotate left or right, Delete, Extract (a new PDF in the library), Insert from file (another PDF here), drag a page to move it | `pdf.pages` |
-| Combine | This PDF and others in order (drag the grip to reorder), each with its pages ("1-4, 9" or All), "One PDF of 31 pages", a name, Combine; the new PDF opens | `pdf.merge` |
+| Combine | This PDF and others in order (drag the grip to reorder), each with its pages ("1-4, 9" or All), "One PDF of 31 pages", a name, Combine; the new PDF opens. When the list does not fit the window, it scrolls inside the card and the total, name and Combine stay in view | `pdf.merge` |
 | Edit | Click a paragraph: its text becomes editable in place; the right panel shows its font and size, its Alignment (left, centre, right or justify: the one its lines show is chosen, since the engine sets an edited paragraph flush left unless told) and its Colour (its own until you pick one of six); Apply or Cancel | `pdf.lines`, `pdf.edit_text` |
 
 Undo and Redo use the engine's history; Save writes the PDF back
@@ -214,18 +214,24 @@ that refusal.
   budget, in the wide layout (an app area of 1292 x 662); and, opened from the
   shell's menu, a 1296 x 703 window on a 1380 x 845 work area, 32 points
   above the dock.
+- **Verified on 10 Oct 2026, the follow-ups** (macOS, Apple silicon;
+  [tests/evidence/v2-followups-20261010](tests/evidence/v2-followups-20261010/README.md)):
+  the model tests; the `shell`, `restart`, `full` and `empty` runs in a hidden
+  desktop shell with the real engine at the runtime's 64 ms budget, at the
+  window's own size (an app area of 1292 x 662): comment dates in local time,
+  the Edit panel's Alignment and Colour, the storage line from
+  `files.status`, covers kept across closes and a restart, Combine's button in
+  view with two PDFs; and the `fixture` run in card-host at 1536 x 1024.
 - **Not verified**: the host's file dialog and a real import (a hidden window
   cannot open it); with the real engine, form fields, outlines, Redo, the
   other comment and page operations, password-protected PDFs, the eight-PDF
   cap and the unsaved-changes question (the dev fixture covers their screens);
-  the `restart`, `full` and `empty` runs at the window's own size; other
-  screen sizes; Linux, Windows, phones.
+  other screen sizes; Linux, Windows, phones.
 - **Known**: on a heavily loaded machine a tap can overrun the 64 ms budget
   and be lost (seen at load averages of 60 to 150 before `library.json` moved
-  off the tap path). On a screen 900 points tall the app area is about
-  1292 x 662. There, with two PDFs in Combine, the card's Combine button needs
-  one scroll (85 points short). Home's last caption line (when each PDF was
-  last opened) also sits at the fold. The engine reports neither a
+  off the tap path). On a screen 900 points tall (an app area of about
+  1292 x 662), Home's last caption line (when each PDF was last opened) sits
+  at the fold; the library scrolls. The engine reports neither a
   paragraph's alignment nor its colour: the Edit panel reads the alignment
   from the lines' boxes and shows the colour as the paragraph's own until you
   pick one.

@@ -52,7 +52,7 @@ PDF Tools 以 1296 x 703 点打开，应用区域为 1292 x 667，即它的宽�
 | Comment | 对点按的那一行做高亮、下划线或删除线（点按两次作用于整段），在点按处添加 Note 和 Text box，四种颜色可选；带回复、状态和删除的评论线程。评论使用在“Comment as”中保存的名字 | `pdf.lines`、`pdf.comments`、`pdf.comment` |
 | Fill & Sign | 用框线标出表单字段（未填的必填字段为红色）并列出其值；选中一个字段即可输入值；Add text、Add date 和 Add initials 会在点按处放置标记；姓名缩写会被保存 | `pdf.fields`、`pdf.fill`、`pdf.fill_sign` |
 | Pages | 每页一张大缩略图：选择页面，向左或向右旋转、删除、提取（在资料库中生成新 PDF）、从文件插入（这里的另一个 PDF），拖动页面以移动 | `pdf.pages` |
-| Combine | 当前 PDF 与其他 PDF 按顺序排列（拖动手柄调整顺序），每个都可指定页面（“1-4, 9”或 All），“One PDF of 31 pages”，名称，Combine；新 PDF 随即打开 | `pdf.merge` |
+| Combine | 当前 PDF 与其他 PDF 按顺序排列（拖动手柄调整顺序），每个都可指定页面（“1-4, 9”或 All），“One PDF of 31 pages”，名称，Combine；新 PDF 随即打开。列表放不下时在卡片内滚动，总页数、名称和 Combine 保持可见 | `pdf.merge` |
 | Edit | 点击一个段落：它的文字可以就地编辑；右侧面板显示字体和字号、Alignment（左对齐、居中、右对齐或两端对齐：默认选中各行所显示的那种，因为引擎在未指定时会把编辑后的段落设为左对齐）和 Colour（在选择六种颜色之一前保持段落原有颜色）；Apply 或 Cancel | `pdf.lines`、`pdf.edit_text` |
 
 Undo 和 Redo 使用引擎的历史记录；Save 把 PDF 写回（`pdf.undo`、`pdf.redo`、`pdf.save`、
@@ -173,14 +173,20 @@ python3 apps/pdftools/dev-fixture/make_fixture.py <card-host app data>/os.pdftoo
   [tests/evidence/window-20261010](tests/evidence/window-20261010/README.zh-CN.md)）：使用真实
   引擎、按运行时 64 ms 的预算，以宽布局（应用区域 1292 x 662）进行的 `shell` 运行，浅色和深色；
   以及从 Shell 菜单打开时，在 1380 x 845 的工作区上打开的 1296 x 703 窗口，距程序坞 32 点。
+- **已于 2026 年 10 月 10 日验证后续改进**（macOS，Apple 芯片；
+  [tests/evidence/v2-followups-20261010](tests/evidence/v2-followups-20261010/README.zh-CN.md)）：
+  模型测试；在隐藏的桌面 Shell 中使用真实引擎、按运行时 64 ms 的预算、在窗口自身尺寸
+  （应用区域 1292 x 662）下进行的 `shell`、`restart`、`full` 和 `empty` 运行：按本地时间显示
+  的评论日期、Edit 面板的 Alignment 和 Colour、来自 `files.status` 的状态栏存储用量、关闭和
+  重启后仍保留的封面、列出两个 PDF 时合并按钮保持可见；以及在 card-host 中按 1536 x 1024
+  进行的 `fixture` 运行。
 - **未验证**：宿主的文件对话框和真实的导入（隐藏窗口无法打开它）；使用真实引擎时的表单
   字段、大纲、Redo、其他评论和页面操作、受密码保护的 PDF、八个 PDF 的上限以及未保存更改
-  的询问（开发夹具覆盖了它们的界面）；窗口自身尺寸下的 `restart`、`full` 和 `empty` 运行；
-  其他屏幕尺寸；Linux、Windows、手机。
+  的询问（开发夹具覆盖了它们的界面）；其他屏幕尺寸；Linux、Windows、手机。
 - **已知问题**：在负载很高的机器上，一次点按可能超出 64 ms 预算而丢失（在 `library.json`
-  移出点按路径之前，于 60 到 150 的平均负载下见到过）。在 900 点高的屏幕上，应用区域约为
-  1292 x 662：合并中列出两个 PDF 时，卡片的 Combine 按钮需要滚动一次才能看到（差 85 点），
-  首页卡片的最后一行说明（每个 PDF 上次打开的时间）正好在可见区域边缘。引擎既不报告段落的
+  移出点按路径之前，于 60 到 150 的平均负载下见到过）。在 900 点高的屏幕上（应用区域约为
+  1292 x 662），首页卡片的最后一行说明（每个 PDF 上次打开的时间）正好在可见区域边缘；资料库
+  可以滚动。引擎既不报告段落的
   对齐方式，也不报告它的颜色：Edit 面板从各行的边框读出对齐方式，并在选择颜色之前把颜色显示为
   段落原有的颜色。
 - **不在这个版本中**：导出（没有已批准的设计）、打开受密码保护的 PDF、键盘快捷键（运行时
