@@ -1134,11 +1134,12 @@ fn the_render_cache_keeps_to_its_byte_cap() {
         std::fs::File::options().write(true).open(&path).unwrap().set_modified(base + Duration::from_secs(i)).unwrap();
     }
     let keep = root.join("bbbb/1@96.png");
-    cache::evict(&root, &keep, 1 << 20, cache::LIMITS);
+    let dot = dir.path().join(".cache");
+    cache::evict(&dot, &keep, 1 << 20, cache::LIMITS);
     let left: Vec<u64> = (0..17).filter(|i| old.join(format!("{i}@96.png")).exists()).collect();
     assert_eq!(left, (2..17).collect::<Vec<_>>(), "15 MiB stay with the new 1 MiB render; the two oldest went");
     // The file cap counts too, under a test's small limits.
-    cache::evict(&root, &keep, 0, cache::Limits { bytes: u64::MAX, files: 4 });
+    cache::evict(&dot, &keep, 0, cache::Limits { bytes: u64::MAX, files: 4, covers: cache::MAX_COVERS });
     let left: Vec<u64> = (0..17).filter(|i| old.join(format!("{i}@96.png")).exists()).collect();
     assert_eq!(left, vec![14, 15, 16]);
 }
@@ -1192,6 +1193,232 @@ fn the_render_cache_never_follows_a_link() {
     std::os::unix::fs::symlink(w.root.join("accounts/device/library"), w.root.join(format!(".cache/pages/{doc}"))).unwrap();
     coded(&w.err("page", json!({"doc": doc, "page": 1})), "invalid");
     assert_eq!(std::fs::read_dir(w.root.join("accounts/device/library")).unwrap().count(), 1);
+}
+
+// ------------------------------------------------------------ covers
+
+/// `pdf.cover`'s file name: `<name>-<size>-<modified>@<dpi>.png` in
+/// `.cache/covers`, lowercase hex and digits.
+#[track_caller]
+fn cover_name(path: &str, dpi: u32) -> (String, String) {
+    let name = path.strip_prefix(".cache/covers/").unwrap_or_else(|| panic!("not a cover: {path}"));
+    let (key, rest) = name.split_once('@').unwrap();
+    assert_eq!(rest, format!("{dpi}.png"), "{name}");
+    let parts: Vec<&str> = key.split('-').collect();
+    assert_eq!(parts.len(), 3, "{name}");
+    assert!(parts[0].len() == 16 && parts[0].bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "{name}");
+    assert!(parts[1..].iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())), "{name}");
+    (parts[0].to_string(), key.to_string())
+}
+
+/// A cover is page 1 at 48 dpi by default, kept in `.cache/covers` across
+/// closes, prunes and releases, and a kept cover answers without opening
+/// the PDF at all.
+#[test]
+fn a_cover_is_kept_across_closes_and_runs() {
+    let w = World::new().samples();
+    let cover = w.ok("cover", json!({"path": "Board minutes.pdf"}));
+    let path = cover["path"].as_str().unwrap().to_string();
+    let (key, _) = cover_name(&path, 48);
+    assert_eq!(key, covers::name_key("Board minutes.pdf"));
+    let size = &w.ok("info", json!({"path": "Board minutes.pdf"}))["pages"][0];
+    let at_48 = |points: &Json| json!(reading::pixels(points.as_f64().unwrap(), 48));
+    assert_eq!((cover["width"].clone(), cover["height"].clone(), cover["dpi"].clone()), (at_48(&size["width"]), at_48(&size["height"]), json!(48)), "page 1 at 48 dpi: {cover}");
+    let file = w.root.join(&path);
+    assert!(std::fs::read(&file).unwrap().starts_with(b"\x89PNG"));
+    assert_eq!(docs::open_count(), 0, "no open document");
+    assert_eq!(w.ok("cover", json!({"path": "Board minutes.pdf"})), cover, "the same cover again");
+
+    // A document opened, rendered and closed; another opened (which prunes
+    // the closed one's renders); one released after its idle bound.
+    let doc = w.open("Board minutes.pdf");
+    w.ok("page", json!({"doc": doc, "page": 1}));
+    w.ok("close", json!({"doc": doc}));
+    let other = w.open("Field guide.pdf");
+    w.ok("page", json!({"doc": other, "page": 1}));
+    docs::sweep_at(Instant::now() + docs::IDLE + Duration::from_secs(1));
+    coded(&w.err("state", json!({"doc": other})), "unknown_doc");
+    assert!(!w.root.join(format!(".cache/pages/{other}")).exists(), "the released document's renders went");
+    assert!(file.is_file(), "the cover stayed through close, prune and release");
+
+    // A new run: the same file (its size and time) answers from the cache,
+    // with no engine work: bytes the engine cannot read, kept the same size
+    // and time, still answer with the kept cover.
+    let pdf = w.root.join("Board minutes.pdf");
+    let (len, modified) = { let m = std::fs::metadata(&pdf).unwrap(); (m.len(), m.modified().unwrap()) };
+    let original = std::fs::read(&pdf).unwrap();
+    std::fs::write(&pdf, vec![b'x'; len as usize]).unwrap();
+    std::fs::File::options().write(true).open(&pdf).unwrap().set_modified(modified).unwrap();
+    assert_eq!(w.ok("cover", json!({"path": "Board minutes.pdf"})), cover, "kept: the PDF was not opened");
+    // Changed (another time), it is read again: and is damaged now.
+    std::fs::File::options().write(true).open(&pdf).unwrap().set_modified(modified + Duration::from_secs(5)).unwrap();
+    coded(&w.err("cover", json!({"path": "Board minutes.pdf"})), "damaged");
+    std::fs::write(&pdf, original).unwrap();
+}
+
+/// A changed PDF (saved) gets a new key and a new cover, and its older
+/// cover goes, by its name's exact prefix: another PDF's cover stays, and so
+/// does a cover of the same version at another dpi.
+#[test]
+fn a_changed_pdf_gets_a_new_cover_and_the_old_one_goes() {
+    let w = World::new().samples();
+    let before = w.ok("cover", json!({"path": "Board minutes.pdf"}));
+    let other = w.ok("cover", json!({"path": "Field guide.pdf"}));
+    assert_ne!(cover_name(before["path"].as_str().unwrap(), 48).0, cover_name(other["path"].as_str().unwrap(), 48).0);
+    let doc = w.open("Board minutes.pdf");
+    w.ok("pages", json!({"doc": doc, "op": "rotate", "pages": [1], "angle": 90}));
+    w.ok("save", json!({"doc": doc}));
+    w.ok("close", json!({"doc": doc}));
+    let after = w.ok("cover", json!({"path": "Board minutes.pdf"}));
+    let (key, version) = cover_name(after["path"].as_str().unwrap(), 48);
+    assert_eq!(key, cover_name(before["path"].as_str().unwrap(), 48).0, "the same PDF's name");
+    assert_ne!(version, cover_name(before["path"].as_str().unwrap(), 48).1, "another version");
+    assert_eq!((after["width"].clone(), after["height"].clone()), (before["height"].clone(), before["width"].clone()), "the new cover shows page 1 turned: {after}");
+    assert!(!w.root.join(before["path"].as_str().unwrap()).exists(), "the older cover went");
+    assert!(w.root.join(other["path"].as_str().unwrap()).exists(), "another PDF's cover stayed");
+    let larger = w.ok("cover", json!({"path": "Board minutes.pdf", "dpi": 96}));
+    assert!(w.root.join(after["path"].as_str().unwrap()).exists(), "the same version at another dpi stays");
+    assert!(w.root.join(larger["path"].as_str().unwrap()).exists());
+    assert_eq!(larger["dpi"], 96);
+}
+
+/// Covers keep to their 32 within the render cache's 64 files: past 32, the
+/// oldest cover goes; page renders go before covers when the cache is full,
+/// and a new cover then takes a page's place, not a cover's.
+#[test]
+fn covers_keep_to_their_cap_and_page_renders_go_first() {
+    let base = std::time::SystemTime::now() - Duration::from_secs(3_600);
+    // Each render written a second after the last: the cache's age order
+    // does not hang on how finely the file system keeps time.
+    let age = |w: &World, rel: &str, n: u64| std::fs::File::options().write(true).open(w.root.join(rel)).unwrap().set_modified(base + Duration::from_secs(n)).unwrap();
+    let cover = |w: &World, i: usize| -> String {
+        let name = format!("doc {i:02}.pdf");
+        w.put(&name, &tiny_pdf(&format!("first {i}"), "second"));
+        w.ok("cover", json!({"path": name, "dpi": 24}))["path"].as_str().unwrap().to_string()
+    };
+    let w = World::new();
+    let mut made = Vec::new();
+    for i in 0..=cache::MAX_COVERS {
+        let path = cover(&w, i);
+        age(&w, &path, i as u64);
+        made.push(path);
+    }
+    let kept: Vec<bool> = made.iter().map(|p| w.root.join(p).exists()).collect();
+    assert!(!kept[0] && kept[1..].iter().all(|k| *k), "the 33rd cover took the oldest's place: {kept:?}");
+    assert_eq!(std::fs::read_dir(w.root.join(cache::COVERS)).unwrap().count(), cache::MAX_COVERS);
+
+    // Four covers and page renders past the 64 files: the pages go, oldest
+    // first, and every cover stays.
+    let w = World::new();
+    let covers: Vec<String> = (0..4).map(|i| { let p = cover(&w, i); age(&w, &p, i as u64); p }).collect();
+    let doc = w.open("doc 00.pdf");
+    let mut pages = Vec::new();
+    for (n, dpi) in (24..=300).step_by(3).take(cache::MAX_FILES + 6).enumerate() {
+        let path = w.ok("page", json!({"doc": doc, "page": 1, "dpi": dpi}))["path"].as_str().unwrap().to_string();
+        age(&w, &path, 100 + n as u64);
+        pages.push(path);
+    }
+    let left = |pages: &[String]| pages.iter().filter(|p| w.root.join(p).exists()).count();
+    assert!(covers.iter().all(|p| w.root.join(p).exists()), "every cover stayed");
+    assert_eq!(left(&pages), cache::MAX_FILES - covers.len(), "the pages kept to what the covers left");
+    assert!(pages[..pages.len() - left(&pages)].iter().all(|p| !w.root.join(p).exists()), "the oldest pages went");
+    // A fifth cover with the cache full: the oldest page makes room.
+    let fifth = cover(&w, 4);
+    assert!(w.root.join(&fifth).exists() && covers.iter().all(|p| w.root.join(p).exists()), "no cover went");
+    assert_eq!(left(&pages), cache::MAX_FILES - covers.len() - 1, "a page made room");
+}
+
+/// The whole cache, covers too, is cleared before a write would fail with
+/// `storage_full:`.
+#[test]
+fn covers_are_cleared_before_storage_full() {
+    let roomy = World::new().samples();
+    let cover = roomy.ok("cover", json!({"path": "Board minutes.pdf", "dpi": 150}))["path"].as_str().unwrap().to_string();
+    let doc = roomy.open("Board minutes.pdf");
+    roomy.ok("page", json!({"doc": doc, "page": 1, "dpi": 150}));
+    let cached: u64 = [cover.clone(), format!(".cache/pages/{doc}/1@150.png")].iter().map(|p| std::fs::metadata(roomy.root.join(p)).unwrap().len()).sum();
+    let tight = World { _dir: tempfile::tempdir().unwrap(), root: roomy.root.clone(), areas: resolver(&roomy.root, Some(200)) };
+    tight.ok("export", json!({"doc": doc, "kind": "text", "out": "minutes.txt"}));
+    let text = std::fs::metadata(tight.root.join("minutes.txt")).unwrap().len();
+    assert!(text > 200 && text <= 200 + cached, "the export needed the cache's room: {text} bytes");
+    assert!(!tight.root.join(&cover).exists(), "the cover went with the page renders");
+    // A cover that does not fit what is left fails the same way.
+    coded(&tight.err("cover", json!({"path": "Field guide.pdf", "dpi": 150})), "storage_full");
+}
+
+/// A cover is not an open document: it adds nothing to the table and is
+/// not refused when a caller has its 8 open.
+#[test]
+fn a_cover_is_no_open_document() {
+    let w = World::new().samples();
+    let open: Vec<String> = (0..docs::MAX_OPEN).map(|_| w.open("Board minutes.pdf")).collect();
+    assert_eq!(docs::open_count(), docs::MAX_OPEN);
+    coded(&w.err("open", json!({"path": "Field guide.pdf"})), "too_many_open");
+    w.ok("cover", json!({"path": "Field guide.pdf"}));
+    w.ok("cover", json!({"path": "Apartment lease.pdf"}));
+    assert_eq!(docs::open_count(), docs::MAX_OPEN, "no open-document entry");
+    coded(&w.err("open", json!({"path": "Field guide.pdf"})), "too_many_open");
+    w.ok("close", json!({"doc": open[0]}));
+    w.open("Field guide.pdf");
+}
+
+/// A cover runs no script of the PDF's (a fresh session, JavaScript off),
+/// and is refused where `pdf.info` refuses: a missing, damaged or locked
+/// PDF, a path outside the storage, a dpi out of 24 to 150, a page past 16
+/// megapixels, a key it does not take; and a cache folder that is a link.
+#[test]
+fn a_cover_runs_no_script_and_is_refused_where_info_is() {
+    let w = World::new().samples();
+    w.put("form.pdf", &scripted_form());
+    let cover = w.ok("cover", json!({"path": "form.pdf"}));
+    let doc = w.open("form.pdf");
+    let page = w.ok("page", json!({"doc": doc, "page": 1, "dpi": 48}));
+    assert_eq!(
+        std::fs::read(w.root.join(cover["path"].as_str().unwrap())).unwrap(),
+        std::fs::read(w.root.join(page["path"].as_str().unwrap())).unwrap(),
+        "the cover is page 1 as the scripts-off session draws it"
+    );
+    assert_eq!(value(&w.ok("fields", json!({"doc": doc})), "note"), json!("quiet"));
+    // An XFA form whose initialize script sets qty to 2 on opening, as the
+    // engine's default session (JavaScript on) runs it: the cover is the form
+    // as the scripts-off session draws it, not as the script left it.
+    w.put("xfa.pdf", &pdfcraft_xfa::fixtures::shell(&pdfcraft_xfa::fixtures::scripted_template()));
+    let png = |rel: &Json| std::fs::read(w.root.join(rel.as_str().unwrap())).unwrap();
+    let xfa_cover = png(&w.ok("cover", json!({"path": "xfa.pdf"}))["path"]);
+    let xfa = w.open("xfa.pdf");
+    assert_eq!(xfa_cover, png(&w.ok("page", json!({"doc": xfa, "page": 1, "dpi": 48}))["path"]), "the scripts-off drawing");
+    let mut on = Automation::new().with_root(&w.root).unwrap();
+    let (d, _) = open(&mut on, "xfa.pdf").unwrap();
+    assert_eq!(value(&run(&mut on, "form_fields", &json!({"doc": d})).unwrap(), "qty"), json!("2"), "with JavaScript on, the script runs on opening");
+    let live = on.call("page_render", &json!({"doc": d, "page": 1, "dpi": 48})).unwrap();
+    let live = live.into_iter().find_map(|c| match c { Content::Png { data, .. } => Some(data), _ => None }).unwrap();
+    assert_ne!(live, xfa_cover, "the script's value would have shown on the cover");
+
+    w.put("locked.pdf", &locked_pdf());
+    w.put("huge.pdf", &sized_pdf(2_000.0, 2_000.0));
+    coded(&w.err("cover", json!({"path": "missing.pdf"})), "not_found");
+    coded(&w.err("cover", json!({"path": "Damaged scan.pdf"})), "damaged");
+    coded(&w.err("cover", json!({"path": "locked.pdf"})), "protected");
+    coded(&w.err("cover", json!({"path": "huge.pdf", "dpi": 150})), "too_large");
+    assert_eq!(w.ok("cover", json!({"path": "huge.pdf", "dpi": 24}))["width"], 667, "a lower dpi fits");
+    for bad in [json!({"path": "../elsewhere.pdf"}), json!({"path": "/etc/hosts"}), json!({"path": "Board minutes.pdf", "dpi": 23}), json!({"path": "Board minutes.pdf", "dpi": 151}), json!({})] {
+        coded(&w.err("cover", bad), "invalid");
+    }
+    for (key, value) in [("page", json!(2)), ("out", json!("cover.png")), ("doc", json!("abc"))] {
+        let mut args = json!({"path": "Board minutes.pdf"});
+        args[key] = value;
+        let e = w.err("cover", args);
+        coded(&e, "invalid");
+        assert!(e.contains(&format!("`{key}` is not one of them")), "{e}");
+    }
+    // A covers folder that is a link is refused, and nothing is written
+    // through it.
+    let w = World::new().samples();
+    std::fs::create_dir_all(w.root.join("accounts/device/library")).unwrap();
+    std::fs::create_dir_all(w.root.join(".cache")).unwrap();
+    std::os::unix::fs::symlink(w.root.join("accounts/device/library"), w.root.join(cache::COVERS)).unwrap();
+    coded(&w.err("cover", json!({"path": "Board minutes.pdf"})), "invalid");
+    assert_eq!(std::fs::read_dir(w.root.join("accounts/device/library")).unwrap().count(), 0, "nothing written through the link");
 }
 
 // ------------------------------------------------------------ snippets
