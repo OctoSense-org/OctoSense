@@ -36,6 +36,10 @@ goes to both. Derived from `BRIEF.md` (Actions and the engine).
   the `comments` rects, the `fields` rect and the `rects` input of a comment
   add. Find's match rects can go straight into a highlight.
 - **Handles:** `doc` is a string (lowercase hex).
+- **Storage use** is the shell's, not this service's: PDF Tools' status line
+  ("14.6 of 64 MB used") reads `used_bytes` and `quota_bytes` from the shell's
+  `files.status`, which count everything in its storage, this service's
+  render cache and covers included.
 
 ## Documents
 
@@ -56,15 +60,26 @@ Caps: the file is at most 128 MiB (`MAX_PDF_BYTES`).
 | `pdf.find` | `{doc, query, limit?}` | `{total, matches: [{page, rects: [[x, y, w, h], …], snippet}]}`, snippet ≤ 120 characters with the match marked `[[…]]` |
 | `pdf.lines` | `{doc, page}` | `{lines: [{n, text, box, font, size}], paragraphs: [{n, text, box, lines, font, size}]}` |
 | `pdf.text` | `{path, pages?}` (as today) or `{doc, pages?}` | as today |
+| `pdf.cover` | `{path, dpi?}` | `{path, width, height, dpi}`: page 1 of the PDF at `path` (in storage) rendered as a PNG written to `.cache/covers/<key>@<dpi>.png`, kept across `pdf.close` and the app closing |
 
 Caps: `dpi` 24 to 300 (default 96), and at most 16 megapixels per render. A
 fractional `dpi` is rounded; one out of range is `invalid:`, not clamped. A
 single render whose PNG is over 16 MiB is `too_large:`. `limit` at most 500
-(default 200); `total` saturates at 10,000. The render cache is at most 16 MiB
-and 64 files per app (app storage allows 256 entries in all, and imports and
-library saves need room): the oldest renders go first, and it is cleared
-before a write would fail with `storage_full:`. A render of an edited
-document reflects its unsaved edits.
+(default 200); `total` saturates at 10,000. The render cache, page renders
+and covers together, is at most 16 MiB and 64 files per app (app storage
+allows 256 entries in all, and imports and library saves need room), at most
+32 of them covers: page renders go before covers, each oldest first, and the
+whole cache is cleared before a write would fail with `storage_full:`. A
+render of an edited document reflects its unsaved edits.
+
+`pdf.cover`: `dpi` 24 to 150 (default 48), at most 16 megapixels. Its `key`
+is `<name>-<size>-<modified>`, lowercase hex and digits: a hash of the file's
+storage-relative name, its size in bytes and its modification time, so a
+changed file gets a new cover and the file's older covers go (another file's
+never). A kept cover answers without opening the file; a new one opens it
+without an open document (no handle, not counted toward the 8). Its errors
+are `pdf.info`'s (`not_found:`, `damaged:`, `protected:`, `too_large:`,
+`invalid:`) and `storage_full:`.
 
 ## Comments
 
@@ -77,8 +92,11 @@ document reflects its unsaved edits.
 | `pdf.comment` | `{doc, op: "reply", id, text, author?}` | `{id}` (the reply's) |
 | `pdf.comment` | `{doc, op: "status", id, status}` | `{id}`; `status` is `accepted`, `rejected`, `cancelled`, `completed` or `none` |
 
-A comment's `date` is local time without a zone or seconds
-(`2026-10-10T22:21`), and its `rects` is one bounding box. An unnamed comment's
+A comment's and a reply's `date` is this device's local time without a zone
+or seconds (`2026-10-10T22:21`): the service reads each date as the file
+writes it and converts it from its zone (`Z`, as the engine stamps its own
+marks, or `±hh'mm'`); a date written without a zone is taken as written. A
+comment's `rects` is one bounding box. An unnamed comment's
 id is `@page-index`. Fill & Sign marks appear in the list. Without `author`
 the engine writes "PdfCraft": always pass the person's name (PDF Tools asks
 once, "Comment as", and keeps it in its storage).
@@ -111,7 +129,12 @@ Caps: at most 512 pages named in one call.
 
 | Method | Arguments | Answer |
 | --- | --- | --- |
-| `pdf.edit_text` | `{doc, page, paragraph?, line?, text}` | `{edited: true}`; exactly one of `paragraph` or `line`, numbers from `pdf.lines` |
+| `pdf.edit_text` | `{doc, page, paragraph?, line?, text, align?, color?}` | `{edited: true}`; exactly one of `paragraph` or `line`, numbers from `pdf.lines` |
+
+`align` (`left`, `center`, `right` or `justify`) and `color` (`#rrggbb`) format
+a paragraph and are refused with `line`; the paragraph keeps its font, size
+and place. Without `align` its lines are set flush left, and without `color`
+it keeps its own; `pdf.lines` reports neither.
 
 ## History and saving
 

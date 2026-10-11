@@ -679,6 +679,134 @@ fn page_operations_and_text_edits() {
     coded(&w.err("edit_text", json!({"doc": doc, "page": 3, "line": 999, "text": "x"})), "invalid");
 }
 
+/// A page with a heading and a paragraph of three lines in Helvetica, set
+/// flush left in black.
+fn paragraph_pdf() -> Vec<u8> {
+    let content = "BT /F1 18 Tf 50 360 Td (Third quarter) Tj ET\nBT /F1 12 Tf 14 TL 50 320 Td (The quarter closed ahead of plan, with) Tj T* (revenue up in every region while costs) Tj T* (held flat.) Tj ET";
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 400] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".to_string(),
+        format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_string(),
+    ];
+    assemble(&objs)
+}
+
+/// `[x, y, w, h]` from an answer.
+fn xywh4(v: &Json) -> [f64; 4] {
+    let n = |i: usize| v[i].as_f64().unwrap_or_else(|| panic!("not [x, y, w, h]: {v}"));
+    [n(0), n(1), n(2), n(3)]
+}
+
+/// `pdf.edit_text` formats a paragraph with `align` (left, center, right,
+/// justify) and `color` (`#rrggbb`) and nothing else: no font, size or
+/// move, and a line takes neither. The paragraph is redrawn where it was,
+/// in its own font and size.
+#[test]
+fn a_paragraph_takes_an_alignment_and_a_colour() {
+    let w = World::new();
+    w.put("para.pdf", &paragraph_pdf());
+    let doc = w.open("para.pdf");
+    // The paragraph as pdf.lines gives it: its number, text and box, and its
+    // lines' boxes.
+    let paragraph = || {
+        let lines = w.ok("lines", json!({"doc": doc, "page": 1}));
+        let p = lines["paragraphs"].as_array().unwrap().iter().find(|p| p["text"].as_str().unwrap().starts_with("The quarter")).unwrap_or_else(|| panic!("{lines}")).clone();
+        let boxes: Vec<[f64; 4]> = p["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| xywh4(&lines["lines"].as_array().unwrap().iter().find(|l| l["n"] == *n).unwrap()["box"]))
+            .collect();
+        (p["n"].clone(), p["text"].as_str().unwrap().to_string(), xywh4(&p["box"]), boxes)
+    };
+    // Each line's fill colour, as the engine reads the page.
+    let colours = || {
+        docs::with_open(&doc, |d| d.engine.session().docs()[0].text_lines(0).iter().filter(|l| !l.text.contains("Third")).map(|l| l.color).collect::<Vec<_>>()).unwrap()
+    };
+    let (n, text, [x, _, width, _], boxes) = paragraph();
+    assert_eq!(boxes.len(), 3, "three lines");
+    assert!(colours().iter().all(|c| c.iter().all(|v| v.abs() < 0.01)), "black: {:?}", colours());
+    let near = |a: f64, b: f64| (a - b).abs() < 1.0;
+
+    assert_eq!(w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "right", "color": "#C0392B"})), json!({"edited": true}));
+    let (n, after, _, boxes) = paragraph();
+    assert_eq!(after, text, "the same words");
+    for b in &boxes {
+        assert!(near(b[0] + b[2], x + width), "flush right at {}: {b:?}", x + width);
+    }
+    let red = [0xc0 as f64 / 255.0, 0x39 as f64 / 255.0, 0x2b as f64 / 255.0];
+    for c in colours() {
+        assert!(c.iter().zip(red).all(|(v, r)| (v - r).abs() < 0.01), "#c0392b: {c:?}");
+    }
+    w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "center"}));
+    let (n, _, _, boxes) = paragraph();
+    for b in &boxes {
+        assert!(near(b[0] + b[2] / 2.0, x + width / 2.0), "centred on {}: {b:?}", x + width / 2.0);
+    }
+    assert!(colours().iter().all(|c| c.iter().zip(red).all(|(v, r)| (v - r).abs() < 0.01)), "an edit without a colour keeps the paragraph's own");
+    w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "justify"}));
+    let (n, _, _, boxes) = paragraph();
+    let (last, full) = boxes.split_last().unwrap();
+    for b in full {
+        assert!(near(b[0], x) && near(b[0] + b[2], x + width), "justified to [{x}, {}]: {b:?}", x + width);
+    }
+    assert!(near(last[0], x) && last[0] + last[2] < x + width - 10.0, "the last line stays short: {last:?}");
+    w.ok("edit_text", json!({"doc": doc, "page": 1, "paragraph": n, "text": text, "align": "left", "color": "#000000"}));
+    let (n, _, _, boxes) = paragraph();
+    assert!(boxes.iter().all(|b| near(b[0], x)), "flush left: {boxes:?}");
+    assert!(colours().iter().all(|c| c.iter().all(|v| v.abs() < 0.01)), "black again: {:?}", colours());
+    // Each format is one undo step.
+    w.ok("undo", json!({"doc": doc}));
+    assert!(colours().iter().all(|c| c.iter().zip(red).all(|(v, r)| (v - r).abs() < 0.01)), "undone: red again, {:?}", colours());
+    w.ok("redo", json!({"doc": doc}));
+    assert!(colours().iter().all(|c| c.iter().all(|v| v.abs() < 0.01)), "redone: black, {:?}", colours());
+
+    // What the service refuses, before the engine sees it.
+    let edits = w.ok("state", json!({"doc": doc}));
+    let base = json!({"doc": doc, "page": 1, "paragraph": n, "text": text});
+    let with = |key: &str, value: Json| {
+        let mut args = base.clone();
+        args[key] = value;
+        args
+    };
+    for bad in [
+        json!({"doc": doc, "page": 1, "line": 2, "text": "x", "align": "center"}),
+        json!({"doc": doc, "page": 1, "line": 2, "text": "x", "color": "#000000"}),
+        with("align", json!("middle")),
+        with("align", json!("Center")),
+        with("align", json!(1)),
+        with("color", json!("red")),
+        with("color", json!("#12345")),
+        with("color", json!("#1234567")),
+        with("color", json!("123456")),
+        with("color", json!("#ggg000")),
+        with("color", json!([1, 0, 0])),
+        json!({"doc": doc, "page": 1, "paragraph": n, "align": "center"}),
+    ] {
+        coded(&w.err("edit_text", bad.clone()), "invalid");
+    }
+    for (key, value) in [
+        ("font", json!("times")),
+        ("bold", json!(true)),
+        ("italic", json!(true)),
+        ("size", json!(20)),
+        ("underline", json!(true)),
+        ("line_spacing", json!(2)),
+        ("char_spacing", json!(1)),
+        ("scale", json!(120)),
+        ("dx", json!(10)),
+        ("dy", json!(10)),
+        ("width", json!(100)),
+    ] {
+        let e = w.err("edit_text", with(key, value));
+        coded(&e, "invalid");
+        assert!(e.contains(&format!("`{key}` is not one of them")), "{e}");
+    }
+    assert_eq!(w.ok("state", json!({"doc": doc})), edits, "the refusals reached nothing");
+}
+
 #[test]
 fn undo_and_redo_across_calls() {
     let w = World::new().samples();
@@ -1006,11 +1134,12 @@ fn the_render_cache_keeps_to_its_byte_cap() {
         std::fs::File::options().write(true).open(&path).unwrap().set_modified(base + Duration::from_secs(i)).unwrap();
     }
     let keep = root.join("bbbb/1@96.png");
-    cache::evict(&root, &keep, 1 << 20, cache::LIMITS);
+    let dot = dir.path().join(".cache");
+    cache::evict(&dot, &keep, 1 << 20, cache::LIMITS);
     let left: Vec<u64> = (0..17).filter(|i| old.join(format!("{i}@96.png")).exists()).collect();
     assert_eq!(left, (2..17).collect::<Vec<_>>(), "15 MiB stay with the new 1 MiB render; the two oldest went");
     // The file cap counts too, under a test's small limits.
-    cache::evict(&root, &keep, 0, cache::Limits { bytes: u64::MAX, files: 4 });
+    cache::evict(&dot, &keep, 0, cache::Limits { bytes: u64::MAX, files: 4, covers: cache::MAX_COVERS });
     let left: Vec<u64> = (0..17).filter(|i| old.join(format!("{i}@96.png")).exists()).collect();
     assert_eq!(left, vec![14, 15, 16]);
 }
@@ -1066,6 +1195,232 @@ fn the_render_cache_never_follows_a_link() {
     assert_eq!(std::fs::read_dir(w.root.join("accounts/device/library")).unwrap().count(), 1);
 }
 
+// ------------------------------------------------------------ covers
+
+/// `pdf.cover`'s file name: `<name>-<size>-<modified>@<dpi>.png` in
+/// `.cache/covers`, lowercase hex and digits.
+#[track_caller]
+fn cover_name(path: &str, dpi: u32) -> (String, String) {
+    let name = path.strip_prefix(".cache/covers/").unwrap_or_else(|| panic!("not a cover: {path}"));
+    let (key, rest) = name.split_once('@').unwrap();
+    assert_eq!(rest, format!("{dpi}.png"), "{name}");
+    let parts: Vec<&str> = key.split('-').collect();
+    assert_eq!(parts.len(), 3, "{name}");
+    assert!(parts[0].len() == 16 && parts[0].bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)), "{name}");
+    assert!(parts[1..].iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())), "{name}");
+    (parts[0].to_string(), key.to_string())
+}
+
+/// A cover is page 1 at 48 dpi by default, kept in `.cache/covers` across
+/// closes, prunes and releases, and a kept cover answers without opening
+/// the PDF at all.
+#[test]
+fn a_cover_is_kept_across_closes_and_runs() {
+    let w = World::new().samples();
+    let cover = w.ok("cover", json!({"path": "Board minutes.pdf"}));
+    let path = cover["path"].as_str().unwrap().to_string();
+    let (key, _) = cover_name(&path, 48);
+    assert_eq!(key, covers::name_key("Board minutes.pdf"));
+    let size = &w.ok("info", json!({"path": "Board minutes.pdf"}))["pages"][0];
+    let at_48 = |points: &Json| json!(reading::pixels(points.as_f64().unwrap(), 48));
+    assert_eq!((cover["width"].clone(), cover["height"].clone(), cover["dpi"].clone()), (at_48(&size["width"]), at_48(&size["height"]), json!(48)), "page 1 at 48 dpi: {cover}");
+    let file = w.root.join(&path);
+    assert!(std::fs::read(&file).unwrap().starts_with(b"\x89PNG"));
+    assert_eq!(docs::open_count(), 0, "no open document");
+    assert_eq!(w.ok("cover", json!({"path": "Board minutes.pdf"})), cover, "the same cover again");
+
+    // A document opened, rendered and closed; another opened (which prunes
+    // the closed one's renders); one released after its idle bound.
+    let doc = w.open("Board minutes.pdf");
+    w.ok("page", json!({"doc": doc, "page": 1}));
+    w.ok("close", json!({"doc": doc}));
+    let other = w.open("Field guide.pdf");
+    w.ok("page", json!({"doc": other, "page": 1}));
+    docs::sweep_at(Instant::now() + docs::IDLE + Duration::from_secs(1));
+    coded(&w.err("state", json!({"doc": other})), "unknown_doc");
+    assert!(!w.root.join(format!(".cache/pages/{other}")).exists(), "the released document's renders went");
+    assert!(file.is_file(), "the cover stayed through close, prune and release");
+
+    // A new run: the same file (its size and time) answers from the cache,
+    // with no engine work: bytes the engine cannot read, kept the same size
+    // and time, still answer with the kept cover.
+    let pdf = w.root.join("Board minutes.pdf");
+    let (len, modified) = { let m = std::fs::metadata(&pdf).unwrap(); (m.len(), m.modified().unwrap()) };
+    let original = std::fs::read(&pdf).unwrap();
+    std::fs::write(&pdf, vec![b'x'; len as usize]).unwrap();
+    std::fs::File::options().write(true).open(&pdf).unwrap().set_modified(modified).unwrap();
+    assert_eq!(w.ok("cover", json!({"path": "Board minutes.pdf"})), cover, "kept: the PDF was not opened");
+    // Changed (another time), it is read again: and is damaged now.
+    std::fs::File::options().write(true).open(&pdf).unwrap().set_modified(modified + Duration::from_secs(5)).unwrap();
+    coded(&w.err("cover", json!({"path": "Board minutes.pdf"})), "damaged");
+    std::fs::write(&pdf, original).unwrap();
+}
+
+/// A changed PDF (saved) gets a new key and a new cover, and its older
+/// cover goes, by its name's exact prefix: another PDF's cover stays, and so
+/// does a cover of the same version at another dpi.
+#[test]
+fn a_changed_pdf_gets_a_new_cover_and_the_old_one_goes() {
+    let w = World::new().samples();
+    let before = w.ok("cover", json!({"path": "Board minutes.pdf"}));
+    let other = w.ok("cover", json!({"path": "Field guide.pdf"}));
+    assert_ne!(cover_name(before["path"].as_str().unwrap(), 48).0, cover_name(other["path"].as_str().unwrap(), 48).0);
+    let doc = w.open("Board minutes.pdf");
+    w.ok("pages", json!({"doc": doc, "op": "rotate", "pages": [1], "angle": 90}));
+    w.ok("save", json!({"doc": doc}));
+    w.ok("close", json!({"doc": doc}));
+    let after = w.ok("cover", json!({"path": "Board minutes.pdf"}));
+    let (key, version) = cover_name(after["path"].as_str().unwrap(), 48);
+    assert_eq!(key, cover_name(before["path"].as_str().unwrap(), 48).0, "the same PDF's name");
+    assert_ne!(version, cover_name(before["path"].as_str().unwrap(), 48).1, "another version");
+    assert_eq!((after["width"].clone(), after["height"].clone()), (before["height"].clone(), before["width"].clone()), "the new cover shows page 1 turned: {after}");
+    assert!(!w.root.join(before["path"].as_str().unwrap()).exists(), "the older cover went");
+    assert!(w.root.join(other["path"].as_str().unwrap()).exists(), "another PDF's cover stayed");
+    let larger = w.ok("cover", json!({"path": "Board minutes.pdf", "dpi": 96}));
+    assert!(w.root.join(after["path"].as_str().unwrap()).exists(), "the same version at another dpi stays");
+    assert!(w.root.join(larger["path"].as_str().unwrap()).exists());
+    assert_eq!(larger["dpi"], 96);
+}
+
+/// Covers keep to their 32 within the render cache's 64 files: past 32, the
+/// oldest cover goes; page renders go before covers when the cache is full,
+/// and a new cover then takes a page's place, not a cover's.
+#[test]
+fn covers_keep_to_their_cap_and_page_renders_go_first() {
+    let base = std::time::SystemTime::now() - Duration::from_secs(3_600);
+    // Each render written a second after the last: the cache's age order
+    // does not hang on how finely the file system keeps time.
+    let age = |w: &World, rel: &str, n: u64| std::fs::File::options().write(true).open(w.root.join(rel)).unwrap().set_modified(base + Duration::from_secs(n)).unwrap();
+    let cover = |w: &World, i: usize| -> String {
+        let name = format!("doc {i:02}.pdf");
+        w.put(&name, &tiny_pdf(&format!("first {i}"), "second"));
+        w.ok("cover", json!({"path": name, "dpi": 24}))["path"].as_str().unwrap().to_string()
+    };
+    let w = World::new();
+    let mut made = Vec::new();
+    for i in 0..=cache::MAX_COVERS {
+        let path = cover(&w, i);
+        age(&w, &path, i as u64);
+        made.push(path);
+    }
+    let kept: Vec<bool> = made.iter().map(|p| w.root.join(p).exists()).collect();
+    assert!(!kept[0] && kept[1..].iter().all(|k| *k), "the 33rd cover took the oldest's place: {kept:?}");
+    assert_eq!(std::fs::read_dir(w.root.join(cache::COVERS)).unwrap().count(), cache::MAX_COVERS);
+
+    // Four covers and page renders past the 64 files: the pages go, oldest
+    // first, and every cover stays.
+    let w = World::new();
+    let covers: Vec<String> = (0..4).map(|i| { let p = cover(&w, i); age(&w, &p, i as u64); p }).collect();
+    let doc = w.open("doc 00.pdf");
+    let mut pages = Vec::new();
+    for (n, dpi) in (24..=300).step_by(3).take(cache::MAX_FILES + 6).enumerate() {
+        let path = w.ok("page", json!({"doc": doc, "page": 1, "dpi": dpi}))["path"].as_str().unwrap().to_string();
+        age(&w, &path, 100 + n as u64);
+        pages.push(path);
+    }
+    let left = |pages: &[String]| pages.iter().filter(|p| w.root.join(p).exists()).count();
+    assert!(covers.iter().all(|p| w.root.join(p).exists()), "every cover stayed");
+    assert_eq!(left(&pages), cache::MAX_FILES - covers.len(), "the pages kept to what the covers left");
+    assert!(pages[..pages.len() - left(&pages)].iter().all(|p| !w.root.join(p).exists()), "the oldest pages went");
+    // A fifth cover with the cache full: the oldest page makes room.
+    let fifth = cover(&w, 4);
+    assert!(w.root.join(&fifth).exists() && covers.iter().all(|p| w.root.join(p).exists()), "no cover went");
+    assert_eq!(left(&pages), cache::MAX_FILES - covers.len() - 1, "a page made room");
+}
+
+/// The whole cache, covers too, is cleared before a write would fail with
+/// `storage_full:`.
+#[test]
+fn covers_are_cleared_before_storage_full() {
+    let roomy = World::new().samples();
+    let cover = roomy.ok("cover", json!({"path": "Board minutes.pdf", "dpi": 150}))["path"].as_str().unwrap().to_string();
+    let doc = roomy.open("Board minutes.pdf");
+    roomy.ok("page", json!({"doc": doc, "page": 1, "dpi": 150}));
+    let cached: u64 = [cover.clone(), format!(".cache/pages/{doc}/1@150.png")].iter().map(|p| std::fs::metadata(roomy.root.join(p)).unwrap().len()).sum();
+    let tight = World { _dir: tempfile::tempdir().unwrap(), root: roomy.root.clone(), areas: resolver(&roomy.root, Some(200)) };
+    tight.ok("export", json!({"doc": doc, "kind": "text", "out": "minutes.txt"}));
+    let text = std::fs::metadata(tight.root.join("minutes.txt")).unwrap().len();
+    assert!(text > 200 && text <= 200 + cached, "the export needed the cache's room: {text} bytes");
+    assert!(!tight.root.join(&cover).exists(), "the cover went with the page renders");
+    // A cover that does not fit what is left fails the same way.
+    coded(&tight.err("cover", json!({"path": "Field guide.pdf", "dpi": 150})), "storage_full");
+}
+
+/// A cover is not an open document: it adds nothing to the table and is
+/// not refused when a caller has its 8 open.
+#[test]
+fn a_cover_is_no_open_document() {
+    let w = World::new().samples();
+    let open: Vec<String> = (0..docs::MAX_OPEN).map(|_| w.open("Board minutes.pdf")).collect();
+    assert_eq!(docs::open_count(), docs::MAX_OPEN);
+    coded(&w.err("open", json!({"path": "Field guide.pdf"})), "too_many_open");
+    w.ok("cover", json!({"path": "Field guide.pdf"}));
+    w.ok("cover", json!({"path": "Apartment lease.pdf"}));
+    assert_eq!(docs::open_count(), docs::MAX_OPEN, "no open-document entry");
+    coded(&w.err("open", json!({"path": "Field guide.pdf"})), "too_many_open");
+    w.ok("close", json!({"doc": open[0]}));
+    w.open("Field guide.pdf");
+}
+
+/// A cover runs no script of the PDF's (a fresh session, JavaScript off),
+/// and is refused where `pdf.info` refuses: a missing, damaged or locked
+/// PDF, a path outside the storage, a dpi out of 24 to 150, a page past 16
+/// megapixels, a key it does not take; and a cache folder that is a link.
+#[test]
+fn a_cover_runs_no_script_and_is_refused_where_info_is() {
+    let w = World::new().samples();
+    w.put("form.pdf", &scripted_form());
+    let cover = w.ok("cover", json!({"path": "form.pdf"}));
+    let doc = w.open("form.pdf");
+    let page = w.ok("page", json!({"doc": doc, "page": 1, "dpi": 48}));
+    assert_eq!(
+        std::fs::read(w.root.join(cover["path"].as_str().unwrap())).unwrap(),
+        std::fs::read(w.root.join(page["path"].as_str().unwrap())).unwrap(),
+        "the cover is page 1 as the scripts-off session draws it"
+    );
+    assert_eq!(value(&w.ok("fields", json!({"doc": doc})), "note"), json!("quiet"));
+    // An XFA form whose initialize script sets qty to 2 on opening, as the
+    // engine's default session (JavaScript on) runs it: the cover is the form
+    // as the scripts-off session draws it, not as the script left it.
+    w.put("xfa.pdf", &pdfcraft_xfa::fixtures::shell(&pdfcraft_xfa::fixtures::scripted_template()));
+    let png = |rel: &Json| std::fs::read(w.root.join(rel.as_str().unwrap())).unwrap();
+    let xfa_cover = png(&w.ok("cover", json!({"path": "xfa.pdf"}))["path"]);
+    let xfa = w.open("xfa.pdf");
+    assert_eq!(xfa_cover, png(&w.ok("page", json!({"doc": xfa, "page": 1, "dpi": 48}))["path"]), "the scripts-off drawing");
+    let mut on = Automation::new().with_root(&w.root).unwrap();
+    let (d, _) = open(&mut on, "xfa.pdf").unwrap();
+    assert_eq!(value(&run(&mut on, "form_fields", &json!({"doc": d})).unwrap(), "qty"), json!("2"), "with JavaScript on, the script runs on opening");
+    let live = on.call("page_render", &json!({"doc": d, "page": 1, "dpi": 48})).unwrap();
+    let live = live.into_iter().find_map(|c| match c { Content::Png { data, .. } => Some(data), _ => None }).unwrap();
+    assert_ne!(live, xfa_cover, "the script's value would have shown on the cover");
+
+    w.put("locked.pdf", &locked_pdf());
+    w.put("huge.pdf", &sized_pdf(2_000.0, 2_000.0));
+    coded(&w.err("cover", json!({"path": "missing.pdf"})), "not_found");
+    coded(&w.err("cover", json!({"path": "Damaged scan.pdf"})), "damaged");
+    coded(&w.err("cover", json!({"path": "locked.pdf"})), "protected");
+    coded(&w.err("cover", json!({"path": "huge.pdf", "dpi": 150})), "too_large");
+    assert_eq!(w.ok("cover", json!({"path": "huge.pdf", "dpi": 24}))["width"], 667, "a lower dpi fits");
+    for bad in [json!({"path": "../elsewhere.pdf"}), json!({"path": "/etc/hosts"}), json!({"path": "Board minutes.pdf", "dpi": 23}), json!({"path": "Board minutes.pdf", "dpi": 151}), json!({})] {
+        coded(&w.err("cover", bad), "invalid");
+    }
+    for (key, value) in [("page", json!(2)), ("out", json!("cover.png")), ("doc", json!("abc"))] {
+        let mut args = json!({"path": "Board minutes.pdf"});
+        args[key] = value;
+        let e = w.err("cover", args);
+        coded(&e, "invalid");
+        assert!(e.contains(&format!("`{key}` is not one of them")), "{e}");
+    }
+    // A covers folder that is a link is refused, and nothing is written
+    // through it.
+    let w = World::new().samples();
+    std::fs::create_dir_all(w.root.join("accounts/device/library")).unwrap();
+    std::fs::create_dir_all(w.root.join(".cache")).unwrap();
+    std::os::unix::fs::symlink(w.root.join("accounts/device/library"), w.root.join(cache::COVERS)).unwrap();
+    coded(&w.err("cover", json!({"path": "Board minutes.pdf"})), "invalid");
+    assert_eq!(std::fs::read_dir(w.root.join("accounts/device/library")).unwrap().count(), 0, "nothing written through the link");
+}
+
 // ------------------------------------------------------------ snippets
 
 #[test]
@@ -1091,14 +1446,138 @@ fn snippets_mark_the_match_within_120_characters() {
     assert!(s.chars().count() <= reading::SNIPPET && s.starts_with("[[word") && s.ends_with("…]]"), "{s}");
 }
 
+/// Seven hours behind UTC: California's clock in October.
+const PDT: i64 = -7 * 3_600;
+
+/// A comment's `date` from what the engine lists and what the file writes:
+/// the written date with its zone, when it is the one listed; the listed
+/// wall clock as written otherwise.
 #[test]
-fn pdf_dates_read_as_iso_8601() {
-    assert_eq!(review::date(&json!("2026-10-10 14:30")), json!("2026-10-10T14:30"), "the engine's listing: the file's wall clock");
-    assert_eq!(review::date(&json!("D:20261010143000+02'00'")), json!("2026-10-10T14:30:00+02:00"));
-    assert_eq!(review::date(&json!("D:20261010143000Z")), json!("2026-10-10T14:30:00Z"));
-    assert_eq!(review::date(&json!("D:20261010")), json!("2026-10-10T00:00:00Z"));
-    assert_eq!(review::date(&json!("yesterday")), json!("yesterday"));
-    assert_eq!(review::date(&Json::Null), Json::Null);
+fn pdf_dates_read_as_local_time() {
+    let pdt = |_: i64| PDT;
+    let date = |listed: Json, written: Option<&str>| review::date(&listed, written, pdt);
+    // The bug: the engine stamps a mark made at 17:32 on 10 Oct in
+    // California as 00:32 UTC on 11 Oct, and lists it as "2026-10-11 00:32".
+    assert_eq!(date(json!("2026-10-11 00:32"), Some("D:20261011003256Z")), json!("2026-10-10T17:32"));
+    assert_eq!(date(json!("2026-10-10 14:30"), Some("D:20261010143000+02'00'")), json!("2026-10-10T05:30"));
+    assert_eq!(date(json!("2026-10-10 14:30"), Some("D:20261010143000")), json!("2026-10-10T14:30"), "no zone: as written");
+    // Without the written date, or with one that is not the listed one, the
+    // listing's wall clock, as written.
+    assert_eq!(date(json!("2026-10-11 00:32"), None), json!("2026-10-11T00:32"));
+    assert_eq!(date(json!("2026-10-11 00:32"), Some("D:20261012003256Z")), json!("2026-10-11T00:32"));
+    // A date the listing passed through (fewer than twelve digits).
+    assert_eq!(date(json!("D:2026101014Z"), Some("D:2026101014Z")), json!("2026-10-10T07:00"));
+    assert_eq!(date(json!("D:20261010"), None), json!("2026-10-10T00:00"));
+    assert_eq!(date(json!("yesterday"), Some("yesterday")), json!("yesterday"));
+    assert_eq!(date(Json::Null, Some("D:20261011003256Z")), Json::Null);
+}
+
+/// A one-page PDF whose comments and replies carry each kind of date a
+/// file writes: UTC (`Z`, as the engine stamps its own marks), an offset
+/// (`+02'00'`) and no zone. Comment `a` (UTC) has a reply dated with an
+/// offset, `b` (an offset) one with no zone, `c` (no zone) one in UTC, and
+/// the last comment has no name (its id is its place) and a western offset.
+fn dated_comments() -> Vec<u8> {
+    let note = |name: &str, top: u32, date: &str, extra: &str| {
+        let nm = if name.is_empty() { String::new() } else { format!(" /NM ({name})") };
+        format!("<< /Type /Annot /Subtype /Text /Rect [40 {} 60 {top}] /T (Ana) /Contents (about {name}) /M ({date}){nm}{extra} /P 3 0 R >>", top - 20)
+    };
+    let page = "BT /F1 12 Tf 20 280 Td (Dated comments) Tj ET";
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Resources << /Font << /F1 12 0 R >> >> /Contents 11 0 R /Annots [4 0 R 5 0 R 6 0 R 7 0 R 8 0 R 9 0 R 10 0 R] >>".to_string(),
+        // 4–6 the comments, 7–9 their replies, 10 the unnamed comment
+        note("a", 260, "D:20261011003256Z", ""),
+        note("b", 220, "D:20261010143000+02'00'", ""),
+        note("c", 180, "D:20261010143000", ""),
+        note("a-reply", 260, "D:20261011090000+02'00'", " /IRT 4 0 R"),
+        note("b-reply", 220, "D:20261011090000", " /IRT 5 0 R"),
+        note("c-reply", 180, "D:20261011003000Z", " /IRT 6 0 R"),
+        note("", 140, "D:20261011220000-04'00'", ""),
+        // 11 the page's content, 12 its font
+        format!("<< /Length {} >>\nstream\n{page}\nendstream", page.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+    ];
+    assemble(&objs)
+}
+
+/// The dates of `pdf.comments`, as (id, date) of each comment, then
+/// (reply id, date) of each reply.
+fn dates_of(list: &Json) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for c in list["comments"].as_array().unwrap() {
+        out.push((c["id"].as_str().unwrap().to_string(), c["date"].as_str().unwrap_or("").to_string()));
+        for r in c["replies"].as_array().unwrap() {
+            out.push((r["id"].as_str().unwrap().to_string(), r["date"].as_str().unwrap_or("").to_string()));
+        }
+    }
+    out
+}
+
+/// SERVICE.md: a comment's `date` is this device's local time. A date in
+/// UTC or with an offset goes to the device's clock, and a date with no
+/// zone is taken as written, for comments and replies alike, read from the
+/// file's own `/M` (the engine's listing drops the zone).
+#[test]
+fn comment_dates_are_this_devices_local_time() {
+    let w = World::new();
+    w.put("dated.pdf", &dated_comments());
+    let doc = w.open("dated.pdf");
+    let owned = |pairs: &[(&str, &str)]| pairs.iter().map(|(id, date)| (id.to_string(), date.to_string())).collect::<Vec<_>>();
+    let in_california = dates::with_offset(PDT, || dates_of(&w.ok("comments", json!({"doc": doc}))));
+    assert_eq!(
+        in_california,
+        owned(&[
+            ("a", "2026-10-10T17:32"),
+            ("a-reply", "2026-10-11T00:00"),
+            ("b", "2026-10-10T05:30"),
+            ("b-reply", "2026-10-11T09:00"),
+            ("c", "2026-10-10T14:30"),
+            ("c-reply", "2026-10-10T17:30"),
+            ("@1-7", "2026-10-11T19:00"),
+        ])
+    );
+    let in_tokyo = dates::with_offset(9 * 3_600, || dates_of(&w.ok("comments", json!({"doc": doc}))));
+    assert_eq!(
+        in_tokyo,
+        owned(&[
+            ("a", "2026-10-11T09:32"),
+            ("a-reply", "2026-10-11T16:00"),
+            ("b", "2026-10-10T21:30"),
+            ("b-reply", "2026-10-11T09:00"),
+            ("c", "2026-10-10T14:30"),
+            ("c-reply", "2026-10-11T09:30"),
+            ("@1-7", "2026-10-12T11:00"),
+        ]),
+        "the same file on a clock nine hours ahead of UTC; dates with no zone stay as written"
+    );
+    assert_eq!(w.ok("state", json!({"doc": doc}))["edited"], false, "reading the dates changed nothing");
+
+    // A mark made now is stamped in UTC by the engine and reads as the
+    // device's clock now, unsaved and after a save; one in another place
+    // too (an unnamed comment's id is its place).
+    let made = |before: i64, after: i64, date: &str| [before, after].iter().any(|t| dates::minute_at(*t, PDT) == date);
+    let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let before = now();
+    let id = w.ok("comment", json!({"doc": doc, "op": "add", "page": 1, "type": "note", "at": [200, 200], "text": "now", "author": "Ana"}))["id"].as_str().unwrap().to_string();
+    w.ok("comment", json!({"doc": doc, "op": "reply", "id": "a", "text": "seen", "author": "Ben"}));
+    let after = now();
+    let list = dates::with_offset(PDT, || w.ok("comments", json!({"doc": doc})));
+    let listed = dates_of(&list);
+    let date_of = |listed: &[(String, String)], id: &str| listed.iter().find(|(i, _)| i == id).map(|(_, d)| d.clone()).unwrap_or_else(|| panic!("no {id}: {listed:?}"));
+    assert!(made(before, after, &date_of(&listed, &id)), "a new comment, unsaved: {listed:?}");
+    let a = list["comments"].as_array().unwrap().iter().find(|c| c["id"] == "a").unwrap();
+    let seen = a["replies"].as_array().unwrap().iter().find(|r| r["text"] == "seen").unwrap_or_else(|| panic!("no reply: {a}"));
+    assert!(made(before, after, seen["date"].as_str().unwrap()), "a new reply, unsaved: {a}");
+    assert_eq!(date_of(&listed, "a-reply"), "2026-10-11T00:00", "the reply beside it keeps its own zone");
+    w.ok("save", json!({"doc": doc}));
+    w.ok("close", json!({"doc": doc}));
+    let again = w.open("dated.pdf");
+    let reopened = dates::with_offset(PDT, || dates_of(&w.ok("comments", json!({"doc": again}))));
+    assert!(made(before, after, &date_of(&reopened, &id)), "saved and opened again: {reopened:?}");
+    assert_eq!(date_of(&reopened, "a"), "2026-10-10T17:32");
+    assert_eq!(date_of(&reopened, "b-reply"), "2026-10-11T09:00");
 }
 
 #[test]

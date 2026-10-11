@@ -5,7 +5,9 @@
 //!
 //! - **Files.** A call that names a `path` is a fresh session that opens
 //!   the file, acts and closes: `info`, `text`, `render`, `merge`, `split`.
-//!   The system agent's five `pdf.*` tools (`tools.json`) are these.
+//!   The system agent's five `pdf.*` tools (`tools.json`) are these. PDF
+//!   Tools' `cover` is one too: a PDF's first page, kept in the render
+//!   cache across closes ([`covers`]).
 //! - **Open documents** (PDF Tools v2, `apps/pdftools/design/SERVICE.md`):
 //!   `open` keeps the engine's document, its edits and undo history,
 //!   between calls under a handle that later calls name as `doc`; `close`,
@@ -57,6 +59,8 @@ mod args;
 mod cache;
 mod change;
 mod codes;
+mod covers;
+mod dates;
 mod docs;
 mod reading;
 mod review;
@@ -170,6 +174,7 @@ fn dispatch_in(method: &str, args: &Json, cx: &Ctx) -> Result<Json, String> {
         "render" => render(args, cx.area),
         "merge" => merge(args, cx.area),
         "split" => split(args, cx.area),
+        "cover" => covers::cover(args, cx),
         "open" => docs::open(args, cx),
         "close" => docs::close(args, cx),
         "state" => docs::state(args, cx),

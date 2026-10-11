@@ -24,13 +24,34 @@
 //!   (`doc_tests::a_forms_own_scripts_never_run`).
 //! - `comment_list`, `comment_edit`, `comment_delete`, `comment_reply`,
 //!   `comment_set_status`, `form_fields` and `fill_sign_add` are `safe`.
+//!
+//! **Dates.** `comment_list` lists a comment's `/M` through pdfcraft-render's
+//! `pretty_date`, which keeps the file's wall clock and drops the zone and
+//! the seconds: the engine stamps its own marks in UTC
+//! (`D:20261011003256Z`), so a mark made at 17:32 in California on 10 Oct
+//! listed as 00:32 on 11 Oct. SERVICE.md's `date` is this device's local
+//! time, so [`comments`] reads each date as the file writes it from the
+//! engine's own comment reader, `pdfcraft_annot::summaries` (the reader
+//! the engine's listing comes from), over a `pdfcraft_cos` document opened
+//! on the open document's working bytes (its unsaved edits included), and
+//! takes it to local time ([`crate::dates`]). That route only reads: the
+//! bytes are the engine's own copy in memory (no file is opened, no path
+//! named, nothing written), the object reader runs no script and changes
+//! nothing, and the session it comes from is borrowed, not called. One pass
+//! over the page tree and the comments, the cost of the engine's own
+//! listing (the engine's per-comment `comment_props` walks the page tree for
+//! each comment). A date is used only where it is the one the engine
+//! listed for that page and place; otherwise, or if the read fails, the
+//! listed wall clock stands, taken as written.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use serde_json::{json, Value as Json};
 
 use crate::args::{self, xywh};
 use crate::codes::{self, invalid};
+use crate::dates;
 use crate::docs::{self, OpenDoc};
 use crate::Ctx;
 
@@ -62,38 +83,61 @@ fn comment_id(c: &Json) -> Json {
     }
 }
 
-/// A comment's date as ISO 8601. The engine lists it as the file's wall
-/// clock, `YYYY-MM-DD HH:MM` (pdfcraft-render's `pretty_date`, which drops
-/// the seconds and the zone): that becomes `YYYY-MM-DDTHH:MM`, a local
-/// time. A raw PDF date (`D:20261010143000+02'00'`) keeps its zone. Any
-/// other text stays as the file has it.
-pub(crate) fn date(v: &Json) -> Json {
-    let Some(raw) = v.as_str() else { return Json::Null };
-    let b = raw.as_bytes();
+/// A comment's `date` (SERVICE.md: this device's local time,
+/// `YYYY-MM-DDTHH:MM`). `listed` is what the engine's `comment_list` gives,
+/// the file's wall clock `YYYY-MM-DD HH:MM` without its zone (module doc);
+/// `written` is the date as the file writes it, `/M` with its zone, when
+/// the service could read it. A written date that is the listed one goes to
+/// local time from its zone ([`dates::local`]); without one, the listed wall
+/// clock is taken as written. Any other text stays as the file has it.
+pub(crate) fn date(listed: &Json, written: Option<&str>, offset_at: impl Fn(i64) -> i64) -> Json {
+    let Some(listed) = listed.as_str() else { return Json::Null };
+    if let Some(local) = written.filter(|w| pretty_date(w) == listed).and_then(|w| dates::local(w, &offset_at)) {
+        return json!(local);
+    }
+    let b = listed.as_bytes();
     let digit = |i: usize| b.get(i).is_some_and(u8::is_ascii_digit);
     if b.len() == 16 && (b[4], b[7], b[10], b[13]) == (b'-', b'-', b' ', b':') && [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15].into_iter().all(digit) {
-        return json!(format!("{}T{}", &raw[..10], &raw[11..]));
+        return json!(format!("{}T{}", &listed[..10], &listed[11..]));
     }
-    let s = raw.strip_prefix("D:").unwrap_or(raw);
-    let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
-    if digits.len() < 8 {
-        return json!(raw);
+    // A date the listing passed through unshortened (fewer than twelve
+    // digits): read as a PDF date.
+    match dates::local(listed, &offset_at) {
+        Some(local) => json!(local),
+        None => json!(listed),
     }
-    let part = |from: usize, to: usize, default: &'static str| digits.get(from..to).unwrap_or(default).to_string();
-    let (y, mo, d) = (part(0, 4, "0000"), part(4, 6, "01"), part(6, 8, "01"));
-    let (h, mi, se) = (part(8, 10, "00"), part(10, 12, "00"), part(12, 14, "00"));
-    let zone = s[digits.len()..].replace('\'', "");
-    let zone = match zone.as_bytes().first() {
-        Some(b'Z') | None => "Z".to_string(),
-        Some(b'+' | b'-') if zone.len() >= 3 => {
-            let (sign, rest) = zone.split_at(1);
-            let hh = rest.get(0..2).unwrap_or("00");
-            let mm = rest.get(2..4).unwrap_or("00");
-            format!("{sign}{hh}:{mm}")
-        }
-        _ => "Z".to_string(),
-    };
-    json!(format!("{y}-{mo}-{d}T{h}:{mi}:{se}{zone}"))
+}
+
+/// What the engine's listing makes of a written date: pdfcraft-render's
+/// `pretty_date` (`D:20261001123000Z` → `2026-10-01 12:30`; anything with
+/// fewer than twelve digits after `D:` unchanged), so a written date can be
+/// matched with the one listed for the same comment.
+fn pretty_date(written: &str) -> String {
+    let d = written.trim_start_matches("D:");
+    let b = d.as_bytes();
+    if b.len() >= 12 && b[..12].iter().all(u8::is_ascii_digit) {
+        format!("{}-{}-{} {}:{}", &d[0..4], &d[4..6], &d[6..8], &d[8..10], &d[10..12])
+    } else {
+        written.to_string()
+    }
+}
+
+/// Every comment's and reply's date as the file writes it (`/M`), by its
+/// 1-based page and its 1-based place in the page's `/Annots` (as the
+/// engine's `comment_list` gives `page` and `index`): read with the
+/// engine's own comment reader over the open document's working bytes, the
+/// reviewed read-only route of the module doc. Empty if the document cannot
+/// be read so (the engine holds no editor for it either, or a reader
+/// fails); a reader's panic stays here.
+fn written_dates(doc: &OpenDoc) -> HashMap<(u64, u64), String> {
+    let id = doc.id;
+    let Some(working) = doc.engine.session().docs().iter().find(|d| d.id.0 == id) else { return HashMap::new() };
+    let (bytes, password) = (working.bytes.clone(), working.password.clone());
+    catch_unwind(AssertUnwindSafe(|| {
+        let Ok(cos) = pdfcraft_cos::Document::open_with_password(bytes, password.as_deref()) else { return HashMap::new() };
+        pdfcraft_annot::summaries(&cos).into_iter().filter_map(|s| Some(((s.page as u64 + 1, s.index as u64 + 1), s.modified?))).collect()
+    }))
+    .unwrap_or_default()
 }
 
 /// The engine's annotation subtype as SERVICE.md's comment type.
@@ -120,6 +164,12 @@ pub(crate) fn comments(a: &Json, cx: &Ctx) -> Result<Json, String> {
     args::only(a, &["doc"], M)?;
     docs::with_doc(a, cx, M, |doc| {
         let list = doc.call("comment_list", json!({})).map_err(|e| codes::refused(&e))?;
+        // Each date with its zone, from the file (module doc).
+        let written = written_dates(doc);
+        let when = |c: &Json| {
+            let at = c["page"].as_u64().zip(c["index"].as_u64());
+            date(&c["modified"], at.and_then(|at| written.get(&at)).map(String::as_str), dates::offset_at)
+        };
         let comments: Vec<Json> = list["comments"]
             .as_array()
             .into_iter()
@@ -134,7 +184,7 @@ pub(crate) fn comments(a: &Json, cx: &Ctx) -> Result<Json, String> {
                     "type": kind(&c["type"]),
                     "author": c["author"],
                     "text": c["contents"],
-                    "date": date(&c["modified"]),
+                    "date": when(c),
                     "color": c["color"],
                     "status": c["status"].as_str().map(str::to_ascii_lowercase).unwrap_or_else(|| "none".into()),
                     "rects": if rect.is_null() { json!([]) } else { json!([rect]) },
@@ -142,7 +192,7 @@ pub(crate) fn comments(a: &Json, cx: &Ctx) -> Result<Json, String> {
                         "id": comment_id(r),
                         "author": r["author"],
                         "text": r["contents"],
-                        "date": date(&r["modified"]),
+                        "date": when(r),
                     })).collect::<Vec<_>>(),
                 })
             })

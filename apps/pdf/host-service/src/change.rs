@@ -6,6 +6,17 @@
 //! - `page_rotate`, `page_delete`, `page_move`, `page_duplicate`,
 //!   `text_edit`, `edit_undo`, `edit_redo` and `doc_list` are `safe`:
 //!   undoable edits of the open document, or reads of it.
+//! - `text_edit`'s formatting: of the paragraph formatting the engine
+//!   offers, `pdf.edit_text` passes only `align` and `color`, formatting
+//!   alone (the paragraph is drawn again where it was, in its own font and
+//!   size): `align` as one of the engine's four names, `color` as a
+//!   `#rrggbb` the service writes itself from the three bytes it parsed
+//!   (never one of the engine's colour names), and both only with
+//!   `paragraph`, since the engine formats a paragraph, not a line. The
+//!   font (`font`, `bold`, `italic`), `size`, `underline`, the spacing
+//!   (`line_spacing`, `char_spacing`, `scale`) and the moves (`dx`, `dy`,
+//!   `width`) stay out: `pdf.edit_text` refuses each before the engine sees
+//!   the call.
 //! - `page_insert_file` is `file`: it reads the PDF at `path`. The path is
 //!   the caller's, contained in its area and at most 128 MiB
 //!   ([`crate::checked_input`]), and the engine's root-confined resolver
@@ -48,6 +59,16 @@ pub(crate) const MAX_EXPORT_PAGES: usize = 64;
 pub(crate) const MAX_EXPORT_PIXELS: u64 = 256_000_000;
 /// The longest text an edit types.
 const MAX_EDIT: usize = 10_000;
+/// A paragraph's alignments (SERVICE.md "Edit"), as the engine names them.
+const ALIGNS: [&str; 4] = ["left", "center", "right", "justify"];
+
+/// `#rrggbb` (either case) as the engine's `#rrggbb`, written from its
+/// three bytes; `None` for anything else.
+fn hex_color(color: &str) -> Option<String> {
+    let hex = color.strip_prefix('#').filter(|h| h.len() == 6 && h.bytes().all(|b| b.is_ascii_hexdigit()))?;
+    let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+    Some(format!("#{:02x}{:02x}{:02x}", byte(0)?, byte(2)?, byte(4)?))
+}
 
 /// Move what the engine wrote in `stage` into place under `area`'s rules,
 /// clearing the render cache first when the storage would be too full.
@@ -157,17 +178,38 @@ pub(crate) fn pages(a: &Json, cx: &Ctx) -> Result<Json, String> {
     }
 }
 
-/// `pdf.edit_text {doc, page, paragraph?, line?, text}`.
+/// `pdf.edit_text {doc, page, paragraph?, line?, text, align?, color?}`:
+/// `align` and `color` format a paragraph (the module doc's review).
 pub(crate) fn edit_text(a: &Json, cx: &Ctx) -> Result<Json, String> {
     const M: &str = "pdf.edit_text";
-    args::only(a, &["doc", "page", "paragraph", "line", "text"], M)?;
+    args::only(a, &["doc", "page", "paragraph", "line", "text", "align", "color"], M)?;
     let page = args::positive(a, "page", M)?;
     let text = args::opt_str(a, "text", M, MAX_EDIT)?.ok_or_else(|| invalid(format!("{M} needs `text`")))?;
     let paragraph = args::opt_int(a, "paragraph", M)?;
     let line = args::opt_int(a, "line", M)?;
+    let align = match args::opt_str(a, "align", M, 16)? {
+        Some(al) if ALIGNS.contains(&al) => Some(al),
+        Some(al) => return Err(invalid(format!("{M}: `align` is {}, not {al:?}", ALIGNS.join(", ")))),
+        None => None,
+    };
+    let color = match args::opt_str(a, "color", M, 16)? {
+        Some(c) => Some(hex_color(c).ok_or_else(|| invalid(format!("{M}: `color` is #rrggbb, not {c:?}")))?),
+        None => None,
+    };
     let mut call = json!({ "page": page, "text": text });
     match (paragraph, line) {
-        (Some(n), None) if n >= 1 => call["paragraph"] = json!(n),
+        (Some(n), None) if n >= 1 => {
+            call["paragraph"] = json!(n);
+            if let Some(align) = align {
+                call["align"] = json!(align);
+            }
+            if let Some(color) = color {
+                call["color"] = json!(color);
+            }
+        }
+        (None, Some(_)) if align.is_some() || color.is_some() => {
+            return Err(invalid(format!("{M}: `align` and `color` format a paragraph: give `paragraph`, a number from pdf.lines, not `line`")));
+        }
         (None, Some(n)) if n >= 1 => call["line"] = json!(n),
         _ => return Err(invalid(format!("{M}: give exactly one of `paragraph` or `line`, a number from pdf.lines"))),
     }

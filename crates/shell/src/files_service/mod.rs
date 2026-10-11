@@ -228,6 +228,35 @@ fn parse_operation(method: &str, args: &Value) -> Result<Operation, String> {
     Ok(Operation::Export { path, name })
 }
 
+/// `files.status` for the calling isolate. `storage` is its live storage
+/// scope, `jail_bytes` measures what its jail holds now. With storage, it
+/// also says how much the storage holds and may hold: `used_bytes`, as the
+/// shell measures the jail (the measure the engines' room checks keep to),
+/// and `quota_bytes`, the live scope's quota that the app's own writes are
+/// checked against. Both are left out when either is unknown.
+fn status_answer(storage: Option<&StorageAccess>, jail_bytes: impl FnOnce() -> Option<u64>) -> Value {
+    let mut answer = json!({
+        "import_supported":file_dialogs::native_file_bytes_supported(),
+        "export_supported":file_dialogs::native_file_bytes_supported(),
+        "max_file_bytes":MAX_FILE_BYTES, "max_import_bytes":MAX_IMPORT, "foreground_required":true,
+        "photo_pick_supported":file_dialogs::native_file_bytes_supported(),
+        "text_share_supported":cfg!(target_os="android"), "max_share_text_bytes":MAX_SHARE_TEXT,
+        "storage_granted":storage.is_some()
+    });
+    if let Some((storage, used)) = storage.and_then(|storage| Some((storage, jail_bytes()?))) {
+        answer["used_bytes"] = used.into();
+        answer["quota_bytes"] = storage.quota().into();
+    }
+    answer
+}
+
+/// What `app`'s jail holds now, as the host's app storage measures it
+/// (ADR 0004 §11: the sandbox cannot count bytes, so the host does). The
+/// jail is the root App Hub gives the app's isolates: `<apps root>/<app>`.
+fn jail_bytes(app: &str) -> Option<u64> {
+    crate::app_storage::host()?.usage(app).ok().map(|usage| usage.jail_bytes)
+}
+
 fn admission(app: &str, host: &std::path::Path) -> Result<Value, String> {
     let loaded = crate::host_tools::script_apps::admitted_host(app, host)
         .map_err(|_| "permission_denied: App is no longer admitted")?;
@@ -299,7 +328,7 @@ impl HostService for FilesService {
         let mut methods = vec![HostApiMethod::new("files.status", 1, "files", "Discover file transfer support without opening a dialog",
             json!({"type":"object","additionalProperties":false}),
             json!({"type":"object","required":["import_supported","export_supported","max_file_bytes","max_import_bytes","storage_granted","foreground_required"],
-                "properties":{"import_supported":{"type":"boolean"},"export_supported":{"type":"boolean"},"max_file_bytes":{"type":"integer"},"max_import_bytes":{"type":"integer"},"photo_pick_supported":{"type":"boolean"},"text_share_supported":{"type":"boolean"},"max_share_text_bytes":{"type":"integer"},"storage_granted":{"type":"boolean"},"foreground_required":{"const":true}}}))
+                "properties":{"import_supported":{"type":"boolean"},"export_supported":{"type":"boolean"},"max_file_bytes":{"type":"integer"},"max_import_bytes":{"type":"integer"},"photo_pick_supported":{"type":"boolean"},"text_share_supported":{"type":"boolean"},"max_share_text_bytes":{"type":"integer"},"storage_granted":{"type":"boolean"},"used_bytes":{"type":"integer","minimum":0},"quota_bytes":{"type":"integer","minimum":0},"foreground_required":{"const":true}}}))
             .with_platforms(&["macos","windows","linux","android","ios","openharmony","web"]).with_agent_access(AgentAccess::Allowed)];
         if cfg!(target_os = "android") {
             methods.push(HostApiMethod::new("files.share", 1, "files", "Open Android's text share chooser; OS handoff does not confirm delivery",
@@ -344,14 +373,8 @@ impl HostService for FilesService {
             // Status is intentionally nonprompting and does not need storage.
             let heap = reply.isolate_key();
             reply.send(admission(&call.app_id, &call.host_dir).map(|_| {
-                json!({
-                    "import_supported":file_dialogs::native_file_bytes_supported(),
-                    "export_supported":file_dialogs::native_file_bytes_supported(),
-                    "max_file_bytes":MAX_FILE_BYTES, "max_import_bytes":MAX_IMPORT, "foreground_required":true,
-                    "photo_pick_supported":file_dialogs::native_file_bytes_supported(),
-                    "text_share_supported":cfg!(target_os="android"), "max_share_text_bytes":MAX_SHARE_TEXT,
-                    "storage_granted":splash_storage::storage_for_heap(heap, &call.app_id).is_some()
-                })
+                let storage = splash_storage::storage_for_heap(heap, &call.app_id);
+                status_answer(storage.as_ref(), || jail_bytes(&call.app_id))
             }));
             return;
         }
