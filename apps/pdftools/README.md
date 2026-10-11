@@ -31,7 +31,16 @@ decision that applies.
 | Canvas | The pages, white on the desk: a run of up to eight pages from the page you went to, each the engine's render at screen resolution |
 | Pill | Page "3 / 24", previous and next, zoom out, zoom, zoom in, fit width, fit page |
 | Right panel | Comment: the threads. Fill & Sign: the form's fields and Add text, Add date, Add initials. Edit: the paragraph being edited |
-| Status line | Saved or Edited, and the storage the PDFs use ("14.6 of 64 MB used") |
+| Status line | Saved or Edited, and the storage the PDFs use ("14.6 of 64 MB used", "37 KB of 64 MB used") |
+
+The designs are drawn at 1536 x 1024, but the desktop opens every app's
+window at 72% of the desk's width and 76% of its height, at most 1000 x 720
+points (`crates/shell/src/desktop_layout.rs`); in the runs here PDF Tools got
+990 x 603 points. An app has no way to ask for a larger window; the person
+can resize or maximize it. Below 1180 points wide the mode tabs and Save trim
+their padding, both right panels take 320 points, a right panel takes the
+left panel's place, and until the person zooms, the page fits the canvas, up
+to 100%.
 
 ## Modes
 
@@ -106,16 +115,20 @@ Notes for whoever changes the script:
   text): give a Label no margin or padding and put a View around it instead.
 - **A view whose `on_render` starts hidden stays hidden**: regions that hide
   are wrapped in plain Views that are shown and hidden instead.
-- One handler, timer or callback has a 64 ms budget; page images are read
-  with `fs.read_bytes` and shown with `binary_resource`, one stored handle per
-  image.
+- One handler, timer or callback has a 64 ms budget of wall-clock time; page
+  images are read with `fs.read_bytes` and shown with `binary_resource`, one
+  stored handle per image. `library.json` is written by the heartbeat (at most
+  every 2 s) when a page turn or an open changed it, so no tap waits on the
+  disk; a new title, a removal or the "Comment as" name is written at once.
 
 ## Testing
 
 The library's rules are pure functions in `main.splash`, tested from Rust by
 evaluating the bundle's functions in a script VM
 (`crates/shell/src/pdftools_model_tests.rs`): an imported PDF's title, a split
-part's title, and what the library index keeps across a restart.
+part's title, what the library index keeps across a restart, the pages a
+range names, a find snippet's match in bold, an avatar's initials and a
+comment's date.
 
 ```sh
 cargo test --locked -p octosense-shell --lib pdftools_model
@@ -137,11 +150,16 @@ python3 apps/pdftools/tests/ui.py --shell target/debug/octosense --lock <dir> --
 python3 apps/pdftools/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/pdftools-ui
 ```
 
+The runtime gives one handler 64 ms of wall-clock time, so on a busy machine
+a run can fail on a handler that waited for the CPU (`script time budget
+exceeded` in its log); `--budget-ms 1000` raises the hosts' budget
+(`MAKEPAD_SPLASH_BUDGET_MS`) for such a machine.
+
 | Run | What it covers |
 | --- | --- |
-| `shell` | Every mode on the samples, light then dark through the shell's own style menu: Home and its covers, reading and thumbnails, find, a highlight and a reply, a rotation and its undo, combine with a page range, a Fill & Sign mark, a text edit, save, the damaged file, and "Open a PDF from this device" |
+| `shell` | Every mode on the samples in the shell's own window, light, then dark through the shell's own style menu (the dark pass works on what the light pass left): Home and its covers, "Open a PDF from this device" refused, reading and thumbnails, find ("9 matches on 4 pages"), a highlight and its reply, a rotation and its undo, combine with a page range ("One PDF of 5 pages"), initials placed by Fill & Sign, a text edit, save, and the damaged file |
 | `restart` | The same home again: the library, its titles, the page a PDF was left at, and `Imported PDF.pdf` placed as an import leaves one |
-| `full` | Storage filled to 8 KB short of its 64 MiB: the refusal on Home, then a removal |
+| `full` | Storage filled to 8 KB short of its 64 MiB: the refusal on Home, then a removal, which asks once more |
 | `empty` | No PDFs: the empty library and its Open button, light and dark |
 | `missing` | `card-host` with the shipped bundle: no engine and no files service |
 | `fixture` | `card-host` with the dev fixture: every designed screen at the designs' 1536 x 1024, light and dark, each grab beside its design in `compare/`, and the damaged, protected and unsaved states |
@@ -165,9 +183,27 @@ that refusal.
 
 ## Status
 
-- **Not verified yet**: see the pull request for the runs made on this
-  version and their evidence.
-- **Not part of this version**: export (no approved design), password-protected
-  PDFs, keyboard shortcuts (the runtime gives script apps no key events),
-  the Edit panel's Alignment and Colour (`pdf.edit_text` takes only text),
-  Linux, Windows, phones.
+- **Verified on 10 Oct 2026** (macOS, Apple silicon; the frames, side-by-sides
+  and receipt are in [tests/evidence/v2-20261010](tests/evidence/v2-20261010/README.md)):
+  the model tests; the `shell`, `restart`, `full` and `empty` runs in a hidden
+  desktop shell with the real engine, at the runtime's 64 ms script budget
+  (and again with `--budget-ms 1000` while other builds loaded the machine);
+  the `missing` and `fixture` runs in card-host, light and dark. `fixture`
+  ran with `--budget-ms 1000`: its stand-in engine answers in script, and at
+  64 ms one of its answers overran in the dark pass.
+- **Not verified**: the host's file dialog and a real import (a hidden window
+  cannot open it); with the real engine, form fields, outlines, Redo, the
+  other comment and page operations, password-protected PDFs, the eight-PDF
+  cap and the unsaved-changes question (the dev fixture covers their screens);
+  window sizes other than the shell's default and 1536 x 1024; Linux,
+  Windows, phones.
+- **Known**: a comment's date is the engine's UTC time read as local time, so
+  a comment made in the evening west of UTC shows the next day's date, until
+  the pdf service converts it. The status line counts only the PDFs in the
+  library: the files service does not report the storage's use. On a heavily
+  loaded machine a tap can overrun the 64 ms budget and be lost (seen at load
+  averages of 60 to 150 before `library.json` moved off the tap path).
+- **Not part of this version**: export (no approved design), opening
+  password-protected PDFs, keyboard shortcuts (the runtime gives script apps no
+  key events), the Edit panel's Alignment and Colour (`pdf.edit_text` takes
+  only text).

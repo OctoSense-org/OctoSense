@@ -27,7 +27,13 @@ craft 引擎只在桌面版中提供（`craft-engines`）。
 | 画布 | 页面以白色显示在桌面背景上：从你前往的那一页开始的至多八页，每页都是引擎按屏幕分辨率渲染的结果 |
 | 浮动控制条 | 页码“3 / 24”、上一页和下一页、缩小、缩放比例、放大、适合宽度、适合页面 |
 | 右侧面板 | Comment：评论线程。Fill & Sign：表单字段以及 Add text、Add date、Add initials。Edit：正在编辑的段落 |
-| 状态栏 | Saved 或 Edited，以及 PDF 占用的存储（“14.6 of 64 MB used”） |
+| 状态栏 | Saved 或 Edited，以及 PDF 占用的存储（“14.6 of 64 MB used”、“37 KB of 64 MB used”） |
+
+设计图按 1536 x 1024 绘制，但桌面版打开每个应用的窗口时，宽度取桌面的 72%、高度取 76%，
+最大 1000 x 720 点（`crates/shell/src/desktop_layout.rs`）；在这里的运行中 PDF Tools 得到
+990 x 603 点。应用没有办法请求更大的窗口；用户可以调整窗口大小或将其最大化。窗口宽度小于
+1180 点时，模式标签和 Save 会收紧内边距，两种右侧面板都取 320 点宽，右侧面板会取代左侧面板
+的位置；在用户自己缩放之前，页面会适合画布宽度，最大 100%。
 
 ## 模式
 
@@ -88,14 +94,17 @@ PDF to make room”）、已打开八个 PDF、关闭时有未保存的更改，
   设置 margin 或 padding，改为在外面套一个 View。
 - **`on_render` 一开始就隐藏的视图会一直隐藏**：需要隐藏的区域都套在普通的 View 中，改为
   显示和隐藏外层 View。
-- 每个处理函数、定时器或回调有 64 ms 的时间预算；页面图像用 `fs.read_bytes` 读取并用
-  `binary_resource` 显示，每张图像保存一个句柄。
+- 每个处理函数、定时器或回调有 64 ms 的挂钟时间预算；页面图像用 `fs.read_bytes` 读取并用
+  `binary_resource` 显示，每张图像保存一个句柄。翻页或打开文件改动了 `library.json` 时，
+  由心跳定时器写入（至多每 2 秒一次），因此点按从不等待磁盘；新的标题、移除操作或
+  “Comment as”中的名字会立即写入。
 
 ## 测试
 
 资料库的规则是 `main.splash` 中的纯函数，由 Rust 在脚本虚拟机中执行包内函数来测试
-（`crates/shell/src/pdftools_model_tests.rs`）：导入的 PDF 的标题、拆分出的部分的标题，以及
-资料库索引在重启后保留的内容。
+（`crates/shell/src/pdftools_model_tests.rs`）：导入的 PDF 的标题、拆分出的部分的标题、
+资料库索引在重启后保留的内容、页面范围所指的页面、查找摘要中加粗的匹配、头像中的姓名缩写，
+以及评论的日期。
 
 ```sh
 cargo test --locked -p octosense-shell --lib pdftools_model
@@ -115,11 +124,15 @@ python3 apps/pdftools/tests/ui.py --shell target/debug/octosense --lock <dir> --
 python3 apps/pdftools/tests/ui.py --card-host <App Hub>/target/release/card-host --output target/pdftools-ui
 ```
 
+运行时给每个处理函数 64 ms 的挂钟时间，因此在繁忙的机器上，一次运行可能因为某个处理函数
+等待 CPU 而失败（日志中出现 `script time budget exceeded`）；对这样的机器，
+`--budget-ms 1000` 会提高宿主的预算（`MAKEPAD_SPLASH_BUDGET_MS`）。
+
 | 运行 | 覆盖内容 |
 | --- | --- |
-| `shell` | 在示例上覆盖每种模式，先浅色后通过 Shell 自己的样式菜单切到深色：主页及其封面、阅读和缩略图、查找、一处高亮和一条回复、一次旋转及其撤销、带页面范围的合并、一个 Fill & Sign 标记、一次文字编辑、保存、损坏的文件，以及“Open a PDF from this device” |
+| `shell` | 在 Shell 自己的窗口中、在示例上覆盖每种模式，先浅色，再通过 Shell 自己的样式菜单切到深色（深色这一轮在浅色一轮留下的状态上进行）：主页及其封面、“Open a PDF from this device”被拒绝、阅读和缩略图、查找（“9 matches on 4 pages”）、一处高亮及其回复、一次旋转及其撤销、带页面范围的合并（“One PDF of 5 pages”）、Fill & Sign 放置的姓名缩写、一次文字编辑、保存，以及损坏的文件 |
 | `restart` | 再次使用同一个主目录：资料库、其中的标题、PDF 离开时所在的页面，以及按导入方式放入的 `Imported PDF.pdf` |
-| `full` | 存储被填到距 64 MiB 只差 8 KB：主页上的拒绝提示，然后移除一个 PDF |
+| `full` | 存储被填到距 64 MiB 只差 8 KB：主页上的拒绝提示，然后移除一个 PDF（会再确认一次） |
 | `empty` | 没有 PDF：空资料库及其 Open 按钮，浅色和深色 |
 | `missing` | 使用发布包的 `card-host`：没有引擎，也没有文件服务 |
 | `fixture` | 使用开发夹具的 `card-host`：每个设计过的界面按设计图的 1536 x 1024 显示，浅色和深色，每张截图都与它的设计图并排放在 `compare/` 中，另有损坏、受保护和未保存三种状态 |
@@ -139,7 +152,19 @@ python3 apps/pdftools/dev-fixture/make_fixture.py <card-host app data>/os.pdftoo
 
 ## 状态
 
-- **尚未验证**：在这个版本上进行的运行及其证据见拉取请求。
-- **不在这个版本中**：导出（没有已批准的设计）、受密码保护的 PDF、键盘快捷键（运行时不给
-  脚本应用按键事件）、Edit 面板中的 Alignment 和 Colour（`pdf.edit_text` 只接收文字）、
+- **已于 2026 年 10 月 10 日验证**（macOS，Apple 芯片；截图、并排对比图和记录见
+  [tests/evidence/v2-20261010](tests/evidence/v2-20261010/README.zh-CN.md)）：模型测试；在
+  隐藏的桌面 Shell 中使用真实引擎、按运行时 64 ms 的脚本预算进行的 `shell`、`restart`、
+  `full` 和 `empty` 运行（在其他构建占用机器时又用 `--budget-ms 1000` 运行了一次）；在
+  card-host 中进行的 `missing` 和 `fixture` 运行，浅色和深色。`fixture` 使用了
+  `--budget-ms 1000`：它的替身引擎在脚本中作答，按 64 ms 运行时，深色一轮中有一次作答超时。
+- **未验证**：宿主的文件对话框和真实的导入（隐藏窗口无法打开它）；使用真实引擎时的表单
+  字段、大纲、Redo、其他评论和页面操作、受密码保护的 PDF、八个 PDF 的上限以及未保存更改
+  的询问（开发夹具覆盖了它们的界面）；Shell 默认窗口和 1536 x 1024 以外的窗口尺寸；
   Linux、Windows、手机。
+- **已知问题**：评论的日期是引擎的 UTC 时间被当作本地时间读取，因此在 UTC 以西的晚上做的
+  评论会显示第二天的日期，直到 pdf 服务完成转换。状态栏只统计资料库中的 PDF：文件服务不
+  报告存储的用量。在负载很高的机器上，一次点按可能超出 64 ms 预算而丢失（在 `library.json`
+  移出点按路径之前，于 60 到 150 的平均负载下见到过）。
+- **不在这个版本中**：导出（没有已批准的设计）、打开受密码保护的 PDF、键盘快捷键（运行时
+  不给脚本应用按键事件）、Edit 面板中的 Alignment 和 Colour（`pdf.edit_text` 只接收文字）。
